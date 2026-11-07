@@ -3,41 +3,41 @@
    and transition, so nothing here needs its own reduced variant.
 
    Entrances sit in :where() so a surface that already has its own entrance
-   (the publish review, the work-folder switcher, toasts) keeps it. Anything
+   (the publish review, the Connected Folder switcher, toasts) keeps it. Anything
    you trigger finishes inside 250ms; only confirmations overshoot. */
 
-@keyframes work-fold-fade-in {
+@keyframes amplefile-fade-in {
   from { opacity: 0; }
 }
 
-@keyframes work-fold-dialog-in {
+@keyframes amplefile-dialog-in {
   from { opacity: 0; scale: 0.97; translate: 0 8px; }
 }
 
-@keyframes work-fold-menu-in {
-  from { opacity: 0; scale: 0.96; translate: 0 var(--work-fold-menu-rise, -4px); }
+@keyframes amplefile-menu-in {
+  from { opacity: 0; scale: 0.96; translate: 0 var(--amplefile-menu-rise, -4px); }
 }
 
-@keyframes work-fold-rise-in {
+@keyframes amplefile-rise-in {
   from { opacity: 0; translate: 0 4px; }
 }
 
 /* Clipped only while it grows, so row focus rings are never cut off after. */
-@keyframes work-fold-folder-open {
+@keyframes amplefile-folder-open {
   from { height: 0; opacity: 0; overflow: clip; }
   to { overflow: clip; }
 }
 
 /* Opacity only: the connected tab frame measures the tab as it arrives. */
-@keyframes work-fold-tab-in {
+@keyframes amplefile-tab-in {
   from { opacity: 0; }
 }
 
-@keyframes work-fold-dot-in {
+@keyframes amplefile-dot-in {
   from { opacity: 0; scale: 0; }
 }
 
-@keyframes work-fold-confirm-pop {
+@keyframes amplefile-confirm-pop {
   0% { opacity: 0; scale: 0.4; }
   60% { opacity: 1; scale: 1.15; }
   100% { scale: 1; }
@@ -46,23 +46,23 @@
 /* Dialogs: the backdrop fades while the window rises into place. */
 
 :where(.modal-backdrop, .publish-review-backdrop) {
-  animation: work-fold-fade-in var(--work-fold-motion-base) ease-out;
+  animation: amplefile-fade-in var(--amplefile-motion-base) ease-out;
 }
 
 :where(.modal-backdrop, .publish-review-backdrop) > * {
-  animation: work-fold-dialog-in var(--work-fold-motion-slow) var(--work-fold-ease-smooth);
+  animation: amplefile-dialog-in var(--amplefile-motion-slow) var(--amplefile-ease-smooth);
 }
 
 /* Menus grow from the side of their button they open from. */
 
-:where(.context-menu, .composer-command-menu, .chat-rename-popover, .surface-tab-work-folder-menu,
-  .model-catalog-popover, .work-folder-pane-breadcrumb-menu, .browser-tab-site-menu) {
+:where(.context-menu, .composer-command-menu, .chat-rename-popover, .surface-tab-connected-folder-menu,
+  .model-catalog-popover, .connected-folder-pane-breadcrumb-menu, .browser-tab-site-menu) {
   transform-origin: top left;
-  animation: work-fold-menu-in 150ms var(--work-fold-ease-smooth);
+  animation: amplefile-menu-in 150ms var(--amplefile-ease-smooth);
 }
 
 :where(.composer-command-menu) {
-  --work-fold-menu-rise: 4px;
+  --amplefile-menu-rise: 4px;
   transform-origin: bottom left;
 }
 
@@ -71,7 +71,7 @@
 }
 
 :where(:is(.composer-model-control, .composer-attach-control, .composer-context-control)[data-menu-placement="below"] .composer-command-menu) {
-  --work-fold-menu-rise: -4px;
+  --amplefile-menu-rise: -4px;
   transform-origin: top left;
 }
 
@@ -80,31 +80,31 @@
 }
 
 :where(.jump-to-latest) {
-  --work-fold-menu-rise: 6px;
-  animation: work-fold-menu-in var(--work-fold-motion-base) var(--work-fold-ease-smooth);
+  --amplefile-menu-rise: 6px;
+  animation: amplefile-menu-in var(--amplefile-motion-base) var(--amplefile-ease-smooth);
 }
 
 /* Settings pages and tabs arrive instead of appearing. */
 
 :where(.settings-tab-panel) {
-  animation: work-fold-rise-in var(--work-fold-motion-base) var(--work-fold-ease-smooth);
+  animation: amplefile-rise-in var(--amplefile-motion-base) var(--amplefile-ease-smooth);
 }
 
 :where(.surface-tab) {
-  animation: work-fold-tab-in var(--work-fold-motion-base) var(--work-fold-ease-smooth);
+  animation: amplefile-tab-in var(--amplefile-motion-base) var(--amplefile-ease-smooth);
 }
 
 /* Only the folder a person just opened grows open (FileTree marks it). */
 
 .file-children.opening {
   interpolate-size: allow-keywords;
-  animation: work-fold-folder-open 200ms var(--work-fold-ease-smooth);
+  animation: amplefile-folder-open 200ms var(--amplefile-ease-smooth);
 }
 
 /* Activity: a running dot pops in; lib/motion.ts plays the reply-landed ring. */
 
 :where(.chat-activity-indicator) {
-  animation: work-fold-dot-in 220ms var(--work-fold-ease-pop);
+  animation: amplefile-dot-in 220ms var(--amplefile-ease-pop);
 }
 
 .chat-activity-dot,
@@ -127,20 +127,20 @@
 
 .is-copied svg,
 .file-details-copy[data-state="copied"] svg {
-  animation: work-fold-confirm-pop 280ms var(--work-fold-ease-smooth);
+  animation: amplefile-confirm-pop 280ms var(--amplefile-ease-smooth);
 }
 
 /* Buttons answer a press. Their color timings are restated so scale can join them. */
 
-:root[data-theme] .app-shell :is(.ui-control, .send-button, .work-folder-rail-button, .work-folder-rail-account-button, .surface-tab-action,
-  .composer-command-trigger, .message-copy-button, .model-catalog-trigger, .checks-manual-button, .work-folder-banner-upload-button,
+:root[data-theme] .app-shell :is(.ui-control, .send-button, .connected-folder-rail-button, .connected-folder-rail-account-button, .surface-tab-action,
+  .composer-command-trigger, .message-copy-button, .model-catalog-trigger, .checks-manual-button, .connected-folder-banner-upload-button,
   .message-code-toolbar button, .generated-image-actions button) {
   transition: background-color 110ms ease-out, color 110ms ease-out, border-color 110ms ease-out, box-shadow 110ms ease-out,
-    opacity 110ms ease-out, filter 110ms ease-out, scale 160ms var(--work-fold-ease-smooth);
+    opacity 110ms ease-out, filter 110ms ease-out, scale 160ms var(--amplefile-ease-smooth);
 }
 
-:root[data-theme] .app-shell :is(.ui-control, .send-button, .work-folder-rail-button, .work-folder-rail-account-button, .surface-tab-action,
-  .composer-command-trigger, .message-copy-button, .model-catalog-trigger, .checks-manual-button, .work-folder-banner-upload-button,
+:root[data-theme] .app-shell :is(.ui-control, .send-button, .connected-folder-rail-button, .connected-folder-rail-account-button, .surface-tab-action,
+  .composer-command-trigger, .message-copy-button, .model-catalog-trigger, .checks-manual-button, .connected-folder-banner-upload-button,
   .message-code-toolbar button, .generated-image-actions button):active:not(:disabled) {
   scale: 0.96;
   transition-duration: 110ms, 110ms, 110ms, 110ms, 110ms, 110ms, 70ms;

@@ -9,8 +9,8 @@ import { syncBuiltinESMExports } from "node:module";
 import { delimiter, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const logFile = process.env.WORKFOLD_TEST_REAL_PI_WRITE_LOG;
-const protectedRoots = (process.env.WORKFOLD_TEST_REAL_PI_DIRS ?? "")
+const logFile = process.env.AMPLEFILE_TEST_REAL_PI_WRITE_LOG;
+const protectedRoots = (process.env.AMPLEFILE_TEST_REAL_PI_DIRS ?? "")
   .split(delimiter)
   .filter(Boolean)
   .flatMap((root) => {

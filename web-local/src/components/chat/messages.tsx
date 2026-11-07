@@ -11,16 +11,16 @@ import { formatDateTime } from "../../lib/format";
 import { resolveMessageImageSource } from "../../lib/message-images";
 import { assistantTurnView, savedWorkTrailPreviews } from "../../lib/chat-work-trail";
 import { rehypeSingleLineBreaks } from "../../lib/markdown-line-breaks";
-import { collectWorkFolderPathCandidates, findWorkFolderPathMentions, workFolderPathCandidate } from "../../lib/work-folder-path-links";
+import { collectConnectedFolderPathCandidates, findConnectedFolderPathMentions, connectedFolderPathCandidate } from "../../lib/connected-folder-path-links";
 import type { ChatMessage, ChatMessageLanding, RuntimePreviewEntry } from "../../types";
 import { FluentGlyph } from "../chrome/common";
 import { FileTypeIcon } from "../tree/FileTree";
-import { RuntimeContextPreview, turnChangedFiles, type TurnChangedFile, type WorkFolderPathLinkResolver } from "./activity";
+import { RuntimeContextPreview, turnChangedFiles, type TurnChangedFile, type ConnectedFolderPathLinkResolver } from "./activity";
 import { GeneratedImages, turnGeneratedImages } from "./GeneratedImages";
 
-export type { WorkFolderPathLinkResolver };
+export type { ConnectedFolderPathLinkResolver };
 
-const assistantMessageWorkFolderPathCache = new Map<string, {
+const assistantMessageConnectedFolderPathCache = new Map<string, {
   content: string;
   resolved: Map<string, string>;
   promise: Promise<Map<string, string>> | null;
@@ -33,10 +33,10 @@ interface ChatMessageRowProps {
   suppressEnterAnimation: boolean;
   showRuntimePreview: boolean;
   runtimePreviews: RuntimePreviewEntry[];
-  workFolderId: string;
-  workFolderRoot: string;
-  onOpenWorkFolderFile?: (path: string) => void;
-  resolveWorkFolderPathLinks?: WorkFolderPathLinkResolver;
+  connectedFolderId: string;
+  connectedFolderRoot: string;
+  onOpenConnectedFolderFile?: (path: string) => void;
+  resolveConnectedFolderPathLinks?: ConnectedFolderPathLinkResolver;
   onCopyMessage: (messageId: string, content: string) => void | Promise<void>;
   /** Present only on the Chat's last message while nothing runs: an interrupted reply can be continued. */
   onContinue?: () => void;
@@ -49,17 +49,17 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   suppressEnterAnimation,
   showRuntimePreview,
   runtimePreviews,
-  workFolderId,
-  workFolderRoot,
-  onOpenWorkFolderFile,
-  resolveWorkFolderPathLinks,
+  connectedFolderId,
+  connectedFolderRoot,
+  onOpenConnectedFolderFile,
+  resolveConnectedFolderPathLinks,
   onCopyMessage,
   onContinue,
 }: ChatMessageRowProps) {
-  const [workFolderLinkVersion, setWorkFolderLinkVersion] = useState(0);
-  const workFolderLinkCacheKey = `${workFolderId}:${message.id}`;
-  const cachedWorkFolderLinks = assistantMessageWorkFolderPathCache.get(workFolderLinkCacheKey);
-  const workFolderLinks = cachedWorkFolderLinks?.content === message.content ? cachedWorkFolderLinks.resolved : null;
+  const [connectedFolderLinkVersion, setConnectedFolderLinkVersion] = useState(0);
+  const connectedFolderLinkCacheKey = `${connectedFolderId}:${message.id}`;
+  const cachedConnectedFolderLinks = assistantMessageConnectedFolderPathCache.get(connectedFolderLinkCacheKey);
+  const connectedFolderLinks = cachedConnectedFolderLinks?.content === message.content ? cachedConnectedFolderLinks.resolved : null;
   const messageTime = message.createdAt ? formatDateTime(message.createdAt) : "";
   const savedRuntimePreviews = savedWorkTrailPreviews(message);
   const visibleRuntimePreviews = showRuntimePreview && runtimePreviews.length
@@ -67,23 +67,23 @@ export const ChatMessageRow = memo(function ChatMessageRow({
     : savedRuntimePreviews;
   const turnView = assistantTurnView(message.content, message.role === "assistant" ? message.assistantPresentation : undefined, visibleRuntimePreviews);
   const generatedImages = message.role === "assistant" ? turnGeneratedImages(visibleRuntimePreviews) : [];
-  const changedFiles = message.role === "assistant" && onOpenWorkFolderFile && resolveWorkFolderPathLinks
-    ? turnChangedFiles(visibleRuntimePreviews, workFolderRoot)
+  const changedFiles = message.role === "assistant" && onOpenConnectedFolderFile && resolveConnectedFolderPathLinks
+    ? turnChangedFiles(visibleRuntimePreviews, connectedFolderRoot)
     : [];
 
   useEffect(() => {
-    if (message.role !== "assistant" || !resolveWorkFolderPathLinks || !onOpenWorkFolderFile) return;
-    const candidates = collectWorkFolderPathCandidates(message.content);
+    if (message.role !== "assistant" || !resolveConnectedFolderPathLinks || !onOpenConnectedFolderFile) return;
+    const candidates = collectConnectedFolderPathCandidates(message.content);
     if (!candidates.length) return;
     let cancelled = false;
-    void resolveMessageWorkFolderLinks(workFolderLinkCacheKey, message.content, candidates, resolveWorkFolderPathLinks)
+    void resolveMessageConnectedFolderLinks(connectedFolderLinkCacheKey, message.content, candidates, resolveConnectedFolderPathLinks)
       .then(() => {
-        if (!cancelled) setWorkFolderLinkVersion((current) => current + 1);
+        if (!cancelled) setConnectedFolderLinkVersion((current) => current + 1);
       });
     return () => {
       cancelled = true;
     };
-  }, [message.content, message.id, message.role, onOpenWorkFolderFile, resolveWorkFolderPathLinks, workFolderLinkCacheKey]);
+  }, [message.content, message.id, message.role, onOpenConnectedFolderFile, resolveConnectedFolderPathLinks, connectedFolderLinkCacheKey]);
 
   if (message.kind === "assistant_continuation") return <p className="work-continuation" role="note">Continuing with the results from delegated work.</p>;
   if (message.kind === "context_compaction") return <p className="work-continuation" role="note">{message.content}</p>;
@@ -96,26 +96,26 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   return (
     <article className={`message ${sender}${suppressEnterAnimation ? " settled" : ""}`}>
       {fromApp ? <p className="message-sender">From {fromApp}</p> : null}
-      {message.role === "user" && message.attachments?.length ? <SentAttachments attachments={message.attachments} onOpenWorkFolderFile={onOpenWorkFolderFile} /> : null}
+      {message.role === "user" && message.attachments?.length ? <SentAttachments attachments={message.attachments} onOpenConnectedFolderFile={onOpenConnectedFolderFile} /> : null}
       <div className="message-surface">
         {turnView.steps.length ? (
           <RuntimeContextPreview
             entries={turnView.steps}
-            workFolderRoot={workFolderRoot}
-            onOpenWorkFolderFile={message.role === "assistant" ? onOpenWorkFolderFile : undefined}
-            resolveWorkFolderPathLinks={message.role === "assistant" ? resolveWorkFolderPathLinks : undefined}
-            renderText={(content, links) => <MarkdownMessage content={content} workFolderLinks={links} onOpenWorkFolderFile={onOpenWorkFolderFile} />}
+            connectedFolderRoot={connectedFolderRoot}
+            onOpenConnectedFolderFile={message.role === "assistant" ? onOpenConnectedFolderFile : undefined}
+            resolveConnectedFolderPathLinks={message.role === "assistant" ? resolveConnectedFolderPathLinks : undefined}
+            renderText={(content, links) => <MarkdownMessage content={content} connectedFolderLinks={links} onOpenConnectedFolderFile={onOpenConnectedFolderFile} />}
           />
         ) : null}
         {turnView.answer ? <MarkdownMessage
           content={turnView.answer}
-          workFolderLinks={message.role === "assistant" ? workFolderLinks : null}
-          onOpenWorkFolderFile={message.role === "assistant" ? onOpenWorkFolderFile : undefined}
-          key={workFolderLinkVersion}
+          connectedFolderLinks={message.role === "assistant" ? connectedFolderLinks : null}
+          onOpenConnectedFolderFile={message.role === "assistant" ? onOpenConnectedFolderFile : undefined}
+          key={connectedFolderLinkVersion}
         /> : null}
-        {generatedImages.length ? <GeneratedImages images={generatedImages} workFolderId={workFolderId} onOpenWorkFolderFile={onOpenWorkFolderFile} /> : null}
-        {changedFiles.length && onOpenWorkFolderFile && resolveWorkFolderPathLinks
-          ? <TurnFiles files={changedFiles} resolveWorkFolderPathLinks={resolveWorkFolderPathLinks} onOpenWorkFolderFile={onOpenWorkFolderFile} />
+        {generatedImages.length ? <GeneratedImages images={generatedImages} connectedFolderId={connectedFolderId} onOpenConnectedFolderFile={onOpenConnectedFolderFile} /> : null}
+        {changedFiles.length && onOpenConnectedFolderFile && resolveConnectedFolderPathLinks
+          ? <TurnFiles files={changedFiles} resolveConnectedFolderPathLinks={resolveConnectedFolderPathLinks} onOpenConnectedFolderFile={onOpenConnectedFolderFile} />
           : null}
         {message.role === "assistant" && showLanding && message.landing ? <TurnLanding landing={message.landing} /> : null}
         {message.role === "assistant" && message.interruption ? <InterruptedTurn interruption={message.interruption} onContinue={onContinue} /> : null}
@@ -167,10 +167,10 @@ function areChatMessageRowPropsEqual(previous: ChatMessageRowProps, next: ChatMe
     && previous.suppressEnterAnimation === next.suppressEnterAnimation
     && previous.showRuntimePreview === next.showRuntimePreview
     && sameRuntimePreview
-    && previous.workFolderId === next.workFolderId
-    && previous.workFolderRoot === next.workFolderRoot
-    && previous.onOpenWorkFolderFile === next.onOpenWorkFolderFile
-    && previous.resolveWorkFolderPathLinks === next.resolveWorkFolderPathLinks
+    && previous.connectedFolderId === next.connectedFolderId
+    && previous.connectedFolderRoot === next.connectedFolderRoot
+    && previous.onOpenConnectedFolderFile === next.onOpenConnectedFolderFile
+    && previous.resolveConnectedFolderPathLinks === next.resolveConnectedFolderPathLinks
     && previous.onCopyMessage === next.onCopyMessage
     && previous.onContinue === next.onContinue;
 }
@@ -182,21 +182,21 @@ const turnFilesShownAtFirst = 5;
  * The files a reply wrote or edited, listed at its end so the result is one
  * click away (2026-10-27). A file that no longer exists is left out.
  */
-function TurnFiles({ files, resolveWorkFolderPathLinks, onOpenWorkFolderFile }: {
+function TurnFiles({ files, resolveConnectedFolderPathLinks, onOpenConnectedFolderFile }: {
   files: TurnChangedFile[];
-  resolveWorkFolderPathLinks: WorkFolderPathLinkResolver;
-  onOpenWorkFolderFile: (path: string) => void;
+  resolveConnectedFolderPathLinks: ConnectedFolderPathLinkResolver;
+  onOpenConnectedFolderFile: (path: string) => void;
 }) {
   const key = files.map((file) => file.path).join("\n");
   const [existing, setExisting] = useState<Map<string, string> | null>(null);
   const [showAll, setShowAll] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    void resolveWorkFolderPathLinks(key.split("\n"))
+    void resolveConnectedFolderPathLinks(key.split("\n"))
       .then((resolved) => { if (!cancelled) setExisting(resolved); })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [key, resolveWorkFolderPathLinks]);
+  }, [key, resolveConnectedFolderPathLinks]);
   if (!existing) return null;
   const present = files.flatMap((file) => {
     const path = existing.get(file.path);
@@ -211,7 +211,7 @@ function TurnFiles({ files, resolveWorkFolderPathLinks, onOpenWorkFolderFile }: 
         const folder = slash > 0 ? file.path.slice(0, slash) : "";
         return (
           <li key={file.path}>
-            <button type="button" onClick={() => onOpenWorkFolderFile(file.path)} title={file.path}>
+            <button type="button" onClick={() => onOpenConnectedFolderFile(file.path)} title={file.path}>
               <FileTypeIcon path={file.path} />
               <span className="turn-file-copy">
                 <span className="turn-file-name">{slash >= 0 ? file.path.slice(slash + 1) : file.path}</span>
@@ -232,9 +232,9 @@ function TurnFiles({ files, resolveWorkFolderPathLinks, onOpenWorkFolderFile }: 
 }
 
 /** The files that went out with a message, drawn like the composer's chips; each opens its file. */
-function SentAttachments({ attachments, onOpenWorkFolderFile }: {
+function SentAttachments({ attachments, onOpenConnectedFolderFile }: {
   attachments: NonNullable<ChatMessage["attachments"]>;
-  onOpenWorkFolderFile?: (path: string) => void;
+  onOpenConnectedFolderFile?: (path: string) => void;
 }) {
   return (
     <ul className="message-attachments" aria-label="Attached files">
@@ -242,8 +242,8 @@ function SentAttachments({ attachments, onOpenWorkFolderFile }: {
         const content = <span className="context-chip-main"><FileTypeIcon path={attachment.target} /><span className="context-chip-name">{attachment.name}</span></span>;
         return (
           <li key={`${attachment.kind}:${attachment.target}`}>
-            {onOpenWorkFolderFile && attachment.kind === "file"
-              ? <button className="context-chip message-attachment" type="button" title={attachment.target} onClick={() => onOpenWorkFolderFile(attachment.target)}>{content}</button>
+            {onOpenConnectedFolderFile && attachment.kind === "file"
+              ? <button className="context-chip message-attachment" type="button" title={attachment.target} onClick={() => onOpenConnectedFolderFile(attachment.target)}>{content}</button>
               : <span className="context-chip message-attachment" title={attachment.target}>{content}</span>}
           </li>
         );
@@ -309,7 +309,7 @@ function InterruptedTurn({ interruption, onContinue }: { interruption: NonNullab
     return (
       <section className="turn-interruption" role="status" aria-label="Failed Worker response">
         <strong>Request Stopped</strong>
-        <span>work-fold saved this result with your Chat. You can try again whenever you’re ready.</span>
+        <span>AmpleFile saved this result with your Chat. You can try again whenever you’re ready.</span>
         <ContinueButton onContinue={onContinue} />
       </section>
     );
@@ -318,7 +318,7 @@ function InterruptedTurn({ interruption, onContinue }: { interruption: NonNullab
     return (
       <section className="turn-interruption" role="status" aria-label="Stopped Worker response">
         <strong>Response Stopped</strong>
-        <span>work-fold saved the response produced before you stopped the Worker.</span>
+        <span>AmpleFile saved the response produced before you stopped the Worker.</span>
       </section>
     );
   }
@@ -326,7 +326,7 @@ function InterruptedTurn({ interruption, onContinue }: { interruption: NonNullab
     return (
       <section className="turn-interruption" role="status" aria-label="Worker response interrupted by app close">
         <strong>App Interrupted This Response</strong>
-        <span>work-fold saved the partial response and did not rerun the turn because tools may already have changed something.</span>
+        <span>AmpleFile saved the partial response and did not rerun the turn because tools may already have changed something.</span>
         <ContinueButton onContinue={onContinue} />
       </section>
     );
@@ -337,7 +337,7 @@ function InterruptedTurn({ interruption, onContinue }: { interruption: NonNullab
   return (
     <section className="turn-interruption" role="status" aria-label="Interrupted Worker response">
       <strong>Response Interrupted</strong>
-      <span>work-fold preserved the partial response. {retryText}</span>
+      <span>AmpleFile preserved the partial response. {retryText}</span>
       <ContinueButton onContinue={onContinue} />
     </section>
   );
@@ -345,14 +345,14 @@ function InterruptedTurn({ interruption, onContinue }: { interruption: NonNullab
 
 export function MarkdownMessage({
   content,
-  workFolderLinks = null,
-  onOpenWorkFolderFile,
+  connectedFolderLinks = null,
+  onOpenConnectedFolderFile,
 }: {
   content: string;
-  workFolderLinks?: Map<string, string> | null;
-  onOpenWorkFolderFile?: (path: string) => void;
+  connectedFolderLinks?: Map<string, string> | null;
+  onOpenConnectedFolderFile?: (path: string) => void;
 }) {
-  const linkChildren = (children: ReactNode) => linkWorkFolderPathText(children, workFolderLinks, onOpenWorkFolderFile);
+  const linkChildren = (children: ReactNode) => linkConnectedFolderPathText(children, connectedFolderLinks, onOpenConnectedFolderFile);
   return (
     <div className="message-body">
       <ReactMarkdown
@@ -368,14 +368,14 @@ export function MarkdownMessage({
           code: ({ children, className }) => {
             const text = reactNodeText(children);
             if (className || text.includes("\n")) return <code className={className}>{children}</code>;
-            const normalizedPath = workFolderPathCandidate(text, { allowWorkFolders: true });
-            const resolvedPath = normalizedPath ? workFolderLinks?.get(normalizedPath) ?? null : null;
-            if (!resolvedPath || !onOpenWorkFolderFile) return <code>{children}</code>;
+            const normalizedPath = connectedFolderPathCandidate(text, { allowConnectedFolders: true });
+            const resolvedPath = normalizedPath ? connectedFolderLinks?.get(normalizedPath) ?? null : null;
+            if (!resolvedPath || !onOpenConnectedFolderFile) return <code>{children}</code>;
             return (
               <button
-                className="work-folder-file-link work-folder-file-link-code"
+                className="connected-folder-file-link connected-folder-file-link-code"
                 type="button"
-                onClick={() => onOpenWorkFolderFile(resolvedPath)}
+                onClick={() => onOpenConnectedFolderFile(resolvedPath)}
                 title={resolvedPath}
               >
                 {text}
@@ -383,10 +383,10 @@ export function MarkdownMessage({
             );
           },
           a: ({ href, children }) => {
-            const workFolderPath = workFolderPathCandidate(href ?? "", { allowWorkFolders: true });
-            const resolvedPath = workFolderPath ? workFolderLinks?.get(workFolderPath) ?? null : null;
-            if (resolvedPath && onOpenWorkFolderFile) {
-              return <button className="work-folder-file-link" type="button" onClick={() => onOpenWorkFolderFile(resolvedPath)} title={resolvedPath}>{children}</button>;
+            const connectedFolderPath = connectedFolderPathCandidate(href ?? "", { allowConnectedFolders: true });
+            const resolvedPath = connectedFolderPath ? connectedFolderLinks?.get(connectedFolderPath) ?? null : null;
+            if (resolvedPath && onOpenConnectedFolderFile) {
+              return <button className="connected-folder-file-link" type="button" onClick={() => onOpenConnectedFolderFile(resolvedPath)} title={resolvedPath}>{children}</button>;
             }
             // A server on this computer, such as a Worker's dev server, opens as a browser tab.
             const localServer = localServerHref(href);
@@ -397,10 +397,10 @@ export function MarkdownMessage({
             return safeHref ? <a className="message-external-link" href={safeHref} target="_blank" rel="noreferrer">{children}</a> : <>{children}</>;
           },
           img: ({ src, alt }) => {
-            const workFolderPath = workFolderPathCandidate(src ?? "", { allowWorkFolders: true });
-            const resolvedPath = workFolderPath ? workFolderLinks?.get(workFolderPath) ?? null : null;
-            if (resolvedPath && onOpenWorkFolderFile) {
-              return <button className="message-image-file" type="button" onClick={() => onOpenWorkFolderFile(resolvedPath)} title={resolvedPath}>{alt || resolvedPath.split("/").pop() || "Open Image"}</button>;
+            const connectedFolderPath = connectedFolderPathCandidate(src ?? "", { allowConnectedFolders: true });
+            const resolvedPath = connectedFolderPath ? connectedFolderLinks?.get(connectedFolderPath) ?? null : null;
+            if (resolvedPath && onOpenConnectedFolderFile) {
+              return <button className="message-image-file" type="button" onClick={() => onOpenConnectedFolderFile(resolvedPath)} title={resolvedPath}>{alt || resolvedPath.split("/").pop() || "Open Image"}</button>;
             }
             const resolution = resolveMessageImageSource(src, window.location.href);
             if (resolution.kind === "embed") return <img className="message-image" src={resolution.src} alt={alt ?? ""} loading="lazy" referrerPolicy="no-referrer" />;
@@ -450,13 +450,13 @@ function MarkdownCodeBlock({ children }: { children: ReactNode }) {
   );
 }
 
-async function resolveMessageWorkFolderLinks(
+async function resolveMessageConnectedFolderLinks(
   cacheKey: string,
   content: string,
   candidates: string[],
-  resolver: WorkFolderPathLinkResolver,
+  resolver: ConnectedFolderPathLinkResolver,
 ): Promise<Map<string, string>> {
-  const cached = assistantMessageWorkFolderPathCache.get(cacheKey);
+  const cached = assistantMessageConnectedFolderPathCache.get(cacheKey);
   if (cached?.content === content) {
     if (cached.promise) return cached.promise;
     return cached.resolved;
@@ -465,51 +465,51 @@ async function resolveMessageWorkFolderLinks(
     .then((resolved) => {
       // Empty results are not cached: the tree (fixture mode) or the API may simply
       // not be ready yet, and a poisoned empty entry would never be retried.
-      if (resolved.size) assistantMessageWorkFolderPathCache.set(cacheKey, { content, resolved, promise: null });
-      else assistantMessageWorkFolderPathCache.delete(cacheKey);
+      if (resolved.size) assistantMessageConnectedFolderPathCache.set(cacheKey, { content, resolved, promise: null });
+      else assistantMessageConnectedFolderPathCache.delete(cacheKey);
       return resolved;
     })
     .catch(() => {
-      assistantMessageWorkFolderPathCache.delete(cacheKey);
+      assistantMessageConnectedFolderPathCache.delete(cacheKey);
       return new Map<string, string>();
     });
-  assistantMessageWorkFolderPathCache.set(cacheKey, { content, resolved: new Map(), promise });
+  assistantMessageConnectedFolderPathCache.set(cacheKey, { content, resolved: new Map(), promise });
   return promise;
 }
 
-function linkWorkFolderPathText(
+function linkConnectedFolderPathText(
   children: ReactNode,
-  workFolderLinks: Map<string, string> | null | undefined,
-  onOpenWorkFolderFile: ((path: string) => void) | undefined,
+  connectedFolderLinks: Map<string, string> | null | undefined,
+  onOpenConnectedFolderFile: ((path: string) => void) | undefined,
 ): ReactNode {
-  if (!workFolderLinks?.size || !onOpenWorkFolderFile) return children;
+  if (!connectedFolderLinks?.size || !onOpenConnectedFolderFile) return children;
   return Children.map(children, (child) => {
-    if (typeof child === "string") return linkWorkFolderPathString(child, workFolderLinks, onOpenWorkFolderFile);
+    if (typeof child === "string") return linkConnectedFolderPathString(child, connectedFolderLinks, onOpenConnectedFolderFile);
     if (!isValidElement(child) || child.type === "a" || child.type === "code" || child.type === "button") return child;
     const element = child as ReactElement<{ children?: ReactNode }>;
     if (element.props.children === undefined) return child;
-    return cloneElement(element, undefined, linkWorkFolderPathText(element.props.children, workFolderLinks, onOpenWorkFolderFile));
+    return cloneElement(element, undefined, linkConnectedFolderPathText(element.props.children, connectedFolderLinks, onOpenConnectedFolderFile));
   });
 }
 
-function linkWorkFolderPathString(
+function linkConnectedFolderPathString(
   text: string,
-  workFolderLinks: Map<string, string>,
-  onOpenWorkFolderFile: (path: string) => void,
+  connectedFolderLinks: Map<string, string>,
+  onOpenConnectedFolderFile: (path: string) => void,
 ): ReactNode {
-  const mentions = findWorkFolderPathMentions(text).filter((mention) => workFolderLinks.has(mention.normalizedPath));
+  const mentions = findConnectedFolderPathMentions(text).filter((mention) => connectedFolderLinks.has(mention.normalizedPath));
   if (!mentions.length) return text;
   const parts: ReactNode[] = [];
   let cursor = 0;
   mentions.forEach((mention, index) => {
-    const resolvedPath = workFolderLinks.get(mention.normalizedPath);
+    const resolvedPath = connectedFolderLinks.get(mention.normalizedPath);
     if (!resolvedPath) return;
     if (mention.start > cursor) parts.push(text.slice(cursor, mention.start));
     parts.push(
       <button
-        className="work-folder-file-link"
+        className="connected-folder-file-link"
         type="button"
-        onClick={() => onOpenWorkFolderFile(resolvedPath)}
+        onClick={() => onOpenConnectedFolderFile(resolvedPath)}
         title={resolvedPath}
         key={`${mention.start}:${mention.normalizedPath}:${index}`}
       >

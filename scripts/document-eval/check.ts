@@ -7,7 +7,7 @@
  * against values derived from the seeded inputs, and writes page images for a
  * person to look at.
  *
- * Usage: tsx scripts/document-eval/check.ts <task> <work-folder> <results-dir>
+ * Usage: tsx scripts/document-eval/check.ts <task> <connected-folder> <results-dir>
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";

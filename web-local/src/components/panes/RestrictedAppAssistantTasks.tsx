@@ -8,15 +8,15 @@ import { cancelRestrictedAppAssistantTask, listRestrictedAppAssistantTasks, read
 import { ConnectedWorkRequest, openWorkFile } from "../chat/WorkRequest";
 
 /**
- * Requests this app handed to the work-folder's Worker. Each one already started
+ * Requests this app handed to the Connected Folder's Worker. Each one already started
  * its own Chat when the app asked; this list shows status, the exact
  * instructions and input, the reply once done, and offers Open Chat and Stop.
  */
 export function RestrictedAppAssistantTasks({ app, disabled, onOpenChat, onOpenFile = openWorkFile }: {
   app: RestrictedAppInstalled;
   disabled: boolean;
-  onOpenChat?: (workFolderId: string, conversationId: string) => Promise<void>;
-  onOpenFile?: (workFolderId: string, path: string) => Promise<void>;
+  onOpenChat?: (connectedFolderId: string, conversationId: string) => Promise<void>;
+  onOpenFile?: (connectedFolderId: string, path: string) => Promise<void>;
 }) {
   const [tasks, setTasks] = useState<RestrictedAppAssistantTask[]>([]);
   const [detail, setDetail] = useState<RestrictedAppTaskDetail | null>(null);
@@ -56,7 +56,7 @@ export function RestrictedAppAssistantTasks({ app, disabled, onOpenChat, onOpenF
     setBusy(true); setError(null);
     try {
       const next = await readRestrictedAppAssistantTask(app, task.requestId);
-      if (openChat && onOpenChat) await onOpenChat(app.workFolderId, next.conversationId);
+      if (openChat && onOpenChat) await onOpenChat(app.connectedFolderId, next.conversationId);
       else setDetail(next);
     } catch (caught) { setError(errorText(caught)); }
     finally { setBusy(false); }
@@ -80,7 +80,7 @@ export function RestrictedAppAssistantTasks({ app, disabled, onOpenChat, onOpenF
       {task.result ? <div className="restricted-app-task-result">
         <p className="work-result-summary" aria-label="Worker result">{task.result.summary}{task.result.truncated ? restrictedAppAssistantResultTrimNote : ""}</p>
         {task.result.files?.length ? <ul className="work-result-files" aria-label="Worker result files">
-          {task.result.files.map((file) => <li key={file.path}><button className="work-file-button" type="button" onClick={() => void onOpenFile(app.workFolderId, file.path).catch((caught) => setError(errorText(caught)))}><span>{file.path}</span><small>{restrictedAppResultFileSize(file.sizeBytes)} · Open File</small></button></li>)}
+          {task.result.files.map((file) => <li key={file.path}><button className="work-file-button" type="button" onClick={() => void onOpenFile(app.connectedFolderId, file.path).catch((caught) => setError(errorText(caught)))}><span>{file.path}</span><small>{restrictedAppResultFileSize(file.sizeBytes)} · Open File</small></button></li>)}
         </ul> : null}
       </div> : null}
       <div className="restricted-app-task-actions">
@@ -102,7 +102,7 @@ export function RestrictedAppAssistantTasks({ app, disabled, onOpenChat, onOpenF
   </section>;
 }
 
-function AppTaskQuestion({ app, task, onOpenFile }: { app: RestrictedAppInstalled; task: RestrictedAppAssistantTask; onOpenFile: (workFolderId: string, path: string) => Promise<void> }) {
+function AppTaskQuestion({ app, task, onOpenFile }: { app: RestrictedAppInstalled; task: RestrictedAppAssistantTask; onOpenFile: (connectedFolderId: string, path: string) => Promise<void> }) {
   const [taskId, setTaskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {

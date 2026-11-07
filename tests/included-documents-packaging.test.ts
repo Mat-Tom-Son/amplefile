@@ -13,7 +13,7 @@ const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const require = createRequire(import.meta.url);
 
 test("packaged document worker uses Electron's Node and archived libraries with native canvas", { skip: process.platform !== "darwin", timeout: 45_000 }, async (t) => {
-  const temporary = await mkdtemp(join(tmpdir(), "workfold-documents-asar-"));
+  const temporary = await mkdtemp(join(tmpdir(), "amplefile-documents-asar-"));
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const stage = join(temporary, "app");
   await mkdir(join(stage, "resources", "included-tools"), { recursive: true });

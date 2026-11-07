@@ -24,9 +24,9 @@ import {
 
 export const defaultPiStreamStallMs = 180_000;
 
-/** The silence that ends one response. `WORKFOLD_PI_STREAM_STALL_MS=0` turns the watchdog off. */
+/** The silence that ends one response. `AMPLEFILE_PI_STREAM_STALL_MS=0` turns the watchdog off. */
 export function piStreamStallMs(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env.WORKFOLD_PI_STREAM_STALL_MS;
+  const raw = env.AMPLEFILE_PI_STREAM_STALL_MS;
   if (raw === undefined || raw.trim() === "") return defaultPiStreamStallMs;
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : defaultPiStreamStallMs;
@@ -35,7 +35,7 @@ export function piStreamStallMs(env: NodeJS.ProcessEnv = process.env): number {
 /** Pi retries errors whose text says "timeout", so this wording also reaches Pi's retry. */
 export function stalledStreamMessage(stallMs: number): string {
   const seconds = Math.round(stallMs / 1000);
-  return `The AI provider sent nothing for ${seconds} seconds, so work-fold ended this response (stream timeout) to send it again.`;
+  return `The AI provider sent nothing for ${seconds} seconds, so AmpleFile ended this response (stream timeout) to send it again.`;
 }
 
 function emptyResponse(model: Model<Api>): AssistantMessage {

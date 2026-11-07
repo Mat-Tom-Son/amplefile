@@ -19,20 +19,20 @@ import { promisify } from "node:util";
 
 import { getShellConfig } from "@earendil-works/pi-coding-agent";
 
-import { workFoldBackgroundJobLimits } from "../../shared/work-fold-limits.js";
+import { ampleFileBackgroundJobLimits } from "../../shared/amplefile-limits.js";
 import {
   assertJobCommand,
   boundJobError,
-  isWorkFoldJobTerminalState,
+  isAmpleFileJobTerminalState,
   jobDisplayName,
-  WorkFoldJobLimitError,
-  WorkFoldJobNotFoundError,
-  workFoldJobRecordSchema,
-  workFoldJobRunningLimitMessage,
-  type WorkFoldJobHistory,
-  type WorkFoldJobRecord,
-  type WorkFoldJobStopCause,
-  type WorkFoldJobSurface,
+  AmpleFileJobLimitError,
+  AmpleFileJobNotFoundError,
+  ampleFileJobRecordSchema,
+  ampleFileJobRunningLimitMessage,
+  type AmpleFileJobHistory,
+  type AmpleFileJobRecord,
+  type AmpleFileJobStopCause,
+  type AmpleFileJobSurface,
 } from "./job-records.js";
 import {
   JobOutputWriter,
@@ -43,22 +43,22 @@ import {
   scanJobOutputLines,
   type JobOutputRead,
 } from "./job-output.js";
-import type { WorkFoldJobStore } from "./job-store.js";
+import type { AmpleFileJobStore } from "./job-store.js";
 
 const execFileAsync = promisify(execFile);
 
 /** Pi's shell settings for the session that starts a job, so it runs the way `bash` would. */
-export interface WorkFoldJobShell {
+export interface AmpleFileJobShell {
   shellPath?: string;
   commandPrefix?: string;
   /** Pi's tool directory, put first on PATH like Pi's own shell environment. */
   binDir?: string;
 }
 
-export interface WorkFoldJobStartInput {
+export interface AmpleFileJobStartInput {
   interactive?: boolean;
   service?: boolean;
-  owner: { workFolderId?: string; workFolderName?: string; conversationId: string };
+  owner: { connectedFolderId?: string; connectedFolderName?: string; conversationId: string };
   taskId: string;
   requestId: string;
   command: string;
@@ -66,45 +66,45 @@ export interface WorkFoldJobStartInput {
   /** Absolute and existing; resolved by the caller. */
   cwd: string;
   timeoutSeconds?: number;
-  surface: WorkFoldJobSurface;
-  shell?: WorkFoldJobShell;
+  surface: AmpleFileJobSurface;
+  shell?: AmpleFileJobShell;
 }
 
-export interface WorkFoldJobServicePorts {
+export interface AmpleFileJobServicePorts {
   /** After `accepted` is journaled and before spawn; throwing records the job `failed`. */
-  beforeSpawn?(job: WorkFoldJobRecord): Promise<void>;
+  beforeSpawn?(job: AmpleFileJobRecord): Promise<void>;
   /**
    * Checked once the process is running: a Stop that landed while the job was
    * starting found nothing live to stop, so the job stops itself here.
    */
-  stopRequested?(job: WorkFoldJobRecord): boolean;
+  stopRequested?(job: AmpleFileJobRecord): boolean;
   /** After the process ended and its terminal state is journaled. */
-  captureHistory(job: WorkFoldJobRecord): Promise<WorkFoldJobHistory>;
+  captureHistory(job: AmpleFileJobRecord): Promise<AmpleFileJobHistory>;
   /** The job is settled: History coverage and its end are on record. */
-  afterSettle(job: WorkFoldJobRecord): Promise<void> | void;
+  afterSettle(job: AmpleFileJobRecord): Promise<void> | void;
 }
 
-export interface WorkFoldJobServiceOptions {
-  store: WorkFoldJobStore;
-  ports: WorkFoldJobServicePorts;
+export interface AmpleFileJobServiceOptions {
+  store: AmpleFileJobStore;
+  ports: AmpleFileJobServicePorts;
   now?: () => Date;
   runningLimit?: number;
   stopGraceMs?: number;
   segmentBytes?: number;
 }
 
-export type WorkFoldJobWaitOutcome =
-  | { outcome: "ended"; job: WorkFoldJobRecord }
-  | { outcome: "matched"; job: WorkFoldJobRecord; line: number; text: string }
-  | { outcome: "timed_out"; job: WorkFoldJobRecord }
-  | { outcome: "aborted"; job: WorkFoldJobRecord };
+export type AmpleFileJobWaitOutcome =
+  | { outcome: "ended"; job: AmpleFileJobRecord }
+  | { outcome: "matched"; job: AmpleFileJobRecord; line: number; text: string }
+  | { outcome: "timed_out"; job: AmpleFileJobRecord }
+  | { outcome: "aborted"; job: AmpleFileJobRecord };
 
 interface LiveJob {
   terminalGroupId?: number;
   jobId: string;
   child: ChildProcess | null;
   writer: JobOutputWriter;
-  stopCause: WorkFoldJobStopCause | null;
+  stopCause: AmpleFileJobStopCause | null;
   timeoutTimer: NodeJS.Timeout | null;
   killTimer: NodeJS.Timeout | null;
   skipHistory: boolean;
@@ -113,16 +113,16 @@ interface LiveJob {
   /** The process group has drained; the job stays here through History and host settlement. */
   exited: boolean;
   events: EventEmitter;
-  settled: Promise<WorkFoldJobRecord>;
-  resolveSettled: (record: WorkFoldJobRecord) => void;
+  settled: Promise<AmpleFileJobRecord>;
+  resolveSettled: (record: AmpleFileJobRecord) => void;
   /** The address the job announced it serves, and the end of the output a split address may continue from. */
   serving: string | null;
   servingTail: string;
 }
 
-export class WorkFoldJobService {
-  readonly store: WorkFoldJobStore;
-  readonly #ports: WorkFoldJobServicePorts;
+export class AmpleFileJobService {
+  readonly store: AmpleFileJobStore;
+  readonly #ports: AmpleFileJobServicePorts;
   readonly #now: () => Date;
   readonly #runningLimit: number;
   readonly #stopGraceMs: number;
@@ -135,12 +135,12 @@ export class WorkFoldJobService {
     for (const live of this.#live.values()) if (!live.exited) { if (live.terminalGroupId) killGroup(live.terminalGroupId, "SIGKILL"); killGroup(live.child?.pid, "SIGKILL"); }
   };
 
-  constructor(options: WorkFoldJobServiceOptions) {
+  constructor(options: AmpleFileJobServiceOptions) {
     this.store = options.store;
     this.#ports = options.ports;
     this.#now = options.now ?? (() => new Date());
-    this.#runningLimit = options.runningLimit ?? workFoldBackgroundJobLimits.runningMachineWide;
-    this.#stopGraceMs = options.stopGraceMs ?? workFoldBackgroundJobLimits.stopGraceMs;
+    this.#runningLimit = options.runningLimit ?? ampleFileBackgroundJobLimits.runningMachineWide;
+    this.#stopGraceMs = options.stopGraceMs ?? ampleFileBackgroundJobLimits.stopGraceMs;
     this.#segmentBytes = options.segmentBytes;
     process.on("exit", this.#exitHandler);
   }
@@ -155,22 +155,22 @@ export class WorkFoldJobService {
     return this.#live.has(jobId);
   }
 
-  get(jobId: string): WorkFoldJobRecord | null {
+  get(jobId: string): AmpleFileJobRecord | null {
     const record = this.store.get(jobId);
     if (!record) return null;
     const live = this.#live.get(jobId);
-    return live && !isWorkFoldJobTerminalState(record.state)
+    return live && !isAmpleFileJobTerminalState(record.state)
       ? { ...record, output: live.writer.counters, ...(live.serving ? { serving: live.serving } : {}) }
       : record;
   }
 
-  require(jobId: string): WorkFoldJobRecord {
+  require(jobId: string): AmpleFileJobRecord {
     const record = this.get(jobId);
-    if (!record) throw new WorkFoldJobNotFoundError();
+    if (!record) throw new AmpleFileJobNotFoundError();
     return record;
   }
 
-  list(filter: Parameters<WorkFoldJobStore["list"]>[0] = {}): WorkFoldJobRecord[] {
+  list(filter: Parameters<AmpleFileJobStore["list"]>[0] = {}): AmpleFileJobRecord[] {
     return this.store.list(filter).map((record) => this.get(record.jobId) ?? record);
   }
 
@@ -178,11 +178,11 @@ export class WorkFoldJobService {
    * Journals the job, lets the host attach it, spawns it, and returns the
    * record once it is running (or recorded as failed to start).
    */
-  async start(input: WorkFoldJobStartInput): Promise<WorkFoldJobRecord> {
-    if (this.#closing) throw new Error("work-fold is closing; no new background job can start.");
+  async start(input: AmpleFileJobStartInput): Promise<AmpleFileJobRecord> {
+    if (this.#closing) throw new Error("AmpleFile is closing; no new background job can start.");
     const command = assertJobCommand(input.command);
     if (input.interactive && process.platform === "win32") throw new Error("Interactive terminal jobs are available on macOS and POSIX hosts.");
-    if (this.runningCount() >= this.#runningLimit) throw new WorkFoldJobLimitError(workFoldJobRunningLimitMessage(this.#runningLimit));
+    if (this.runningCount() >= this.#runningLimit) throw new AmpleFileJobLimitError(ampleFileJobRunningLimitMessage(this.#runningLimit));
     const timeoutSeconds = input.timeoutSeconds;
     if (timeoutSeconds !== undefined && (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0 || timeoutSeconds * 1000 > 2_147_483_647)) {
       throw new Error("A background job's timeout must be a positive number of seconds.");
@@ -196,16 +196,16 @@ export class WorkFoldJobService {
       reserved = false;
       this.#starting -= 1;
     };
-    let accepted: WorkFoldJobRecord;
+    let accepted: AmpleFileJobRecord;
     try {
       const folder = await stat(input.cwd).catch(() => null);
       if (!folder?.isDirectory()) throw new Error(`The folder to run in does not exist: ${input.cwd}`);
       const at = this.#now().toISOString();
       const jobId = this.store.newJobId();
-      const draft: WorkFoldJobRecord = {
+      const draft: AmpleFileJobRecord = {
         ...(input.interactive ? { interactive: true } : {}),
         ...(input.service ? { service: true } : {}),
-        schema: workFoldJobRecordSchema,
+        schema: ampleFileJobRecordSchema,
         jobId,
         conversationId: input.owner.conversationId,
         taskId: input.taskId,
@@ -231,8 +231,8 @@ export class WorkFoldJobService {
         history: null,
         delivery: null,
       };
-      if (input.owner.workFolderId !== undefined) draft.workFolderId = input.owner.workFolderId;
-      if (input.owner.workFolderName !== undefined) draft.workFolderName = input.owner.workFolderName;
+      if (input.owner.connectedFolderId !== undefined) draft.connectedFolderId = input.owner.connectedFolderId;
+      if (input.owner.connectedFolderName !== undefined) draft.connectedFolderName = input.owner.connectedFolderName;
       accepted = await this.store.create(draft);
     } catch (error) {
       releaseStarting();
@@ -267,14 +267,14 @@ export class WorkFoldJobService {
     }
   }
 
-  async #spawn(accepted: WorkFoldJobRecord, shell: WorkFoldJobShell, releaseStarting: () => void): Promise<WorkFoldJobRecord> {
+  async #spawn(accepted: AmpleFileJobRecord, shell: AmpleFileJobShell, releaseStarting: () => void): Promise<AmpleFileJobRecord> {
     const config = getShellConfig(shell.shellPath);
     const resolvedCommand = shell.commandPrefix ? `${shell.commandPrefix}\n${accepted.command}` : accepted.command;
     const fromStdin = (config as { commandTransport?: string }).commandTransport === "stdin";
     if (accepted.interactive && fromStdin) throw new Error("Interactive jobs require a shell that accepts commands as arguments.");
     const writer = new JobOutputWriter(this.store.outputDirectory(accepted.jobId), this.#segmentBytes ? { segmentBytes: this.#segmentBytes } : {});
-    let resolveSettled!: (record: WorkFoldJobRecord) => void;
-    const settled = new Promise<WorkFoldJobRecord>((resolve) => { resolveSettled = resolve; });
+    let resolveSettled!: (record: AmpleFileJobRecord) => void;
+    const settled = new Promise<AmpleFileJobRecord>((resolve) => { resolveSettled = resolve; });
     const live: LiveJob = {
       jobId: accepted.jobId,
       child: null,
@@ -359,7 +359,7 @@ export class WorkFoldJobService {
       await this.#finish(live, exit);
     });
     try {
-      let terminal: Partial<WorkFoldJobRecord> = {};
+      let terminal: Partial<AmpleFileJobRecord> = {};
       if (accepted.interactive) {
         const deadline = Date.now() + 2_000;
         while (Date.now() < deadline) {
@@ -383,7 +383,7 @@ export class WorkFoldJobService {
       }
       const startedAt = this.#now().toISOString();
       const processStartedAt = await processStartTime(child.pid);
-      const running = await this.store.update(accepted.jobId, (record) => isWorkFoldJobTerminalState(record.state) ? record : {
+      const running = await this.store.update(accepted.jobId, (record) => isAmpleFileJobTerminalState(record.state) ? record : {
         ...record,
         state: "running",
         startedAt,
@@ -437,7 +437,7 @@ export class WorkFoldJobService {
     const exitCode = exit.code ?? (exit.signal ? 128 + signalNumber : null);
     const cause = live.stopCause;
     const state = live.startFailure ? "failed" : cause === "timeout" ? "timed_out" : cause === "quit" ? "interrupted" : cause ? "stopped" : "exited";
-    const isAgentScope = (record: WorkFoldJobRecord) => record.workFolderId === undefined;
+    const isAgentScope = (record: AmpleFileJobRecord) => record.connectedFolderId === undefined;
     let ended = await this.store.update(live.jobId, (record) => ({
       ...record,
       state,
@@ -445,16 +445,16 @@ export class WorkFoldJobService {
       exitCode,
       signal: exit.signal ?? null,
       stoppedBy: cause,
-      error: live.startFailure ?? (cause === "quit" ? "work-fold closed before this job finished." : record.error),
+      error: live.startFailure ?? (cause === "quit" ? "AmpleFile closed before this job finished." : record.error),
       output: counters,
       history: live.skipHistory
-        ? { status: "unavailable", reason: "work-fold was closing." }
+        ? { status: "unavailable", reason: "AmpleFile was closing." }
         : isAgentScope(record)
-          ? { status: "not_applicable", reason: "the work-fold agent's working folder has no History; take a checkpoint with history save in a work-folder this job changed." }
+          ? { status: "not_applicable", reason: "the AmpleFile agent's working folder has no History; take a checkpoint with history save in a Connected Folder this job changed." }
           : { status: "pending" },
     })).catch(() => this.store.get(live.jobId)!);
     if (ended.history?.status === "pending") {
-      let history: WorkFoldJobHistory;
+      let history: AmpleFileJobHistory;
       try {
         history = await this.#ports.captureHistory(ended);
       } catch (error) {
@@ -481,7 +481,7 @@ export class WorkFoldJobService {
   }
 
   /** Exact input bytes, with no shell interpolation or implicit newline. */
-  async input(jobId: string, text: string, eof = false): Promise<WorkFoldJobRecord> {
+  async input(jobId: string, text: string, eof = false): Promise<AmpleFileJobRecord> {
     const live = this.#live.get(jobId);
     const job = this.require(jobId);
     if (!job.interactive || !live?.child?.stdin || live.exited) throw new Error("Input requires a running interactive terminal job.");
@@ -492,15 +492,15 @@ export class WorkFoldJobService {
   }
 
   /** SIGTERM then SIGKILL to all owned groups; resolves only after settlement. */
-  async stop(jobId: string, cause: WorkFoldJobStopCause, options: { skipHistory?: boolean } = {}): Promise<WorkFoldJobRecord> {
+  async stop(jobId: string, cause: AmpleFileJobStopCause, options: { skipHistory?: boolean } = {}): Promise<AmpleFileJobRecord> {
     const live = this.#live.get(jobId);
     if (!live) {
       const record = this.require(jobId);
-      if (!isWorkFoldJobTerminalState(record.state) && !this.#starting) {
+      if (!isAmpleFileJobTerminalState(record.state) && !this.#starting) {
         // A record with no live process in this run is left from an earlier run.
-        return await this.store.update(jobId, (current) => isWorkFoldJobTerminalState(current.state) ? current : {
+        return await this.store.update(jobId, (current) => isAmpleFileJobTerminalState(current.state) ? current : {
           ...current, state: "interrupted", endedAt: this.#now().toISOString(), settledAt: this.#now().toISOString(),
-          error: "work-fold closed before this job finished.",
+          error: "AmpleFile closed before this job finished.",
         });
       }
       return record;
@@ -517,7 +517,7 @@ export class WorkFoldJobService {
   }
 
   /** Stops several jobs at once; used by a request Stop. */
-  async stopMany(jobIds: readonly string[], cause: WorkFoldJobStopCause): Promise<WorkFoldJobRecord[]> {
+  async stopMany(jobIds: readonly string[], cause: AmpleFileJobStopCause): Promise<AmpleFileJobRecord[]> {
     return await Promise.all(jobIds.filter((jobId) => this.#live.has(jobId)).map((jobId) => this.stop(jobId, cause)));
   }
 
@@ -527,7 +527,7 @@ export class WorkFoldJobService {
    * line of output from `fromLine` (default: the first kept line), including
    * a final line still being written.
    */
-  async wait(jobId: string, options: { seconds: number; until?: RegExp; fromLine?: number; signal?: AbortSignal }): Promise<WorkFoldJobWaitOutcome> {
+  async wait(jobId: string, options: { seconds: number; until?: RegExp; fromLine?: number; signal?: AbortSignal }): Promise<AmpleFileJobWaitOutcome> {
     const current = this.require(jobId);
     const live = this.#live.get(jobId);
     const until = options.until;
@@ -543,13 +543,13 @@ export class WorkFoldJobService {
       }
       return { outcome: "ended", job: this.require(jobId) };
     }
-    return await new Promise<WorkFoldJobWaitOutcome>((resolve) => {
+    return await new Promise<AmpleFileJobWaitOutcome>((resolve) => {
       const decoder = new StringDecoder("utf8");
       let pending = "";
       let buffered: Buffer[] | null = until ? [] : null;
       let lineNumber = 0;
       let done = false;
-      const finish = (outcome: WorkFoldJobWaitOutcome) => {
+      const finish = (outcome: AmpleFileJobWaitOutcome) => {
         if (done) return;
         done = true;
         clearTimeout(timer);
@@ -580,7 +580,7 @@ export class WorkFoldJobService {
         if (buffered) buffered.push(chunk);
         else consume(decoder.write(chunk));
       };
-      const onSettled = (record: WorkFoldJobRecord) => {
+      const onSettled = (record: AmpleFileJobRecord) => {
         if (until && pending && !done) consume(decoder.end());
         finish({ outcome: "ended", job: record });
       };
@@ -628,7 +628,7 @@ export class WorkFoldJobService {
 
   async #scanForMatch(
     jobId: string,
-    record: WorkFoldJobRecord,
+    record: AmpleFileJobRecord,
     matchIn: (line: string) => boolean,
     fromLine?: number,
   ): Promise<{ line: number; text: string } | null> {
@@ -644,7 +644,7 @@ export class WorkFoldJobService {
   }
 
   /** The end of the output, or a page from `offset`, within Pi's `bash` bounds. */
-  async read(jobId: string, options: { offset?: number; limit?: number } = {}): Promise<{ job: WorkFoldJobRecord; output: JobOutputRead }> {
+  async read(jobId: string, options: { offset?: number; limit?: number } = {}): Promise<{ job: AmpleFileJobRecord; output: JobOutputRead }> {
     const job = this.require(jobId);
     const live = this.#live.get(jobId);
     const keptBytes = live?.writer.keptBytes;
@@ -660,9 +660,9 @@ export class WorkFoldJobService {
   }
 
   /** Records the job's one delivery; a second delivery is ignored. */
-  async markDelivered(jobId: string, by: "read" | "turn_context" | "follow_up", taskId: string | null): Promise<WorkFoldJobRecord | null> {
+  async markDelivered(jobId: string, by: "read" | "turn_context" | "follow_up", taskId: string | null): Promise<AmpleFileJobRecord | null> {
     const record = this.store.get(jobId);
-    if (!record || record.delivery || !isWorkFoldJobTerminalState(record.state)) return record;
+    if (!record || record.delivery || !isAmpleFileJobTerminalState(record.state)) return record;
     return await this.store.update(jobId, (current) => current.delivery ? current : {
       ...current,
       delivery: { at: this.#now().toISOString(), by, taskId },
@@ -691,7 +691,7 @@ export class WorkFoldJobService {
  * process group leader is provably the same process (same id, same start
  * time). A reused process id is left alone.
  */
-export async function reapOrphanedJobProcesses(records: readonly WorkFoldJobRecord[]): Promise<number> {
+export async function reapOrphanedJobProcesses(records: readonly AmpleFileJobRecord[]): Promise<number> {
   if (process.platform === "win32") return 0;
   let reaped = 0;
   for (const record of records) {
@@ -717,7 +717,7 @@ function jobEnvironment(jobId: string, binDir: string | undefined): NodeJS.Proce
   }
   // Pi's own session variables describe a turn; a job outlives its turn.
   for (const key of ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"]) delete env[key];
-  env.WORKFOLD_JOB_ID = jobId;
+  env.AMPLEFILE_JOB_ID = jobId;
   return env;
 }
 
@@ -798,7 +798,7 @@ function streamClosed(stream: NodeJS.ReadableStream | null | undefined): Promise
   });
 }
 
-function emptyRead(job: WorkFoldJobRecord): JobOutputRead {
+function emptyRead(job: AmpleFileJobRecord): JobOutputRead {
   return {
     text: "", fromLine: 0, toLine: 0, totalLines: job.output.lines, totalBytes: job.output.bytes,
     droppedLines: job.output.droppedLines, truncated: job.output.lines > 0, nextOffset: job.output.lines + 1,

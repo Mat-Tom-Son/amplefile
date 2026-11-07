@@ -18,7 +18,7 @@ import {
   standardFolderEntryInfo,
   standardFolderRegistrationTarget,
 } from "../src/local/standard-folders.js";
-import { registerLinkedWorkFolder } from "../src/local/work-folder.js";
+import { registerLinkedConnectedFolder } from "../src/local/connected-folder.js";
 import { nativeFileMenuItems, parseNativeFileMenuRequest } from "../desktop/src/file-context-menu.js";
 
 async function home(t: test.TestContext): Promise<string> {
@@ -31,10 +31,10 @@ async function home(t: test.TestContext): Promise<string> {
 
 test("only the standard folders on this computer are listed, and a registered one says so", async (t) => {
   const root = await home(t);
-  const folders = await listStandardFolders([{ id: "wf-downloads", workFolderRoot: join(root, "Downloads") }], root);
-  assert.deepEqual(folders.map((folder) => [folder.id, folder.name, folder.workFolderId]), [
+  const folders = await listStandardFolders([{ id: "af-downloads", connectedFolderRoot: join(root, "Downloads") }], root);
+  assert.deepEqual(folders.map((folder) => [folder.id, folder.name, folder.connectedFolderId]), [
     ["desktop", "Desktop", null],
-    ["downloads", "Downloads", "wf-downloads"],
+    ["downloads", "Downloads", "af-downloads"],
     // The home folder goes by the account's name, as in Finder.
     ["home", basename(root), null],
   ]);
@@ -51,14 +51,14 @@ test("a standard folder lists one level without the files Finder hides, and stay
   await writeFile(join(downloads, ".hidden"), "x");
   await mkdir(join(downloads, "Receipts"));
   await writeFile(join(downloads, "Receipts", "inner.pdf"), "pdf");
-  await mkdir(join(downloads, ".work-fold"));
+  await mkdir(join(downloads, ".amplefile"));
 
   const listing = await scanStandardFolder("downloads", "", root);
   assert.deepEqual(listing.tree.map((entry) => entry.name).sort(), ["Receipts", "receipt.pdf"]);
   assert.equal(listing.tree.find((entry) => entry.name === "Receipts")?.children, undefined, "one level only");
   assert.deepEqual((await scanStandardFolder("downloads", "Receipts", root)).tree.map((entry) => entry.path), ["Receipts/inner.pdf"]);
   await assert.rejects(scanStandardFolder("downloads", "../Desktop", root), /escapes/);
-  await assert.rejects(scanStandardFolder("downloads", ".work-fold", root), /reserved/);
+  await assert.rejects(scanStandardFolder("downloads", ".amplefile", root), /reserved/);
 
   const info = await standardFolderEntryInfo("downloads", "receipt.pdf", root);
   assert.equal(info.sizeBytes, 3);
@@ -86,34 +86,34 @@ test("rename and New Folder refuse names that would collide or hide, and change 
   assert.deepEqual(await createStandardFolderFolder("downloads", "Receipts", "2026", root), { path: "Receipts/2026" });
 });
 
-test("anything a registered work-folder owns is changed through that work-folder, not as a standard folder", async (t) => {
+test("anything a registered Connected Folder owns is changed through that Connected Folder, not as a standard folder", async (t) => {
   const root = await home(t);
   const downloads = join(root, "Downloads");
   await mkdir(join(downloads, "Taxes", "Forms"), { recursive: true });
   await writeFile(join(downloads, "Taxes", "w2.pdf"), "w2");
   await writeFile(join(downloads, "loose.pdf"), "x");
-  await registerLinkedWorkFolder(join(downloads, "Taxes"));
+  await registerLinkedConnectedFolder(join(downloads, "Taxes"));
 
   await assert.doesNotReject(assertStandardFolderPathUnowned("downloads", "loose.pdf", root));
-  await assert.rejects(assertStandardFolderPathUnowned("downloads", "Taxes", root), /is a work-folder/);
-  await assert.rejects(assertStandardFolderPathUnowned("downloads", "Taxes/w2.pdf", root), /is a work-folder/);
-  await assert.rejects(renameStandardFolderEntry("downloads", "Taxes/w2.pdf", "w2-2025.pdf", root), /is a work-folder/);
-  await assert.rejects(renameStandardFolderEntry("downloads", "loose.pdf", "Taxes", root), /already exists|is a work-folder/);
-  await assert.rejects(createStandardFolderFolder("downloads", "Taxes", "New", root), /is a work-folder/);
-  // Trashing or renaming a folder that holds a work-folder would carry the work-folder along.
-  await assert.rejects(assertStandardFolderPathUnowned("downloads", "", root), /is a work-folder/);
+  await assert.rejects(assertStandardFolderPathUnowned("downloads", "Taxes", root), /is a Connected Folder/);
+  await assert.rejects(assertStandardFolderPathUnowned("downloads", "Taxes/w2.pdf", root), /is a Connected Folder/);
+  await assert.rejects(renameStandardFolderEntry("downloads", "Taxes/w2.pdf", "w2-2025.pdf", root), /is a Connected Folder/);
+  await assert.rejects(renameStandardFolderEntry("downloads", "loose.pdf", "Taxes", root), /already exists|is a Connected Folder/);
+  await assert.rejects(createStandardFolderFolder("downloads", "Taxes", "New", root), /is a Connected Folder/);
+  // Trashing or renaming a folder that holds a Connected Folder would carry the Connected Folder along.
+  await assert.rejects(assertStandardFolderPathUnowned("downloads", "", root), /is a Connected Folder/);
   // Adding a folder next to one is fine.
   assert.deepEqual(await createStandardFolderFolder("downloads", "", "New", root), { path: "New" });
 
   const listing = await scanStandardFolder("downloads", "", root);
-  assert.equal(listing.tree.find((entry) => entry.name === "Taxes")?.nestedFolder, true, "the registered folder shows as a work-folder");
+  assert.equal(listing.tree.find((entry) => entry.name === "Taxes")?.nestedFolder, true, "the registered folder shows as a Connected Folder");
   await assert.rejects(standardFolderRegistrationTarget("downloads", "Taxes", root), /already has its own Worker/);
   assert.equal(await standardFolderRegistrationTarget("downloads", "", root), downloads);
 });
 
 test("a standard folder's native menu offers Move to Trash and needs exactly one owner", () => {
   const request = parseNativeFileMenuRequest({
-    workFolderId: "",
+    connectedFolderId: "",
     standardFolderId: "downloads",
     path: "receipt.pdf",
     kind: "file",
@@ -125,7 +125,7 @@ test("a standard folder's native menu offers Move to Trash and needs exactly one
     "Open", "Open With", "Show in Finder", "Copy File Path", "Rename…", "Move to Trash",
   ]);
   const several = parseNativeFileMenuRequest({
-    workFolderId: "",
+    connectedFolderId: "",
     standardFolderId: "downloads",
     path: "receipt.pdf",
     kind: "file",
@@ -135,7 +135,7 @@ test("a standard folder's native menu offers Move to Trash and needs exactly one
   });
   assert.equal(nativeFileMenuItems(several).at(-1)?.type === "item" && (nativeFileMenuItems(several).at(-1) as { label: string }).label, "Move to Trash");
   assert.throws(() => parseNativeFileMenuRequest({
-    workFolderId: "work-folder-1",
+    connectedFolderId: "connected-folder-1",
     standardFolderId: "downloads",
     path: "receipt.pdf",
     kind: "file",
@@ -159,10 +159,10 @@ test("Pictures and iCloud Drive appear when the computer has them, and the home 
 test("a folder added with + joins Standard Folders until it is removed, and removing never touches the folder", async (t) => {
   const root = await home(t);
   const state = await mkdtemp(join(tmpdir(), "sidebar-state-"));
-  const previous = process.env.WORKFOLD_STATE_DIR;
-  process.env.WORKFOLD_STATE_DIR = state;
+  const previous = process.env.AMPLEFILE_STATE_DIR;
+  process.env.AMPLEFILE_STATE_DIR = state;
   t.after(async () => {
-    if (previous === undefined) delete process.env.WORKFOLD_STATE_DIR; else process.env.WORKFOLD_STATE_DIR = previous;
+    if (previous === undefined) delete process.env.AMPLEFILE_STATE_DIR; else process.env.AMPLEFILE_STATE_DIR = previous;
     await rm(state, { recursive: true, force: true });
   });
   const projects = join(root, "Projects");
@@ -175,7 +175,7 @@ test("a folder added with + joins Standard Folders until it is removed, and remo
   assert.equal(isStandardFolderId(added.id), true);
   assert.equal(standardFolderRoot(added.id as never, root), projects);
   const listed = await listStandardFolders([], root);
-  assert.deepEqual(listed.at(-1), { id: added.id, name: "Projects", root: projects, workFolderId: null, added: true });
+  assert.deepEqual(listed.at(-1), { id: added.id, name: "Projects", root: projects, connectedFolderId: null, added: true });
   assert.throws(() => removeSidebarFolder("downloads"), /Built-in folders stay/);
   removeSidebarFolder(added.id);
   assert.equal(isStandardFolderId(added.id), false);

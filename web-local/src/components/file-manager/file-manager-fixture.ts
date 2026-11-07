@@ -2,7 +2,7 @@ import type { TreeEntry } from "../../types";
 import type { StandardFolderSummary } from "./file-manager-places";
 
 /**
- * The browser preview's Standard Folders (`?fixture=work-folder&layout=file-manager`).
+ * The browser preview's Standard Folders (`?fixture=connected-folder&layout=file-manager`).
  * Nothing here touches a real folder.
  */
 export function buildFixtureStandardFolders(): { folders: StandardFolderSummary[]; trees: Record<string, TreeEntry[]> } {
@@ -11,12 +11,12 @@ export function buildFixtureStandardFolders(): { folders: StandardFolderSummary[
   const folder = (name: string, hours: number, extra: Partial<TreeEntry> = {}): TreeEntry => ({ name, path: name, kind: "folder", updatedAt: ago(hours), ...extra });
   return {
     folders: [
-      { id: "desktop", name: "Desktop", root: "/Users/you/Desktop", workFolderId: null },
-      { id: "documents", name: "Documents", root: "/Users/you/Documents", workFolderId: null },
-      { id: "downloads", name: "Downloads", root: "/Users/you/Downloads", workFolderId: null },
-      { id: "pictures", name: "Pictures", root: "/Users/you/Pictures", workFolderId: null },
-      { id: "home", name: "you", root: "/Users/you", workFolderId: null },
-      { id: "icloud", name: "iCloud Drive", root: "/Users/you/Library/Mobile Documents/com~apple~CloudDocs", workFolderId: null },
+      { id: "desktop", name: "Desktop", root: "/Users/you/Desktop", connectedFolderId: null },
+      { id: "documents", name: "Documents", root: "/Users/you/Documents", connectedFolderId: null },
+      { id: "downloads", name: "Downloads", root: "/Users/you/Downloads", connectedFolderId: null },
+      { id: "pictures", name: "Pictures", root: "/Users/you/Pictures", connectedFolderId: null },
+      { id: "home", name: "you", root: "/Users/you", connectedFolderId: null },
+      { id: "icloud", name: "iCloud Drive", root: "/Users/you/Library/Mobile Documents/com~apple~CloudDocs", connectedFolderId: null },
     ],
     trees: {
       desktop: [

@@ -68,17 +68,17 @@ if (process.platform === "darwin") {
 const realPiDirs = [...new Set([
   join(homedir(), ".pi"),
   process.env.PI_CODING_AGENT_DIR?.trim(),
-  process.env.WORKFOLD_AGENT_DIR?.trim(),
+  process.env.AMPLEFILE_AGENT_DIR?.trim(),
 ].filter(Boolean).map((path) => resolve(path.replace(/^~(?=$|[\\/])/, homedir()))))];
-const testPiRoot = await mkdtemp(join(tmpdir(), "work-fold-test-pi-"));
+const testPiRoot = await mkdtemp(join(tmpdir(), "amplefile-test-pi-"));
 const realPiWriteLog = join(testPiRoot, "real-pi-writes.jsonl");
 const env = {
   ...process.env,
   PI_CODING_AGENT_DIR: join(testPiRoot, "agent"),
-  WORKFOLD_TEST_REAL_PI_DIRS: realPiDirs.join(delimiter),
-  WORKFOLD_TEST_REAL_PI_WRITE_LOG: realPiWriteLog,
+  AMPLEFILE_TEST_REAL_PI_DIRS: realPiDirs.join(delimiter),
+  AMPLEFILE_TEST_REAL_PI_WRITE_LOG: realPiWriteLog,
 };
-delete env.WORKFOLD_AGENT_DIR;
+delete env.AMPLEFILE_AGENT_DIR;
 delete env.PI_CODING_AGENT_SESSION_DIR;
 
 const child = spawn(process.execPath, [tsxCli, "--import", realPiGuard, "--import", fluentIcons, "--test", ...files], {

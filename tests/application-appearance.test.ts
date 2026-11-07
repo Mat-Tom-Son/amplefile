@@ -11,14 +11,14 @@ function memory(initial: Record<string,string> = {}) {
 const preset = (name = "My Paper", preferences = defaultApplicationAppearance) => ({ kind: appearancePresetKind, version: 1, name, preferences });
 
 test("appearance migrates existing preferences without rewriting any storage on load", () => {
-  const storage = memory({ "work-fold.theme": "system", "work-fold.typography.v1": JSON.stringify({ font: "verdana", textSize: "comfortable" }) });
+  const storage = memory({ "amplefile.theme": "system", "amplefile.typography.v1": JSON.stringify({ font: "verdana", textSize: "comfortable" }) });
   const store = new ApplicationAppearanceStore(storage);
   assert.deepEqual({ mode: store.getSnapshot().preferences.mode, font: store.getSnapshot().preferences.font, readingSize: store.getSnapshot().preferences.readingSize }, { mode: "system", font: "verdana", readingSize: 16 });
   assert.equal(storage.writes, 0);
   store.update({ palette: "paper" });
   assert.equal(storage.writes, 1);
   assert.equal(JSON.parse(storage.data.get(applicationAppearanceKey)!).font, "verdana");
-  assert.equal(storage.data.get("work-fold.theme"), "system");
+  assert.equal(storage.data.get("amplefile.theme"), "system");
 });
 
 test("a record saved before a setting existed reads as its default and is only rewritten on the next change", () => {

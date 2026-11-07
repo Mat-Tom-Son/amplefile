@@ -1,14 +1,14 @@
-import type { WorkFolderSurfaceTab } from "../types";
+import type { ConnectedFolderSurfaceTab } from "../types";
 
 /**
- * Tabs grouped by the work-folder that owns them, in first-seen order.
- * Browser tabs belong to no work-folder and share one group, whose id is null.
+ * Tabs grouped by the Connected Folder that owns them, in first-seen order.
+ * Browser tabs belong to no Connected Folder and share one group, whose id is null.
  */
-export function groupSurfaceTabsByWorkFolder(
-  tabs: WorkFolderSurfaceTab[],
-): Array<{ workFolderId: string | null; tabs: WorkFolderSurfaceTab[] }> {
-  const groups = new Map<string | null, WorkFolderSurfaceTab[]>();
-  for (const tab of tabs) groups.set(tab.workFolderId, [...(groups.get(tab.workFolderId) ?? []), tab]);
+export function groupSurfaceTabsByConnectedFolder(
+  tabs: ConnectedFolderSurfaceTab[],
+): Array<{ connectedFolderId: string | null; tabs: ConnectedFolderSurfaceTab[] }> {
+  const groups = new Map<string | null, ConnectedFolderSurfaceTab[]>();
+  for (const tab of tabs) groups.set(tab.connectedFolderId, [...(groups.get(tab.connectedFolderId) ?? []), tab]);
   return [...groups.entries()]
-    .map(([workFolderId, groupedTabs]) => ({ workFolderId, tabs: groupedTabs }));
+    .map(([connectedFolderId, groupedTabs]) => ({ connectedFolderId, tabs: groupedTabs }));
 }

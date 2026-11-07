@@ -1,21 +1,21 @@
 {
-  "name": "work-fold-desktop",
+  "name": "amplefile-desktop",
   "version": "0.15.3",
   "private": true,
   "type": "module",
   "description": "A local-first desktop app powered by Pi.",
   "author": "Mat-Tom-Son",
   "license": "MIT",
-  "homepage": "https://work-fold.com",
+  "homepage": "https://amplefile.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Mat-Tom-Son/work-fold.git"
+    "url": "https://github.com/Mat-Tom-Son/amplefile.git"
   },
   "bugs": {
-    "url": "https://github.com/Mat-Tom-Son/work-fold/issues"
+    "url": "https://github.com/Mat-Tom-Son/amplefile/issues"
   },
   "main": "dist/desktop/desktop/src/main.js",
-  "productName": "work-fold",
+  "productName": "AmpleFile",
   "engines": {
     "node": ">=22.19.0"
   },
@@ -30,9 +30,9 @@
     "harness:autonomous": "tsx scripts/harness-eval/autonomous.ts",
     "harness:repeat": "tsx scripts/harness-eval/repeat.ts",
     "harness:check": "tsc --noEmit -p tsconfig.harness-eval.json",
-    "work-fold:drive": "tsx scripts/work-fold-drive.ts",
-    "work-fold:appearance": "tsx scripts/work-fold-appearance.ts",
-    "work-fold:checks": "tsx scripts/work-fold-checks.ts",
+    "amplefile:drive": "tsx scripts/amplefile-drive.ts",
+    "amplefile:appearance": "tsx scripts/amplefile-appearance.ts",
+    "amplefile:checks": "tsx scripts/amplefile-checks.ts",
     "local:dev": "concurrently -k -n api,ui -c cyan,green \"npm run local:api\" \"vite --config vite.local.config.ts\"",
     "local:check": "tsc --noEmit -p tsconfig.web.json",
     "local:build": "vite build --config vite.local.config.ts",
@@ -40,7 +40,7 @@
     "desktop:check": "tsc --noEmit -p tsconfig.desktop.json",
     "desktop:compile": "node scripts/clean-desktop-dist.mjs && tsc -p tsconfig.desktop.json && node scripts/stage-restricted-app-kit.mjs",
     "desktop:prepare": "npm run desktop:computer-helper && npm run desktop:chrome-native-host && npm run desktop:icons && npm run local:build && npm run desktop:compile && npm run desktop:preload:smoke && npm run desktop:restricted-app:smoke && npm run desktop:browser:smoke && npm run desktop:preflight",
-    "desktop:package": "npm run desktop:prepare && electron-forge package && node scripts/verify-packaged-app-assets.mjs --package-dir out/work-fold-win32-x64",
+    "desktop:package": "npm run desktop:prepare && electron-forge package && node scripts/verify-packaged-app-assets.mjs --package-dir out/amplefile-win32-x64",
     "desktop:package:smoke": "npm run desktop:prepare && electron-builder --config electron-builder.desktop.cjs --win --x64 --dir --publish never && npm run desktop:verify:packaged-assets -- --package-dir out/builder/win-unpacked",
     "desktop:make": "npm run desktop:prepare && electron-builder --config electron-builder.desktop.cjs --win nsis --x64 --publish never && npm run desktop:verify:release",
     "desktop:make:mac": "node scripts/build-mac-desktop.mjs --unsigned-smoke",

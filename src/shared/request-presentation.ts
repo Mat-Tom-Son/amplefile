@@ -1,7 +1,7 @@
 /** Trusted person-facing projection. Never exposed to sandboxed App bridges. */
 export interface WorkRequestOwner {
-  workFolderId?: string;
-  workFolderName?: string;
+  connectedFolderId?: string;
+  connectedFolderName?: string;
   conversationId: string;
 }
 
@@ -40,7 +40,7 @@ export interface WorkRequestView {
     outcome: "succeeded" | "partial" | "failed";
     summary: string;
     data?: unknown;
-    files: Array<{ workFolderId: string; workFolderName: string; path: string; sizeBytes: number }>;
+    files: Array<{ connectedFolderId: string; connectedFolderName: string; path: string; sizeBytes: number }>;
   } | null;
 }
 

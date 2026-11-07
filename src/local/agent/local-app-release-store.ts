@@ -1117,7 +1117,7 @@ function normalizeIoError(error: unknown, action: string): LocalAppReleaseStoreE
   if (error instanceof LocalAppReleaseStoreError) return error;
   return new LocalAppReleaseStoreError(
     "RELEASE_STORE_IO",
-    `work-fold could not ${action}.`,
+    `AmpleFile could not ${action}.`,
     { cause: error },
   );
 }

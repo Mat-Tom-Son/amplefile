@@ -18,7 +18,7 @@ test("the desktop work presentation shows the question, origin, whole-work Stop 
   assert.match(html, />Stop</);
   assert.doesNotMatch(html, /<script>/);
   const completed = { ...view(), state: "partial" as const, label: "Partly Finished", canStop: false, questions: [], questionCount: 0,
-    result: { outcome: "partial" as const, summary: "One quote is still missing.", files: [{ workFolderId: "quotes", workFolderName: "Supplier quotes", path: "comparison.md", sizeBytes: 42 }] } };
+    result: { outcome: "partial" as const, summary: "One quote is still missing.", files: [{ connectedFolderId: "quotes", connectedFolderName: "Supplier quotes", path: "comparison.md", sizeBytes: 42 }] } };
   const result = renderToStaticMarkup(React.createElement(WorkRequest, { work: completed, error: null, busy: false, act: async () => true, refresh: async () => {}, showResultSummary: true }));
   assert.match(result, /Partly Finished/); assert.match(result, /One quote is still missing/); assert.match(result, /comparison.md/); assert.match(result, /Open File/);
   assert.doesNotMatch(result, />Stop</);

@@ -3,17 +3,17 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { isShownStandardEntry, listStandardFolders } from "./standard-folders.js";
-import { isAlwaysHiddenWorkFolderEntry } from "./work-folder-ignore.js";
+import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
 
 /**
  * Go to Folder (docs/product-model.md, "2026-11-06 file manager layout"), as
  * Finder's ⇧⌘G: a typed path becomes a place the file manager opens, a
- * registered work-folder (the deepest one holding the path) or a Standard
+ * registered Connected Folder (the deepest one holding the path) or a Standard
  * Folder (the most specific one), and the folders and files whose names start
  * with what is being typed are offered as completions. Nothing outside those
  * places is listed or opened.
  */
-export interface GoToFolderPlace { kind: "work-folder" | "standard"; id: string }
+export interface GoToFolderPlace { kind: "connected-folder" | "standard"; id: string }
 
 export interface GoToFolderResult {
   /** Where the typed path opens, when it names a folder or file that exists; a file opens its folder with the file selected. */
@@ -28,12 +28,12 @@ const maxSuggestions = 12;
 
 export async function goToFolder(
   typed: string,
-  workFolders: ReadonlyArray<{ id: string; workFolderRoot: string }>,
+  connectedFolders: ReadonlyArray<{ id: string; connectedFolderRoot: string }>,
   home = homedir(),
 ): Promise<GoToFolderResult> {
   const full = expandTypedPath(typed, home);
   if (!full) return { target: null, suggestions: [], message: null };
-  const places = await knownPlaces(workFolders, home);
+  const places = await knownPlaces(connectedFolders, home);
   const endsWithSeparator = /[\\/]$/.test(typed.trim());
   // The folder whose names complete the typed path: the path itself after a "/", else its parent.
   const listedFolder = endsWithSeparator ? full : dirname(full);
@@ -46,7 +46,7 @@ export async function goToFolder(
     return {
       target: null,
       suggestions,
-      message: "work-fold opens folders in your home folder, iCloud Drive, a work-folder, or a folder in the sidebar.",
+      message: "AmpleFile opens folders in your home folder, iCloud Drive, a Connected Folder, or a folder in the sidebar.",
     };
   }
   const info = await stat(full).catch(() => null);
@@ -69,21 +69,21 @@ export function expandTypedPath(typed: string, home = homedir()): string | null 
 
 interface KnownPlace { place: GoToFolderPlace; root: string }
 
-async function knownPlaces(workFolders: ReadonlyArray<{ id: string; workFolderRoot: string }>, home: string): Promise<KnownPlace[]> {
+async function knownPlaces(connectedFolders: ReadonlyArray<{ id: string; connectedFolderRoot: string }>, home: string): Promise<KnownPlace[]> {
   // The home folder holds the other Standard Folders; the deepest match wins, so it opens only what nothing else holds.
-  const standard = await listStandardFolders(workFolders, home);
+  const standard = await listStandardFolders(connectedFolders, home);
   return [
-    ...workFolders.map((workFolder) => ({ place: { kind: "work-folder" as const, id: workFolder.id }, root: resolve(workFolder.workFolderRoot) })),
-    ...standard.filter((folder) => !folder.workFolderId).map((folder) => ({ place: { kind: "standard" as const, id: folder.id }, root: resolve(folder.root) })),
+    ...connectedFolders.map((connectedFolder) => ({ place: { kind: "connected-folder" as const, id: connectedFolder.id }, root: resolve(connectedFolder.connectedFolderRoot) })),
+    ...standard.filter((folder) => !folder.connectedFolderId).map((folder) => ({ place: { kind: "standard" as const, id: folder.id }, root: resolve(folder.root) })),
   ];
 }
 
-/** The deepest known place holding a path; a work-folder wins over a Standard Folder at the same depth. */
+/** The deepest known place holding a path; a Connected Folder wins over a Standard Folder at the same depth. */
 function placeFor(path: string, places: readonly KnownPlace[]): KnownPlace | null {
   let best: KnownPlace | null = null;
   for (const candidate of places) {
     if (!contains(candidate.root, path)) continue;
-    if (!best || candidate.root.length > best.root.length || (candidate.root.length === best.root.length && candidate.place.kind === "work-folder")) best = candidate;
+    if (!best || candidate.root.length > best.root.length || (candidate.root.length === best.root.length && candidate.place.kind === "connected-folder")) best = candidate;
   }
   return best;
 }
@@ -92,7 +92,7 @@ async function completions(folder: string, partial: string): Promise<GoToFolderR
   const entries = await readdir(folder, { withFileTypes: true }).catch(() => []);
   const needle = partial.toLocaleLowerCase();
   return entries
-    .filter((entry) => isShownStandardEntry(entry.name) && !isAlwaysHiddenWorkFolderEntry(entry.name) && entry.name.toLocaleLowerCase().startsWith(needle))
+    .filter((entry) => isShownStandardEntry(entry.name) && !isAlwaysHiddenConnectedFolderEntry(entry.name) && entry.name.toLocaleLowerCase().startsWith(needle))
     .filter((entry) => entry.isDirectory() || entry.isFile())
     .map((entry) => ({ name: entry.name, kind: entry.isDirectory() ? "folder" as const : "file" as const, path: join(folder, entry.name) }))
     .sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) : a.kind === "folder" ? -1 : 1))

@@ -2,6 +2,6 @@ import type { ModelContextDiagnosticsBridge } from "../../src/shared/model-conte
 
 declare global {
   interface Window {
-    workFoldDiagnostics?: ModelContextDiagnosticsBridge;
+    ampleFileDiagnostics?: ModelContextDiagnosticsBridge;
   }
 }

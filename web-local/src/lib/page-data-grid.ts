@@ -13,7 +13,7 @@ export interface GridColumn {
   type: string;
   /** No longer in page.json; its values stay and can't be edited. */
   retired: boolean;
-  /** work-fold's own: when an entry was added, changed, or deleted, and by whom. */
+  /** AmpleFile's own: when an entry was added, changed, or deleted, and by whom. */
   system: boolean;
   width: number;
   options?: string[];

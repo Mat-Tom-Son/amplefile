@@ -1,6 +1,6 @@
 # Collaboration experience
 
-The person asks for work in a Chat, the work-fold agent, or an App. That remains one
+The person asks for work in a Chat, the AmpleFile agent, or an App. That remains one
 piece of work while agents divide it, ask questions, and combine results.
 The interface follows the durable request, while streamed text and tool
 activity still follow the current turn.
@@ -47,19 +47,19 @@ answer.
   settle or overwrite a newer turn.
 - Stop closes the selected request and its outstanding descendants, including
   waiting questions. It stays available between model turns. It does not stop
-  independent work in the same work-folder.
+  independent work in the same Connected Folder.
 - Host continuations have explicit message metadata and appear as quiet
   activity, never as messages apparently typed by the person. Older messages
   without that metadata retain their original presentation.
-- Results show the summary and selected files with their owning work-folder.
+- Results show the summary and selected files with their owning Connected Folder.
   Structured data is secondary. Opening a file does not copy it into a Chat.
 - Failed continuations expose saved work and an explicit continuation action
   where the request still permits one. Restart does not itself replay work.
 
 ## Surfaces and boundaries
 
-work-folder Chats, the trusted Settings → Apps page, and the work-fold agent popover share the same React
-work presentation. Each work-folder tab retains its identity.
+Connected Folder Chats, the trusted Settings → Apps page, and the AmpleFile agent popover share the same React
+work presentation. Each Connected Folder tab retains its identity.
 
 Sandboxed App bridges gain no request-graph or question access. There is no
 paired browser surface: Web Access was removed from the desktop on 2026-11-07.
@@ -68,7 +68,7 @@ paired browser surface: Web Access was removed from the desktop on 2026-11-07.
 
 Exercise delegation, a person question, answer, continuation, selected files,
 partial completion, and Stop from the originating surface. Also cover a
-question in a delegated work-folder, repeated/stale answers,
+question in a delegated Connected Folder, repeated/stale answers,
 restart with a saved answer, failure/reconnect with a draft, and keyboard/mobile
 interaction. Host integration tests verify authority and exact-once delivery;
 browser journeys verify visible state, controls, focus, and rendering.
@@ -79,7 +79,7 @@ The host projection is `src/shared/request-presentation.ts`, served by the
 local adapter in `src/local/server.ts`. Desktop surfaces share
 `web-local/src/components/chat/WorkRequest.tsx`.
 
-`tests/work-fold-collaboration-journeys.test.ts` exercises actual host admission,
+`tests/amplefile-collaboration-journeys.test.ts` exercises actual host admission,
 question ownership, repeat answers, request-wide Stop, restart, selected files,
 and explicit continuation. `tests/work-request-rendering.test.ts` covers exact
 question rendering, escaping, draft/focus retention, failed sends, and duplicate
@@ -87,9 +87,9 @@ submission. `tests/renderer-app-assistant-tasks.test.ts` covers results and Chat
 navigation in the trusted Apps surface. These are development checks; packaged
 Electron and signed-release verification remain separate release work.
 
-## Conversation navigation and work-folder browsing
+## Conversation navigation and Connected Folder browsing
 
-The work-fold agent popover has a searchable **Chats** view over saved machine-local fold
+The AmpleFile agent popover has a searchable **Chats** view over saved machine-local fold
 conversations, with titles, dates, and quiet working/answer indicators. Selecting
 a chat pins its transcript, request, model state, and next message to that id;
 background refresh never switches the selection. New chat opens a clean draft

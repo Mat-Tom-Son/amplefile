@@ -15,46 +15,46 @@ import {
 import { declaredTables } from "../web-local/src/lib/pages.js";
 import { fakePagesClient, pageRow, type FakePagesClient } from "./support/fake-pages-client.js";
 import { filterGridEntries, gridColumns, gridEntries, nextSort, sortGridEntries } from "../web-local/src/lib/page-data-grid.js";
-import type { TreeEntry, WorkFolderSummary } from "../web-local/src/types.js";
+import type { TreeEntry, ConnectedFolderSummary } from "../web-local/src/types.js";
 
 const assets = registerHooks({
   load(url, context, next) { return /\.svg(?:\?|$)/.test(url) ? { format: "module", source: `export default ${JSON.stringify(url)};`, shortCircuit: true } : next(url, context); },
 });
 const { FileTree } = await import("../web-local/src/components/tree/FileTree.js");
 const { PageTab, pageFileChange } = await import("../web-local/src/components/pages/PageTab.js");
-const { pageListChange } = await import("../web-local/src/hooks/useWorkFolderPages.js");
+const { pageListChange } = await import("../web-local/src/hooks/useConnectedFolderPages.js");
 const { testEntriesNote } = await import("../web-local/src/components/pages/PageDataView.js");
 assets.deregister();
 
-const workFolder = { id: "space-0123456789abcdef", name: "Home", workFolderRoot: "/tmp/home", location: { kind: "local", storage: "linked" } } as WorkFolderSummary;
+const connectedFolder = { id: "space-0123456789abcdef", name: "Home", connectedFolderRoot: "/tmp/home", location: { kind: "local", storage: "linked" } } as ConnectedFolderSummary;
 const pagePath = "Events/Garden Party RSVP";
 
 test("page tabs restore with their view, follow a moved folder, and close with it", () => {
-  const tab = pageSurfaceTab(workFolder, pagePath, "Garden Party RSVP");
-  assert.deepEqual(tab, { id: `page:${workFolder.id}:${pagePath}`, kind: "page", workFolderId: workFolder.id, path: pagePath, title: "Garden Party RSVP" });
-  assert.equal(pageSurfaceTab(workFolder, pagePath).title, "Garden Party RSVP", "the folder's name until page.json is read");
+  const tab = pageSurfaceTab(connectedFolder, pagePath, "Garden Party RSVP");
+  assert.deepEqual(tab, { id: `page:${connectedFolder.id}:${pagePath}`, kind: "page", connectedFolderId: connectedFolder.id, path: pagePath, title: "Garden Party RSVP" });
+  assert.equal(pageSurfaceTab(connectedFolder, pagePath).title, "Garden Party RSVP", "the folder's name until page.json is read");
   const restored = normalizeStoredSurfaceTabsValue({
     tabs: [
-      { id: "anything", kind: "page", workFolderId: workFolder.id, path: pagePath, title: "Garden Party RSVP", view: "data" },
-      { id: "page-2", kind: "page", workFolderId: workFolder.id, path: "Sign-up", title: "", view: "spreadsheet" },
-      { id: "escape", kind: "page", workFolderId: workFolder.id, path: "../Elsewhere", title: "x" },
-      { id: "absolute", kind: "page", workFolderId: workFolder.id, path: "/etc", title: "x" },
-      { id: "empty", kind: "page", workFolderId: workFolder.id, path: "", title: "x" },
+      { id: "anything", kind: "page", connectedFolderId: connectedFolder.id, path: pagePath, title: "Garden Party RSVP", view: "data" },
+      { id: "page-2", kind: "page", connectedFolderId: connectedFolder.id, path: "Sign-up", title: "", view: "spreadsheet" },
+      { id: "escape", kind: "page", connectedFolderId: connectedFolder.id, path: "../Elsewhere", title: "x" },
+      { id: "absolute", kind: "page", connectedFolderId: connectedFolder.id, path: "/etc", title: "x" },
+      { id: "empty", kind: "page", connectedFolderId: connectedFolder.id, path: "", title: "x" },
     ],
     activeTabId: "anything",
   });
   assert.deepEqual(restored, {
     tabs: [
-      { id: `page:${workFolder.id}:${pagePath}`, kind: "page", workFolderId: workFolder.id, path: pagePath, title: "Garden Party RSVP", view: "data" },
-      { id: `page:${workFolder.id}:Sign-up`, kind: "page", workFolderId: workFolder.id, path: "Sign-up", title: "Sign-up" },
+      { id: `page:${connectedFolder.id}:${pagePath}`, kind: "page", connectedFolderId: connectedFolder.id, path: pagePath, title: "Garden Party RSVP", view: "data" },
+      { id: `page:${connectedFolder.id}:Sign-up`, kind: "page", connectedFolderId: connectedFolder.id, path: "Sign-up", title: "Sign-up" },
     ],
-    activeTabId: `page:${workFolder.id}:${pagePath}`,
+    activeTabId: `page:${connectedFolder.id}:${pagePath}`,
   });
-  const moved = retargetFileSurfaceTabs(restored.tabs, workFolder.id, "Events", "Parties");
-  assert.equal(moved[0]!.id, `page:${workFolder.id}:Parties/Garden Party RSVP`);
+  const moved = retargetFileSurfaceTabs(restored.tabs, connectedFolder.id, "Events", "Parties");
+  assert.equal(moved[0]!.id, `page:${connectedFolder.id}:Parties/Garden Party RSVP`);
   assert.equal((moved[0] as { path: string }).path, "Parties/Garden Party RSVP");
   assert.equal(moved[0]!.title, "Garden Party RSVP", "a moved page keeps its title");
-  assert.deepEqual(closeFileSurfaceTabs(moved, workFolder.id, new Set(["Parties/Garden Party RSVP"])).map((item) => item.id), [`page:${workFolder.id}:Sign-up`]);
+  assert.deepEqual(closeFileSurfaceTabs(moved, connectedFolder.id, new Set(["Parties/Garden Party RSVP"])).map((item) => item.id), [`page:${connectedFolder.id}:Sign-up`]);
 });
 
 async function harness(t: TestContext): Promise<DomHarness> {
@@ -115,7 +115,7 @@ const row = pageRow;
 async function renderPageTab(dom: DomHarness, client: FakeClient, view: "preview" | "data") {
   const changes: { views: string[]; titles: string[] } = { views: [], titles: [] };
   await dom.render(createElement(PageTab, {
-    workFolder, path: pagePath, title: "Garden Party RSVP", view, active: true, fixtureMode: true, client,
+    connectedFolder, path: pagePath, title: "Garden Party RSVP", view, active: true, fixtureMode: true, client,
     onViewChange: (next: string) => changes.views.push(next),
     onTitleChange: (title: string) => changes.titles.push(title),
   }));
@@ -126,7 +126,7 @@ async function renderPageTab(dom: DomHarness, client: FakeClient, view: "preview
 function frameMessages(frame: HTMLIFrameElement) {
   const sent: any[] = [];
   (frame.contentWindow as any).postMessage = (message: unknown) => sent.push(message);
-  window.dispatchEvent(new (window as any).MessageEvent("message", { data: { type: "work-fold.page.ready" }, source: frame.contentWindow }));
+  window.dispatchEvent(new (window as any).MessageEvent("message", { data: { type: "amplefile.page.ready" }, source: frame.contentWindow }));
   return sent;
 }
 
@@ -145,10 +145,10 @@ test("Preview runs the page as a visitor, as the owner, or as a new visitor", as
   let frame = dom.container.querySelector<HTMLIFrameElement>(".page-preview-frame")!;
   assert.equal(frame.getAttribute("sandbox"), "allow-scripts allow-forms");
   let init = frameMessages(frame)[0];
-  assert.equal(init.type, "work-fold.page.init");
+  assert.equal(init.type, "amplefile.page.init");
   assert.equal(init.owner, false);
   assert.deepEqual(init.tables, { rsvps: { name: "text", guests: "number", bringing: "choice" } });
-  window.dispatchEvent(new (window as any).MessageEvent("message", { data: { type: "work-fold.page.call", channel: init.channel, callId: 1, call: { op: "mine", table: "rsvps" } }, source: frame.contentWindow }));
+  window.dispatchEvent(new (window as any).MessageEvent("message", { data: { type: "amplefile.page.call", channel: init.channel, callId: 1, call: { op: "mine", table: "rsvps" } }, source: frame.contentWindow }));
   await dom.waitFor(() => client.calls.length === 1);
   assert.deepEqual(client.calls[0], { viewer: { role: "visitor", visitor: "v_visitor00000001" }, call: { op: "mine", table: "rsvps" } });
 
@@ -157,7 +157,7 @@ test("Preview runs the page as a visitor, as the owner, or as a new visitor", as
   frame = dom.container.querySelector<HTMLIFrameElement>(".page-preview-frame")!;
   init = frameMessages(frame)[0];
   assert.equal(init.owner, true, "the page sees the owner");
-  window.dispatchEvent(new (window as any).MessageEvent("message", { data: { type: "work-fold.page.call", channel: init.channel, callId: 1, call: { op: "count", table: "rsvps" } }, source: frame.contentWindow }));
+  window.dispatchEvent(new (window as any).MessageEvent("message", { data: { type: "amplefile.page.call", channel: init.channel, callId: 1, call: { op: "count", table: "rsvps" } }, source: frame.contentWindow }));
   await dom.waitFor(() => client.calls.length === 2);
   assert.deepEqual(client.calls[1]!.viewer, { role: "owner" });
 
@@ -167,7 +167,7 @@ test("Preview runs the page as a visitor, as the owner, or as a new visitor", as
   await dom.waitFor(() => dom.container.querySelector(".page-preview-frame") !== frame && Boolean(dom.container.querySelector(".page-preview-frame")));
   frame = dom.container.querySelector<HTMLIFrameElement>(".page-preview-frame")!;
   init = frameMessages(frame)[0];
-  window.dispatchEvent(new (window as any).MessageEvent("message", { data: { type: "work-fold.page.call", channel: init.channel, callId: 1, call: { op: "mine", table: "rsvps" } }, source: frame.contentWindow }));
+  window.dispatchEvent(new (window as any).MessageEvent("message", { data: { type: "amplefile.page.call", channel: init.channel, callId: 1, call: { op: "mine", table: "rsvps" } }, source: frame.contentWindow }));
   await dom.waitFor(() => client.calls.length === 3);
   assert.deepEqual(client.calls[2]!.viewer, { role: "visitor", visitor: "v_visitor00000002" }, "a new visitor sees none of the last one's entries");
 });
@@ -331,7 +331,7 @@ test("only changes that can matter reload a page or Files' page list", () => {
   assert.equal(pageFileChange({ path: "Events" }, pagePath), true, "a folder above it moved");
   assert.equal(pageFileChange({ path: null }, pagePath), true);
   assert.equal(pageFileChange({ path: `${pagePath}/data.sqlite-wal` }, pagePath), false, "the page's data file isn't part of the page");
-  assert.equal(pageFileChange({ path: `${pagePath}/.work-fold/x.json` }, pagePath), false);
+  assert.equal(pageFileChange({ path: `${pagePath}/.amplefile/x.json` }, pagePath), false);
   assert.equal(pageFileChange({ path: `${pagePath} 2/index.html` }, pagePath), false);
   assert.equal(pageFileChange({ path: "Notes/todo.md" }, pagePath), false);
   assert.equal(pageListChange(`${pagePath}/page.json`), true);
@@ -350,7 +350,7 @@ test("declared tables are read from the inspection in page.json's order", () => 
 
 test("page styles use the shell's type scale, control heights, and arrow pointer", async () => {
   const css = await readFile(join(process.cwd(), "web-local/src/components/pages/pages.css"), "utf8");
-  for (const match of css.matchAll(/font-size:\s*([^;]+);/g)) assert.match(match[1]!, /^var\(--work-fold-type-/, `font-size ${match[1]} is off the type scale`);
+  for (const match of css.matchAll(/font-size:\s*([^;]+);/g)) assert.match(match[1]!, /^var\(--amplefile-type-/, `font-size ${match[1]} is off the type scale`);
   assert.doesNotMatch(css, /cursor:\s*pointer/);
   assert.doesNotMatch(css, /font-weight:\s*(?:[89]00|bold)/);
   const main = await readFile(join(process.cwd(), "web-local/src/main.tsx"), "utf8");

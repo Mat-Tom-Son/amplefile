@@ -42,7 +42,7 @@ export function cleanVerificationEnvironment(environment = process.env) {
   }
   return { ...env, PATH: `${dirname(process.execPath)}:${env.PATH ?? ""}`, CI: "1",
     npm_config_node_options: "--enable-source-maps", npm_config_script_shell: "/bin/sh", npm_config_ignore_scripts: "false", npm_config_dry_run: "false",
-    WORKFOLD_DESKTOP_RELEASE_PLATFORM: "darwin", WORKFOLD_DESKTOP_RELEASE_ARCH: "arm64", WORKFOLD_MAC_RELEASE_BUILD: "0" };
+    AMPLEFILE_DESKTOP_RELEASE_PLATFORM: "darwin", AMPLEFILE_DESKTOP_RELEASE_ARCH: "arm64", AMPLEFILE_MAC_RELEASE_BUILD: "0" };
 }
 
 export async function readToolchain(rootDir) {
@@ -54,8 +54,8 @@ export async function readToolchain(rootDir) {
   const npmVersion = execFileSync(process.execPath, [npmCli, "--version"], { cwd: rootDir, env, encoding: "utf8" }).trim();
   const [major, minor] = npmVersion.split(".").map(Number);
   if (!(major > 11 || (major === 11 && minor >= 16))) throw new Error("Local release verification requires npm 11.16.0 or newer.");
-  const browser = process.env.WORKFOLD_CSS_BROWSER || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-  await access(browser, constants.X_OK).catch(() => { throw new Error("Real CSS tests require Chrome. Install Chrome or set WORKFOLD_CSS_BROWSER to a Chromium executable."); });
+  const browser = process.env.AMPLEFILE_CSS_BROWSER || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+  await access(browser, constants.X_OK).catch(() => { throw new Error("Real CSS tests require Chrome. Install Chrome or set AMPLEFILE_CSS_BROWSER to a Chromium executable."); });
   execFileSync(browser, ["--version"], { env, encoding: "utf8", timeout: 15_000, stdio: ["ignore", "pipe", "pipe"] });
   return { npmVersion, npmCli, nodePath: process.execPath, browser };
 }
@@ -100,7 +100,7 @@ export async function runLocalReleaseVerification(rootDir, { snapshot = readVeri
     const logDirectory = join(paths.directory, runId);
     await mkdir(logDirectory);
     const receipt = { schemaVersion: 1, status: "running", runId, source, toolchain: runtime, startedAt: new Date().toISOString(), stages: [] };
-    const env = { ...cleanVerificationEnvironment(), WORKFOLD_CSS_BROWSER: runtime.browser };
+    const env = { ...cleanVerificationEnvironment(), AMPLEFILE_CSS_BROWSER: runtime.browser };
     for (const stage of LOCAL_VERIFICATION_STAGES) {
       same(source, await snapshot(rootDir), "Source changed during local verification");
       const logPath = join(logDirectory, `${stage.id}.log`);

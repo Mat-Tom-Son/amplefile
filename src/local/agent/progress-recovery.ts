@@ -4,8 +4,8 @@ import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { ExtensionFactory, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 
-export const progressEntryType = "work-fold-progress.v1";
-export const progressContextType = "work-fold-progress-recovery";
+export const progressEntryType = "amplefile-progress.v1";
+export const progressContextType = "amplefile-progress-recovery";
 export const retainedEvidenceChars = 256_000;
 const pageChars = 16_000;
 // Pi's native compaction serializer retains 2,000 characters per tool result.
@@ -51,7 +51,7 @@ export class ProgressRecovery {
       const real = await realpath(resolve(root, path));
       const name = relative(root, real);
       if (!name || name.startsWith(`..${sep}`) || name === ".." || isAbsolute(name)
-        || name.split(sep).some(part => [".work-fold", ".workspace", ".pi", ".git"].includes(part))) return null;
+        || name.split(sep).some(part => [".amplefile", ".workspace", ".pi", ".git"].includes(part))) return null;
       const info = await stat(real);
       if (!info.isFile() || info.size > 32 * 1024 * 1024) return null;
       const hash = createHash("sha256");
@@ -168,7 +168,7 @@ export class ProgressRecovery {
           if (evidence.some(id => !records.some(record => record.id === id))) throw new Error('Evidence ids must belong to this request. Copy exact ids from progress input:{action:"list"}, or omit evidence. Put explanations in summary, not evidence.');
           const files: string[] = params.files ?? [];
           const sources = await this.fingerprints(files);
-          if (sources.length !== new Set(files).size) throw new Error("Each evidence file must be a readable ordinary file inside this work-folder (up to 32 MiB), outside reserved metadata.");
+          if (sources.length !== new Set(files).size) throw new Error("Each evidence file must be a readable ordinary file inside this Connected Folder (up to 32 MiB), outside reserved metadata.");
           if (this.current()?.taskId !== scope.taskId) throw new Error("The turn ended before progress could be saved.");
           const record: ProgressRecord = { requestId: scope.requestId, taskId: scope.taskId, id: `note-${createHash("sha256").update(`${scope.taskId}\0${callId}`).digest("hex").slice(0, 20)}`, at: new Date().toISOString(), kind: "finding", summary: params.summary.trim(), failed: false, text: params.summary.trim(), originalChars: params.summary.trim().length, imageCount: 0, sources, sourceBinding: "untracked", evidence };
           this.session.appendCustomEntry(progressEntryType, record);

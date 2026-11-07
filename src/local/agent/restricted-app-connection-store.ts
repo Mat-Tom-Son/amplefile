@@ -178,7 +178,7 @@ export class EncryptedRestrictedAppConnectionStore implements RestrictedAppConne
       if (new Set(connectionIds).size !== connectionIds.length) throw new Error("Connection store contains duplicate connection ids.");
       return { schemaVersion: 3, records };
     } catch (error) {
-      throw new Error(`work-fold could not read restricted app connections: ${errorMessage(error)}`);
+      throw new Error(`AmpleFile could not read restricted app connections: ${errorMessage(error)}`);
     }
   }
 

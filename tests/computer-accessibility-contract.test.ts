@@ -9,7 +9,7 @@ import test from "node:test";
 
 test("Mac accessibility dispatches once, refuses changed identities and retains incomplete reads", { skip: process.platform !== "darwin", timeout: 45_000 }, async () => {
   const exec = promisify(execFile);
-  const scratch = await mkdtemp(join(tmpdir(), "workfold-computer-contract-"));
+  const scratch = await mkdtemp(join(tmpdir(), "amplefile-computer-contract-"));
   try {
     const source = fileURLToPath(new URL("../node_modules/@injaneity/pi-computer-use/native/macos/", import.meta.url));
     const executable = join(scratch, "accessibility-tests");

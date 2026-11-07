@@ -32,10 +32,10 @@ import type { BrowserSurfaceTab } from "../../types";
 import { BrowserTabIcon, FluentGlyph } from "../chrome/common";
 import { nativeViewBounds, nativeViewOccluded } from "../panes/RestrictedAppViewport";
 
-type BrowserBridge = NonNullable<NonNullable<Window["workFoldDesktop"]>["browser"]>;
+type BrowserBridge = NonNullable<NonNullable<Window["ampleFileDesktop"]>["browser"]>;
 type HistoryEntry = Awaited<ReturnType<BrowserBridge["recent"]>>[number];
 
-/** Who is using the page: a Worker's Chat (with Stop) or the work-fold agent. */
+/** Who is using the page: a Worker's Chat (with Stop) or the AmpleFile agent. */
 export interface BrowserTabWorker {
   label: string;
   title: string;
@@ -72,7 +72,7 @@ export function BrowserTabPanel({
   worker?: BrowserTabWorker | null;
   onError: (message: string) => void;
 }) {
-  const desktop = window.workFoldDesktop?.browser;
+  const desktop = window.ampleFileDesktop?.browser;
   const viewportRef = useRef<HTMLDivElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
@@ -298,7 +298,7 @@ export function BrowserTabPanel({
     return (
       <section className="browser-tab browser-tab-unavailable" aria-label="Browser">
         <FluentGlyph icon={BrowserTabIcon} size={28} filled={false} />
-        <strong>The browser runs in the work-fold desktop app.</strong>
+        <strong>The browser runs in the AmpleFile desktop app.</strong>
       </section>
     );
   }
@@ -440,7 +440,7 @@ export function BrowserTabPanel({
         <button className="browser-tab-button" type="button" disabled={!hasPage} onClick={openFind} aria-label="Find in Page" title="Find in Page">
           <Search16Regular />
         </button>
-        <button className="browser-tab-button" type="button" disabled={!external} onClick={() => { void window.workFoldDesktop?.shell.openExternal(url).catch((caught) => onError(caught instanceof Error ? caught.message : "The page could not open.")); }} aria-label="Open in Your Web Browser" title="Open in Your Web Browser">
+        <button className="browser-tab-button" type="button" disabled={!external} onClick={() => { void window.ampleFileDesktop?.shell.openExternal(url).catch((caught) => onError(caught instanceof Error ? caught.message : "The page could not open.")); }} aria-label="Open in Your Web Browser" title="Open in Your Web Browser">
           <Open20Regular />
         </button>
       </header>
@@ -456,7 +456,7 @@ export function BrowserTabPanel({
         <div className="browser-tab-bar browser-tab-notice" role="status">
           <Warning16Regular aria-hidden="true" />
           <span className="browser-tab-bar-text">{page.notice.text}</span>
-          {window.workFoldDesktop?.app.platform === "darwin" ? (
+          {window.ampleFileDesktop?.app.platform === "darwin" ? (
             <button className="ui-control compact no-margin" type="button" onClick={() => { void desktop.command(tab.pageId, { type: "open-privacy-settings", kind: page.notice!.kind }); }}>Open System Settings</button>
           ) : null}
           <button className="browser-tab-button" type="button" onClick={() => { void desktop.command(tab.pageId, { type: "dismiss-notice" }); }} aria-label="Dismiss" title="Dismiss">
@@ -529,7 +529,7 @@ export function BrowserTabPanel({
           <div className="browser-tab-state">
             <FluentGlyph icon={BrowserTabIcon} size={32} filled={false} />
             <strong>Search or Type a Web Address</strong>
-            <span>This browser is shared by every work-folder, and your Workers can use its tabs too.</span>
+            <span>This browser is shared by every Connected Folder, and your Workers can use its tabs too.</span>
           </div>
         ) : page?.crashed ? (
           <div className="browser-tab-state">

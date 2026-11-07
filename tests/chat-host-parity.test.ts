@@ -7,14 +7,14 @@ import test from "node:test";
 import { isPiTurnNotRunningError, isPiTurnTimeoutError, piTurnTimeoutMs } from "../src/local/agent/pi-client.js";
 import { builtInPiCommands } from "../src/local/agent/skill-catalog.js";
 import { startLocalApi } from "../src/local/server.js";
-import type { WorkFoldKernel } from "../src/local/work-fold-kernel.js";
+import type { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
 
 test("a turn has no wall-clock cap unless a host opts into one", () => {
-  assert.equal(piTurnTimeoutMs({}), 0, "native Pi sessions have no turn cap, so neither does work-fold by default");
-  assert.equal(piTurnTimeoutMs({ WORKFOLD_PI_TURN_TIMEOUT_MS: "120000" }), 120_000);
+  assert.equal(piTurnTimeoutMs({}), 0, "native Pi sessions have no turn cap, so neither does AmpleFile by default");
+  assert.equal(piTurnTimeoutMs({ AMPLEFILE_PI_TURN_TIMEOUT_MS: "120000" }), 120_000);
   assert.equal(piTurnTimeoutMs({ PI_TURN_TIMEOUT_MS: "5000" }), 5_000);
-  assert.equal(piTurnTimeoutMs({ WORKFOLD_PI_TURN_TIMEOUT_MS: "nonsense" }), 0);
-  assert.equal(piTurnTimeoutMs({ WORKFOLD_PI_TURN_TIMEOUT_MS: "-1" }), 0);
+  assert.equal(piTurnTimeoutMs({ AMPLEFILE_PI_TURN_TIMEOUT_MS: "nonsense" }), 0);
+  assert.equal(piTurnTimeoutMs({ AMPLEFILE_PI_TURN_TIMEOUT_MS: "-1" }), 0);
   const timeout = new Error("x");
   timeout.name = "PiTurnTimeoutError";
   assert.equal(isPiTurnTimeoutError(timeout), true);
@@ -32,7 +32,7 @@ test("the thinking level is a first-class Chat command alongside model selection
 });
 
 test("steering requires a running agent turn and never appends a message it could not deliver", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-steer-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-steer-test-"));
   const agentDir = join(sandbox, "agent");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
   await writeFile(join(agentDir, "extensions", "hold.ts"), `export default function (pi) {
@@ -45,20 +45,20 @@ test("steering requires a running agent turn and never appends a message it coul
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider,
   });
   try {
-    const created = await json(`${api.origin}/api/work-folders`, {
+    const created = await json(`${api.origin}/api/connected-folders`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Steer work-folder" }),
-    }) as { workFolder: { id: string } };
-    const workFolderId = created.workFolder.id;
-    const conversation = await json(`${api.origin}/api/work-folders/${workFolderId}/conversations`, { method: "POST" }) as { conversation: { id: string } };
+      body: JSON.stringify({ name: "Steer Connected Folder" }),
+    }) as { connectedFolder: { id: string } };
+    const connectedFolderId = created.connectedFolder.id;
+    const conversation = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/conversations`, { method: "POST" }) as { conversation: { id: string } };
     const conversationId = conversation.conversation.id;
-    const messages = `${api.origin}/api/work-folders/${workFolderId}/conversations/${conversationId}/messages`;
+    const messages = `${api.origin}/api/connected-folders/${connectedFolderId}/conversations/${conversationId}/messages`;
 
     const invalid = await fetch(messages, {
       method: "POST",
@@ -91,17 +91,17 @@ test("steering requires a running agent turn and never appends a message it coul
     assert.equal(duringCommand.status, 409, await duringCommand.text());
 
     await waitForTurnToSettle(api.kernel, conversationId);
-    const transcript = await json(`${api.origin}/api/work-folders/${workFolderId}/conversations/${conversationId}`) as { messages: Array<{ role: string; content: string; delivery?: string }> };
+    const transcript = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/conversations/${conversationId}`) as { messages: Array<{ role: string; content: string; delivery?: string }> };
     assert.equal(transcript.messages.some((message) => message.content === "redirect please"), false, "a refused steer leaves no trace in the transcript");
     assert.equal(transcript.messages.some((message) => message.delivery === "steer"), false);
 
-    const runtime = await json(`${api.origin}/api/work-folders/${workFolderId}/conversations/${conversationId}/runtime`) as { runtime: { thinkingLevel: string; thinkingLevels: string[] } };
+    const runtime = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/conversations/${conversationId}/runtime`) as { runtime: { thinkingLevel: string; thinkingLevels: string[] } };
     assert.ok(Array.isArray(runtime.runtime.thinkingLevels), "runtime state lists the levels the current model supports");
     assert.ok(runtime.runtime.thinkingLevels.includes(runtime.runtime.thinkingLevel));
 
     const nextLevel = runtime.runtime.thinkingLevels.find((level) => level !== runtime.runtime.thinkingLevel);
     if (nextLevel) {
-      const changed = await json(`${api.origin}/api/work-folders/${workFolderId}/conversations/${conversationId}/thinking`, {
+      const changed = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/conversations/${conversationId}/thinking`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ level: nextLevel }),
@@ -110,7 +110,7 @@ test("steering requires a running agent turn and never appends a message it coul
       assert.equal(changed.runtime.thinkingLevel, nextLevel, "the selected reasoning level updates the live Pi session");
     }
 
-    const badLevel = await fetch(`${api.origin}/api/work-folders/${workFolderId}/conversations/${conversationId}/thinking`, {
+    const badLevel = await fetch(`${api.origin}/api/connected-folders/${connectedFolderId}/conversations/${conversationId}/thinking`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ level: "galaxy-brain" }),
@@ -125,7 +125,7 @@ test("steering requires a running agent turn and never appends a message it coul
 
 // The kernel task finishes after the turn's running flag clears, so waiting on
 // it (rather than on the transcript) observes a fully settled turn.
-async function waitForTurnToSettle(kernel: WorkFoldKernel, conversationId: string): Promise<void> {
+async function waitForTurnToSettle(kernel: AmpleFileKernel, conversationId: string): Promise<void> {
   for (let attempt = 0; attempt < 200; attempt += 1) {
     const tasks = await kernel.getTasks({ kind: "system" });
     if (!tasks.tasks.some((task) => task.kind === "assistant_turn" && task.conversationId === conversationId)) return;

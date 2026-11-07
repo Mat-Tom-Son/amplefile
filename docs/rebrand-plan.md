@@ -1,27 +1,31 @@
 # Rebrand plan
 
-> **Status:** Plan, 2026-11-07. The owner wants a clean break from the name
-> "work-fold" and a new repository. The names are decided (below): the
-> product is **AmpleFile** and a folder with its own Worker is a **Connected
-> Folder**. This plan records everything the names touch, the decisions each
-> part needs, what must come along intact, and the order of work.
+> **Status:** Renamed, 2026-11-07. The owner wanted a clean break from the
+> name "work-fold" and a new repository. The product is **AmpleFile** and a
+> folder with its own Worker is a **Connected Folder**. This repository
+> started from work-fold's `bd420081` and `scripts/rebrand/rename.mjs` made
+> the rename; this plan keeps the old spellings on purpose as the record of
+> what changed. Still to do: the `.work-fold/` import, the app alias
+> decision, and the release setup (Order of work, steps 5 and 7).
 
 ## Decided names (2026-11-07)
 
 | Today | New | Spellings |
 |---|---|---|
 | work-fold (the product) | **AmpleFile** | Display `AmpleFile`; code `ampleFile` / `AmpleFile`; one lowercase word everywhere else: `amplefile` (command, folders, ids, repos), `AMPLEFILE` (environment) |
-| work-folder | **Connected Folder** | Title Case in headings and buttons ("Connected Folders", "New Connected Folder…"), lowercase in sentences ("this connected folder's Worker"); code `connectedFolder` / `ConnectedFolder`; kebab `connected-folder` (routes, CLI family `connected-folders`, flag `--connected-folder`, files, CSS); `CONNECTED_FOLDER` |
+| work-folder | **Connected Folder** | Always capitalized, like "Worker", in labels and in sentences ("New Connected Folder…", "this Connected Folder's Worker"); labels are Title Case; code `connectedFolder` / `ConnectedFolder`; kebab `connected-folder` (routes, CLI family `connected-folders`, flag `--connected-folder`, files, CSS); `CONNECTED_FOLDER` |
 | work-fold agent | **AmpleFile agent** | Code `ampleFileAgent` / `AmpleFileAgent`; kebab `amplefile-agent` (routes, scope id); the CLI verb stays `agent` |
 | `WORKFOLD_` | **`AMPLEFILE_`** | Environment variables |
 | `wf-`, `--wf-*`, `/__work-fold/kit.css` | **`af-`**, **`--af-*`**, **`/__amplefile/kit.css`** | The app kit |
 | `workFoldDesktop`, `workFoldRestrictedApp`, `workFoldPage` | **`ampleFileDesktop`**, **`ampleFileRestrictedApp`**, **`ampleFilePage`** | Globals |
 | `.work-fold/work-folder.json` | **`.amplefile/connected-folder.json`** | The portable folder; the first time a folder that has `.work-fold/` is connected, copy it across so its Chats come along |
 
-The verbs follow the noun. "Use Existing Folder…" and "Put This Folder to
-Work" become **Connect Folder…** and **Connect This Folder**, "Create New
-work-folder…" becomes **New Connected Folder…**, and "Remove work-folder…"
-becomes **Disconnect…**, which says the files stay where they are. "Put your
+The verbs follow the noun. "Use Existing Folder…", "Put This Folder to
+Work", and "Make a work-folder" become **Connect Folder…** and **Connect This
+Folder**, "Create New work-folder…" becomes **New Connected Folder…**, and
+"Remove work-folder…" becomes **Disconnect…**, which says the files stay
+where they are (a managed folder still offers **Delete Connected Folder…**).
+"sub work-folder" becomes **nested Connected Folder**. "Put your
 folders to work" can stay as a tagline. "Connect" also appears in **Connect
 Your AI** and in apps' service connections; those name accounts, so the copy
 never calls a provider or service a connected anything.
@@ -36,10 +40,12 @@ Identity file values: `productName` `AmpleFile`, `packageName`
 `amplefile-agent`, `sourceRepositoryName` `amplefile`,
 `macReleaseRepositoryName` `amplefile-mac-releases`.
 
-The renamer needs one rule the October codemod didn't: "work-fold" is two
-words and maps to camel `ampleFile` and Pascal `AmpleFile`, but to the single
-word `amplefile` in kebab, lowercase, and upper-case spellings (never
-`ample-file`).
+The renamer (`scripts/rebrand/rename.mjs`) needed one rule the October
+codemod didn't: "work-fold" is two words and maps to camel `ampleFile` and
+Pascal `AmpleFile`, but to the single word `amplefile` in kebab, lowercase,
+and upper-case spellings (never `ample-file`). Where the old lowercase name
+was also the app's file name (the app bundle, its executable, its
+application-data folder), the new one is `AmpleFile`.
 
 `amplefile.com` was registered on 2026-11-07; `amplefile.app` was free that day.
 
@@ -236,8 +242,8 @@ The new repository should start from the finished file-manager tree without:
   off.
 - The October migrations for the older Workspace and "Space" names
   (`src/local/vocabulary-migration*`, `web-local/src/lib/storage-migration.ts`)
-  and the read-only tolerance for retired record shapes. A new app has no such
-  state.
+  and the tolerance for pre-October names. Done 2026-11-07: a new app has no
+  such state.
 - `docs/archive/` and `docs/releases/`. Done 2026-11-07: they stay in the
   work-fold repository.
 - The inactive Windows lanes.
@@ -247,13 +253,23 @@ The new repository should start from the finished file-manager tree without:
 ## Order of work
 
 1. Choose the name and the three companion names (noun, agent, prefixes).
+   Done 2026-11-07.
 2. Finish the file-manager work that must ship and merge it here, so the new
-   repository starts from one known commit.
-3. Run the inventory and save its report with the commit it describes.
+   repository starts from one known commit. Done: work-fold `bd420081`.
+3. Run the inventory and save its report with the commit it describes. Done.
 4. In the new repository: update `src/shared/product-identity.json`, extend
    the vocabulary codemod with the new word rules, run the code pass, then the
    prose pass, then rename files with `git mv`, and review the diff by class.
+   Done 2026-11-07 with `scripts/rebrand/rename.mjs`, followed by hand fixes
+   where code and prose meet (command names in help text and prompts, test
+   regexes, and labels built from ids).
 5. Build the `.work-fold/` import and decide the app alias question.
-6. Run `npm run check`, `npm test`, and `inventory.mjs --check`.
+   Regenerate the reviewed pi-chrome patch
+   (`patches/included-tools/pi-chrome-0.15.51.patch`) so it reads
+   `globalThis.ampleFileChrome` and says "AmpleFile extension"; until then
+   the Chrome bootstrap keeps `globalThis.workFoldChrome`. The Chrome Web
+   Store id and key in the distribution are still work-fold's listing.
+6. Run `npm run check`, `npm test`, and `inventory.mjs --check`. Done
+   2026-11-07, with `npm run desktop:prepare`.
 7. Set up the new release repository, signing, and notarization profile, and
    make a first local release candidate under the new bundle id.

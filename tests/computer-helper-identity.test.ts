@@ -10,7 +10,7 @@ import { verifyHelperExecutable } from "../node_modules/@injaneity/pi-computer-u
 
 const run = promisify(execFile);
 test("quarantined helper relocation requires the complete current signed artifact and compatible protocol", { skip: process.platform !== "darwin", timeout: 45_000 }, async t => {
-  const root = await mkdtemp(join(tmpdir(), "workfold-helper-identity-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-helper-identity-"));
   const systemTemp = (await run("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"])).stdout.trim();
   const relocation = join(await realpath(systemTemp), "AppTranslocation", randomUUID());
   t.after(async () => { await rm(root, { recursive: true, force: true }); await rm(relocation, { recursive: true, force: true }); });
@@ -20,7 +20,7 @@ test("quarantined helper relocation requires the complete current signed artifac
   await mkdir(join(expectedApp, "Contents/Resources"));
   await writeFile(join(root, "tiny.c"), "int main(void) { return 0; }\n");
   await run("/usr/bin/cc", [join(root, "tiny.c"), "-o", expected]);
-  await writeFile(join(expectedApp, "Contents/Info.plist"), '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.work-fold.helper-identity-test</string><key>CFBundleExecutable</key><string>bridge</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>');
+  await writeFile(join(expectedApp, "Contents/Info.plist"), '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.amplefile.helper-identity-test</string><key>CFBundleExecutable</key><string>bridge</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>');
   await writeFile(join(expectedApp, "Contents/Resources/icon.txt"), "exact resource");
   await run("/usr/bin/codesign", ["--force", "--sign", "-", expectedApp]);
   const reset = async () => { await rm(actualApp, { force: true, recursive: true }); await cp(expectedApp, actualApp, { recursive: true }); };

@@ -10,7 +10,7 @@ const bundledUrl = import.meta.url.replace(/\.asar\.unpacked\//, ".asar/");
 const require = createRequire(bundledUrl);
 const archivePrefix = bundledUrl.match(/^.*?\.asar\//)?.[0];
 function bundledOrigin(specifier, url) {
-  if (archivePrefix && !url.startsWith(archivePrefix)) throw new Error(`Bundled document dependency ${specifier} resolved outside the application archive. Reinstall work-fold to repair its bundled libraries.`);
+  if (archivePrefix && !url.startsWith(archivePrefix)) throw new Error(`Bundled document dependency ${specifier} resolved outside the application archive. Reinstall AmpleFile to repair its bundled libraries.`);
   return url;
 }
 function bundledResolve(specifier) {

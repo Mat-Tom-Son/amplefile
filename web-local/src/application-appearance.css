@@ -1,12 +1,12 @@
 /* Shared application preferences, loaded after the desktop/popover styles.
-   work-folder identity roles remain local to their work-folder; application roles only
+   Connected Folder identity roles remain local to their Connected Folder; application roles only
    replace the retained fixed interface colors and typography. */
 :root[data-appearance-palette] {
   color: var(--ui-text);
-  font-size: var(--work-fold-font-size);
-  --work-fold-accent: var(--ui-accent);
-  --work-fold-accent-soft: var(--ui-accent-soft);
-  --work-fold-readable-line-height: var(--work-fold-reading-leading);
+  font-size: var(--amplefile-font-size);
+  --amplefile-accent: var(--ui-accent);
+  --amplefile-accent-soft: var(--ui-accent-soft);
+  --amplefile-readable-line-height: var(--amplefile-reading-leading);
   --pop-bg: var(--ui-canvas);
   --pop-surface: var(--ui-surface);
   --pop-surface-2: var(--ui-surface-subtle);
@@ -20,8 +20,8 @@
 }
 
 :root[data-appearance-palette] body {
-  font-family: var(--work-fold-ui-font);
-  font-size: var(--work-fold-font-size);
+  font-family: var(--amplefile-ui-font);
+  font-size: var(--amplefile-font-size);
   color: var(--ui-text);
 }
 
@@ -43,8 +43,8 @@
 }
 
 :root[data-appearance-palette] .app-shell {
-  --work-fold-chat-surface: var(--ui-surface);
-  --work-fold-chat-border: var(--ui-border);
+  --amplefile-chat-surface: var(--ui-surface);
+  --amplefile-chat-border: var(--ui-border);
   color: var(--ui-text);
 }
 
@@ -79,7 +79,7 @@
 }
 :root[data-appearance-palette] .capabilities-hierarchy-glyph g.active text { fill: var(--ui-on-accent); }
 
-:root[data-appearance-palette] .app-shell :is(.right-rail, .chat-panel, .file-details-pane, .work-folder-surface-body-empty) {
+:root[data-appearance-palette] .app-shell :is(.right-rail, .chat-panel, .file-details-pane, .connected-folder-surface-body-empty) {
   color: var(--ui-text);
   background: var(--ui-surface);
 }
@@ -97,20 +97,20 @@
 /* Reading is separate from control typography. Enlarged text reflows Markdown
    and the composer without enlarging toolbars or clipping code/table overflow. */
 :root[data-appearance-palette] .app-shell .message-list {
-  padding-inline: max(20px, calc((100% - var(--work-fold-chat-measure)) / 2));
+  padding-inline: max(20px, calc((100% - var(--amplefile-chat-measure)) / 2));
 }
-:root[data-appearance-palette] .app-shell .message.assistant { width: min(100%, var(--work-fold-chat-measure)); }
-:root[data-appearance-palette] .app-shell :is(.message.user, .message.app-request) { max-width: min(88%, calc(var(--work-fold-chat-measure) * 0.82)); }
+:root[data-appearance-palette] .app-shell .message.assistant { width: min(100%, var(--amplefile-chat-measure)); }
+:root[data-appearance-palette] .app-shell :is(.message.user, .message.app-request) { max-width: min(88%, calc(var(--amplefile-chat-measure) * 0.82)); }
 :root[data-appearance-palette] .app-shell .composer-input-shell {
   width: 100%;
-  max-width: var(--work-fold-chat-measure);
+  max-width: var(--amplefile-chat-measure);
   margin-inline: auto;
 }
 :root[data-appearance-palette] .app-shell .chat-panel .message-body,
 :root[data-appearance-palette] .popover .popover-message-body {
-  font-family: var(--work-fold-reading-font);
-  font-size: var(--work-fold-reading-size);
-  line-height: var(--work-fold-reading-leading);
+  font-family: var(--amplefile-reading-font);
+  font-size: var(--amplefile-reading-size);
+  line-height: var(--amplefile-reading-leading);
 }
 :root[data-appearance-palette] .app-shell .chat-panel .message-body,
 :root[data-appearance-palette] .app-shell .chat-panel .message-body :is(h1, h2, h3, h4, h5, h6),
@@ -120,17 +120,17 @@
 :root[data-appearance-palette] .app-shell .chat-panel .message-body h3 { font-size: 1.12em; }
 :root[data-appearance-palette] .app-shell .chat-panel .message-body :is(h4, h5, h6) { font-size: 1em; }
 :root[data-appearance-palette] :is(.message-body, .popover-message-body) > :is(p, ul, ol, blockquote, .message-code-block, .message-table-scroll):not(:last-child) {
-  margin-bottom: var(--work-fold-paragraph-gap);
+  margin-bottom: var(--amplefile-paragraph-gap);
 }
 :root[data-appearance-palette] .app-shell .chat-panel .message-body blockquote { color: var(--ui-text-muted); }
 :root[data-appearance-palette] .app-shell .chat-panel .message-body table,
 :root[data-appearance-palette] .popover .popover-message-body table { font-size: 0.92em; }
 :root[data-appearance-palette] :is(.message-body, .popover-message-body) :is(code, pre),
 :root[data-appearance-palette] .app-shell :is(.file-preview-text, .markdown-preview pre, .markdown-preview code) {
-  font-family: var(--work-fold-monospace-font);
+  font-family: var(--amplefile-monospace-font);
 }
-:root[data-appearance-palette] .app-shell .chat-panel .message-body :is(code, th, td, .message-table-scroll, .message-code-block, .work-folder-file-link-code) { border-color: var(--ui-border); }
-:root[data-appearance-palette] .app-shell .chat-panel .message-body :is(code, th, .work-folder-file-link-code),
+:root[data-appearance-palette] .app-shell .chat-panel .message-body :is(code, th, td, .message-table-scroll, .message-code-block, .connected-folder-file-link-code) { border-color: var(--ui-border); }
+:root[data-appearance-palette] .app-shell .chat-panel .message-body :is(code, th, .connected-folder-file-link-code),
 :root[data-appearance-palette] .app-shell .chat-panel .message-code-toolbar {
   color: var(--ui-text);
   background: var(--ui-surface-subtle);
@@ -140,21 +140,21 @@
 :root[data-appearance-palette] .app-shell .chat-panel .message-body .message-code-block pre code { color: inherit; background: transparent; }
 :root[data-appearance-palette] .app-shell .composer textarea,
 :root[data-appearance-palette] .popover .agent-composer textarea {
-  font-family: var(--work-fold-ui-font);
-  font-size: var(--work-fold-reading-size);
-  line-height: var(--work-fold-reading-leading);
+  font-family: var(--amplefile-ui-font);
+  font-size: var(--amplefile-reading-size);
+  line-height: var(--amplefile-reading-leading);
 }
 
-/* Tinted keeps each work-folder's accent; quiet changes only message treatment,
-   never the work-folder icon, banner, selection, or saved identity. */
+/* Tinted keeps each Connected Folder's accent; quiet changes only message treatment,
+   never the Connected Folder icon, banner, selection, or saved identity. */
 :root[data-appearance-palette] .app-shell .message.user .message-surface {
-  background: var(--work-folder-accent-soft-fill, var(--ui-accent-soft));
-  color: var(--work-folder-accent-text-body, var(--ui-accent));
+  background: var(--connected-folder-accent-soft-fill, var(--ui-accent-soft));
+  color: var(--connected-folder-accent-text-body, var(--ui-accent));
   box-shadow: none;
 }
 :root[data-appearance-palette] .app-shell .chat-panel .message.user .message-body,
-:root[data-appearance-palette] .app-shell .chat-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, a, code, .work-folder-file-link),
-:root[data-appearance-palette] .app-shell .message.user :is(.message-image-external, .message-image-unavailable) { color: var(--work-folder-accent-text-body, var(--ui-accent)); }
+:root[data-appearance-palette] .app-shell .chat-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, a, code, .connected-folder-file-link),
+:root[data-appearance-palette] .app-shell .message.user :is(.message-image-external, .message-image-unavailable) { color: var(--connected-folder-accent-text-body, var(--ui-accent)); }
 :root[data-appearance-palette] .popover .popover-message.user { background: var(--ui-accent-soft); color: var(--ui-accent); }
 :root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .message.user .message-surface,
 :root[data-appearance-palette][data-appearance-messages="quiet"] .popover .popover-message.user {
@@ -162,36 +162,36 @@
   color: var(--ui-text);
 }
 :root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .chat-panel .message.user .message-body,
-:root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .chat-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, a, code, .work-folder-file-link),
+:root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .chat-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, a, code, .connected-folder-file-link),
 :root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .message.user :is(.message-image-external, .message-image-unavailable) { color: var(--ui-text); }
 
 /* Density changes row padding, not glyph scale or content hierarchy. */
-:root[data-appearance-palette] .app-shell :is(.file-row, .chat-work-folder-row-shell),
+:root[data-appearance-palette] .app-shell :is(.file-row, .chat-connected-folder-row-shell),
 :root[data-appearance-palette] .app-shell .settings-window .settings-tab,
 :root[data-appearance-palette] .popover :is(.popover-new-chat, .agent-chat-row) {
-  min-height: var(--work-fold-list-height);
-  padding-block: var(--work-fold-list-padding);
+  min-height: var(--amplefile-list-height);
+  padding-block: var(--amplefile-list-padding);
 }
-:root[data-appearance-palette] .app-shell .file-row { color: var(--ui-text); font-size: var(--work-fold-type-sm); }
-:root[data-appearance-palette] .app-shell .file-row.selected { color: var(--ui-text); background: var(--work-folder-accent-soft-fill, var(--ui-accent-soft)); }
-:root[data-appearance-palette] .app-shell .chat-work-folder-row-title { color: var(--ui-text); }
-:root[data-appearance-palette] .app-shell .chat-work-folder-row-time { color: var(--ui-text-muted); }
-:root[data-appearance-palette] .app-shell .settings-window :is(.settings-tab, .settings-field input, .settings-field select, .settings-section p, .context-meta-grid dt, .context-meta-grid dd) { font-size: var(--work-fold-type-sm); }
-:root[data-appearance-palette] .popover :is(.popover-new-chat, .agent-chat-row) { font-size: var(--work-fold-type-sm); }
-:root[data-appearance-palette] .popover :is(.composer-model, .composer-thinking) { font-size: var(--work-fold-type-xs); }
+:root[data-appearance-palette] .app-shell .file-row { color: var(--ui-text); font-size: var(--amplefile-type-sm); }
+:root[data-appearance-palette] .app-shell .file-row.selected { color: var(--ui-text); background: var(--connected-folder-accent-soft-fill, var(--ui-accent-soft)); }
+:root[data-appearance-palette] .app-shell .chat-connected-folder-row-title { color: var(--ui-text); }
+:root[data-appearance-palette] .app-shell .chat-connected-folder-row-time { color: var(--ui-text-muted); }
+:root[data-appearance-palette] .app-shell .settings-window :is(.settings-tab, .settings-field input, .settings-field select, .settings-section p, .context-meta-grid dt, .context-meta-grid dd) { font-size: var(--amplefile-type-sm); }
+:root[data-appearance-palette] .popover :is(.popover-new-chat, .agent-chat-row) { font-size: var(--amplefile-type-sm); }
+:root[data-appearance-palette] .popover :is(.composer-model, .composer-thinking) { font-size: var(--amplefile-type-xs); }
 
 :root[data-appearance-palette] .app-shell .send-button:not(.stop-send-button):not(:disabled) {
-  background: var(--work-folder-accent-solid, var(--ui-accent-solid));
-  color: var(--work-folder-on-accent-solid, var(--ui-on-accent));
+  background: var(--connected-folder-accent-solid, var(--ui-accent-solid));
+  color: var(--connected-folder-on-accent-solid, var(--ui-on-accent));
 }
 :root[data-appearance-palette] .app-shell .send-button:not(.stop-send-button):hover:not(:disabled) {
-  background: color-mix(in srgb, var(--work-folder-accent-solid, var(--ui-accent-solid)) 28%, var(--ui-surface));
+  background: color-mix(in srgb, var(--connected-folder-accent-solid, var(--ui-accent-solid)) 28%, var(--ui-surface));
   color: var(--ui-text);
   box-shadow: none;
   filter: none;
 }
 :root[data-appearance-palette] .app-shell .send-button:not(.stop-send-button):active:not(:disabled) {
-  background: color-mix(in srgb, var(--work-folder-accent-solid, var(--ui-accent-solid)) 38%, var(--ui-surface));
+  background: color-mix(in srgb, var(--connected-folder-accent-solid, var(--ui-accent-solid)) 38%, var(--ui-surface));
   color: var(--ui-text);
   box-shadow: none;
   filter: none;
@@ -201,21 +201,21 @@
 :root[data-appearance-palette] .popover :is(button, input, select, textarea, [tabindex]):focus-visible {
   outline-color: var(--ui-focus);
 }
-:root[data-appearance-palette] .app-shell .file-row:focus-visible { box-shadow: inset 0 0 0 2px var(--work-folder-accent-border-state, var(--ui-focus)); }
+:root[data-appearance-palette] .app-shell .file-row:focus-visible { box-shadow: inset 0 0 0 2px var(--connected-folder-accent-border-state, var(--ui-focus)); }
 
 /* The hook combines explicit choices with OS preferences. These selectors also
    cover a native vibrancy/Mica window without changing the native material. */
 :root[data-appearance-transparency="opaque"],
 :root[data-appearance-transparency="opaque"] :is(body, #root),
 :root[data-appearance-transparency="opaque"] .app-shell,
-:root[data-appearance-transparency="opaque"] .app-shell .work-folder-layout { background: var(--ui-canvas); }
-:root[data-appearance-transparency="opaque"] .app-shell .work-folder-layout .professional-work-folder-rail { background: var(--ui-surface-subtle); }
-:root[data-appearance-transparency="opaque"] .app-shell .work-folder-layout .work-folder-mode-pane,
+:root[data-appearance-transparency="opaque"] .app-shell .connected-folder-layout { background: var(--ui-canvas); }
+:root[data-appearance-transparency="opaque"] .app-shell .connected-folder-layout .professional-connected-folder-rail { background: var(--ui-surface-subtle); }
+:root[data-appearance-transparency="opaque"] .app-shell .connected-folder-layout .connected-folder-mode-pane,
 :root[data-appearance-transparency="opaque"] .desktop-titlebar,
 :root[data-appearance-transparency="opaque"] .popover { background: var(--ui-surface); }
 :root[data-appearance-transparency="opaque"] :is(.context-menu, .composer-command-menu, .drop-overlay) { backdrop-filter: none; background: var(--ui-surface); }
 
-:root[data-appearance-contrast="more"] .app-shell :is(.message-time, .message-copy-button, .chat-work-folder-row-actions),
+:root[data-appearance-contrast="more"] .app-shell :is(.message-time, .message-copy-button, .chat-connected-folder-row-actions),
 :root[data-appearance-contrast="more"] .popover .working-elapsed { opacity: 1; color: var(--ui-text-muted); }
 :root[data-appearance-contrast="more"] :is(button, input, select, textarea):focus-visible { outline-width: 3px; outline-style: solid; }
 
@@ -245,7 +245,7 @@
 }
 
 @media (pointer: coarse) {
-  :root[data-appearance-palette] .app-shell :is(.file-row, .chat-work-folder-row-shell),
+  :root[data-appearance-palette] .app-shell :is(.file-row, .chat-connected-folder-row-shell),
   :root[data-appearance-palette] .app-shell .settings-window .settings-tab,
-  :root[data-appearance-palette] .popover :is(.popover-new-chat, .agent-chat-row) { min-height: max(44px, var(--work-fold-list-height)); }
+  :root[data-appearance-palette] .popover :is(.popover-new-chat, .agent-chat-row) { min-height: max(44px, var(--amplefile-list-height)); }
 }

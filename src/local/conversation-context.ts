@@ -7,7 +7,7 @@ import JSZip from "jszip";
 import { SaxesParser, type SaxesTagNS } from "saxes";
 
 import { OFFICE_OPEN_DOCUMENT_READ_NOTE, officeDocumentLockPresent } from "./office-lock-files.js";
-import { resolveWorkFolderPath } from "./work-folder.js";
+import { resolveConnectedFolderPath } from "./connected-folder.js";
 
 export type ConversationContextMode = "full_original_text" | "full_extracted_text" | "image" | "path_only_reference";
 
@@ -51,22 +51,22 @@ export interface LoadedConversationContextAttachment extends ConversationContext
 }
 
 export async function previewConversationContextAttachment(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   input: { path: string },
 ): Promise<ConversationContextAttachment> {
-  const loaded = await loadAttachment(workFolderRoot, normalizePath(input.path), chatContextBudgetTokens(), chatContextBudgetTokens());
+  const loaded = await loadAttachment(connectedFolderRoot, normalizePath(input.path), chatContextBudgetTokens(), chatContextBudgetTokens());
   const { text: _text, image: _image, ...attachment } = loaded;
   return { ...attachment, budgetStatus: "preview", detail: `${attachment.detail} This is an extraction preview. Inline inclusion is decided when sending, using the selected model and current conversation; the file path remains available to tools.` };
 }
 
-/** Staging a work-folder file or folder attaches its path, without reading or extracting its body. */
+/** Staging a Connected Folder file or folder attaches its path, without reading or extracting its body. */
 export async function previewConversationContextReference(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   input: { path: string },
 ): Promise<ConversationContextAttachment> {
   const sourcePath = normalizePath(input.path);
   if (!sourcePath) throw new Error("Choose a file to attach.");
-  const path = resolveWorkFolderPath(workFolderRoot, sourcePath);
+  const path = resolveConnectedFolderPath(connectedFolderRoot, sourcePath);
   const info = await stat(path).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT" || error.code === "ENOTDIR") throw new Error(`File not found: ${sourcePath}`);
     throw error;
@@ -90,7 +90,7 @@ export async function previewConversationContextReference(
 
 /** Workers inspect original files with tools; images retain native vision admission. */
 export async function loadConversationContextReferencesForTurn(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   paths: string[],
   availableTokens?: number,
 ): Promise<LoadedConversationContextAttachment[]> {
@@ -99,9 +99,9 @@ export async function loadConversationContextReferencesForTurn(
   const result: LoadedConversationContextAttachment[] = [];
   for (const sourcePath of [...new Set(paths.map(normalizePath).filter(Boolean))]) {
     try {
-      const reference = await previewConversationContextReference(workFolderRoot, { path: sourcePath });
+      const reference = await previewConversationContextReference(connectedFolderRoot, { path: sourcePath });
       if (imageExtensions.has(extname(sourcePath).toLowerCase())) {
-        const image = await loadAttachment(workFolderRoot, sourcePath, remaining, budgetTokens);
+        const image = await loadAttachment(connectedFolderRoot, sourcePath, remaining, budgetTokens);
         if (image.mode === "image" || image.mode === "path_only_reference") {
           if (image.includedInPrompt) remaining -= image.estimatedTokens;
           result.push(image);
@@ -121,7 +121,7 @@ export async function loadConversationContextReferencesForTurn(
 }
 
 export async function loadConversationContextAttachmentsForTurn(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   paths: string[],
   availableTokens?: number,
 ): Promise<LoadedConversationContextAttachment[]> {
@@ -129,7 +129,7 @@ export async function loadConversationContextAttachmentsForTurn(
   let remaining = budgetTokens;
   const result: LoadedConversationContextAttachment[] = [];
   for (const sourcePath of [...new Set(paths.map(normalizePath).filter(Boolean))]) {
-    const attachment = await loadAttachment(workFolderRoot, sourcePath, remaining, budgetTokens);
+    const attachment = await loadAttachment(connectedFolderRoot, sourcePath, remaining, budgetTokens);
     if (attachment.includedInPrompt) remaining -= attachment.estimatedTokens;
     result.push(attachment);
   }
@@ -137,7 +137,7 @@ export async function loadConversationContextAttachmentsForTurn(
 }
 
 async function loadAttachment(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   sourcePath: string,
   remaining: number,
   budgetTokens: number,
@@ -146,7 +146,7 @@ async function loadAttachment(
   let sourceSizeBytes = 0;
   try {
     if (!sourcePath) throw new Error("Choose a file to attach to chat context.");
-    const path = resolveWorkFolderPath(workFolderRoot, sourcePath);
+    const path = resolveConnectedFolderPath(connectedFolderRoot, sourcePath);
     const info = await stat(path);
     if (!info.isFile()) throw new Error("Only files can be attached to chat context.");
     sourceSizeBytes = info.size;
@@ -684,13 +684,13 @@ function pathOnlyAttachment(input: {
     mode: "path_only_reference",
     includedInPrompt: false,
     userLabel: "Path only",
-    detail: `The work-folder-relative path is attached. Pi can inspect the file with tools. Reason: ${input.reason}`,
+    detail: `The Connected Folder–relative path is attached. Pi can inspect the file with tools. Reason: ${input.reason}`,
     text: null,
   };
 }
 
 export function chatContextBudgetTokens(availableTokens = Math.ceil(64 * 1024 * 1024 / 3.5)): number {
-  const configured = Number(process.env.WORKFOLD_CHAT_CONTEXT_BUDGET_TOKENS);
+  const configured = Number(process.env.AMPLEFILE_CHAT_CONTEXT_BUDGET_TOKENS);
   // Without a live model this is only the extraction-memory bound, not a
   // promise that this much text fits a prompt. Production dispatch supplies
   // the live remaining capacity. An explicit user configuration may narrow it.

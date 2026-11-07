@@ -1,0 +1,415 @@
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
+$pathManagementFlag = '--amplefile-installer-manage-user-path'
+if ($args.Count -gt 0 -and [string]$args[0] -ceq $pathManagementFlag) {
+  try {
+    if ($args.Count -ne 3 -or @('install', 'uninstall') -notcontains [string]$args[1]) {
+      throw 'Invalid installer PATH management request.'
+    }
+    $action = [string]$args[1]
+    $target = ([string]$args[2]).Trim().TrimEnd('\')
+    if ([string]::IsNullOrWhiteSpace($target)) {
+      throw 'The installer CLI bin path is empty.'
+    }
+    $registryKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+    if ($null -eq $registryKey -and $action -eq 'install') {
+      $registryKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+    }
+    if ($null -eq $registryKey) {
+      exit 0
+    }
+    try {
+      $currentValue = $registryKey.GetValue(
+        'Path',
+        '',
+        [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
+      )
+      $currentPath = if ($null -eq $currentValue) { '' } else { [string]$currentValue }
+      $matchesTarget = {
+        param([string]$entry)
+        [string]::Equals($entry.Trim().TrimEnd('\'), $target, [StringComparison]::OrdinalIgnoreCase)
+      }
+      if ($action -eq 'install') {
+        if ($currentPath.Split(';') | Where-Object { & $matchesTarget $_ }) {
+          exit 0
+        }
+        $nextPath = if ([string]::IsNullOrEmpty($currentPath)) {
+          $target
+        } elseif ($currentPath.EndsWith(';', [StringComparison]::Ordinal)) {
+          "$currentPath$target"
+        } else {
+          "$currentPath;$target"
+        }
+        $registryKey.SetValue('Path', $nextPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+      } else {
+        $removed = $false
+        $keptEntries = [Collections.Generic.List[string]]::new()
+        foreach ($entry in $currentPath.Split(';')) {
+          if (& $matchesTarget $entry) {
+            $removed = $true
+          } else {
+            $keptEntries.Add($entry)
+          }
+        }
+        if (-not $removed) {
+          exit 0
+        }
+        $nextPath = [string]::Join(';', $keptEntries)
+        if ([string]::IsNullOrEmpty($nextPath)) {
+          $registryKey.DeleteValue('Path', $false)
+        } else {
+          $registryKey.SetValue('Path', $nextPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+        }
+      }
+    } finally {
+      $registryKey.Dispose()
+    }
+    exit 0
+  } catch {
+    [Console]::Error.Write("amplefile installer: $($_.Exception.Message)$([Environment]::NewLine)")
+    exit 1
+  }
+}
+
+$script:ActUnavailableMessage = 'Open AmpleFile to run this command. Act commands need the AmpleFile app running.'
+$script:ActMaxMessageFileBytes = 16777216
+$script:MaxWaitSeconds = 2592000
+
+function Test-AmpleFileActCommand {
+  param([string[]]$CommandArguments)
+  # Help for any family is content-free and works without the app running.
+  if ($CommandArguments -ccontains '--help' -or $CommandArguments -ccontains '-h') { return $false }
+  $positional = @($CommandArguments | Where-Object { $_ -cne '--json' })
+  $group = if ($positional.Count -gt 0) { [string]$positional[0] } else { '' }
+  $actGroups = @(
+    'chat', 'chats', 'files', 'agent', 'history', 'search',
+    'tools', 'apps', 'automations', 'recently-deleted', 'requests', 'jobs', 'worktrees'
+  )
+  if ($actGroups -contains $group) { return $true }
+  # Page folders (docs/pages.md): check one.
+  if ($group -ceq 'pages') { return $positional.Count -ge 2 -and @('validate') -ccontains [string]$positional[1] }
+  if ($group -ceq 'checks') { return $positional.Count -lt 2 -or [string]$positional[1] -cne 'status' }
+  if ($group -ceq 'connected-folders') { return $positional.Count -lt 2 -or [string]$positional[1] -cne 'list' }
+  return $false
+}
+
+function Read-AmpleFileActToken {
+  param([string]$CliRoot)
+  $tokenPath = Join-Path $CliRoot 'act-token.json'
+  if (-not [IO.File]::Exists($tokenPath)) { return $null }
+  try {
+    $record = [IO.File]::ReadAllText($tokenPath, [System.Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
+    if ($record.version -ne 1) { return $null }
+    $token = [string]$record.actToken
+    if ($token -notmatch '^[A-Za-z0-9_-]{16,256}$') { return $null }
+    return $token
+  } catch {
+    return $null
+  }
+}
+
+function Invoke-AmpleFileRequest {
+  param(
+    [string[]]$RequestArguments,
+    [string]$ActToken,
+    [object]$Payload
+  )
+  $requestId = [Guid]::NewGuid().ToString('D')
+  $requestDirectory = Join-Path $script:AmpleFileCliRoot 'requests'
+  $responseDirectory = Join-Path $script:AmpleFileCliRoot 'responses'
+  $requestPath = Join-Path $requestDirectory "$requestId.json"
+  $responsePath = Join-Path $responseDirectory "$requestId.json"
+  $temporaryRequestPath = Join-Path $requestDirectory "$requestId.$([Guid]::NewGuid().ToString('D')).tmp"
+  try {
+    if ([string]::IsNullOrEmpty($ActToken)) {
+      $request = [ordered]@{
+        protocolVersion = 1
+        id = $requestId
+        argv = $RequestArguments
+        cwd = $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.ProviderPath
+        createdAt = [DateTimeOffset]::UtcNow.ToString('o', [Globalization.CultureInfo]::InvariantCulture)
+      }
+    } else {
+      $request = [ordered]@{
+        protocolVersion = 3
+        lane = 'act'
+        id = $requestId
+        argv = $RequestArguments
+        cwd = $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.ProviderPath
+        createdAt = [DateTimeOffset]::UtcNow.ToString('o', [Globalization.CultureInfo]::InvariantCulture)
+        actToken = $ActToken
+      }
+      if ($null -ne $Payload) {
+        $request['payload'] = $Payload
+      }
+    }
+    $requestJson = $request | ConvertTo-Json -Compress -Depth 6
+    $requestBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($requestJson)
+    $requestStream = [IO.FileStream]::new(
+      $temporaryRequestPath,
+      [IO.FileMode]::CreateNew,
+      [IO.FileAccess]::Write,
+      [IO.FileShare]::None
+    )
+    try {
+      $requestStream.Write($requestBytes, 0, $requestBytes.Length)
+      $requestStream.Flush($true)
+    } finally {
+      $requestStream.Dispose()
+    }
+    [IO.File]::Move($temporaryRequestPath, $requestPath)
+    $temporaryRequestPath = $null
+
+    Start-Process -FilePath $script:AmpleFileAppPath -ArgumentList @('--amplefile-cli-request', $requestId) -WindowStyle Hidden | Out-Null
+
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    while (-not [IO.File]::Exists($responsePath)) {
+      if ($timer.ElapsedMilliseconds -ge $script:AmpleFileCliTimeoutMs) {
+        throw [TimeoutException]::new("AmpleFile did not answer CLI request $requestId within $($script:AmpleFileCliTimeoutMs) ms.")
+      }
+      Start-Sleep -Milliseconds 50
+    }
+
+    $response = [IO.File]::ReadAllText($responsePath, [System.Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
+    if ($response.protocolVersion -ne 1) {
+      throw "AmpleFile returned unsupported CLI protocol version $($response.protocolVersion)."
+    }
+    if ([string]$response.id -cne $requestId) {
+      throw 'AmpleFile returned a CLI response with the wrong request id.'
+    }
+    return [pscustomobject]@{
+      ExitCode = [Convert]::ToInt32($response.exitCode, [Globalization.CultureInfo]::InvariantCulture)
+      Stdout = [string]$response.stdout
+      Stderr = [string]$response.stderr
+    }
+  } finally {
+    foreach ($path in @($temporaryRequestPath, $requestPath, $responsePath)) {
+      if (-not [string]::IsNullOrWhiteSpace($path) -and [IO.File]::Exists($path)) {
+        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+      }
+    }
+  }
+}
+
+function ConvertTo-AmpleFileActArguments {
+  # Rewrites --message-file <path> into a bounded payload the host can trust.
+  param([string[]]$CommandArguments)
+  $rewritten = [Collections.Generic.List[string]]::new()
+  $payload = $null
+  for ($index = 0; $index -lt $CommandArguments.Count; $index += 1) {
+    $token = [string]$CommandArguments[$index]
+    if ($token -cne '--message-file') {
+      $rewritten.Add($token)
+      continue
+    }
+    if ($index + 1 -ge $CommandArguments.Count) {
+      throw New-AmpleFileUsageError '--message-file requires a path.'
+    }
+    if ($null -ne $payload) {
+      throw New-AmpleFileUsageError '--message-file may be provided only once.'
+    }
+    $messagePath = [IO.Path]::GetFullPath([string]$CommandArguments[$index + 1])
+    $index += 1
+    $messageText = [IO.File]::ReadAllText($messagePath, [System.Text.UTF8Encoding]::new($false))
+    if ([System.Text.UTF8Encoding]::new($false).GetByteCount($messageText) -gt $script:ActMaxMessageFileBytes) {
+      throw New-AmpleFileUsageError "--message-file exceeds $($script:ActMaxMessageFileBytes) bytes."
+    }
+    $payload = [ordered]@{ messageFile = $messageText }
+    $rewritten.Add('--message-from-payload')
+  }
+  return [pscustomobject]@{ Arguments = $rewritten.ToArray(); Payload = $payload }
+}
+
+function Get-AmpleFileChatWaitPlan {
+  param([string[]]$CommandArguments)
+  $positional = @($CommandArguments | Where-Object { $_ -cne '--json' })
+  if ($positional.Count -lt 2 -or $positional[1] -cne 'wait') { return $null }
+  $group = [string]$positional[0]
+  if (@('chat', 'agent', 'checks') -notcontains $group) { return $null }
+  $plan = [ordered]@{ Group = $group; ConnectedFolder = ''; Task = ''; TimeoutSeconds = 3600; Json = $CommandArguments -ccontains '--json' }
+  for ($index = 0; $index -lt $CommandArguments.Count; $index += 1) {
+    $token = [string]$CommandArguments[$index]
+    switch ($token) {
+      '--connected-folder' { $plan.ConnectedFolder = [string]$CommandArguments[$index + 1]; $index += 1 }
+      '--task' { $plan.Task = [string]$CommandArguments[$index + 1]; $index += 1 }
+      '--timeout' {
+        $timeoutSeconds = 0
+        if (-not [int]::TryParse([string]$CommandArguments[$index + 1], [ref]$timeoutSeconds) -or $timeoutSeconds -lt 1 -or $timeoutSeconds -gt $script:MaxWaitSeconds) {
+          throw New-AmpleFileUsageError "--timeout must be an integer between 1 and $($script:MaxWaitSeconds) seconds."
+        }
+        $plan.TimeoutSeconds = $timeoutSeconds
+        $index += 1
+      }
+      $group { }
+      'wait' { }
+      '--json' { }
+      default { throw New-AmpleFileUsageError "Unknown option for $group wait: $token" }
+    }
+  }
+  if ((@('chat', 'checks') -contains $group) -and [string]::IsNullOrWhiteSpace($plan.ConnectedFolder)) { throw New-AmpleFileUsageError 'Act commands require an explicit --connected-folder <id-or-name>.' }
+  if ($group -ceq 'agent' -and -not [string]::IsNullOrWhiteSpace($plan.ConnectedFolder)) { throw New-AmpleFileUsageError "The AmpleFile agent sits above Connected Folders, so 'agent wait' takes no --connected-folder." }
+  if ([string]::IsNullOrWhiteSpace($plan.Task)) {
+    $source = if ($group -ceq 'checks') { 'checks run' } else { "$group send" }
+    throw New-AmpleFileUsageError "Provide --task <id> from $source."
+  }
+  return [pscustomobject]$plan
+}
+
+function Invoke-AmpleFileChatWait {
+  param([pscustomobject]$Plan, [string]$ActToken)
+  # Waiting is task-scoped: it follows the exact turn the send accepted, so
+  # an older assistant message can never read as this turn's success.
+  # The loop settles on two things and says which: the turn reached a
+  # terminal state (then the result is printed), or the task is waiting on
+  # an answer (then the status document with its `waiting` field is
+  # printed, exit 0). A parent never sits on a child's question.
+  $statusArguments = [Collections.Generic.List[string]]::new()
+  $statusVerb = if ($Plan.Group -ceq 'checks') { 'task' } else { 'status' }
+  $statusArguments.AddRange([string[]]@($Plan.Group, $statusVerb))
+  if ((@('chat', 'checks') -contains $Plan.Group)) { $statusArguments.AddRange([string[]]@('--connected-folder', $Plan.ConnectedFolder)) }
+  $statusArguments.AddRange([string[]]@('--task', $Plan.Task))
+  $humanStatusArguments = $statusArguments.ToArray()
+  $statusArguments.Add('--json')
+  $deadline = [DateTimeOffset]::UtcNow.AddSeconds($Plan.TimeoutSeconds)
+  for (;;) {
+    $status = Invoke-AmpleFileRequest -RequestArguments $statusArguments.ToArray() -ActToken $ActToken -Payload $null
+    if ($status.ExitCode -ne 0) {
+      Write-AmpleFileOutcome $status
+      return $status.ExitCode
+    }
+    $state = ''
+    $waiting = $null
+    $requestState = ""
+    try {
+      $data = ($status.Stdout | ConvertFrom-Json).data
+      $state = [string]$data.task.state
+      $waiting = $data.waiting
+      if ($data.requestGraph) { $requestState = [string]$data.requestGraph.state }
+      elseif ($data.request) { $requestState = [string]$data.request.state }
+    } catch {
+      throw 'AmpleFile returned an unreadable task status.'
+    }
+    if ($null -ne $waiting -or $requestState -eq "waiting") {
+      if ($Plan.Json) {
+        Write-AmpleFileOutcome $status
+        return 0
+      }
+      $humanStatus = Invoke-AmpleFileRequest -RequestArguments $humanStatusArguments -ActToken $ActToken -Payload $null
+      Write-AmpleFileOutcome $humanStatus
+      return $humanStatus.ExitCode
+    }
+    if ($requestState) {
+      if (@('working', 'handed_off') -notcontains $requestState) { break }
+    } elseif (@('accepted', 'running') -notcontains $state) { break }
+    if ([DateTimeOffset]::UtcNow -ge $deadline) {
+      [Console]::Error.Write("amplefile: $($Plan.Group) wait timed out after $($Plan.TimeoutSeconds)s.$([Environment]::NewLine)")
+      return 7
+    }
+    Start-Sleep -Seconds 2
+  }
+  $resultArguments = [Collections.Generic.List[string]]::new()
+  $resultArguments.AddRange([string[]]@($Plan.Group, 'result'))
+  if ((@('chat', 'checks') -contains $Plan.Group)) { $resultArguments.AddRange([string[]]@('--connected-folder', $Plan.ConnectedFolder)) }
+  $resultArguments.AddRange([string[]]@('--task', $Plan.Task))
+  if ($Plan.Json) { $resultArguments.Add('--json') }
+  $result = Invoke-AmpleFileRequest -RequestArguments $resultArguments.ToArray() -ActToken $ActToken -Payload $null
+  Write-AmpleFileOutcome $result
+  return $result.ExitCode
+}
+
+function Write-AmpleFileOutcome {
+  param([pscustomobject]$Outcome)
+  [Console]::Out.Write([string]$Outcome.Stdout)
+  [Console]::Error.Write([string]$Outcome.Stderr)
+}
+
+function New-AmpleFileUsageError {
+  param([string]$Message)
+  $usageError = [Exception]::new("$Message`nRun 'amplefile help' for usage.")
+  $usageError.Data['ampleFileExitCode'] = 2
+  return $usageError
+}
+
+$commandArguments = [string[]]@($args)
+$exitCode = 1
+
+try {
+  $appData = $env:APPDATA
+  if ([string]::IsNullOrWhiteSpace($appData)) {
+    $appData = [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
+  }
+  if ([string]::IsNullOrWhiteSpace($appData)) {
+    throw 'The current user AppData directory could not be resolved.'
+  }
+
+  $appPath = if ([string]::IsNullOrWhiteSpace($env:AMPLEFILE_CLI_APP)) {
+    Join-Path $PSScriptRoot '..\AmpleFile.exe'
+  } else {
+    $env:AMPLEFILE_CLI_APP
+  }
+  $appPath = [IO.Path]::GetFullPath($appPath)
+  if (-not [IO.File]::Exists($appPath)) {
+    throw "AmpleFile executable was not found at $appPath."
+  }
+
+  $stateDirectory = if ([string]::IsNullOrWhiteSpace($env:AMPLEFILE_CLI_STATE_DIR)) {
+    $uninstallerPath = Join-Path ([IO.Path]::GetDirectoryName($appPath)) 'Uninstall AmpleFile.exe'
+    $stateName = if ([IO.File]::Exists($uninstallerPath)) { 'AmpleFile' } else { 'AmpleFile Development' }
+    Join-Path $appData $stateName
+  } else {
+    $env:AMPLEFILE_CLI_STATE_DIR
+  }
+  $stateDirectory = [IO.Path]::GetFullPath($stateDirectory)
+
+  $timeoutMs = 1800000
+  if (-not [string]::IsNullOrWhiteSpace($env:AMPLEFILE_CLI_TIMEOUT_MS)) {
+    $configuredTimeout = 0
+    if (-not [int]::TryParse($env:AMPLEFILE_CLI_TIMEOUT_MS, [ref]$configuredTimeout) -or $configuredTimeout -lt 100) {
+      throw 'AMPLEFILE_CLI_TIMEOUT_MS must be an integer of at least 100.'
+    }
+    $timeoutMs = $configuredTimeout
+  }
+
+  $script:AmpleFileAppPath = $appPath
+  $script:AmpleFileCliRoot = Join-Path $stateDirectory 'cli'
+  $script:AmpleFileCliTimeoutMs = $timeoutMs
+  [IO.Directory]::CreateDirectory((Join-Path $script:AmpleFileCliRoot 'requests')) | Out-Null
+  [IO.Directory]::CreateDirectory((Join-Path $script:AmpleFileCliRoot 'responses')) | Out-Null
+
+  if (Test-AmpleFileActCommand -CommandArguments $commandArguments) {
+    # Every act family other than the content-free reads rides the separately
+    # versioned act lane and requires the per-launch token the running app
+    # minted.
+    $actToken = Read-AmpleFileActToken -CliRoot $script:AmpleFileCliRoot
+    if ([string]::IsNullOrEmpty($actToken)) {
+      [Console]::Error.Write("amplefile: $($script:ActUnavailableMessage)$([Environment]::NewLine)")
+      exit 6
+    }
+    $waitPlan = Get-AmpleFileChatWaitPlan -CommandArguments $commandArguments
+    if ($null -ne $waitPlan) {
+      $exitCode = Invoke-AmpleFileChatWait -Plan $waitPlan -ActToken $actToken
+    } else {
+      $prepared = ConvertTo-AmpleFileActArguments -CommandArguments $commandArguments
+      $outcome = Invoke-AmpleFileRequest -RequestArguments $prepared.Arguments -ActToken $actToken -Payload $prepared.Payload
+      Write-AmpleFileOutcome $outcome
+      $exitCode = $outcome.ExitCode
+    }
+  } else {
+    $outcome = Invoke-AmpleFileRequest -RequestArguments $commandArguments -ActToken '' -Payload $null
+    Write-AmpleFileOutcome $outcome
+    $exitCode = $outcome.ExitCode
+  }
+} catch [TimeoutException] {
+  $exitCode = 124
+  [Console]::Error.Write("amplefile: $($_.Exception.Message)$([Environment]::NewLine)")
+} catch {
+  $exitCode = 1
+  if ($_.Exception.Data.Contains('ampleFileExitCode')) {
+    $exitCode = [int]$_.Exception.Data['ampleFileExitCode']
+  }
+  [Console]::Error.Write("amplefile: $($_.Exception.Message)$([Environment]::NewLine)")
+}
+
+exit $exitCode

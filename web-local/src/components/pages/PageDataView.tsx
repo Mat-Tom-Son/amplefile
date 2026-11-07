@@ -45,7 +45,7 @@ interface TableChoice {
  * without strain.
  */
 export function PageDataView({
-  workFolderId,
+  connectedFolderId,
   path,
   title,
   client,
@@ -56,7 +56,7 @@ export function PageDataView({
   viewId,
   onTryInPreview,
 }: {
-  workFolderId: string;
+  connectedFolderId: string;
   path: string;
   title: string;
   client: PageEntriesClient;
@@ -68,7 +68,7 @@ export function PageDataView({
   viewId: string;
   onTryInPreview: () => void;
 }) {
-  const tableKey = `work-fold.page.data-table:${workFolderId}:${path}`;
+  const tableKey = `amplefile.page.data-table:${connectedFolderId}:${path}`;
   const [storedTable, setStoredTable] = useState<string | null>(() => readStoredJsonValue<string | null>(tableKey, (value) => typeof value === "string" ? value : null, null));
   const [markSince, setMarkSince] = useState<Record<string, string | null>>({});
   const ids = useId();
@@ -105,7 +105,7 @@ export function PageDataView({
     const lastSeen = live?.lastSeen ?? null;
     setMarkSince((current) => tableName in current ? current : { ...current, [tableName]: lastSeen });
     const timer = window.setTimeout(() => {
-      void client.seen(workFolderId, path, tableName).then((seen) => markSeen(tableName, seen)).catch(() => undefined);
+      void client.seen(connectedFolderId, path, tableName).then((seen) => markSeen(tableName, seen)).catch(() => undefined);
     }, 1200);
     return () => window.clearTimeout(timer);
     // Seen again whenever the entries change while the person is looking.
@@ -143,7 +143,7 @@ export function PageDataView({
           {table ? (
             <PageTableGrid
               key={table.name}
-              workFolderId={workFolderId}
+              connectedFolderId={connectedFolderId}
               path={path}
               pageTitle={title}
               table={table}
@@ -174,7 +174,7 @@ function tableChoices(declared: readonly DeclaredTable[], summaries: readonly Pa
 }
 
 function PageTableGrid({
-  workFolderId,
+  connectedFolderId,
   path,
   pageTitle,
   table,
@@ -187,7 +187,7 @@ function PageTableGrid({
   onReload,
   onTryInPreview,
 }: {
-  workFolderId: string;
+  connectedFolderId: string;
   path: string;
   pageTitle: string;
   table: TableChoice;
@@ -202,7 +202,7 @@ function PageTableGrid({
   onTryInPreview: () => void;
 }) {
   const tableName = table.name;
-  const hiddenKey = `work-fold.page.data-hidden:${workFolderId}:${path}:${tableName}`;
+  const hiddenKey = `amplefile.page.data-hidden:${connectedFolderId}:${path}:${tableName}`;
   const [showDeleted, setShowDeleted] = useState(false);
   const [query, setQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -231,7 +231,7 @@ function PageTableGrid({
   const newCount = showDeleted ? 0 : state?.live ? newEntryCount(state.live, since) : table.summary?.newCount ?? 0;
   const activeFilters = Object.entries(filters).filter(([key, value]) => value.trim() && shownColumns.some((column) => column.key === key)).length;
   // A change made here reaches the page in Preview.
-  const announce = () => announcePageDataChange({ workFolderId, page: path, table: tableName, source: viewId });
+  const announce = () => announcePageDataChange({ connectedFolderId, page: path, table: tableName, source: viewId });
 
   // Selections only hold entries that are still here.
   useEffect(() => {
@@ -266,7 +266,7 @@ function PageTableGrid({
     if (!rowIds.length || busy) return;
     setBusy(true);
     try {
-      const count = await client.remove(workFolderId, path, tableName, rowIds);
+      const count = await client.remove(connectedFolderId, path, tableName, rowIds);
       setChecked(new Set());
       if (selectedId && rowIds.includes(selectedId)) setSelectedId(null);
       onReload();
@@ -288,7 +288,7 @@ function PageTableGrid({
     if (!rowIds.length) return;
     setBusy(true);
     try {
-      const count = await client.restore(workFolderId, path, tableName, rowIds);
+      const count = await client.restore(connectedFolderId, path, tableName, rowIds);
       setChecked(new Set());
       if (selectedId && rowIds.includes(selectedId)) setSelectedId(null);
       onReload();
@@ -303,7 +303,7 @@ function PageTableGrid({
 
   async function saveValue(row: PageRow, column: GridColumn, raw: string): Promise<string | null> {
     try {
-      await client.update(workFolderId, path, tableName, row.id, { [column.key]: editedValue(raw, column) });
+      await client.update(connectedFolderId, path, tableName, row.id, { [column.key]: editedValue(raw, column) });
       onReload();
       announce();
       return null;
@@ -316,7 +316,7 @@ function PageTableGrid({
     if (exporting) return;
     setExporting(true);
     try {
-      const blob = await client.exportCsv(workFolderId, path, tableName);
+      const blob = await client.exportCsv(connectedFolderId, path, tableName);
       saveSpreadsheet(blob, single ? pageTitle : `${pageTitle} - ${humanizeName(tableName)}`);
     } catch (error) {
       showToast({ text: errorText(error), tone: "error" });

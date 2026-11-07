@@ -1,12 +1,12 @@
 /**
  * The built-in browser (docs/built-in-browser.md): one set of browser tabs
- * that belongs to no work-folder. Every work-folder's tab strip shows them,
- * and every Worker and the work-fold agent can use them. These are the shapes
+ * that belongs to no Connected Folder. Every Connected Folder's tab strip shows them,
+ * and every Worker and the AmpleFile agent can use them. These are the shapes
  * the desktop host, the renderer, and the agent tools share.
  */
 
 /** One persistent profile for every browser tab: cookies and sign-ins survive restarts. */
-export const browserPartition = "persist:work-fold-browser";
+export const browserPartition = "persist:amplefile-browser";
 
 /** Where a search typed into the address bar goes. */
 export const browserSearchUrl = "https://www.google.com/search?q=";
@@ -83,7 +83,7 @@ export interface BrowserPageState {
   zoomPercent: number;
   /** The last tab or pop-up the site tried to open without a click, held for the person. */
   blockedPopup: { url: string; origin: string | null } | null;
-  /** The Chat whose Worker is using this page right now; `owner` is `<work-folder id>/<conversation id>`. */
+  /** The Chat whose Worker is using this page right now; `owner` is `<connected-folder id>/<conversation id>`. */
   worker: { owner: string } | null;
 }
 
@@ -208,7 +208,7 @@ export interface BrowserDownloadRecord {
  * desktop app; a development API without Electron gives Workers no browser.
  */
 /**
- * Who is calling: `owner` names the Chat (`<work-folder id>/<conversation id>`).
+ * Who is calling: `owner` names the Chat (`<connected-folder id>/<conversation id>`).
  * Tabs it opens are its own to close, and the person sees which Chat's
  * Worker is using a page.
  */

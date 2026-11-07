@@ -24,30 +24,30 @@ interface LegacyModelPreferencesFile {
 }
 
 /**
- * Machine-local model choices for each portable work-folder identity and for the
- * work-fold agent. Provider credentials remain in Pi's shared AuthStorage.
+ * Machine-local model choices for each portable Connected Folder identity and for the
+ * AmpleFile agent. Provider credentials remain in Pi's shared AuthStorage.
  */
 export class ModelPreferenceStore {
   readonly #filePath: string;
-  readonly #workFoldAgentRootPath?: string;
+  readonly #ampleFileAgentRootPath?: string;
   #writeQueue = Promise.resolve();
 
-  constructor(options: { filePath: string; workFoldAgentRootPath?: string }) {
+  constructor(options: { filePath: string; ampleFileAgentRootPath?: string }) {
     this.#filePath = options.filePath;
-    this.#workFoldAgentRootPath = options.workFoldAgentRootPath ? rootKey(options.workFoldAgentRootPath) : undefined;
+    this.#ampleFileAgentRootPath = options.ampleFileAgentRootPath ? rootKey(options.ampleFileAgentRootPath) : undefined;
   }
 
-  async get(workFolderRoot: string): Promise<PiPreferredModel | undefined> {
+  async get(connectedFolderRoot: string): Promise<PiPreferredModel | undefined> {
     const data = await this.#read();
-    const saved = data.scopes[await this.#scopeKey(workFolderRoot)]?.model;
+    const saved = data.scopes[await this.#scopeKey(connectedFolderRoot)]?.model;
     return saved ? { provider: saved.provider, id: saved.id } : undefined;
   }
 
-  async set(workFolderRoot: string, model: PiPreferredModel): Promise<void> {
+  async set(connectedFolderRoot: string, model: PiPreferredModel): Promise<void> {
     const provider = model.provider.trim();
     const id = model.id.trim();
     if (!provider || !id) throw new Error("A provider and model are required.");
-    const scope = await this.#scopeKey(workFolderRoot);
+    const scope = await this.#scopeKey(connectedFolderRoot);
     const write = this.#writeQueue.then(async () => {
       const data = await this.#read();
       data.scopes[scope] = {
@@ -61,14 +61,14 @@ export class ModelPreferenceStore {
     await write;
   }
 
-  async getInstructions(workFolderRoot: string): Promise<string> {
+  async getInstructions(connectedFolderRoot: string): Promise<string> {
     const data = await this.#read();
-    return data.scopes[await this.#scopeKey(workFolderRoot)]?.instructions ?? "";
+    return data.scopes[await this.#scopeKey(connectedFolderRoot)]?.instructions ?? "";
   }
 
-  async setInstructions(workFolderRoot: string, instructions: string): Promise<void> {
+  async setInstructions(connectedFolderRoot: string, instructions: string): Promise<void> {
     const normalized = normalizeWorkerInstructions(instructions);
-    const scope = await this.#scopeKey(workFolderRoot);
+    const scope = await this.#scopeKey(connectedFolderRoot);
     const write = this.#writeQueue.then(async () => {
       const data = await this.#read();
       const current = data.scopes[scope];
@@ -121,13 +121,13 @@ export class ModelPreferenceStore {
     return parsed;
   }
 
-  async #scopeKey(workFolderRoot: string): Promise<string> {
-    const normalizedRoot = rootKey(workFolderRoot);
-    if (this.#workFoldAgentRootPath && normalizedRoot === this.#workFoldAgentRootPath) return "agent";
+  async #scopeKey(connectedFolderRoot: string): Promise<string> {
+    const normalizedRoot = rootKey(connectedFolderRoot);
+    if (this.#ampleFileAgentRootPath && normalizedRoot === this.#ampleFileAgentRootPath) return "agent";
     try {
-      const source = await readFile(join(workFolderRoot, ".work-fold", "work-folder.json"), "utf8");
+      const source = await readFile(join(connectedFolderRoot, ".amplefile", "connected-folder.json"), "utf8");
       const parsed = JSON.parse(source) as { id?: unknown };
-      if (typeof parsed.id === "string" && parsed.id.trim()) return `work-folder:${parsed.id.trim()}`;
+      if (typeof parsed.id === "string" && parsed.id.trim()) return `connected-folder:${parsed.id.trim()}`;
     } catch {
       // Unregistered test and management roots fall back to a non-content path key.
     }

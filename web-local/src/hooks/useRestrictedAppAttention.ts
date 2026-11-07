@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
-export function restrictedAppAttentionKey(workFolderId: string, appId: string, featureInstallationId: string): string {
-  return `${workFolderId}\u0000${appId}\u0000${featureInstallationId}`;
+export function restrictedAppAttentionKey(connectedFolderId: string, appId: string, featureInstallationId: string): string {
+  return `${connectedFolderId}\u0000${appId}\u0000${featureInstallationId}`;
 }
 
 /**
@@ -12,12 +12,12 @@ export function restrictedAppAttentionKey(workFolderId: string, appId: string, f
 export function useRestrictedAppAttention(): ReadonlyMap<string, number> {
   const [attention, setAttention] = useState<ReadonlyMap<string, number>>(() => new Map());
   useEffect(() => {
-    const bridge = window.workFoldDesktop?.restrictedApps;
+    const bridge = window.ampleFileDesktop?.restrictedApps;
     if (!bridge?.onAttention) return;
     let disposed = false;
-    const apply = (state: { workFolderId: string; appId: string; featureInstallationId: string; count: number }) => {
+    const apply = (state: { connectedFolderId: string; appId: string; featureInstallationId: string; count: number }) => {
       setAttention((current) => {
-        const key = restrictedAppAttentionKey(state.workFolderId, state.appId, state.featureInstallationId);
+        const key = restrictedAppAttentionKey(state.connectedFolderId, state.appId, state.featureInstallationId);
         if ((current.get(key) ?? 0) === state.count) return current;
         const next = new Map(current);
         if (state.count > 0) next.set(key, state.count);

@@ -7,9 +7,9 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { FileCredentialStore, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { readConversation } from "../src/local/agent/chat-store.js";
-import { WorkFoldTurnStore } from "../src/local/agent/turn-store.js";
+import { AmpleFileTurnStore } from "../src/local/agent/turn-store.js";
 import { startLocalApi, type LocalApiOptions } from "../src/local/server.js";
-import { configureWorkFoldStateRoot } from "../src/local/state-paths.js";
+import { configureAmpleFileStateRoot } from "../src/local/state-paths.js";
 
 test("closing stops an accepted turn that is still preparing before it reaches the provider", async (t) => {
   let resume!: () => void;
@@ -27,7 +27,7 @@ test("closing stops an accepted turn that is still preparing before it reaches t
   await within(closing, "close()");
   // Quitting is recorded like a crash, never as a Stop the person asked for (2026-10-27).
   assert.equal(h.turnStore.get(taskId)?.status, "interrupted");
-  const reply = (await readConversation(h.workFolderRoot, h.conversationId)).findLast((message) => message.role === "assistant");
+  const reply = (await readConversation(h.connectedFolderRoot, h.conversationId)).findLast((message) => message.role === "assistant");
   assert.equal(reply?.turnId, taskId);
   assert.equal(reply?.interruption?.reason, "app_interrupted");
   assert.equal(h.runtimeRequests(), runtimeRequests, "the turn never started its prompt, which resolves its runtime first");
@@ -64,7 +64,7 @@ test("closing waits for an acceptance already in flight and stops its turn befor
 });
 
 async function fixture(t: TestContext, options: Pick<LocalApiOptions, "beforeAgentPrompt"> = {}) {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-close-turns-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-close-turns-"));
   // The provider never answers: a turn that reaches it would hold close() open.
   let providerRequests = 0;
   const provider = createServer((request, response) => {
@@ -84,11 +84,11 @@ async function fixture(t: TestContext, options: Pick<LocalApiOptions, "beforeAge
   const settingsManager = SettingsManager.inMemory({ defaultProvider: "fixture", defaultModel: "fixture", defaultThinkingLevel: "off" });
   const runtimeRoots: string[] = [];
   const stateRoot = join(root, "state");
-  const turnStore = await WorkFoldTurnStore.create({ stateRoot });
+  const turnStore = await AmpleFileTurnStore.create({ stateRoot });
   const api = await startLocalApi({
-    port: 0, stateBase: stateRoot, workFolderBase: join(root, "content"), loadEnv: false, turnStore, ...options,
-    piRuntimeProvider: { async resolveRuntime(workFolderRoot) {
-      runtimeRoots.push(workFolderRoot);
+    port: 0, stateBase: stateRoot, connectedFolderBase: join(root, "content"), loadEnv: false, turnStore, ...options,
+    piRuntimeProvider: { async resolveRuntime(connectedFolderRoot) {
+      runtimeRoots.push(connectedFolderRoot);
       return { agentDir, credentials, modelRuntime, settingsManager };
     } },
   });
@@ -100,19 +100,19 @@ async function fixture(t: TestContext, options: Pick<LocalApiOptions, "beforeAge
     } finally {
       provider.closeAllConnections();
       await new Promise<void>((resolve) => provider.close(() => resolve()));
-      configureWorkFoldStateRoot(undefined);
+      configureAmpleFileStateRoot(undefined);
       await rm(root, { recursive: true, force: true, maxRetries: 5 });
     }
   });
-  const { workFolder } = await api.actFacade.createWorkFolder({ name: "Close fixture" });
-  const { conversation } = await api.actFacade.createConversation({ workFolder: workFolder.id });
+  const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Close fixture" });
+  const { conversation } = await api.actFacade.createConversation({ connectedFolder: connectedFolder.id });
   return {
     turnStore,
     close,
-    workFolderRoot: workFolder.workFolderRoot,
+    connectedFolderRoot: connectedFolder.connectedFolderRoot,
     conversationId: conversation.id,
-    send: () => api.actFacade.sendMessage({ workFolder: workFolder.id, conversationId: conversation.id, content: "Start working." }),
-    runtimeRequests: () => runtimeRoots.filter((candidate) => candidate === workFolder.workFolderRoot).length,
+    send: () => api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId: conversation.id, content: "Start working." }),
+    runtimeRequests: () => runtimeRoots.filter((candidate) => candidate === connectedFolder.connectedFolderRoot).length,
     providerRequests: () => providerRequests,
   };
 }

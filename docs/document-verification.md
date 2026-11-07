@@ -81,7 +81,7 @@ While the details are open, the dialog's ordinary status refresh (every five
 seconds and whenever the window regains focus) runs the same file checks, so
 each row ticks off soon after the engine appears, with no ten-minute limit
 and no extra watcher. **Check** stays available. An installed engine's path
-and version sit in the tooltip of its **Installed** label. work-fold itself
+and version sit in the tooltip of its **Installed** label. AmpleFile itself
 installs nothing: it opens the official page or shows a command the person
 runs. Nothing is bundled.
 
@@ -123,7 +123,7 @@ runs. Nothing is bundled.
   - a budget workbook with formulas and a cross-sheet total;
   - a slide deck whose dense slide overflows unless the Worker fixes it;
   - a Word report with a wide table.
-- Two conditions, run through `npm run work-fold:drive` with the same model:
+- Two conditions, run through `npm run amplefile:drive` with the same model:
   - engines visible;
   - engines hidden by a macOS `sandbox-exec` profile, so the Worker's shell
     cannot find them either.
@@ -134,7 +134,7 @@ runs. Nothing is bundled.
 
 - A bundled, MIT-licensed JavaScript formula evaluator for formula checks
   without LibreOffice.
-- One-click install through Homebrew from inside work-fold.
+- One-click install through Homebrew from inside AmpleFile.
 - Exporting through the person's own Word or PowerPoint with Computer Control.
 
 ## Addendum: a Quick Look preview without LibreOffice

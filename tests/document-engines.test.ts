@@ -16,7 +16,7 @@ const sha = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 test("installed LibreOffice renders Word and recalculates a new workbook without touching sources", { timeout: 60_000 }, async (t) => {
   const engines = await discoverDocumentEngines();
   if (!engines.libreoffice.available) { t.skip("LibreOffice is not installed; optional engine is reported explicitly."); return; }
-  const root = await mkdtemp(join(tmpdir(), "work-fold-office-engine-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-office-engine-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const source = join(root, "source.docx"), output = join(root, "rendered.pdf");
   const original = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph("Engine rendering fixture")] }] }));
@@ -42,7 +42,7 @@ test("installed LibreOffice renders Word and recalculates a new workbook without
 });
 
 test("OCR adapter uses explicit language, fresh output, retained logs and source identity", { skip: process.platform === "win32" }, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-ocr-engine-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-ocr-engine-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const executable = join(root, "synthetic-engine"), source = join(root, "page.png"), output = join(root, "recognized.txt");
   await writeFile(source, "synthetic image");
@@ -56,7 +56,7 @@ test("OCR adapter uses explicit language, fresh output, retained logs and source
 });
 
 test("Stop terminates an owned engine and preserves its log without publishing partial output", { skip: process.platform === "win32", timeout: 15_000 }, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-engine-stop-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-engine-stop-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const executable = join(root, "slow-engine"), marker = join(root, "started"), source = join(root, "page.png"), output = join(root, "text.txt");
   await writeFile(source, "fixture");
@@ -81,7 +81,7 @@ test("Stop terminates an owned engine and preserves its log without publishing p
 });
 
 test("Stop kills a descendant that ignores TERM after its engine parent exits", { skip: process.platform === "win32", timeout: 15_000 }, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-engine-descendant-stop-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-engine-descendant-stop-"));
   let parentPid = 0, descendantPid = 0;
   t.after(async () => {
     for (const pid of [parentPid, descendantPid]) if (pid) { try { process.kill(pid, "SIGKILL"); } catch {} }
@@ -116,7 +116,7 @@ test("Stop kills a descendant that ignores TERM after its engine parent exits", 
 });
 
 test("Stop during output publication reports interruption and retains the created file and log", { skip: process.platform === "win32", timeout: 15_000 }, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-engine-publish-stop-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-engine-publish-stop-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const executable = join(root, "engine"), source = join(root, "page.png"), output = join(root, "text.txt");
   const outputBytes = 128 * 1024 * 1024;

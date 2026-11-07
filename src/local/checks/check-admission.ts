@@ -2,32 +2,32 @@ import { loadCheckTextSnapshots, modelCheckLimits } from "./check-text.js";
 import { modelReviewTextLimits } from "./model-review-sensor.js";
 import { randomUUID } from "node:crypto";
 
-import type { WorkFoldCheckDeclaration } from "../../shared/checks.js";
-import { normalizeWorkFoldCheckTargetPath } from "../../shared/checks.js";
-import { workFoldCheckFingerprint } from "./check-integrity.js";
+import type { AmpleFileCheckDeclaration } from "../../shared/checks.js";
+import { normalizeAmpleFileCheckTargetPath } from "../../shared/checks.js";
+import { ampleFileCheckFingerprint } from "./check-integrity.js";
 import type {
-  WorkFoldCheckCandidateFinding,
-  WorkFoldCheckEvidence,
-  WorkFoldCheckFinding,
+  AmpleFileCheckCandidateFinding,
+  AmpleFileCheckEvidence,
+  AmpleFileCheckFinding,
 } from "./check-types.js";
-import { resolveWorkFoldCheckTargets } from "./target-resolver.js";
+import { resolveAmpleFileCheckTargets } from "./target-resolver.js";
 
-export async function admitWorkFoldCheckCandidate(input: {
+export async function admitAmpleFileCheckCandidate(input: {
   root: string;
-  declaration: WorkFoldCheckDeclaration;
+  declaration: AmpleFileCheckDeclaration;
   declarationDigest: string;
   sensorDigest: string;
-  candidate: WorkFoldCheckCandidateFinding;
+  candidate: AmpleFileCheckCandidateFinding;
   now?: Date;
   signal?: AbortSignal;
-}): Promise<WorkFoldCheckFinding | null> {
+}): Promise<AmpleFileCheckFinding | null> {
   if (input.signal?.aborted) throw new Error(String(input.signal.reason || "Check admission was aborted."));
   let targetPath: string;
   let title: string;
   let detail: string | undefined;
   let remediation: string | undefined;
   try {
-    targetPath = normalizeWorkFoldCheckTargetPath(input.candidate.targetPath, "Finding target path");
+    targetPath = normalizeAmpleFileCheckTargetPath(input.candidate.targetPath, "Finding target path");
     title = boundedDisplayText(input.candidate.title, "Finding title", 300);
     detail = input.candidate.detail ? boundedDisplayText(input.candidate.detail, "Finding detail", 2_000) : undefined;
     remediation = input.candidate.remediation ? boundedDisplayText(input.candidate.remediation, "Finding remediation", 2_000) : undefined;
@@ -38,10 +38,10 @@ export async function admitWorkFoldCheckCandidate(input: {
   if (!Array.isArray(input.candidate.evidence) || input.candidate.evidence.length < 1 || input.candidate.evidence.length > 16) return null;
   for (const evidence of input.candidate.evidence) {
     if (input.signal?.aborted) throw new Error(String(input.signal.reason || "Check admission was aborted."));
-    if (!await verifyWorkFoldCheckEvidence(input.root, evidence, input.declaration)) return null;
+    if (!await verifyAmpleFileCheckEvidence(input.root, evidence, input.declaration)) return null;
   }
   const evidence = structuredClone(input.candidate.evidence);
-  const fingerprint = workFoldCheckFingerprint({
+  const fingerprint = ampleFileCheckFingerprint({
     checkId: input.declaration.id,
     declarationDigest: input.declarationDigest,
     sensorId: input.declaration.sensor.id,
@@ -69,18 +69,18 @@ export async function admitWorkFoldCheckCandidate(input: {
   };
 }
 
-export async function reverifyWorkFoldCheckFinding(
+export async function reverifyAmpleFileCheckFinding(
   root: string,
-  declaration: WorkFoldCheckDeclaration,
-  finding: WorkFoldCheckFinding,
+  declaration: AmpleFileCheckDeclaration,
+  finding: AmpleFileCheckFinding,
 ): Promise<boolean> {
   if (finding.status !== "active" || finding.checkId !== declaration.id) return false;
   if (finding.sensorId !== declaration.sensor.id || finding.sensorRevision !== declaration.sensor.revision) return false;
   if (!declarationContainsPath(declaration, finding.targetPath)) return false;
   for (const evidence of finding.evidence) {
-    if (!await verifyWorkFoldCheckEvidence(root, evidence, declaration)) return false;
+    if (!await verifyAmpleFileCheckEvidence(root, evidence, declaration)) return false;
   }
-  return workFoldCheckFingerprint({
+  return ampleFileCheckFingerprint({
     checkId: declaration.id,
     declarationDigest: finding.declarationDigest,
     sensorId: declaration.sensor.id,
@@ -91,19 +91,19 @@ export async function reverifyWorkFoldCheckFinding(
   }) === finding.fingerprint;
 }
 
-export async function verifyWorkFoldCheckEvidence(
+export async function verifyAmpleFileCheckEvidence(
   root: string,
-  evidence: WorkFoldCheckEvidence,
-  declaration: WorkFoldCheckDeclaration,
+  evidence: AmpleFileCheckEvidence,
+  declaration: AmpleFileCheckDeclaration,
 ): Promise<boolean> {
   if (evidence.kind === "text-span") {
-    if (declaration.sensor.id !== "work-fold.text-review" || evidence.identity.checkId !== declaration.id
+    if (declaration.sensor.id !== "amplefile.text-review" || evidence.identity.checkId !== declaration.id
       || evidence.identity.path !== evidence.path || !Number.isSafeInteger(evidence.start) || evidence.start < 0
       || !Number.isSafeInteger(evidence.end) || typeof evidence.quote !== "string" || !evidence.quote.trim()
       || evidence.quote.length > modelReviewTextLimits.quote || evidence.end - evidence.start !== evidence.quote.length
       || !Array.isArray(evidence.context)) return false;
     try {
-      const resolution = await resolveWorkFoldCheckTargets(root, declaration.targets, {
+      const resolution = await resolveAmpleFileCheckTargets(root, declaration.targets, {
         limits: {
           maxFiles: modelCheckLimits.maximumFiles,
           maxFileBytes: modelCheckLimits.maximumFileBytes,
@@ -123,18 +123,18 @@ export async function verifyWorkFoldCheckEvidence(
   if (evidence.kind !== "path-state") return false;
   let path: string;
   try {
-    path = normalizeWorkFoldCheckTargetPath(evidence.path, "Evidence path");
+    path = normalizeAmpleFileCheckTargetPath(evidence.path, "Evidence path");
   } catch {
     return false;
   }
   if (evidence.identity.path !== path || !declarationContainsPath(declaration, path)) return false;
   if (evidence.expected === evidence.observed || evidence.identity.state !== evidence.observed) return false;
-  const resolution = await resolveWorkFoldCheckTargets(root, [{ kind: "file", role: "primary", path }]);
+  const resolution = await resolveAmpleFileCheckTargets(root, [{ kind: "file", role: "primary", path }]);
   const observed = resolution.files.some((file) => file.path === path) ? "file" : "missing";
   return observed === evidence.observed;
 }
 
-function semanticEvidenceIdentity(evidence: WorkFoldCheckEvidence): unknown {
+function semanticEvidenceIdentity(evidence: AmpleFileCheckEvidence): unknown {
   if (evidence.kind === "text-span") return { kind: evidence.kind, path: evidence.path, start: evidence.start, end: evidence.end, quote: evidence.quote, sha256: evidence.identity.sha256, context: evidence.context.map(({ path, sha256 }) => ({ path, sha256 })).sort((a, b) => a.path.localeCompare(b.path)) };
   return {
     kind: evidence.kind,
@@ -144,7 +144,7 @@ function semanticEvidenceIdentity(evidence: WorkFoldCheckEvidence): unknown {
   };
 }
 
-function declarationContainsPath(declaration: WorkFoldCheckDeclaration, path: string): boolean {
+function declarationContainsPath(declaration: AmpleFileCheckDeclaration, path: string): boolean {
   return declaration.targets.some((target) => {
     if (target.kind === "file") return target.path === path;
     if (!path.startsWith(`${target.path}/`)) return false;

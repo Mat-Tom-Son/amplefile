@@ -14,7 +14,7 @@ export type RestrictedAppNotificationRecordLimits = typeof restrictedAppNotifica
 /** What the notification broker reports for one `notifications.show` call it answered. */
 export interface RestrictedAppNotificationOutcome {
   at: string;
-  workFolderId: string;
+  connectedFolderId: string;
   appId: string;
   featureInstallationId: string | null;
   digest: string;
@@ -32,7 +32,7 @@ export interface RestrictedAppNotificationRecordOptions {
 }
 
 const statuses: readonly RestrictedAppNotificationRecordStatus[] = ["shown", "rate-limited", "unsupported"];
-const entryKeys = ["v", "id", "at", "workFolderId", "appId", "featureInstallationId", "digest", "permissionId", "title", "status"];
+const entryKeys = ["v", "id", "at", "connectedFolderId", "appId", "featureInstallationId", "digest", "permissionId", "title", "status"];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
@@ -40,7 +40,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
  * which app and installation, which reviewed category and its title, and
  * whether it was shown, held back by the spam guard, or could not be shown on
  * this computer. Like the inference receipts it lives outside every
- * work-folder. Recording never stands between an app and its notification: a
+ * Connected Folder. Recording never stands between an app and its notification: a
  * line that cannot be written is lost, and a damaged line is skipped on read.
  */
 export class RestrictedAppNotificationRecord extends EventEmitter {
@@ -81,7 +81,7 @@ export class RestrictedAppNotificationRecord extends EventEmitter {
       if (this.#entries.length > this.#limits.records + Math.ceil(this.#limits.records / 20) || this.#bytes > this.#limits.journalBytes) {
         await this.#compact().catch(() => undefined);
       }
-      this.emit("changed", { workFolderId: entry.workFolderId, appId: entry.appId, featureInstallationId: entry.featureInstallationId });
+      this.emit("changed", { connectedFolderId: entry.connectedFolderId, appId: entry.appId, featureInstallationId: entry.featureInstallationId });
     });
     this.#queue = write;
     await write;
@@ -89,7 +89,7 @@ export class RestrictedAppNotificationRecord extends EventEmitter {
 
   /** One installation's outcomes, newest first, across its code changes. */
   async list(
-    scope: { workFolderId: string; appId: string; featureInstallationId: string },
+    scope: { connectedFolderId: string; appId: string; featureInstallationId: string },
     limit: number = this.#limits.listLimit,
   ): Promise<RestrictedAppNotificationRecordEntry[]> {
     await this.#queue.catch(() => undefined);
@@ -98,7 +98,7 @@ export class RestrictedAppNotificationRecord extends EventEmitter {
     const found: RestrictedAppNotificationRecordEntry[] = [];
     for (let index = this.#entries.length - 1; index >= 0 && found.length < bounded; index -= 1) {
       const entry = this.#entries[index]!;
-      if (entry.workFolderId !== scope.workFolderId || entry.appId !== scope.appId
+      if (entry.connectedFolderId !== scope.connectedFolderId || entry.appId !== scope.appId
         || entry.featureInstallationId !== scope.featureInstallationId || Date.parse(entry.at) < cutoff) continue;
       found.push(structuredClone(entry));
     }
@@ -139,7 +139,7 @@ export class RestrictedAppNotificationRecord extends EventEmitter {
     for (let index = this.#entries.length - 1; index >= 0 && kept.length < this.#limits.records; index -= 1) {
       const entry = this.#entries[index]!;
       if (Date.parse(entry.at) < cutoff) continue;
-      const key = JSON.stringify([entry.workFolderId, entry.appId, entry.featureInstallationId]);
+      const key = JSON.stringify([entry.connectedFolderId, entry.appId, entry.featureInstallationId]);
       const count = perInstallation.get(key) ?? 0;
       if (count >= this.#limits.perInstallation) continue;
       perInstallation.set(key, count + 1);
@@ -180,7 +180,7 @@ function entryValue(value: unknown): RestrictedAppNotificationRecordEntry | null
   const text = (field: unknown, maximum: number) => typeof field === "string" && field.length > 0 && field.length <= maximum;
   if (record.v !== 1 || typeof record.id !== "string" || !uuid.test(record.id)
     || typeof record.at !== "string" || !Number.isFinite(Date.parse(record.at))
-    || !text(record.workFolderId, 200) || !text(record.appId, 64)
+    || !text(record.connectedFolderId, 200) || !text(record.appId, 64)
     || !(record.featureInstallationId === null || text(record.featureInstallationId, 200))
     || typeof record.digest !== "string" || !/^[0-9a-f]{64}$/.test(record.digest)
     || typeof record.permissionId !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(record.permissionId)
@@ -192,7 +192,7 @@ function entryValue(value: unknown): RestrictedAppNotificationRecordEntry | null
     v: 1,
     id: record.id,
     at: new Date(record.at as string).toISOString(),
-    workFolderId: record.workFolderId as string,
+    connectedFolderId: record.connectedFolderId as string,
     appId: record.appId as string,
     featureInstallationId: record.featureInstallationId as string | null,
     digest: record.digest,

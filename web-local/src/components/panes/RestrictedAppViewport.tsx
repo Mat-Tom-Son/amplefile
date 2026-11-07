@@ -35,7 +35,7 @@ export function RestrictedAppViewport({
   const [message, setMessage] = useState("");
   const cornerRadius = resolveRestrictedAppCornerRadius(app.manifest.ui.cornerRadius);
   latestRef.current = { app, placement, appTabId, route, state, openedFrom, active };
-  const desktop = window.workFoldDesktop?.restrictedApps;
+  const desktop = window.ampleFileDesktop?.restrictedApps;
 
   useEffect(() => {
     if (!desktop) return;
@@ -106,7 +106,7 @@ export function RestrictedAppViewport({
       document.removeEventListener("visibilitychange", schedule);
       void desktop.unmountView(mountId).catch(() => undefined);
     };
-  }, [desktop, generation, app.workFolderId, app.manifest.id, app.digest, app.featureInstallationId]);
+  }, [desktop, generation, app.connectedFolderId, app.manifest.id, app.digest, app.featureInstallationId]);
 
   useLayoutEffect(() => {
     const element = hostRef.current;
@@ -115,7 +115,7 @@ export function RestrictedAppViewport({
   }, [active, appTabId, desktop, openedFrom, placement, route, state]);
 
   if (!desktop) {
-    return <div className="restricted-app-view restricted-app-view-fallback" style={{ borderRadius: cornerRadius }}><Apps24Regular /><strong>{app.manifest.title}</strong><span>Interactive app views run in the work-fold desktop app.</span></div>;
+    return <div className="restricted-app-view restricted-app-view-fallback" style={{ borderRadius: cornerRadius }}><Apps24Regular /><strong>{app.manifest.title}</strong><span>Interactive app views run in the AmpleFile desktop app.</span></div>;
   }
 
   return (
@@ -151,7 +151,7 @@ function viewRequest(
   const bounds = nativeViewBounds(element, elementBounds, latest.placement);
   const active = latest.active && !element.hidden && document.visibilityState === "visible";
   return {
-    workFolderId: latest.app.workFolderId,
+    connectedFolderId: latest.app.connectedFolderId,
     appId: latest.app.manifest.id,
     featureInstallationId: latest.app.featureInstallationId,
     digest: latest.app.digest,
@@ -182,7 +182,7 @@ export function nativeViewBounds(element: HTMLElement, bounds: DOMRect, placemen
   const right = bounds.right - borderRight;
   const bottom = bounds.bottom - borderBottom;
   if (placement === "navigator") {
-    const rail = document.querySelector<HTMLElement>(".professional-work-folder-rail")?.getBoundingClientRect();
+    const rail = document.querySelector<HTMLElement>(".professional-connected-folder-rail")?.getBoundingClientRect();
     if (rail) left = Math.max(left, rail.right + restrictedAppRailGuard);
   }
   return {
@@ -211,7 +211,7 @@ export function nativeViewOccluded(element: HTMLElement, bounds: DOMRect): boole
     ".command-palette-backdrop",
     ".context-menu-backdrop",
     ".context-menu",
-    ".surface-tab-work-folder-menu",
+    ".surface-tab-connected-folder-menu",
     ".chat-rename-popover",
     "[role='menu']",
     "[role='dialog'][aria-modal='true']",

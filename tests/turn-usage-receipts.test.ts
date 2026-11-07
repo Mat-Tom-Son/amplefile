@@ -39,12 +39,12 @@ async function fixture(t: test.TestContext) {
   t.after(() => new Promise<void>((resolve, reject) => { providerServer.close((error) => error ? reject(error) : resolve()); }));
   const port = (providerServer.address() as AddressInfo).port;
 
-  const root = await mkdtemp(join(tmpdir(), "work-fold-turn-usage-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-turn-usage-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "agent");
-  const workFolderRoot = join(root, "work-folder");
+  const connectedFolderRoot = join(root, "connected-folder");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
-  await mkdir(workFolderRoot, { recursive: true });
+  await mkdir(connectedFolderRoot, { recursive: true });
   const model = (id: string, cost: string) =>
     `{ id: "${id}", name: "${id}", reasoning: false, input: ["text"], cost: ${cost}, contextWindow: 32768, maxTokens: 1024 }`;
   await writeFile(join(agentDir, "extensions", "usage-provider.ts"),
@@ -64,7 +64,7 @@ async function fixture(t: test.TestContext) {
     client(conversationId: string, modelId: string) {
       const settingsManager = SettingsManager.inMemory({ defaultProvider: "usage-provider", defaultModel: modelId, defaultThinkingLevel: "off" });
       const provider: PiRuntimeProvider = { async resolveRuntime() { return { agentDir, settingsManager }; } };
-      const client = new PiConversationClient(conversationId, workFolderRoot, provider);
+      const client = new PiConversationClient(conversationId, connectedFolderRoot, provider);
       t.after(() => client.stop());
       return client;
     },

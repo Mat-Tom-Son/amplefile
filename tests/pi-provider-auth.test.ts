@@ -16,7 +16,7 @@ const hooks: PiOAuthHooks = {
 };
 
 test("native ChatGPT login receives a stable installation UUID, persists the full grant, and ignores project identities", async t => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-chatgpt-login-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-chatgpt-login-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "pi"), first = join(root, "first"), second = join(root, "second");
   await mkdir(join(first, ".pi"), { recursive: true });
@@ -47,7 +47,7 @@ test("native ChatGPT login receives a stable installation UUID, persists the ful
       openUrl({ url }) {
         authorize = new URL(url);
         nonce = authorize.searchParams.get("nonce")!;
-        assert.equal(authorize.searchParams.get("agent_name_hint"), "work-fold");
+        assert.equal(authorize.searchParams.get("agent_name_hint"), "AmpleFile");
         ids.push(authorize.searchParams.get("ext_agent_host_id")!);
       },
       async manualCodeInput(_signal, prompt) {
@@ -77,7 +77,7 @@ test("native ChatGPT login receives a stable installation UUID, persists the ful
 });
 
 test("native API-key setup keeps Cloudflare configuration and key replacement preserves that configuration", async t => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-cloudflare-login-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-cloudflare-login-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const credentials = FileCredentialStore.inMemory();
   const runtime = await ModelRuntime.create({ credentials, modelsPath: null, authPath: join(root, "auth.json") });
@@ -99,7 +99,7 @@ test("native API-key setup keeps Cloudflare configuration and key replacement pr
 
 test("native OpenAI login rejects unverifiable identity before persisting any credential", async t => {
   const identity = openAiIdentityFixture(), other = openAiIdentityFixture();
-  const root = await mkdtemp(join(tmpdir(), "work-fold-openai-id-validation-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-openai-id-validation-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const previousFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = previousFetch; });
@@ -148,7 +148,7 @@ test("rotated refresh credentials survive an unavailable JWKS or invalid optiona
 });
 
 test("provider setup API connects a provider with no chat models without changing the Worker default", async t => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-provider-api-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-provider-api-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const credentials = FileCredentialStore.inMemory({ chat: { type: "api_key", key: "synthetic" } });
   const runtime = await ModelRuntime.create({ credentials, modelsPath: null, authPath: join(root, "auth.json") });
@@ -158,7 +158,7 @@ test("provider setup API connects a provider with no chat models without changin
     auth: { apiKey: { name: "Provider credentials", login: async () => ({ type: "api_key", key: "synthetic", env: { ACCOUNT: "synthetic-account" } }),
       resolve: async ({ credential }) => credential ? { auth: { apiKey: credential.key }, source: "stored credential" } : undefined } },
   });
-  const api = await startLocalApi({ port: 0, stateBase: join(root, "state"), workFolderBase: join(root, "content"), loadEnv: false,
+  const api = await startLocalApi({ port: 0, stateBase: join(root, "state"), connectedFolderBase: join(root, "content"), loadEnv: false,
     piRuntimeProvider: { resolveRuntime: async () => ({ agentDir: root, credentials, modelRuntime: runtime,
       preferredModel: { provider: "chat", id: "chat-model" } }) }, piOAuthHooks: hooks });
   t.after(() => api.close());

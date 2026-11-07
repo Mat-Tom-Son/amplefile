@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, createEventSource, errorText } from "../../lib/api";
 import { eventPathTouchesFolder, findTreeEntry } from "../../lib/tree";
-import type { TreeEntry, WorkFolderFileEvent } from "../../types";
+import type { TreeEntry, ConnectedFolderFileEvent } from "../../types";
 import { placeApiBase, placeEventsUrl, placeKey, type FileManagerPlace } from "./file-manager-places";
 
 export type FolderListingStatus = "loading" | "ready" | "error";
@@ -19,7 +19,7 @@ const refreshDelayMs = 200;
 
 /**
  * One folder's contents, one level deep, as the file manager shows them: the
- * same `/tree` route Files uses, asked for a single level, for a work-folder
+ * same `/tree` route Files uses, asked for a single level, for a Connected Folder
  * or a standard folder. File events keep it current; a refresh never blanks
  * rows already shown.
  */
@@ -77,7 +77,7 @@ export function useFolderListing(place: FileManagerPlace, path: string, fixtureT
     const source = createEventSource(eventsUrl);
     source.onmessage = (event) => {
       try {
-        const parsed = JSON.parse(event.data) as WorkFolderFileEvent;
+        const parsed = JSON.parse(event.data) as ConnectedFolderFileEvent;
         if (parsed.type === "ready") return schedule();
         if (parsed.type !== "file_event") return;
         noteChange();

@@ -16,21 +16,21 @@ import { FileRestrictedAppStorage, type RestrictedAppStorageOwner } from "../src
 import { LocalAppReleaseStore } from "../src/local/agent/local-app-release-store.js";
 import {
   RestrictedAppService,
-  type LocalAppWorkFolderRecoveryCopy,
+  type LocalAppConnectedFolderRecoveryCopy,
   type RestrictedAppInstalled,
   type RestrictedAppRuntimeDescriptor,
   type RestrictedAppRuntimeHost,
 } from "../src/local/agent/restricted-app-service.js";
 import { RestrictedAppRegistryVersionUnsupportedError } from "../src/local/agent/restricted-app-registry-error.js";
 
-const sourceWorkFolder = "ws-local-app-studio-source";
-const targetWorkFolder = "ws-local-app-studio-target";
+const sourceConnectedFolder = "ws-local-app-studio-source";
+const targetConnectedFolder = "ws-local-app-studio-target";
 const featureId = "connected-inbox";
 const refreshAppAutomation = "refresh-mail";
 
 test("Local App Studio separates Project declaration, immutable Release review, durable install preparation, and activation", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-local-app-studio-release-"));
-  const sourceRoot = join(sandbox, "source-work-folder");
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-local-app-studio-release-"));
+  const sourceRoot = join(sandbox, "source-connected-folder");
   const packageRoot = join(sourceRoot, "apps", "connected-inbox");
   const rootPath = join(sandbox, "state", "restricted-apps");
   const storage = new FileRestrictedAppStorage(join(rootPath, "data"));
@@ -50,14 +50,14 @@ test("Local App Studio separates Project declaration, immutable Release review, 
       description: "A deliberately declared local App Project.",
       icon: "mail",
     } as const;
-    const project = await service.declareLocalAppProject({ workFolderId: sourceWorkFolder, presentation });
+    const project = await service.declareLocalAppProject({ connectedFolderId: sourceConnectedFolder, presentation });
     assert.deepEqual(project.presentation, presentation);
-    assert.equal(project.workFolderId, sourceWorkFolder);
+    assert.equal(project.connectedFolderId, sourceConnectedFolder);
 
-    const review = await service.inspect({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
+    const review = await service.inspect({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
     const preview = await service.install({
-      workFolderId: sourceWorkFolder,
-      workFolderRoot: sourceRoot,
+      connectedFolderId: sourceConnectedFolder,
+      connectedFolderRoot: sourceRoot,
       sourcePath: "apps/connected-inbox",
       expectedDigest: review.digest,
     });
@@ -65,15 +65,15 @@ test("Local App Studio separates Project declaration, immutable Release review, 
     assert.equal(preview.releaseDigest, null);
     assert.equal(preview.projectId, project.projectId);
 
-    const prepared = await service.prepareLocalAppRelease({ workFolderId: sourceWorkFolder, displayVersion: "1.0.0" });
+    const prepared = await service.prepareLocalAppRelease({ connectedFolderId: sourceConnectedFolder, displayVersion: "1.0.0" });
     assert.equal(prepared.state, "prepared");
     assert.equal(prepared.publishedAt, null);
     assert.deepEqual(prepared.presentation, presentation);
-    assert.deepEqual((await service.localAppStudio(sourceWorkFolder)).releases, [prepared]);
+    assert.deepEqual((await service.localAppStudio(sourceConnectedFolder)).releases, [prepared]);
     await assert.rejects(
       service.prepareLocalAppInstall({
-        sourceWorkFolderId: sourceWorkFolder,
-        targetWorkFolderId: targetWorkFolder,
+        sourceConnectedFolderId: sourceConnectedFolder,
+        targetConnectedFolderId: targetConnectedFolder,
         releaseDigest: prepared.releaseDigest,
       }),
       (error: unknown) => errorCode(error) === "INPUT_INVALID" && /published Release/i.test(errorMessage(error)),
@@ -82,20 +82,20 @@ test("Local App Studio separates Project declaration, immutable Release review, 
 
     await writeFile(join(packageRoot, "worker.js"), workerSource("unreviewed-source-after-prepare"), "utf8");
     const published = await service.publishLocalAppRelease({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       releaseDigest: prepared.releaseDigest,
     });
     assert.equal(published.state, "published");
     assert.ok(published.publishedAt);
 
     const firstPlan = await service.prepareLocalAppInstall({
-      sourceWorkFolderId: sourceWorkFolder,
-      targetWorkFolderId: targetWorkFolder,
+      sourceConnectedFolderId: sourceConnectedFolder,
+      targetConnectedFolderId: targetConnectedFolder,
       releaseDigest: published.releaseDigest,
     });
     const retryPlan = await service.prepareLocalAppInstall({
-      sourceWorkFolderId: sourceWorkFolder,
-      targetWorkFolderId: targetWorkFolder,
+      sourceConnectedFolderId: sourceConnectedFolder,
+      targetConnectedFolderId: targetConnectedFolder,
       releaseDigest: published.releaseDigest,
     });
     assert.deepEqual(retryPlan, firstPlan, "retries must return the durably reserved operation and identity allocations");
@@ -112,13 +112,13 @@ test("Local App Studio separates Project declaration, immutable Release review, 
       connections,
       runtimeHost: new RecordingRuntimeHost(),
     });
-    const recovered = await service.localAppStudio(sourceWorkFolder);
+    const recovered = await service.localAppStudio(sourceConnectedFolder);
     assert.deepEqual(recovered.project?.presentation, presentation);
     assert.deepEqual(recovered.operations, [firstPlan], "a prepared install must survive process restart without allocating replacement ids");
 
     const activated = await service.activateLocalAppInstall(firstPlan.operationId);
     assert.equal(activated.instance.runtimeInstanceId, firstPlan.runtimeInstanceId);
-    assert.equal(activated.instance.workFolderId, targetWorkFolder);
+    assert.equal(activated.instance.connectedFolderId, targetConnectedFolder);
     assert.equal(activated.instance.releaseDigest, published.releaseDigest);
     assert.equal(activated.apps.length, 1);
     const installed = activated.apps[0]!;
@@ -126,24 +126,24 @@ test("Local App Studio separates Project declaration, immutable Release review, 
     assert.equal(installed.releaseDigest, published.releaseDigest);
     // An installed Feature comes up able to work (docs/receipts-not-gates.md, F21).
     assert.deepEqual(installed.networkGrants, ["mail-api"]);
-    assert.deepEqual(installed.fileGrants, [{ id: "exports", declarationId: "exports", root: ".", access: "read-write" }], "a directory permission binds to the whole work-folder");
+    assert.deepEqual(installed.fileGrants, [{ id: "exports", declarationId: "exports", root: ".", access: "read-write" }], "a directory permission binds to the whole Connected Folder");
     assert.deepEqual(installed.notificationGrants, ["new-mail"]);
     assert.ok(installed.automations.length > 0);
     assert.equal(installed.automations.every((automation) => automation.enabled), true, "every declared automation is on");
-    assert.deepEqual(await service.connectionStatus(targetWorkFolder, featureId, installed.digest), [{
+    assert.deepEqual(await service.connectionStatus(targetConnectedFolder, featureId, installed.digest), [{
       destinationId: "mail-api",
       owner: "instance",
       kind: null,
       configured: false,
     }], "installation must not silently configure a declared connection");
 
-    const descriptor = await service.runtimeDescriptor(targetWorkFolder, featureId, installed.digest);
+    const descriptor = await service.runtimeDescriptor(targetConnectedFolder, featureId, installed.digest);
     const releasedWorker = await readFile(join(descriptor.stagedRoot, "worker.js"), "utf8");
     assert.match(releasedWorker, /release-one-reviewed-bytes/);
     assert.doesNotMatch(releasedWorker, /unreviewed-source-after-prepare/,
       "activation must materialize the prepared Release closure, never current source files");
 
-    const development = (await service.list(sourceWorkFolder))[0]!;
+    const development = (await service.list(sourceConnectedFolder))[0]!;
     assert.equal(development.runtimeInstanceKind, "development");
     assert.equal(development.projectId, installed.projectId);
     assert.notEqual(development.runtimeInstanceId, installed.runtimeInstanceId);
@@ -153,19 +153,19 @@ test("Local App Studio separates Project declaration, immutable Release review, 
     await storage.set(storageOwner(installed), "shared-key", "installed-value");
     assert.equal(await storage.get(storageOwner(development), "shared-key"), "development-value");
     assert.equal(await storage.get(storageOwner(installed), "shared-key"), "installed-value");
-    const editable = await service.snapshotForChange(targetWorkFolder, featureId, installed.digest);
-    assert.equal(editable.app.sourceWorkFolderId, sourceWorkFolder);
-    assert.equal(editable.app.workFolderId, targetWorkFolder);
+    const editable = await service.snapshotForChange(targetConnectedFolder, featureId, installed.digest);
+    assert.equal(editable.app.sourceConnectedFolderId, sourceConnectedFolder);
+    assert.equal(editable.app.connectedFolderId, targetConnectedFolder);
     assert.equal(editable.previewBase?.featureInstallationId, development.featureInstallationId);
     assert.match(Buffer.from(editable.files.get("worker.js")!).toString(), /release-one-reviewed-bytes/);
     assert.ok([...editable.files.keys()].every((path) => !/storage|conversations|shared-key/.test(path)));
-    const laterReview = await service.inspect({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
-    await service.install({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: laterReview.digest });
-    await assert.rejects(service.snapshotForChange(targetWorkFolder, featureId, installed.digest), /different Local preview/);
-    await service.remove({ workFolderId: sourceWorkFolder, appId: featureId, expectedDigest: laterReview.digest });
-    const absentPreview = await service.snapshotForChange(targetWorkFolder, featureId, installed.digest);
+    const laterReview = await service.inspect({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
+    await service.install({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: laterReview.digest });
+    await assert.rejects(service.snapshotForChange(targetConnectedFolder, featureId, installed.digest), /different Local preview/);
+    await service.remove({ connectedFolderId: sourceConnectedFolder, appId: featureId, expectedDigest: laterReview.digest });
+    const absentPreview = await service.snapshotForChange(targetConnectedFolder, featureId, installed.digest);
     assert.equal(absentPreview.previewBase, null);
-    const replaceAbsent = { workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: laterReview.digest, expectedPreviewBase: absentPreview.previewBase };
+    const replaceAbsent = { connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: laterReview.digest, expectedPreviewBase: absentPreview.previewBase };
     await service.install(replaceAbsent);
     await assert.rejects(service.install(replaceAbsent), /Local preview changed/, "an absent predecessor must not silently replace a later install, even with identical bytes");
   } finally {
@@ -174,9 +174,9 @@ test("Local App Studio separates Project declaration, immutable Release review, 
   }
 });
 
-test("removing a target work-folder cancels a prepared install even before an App Instance exists", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-local-app-studio-remove-target-"));
-  const sourceRoot = join(sandbox, "source-work-folder");
+test("removing a target Connected Folder cancels a prepared install even before an App Instance exists", async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-local-app-studio-remove-target-"));
+  const sourceRoot = join(sandbox, "source-connected-folder");
   const packageRoot = join(sourceRoot, "apps", "connected-inbox");
   const rootPath = join(sandbox, "state", "restricted-apps");
   let service: RestrictedAppService | undefined;
@@ -184,39 +184,39 @@ test("removing a target work-folder cancels a prepared install even before an Ap
     await writePackage(packageRoot, { marker: "prepared-target-removal" });
     service = await RestrictedAppService.create({ rootPath });
     await service.declareLocalAppProject({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       presentation: { title: "Connected Inbox", description: null, icon: "mail" },
     });
     const review = await service.inspect({
-      workFolderId: sourceWorkFolder,
-      workFolderRoot: sourceRoot,
+      connectedFolderId: sourceConnectedFolder,
+      connectedFolderRoot: sourceRoot,
       sourcePath: "apps/connected-inbox",
     });
     await service.install({
-      workFolderId: sourceWorkFolder,
-      workFolderRoot: sourceRoot,
+      connectedFolderId: sourceConnectedFolder,
+      connectedFolderRoot: sourceRoot,
       sourcePath: "apps/connected-inbox",
       expectedDigest: review.digest,
     });
     const release = await prepareAndPublish(service, "1.0.0");
     const operation = await service.prepareLocalAppInstall({
-      sourceWorkFolderId: sourceWorkFolder,
-      targetWorkFolderId: targetWorkFolder,
+      sourceConnectedFolderId: sourceConnectedFolder,
+      targetConnectedFolderId: targetConnectedFolder,
       releaseDigest: release.releaseDigest,
     });
-    assert.deepEqual((await service.localAppStudio(sourceWorkFolder)).operations, [operation]);
-    assert.deepEqual(await service.workFolderRemovalMutationWorkFolderIds(sourceWorkFolder), [sourceWorkFolder, targetWorkFolder]);
-    assert.deepEqual(await service.workFolderRemovalMutationWorkFolderIds(targetWorkFolder), [sourceWorkFolder, targetWorkFolder]);
-    assert.deepEqual(await service.workFolderRemovalImpact(targetWorkFolder), {
+    assert.deepEqual((await service.localAppStudio(sourceConnectedFolder)).operations, [operation]);
+    assert.deepEqual(await service.connectedFolderRemovalMutationConnectedFolderIds(sourceConnectedFolder), [sourceConnectedFolder, targetConnectedFolder]);
+    assert.deepEqual(await service.connectedFolderRemovalMutationConnectedFolderIds(targetConnectedFolder), [sourceConnectedFolder, targetConnectedFolder]);
+    assert.deepEqual(await service.connectedFolderRemovalImpact(targetConnectedFolder), {
       activeSourceInstanceCount: 0,
       activeTargetInstanceCount: 0,
       retainedDataCount: 0,
       incomingPreparedOperationCount: 1,
     });
 
-    await service.removeWorkFolder(targetWorkFolder);
+    await service.removeConnectedFolder(targetConnectedFolder);
 
-    assert.deepEqual((await service.localAppStudio(sourceWorkFolder)).operations, []);
+    assert.deepEqual((await service.localAppStudio(sourceConnectedFolder)).operations, []);
     await assert.rejects(
       service.activateLocalAppInstall(operation.operationId),
       (error: unknown) => errorCode(error) === "INPUT_INVALID" && /no longer available/i.test(errorMessage(error)),
@@ -228,8 +228,8 @@ test("removing a target work-folder cancels a prepared install even before an Ap
 });
 
 test("Release deletion prunes only unused objects and preserves every active, prepared, or retained obligation", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-local-app-studio-release-delete-"));
-  const sourceRoot = join(sandbox, "source-work-folder");
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-local-app-studio-release-delete-"));
+  const sourceRoot = join(sandbox, "source-connected-folder");
   const packageRoot = join(sourceRoot, "apps", "connected-inbox");
   const rootPath = join(sandbox, "state", "restricted-apps");
   const storage = new FileRestrictedAppStorage(join(rootPath, "data"));
@@ -239,30 +239,30 @@ test("Release deletion prunes only unused objects and preserves every active, pr
     await writePackage(packageRoot, { marker: "release-deletion" });
     service = await RestrictedAppService.create({ rootPath, storage, connections });
     await service.declareLocalAppProject({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       presentation: { title: "Connected Inbox", description: "Release deletion fixture.", icon: "mail" },
     });
     const review = await service.inspect({
-      workFolderId: sourceWorkFolder,
-      workFolderRoot: sourceRoot,
+      connectedFolderId: sourceConnectedFolder,
+      connectedFolderRoot: sourceRoot,
       sourcePath: "apps/connected-inbox",
     });
     await service.install({
-      workFolderId: sourceWorkFolder,
-      workFolderRoot: sourceRoot,
+      connectedFolderId: sourceConnectedFolder,
+      connectedFolderRoot: sourceRoot,
       sourcePath: "apps/connected-inbox",
       expectedDigest: review.digest,
     });
 
-    const unusedPrepared = await service.prepareLocalAppRelease({ workFolderId: sourceWorkFolder, displayVersion: "0.9.0" });
+    const unusedPrepared = await service.prepareLocalAppRelease({ connectedFolderId: sourceConnectedFolder, displayVersion: "0.9.0" });
     const unusedPath = releaseObjectPath(rootPath, unusedPrepared.releaseDigest);
     assert.deepEqual(await service.deleteLocalAppRelease({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       releaseDigest: unusedPrepared.releaseDigest,
     }), { deleted: true, cleanupPending: false });
     await assert.rejects(access(unusedPath), (error: unknown) => isMissingError(error));
     assert.deepEqual(await service.deleteLocalAppRelease({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       releaseDigest: unusedPrepared.releaseDigest,
     }), { deleted: false, cleanupPending: false }, "deletion retries are idempotent");
 
@@ -272,40 +272,40 @@ test("Release deletion prunes only unused objects and preserves every active, pr
 
     const activeRelease = await prepareAndPublish(service, "1.0.0");
     const install = await service.prepareLocalAppInstall({
-      sourceWorkFolderId: sourceWorkFolder,
-      targetWorkFolderId: targetWorkFolder,
+      sourceConnectedFolderId: sourceConnectedFolder,
+      targetConnectedFolderId: targetConnectedFolder,
       releaseDigest: activeRelease.releaseDigest,
     });
     await assert.rejects(
-      service.deleteLocalAppRelease({ workFolderId: sourceWorkFolder, releaseDigest: activeRelease.releaseDigest }),
+      service.deleteLocalAppRelease({ connectedFolderId: sourceConnectedFolder, releaseDigest: activeRelease.releaseDigest }),
       (error: unknown) => errorCode(error) === "INPUT_INVALID" && /Cancel every prepared install/i.test(errorMessage(error)),
     );
     await service.cancelLocalAppOperation(install.operationId);
 
     const activeInstall = await service.prepareLocalAppInstall({
-      sourceWorkFolderId: sourceWorkFolder,
-      targetWorkFolderId: targetWorkFolder,
+      sourceConnectedFolderId: sourceConnectedFolder,
+      targetConnectedFolderId: targetConnectedFolder,
       releaseDigest: activeRelease.releaseDigest,
     });
     const installed = (await service.activateLocalAppInstall(activeInstall.operationId)).apps[0]!;
     await assert.rejects(
-      service.deleteLocalAppRelease({ workFolderId: sourceWorkFolder, releaseDigest: activeRelease.releaseDigest }),
+      service.deleteLocalAppRelease({ connectedFolderId: sourceConnectedFolder, releaseDigest: activeRelease.releaseDigest }),
       (error: unknown) => errorCode(error) === "INPUT_INVALID" && /Uninstall every App Instance/i.test(errorMessage(error)),
     );
 
     const updateTarget = await prepareAndPublish(service, "2.0.0");
     const update = await service.prepareLocalAppUpdate({
-      sourceWorkFolderId: sourceWorkFolder,
+      sourceConnectedFolderId: sourceConnectedFolder,
       runtimeInstanceId: installed.runtimeInstanceId,
       releaseDigest: updateTarget.releaseDigest,
     });
     await assert.rejects(
-      service.deleteLocalAppRelease({ workFolderId: sourceWorkFolder, releaseDigest: updateTarget.releaseDigest }),
+      service.deleteLocalAppRelease({ connectedFolderId: sourceConnectedFolder, releaseDigest: updateTarget.releaseDigest }),
       (error: unknown) => errorCode(error) === "INPUT_INVALID" && /Cancel every prepared install/i.test(errorMessage(error)),
       "the prepared operation's target Release must remain closed",
     );
     await assert.rejects(
-      service.deleteLocalAppRelease({ workFolderId: sourceWorkFolder, releaseDigest: activeRelease.releaseDigest }),
+      service.deleteLocalAppRelease({ connectedFolderId: sourceConnectedFolder, releaseDigest: activeRelease.releaseDigest }),
       (error: unknown) => errorCode(error) === "INPUT_INVALID"
         && /Uninstall every App Instance/i.test(errorMessage(error))
         && /Cancel every prepared install/i.test(errorMessage(error)),
@@ -313,7 +313,7 @@ test("Release deletion prunes only unused objects and preserves every active, pr
     );
     await service.cancelLocalAppOperation(update.operationId);
     assert.deepEqual(await service.deleteLocalAppRelease({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       releaseDigest: updateTarget.releaseDigest,
     }), { deleted: true, cleanupPending: false });
 
@@ -322,15 +322,15 @@ test("Release deletion prunes only unused objects and preserves every active, pr
       dataDisposition: "retain",
     });
     await assert.rejects(
-      service.deleteLocalAppRelease({ workFolderId: sourceWorkFolder, releaseDigest: activeRelease.releaseDigest }),
+      service.deleteLocalAppRelease({ connectedFolderId: sourceConnectedFolder, releaseDigest: activeRelease.releaseDigest }),
       (error: unknown) => errorCode(error) === "INPUT_INVALID" && /Purge the retained App data/i.test(errorMessage(error)),
     );
     await service.purgeLocalAppRetainedData(uninstalled.retainedData[0]!.retainedDataId);
     assert.deepEqual(await service.deleteLocalAppRelease({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       releaseDigest: activeRelease.releaseDigest,
     }), { deleted: true, cleanupPending: false });
-    assert.deepEqual((await service.localAppStudio(sourceWorkFolder)).releases, []);
+    assert.deepEqual((await service.localAppStudio(sourceConnectedFolder)).releases, []);
     assert.deepEqual(await readdir(join(rootPath, "releases")), []);
   } finally {
     await service?.close().catch(() => undefined);
@@ -345,8 +345,8 @@ test("Release deletion prunes only unused objects and preserves every active, pr
  * restart, because startup checks every stored Release against its record.
  */
 test("a deleted Release comes back from its kept copy, verified, in the state it was deleted in", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-local-app-studio-release-restore-"));
-  const sourceRoot = join(sandbox, "source-work-folder");
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-local-app-studio-release-restore-"));
+  const sourceRoot = join(sandbox, "source-connected-folder");
   const rootPath = join(sandbox, "state", "restricted-apps");
   const storage = new FileRestrictedAppStorage(join(rootPath, "data"));
   const connections = new MemoryConnectionStore();
@@ -355,27 +355,27 @@ test("a deleted Release comes back from its kept copy, verified, in the state it
     await writePackage(join(sourceRoot, "apps", "connected-inbox"), { marker: "release-restore" });
     service = await RestrictedAppService.create({ rootPath, storage, connections });
     await service.declareLocalAppProject({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       presentation: { title: "Connected Inbox", description: "Release restore fixture.", icon: "mail" },
     });
-    const review = await service.inspect({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
-    await service.install({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: review.digest });
+    const review = await service.inspect({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
+    await service.install({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: review.digest });
     const published = await prepareAndPublish(service, "1.0.0");
 
     // A failing keep deletes nothing: the copy comes first.
     await assert.rejects(
       service.deleteLocalAppRelease({
-        workFolderId: sourceWorkFolder,
+        connectedFolderId: sourceConnectedFolder,
         releaseDigest: published.releaseDigest,
         keep: async () => { throw new Error("Recently deleted is unavailable"); },
       }),
       /Recently deleted is unavailable/,
     );
-    assert.equal((await service.localAppStudio(sourceWorkFolder)).releases.length, 1);
+    assert.equal((await service.localAppStudio(sourceConnectedFolder)).releases.length, 1);
 
     let kept: { record: unknown; release: unknown } | undefined;
     assert.deepEqual(await service.deleteLocalAppRelease({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       releaseDigest: published.releaseDigest,
       keep: async (copy) => { kept = JSON.parse(JSON.stringify(copy)); },
     }), { deleted: true, cleanupPending: false });
@@ -388,35 +388,35 @@ test("a deleted Release comes back from its kept copy, verified, in the state it
     const tampered = structuredClone(kept.release) as { manifest: { displayVersion: string } };
     tampered.manifest.displayVersion = "9.9.9";
     await assert.rejects(
-      service.restoreLocalAppRelease({ workFolderId: sourceWorkFolder, record: kept.record, release: tampered }),
+      service.restoreLocalAppRelease({ connectedFolderId: sourceConnectedFolder, record: kept.record, release: tampered }),
       (error: unknown) => errorCode(error) === "INPUT_INVALID",
     );
     await assert.rejects(
-      service.restoreLocalAppRelease({ workFolderId: targetWorkFolder, record: kept.record, release: kept.release }),
-      /different work-folder/,
+      service.restoreLocalAppRelease({ connectedFolderId: targetConnectedFolder, record: kept.record, release: kept.release }),
+      /different Connected Folder/,
     );
 
-    const restored = await service.restoreLocalAppRelease({ workFolderId: sourceWorkFolder, record: kept.record, release: kept.release });
+    const restored = await service.restoreLocalAppRelease({ connectedFolderId: sourceConnectedFolder, record: kept.record, release: kept.release });
     assert.deepEqual(restored, published, "the Release returns exactly as it was, published");
     await access(releaseObjectPath(rootPath, published.releaseDigest));
     assert.deepEqual(
-      await service.restoreLocalAppRelease({ workFolderId: sourceWorkFolder, record: kept.record, release: kept.release }),
+      await service.restoreLocalAppRelease({ connectedFolderId: sourceConnectedFolder, record: kept.record, release: kept.release }),
       published,
       "restoring a Release that is already back changes nothing",
     );
 
     await service.close();
     service = await RestrictedAppService.create({ rootPath, storage, connections });
-    assert.deepEqual((await service.localAppStudio(sourceWorkFolder)).releases, [published], "the restored Release passes startup verification");
+    assert.deepEqual((await service.localAppStudio(sourceConnectedFolder)).releases, [published], "the restored Release passes startup verification");
 
     // A version prepared again in the meantime is not overwritten.
-    await service.deleteLocalAppRelease({ workFolderId: sourceWorkFolder, releaseDigest: published.releaseDigest });
+    await service.deleteLocalAppRelease({ connectedFolderId: sourceConnectedFolder, releaseDigest: published.releaseDigest });
     await writePackage(join(sourceRoot, "apps", "connected-inbox"), { marker: "release-restore-second" });
-    const nextReview = await service.inspect({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
-    await service.install({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: nextReview.digest });
-    await service.prepareLocalAppRelease({ workFolderId: sourceWorkFolder, displayVersion: "1.0.0" });
+    const nextReview = await service.inspect({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
+    await service.install({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: nextReview.digest });
+    await service.prepareLocalAppRelease({ connectedFolderId: sourceConnectedFolder, displayVersion: "1.0.0" });
     await assert.rejects(
-      service.restoreLocalAppRelease({ workFolderId: sourceWorkFolder, record: kept.record, release: kept.release }),
+      service.restoreLocalAppRelease({ connectedFolderId: sourceConnectedFolder, record: kept.record, release: kept.release }),
       /Another Release 1\.0\.0 has been prepared since/,
     );
   } finally {
@@ -426,57 +426,57 @@ test("a deleted Release comes back from its kept copy, verified, in the state it
 });
 
 /**
- * Removing a work-folder hands everything it takes out of App Studio to
- * `keep` before anything is removed, and `restoreWorkFolderAppStudio` puts
+ * Removing a Connected Folder hands everything it takes out of App Studio to
+ * `keep` before anything is removed, and `restoreConnectedFolderAppStudio` puts
  * the same values back (docs/receipts-not-gates.md, F20): packages and
  * envelopes are re-checked, a newer App Project with its own work is never
  * merged, and previews return under fresh authority with the person's
  * narrowing intact. The restored history survives a restart.
  */
-test("a removed work-folder's App Studio history comes back from its kept copy, re-checked", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-local-app-studio-work-folder-restore-"));
-  const sourceRoot = join(sandbox, "source-work-folder");
+test("a removed Connected Folder's App Studio history comes back from its kept copy, re-checked", async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-local-app-studio-connected-folder-restore-"));
+  const sourceRoot = join(sandbox, "source-connected-folder");
   const keptRoot = join(sandbox, "kept-packages");
   const rootPath = join(sandbox, "state", "restricted-apps");
   const storage = new FileRestrictedAppStorage(join(rootPath, "data"));
   const connections = new MemoryConnectionStore();
   let service: RestrictedAppService | undefined;
   try {
-    await writePackage(join(sourceRoot, "apps", "connected-inbox"), { marker: "work-folder-restore" });
+    await writePackage(join(sourceRoot, "apps", "connected-inbox"), { marker: "connected-folder-restore" });
     service = await RestrictedAppService.create({ rootPath, storage, connections, runtimeHost: new RecordingRuntimeHost() });
     const project = await service.declareLocalAppProject({
-      workFolderId: sourceWorkFolder,
-      presentation: { title: "Connected Inbox", description: "Work-folder restore fixture.", icon: "mail" },
+      connectedFolderId: sourceConnectedFolder,
+      presentation: { title: "Connected Inbox", description: "Connected Folder restore fixture.", icon: "mail" },
     });
-    const review = await service.inspect({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
-    const preview = await service.install({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: review.digest });
+    const review = await service.inspect({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
+    const preview = await service.install({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: review.digest });
     // The person's narrowing is part of what comes back.
-    await service.revokeNotifications({ workFolderId: sourceWorkFolder, appId: featureId, expectedDigest: preview.digest, permissionId: "new-mail" });
+    await service.revokeNotifications({ connectedFolderId: sourceConnectedFolder, appId: featureId, expectedDigest: preview.digest, permissionId: "new-mail" });
     const published = await prepareAndPublish(service, "1.0.0");
-    const prepared = await service.prepareLocalAppRelease({ workFolderId: sourceWorkFolder, displayVersion: "1.1.0" });
+    const prepared = await service.prepareLocalAppRelease({ connectedFolderId: sourceConnectedFolder, displayVersion: "1.1.0" });
     const operation = await service.prepareLocalAppInstall({
-      sourceWorkFolderId: sourceWorkFolder,
-      targetWorkFolderId: targetWorkFolder,
+      sourceConnectedFolderId: sourceConnectedFolder,
+      targetConnectedFolderId: targetConnectedFolder,
       releaseDigest: published.releaseDigest,
     });
-    const before = await service.localAppStudio(sourceWorkFolder);
+    const before = await service.localAppStudio(sourceConnectedFolder);
     const narrowed = before.previews[0]!;
     assert.deepEqual(narrowed.notificationGrants, []);
 
     // A failing keep removes nothing: the copy comes first.
     await assert.rejects(
-      service.removeWorkFolder(sourceWorkFolder, { keep: async () => { throw new Error("Recently deleted is unavailable"); } }),
+      service.removeConnectedFolder(sourceConnectedFolder, { keep: async () => { throw new Error("Recently deleted is unavailable"); } }),
       /Recently deleted is unavailable/,
     );
-    assert.deepEqual(await service.localAppStudio(sourceWorkFolder), before);
+    assert.deepEqual(await service.localAppStudio(sourceConnectedFolder), before);
 
-    let kept: LocalAppWorkFolderRecoveryCopy | undefined;
-    await service.removeWorkFolder(sourceWorkFolder, {
+    let kept: LocalAppConnectedFolderRecoveryCopy | undefined;
+    await service.removeConnectedFolder(sourceConnectedFolder, {
       keep: async (copy) => {
         // What the Recently deleted store does: a JSON copy of the records and
         // a copy of each package folder, never the originals.
         for (const item of copy.packages) await cp(item.root, join(keptRoot, item.digest), { recursive: true });
-        kept = JSON.parse(JSON.stringify(copy)) as LocalAppWorkFolderRecoveryCopy;
+        kept = JSON.parse(JSON.stringify(copy)) as LocalAppConnectedFolderRecoveryCopy;
       },
     });
     assert.ok(kept);
@@ -484,15 +484,15 @@ test("a removed work-folder's App Studio history comes back from its kept copy, 
     assert.deepEqual(kept.releases.map((item) => item.record.releaseDigest).sort(), [published.releaseDigest, prepared.releaseDigest].sort());
     assert.deepEqual(kept.operations.map((item) => item.operationId), [operation.operationId]);
     assert.ok(kept.adminReceipts.length > 0, "the Project's receipts travel with it");
-    assert.deepEqual(await service.localAppStudio(sourceWorkFolder), {
+    assert.deepEqual(await service.localAppStudio(sourceConnectedFolder), {
       project: null, previews: [], releases: [], instances: [], operations: [], retainedData: [],
     });
     await assert.rejects(access(releaseObjectPath(rootPath, published.releaseDigest)), (error: unknown) => isMissingError(error));
     await assert.rejects(access(join(rootPath, "staged", preview.digest)), (error: unknown) => isMissingError(error));
 
     const packageRoots = new Map(kept.packages.map((item) => [item.digest, join(keptRoot, item.digest)]));
-    const restoreInput = (overrides: Partial<Parameters<RestrictedAppService["restoreWorkFolderAppStudio"]>[0]> = {}) => ({
-      workFolderId: sourceWorkFolder,
+    const restoreInput = (overrides: Partial<Parameters<RestrictedAppService["restoreConnectedFolderAppStudio"]>[0]> = {}) => ({
+      connectedFolderId: sourceConnectedFolder,
       studio: {
         project: kept!.project,
         runtimeInstances: kept!.runtimeInstances,
@@ -502,7 +502,7 @@ test("a removed work-folder's App Studio history comes back from its kept copy, 
       },
       releases: kept!.releases,
       packageRoots,
-      registeredWorkFolderIds: new Set([sourceWorkFolder, targetWorkFolder]),
+      registeredConnectedFolderIds: new Set([sourceConnectedFolder, targetConnectedFolder]),
       ...overrides,
     });
 
@@ -511,34 +511,34 @@ test("a removed work-folder's App Studio history comes back from its kept copy, 
     await cp(join(keptRoot, preview.digest), tamperedRoot, { recursive: true });
     await writeFile(join(tamperedRoot, "worker.js"), workerSource("tampered"), "utf8");
     await assert.rejects(
-      service.restoreWorkFolderAppStudio(restoreInput({ packageRoots: new Map([[preview.digest, tamperedRoot]]) })),
+      service.restoreConnectedFolderAppStudio(restoreInput({ packageRoots: new Map([[preview.digest, tamperedRoot]]) })),
       (error: unknown) => errorCode(error) === "INPUT_INVALID" && /failed its check/.test(errorMessage(error)),
     );
     const tamperedReleases = structuredClone(kept.releases);
     (tamperedReleases[0]!.release as unknown as { manifest: { displayVersion: string } }).manifest.displayVersion = "9.9.9";
     await assert.rejects(
-      service.restoreWorkFolderAppStudio(restoreInput({ releases: tamperedReleases })),
+      service.restoreConnectedFolderAppStudio(restoreInput({ releases: tamperedReleases })),
       (error: unknown) => errorCode(error) === "INPUT_INVALID",
     );
     await assert.rejects(
-      service.restoreWorkFolderAppStudio(restoreInput({ workFolderId: targetWorkFolder })),
+      service.restoreConnectedFolderAppStudio(restoreInput({ connectedFolderId: targetConnectedFolder })),
       (error: unknown) => errorCode(error) === "INPUT_INVALID",
-      "App Studio history goes back only into the work-folder it came from",
+      "App Studio history goes back only into the Connected Folder it came from",
     );
-    assert.equal((await service.localAppStudio(sourceWorkFolder)).project, null, "a refused restore changes nothing");
+    assert.equal((await service.localAppStudio(sourceConnectedFolder)).project, null, "a refused restore changes nothing");
 
     // A newer App Project with its own apps is never merged; once it is empty it gives way.
-    const newer = await service.install({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: review.digest });
+    const newer = await service.install({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: review.digest });
     assert.notEqual(newer.projectId, project.projectId);
-    assert.match(await service.workFolderAppStudioRestoreBlocker(sourceWorkFolder, project.projectId) ?? "", /started a new App Project/);
+    assert.match(await service.connectedFolderAppStudioRestoreBlocker(sourceConnectedFolder, project.projectId) ?? "", /started a new App Project/);
     await assert.rejects(
-      service.restoreWorkFolderAppStudio(restoreInput()),
+      service.restoreConnectedFolderAppStudio(restoreInput()),
       (error: unknown) => errorCode(error) === "INPUT_INVALID" && /does not merge two App Projects/.test(errorMessage(error)),
     );
-    await service.remove({ workFolderId: sourceWorkFolder, appId: featureId, expectedDigest: newer.digest });
-    assert.equal(await service.workFolderAppStudioRestoreBlocker(sourceWorkFolder, project.projectId), null);
+    await service.remove({ connectedFolderId: sourceConnectedFolder, appId: featureId, expectedDigest: newer.digest });
+    assert.equal(await service.connectedFolderAppStudioRestoreBlocker(sourceConnectedFolder, project.projectId), null);
 
-    const restored = await service.restoreWorkFolderAppStudio(restoreInput());
+    const restored = await service.restoreConnectedFolderAppStudio(restoreInput());
     assert.equal(restored.restored, true);
     assert.equal(restored.droppedOperationCount, 0);
     assert.deepEqual(restored.project, before.project);
@@ -556,75 +556,75 @@ test("a removed work-folder's App Studio history comes back from its kept copy, 
     for (const field of ["featureInstallationGeneration", "grantGeneration", "connectionGeneration", "jobGeneration", "dataGeneration", "runtimeInstanceGeneration"] as const) {
       assert.notEqual(back.authority[field], narrowed.authority[field], `${field} is fresh, so nothing issued before the removal can act for it`);
     }
-    assert.equal((await service.connectionStatus(sourceWorkFolder, featureId, back.digest))[0]?.configured, false,
+    assert.equal((await service.connectionStatus(sourceConnectedFolder, featureId, back.digest))[0]?.configured, false,
       "secrets went with the removal and are entered again");
     await access(releaseObjectPath(rootPath, published.releaseDigest));
     await access(join(rootPath, "staged", preview.digest));
 
-    const again = await service.restoreWorkFolderAppStudio(restoreInput());
+    const again = await service.restoreConnectedFolderAppStudio(restoreInput());
     assert.equal(again.restored, false, "restoring history that is already back changes nothing");
 
     await service.close();
     service = await RestrictedAppService.create({ rootPath, storage, connections, runtimeHost: new RecordingRuntimeHost() });
-    const reopened = await service.localAppStudio(sourceWorkFolder);
+    const reopened = await service.localAppStudio(sourceConnectedFolder);
     assert.equal(reopened.project?.projectId, project.projectId, "the restored history passes startup verification");
     assert.equal(reopened.releases.length, 2);
     assert.equal(reopened.previews.length, 1);
 
     // The restored lineage works: the prepared Release still publishes against
     // its source previews, and the prepared install still activates.
-    assert.equal((await service.publishLocalAppRelease({ workFolderId: sourceWorkFolder, releaseDigest: prepared.releaseDigest })).state, "published");
+    assert.equal((await service.publishLocalAppRelease({ connectedFolderId: sourceConnectedFolder, releaseDigest: prepared.releaseDigest })).state, "published");
     const activated = await service.activateLocalAppInstall(operation.operationId);
-    assert.equal(activated.instance.workFolderId, targetWorkFolder);
+    assert.equal(activated.instance.connectedFolderId, targetConnectedFolder);
   } finally {
     await service?.close().catch(() => undefined);
     await rm(sandbox, { recursive: true, force: true });
   }
 });
 
-test("a target work-folder's cancelled installs come back only while they still fit", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-local-app-studio-target-restore-"));
-  const sourceRoot = join(sandbox, "source-work-folder");
+test("a target Connected Folder's cancelled installs come back only while they still fit", async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-local-app-studio-target-restore-"));
+  const sourceRoot = join(sandbox, "source-connected-folder");
   const rootPath = join(sandbox, "state", "restricted-apps");
   let service: RestrictedAppService | undefined;
   try {
     await writePackage(join(sourceRoot, "apps", "connected-inbox"), { marker: "target-restore" });
     service = await RestrictedAppService.create({ rootPath });
-    const review = await service.inspect({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
-    await service.install({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: review.digest });
+    const review = await service.inspect({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
+    await service.install({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox", expectedDigest: review.digest });
     const published = await prepareAndPublish(service, "1.0.0");
     const operation = await service.prepareLocalAppInstall({
-      sourceWorkFolderId: sourceWorkFolder,
-      targetWorkFolderId: targetWorkFolder,
+      sourceConnectedFolderId: sourceConnectedFolder,
+      targetConnectedFolderId: targetConnectedFolder,
       releaseDigest: published.releaseDigest,
     });
 
-    let kept: LocalAppWorkFolderRecoveryCopy | undefined;
-    await service.removeWorkFolder(targetWorkFolder, { keep: async (copy) => { kept = JSON.parse(JSON.stringify(copy)); } });
+    let kept: LocalAppConnectedFolderRecoveryCopy | undefined;
+    await service.removeConnectedFolder(targetConnectedFolder, { keep: async (copy) => { kept = JSON.parse(JSON.stringify(copy)); } });
     assert.ok(kept);
-    assert.equal(kept.project, null, "a target-only work-folder keeps no App Project");
+    assert.equal(kept.project, null, "a target-only Connected Folder keeps no App Project");
     assert.deepEqual(kept.operations.map((item) => item.operationId), [operation.operationId]);
-    assert.deepEqual((await service.localAppStudio(sourceWorkFolder)).operations, []);
+    assert.deepEqual((await service.localAppStudio(sourceConnectedFolder)).operations, []);
     const input = (registered: string[]) => ({
-      workFolderId: targetWorkFolder,
+      connectedFolderId: targetConnectedFolder,
       studio: { project: kept!.project, runtimeInstances: kept!.runtimeInstances, previews: kept!.previews, operations: kept!.operations, adminReceipts: kept!.adminReceipts },
       releases: kept!.releases,
       packageRoots: new Map<string, string>(),
-      registeredWorkFolderIds: new Set(registered),
+      registeredConnectedFolderIds: new Set(registered),
     });
 
-    // Aimed at a work-folder that is not registered, the install is counted, not guessed at.
-    const unregistered = await service.restoreWorkFolderAppStudio(input([sourceWorkFolder]));
+    // Aimed at a Connected Folder that is not registered, the install is counted, not guessed at.
+    const unregistered = await service.restoreConnectedFolderAppStudio(input([sourceConnectedFolder]));
     assert.equal(unregistered.restored, false);
     assert.equal(unregistered.droppedOperationCount, 1);
-    assert.deepEqual((await service.localAppStudio(sourceWorkFolder)).operations, []);
+    assert.deepEqual((await service.localAppStudio(sourceConnectedFolder)).operations, []);
 
-    const restored = await service.restoreWorkFolderAppStudio(input([sourceWorkFolder, targetWorkFolder]));
+    const restored = await service.restoreConnectedFolderAppStudio(input([sourceConnectedFolder, targetConnectedFolder]));
     assert.equal(restored.restored, true);
     assert.equal(restored.droppedOperationCount, 0);
     assert.deepEqual(restored.operations, [operation]);
-    assert.deepEqual((await service.localAppStudio(sourceWorkFolder)).operations, [operation]);
-    const repeated = await service.restoreWorkFolderAppStudio(input([sourceWorkFolder, targetWorkFolder]));
+    assert.deepEqual((await service.localAppStudio(sourceConnectedFolder)).operations, [operation]);
+    const repeated = await service.restoreConnectedFolderAppStudio(input([sourceConnectedFolder, targetConnectedFolder]));
     assert.equal(repeated.restored, false);
     assert.equal(repeated.droppedOperationCount, 0, "an install already back is neither restored twice nor counted as lost");
   } finally {
@@ -634,8 +634,8 @@ test("a target work-folder's cancelled installs come back only while they still 
 });
 
 test("a retryable Release prune remains pending across restart without blocking service startup", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-local-app-studio-release-prune-retry-"));
-  const sourceRoot = join(sandbox, "source-work-folder");
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-local-app-studio-release-prune-retry-"));
+  const sourceRoot = join(sandbox, "source-connected-folder");
   const packageRoot = join(sourceRoot, "apps", "connected-inbox");
   const rootPath = join(sandbox, "state", "restricted-apps");
   let blockPruning = false;
@@ -654,26 +654,26 @@ test("a retryable Release prune remains pending across restart without blocking 
     await writePackage(packageRoot, { marker: "restart-safe-prune" });
     service = await RestrictedAppService.create({ rootPath, releaseStore });
     await service.declareLocalAppProject({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       presentation: { title: "Connected Inbox", description: "Prune retry fixture.", icon: "mail" },
     });
     const review = await service.inspect({
-      workFolderId: sourceWorkFolder,
-      workFolderRoot: sourceRoot,
+      connectedFolderId: sourceConnectedFolder,
+      connectedFolderRoot: sourceRoot,
       sourcePath: "apps/connected-inbox",
     });
     await service.install({
-      workFolderId: sourceWorkFolder,
-      workFolderRoot: sourceRoot,
+      connectedFolderId: sourceConnectedFolder,
+      connectedFolderRoot: sourceRoot,
       sourcePath: "apps/connected-inbox",
       expectedDigest: review.digest,
     });
-    const release = await service.prepareLocalAppRelease({ workFolderId: sourceWorkFolder, displayVersion: "0.9.0" });
+    const release = await service.prepareLocalAppRelease({ connectedFolderId: sourceConnectedFolder, displayVersion: "0.9.0" });
     const objectPath = releaseObjectPath(rootPath, release.releaseDigest);
 
     blockPruning = true;
     assert.deepEqual(await service.deleteLocalAppRelease({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       releaseDigest: release.releaseDigest,
     }), { deleted: true, cleanupPending: true });
     assert.equal(await access(objectPath).then(() => true), true);
@@ -681,16 +681,16 @@ test("a retryable Release prune remains pending across restart without blocking 
     service = undefined;
 
     service = await RestrictedAppService.create({ rootPath, releaseStore });
-    assert.deepEqual((await service.localAppStudio(sourceWorkFolder)).releases, [],
+    assert.deepEqual((await service.localAppStudio(sourceConnectedFolder)).releases, [],
       "the committed registry deletion remains authoritative while bytes await pruning");
     assert.deepEqual(await service.deleteLocalAppRelease({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       releaseDigest: release.releaseDigest,
     }), { deleted: false, cleanupPending: true });
 
     blockPruning = false;
     assert.deepEqual(await service.deleteLocalAppRelease({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       releaseDigest: release.releaseDigest,
     }), { deleted: false, cleanupPending: false });
     await assert.rejects(access(objectPath), (error: unknown) => isMissingError(error));
@@ -701,8 +701,8 @@ test("a retryable Release prune remains pending across restart without blocking 
 });
 
 test("startup consumes the Release store's single verified reconciliation projection without rereading closures", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-local-app-studio-release-startup-"));
-  const sourceRoot = join(sandbox, "source-work-folder");
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-local-app-studio-release-startup-"));
+  const sourceRoot = join(sandbox, "source-connected-folder");
   const packageRoot = join(sourceRoot, "apps", "connected-inbox");
   const rootPath = join(sandbox, "state", "restricted-apps");
   const releaseStore = new CountingReleaseStore(join(rootPath, "releases"));
@@ -711,13 +711,13 @@ test("startup consumes the Release store's single verified reconciliation projec
     await writePackage(packageRoot, { marker: "single-startup-verification" });
     service = await RestrictedAppService.create({ rootPath, releaseStore });
     const review = await service.inspect({
-      workFolderId: sourceWorkFolder,
-      workFolderRoot: sourceRoot,
+      connectedFolderId: sourceConnectedFolder,
+      connectedFolderRoot: sourceRoot,
       sourcePath: "apps/connected-inbox",
     });
     await service.install({
-      workFolderId: sourceWorkFolder,
-      workFolderRoot: sourceRoot,
+      connectedFolderId: sourceConnectedFolder,
+      connectedFolderRoot: sourceRoot,
       sourcePath: "apps/connected-inbox",
       expectedDigest: review.digest,
     });
@@ -730,7 +730,7 @@ test("startup consumes the Release store's single verified reconciliation projec
 
     assert.equal(releaseStore.readCalls, 0,
       "reconciliation's verified projection must replace a redundant startup read of each full Release");
-    assert.equal((await service.localAppStudio(sourceWorkFolder)).releases.length, 1);
+    assert.equal((await service.localAppStudio(sourceConnectedFolder)).releases.length, 1);
   } finally {
     await service?.close().catch(() => undefined);
     await rm(sandbox, { recursive: true, force: true });
@@ -738,9 +738,9 @@ test("startup consumes the Release store's single verified reconciliation projec
 });
 
 test("Local App updates carry continuity across revisions by default, reset every power only on request, roll back, and retain data explicitly", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-local-app-studio-update-"));
-  const sourceRoot = join(sandbox, "source-work-folder");
-  const targetRoot = join(sandbox, "target-work-folder");
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-local-app-studio-update-"));
+  const sourceRoot = join(sandbox, "source-connected-folder");
+  const targetRoot = join(sandbox, "target-connected-folder");
   const packageRoot = join(sourceRoot, "apps", "connected-inbox");
   const rootPath = join(sandbox, "state", "restricted-apps");
   const storage = new FileRestrictedAppStorage(join(rootPath, "data"));
@@ -752,20 +752,20 @@ test("Local App updates carry continuity across revisions by default, reset ever
     await mkdir(join(targetRoot, "exports"), { recursive: true });
     service = await RestrictedAppService.create({ rootPath, storage, connections, runtimeHost });
     await service.declareLocalAppProject({
-      workFolderId: sourceWorkFolder,
+      connectedFolderId: sourceConnectedFolder,
       presentation: { title: "Connected Inbox", description: "Update continuity fixture.", icon: "mail" },
     });
-    const previewReview = await service.inspect({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
+    const previewReview = await service.inspect({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
     await service.install({
-      workFolderId: sourceWorkFolder,
-      workFolderRoot: sourceRoot,
+      connectedFolderId: sourceConnectedFolder,
+      connectedFolderRoot: sourceRoot,
       sourcePath: "apps/connected-inbox",
       expectedDigest: previewReview.digest,
     });
     const firstRelease = await prepareAndPublish(service, "1.0.0");
     const installPlan = await service.prepareLocalAppInstall({
-      sourceWorkFolderId: sourceWorkFolder,
-      targetWorkFolderId: targetWorkFolder,
+      sourceConnectedFolderId: sourceConnectedFolder,
+      targetConnectedFolderId: targetConnectedFolder,
       releaseDigest: firstRelease.releaseDigest,
     });
     const firstInstalled = (await service.activateLocalAppInstall(installPlan.operationId)).apps[0]!;
@@ -776,34 +776,34 @@ test("Local App updates carry continuity across revisions by default, reset ever
     };
 
     await service.grantNetwork({
-      workFolderId: targetWorkFolder,
+      connectedFolderId: targetConnectedFolder,
       appId: featureId,
       expectedDigest: firstInstalled.digest,
       destinationId: "mail-api",
     });
     await service.grantFiles({
-      workFolderId: targetWorkFolder,
-      workFolderRoot: targetRoot,
+      connectedFolderId: targetConnectedFolder,
+      connectedFolderRoot: targetRoot,
       appId: featureId,
       expectedDigest: firstInstalled.digest,
       permissionId: "exports",
       root: "exports",
     });
     await service.grantNotifications({
-      workFolderId: targetWorkFolder,
+      connectedFolderId: targetConnectedFolder,
       appId: featureId,
       expectedDigest: firstInstalled.digest,
       permissionId: "new-mail",
     });
     await service.setConnection({
-      workFolderId: targetWorkFolder,
+      connectedFolderId: targetConnectedFolder,
       appId: featureId,
       expectedDigest: firstInstalled.digest,
       destinationId: "mail-api",
       credential: { kind: "api-key", value: "local-test-secret" },
     });
     await service.setAppAutomationEnabled({
-      workFolderId: targetWorkFolder,
+      connectedFolderId: targetConnectedFolder,
       appId: featureId,
       expectedDigest: firstInstalled.digest,
       appAutomationId: refreshAppAutomation,
@@ -813,7 +813,7 @@ test("Local App updates carry continuity across revisions by default, reset ever
 
     const exactRelease = await prepareAndPublish(service, "1.0.1");
     const exactUpdate = await service.prepareLocalAppUpdate({
-      sourceWorkFolderId: sourceWorkFolder,
+      sourceConnectedFolderId: sourceConnectedFolder,
       runtimeInstanceId: firstInstalled.runtimeInstanceId,
       releaseDigest: exactRelease.releaseDigest,
     });
@@ -827,7 +827,7 @@ test("Local App updates carry continuity across revisions by default, reset ever
     });
     await assert.rejects(
       service.prepareLocalAppUpdate({
-        sourceWorkFolderId: sourceWorkFolder,
+        sourceConnectedFolderId: sourceConnectedFolder,
         runtimeInstanceId: firstInstalled.runtimeInstanceId,
         releaseDigest: exactRelease.releaseDigest,
         continuityPolicy: "reset",
@@ -841,12 +841,12 @@ test("Local App updates carry continuity across revisions by default, reset ever
     assert.deepEqual(exactActivated.fileGrants.map((grant) => grant.declarationId), ["exports"]);
     assert.deepEqual(exactActivated.notificationGrants, ["new-mail"]);
     assert.equal(exactActivated.automations.find((item) => item.id === refreshAppAutomation)?.enabled, true);
-    assert.equal((await service.connectionStatus(targetWorkFolder, featureId, exactActivated.digest))[0]?.configured, true);
+    assert.equal((await service.connectionStatus(targetConnectedFolder, featureId, exactActivated.digest))[0]?.configured, true);
     assert.deepEqual(await storage.get(storageOwner(exactActivated), "durable"), { count: 7 });
 
     const resetRelease = await prepareAndPublish(service, "1.0.2");
     const resetUpdate = await service.prepareLocalAppUpdate({
-      sourceWorkFolderId: sourceWorkFolder,
+      sourceConnectedFolderId: sourceConnectedFolder,
       runtimeInstanceId: exactActivated.runtimeInstanceId,
       releaseDigest: resetRelease.releaseDigest,
       continuityPolicy: "reset",
@@ -858,45 +858,45 @@ test("Local App updates carry continuity across revisions by default, reset ever
     // "reset" is the person's explicit choice to start over with the install
     // defaults: every declared power on again, and the connection gone.
     assert.deepEqual(resetActivated.networkGrants, ["mail-api"]);
-    assert.deepEqual(resetActivated.fileGrants, [{ id: "exports", declarationId: "exports", root: ".", access: "read-write" }], "the reset re-binds the directory permission to the whole work-folder");
+    assert.deepEqual(resetActivated.fileGrants, [{ id: "exports", declarationId: "exports", root: ".", access: "read-write" }], "the reset re-binds the directory permission to the whole Connected Folder");
     assert.deepEqual(resetActivated.notificationGrants, ["new-mail"]);
     assert.equal(resetActivated.automations.every((automation) => automation.enabled), true);
-    assert.equal((await service.connectionStatus(targetWorkFolder, featureId, resetActivated.digest))[0]?.configured, false,
+    assert.equal((await service.connectionStatus(targetConnectedFolder, featureId, resetActivated.digest))[0]?.configured, false,
       "an exact-revision reset must synchronously revoke the predecessor connection");
     assert.deepEqual(await storage.get(storageOwner(resetActivated), "durable"), { count: 7 });
     // The person narrows one default and connects again before the code changes.
     await service.revokeNotifications({
-      workFolderId: targetWorkFolder,
+      connectedFolderId: targetConnectedFolder,
       appId: featureId,
       expectedDigest: resetActivated.digest,
       permissionId: "new-mail",
     });
     await service.setConnection({
-      workFolderId: targetWorkFolder,
+      connectedFolderId: targetConnectedFolder,
       appId: featureId,
       expectedDigest: resetActivated.digest,
       destinationId: "mail-api",
       credential: { kind: "api-key", value: "replacement-test-secret" },
     });
 
-    const staleRelease = await service.prepareLocalAppRelease({ workFolderId: sourceWorkFolder, displayVersion: "1.1.0" });
+    const staleRelease = await service.prepareLocalAppRelease({ connectedFolderId: sourceConnectedFolder, displayVersion: "1.1.0" });
     await writePackage(packageRoot, { version: "0.2.0", marker: "changed-revision" });
-    const changedReview = await service.inspect({ workFolderId: sourceWorkFolder, workFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
+    const changedReview = await service.inspect({ connectedFolderId: sourceConnectedFolder, connectedFolderRoot: sourceRoot, sourcePath: "apps/connected-inbox" });
     await service.install({
-      workFolderId: sourceWorkFolder,
-      workFolderRoot: sourceRoot,
+      connectedFolderId: sourceConnectedFolder,
+      connectedFolderRoot: sourceRoot,
       sourcePath: "apps/connected-inbox",
       expectedDigest: changedReview.digest,
     });
     await assert.rejects(
-      service.publishLocalAppRelease({ workFolderId: sourceWorkFolder, releaseDigest: staleRelease.releaseDigest }),
+      service.publishLocalAppRelease({ connectedFolderId: sourceConnectedFolder, releaseDigest: staleRelease.releaseDigest }),
       (error: unknown) => errorCode(error) === "REVISION_CHANGED" && /changed after this Release was prepared/i.test(errorMessage(error)),
       "publishing must revalidate the reviewed Development Instance stamp",
     );
 
     const changedRelease = await prepareAndPublish(service, "2.0.0");
     const changedUpdate = await service.prepareLocalAppUpdate({
-      sourceWorkFolderId: sourceWorkFolder,
+      sourceConnectedFolderId: sourceConnectedFolder,
       runtimeInstanceId: firstInstalled.runtimeInstanceId,
       releaseDigest: changedRelease.releaseDigest,
     });
@@ -912,16 +912,16 @@ test("Local App updates carry continuity across revisions by default, reset ever
     const changedActivated = (await service.activateLocalAppUpdate(changedUpdate.operationId)).apps[0]!;
     assert.deepEqual(ids(changedActivated), originalIds, "a revision switch keeps the Feature incarnation and data lineage");
     assert.deepEqual(changedActivated.networkGrants, ["mail-api"], "the person's granted state carries by declaration id");
-    assert.deepEqual(changedActivated.fileGrants, [{ id: "exports", declarationId: "exports", root: ".", access: "read-write" }], "the whole-work-folder file grant carries with its unchanged declaration");
+    assert.deepEqual(changedActivated.fileGrants, [{ id: "exports", declarationId: "exports", root: ".", access: "read-write" }], "the whole-connected-folder file grant carries with its unchanged declaration");
     assert.deepEqual(changedActivated.notificationGrants, [], "the person's revocation carries across the code change");
     assert.equal(changedActivated.automations.find((item) => item.id === refreshAppAutomation)?.enabled, true);
-    assert.equal((await service.connectionStatus(targetWorkFolder, featureId, changedActivated.digest))[0]?.configured, true,
+    assert.equal((await service.connectionStatus(targetConnectedFolder, featureId, changedActivated.digest))[0]?.configured, true,
       "a byte-identical destination declaration keeps its connection");
     assert.deepEqual(await storage.get(storageOwner(changedActivated), "durable"), { count: 7 },
       "code revision must not imply a data namespace reset");
 
     const rollbackPlan = await service.prepareLocalAppUpdate({
-      sourceWorkFolderId: sourceWorkFolder,
+      sourceConnectedFolderId: sourceConnectedFolder,
       runtimeInstanceId: changedActivated.runtimeInstanceId,
       releaseDigest: exactRelease.releaseDigest,
     });
@@ -934,14 +934,14 @@ test("Local App updates carry continuity across revisions by default, reset ever
     assert.deepEqual(await storage.get(storageOwner(rolledBack), "durable"), { count: 7 });
 
     await assert.rejects(
-      service.remove({ workFolderId: targetWorkFolder, appId: featureId, expectedDigest: rolledBack.digest }),
+      service.remove({ connectedFolderId: targetConnectedFolder, appId: featureId, expectedDigest: rolledBack.digest }),
       (error: unknown) => errorCode(error) === "INPUT_INVALID" && /App Studio/i.test(errorMessage(error)),
       "a Feature-level remove must not bypass App Instance data disposition",
     );
     await assert.rejects(
-      service.removeWorkFolder(targetWorkFolder),
+      service.removeConnectedFolder(targetConnectedFolder),
       (error: unknown) => errorCode(error) === "INPUT_INVALID" && /Uninstall release-backed Apps/i.test(errorMessage(error)),
-      "work-folder removal must not implicitly delete an attached App Instance",
+      "Connected Folder removal must not implicitly delete an attached App Instance",
     );
 
     const uninstalled = await service.uninstallLocalApp({
@@ -951,15 +951,15 @@ test("Local App updates carry continuity across revisions by default, reset ever
     assert.equal(uninstalled.removed, true);
     assert.equal(uninstalled.retainedData.length, 1);
     assert.equal(uninstalled.retainedData[0]?.dataNamespaceId, originalIds.dataNamespaceId);
-    assert.deepEqual(await service.list(targetWorkFolder), []);
+    assert.deepEqual(await service.list(targetConnectedFolder), []);
     assert.deepEqual(await storage.get(storageOwner(rolledBack), "durable"), { count: 7 });
-    assert.equal((await service.localAppStudio(sourceWorkFolder)).retainedData.length, 1);
+    assert.equal((await service.localAppStudio(sourceConnectedFolder)).retainedData.length, 1);
 
     const purged = await service.purgeLocalAppRetainedData(uninstalled.retainedData[0]!.retainedDataId);
     assert.equal(purged.purged, true);
     assert.equal(purged.cleanupPending, false);
     assert.equal((await storage.usage(storageOwner(rolledBack))).keyCount, 0);
-    assert.deepEqual((await service.localAppStudio(sourceWorkFolder)).retainedData, []);
+    assert.deepEqual((await service.localAppStudio(sourceConnectedFolder)).retainedData, []);
   } finally {
     await service?.close().catch(() => undefined);
     await rm(sandbox, { recursive: true, force: true });
@@ -967,7 +967,7 @@ test("Local App updates carry continuity across revisions by default, reset ever
 });
 
 test("Restricted app registry rejects v3 without importing or rewriting it", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-local-app-studio-v3-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-local-app-studio-v3-"));
   const rootPath = join(sandbox, "state", "restricted-apps");
   const registryPath = join(rootPath, "registry.json");
   const oldRegistry = `${JSON.stringify({ schemaVersion: 3, projects: [] }, null, 2)}\n`;
@@ -987,9 +987,9 @@ test("Restricted app registry rejects v3 without importing or rewriting it", asy
 });
 
 async function prepareAndPublish(service: RestrictedAppService, displayVersion: string) {
-  const prepared = await service.prepareLocalAppRelease({ workFolderId: sourceWorkFolder, displayVersion });
+  const prepared = await service.prepareLocalAppRelease({ connectedFolderId: sourceConnectedFolder, displayVersion });
   return await service.publishLocalAppRelease({
-    workFolderId: sourceWorkFolder,
+    connectedFolderId: sourceConnectedFolder,
     releaseDigest: prepared.releaseDigest,
   });
 }
@@ -1013,11 +1013,11 @@ function storageOwner(app: RestrictedAppInstalled): RestrictedAppStorageOwner {
 }
 
 class RecordingRuntimeHost implements RestrictedAppRuntimeHost {
-  readonly stops: Array<{ workFolderId: string; appId: string; digest?: string }> = [];
+  readonly stops: Array<{ connectedFolderId: string; appId: string; digest?: string }> = [];
   async invoke(_app: RestrictedAppRuntimeDescriptor, _action: string, _input: unknown): Promise<unknown> { return {}; }
   async runAppAutomation(): Promise<void> {}
-  async stop(workFolderId: string, appId: string, digest?: string): Promise<void> {
-    this.stops.push({ workFolderId, appId, ...(digest ? { digest } : {}) });
+  async stop(connectedFolderId: string, appId: string, digest?: string): Promise<void> {
+    this.stops.push({ connectedFolderId, appId, ...(digest ? { digest } : {}) });
   }
   async close(): Promise<void> {}
 }

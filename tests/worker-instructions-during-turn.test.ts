@@ -15,7 +15,7 @@ async function waitFor(predicate: () => boolean, label: string, timeoutMs = 20_0
 }
 
 test("Worker instructions save while a turn runs, and that Chat picks them up when its turn ends", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-instructions-during-turn-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-instructions-during-turn-"));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
   // A Pi extension command answers turns without a model call.
   await mkdir(join(sandbox, "agent", "extensions"), { recursive: true });
@@ -29,7 +29,7 @@ test("Worker instructions save while a turn runs, and that Chat picks them up wh
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: {
       // Called each time a Chat's client is built: what its session will carry.
@@ -47,13 +47,13 @@ test("Worker instructions save while a turn runs, and that Chat picks them up wh
     },
   });
   try {
-    const { workFolder } = await api.actFacade.createWorkFolder({ name: "Garden" });
+    const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Garden" });
     // A finished turn's request settles a moment before its Chat takes the next message.
     const sendWhenFree = async (content: string, conversationId: string) => {
       const deadline = Date.now() + 20_000;
       for (;;) {
         try {
-          return await api.actFacade.sendMessage({ workFolder: workFolder.id, conversationId, content });
+          return await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId, content });
         } catch (error) {
           if (!/Wait for the current agent turn to finish/.test(String(error)) || Date.now() > deadline) throw error;
           await new Promise((resolve) => setTimeout(resolve, 25));
@@ -63,11 +63,11 @@ test("Worker instructions save while a turn runs, and that Chat picks them up wh
     // Settled means the request itself finished, not just its latest turn.
     const settled = (taskId: string) => () => ["done", "partial", "failed", "stopped"].includes(api.requests.byTaskId(taskId)?.state ?? "");
 
-    // The Worker is mid-turn when it saves its own work-folder's instructions.
+    // The Worker is mid-turn when it saves its own Connected Folder's instructions.
     holdNext = true;
-    const first = await api.actFacade.sendMessage({ workFolder: workFolder.id, newConversation: true, content: "/noop" });
+    const first = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "/noop" });
     await waitFor(() => release !== null, "the turn to be running");
-    const saved = await api.actFacade.workerSetInstructions({ workFolder: workFolder.id, instructions: "This folder plans the spring vegetable garden." });
+    const saved = await api.actFacade.workerSetInstructions({ connectedFolder: connectedFolder.id, instructions: "This folder plans the spring vegetable garden." });
     assert.equal(saved.instructions, "This folder plans the spring vegetable garden.", "saving is not refused while the turn runs");
     assert.equal(api.requests.byTaskId(first.taskId)?.turns.at(-1)?.state, "running", "the running turn is not interrupted");
     release!();
@@ -82,7 +82,7 @@ test("Worker instructions save while a turn runs, and that Chat picks them up wh
     assert.equal(sessionInstructions.at(-1), "This folder plans the spring vegetable garden.");
 
     // An idle Chat rebuilds at once.
-    await api.actFacade.workerSetInstructions({ workFolder: workFolder.id, instructions: "Keep seed orders in Supplies." });
+    await api.actFacade.workerSetInstructions({ connectedFolder: connectedFolder.id, instructions: "Keep seed orders in Supplies." });
     const third = await sendWhenFree("/noop", first.conversationId);
     await waitFor(settled(third.taskId), "the third turn to finish");
     assert.equal(sessionInstructions.at(-1), "Keep seed orders in Supplies.");
@@ -95,13 +95,13 @@ test("Worker instructions save while a turn runs, and that Chat picks them up wh
 });
 
 test("--append adds one remembered line, keeps what was there, and skips an exact repeat", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-instructions-append-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-instructions-append-"));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
   const instructions = new Map<string, string>();
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: {
       async resolveRuntime(root: string) { return { agentDir: join(sandbox, "agent"), workerInstructions: instructions.get(root) ?? "" }; },
@@ -110,16 +110,16 @@ test("--append adds one remembered line, keeps what was there, and skips an exac
     },
   });
   try {
-    const { workFolder } = await api.actFacade.createWorkFolder({ name: "Notes" });
-    const first = await api.actFacade.workerSetInstructions({ workFolder: workFolder.id, instructions: "This folder holds Mat's research notes.\n" , append: true });
+    const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Notes" });
+    const first = await api.actFacade.workerSetInstructions({ connectedFolder: connectedFolder.id, instructions: "This folder holds Mat's research notes.\n" , append: true });
     assert.equal(first.instructions, "This folder holds Mat's research notes.");
     assert.equal(first.appended, true);
-    const second = await api.actFacade.workerSetInstructions({ workFolder: workFolder.id, instructions: "Write dates as YYYY-MM-DD.", append: true });
+    const second = await api.actFacade.workerSetInstructions({ connectedFolder: connectedFolder.id, instructions: "Write dates as YYYY-MM-DD.", append: true });
     assert.equal(second.instructions, "This folder holds Mat's research notes.\nWrite dates as YYYY-MM-DD.");
-    const repeat = await api.actFacade.workerSetInstructions({ workFolder: workFolder.id, instructions: "  Write dates as YYYY-MM-DD.  ", append: true });
+    const repeat = await api.actFacade.workerSetInstructions({ connectedFolder: connectedFolder.id, instructions: "  Write dates as YYYY-MM-DD.  ", append: true });
     assert.equal(repeat.appended, false);
-    assert.equal(instructions.get(workFolder.workFolderRoot), "This folder holds Mat's research notes.\nWrite dates as YYYY-MM-DD.");
-    await assert.rejects(api.actFacade.workerSetInstructions({ workFolder: workFolder.id, instructions: "   ", append: true }), /Provide the line to add/);
+    assert.equal(instructions.get(connectedFolder.connectedFolderRoot), "This folder holds Mat's research notes.\nWrite dates as YYYY-MM-DD.");
+    await assert.rejects(api.actFacade.workerSetInstructions({ connectedFolder: connectedFolder.id, instructions: "   ", append: true }), /Provide the line to add/);
   } finally {
     await api.close();
   }

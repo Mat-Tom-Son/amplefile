@@ -19,11 +19,11 @@ import { PopoverApp } from "./PopoverApp";
 
 const platform = desktopPlatform();
 if (platform) document.documentElement.dataset.platform = platform;
-if (window.workFoldDesktop) document.documentElement.dataset.desktop = "true";
+if (window.ampleFileDesktop) document.documentElement.dataset.desktop = "true";
 // The inert preview imitates the Mac popover; popover-document.css draws its material.
 const previewWindow = previewPlatform() === "darwin";
 if (previewWindow) document.documentElement.dataset.previewWindow = "mac";
-const windowMaterial = window.workFoldDesktop?.window.material ?? (previewWindow ? "vibrancy" : undefined);
+const windowMaterial = window.ampleFileDesktop?.window.material ?? (previewWindow ? "vibrancy" : undefined);
 if (windowMaterial === "vibrancy") document.documentElement.dataset.windowMaterial = windowMaterial;
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

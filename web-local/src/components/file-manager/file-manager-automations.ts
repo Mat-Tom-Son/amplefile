@@ -12,10 +12,10 @@ export interface AutomationCardRow {
 }
 
 /** The folder's own Automations first, then each ready-made one as the Automation it is (or would be) here. */
-export function automationCardRows(workFolderId: string, automations: readonly FolderAutomationView[]): AutomationCardRow[] {
+export function automationCardRows(connectedFolderId: string, automations: readonly FolderAutomationView[]): AutomationCardRow[] {
   const isOn = (automation: FolderAutomationView | undefined) => automation?.state === "on" || automation?.state === "running";
   const ready = automationTemplates.map((template) => {
-    const automationId = automationTemplateAutomationId(template.id, workFolderId);
+    const automationId = automationTemplateAutomationId(template.id, connectedFolderId);
     const existing = automations.find((automation) => automation.automationId === automationId);
     return { automationId, title: template.title, description: template.description, on: isOn(existing), templateId: template.id, ...(existing ? { existing } : {}) };
   });

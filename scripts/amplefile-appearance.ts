@@ -1,0 +1,250 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { extname, resolve } from "node:path";
+import { parseArgs } from "node:util";
+
+import {
+  accentIdentityFromHex,
+  createConnectedFolderAppearanceProposal,
+  normalizeHexColor,
+  parseConnectedFolderAppearanceProposal,
+  resolveConnectedFolderAppearance,
+  connectedFolderAppearanceBannerNames,
+  connectedFolderAppearanceBannerLayouts,
+  connectedFolderAppearanceBannerIconStyles,
+  connectedFolderAppearanceBannerTitleFills,
+  connectedFolderAppearanceBannerPresetIds,
+  normalizeConnectedFolderAppearanceBannerFraming,
+  type ConnectedFolderAppearanceBannerImagePosition,
+  type ConnectedFolderAppearanceProposal,
+} from "../src/shared/connected-folder-appearance.js";
+
+const bannerNames = new Set<string>(connectedFolderAppearanceBannerNames);
+
+async function main(): Promise<void> {
+  const [command, ...args] = process.argv.slice(2);
+  if (!command || command === "help" || command === "--help" || command === "-h") {
+    printHelp();
+    return;
+  }
+  if (command === "create") {
+    await createCommand(args);
+    return;
+  }
+  if (command === "validate" || command === "resolve") {
+    await inspectCommand(command, args);
+    return;
+  }
+  throw new Error(`Unknown command: ${command}`);
+}
+
+async function createCommand(args: string[]): Promise<void> {
+  const parsed = parseArgs({
+    args,
+    allowPositionals: false,
+    strict: true,
+    options: {
+      name: { type: "string" },
+      description: { type: "string" },
+      color: { type: "string" },
+      secondary: { type: "string" },
+      icon: { type: "string" },
+      banner: { type: "string" },
+      "banner-image": { type: "string" },
+      "banner-preset": { type: "string" },
+      "banner-layout": { type: "string" },
+      "icon-style": { type: "string" },
+      "title-fill": { type: "string" },
+      "frame-x": { type: "string" },
+      "frame-y": { type: "string" },
+      zoom: { type: "string" },
+      position: { type: "string", default: "center" },
+      "connected-folder-id": { type: "string" },
+      "connected-folder-name": { type: "string" },
+      "created-by": { type: "string", default: "other" },
+      out: { type: "string" },
+      force: { type: "boolean", default: false },
+      json: { type: "boolean", default: false },
+    },
+  });
+  const color = requireHex(parsed.values.color, "--color");
+  const secondary = parsed.values.secondary ? requireHex(parsed.values.secondary, "--secondary") : undefined;
+  const bannerName = parsed.values.banner?.trim().toLowerCase();
+  if (bannerName && !bannerNames.has(bannerName)) {
+    throw new Error(`--banner must be one of: ${[...bannerNames].join(", ")}`);
+  }
+  const position = normalizePosition(parsed.values.position);
+  const bannerPreset = connectedFolderAppearanceBannerPresetIds.find((id) => id === parsed.values["banner-preset"]);
+  if (parsed.values["banner-preset"] && !bannerPreset) throw new Error(`--banner-preset must be one of: ${connectedFolderAppearanceBannerPresetIds.join(", ")}`);
+  if (bannerPreset && parsed.values["banner-image"]) throw new Error("Choose --banner-preset or --banner-image.");
+  const bannerLayout = connectedFolderAppearanceBannerLayouts.find((id) => id === parsed.values["banner-layout"]);
+  if (parsed.values["banner-layout"] && !bannerLayout) throw new Error(`--banner-layout must be one of: ${connectedFolderAppearanceBannerLayouts.join(", ")}`);
+  const bannerIconStyle = connectedFolderAppearanceBannerIconStyles.find((id) => id === parsed.values["icon-style"]);
+  if (parsed.values["icon-style"] && !bannerIconStyle) throw new Error(`--icon-style must be one of: ${connectedFolderAppearanceBannerIconStyles.join(", ")}`);
+  const bannerTitleFill = connectedFolderAppearanceBannerTitleFills.find((id) => id === parsed.values["title-fill"]);
+  if (parsed.values["title-fill"] && !bannerTitleFill) throw new Error(`--title-fill must be one of: ${connectedFolderAppearanceBannerTitleFills.join(", ")}`);
+  const hasFraming = parsed.values["frame-x"] !== undefined || parsed.values["frame-y"] !== undefined || parsed.values.zoom !== undefined;
+  const bannerFraming = hasFraming ? normalizeConnectedFolderAppearanceBannerFraming({ x: Number(parsed.values["frame-x"] ?? 50), y: Number(parsed.values["frame-y"] ?? (position === "top" ? 0 : position === "bottom" ? 100 : 50)), zoom: Number(parsed.values.zoom ?? 1) }) : undefined;
+  if (hasFraming && !bannerFraming) throw new Error("Frame coordinates must be between 0 and 100; zoom must be between 1 and 2.");
+  const createdBy = normalizeCreatedBy(parsed.values["created-by"]);
+  const bannerImage = parsed.values["banner-image"]
+    ? await encodeBannerImage(resolve(parsed.values["banner-image"]))
+    : undefined;
+  const proposal = createConnectedFolderAppearanceProposal({
+    name: parsed.values.name?.trim() || "AmpleFile appearance",
+    description: parsed.values.description,
+    target: {
+      connectedFolderId: parsed.values["connected-folder-id"],
+      connectedFolderName: parsed.values["connected-folder-name"],
+    },
+    customization: {
+      schema: 2,
+      primary: accentIdentityFromHex(color),
+      ...(secondary ? { secondary: accentIdentityFromHex(secondary) } : {}),
+      ...(parsed.values.icon ? { iconName: parsed.values.icon } : {}),
+      ...(bannerName ? { bannerName } : {}),
+      ...(bannerImage ? { bannerImage, bannerImagePosition: position } : {}),
+      ...(bannerPreset ? { bannerPreset } : {}),
+      ...(bannerFraming ? { bannerFraming } : {}),
+      ...(bannerLayout ? { bannerLayout } : {}),
+      ...(bannerIconStyle ? { bannerIconStyle } : {}),
+      ...(bannerTitleFill ? { bannerTitleFill } : {}),
+    },
+    createdBy,
+  });
+  const outputPath = resolve(parsed.values.out ?? defaultProposalName(proposal.name));
+  await writeFile(outputPath, `${JSON.stringify(proposal, null, 2)}\n`, {
+    encoding: "utf8",
+    flag: parsed.values.force ? "w" : "wx",
+    mode: 0o600,
+  });
+  if (parsed.values.json) {
+    process.stdout.write(`${JSON.stringify({ created: true, path: outputPath, proposal }, null, 2)}\n`);
+  } else {
+    process.stdout.write(`Created code-free appearance proposal: ${outputPath}\n`);
+    printAudit(proposal);
+  }
+}
+
+async function inspectCommand(command: "validate" | "resolve", args: string[]): Promise<void> {
+  const parsed = parseArgs({
+    args,
+    allowPositionals: true,
+    strict: true,
+    options: {
+      json: { type: "boolean", default: false },
+    },
+  });
+  if (parsed.positionals.length !== 1) throw new Error(`${command} requires one proposal file.`);
+  const path = resolve(parsed.positionals[0]!);
+  const proposal = parseConnectedFolderAppearanceProposal(JSON.parse(await readFile(path, "utf8")));
+  const resolved = resolveProposal(proposal);
+  if (parsed.values.json || command === "resolve") {
+    process.stdout.write(`${JSON.stringify({ valid: true, path, proposal, resolved }, null, 2)}\n`);
+    return;
+  }
+  process.stdout.write(`Valid AmpleFile appearance proposal: ${path}\n`);
+  printAudit(proposal);
+}
+
+function resolveProposal(proposal: ConnectedFolderAppearanceProposal) {
+  const primary = proposal.customization.primary
+    ?? accentIdentityFromHex(proposal.customization.color ?? "#60646c");
+  const secondary = proposal.customization.secondary
+    ?? (proposal.customization.color2 ? accentIdentityFromHex(proposal.customization.color2) : primary);
+  return resolveConnectedFolderAppearance({
+    primary,
+    secondary,
+    bannerName: proposal.customization.bannerName,
+    hasBannerImage: Boolean(proposal.customization.bannerImage || proposal.customization.bannerPreset),
+  });
+}
+
+function printAudit(proposal: ConnectedFolderAppearanceProposal): void {
+  const result = resolveProposal(proposal);
+  process.stdout.write(`Light and dark semantic roles: ${result.passes ? "PASS" : "NEEDS ATTENTION"}\n`);
+  for (const palette of [result.light, result.dark]) {
+    const weakest = [...palette.audit].sort((left, right) => {
+      const leftScore = Math.min(left.wcag / left.wcagTarget, left.apcaTarget ? left.apca / left.apcaTarget : Number.POSITIVE_INFINITY);
+      const rightScore = Math.min(right.wcag / right.wcagTarget, right.apcaTarget ? right.apca / right.apcaTarget : Number.POSITIVE_INFINITY);
+      return leftScore - rightScore;
+    })[0]!;
+    process.stdout.write(`  ${palette.mode}: ${palette.textUi} text, ${palette.solid} solid; weakest ${weakest.role} ${weakest.wcag}:1 / Lc ${weakest.apca}\n`);
+  }
+  if (result.uncertified.length) {
+    process.stdout.write(`  Advisory visual review: ${result.uncertified.join(", ")}\n`);
+  }
+}
+
+async function encodeBannerImage(path: string): Promise<string> {
+  const extension = extname(path).toLowerCase();
+  const supported = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"]);
+  if (!supported.has(extension)) throw new Error("--banner-image must be PNG, JPEG, WebP, GIF, or BMP.");
+  const source = await readFile(path);
+  if (source.byteLength > 12 * 1024 * 1024) throw new Error("--banner-image is larger than 12 MB.");
+  const { default: sharp } = await import("sharp");
+  const bytes = await sharp(source, { animated: false })
+    .resize({ width: 1600, height: 640, fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 78 })
+    .toBuffer();
+  const dataUrl = `data:image/webp;base64,${bytes.toString("base64")}`;
+  if (dataUrl.length > 700_000) throw new Error("Processed banner is too detailed. Choose a simpler or smaller image.");
+  return dataUrl;
+}
+
+function requireHex(value: string | undefined, option: string): string {
+  if (!value || !/^#[0-9a-f]{6}$/i.test(value.trim())) throw new Error(`${option} requires a six-digit hex colour such as #0d74ce.`);
+  return normalizeHexColor(value);
+}
+
+function normalizePosition(value: string | undefined): ConnectedFolderAppearanceBannerImagePosition {
+  if (value === "top" || value === "center" || value === "bottom") return value;
+  throw new Error("--position must be top, center, or bottom.");
+}
+
+function normalizeCreatedBy(value: string | undefined): ConnectedFolderAppearanceProposal["createdBy"] {
+  if (value === "codex" || value === "claude-code" || value === "human" || value === "other") return value;
+  throw new Error("--created-by must be codex, claude-code, human, or other.");
+}
+
+function defaultProposalName(name: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "connected-folder";
+  return `${slug}.amplefile-appearance.json`;
+}
+
+function printHelp(): void {
+  process.stdout.write(`AmpleFile appearance proposal tool
+
+Creates and verifies inert, typed appearance files. It never changes the running app.
+
+Commands:
+  create   --name "Client work" --color "#0d74ce" [options]
+  validate <proposal.amplefile-appearance.json> [--json]
+  resolve  <proposal.amplefile-appearance.json> [--json]
+
+Create options:
+  --secondary "#6550b9"     Optional paired banner colour
+  --icon folder             Fluent Connected Folder identity icon id
+  --banner classic          none, classic, mist, horizon, aurora, halftone,
+                            blueprint, pinstripe, ribbon, or bold
+  --banner-image <path>     Safe raster image; resized and encoded as WebP
+  --banner-preset fold      tide, ember, fold, or dusk (bundled offline)
+  --banner-layout cover     card, compact, band, or cover
+  --icon-style circle       none, plain, square, or circle
+  --title-fill accent       frosted, solid, accent, or none
+  --frame-x 50 --frame-y 50 Image framing, each between 0 and 100
+  --zoom 1                  Image zoom, between 1 and 2
+  --position center         top, center, or bottom
+  --connected-folder-id <id>       Advisory target shown during review
+  --connected-folder-name <name>   Advisory target shown during review
+  --created-by codex        codex, claude-code, human, or other
+  --description <text>
+  --out <path>              Defaults to <name>.amplefile-appearance.json
+  --force                   Replace the exact output file
+  --json                    Machine-readable output
+`);
+}
+
+main().catch((error: unknown) => {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
+});

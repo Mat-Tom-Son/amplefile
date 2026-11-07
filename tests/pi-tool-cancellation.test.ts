@@ -7,16 +7,16 @@ import { join } from "node:path";
 import test from "node:test";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { PiConversationClient, PiTurnDrainingError, type PiChatEvent } from "../src/local/agent/pi-client.js";
-import { appendToolFeedbackGuide, workFoldToolFeedbackGuide } from "../src/local/agent/tool-feedback-guide.js";
+import { appendToolFeedbackGuide, ampleFileToolFeedbackGuide } from "../src/local/agent/tool-feedback-guide.js";
 
 test("Stop leaves native tool effects intact, suppresses late UI events and fences reuse until the tool drains", { timeout: 15_000 }, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-tool-cancellation-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-tool-cancellation-"));
   const agentDir = join(root, "pi");
-  const workFolderRoot = join(root, "content");
-  const effectPath = join(workFolderRoot, "effect.txt");
+  const connectedFolderRoot = join(root, "content");
+  const effectPath = join(connectedFolderRoot, "effect.txt");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
-  await mkdir(workFolderRoot, { recursive: true });
-  await writeFile(join(workFolderRoot, "AGENTS.md"), "Keep the original native project instructions.\n");
+  await mkdir(connectedFolderRoot, { recursive: true });
+  await writeFile(join(connectedFolderRoot, "AGENTS.md"), "Keep the original native project instructions.\n");
   const started = deferred<void>();
   const cancelled = deferred<void>();
   const release = deferred<void>();
@@ -82,8 +82,8 @@ test("Stop leaves native tool effects intact, suppresses late UI events and fenc
     workerInstructions: "Keep the configured agent instructions.",
     settingsManager: SettingsManager.inMemory({ defaultProvider: "cancellation-provider", defaultModel: "cancellation-model", defaultThinkingLevel: "off" }),
   }; } };
-  const client = new PiConversationClient("cancelled-chat", workFolderRoot, provider);
-  const other = new PiConversationClient("other-chat", workFolderRoot, provider, undefined, { operationsGuide: "Keep the work-folder operations guide." });
+  const client = new PiConversationClient("cancelled-chat", connectedFolderRoot, provider);
+  const other = new PiConversationClient("other-chat", connectedFolderRoot, provider, undefined, { operationsGuide: "Keep the Connected Folder operations guide." });
   t.after(async () => {
     release.resolve();
     await Promise.all([client.stop(), other.stop()]);
@@ -92,7 +92,7 @@ test("Stop leaves native tool effects intact, suppresses late UI events and fenc
   });
   const events: PiChatEvent[] = [];
   client.on("event", (event: PiChatEvent) => events.push(event));
-  const running = client.prompt("Run the slow tool once.", { workFoldAgentTaskId: "first-task" });
+  const running = client.prompt("Run the slow tool once.", { ampleFileAgentTaskId: "first-task" });
   const rejected = assert.rejects(running, { name: "PiTurnCancelledError" });
   await started.promise;
   assert.ok(events.some((event) => event.type === "tool" && event.phase === "running"));
@@ -101,7 +101,7 @@ test("Stop leaves native tool effects intact, suppresses late UI events and fenc
   await cancelled.promise;
   const stoppedEvents = events.length;
   const stoppedTrail = client.getTurnWorkTrail();
-  await assert.rejects(client.prompt("Do something else.", { workFoldAgentTaskId: "next-task" }), PiTurnDrainingError);
+  await assert.rejects(client.prompt("Do something else.", { ampleFileAgentTaskId: "next-task" }), PiTurnDrainingError);
   await assert.rejects(client.compact(), PiTurnDrainingError);
   await assert.rejects(client.reloadResources(), PiTurnDrainingError);
   assert.equal(providerRequests.length, 1, "a draining Chat never queues another provider call");
@@ -110,10 +110,10 @@ test("Stop leaves native tool effects intact, suppresses late UI events and fenc
     const system = payload.messages.find((message: any) => message.role === "system").content;
     assert.ok(system.includes("Keep the original native project instructions."));
     assert.ok(system.includes("Keep the configured agent instructions."));
-    assert.equal(system.split(workFoldToolFeedbackGuide).length, 2, "the actual provider request carries one shared feedback appendix");
-    assert.ok(system.indexOf("Keep the configured agent instructions.") < system.indexOf(workFoldToolFeedbackGuide));
-    assert.equal(system.includes("Keep the work-folder operations guide."), index === 1, "only the work-folder scope receives its operations guide");
-    if (index === 1) assert.ok(system.indexOf("Keep the work-folder operations guide.") < system.indexOf(workFoldToolFeedbackGuide));
+    assert.equal(system.split(ampleFileToolFeedbackGuide).length, 2, "the actual provider request carries one shared feedback appendix");
+    assert.ok(system.indexOf("Keep the configured agent instructions.") < system.indexOf(ampleFileToolFeedbackGuide));
+    assert.equal(system.includes("Keep the Connected Folder operations guide."), index === 1, "only the Connected Folder scope receives its operations guide");
+    if (index === 1) assert.ok(system.indexOf("Keep the Connected Folder operations guide.") < system.indexOf(ampleFileToolFeedbackGuide));
   }
   assert.equal((await readFile(effectPath, "utf8").catch(() => "")), "");
   release.resolve();
@@ -122,16 +122,16 @@ test("Stop leaves native tool effects intact, suppresses late UI events and fenc
   assert.equal(await readFile(effectPath, "utf8"), "effect happened once\n", "Stop does not erase an actual external effect");
   assert.ok(events.slice(stoppedEvents).every(event => event.type === "runtime"), "late native results cannot revive the stopped turn; only its context meter refreshes");
   assert.deepEqual(client.getTurnWorkTrail(), stoppedTrail);
-  assert.equal(await client.prompt("Continue with a fresh request.", { workFoldAgentTaskId: "new-task" }), "Ready for the next request.");
+  assert.equal(await client.prompt("Continue with a fresh request.", { ampleFileAgentTaskId: "new-task" }), "Ready for the next request.");
   assert.equal(await readFile(effectPath, "utf8"), "effect happened once\n", "reuse does not replay the tool");
   assert.ok(providerRequests.at(-1).messages.some((message: any) => message.role === "tool" && JSON.stringify(message.content).includes("effect happened once")), "Pi retains the observed native tool outcome for future context");
 });
 
-test("the common feedback appendix preserves native and work-folder instruction order", () => {
-  const original = ["native instructions", "personal instructions", "work-folder operations"];
-  assert.deepEqual(appendToolFeedbackGuide(original), [...original, workFoldToolFeedbackGuide]);
-  assert.deepEqual(original, ["native instructions", "personal instructions", "work-folder operations"]);
-  assert.ok(Buffer.byteLength(workFoldToolFeedbackGuide, "utf8") < 4 * 1024);
+test("the common feedback appendix preserves native and Connected Folder instruction order", () => {
+  const original = ["native instructions", "personal instructions", "Connected Folder operations"];
+  assert.deepEqual(appendToolFeedbackGuide(original), [...original, ampleFileToolFeedbackGuide]);
+  assert.deepEqual(original, ["native instructions", "personal instructions", "Connected Folder operations"]);
+  assert.ok(Buffer.byteLength(ampleFileToolFeedbackGuide, "utf8") < 4 * 1024);
 });
 
 function deferred<T>() {

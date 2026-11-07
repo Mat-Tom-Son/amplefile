@@ -57,7 +57,7 @@ function stubApi(t: TestContext, reply: (path: string, body: Record<string, unkn
 const buttons = () => [...document.querySelectorAll("button")];
 const button = (text: string | RegExp) => buttons().find((item) => typeof text === "string" ? item.textContent === text : text.test(item.textContent ?? ""));
 
-test("first run says what work-fold is, connects AI, then picks the first folder", async (t) => {
+test("first run says what AmpleFile is, connects AI, then picks the first folder", async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   const posts = stubApi(t, () => ({ status: connectedStatus, models: [{ provider: "openrouter", id: "openai/gpt-6-luna", name: "OpenAI: GPT-6 Luna" }] }));
@@ -66,7 +66,7 @@ test("first run says what work-fold is, connects AI, then picks the first folder
   await dom.render(createElement(OnboardingFlow, {
     agentConfigured: false,
     onAiConnected: (status: AgentStatus) => { connected.push(status); },
-    onCreateWorkFolder: () => { chosen.push("create"); },
+    onCreateConnectedFolder: () => { chosen.push("create"); },
     onOpenFolder: () => { chosen.push("open"); },
   }));
   assert.equal(document.querySelector("h1")?.textContent, "Put your folders to work");
@@ -93,8 +93,8 @@ test("first run says what work-fold is, connects AI, then picks the first folder
   await dom.act(() => button("Continue")!.click());
   assert.equal(document.querySelector("h1")?.textContent, "Pick a Folder to Start With");
   assert.match(document.body.textContent!, /Step 3 of 3/);
-  await dom.act(() => button(/^Use Existing Folder/)!.click());
-  await dom.act(() => button(/^Create New work-folder/)!.click());
+  await dom.act(() => button(/^Connect Folder/)!.click());
+  await dom.act(() => button(/^New Connected Folder/)!.click());
   assert.deepEqual(chosen, ["open", "create"]);
 });
 
@@ -102,13 +102,13 @@ test("first run skips the AI step when a provider is already connected, and lets
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   stubApi(t, () => ({}));
-  await dom.render(createElement(OnboardingFlow, { agentConfigured: true, onAiConnected: () => {}, onCreateWorkFolder: () => {}, onOpenFolder: () => {} }));
+  await dom.render(createElement(OnboardingFlow, { agentConfigured: true, onAiConnected: () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {} }));
   await dom.act(() => button("Get Started")!.click());
   assert.equal(document.querySelector("h1")?.textContent, "Pick a Folder to Start With");
   assert.match(document.body.textContent!, /Step 2 of 2/);
   assert.doesNotMatch(document.body.textContent!, /No AI connected yet/);
 
-  await dom.render(createElement(OnboardingFlow, { key: "fresh", agentConfigured: false, onAiConnected: () => {}, onCreateWorkFolder: () => {}, onOpenFolder: () => {} }));
+  await dom.render(createElement(OnboardingFlow, { key: "fresh", agentConfigured: false, onAiConnected: () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {} }));
   await dom.act(() => button("Get Started")!.click());
   await dom.waitFor(() => Boolean(button("Skip for Now")));
   await dom.act(() => button("Skip for Now")!.click());
@@ -166,8 +166,8 @@ test("first run keeps the App's folder registration contract and the dark defaul
   const app = await read("web-local/src/App.tsx");
   assert.equal(defaultApplicationAppearance.mode, "dark");
   assert.match(app, /useApplicationAppearance/);
-  assert.match(app, /body:\s*\{ workFolderRoot: selected\.path, folderGrantId: selected\.folderGrantId \}/);
-  assert.match(app, /await checksControl\?\.suspend\(\);[\s\S]*?\/api\/work-folders\/local-folder/);
+  assert.match(app, /body:\s*\{ connectedFolderRoot: selected\.path, folderGrantId: selected\.folderGrantId \}/);
+  assert.match(app, /await checksControl\?\.suspend\(\);[\s\S]*?\/api\/connected-folders\/local-folder/);
   assert.match(app, /finally \{ void checksControl\?\.resume\(\); \}/);
   // Set up for me waits for an AI connection instead of sending a turn that cannot start.
   assert.match(app, /if \(!agent\.configured\) \{ requestConnectAi\(\(\) => void sendSetUp\(mode\)\); return; \}/);

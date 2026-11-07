@@ -4,8 +4,8 @@ import { api } from "../../lib/api";
 import { subscribeControlEvents } from "../../lib/control-events";
 
 /** Account metadata stays in Settings and is never part of the model catalog or a Chat. */
-export function ProviderAccountDetails({ provider, scope, workFolderId, revision, active, fixtureMode, onSelectCodex, onReconnect, busy = false }: {
-  provider: string; scope: "work-folder" | "agent"; workFolderId?: string; revision: unknown; active: boolean; fixtureMode: boolean;
+export function ProviderAccountDetails({ provider, scope, connectedFolderId, revision, active, fixtureMode, onSelectCodex, onReconnect, busy = false }: {
+  provider: string; scope: "connected-folder" | "agent"; connectedFolderId?: string; revision: unknown; active: boolean; fixtureMode: boolean;
   onSelectCodex?: () => void; onReconnect?: () => void; busy?: boolean;
 }) {
   const [account, setAccount] = useState<AccountDetails | null>(null);
@@ -34,7 +34,7 @@ export function ProviderAccountDetails({ provider, scope, workFolderId, revision
     if (!active || fixtureMode) { setLoading(false); return () => controller.abort(); }
     setLoading(true);
     const params = new URLSearchParams({ provider, scope });
-    if (scope === "work-folder" && workFolderId) params.set("workFolderId", workFolderId);
+    if (scope === "connected-folder" && connectedFolderId) params.set("connectedFolderId", connectedFolderId);
     void api<{ account: AccountDetails }>(`/api/agent/provider-account?${params}`, { signal: controller.signal })
       .then(result => {
         if (controller.signal.aborted) return;
@@ -44,7 +44,7 @@ export function ProviderAccountDetails({ provider, scope, workFolderId, revision
         if (!controller.signal.aborted) setError("OpenAI account details are unavailable. Your connection has been kept.");
       }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [provider, scope, workFolderId, revision, active, fixtureMode, attempt]);
+  }, [provider, scope, connectedFolderId, revision, active, fixtureMode, attempt]);
 
   return <div className="ai-models-account-details" aria-label="OpenAI account details">
     {loading ? <p className="professional-field-hint" role="status">Loading account details…</p> : <>

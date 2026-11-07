@@ -2,12 +2,12 @@
 
 ## Current product language
 
-Current documentation uses **work-folder** (always lowercase) for the working
+Current documentation uses **Connected Folder** (always capitalized) for the working
 context backed by one ordinary folder, **Worker** for its AI assistant,
-**work-fold agent** for the agent above all work-folders, **Automation** for
-deterministic cross-work-folder steps, **Skills & Extensions** for capability
+**AmpleFile agent** for the agent above all Connected Folders, **Automation** for
+deterministic cross–Connected Folder steps, **Skills & Extensions** for capability
 management, and **Recently deleted** for reversible deletion. There is no
-Library. Since the 2026-10-10 domain migration these words are also the code's:
+Library. These words are also the code's:
 identifiers, HTTP routes, CLI verbs and flags, JSON keys, schemas, and storage
 paths use them, with the exceptions listed in [the vocabulary
 glossary](../scripts/vocabulary/GLOSSARY.md) (for example the app-state
@@ -25,12 +25,12 @@ instruction to implement its contents.
 | Area | Read |
 |---|---|
 | Product and contributor workflow | [Product model](product-model.md), [Contributing](../CONTRIBUTING.md), [Development](development.md), [Architecture](architecture.md) |
-| The work-fold agent and receipts | [Decision register](work-fold-agent-decisions.md), [Receipts, not gates](receipts-not-gates.md), [Collaboration contract](collaboration-contract.md), [Background jobs](background-jobs.md), [Worker tools](worker-tools.md), [Built-in browser](built-in-browser.md), [The work-fold agent and CLI](work-fold-agent-and-cli.md), [Act ledger](act-ledger.md) |
-| Checks and Automations | [Checks](checks.md), [Automations (technical automation contract)](automations.md), [The overview](work-fold-agent-overview.md) |
+| The AmpleFile agent and receipts | [Decision register](amplefile-agent-decisions.md), [Receipts, not gates](receipts-not-gates.md), [Collaboration contract](collaboration-contract.md), [Background jobs](background-jobs.md), [Worker tools](worker-tools.md), [Built-in browser](built-in-browser.md), [The AmpleFile agent and CLI](amplefile-agent-and-cli.md), [Act ledger](act-ledger.md) |
+| Checks and Automations | [Checks](checks.md), [Automations (technical automation contract)](automations.md), [The overview](amplefile-agent-overview.md) |
 | Native agent capabilities | [Skills, Extensions, packages, and scopes](skills-and-extensions.md), [Pi resources](pi-resources.md), [Declarative Extension surfaces](extension-surfaces.md) |
-| Restricted work-folder apps | [Authoring](restricted-app-authoring.md), [Runtime](restricted-app-runtime.md), [App platform foundation](app-platform-foundation.md) |
+| Restricted Connected Folder apps | [Authoring](restricted-app-authoring.md), [Runtime](restricted-app-runtime.md), [App platform foundation](app-platform-foundation.md) |
 | Pages | [Pages (page folders, preview, entries)](pages.md) |
-| Desktop interaction and appearance | [Desktop parity](ui-parity.md), [Collaboration experience](collaboration-experience.md), [Visual system](visual-design.md), [Application appearance](application-appearance.md), [work-folder customization](work-folder-customization.md), [Image generation](image-generation.md) |
+| Desktop interaction and appearance | [Desktop parity](ui-parity.md), [Collaboration experience](collaboration-experience.md), [Visual system](visual-design.md), [Application appearance](application-appearance.md), [Connected Folder customization](connected-folder-customization.md), [Image generation](image-generation.md) |
 | Mac distribution | [Build lanes](macos-build.md), [Release procedure](macos-release.md) |
 
 The App platform's [ontology](app-platform-ontology.md),
@@ -49,14 +49,14 @@ hosted-runtime semantics do not imply a deployed cloud runtime.
   tracked symlink to that exact directory. Other `.claude/` and `.codex/`
   content is ignored machine-local state. There is no separate `.agent/`
   contract.
-- The work-fold agent's runtime instructions and `manage-work-folders` Skill are generated
-  from `src/local/work-fold-agent-instructions.ts`, and the compact operations guide
-  every work-folder turn receives is generated from
-  `src/local/agent/work-folder-operations-guide.ts`. They are app resources, not
+- The AmpleFile agent's runtime instructions and `manage-connected-folders` Skill are generated
+  from `src/local/amplefile-agent-instructions.ts`, and the compact operations guide
+  every Connected Folder turn receives is generated from
+  `src/local/agent/connected-folder-operations-guide.ts`. They are app resources, not
   copies of the repository's contributor contract.
 - The [filing Skill](reference-skills/organize-dropped-material/SKILL.md) is a
   reference example, not an automatically installed project Skill. Its
-  cross-work-folder workflow belongs in the work-fold agent.
+  cross–Connected Folder workflow belongs in the AmpleFile agent.
 - [Connected inbox](../examples/packages/connected-inbox/README.md) is a
   full-trust Pi Extension. [Restricted Connected inbox](../examples/packages/restricted-connected-inbox/README.md)
   is the separate sandboxed-app example. Neither is an installed account
@@ -71,9 +71,9 @@ hosted-runtime semantics do not imply a deployed cloud runtime.
 |---|---|
 | [Extensions and computer work](extension-foundation.md) | Shared Extension design, first interaction implementation, inclusion candidates and outstanding compatibility/release work |
 | [Feedback during agent work](tool-feedback.md) | General native-tool feedback contract, adversarial review decisions, local model-context inspection and implementation evidence |
-| [Collaboration contract](collaboration-contract.md) | The built wave B specification (accepted 2026-09-11): durable requests, work-folder turn context, report/ask/answer/handoff, one result shape, app change hints — also listed under current contracts |
+| [Collaboration contract](collaboration-contract.md) | The built wave B specification (accepted 2026-09-11): durable requests, Connected Folder turn context, report/ask/answer/handoff, one result shape, app change hints — also listed under current contracts |
 | [Receipts, not gates](receipts-not-gates.md) | Accepted 2026-09-10 direction and the specification the canonical documents now follow: one authority mode, reversible destruction, apps that come up able to work; supersedes F3–F7 and F17, narrows F8, F9, F18 |
-| [Rebrand plan](rebrand-plan.md) | Proposed 2026-11-07: every place the work-fold names appear, the contract decisions, what must come along, and the order of work for the new name and repository |
+| [Rebrand plan](rebrand-plan.md) | Proposed 2026-11-07: every place the AmpleFile names appear, the contract decisions, what must come along, and the order of work for the new name and repository |
 | [Windows build](windows-build.md), [Windows releases](windows-release.md) | Inactive platform references; no Windows gate on Mac releases |
 
 Finished plans, superseded designs, dated evidence, and release notes stay in

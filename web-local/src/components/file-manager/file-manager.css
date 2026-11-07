@@ -1,5 +1,5 @@
 /* The file manager layout (docs/product-model.md, "File manager layout").
-   These styles follow the approved mockup ("work-fold as a smart file
+   These styles follow the approved mockup ("amplefile as a smart file
    manager", 2026-11-06): neutral macOS surfaces, an inset sidebar, rounded
    toolbar groups, and Finder-shaped icons. The accent is the app's own. */
 
@@ -183,7 +183,7 @@
   gap: 8px;
   width: 100%;
   height: calc(28px * var(--fm-scale) * var(--fm-density));
-  /* Every row keeps room left of its icon for a sub work-folders caret, as
+  /* Every row keeps room left of its icon for a nested Connected Folders caret, as
      Mail's and Notes' sidebars do, so icons line up whether a row has one. */
   padding: 0 8px 0 var(--fm-sidebar-gutter, 21px);
   border: 0;
@@ -695,7 +695,7 @@
 
 .app-shell.layout-file-manager {
   /* The panel is narrow: its Chat reads two pixels under the Reading Size chosen in Appearance (15 → 13). */
-  --fm-reading-size: calc(var(--work-fold-reading-size, 15px) - 2px);
+  --fm-reading-size: calc(var(--amplefile-reading-size, 15px) - 2px);
   --fm-panel: #f5f5f7;
   --fm-field: #ffffff;
   --fm-field-line: rgba(0, 0, 0, 0.14);
@@ -1168,7 +1168,7 @@
   box-shadow: inset 0 0.03em 0 rgba(255, 255, 255, 0.35);
 }
 
-/* A work-folder's folder takes its own color. */
+/* A Connected Folder's folder takes its own color. */
 .fm-ic-folder.is-tinted {
   --fold: color-mix(in srgb, var(--fold-base) 62%, #fff);
   --fold-tab: color-mix(in srgb, var(--fold-base) 80%, #fff);
@@ -1526,7 +1526,7 @@
 }
 
 /*
- * The Chat in the panel is work-fold's own Chat (ChatPanel, variant "panel"),
+ * The Chat in the panel is AmpleFile's own Chat (ChatPanel, variant "panel"),
  * drawn here the way the design draws it: plain messages, the person's in an
  * accent bubble, and a rounded Reply field with its Send button inside.
  */
@@ -2033,7 +2033,7 @@
 }
 
 /*
- * The icon chosen in Customize work-folder, stamped on the folder's front in
+ * The icon chosen in Customize Connected Folder, stamped on the folder's front in
  * a deeper shade of its color, as macOS draws a symbol on a folder.
  */
 .fm-folder-symbol {
@@ -2054,7 +2054,7 @@
   font-size: inherit !important;
 }
 
-/* Customize work-folder's preview in the file manager: the folder as the sidebar and Info draw it. */
+/* Customize Connected Folder's preview in the file manager: the folder as the sidebar and Info draw it. */
 .fm-customize-preview {
   display: flex;
   flex-direction: column;
@@ -2128,13 +2128,13 @@
 }
 
 /* App Font: Default is the Mac's own, as Finder uses; the others are the app's choices. */
-:root[data-work-fold-font]:not([data-work-fold-font="default"]) .app-shell.layout-file-manager {
-  --fm-font: var(--work-fold-ui-font), system-ui, sans-serif;
+:root[data-amplefile-font]:not([data-amplefile-font="default"]) .app-shell.layout-file-manager {
+  --fm-font: var(--amplefile-ui-font), system-ui, sans-serif;
 }
 
-:root[data-work-fold-text-size="compact"] .app-shell.layout-file-manager { --fm-scale: 0.92; }
-:root[data-work-fold-text-size="comfortable"] .app-shell.layout-file-manager { --fm-scale: 1.08; }
-:root[data-work-fold-text-size="large"] .app-shell.layout-file-manager { --fm-scale: 1.2; }
+:root[data-amplefile-text-size="compact"] .app-shell.layout-file-manager { --fm-scale: 0.92; }
+:root[data-amplefile-text-size="comfortable"] .app-shell.layout-file-manager { --fm-scale: 1.08; }
+:root[data-amplefile-text-size="large"] .app-shell.layout-file-manager { --fm-scale: 1.2; }
 
 :root[data-appearance-density="compact"] .app-shell.layout-file-manager { --fm-density: 0.86; }
 :root[data-appearance-density="spacious"] .app-shell.layout-file-manager { --fm-density: 1.2; }
@@ -2165,7 +2165,7 @@
   color: var(--fm-text);
 }
 
-/* As on the Mac, plain folders take a chosen accent's color; a work-folder keeps its own. */
+/* As on the Mac, plain folders take a chosen accent's color; a Connected Folder keeps its own. */
 :root[data-appearance-accent="custom"] .app-shell.layout-file-manager .fm-ic-folder:not(.is-tinted) {
   --fold: color-mix(in srgb, var(--fm-accent) 62%, #fff);
   --fold-tab: color-mix(in srgb, var(--fm-accent) 80%, #fff);
@@ -2176,7 +2176,7 @@
  * two above it rather than the classic transcript's display sizes.
  */
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel {
-  --work-fold-reading-size: var(--fm-reading-size);
+  --amplefile-reading-size: var(--fm-reading-size);
 }
 
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message :is(h1, h2) {
@@ -2964,7 +2964,7 @@
 }
 
 /* A file the reply names: an accent link with a file glyph, which shows the file in the list. */
-:root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-body .work-folder-file-link {
+:root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-body .connected-folder-file-link {
   display: inline-flex;
   align-items: baseline;
   gap: 3px;
@@ -2978,7 +2978,7 @@
   text-decoration: none;
 }
 
-:root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-body .work-folder-file-link::before {
+:root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-body .connected-folder-file-link::before {
   display: inline-block;
   width: 0.85em;
   height: 0.85em;
@@ -2989,7 +2989,7 @@
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 1.75h5l3.25 3.25v9.25H4z' fill='none' stroke='black' stroke-width='1.5' stroke-linejoin='round'/%3E%3Cpath d='M9 1.75V5h3.25' fill='none' stroke='black' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
-:root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-body .work-folder-file-link:hover {
+:root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-body .connected-folder-file-link:hover {
   background: var(--fm-accent-soft);
 }
 
@@ -2999,7 +2999,7 @@
   border-radius: 4px;
   background: var(--fm-cap);
   color: var(--fm-text);
-  font-family: var(--work-fold-monospace-font, ui-monospace, monospace);
+  font-family: var(--amplefile-monospace-font, ui-monospace, monospace);
   font-size: 0.88em;
 }
 
@@ -3057,7 +3057,7 @@
   border: 0;
   background: transparent;
   color: var(--fm-text);
-  font-family: var(--work-fold-monospace-font, ui-monospace, monospace);
+  font-family: var(--amplefile-monospace-font, ui-monospace, monospace);
   font-size: calc(12px * var(--fm-scale));
   line-height: 1.5;
 }
@@ -3308,7 +3308,7 @@
   display: none;
 }
 
-/* Sub work-folders (owner request, 2026-11-07): each sits under its parent,
+/* Nested Connected Folders (owner request, 2026-11-07): each sits under its parent,
    indented, and a caret inside the row, left of its icon, shows or hides
    them (owner request, 2026-11-07: inside the highlight, as Mail and Notes
    draw it). */
@@ -3358,7 +3358,7 @@
 .fm-sidebar-caret svg {
   width: 11px;
   height: 11px;
-  transition: transform 220ms var(--work-fold-ease-smooth);
+  transition: transform 220ms var(--amplefile-ease-smooth);
 }
 
 .fm-sidebar-caret:active svg {
@@ -3381,7 +3381,7 @@
   }
 }
 
-/* Sub work-folders grow in under their parent, one after another, and slide
+/* Nested Connected Folders grow in under their parent, one after another, and slide
    down into place; closing collapses them (lib/motion.ts). */
 @keyframes fm-sidebar-row-open {
   from { height: 0; opacity: 0; overflow: clip; }
@@ -3394,12 +3394,12 @@
 
 .fm-sidebar-node.is-arriving {
   interpolate-size: allow-keywords;
-  animation: fm-sidebar-row-open var(--work-fold-motion-base) var(--work-fold-ease-smooth) both;
+  animation: fm-sidebar-row-open var(--amplefile-motion-base) var(--amplefile-ease-smooth) both;
   animation-delay: calc(var(--fm-arrive-index, 0) * 28ms);
 }
 
 .fm-sidebar-node.is-arriving > .fm-sidebar-item {
-  animation: fm-sidebar-row-drop 240ms var(--work-fold-ease-smooth) both;
+  animation: fm-sidebar-row-drop 240ms var(--amplefile-ease-smooth) both;
   animation-delay: calc(var(--fm-arrive-index, 0) * 28ms);
 }
 
@@ -3453,7 +3453,7 @@
   background: var(--fm-btn);
   box-shadow: var(--fm-btn-shadow);
   transform: translateX(calc(var(--fm-seg-index, 0) * 100%));
-  transition: transform var(--work-fold-motion-slow) var(--work-fold-ease-smooth);
+  transition: transform var(--amplefile-motion-slow) var(--amplefile-ease-smooth);
 }
 
 .fm-seg.has-thumb .fm-seg-b {
@@ -3472,15 +3472,15 @@
 }
 
 .fm-pane[data-from="right"] {
-  animation: fm-from-right 240ms var(--work-fold-ease-smooth);
+  animation: fm-from-right 240ms var(--amplefile-ease-smooth);
 }
 
 .fm-pane[data-from="left"] {
-  animation: fm-from-left 240ms var(--work-fold-ease-smooth);
+  animation: fm-from-left 240ms var(--amplefile-ease-smooth);
 }
 
 .fm-pane[data-from="none"] {
-  animation: fm-fade-in var(--work-fold-motion-base) ease-out;
+  animation: fm-fade-in var(--amplefile-motion-base) ease-out;
 }
 
 /* A Chat pushes in from the right, like the next screen of a Mac app; Back
@@ -3490,25 +3490,25 @@
 }
 
 .fm-panel.is-chat > .fm-chat:not([hidden]) {
-  animation: fm-push-in var(--work-fold-motion-slow) var(--work-fold-ease-smooth);
+  animation: fm-push-in var(--amplefile-motion-slow) var(--amplefile-ease-smooth);
 }
 
 .fm-panel.is-chat > .fm-ph {
-  animation: fm-fade-in var(--work-fold-motion-base) ease-out;
+  animation: fm-fade-in var(--amplefile-motion-base) ease-out;
 }
 
 /* The panel slides in when it's shown. */
 .fm-panel.is-arriving {
-  animation: fm-from-right var(--work-fold-motion-slow) var(--work-fold-ease-smooth);
+  animation: fm-from-right var(--amplefile-motion-slow) var(--amplefile-ease-smooth);
 }
 
 /* What arrives in Info: the Worker's receipt, then suggestions one by one. */
 .fm-receipt {
-  animation: fm-rise-in 240ms var(--work-fold-ease-smooth);
+  animation: fm-rise-in 240ms var(--amplefile-ease-smooth);
 }
 
 .fm-suggests .fm-suggest {
-  animation: fm-rise-in var(--work-fold-motion-base) var(--work-fold-ease-smooth) both;
+  animation: fm-rise-in var(--amplefile-motion-base) var(--amplefile-ease-smooth) both;
 }
 
 .fm-suggests .fm-suggest:nth-child(2) { animation-delay: 40ms; }
@@ -3518,20 +3518,20 @@
 /* Activity and change dots pop in. */
 .fm-dot,
 .fm-changed-dot {
-  animation: fm-pop-in 240ms var(--work-fold-ease-pop) both;
+  animation: fm-pop-in 240ms var(--amplefile-ease-pop) both;
 }
 
 .fm-dot.is-run {
-  animation: fm-pop-in 240ms var(--work-fold-ease-pop), fm-pulse 1.2s ease-in-out 240ms infinite;
+  animation: fm-pop-in 240ms var(--amplefile-ease-pop), fm-pulse 1.2s ease-in-out 240ms infinite;
 }
 
 /* Sheets and the search scope bar arrive instead of appearing. */
 .fm-goto {
-  animation: fm-sheet-in var(--work-fold-motion-base) var(--work-fold-ease-smooth);
+  animation: fm-sheet-in var(--amplefile-motion-base) var(--amplefile-ease-smooth);
 }
 
 .fm-scope {
-  animation: fm-fade-in var(--work-fold-motion-base) ease-out;
+  animation: fm-fade-in var(--amplefile-motion-base) ease-out;
 }
 
 /* Rows, sidebar items, and buttons answer the pointer smoothly, and buttons
@@ -3547,7 +3547,7 @@
 .fm-btn,
 .fm-capbtn,
 .fm-heading-add {
-  transition: background-color 110ms ease-out, color 110ms ease-out, box-shadow 110ms ease-out, scale 160ms var(--work-fold-ease-smooth);
+  transition: background-color 110ms ease-out, color 110ms ease-out, box-shadow 110ms ease-out, scale 160ms var(--amplefile-ease-smooth);
 }
 
 .fm-tool:active:not(:disabled),
@@ -3566,15 +3566,15 @@
 .fm-welcome-step[data-from="right"] > *,
 .fm-welcome-step[data-from="left"] > *,
 .fm-welcome-step[data-from="none"] > * {
-  animation: fm-fade-in var(--work-fold-motion-base) ease-out both;
+  animation: fm-fade-in var(--amplefile-motion-base) ease-out both;
 }
 
 .fm-welcome-step[data-from="right"] > * {
-  animation: fm-from-right 240ms var(--work-fold-ease-smooth) both;
+  animation: fm-from-right 240ms var(--amplefile-ease-smooth) both;
 }
 
 .fm-welcome-step[data-from="left"] > * {
-  animation: fm-from-left 240ms var(--work-fold-ease-smooth) both;
+  animation: fm-from-left 240ms var(--amplefile-ease-smooth) both;
 }
 
 .fm-welcome-step > :nth-child(2) { animation-delay: 30ms; }
@@ -3582,7 +3582,7 @@
 .fm-welcome-step > :nth-child(n + 4) { animation-delay: 90ms; }
 
 .fm-welcome-dot {
-  transition: background-color var(--work-fold-motion-base) var(--work-fold-ease-smooth), scale var(--work-fold-motion-base) var(--work-fold-ease-smooth);
+  transition: background-color var(--amplefile-motion-base) var(--amplefile-ease-smooth), scale var(--amplefile-motion-base) var(--amplefile-ease-smooth);
 }
 
 .fm-welcome-dot.is-on {

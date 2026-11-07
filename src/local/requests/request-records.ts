@@ -3,7 +3,7 @@
  * and limit refusals behind F25 (docs/collaboration-contract.md).
  *
  * A request is the machine-local record of one thing a person asked for and
- * everything the work-fold agent, a Worker, an app, an automation, or an
+ * everything the AmpleFile agent, a Worker, an app, an automation, or an
  * outside harness on the CLI did about it: the accepted turns, the questions
  * they asked, the results they reported, and the child requests they started. It
  * is attribution and recovery machinery, never a gate — nothing here waits
@@ -21,25 +21,25 @@
  */
 import { Buffer } from "node:buffer";
 
-import { workFoldRequestLimits } from "../../shared/work-fold-limits.js";
+import { ampleFileRequestLimits } from "../../shared/amplefile-limits.js";
 import {
   validateRestrictedAppValue,
   type RestrictedAppJsonSchema,
 } from "../agent/restricted-app-manifest.js";
-import { maxWorkFoldAgentAttachments, type WorkFoldAgentAttachmentRef } from "../work-fold-agent-attachments.js";
-import { containsReservedWorkFolderPathSegment } from "../work-folder-path-policy.js";
+import { maxAmpleFileAgentAttachments, type AmpleFileAgentAttachmentRef } from "../amplefile-agent-attachments.js";
+import { containsReservedConnectedFolderPathSegment } from "../connected-folder-path-policy.js";
 
-export const workFoldRequestRecordSchema = "work-fold.request.v1" as const;
-export const workFoldQuestionRecordSchema = "work-fold.request-question.v1" as const;
-export const workFoldResultRecordSchema = "work-fold.request-result.v1" as const;
+export const ampleFileRequestRecordSchema = "amplefile.request.v1" as const;
+export const ampleFileQuestionRecordSchema = "amplefile.request-question.v1" as const;
+export const ampleFileResultRecordSchema = "amplefile.request-result.v1" as const;
 
-export const workFoldRequestIdPattern = /^req-\d{14}-[0-9a-f]{8}$/;
-const workFoldJobRefIdPattern = /^job-\d{14}-[0-9a-f]{8}$/;
-export const workFoldQuestionIdPattern = /^q-\d{14}-[0-9a-f]{8}$/;
-export const workFoldResultIdPattern = /^res-\d{14}-[0-9a-f]{8}$/;
+export const ampleFileRequestIdPattern = /^req-\d{14}-[0-9a-f]{8}$/;
+const ampleFileJobRefIdPattern = /^job-\d{14}-[0-9a-f]{8}$/;
+export const ampleFileQuestionIdPattern = /^q-\d{14}-[0-9a-f]{8}$/;
+export const ampleFileResultIdPattern = /^res-\d{14}-[0-9a-f]{8}$/;
 
 /** The one spelling every request refusal names, shared with the app-facing refusals. */
-export const workFoldRequestLimitsSection = "Settings → Automations → Limits";
+export const ampleFileRequestLimitsSection = "Settings → Automations → Limits";
 
 const forbiddenTextPattern = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u;
 const maximumResultFilePathLength = 1_024;
@@ -47,9 +47,9 @@ const maximumErrorLength = 2_048;
 const maximumStableIdLength = 160;
 const stableIdPattern = /^[A-Za-z0-9._:-]+$/;
 
-export type WorkFoldRequestKind = "agent" | "work-folder" | "app" | "automation" | "cli";
+export type AmpleFileRequestKind = "agent" | "connected-folder" | "app" | "automation" | "cli";
 
-export type WorkFoldRequestState =
+export type AmpleFileRequestState =
   | "working"
   | "waiting"
   | "handed_off"
@@ -60,10 +60,10 @@ export type WorkFoldRequestState =
   | "expired";
 
 /** No outstanding work. Done/partial/failed may reopen through explicit continuation; stop and expiry do not. */
-export const workFoldRequestTerminalStates = ["done", "partial", "failed", "stopped", "expired"] as const;
+export const ampleFileRequestTerminalStates = ["done", "partial", "failed", "stopped", "expired"] as const;
 
-export function isWorkFoldRequestTerminalState(state: WorkFoldRequestState): boolean {
-  return (workFoldRequestTerminalStates as readonly string[]).includes(state);
+export function isAmpleFileRequestTerminalState(state: AmpleFileRequestState): boolean {
+  return (ampleFileRequestTerminalStates as readonly string[]).includes(state);
 }
 
 /**
@@ -71,7 +71,7 @@ export function isWorkFoldRequestTerminalState(state: WorkFoldRequestState): boo
  * `remote_web` is read only: older builds wrote it for work a paired browser
  * sent before Web Access was removed (2026-11-07).
  */
-export type WorkFoldRequestSurface =
+export type AmpleFileRequestSurface =
   | "cli"
   | "popover"
   | "main-window"
@@ -80,7 +80,7 @@ export type WorkFoldRequestSurface =
   | "system";
 
 /** The turn-journal statuses a request aggregates. The journal stays the outcome authority. */
-export type WorkFoldRequestTurnState =
+export type AmpleFileRequestTurnState =
   | "accepted"
   | "running"
   | "succeeded"
@@ -88,18 +88,18 @@ export type WorkFoldRequestTurnState =
   | "aborted"
   | "interrupted";
 
-export type WorkFoldResultOutcome = "succeeded" | "partial" | "failed";
+export type AmpleFileResultOutcome = "succeeded" | "partial" | "failed";
 
-export interface WorkFoldRequestOwner {
-  /** Absent exactly for the work-fold agent scope; present for every work-folder-owned request. */
-  workFolderId?: string;
-  /** Display snapshot, so an unregistered work-folder still renders its name. */
-  workFolderName?: string;
+export interface AmpleFileRequestOwner {
+  /** Absent exactly for the AmpleFile agent scope; present for every Connected Folder–owned request. */
+  connectedFolderId?: string;
+  /** Display snapshot, so an unregistered Connected Folder still renders its name. */
+  connectedFolderName?: string;
   conversationId: string;
 }
 
-export interface WorkFoldRequestAppRef {
-  workFolderId: string;
+export interface AmpleFileRequestAppRef {
+  connectedFolderId: string;
   appId: string;
   featureInstallationId: string;
   digest: string;
@@ -111,7 +111,7 @@ export interface WorkFoldRequestAppRef {
  * `amountUsdComplete` is false when at least one counted turn ran on a model
  * with no published rates — an unknown cost stays unknown rather than zero.
  */
-export interface WorkFoldRequestUsage {
+export interface AmpleFileRequestUsage {
   turns: number;
   inputTokens: number;
   outputTokens: number;
@@ -120,12 +120,12 @@ export interface WorkFoldRequestUsage {
 }
 
 /** One accepted turn belonging to this request, with its own settled outcome. */
-export interface WorkFoldRequestTurnRef {
+export interface AmpleFileRequestTurnRef {
   taskId: string;
   acceptedAt: string;
   /** `continuation` marks a turn started by an answer or a settle batch. */
   role: "origin" | "continuation";
-  state: WorkFoldRequestTurnState;
+  state: AmpleFileRequestTurnState;
   settledAt: string | null;
   messageId: string | null;
   error: string | null;
@@ -136,31 +136,31 @@ export interface WorkFoldRequestTurnRef {
  * F31), by reference. The job journal keeps the whole record and its output.
  * `running` covers a job from its journaled start until it settles.
  */
-export type WorkFoldRequestJobState = "running" | "exited" | "stopped" | "timed_out" | "failed" | "interrupted";
+export type AmpleFileRequestJobState = "running" | "exited" | "stopped" | "timed_out" | "failed" | "interrupted";
 
-export interface WorkFoldRequestJobRef {
+export interface AmpleFileRequestJobRef {
   service?: boolean;
   jobId: string;
   /** The turn that started it. */
   taskId: string;
   name: string;
-  state: WorkFoldRequestJobState;
+  state: AmpleFileRequestJobState;
   startedAt: string;
   settledAt: string | null;
   exitCode: number | null;
 }
 
 /** A recorded result, by reference. The envelope itself lives in its own file. */
-export interface WorkFoldRequestResultRef {
+export interface AmpleFileRequestResultRef {
   resultId: string;
   taskId: string;
-  outcome: WorkFoldResultOutcome;
+  outcome: AmpleFileResultOutcome;
   recordedAt: string;
   receiptId: string;
   fileCount: number;
 }
 
-export type WorkFoldRequestLimitName =
+export type AmpleFileRequestLimitName =
   | "deadline"
   | "childTasks"
   | "depth"
@@ -182,22 +182,22 @@ export type WorkFoldRequestLimitName =
   | "turnsPerRequest"
   | "actionsPerRequest";
 
-export type WorkFoldChecklistItemStatus = "todo" | "doing" | "done";
+export type AmpleFileChecklistItemStatus = "todo" | "doing" | "done";
 
-export interface WorkFoldChecklistItem {
+export interface AmpleFileChecklistItem {
   text: string;
-  status: WorkFoldChecklistItemStatus;
+  status: AmpleFileChecklistItemStatus;
 }
 
-export interface WorkFoldChecklist {
-  items: WorkFoldChecklistItem[];
+export interface AmpleFileChecklist {
+  items: AmpleFileChecklistItem[];
   updatedAt: string;
   /** The turn that last changed it. */
   taskId: string;
 }
 
-export interface WorkFoldRequestLimitHit {
-  limit: WorkFoldRequestLimitName;
+export interface AmpleFileRequestLimitHit {
+  limit: AmpleFileRequestLimitName;
   at: string;
 }
 
@@ -207,9 +207,9 @@ export interface WorkFoldRequestLimitHit {
  * render the commands they understand and fall back to the command token for
  * the rest. Act reads carry no lineage and are deliberately absent.
  */
-export const workFoldRequestActionCommands = [
-  "work-folders.worker.model",
-  "work-folders.worker.instructions",
+export const ampleFileRequestActionCommands = [
+  "connected-folders.worker.model",
+  "connected-folders.worker.instructions",
   "chat.send",
   "chat.rename",
   "chat.snooze",
@@ -234,14 +234,14 @@ export const workFoldRequestActionCommands = [
   "files.delete",
   "files.mkdir",
   "files.create",
-  "work-folders.create",
-  "work-folders.register",
-  "work-folders.rename",
-  "work-folders.unregister",
-  "work-folders.delete",
-  "work-folders.appearance.apply",
-  "work-folders.appearance.reset",
-  "work-folders.appearance.undo",
+  "connected-folders.create",
+  "connected-folders.register",
+  "connected-folders.rename",
+  "connected-folders.unregister",
+  "connected-folders.delete",
+  "connected-folders.appearance.apply",
+  "connected-folders.appearance.reset",
+  "connected-folders.appearance.undo",
   "tools.import-skill",
   "tools.install",
   "tools.update",
@@ -285,48 +285,48 @@ export const workFoldRequestActionCommands = [
   "pages.unpublish",
 ] as const;
 
-export type WorkFoldRequestActionCommand = (typeof workFoldRequestActionCommands)[number];
+export type AmpleFileRequestActionCommand = (typeof ampleFileRequestActionCommands)[number];
 
 /**
- * Commands older builds recorded for verbs work-fold no longer has: the
+ * Commands older builds recorded for verbs AmpleFile no longer has: the
  * desktop-served page and app sharing verbs (retired 2026-11-05). A record
  * that names one still loads; that action is skipped, so the rest of the
  * request's story survives instead of the whole record reading as damaged.
  */
-const retiredWorkFoldRequestActionCommands: ReadonlySet<string> = new Set(["pages.share", "pages.share-app"]);
+const retiredAmpleFileRequestActionCommands: ReadonlySet<string> = new Set(["pages.share", "pages.share-app"]);
 
-function isRetiredWorkFoldRequestAction(value: unknown): boolean {
+function isRetiredAmpleFileRequestAction(value: unknown): boolean {
   return typeof value === "object" && value !== null
-    && retiredWorkFoldRequestActionCommands.has((value as { command?: unknown }).command as string);
+    && retiredAmpleFileRequestActionCommands.has((value as { command?: unknown }).command as string);
 }
 
-export interface WorkFoldRequestAction {
-  command: WorkFoldRequestActionCommand;
+export interface AmpleFileRequestAction {
+  command: AmpleFileRequestActionCommand;
   at: string;
   /**
-   * Absent exactly for work-folder-free acts: removing an Everywhere Skill or
-   * Extension. Every work-folder-bound act names its work-folder.
+   * Absent exactly for Connected Folder–free acts: removing an Everywhere Skill or
+   * Extension. Every Connected Folder–bound act names its Connected Folder.
    */
-  workFolderId?: string;
-  workFolderName?: string;
+  connectedFolderId?: string;
+  connectedFolderName?: string;
   /** Resolved absolute source paths for files.add; used to match dispositions. */
   sources?: string[];
-  /** work-folder-relative destinations reported by files.add. */
+  /** Connected Folder–relative destinations reported by files.add. */
   copied?: string[];
   checkpointId?: string | null;
-  /** Registered or created work-folder root. */
-  workFolderRoot?: string;
+  /** Registered or created Connected Folder root. */
+  connectedFolderRoot?: string;
   conversationId?: string;
   taskId?: string;
   /** Exact installation produced by a completed app operation. Never resolved by display name. */
   apps?: Array<{
-    workFolderId: string;
+    connectedFolderId: string;
     /**
-     * Display label for the installation's own work-folder at the time of the
-     * act, which can differ from the act's work-folder (an install into a
+     * Display label for the installation's own Connected Folder at the time of the
+     * act, which can differ from the act's Connected Folder (an install into a
      * target). Records written before this field existed omit it.
      */
-    workFolderName?: string;
+    connectedFolderName?: string;
     appId: string;
     featureInstallationId: string;
     digest: string;
@@ -336,16 +336,16 @@ export interface WorkFoldRequestAction {
 }
 
 /** Read only: the paired browser older builds recorded on work sent through Web Access. */
-export interface WorkFoldRequestRemoteRef {
+export interface AmpleFileRequestRemoteRef {
   principalId: string;
   grantId: string;
   requestId: string;
 }
 
-export interface WorkFoldRequestRecord {
-  schema: typeof workFoldRequestRecordSchema;
+export interface AmpleFileRequestRecord {
+  schema: typeof ampleFileRequestRecordSchema;
   requestId: string;
-  kind: WorkFoldRequestKind;
+  kind: AmpleFileRequestKind;
   /** Equal to `requestId` for a root. */
   rootId: string;
   parentRequestId: string | null;
@@ -353,26 +353,26 @@ export interface WorkFoldRequestRecord {
   parentTaskId: string | null;
   /** 0 for a root. */
   depth: number;
-  owner: WorkFoldRequestOwner;
-  app?: WorkFoldRequestAppRef;
-  surface: WorkFoldRequestSurface;
+  owner: AmpleFileRequestOwner;
+  app?: AmpleFileRequestAppRef;
+  surface: AmpleFileRequestSurface;
   createdAt: string;
   updatedAt: string;
   settledAt: string | null;
   /** A legacy request window, or `null` for work that does not expire on a timer. */
   deadline: string | null;
-  state: WorkFoldRequestState;
+  state: AmpleFileRequestState;
   /** `turns[0].role` is always `origin`. */
-  turns: WorkFoldRequestTurnRef[];
+  turns: AmpleFileRequestTurnRef[];
   childRequestIds: string[];
   questionIds: string[];
-  results: WorkFoldRequestResultRef[];
-  usage: WorkFoldRequestUsage;
+  results: AmpleFileRequestResultRef[];
+  usage: AmpleFileRequestUsage;
   continuationCount: number;
   /** Settled child turns already reserved for delivery, independent of timing. */
   deliveredChildTaskIds: string[];
   /** Background jobs this request's turns started; absent until the first one (F31). */
-  jobs?: WorkFoldRequestJobRef[];
+  jobs?: AmpleFileRequestJobRef[];
   /** Finished jobs whose end already reached the Chat, by any path (F32). */
   deliveredJobIds?: string[];
   /**
@@ -380,24 +380,24 @@ export interface WorkFoldRequestRecord {
    * plans to do and how far it got. The host keeps it, shows it to the
    * person, and hands it back to every later turn of the request.
    */
-  checklist?: WorkFoldChecklist;
+  checklist?: AmpleFileChecklist;
   continuationState: "pending" | "failed" | null;
   stopRequestedAt: string | null;
-  limitHit: WorkFoldRequestLimitHit | null;
+  limitHit: AmpleFileRequestLimitHit | null;
   /** Set when startup reconciliation settled this request, so no one continues it. */
   reconciledAt: string | null;
-  remote: WorkFoldRequestRemoteRef | null;
+  remote: AmpleFileRequestRemoteRef | null;
   /** The original assignment, retained when answers and follow-ups join. */
   assignment: string;
   /** The newest turn's message text, bounded. */
   content: string;
-  attachments: WorkFoldAgentAttachmentRef[];
-  actions: WorkFoldRequestAction[];
+  attachments: AmpleFileAgentAttachmentRef[];
+  actions: AmpleFileRequestAction[];
   continuedFromTaskId: string | null;
 }
 
-export interface WorkFoldQuestionRecord {
-  schema: typeof workFoldQuestionRecordSchema;
+export interface AmpleFileQuestionRecord {
+  schema: typeof ampleFileQuestionRecordSchema;
   questionId: string;
   requestId: string;
   /** Denormalized so "any open question under this root" is one index hit. */
@@ -422,26 +422,26 @@ export interface WorkFoldQuestionRecord {
   answeredAt: string | null;
   /** The single linked continuation turn an answer starts; set once, never twice. */
   continuationTaskId: string | null;
-  /** Enforces the refusal of an answer from a work-folder that does not own the question. */
-  answeredByWorkFolderId: string | null;
+  /** Enforces the refusal of an answer from a Connected Folder that does not own the question. */
+  answeredByConnectedFolderId: string | null;
 }
 
-export interface WorkFoldResultFileRef {
-  /** work-folder-relative deliverable path. */
+export interface AmpleFileResultFileRef {
+  /** Connected Folder–relative deliverable path. */
   path: string;
   sha256: string;
   sizeBytes: number;
 }
 
-export interface WorkFoldResultEnvelope {
+export interface AmpleFileResultEnvelope {
   summary: string;
   data?: unknown;
-  files?: WorkFoldResultFileRef[];
-  outcome: WorkFoldResultOutcome;
+  files?: AmpleFileResultFileRef[];
+  outcome: AmpleFileResultOutcome;
 }
 
-export interface WorkFoldResultRecord {
-  schema: typeof workFoldResultRecordSchema;
+export interface AmpleFileResultRecord {
+  schema: typeof ampleFileResultRecordSchema;
   resultId: string;
   requestId: string;
   rootId: string;
@@ -449,7 +449,7 @@ export interface WorkFoldResultRecord {
   recordedAt: string;
   /** The act receipt id the reporting verb journaled. */
   receiptId: string;
-  envelope: WorkFoldResultEnvelope;
+  envelope: AmpleFileResultEnvelope;
 }
 
 /**
@@ -457,21 +457,21 @@ export interface WorkFoldResultRecord {
  * section that shows it, because a bound a person cannot find is a gate in
  * disguise (docs/receipts-not-gates.md, principle 6).
  */
-export class WorkFoldRequestLimitError extends Error {
-  readonly limit: WorkFoldRequestLimitName;
+export class AmpleFileRequestLimitError extends Error {
+  readonly limit: AmpleFileRequestLimitName;
 
-  constructor(limit: WorkFoldRequestLimitName, message: string, options?: ErrorOptions) {
+  constructor(limit: AmpleFileRequestLimitName, message: string, options?: ErrorOptions) {
     super(message, options);
-    this.name = "WorkFoldRequestLimitError";
+    this.name = "AmpleFileRequestLimitError";
     this.limit = limit;
   }
 }
 
 /** Something about the request graph itself is wrong; not a bound, so not a limit error. */
-export class WorkFoldRequestLineageError extends Error {
+export class AmpleFileRequestLineageError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
-    this.name = "WorkFoldRequestLineageError";
+    this.name = "AmpleFileRequestLineageError";
   }
 }
 
@@ -484,11 +484,11 @@ function kilobytes(bytes: number): string {
  * enforced, so a host that raises a default cannot leave a stale number in
  * the refusal.
  */
-export function workFoldRequestLimitMessage(limit: WorkFoldRequestLimitName, cap: number): string {
-  const shows = `${workFoldRequestLimitsSection} shows this number.`;
+export function ampleFileRequestLimitMessage(limit: AmpleFileRequestLimitName, cap: number): string {
+  const shows = `${ampleFileRequestLimitsSection} shows this number.`;
   switch (limit) {
     case "deadline":
-      return `This request passed its ${Math.round(cap / 3_600_000)}-hour window, so work-fold stopped it. ${shows}`;
+      return `This request passed its ${Math.round(cap / 3_600_000)}-hour window, so AmpleFile stopped it. ${shows}`;
     case "childTasks":
       return `This request has already started ${cap} Worker turns, the most one request may start. ${shows}`;
     case "depth":
@@ -496,9 +496,9 @@ export function workFoldRequestLimitMessage(limit: WorkFoldRequestLimitName, cap
     case "concurrentChildren":
       return `This request already has ${cap} Worker turns running at once, the most it may run together. ${shows}`;
     case "continuations":
-      return `This request already got ${cap} follow-up turns, so work-fold recorded this result without starting another. ${shows}`;
+      return `This request already got ${cap} follow-up turns, so AmpleFile recorded this result without starting another. ${shows}`;
     case "providerBudget":
-      return `This request reached its model spending limit of $${cap}, so work-fold stopped it. ${shows}`;
+      return `This request reached its model spending limit of $${cap}, so AmpleFile stopped it. ${shows}`;
     case "questionLifetime":
       return `This question's request passed its ${Math.round(cap / 3_600_000)}-hour window, so it can no longer be answered. ${shows}`;
     case "questionText":
@@ -530,27 +530,27 @@ export function workFoldRequestLimitMessage(limit: WorkFoldRequestLimitName, cap
   }
 }
 
-export function workFoldRequestLimitError(limit: WorkFoldRequestLimitName, cap: number): WorkFoldRequestLimitError {
-  return new WorkFoldRequestLimitError(limit, workFoldRequestLimitMessage(limit, cap));
+export function ampleFileRequestLimitError(limit: AmpleFileRequestLimitName, cap: number): AmpleFileRequestLimitError {
+  return new AmpleFileRequestLimitError(limit, ampleFileRequestLimitMessage(limit, cap));
 }
 
-export interface WorkFoldRequestStateInput {
+export interface AmpleFileRequestStateInput {
   stopRequestedAt: string | null;
   deadline: string | null;
   now: Date;
   /** This request's own turns, in acceptance order. */
-  turnStates: readonly WorkFoldRequestTurnState[];
+  turnStates: readonly AmpleFileRequestTurnState[];
   /** Open questions this request asked itself. */
   openQuestions: number;
   openBlockingQuestions?: number;
   /** Open questions anywhere below this request. */
   openDescendantQuestions: number;
   /** One entry per recorded child id; `null` when that id resolves to no record. */
-  childStates: readonly (WorkFoldRequestState | null)[];
-  resultOutcomes: readonly WorkFoldResultOutcome[];
-  limitHit: WorkFoldRequestLimitHit | null;
+  childStates: readonly (AmpleFileRequestState | null)[];
+  resultOutcomes: readonly AmpleFileResultOutcome[];
+  limitHit: AmpleFileRequestLimitHit | null;
   /** This request's background jobs (F31). A running one is outstanding work. */
-  jobStates?: readonly WorkFoldRequestJobState[];
+  jobStates?: readonly AmpleFileRequestJobState[];
 }
 
 /**
@@ -581,7 +581,7 @@ export interface WorkFoldRequestStateInput {
  * 10 above rule 11 means a mixed set of stopped and finished children reads as
  * `stopped` rather than as partial success.
  */
-export function computeWorkFoldRequestState(input: WorkFoldRequestStateInput): WorkFoldRequestState {
+export function computeAmpleFileRequestState(input: AmpleFileRequestStateInput): AmpleFileRequestState {
   if (input.stopRequestedAt !== null) return "stopped";
   if (input.turnStates.includes("aborted")) return "stopped";
   if (input.limitHit?.limit === "providerBudget") return "failed";
@@ -617,7 +617,7 @@ export function computeWorkFoldRequestState(input: WorkFoldRequestStateInput): W
  * true F25 state travels beside it, so those surfaces keep compiling while
  * the richer vocabulary reaches the ones that want it.
  */
-export type WorkFoldRequestAgentPhase =
+export type AmpleFileRequestAgentPhase =
   | "working"
   | "needs_you"
   | "handed_off"
@@ -625,11 +625,11 @@ export type WorkFoldRequestAgentPhase =
   | "failed"
   | "stopped";
 
-export function workFoldRequestStateToAgentPhase(
-  state: WorkFoldRequestState,
+export function ampleFileRequestStateToAgentPhase(
+  state: AmpleFileRequestState,
   _legacyReplyAsksQuestion = false,
-): WorkFoldRequestAgentPhase {
-  const phase = ((): WorkFoldRequestAgentPhase => {
+): AmpleFileRequestAgentPhase {
+  const phase = ((): AmpleFileRequestAgentPhase => {
     switch (state) {
       case "working":
         return "working";
@@ -679,10 +679,10 @@ function nullableIsoDate(value: unknown, label: string): string | null {
   return isoDate(value, label);
 }
 
-function boundedText(value: unknown, label: string, maxBytes: number, limit?: WorkFoldRequestLimitName): string {
+function boundedText(value: unknown, label: string, maxBytes: number, limit?: AmpleFileRequestLimitName): string {
   if (typeof value !== "string") throw new Error(`${label} must be text.`);
   if (Buffer.byteLength(value, "utf8") > maxBytes) {
-    if (limit) throw workFoldRequestLimitError(limit, maxBytes);
+    if (limit) throw ampleFileRequestLimitError(limit, maxBytes);
     throw new Error(`${label} is longer than ${maxBytes} bytes.`);
   }
   if (forbiddenTextPattern.test(value.replace(/[\n\r\t]/g, " "))) {
@@ -712,7 +712,7 @@ function stringArray(value: unknown, label: string, maxItems?: number): string[]
   });
 }
 
-export function parseWorkFoldAttachmentRef(value: unknown, label: string): WorkFoldAgentAttachmentRef {
+export function parseAmpleFileAttachmentRef(value: unknown, label: string): AmpleFileAgentAttachmentRef {
   const record = objectValue(value, label);
   assertClosedShape(record, ["kind", "target", "name"], label);
   return {
@@ -722,35 +722,35 @@ export function parseWorkFoldAttachmentRef(value: unknown, label: string): WorkF
   };
 }
 
-export function parseWorkFoldRequestAction(value: unknown, label = "Request action"): WorkFoldRequestAction {
+export function parseAmpleFileRequestAction(value: unknown, label = "Request action"): AmpleFileRequestAction {
   const record = objectValue(value, label);
   assertClosedShape(
     record,
-    ["command", "at", "workFolderId", "workFolderName", "sources", "copied", "checkpointId", "workFolderRoot", "conversationId", "taskId", "apps"],
+    ["command", "at", "connectedFolderId", "connectedFolderName", "sources", "copied", "checkpointId", "connectedFolderRoot", "conversationId", "taskId", "apps"],
     label,
   );
-  const action: WorkFoldRequestAction = {
-    command: enumValue(record.command, workFoldRequestActionCommands, `${label} command`),
+  const action: AmpleFileRequestAction = {
+    command: enumValue(record.command, ampleFileRequestActionCommands, `${label} command`),
     at: isoDate(record.at, `${label} time`),
   };
-  if (record.workFolderId !== undefined) action.workFolderId = stableId(record.workFolderId, `${label} work-folder id`);
-  if (record.workFolderName !== undefined) action.workFolderName = boundedText(record.workFolderName, `${label} work-folder name`, 1_024);
+  if (record.connectedFolderId !== undefined) action.connectedFolderId = stableId(record.connectedFolderId, `${label} Connected Folder id`);
+  if (record.connectedFolderName !== undefined) action.connectedFolderName = boundedText(record.connectedFolderName, `${label} Connected Folder name`, 1_024);
   if (record.sources !== undefined) action.sources = stringArray(record.sources, `${label} sources`, 256);
   if (record.copied !== undefined) action.copied = stringArray(record.copied, `${label} destinations`, 256);
   if (record.checkpointId !== undefined) {
     action.checkpointId = record.checkpointId === null ? null : stableId(record.checkpointId, `${label} restore point`);
   }
-  if (record.workFolderRoot !== undefined) action.workFolderRoot = boundedText(record.workFolderRoot, `${label} work-folder root`, 4_096);
+  if (record.connectedFolderRoot !== undefined) action.connectedFolderRoot = boundedText(record.connectedFolderRoot, `${label} Connected Folder root`, 4_096);
   if (record.conversationId !== undefined) action.conversationId = stableId(record.conversationId, `${label} conversation id`);
   if (record.taskId !== undefined) action.taskId = stableId(record.taskId, `${label} task id`);
   if (record.apps !== undefined) {
     if (!Array.isArray(record.apps) || record.apps.length > 64) throw new Error(`${label} apps are invalid.`);
     action.apps = record.apps.map((item, index) => {
       const app = objectValue(item, `${label} app ${index + 1}`);
-      assertClosedShape(app, ["workFolderId", "workFolderName", "appId", "featureInstallationId", "digest", "title", "version"], `${label} app ${index + 1}`);
+      assertClosedShape(app, ["connectedFolderId", "connectedFolderName", "appId", "featureInstallationId", "digest", "title", "version"], `${label} app ${index + 1}`);
       return {
-        workFolderId: stableId(app.workFolderId, `${label} app work-folder id`),
-        ...(app.workFolderName === undefined ? {} : { workFolderName: boundedText(app.workFolderName, `${label} app work-folder name`, 1_024) }),
+        connectedFolderId: stableId(app.connectedFolderId, `${label} app Connected Folder id`),
+        ...(app.connectedFolderName === undefined ? {} : { connectedFolderName: boundedText(app.connectedFolderName, `${label} app Connected Folder name`, 1_024) }),
         appId: stableId(app.appId, `${label} app id`),
         featureInstallationId: stableId(app.featureInstallationId, `${label} app installation id`),
         digest: stableId(app.digest, `${label} app fingerprint`),
@@ -762,7 +762,7 @@ export function parseWorkFoldRequestAction(value: unknown, label = "Request acti
   return action;
 }
 
-function parseTurnRef(value: unknown, index: number): WorkFoldRequestTurnRef {
+function parseTurnRef(value: unknown, index: number): AmpleFileRequestTurnRef {
   const label = `Request turn ${index + 1}`;
   const record = objectValue(value, label);
   assertClosedShape(record, ["taskId", "acceptedAt", "role", "state", "settledAt", "messageId", "error"], label);
@@ -785,13 +785,13 @@ function parseTurnRef(value: unknown, index: number): WorkFoldRequestTurnRef {
   };
 }
 
-function parseJobRef(value: unknown, index: number): WorkFoldRequestJobRef {
+function parseJobRef(value: unknown, index: number): AmpleFileRequestJobRef {
   const label = `Request background job ${index + 1}`;
   const record = objectValue(value, label);
   assertClosedShape(record, ["jobId", "taskId", "name", "state", "startedAt", "settledAt", "exitCode", "service"], label);
   if (record.service !== undefined && typeof record.service !== "boolean") throw new Error(`${label} service must be boolean.`);
   const jobId = stableId(record.jobId, `${label} id`);
-  if (!workFoldJobRefIdPattern.test(jobId)) throw new Error(`${label} id is invalid.`);
+  if (!ampleFileJobRefIdPattern.test(jobId)) throw new Error(`${label} id is invalid.`);
   const exitCode = record.exitCode === null || record.exitCode === undefined ? null : record.exitCode;
   if (exitCode !== null && (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode))) throw new Error(`${label} exit code is invalid.`);
   return {
@@ -806,12 +806,12 @@ function parseJobRef(value: unknown, index: number): WorkFoldRequestJobRef {
   };
 }
 
-function parseResultRef(value: unknown, index: number): WorkFoldRequestResultRef {
+function parseResultRef(value: unknown, index: number): AmpleFileRequestResultRef {
   const label = `Request result ${index + 1}`;
   const record = objectValue(value, label);
   assertClosedShape(record, ["resultId", "taskId", "outcome", "recordedAt", "receiptId", "fileCount"], label);
   const resultId = stableId(record.resultId, `${label} id`);
-  if (!workFoldResultIdPattern.test(resultId)) throw new Error(`${label} id is invalid.`);
+  if (!ampleFileResultIdPattern.test(resultId)) throw new Error(`${label} id is invalid.`);
   return {
     resultId,
     taskId: stableId(record.taskId, `${label} task id`),
@@ -822,11 +822,11 @@ function parseResultRef(value: unknown, index: number): WorkFoldRequestResultRef
   };
 }
 
-function parseUsage(value: unknown): WorkFoldRequestUsage {
+function parseUsage(value: unknown): AmpleFileRequestUsage {
   const record = objectValue(value, "Request usage");
   assertClosedShape(record, ["turns", "inputTokens", "outputTokens", "amountUsd", "amountUsdComplete"], "Request usage");
   if (typeof record.amountUsdComplete !== "boolean") throw new Error("Request usage completeness is invalid.");
-  const usage: WorkFoldRequestUsage = {
+  const usage: AmpleFileRequestUsage = {
     turns: nonNegativeInteger(record.turns, "Request usage turn count"),
     inputTokens: nonNegativeInteger(record.inputTokens, "Request usage input tokens"),
     outputTokens: nonNegativeInteger(record.outputTokens, "Request usage output tokens"),
@@ -841,10 +841,10 @@ function parseUsage(value: unknown): WorkFoldRequestUsage {
   return usage;
 }
 
-export function parseWorkFoldRequestRecord(value: unknown): WorkFoldRequestRecord {
+export function parseAmpleFileRequestRecord(value: unknown): AmpleFileRequestRecord {
   const label = "Request record";
   const record = objectValue(value, label);
-  if (record.schema !== workFoldRequestRecordSchema) throw new Error(`${label} schema is unsupported.`);
+  if (record.schema !== ampleFileRequestRecordSchema) throw new Error(`${label} schema is unsupported.`);
   assertClosedShape(
     record,
     [
@@ -857,15 +857,15 @@ export function parseWorkFoldRequestRecord(value: unknown): WorkFoldRequestRecor
     label,
   );
   const requestId = stableId(record.requestId, `${label} id`);
-  if (!workFoldRequestIdPattern.test(requestId)) throw new Error(`${label} id is invalid.`);
+  if (!ampleFileRequestIdPattern.test(requestId)) throw new Error(`${label} id is invalid.`);
   const rootId = stableId(record.rootId, `${label} root id`);
-  if (!workFoldRequestIdPattern.test(rootId)) throw new Error(`${label} root id is invalid.`);
+  if (!ampleFileRequestIdPattern.test(rootId)) throw new Error(`${label} root id is invalid.`);
 
   const ownerRecord = objectValue(record.owner, `${label} owner`);
-  assertClosedShape(ownerRecord, ["workFolderId", "workFolderName", "conversationId"], `${label} owner`);
-  const owner: WorkFoldRequestOwner = { conversationId: stableId(ownerRecord.conversationId, `${label} conversation id`) };
-  if (ownerRecord.workFolderId !== undefined) owner.workFolderId = stableId(ownerRecord.workFolderId, `${label} work-folder id`);
-  if (ownerRecord.workFolderName !== undefined) owner.workFolderName = boundedText(ownerRecord.workFolderName, `${label} work-folder name`, 1_024);
+  assertClosedShape(ownerRecord, ["connectedFolderId", "connectedFolderName", "conversationId"], `${label} owner`);
+  const owner: AmpleFileRequestOwner = { conversationId: stableId(ownerRecord.conversationId, `${label} conversation id`) };
+  if (ownerRecord.connectedFolderId !== undefined) owner.connectedFolderId = stableId(ownerRecord.connectedFolderId, `${label} Connected Folder id`);
+  if (ownerRecord.connectedFolderName !== undefined) owner.connectedFolderName = boundedText(ownerRecord.connectedFolderName, `${label} Connected Folder name`, 1_024);
 
   const turns = Array.isArray(record.turns) ? record.turns.map(parseTurnRef) : null;
   if (!turns || !turns.length) {
@@ -873,10 +873,10 @@ export function parseWorkFoldRequestRecord(value: unknown): WorkFoldRequestRecor
   }
   if (turns[0]!.role !== "origin") throw new Error(`${label} does not start with its own turn.`);
 
-  const parsed: WorkFoldRequestRecord = {
-    schema: workFoldRequestRecordSchema,
+  const parsed: AmpleFileRequestRecord = {
+    schema: ampleFileRequestRecordSchema,
     requestId,
-    kind: enumValue(record.kind, ["agent", "work-folder", "app", "automation", "cli"] as const, `${label} kind`),
+    kind: enumValue(record.kind, ["agent", "connected-folder", "app", "automation", "cli"] as const, `${label} kind`),
     rootId,
     parentRequestId: record.parentRequestId === null || record.parentRequestId === undefined
       ? null
@@ -903,12 +903,12 @@ export function parseWorkFoldRequestRecord(value: unknown): WorkFoldRequestRecor
     turns,
     childRequestIds: stringArray(record.childRequestIds, `${label} child ids`)
       .map((id) => {
-        if (!workFoldRequestIdPattern.test(id)) throw new Error(`${label} child id is invalid.`);
+        if (!ampleFileRequestIdPattern.test(id)) throw new Error(`${label} child id is invalid.`);
         return id;
       }),
     questionIds: stringArray(record.questionIds, `${label} question ids`)
       .map((id) => {
-        if (!workFoldQuestionIdPattern.test(id)) throw new Error(`${label} question id is invalid.`);
+        if (!ampleFileQuestionIdPattern.test(id)) throw new Error(`${label} question id is invalid.`);
         return id;
       }),
     results: Array.isArray(record.results)
@@ -923,15 +923,15 @@ export function parseWorkFoldRequestRecord(value: unknown): WorkFoldRequestRecor
     limitHit: record.limitHit === null || record.limitHit === undefined ? null : parseLimitHit(record.limitHit, label),
     reconciledAt: nullableIsoDate(record.reconciledAt, `${label} recovery time`),
     remote: record.remote === null || record.remote === undefined ? null : parseRemoteRef(record.remote, label),
-    content: boundedText(record.content, `${label} message`, workFoldRequestLimits.maxRequestContentBytes),
-    assignment: boundedText(record.assignment ?? record.content, `${label} assignment`, workFoldRequestLimits.maxRequestContentBytes),
-    attachments: Array.isArray(record.attachments) && record.attachments.length <= maxWorkFoldAgentAttachments
-      ? record.attachments.map((item, index) => parseWorkFoldAttachmentRef(item, `${label} attachment ${index + 1}`))
+    content: boundedText(record.content, `${label} message`, ampleFileRequestLimits.maxRequestContentBytes),
+    assignment: boundedText(record.assignment ?? record.content, `${label} assignment`, ampleFileRequestLimits.maxRequestContentBytes),
+    attachments: Array.isArray(record.attachments) && record.attachments.length <= maxAmpleFileAgentAttachments
+      ? record.attachments.map((item, index) => parseAmpleFileAttachmentRef(item, `${label} attachment ${index + 1}`))
       : (() => { throw new Error(`${label} attachments are invalid.`); })(),
     actions: Array.isArray(record.actions)
       ? record.actions
-        .filter((item) => !isRetiredWorkFoldRequestAction(item))
-        .map((item, index) => parseWorkFoldRequestAction(item, `${label} action ${index + 1}`))
+        .filter((item) => !isRetiredAmpleFileRequestAction(item))
+        .map((item, index) => parseAmpleFileRequestAction(item, `${label} action ${index + 1}`))
       : (() => { throw new Error(`${label} actions are invalid.`); })(),
     continuedFromTaskId: record.continuedFromTaskId === null || record.continuedFromTaskId === undefined
       ? null
@@ -941,18 +941,18 @@ export function parseWorkFoldRequestRecord(value: unknown): WorkFoldRequestRecor
     if (!Array.isArray(record.jobs)) throw new Error(`${label} background jobs are invalid.`);
     parsed.jobs = record.jobs.map(parseJobRef);
   }
-  if (record.checklist !== undefined) parsed.checklist = parseWorkFoldChecklist(record.checklist);
+  if (record.checklist !== undefined) parsed.checklist = parseAmpleFileChecklist(record.checklist);
   if (record.deliveredJobIds !== undefined) {
     parsed.deliveredJobIds = stringArray(record.deliveredJobIds, `${label} delivered background jobs`).map((id) => {
-      if (!workFoldJobRefIdPattern.test(id)) throw new Error(`${label} delivered background job id is invalid.`);
+      if (!ampleFileJobRefIdPattern.test(id)) throw new Error(`${label} delivered background job id is invalid.`);
       return id;
     });
   }
   if (record.app !== undefined) {
     const app = objectValue(record.app, `${label} app`);
-    assertClosedShape(app, ["workFolderId", "appId", "featureInstallationId", "digest"], `${label} app`);
+    assertClosedShape(app, ["connectedFolderId", "appId", "featureInstallationId", "digest"], `${label} app`);
     parsed.app = {
-      workFolderId: stableId(app.workFolderId, `${label} app work-folder id`),
+      connectedFolderId: stableId(app.connectedFolderId, `${label} app Connected Folder id`),
       appId: stableId(app.appId, `${label} app id`),
       featureInstallationId: stableId(app.featureInstallationId, `${label} app installation id`),
       digest: stableId(app.digest, `${label} app fingerprint`),
@@ -964,7 +964,7 @@ export function parseWorkFoldRequestRecord(value: unknown): WorkFoldRequestRecor
   return parsed;
 }
 
-function parseLimitHit(value: unknown, label: string): WorkFoldRequestLimitHit {
+function parseLimitHit(value: unknown, label: string): AmpleFileRequestLimitHit {
   const record = objectValue(value, `${label} limit`);
   assertClosedShape(record, ["limit", "at"], `${label} limit`);
   return {
@@ -981,7 +981,7 @@ function parseLimitHit(value: unknown, label: string): WorkFoldRequestLimitHit {
   };
 }
 
-function parseRemoteRef(value: unknown, label: string): WorkFoldRequestRemoteRef {
+function parseRemoteRef(value: unknown, label: string): AmpleFileRequestRemoteRef {
   const record = objectValue(value, `${label} remote reference`);
   assertClosedShape(record, ["principalId", "grantId", "requestId"], `${label} remote reference`);
   return {
@@ -991,34 +991,34 @@ function parseRemoteRef(value: unknown, label: string): WorkFoldRequestRemoteRef
   };
 }
 
-export function parseWorkFoldQuestionRecord(value: unknown): WorkFoldQuestionRecord {
+export function parseAmpleFileQuestionRecord(value: unknown): AmpleFileQuestionRecord {
   const label = "Question record";
   const record = objectValue(value, label);
   if (record.asynchronous !== undefined && typeof record.asynchronous !== "boolean") throw new Error("Question asynchronous must be a boolean.");
-  if (record.schema !== workFoldQuestionRecordSchema) throw new Error(`${label} schema is unsupported.`);
+  if (record.schema !== ampleFileQuestionRecordSchema) throw new Error(`${label} schema is unsupported.`);
   assertClosedShape(
     record,
     [
       "schema", "questionId", "requestId", "rootId", "taskId", "respondent", "text", "options", "askedAt", "updatedAt",
-      "expiresAt", "state", "answer", "answeredAt", "continuationTaskId", "answeredByWorkFolderId", "asynchronous",
+      "expiresAt", "state", "answer", "answeredAt", "continuationTaskId", "answeredByConnectedFolderId", "asynchronous",
     ],
     label,
   );
   const questionId = stableId(record.questionId, `${label} id`);
-  if (!workFoldQuestionIdPattern.test(questionId)) throw new Error(`${label} id is invalid.`);
+  if (!ampleFileQuestionIdPattern.test(questionId)) throw new Error(`${label} id is invalid.`);
   const requestId = stableId(record.requestId, `${label} request id`);
-  if (!workFoldRequestIdPattern.test(requestId)) throw new Error(`${label} request id is invalid.`);
+  if (!ampleFileRequestIdPattern.test(requestId)) throw new Error(`${label} request id is invalid.`);
   const rootId = stableId(record.rootId, `${label} root id`);
-  if (!workFoldRequestIdPattern.test(rootId)) throw new Error(`${label} root id is invalid.`);
+  if (!ampleFileRequestIdPattern.test(rootId)) throw new Error(`${label} root id is invalid.`);
   return {
-    schema: workFoldQuestionRecordSchema,
+    schema: ampleFileQuestionRecordSchema,
     questionId,
     requestId,
     rootId,
     taskId: stableId(record.taskId, `${label} task id`),
     respondent: enumValue(record.respondent, ["person", "parent"] as const, `${label} respondent`),
-    text: boundedText(record.text, `${label} text`, workFoldRequestLimits.maxQuestionTextBytes, "questionText"),
-    ...(record.options === undefined || record.options === null ? {} : { options: parseWorkFoldQuestionOptions(record.options) }),
+    text: boundedText(record.text, `${label} text`, ampleFileRequestLimits.maxQuestionTextBytes, "questionText"),
+    ...(record.options === undefined || record.options === null ? {} : { options: parseAmpleFileQuestionOptions(record.options) }),
     ...(record.asynchronous === undefined ? {} : { asynchronous: record.asynchronous as boolean }),
     askedAt: isoDate(record.askedAt, `${label} time`),
     updatedAt: isoDate(record.updatedAt, `${label} update time`),
@@ -1026,35 +1026,35 @@ export function parseWorkFoldQuestionRecord(value: unknown): WorkFoldQuestionRec
     state: enumValue(record.state, ["open", "answered", "expired", "cancelled"] as const, `${label} state`),
     answer: record.answer === null || record.answer === undefined
       ? null
-      : boundedText(record.answer, `${label} answer`, workFoldRequestLimits.maxAnswerTextBytes, "answerText"),
+      : boundedText(record.answer, `${label} answer`, ampleFileRequestLimits.maxAnswerTextBytes, "answerText"),
     answeredAt: nullableIsoDate(record.answeredAt, `${label} answer time`),
     continuationTaskId: record.continuationTaskId === null || record.continuationTaskId === undefined
       ? null
       : stableId(record.continuationTaskId, `${label} follow-up task id`),
-    answeredByWorkFolderId: record.answeredByWorkFolderId === null || record.answeredByWorkFolderId === undefined
+    answeredByConnectedFolderId: record.answeredByConnectedFolderId === null || record.answeredByConnectedFolderId === undefined
       ? null
-      : stableId(record.answeredByWorkFolderId, `${label} answering work-folder id`),
+      : stableId(record.answeredByConnectedFolderId, `${label} answering Connected Folder id`),
   };
 }
 
 /** A request's checklist items: non-empty one-line text with a status. An empty list clears it. */
-export function parseWorkFoldChecklistItems(value: unknown): WorkFoldChecklistItem[] {
+export function parseAmpleFileChecklistItems(value: unknown): AmpleFileChecklistItem[] {
   if (!Array.isArray(value)) throw new Error("A checklist must be a list of items.");
-  if (value.length > workFoldRequestLimits.maxChecklistItems) throw workFoldRequestLimitError("checklistItems", workFoldRequestLimits.maxChecklistItems);
+  if (value.length > ampleFileRequestLimits.maxChecklistItems) throw ampleFileRequestLimitError("checklistItems", ampleFileRequestLimits.maxChecklistItems);
   return value.map((raw) => {
     const item = objectValue(raw, "A checklist item");
     assertClosedShape(item, ["text", "status"], "A checklist item");
-    const text = boundedText(item.text, "A checklist item", workFoldRequestLimits.maxChecklistItemBytes, "checklistItemText").replace(/\s+/g, " ").trim();
+    const text = boundedText(item.text, "A checklist item", ampleFileRequestLimits.maxChecklistItemBytes, "checklistItemText").replace(/\s+/g, " ").trim();
     if (!text) throw new Error("A checklist item cannot be empty.");
     return { text, status: enumValue(item.status, ["todo", "doing", "done"] as const, "A checklist item's status") };
   });
 }
 
-function parseWorkFoldChecklist(value: unknown): WorkFoldChecklist {
+function parseAmpleFileChecklist(value: unknown): AmpleFileChecklist {
   const checklist = objectValue(value, "Request checklist");
   assertClosedShape(checklist, ["items", "updatedAt", "taskId"], "Request checklist");
   return {
-    items: parseWorkFoldChecklistItems(checklist.items),
+    items: parseAmpleFileChecklistItems(checklist.items),
     updatedAt: isoDate(checklist.updatedAt, "Request checklist time"),
     taskId: stableId(checklist.taskId, "Request checklist task id"),
   };
@@ -1064,11 +1064,11 @@ function parseWorkFoldChecklist(value: unknown): WorkFoldChecklist {
  * A question's suggested answers: each is non-empty single-line text, none
  * repeats, and an empty list is the same as offering none.
  */
-export function parseWorkFoldQuestionOptions(value: unknown): string[] {
+export function parseAmpleFileQuestionOptions(value: unknown): string[] {
   if (!Array.isArray(value)) throw new Error("Question choices must be a list of text.");
-  if (value.length > workFoldRequestLimits.maxQuestionOptions) throw workFoldRequestLimitError("questionOptions", workFoldRequestLimits.maxQuestionOptions);
+  if (value.length > ampleFileRequestLimits.maxQuestionOptions) throw ampleFileRequestLimitError("questionOptions", ampleFileRequestLimits.maxQuestionOptions);
   const options = value.map((item) => {
-    const text = boundedText(item, "A question choice", workFoldRequestLimits.maxQuestionOptionBytes, "questionOptionText").trim();
+    const text = boundedText(item, "A question choice", ampleFileRequestLimits.maxQuestionOptionBytes, "questionOptionText").trim();
     if (!text) throw new Error("A question choice cannot be empty.");
     if (/[\n\r]/.test(text)) throw new Error("A question choice must be one line.");
     return text;
@@ -1079,27 +1079,27 @@ export function parseWorkFoldQuestionOptions(value: unknown): string[] {
 
 /**
  * The one result shape (F29). Sizes are bounds, so a refusal here is a
- * `WorkFoldRequestLimitError` that names its number; anything else about the
+ * `AmpleFileRequestLimitError` that names its number; anything else about the
  * shape is an ordinary error.
  */
-export function parseWorkFoldResultEnvelope(
+export function parseAmpleFileResultEnvelope(
   value: unknown,
   options: { schema?: RestrictedAppJsonSchema } = {},
-): WorkFoldResultEnvelope {
+): AmpleFileResultEnvelope {
   const label = "Result";
   const record = objectValue(value, label);
   assertClosedShape(record, ["summary", "data", "files", "outcome"], label);
-  const summary = boundedText(record.summary, `${label} summary`, workFoldRequestLimits.maxResultSummaryBytes, "resultSummary");
+  const summary = boundedText(record.summary, `${label} summary`, ampleFileRequestLimits.maxResultSummaryBytes, "resultSummary");
   if (!summary.trim()) throw new Error(`${label} summary cannot be empty.`);
-  const envelope: WorkFoldResultEnvelope = {
+  const envelope: AmpleFileResultEnvelope = {
     summary,
     outcome: enumValue(record.outcome, ["succeeded", "partial", "failed"] as const, `${label} outcome`),
   };
   if (record.data !== undefined) {
     const serialized = JSON.stringify(record.data);
     if (serialized === undefined) throw new Error(`${label} details must be JSON.`);
-    if (Buffer.byteLength(serialized, "utf8") > workFoldRequestLimits.maxResultDataBytes) {
-      throw workFoldRequestLimitError("resultData", workFoldRequestLimits.maxResultDataBytes);
+    if (Buffer.byteLength(serialized, "utf8") > ampleFileRequestLimits.maxResultDataBytes) {
+      throw ampleFileRequestLimitError("resultData", ampleFileRequestLimits.maxResultDataBytes);
     }
     if (options.schema) validateRestrictedAppValue(options.schema, record.data, `${label} details`);
     envelope.data = JSON.parse(serialized) as unknown;
@@ -1111,53 +1111,53 @@ export function parseWorkFoldResultEnvelope(
   return envelope;
 }
 
-function parseResultFileRef(value: unknown, label: string): WorkFoldResultFileRef {
+function parseResultFileRef(value: unknown, label: string): AmpleFileResultFileRef {
   const record = objectValue(value, label);
   assertClosedShape(record, ["path", "sha256", "sizeBytes"], label);
   const path = boundedText(record.path, `${label} path`, maximumResultFilePathLength);
-  assertWorkFolderRelativeResultPath(path, label);
+  assertConnectedFolderRelativeResultPath(path, label);
   if (typeof record.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(record.sha256)) throw new Error(`${label} fingerprint is invalid.`);
   return { path, sha256: record.sha256, sizeBytes: nonNegativeInteger(record.sizeBytes, `${label} size`) };
 }
 
 /**
- * A deliverable is named relative to the work-folder that produced it. Absolute
- * paths, parent traversal, and the reserved work-fold, Pi, and legacy product
+ * A deliverable is named relative to the Connected Folder that produced it. Absolute
+ * paths, parent traversal, and the reserved AmpleFile, Pi, and legacy product
  * folders are never valid endpoints (AGENTS.md, portable identity).
  */
-export function assertWorkFolderRelativeResultPath(path: string, label = "Result file"): void {
+export function assertConnectedFolderRelativeResultPath(path: string, label = "Result file"): void {
   if (!path.length) throw new Error(`${label} path cannot be empty.`);
   if (path.startsWith("/") || path.startsWith("\\") || /^[A-Za-z]:[\\/]/.test(path)) {
-    throw new Error(`${label} path must be relative to the work-folder.`);
+    throw new Error(`${label} path must be relative to the Connected Folder.`);
   }
   const segments = path.split(/[\\/]+/u);
   if (segments.some((segment) => segment === ".." || segment === "." || !segment.length)) {
-    throw new Error(`${label} path must be relative to the work-folder.`);
+    throw new Error(`${label} path must be relative to the Connected Folder.`);
   }
-  if (containsReservedWorkFolderPathSegment(path)) {
-    throw new Error(`${label} path names reserved work-fold, Pi, or legacy product metadata.`);
+  if (containsReservedConnectedFolderPathSegment(path)) {
+    throw new Error(`${label} path names reserved AmpleFile, Pi, or legacy product metadata.`);
   }
 }
 
-export function parseWorkFoldResultRecord(value: unknown): WorkFoldResultRecord {
+export function parseAmpleFileResultRecord(value: unknown): AmpleFileResultRecord {
   const label = "Result record";
   const record = objectValue(value, label);
-  if (record.schema !== workFoldResultRecordSchema) throw new Error(`${label} schema is unsupported.`);
+  if (record.schema !== ampleFileResultRecordSchema) throw new Error(`${label} schema is unsupported.`);
   assertClosedShape(record, ["schema", "resultId", "requestId", "rootId", "taskId", "recordedAt", "receiptId", "envelope"], label);
   const resultId = stableId(record.resultId, `${label} id`);
-  if (!workFoldResultIdPattern.test(resultId)) throw new Error(`${label} id is invalid.`);
+  if (!ampleFileResultIdPattern.test(resultId)) throw new Error(`${label} id is invalid.`);
   const requestId = stableId(record.requestId, `${label} request id`);
-  if (!workFoldRequestIdPattern.test(requestId)) throw new Error(`${label} request id is invalid.`);
+  if (!ampleFileRequestIdPattern.test(requestId)) throw new Error(`${label} request id is invalid.`);
   const rootId = stableId(record.rootId, `${label} root id`);
-  if (!workFoldRequestIdPattern.test(rootId)) throw new Error(`${label} root id is invalid.`);
+  if (!ampleFileRequestIdPattern.test(rootId)) throw new Error(`${label} root id is invalid.`);
   return {
-    schema: workFoldResultRecordSchema,
+    schema: ampleFileResultRecordSchema,
     resultId,
     requestId,
     rootId,
     taskId: stableId(record.taskId, `${label} task id`),
     recordedAt: isoDate(record.recordedAt, `${label} time`),
     receiptId: stableId(record.receiptId, `${label} receipt id`),
-    envelope: parseWorkFoldResultEnvelope(record.envelope),
+    envelope: parseAmpleFileResultEnvelope(record.envelope),
   };
 }

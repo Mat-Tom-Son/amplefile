@@ -2,7 +2,7 @@ import type { ClipboardContent } from "../../../src/shared/clipboard";
 
 /** Desktop Copy belongs to the native host, including while a native menu owns focus. */
 export async function copyToClipboard(content: ClipboardContent): Promise<void> {
-  const native = window.workFoldDesktop?.clipboard ?? window.workFoldDiagnostics?.clipboard;
+  const native = window.ampleFileDesktop?.clipboard ?? window.ampleFileDiagnostics?.clipboard;
   if (native) {
     await native.write(content);
     return;

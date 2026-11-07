@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-// WorkFoldChromeOrigin is generated from the checked distribution identity at
+// AmpleFileChromeOrigin is generated from the checked distribution identity at
 // build time. This process never mutates connection state or controls Chrome.
 let maximumRequestBytes = 16 * 1024
 let maximumResponseBytes = 64 * 1024
@@ -38,8 +38,8 @@ func privateDescriptor(_ url: URL) -> [String: Any]? {
 }
 
 // Chrome passes its caller origin as argv[1]. It does not pass a profile ID.
-guard !WorkFoldChromeOrigin.isEmpty else { fail("store_unavailable") }
-guard CommandLine.arguments.count == 2, CommandLine.arguments[1] == WorkFoldChromeOrigin else { fail("connection_error") }
+guard !AmpleFileChromeOrigin.isEmpty else { fail("store_unavailable") }
+guard CommandLine.arguments.count == 2, CommandLine.arguments[1] == AmpleFileChromeOrigin else { fail("connection_error") }
 // A truncated client must not leave an orphaned native helper process forever.
 signal(SIGALRM, SIG_DFL)
 alarm(10)
@@ -50,7 +50,7 @@ guard count > 0, count <= maximumRequestBytes, let body = readExactly(Int(count)
 if request["version"] as? Int == 1, request["action"] as? String == "open-app" {
     let opener = Process()
     opener.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    opener.arguments = ["-b", "com.work-fold.desktop"]
+    opener.arguments = ["-b", "com.amplefile.desktop"]
     opener.standardInput = FileHandle.nullDevice
     opener.standardOutput = FileHandle.nullDevice
     opener.standardError = FileHandle.nullDevice
@@ -67,7 +67,7 @@ guard let descriptor = privateDescriptor(descriptorURL), descriptor["version"] a
       parts.path == "/bootstrap", parts.query == nil, parts.fragment == nil, parts.user == nil, parts.password == nil,
       let url = parts.url else { fail("app_not_running") }
 
-let envelope: [String: Any] = ["version": 1, "launchId": launchId, "extensionOrigin": WorkFoldChromeOrigin, "request": request]
+let envelope: [String: Any] = ["version": 1, "launchId": launchId, "extensionOrigin": AmpleFileChromeOrigin, "request": request]
 guard let payload = try? JSONSerialization.data(withJSONObject: envelope) else { fail("connection_error") }
 var outgoing = URLRequest(url: url)
 outgoing.httpMethod = "POST"

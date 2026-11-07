@@ -36,7 +36,7 @@ const tenantId = parseTenantId("tenant_local-test");
 const runtimeInstanceId = parseRuntimeInstanceId("runtime-instance_mail-test");
 const featureInstallationId = parseFeatureInstallationId("feature-installation_mail-test");
 const effectivePrincipalId = parsePrincipalId("principal_local-test");
-const featureRevisionDigest = parseAppPlatformArtifactDigest(`work-fold.artifact.v1:sha256:${"a".repeat(64)}`);
+const featureRevisionDigest = parseAppPlatformArtifactDigest(`amplefile.artifact.v1:sha256:${"a".repeat(64)}`);
 const owner: RestrictedAppRuntimeOwner = {
   tenantId,
   runtimeInstanceId,
@@ -460,7 +460,7 @@ test("network broker reaches an exact loopback service and denies its redirects"
     assert.ok(address && typeof address === "object");
     assert.ok(address.port >= 1_024);
     const productionConnections = new EncryptedRestrictedAppConnectionStore(
-      join(tmpdir(), `work-fold-loopback-composition-${randomUUID()}.bin`),
+      join(tmpdir(), `amplefile-loopback-composition-${randomUUID()}.bin`),
       {
         isAvailable: () => true,
         encrypt: (plaintext) => Buffer.from(plaintext, "utf8"),

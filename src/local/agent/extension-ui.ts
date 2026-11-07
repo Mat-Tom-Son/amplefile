@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { workFoldExtensionUiLimits as extensionUiLimits } from "../../shared/work-fold-limits.js";
-export { workFoldExtensionUiLimits as extensionUiLimits } from "../../shared/work-fold-limits.js";
+import { ampleFileExtensionUiLimits as extensionUiLimits } from "../../shared/amplefile-limits.js";
+export { ampleFileExtensionUiLimits as extensionUiLimits } from "../../shared/amplefile-limits.js";
 
 import type {
   ExtensionUIContext,
@@ -11,7 +11,7 @@ import type {
 
 export interface PiExtensionUiScope {
   conversationId: string;
-  workFolderRoot: string;
+  connectedFolderRoot: string;
   /** Exact originating host turn, when this call was made within one. */
   taskId?: string;
 }
@@ -134,7 +134,7 @@ export interface PiExtensionUiBridge {
 }
 
 function scopeKey(scope: PiExtensionUiScope): string {
-  return JSON.stringify([scope.workFolderRoot, scope.conversationId]);
+  return JSON.stringify([scope.connectedFolderRoot, scope.conversationId]);
 }
 
 /** Validate at the callback boundary too, so every adapter obeys the same contract. */
@@ -390,7 +390,7 @@ export function createExtensionUiContext(
       return undefined;
     },
     setTheme() {
-      return { success: false, error: "Theme switching is controlled by the work-fold renderer." };
+      return { success: false, error: "Theme switching is controlled by the AmpleFile renderer." };
     },
     getToolsExpanded() {
       return false;

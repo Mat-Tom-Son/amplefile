@@ -2,14 +2,14 @@ import { logicalEventController } from "./support/local-events.js";
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { createElement, StrictMode, type ComponentProps } from "react";
-import type { AgentModel, AgentStatus, WorkFolderSummary } from "../web-local/src/types.js";
+import type { AgentModel, AgentStatus, ConnectedFolderSummary } from "../web-local/src/types.js";
 import { useModalDialog } from "../web-local/src/hooks/useModalDialog.js";
 import { createDomHarness } from "./support/dom.js";
 
 const { AiModelsPane } = await import("../web-local/src/components/panes/AiModelsPane.js");
 
 const status: AgentStatus = { configured: true, ready: true, provider: "openrouter", model: "model-a", error: null, piVersion: "fixture" };
-const workFolder = (id: string): WorkFolderSummary => ({ id, name: `work-folder ${id}`, workFolderRoot: `/synthetic/${id}` } as WorkFolderSummary);
+const connectedFolder = (id: string): ConnectedFolderSummary => ({ id, name: `Connected Folder ${id}`, connectedFolderRoot: `/synthetic/${id}` } as ConnectedFolderSummary);
 const models: AgentModel[] = [
   { provider: "openrouter", providerName: "OpenRouter", id: "model-a", name: "Model A", authConfigured: true, authSource: "stored", authType: "api_key", oauthSupported: false },
   { provider: "openrouter", providerName: "OpenRouter", id: "model-b", name: "Model B", authConfigured: true, authSource: "stored", authType: "api_key", oauthSupported: false },
@@ -49,8 +49,8 @@ async function setup(t: TestContext) {
   t.after(async () => { await dom.cleanup(); globalThis.fetch = previous; });
   const callbacks: AgentStatus[] = [];
   const changes: string[] = [];
-  const render = (selected: WorkFolderSummary | null, initialScope: "work-folder" | "agent" = "work-folder", strict = false, extra: Partial<ComponentProps<typeof AiModelsPane>> = {}) => {
-    const component = createElement(AiModelsPane, { workFolder: selected, status, embedded: true, initialScope,
+  const render = (selected: ConnectedFolderSummary | null, initialScope: "connected-folder" | "agent" = "connected-folder", strict = false, extra: Partial<ComponentProps<typeof AiModelsPane>> = {}) => {
+    const component = createElement(AiModelsPane, { connectedFolder: selected, status, embedded: true, initialScope,
       onConfigured: (next) => callbacks.push(next), onModelChanged: (scope) => changes.push(scope), ...extra });
     return dom.render(strict ? createElement(StrictMode, null, component) : component);
   };
@@ -93,7 +93,7 @@ test("OpenAI account Settings shows identity and an honest usage link, and ignor
     ...models,
     { ...models[0]!, provider: "openai", providerName: "OpenAI", name: "Account model", authType: "oauth" as const },
   ];
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse({ models: connected, status: { ...status, provider: "openai" } }));
   await ui.dom.waitFor(() => ui.requests.some(request => request.path.startsWith("/api/agent/provider-account?")));
   const profileRead = ui.requests.find(request => request.path.startsWith("/api/agent/provider-account?"))!;
@@ -123,7 +123,7 @@ test("OpenAI account Settings shows identity and an honest usage link, and ignor
 test("OpenAI account Settings leaves missing workspace explicit and keeps API-key connections separate", async t => {
   const ui = await setup(t);
   const connected = [{ ...models[0]!, provider: "openai", providerName: "OpenAI", name: "Account model", authType: "oauth" as const }];
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse({ models: connected, status: { ...status, provider: "openai" } }));
   await ui.dom.waitFor(() => ui.requests.some(request => request.path.startsWith("/api/agent/provider-account?")));
   await ui.finish(ui.requests.find(request => request.path.startsWith("/api/agent/provider-account?"))!, { account: {
@@ -136,7 +136,7 @@ test("OpenAI account Settings leaves missing workspace explicit and keeps API-ke
   assert.match(panel.textContent!, /account details are unavailable/);
   assert.doesNotMatch(panel.textContent!, /sensitive upstream/);
   await ui.dom.render(null);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests.at(-1)!, modelResponse({ models: connected.map(model => ({ ...model, authType: "api_key" })), status: { ...status, provider: "openai" } }));
   assert.equal(ui.dom.container.querySelector('[aria-label="OpenAI account details"]'), null);
 });
@@ -144,7 +144,7 @@ test("OpenAI account Settings leaves missing workspace explicit and keeps API-ke
 test("Codex Settings renders actual zero usage, window length and reset time and refreshes on focus", async t => {
   const ui = await setup(t);
   const connected = [{ ...models[0]!, provider: "openai-codex", providerName: "OpenAI (Codex subscription)", authType: "oauth" as const }];
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse({ models: connected, status: { ...status, provider: "openai-codex" } }));
   await ui.dom.waitFor(() => ui.requests.some(request => request.path.startsWith("/api/agent/provider-account?")));
   const account = { provider: "openai-codex", connected: true, email: "person@example.test", workspaceName: "Synthetic workspace", workspaceId: "selected", plan: "team", source: "provider", checkedAt: "2026-11-04T20:00:00Z", error: null,
@@ -164,7 +164,7 @@ test("Codex Settings renders actual zero usage, window length and reset time and
   await ui.finish(ui.requests.at(-1)!, { account: { ...account, applicableResets: null } });
   assert.match(ui.dom.container.textContent!, /Rate-limit resets on account: 3/);
   assert.doesNotMatch(ui.dom.container.textContent!, /Rate-limit resets for this workspace/);
-  await ui.render(workFolder("a"), "work-folder", false, { active: false });
+  await ui.render(connectedFolder("a"), "connected-folder", false, { active: false });
   const inactiveCount = ui.requests.length;
   await ui.dom.act(() => window.dispatchEvent(new Event("focus")));
   assert.equal(ui.requests.length, inactiveCount, "hidden Settings releases focus refresh listeners");
@@ -173,7 +173,7 @@ test("Codex Settings renders actual zero usage, window length and reset time and
 test("a direct connection saved without identity offers its native reconnect action", async t => {
   const ui = await setup(t);
   const connected = [{ ...models[0]!, provider: "openai", providerName: "OpenAI", authType: "oauth" as const, oauthSupported: true }];
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse({ models: connected, status: { ...status, provider: "openai" } }));
   await ui.dom.waitFor(() => ui.requests.some(request => request.path.startsWith("/api/agent/provider-account?")));
   await ui.finish(ui.requests.find(request => request.path.startsWith("/api/agent/provider-account?"))!, { account: {
@@ -193,7 +193,7 @@ test("Codex is a distinct available connection and signing in preserves a workin
     { id: "openrouter", name: "OpenRouter", configured: true, authType: "api_key", authSource: "stored", apiKey: true, oauth: false, modelCount: 2 },
     { id: "openai-codex", name: "OpenAI", configured: false, apiKey: false, oauth: true, oauthAvailable: true, oauthLabel: "Sign in with ChatGPT", modelCount: 1 },
   ];
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse({ providers }));
   const option = ui.dom.container.querySelector<HTMLOptionElement>('option[value="openai-codex"]');
   assert.equal(option?.textContent, "OpenAI (Codex subscription)");
@@ -207,44 +207,44 @@ test("Codex is a distinct available connection and signing in preserves a workin
   assert.equal(selectedModel(ui.dom), "model-a");
 });
 
-test("obsolete scope reads and Strict Mode replay cannot overwrite the current target or request a missing work-folder", async (t) => {
+test("obsolete scope reads and Strict Mode replay cannot overwrite the current target or request a missing Connected Folder", async (t) => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"), "work-folder", true);
-  const workFolderRead = ui.requests.at(-1)!;
-  assert.match(workFolderRead.path, /scope=work-folder&workFolderId=a/);
-  await ui.render(null, "work-folder", true);
-  const workFoldAgentRead = ui.requests.at(-1)!;
-  assert.match(workFoldAgentRead.path, /scope=agent$/);
-  assert.ok(workFolderRead.init.signal?.aborted);
-  await ui.finish(workFoldAgentRead, modelResponse({ status: { ...status, model: "model-b" }, instructions: null }));
-  await ui.finish(workFolderRead, { error: "work-folder id is required." }, 400);
+  await ui.render(connectedFolder("a"), "connected-folder", true);
+  const connectedFolderRead = ui.requests.at(-1)!;
+  assert.match(connectedFolderRead.path, /scope=connected-folder&connectedFolderId=a/);
+  await ui.render(null, "connected-folder", true);
+  const ampleFileAgentRead = ui.requests.at(-1)!;
+  assert.match(ampleFileAgentRead.path, /scope=agent$/);
+  assert.ok(connectedFolderRead.init.signal?.aborted);
+  await ui.finish(ampleFileAgentRead, modelResponse({ status: { ...status, model: "model-b" }, instructions: null }));
+  await ui.finish(connectedFolderRead, { error: "Connected Folder id is required." }, 400);
   assert.equal(selectedModel(ui.dom), "model-b");
   assert.equal(ui.dom.container.querySelector("textarea"), null);
-  assert.doesNotMatch(ui.dom.container.textContent!, /work-folder id is required|work-folder not found/);
-  assert.ok(ui.requests.every((request) => !request.path.endsWith("scope=work-folder")));
+  assert.doesNotMatch(ui.dom.container.textContent!, /Connected Folder id is required|Connected Folder not found/);
+  assert.ok(ui.requests.every((request) => !request.path.endsWith("scope=connected-folder")));
   assert.equal(ui.dom.container.querySelectorAll('input[name="ai-model-scope"]').length, 0);
-  assert.match(ui.dom.container.textContent!, /work-fold agent/);
+  assert.match(ui.dom.container.textContent!, /AmpleFile agent/);
 });
 
-test("model writes submit once, remain bound to the original work-folder and cannot finish into a replacement form", async (t) => {
+test("model writes submit once, remain bound to the original Connected Folder and cannot finish into a replacement form", async (t) => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse());
   await ui.select("#ai-model", "model-b");
   await ui.submit("model", true);
   const write = ui.requests.at(-1)!;
   assert.equal(ui.requests.filter((item) => item.path === "/api/agent/configure").length, 1);
-  assert.deepEqual(write.body, { scope: "work-folder", workFolderId: "a", provider: "openrouter", model: "model-b" });
+  assert.deepEqual(write.body, { scope: "connected-folder", connectedFolderId: "a", provider: "openrouter", model: "model-b" });
   assert.equal(ui.dom.container.querySelector<HTMLSelectElement>('select[aria-label="Provider"]')?.disabled, true);
-  // The work-fold agent's scope is read alongside so switching scopes never reloads; count only this work-folder's reads.
-  const workFolderReads = () => ui.requests.filter((item) => /scope=work-folder/.test(item.path));
-  await ui.render(workFolder("b"));
-  assert.equal(workFolderReads().length, 1, "replacement read waits for the accepted write to settle");
+  // The AmpleFile agent's scope is read alongside so switching scopes never reloads; count only this Connected Folder's reads.
+  const connectedFolderReads = () => ui.requests.filter((item) => /scope=connected-folder/.test(item.path));
+  await ui.render(connectedFolder("b"));
+  assert.equal(connectedFolderReads().length, 1, "replacement read waits for the accepted write to settle");
   await ui.finish(write, { status: { ...status, model: "model-b" } });
-  await ui.dom.waitFor(() => workFolderReads().length === 2);
-  assert.match(workFolderReads()[1]!.path, /workFolderId=b/);
-  await ui.finish(workFolderReads()[1]!, modelResponse({ instructions: "B instructions" }));
-  assert.deepEqual(ui.callbacks, [], "old work-folder cannot replace the current app status");
+  await ui.dom.waitFor(() => connectedFolderReads().length === 2);
+  assert.match(connectedFolderReads()[1]!.path, /connectedFolderId=b/);
+  await ui.finish(connectedFolderReads()[1]!, modelResponse({ instructions: "B instructions" }));
+  assert.deepEqual(ui.callbacks, [], "old Connected Folder cannot replace the current app status");
   assert.deepEqual(ui.changes, []);
   assert.equal(selectedModel(ui.dom), "model-a");
   assert.equal(ui.dom.container.querySelector<HTMLTextAreaElement>("textarea")?.value, "B instructions");
@@ -253,7 +253,7 @@ test("model writes submit once, remain bound to the original work-folder and can
 
 test("refresh is provider-owned and preserves edits made while the same provider catalog loads", async (t) => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse());
   await ui.dom.act(() => { ui.button("Refresh").click(); ui.button("Refresh").click(); });
   const refresh = ui.requests.at(-1)!;
@@ -276,7 +276,7 @@ test("refresh is provider-owned and preserves edits made while the same provider
 
 test("instructions keep newer edits through an in-flight save and errors stay with their own form", async (t) => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse());
   await ui.type("textarea", "First edit");
   await ui.submit("instructions", true);
@@ -300,7 +300,7 @@ test("instructions keep newer edits through an in-flight save and errors stay wi
 
 test("saved credentials are readable status, with separate explicit connection and no secret carried across providers", async (t) => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse());
   assert.equal(ui.dom.container.querySelector('input[type="password"]'), null);
   assert.match(ui.dom.container.textContent!, /API key saved on this computer/);
@@ -315,7 +315,7 @@ test("saved credentials are readable status, with separate explicit connection a
   assert.match(ui.dom.container.textContent!, /Connect Your AI/, "the featured providers lead while nothing is connected");
   await ui.submit("connection", true);
   const write = ui.requests.at(-1)!;
-  assert.deepEqual(write.body, { scope: "work-folder", workFolderId: "a", provider: "anthropic", apiKey: "synthetic-new-provider-key" });
+  assert.deepEqual(write.body, { scope: "connected-folder", connectedFolderId: "a", provider: "anthropic", apiKey: "synthetic-new-provider-key" });
   assert.equal(ui.requests.filter((item) => item.path === "/api/agent/configure").length, 1);
   await ui.finish(write, { status: { ...status, provider: "anthropic", model: "claude" } });
   assert.equal(ui.dom.container.querySelector('input[type="password"]'), null);
@@ -325,7 +325,7 @@ test("saved credentials are readable status, with separate explicit connection a
 
 test("Settings uses Pi's account labels and connects providers before they have chat models", async t => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   const providers = [
     { id: "openrouter", name: "OpenRouter", configured: true, authSource: "stored", authType: "api_key", apiKey: true, oauth: false, oauthAvailable: false, guidedSetup: true, modelCount: 2 },
     { id: "account-only", name: "Account provider", configured: false, apiKey: false, oauth: true, oauthLabel: "Sign in with Example", oauthAvailable: true, guidedSetup: false, modelCount: 0 },
@@ -338,7 +338,7 @@ test("Settings uses Pi's account labels and connects providers before they have 
   await ui.dom.act(() => ui.button("Sign in with Example").click());
   const account = ui.requests.at(-1)!;
   assert.equal(account.path, "/api/agent/oauth");
-  assert.deepEqual(account.body, { scope: "work-folder", workFolderId: "a", provider: "account-only" });
+  assert.deepEqual(account.body, { scope: "connected-folder", connectedFolderId: "a", provider: "account-only" });
   await ui.finish(account, { status, models, providers: providers.map(item => item.id === "account-only" ? { ...item, configured: true, authSource: "stored", authType: "oauth" } : item) });
   assert.match(ui.dom.container.textContent!, /Connection saved/);
   assert.equal(ui.button("Reconnect Account").disabled, false);
@@ -346,20 +346,20 @@ test("Settings uses Pi's account labels and connects providers before they have 
   await ui.type("#ai-models-api-key", "synthetic-image-key");
   await ui.submit("connection", true);
   const key = ui.requests.at(-1)!;
-  assert.deepEqual(key.body, { scope: "work-folder", workFolderId: "a", provider: "images-only", apiKey: "synthetic-image-key" });
+  assert.deepEqual(key.body, { scope: "connected-folder", connectedFolderId: "a", provider: "images-only", apiKey: "synthetic-image-key" });
   await ui.finish(key, { status, providers: providers.map(item => item.id === "images-only" ? { ...item, configured: true, authSource: "stored", authType: "api_key" } : item) });
   assert.match(ui.dom.container.textContent!, /API key saved on this computer/);
   assert.equal(ui.button("Save Model").disabled, true);
   await ui.dom.act(() => ui.button("Guided Setup").click());
   const guidedRequest = ui.requests.at(-1)!;
   assert.equal(guidedRequest.path, "/api/agent/login");
-  assert.deepEqual(guidedRequest.body, { scope: "work-folder", workFolderId: "a", provider: "images-only", method: "api_key" });
+  assert.deepEqual(guidedRequest.body, { scope: "connected-folder", connectedFolderId: "a", provider: "images-only", method: "api_key" });
   await ui.finish(guidedRequest, { status, models, providers });
 });
 
 test("Settings allows an API key for Copilot when Pi advertises it and reports desktop-only account setup", async t => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   const providers = [{ id: "github-copilot", name: "GitHub Copilot", configured: false, apiKey: true,
     oauth: true, oauthLabel: "Sign in with GitHub", oauthAvailable: false, guidedSetup: false, modelCount: 1 }];
   await ui.finish(ui.requests[0]!, modelResponse({ providers, models: [{ ...models[0]!, provider: "github-copilot", authConfigured: false }], status: { ...status, provider: "github-copilot" } }));
@@ -376,7 +376,7 @@ test("all connected providers share one model picker and connection writes prese
     ...models,
     { ...models[0]!, provider: "openai", providerName: "OpenAI", id: "model-a", name: "Account model", authType: "oauth" as const },
   ];
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse({ models: connected }));
   await ui.dom.act(() => ui.dom.container.querySelector<HTMLButtonElement>("#ai-model")!.click());
   assert.equal(ui.dom.container.querySelector('[role="option"][data-provider="anthropic"]'), null, "disconnected catalogs stay in connection setup");
@@ -390,24 +390,24 @@ test("all connected providers share one model picker and connection writes prese
   await ui.finish(ui.requests.at(-1)!, modelResponse({ models: connected }));
   assert.equal(ui.dom.container.querySelector("#ai-model")?.getAttribute("data-provider"), "openai", "fresh connection catalog preserves the selected model draft");
   await ui.submit("model");
-  assert.deepEqual(ui.requests.at(-1)!.body, { scope: "work-folder", workFolderId: "a", provider: "openai", model: "model-a" });
+  assert.deepEqual(ui.requests.at(-1)!.body, { scope: "connected-folder", connectedFolderId: "a", provider: "openai", model: "model-a" });
   const saved = { ...status, provider: "openai" };
   await ui.finish(ui.requests.at(-1)!, { status: saved });
   await ui.dom.render(null);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests.at(-1)!, modelResponse({ models: connected, status: saved }));
   assert.equal(ui.dom.container.querySelector("#ai-model")?.getAttribute("data-provider"), "openai");
   assert.equal(ui.dom.container.querySelectorAll('optgroup[label="Connected"] option').length, 2);
   await ui.select("#ai-model", "model-b");
   await ui.submit("model");
-  assert.deepEqual(ui.requests.at(-1)!.body, { scope: "work-folder", workFolderId: "a", provider: "openrouter", model: "model-b" });
+  assert.deepEqual(ui.requests.at(-1)!.body, { scope: "connected-folder", connectedFolderId: "a", provider: "openrouter", model: "model-b" });
   await ui.finish(ui.requests.at(-1)!, { status: { ...status, model: "model-b" } });
   assert.equal(ui.dom.container.querySelector("#ai-models-api-key"), null, "switching between saved connections needs no repeated key entry");
 });
 
 test("changing a saved API key keeps the old connection until an explicit save, and Cancel discards the replacement", async (t) => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse());
   await ui.dom.act(() => ui.button("Change API Key").click());
   const key = () => ui.dom.container.querySelector<HTMLInputElement>("#ai-models-api-key")!;
@@ -425,7 +425,7 @@ test("changing a saved API key keeps the old connection until an explicit save, 
   await ui.type("#ai-models-api-key", "synthetic-replacement");
   await ui.submit("connection", true);
   const write = ui.requests.at(-1)!;
-  assert.deepEqual(write.body, { scope: "work-folder", workFolderId: "a", provider: "openrouter", apiKey: "synthetic-replacement" });
+  assert.deepEqual(write.body, { scope: "connected-folder", connectedFolderId: "a", provider: "openrouter", apiKey: "synthetic-replacement" });
   assert.equal(ui.requests.filter((request) => request.path === "/api/agent/configure").length, 1);
   assert.equal(ui.requests.some((request) => request.init.method === "DELETE"), false);
   await ui.finish(write, { error: "Synthetic save failure" }, 409);
@@ -439,14 +439,14 @@ test("changing a saved API key keeps the old connection until an explicit save, 
 
 test("a model-only save preserves an unsaved key replacement and never submits it", async (t) => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse());
   await ui.dom.act(() => ui.button("Change API Key").click());
   await ui.type("#ai-models-api-key", "synthetic-unsaved-key");
   await ui.select("#ai-model", "model-b");
   await ui.submit("model");
   const write = ui.requests.at(-1)!;
-  assert.deepEqual(write.body, { scope: "work-folder", workFolderId: "a", provider: "openrouter", model: "model-b" });
+  assert.deepEqual(write.body, { scope: "connected-folder", connectedFolderId: "a", provider: "openrouter", model: "model-b" });
   await ui.finish(write, { status: { ...status, model: "model-b" } });
   assert.equal(ui.dom.container.querySelector<HTMLInputElement>("#ai-models-api-key")?.value, "synthetic-unsaved-key");
   await ui.select('select[aria-label="Provider"]', "anthropic");
@@ -459,7 +459,7 @@ test("Azure setup starts with user-entered deployments, accepts multiple names, 
   const ui = await setup(t);
   const azureStatus = { ...status, configured: false, provider: "azure", model: null };
   const azureModels = [{ ...models[0]!, provider: "azure", providerName: "Azure OpenAI", id: "catalog-model", name: "Catalog model", authConfigured: false }];
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse({ status: azureStatus, models: azureModels, azure: { baseUrl: "", deployments: [] } }));
   assert.equal(ui.dom.container.querySelector("#ai-model"), null, "connection setup needs no catalog model");
   assert.equal(ui.button("Save Azure Settings").disabled, true);
@@ -474,7 +474,7 @@ test("Azure setup starts with user-entered deployments, accepts multiple names, 
   await ui.submit("connection", true);
   const write = ui.requests.at(-1)!;
   const azure = { baseUrl: "https://example.cognitiveservices.azure.com/openai/v1", deployments: ["my-deployment", "fast", "third"] };
-  assert.deepEqual(write.body, { scope: "work-folder", workFolderId: "a", provider: "azure", apiKey: "synthetic-key", azure });
+  assert.deepEqual(write.body, { scope: "connected-folder", connectedFolderId: "a", provider: "azure", apiKey: "synthetic-key", azure });
   assert.equal(ui.requests.filter((request) => request.path === "/api/agent/configure").length, 1);
   assert.equal(ui.dom.container.querySelector<HTMLInputElement>("#ai-models-azure-endpoint")?.disabled, true);
   const savedStatus = azureStatus;
@@ -485,7 +485,7 @@ test("Azure setup starts with user-entered deployments, accepts multiple names, 
   assert.equal(ui.dom.container.querySelector<HTMLInputElement>("#ai-models-api-key")?.value, "");
   await ui.select("#ai-model", "fast");
   await ui.submit("model");
-  assert.deepEqual(ui.requests.at(-1)!.body, { scope: "work-folder", workFolderId: "a", provider: "azure", model: "fast" });
+  assert.deepEqual(ui.requests.at(-1)!.body, { scope: "connected-folder", connectedFolderId: "a", provider: "azure", model: "fast" });
   await ui.finish(ui.requests.at(-1)!, { status: { ...azureStatus, configured: true, model: "fast" } });
   await ui.type("#ai-models-azure-endpoint", "https://new.openai.azure.com");
   await ui.hint();
@@ -514,7 +514,7 @@ test("Foundry forms keep endpoint drafts separate, clear keys on switching, and 
     ...["azure", "azure-chat-completions", "azure-anthropic"].map((id) => ({ id, name: id, configured: false, apiKey: true, oauth: false, modelCount: 0 })),
   ];
   const foundryModels = { "azure-anthropic": [{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" }], "azure-chat-completions": [{ id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" }] };
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse({ providers, azure, foundry, foundryModels }));
   await ui.select('select[aria-label="Provider"]', "azure-anthropic");
   assert.equal(ui.dom.container.querySelector<HTMLInputElement>("#ai-models-azure-endpoint")?.value, "");
@@ -533,14 +533,14 @@ test("Foundry forms keep endpoint drafts separate, clear keys on switching, and 
   await ui.type("#ai-models-api-key", "anthropic-synthetic-key");
   await ui.submit("connection");
   const submitted = { baseUrl: "https://claude.services.ai.azure.com/anthropic", deployments: ["reviewer"], modelIds: { reviewer: "claude-sonnet-4-6" } };
-  assert.deepEqual(ui.requests.at(-1)!.body, { scope: "work-folder", workFolderId: "a", provider: "azure-anthropic", apiKey: "anthropic-synthetic-key", foundry: submitted });
+  assert.deepEqual(ui.requests.at(-1)!.body, { scope: "connected-folder", connectedFolderId: "a", provider: "azure-anthropic", apiKey: "anthropic-synthetic-key", foundry: submitted });
   const connected = providers.map((item) => item.id === "azure-anthropic" ? { ...item, configured: true, authSource: "stored", authType: "api_key" } : item);
   await ui.finish(ui.requests.at(-1)!, { status, models, providers: connected, azure, foundry: { ...foundry, "azure-anthropic": submitted }, foundryModels });
   assert.equal(selectedModel(ui.dom), "model-a", "connection saves leave the Worker model alone");
   assert.equal(ui.dom.container.querySelector<HTMLInputElement>("#ai-models-api-key")?.value, "");
   assert.equal(ui.button("Save Foundry Settings").disabled, true);
   await ui.dom.act(() => ui.button("Remove API Key").click());
-  assert.deepEqual(ui.requests.at(-1)!.body, { scope: "work-folder", workFolderId: "a", provider: "azure-anthropic" });
+  assert.deepEqual(ui.requests.at(-1)!.body, { scope: "connected-folder", connectedFolderId: "a", provider: "azure-anthropic" });
   await ui.finish(ui.requests.at(-1)!, { status, models, providers, azure, foundry });
   assert.equal(ui.dom.container.querySelector<HTMLInputElement>("#ai-models-azure-endpoint")?.value, "");
   await ui.select('select[aria-label="Provider"]', "azure");
@@ -557,7 +557,7 @@ test("Settings exposes an unavailable saved base model and lets the person repai
     { id: "azure-anthropic", name: "Foundry Anthropic", configured: true, apiKey: true, oauth: false, modelCount: 0, authSource: "stored", authType: "api_key" },
   ];
   const foundryModels = { "azure-anthropic": [{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" }] };
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse({ providers, foundry: { "azure-anthropic": connection }, foundryModels }));
   await ui.select('select[aria-label="Provider"]', "azure-anthropic");
   assert.match(ui.dom.container.textContent!, /Choose a base model again/);
@@ -576,7 +576,7 @@ test("undoing base-model edits clears the connection's unsaved state", async (t)
   const ui = await setup(t);
   const connection = { baseUrl: "https://example.services.ai.azure.com/anthropic", deployments: ["team"] };
   const providers = [{ id: "azure-anthropic", name: "Foundry Anthropic", configured: true, apiKey: true, oauth: false, modelCount: 1, authSource: "stored", authType: "api_key" }];
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse({ providers, models: [{ ...models[0]!, provider: "azure-anthropic", id: "team" }],
     status: { ...status, provider: "azure-anthropic", model: "team" }, foundry: { "azure-anthropic": connection },
     foundryModels: { "azure-anthropic": [{ id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" }] } }));
@@ -590,7 +590,7 @@ test("undoing base-model edits clears the connection's unsaved state", async (t)
 test("a malformed connection shows setup needed while keeping its stored key available for repair", async (t) => {
   const ui = await setup(t);
   const providers = [{ id: "azure-anthropic", name: "Foundry Anthropic", configured: true, apiKey: true, oauth: false, modelCount: 0, authSource: "stored", authType: "api_key" }];
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse({ providers, foundry: { "azure-anthropic": { baseUrl: "", deployments: [] } },
     foundryErrors: { "azure-anthropic": "Saved connection settings need correction." } }));
   assert.match(ui.dom.container.textContent!, /Saved key · connection setup needed/);
@@ -606,7 +606,7 @@ test("a malformed connection shows setup needed while keeping its stored key ava
 
 test("outside settings changes refresh clean forms without replacing unsaved drafts", async (t) => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse());
   await ui.hint();
   await ui.finish(ui.requests.at(-1)!, modelResponse({ status: { ...status, model: "model-b" } }));
@@ -625,7 +625,7 @@ test("outside settings changes refresh clean forms without replacing unsaved dra
 
 test("an outside read begun before a local save cannot replace its result or later instruction edits", async (t) => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse());
   await ui.type("textarea", "Instructions being saved");
   await ui.hint();
@@ -651,31 +651,31 @@ test("model focus is an opening request, yields to user navigation and is not re
   document.body.append(navigation);
   t.after(() => navigation.remove());
   navigation.focus();
-  await ui.render(workFolder("a"), "work-folder", false, { focusModelOnOpen: true });
+  await ui.render(connectedFolder("a"), "connected-folder", false, { focusModelOnOpen: true });
   await ui.finish(ui.requests[0]!, modelResponse());
   assert.equal(document.activeElement?.id, "ai-model", "initial request focuses its model once the data is ready");
-  await ui.render(workFolder("a"), "work-folder", false, { focusModelOnOpen: true, active: false });
+  await ui.render(connectedFolder("a"), "connected-folder", false, { focusModelOnOpen: true, active: false });
   navigation.focus();
-  await ui.render(workFolder("a"), "work-folder", false, { focusModelOnOpen: true, active: true });
+  await ui.render(connectedFolder("a"), "connected-folder", false, { focusModelOnOpen: true, active: true });
   assert.equal(document.activeElement, navigation, "a persistent opening flag cannot steal focus on revisit");
   await ui.dom.render(null);
-  await ui.render(workFolder("a"), "work-folder", false, { focusModelOnOpen: true });
-  const radio = ui.dom.container.querySelector<HTMLInputElement>('input[value="work-folder"]')!;
+  await ui.render(connectedFolder("a"), "connected-folder", false, { focusModelOnOpen: true });
+  const radio = ui.dom.container.querySelector<HTMLInputElement>('input[value="connected-folder"]')!;
   radio.focus();
   await ui.finish(ui.requests.at(-1)!, modelResponse());
   assert.equal(document.activeElement, radio, "moving to a scope control while loading cancels delayed focus");
   await ui.dom.render(null);
   navigation.focus();
-  await ui.render(workFolder("a"), "work-folder", false, { focusModelOnOpen: true });
+  await ui.render(connectedFolder("a"), "connected-folder", false, { focusModelOnOpen: true });
   const pending = ui.requests.at(-1)!;
-  await ui.render(workFolder("a"), "work-folder", false, { focusModelOnOpen: true, active: false });
+  await ui.render(connectedFolder("a"), "connected-folder", false, { focusModelOnOpen: true, active: false });
   await ui.finish(pending, modelResponse());
   assert.equal(document.activeElement, navigation, "a response must never focus a hidden agent page");
 });
 
-test("scope round trips preserve model and instruction drafts, omit credentials and prune a removed work-folder", async (t) => {
+test("scope round trips preserve model and instruction drafts, omit credentials and prune a removed Connected Folder", async (t) => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse());
   await ui.select('select[aria-label="Provider"]', "anthropic");
   await ui.type("#ai-models-api-key", "never-cache-this-secret");
@@ -683,7 +683,7 @@ test("scope round trips preserve model and instruction drafts, omit credentials 
   await ui.dom.act(() => ui.dom.container.querySelector<HTMLInputElement>('input[value="agent"]')!.click());
   await ui.finish(ui.requests.at(-1)!, modelResponse({ instructions: null }));
   await ui.select("#ai-model", "model-b");
-  await ui.dom.act(() => ui.dom.container.querySelector<HTMLInputElement>('input[value="work-folder"]')!.click());
+  await ui.dom.act(() => ui.dom.container.querySelector<HTMLInputElement>('input[value="connected-folder"]')!.click());
   await ui.finish(ui.requests.at(-1)!, modelResponse());
   assert.equal(ui.dom.container.querySelector<HTMLSelectElement>('select[aria-label="Provider"]')?.value, "anthropic");
   assert.equal(ui.dom.container.querySelector<HTMLTextAreaElement>("textarea")?.value, "A draft to keep");
@@ -692,9 +692,9 @@ test("scope round trips preserve model and instruction drafts, omit credentials 
   await ui.finish(ui.requests.at(-1)!, modelResponse({ instructions: null }));
   assert.equal(selectedModel(ui.dom), "model-b");
   await ui.render(null);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests.at(-1)!, modelResponse());
-  assert.equal(ui.dom.container.querySelector<HTMLTextAreaElement>("textarea")?.value, "Original instructions", "removing a work-folder drops its cached draft");
+  assert.equal(ui.dom.container.querySelector<HTMLTextAreaElement>("textarea")?.value, "Original instructions", "removing a Connected Folder drops its cached draft");
   assert.equal(ui.dom.container.querySelector<HTMLSelectElement>('select[aria-label="Provider"]')?.value, "openrouter");
 });
 
@@ -702,11 +702,11 @@ test("closing and reopening Settings keeps unsaved instructions when the host ke
   const ui = await setup(t);
   const drafts = new Map();
   const own = () => ui.requests.filter((item) => !/scope=agent/.test(item.path));
-  await ui.render(workFolder("a"), "work-folder", false, { drafts });
+  await ui.render(connectedFolder("a"), "connected-folder", false, { drafts });
   await ui.finish(own()[0]!, modelResponse());
   await ui.type("textarea", "Half-written instructions");
   await ui.dom.render(null);
-  await ui.render(workFolder("a"), "work-folder", false, { drafts });
+  await ui.render(connectedFolder("a"), "connected-folder", false, { drafts });
   await ui.finish(own().at(-1)!, modelResponse());
   assert.equal(ui.dom.container.querySelector<HTMLTextAreaElement>("textarea")?.value, "Half-written instructions");
   assert.equal(ui.button("Save Instructions").disabled, false);
@@ -715,14 +715,14 @@ test("closing and reopening Settings keeps unsaved instructions when the host ke
 
 test("closing and reopening Settings waits for an accepted write before loading saved values", async (t) => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse());
   await ui.select("#ai-model", "model-b");
   await ui.submit("model");
   const accepted = ui.requests.at(-1)!;
   await ui.dom.render(null);
-  await ui.render(workFolder("a"));
-  // The work-fold agent's scope is read ahead once a form has loaded; only this work-folder's reads count here.
+  await ui.render(connectedFolder("a"));
+  // The AmpleFile agent's scope is read ahead once a form has loaded; only this Connected Folder's reads count here.
   const own = () => ui.requests.filter((item) => !/scope=agent/.test(item.path));
   assert.equal(own().length, 2, "the new dialog still owns the previous accepted operation's completion");
   await ui.finish(accepted, { status: { ...status, model: "model-b" } });
@@ -734,7 +734,7 @@ test("closing and reopening Settings waits for an accepted write before loading 
 
 test("a control hint during initial loading invalidates that read instead of showing a stale default", async (t) => {
   const ui = await setup(t);
-  await ui.render(workFolder("a"));
+  await ui.render(connectedFolder("a"));
   const obsolete = ui.requests[0]!;
   await ui.hint();
   const fresh = ui.requests.at(-1)!;
@@ -752,7 +752,7 @@ test("delayed model focus accepts the parent modal's owned opening focus", async
     const ref = useModalDialog({ onClose: () => {} });
     return createElement("div", { ref, role: "dialog", tabIndex: -1 },
       createElement("button", { id: "modal-close" }, "Close"),
-      createElement(AiModelsPane, { workFolder: workFolder("a"), status, focusModelOnOpen: true, onConfigured: () => {} }));
+      createElement(AiModelsPane, { connectedFolder: connectedFolder("a"), status, focusModelOnOpen: true, onConfigured: () => {} }));
   }
   await ui.dom.render(createElement(StrictMode, null, createElement(Dialog)));
   assert.equal(document.activeElement?.id, "modal-close");
@@ -760,25 +760,25 @@ test("delayed model focus accepts the parent modal's owned opening focus", async
   assert.equal(document.activeElement?.id, "ai-model");
 });
 
-async function returnToCachedWorkFolder(ui: Awaited<ReturnType<typeof setup>>): Promise<Request> {
-  await ui.render(workFolder("a"));
+async function returnToCachedConnectedFolder(ui: Awaited<ReturnType<typeof setup>>): Promise<Request> {
+  await ui.render(connectedFolder("a"));
   await ui.finish(ui.requests[0]!, modelResponse());
   const prefetched = ui.requests.at(-1)!;
   assert.match(prefetched.path, /scope=agent$/);
   await ui.finish(prefetched, modelResponse({ instructions: null }));
   await ui.dom.act(() => ui.dom.container.querySelector<HTMLInputElement>('input[value="agent"]')!.click());
   await ui.finish(ui.requests.at(-1)!, modelResponse({ instructions: null }));
-  await ui.dom.act(() => ui.dom.container.querySelector<HTMLInputElement>('input[value="work-folder"]')!.click());
+  await ui.dom.act(() => ui.dom.container.querySelector<HTMLInputElement>('input[value="connected-folder"]')!.click());
   assert.equal(selectedModel(ui.dom), "model-a", "the cached form remains usable while its quiet read is pending");
   assert.doesNotMatch(ui.dom.container.textContent!, /Loading AI Models/);
   const quietRead = ui.requests.at(-1)!;
-  assert.match(quietRead.path, /scope=work-folder&workFolderId=a/);
+  assert.match(quietRead.path, /scope=connected-folder&connectedFolderId=a/);
   return quietRead;
 }
 
 test("a cached scope's quiet read cannot replace a model saved after that read began", async (t) => {
   const ui = await setup(t);
-  const quietRead = await returnToCachedWorkFolder(ui);
+  const quietRead = await returnToCachedConnectedFolder(ui);
   await ui.select("#ai-model", "model-b");
   await ui.submit("model");
   await ui.finish(ui.requests.at(-1)!, { status: { ...status, model: "model-b" } });
@@ -790,13 +790,13 @@ test("a cached scope's quiet read cannot replace a model saved after that read b
   // A later scope revisit must also use the accepted save, not re-cache the
   // stale quiet response as the saved model.
   await ui.dom.act(() => ui.dom.container.querySelector<HTMLInputElement>('input[value="agent"]')!.click());
-  await ui.dom.act(() => ui.dom.container.querySelector<HTMLInputElement>('input[value="work-folder"]')!.click());
+  await ui.dom.act(() => ui.dom.container.querySelector<HTMLInputElement>('input[value="connected-folder"]')!.click());
   assert.equal(selectedModel(ui.dom), "model-b");
 });
 
 test("a cached scope's obsolete load error cannot hide successfully saved instructions", async (t) => {
   const ui = await setup(t);
-  const quietRead = await returnToCachedWorkFolder(ui);
+  const quietRead = await returnToCachedConnectedFolder(ui);
   await ui.type("textarea", "Saved after the quiet read started");
   await ui.submit("instructions");
   await ui.finish(ui.requests.at(-1)!, { instructions: "Saved after the quiet read started" });
@@ -809,7 +809,7 @@ test("a cached scope's obsolete load error cannot hide successfully saved instru
 
 test("a newer control-event refresh supersedes a cached scope's older quiet read", async (t) => {
   const ui = await setup(t);
-  const quietRead = await returnToCachedWorkFolder(ui);
+  const quietRead = await returnToCachedConnectedFolder(ui);
   await ui.hint();
   const outsideRead = ui.requests.at(-1)!;
   assert.notEqual(outsideRead, quietRead);

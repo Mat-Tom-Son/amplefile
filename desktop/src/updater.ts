@@ -293,7 +293,7 @@ export class DesktopUpdater {
           availableVersion: result.updateInfo.version,
           progressPercent: null,
           checkedAt: this.host.now(),
-          message: `work-fold ${result.updateInfo.version} is available.`,
+          message: `AmpleFile ${result.updateInfo.version} is available.`,
           error: null,
         });
       }
@@ -302,7 +302,7 @@ export class DesktopUpdater {
         availableVersion: null,
         progressPercent: null,
         checkedAt: this.host.now(),
-        message: `work-fold ${this.host.currentVersion()} is up to date.`,
+        message: `AmpleFile ${this.host.currentVersion()} is up to date.`,
         error: null,
       });
     } catch (error) {
@@ -399,7 +399,7 @@ export class DesktopUpdater {
   }
 
   private deferTransientCheck(message: string): DesktopUpdateStatus {
-    console.warn(`work-fold update check deferred until the network recovers: ${message}`);
+    console.warn(`AmpleFile update check deferred until the network recovers: ${message}`);
     this.scheduleBackgroundCheck(this.transientRetryDelayMs);
     return this.setStatus({
       phase: "idle",
@@ -421,7 +421,7 @@ export class DesktopUpdater {
       availableVersion: info.version,
       progressPercent: null,
       checkedAt: this.host.now(),
-      message: `work-fold ${info.version} is available.`,
+      message: `AmpleFile ${info.version} is available.`,
       error: null,
     });
   };
@@ -434,7 +434,7 @@ export class DesktopUpdater {
       availableVersion: null,
       progressPercent: null,
       checkedAt: this.host.now(),
-      message: `work-fold ${info.version || this.host.currentVersion()} is up to date.`,
+      message: `AmpleFile ${info.version || this.host.currentVersion()} is up to date.`,
       error: null,
     });
   };
@@ -455,7 +455,7 @@ export class DesktopUpdater {
       phase: "ready",
       availableVersion: info.version,
       progressPercent: 100,
-      message: `work-fold ${info.version} is ready to install.`,
+      message: `AmpleFile ${info.version} is ready to install.`,
       error: null,
     });
     if (this.installAfterDownload) {
@@ -475,7 +475,7 @@ export class DesktopUpdater {
 
   private readonly onError = (error: Error): void => {
     const message = errorMessage(error);
-    console.warn(`work-fold updater error: ${message}`);
+    console.warn(`AmpleFile updater error: ${message}`);
     if (this.status.phase === "installing" || this.installPromise) {
       this.restoreReadyAfterInstallFailure(message);
       return;
@@ -498,9 +498,9 @@ export class DesktopUpdater {
     try {
       const result = await this.host.showMessage({
         type: "info",
-        title: "work-fold Update Ready",
-        message: `work-fold ${version} is ready to install.`,
-        detail: "Restart work-fold to finish updating. If you choose Later, the update will install when you quit the app.",
+        title: "AmpleFile Update Ready",
+        message: `AmpleFile ${version} is ready to install.`,
+        detail: "Restart AmpleFile to finish updating. If you choose Later, the update will install when you quit the app.",
         buttons: ["Restart Now", "Later"],
         defaultId: 0,
         cancelId: 1,
@@ -515,7 +515,7 @@ export class DesktopUpdater {
         phase: "ready",
         availableVersion: version,
         progressPercent: 100,
-        message: `work-fold ${version} will install when you quit.`,
+        message: `AmpleFile ${version} will install when you quit.`,
         error: null,
       });
     } finally {
@@ -589,7 +589,7 @@ function defaultElectronHost(getWindow: () => BrowserWindow | null): DesktopUpda
     emitStatus: (status) => {
       const window = getWindow();
       if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-        window.webContents.send("work-fold:updates:status-changed", status);
+        window.webContents.send("amplefile:updates:status-changed", status);
       }
     },
   };

@@ -4,8 +4,8 @@
  * opens as a browser tab instead of in the default browser.
  */
 
-/** Asks the open work-folder view to open a browser tab at an address. */
-export const openBrowserTabEvent = "work-fold:open-browser-tab";
+/** Asks the open Connected Folder view to open a browser tab at an address. */
+export const openBrowserTabEvent = "amplefile:open-browser-tab";
 
 export interface OpenBrowserTabRequest {
   url: string;
@@ -28,7 +28,7 @@ export function localServerHref(href: string | undefined): string | null {
 }
 
 export function browserTabsAvailable(): boolean {
-  return Boolean(window.workFoldDesktop?.browser);
+  return Boolean(window.ampleFileDesktop?.browser);
 }
 
 export function requestBrowserTab(url: string): void {

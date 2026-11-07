@@ -5,7 +5,7 @@ import { defineConfig, type Plugin } from "vite";
 
 import { PAGE_FRAME_CONTENT_SECURITY_POLICY, PAGE_FRAME_HTML, PAGE_FRAME_SCRIPT } from "./src/local/pages/frame/page-frame-assets";
 
-const apiPort = process.env.WORKFOLD_LOCAL_API_PORT ?? "4327";
+const apiPort = process.env.AMPLEFILE_LOCAL_API_PORT ?? "4327";
 
 export default defineConfig({
   root: "web-local",
@@ -36,7 +36,7 @@ export default defineConfig({
  */
 function pageFrame(): Plugin {
   return {
-    name: "work-fold-page-frame",
+    name: "amplefile-page-frame",
     configureServer(server) {
       server.middlewares.use((request, response, next) => {
         const path = request.url?.split("?")[0];

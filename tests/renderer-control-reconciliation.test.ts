@@ -6,11 +6,11 @@ import test from "node:test";
 import { useBootstrapRefresh } from "../web-local/src/hooks/useBootstrapRefresh.js";
 import { useModelConfigurationRevision } from "../web-local/src/hooks/useModelConfigurationRevision.js";
 import { useRestrictedApps } from "../web-local/src/hooks/useRestrictedApps.js";
-import { useWorkFolderTree } from "../web-local/src/hooks/useWorkFolderTree.js";
-import type { WorkFolderSummary } from "../web-local/src/types.js";
+import { useConnectedFolderTree } from "../web-local/src/hooks/useConnectedFolderTree.js";
+import type { ConnectedFolderSummary } from "../web-local/src/types.js";
 import { createDomHarness } from "./support/dom.js";
 
-const workFolder = (id: string) => ({ id, name: id, workFolderRoot: `/tmp/${id}`, location: { storage: "linked" } }) as WorkFolderSummary;
+const connectedFolder = (id: string) => ({ id, name: id, connectedFolderRoot: `/tmp/${id}`, location: { storage: "linked" } }) as ConnectedFolderSummary;
 const closedStream = (init?: RequestInit) => new Response(new ReadableStream({ start(controller) { init?.signal?.addEventListener("abort", () => controller.close(), { once: true }); } }), { headers: { "content-type": "text/event-stream" } });
 
 test("newer registry reads win and a removed surface cannot report a late read failure", async (t) => {
@@ -21,22 +21,22 @@ test("newer registry reads win and a removed surface cannot report a late read f
   const failures: string[] = [];
   function Registry() {
     const [ids, setIds] = useState<string[]>([]);
-    const refresh = useBootstrapRefresh(true, (value) => setIds(value.workFolders.map((item) => item.id)), (error) => failures.push(error));
+    const refresh = useBootstrapRefresh(true, (value) => setIds(value.connectedFolders.map((item) => item.id)), (error) => failures.push(error));
     return createElement("button", { onClick: () => void refresh() }, ids.join(",") || "Refresh");
   }
   await dom.render(createElement(Registry));
   await dom.act(() => dom.container.querySelector("button")!.click());
   await dom.act(() => dom.container.querySelector("button")!.click());
-  await dom.act(() => pending[1]!(Response.json({ workFolders: [workFolder("survivor")] })));
-  await dom.act(() => pending[0]!(Response.json({ workFolders: [workFolder("deleted"), workFolder("survivor")] })));
+  await dom.act(() => pending[1]!(Response.json({ connectedFolders: [connectedFolder("survivor")] })));
+  await dom.act(() => pending[0]!(Response.json({ connectedFolders: [connectedFolder("deleted"), connectedFolder("survivor")] })));
   assert.equal(dom.container.textContent, "survivor");
   await dom.act(() => dom.container.querySelector("button")!.click());
   await dom.render(null);
-  await dom.act(() => pending[2]!(Response.json({ error: "work-folder not found" }, { status: 404 })));
+  await dom.act(() => pending[2]!(Response.json({ error: "Connected Folder not found" }, { status: 404 })));
   assert.deepEqual(failures, []);
 });
 
-test("app hints wait for the updated registry and never requery removed work-folders", async (t) => {
+test("app hints wait for the updated registry and never requery removed Connected Folders", async (t) => {
   const dom = await createDomHarness(); t.after(() => dom.cleanup());
   const previousFetch = globalThis.fetch; t.after(() => { globalThis.fetch = previousFetch; });
   let stream!: ReadableStreamDefaultController<Uint8Array>;
@@ -51,30 +51,30 @@ test("app hints wait for the updated registry and never requery removed work-fol
   }) as typeof fetch;
   const errors: unknown[] = [];
   const onError = (error: unknown) => errors.push(error);
-  function Catalog({ workFolders, active }: { workFolders: WorkFolderSummary[]; active: string }) {
-    const state = useRestrictedApps({ activeWorkFolderId: active, workFolders, onError });
-    return createElement("output", null, [...state.knownWorkFolderIds].join(","));
+  function Catalog({ connectedFolders, active }: { connectedFolders: ConnectedFolderSummary[]; active: string }) {
+    const state = useRestrictedApps({ activeConnectedFolderId: active, connectedFolders, onError });
+    return createElement("output", null, [...state.knownConnectedFolderIds].join(","));
   }
-  await dom.render(createElement(Catalog, { workFolders: [workFolder("deleted"), workFolder("survivor")], active: "deleted" }));
-  await dom.act(async () => { stream.enqueue(new TextEncoder().encode('data: {"type":"work-folders"}\n\n')); await new Promise(setImmediate); });
-  await dom.act(() => finishDeleted(Response.json({ error: "work-folder not found" }, { status: 404 })));
+  await dom.render(createElement(Catalog, { connectedFolders: [connectedFolder("deleted"), connectedFolder("survivor")], active: "deleted" }));
+  await dom.act(async () => { stream.enqueue(new TextEncoder().encode('data: {"type":"connected-folders"}\n\n')); await new Promise(setImmediate); });
+  await dom.act(() => finishDeleted(Response.json({ error: "Connected Folder not found" }, { status: 404 })));
   assert.deepEqual(errors, []);
-  await dom.render(createElement(Catalog, { workFolders: [workFolder("survivor")], active: "survivor" }));
+  await dom.render(createElement(Catalog, { connectedFolders: [connectedFolder("survivor")], active: "survivor" }));
   await dom.act(async () => { stream.enqueue(new TextEncoder().encode('data: {"type":"apps"}\n\n')); await new Promise(setImmediate); });
   assert.equal(reads.filter((path) => path.includes("/deleted/")).length, 1);
   assert.equal(dom.container.textContent, "survivor");
 });
 
-test("removing a work-folder tree cancels pending error delivery to the global banner", async (t) => {
+test("removing a Connected Folder tree cancels pending error delivery to the global banner", async (t) => {
   const dom = await createDomHarness(); t.after(() => dom.cleanup());
   const previousFetch = globalThis.fetch; t.after(() => { globalThis.fetch = previousFetch; });
   let finish!: (response: Response) => void;
   globalThis.fetch = (async (input, init) => String(input).endsWith("/api/events") ? closedStream(init) : new Promise<Response>((resolve) => { finish = resolve; })) as typeof fetch;
   const errors: Array<string | null> = [];
-  function Tree() { useWorkFolderTree(workFolder("deleted"), (error) => errors.push(error)); return null; }
+  function Tree() { useConnectedFolderTree(connectedFolder("deleted"), (error) => errors.push(error)); return null; }
   await dom.render(createElement(Tree));
   await dom.render(null);
-  await dom.act(() => finish(Response.json({ error: "work-folder not found" }, { status: 404 })));
+  await dom.act(() => finish(Response.json({ error: "Connected Folder not found" }, { status: 404 })));
   assert.deepEqual(errors, []);
 });
 
@@ -112,7 +112,7 @@ test("an external agent hint refreshes draft models while existing Chat sessions
   }) as typeof fetch;
   function Chat() {
     const [revision] = useModelConfigurationRevision();
-    const props = { workFolder: workFolder("workshop"), workFolderCustomizations: {}, modelConfigurationRevision: revision, contextPathRequest: null, selectedPath: null, onAgentFinished() {} };
+    const props = { connectedFolder: connectedFolder("workshop"), connectedFolderCustomizations: {}, modelConfigurationRevision: revision, contextPathRequest: null, selectedPath: null, onAgentFinished() {} };
     return createElement("div", null,
       createElement("section", { id: "draft" }, createElement(ChatPanel, { ...props, surfaceTabId: "draft" })),
       createElement("section", { id: "other-draft" }, createElement(ChatPanel, { ...props, surfaceTabId: "other-draft", active: false })),
@@ -140,7 +140,7 @@ test("an external agent hint refreshes draft models while existing Chat sessions
   await dom.act(() => (document.activeElement as HTMLButtonElement).click());
   await dom.waitFor(() => trigger.textContent?.includes("DeepSeek Flash") === true);
   assert.equal(document.activeElement, trigger, "choosing a model keeps focus when its option unmounts");
-  assert.deepEqual(configured, { scope: "work-folder", workFolderId: "workshop", provider: nextModel.provider, model: nextModel.id });
+  assert.deepEqual(configured, { scope: "connected-folder", connectedFolderId: "workshop", provider: nextModel.provider, model: nextModel.id });
   await dom.act(async () => { stream.enqueue(new TextEncoder().encode('data: {"type":"models"}\n\n')); await new Promise(setImmediate); });
   await dom.waitFor(() => dom.container.querySelector("#other-draft")?.textContent?.includes("DeepSeek Flash") === true);
   assert.doesNotMatch(dom.container.textContent ?? "", /Old GLM/);
@@ -168,7 +168,7 @@ test("attached file references show only the file icon, name and removal control
   HTMLElement.prototype.scrollIntoView = () => {};
   const previousFetch = globalThis.fetch;
   t.after(async () => { await dom.cleanup(); globalThis.fetch = previousFetch; });
-  const target = workFolder("workshop");
+  const target = connectedFolder("workshop");
   const path = "Notes/Review.pdf";
   let attachmentRequests = 0;
   globalThis.fetch = (async (input, init) => {
@@ -185,10 +185,10 @@ test("attached file references show only the file icon, name and removal control
     throw new Error(`Unexpected request: ${url}`);
   }) as typeof fetch;
   const chatProps = {
-    workFolder: target, workFolderCustomizations: {},
+    connectedFolder: target, connectedFolderCustomizations: {},
     selectedPath: null, onAgentFinished() {}, surfaceTabId: "attachment-chat",
   };
-  const request = (id: number) => ({ id, paths: [path], workFolderId: target.id, surfaceTabId: "attachment-chat" });
+  const request = (id: number) => ({ id, paths: [path], connectedFolderId: target.id, surfaceTabId: "attachment-chat" });
   await dom.render(createElement(ChatPanel, { ...chatProps, contextPathRequest: request(1) }));
   await dom.waitFor(() => dom.container.querySelector(".context-chip-name")?.textContent === "Review.pdf");
   const chip = dom.container.querySelector<HTMLElement>(".context-chip")!;
@@ -241,7 +241,7 @@ test("an externally accepted answer is visible during its continuation and an ol
     if (path.endsWith("/saved/work")) return Response.json({ work: null });
     throw new Error(`Unexpected request: ${path}`);
   }) as typeof fetch;
-  const chatProps = { workFolder: workFolder("workshop"), workFolderCustomizations: {}, contextPathRequest: null, selectedPath: null, onAgentFinished() {}, surfaceTabId: "saved", targetConversationId: "saved" };
+  const chatProps = { connectedFolder: connectedFolder("workshop"), connectedFolderCustomizations: {}, contextPathRequest: null, selectedPath: null, onAgentFinished() {}, surfaceTabId: "saved", targetConversationId: "saved" };
   await dom.render(createElement(ChatPanel, chatProps));
   await dom.waitFor(() => Boolean(send) && dom.container.textContent?.includes("Previous reply") === true);
   messages = [...messages, { id: "answer", role: "user", content: "Accepted answer: CAD", createdAt: stamp }];
@@ -268,7 +268,7 @@ test("an externally accepted answer is visible during its continuation and an ol
   messages = [...messages, { id: "final", role: "assistant", content: "Persisted second continuation", createdAt: stamp }];
   const { createEventSource } = await import("../web-local/src/lib/api.js");
   let extra!: ReturnType<typeof createEventSource>;
-  await dom.act(async () => { extra = createEventSource("/api/work-folders/workshop/file-events"); });
+  await dom.act(async () => { extra = createEventSource("/api/connected-folders/workshop/file-events"); });
   await dom.waitFor(() => dom.container.textContent?.includes("Persisted second continuation") === true && !dom.container.querySelector('[aria-label="Stop Worker"]'));
   await dom.act(async () => finishSettlement(Response.json({ messages: [{ id: "stale-final", role: "assistant", content: "Late settlement", createdAt: stamp }] })));
   assert.doesNotMatch(dom.container.textContent ?? "", /Late settlement/);
@@ -295,9 +295,9 @@ test("file monitoring re-queries edits made while a multiplex connection drains"
     } }));
     return Response.json({ tree: [{ kind: "file", path: version, name: version }] });
   }) as typeof fetch;
-  function Tree() { const state = useWorkFolderTree(workFolder("lab"), () => {}); return createElement("output", null, state.tree.map((item) => item.name).join(",")); }
+  function Tree() { const state = useConnectedFolderTree(connectedFolder("lab"), () => {}); return createElement("output", null, state.tree.map((item) => item.name).join(",")); }
   await dom.render(createElement(Tree));
   await dom.waitFor(() => dom.container.textContent === "before.txt");
-  await dom.act(() => { extra = createEventSource("/api/work-folders/lab/conversations/background/events"); });
+  await dom.act(() => { extra = createEventSource("/api/connected-folders/lab/conversations/background/events"); });
   await dom.waitFor(() => connections === 2 && dom.container.textContent === "written-during-drain.txt");
 });

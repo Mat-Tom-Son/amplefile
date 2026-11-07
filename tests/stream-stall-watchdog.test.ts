@@ -42,9 +42,9 @@ async function collect(stream: AsyncIterable<AssistantMessageEvent>): Promise<As
 
 test("the stall setting defaults to three minutes and 0 turns it off", () => {
   assert.equal(piStreamStallMs({}), 180_000);
-  assert.equal(piStreamStallMs({ WORKFOLD_PI_STREAM_STALL_MS: "0" }), 0);
-  assert.equal(piStreamStallMs({ WORKFOLD_PI_STREAM_STALL_MS: "90000" }), 90_000);
-  assert.equal(piStreamStallMs({ WORKFOLD_PI_STREAM_STALL_MS: "soon" }), 180_000);
+  assert.equal(piStreamStallMs({ AMPLEFILE_PI_STREAM_STALL_MS: "0" }), 0);
+  assert.equal(piStreamStallMs({ AMPLEFILE_PI_STREAM_STALL_MS: "90000" }), 90_000);
+  assert.equal(piStreamStallMs({ AMPLEFILE_PI_STREAM_STALL_MS: "soon" }), 180_000);
 });
 
 test("a silent response ends as a retryable timeout that keeps its partial text and aborts the request", async () => {
@@ -104,9 +104,9 @@ test("the caller's own abort is never reported as a stall", async () => {
 });
 
 test("a real turn whose first response goes silent is sent again and finishes", { timeout: 60_000 }, async (t) => {
-  const previous = process.env.WORKFOLD_PI_STREAM_STALL_MS;
-  process.env.WORKFOLD_PI_STREAM_STALL_MS = "300";
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-stream-stall-"));
+  const previous = process.env.AMPLEFILE_PI_STREAM_STALL_MS;
+  process.env.AMPLEFILE_PI_STREAM_STALL_MS = "300";
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-stream-stall-"));
   const faux = fauxProvider({ provider: "fixture-stall", models: [{ id: "chat" }] });
   let calls = 0;
   const runtime = await ModelRuntime.create({ credentials: FileCredentialStore.inMemory(), modelsPath: null });
@@ -124,7 +124,7 @@ test("a real turn whose first response goes silent is sent again and finishes", 
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: {
       resolveRuntime: async () => ({
@@ -136,21 +136,21 @@ test("a real turn whose first response goes silent is sent again and finishes", 
     },
   });
   t.after(async () => {
-    if (previous === undefined) delete process.env.WORKFOLD_PI_STREAM_STALL_MS;
-    else process.env.WORKFOLD_PI_STREAM_STALL_MS = previous;
+    if (previous === undefined) delete process.env.AMPLEFILE_PI_STREAM_STALL_MS;
+    else process.env.AMPLEFILE_PI_STREAM_STALL_MS = previous;
     await api.close().catch(() => undefined);
     await rm(sandbox, { recursive: true, force: true });
   });
-  const { workFolder } = await api.actFacade.createWorkFolder({ name: "Stall" });
-  const sent = await api.actFacade.sendMessage({ workFolder: workFolder.id, newConversation: true, content: "Say something." });
+  const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Stall" });
+  const sent = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "Say something." });
   const deadline = Date.now() + 20_000;
   let state = "running";
   while (state === "running" && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 50));
-    state = (await api.actFacade.turnStatus({ workFolder: workFolder.id, taskId: sent.taskId })).task.state;
+    state = (await api.actFacade.turnStatus({ connectedFolder: connectedFolder.id, taskId: sent.taskId })).task.state;
   }
   assert.equal(state, "succeeded");
   assert.ok(calls >= 2, "the silent response was sent again");
-  const transcript = await (await fetch(new URL(`/api/work-folders/${workFolder.id}/conversations/${sent.conversationId}`, api.origin))).json() as { messages: Array<{ role: string; content: string }> };
+  const transcript = await (await fetch(new URL(`/api/connected-folders/${connectedFolder.id}/conversations/${sent.conversationId}`, api.origin))).json() as { messages: Array<{ role: string; content: string }> };
   assert.equal(transcript.messages.filter((message) => message.role === "assistant").at(-1)?.content, "Done after a resend.");
 });

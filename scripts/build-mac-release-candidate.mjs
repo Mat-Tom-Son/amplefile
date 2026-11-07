@@ -21,12 +21,12 @@ if (arch !== "arm64" && arch !== "x64") throw new Error(`Unsupported macOS archi
 assertReleaseCredentials();
 
 const envPatch = {
-  WORKFOLD_DESKTOP_RELEASE_PLATFORM: "darwin",
-  WORKFOLD_DESKTOP_RELEASE_ARCH: arch,
-  WORKFOLD_DESKTOP_OUTPUT_DIR: outputDirectory,
-  WORKFOLD_MAC_RELEASE_BUILD: "1",
-  WORKFOLD_ALLOW_UNSIGNED_MAC_BUILD: "0",
-  WORKFOLD_REQUIRE_CODE_SIGNING: "1",
+  AMPLEFILE_DESKTOP_RELEASE_PLATFORM: "darwin",
+  AMPLEFILE_DESKTOP_RELEASE_ARCH: arch,
+  AMPLEFILE_DESKTOP_OUTPUT_DIR: outputDirectory,
+  AMPLEFILE_MAC_RELEASE_BUILD: "1",
+  AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD: "0",
+  AMPLEFILE_REQUIRE_CODE_SIGNING: "1",
 };
 
 await withReleaseVerificationLock(rootDir, "interactive candidate build", async () => {
@@ -62,8 +62,8 @@ await withReleaseVerificationLock(rootDir, "interactive candidate build", async 
 });
 
 function assertReleaseCredentials() {
-  if (!value(process.env.WORKFOLD_MAC_SIGN_IDENTITY) && !value(process.env.CSC_NAME)) {
-    throw new Error("Set WORKFOLD_MAC_SIGN_IDENTITY or CSC_NAME to a Developer ID Application identity.");
+  if (!value(process.env.AMPLEFILE_MAC_SIGN_IDENTITY) && !value(process.env.CSC_NAME)) {
+    throw new Error("Set AMPLEFILE_MAC_SIGN_IDENTITY or CSC_NAME to a Developer ID Application identity.");
   }
   const hasApiKey = every("APPLE_API_KEY", "APPLE_API_KEY_ID", "APPLE_API_ISSUER");
   const hasAppleId = every("APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID");

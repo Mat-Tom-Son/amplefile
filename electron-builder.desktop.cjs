@@ -2,24 +2,24 @@ const path = require("node:path");
 const identity = require("./src/shared/product-identity.json");
 
 const root = __dirname;
-const macReleaseBuild = process.env.WORKFOLD_MAC_RELEASE_BUILD === "1";
-const unsignedMacBuild = process.env.WORKFOLD_ALLOW_UNSIGNED_MAC_BUILD === "1";
-const macSignIdentity = process.env.WORKFOLD_MAC_SIGN_IDENTITY?.trim();
+const macReleaseBuild = process.env.AMPLEFILE_MAC_RELEASE_BUILD === "1";
+const unsignedMacBuild = process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD === "1";
+const macSignIdentity = process.env.AMPLEFILE_MAC_SIGN_IDENTITY?.trim();
 const electronBuilderMacIdentity = macSignIdentity?.replace(/^Developer ID Application:\s*/i, "");
-const macReleaseOwner = process.env.WORKFOLD_MAC_RELEASE_OWNER?.trim() || identity.sourceRepositoryOwner;
-const macReleaseRepo = process.env.WORKFOLD_MAC_RELEASE_REPO?.trim() || identity.macReleaseRepositoryName;
-const macFeedBuild = process.env.WORKFOLD_DESKTOP_RELEASE_PLATFORM === "darwin";
-const outputDirectory = process.env.WORKFOLD_DESKTOP_OUTPUT_DIR?.trim() || "out/builder";
+const macReleaseOwner = process.env.AMPLEFILE_MAC_RELEASE_OWNER?.trim() || identity.sourceRepositoryOwner;
+const macReleaseRepo = process.env.AMPLEFILE_MAC_RELEASE_REPO?.trim() || identity.macReleaseRepositoryName;
+const macFeedBuild = process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM === "darwin";
+const outputDirectory = process.env.AMPLEFILE_DESKTOP_OUTPUT_DIR?.trim() || "out/builder";
 
 module.exports = {
   appId: unsignedMacBuild ? identity.macSmokeAppId : identity.productionAppId,
   productName: unsignedMacBuild ? identity.macSmokeProductName : identity.productName,
   extraMetadata: {
-    workFoldBuildChannel: unsignedMacBuild ? "mac-local-smoke" : "production",
+    ampleFileBuildChannel: unsignedMacBuild ? "mac-local-smoke" : "production",
   },
   copyright: "Copyright © 2026 Mat-Tom-Son",
   artifactName: `${identity.productName}-\${version}-\${os}-\${arch}.\${ext}`,
-  forceCodeSigning: macReleaseBuild || process.env.WORKFOLD_REQUIRE_CODE_SIGNING === "1",
+  forceCodeSigning: macReleaseBuild || process.env.AMPLEFILE_REQUIRE_CODE_SIGNING === "1",
   electronUpdaterCompatibility: ">=2.16",
   generateUpdatesFilesForAllChannels: false,
   publish: [
@@ -81,7 +81,7 @@ module.exports = {
     // A self-signed certificate is useful for personal artifact continuity but
     // is not a public trust anchor. Enable updater Authenticode enforcement only
     // after a CA-backed publisher identity has been configured and tested.
-    verifyUpdateCodeSignature: process.env.WORKFOLD_TRUSTED_CODE_SIGNING === "1",
+    verifyUpdateCodeSignature: process.env.AMPLEFILE_TRUSTED_CODE_SIGNING === "1",
     signtoolOptions: {
       signingHashAlgorithms: ["sha256"],
       rfc3161TimeStampServer: "http://timestamp.digicert.com",
@@ -106,14 +106,14 @@ module.exports = {
     // (docs/built-in-browser.md; the browser asks the person first), and when
     // the file manager first opens a standard folder.
     extendInfo: {
-      NSCameraUsageDescription: "A website open in work-fold's browser wants to use your camera.",
-      NSMicrophoneUsageDescription: "A website open in work-fold's browser wants to use your microphone.",
-      NSLocationUsageDescription: "A website open in work-fold's browser wants to know your location.",
-      NSLocationWhenInUseUsageDescription: "A website open in work-fold's browser wants to know your location.",
+      NSCameraUsageDescription: "A website open in AmpleFile's browser wants to use your camera.",
+      NSMicrophoneUsageDescription: "A website open in AmpleFile's browser wants to use your microphone.",
+      NSLocationUsageDescription: "A website open in AmpleFile's browser wants to know your location.",
+      NSLocationWhenInUseUsageDescription: "A website open in AmpleFile's browser wants to know your location.",
       // The File Manager's Standard Folders (docs/product-model.md, 2026-11-06).
-      NSDesktopFolderUsageDescription: "work-fold shows your Desktop in its file manager.",
-      NSDocumentsFolderUsageDescription: "work-fold shows your Documents folder in its file manager.",
-      NSDownloadsFolderUsageDescription: "work-fold shows your Downloads folder in its file manager.",
+      NSDesktopFolderUsageDescription: "AmpleFile shows your Desktop in its file manager.",
+      NSDocumentsFolderUsageDescription: "AmpleFile shows your Documents folder in its file manager.",
+      NSDownloadsFolderUsageDescription: "AmpleFile shows your Downloads folder in its file manager.",
     },
   },
   dmg: {

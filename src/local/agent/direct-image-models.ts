@@ -1,7 +1,7 @@
 /**
  * Image generation straight from providers whose image models Pi's catalog
  * does not list yet: OpenAI (GPT Image, through the Images API) and Google
- * (Nano Banana, through the Gemini Interactions API). work-fold calls them
+ * (Nano Banana, through the Gemini Interactions API). AmpleFile calls them
  * with the credential Pi already holds for that provider
  * (`ModelRuntime.getAuth`) and never changes the provider's chat models. A
  * provider whose image models Pi lists natively is always reached through Pi

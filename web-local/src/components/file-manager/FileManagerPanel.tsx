@@ -9,18 +9,18 @@ import { readStoredJsonValue, writeStoredJsonValue } from "../../lib/storage";
 import { showToast } from "../../ui/feedback";
 import { subscribeControlEvents } from "../../lib/control-events";
 import { notifyFolderAutomationsChanged } from "../../hooks/useFolderAutomations";
-import { restorePointTitle } from "../panes/workFolderPanes";
-import type { WorkFolderUiFixture } from "../../fixtures/work-folder-fixture";
+import { restorePointTitle } from "../panes/connectedFolderPanes";
+import type { ConnectedFolderUiFixture } from "../../fixtures/connected-folder-fixture";
 import type { FolderAutomationView } from "../../../../src/shared/automation-presentation";
 import { automationCardRows, type AutomationCardRow } from "./file-manager-automations";
-import type { ConversationSummary, FileVersionEntry, TreeEntry, WorkFolderCheckpoint, WorkFolderSummary } from "../../types";
+import type { ConversationSummary, FileVersionEntry, TreeEntry, ConnectedFolderCheckpoint, ConnectedFolderSummary } from "../../types";
 import { fileKindLabel, fileManagerIcon, formatFileManagerDate, historyTimeLabel } from "./file-manager-model";
 import { placeApiBase, type FileManagerPlace } from "./file-manager-places";
 import { TintedFolder } from "./file-manager-folder";
-import type { WorkFolderIconOption } from "../../work-folder-icons";
+import type { ConnectedFolderIconOption } from "../../connected-folder-icons";
 
 type PanelTab = "info" | "history";
-const tabStorageKey = "work-fold.file-manager.panel-tab.v1";
+const tabStorageKey = "amplefile.file-manager.panel-tab.v1";
 const previewableImage = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
 
 type HistoryAction =
@@ -32,27 +32,27 @@ interface HistoryRow { id: string; kind: "chat" | "change"; conversationId?: str
 
 /**
  * The file manager's right panel (docs/product-model.md, "2026-11-06 file
- * manager layout"), as the design draws it. In a work-folder, Info says what
+ * manager layout"), as the design draws it. In a Connected Folder, Info says what
  * the selection is and History lists its Chats and changes. A standard folder
  * offers to put the folder to work.
  */
-export function FileManagerPanel({ place, workFolder, placeName, folderPath, folderName, folderColor, folderSymbol, receipt = null, arriving = false, itemCount, selection, automations, fixture, chat, composer, chatStatuses, searchItem, historyRefreshKey, onPutToWork, onOpenChat, onRestored, onError }: {
+export function FileManagerPanel({ place, connectedFolder, placeName, folderPath, folderName, folderColor, folderSymbol, receipt = null, arriving = false, itemCount, selection, automations, fixture, chat, composer, chatStatuses, searchItem, historyRefreshKey, onPutToWork, onOpenChat, onRestored, onError }: {
   place: FileManagerPlace;
-  workFolder: WorkFolderSummary | null;
+  connectedFolder: ConnectedFolderSummary | null;
   placeName: string;
   placeRoot: string;
   folderPath: string;
   folderName: string;
-  /** The work-folder's color when the panel describes its top level. */
+  /** The Connected Folder's color when the panel describes its top level. */
   folderColor: string | null;
-  /** The icon chosen in Customize work-folder, stamped on the folder. */
-  folderSymbol?: WorkFolderIconOption["Icon"] | null;
+  /** The icon chosen in Customize Connected Folder, stamped on the folder. */
+  folderSymbol?: ConnectedFolderIconOption["Icon"] | null;
   /** What the Worker's last reply changed, at the top of Info. */
   receipt?: ReactNode;
   itemCount: number;
   selection: TreeEntry[];
   automations: FolderAutomationView[];
-  fixture: WorkFolderUiFixture | null;
+  fixture: ConnectedFolderUiFixture | null;
   /**
    * The Chat the panel holds. While `open`, it replaces Info and History, as
    * in the design; closed, it stays mounted so a running reply keeps streaming.
@@ -60,11 +60,11 @@ export function FileManagerPanel({ place, workFolder, placeName, folderPath, fol
   chat: { open: boolean; title: string; onBack: () => void; content: ReactNode } | null;
   /** The panel was just shown: it slides in. */
   arriving?: boolean;
-  /** The message box at the panel's foot in a work-folder; its suggestions show on Info only. */
+  /** The message box at the panel's foot in a Connected Folder; its suggestions show on Info only. */
   composer: ((options: { showSuggestions: boolean }) => ReactNode) | null;
-  /** Changes whenever the work-folder's files change, so History reloads. */
+  /** Changes whenever the Connected Folder's files change, so History reloads. */
   historyRefreshKey: number;
-  /** A search result chosen in the list, which may be in another work-folder. */
+  /** A search result chosen in the list, which may be in another Connected Folder. */
   searchItem: { apiBase: string; entry: TreeEntry; where: string } | null;
   /** Chat activity by chatActivityKey, for History's dots. */
   chatStatuses: Readonly<Record<string, "running" | "attention">>;
@@ -75,8 +75,8 @@ export function FileManagerPanel({ place, workFolder, placeName, folderPath, fol
 }) {
   const [storedTab, setTabState] = useState<PanelTab>(() => readStoredJsonValue(tabStorageKey, (value) => value === "history" ? "history" : "info", "info"));
   const setTab = (next: PanelTab) => { setTabState(next); writeStoredJsonValue(tabStorageKey, next); };
-  // Only a work-folder has a Worker and History; elsewhere the panel is Info alone.
-  const tabsShown = Boolean(workFolder);
+  // Only a Connected Folder has a Worker and History; elsewhere the panel is Info alone.
+  const tabsShown = Boolean(connectedFolder);
   const tab = tabsShown ? storedTab : "info";
   const single = selection.length === 1 ? selection[0]! : null;
   const apiBase = placeApiBase(place);
@@ -92,8 +92,8 @@ export function FileManagerPanel({ place, workFolder, placeName, folderPath, fol
     info = <SelectionInfo selection={selection} sizeOf={(entry) => entry.kind === "folder" ? "--" : typeof entry.sizeBytes === "number" ? formatBytes(entry.sizeBytes) : ""} />;
   } else if (folderPath) {
     info = <ItemInfo apiBase={apiBase} entry={{ name: folderName, path: folderPath, kind: "folder" }} where={where(folderPath)} fixtureMode={fixtureMode} itemCount={itemCount} />;
-  } else if (workFolder) {
-    info = <WorkFolderInfo workFolderId={workFolder.id} name={folderName} color={folderColor} symbol={folderSymbol ?? null} itemCount={itemCount} automations={automations} fixtureMode={fixtureMode} onError={onError} />;
+  } else if (connectedFolder) {
+    info = <ConnectedFolderInfo connectedFolderId={connectedFolder.id} name={folderName} color={folderColor} symbol={folderSymbol ?? null} itemCount={itemCount} automations={automations} fixtureMode={fixtureMode} onError={onError} />;
   } else {
     info = <>
       <FolderHeader name={folderName} color={null} itemCount={itemCount} />
@@ -101,7 +101,7 @@ export function FileManagerPanel({ place, workFolder, placeName, folderPath, fol
         <div className="fm-cta">
           <div className="fm-cta-t">No Worker here yet</div>
           <div className="fm-cta-s">Adds a Worker and History. Nothing moves.</div>
-          <button type="button" className="fm-btn is-primary" onClick={onPutToWork}>Put This Folder to Work</button>
+          <button type="button" className="fm-btn is-primary" onClick={onPutToWork}>Connect This Folder</button>
         </div>
       </section>
     </>;
@@ -129,15 +129,15 @@ export function FileManagerPanel({ place, workFolder, placeName, folderPath, fol
         <button type="button" role="tab" aria-selected={tab === "info"} className={`fm-seg-b${tab === "info" ? " is-on" : ""}`} onClick={() => setTab("info")}>Info</button>
         <button type="button" role="tab" aria-selected={tab === "history"} className={`fm-seg-b${tab === "history" ? " is-on" : ""}`} onClick={() => setTab("history")}>
           <span>History</span>
-          {workFolder && Object.entries(chatStatuses).some(([key, status]) => status === "attention" && key.startsWith(`${workFolder.id}:`)) ? <span className="fm-dot is-done" aria-label="New reply" role="img" /> : null}
+          {connectedFolder && Object.entries(chatStatuses).some(([key, status]) => status === "attention" && key.startsWith(`${connectedFolder.id}:`)) ? <span className="fm-dot is-done" aria-label="New reply" role="img" /> : null}
         </button>
       </div>
     </div> : null}
     {chatShown ? null : <div className={`fm-panel-scroll${tabsShown ? "" : " is-untabbed"}`} role={tabsShown ? "tabpanel" : undefined}>
       <div key={tab} className="fm-pane" data-from={paneFromRef.current}>
-        {tab === "info" || !workFolder
+        {tab === "info" || !connectedFolder
           ? <>{receipt}{info}</>
-          : <HistoryList workFolder={workFolder} file={single?.kind === "file" ? single : null} fixture={fixture} chatStatuses={chatStatuses} refreshKey={historyRefreshKey} onOpenChat={onOpenChat} onRestored={onRestored} onError={onError} />}
+          : <HistoryList connectedFolder={connectedFolder} file={single?.kind === "file" ? single : null} fixture={fixture} chatStatuses={chatStatuses} refreshKey={historyRefreshKey} onOpenChat={onOpenChat} onRestored={onRestored} onError={onError} />}
       </div>
     </div>}
     {chat ? <div className="fm-chat" hidden={!chatShown}>{chat.content}</div> : null}
@@ -145,7 +145,7 @@ export function FileManagerPanel({ place, workFolder, placeName, folderPath, fol
   </aside>;
 }
 
-function FolderHeader({ name, color, symbol = null, itemCount }: { name: string; color: string | null; symbol?: WorkFolderIconOption["Icon"] | null; itemCount: number }) {
+function FolderHeader({ name, color, symbol = null, itemCount }: { name: string; color: string | null; symbol?: ConnectedFolderIconOption["Icon"] | null; itemCount: number }) {
   return <div className="fm-hd">
     <div className="fm-pv">
       {color ? <TintedFolder color={color} symbol={symbol} /> : <span className="fm-ic fm-ic-folder" aria-hidden="true" />}
@@ -156,32 +156,32 @@ function FolderHeader({ name, color, symbol = null, itemCount }: { name: string;
 }
 
 /**
- * A work-folder's top level: its Automations, each with its on/off switch,
+ * A Connected Folder's top level: its Automations, each with its on/off switch,
  * then the ready-made ones it hasn't turned on, which Turn on creates.
  */
-function WorkFolderInfo({ workFolderId, name, color, symbol, itemCount, automations, fixtureMode, onError }: {
-  workFolderId: string;
+function ConnectedFolderInfo({ connectedFolderId, name, color, symbol, itemCount, automations, fixtureMode, onError }: {
+  connectedFolderId: string;
   name: string;
   color: string | null;
-  symbol: WorkFolderIconOption["Icon"] | null;
+  symbol: ConnectedFolderIconOption["Icon"] | null;
   itemCount: number;
   automations: FolderAutomationView[];
   fixtureMode: boolean;
   onError: (message: string | null) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
-  const rows = automationCardRows(workFolderId, automations);
+  const rows = automationCardRows(connectedFolderId, automations);
   async function toggle(row: AutomationCardRow, on: boolean) {
-    const bridge = window.workFoldDesktop?.automations;
+    const bridge = window.ampleFileDesktop?.automations;
     if (fixtureMode) { showToast({ text: "Automations are disabled in the preview", tone: "info" }); return; }
     if (!bridge) { showToast({ text: "Automations are available in the Mac app", tone: "info" }); return; }
     setBusy(row.automationId);
     try {
       if (!on) await bridge.disable(row.automationId);
       else if (row.templateId && !row.existing) {
-        if (!bridge.enableTemplate) throw new Error("Update work-fold to turn on ready-made Automations.");
-        await bridge.enableTemplate(workFolderId, row.templateId);
-      } else if (row.templateId && bridge.enableTemplate) await bridge.enableTemplate(workFolderId, row.templateId);
+        if (!bridge.enableTemplate) throw new Error("Update AmpleFile to turn on ready-made Automations.");
+        await bridge.enableTemplate(connectedFolderId, row.templateId);
+      } else if (row.templateId && bridge.enableTemplate) await bridge.enableTemplate(connectedFolderId, row.templateId);
       else await bridge.enable(row.automationId);
       notifyFolderAutomationsChanged();
     } catch (caught) {
@@ -303,10 +303,10 @@ function SelectionInfo({ selection, sizeOf }: { selection: TreeEntry[]; sizeOf: 
  * offer Restore on the others. Every restore leaves its own restore point,
  * and the toast's Undo goes back to it.
  */
-function HistoryList({ workFolder, file, fixture, chatStatuses, refreshKey, onOpenChat, onRestored, onError }: {
-  workFolder: WorkFolderSummary;
+function HistoryList({ connectedFolder, file, fixture, chatStatuses, refreshKey, onOpenChat, onRestored, onError }: {
+  connectedFolder: ConnectedFolderSummary;
   file: TreeEntry | null;
-  fixture: WorkFolderUiFixture | null;
+  fixture: ConnectedFolderUiFixture | null;
   chatStatuses: Readonly<Record<string, "running" | "attention">>;
   refreshKey: number;
   onOpenChat: (conversationId: string, title: string) => void;
@@ -331,18 +331,18 @@ function HistoryList({ workFolder, file, fixture, chatStatuses, refreshKey, onOp
   useEffect(() => {
     let cancelled = false;
     // A reload keeps the rows on screen; only a different list starts from Loading.
-    const key = `${workFolder.id}\0${file?.path ?? ""}`;
+    const key = `${connectedFolder.id}\0${file?.path ?? ""}`;
     if (key !== loadedKey) setRows(null);
     async function load(): Promise<HistoryRow[]> {
       if (fixture) {
-        const chats = file ? [] : (fixture.conversations[workFolder.id] ?? []).map((chat) => chatRow(chat));
-        const changes = file ? [] : (fixture.checkpoints[workFolder.id] ?? []).map(changeRow);
+        const chats = file ? [] : (fixture.conversations[connectedFolder.id] ?? []).map((chat) => chatRow(chat));
+        const changes = file ? [] : (fixture.checkpoints[connectedFolder.id] ?? []).map(changeRow);
         return [...chats, ...changes];
       }
       if (file) {
         const [body, current] = await Promise.all([
-          queueHistoryRequest(workFolder.id, () => api<{ versions: FileVersionEntry[] }>(`/api/work-folders/${workFolder.id}/history/file-versions?path=${encodeURIComponent(file.path)}`)),
-          api<{ hashSha256: string | null }>(`/api/work-folders/${workFolder.id}/file-info?path=${encodeURIComponent(file.path)}`).catch(() => ({ hashSha256: null })),
+          queueHistoryRequest(connectedFolder.id, () => api<{ versions: FileVersionEntry[] }>(`/api/connected-folders/${connectedFolder.id}/history/file-versions?path=${encodeURIComponent(file.path)}`)),
+          api<{ hashSha256: string | null }>(`/api/connected-folders/${connectedFolder.id}/file-info?path=${encodeURIComponent(file.path)}`).catch(() => ({ hashSha256: null })),
         ]);
         let currentShown = false;
         return body.versions.map((version, index) => {
@@ -359,8 +359,8 @@ function HistoryList({ workFolder, file, fixture, chatStatuses, refreshKey, onOp
         });
       }
       const [chats, checkpoints] = await Promise.all([
-        api<{ conversations: ConversationSummary[] }>(`/api/work-folders/${workFolder.id}/conversations`).then((body) => body.conversations).catch(() => [] as ConversationSummary[]),
-        queueHistoryRequest(workFolder.id, () => api<{ checkpoints: WorkFolderCheckpoint[] }>(`/api/work-folders/${workFolder.id}/history/checkpoints`)).then((body) => body.checkpoints),
+        api<{ conversations: ConversationSummary[] }>(`/api/connected-folders/${connectedFolder.id}/conversations`).then((body) => body.conversations).catch(() => [] as ConversationSummary[]),
+        queueHistoryRequest(connectedFolder.id, () => api<{ checkpoints: ConnectedFolderCheckpoint[] }>(`/api/connected-folders/${connectedFolder.id}/history/checkpoints`)).then((body) => body.checkpoints),
       ]);
       return [...chats.filter((chat) => !chat.archivedAt).map(chatRow), ...checkpoints.map(changeRow)];
     }
@@ -368,7 +368,7 @@ function HistoryList({ workFolder, file, fixture, chatStatuses, refreshKey, onOp
       .then((loaded) => { if (!cancelled) { setRows(loaded); setLoadedKey(key); } })
       .catch((caught) => { if (!cancelled) { setRows([]); onError(errorText(caught)); } });
     return () => { cancelled = true; };
-  }, [file?.path, fixture, revision, refreshKey, workFolder.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [file?.path, fixture, revision, refreshKey, connectedFolder.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Changes on top and Chats below, newest first in each (owner decision 2026-11-07: no filter).
   const sections = useMemo(() => {
@@ -377,10 +377,10 @@ function HistoryList({ workFolder, file, fixture, chatStatuses, refreshKey, onOp
   }, [rows]);
   // Each section shows its newest few until the person asks for the rest.
   const [expanded, setExpanded] = useState<{ changes: boolean; chats: boolean }>({ changes: false, chats: false });
-  useEffect(() => { setExpanded({ changes: false, chats: false }); }, [workFolder.id, file?.path]);
+  useEffect(() => { setExpanded({ changes: false, chats: false }); }, [connectedFolder.id, file?.path]);
 
   async function restoreRestorePoint(checkpointId: string): Promise<{ safetyCheckpointId: string }> {
-    return queueHistoryRequest(workFolder.id, () => api<{ safetyCheckpointId: string }>(`/api/work-folders/${workFolder.id}/history/checkpoints/${encodeURIComponent(checkpointId)}/restore`, { method: "POST", body: {} }));
+    return queueHistoryRequest(connectedFolder.id, () => api<{ safetyCheckpointId: string }>(`/api/connected-folders/${connectedFolder.id}/history/checkpoints/${encodeURIComponent(checkpointId)}/restore`, { method: "POST", body: {} }));
   }
 
   async function run(row: HistoryRow) {
@@ -390,7 +390,7 @@ function HistoryList({ workFolder, file, fixture, chatStatuses, refreshKey, onOp
     setBusy(row.id);
     try {
       const result = action.kind === "version"
-        ? (await queueHistoryRequest(workFolder.id, () => api<{ result: { safetyCheckpointId: string } }>(`/api/work-folders/${workFolder.id}/history/file-versions`, { method: "POST", body: { path: action.path, hashSha256: action.hashSha256 } }))).result
+        ? (await queueHistoryRequest(connectedFolder.id, () => api<{ result: { safetyCheckpointId: string } }>(`/api/connected-folders/${connectedFolder.id}/history/file-versions`, { method: "POST", body: { path: action.path, hashSha256: action.hashSha256 } }))).result
         : await restoreRestorePoint(action.checkpointId);
       onRestored();
       setRevision((value) => value + 1);
@@ -420,7 +420,7 @@ function HistoryList({ workFolder, file, fixture, chatStatuses, refreshKey, onOp
     {row.action && row.action.kind !== "current" ? <button type="button" className="fm-btn is-small" disabled={busy !== null} onClick={() => void run(row)}>{row.action.kind === "undo" ? "Undo" : "Restore"}</button> : null}
   </div>;
   const chatView = (row: HistoryRow) => {
-    const status = chatStatuses[`${workFolder.id}:${row.conversationId}`];
+    const status = chatStatuses[`${connectedFolder.id}:${row.conversationId}`];
     return <button type="button" className="fm-crow fm-crow-btn" key={row.id} onClick={() => onOpenChat(row.conversationId!, row.title)}>
       <span className="fm-crow-glyph" aria-hidden="true"><Chat16Regular /></span>
       <span className="fm-crow-t"><span title={row.title}>{row.title}</span><span className="fm-crow-s">{historyTimeLabel(row.at)}</span></span>
@@ -458,7 +458,7 @@ function chatRow(chat: Pick<ConversationSummary, "id" | "title" | "updatedAt">):
   return { id: `chat:${chat.id}`, kind: "chat", conversationId: chat.id, title: chat.title || "New Chat", at: chat.updatedAt };
 }
 
-function changeRow(checkpoint: WorkFolderCheckpoint): HistoryRow {
+function changeRow(checkpoint: ConnectedFolderCheckpoint): HistoryRow {
   const title = restorePointTitle(checkpoint);
   return {
     id: `change:${checkpoint.checkpointId}`,

@@ -7,22 +7,22 @@ import { includedToolsPath } from "../../lib/included-tool-scope";
 import type { AgentStatus } from "../../types";
 import { IncludedChromeSetup } from "../panes/IncludedChromeSetup";
 import { IncludedComputerSetup } from "../panes/IncludedComputerSetup";
-import { WorkFoldLockup } from "../brand/WorkFoldBrand";
+import { AmpleFileLockup } from "../brand/AmpleFileBrand";
 import { ConnectAi, type ConnectedAi } from "./ConnectAi";
 
 type OnboardingStep = "welcome" | "connect" | "tools" | "folder";
 export type MacTool = "chrome" | "computer";
 
 /**
- * First run (2026-10-11): what work-fold is, connecting an AI provider, then
+ * First run (2026-10-11): what AmpleFile is, connecting an AI provider, then
  * the first folder. Connecting comes before the folder so the first thing a
  * Worker is asked to do, often Set up for me, can actually run. Skipping it
- * is fine: a work-folder is still a useful folder without AI.
+ * is fine: a Connected Folder is still a useful folder without AI.
  */
-export function OnboardingFlow({ agentConfigured, onAiConnected, onCreateWorkFolder, onOpenFolder, onOpenSettings, fixtureMode = false }: {
+export function OnboardingFlow({ agentConfigured, onAiConnected, onCreateConnectedFolder, onOpenFolder, onOpenSettings, fixtureMode = false }: {
   agentConfigured: boolean;
   onAiConnected: (status: AgentStatus) => void;
-  onCreateWorkFolder: () => void;
+  onCreateConnectedFolder: () => void;
   onOpenFolder: () => void;
   onOpenSettings?: () => void;
   fixtureMode?: boolean;
@@ -47,9 +47,9 @@ export function OnboardingFlow({ agentConfigured, onAiConnected, onCreateWorkFol
     <main className="onboarding-flow">
       {step === "welcome" ? (
         <section className="onboarding-step onboarding-welcome" aria-labelledby="onboarding-welcome-title">
-          <WorkFoldLockup className="onboarding-lockup" />
+          <AmpleFileLockup className="onboarding-lockup" />
           <h1 id="onboarding-welcome-title">Put your folders to work</h1>
-          <p>work-fold gives any folder on your Mac its own AI Worker. Ask it to sort, write, research, or build, right where your files live.</p>
+          <p>AmpleFile gives any folder on your Mac its own AI Worker. Ask it to sort, write, research, or build, right where your files live.</p>
           <button className="ui-control ui-control--primary onboarding-primary" type="button" onClick={next} autoFocus>Get Started</button>
         </section>
       ) : null}
@@ -107,13 +107,13 @@ export function OnboardingFlow({ agentConfigured, onAiConnected, onCreateWorkFol
           <div className="onboarding-actions" aria-label="Choose a folder" role="group">
             <button className="onboarding-folder-action" type="button" onClick={onOpenFolder}>
               <FolderOpen size={20} aria-hidden="true" />
-              <strong>Use Existing Folder</strong>
+              <strong>Connect Folder</strong>
               <span>A folder you already have. Nothing moves.</span>
             </button>
-            <button className="onboarding-folder-action" type="button" onClick={onCreateWorkFolder}>
+            <button className="onboarding-folder-action" type="button" onClick={onCreateConnectedFolder}>
               <FolderPlus size={20} aria-hidden="true" />
-              <strong>Create New work-folder</strong>
-              <span>Start with an empty folder work-fold keeps for you.</span>
+              <strong>New Connected Folder</strong>
+              <span>Start with an empty folder AmpleFile keeps for you.</span>
             </button>
           </div>
           {!agentConfigured && !connected ? <p className="onboarding-note">No AI connected yet. Your Worker will offer to connect one when you need it.</p> : null}

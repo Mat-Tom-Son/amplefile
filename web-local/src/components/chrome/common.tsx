@@ -1,7 +1,7 @@
 import type React from "react";
 import { ChatAdd20Filled, ChatAdd20Regular, Globe20Filled, Globe20Regular, GlobeAdd20Filled, GlobeAdd20Regular, bundleIcon, type FluentIcon } from "@fluentui/react-icons";
 import { AlertTriangle, X } from "./icons";
-import type { WorkFolderIconOption } from "../../work-folder-icons";
+import type { ConnectedFolderIconOption } from "../../connected-folder-icons";
 
 const NewChatIcon = bundleIcon(ChatAdd20Filled, ChatAdd20Regular);
 const BrowserTabIcon = bundleIcon(Globe20Filled, Globe20Regular);
@@ -28,13 +28,13 @@ function FluentGlyph({
   );
 }
 
-function WorkFolderIconGlyph({
+function ConnectedFolderIconGlyph({
   icon,
   size,
   filled = true,
   className,
 }: {
-  icon: WorkFolderIconOption["Icon"];
+  icon: ConnectedFolderIconOption["Icon"];
   size: number;
   filled?: boolean;
   className?: string;
@@ -44,7 +44,7 @@ function WorkFolderIconGlyph({
       icon={icon}
       size={size}
       filled={filled}
-      className={["work-folder-fluent-icon", className ?? ""].filter(Boolean).join(" ")}
+      className={["connected-folder-fluent-icon", className ?? ""].filter(Boolean).join(" ")}
     />
   );
 }
@@ -86,4 +86,4 @@ function CenteredState({ icon, title, text }: { icon?: React.ReactNode; title: s
   );
 }
 
-export { Banner, BrowserTabIcon, CenteredState, EmptyInline, FluentGlyph, NewBrowserTabIcon, NewChatIcon, PanelTitle, WorkFolderIconGlyph };
+export { Banner, BrowserTabIcon, CenteredState, EmptyInline, FluentGlyph, NewBrowserTabIcon, NewChatIcon, PanelTitle, ConnectedFolderIconGlyph };

@@ -8,40 +8,40 @@ import { MAIN_CI_JOBS, TAG_CI_JOBS } from "../scripts/release-ci.mjs";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
-test("desktop release configuration uses the isolated work-fold identities and feeds", () => {
+test("desktop release configuration uses the isolated AmpleFile identities and feeds", () => {
   const packageJson = JSON.parse(read("package.json"));
   const identity = JSON.parse(read("src/shared/product-identity.json"));
   const require = createRequire(import.meta.url);
   const builderPath = join(rootDir, "electron-builder.desktop.cjs");
-  const previousPlatform = process.env.WORKFOLD_DESKTOP_RELEASE_PLATFORM;
-  const previousRepo = process.env.WORKFOLD_MAC_RELEASE_REPO;
-  const previousUnsignedMac = process.env.WORKFOLD_ALLOW_UNSIGNED_MAC_BUILD;
-  const previousOutput = process.env.WORKFOLD_DESKTOP_OUTPUT_DIR;
-  process.env.WORKFOLD_DESKTOP_RELEASE_PLATFORM = "win32";
+  const previousPlatform = process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM;
+  const previousRepo = process.env.AMPLEFILE_MAC_RELEASE_REPO;
+  const previousUnsignedMac = process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD;
+  const previousOutput = process.env.AMPLEFILE_DESKTOP_OUTPUT_DIR;
+  process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM = "win32";
   const builder = require(builderPath);
-  process.env.WORKFOLD_DESKTOP_RELEASE_PLATFORM = "darwin";
-  process.env.WORKFOLD_MAC_RELEASE_REPO = identity.macReleaseRepositoryName;
+  process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM = "darwin";
+  process.env.AMPLEFILE_MAC_RELEASE_REPO = identity.macReleaseRepositoryName;
   delete require.cache[require.resolve(builderPath)];
   const macBuilder = require(builderPath);
-  process.env.WORKFOLD_ALLOW_UNSIGNED_MAC_BUILD = "1";
+  process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD = "1";
   delete require.cache[require.resolve(builderPath)];
   const macSmokeBuilder = require(builderPath);
-  process.env.WORKFOLD_DESKTOP_OUTPUT_DIR = "out/mac-rc";
+  process.env.AMPLEFILE_DESKTOP_OUTPUT_DIR = "out/mac-rc";
   delete require.cache[require.resolve(builderPath)];
   const macCandidateBuilder = require(builderPath);
-  if (previousPlatform === undefined) delete process.env.WORKFOLD_DESKTOP_RELEASE_PLATFORM;
-  else process.env.WORKFOLD_DESKTOP_RELEASE_PLATFORM = previousPlatform;
-  if (previousRepo === undefined) delete process.env.WORKFOLD_MAC_RELEASE_REPO;
-  else process.env.WORKFOLD_MAC_RELEASE_REPO = previousRepo;
-  if (previousUnsignedMac === undefined) delete process.env.WORKFOLD_ALLOW_UNSIGNED_MAC_BUILD;
-  else process.env.WORKFOLD_ALLOW_UNSIGNED_MAC_BUILD = previousUnsignedMac;
-  if (previousOutput === undefined) delete process.env.WORKFOLD_DESKTOP_OUTPUT_DIR;
-  else process.env.WORKFOLD_DESKTOP_OUTPUT_DIR = previousOutput;
+  if (previousPlatform === undefined) delete process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM;
+  else process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM = previousPlatform;
+  if (previousRepo === undefined) delete process.env.AMPLEFILE_MAC_RELEASE_REPO;
+  else process.env.AMPLEFILE_MAC_RELEASE_REPO = previousRepo;
+  if (previousUnsignedMac === undefined) delete process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD;
+  else process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD = previousUnsignedMac;
+  if (previousOutput === undefined) delete process.env.AMPLEFILE_DESKTOP_OUTPUT_DIR;
+  else process.env.AMPLEFILE_DESKTOP_OUTPUT_DIR = previousOutput;
   delete require.cache[require.resolve(builderPath)];
 
   assert.equal(packageJson.name, identity.packageName);
   assert.equal(packageJson.productName, identity.productName);
-  assert.equal(packageJson.repository.url, "https://github.com/Mat-Tom-Son/work-fold.git");
+  assert.equal(packageJson.repository.url, "https://github.com/Mat-Tom-Son/amplefile.git");
   assert.equal(packageJson.dependencies["electron-updater"], "6.8.9");
   assert.match(packageJson.scripts["desktop:make"], /electron-builder/);
   assert.match(packageJson.scripts["desktop:make"], /--win nsis --x64/, "the NSIS target and x64 architecture must use Electron Builder's supported argument order");
@@ -50,28 +50,28 @@ test("desktop release configuration uses the isolated work-fold identities and f
   assert.deepEqual(builder.publish, [{
     provider: "github",
     owner: "Mat-Tom-Son",
-    repo: "work-fold",
+    repo: "amplefile",
     releaseType: "release",
   }]);
   assert.deepEqual(macBuilder.publish, [{
     provider: "github",
     owner: "Mat-Tom-Son",
-    repo: "work-fold-mac-releases",
+    repo: "amplefile-mac-releases",
     releaseType: "release",
   }]);
   assert.equal(macSmokeBuilder.productName, identity.macSmokeProductName);
   assert.equal(macSmokeBuilder.appId, identity.macSmokeAppId);
-  assert.equal(macSmokeBuilder.extraMetadata.workFoldBuildChannel, "mac-local-smoke");
+  assert.equal(macSmokeBuilder.extraMetadata.ampleFileBuildChannel, "mac-local-smoke");
   assert.equal(macBuilder.productName, identity.productName);
   assert.equal(macBuilder.appId, identity.productionAppId);
-  assert.equal(macBuilder.extraMetadata.workFoldBuildChannel, "production");
+  assert.equal(macBuilder.extraMetadata.ampleFileBuildChannel, "production");
   assert.equal(macSmokeBuilder.mac.executableName, identity.macSmokeProductName);
   assert.equal(macBuilder.mac.executableName, identity.productName);
   assert.equal(builder.directories.output, "out/builder");
   assert.equal(macCandidateBuilder.directories.output, "out/mac-rc");
-  assert.equal(builder.artifactName, "work-fold-${version}-${os}-${arch}.${ext}");
-  assert.equal(builder.dmg.artifactName, "work-fold-${version}-mac-${arch}.${ext}");
-  assert.equal(builder.nsis.artifactName, "work-fold-Setup-${version}.${ext}");
+  assert.equal(builder.artifactName, "AmpleFile-${version}-${os}-${arch}.${ext}");
+  assert.equal(builder.dmg.artifactName, "AmpleFile-${version}-mac-${arch}.${ext}");
+  assert.equal(builder.nsis.artifactName, "AmpleFile-Setup-${version}.${ext}");
   assert.equal(builder.nsis.uninstallDisplayName, identity.productName);
   assert.equal(builder.nsis.shortcutName, identity.productName);
   assert.equal(builder.nsis.deleteAppDataOnUninstall, false);
@@ -164,7 +164,7 @@ test("background CI tests every PR/main file in four shards and verifies source 
   assert.equal(tagCommands[0].if, undefined);
 });
 
-test("the macOS Safe Storage reset can target only the work-fold identity", () => {
+test("the macOS Safe Storage reset can target only the AmpleFile identity", () => {
   const reset = read("scripts/reset-mac-safe-storage.mjs");
 
   assert.match(reset, /src", "shared", "product-identity\.json"/);

@@ -4,9 +4,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import type { BrowserWindow, BrowserWindowConstructorOptions, IpcMainInvokeEvent } from "electron";
 import { ModelContextWindow, parseModelContextDiagnosticRequest } from "../desktop/src/model-context-window.js";
-import { workFoldCliInstanceData, workFoldInspectContextFromArgv, workFoldSecondInstanceIntent } from "../desktop/src/work-fold-cli-host.js";
+import { ampleFileCliInstanceData, ampleFileInspectContextFromArgv, ampleFileSecondInstanceIntent } from "../desktop/src/amplefile-cli-host.js";
 
-const url = "work-fold-desktop://app/index.html?dev-context";
+const url = "amplefile-desktop://app/index.html?dev-context";
 
 class TestWindow extends EventEmitter {
   destroyed = false;
@@ -35,16 +35,16 @@ class TestWindow extends EventEmitter {
 }
 
 test("explicit inspector launch survives cold and running-app dispatch while CLI stays headless", () => {
-  const argv = ["work-fold", "--work-fold-inspect-context"];
-  assert.equal(workFoldInspectContextFromArgv(argv), true);
-  const data = workFoldCliInstanceData(null, workFoldInspectContextFromArgv(argv));
-  assert.deepEqual(data, { kind: "work-fold-inspect-context" });
-  assert.deepEqual(workFoldSecondInstanceIntent(argv, {}), { kind: "inspect-context" });
-  assert.deepEqual(workFoldSecondInstanceIntent([], data), { kind: "inspect-context" });
-  assert.deepEqual(workFoldSecondInstanceIntent(["--work-fold-inspect-context=true"], {}), { kind: "gui" });
-  assert.equal(workFoldSecondInstanceIntent([...argv, "--work-fold-cli-request"], data).kind, "cli-invalid");
+  const argv = ["amplefile", "--amplefile-inspect-context"];
+  assert.equal(ampleFileInspectContextFromArgv(argv), true);
+  const data = ampleFileCliInstanceData(null, ampleFileInspectContextFromArgv(argv));
+  assert.deepEqual(data, { kind: "amplefile-inspect-context" });
+  assert.deepEqual(ampleFileSecondInstanceIntent(argv, {}), { kind: "inspect-context" });
+  assert.deepEqual(ampleFileSecondInstanceIntent([], data), { kind: "inspect-context" });
+  assert.deepEqual(ampleFileSecondInstanceIntent(["--amplefile-inspect-context=true"], {}), { kind: "gui" });
+  assert.equal(ampleFileSecondInstanceIntent([...argv, "--amplefile-cli-request"], data).kind, "cli-invalid");
   const requestId = "38fc6538-9776-4833-871b-2d00e33502f7";
-  assert.deepEqual(workFoldSecondInstanceIntent(argv, workFoldCliInstanceData(requestId, true)), { kind: "cli", requestId });
+  assert.deepEqual(ampleFileSecondInstanceIntent(argv, ampleFileCliInstanceData(requestId, true)), { kind: "cli", requestId });
 });
 
 test("inspector is lazy, isolated, reusable and never changes recording by opening or closing", async () => {
@@ -90,24 +90,24 @@ test("inspector rejects foreign renderers, child frames, navigation and broader 
   const event = window.event();
   assert.throws(() => inspector.assertSender(new TestWindow().event()), /own trusted main frame/);
   assert.throws(() => inspector.assertSender({ ...event, senderFrame: { ...event.senderFrame, routingId: 999 } } as IpcMainInvokeEvent), /own trusted main frame/);
-  assert.throws(() => inspector.assertSender({ ...event, senderFrame: { ...event.senderFrame, url: "work-fold-desktop://app/index.html" } } as IpcMainInvokeEvent), /own trusted main frame/);
+  assert.throws(() => inspector.assertSender({ ...event, senderFrame: { ...event.senderFrame, url: "amplefile-desktop://app/index.html" } } as IpcMainInvokeEvent), /own trusted main frame/);
   assert.deepEqual(window.popup?.(), { action: "deny" });
   let prevented = false;
   window.webContents.emit("will-navigate", { preventDefault() { prevented = true; } }, "https://example.com");
   assert.equal(prevented, true);
-  await assert.rejects(inspector.request(event, { path: "/api/work-folders", body: { enabled: true } }), /Invalid diagnostic path/);
+  await assert.rejects(inspector.request(event, { path: "/api/connected-folders", body: { enabled: true } }), /Invalid diagnostic path/);
   assert.equal(requests, 0);
   inspector.closeFrom(event);
   assert.throws(() => inspector.assertSender(event), /own trusted main frame/);
 });
 
 test("diagnostic request broker accepts only scoped reads and explicit recording controls", () => {
-  assert.deepEqual(parseModelContextDiagnosticRequest({ path: "/api/model-context/record_1-abc?workFolderId=one&conversationId=two" }), {
-    path: "/api/model-context/record_1-abc?workFolderId=one&conversationId=two", method: "GET",
+  assert.deepEqual(parseModelContextDiagnosticRequest({ path: "/api/model-context/record_1-abc?connectedFolderId=one&conversationId=two" }), {
+    path: "/api/model-context/record_1-abc?connectedFolderId=one&conversationId=two", method: "GET",
   });
   for (const input of [
-    { path: "https://example.com/api/model-context" }, { path: "/api/model-context/../work-folders" },
-    { path: "/api/model-context/%2e%2e" }, { path: "/api/model-context?workFolderId=x&workFolderId=y" },
+    { path: "https://example.com/api/model-context" }, { path: "/api/model-context/../connected-folders" },
+    { path: "/api/model-context/%2e%2e" }, { path: "/api/model-context?connectedFolderId=x&connectedFolderId=y" },
     { path: "/api/model-context?conversationId=y" }, { path: "/api/model-context?url=https://example.com" },
     { path: "/api/model-context", headers: {} }, { path: "/api/model-context", method: "DELETE" },
     { path: "/api/model-context/record", body: { clear: true } },
@@ -123,7 +123,7 @@ test("focused inspector owns close and refresh menu commands and shortcuts", asy
     createWindow: () => window as unknown as BrowserWindow, request: async () => { throw new Error("No capture request expected."); },
   });
   await inspector.open();
-  assert.equal(inspector.handleMenuCommand("reload-work-folder-state"), true);
+  assert.equal(inspector.handleMenuCommand("reload-connected-folder-state"), true);
   assert.equal(window.reloads, 1);
   assert.equal(inspector.handleMenuCommand("open-settings"), false);
   let prevented = false;
@@ -140,11 +140,11 @@ test("focused inspector owns close and refresh menu commands and shortcuts", asy
 
 test("desktop wires both launch paths and excludes the inspector from general IPC", async () => {
   const main = await readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8");
-  assert.match(main, /initialInspectContext = interactiveRequested && workFoldInspectContextFromArgv\(process.argv\)/);
+  assert.match(main, /initialInspectContext = interactiveRequested && ampleFileInspectContextFromArgv\(process.argv\)/);
   assert.match(main, /if \(initialInspectContext\) await openModelContextWindow\(\)/);
   assert.match(main, /intent.kind === "inspect-context"[\s\S]*?startInteractiveApp\(\).then\(openModelContextWindow\)[\s\S]*?return;/);
   assert.match(main, /function assertTrustedRenderer[\s\S]*?modelContextWindow\?\.owns\(event.sender\)[\s\S]*?throw/);
   const preload = await readFile(new URL("../desktop/src/model-context-preload.cts", import.meta.url), "utf8");
   assert.deepEqual([...preload.matchAll(/require\(([^)]+)\)/g)].map((match) => match[1]), ['"electron"']);
-  assert.doesNotMatch(preload, /workFoldDesktop|session-headers|apiSessionToken|enabled: true/);
+  assert.doesNotMatch(preload, /ampleFileDesktop|session-headers|apiSessionToken|enabled: true/);
 });

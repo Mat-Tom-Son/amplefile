@@ -12,7 +12,7 @@ import type { DocumentEngineSearch } from "../../../resources/included-tools/rea
 import { beginIncludedToolObservation } from "./included-tool-observations.js";
 import { toolInputFeedbackExtension } from "./tool-input-feedback.js";
 import { reservedPathSearchExtension } from "./reserved-path-search.js";
-import { workFoldRolePreambleExtension, type WorkFoldSessionRole } from "./role-preamble.js";
+import { ampleFileRolePreambleExtension, type AmpleFileSessionRole } from "./role-preamble.js";
 export { includedToolDefinitions, type IncludedToolId } from "../../shared/included-tools.js";
 export interface IncludedToolsConfiguration {
   rootPath: string;
@@ -30,7 +30,7 @@ export function includedToolsRoot(): string {
   while (dirname(dir) !== dir) {
     const manifest = join(dir, "package.json");
     if (existsSync(manifest)) {
-      try { if (JSON.parse(readFileSync(manifest, "utf8")).name === "work-fold-desktop") return join(dir, "resources", "included-tools"); } catch { /* Keep walking to the host package. */ }
+      try { if (JSON.parse(readFileSync(manifest, "utf8")).name === "amplefile-desktop") return join(dir, "resources", "included-tools"); } catch { /* Keep walking to the host package. */ }
     }
     dir = dirname(dir);
   }
@@ -43,7 +43,7 @@ export async function resolveIncludedResources(cwd: string, runtime: ResolvedPiR
   if (!config) return [];
   const paths = includedToolDefinitions.map((item) => join(config.rootPath, item.id, "index.ts"));
   const skillRoot = join(config.rootPath, "documents", "skills");
-  // Skills work-fold itself ships, such as Set up for me, belong to no single included tool.
+  // Skills AmpleFile itself ships, such as Set up for me, belong to no single included tool.
   const bundledSkillRoot = join(config.rootPath, "skills");
   const bundledSkills = existsSync(bundledSkillRoot) ? [bundledSkillRoot] : [];
   const global = runtime.settingsManager.getGlobalSettings();
@@ -51,9 +51,9 @@ export async function resolveIncludedResources(cwd: string, runtime: ResolvedPiR
   const manager = new DefaultPackageManager({ cwd, agentDir: runtime.agentDir, settingsManager: settings });
   const native = await manager.resolve(async () => "skip");
   return [
-    ...native.extensions.filter((item) => paths.includes(item.path)).map((item) => ({ ...item, kind: "extensions" as const, included: includedToolDefinitions.find((definition) => join(config.rootPath, definition.id, "index.ts") === item.path), metadata: { ...item.metadata, source: "Included with work-fold", scope: "user" as const } })),
-    ...native.skills.filter((item) => item.path.startsWith(`${skillRoot}/`)).map((item) => ({ ...item, kind: "skills" as const, included: includedToolDefinitions.find((definition) => definition.id === "documents"), metadata: { ...item.metadata, source: "Included with work-fold", scope: "user" as const } })),
-    ...native.skills.filter((item) => bundledSkills.length > 0 && item.path.startsWith(`${bundledSkillRoot}/`)).map((item) => ({ ...item, kind: "skills" as const, bundled: true as const, metadata: { ...item.metadata, source: "Included with work-fold", scope: "user" as const } })),
+    ...native.extensions.filter((item) => paths.includes(item.path)).map((item) => ({ ...item, kind: "extensions" as const, included: includedToolDefinitions.find((definition) => join(config.rootPath, definition.id, "index.ts") === item.path), metadata: { ...item.metadata, source: "Included with AmpleFile", scope: "user" as const } })),
+    ...native.skills.filter((item) => item.path.startsWith(`${skillRoot}/`)).map((item) => ({ ...item, kind: "skills" as const, included: includedToolDefinitions.find((definition) => definition.id === "documents"), metadata: { ...item.metadata, source: "Included with AmpleFile", scope: "user" as const } })),
+    ...native.skills.filter((item) => bundledSkills.length > 0 && item.path.startsWith(`${bundledSkillRoot}/`)).map((item) => ({ ...item, kind: "skills" as const, bundled: true as const, metadata: { ...item.metadata, source: "Included with AmpleFile", scope: "user" as const } })),
   ];
 }
 
@@ -61,12 +61,12 @@ export async function resolveIncludedResources(cwd: string, runtime: ResolvedPiR
  * A per-runtime native event bus; no process-global current Chat or renderer capability.
  * A Chat session names its role, which opens each request with that role instead of Pi's coding preamble.
  */
-export async function includedResourceOptions(cwd: string, runtime: ResolvedPiRuntime, mode: "catalog" | "session", role?: WorkFoldSessionRole) {
+export async function includedResourceOptions(cwd: string, runtime: ResolvedPiRuntime, mode: "catalog" | "session", role?: AmpleFileSessionRole) {
   const config = runtime.config.includedTools;
   const extensionFactories = [
     { name: "tool_input_feedback", builtin: true, factory: toolInputFeedbackExtension },
-    { name: "work_fold_reserved_path_search", builtin: true, factory: reservedPathSearchExtension },
-    ...(role ? [{ name: "work_fold_role", builtin: true, factory: workFoldRolePreambleExtension(role) }] : []),
+    { name: "amplefile_reserved_path_search", builtin: true, factory: reservedPathSearchExtension },
+    ...(role ? [{ name: "amplefile_role", builtin: true, factory: ampleFileRolePreambleExtension(role) }] : []),
     { name: "codemode", builtin: true, replaceable: true, factory: createCodemodeExtension() },
     { name: "tool_search", builtin: true, replaceable: true, factory: createToolSearchExtension() },
   ];
@@ -74,7 +74,7 @@ export async function includedResourceOptions(cwd: string, runtime: ResolvedPiRu
   const resources = await resolveIncludedResources(cwd, runtime);
   const eventBus = createEventBus();
   const mcpOptions = await includedNativeMcpOptions({ agentDir: runtime.agentDir, mcpCredentialBackend: runtime.config.mcpCredentialBackend, ...(runtime.projectTrust.trusted ? { cwd: resolve(cwd) } : {}) }, runtime.credentials, mode);
-  eventBus.on("work-fold:extension-host:v1", (value) => {
+  eventBus.on("amplefile:extension-host:v1", (value) => {
     if (!value || typeof value !== "object" || Reflect.get(value, "version") !== 1) return;
     Reflect.set(value, "context", {
       version: 1, mode, cwd: resolve(cwd), agentDir: runtime.agentDir, stateRoot: config.stateRoot,
@@ -92,7 +92,7 @@ export async function includedResourceOptions(cwd: string, runtime: ResolvedPiRu
       getMcpOptions: () => mcpOptions,
       // Credentials are read only when an operation actually needs them.
       getSearchConfig: async () => {
-        const credential = await runtime.credentials.read("work-fold:web:brave");
+        const credential = await runtime.credentials.read("amplefile:web:brave");
         return credential?.type === "api_key" ? { provider: "brave", apiKey: credential.key } : { provider: "duckduckgo" };
       },
     });

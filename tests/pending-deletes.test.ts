@@ -4,7 +4,7 @@ import { createDomHarness } from "./support/dom.js";
 import { deleteLocalFileRequest, deleteLocalFilesRequest, pendingDeleteGroups, settledPendingDeletes, type PendingDelete } from "../web-local/src/lib/pending-deletes.js";
 
 const pending = (path: string, extra: Partial<PendingDelete> = {}): PendingDelete => ({
-  workFolderId: "space-a", path, name: path.split("/").pop()!, selectedPath: null, deletedTabPaths: new Set(), ...extra,
+  connectedFolderId: "space-a", path, name: path.split("/").pop()!, selectedPath: null, deletedTabPaths: new Set(), ...extra,
 });
 
 test("rows deleted together reach the host together; every other row goes on its own", () => {
@@ -12,7 +12,7 @@ test("rows deleted together reach the host together; every other row goes on its
     pending("a.txt", { batchId: 1 }),
     pending("solo.txt"),
     pending("b.txt", { batchId: 1 }),
-    pending("other.txt", { batchId: 1, workFolderId: "space-b" }),
+    pending("other.txt", { batchId: 1, connectedFolderId: "space-b" }),
     pending("c.txt", { batchId: 2 }),
   ]);
   assert.deepEqual(groups.map((group) => group.map((item) => item.path)), [["a.txt", "b.txt"], ["solo.txt"], ["other.txt"], ["c.txt"]]);
@@ -55,10 +55,10 @@ test("several rows go to the host in one request, and one row keeps its own rout
   assert.equal(result.safetyCheckpointId, "cp-1");
   await deleteLocalFileRequest(pending("solo.txt"));
   assert.deepEqual(sent, [
-    { url: "/api/work-folders/space-a/local-files", method: "DELETE", body: { paths: ["a.txt", "b.txt"] }, keepalive: true },
-    { url: "/api/work-folders/space-a/local-file", method: "DELETE", body: { path: "solo.txt" }, keepalive: false },
+    { url: "/api/connected-folders/space-a/local-files", method: "DELETE", body: { paths: ["a.txt", "b.txt"] }, keepalive: true },
+    { url: "/api/connected-folders/space-a/local-file", method: "DELETE", body: { path: "solo.txt" }, keepalive: false },
   ]);
 
-  globalThis.fetch = (async () => Response.json({ error: "Finish or stop this work-folder's outstanding work before deleting." }, { status: 409 })) as typeof fetch;
+  globalThis.fetch = (async () => Response.json({ error: "Finish or stop this Connected Folder's outstanding work before deleting." }, { status: 409 })) as typeof fetch;
   await assert.rejects(() => deleteLocalFilesRequest("space-a", ["a.txt", "b.txt"]), /outstanding work/);
 });

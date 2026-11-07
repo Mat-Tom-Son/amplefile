@@ -11,8 +11,8 @@ import {
 import type { HistoryPageInfo, HistoryPageOptions } from "../shared/history-review.js";
 import { decodeRetrievalCursor, encodeRetrievalCursor, retrievalError } from "./retrieval-cursor.js";
 import { isOfficeLockFileName } from "./office-lock-files.js";
-import { workFolderHistoryRoot } from "./state-paths.js";
-import { assertWorkFolderDoesNotContainState, ensureSafeWorkFolderRoot, resolveWorkFolderPath, nestedRegisteredWorkFolderPaths, withWorkFolderHistoryOperation } from "./work-folder.js";
+import { connectedFolderHistoryRoot } from "./state-paths.js";
+import { assertConnectedFolderDoesNotContainState, ensureSafeConnectedFolderRoot, resolveConnectedFolderPath, nestedRegisteredConnectedFolderPaths, withConnectedFolderHistoryOperation } from "./connected-folder.js";
 
 export interface CheckpointFileEntry {
   path: string;
@@ -32,7 +32,7 @@ export interface CheckpointSkippedFile {
   reason: "too_large" | "unreadable" | "symbolic_link" | "excluded";
 }
 
-export interface WorkFolderCheckpoint {
+export interface ConnectedFolderCheckpoint {
   schemaVersion: "0.2.0";
   checkpointId: string;
   createdAt: string;
@@ -51,7 +51,7 @@ export interface WorkFolderCheckpoint {
   files: CheckpointFileEntry[];
 }
 
-export interface WorkFolderFileVersion {
+export interface ConnectedFolderFileVersion {
   path: string;
   hashSha256: string;
   sizeBytes: number;
@@ -62,7 +62,7 @@ export interface WorkFolderFileVersion {
   source: "checkpoint";
 }
 
-export interface WorkFolderRestoreResult {
+export interface ConnectedFolderRestoreResult {
   restored: true;
   checkpointId: string;
   safetyCheckpointId: string;
@@ -84,17 +84,17 @@ const captureHashConcurrency = 8;
 /** Files at or above this size are hashed from a stream instead of being read whole. */
 const captureStreamHashBytes = 8 * 1024 * 1024;
 
-export async function storeWorkFolderBlob(workFolderRoot: string, bytes: Buffer): Promise<StoredBlobRef> {
-  const root = ensureHistoryRoot(workFolderRoot);
-  const stored = await writeWorkFolderBlob(root, bytes);
+export async function storeConnectedFolderBlob(connectedFolderRoot: string, bytes: Buffer): Promise<StoredBlobRef> {
+  const root = ensureHistoryRoot(connectedFolderRoot);
+  const stored = await writeConnectedFolderBlob(root, bytes);
   await ensureHistoryMeta(root);
   return stored;
 }
 
 /** Stores bytes by hash; the caller ensures the History metadata once. */
-async function writeWorkFolderBlob(root: string, bytes: Buffer): Promise<StoredBlobRef> {
+async function writeConnectedFolderBlob(root: string, bytes: Buffer): Promise<StoredBlobRef> {
   const hashSha256 = sha256(bytes);
-  const blobPath = workFolderBlobPath(root, hashSha256);
+  const blobPath = connectedFolderBlobPath(root, hashSha256);
   if (!await pathExists(blobPath)) {
     await mkdir(dirname(blobPath), { recursive: true });
     const stagingPath = `${blobPath}.tmp-${randomUUID().slice(0, 8)}`;
@@ -110,18 +110,18 @@ async function writeWorkFolderBlob(root: string, bytes: Buffer): Promise<StoredB
 }
 
 /**
- * Captures one work-folder file into the blob store without holding large files in
+ * Captures one Connected Folder file into the blob store without holding large files in
  * memory. The common case — content already stored — costs one streamed read.
  * A new blob is copied (a clone on APFS) into a private staging file and then
  * hashed again from that copy, so the stored bytes always match the recorded
  * hash even if the source file changes mid-capture.
  */
-async function storeWorkFolderBlobFromFile(root: string, absolutePath: string, sizeBytes: number): Promise<StoredBlobRef> {
+async function storeConnectedFolderBlobFromFile(root: string, absolutePath: string, sizeBytes: number): Promise<StoredBlobRef> {
   if (sizeBytes < captureStreamHashBytes) {
-    return writeWorkFolderBlob(root, await readFile(absolutePath));
+    return writeConnectedFolderBlob(root, await readFile(absolutePath));
   }
   const hashSha256 = await sha256File(absolutePath);
-  const blobPath = workFolderBlobPath(root, hashSha256);
+  const blobPath = connectedFolderBlobPath(root, hashSha256);
   if (await pathExists(blobPath)) return { hashSha256, sizeBytes };
   await mkdir(dirname(blobPath), { recursive: true });
   const stagingPath = `${blobPath}.tmp-${randomUUID().slice(0, 8)}`;
@@ -129,7 +129,7 @@ async function storeWorkFolderBlobFromFile(root: string, absolutePath: string, s
     await copyFile(absolutePath, stagingPath);
     const stagedHash = await sha256File(stagingPath);
     const stagedInfo = await stat(stagingPath);
-    const finalPath = workFolderBlobPath(root, stagedHash);
+    const finalPath = connectedFolderBlobPath(root, stagedHash);
     if (await pathExists(finalPath)) {
       await rm(stagingPath, { force: true });
     } else {
@@ -157,19 +157,19 @@ function sha256File(path: string): Promise<string> {
     stream.on("end", () => resolvePromise(hash.digest("hex")));
   });
 }
-export async function readWorkFolderBlob(workFolderRoot: string, hashSha256: string): Promise<Buffer | null> {
-  const root = ensureHistoryRoot(workFolderRoot);
+export async function readConnectedFolderBlob(connectedFolderRoot: string, hashSha256: string): Promise<Buffer | null> {
+  const root = ensureHistoryRoot(connectedFolderRoot);
   const normalized = normalizeHash(hashSha256);
-  const bytes = await readFile(workFolderBlobPath(root, normalized)).catch(() => null);
+  const bytes = await readFile(connectedFolderBlobPath(root, normalized)).catch(() => null);
   if (!bytes || sha256(bytes) !== normalized) return null;
   return bytes;
 }
 
-async function createWorkFolderCheckpointUnlocked(
-  workFolderRoot: string,
+async function createConnectedFolderCheckpointUnlocked(
+  connectedFolderRoot: string,
   options: { label?: string; reason?: string } = {},
-): Promise<WorkFolderCheckpoint> {
-  const root = ensureHistoryRoot(workFolderRoot);
+): Promise<ConnectedFolderCheckpoint> {
+  const root = ensureHistoryRoot(connectedFolderRoot);
   const captured = await capturePaths(root, [""], await createFullHistoryCapturePolicy(root));
   return persistCheckpoint(root, {
     reason: options.reason?.trim() || "manual",
@@ -182,8 +182,8 @@ async function createWorkFolderCheckpointUnlocked(
   });
 }
 
-async function createWorkFolderMutationCheckpointUnlocked(
-  workFolderRoot: string,
+async function createConnectedFolderMutationCheckpointUnlocked(
+  connectedFolderRoot: string,
   options: {
     paths?: string[];
     deleteOnRestore?: string[];
@@ -191,8 +191,8 @@ async function createWorkFolderMutationCheckpointUnlocked(
     label?: string;
     reason?: string;
   },
-): Promise<WorkFolderCheckpoint> {
-  const root = ensureHistoryRoot(workFolderRoot);
+): Promise<ConnectedFolderCheckpoint> {
+  const root = ensureHistoryRoot(connectedFolderRoot);
   const captureRoots = collapsePaths((options.paths ?? []).map((path) => canonicalPath(root, path, true).path));
   const deleteOnRestore = collapsePaths((options.deleteOnRestore ?? []).map((path) => canonicalPath(root, path, true).path));
   const movesOnRestore = (options.movesOnRestore ?? []).map((move) => ({
@@ -211,15 +211,15 @@ async function createWorkFolderMutationCheckpointUnlocked(
   });
 }
 
-export async function listWorkFolderCheckpoints(workFolderRoot: string, limit = 50): Promise<WorkFolderCheckpoint[]> {
-  const root = ensureHistoryRoot(workFolderRoot);
+export async function listConnectedFolderCheckpoints(connectedFolderRoot: string, limit = 50): Promise<ConnectedFolderCheckpoint[]> {
+  const root = ensureHistoryRoot(connectedFolderRoot);
   return (await readCheckpointManifests(root)).slice(0, Math.min(Math.max(limit, 1), 1000));
 }
 
 /** A page of the full retained ledger; the cursor rejects a changed source. */
-export async function listWorkFolderCheckpointPage(workFolderRoot: string, options: HistoryPageOptions = {}): Promise<HistoryPageInfo & { checkpoints: WorkFolderCheckpoint[] }> {
-  const root = ensureHistoryRoot(workFolderRoot);
-  return withWorkFolderHistoryOperation(root, async () => {
+export async function listConnectedFolderCheckpointPage(connectedFolderRoot: string, options: HistoryPageOptions = {}): Promise<HistoryPageInfo & { checkpoints: ConnectedFolderCheckpoint[] }> {
+  const root = ensureHistoryRoot(connectedFolderRoot);
+  return withConnectedFolderHistoryOperation(root, async () => {
     const checkpoints = await readCheckpointManifests(root);
     const page = historyPage(root, "checkpoints", checkpoints, options);
     return { ...page.info, checkpoints: page.items };
@@ -241,22 +241,22 @@ function historyPage<T>(root: string, selector: string, items: T[], options: His
     nextCursor: end < items.length ? encodeRetrievalCursor({ scope, sourceVersion, offset: end }) : null } };
 }
 
-export async function getWorkFolderCheckpoint(workFolderRoot: string, checkpointId: string): Promise<WorkFolderCheckpoint | null> {
+export async function getConnectedFolderCheckpoint(connectedFolderRoot: string, checkpointId: string): Promise<ConnectedFolderCheckpoint | null> {
   if (!checkpointIdPattern.test(checkpointId)) return null;
-  const root = ensureHistoryRoot(workFolderRoot);
+  const root = ensureHistoryRoot(connectedFolderRoot);
   return readCheckpointManifest(join(checkpointsDir(root), `${checkpointId}.json`));
 }
 
-async function discardWorkFolderCheckpointUnlocked(workFolderRoot: string, checkpointId: string): Promise<void> {
+async function discardConnectedFolderCheckpointUnlocked(connectedFolderRoot: string, checkpointId: string): Promise<void> {
   if (!checkpointIdPattern.test(checkpointId)) return;
-  const root = ensureHistoryRoot(workFolderRoot);
+  const root = ensureHistoryRoot(connectedFolderRoot);
   await rm(join(checkpointsDir(root), `${checkpointId}.json`), { force: true });
   await garbageCollectObjects(root, await readCheckpointManifests(root));
 }
 
-async function restoreWorkFolderCheckpointUnlocked(workFolderRoot: string, checkpointId: string): Promise<WorkFolderRestoreResult> {
-  const root = ensureHistoryRoot(workFolderRoot);
-  const checkpoint = await getWorkFolderCheckpoint(root, checkpointId);
+async function restoreConnectedFolderCheckpointUnlocked(connectedFolderRoot: string, checkpointId: string): Promise<ConnectedFolderRestoreResult> {
+  const root = ensureHistoryRoot(connectedFolderRoot);
+  const checkpoint = await getConnectedFolderCheckpoint(root, checkpointId);
   if (!checkpoint) throw notFound("Restore point not found.");
   validateCheckpointPaths(root, checkpoint);
   const staged = await stageCheckpointContent(root, checkpoint);
@@ -265,7 +265,7 @@ async function restoreWorkFolderCheckpointUnlocked(workFolderRoot: string, check
     await assertRestoreOwnership(root, checkpoint);
 
     const safety = checkpoint.scope === "full"
-      ? await createWorkFolderCheckpoint(root, { reason: "pre_restore", label: `Before restoring ${checkpointId}` })
+      ? await createConnectedFolderCheckpoint(root, { reason: "pre_restore", label: `Before restoring ${checkpointId}` })
       : await createTargetedRestoreSafety(root, checkpoint);
     assertRestoreCoverage(checkpoint, safety);
     await assertRestoreOwnership(root, checkpoint);
@@ -334,19 +334,19 @@ async function restoreWorkFolderCheckpointUnlocked(workFolderRoot: string, check
   }
 }
 
-export async function listFileVersions(workFolderRoot: string, relativePath: string, limit = 50): Promise<WorkFolderFileVersion[]> {
-  return (await listFileVersionPage(workFolderRoot, relativePath, { limit: Math.min(Math.max(limit, 1), 200) })).versions;
+export async function listFileVersions(connectedFolderRoot: string, relativePath: string, limit = 50): Promise<ConnectedFolderFileVersion[]> {
+  return (await listFileVersionPage(connectedFolderRoot, relativePath, { limit: Math.min(Math.max(limit, 1), 200) })).versions;
 }
 
-export async function listFileVersionPage(workFolderRoot: string, relativePath: string, options: HistoryPageOptions = {}): Promise<HistoryPageInfo & { versions: WorkFolderFileVersion[] }> {
-  const root = ensureHistoryRoot(workFolderRoot);
+export async function listFileVersionPage(connectedFolderRoot: string, relativePath: string, options: HistoryPageOptions = {}): Promise<HistoryPageInfo & { versions: ConnectedFolderFileVersion[] }> {
+  const root = ensureHistoryRoot(connectedFolderRoot);
   const path = canonicalPath(root, relativePath, true).path;
-  return withWorkFolderHistoryOperation(root, async () => {
-    const versions: WorkFolderFileVersion[] = [];
+  return withConnectedFolderHistoryOperation(root, async () => {
+    const versions: ConnectedFolderFileVersion[] = [];
     const seen = new Set<string>();
     for (const checkpoint of await readCheckpointManifests(root)) {
       const file = checkpoint.files.find((entry) => entry.path === path);
-      if (!file || seen.has(file.hashSha256) || !(await hasWorkFolderBlob(root, file.hashSha256))) continue;
+      if (!file || seen.has(file.hashSha256) || !(await hasConnectedFolderBlob(root, file.hashSha256))) continue;
       seen.add(file.hashSha256);
       versions.push({ path, hashSha256: file.hashSha256, sizeBytes: file.sizeBytes, modifiedAt: file.modifiedAt,
         capturedAt: checkpoint.createdAt, checkpointId: checkpoint.checkpointId,
@@ -358,19 +358,19 @@ export async function listFileVersionPage(workFolderRoot: string, relativePath: 
 }
 
 async function restoreFileVersionUnlocked(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   relativePath: string,
   hashSha256: string,
 ): Promise<{ restored: true; path: string; hashSha256: string; previousHashSha256: string | null; safetyCheckpointId: string }> {
-  const root = ensureHistoryRoot(workFolderRoot);
+  const root = ensureHistoryRoot(connectedFolderRoot);
   const { path, absolutePath } = canonicalPath(root, relativePath, true);
   const normalizedHash = normalizeHash(hashSha256);
-  const bytes = await readWorkFolderBlob(root, normalizedHash);
+  const bytes = await readConnectedFolderBlob(root, normalizedHash);
   if (!bytes) throw notFound("File version not found.");
   const currentInfo = await stat(absolutePath).catch(() => null);
   if (currentInfo && !currentInfo.isFile()) throw new Error("The selected path is currently a folder.");
   const currentBytes = currentInfo?.isFile() ? await readFile(absolutePath) : null;
-  const safety = await createWorkFolderMutationCheckpoint(root, {
+  const safety = await createConnectedFolderMutationCheckpoint(root, {
     paths: currentBytes ? [path] : [],
     deleteOnRestore: currentBytes ? [] : [path],
     reason: "pre_file_restore",
@@ -396,7 +396,7 @@ async function capturePaths(root: string, requestedPaths: string[], policy: Hist
   const directories = new Set<string>();
   const files = new Map<string, CheckpointFileEntry>();
   const skipped = new Map<string, CheckpointSkippedFile>();
-  const nestedPaths = await nestedRegisteredWorkFolderPaths(root);
+  const nestedPaths = await nestedRegisteredConnectedFolderPaths(root);
   const pendingFiles: Array<{ path: string; absolutePath: string; sizeBytes: number; modifiedAt: string }> = [];
 
   const visit = async (absolutePath: string): Promise<void> => {
@@ -456,7 +456,7 @@ async function capturePaths(root: string, requestedPaths: string[], policy: Hist
       const file = pendingFiles[next]!;
       next += 1;
       try {
-        const blob = persistBlobs ? await storeWorkFolderBlobFromFile(root, file.absolutePath, file.sizeBytes)
+        const blob = persistBlobs ? await storeConnectedFolderBlobFromFile(root, file.absolutePath, file.sizeBytes)
           : { hashSha256: await sha256File(file.absolutePath), sizeBytes: file.sizeBytes };
         files.set(file.path, { path: file.path, hashSha256: blob.hashSha256, sizeBytes: blob.sizeBytes, modifiedAt: file.modifiedAt });
       } catch {
@@ -485,7 +485,7 @@ async function persistCheckpoint(root: string, input: {
   directories: string[];
   files: CheckpointFileEntry[];
   skippedFiles: CheckpointSkippedFile[];
-}): Promise<WorkFolderCheckpoint> {
+}): Promise<ConnectedFolderCheckpoint> {
   const material = {
     scope: input.scope,
     captureRoots: input.captureRoots,
@@ -496,11 +496,11 @@ async function persistCheckpoint(root: string, input: {
     skippedFiles: input.skippedFiles,
   };
   const manifestHash = sha256(Buffer.from(stableJson(material), "utf8"));
-  const [latest] = await listWorkFolderCheckpoints(root, 1);
+  const [latest] = await listConnectedFolderCheckpoints(root, 1);
   if (input.scope === "full" && latest?.scope === "full" && latest.manifestHash === manifestHash) return latest;
 
   const createdAt = new Date().toISOString();
-  const checkpoint: WorkFolderCheckpoint = {
+  const checkpoint: ConnectedFolderCheckpoint = {
     schemaVersion: "0.2.0",
     checkpointId: `cp-${createdAt.replace(/[-:.TZ]/g, "").slice(0, 14)}-${randomUUID().slice(0, 8)}`,
     createdAt,
@@ -524,7 +524,7 @@ async function persistCheckpoint(root: string, input: {
   return checkpoint;
 }
 
-function assertRestoreCoverage(checkpoint: WorkFolderCheckpoint, safety: WorkFolderCheckpoint): void {
+function assertRestoreCoverage(checkpoint: ConnectedFolderCheckpoint, safety: ConnectedFolderCheckpoint): void {
   const writes = checkpoint.files.map((file) => file.path);
   const uncovered = safety.skippedFiles.filter((skip) =>
     writes.some((path) => path === skip.path || path.startsWith(`${skip.path}/`))
@@ -534,15 +534,15 @@ function assertRestoreCoverage(checkpoint: WorkFolderCheckpoint, safety: WorkFol
   }
 }
 
-async function assertRestoreOwnership(root: string, checkpoint: WorkFolderCheckpoint): Promise<void> {
-  const nested = await nestedRegisteredWorkFolderPaths(root);
+async function assertRestoreOwnership(root: string, checkpoint: ConnectedFolderCheckpoint): Promise<void> {
+  const nested = await nestedRegisteredConnectedFolderPaths(root);
   const paths = [...checkpoint.files.map((file) => file.path), ...checkpoint.directories,
     ...checkpoint.deleteOnRestore, ...checkpoint.movesOnRestore.flatMap((move) => [move.fromPath, move.toPath])];
   for (const path of paths) {
     if (nested.some((child) => path === child || path.startsWith(`${child}/`)
       || checkpoint.deleteOnRestore.includes(path) && child.startsWith(`${path}/`)
       || checkpoint.movesOnRestore.some((move) => move.fromPath === path || move.toPath === path) && child.startsWith(`${path}/`))) {
-      throw new Error(`Restore refused: ${path} belongs to or contains another registered work-folder. No files were changed.`);
+      throw new Error(`Restore refused: ${path} belongs to or contains another registered Connected Folder. No files were changed.`);
     }
   }
 }
@@ -550,7 +550,7 @@ async function assertRestoreOwnership(root: string, checkpoint: WorkFolderCheckp
 async function atomicRestoreFile(root: string, path: string, bytes: Buffer): Promise<void> {
   const target = canonicalPath(root, path, true).absolutePath;
   await mkdir(dirname(target), { recursive: true });
-  const temporary = `${target}.work-fold-restore-${randomUUID()}`;
+  const temporary = `${target}.amplefile-restore-${randomUUID()}`;
   try {
     await writeFile(temporary, bytes, { flag: "wx" });
     canonicalPath(root, path, true);
@@ -558,7 +558,7 @@ async function atomicRestoreFile(root: string, path: string, bytes: Buffer): Pro
   } finally { await rm(temporary, { force: true }); }
 }
 
-async function createTargetedRestoreSafety(root: string, checkpoint: WorkFolderCheckpoint): Promise<WorkFolderCheckpoint> {
+async function createTargetedRestoreSafety(root: string, checkpoint: ConnectedFolderCheckpoint): Promise<ConnectedFolderCheckpoint> {
   const affectedRoots = collapsePaths([...checkpoint.captureRoots, ...checkpoint.deleteOnRestore]);
   const existing: string[] = [];
   const deleteOnRestore: string[] = [];
@@ -566,7 +566,7 @@ async function createTargetedRestoreSafety(root: string, checkpoint: WorkFolderC
     if (existsSync(canonicalPath(root, path, true).absolutePath)) existing.push(path);
     else deleteOnRestore.push(path);
   }
-  return createWorkFolderMutationCheckpoint(root, {
+  return createConnectedFolderMutationCheckpoint(root, {
     paths: existing,
     deleteOnRestore,
     movesOnRestore: checkpoint.movesOnRestore.map((move) => ({ fromPath: move.toPath, toPath: move.fromPath })),
@@ -575,7 +575,7 @@ async function createTargetedRestoreSafety(root: string, checkpoint: WorkFolderC
   });
 }
 
-async function preflightRestore(root: string, checkpoint: WorkFolderCheckpoint): Promise<void> {
+async function preflightRestore(root: string, checkpoint: ConnectedFolderCheckpoint): Promise<void> {
   for (const move of checkpoint.movesOnRestore) {
     const from = canonicalPath(root, move.fromPath, false).absolutePath;
     const to = canonicalPath(root, move.toPath, true).absolutePath;
@@ -591,7 +591,7 @@ async function preflightRestore(root: string, checkpoint: WorkFolderCheckpoint):
   }
 }
 
-function validateCheckpointPaths(root: string, checkpoint: WorkFolderCheckpoint): void {
+function validateCheckpointPaths(root: string, checkpoint: ConnectedFolderCheckpoint): void {
   for (const directory of checkpoint.directories) canonicalPath(root, directory, true);
   for (const file of checkpoint.files) canonicalPath(root, file.path, true);
   for (const path of checkpoint.captureRoots) canonicalPath(root, path, true);
@@ -611,9 +611,9 @@ async function pruneHistory(root: string): Promise<void> {
   await garbageCollectObjects(root, retained);
 }
 
-async function garbageCollectObjects(root: string, retained: WorkFolderCheckpoint[]): Promise<void> {
+async function garbageCollectObjects(root: string, retained: ConnectedFolderCheckpoint[]): Promise<void> {
   const referenced = new Set(retained.flatMap((checkpoint) => checkpoint.files.map((file) => file.hashSha256)));
-  const objectsRoot = join(workFolderHistoryRoot(root), "objects");
+  const objectsRoot = join(connectedFolderHistoryRoot(root), "objects");
   for (const prefix of await readdir(objectsRoot, { withFileTypes: true }).catch(() => [])) {
     if (!prefix.isDirectory()) continue;
     const directory = join(objectsRoot, prefix.name);
@@ -628,16 +628,16 @@ async function garbageCollectObjects(root: string, retained: WorkFolderCheckpoin
 
 async function stageCheckpointContent(
   root: string,
-  checkpoint: WorkFolderCheckpoint,
+  checkpoint: ConnectedFolderCheckpoint,
 ): Promise<{ root: string; pathsByHash: Map<string, string> }> {
-  const stagingRoot = join(workFolderHistoryRoot(root), "restore-staging", randomUUID());
+  const stagingRoot = join(connectedFolderHistoryRoot(root), "restore-staging", randomUUID());
   const pathsByHash = new Map<string, string>();
   const missing: string[] = [];
   await mkdir(stagingRoot, { recursive: true });
   try {
     for (const file of checkpoint.files) {
       if (pathsByHash.has(file.hashSha256)) continue;
-      const bytes = await readWorkFolderBlob(root, file.hashSha256);
+      const bytes = await readConnectedFolderBlob(root, file.hashSha256);
       if (!bytes) {
         missing.push(file.path);
         continue;
@@ -656,9 +656,9 @@ async function stageCheckpointContent(
   }
 }
 
-async function readCheckpointManifests(root: string): Promise<WorkFolderCheckpoint[]> {
+async function readCheckpointManifests(root: string): Promise<ConnectedFolderCheckpoint[]> {
   const entries = await readdir(checkpointsDir(root)).catch(() => [] as string[]);
-  const checkpoints: WorkFolderCheckpoint[] = [];
+  const checkpoints: ConnectedFolderCheckpoint[] = [];
   for (const name of entries) {
     if (!name.endsWith(".json")) continue;
     const checkpoint = await readCheckpointManifest(join(checkpointsDir(root), name));
@@ -667,29 +667,29 @@ async function readCheckpointManifests(root: string): Promise<WorkFolderCheckpoi
   return checkpoints.sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.checkpointId.localeCompare(left.checkpointId));
 }
 
-async function readCheckpointManifest(path: string): Promise<WorkFolderCheckpoint | null> {
+async function readCheckpointManifest(path: string): Promise<ConnectedFolderCheckpoint | null> {
   try {
-    const value = JSON.parse(await readFile(path, "utf8")) as Partial<WorkFolderCheckpoint>;
+    const value = JSON.parse(await readFile(path, "utf8")) as Partial<ConnectedFolderCheckpoint>;
     if (value.schemaVersion !== "0.2.0" || !checkpointIdPattern.test(value.checkpointId ?? "") || !Array.isArray(value.files)) return null;
-    return { ...value, directories: Array.isArray(value.directories) ? value.directories : [] } as WorkFolderCheckpoint;
+    return { ...value, directories: Array.isArray(value.directories) ? value.directories : [] } as ConnectedFolderCheckpoint;
   } catch {
     return null;
   }
 }
 
-async function hasWorkFolderBlob(root: string, hashSha256: string): Promise<boolean> {
+async function hasConnectedFolderBlob(root: string, hashSha256: string): Promise<boolean> {
   try {
-    return existsSync(workFolderBlobPath(root, hashSha256));
+    return existsSync(connectedFolderBlobPath(root, hashSha256));
   } catch {
     return false;
   }
 }
 
 function canonicalPath(root: string, value: string, allowMissing: boolean): { path: string; absolutePath: string } {
-  const absolutePath = resolveWorkFolderPath(root, toPosix(value).replace(/^\/+/, "") || ".");
+  const absolutePath = resolveConnectedFolderPath(root, toPosix(value).replace(/^\/+/, "") || ".");
   const path = toPosix(relative(root, absolutePath));
-  if (!path || path === ".") throw new Error("The work-folder root cannot be used as a history item.");
-  if (!allowMissing && !existsSync(absolutePath)) throw notFound(`work-folder item not found: ${path}`);
+  if (!path || path === ".") throw new Error("The Connected Folder root cannot be used as a history item.");
+  if (!allowMissing && !existsSync(absolutePath)) throw notFound(`Connected Folder item not found: ${path}`);
   return { path, absolutePath };
 }
 
@@ -698,19 +698,19 @@ function collapsePaths(paths: string[]): string[] {
   return sorted.filter((path, index) => !sorted.slice(0, index).some((parent) => path === parent || path.startsWith(`${parent}/`)));
 }
 
-function ensureHistoryRoot(workFolderRoot: string): string {
-  const root = ensureSafeWorkFolderRoot(workFolderRoot);
-  assertWorkFolderDoesNotContainState(root);
+function ensureHistoryRoot(connectedFolderRoot: string): string {
+  const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);
+  assertConnectedFolderDoesNotContainState(root);
   return root;
 }
 
-function workFolderBlobPath(root: string, hashSha256: string): string {
+function connectedFolderBlobPath(root: string, hashSha256: string): string {
   const normalized = normalizeHash(hashSha256);
-  return join(workFolderHistoryRoot(root), "objects", normalized.slice(0, 2), normalized.slice(2));
+  return join(connectedFolderHistoryRoot(root), "objects", normalized.slice(0, 2), normalized.slice(2));
 }
 
 function checkpointsDir(root: string): string {
-  return join(workFolderHistoryRoot(root), "checkpoints");
+  return join(connectedFolderHistoryRoot(root), "checkpoints");
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -718,9 +718,9 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 async function ensureHistoryMeta(root: string): Promise<void> {
-  const path = join(workFolderHistoryRoot(root), "meta.json");
+  const path = join(connectedFolderHistoryRoot(root), "meta.json");
   if (existsSync(path)) return;
-  await atomicJsonWrite(path, { schemaVersion: "0.2.0", workFolderRoot: resolve(root), createdAt: new Date().toISOString() });
+  await atomicJsonWrite(path, { schemaVersion: "0.2.0", connectedFolderRoot: resolve(root), createdAt: new Date().toISOString() });
 }
 
 async function atomicJsonWrite(path: string, value: unknown): Promise<void> {
@@ -731,12 +731,12 @@ async function atomicJsonWrite(path: string, value: unknown): Promise<void> {
 }
 
 function maxVersionedFileBytes(): number {
-  const configured = Number(process.env.WORKFOLD_HISTORY_MAX_FILE_BYTES);
+  const configured = Number(process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES);
   return Number.isFinite(configured) && configured >= 1 ? Math.floor(configured) : 100 * 1024 * 1024;
 }
 
 function maxRetainedCheckpoints(): number {
-  const configured = Number(process.env.WORKFOLD_HISTORY_MAX_CHECKPOINTS);
+  const configured = Number(process.env.AMPLEFILE_HISTORY_MAX_CHECKPOINTS);
   return Number.isFinite(configured) && configured >= 2 ? Math.min(Math.floor(configured), 500) : 100;
 }
 
@@ -762,27 +762,27 @@ function notFound(message: string): Error {
   return Object.assign(new Error(message), { statusCode: 404 });
 }
 
-export async function createWorkFolderCheckpoint(...args: Parameters<typeof createWorkFolderCheckpointUnlocked>): Promise<Awaited<ReturnType<typeof createWorkFolderCheckpointUnlocked>>> {
-  return withWorkFolderHistoryOperation(args[0], () => createWorkFolderCheckpointUnlocked(...args));
+export async function createConnectedFolderCheckpoint(...args: Parameters<typeof createConnectedFolderCheckpointUnlocked>): Promise<Awaited<ReturnType<typeof createConnectedFolderCheckpointUnlocked>>> {
+  return withConnectedFolderHistoryOperation(args[0], () => createConnectedFolderCheckpointUnlocked(...args));
 }
 
-export async function createWorkFolderMutationCheckpoint(...args: Parameters<typeof createWorkFolderMutationCheckpointUnlocked>): Promise<Awaited<ReturnType<typeof createWorkFolderMutationCheckpointUnlocked>>> {
-  return withWorkFolderHistoryOperation(args[0], () => createWorkFolderMutationCheckpointUnlocked(...args));
+export async function createConnectedFolderMutationCheckpoint(...args: Parameters<typeof createConnectedFolderMutationCheckpointUnlocked>): Promise<Awaited<ReturnType<typeof createConnectedFolderMutationCheckpointUnlocked>>> {
+  return withConnectedFolderHistoryOperation(args[0], () => createConnectedFolderMutationCheckpointUnlocked(...args));
 }
 
-export async function discardWorkFolderCheckpoint(...args: Parameters<typeof discardWorkFolderCheckpointUnlocked>): Promise<Awaited<ReturnType<typeof discardWorkFolderCheckpointUnlocked>>> {
-  return withWorkFolderHistoryOperation(args[0], () => discardWorkFolderCheckpointUnlocked(...args));
+export async function discardConnectedFolderCheckpoint(...args: Parameters<typeof discardConnectedFolderCheckpointUnlocked>): Promise<Awaited<ReturnType<typeof discardConnectedFolderCheckpointUnlocked>>> {
+  return withConnectedFolderHistoryOperation(args[0], () => discardConnectedFolderCheckpointUnlocked(...args));
 }
 
-export async function restoreWorkFolderCheckpoint(...args: Parameters<typeof restoreWorkFolderCheckpointUnlocked>): Promise<Awaited<ReturnType<typeof restoreWorkFolderCheckpointUnlocked>>> {
-  return withWorkFolderHistoryOperation(args[0], () => restoreWorkFolderCheckpointUnlocked(...args));
+export async function restoreConnectedFolderCheckpoint(...args: Parameters<typeof restoreConnectedFolderCheckpointUnlocked>): Promise<Awaited<ReturnType<typeof restoreConnectedFolderCheckpointUnlocked>>> {
+  return withConnectedFolderHistoryOperation(args[0], () => restoreConnectedFolderCheckpointUnlocked(...args));
 }
 
 export async function restoreFileVersion(...args: Parameters<typeof restoreFileVersionUnlocked>): Promise<Awaited<ReturnType<typeof restoreFileVersionUnlocked>>> {
-  return withWorkFolderHistoryOperation(args[0], () => restoreFileVersionUnlocked(...args));
+  return withConnectedFolderHistoryOperation(args[0], () => restoreFileVersionUnlocked(...args));
 }
 
-export interface WorkFolderRestorePreview {
+export interface ConnectedFolderRestorePreview {
   checkpointId: string;
   scope: "full" | "targeted";
   restoreFiles: string[];
@@ -793,10 +793,10 @@ export interface WorkFolderRestorePreview {
   conflicts: string[];
 }
 
-export async function previewWorkFolderCheckpointRestore(workFolderRoot: string, checkpointId: string): Promise<WorkFolderRestorePreview> {
-  return withWorkFolderHistoryOperation(workFolderRoot, async () => {
-    const root = ensureHistoryRoot(workFolderRoot);
-    const checkpoint = await getWorkFolderCheckpoint(root, checkpointId);
+export async function previewConnectedFolderCheckpointRestore(connectedFolderRoot: string, checkpointId: string): Promise<ConnectedFolderRestorePreview> {
+  return withConnectedFolderHistoryOperation(connectedFolderRoot, async () => {
+    const root = ensureHistoryRoot(connectedFolderRoot);
+    const checkpoint = await getConnectedFolderCheckpoint(root, checkpointId);
     if (!checkpoint) throw notFound("Restore point not found.");
     validateCheckpointPaths(root, checkpoint);
     const conflicts: string[] = [];
@@ -813,7 +813,7 @@ export async function previewWorkFolderCheckpointRestore(workFolderRoot: string,
     return {
       checkpointId, scope: checkpoint.scope,
       restoreFiles: checkpoint.files.filter((file) => currentHashes.get(file.path) !== file.hashSha256).map((file) => file.path),
-      removePaths: [...new Set([...checkpoint.deleteOnRestore.filter((path) => existsSync(resolveWorkFolderPath(root, path))),
+      removePaths: [...new Set([...checkpoint.deleteOnRestore.filter((path) => existsSync(resolveConnectedFolderPath(root, path))),
         ...(checkpoint.scope === "full" ? current.files.filter((file) => !selected.has(file.path) && !excluded.some((path) => file.path === path || file.path.startsWith(`${path}/`))).map((file) => file.path) : [])])],
       moves: checkpoint.movesOnRestore,
       excludedPaths: excluded,

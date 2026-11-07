@@ -9,12 +9,12 @@ import {
   type PreparedActFenceScope,
   type PreparedActKernelSeam,
 } from "../src/local/prepared-acts.js";
-import { WorkFoldKernel } from "../src/local/work-fold-kernel.js";
+import { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
 
 const deletion = () => prepareAct({
-  kind: "work-folder.delete-folder",
-  parameters: { workFolderId: "work-folder-1" },
-  pins: { workFolderId: "work-folder-1", workFolderRoot: "/work-folders/one" },
+  kind: "connected-folder.delete-folder",
+  parameters: { connectedFolderId: "connected-folder-1" },
+  pins: { connectedFolderId: "connected-folder-1", connectedFolderRoot: "/connected-folders/one" },
 });
 
 test("prepareFoldAct refuses unknown kinds, unknown or malformed fields, and mismatched identities", () => {
@@ -35,49 +35,49 @@ test("prepareFoldAct refuses unknown kinds, unknown or malformed fields, and mis
     );
   refused({ kind: "files.destroy" as never, parameters: {}, pins: {} }, "KIND_UNKNOWN", /fail closed/);
   refused(
-    { kind: "work-folder.delete-folder", parameters: { workFolderId: "work-folder-1", extra: "x" }, pins: { workFolderId: "work-folder-1", workFolderRoot: "/r" } },
+    { kind: "connected-folder.delete-folder", parameters: { connectedFolderId: "connected-folder-1", extra: "x" }, pins: { connectedFolderId: "connected-folder-1", connectedFolderRoot: "/r" } },
     "INPUT_INVALID",
     /parameters\.extra is not a typed field/,
   );
   refused(
-    { kind: "work-folder.delete-folder", parameters: { workFolderId: "work-folder-1" }, pins: { workFolderId: "work-folder-1" } },
+    { kind: "connected-folder.delete-folder", parameters: { connectedFolderId: "connected-folder-1" }, pins: { connectedFolderId: "connected-folder-1" } },
     "INPUT_INVALID",
-    /pins\.workFolderRoot is required/,
+    /pins\.connectedFolderRoot is required/,
   );
   refused(
-    { kind: "work-folder.delete-folder", parameters: { workFolderId: "work-folder-1" }, pins: { workFolderId: "work-folder-2", workFolderRoot: "/r" } },
+    { kind: "connected-folder.delete-folder", parameters: { connectedFolderId: "connected-folder-1" }, pins: { connectedFolderId: "connected-folder-2", connectedFolderRoot: "/r" } },
     "INPUT_INVALID",
     /must name the same identity/,
   );
   refused(
     {
       kind: "app.storage.clear",
-      parameters: { workFolderId: "work-folder-1", appInstanceId: "app-1" },
+      parameters: { connectedFolderId: "connected-folder-1", appInstanceId: "app-1" },
       pins: { appInstanceId: "app-1", dataNamespaceIds: ["ns-1"], observedBytes: -1 },
     },
     "INPUT_INVALID",
     /non-negative integer/,
   );
   refused(
-    { kind: "capability.package.install", parameters: { scope: "work-folder" }, pins: { packageId: "p", version: "1", source: "npm:p", scope: "work-folder", resourceSummary: "r" } },
+    { kind: "capability.package.install", parameters: { scope: "connected-folder" }, pins: { packageId: "p", version: "1", source: "npm:p", scope: "connected-folder", resourceSummary: "r" } },
     "INPUT_INVALID",
     /exactly one of source or catalogId/,
   );
 
   const act = deletion();
   assert.ok(Object.isFrozen(act) && Object.isFrozen(act.parameters) && Object.isFrozen(act.pins), "a prepared act is inert data");
-  assert.deepEqual(act.pins, { workFolderId: "work-folder-1", workFolderRoot: "/work-folders/one" });
+  assert.deepEqual(act.pins, { connectedFolderId: "connected-folder-1", connectedFolderRoot: "/connected-folders/one" });
 });
 
 test("the executor fences, rechecks pins, wraps execution in one fold_act task, and refuses unbound kinds", async () => {
-  const started: Array<{ requestId: string; kind: string; workFolderId?: string }> = [];
+  const started: Array<{ requestId: string; kind: string; connectedFolderId?: string }> = [];
   const finished: string[] = [];
   const kernel: PreparedActKernelSeam = {
     startExperimentalPreparedActTask(input) {
-      started.push({ requestId: input.requestId, kind: input.kind, ...(input.workFolderId ? { workFolderId: input.workFolderId } : {}) });
+      started.push({ requestId: input.requestId, kind: input.kind, ...(input.connectedFolderId ? { connectedFolderId: input.connectedFolderId } : {}) });
       const id = `task-${started.length}`;
       return {
-        id, kind: "prepared_act", status: "running", workFolderId: input.workFolderId ?? null,
+        id, kind: "prepared_act", status: "running", connectedFolderId: input.connectedFolderId ?? null,
         requestId: input.requestId, actKind: input.kind, actor: input.actor, startedAt: "2026-09-10T00:00:00.000Z",
       };
     },
@@ -96,7 +96,7 @@ test("the executor fences, rechecks pins, wraps execution in one fold_act task, 
       },
     },
     adapters: {
-      "work-folder.delete-folder": {
+      "connected-folder.delete-folder": {
         fenceScope: () => null,
         recheckPins: () => null,
         execute: async () => ({ detail: "deleted" }),
@@ -117,12 +117,12 @@ test("the executor fences, rechecks pins, wraps execution in one fold_act task, 
     },
   });
 
-  // A work-folder-scoped act reserves the work-folder fence by default, rechecks its
+  // A Connected Folder–scoped act reserves the Connected Folder fence by default, rechecks its
   // pins inside it, and runs inside one fold_act task that is finished on
   // the way out; the effect names the task.
   const clear = prepareAct({
     kind: "app.storage.clear",
-    parameters: { workFolderId: "work-folder-1", appInstanceId: "app-1" },
+    parameters: { connectedFolderId: "connected-folder-1", appInstanceId: "app-1" },
     pins: { appInstanceId: "app-1", dataNamespaceIds: ["ns-1"], observedBytes: 10 },
   });
   const context: { ran?: boolean } = {};
@@ -130,8 +130,8 @@ test("the executor fences, rechecks pins, wraps execution in one fold_act task, 
   assert.equal(effect.detail, "cleared");
   assert.equal(effect.taskId, "task-1");
   assert.equal(context.ran, true);
-  assert.deepEqual(scopes, [{ scope: "work-folder", workFolderId: "work-folder-1" }]);
-  assert.deepEqual(started, [{ requestId: "req-1", kind: "app.storage.clear", workFolderId: "work-folder-1" }]);
+  assert.deepEqual(scopes, [{ scope: "connected-folder", connectedFolderId: "connected-folder-1" }]);
+  assert.deepEqual(started, [{ requestId: "req-1", kind: "app.storage.clear", connectedFolderId: "connected-folder-1" }]);
   assert.deepEqual(finished, ["task-1"]);
 
   // A pin mismatch refuses before execute and starts no task.
@@ -147,9 +147,9 @@ test("the executor fences, rechecks pins, wraps execution in one fold_act task, 
   // A null fence scope means the execution reserves its own fence.
   await executor.run({ act: deletion(), requestId: "req-3" });
   assert.equal(scopes.length, 2);
-  assert.deepEqual(started.at(-1), { requestId: "req-3", kind: "work-folder.delete-folder", workFolderId: "work-folder-1" });
+  assert.deepEqual(started.at(-1), { requestId: "req-3", kind: "connected-folder.delete-folder", connectedFolderId: "connected-folder-1" });
 
-  // A work-folder-less act reserves the global fence, and a throwing execution
+  // A connected-folder-less act reserves the global fence, and a throwing execution
   // still finishes its task.
   const install = prepareAct({
     kind: "capability.package.install",
@@ -163,7 +163,7 @@ test("the executor fences, rechecks pins, wraps execution in one fold_act task, 
   // An unbound kind refuses before anything runs.
   const grant = prepareAct({
     kind: "app.grant.network",
-    parameters: { workFolderId: "work-folder-1", appInstanceId: "app-1", declarationId: "api" },
+    parameters: { connectedFolderId: "connected-folder-1", appInstanceId: "app-1", declarationId: "api" },
     pins: { appInstanceId: "app-1", declarationId: "api", releaseDigest: "d".repeat(64) },
   });
   await assert.rejects(
@@ -177,14 +177,14 @@ test("the executor fences, rechecks pins, wraps execution in one fold_act task, 
   );
 
   // The real kernel validates the task input and keeps the lifecycle
-  // internal: a fold_act task never enters the stable work-folder.tasks projection.
-  const real = new WorkFoldKernel();
-  assert.throws(() => real.startExperimentalPreparedActTask({ requestId: " ", kind: "work-folder.delete-folder", actor: { kind: "system" } }), /request id/);
+  // internal: a fold_act task never enters the stable connected-folder.tasks projection.
+  const real = new AmpleFileKernel();
+  assert.throws(() => real.startExperimentalPreparedActTask({ requestId: " ", kind: "connected-folder.delete-folder", actor: { kind: "system" } }), /request id/);
   assert.throws(() => real.startExperimentalPreparedActTask({ requestId: "req", kind: " ", actor: { kind: "system" } }), /kind/);
-  const task = real.startExperimentalPreparedActTask({ requestId: "req-real", kind: "work-folder.delete-folder", actor: { kind: "system" } });
+  const task = real.startExperimentalPreparedActTask({ requestId: "req-real", kind: "connected-folder.delete-folder", actor: { kind: "system" } });
   assert.equal(task.kind, "prepared_act");
   assert.equal(task.requestId, "req-real");
-  assert.equal(task.actKind, "work-folder.delete-folder");
+  assert.equal(task.actKind, "connected-folder.delete-folder");
   assert.deepEqual((await real.getTasks({ kind: "system" })).tasks, []);
   assert.equal(real.finishTask(task.id), true);
 });

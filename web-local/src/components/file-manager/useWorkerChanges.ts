@@ -3,11 +3,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { queueHistoryRequest } from "../../lib/history-queue";
 import { readStoredJsonValue, writeStoredJsonValue } from "../../lib/storage";
-import type { WorkFolderUiFixture } from "../../fixtures/work-folder-fixture";
-import type { WorkFolderCheckpoint, WorkFolderSummary } from "../../types";
-import type { HistoryRestorePreview } from "../panes/workFolderPanes";
+import type { ConnectedFolderUiFixture } from "../../fixtures/connected-folder-fixture";
+import type { ConnectedFolderCheckpoint, ConnectedFolderSummary } from "../../types";
+import type { HistoryRestorePreview } from "../panes/connectedFolderPanes";
 
-/** What a Worker's last reply (or an Automation's run) changed in a work-folder, from its "Before turn" restore point. */
+/** What a Worker's last reply (or an Automation's run) changed in a Connected Folder, from its "Before turn" restore point. */
 export interface WorkerChanges {
   checkpointId: string;
   createdAt: string;
@@ -18,7 +18,7 @@ export interface WorkerChanges {
   paths: ReadonlySet<string>;
 }
 
-const dismissedKey = "work-fold.file-manager.worker-changes-done.v1";
+const dismissedKey = "amplefile.file-manager.worker-changes-done.v1";
 const turnReasons = new Set(["pre_turn", "before_turn"]);
 /** A receipt older than this is history, not news. */
 const freshForMs = 24 * 60 * 60 * 1_000;
@@ -29,46 +29,46 @@ const freshForMs = 24 * 60 * 60 * 1_000;
  * are marked in the list and summed up in Info, with Undo (History's restore)
  * and Done (the receipt and markers go away, and stay away for that reply).
  */
-export function useWorkerChanges(workFolder: WorkFolderSummary | null, fixture: WorkFolderUiFixture | null, refreshKey: unknown) {
+export function useWorkerChanges(connectedFolder: ConnectedFolderSummary | null, fixture: ConnectedFolderUiFixture | null, refreshKey: unknown) {
   const [changes, setChanges] = useState<WorkerChanges | null>(null);
   const [dismissed, setDismissed] = useState<Record<string, string>>(() => readStoredJsonValue(dismissedKey, (value) => value && typeof value === "object" ? value as Record<string, string> : {}, {}));
-  const workFolderId = workFolder?.id ?? null;
+  const connectedFolderId = connectedFolder?.id ?? null;
 
   useEffect(() => {
     let cancelled = false;
     setChanges(null);
-    if (!workFolderId) return;
+    if (!connectedFolderId) return;
     void (async () => {
       const checkpoints = fixture
-        ? fixture.checkpoints[workFolderId] ?? []
+        ? fixture.checkpoints[connectedFolderId] ?? []
         // History requests wait their turn: the host turns away a second one while the first runs.
-        : (await queueHistoryRequest(workFolderId, () => api<{ checkpoints: WorkFolderCheckpoint[] }>(`/api/work-folders/${encodeURIComponent(workFolderId)}/history/checkpoints?limit=12`)).catch(() => ({ checkpoints: [] as WorkFolderCheckpoint[] }))).checkpoints;
+        : (await queueHistoryRequest(connectedFolderId, () => api<{ checkpoints: ConnectedFolderCheckpoint[] }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/history/checkpoints?limit=12`)).catch(() => ({ checkpoints: [] as ConnectedFolderCheckpoint[] }))).checkpoints;
       const turn = checkpoints.find((checkpoint) => turnReasons.has(checkpoint.reason) || checkpoint.label === "Before turn");
-      if (!turn || dismissed[workFolderId] === turn.checkpointId) return;
+      if (!turn || dismissed[connectedFolderId] === turn.checkpointId) return;
       if (!fixture && Date.now() - Date.parse(turn.createdAt) > freshForMs) return;
       const preview = fixture
         ? fixture.restorePoints[turn.checkpointId]?.preview ?? null
-        : await queueHistoryRequest(workFolderId, () => api<{ preview: HistoryRestorePreview }>(`/api/work-folders/${encodeURIComponent(workFolderId)}/history/checkpoints/${encodeURIComponent(turn.checkpointId)}/preview`)).then((body) => body.preview).catch(() => null);
+        : await queueHistoryRequest(connectedFolderId, () => api<{ preview: HistoryRestorePreview }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/history/checkpoints/${encodeURIComponent(turn.checkpointId)}/preview`)).then((body) => body.preview).catch(() => null);
       if (cancelled || !preview) return;
       const summary = workerChangesFrom(turn, preview);
       if (summary) setChanges(summary);
     })();
     return () => { cancelled = true; };
-  }, [workFolderId, fixture, refreshKey, dismissed]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connectedFolderId, fixture, refreshKey, dismissed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const done = useCallback(() => {
-    if (!workFolderId || !changes) return;
-    const next = { ...dismissed, [workFolderId]: changes.checkpointId };
+    if (!connectedFolderId || !changes) return;
+    const next = { ...dismissed, [connectedFolderId]: changes.checkpointId };
     setDismissed(next);
     writeStoredJsonValue(dismissedKey, next);
     setChanges(null);
-  }, [changes, dismissed, workFolderId]);
+  }, [changes, dismissed, connectedFolderId]);
 
   return useMemo(() => ({ changes, done }), [changes, done]);
 }
 
 /** The receipt for one restore point's preview: what is here now that was not, or was elsewhere, or was different. */
-export function workerChangesFrom(checkpoint: Pick<WorkFolderCheckpoint, "checkpointId" | "createdAt">, preview: Pick<HistoryRestorePreview, "restoreFiles" | "removePaths" | "moves">): WorkerChanges | null {
+export function workerChangesFrom(checkpoint: Pick<ConnectedFolderCheckpoint, "checkpointId" | "createdAt">, preview: Pick<HistoryRestorePreview, "restoreFiles" | "removePaths" | "moves">): WorkerChanges | null {
   const moved = preview.moves.map((move) => ({ from: move.toPath, to: move.fromPath }));
   const added = preview.removePaths.filter((path) => !moved.some((move) => move.to === path));
   const changed = preview.restoreFiles.filter((path) => !added.includes(path) && !moved.some((move) => move.to === path || move.from === path));

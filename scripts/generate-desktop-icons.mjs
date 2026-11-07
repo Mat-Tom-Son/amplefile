@@ -13,11 +13,11 @@ import sharp from "sharp";
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const packDir = join(rootDir, "desktop", "assets", "brand", "pack");
 const outDir = join(rootDir, "desktop", "assets");
-const macIconSource = join(packDir, "macOS", "WorkFold-macOS-1024.png");
-const macIconsetDir = join(packDir, "macOS", "WorkFold.iconset");
-const macIcns = join(packDir, "macOS", "WorkFold.icns");
+const macIconSource = join(packDir, "macOS", "AmpleFile-macOS-1024.png");
+const macIconsetDir = join(packDir, "macOS", "AmpleFile.iconset");
+const macIcns = join(packDir, "macOS", "AmpleFile.icns");
 const menuTemplateDir = join(packDir, "monochrome", "macOS-template");
-const menuTemplateSource = join(menuTemplateDir, "WorkFoldTemplate-source.png");
+const menuTemplateSource = join(menuTemplateDir, "AmpleFileTemplate-source.png");
 
 const macIconset = [
   ["icon_16x16.png", 16],
@@ -49,18 +49,18 @@ const icnsChunks = [
 ];
 
 const copies = [
-  ["macOS/WorkFold.icns", "icon.icns", null],
-  ["Windows/WorkFold.ico", "icon.ico", null],
-  ["macOS/WorkFold-macOS-1024.png", "icon.png", 1024],
-  ["macOS/WorkFold-macOS-1024.png", "icon-1024.png", 1024],
-  ["macOS/WorkFold.iconset/icon_512x512.png", "icon-512.png", 512],
-  ["Windows/png/WorkFold-256.png", "icon-256.png", 256],
-  ["Windows/png/WorkFold-128.png", "icon-128.png", 128],
-  ["Windows/png/WorkFold-64.png", "icon-64.png", 64],
-  ["Windows/png/WorkFold-48.png", "icon-48.png", 48],
-  ["Windows/png/WorkFold-32.png", "icon-32.png", 32],
-  ["Windows/png/WorkFold-24.png", "icon-24.png", 24],
-  ["Windows/png/WorkFold-16.png", "icon-16.png", 16],
+  ["macOS/AmpleFile.icns", "icon.icns", null],
+  ["Windows/AmpleFile.ico", "icon.ico", null],
+  ["macOS/AmpleFile-macOS-1024.png", "icon.png", 1024],
+  ["macOS/AmpleFile-macOS-1024.png", "icon-1024.png", 1024],
+  ["macOS/AmpleFile.iconset/icon_512x512.png", "icon-512.png", 512],
+  ["Windows/png/AmpleFile-256.png", "icon-256.png", 256],
+  ["Windows/png/AmpleFile-128.png", "icon-128.png", 128],
+  ["Windows/png/AmpleFile-64.png", "icon-64.png", 64],
+  ["Windows/png/AmpleFile-48.png", "icon-48.png", 48],
+  ["Windows/png/AmpleFile-32.png", "icon-32.png", 32],
+  ["Windows/png/AmpleFile-24.png", "icon-24.png", 24],
+  ["Windows/png/AmpleFile-16.png", "icon-16.png", 16],
 ];
 
 async function renderMacIconPack() {
@@ -152,7 +152,7 @@ for (const [source, target, expectedSize] of copies) {
 }
 
 if (!existsSync(menuTemplateSource)) throw new Error(`Menu-bar template source not found: ${menuTemplateSource}`);
-await renderMenuTemplate(18, "WorkFoldTemplate.png", "iconTemplate.png");
-await renderMenuTemplate(36, "WorkFoldTemplate@2x.png", "iconTemplate@2x.png");
+await renderMenuTemplate(18, "AmpleFileTemplate.png", "iconTemplate.png");
+await renderMenuTemplate(36, "AmpleFileTemplate@2x.png", "iconTemplate@2x.png");
 
-console.log(`Installed ${copies.length + 2} work-fold desktop icons from the pack into ${outDir}`);
+console.log(`Installed ${copies.length + 2} AmpleFile desktop icons from the pack into ${outDir}`);

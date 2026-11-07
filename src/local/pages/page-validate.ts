@@ -1,15 +1,15 @@
 /**
- * `work-fold pages validate` (docs/pages.md, "For the Worker"): the same
+ * `amplefile pages validate` (docs/pages.md, "For the Worker"): the same
  * checks the page tab shows, as the act lane's stable JSON shape. A page with
  * problems is still a successful check; `valid` says whether it has errors.
  */
-import type { WorkFoldActPageValidation, WorkFoldActWorkFolderRef } from "../cli/act-facade.js";
+import type { AmpleFileActPageValidation, AmpleFileActConnectedFolderRef } from "../cli/act-facade.js";
 import { analyzePageFolder } from "./page-inspection.js";
 
-export async function validatePageForAct(workFolder: WorkFoldActWorkFolderRef, page: string): Promise<WorkFoldActPageValidation> {
-  const analysis = await analyzePageFolder(workFolder.workFolderRoot, page, "check");
+export async function validatePageForAct(connectedFolder: AmpleFileActConnectedFolderRef, page: string): Promise<AmpleFileActPageValidation> {
+  const analysis = await analyzePageFolder(connectedFolder.connectedFolderRoot, page, "check");
   return {
-    workFolder,
+    connectedFolder,
     page: analysis.page.path,
     valid: !analysis.problems.some((problem) => problem.severity === "error"),
     summary: {

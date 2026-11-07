@@ -1,25 +1,25 @@
 # Chrome extension distribution
 
 Status: published in the Chrome Web Store as
-[work-fold](https://chromewebstore.google.com/detail/ophmjbphcjmjcpcdpmfehbldiomkepgk)
+[AmpleFile](https://chromewebstore.google.com/detail/ophmjbphcjmjcpcdpmfehbldiomkepgk)
 (item `ophmjbphcjmjcpcdpmfehbldiomkepgk`), which the desktop setup and the
-website's **Add work-fold to Chrome** link open. Each extension update goes
+website's **Add AmpleFile to Chrome** link open. Each extension update goes
 through Google's review before Chrome delivers it.
 
 ## Installation and updates
 
-Chrome setup in work-fold (Skills & Extensions → Chrome, or first run's
+Chrome setup in AmpleFile (Skills & Extensions → Chrome, or first run's
 optional **Let your Worker use your Mac** step) shows two steps: **Add the
-work-fold extension** (**Open Chrome Web Store** registers the app's signed
+AmpleFile extension** (**Open Chrome Web Store** registers the app's signed
 native helper and opens the exact Chrome Web Store listing) and **Choose Connect
 in the extension**. Either order works (2026-10-11): at launch the installed app
-registers its native helper when Chrome is set up on the Mac and no work-fold
+registers its native helper when Chrome is set up on the Mac and no AmpleFile
 registration exists yet, never replacing another installation's, and it
 accepts **Connect** chosen in a freshly added extension without an earlier
-Connect Chrome in work-fold. Setup marks the first step done once the extension
-has reached work-fold, and says to install Google Chrome when no Chrome app is
+Connect Chrome in AmpleFile. Setup marks the first step done once the extension
+has reached AmpleFile, and says to install Google Chrome when no Chrome app is
 installed; it never reads a Chrome profile to find out. The person adds
-**work-fold**, then chooses **Connect** in that profile. The first installation
+**AmpleFile**, then chooses **Connect** in that profile. The first installation
 opens this small setup page once; extension updates do not reopen it or connect
 another profile. The UI shows Connected only after the authenticated HTTP
 transport has negotiated compatible capabilities. A native lease alone means
@@ -28,7 +28,7 @@ Connecting. Setup reads do not launch a browser or enroll a profile.
 Chrome supplies normal extension updates through the same Store item. The
 companion and desktop negotiate bridge major version and required capabilities;
 their product/package versions need not match. Incompatible companions receive
-Update work-fold or Update Chrome extension before any command is dequeued.
+Update AmpleFile or Update Chrome extension before any command is dequeued.
 No new user's setup requires Developer mode, Load unpacked, or finding Library
 folders. The older manual-companion helper remains a contributor/standalone Pi
 facility, not the production onboarding path.
@@ -36,7 +36,7 @@ facility, not the production onboarding path.
 ## Bootstrap and ownership
 
 The maintained pi-chrome 0.15.51 adapter preserves native tools, observations,
-cancellation, and session-owned tab cleanup. In work-fold, ordinary calls stay
+cancellation, and session-owned tab cleanup. In AmpleFile, ordinary calls stay
 in the background; `background: false` or `chrome_tab activate` explicitly brings
 the target forward when needed. Focus is chosen per call within the person's
 task and constraints, with no user-selectable background mode. The embedded
@@ -97,7 +97,7 @@ capability. App-side setup changes need no Store update.
 
 `npm run chrome:build` writes a deterministic ZIP plus per-file SHA-256 evidence
 under `out/chrome-store/`. It verifies every declared upstream patch digest,
-copies only explicit static files, adds the work-fold name and existing icon
+copies only explicit static files, adds the AmpleFile name and existing icon
 assets, and excludes `host-config.json`. All service-worker/UI code is bundled.
 The optional public key, when supplied, must derive the pinned item ID. A Store
 upload can omit `manifest.key`; the Store signs it using its assigned identity.

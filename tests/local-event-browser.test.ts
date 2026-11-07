@@ -12,7 +12,7 @@ import { createLocalEventSink, createLocalEventChannel, parseLocalEventSubscript
 // A synthetic renderer in development Electron, never the installed app or a
 // user profile. Chromium's HTTP/1.1 pool is the failure mode Node fetch misses.
 test("Chromium can start, answer and Stop with twelve mounted Chat streams plus file/control subscriptions", { skip: process.platform !== "darwin", timeout: 30_000 }, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-event-browser-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-event-browser-"));
   const output = await build({ stdin: { contents: `import {api,createEventSource} from ${JSON.stringify(resolve("web-local/src/lib/api.ts"))}; window.fixture={api,createEventSource};`, resolveDir: process.cwd() }, bundle: true, format: "iife", platform: "browser", write: false });
   let activeStreams = 0; let maximumStreams = 0;
   const mutations: string[] = [];
@@ -48,12 +48,12 @@ app.setPath('userData',${JSON.stringify(join(root, "profile"))}); app.disableHar
 app.whenReady().then(async()=>{ const window=new BrowserWindow({show:false,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});
 try { await window.loadURL(${JSON.stringify(origin)}); const result=await window.webContents.executeJavaScript(\`(async()=>{
  const {api,createEventSource}=window.fixture; const streams=[]; let ready=0; let frames=0;
- const paths=Array.from({length:12},(_,i)=>'/api/work-folders/lab/conversations/chat-'+i+'/events'); paths.push('/api/work-folders/lab/file-events','/api/work-fold-agent/control-events');
+ const paths=Array.from({length:12},(_,i)=>'/api/connected-folders/lab/conversations/chat-'+i+'/events'); paths.push('/api/connected-folders/lab/file-events','/api/amplefile-agent/control-events');
  for(const path of paths){const stream=createEventSource(path);stream.onopen=()=>ready++;stream.onmessage=()=>frames++;streams.push(stream);}
  const wait=async(predicate)=>{const end=Date.now()+5000;while(!predicate()){if(Date.now()>end)throw Error('Stream pool admission stalled');await new Promise(r=>setTimeout(r,10));}};
  await wait(()=>ready===14); const before=performance.now();
  const accepted=await Promise.race([Promise.all(['start','answer','stop'].map(name=>api('/fixture/'+name,{method:'POST',body:{synthetic:true}}))),new Promise((_,reject)=>setTimeout(()=>reject(Error('Start/answer/Stop starved behind SSE')),1500))]);
- const elapsed=performance.now()-before; const added=createEventSource('/api/work-folders/lab/conversations/new/events'); added.onopen=()=>ready++;streams.push(added);
+ const elapsed=performance.now()-before; const added=createEventSource('/api/connected-folders/lab/conversations/new/events'); added.onopen=()=>ready++;streams.push(added);
  await wait(()=>ready===29); const cursors=streams.slice(0,14).map(stream=>stream.lastEventId);for(const stream of streams)stream.close();
  return {accepted:accepted.length,elapsed,frames,cursors}; })()\`);console.log('RESULT '+JSON.stringify(result));window.destroy();app.exit(0);}
 catch(error){console.error(error.stack);window.destroy();app.exit(1);}});`);

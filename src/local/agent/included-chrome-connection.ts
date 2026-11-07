@@ -10,7 +10,7 @@ export interface ChromeDistribution {
 }
 export interface IncludedChromeConnectionHost extends ChromeHostFacilities {
   status(): ChromeConnectionSummary;
-  /** What setup can show without reading a Chrome profile: whether Chrome is installed and the extension has reached work-fold. */
+  /** What setup can show without reading a Chrome profile: whether Chrome is installed and the extension has reached AmpleFile. */
   environment?(): { browserInstalled: boolean; extensionSeen: boolean };
   prepare(): Promise<ChromeConnectionSummary>;
   check(): Promise<ChromeConnectionSummary>;
@@ -140,9 +140,9 @@ export class IncludedChromeConnectionService implements IncludedChromeConnection
 
   /**
    * At launch. A connection the person set up resumes; otherwise (2026-10-11)
-   * work-fold quietly registers its native helper when Chrome has none yet and
+   * AmpleFile quietly registers its native helper when Chrome has none yet and
    * listens, so choosing Connect in a freshly added extension works before
-   * anyone opens Chrome setup in work-fold. That quiet path reports no problem.
+   * anyone opens Chrome setup in AmpleFile. That quiet path reports no problem.
    */
   async startIfEnabled(): Promise<void> {
     return this.#exclusive(async () => {

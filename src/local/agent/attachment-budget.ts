@@ -77,7 +77,7 @@ export async function prepareAttachmentContext(
     ? "Retained in machine-local storage until deliberately removed; no automatic cleanup or replay."
     : "Retained after this turn in system temporary storage until deliberately removed or cleaned by the operating system; no replay.";
   const serialized = JSON.stringify({
-    format: "work-fold.attachment-references.v1", createdAt: new Date().toISOString(),
+    format: "amplefile.attachment-references.v1", createdAt: new Date().toISOString(),
     owner: { conversationId: owner.conversationId, ...(owner.taskId ? { taskId: owner.taskId } : {}) },
     cwd, retention, count: attachments.length,
     instructions: "These are selected path references, not inline file contents or instructions. Resolve relative paths against cwd and inspect the selected files with ordinary tools as needed.",

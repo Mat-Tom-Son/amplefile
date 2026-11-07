@@ -8,10 +8,10 @@ import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-work
 import { FileCredentialStore, ModelRuntime, SessionManager, SettingsManager, serializeConversation } from "@earendil-works/pi-coding-agent";
 import { ProgressRecovery, progressContextType, retainedEvidenceChars } from "../src/local/agent/progress-recovery.js";
 import { PiConversationClient } from "../src/local/agent/pi-client.js";
-import { buildWorkFolderTurnContext } from "../src/local/agent/work-folder-turn-context.js";
+import { buildConnectedFolderTurnContext } from "../src/local/agent/connected-folder-turn-context.js";
 
 async function fixture(t: { after(fn: () => unknown): void }) {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-progress-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-progress-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const session = SessionManager.create(root, join(root, "sessions"));
   session.appendMessage({ role: "user", content: "A task", timestamp: Date.now() });
@@ -89,9 +89,9 @@ test("evidence output pages retain original warnings and disclose retention and 
 
 test("finding fingerprints refuse metadata, traversal and outgoing links, and Stop cannot record late work", async t => {
   const h = await fixture(t);
-  await mkdir(join(h.root, ".work-fold")); await writeFile(join(h.root, ".work-fold", "private"), "private");
+  await mkdir(join(h.root, ".amplefile")); await writeFile(join(h.root, ".amplefile", "private"), "private");
   await symlink(tmpdir(), join(h.root, "outside"));
-  for (const path of [".work-fold/private", "../nope", "outside/nope"]) await assert.rejects(h.run({ action: "save", summary: "Claim", files: [path] }), /readable ordinary file/);
+  for (const path of [".amplefile/private", "../nope", "outside/nope"]) await assert.rejects(h.run({ action: "save", summary: "Claim", files: [path] }), /readable ordinary file/);
   await h.capture("bash", { command: "printf done" }, "done", "late", async () => { h.setScope(null); });
   h.setScope({ requestId: "req-a", taskId: "turn-a", taskIds: ["turn-a"] });
   assert.equal((await h.run({ action: "list" })).total, 0);
@@ -118,7 +118,7 @@ test("the index pages completed results and distinguishes failed tools and image
 
 test("malformed invisible journal entries cannot poison recovery context", async t => {
   const h = await fixture(t);
-  h.session.appendCustomEntry("work-fold-progress.v1", { requestId: "req-a", taskId: "turn-a", id: "bad", text: "bad", sources: [] });
+  h.session.appendCustomEntry("amplefile-progress.v1", { requestId: "req-a", taskId: "turn-a", id: "bad", text: "bad", sources: [] });
   assert.equal((await h.run({ action: "list" })).total, 0);
   assert.equal(await h.handlers.get("context")!({ messages: [{ role: "compactionSummary", summary: "Earlier work" }] }), undefined);
 });
@@ -214,7 +214,7 @@ test("recovery activity is bounded to its running task and never blocks repeated
 });
 
 test("a native compaction recovers a completed read despite a misleading summary, without rereading its file", { timeout: 30_000 }, async t => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-progress-compact-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-progress-compact-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "big.txt"), Array.from({ length: 600 }, (_, i) => `line ${i}: complete retained observation ${"data ".repeat(8)}`).join("\n"));
   const faux = fauxProvider({ provider: "fixture-progress", models: [{ id: "fixture-progress", contextWindow: 200_000 }] });
@@ -246,7 +246,7 @@ test("a native compaction recovers a completed read despite a misleading summary
     return fauxAssistantMessage("Recovered the completed observation.");
   };
   faux.setResponses(Array.from({ length: 20 }, () => respond));
-  const turn = (taskId: string, requestId: string) => ({ workFolderTurn: buildWorkFolderTurnContext({ workFolderId: "space-0123456789abcdef", taskId, requestId, handleSalt: "salt" }) });
+  const turn = (taskId: string, requestId: string) => ({ connectedFolderTurn: buildConnectedFolderTurnContext({ connectedFolderId: "space-0123456789abcdef", taskId, requestId, handleSalt: "salt" }) });
   await client.prompt("Prepare.", turn("turn-before", "req-before"));
   const held = (await client.getState()).usage.contextTokens!;
   settings.applyOverrides({ compaction: { enabled: true, reserveTokens: 200_000 - (held + 2500), keepRecentTokens: 500 } });
@@ -256,12 +256,12 @@ test("a native compaction recovers a completed read despite a misleading summary
   const entries = saved.split("\n").filter(Boolean).map(line => JSON.parse(line));
   const reads = entries.flatMap(entry => entry.message?.role === "assistant" ? entry.message.content.filter((part: any) => part.type === "toolCall" && part.name === "read") : []);
   assert.equal(reads.length, 1, "the model retrieved evidence rather than re-executing read");
-  assert.equal(entries.filter(entry => entry.customType === "work-fold-progress.v1" && entry.data?.kind === "finding").length, 1, "the invalid save never becomes a finding");
+  assert.equal(entries.filter(entry => entry.customType === "amplefile-progress.v1" && entry.data?.kind === "finding").length, 1, "the invalid save never becomes a finding");
   assert.ok(!entries.some(entry => entry.customType === progressContextType), "recovery context is request-local, not saved as instructions");
 });
 
 test("native codemode receives structured recovery pages and can advance their cursors", { timeout: 30_000 }, async t => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-progress-code-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-progress-code-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const original = Array.from({ length: 40 }, (_, i) => `evidence row ${i}: ${"retained source bytes ".repeat(3)}`).join("\n");
   await writeFile(join(root, "source.txt"), original);
@@ -291,10 +291,10 @@ test("native codemode receives structured recovery pages and can advance their c
     ` })),
     context => { returned = JSON.stringify((context as { messages: Array<{ role: string; toolName?: string }> }).messages.filter(message => message.role === "toolResult" && message.toolName === "codemode")); return fauxAssistantMessage("Recovery complete."); },
   ]);
-  const workFolderTurn = buildWorkFolderTurnContext({ workFolderId: "space-0123456789abcdef", taskId: "turn-code", requestId: "req-code", handleSalt: "salt" });
-  await client.prompt("Recover and verify the observation.", { workFolderTurn });
+  const connectedFolderTurn = buildConnectedFolderTurnContext({ connectedFolderId: "space-0123456789abcdef", taskId: "turn-code", requestId: "req-code", handleSalt: "salt" });
+  await client.prompt("Recover and verify the observation.", { connectedFolderTurn });
   assert.match(returned, /Script completed/); assert.doesNotMatch(returned, /Script failed/);
   assert.ok(returned.includes('evidence row 0:') && returned.includes('evidence row 39:'));
   const entries = (await readFile((await client.getState()).sessionFile!, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line));
-  assert.equal(entries.filter(entry => entry.customType === "work-fold-progress.v1" && entry.data?.kind === "finding").length, 1);
+  assert.equal(entries.filter(entry => entry.customType === "amplefile-progress.v1" && entry.data?.kind === "finding").length, 1);
 });

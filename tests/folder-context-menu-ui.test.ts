@@ -3,7 +3,7 @@ import { createRequire, registerHooks } from "node:module";
 import { createElement } from "react";
 import test from "node:test";
 import { createDomHarness } from "./support/dom.js";
-import type { WorkFolderSummary } from "../web-local/src/types.js";
+import type { ConnectedFolderSummary } from "../web-local/src/types.js";
 
 const iconNames = Object.keys(createRequire(import.meta.url)("@fluentui/react-icons")).filter((name) => /^[A-Za-z_$][\w$]*$/.test(name));
 const assets = registerHooks({
@@ -14,32 +14,32 @@ const assets = registerHooks({
     return next(url, context);
   },
 });
-const { WorkFolderPaneHeader } = await import("../web-local/src/components/panes/workFolderChrome.js");
-const { workFolderIdentityFor } = await import("../web-local/src/lib/work-folder-identity.js");
+const { ConnectedFolderPaneHeader } = await import("../web-local/src/components/panes/connectedFolderChrome.js");
+const { connectedFolderIdentityFor } = await import("../web-local/src/lib/connected-folder-identity.js");
 assets.deregister();
 
-test("the work-folder context menu consumes outside presses, preserves its actions, and restores normal pane input after dismissal", async (t) => {
+test("the Connected Folder context menu consumes outside presses, preserves its actions, and restores normal pane input after dismissal", async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
-  const workFolder = { id: "menu-owner", name: "Workshop", workFolderRoot: "/synthetic/workshop", location: { kind: "local", storage: "linked" } } as WorkFolderSummary;
+  const connectedFolder = { id: "menu-owner", name: "Workshop", connectedFolderRoot: "/synthetic/workshop", location: { kind: "local", storage: "linked" } } as ConnectedFolderSummary;
   let resizes = 0;
   let customizes = 0;
   await dom.render(createElement("div", { className: "app-shell" },
-    createElement(WorkFolderPaneHeader, {
-      workFolder, identity: workFolderIdentityFor(workFolder, {}), workFolders: [workFolder], workFolderCustomizations: {},
-      onSwitchWorkFolder: () => {}, onCreateWorkFolder: () => {}, onOpenFolder: () => {}, onManageWorkFolders: () => {},
+    createElement(ConnectedFolderPaneHeader, {
+      connectedFolder, identity: connectedFolderIdentityFor(connectedFolder, {}), connectedFolders: [connectedFolder], connectedFolderCustomizations: {},
+      onSwitchConnectedFolder: () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {}, onManageConnectedFolders: () => {},
       onNewChat: () => {}, onOpenAppearance: () => { customizes += 1; },
     }),
     createElement("button", { id: "resize", onPointerDown: () => { resizes += 1; } }, "Resize pane"),
   ));
-  const header = document.querySelector<HTMLElement>(".work-folder-identity-header")!;
-  const trigger = document.querySelector<HTMLButtonElement>(".work-folder-pane-switch-trigger")!;
+  const header = document.querySelector<HTMLElement>(".connected-folder-identity-header")!;
+  const trigger = document.querySelector<HTMLButtonElement>(".connected-folder-pane-switch-trigger")!;
   const open = async () => {
     await dom.act(() => header.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 120, clientY: 80 })));
     await dom.waitFor(() => document.activeElement?.getAttribute("role") === "menuitem");
   };
   await open();
-  const menu = document.querySelector<HTMLElement>('[aria-label="work-folder actions"]')!;
+  const menu = document.querySelector<HTMLElement>('[aria-label="Connected Folder actions"]')!;
   assert.equal(menu.parentElement?.className, "app-shell", "the menu escapes the header's stacking layer while retaining the app's theme");
   assert.ok(document.querySelector(".folder-context-menu-backdrop"));
   const outside = new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 });
@@ -53,7 +53,7 @@ test("the work-folder context menu consumes outside presses, preserves its actio
 
   await open();
   await dom.press("ArrowDown");
-  assert.equal(document.activeElement?.textContent, "Customize work-folder");
+  assert.equal(document.activeElement?.textContent, "Customize Connected Folder");
   await dom.act(() => (document.activeElement as HTMLButtonElement).click());
   assert.equal(customizes, 1);
   assert.equal(document.querySelector(".folder-context-menu-backdrop"), null);
@@ -63,25 +63,25 @@ test("the work-folder context menu consumes outside presses, preserves its actio
   assert.equal(document.activeElement, trigger);
 });
 
-test("the work-folder context menu keeps keyboard focus where the person moved it while the header re-renders", async (t) => {
+test("the Connected Folder context menu keeps keyboard focus where the person moved it while the header re-renders", async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
-  const workFolder = { id: "menu-owner", name: "Workshop", workFolderRoot: "/synthetic/workshop", location: { kind: "local", storage: "linked" } } as WorkFolderSummary;
+  const connectedFolder = { id: "menu-owner", name: "Workshop", connectedFolderRoot: "/synthetic/workshop", location: { kind: "local", storage: "linked" } } as ConnectedFolderSummary;
   const render = () => dom.render(createElement("div", { className: "app-shell" },
-    createElement(WorkFolderPaneHeader, {
-      workFolder, identity: workFolderIdentityFor(workFolder, {}), workFolders: [workFolder], workFolderCustomizations: {},
-      onSwitchWorkFolder: () => {}, onCreateWorkFolder: () => {}, onOpenFolder: () => {}, onManageWorkFolders: () => {},
+    createElement(ConnectedFolderPaneHeader, {
+      connectedFolder, identity: connectedFolderIdentityFor(connectedFolder, {}), connectedFolders: [connectedFolder], connectedFolderCustomizations: {},
+      onSwitchConnectedFolder: () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {}, onManageConnectedFolders: () => {},
       onNewChat: () => {}, onOpenAppearance: () => {},
     }),
   ));
   await render();
-  const header = document.querySelector<HTMLElement>(".work-folder-identity-header")!;
+  const header = document.querySelector<HTMLElement>(".connected-folder-identity-header")!;
   await dom.act(() => header.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 120, clientY: 80 })));
   await dom.waitFor(() => document.activeElement?.getAttribute("role") === "menuitem");
   await dom.press("ArrowDown");
-  assert.equal(document.activeElement?.textContent, "Customize work-folder");
+  assert.equal(document.activeElement?.textContent, "Customize Connected Folder");
   // A file refresh or activity update re-renders the header with a new close callback.
   await render();
   await dom.settle();
-  assert.equal(document.activeElement?.textContent, "Customize work-folder", "focus does not snap back to the first item");
+  assert.equal(document.activeElement?.textContent, "Customize Connected Folder", "focus does not snap back to the first item");
 });

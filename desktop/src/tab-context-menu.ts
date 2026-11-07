@@ -1,5 +1,5 @@
 /**
- * The native right-click menu for a work-folder tab, or for a Chat in the
+ * The native right-click menu for a Connected Folder tab, or for a Chat in the
  * Chats list: the Chat's own actions, then the tab strip's. Browser tabs have
  * their own menu in built-in-browser.ts.
  */

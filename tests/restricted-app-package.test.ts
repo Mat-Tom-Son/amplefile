@@ -15,7 +15,7 @@ import {
 } from "../src/local/agent/restricted-app-package.js";
 
 test("restricted app packages are inspected and content-addressed without evaluating their code", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-restricted-app-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-restricted-app-"));
   const source = join(sandbox, "source");
   const staged = join(sandbox, "staged");
   const canary = join(sandbox, "executed.txt");
@@ -43,7 +43,7 @@ test("restricted app packages are inspected and content-addressed without evalua
 });
 
 test("restricted app package staging supports a flush-compatible atomic commit for nested bytes", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-restricted-app-durable-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-restricted-app-durable-"));
   const source = join(sandbox, "source");
   const staged = join(sandbox, "staged");
   try {
@@ -65,7 +65,7 @@ test("restricted app package staging supports a flush-compatible atomic commit f
 });
 
 test("verified App Release artifact entries stage through a private, content-addressed package boundary", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-release-package-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-release-package-"));
   const source = join(sandbox, "source");
   const staged = join(sandbox, "staged");
   try {
@@ -87,7 +87,7 @@ test("verified App Release artifact entries stage through a private, content-add
 });
 
 test("App Release artifact staging rejects unsafe or noncanonical input before installation", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-release-package-invalid-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-release-package-invalid-"));
   const source = join(sandbox, "source");
   const staged = join(sandbox, "staged");
   try {
@@ -105,7 +105,7 @@ test("App Release artifact staging rejects unsafe or noncanonical input before i
       ),
       /portable relative package path/i,
     );
-    for (const reservedPath of ["nested/.work-fold/private.json", "nested/.WORKSPACE/private.json", "nested/.Pi/private.json"]) {
+    for (const reservedPath of ["nested/.amplefile/private.json", "nested/.WORKSPACE/private.json", "nested/.Pi/private.json"]) {
       await assert.rejects(
         stageRestrictedAppReleaseArtifact(
           entries.map((entry, index) => index === 0 ? { ...entry, path: reservedPath } : entry),
@@ -162,7 +162,7 @@ test("App Release artifact staging rejects unsafe or noncanonical input before i
 });
 
 test("App Release artifact staging re-inspects package and declaration policy and cleans temporary bytes", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-release-package-policy-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-release-package-policy-"));
   const source = join(sandbox, "source");
   const staged = join(sandbox, "staged");
   try {
@@ -187,7 +187,7 @@ test("checked-in restricted app example stays valid for the staged contract", as
   assert.deepEqual(inspection.manifest.permissions.notifications, [{
     id: "inbox-refresh-finished",
     title: "Inbox refresh finished",
-      description: "The inbox refresh automation finished. Open work-fold to review the connection result.",
+      description: "The inbox refresh automation finished. Open AmpleFile to review the connection result.",
   }]);
   assert.equal(inspection.manifest.runtime.entry, "index.html");
   assert.deepEqual(inspection.manifest.automations, [{
@@ -208,11 +208,11 @@ test("checked-in example records failed automation network checks after requesti
     notifications: { show: (request: { permissionId: string }) => Promise<void> };
     storage: { set: (key: string, value: unknown) => Promise<void> };
   };
-  const runtime = globalThis as typeof globalThis & { workFoldRestrictedApp?: ExampleBridge };
-  const previousBridge = runtime.workFoldRestrictedApp;
+  const runtime = globalThis as typeof globalThis & { ampleFileRestrictedApp?: ExampleBridge };
+  const previousBridge = runtime.ampleFileRestrictedApp;
   const operations: string[] = [];
   const writes: Array<{ key: string; value: unknown }> = [];
-  runtime.workFoldRestrictedApp = {
+  runtime.ampleFileRestrictedApp = {
     request: async () => {
       operations.push("network");
       throw Object.assign(new Error("Network access is off."), { code: "NETWORK_DENIED" });
@@ -255,13 +255,13 @@ test("checked-in example records failed automation network checks after requesti
     assert.equal((writes[0]?.value as { reason: unknown }).reason, "manual");
     assert.match((writes[0]?.value as { completedAt: string }).completedAt, /^\d{4}-\d{2}-\d{2}T/);
   } finally {
-    if (previousBridge === undefined) delete runtime.workFoldRestrictedApp;
-    else runtime.workFoldRestrictedApp = previousBridge;
+    if (previousBridge === undefined) delete runtime.ampleFileRestrictedApp;
+    else runtime.ampleFileRestrictedApp = previousBridge;
   }
 });
 
 test("restricted app package preflight rejects native Pi and package-manager execution paths", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-restricted-fields-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-restricted-fields-"));
   try {
     for (const [field, value] of [
       ["scripts", { postinstall: "node setup.js" }],
@@ -281,7 +281,7 @@ test("restricted app package preflight rejects native Pi and package-manager exe
 });
 
 test("restricted app package preflight rejects missing entries and linked files", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-restricted-links-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-restricted-links-"));
   try {
     const missingEntry = join(sandbox, "missing-entry");
     await writePackage(missingEntry, "export {};\n");
@@ -307,7 +307,7 @@ test("restricted app package preflight rejects missing entries and linked files"
 });
 
 test("restricted app package inspection rejects a file that grows after bounded enumeration", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-restricted-package-race-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-restricted-package-race-"));
   const root = join(sandbox, "source");
   try {
     await writePackage(root, "export {};\n");
@@ -358,7 +358,7 @@ async function writePackage(root: string, appSource: string, extraPackageFields:
         auth: [{
           kind: "oauth2-pkce",
           issuer: "https://identity.example.com",
-          clientId: "work-fold-connected-inbox",
+          clientId: "amplefile-connected-inbox",
           scopes: ["mail.read"],
         }],
       }],

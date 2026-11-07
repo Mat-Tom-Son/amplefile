@@ -1,24 +1,24 @@
 const { contextBridge, ipcRenderer } = require("electron") as typeof import("electron");
 
-const networkChannel = "work-fold:restricted-app:network";
-const tabCommandChannel = "work-fold:restricted-app:tabs";
-const contextChannel = "work-fold:restricted-app:context";
-const storageChannel = "work-fold:restricted-app:storage";
-const attentionChannel = "work-fold:restricted-app:attention";
-const storageChangedChannel = "work-fold:restricted-app:storage-changed";
-const tasksChangedChannel = "work-fold:restricted-app:tasks-changed";
-const checksChangedChannel = "work-fold:restricted-app:checks-changed";
-const filesChangedChannel = "work-fold:restricted-app:files-changed";
-const filesSubscriptionChannel = "work-fold:restricted-app:files-subscribe";
-const checksChannel = "work-fold:restricted-app:checks";
-const assistantTasksChannel = "work-fold:restricted-app:assistant-tasks";
-const assistantInferChannel = "work-fold:restricted-app:assistant-infer";
-const filesChannel = "work-fold:restricted-app:files";
-const notificationsChannel = "work-fold:restricted-app:notifications";
+const networkChannel = "amplefile:restricted-app:network";
+const tabCommandChannel = "amplefile:restricted-app:tabs";
+const contextChannel = "amplefile:restricted-app:context";
+const storageChannel = "amplefile:restricted-app:storage";
+const attentionChannel = "amplefile:restricted-app:attention";
+const storageChangedChannel = "amplefile:restricted-app:storage-changed";
+const tasksChangedChannel = "amplefile:restricted-app:tasks-changed";
+const checksChangedChannel = "amplefile:restricted-app:checks-changed";
+const filesChangedChannel = "amplefile:restricted-app:files-changed";
+const filesSubscriptionChannel = "amplefile:restricted-app:files-subscribe";
+const checksChannel = "amplefile:restricted-app:checks";
+const assistantTasksChannel = "amplefile:restricted-app:assistant-tasks";
+const assistantInferChannel = "amplefile:restricted-app:assistant-infer";
+const filesChannel = "amplefile:restricted-app:files";
+const notificationsChannel = "amplefile:restricted-app:notifications";
 const encoder = new TextEncoder();
 
 function argumentValue(name: string): string {
-  const prefix = `--work-fold-restricted-${name}=`;
+  const prefix = `--amplefile-restricted-${name}=`;
   const argument = process.argv.find((value) => value.startsWith(prefix));
   if (!argument) return "";
   try { return decodeURIComponent(argument.slice(prefix.length)); } catch { return ""; }
@@ -96,7 +96,7 @@ function codedError(code: string, message: string): Error {
 }
 
 let context = Object.freeze({
-  workFolderId: argumentValue("work-folder-id"),
+  connectedFolderId: argumentValue("connected-folder-id"),
   appId: argumentValue("app-id"),
   digest: argumentValue("digest"),
   mountId: argumentValue("mount-id"),
@@ -244,7 +244,7 @@ const filesChangedListeners = new Set<(event: FilesChangedEvent) => void>();
  * Tells the host whether this app is listening for granted-root changes.
  * Registration is preload-local, so without this notice the host cannot tell
  * a subscribing app from one that never called `files.onChanged` — and a
- * directory permission binds to the whole work-folder, so it would walk that work-folder
+ * directory permission binds to the whole Connected Folder, so it would walk that Connected Folder
  * on every poll for the life of the view. Sent only when the answer changes.
  */
 let filesSubscribed = false;
@@ -412,7 +412,7 @@ contextBridge.executeInMainWorld({
       }
       return freeze(Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, rebuild(item, path ? `${path}.${key}` : key)])));
     };
-    defineProperty(globalThis, "workFoldRestrictedApp", { value: rebuild(transport), writable: false, configurable: false });
+    defineProperty(globalThis, "ampleFileRestrictedApp", { value: rebuild(transport), writable: false, configurable: false });
   },
 });
 

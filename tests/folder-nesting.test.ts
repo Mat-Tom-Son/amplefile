@@ -5,8 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { buildTurnContextMessage } from "../src/local/agent/pi-client.js";
-import { buildWorkFolderTurnContext } from "../src/local/agent/work-folder-turn-context.js";
-import { scanWorkFolderTree } from "../src/local/work-folder.js";
+import { buildConnectedFolderTurnContext } from "../src/local/agent/connected-folder-turn-context.js";
+import { scanConnectedFolderTree } from "../src/local/connected-folder.js";
 import {
   childFolderPaths,
   childFolders,
@@ -25,25 +25,25 @@ import {
 import { combineActivityStatuses } from "../web-local/src/lib/folder-nesting.js";
 import { backgroundRunningTransition, folderActivityStatuses } from "../web-local/src/hooks/useChatActivity.js";
 import { mentionNames } from "../web-local/src/lib/folder-mentions.js";
-import { workFolderTreePathMissing } from "../web-local/src/lib/tree.js";
+import { connectedFolderTreePathMissing } from "../web-local/src/lib/tree.js";
 
 /**
- * work-folders inside work-folders (2026-10-01): one shared reading of nesting for the
+ * Connected Folders inside Connected Folders (2026-10-01): one shared reading of nesting for the
  * switcher, Files, the composer, and the Workers' turn context.
  */
 
-const repo = { id: "repo", name: "workspace", workFolderRoot: "/Users/me/dev/workspace" };
-const api = { id: "api", name: "api", workFolderRoot: "/Users/me/dev/workspace/packages/api" };
-const web = { id: "web", name: "web", workFolderRoot: "/Users/me/dev/workspace/packages/web/" };
-const routes = { id: "routes", name: "routes", workFolderRoot: "/Users/me/dev/workspace/packages/api/src/routes" };
-const sibling = { id: "sibling", name: "workspace-notes", workFolderRoot: "/Users/me/dev/workspace-notes" };
-const notes = { id: "notes", name: "Notes", workFolderRoot: "/Users/me/Notes" };
+const repo = { id: "repo", name: "workspace", connectedFolderRoot: "/Users/me/dev/workspace" };
+const api = { id: "api", name: "api", connectedFolderRoot: "/Users/me/dev/workspace/packages/api" };
+const web = { id: "web", name: "web", connectedFolderRoot: "/Users/me/dev/workspace/packages/web/" };
+const routes = { id: "routes", name: "routes", connectedFolderRoot: "/Users/me/dev/workspace/packages/api/src/routes" };
+const sibling = { id: "sibling", name: "workspace-notes", connectedFolderRoot: "/Users/me/dev/workspace-notes" };
+const notes = { id: "notes", name: "Notes", connectedFolderRoot: "/Users/me/Notes" };
 const all = [routes, notes, web, sibling, api, repo];
 
-test("the deepest containing work-folder is the parent, and a name prefix is not containment", () => {
-  assert.equal(folderRootContains(repo.workFolderRoot, api.workFolderRoot), true);
-  assert.equal(folderRootContains(repo.workFolderRoot, sibling.workFolderRoot), false, "workspace-notes is beside workspace, not inside it");
-  assert.equal(folderRootContains(repo.workFolderRoot, repo.workFolderRoot), false);
+test("the deepest containing Connected Folder is the parent, and a name prefix is not containment", () => {
+  assert.equal(folderRootContains(repo.connectedFolderRoot, api.connectedFolderRoot), true);
+  assert.equal(folderRootContains(repo.connectedFolderRoot, sibling.connectedFolderRoot), false, "workspace-notes is beside workspace, not inside it");
+  assert.equal(folderRootContains(repo.connectedFolderRoot, repo.connectedFolderRoot), false);
   assert.equal(folderRootContains("C:\\Work\\Repo", "c:\\work\\repo\\pkg"), true, "drive paths compare case-insensitively");
 
   const parents = folderParentIds(all);
@@ -54,8 +54,8 @@ test("the deepest containing work-folder is the parent, and a name prefix is not
   assert.equal(parents.get(sibling.id), null);
 });
 
-test("tree rows list top-level work-folders A–Z, each followed by its children", () => {
-  assert.deepEqual(folderTreeRows(all).map((row) => `${"  ".repeat(row.depth)}${row.workFolder.name}`), [
+test("tree rows list top-level Connected Folders A–Z, each followed by its children", () => {
+  assert.deepEqual(folderTreeRows(all).map((row) => `${"  ".repeat(row.depth)}${row.connectedFolder.name}`), [
     "Notes",
     "workspace",
     "  api",
@@ -72,8 +72,8 @@ test("tree rows list top-level work-folders A–Z, each followed by its children
   ]);
 });
 
-test("Files stops at a nested work-folder's boundary and a read below it returns nothing", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-nested-tree-"));
+test("Files stops at a nested Connected Folder's boundary and a read below it returns nothing", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-nested-tree-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "packages", "api", "src"), { recursive: true });
   await mkdir(join(root, "docs"), { recursive: true });
@@ -81,11 +81,11 @@ test("Files stops at a nested work-folder's boundary and a read below it returns
   await writeFile(join(root, "packages", "readme.md"), "# packages\n");
   await writeFile(join(root, "docs", "guide.md"), "# guide\n");
 
-  const plain = await scanWorkFolderTree(root);
+  const plain = await scanConnectedFolderTree(root);
   const plainPackages = plain.entries.find((entry) => entry.name === "packages");
   assert.ok(plainPackages?.children?.some((entry) => entry.name === "api" && entry.children?.length), "without boundaries the walk descends");
 
-  const bounded = await scanWorkFolderTree(root, 20, "", { nestedFolderPaths: ["packages/api"] });
+  const bounded = await scanConnectedFolderTree(root, 20, "", { nestedFolderPaths: ["packages/api"] });
   const packages = bounded.entries.find((entry) => entry.name === "packages");
   const nested = packages?.children?.find((entry) => entry.name === "api");
   assert.equal(nested?.nestedFolder, true);
@@ -93,11 +93,11 @@ test("Files stops at a nested work-folder's boundary and a read below it returns
   assert.deepEqual(nested?.children, []);
   assert.ok(packages?.children?.some((entry) => entry.name === "readme.md"), "the parent's own files stay listed");
 
-  assert.deepEqual((await scanWorkFolderTree(root, 1, "packages/api", { nestedFolderPaths: ["packages/api"] })).entries, []);
-  assert.deepEqual((await scanWorkFolderTree(root, 1, "packages/api/src", { nestedFolderPaths: ["packages/api"] })).entries, []);
+  assert.deepEqual((await scanConnectedFolderTree(root, 1, "packages/api", { nestedFolderPaths: ["packages/api"] })).entries, []);
+  assert.deepEqual((await scanConnectedFolderTree(root, 1, "packages/api/src", { nestedFolderPaths: ["packages/api"] })).entries, []);
 });
 
-test("an @ query starts a word, matches by prefix first, and inserts the work-folder's name", () => {
+test("an @ query starts a word, matches by prefix first, and inserts the Connected Folder's name", () => {
   assert.equal(activeFolderMention("email@example", 13), null, "an address is not a mention");
   assert.deepEqual(activeFolderMention("ask @ap", 7), { query: "ap", start: 4, end: 7 });
   assert.deepEqual(activeFolderMention("@", 1), { query: "", start: 0, end: 1 });
@@ -113,7 +113,7 @@ test("an @ query starts a word, matches by prefix first, and inserts the work-fo
   assert.deepEqual(insertFolderMention("ask @api now", inside, folders[1]!), { value: "ask @api now", caret: 9 }, "choosing mid-word replaces the whole word");
 });
 
-test("a message addresses each work-folder whose @Name it contains, longest names first", () => {
+test("a message addresses each Connected Folder whose @Name it contains, longest names first", () => {
   const folders = [{ id: "api", name: "api" }, { id: "docs", name: "api docs" }, { id: "web", name: "web" }];
   assert.deepEqual(addressedFolderIds("@api docs and @web, please", folders), ["docs", "web"]);
   assert.deepEqual(addressedFolderIds("Ask @API to add paging.", folders), ["api"]);
@@ -123,7 +123,7 @@ test("a message addresses each work-folder whose @Name it contains, longest name
   assert.deepEqual(addressedFolderIds("@api docs, then @api docs, then @api", folders), ["api", "docs"], "a separate short mention still addresses its Worker");
 });
 
-test("one dot per work-folder: running wins, and a waiting reply counts only for an open-able Chat", () => {
+test("one dot per Connected Folder: running wins, and a waiting reply counts only for an open-able Chat", () => {
   const now = Date.parse("2026-10-01T12:00:00.000Z");
   const chat = (id: string, extra: Record<string, unknown> = {}) => ({ id, title: id, updatedAt: "2026-10-01T11:00:00.000Z", ...extra });
   const conversations = {
@@ -150,9 +150,9 @@ test("a background turn that ends unwatched earns a new-reply mark; a watched on
 
 test("Folders that share a name are addressed by a qualified name", () => {
   const folders = [
-    { id: "a", name: "docs", workFolderRoot: "/work/projA/docs" },
-    { id: "b", name: "docs", workFolderRoot: "/work/projB/docs" },
-    { id: "c", name: "api", workFolderRoot: "/work/projA/api" },
+    { id: "a", name: "docs", connectedFolderRoot: "/work/projA/docs" },
+    { id: "b", name: "docs", connectedFolderRoot: "/work/projB/docs" },
+    { id: "c", name: "api", connectedFolderRoot: "/work/projA/api" },
   ];
   const names = mentionNames(folders);
   assert.deepEqual([...names], [["a", "projA/docs"], ["b", "projB/docs"], ["c", "api"]]);
@@ -162,29 +162,29 @@ test("Folders that share a name are addressed by a qualified name", () => {
 });
 
 test("a deleted folder is recognized whatever the server's capitalization", () => {
-  assert.equal(workFolderTreePathMissing("Requested work-folder tree path is not a folder."), true);
-  assert.equal(workFolderTreePathMissing("ENOENT: no such file"), true);
-  assert.equal(workFolderTreePathMissing("Something else"), false);
+  assert.equal(connectedFolderTreePathMissing("Requested Connected Folder tree path is not a folder."), true);
+  assert.equal(connectedFolderTreePathMissing("ENOENT: no such file"), true);
+  assert.equal(connectedFolderTreePathMissing("Something else"), false);
 });
 
-test("a parent's Worker learns its nested work-folders and the Workers the person addressed", () => {
-  const workFolderTurn = buildWorkFolderTurnContext({ workFolderId: "repo", taskId: "task-1", requestId: "req-1", handleSalt: "salt" });
-  workFolderTurn.nestedFolders = [{ workFolderId: "api", name: "api", path: "packages/api" }];
-  const context = buildTurnContextMessage({ workFolderTurn, addressedFolders: [{ workFolderId: "api", name: "api" }] });
-  assert.match(context, /work-folders inside this one, each with its own Worker/);
+test("a parent's Worker learns its nested Connected Folders and the Workers the person addressed", () => {
+  const connectedFolderTurn = buildConnectedFolderTurnContext({ connectedFolderId: "repo", taskId: "task-1", requestId: "req-1", handleSalt: "salt" });
+  connectedFolderTurn.nestedFolders = [{ connectedFolderId: "api", name: "api", path: "packages/api" }];
+  const context = buildTurnContextMessage({ connectedFolderTurn, addressedFolders: [{ connectedFolderId: "api", name: "api" }] });
+  assert.match(context, /Connected Folders inside this one, each with its own Worker/);
   assert.match(context, /"path": "packages\/api"/);
-  assert.match(context, /chat handoff --to-work-folder <workFolderId>/);
+  assert.match(context, /chat handoff --to-connected-folder <connectedFolderId>/);
   assert.match(context, /addressed these Workers with @/);
-  assert.ok(context.indexOf("work-folders inside this one") < context.indexOf("Work only in this work-folder"), "the stay-inside rule still closes the block");
+  assert.ok(context.indexOf("Connected Folders inside this one") < context.indexOf("Work only in this Connected Folder"), "the stay-inside rule still closes the block");
 
-  const plain = buildTurnContextMessage({ workFolderTurn: buildWorkFolderTurnContext({ workFolderId: "notes", taskId: "t", requestId: "r", handleSalt: "salt" }) });
-  assert.doesNotMatch(plain, /work-folders inside this one|addressed these Workers/, "a work-folder without nesting or mentions hears nothing new");
+  const plain = buildTurnContextMessage({ connectedFolderTurn: buildConnectedFolderTurnContext({ connectedFolderId: "notes", taskId: "t", requestId: "r", handleSalt: "salt" }) });
+  assert.doesNotMatch(plain, /Connected Folders inside this one|addressed these Workers/, "a Connected Folder without nesting or mentions hears nothing new");
 
   const management = buildTurnContextMessage({
-    workFoldAgentWorkFolders: [{ id: "repo", name: "workspace", workFolderRoot: repo.workFolderRoot }, { id: "api", name: "api", workFolderRoot: api.workFolderRoot, parentWorkFolderId: "repo" }],
-    workFoldAgentTaskId: "task-m",
-    addressedFolders: [{ workFolderId: "api", name: "api" }],
+    ampleFileAgentConnectedFolders: [{ id: "repo", name: "workspace", connectedFolderRoot: repo.connectedFolderRoot }, { id: "api", name: "api", connectedFolderRoot: api.connectedFolderRoot, parentConnectedFolderId: "repo" }],
+    ampleFileAgentTaskId: "task-m",
+    addressedFolders: [{ connectedFolderId: "api", name: "api" }],
   });
-  assert.match(management, /"parentWorkFolderId": "repo"/);
-  assert.match(management, /chat send --work-folder <workFolderId> --new --parent-task/);
+  assert.match(management, /"parentConnectedFolderId": "repo"/);
+  assert.match(management, /chat send --connected-folder <connectedFolderId> --new --parent-task/);
 });

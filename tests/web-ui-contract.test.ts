@@ -8,28 +8,28 @@ import {
   welcomeActions,
 } from "../web-local/src/ui-contract.js";
 
-test("work-folder navigation separates the active work-folder from its surfaces", () => {
+test("Connected Folder navigation separates the active Connected Folder from its surfaces", () => {
   assert.deepEqual(primaryNavigation.map(({ id, label }) => [id, label]), [
     ["files", "Files"],
     ["chats", "Chats"],
     ["history", "History"],
   ]);
   assert.deepEqual(welcomeActions, {
-    create: "Create New work-folder",
-    linkFolder: "Use Existing Folder",
+    create: "New Connected Folder",
+    linkFolder: "Connect Folder",
   });
 });
 
-test("Recently deleted says what is waiting, how long, and what work-fold never erases", () => {
+test("Recently deleted says what is waiting, how long, and what AmpleFile never erases", () => {
   // Settings → Recently deleted (docs/receipts-not-gates.md, F20):
-  // nothing work-fold destroys is gone at the moment it happens, and the copy
+  // nothing AmpleFile destroys is gone at the moment it happens, and the copy
   // names the retention window and the clean-break rule instead of implying
   // permanence either way.
   assert.equal(recentlyDeletedSettings.heading, "Recently Deleted");
   assert.equal(recentlyDeletedSettings.restore, "Restore");
   assert.equal(recentlyDeletedSettings.saveCopy, "Save a Copy");
   assert.equal(recentlyDeletedSettings.deleteNow, "Delete Now");
-  // Deleting a plain folder in Files says "Folder", not "work-folder".
+  // Deleting a plain folder in Files says "Folder", not "Connected Folder".
   assert.equal(deleteFolderConfirm.confirmLabel, "Delete Folder");
   assert.match(recentlyDeletedSettings.deleteNowConfirm, /cannot be brought back/i);
   assert.match(recentlyDeletedSettings.retentionLabel, /^Keep Deleted Items For$/);

@@ -5,17 +5,17 @@ import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 import {
-  getWorkFolderEntryInfo,
-  listWorkFolders,
-  nestedRegisteredWorkFolderPaths,
+  getConnectedFolderEntryInfo,
+  listConnectedFolders,
+  nestedRegisteredConnectedFolderPaths,
   resolveNestableFolderPath,
-  resolveWorkFolderPath,
-  scanWorkFolderTree,
+  resolveConnectedFolderPath,
+  scanConnectedFolderTree,
   type TreeEntry,
-  type WorkFolderEntryInfo,
-} from "./work-folder.js";
-import { isAlwaysHiddenWorkFolderEntry } from "./work-folder-ignore.js";
-import { workFoldStateRoot } from "./state-paths.js";
+  type ConnectedFolderEntryInfo,
+} from "./connected-folder.js";
+import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
+import { ampleFileStateRoot } from "./state-paths.js";
 
 /**
  * Standard Folders (docs/product-model.md, "2026-11-06 file manager layout"):
@@ -26,12 +26,12 @@ import { workFoldStateRoot } from "./state-paths.js";
  * of added folders, which only the desktop folder picker writes); the renderer
  * names one only by id and a path inside it.
  *
- * A standard folder is not a work-folder. It has no Worker, History, or
- * `.work-fold/` record, and work-fold writes nothing into it except what the
+ * A standard folder is not a Connected Folder. It has no Worker, History, or
+ * `.amplefile/` record, and AmpleFile writes nothing into it except what the
  * person does by hand: rename, a new folder, Move to Trash (desktop), or
- * "Put This Folder to Work", which registers it. Anything inside a registered
- * work-folder belongs to that work-folder, so these routes refuse to change it
- * and the person uses it from the work-folders section instead.
+ * "Connect This Folder", which registers it. Anything inside a registered
+ * Connected Folder belongs to that Connected Folder, so these routes refuse to change it
+ * and the person uses it from the Connected Folders section instead.
  */
 export const builtInStandardFolderIds = ["desktop", "documents", "downloads", "pictures", "home", "icloud"] as const;
 export type BuiltInStandardFolderId = typeof builtInStandardFolderIds[number];
@@ -51,10 +51,10 @@ const builtInFolders: Record<BuiltInStandardFolderId, { name: (home: string) => 
 export interface StandardFolderSummary {
   id: StandardFolderId;
   name: string;
-  /** The folder on this computer, for Copy Path and nested work-folder matching. */
+  /** The folder on this computer, for Copy Path and nested Connected Folder matching. */
   root: string;
-  /** Set when this folder is itself a registered work-folder; the sidebar then lists it there. */
-  workFolderId: string | null;
+  /** Set when this folder is itself a registered Connected Folder; the sidebar then lists it there. */
+  connectedFolderId: string | null;
   /** True for a folder the person added with +; only those can be removed from the sidebar. */
   added?: boolean;
 }
@@ -83,7 +83,7 @@ export function standardFolderName(id: StandardFolderId, home = homedir()): stri
 
 /** The standard folders that exist on this computer. Stat only: listing one's contents is what asks macOS for access. */
 export async function listStandardFolders(
-  workFolders: ReadonlyArray<{ id: string; workFolderRoot: string }>,
+  connectedFolders: ReadonlyArray<{ id: string; connectedFolderRoot: string }>,
   home = homedir(),
 ): Promise<StandardFolderSummary[]> {
   const folders: StandardFolderSummary[] = [];
@@ -97,8 +97,8 @@ export async function listStandardFolders(
     const probe = place.id === "icloud" ? dirname(place.root) : place.root;
     const info = await lstat(probe).catch(() => null);
     if (!info?.isDirectory() || info.isSymbolicLink()) continue;
-    const registered = workFolders.find((workFolder) => samePath(workFolder.workFolderRoot, place.root));
-    folders.push({ id: place.id, name: place.name, root: place.root, workFolderId: registered?.id ?? null, ...(place.added ? { added: true } : {}) });
+    const registered = connectedFolders.find((connectedFolder) => samePath(connectedFolder.connectedFolderRoot, place.root));
+    folders.push({ id: place.id, name: place.name, root: place.root, connectedFolderId: registered?.id ?? null, ...(place.added ? { added: true } : {}) });
   }
   return folders;
 }
@@ -108,7 +108,7 @@ export async function scanStandardFolder(id: StandardFolderId, relativePath: str
   const root = standardFolderRoot(id, home);
   const atHomeRoot = samePath(root, resolve(home)) && !relativePath.split("/").some((part) => part && part !== ".");
   try {
-    const scan = await scanWorkFolderTree(root, 0, relativePath, { includeIgnored: true, nestedFolderPaths: await nestedRegisteredWorkFolderPaths(root) });
+    const scan = await scanConnectedFolderTree(root, 0, relativePath, { includeIgnored: true, nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(root) });
     return {
       tree: scan.entries
         .filter((entry) => isShownStandardEntry(entry.name) && !(atHomeRoot && entry.name === "Library"))
@@ -120,25 +120,25 @@ export async function scanStandardFolder(id: StandardFolderId, relativePath: str
   }
 }
 
-export async function standardFolderEntryInfo(id: StandardFolderId, relativePath: string, home = homedir()): Promise<WorkFolderEntryInfo> {
+export async function standardFolderEntryInfo(id: StandardFolderId, relativePath: string, home = homedir()): Promise<ConnectedFolderEntryInfo> {
   // Downloads holds multi-gigabyte installers; the Info panel never waits on a hash.
   try {
-    return await getWorkFolderEntryInfo(standardFolderRoot(id, home), relativePath, { hash: false });
+    return await getConnectedFolderEntryInfo(standardFolderRoot(id, home), relativePath, { hash: false });
   } catch (error) {
     throw accessError(error, id);
   }
 }
 
-/** The file for a path inside a standard folder, under the same path policy as a work-folder's. */
+/** The file for a path inside a standard folder, under the same path policy as a Connected Folder's. */
 export function resolveStandardFolderPath(id: StandardFolderId, relativePath: string, home = homedir()): string {
-  return resolveWorkFolderPath(standardFolderRoot(id, home), relativePath);
+  return resolveConnectedFolderPath(standardFolderRoot(id, home), relativePath);
 }
 
 /**
- * Refuses a change to anything a registered work-folder owns: the standard
+ * Refuses a change to anything a registered Connected Folder owns: the standard
  * folder itself when it is registered, a registered folder inside it, or
- * anything inside one. Those changes go through the work-folder, which keeps
- * History for them. Renaming or trashing a folder that holds a work-folder
+ * anything inside one. Those changes go through the Connected Folder, which keeps
+ * History for them. Renaming or trashing a folder that holds a Connected Folder
  * would carry it along, so that is refused too; adding a folder next to one
  * (`allowContaining`) is not.
  */
@@ -149,10 +149,10 @@ export async function assertStandardFolderPathUnowned(
   options: { allowContaining?: boolean } = {},
 ): Promise<string> {
   const target = resolveStandardFolderPath(id, relativePath, home);
-  for (const workFolder of await listWorkFolders()) {
-    if (pathContains(workFolder.workFolderRoot, target) || (!options.allowContaining && pathContains(target, workFolder.workFolderRoot))) {
+  for (const connectedFolder of await listConnectedFolders()) {
+    if (pathContains(connectedFolder.connectedFolderRoot, target) || (!options.allowContaining && pathContains(target, connectedFolder.connectedFolderRoot))) {
       throw Object.assign(
-        new Error(`${workFolder.name} is a work-folder. Open it from the work-folders section to change it, so History keeps the change.`),
+        new Error(`${connectedFolder.name} is a Connected Folder. Open it from the Connected Folders section to change it, so History keeps the change.`),
         { status: 409, statusCode: 409 },
       );
     }
@@ -192,7 +192,7 @@ export async function createStandardFolderFolder(id: StandardFolderId, parentPat
   return { path: toRelative(id, destination, home) };
 }
 
-/** The folder "Put This Folder to Work" registers: the standard folder itself, or a folder inside it. */
+/** The folder "Connect This Folder" registers: the standard folder itself, or a folder inside it. */
 export async function standardFolderRegistrationTarget(id: StandardFolderId, relativePath: string, home = homedir()): Promise<string> {
   const root = standardFolderRoot(id, home);
   if (relativePath.split("/").filter((part) => part && part !== ".").length) return resolveNestableFolderPath(root, relativePath);
@@ -202,15 +202,15 @@ export async function standardFolderRegistrationTarget(id: StandardFolderId, rel
 }
 
 export function isShownStandardEntry(name: string): boolean {
-  return Boolean(name) && !name.startsWith(".") && name !== "Icon\r" && !isAlwaysHiddenWorkFolderEntry(name);
+  return Boolean(name) && !name.startsWith(".") && name !== "Icon\r" && !isAlwaysHiddenConnectedFolderEntry(name);
 }
 
-/** macOS answers EPERM until the person allows work-fold into Desktop, Documents, Downloads, Pictures, or iCloud Drive. */
+/** macOS answers EPERM until the person allows AmpleFile into Desktop, Documents, Downloads, Pictures, or iCloud Drive. */
 export function accessError(error: unknown, id: StandardFolderId): unknown {
   const code = (error as { code?: unknown } | null)?.code;
   if (code === "EPERM" || code === "EACCES") {
     return Object.assign(
-      new Error(`work-fold isn’t allowed to open ${standardFolderName(id)}. Allow it in System Settings → Privacy & Security → Files and Folders.`),
+      new Error(`AmpleFile isn’t allowed to open ${standardFolderName(id)}. Allow it in System Settings → Privacy & Security → Files and Folders.`),
       { status: 403, statusCode: 403 },
     );
   }
@@ -223,7 +223,7 @@ export function accessError(error: unknown, id: StandardFolderId): unknown {
  * one away. Removing never touches the folder.
  */
 export function addedFoldersFile(): string {
-  return join(workFoldStateRoot(), "sidebar-folders.json");
+  return join(ampleFileStateRoot(), "sidebar-folders.json");
 }
 
 let addedFoldersCache: { mtimeMs: number; folders: AddedFolder[] } | null = null;
@@ -289,7 +289,7 @@ function validEntryName(value: string): string {
   if (/[/\\\0:]/.test(name)) throw badRequest("A name can’t contain / \\ or :.");
   if (name.startsWith(".")) throw badRequest("A name can’t start with a period.");
   if (Buffer.byteLength(name, "utf8") > 255) throw badRequest("That name is too long.");
-  if (isAlwaysHiddenWorkFolderEntry(name)) throw badRequest("That name is reserved.");
+  if (isAlwaysHiddenConnectedFolderEntry(name)) throw badRequest("That name is reserved.");
   return name;
 }
 

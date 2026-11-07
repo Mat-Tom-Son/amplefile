@@ -22,7 +22,7 @@ test("Extension surface manifests validate and normalize declarative views", () 
     version: 1,
     id: "project-inbox",
     title: "Project inbox",
-    description: "Messages related to this work-folder.",
+    description: "Messages related to this Connected Folder.",
     icon: "mail",
     views: [{
       id: "overview",
@@ -35,8 +35,8 @@ test("Extension surface manifests validate and normalize declarative views", () 
       ],
     }],
   }, {
-    extensionPath: "C:\\work-folder\\.pi\\extensions\\inbox\\index.ts",
-    manifestPath: "C:\\work-folder\\.pi\\extensions\\inbox\\surface.json",
+    extensionPath: "C:\\connected-folder\\.pi\\extensions\\inbox\\index.ts",
+    manifestPath: "C:\\connected-folder\\.pi\\extensions\\inbox\\surface.json",
     source,
   });
 

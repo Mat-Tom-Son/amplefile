@@ -16,8 +16,8 @@ import { StringDecoder } from "node:string_decoder";
 
 import { truncateTail } from "@earendil-works/pi-coding-agent";
 
-import { workFoldBackgroundJobLimits } from "../../shared/work-fold-limits.js";
-import type { WorkFoldJobOutputCounters } from "./job-records.js";
+import { ampleFileBackgroundJobLimits } from "../../shared/amplefile-limits.js";
+import type { AmpleFileJobOutputCounters } from "./job-records.js";
 
 export const jobOutputFileName = "output.log";
 export const jobPreviousOutputFileName = "output.1.log";
@@ -47,11 +47,11 @@ export class JobOutputWriter {
 
   constructor(directory: string, options: { segmentBytes?: number } = {}) {
     this.directory = directory;
-    this.#segmentBytes = options.segmentBytes ?? workFoldBackgroundJobLimits.outputSegmentBytes;
+    this.#segmentBytes = options.segmentBytes ?? ampleFileBackgroundJobLimits.outputSegmentBytes;
     this.#fd = openSync(join(directory, jobOutputFileName), "a", 0o600);
   }
 
-  get counters(): WorkFoldJobOutputCounters {
+  get counters(): AmpleFileJobOutputCounters {
     return {
       bytes: this.#bytes,
       lines: this.#newlines + (this.#endsWithNewline ? 0 : 1),
@@ -236,11 +236,11 @@ export async function scanJobOutputLines(
  */
 export async function readJobOutputTail(
   directory: string,
-  counters: WorkFoldJobOutputCounters,
+  counters: AmpleFileJobOutputCounters,
   options: { maxLines?: number; maxBytes?: number; keptBytes?: number } = {},
 ): Promise<JobOutputRead> {
-  const maxLines = options.maxLines ?? workFoldBackgroundJobLimits.readMaxLines;
-  const maxBytes = options.maxBytes ?? workFoldBackgroundJobLimits.readMaxBytes;
+  const maxLines = options.maxLines ?? ampleFileBackgroundJobLimits.readMaxLines;
+  const maxBytes = options.maxBytes ?? ampleFileBackgroundJobLimits.readMaxBytes;
   const want = maxBytes * 4 + 4096;
   const segments = await keptSegments(directory, options.keptBytes);
   const pieces: Buffer[] = [];
@@ -281,11 +281,11 @@ export async function readJobOutputTail(
 /** A page of lines starting at `offset` (1-based, counted from the job's first line). */
 export async function readJobOutputPage(
   directory: string,
-  counters: WorkFoldJobOutputCounters,
+  counters: AmpleFileJobOutputCounters,
   options: { offset: number; limit?: number; maxBytes?: number; keptBytes?: number },
 ): Promise<JobOutputRead> {
-  const limit = Math.max(1, options.limit ?? workFoldBackgroundJobLimits.readMaxLines);
-  const maxBytes = options.maxBytes ?? workFoldBackgroundJobLimits.readMaxBytes;
+  const limit = Math.max(1, options.limit ?? ampleFileBackgroundJobLimits.readMaxLines);
+  const maxBytes = options.maxBytes ?? ampleFileBackgroundJobLimits.readMaxBytes;
   const firstKept = counters.droppedLines + 1;
   const start = Math.max(options.offset, firstKept);
   const lines: string[] = [];

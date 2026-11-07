@@ -6,7 +6,7 @@
 > `src/local/agent/browser-tools.ts`, the renderer's browser tab, and their
 > suites are the implementation authority.
 
-work-fold has a browser of its own. A **browser tab** sits in the tab strip
+AmpleFile has a browser of its own. A **browser tab** sits in the tab strip
 beside Chats and files, shows any ordinary website, and is shared with the
 Workers: they can read and use the tabs the person has open, and the pages
 they open appear in the same strip.
@@ -16,12 +16,12 @@ they open appear in the same strip.
 - The globe button beside **New Chat** opens a new browser tab, as does **New
   browser tab** in the command palette. A link that opens a new tab, and a
   Worker's page, become browser tabs too.
-- A browser tab belongs to no work-folder (owner decision, 2026-10-23). Every
-  work-folder's tab strip shows it; selecting it keeps the work-folder that is
-  open; switching work-folders still restores that work-folder's most recent
-  tab; removing a work-folder never closes a browser tab. Grouping by
-  work-folder puts browser tabs in one **Browser** group. This is the one
-  exception to work-folder-bound tabs.
+- A browser tab belongs to no Connected Folder (owner decision, 2026-10-23). Every
+  Connected Folder's tab strip shows it; selecting it keeps the Connected Folder that is
+  open; switching Connected Folders still restores that Connected Folder's most recent
+  tab; removing a Connected Folder never closes a browser tab. Grouping by
+  Connected Folder puts browser tabs in one **Browser** group. This is the one
+  exception to Connected Folder–bound tabs.
 - Browser tabs otherwise work like every tab: drag to reorder, Cmd/Ctrl+W to
   close, Ctrl+Tab and Cmd/Ctrl+1–9 to move between them, and they come back
   after a restart with their address and title. A restored page loads when
@@ -95,7 +95,7 @@ they open appear in the same strip.
   button in the address bar lists what a site was allowed or blocked, and
   **Ask again** forgets one. A pop-up window asks with a dialog instead.
 - On macOS the camera and microphone also need the system's own permission:
-  the first time a site is allowed one, macOS asks once for work-fold, and if
+  the first time a site is allowed one, macOS asks once for AmpleFile, and if
   it is turned off the bar says so with **Open System Settings**. Screen
   sharing uses the macOS picker (macOS 15 and later), where the person chooses
   what to share.
@@ -106,13 +106,13 @@ they open appear in the same strip.
 ## Profile and sign-ins
 
 One persistent Chromium profile serves every browser tab and every
-work-folder. It lives in work-fold's machine-local app data, apart from Chrome,
-from the app's own window, and from every work-folder; cookies are encrypted
+Connected Folder. It lives in AmpleFile's machine-local app data, apart from Chrome,
+from the app's own window, and from every Connected Folder; cookies are encrypted
 with the operating system's keychain like the rest of the app's Chromium data.
 Signing in to a site in one tab signs every tab in.
 
 The browser identifies itself the way Claude's own browser does: Chromium's
-user agent with the app's name (`work-fold/<version>`) and without Electron's
+user agent with the app's name (`amplefile/<version>`) and without Electron's
 token. Several Electron browsers measured that Google's sign-in refuses an
 embedded browser that poses as plain Chrome and accepts one that names itself,
 so the browser does not pose. Sites see Chromium's brand hints and no
@@ -128,7 +128,7 @@ way**).
 
 ## Workers
 
-Every Worker and the work-fold agent in the desktop app carry the browser
+Every Worker and the AmpleFile agent in the desktop app carry the browser
 tools, registered beside the background job tools. They are part of the app,
 not one of the five included tools, so the Skills & Extensions strip is
 unchanged and there is nothing to set up. A development API without Electron
@@ -160,7 +160,7 @@ has no browser and no browser tools.
   person is looking at.
 - While a Worker uses a page, its tab carries a pulsing dot and the toolbar a
   **Worker** chip naming the Chat. The chip opens that Chat, and its Stop
-  button stops the Chat's turn. For the work-fold agent the chip opens its
+  button stops the Chat's turn. For the AmpleFile agent the chip opens its
   panel. The mark stays three seconds after the last step, so a run of steps
   reads as one. When several Chats use a page, the chip names the most recent
   Chat with an active step; finishing its step restores another active Chat
@@ -197,7 +197,7 @@ has no browser and no browser tools.
   the tab hides the page while it is open.
 - Pages keep running in the background, and on macOS after the window
   closes. Quitting closes them without closing their tabs.
-- Nothing from the browser enters a work-folder unless a Worker writes it
+- Nothing from the browser enters a Connected Folder unless a Worker writes it
   there or the person moves a download in. What a Worker reads from a page
   reaches the model provider like any other tool result.
 
@@ -224,6 +224,6 @@ account and is checked by hand: the 2026-10-23 check reached the account page.
 
 - Saved passkeys through the macOS system sheet, once Apple grants the browser
   passkey entitlement (requested by the developer account holder), and Touch
-  ID passkeys created in work-fold through Electron's `app.configureWebAuthn`,
+  ID passkeys created in AmpleFile through Electron's `app.configureWebAuthn`,
   which needs a provisioning profile in the signed build.
 

@@ -17,7 +17,7 @@ async function copyReviewedParser(source: string, packageName = "image-size") {
 }
 
 test("packaged parser guard accepts reviewed bytes and rejects omitted, replaced or wrong-version image-size", async t => {
-  const root = await mkdtemp(join(tmpdir(), "workfold-packaged-parser-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-packaged-parser-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const state of ["reviewed", "missing", "replaced", "wrong-version"]) {
     const source = join(root, state), archive = join(root, `${state}.asar`);
@@ -32,11 +32,11 @@ test("packaged parser guard accepts reviewed bytes and rejects omitted, replaced
 });
 
 test("full built-ASAR smoke rejects missing packaged dependencies without borrowing the contributor runtime", { skip: process.platform !== "darwin", timeout: 15_000 }, async t => {
-  const root = await mkdtemp(join(tmpdir(), "workfold-incomplete-built-archive-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-incomplete-built-archive-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const source = join(root, "source"), archive = join(root, "app.asar");
   await mkdir(source); await mkdir(`${archive}.unpacked`);
-  await writeFile(join(source, "package.json"), JSON.stringify({ name: "work-fold-desktop", type: "module" }));
+  await writeFile(join(source, "package.json"), JSON.stringify({ name: "amplefile-desktop", type: "module" }));
   await copyReviewedParser(source);
   await copyReviewedParser(source, "@earendil-works/pi-coding-agent");
   await copyReviewedParser(source, "@earendil-works/pi-ai");
@@ -45,7 +45,7 @@ test("full built-ASAR smoke rejects missing packaged dependencies without borrow
 });
 
 test("packaged Pi identity rejects missing or replaced OAuth implementation bytes", async t => {
-  const root = await mkdtemp(join(tmpdir(), "workfold-packaged-pi-identity-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-packaged-pi-identity-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const state of ["reviewed", "missing", "replaced"]) {
     const source = join(root, state), archive = join(root, `${state}.asar`);
@@ -60,7 +60,7 @@ test("packaged Pi identity rejects missing or replaced OAuth implementation byte
 });
 
 test("packaged Pi recovery accepts pruned declarations and refuses unpatched or missing runtime bytes", async t => {
-  const root = await mkdtemp(join(tmpdir(), "workfold-packaged-pi-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-packaged-pi-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   for (const state of ["reviewed", "unpatched", "missing-session", "missing-exports", "replaced-exports"]) {
     const source = join(root, state), archive = join(root, `${state}.asar`);

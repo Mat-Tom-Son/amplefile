@@ -189,7 +189,7 @@ export function planLocalAppInstanceUpdate(inputValue: LocalAppInstanceUpdateInp
     ] as const,
   };
   const planDigest = parseSha256Digest(computeDeclarationDigest({
-    domain: "work-fold.local-app-instance-update-plan",
+    domain: "amplefile.local-app-instance-update-plan",
     version: 2,
     ...planWithoutDigest,
   }), "App Instance update plan digest");

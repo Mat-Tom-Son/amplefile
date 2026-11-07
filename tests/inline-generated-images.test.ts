@@ -31,7 +31,7 @@ const pictureBytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]);
 const imageId = "0123456789abcdef0123456789abcdef";
 
 test("the picture store keeps bytes and a name in app state, by an id nothing else can spell", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-generated-images-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-generated-images-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const store = new GeneratedImageStore(join(root, "generated-images"));
   const saved = await store.save(pictureBytes, "image/png", "../Sage tile.jpg");
@@ -40,15 +40,15 @@ test("the picture store keeps bytes and a name in app state, by an id nothing el
   assert.equal(saved.file, join(root, "generated-images", `${saved.id}.png`));
   assert.deepEqual((await store.read(saved.id))?.bytes, pictureBytes);
 
-  await store.noteAdded(saved.id, "work-folder-a", "Images/Sage tile.png");
-  assert.deepEqual((await store.get(saved.id))?.added, { "work-folder-a": "Images/Sage tile.png" });
+  await store.noteAdded(saved.id, "connected-folder-a", "Images/Sage tile.png");
+  assert.deepEqual((await store.get(saved.id))?.added, { "connected-folder-a": "Images/Sage tile.png" });
 
   for (const bad of ["../x", "0123", `${saved.id}.json`, saved.id.toUpperCase()]) assert.equal(await store.get(bad), null, bad);
   await assert.rejects(() => store.save(pictureBytes, "image/svg+xml", "x"), /Unsupported picture type/);
 });
 
 test("a picture made without a path shows in the Chat and stays out of the folder", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-inline-image-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-inline-image-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const folder = join(root, "folder");
   await writeFile(join(root, "placeholder"), "");
@@ -84,7 +84,7 @@ test("a picture made without a path shows in the Chat and stays out of the folde
   assert.deepEqual(await readFile(join(folder, "Images", "banner.png")), pictureBytes);
   assert.equal(parseChatToolImage(saved.details)?.path, "Images/banner.png");
 
-  // Without a store (the work-fold agent today), nothing claims the Chat shows it.
+  // Without a store (the AmpleFile agent today), nothing claims the Chat shows it.
   const plain = createImageGenerationTool({ root: folder, models: source });
   assert.doesNotMatch(plain.description, /shows in the Chat/);
   const unstored = await plain.execute("call-3", { prompt: "A quick sketch" }, undefined, undefined, { model: { input: ["text"] } } as never);
@@ -94,8 +94,8 @@ test("a picture made without a path shows in the Chat and stays out of the folde
 });
 
 test("a Chat log keeps a valid picture reference on a finished generate_image step only", async (t) => {
-  const workFolderRoot = await mkdtemp(join(tmpdir(), "work-fold-chat-image-"));
-  t.after(() => rm(workFolderRoot, { recursive: true, force: true }));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-image-"));
+  t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
   for (const bad of [{ id: "nope", name: "x.png", mimeType: "image/png" }, { id: imageId, name: "a/b.png", mimeType: "image/png" }, { id: imageId, name: "x.svg", mimeType: "image/svg+xml" }]) {
     assert.equal(parseChatToolImage(bad), undefined, JSON.stringify(bad));
   }
@@ -111,8 +111,8 @@ test("a Chat log keeps a valid picture reference on a finished generate_image st
       { kind: "tool", text: "Read complete", detail: "notes.md", toolName: "read", phase: "complete", image } as never,
     ],
   };
-  await appendMessage(workFolderRoot, "chat-image", message);
-  const [read] = await readConversation(workFolderRoot, "chat-image");
+  await appendMessage(connectedFolderRoot, "chat-image", message);
+  const [read] = await readConversation(connectedFolderRoot, "chat-image");
   assert.deepEqual(read?.workTrail?.[0]?.image, image);
   assert.equal(read?.workTrail?.[1]?.image, undefined, "only generate_image carries a picture");
 });
@@ -136,21 +136,21 @@ test("Copy carries one PNG or JPEG picture across the desktop bridge and nothing
 });
 
 test("the routes serve a picture and add it to a folder once, with a restore point", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-image-routes-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-image-routes-"));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
   const stateBase = join(sandbox, "state");
   const api = await startLocalApi({
     port: 0,
     stateBase,
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: { async resolveRuntime() { return {}; } },
   });
   try {
-    const { workFolder } = await api.actFacade.createWorkFolder({ name: "Garden" });
+    const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Garden" });
     const store = new GeneratedImageStore(join(stateBase, "generated-images"));
     const saved = await store.save(pictureBytes, "image/png", "Sage tile");
-    const base = `${api.origin}/api/work-folders/${encodeURIComponent(workFolder.id)}/generated-images/${saved.id}`;
+    const base = `${api.origin}/api/connected-folders/${encodeURIComponent(connectedFolder.id)}/generated-images/${saved.id}`;
 
     const bytes = await fetch(`${api.origin}/api/generated-images/${saved.id}`);
     assert.equal(bytes.status, 200);
@@ -163,24 +163,24 @@ test("the routes serve a picture and add it to a folder once, with a restore poi
     const first = await fetch(`${base}/add`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(first.status, 201);
     assert.deepEqual(await first.json(), { path: "Sage tile.png", added: true });
-    assert.deepEqual(await readFile(join(workFolder.workFolderRoot, "Sage tile.png")), pictureBytes);
-    const { checkpoints } = await (await fetch(`${api.origin}/api/work-folders/${encodeURIComponent(workFolder.id)}/history/checkpoints`)).json() as {
+    assert.deepEqual(await readFile(join(connectedFolder.connectedFolderRoot, "Sage tile.png")), pictureBytes);
+    const { checkpoints } = await (await fetch(`${api.origin}/api/connected-folders/${encodeURIComponent(connectedFolder.id)}/history/checkpoints`)).json() as {
       checkpoints: Array<{ reason: string; deleteOnRestore: string[] }>;
     };
     assert.ok(checkpoints.some((item) => item.reason === "pre_upload" && item.deleteOnRestore.includes("Sage tile.png")), "restoring takes the picture back out");
 
     const again = await fetch(`${base}/add`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.deepEqual(await again.json(), { path: "Sage tile.png", added: false }, "a second click shows the same file");
-    assert.deepEqual((await readdir(workFolder.workFolderRoot)).filter((name) => !name.startsWith(".")), ["Sage tile.png"]);
+    assert.deepEqual((await readdir(connectedFolder.connectedFolderRoot)).filter((name) => !name.startsWith(".")), ["Sage tile.png"]);
     assert.deepEqual(await (await fetch(base)).json(), { name: "Sage tile.png", mimeType: "image/png", addedPath: "Sage tile.png" });
 
     // Once the person deletes or moves the file, the Chat offers Add to folder again.
-    await rm(join(workFolder.workFolderRoot, "Sage tile.png"));
+    await rm(join(connectedFolder.connectedFolderRoot, "Sage tile.png"));
     assert.deepEqual(await (await fetch(base)).json(), { name: "Sage tile.png", mimeType: "image/png" });
-    await writeFile(join(workFolder.workFolderRoot, "Sage tile.png"), "someone else's file");
+    await writeFile(join(connectedFolder.connectedFolderRoot, "Sage tile.png"), "someone else's file");
     const beside = await (await fetch(`${base}/add`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json() as { path: string };
     assert.notEqual(beside.path, "Sage tile.png", "never over a file that is already there");
-    assert.equal(await readFile(join(workFolder.workFolderRoot, "Sage tile.png"), "utf8"), "someone else's file");
+    assert.equal(await readFile(join(connectedFolder.connectedFolderRoot, "Sage tile.png"), "utf8"), "someone else's file");
   } finally {
     await api.close();
   }
@@ -211,7 +211,7 @@ test("hovering a picture offers Copy and Add to folder, then Show in Files", asy
     // The renderer's connect-src policy refuses blob: and data: fetches, so the component must never make one.
     if (url.startsWith("blob:") || url.startsWith("data:")) throw new TypeError(`Refused to connect to ${url.slice(0, 5)} under the Content Security Policy.`);
     const method = init?.method ?? "GET";
-    requests.push({ url, method, session: new Headers(init?.headers).get("x-work-fold-session") });
+    requests.push({ url, method, session: new Headers(init?.headers).get("x-amplefile-session") });
     const path = new URL(url).pathname;
     if (path === `/api/generated-images/${imageId}`) return new Response(new Blob([pictureBytes], { type: "image/png" }));
     if (path.endsWith(`/generated-images/${imageId}`)) return Response.json({ name: "Sage tile.png", mimeType: "image/png", ...(addedPath ? { addedPath } : {}) });
@@ -219,15 +219,15 @@ test("hovering a picture offers Copy and Add to folder, then Show in Files", asy
     return new Response("not found", { status: 404 });
   }) as typeof fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
-  (window as unknown as Record<string, unknown>).workFoldDesktop = {
-    api: { baseUrl: "http://work-fold.test/", getSessionHeaders: async () => ({ "x-work-fold-session": "session-1" }) },
+  (window as unknown as Record<string, unknown>).ampleFileDesktop = {
+    api: { baseUrl: "http://amplefile.test/", getSessionHeaders: async () => ({ "x-amplefile-session": "session-1" }) },
     clipboard: { write: async (content: unknown) => { clipboard.push(content); } },
   };
 
   await dom.render(createElement(GeneratedImages, {
     images: [{ id: imageId, name: "Sage tile.png", mimeType: "image/png", width: 1600, height: 900 }],
-    workFolderId: "garden",
-    onOpenWorkFolderFile: (path: string) => { opened.push(path); },
+    connectedFolderId: "garden",
+    onOpenConnectedFolderFile: (path: string) => { opened.push(path); },
   }));
   await dom.waitFor(() => Boolean(document.querySelector(".generated-image img")));
   const figure = document.querySelector<HTMLElement>(".generated-image")!;
@@ -243,16 +243,16 @@ test("hovering a picture offers Copy and Add to folder, then Show in Files", asy
 
   await dom.act(() => button("Add to Folder")!.click());
   await dom.waitFor(() => Boolean(button("Show in Files")));
-  assert.ok(requests.some((request) => request.method === "POST" && request.url === `http://work-fold.test/api/work-folders/garden/generated-images/${imageId}/add`));
+  assert.ok(requests.some((request) => request.method === "POST" && request.url === `http://amplefile.test/api/connected-folders/garden/generated-images/${imageId}/add`));
   await dom.act(() => button("Show in Files")!.click());
   assert.deepEqual(opened, ["Sage tile.png"]);
 
   // A picture from another computer says so instead of showing a broken image.
   await dom.render(createElement(GeneratedImages, {
     images: [{ id: "e".repeat(32), name: "Elsewhere.png", mimeType: "image/png" }],
-    workFolderId: "garden",
+    connectedFolderId: "garden",
   }));
   await dom.waitFor(() => Boolean(document.querySelector(".generated-image-missing")));
   assert.equal(document.querySelector(".generated-image-missing")!.textContent, "Elsewhere.png is not on this computer.");
-  delete (window as unknown as Record<string, unknown>).workFoldDesktop;
+  delete (window as unknown as Record<string, unknown>).ampleFileDesktop;
 });

@@ -11,7 +11,7 @@ import * as undici from "undici-pi-reviewed";
  * Pi's own `httpProxy` setting), applies the configured HTTP idle timeout to
  * headers and bodies, and attaches an error listener so an undici client
  * error raised while a streamed body is being torn down cannot surface as an
- * unhandled "error" event. The SDK does not export that setup, so work-fold
+ * unhandled "error" event. The SDK does not export that setup, so AmpleFile
  * reproduces it here with the same reviewed undici build Pi resolves.
  */
 

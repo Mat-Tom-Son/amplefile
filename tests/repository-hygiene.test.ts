@@ -9,7 +9,7 @@ const { inspectRepository } = await import(new URL("../scripts/check-repository.
 const ignoreRules = `.env\n.env.*\n!.env.example\nnode_modules/\nout/\noutput/\n.codex/\n.agent/\nAGENTS.override.md\nCLAUDE.local.md\n/.claude/*\n!/.claude/skills/\n/.claude/skills/*\n!/.claude/skills/alpha\n!/.claude/skills/beta\n`;
 
 async function fixture(t: TestContext) {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-repo-check-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-repo-check-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const write = async (path: string, text: string) => {
@@ -122,7 +122,7 @@ test("forced local state and weakened ignore rules fail without deleting persona
 
 test("links and documents cannot resolve into files outside the checkout", async (t) => {
   const f = await fixture(t);
-  const outside = await mkdtemp(join(tmpdir(), "work-fold-repo-external-"));
+  const outside = await mkdtemp(join(tmpdir(), "amplefile-repo-external-"));
   t.after(() => rm(outside, { recursive: true, force: true }));
   await writeFile(join(outside, "external.md"), "npm run should-never-be-read\n");
   await symlink(join(outside, "external.md"), join(f.root, "external.md"));

@@ -1,8 +1,8 @@
-import { accentIdentityFromHex, resolveAccent, wcagContrast } from "./work-folder-appearance.js";
+import { accentIdentityFromHex, resolveAccent, wcagContrast } from "./connected-folder-appearance.js";
 
-export const applicationAppearanceKey = "work-fold.application-appearance.v1";
-export const applicationPresetsKey = "work-fold.appearance-presets.v1";
-export const appearancePresetKind = "work-fold.appearance-preset";
+export const applicationAppearanceKey = "amplefile.application-appearance.v1";
+export const applicationPresetsKey = "amplefile.appearance-presets.v1";
+export const appearancePresetKind = "amplefile.appearance-preset";
 export const appearanceChoices = {
   mode: ["system", "light", "dark"],
   palette: ["original", "paper", "neutral", "slate", "ink"],
@@ -36,7 +36,7 @@ const addedSinceVersion1 = ["chatSteps"] as const satisfies readonly (keyof type
 
 /** Closed values only: proposals cannot introduce executable style or external resources. */
 export function parseApplicationAppearance(raw: unknown): ApplicationAppearance {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Choose a work-fold appearance preset file.");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Choose an AmpleFile appearance preset file.");
   const record = raw as Record<string, unknown>;
   if (record.version !== 1 && record.version !== applicationAppearanceVersion) throw new Error("This appearance version is not supported by this build.");
   // A record saved before a setting existed keeps its meaning: the missing key reads as the default.
@@ -54,9 +54,9 @@ export function parseApplicationAppearance(raw: unknown): ApplicationAppearance 
 }
 
 export function parseAppearancePreset(raw: unknown): AppearancePreset {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Choose a work-fold appearance preset file.");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Choose an AmpleFile appearance preset file.");
   const r = raw as Record<string, unknown>;
-  if (r.kind !== appearancePresetKind || r.version !== 1 || Object.keys(r).some((key) => !["kind", "version", "name", "preferences"].includes(key))) throw new Error("Choose a supported work-fold appearance preset file.");
+  if (r.kind !== appearancePresetKind || r.version !== 1 || Object.keys(r).some((key) => !["kind", "version", "name", "preferences"].includes(key))) throw new Error("Choose a supported AmpleFile appearance preset file.");
   if (typeof r.name !== "string" || !r.name.trim() || r.name.trim().length > 60 || /[\u0000-\u001f]/.test(r.name)) throw new Error("Give the preset a name of 1–60 characters.");
   return { kind: appearancePresetKind, version: 1, name: r.name.trim(), preferences: parseApplicationAppearance(r.preferences) };
 }
@@ -115,15 +115,15 @@ export function applicationAppearanceVariables(p: ApplicationAppearance, mode: "
     // The chosen color itself, in both themes, with whichever of white or near-black reads on it:
     // the file manager fills selection and buttons with it the way Finder does with the system accent.
     "--ui-accent-chosen": color, "--ui-on-accent-chosen": wcagContrast("#ffffff", color) >= wcagContrast("#1d1d1f", color) ? "#ffffff" : "#1d1d1f",
-    "--work-fold-font-family": font, "--work-fold-ui-font": font,
-    "--work-fold-font-size": `${{ compact: 14, standard: 15, comfortable: 16, large: 18 }[p.textSize]}px`,
-    "--work-fold-reading-font": p.readingFont === "serif" ? 'Georgia, "Times New Roman", serif' : p.readingFont === "system" ? 'system-ui, sans-serif' : font,
-    "--work-fold-reading-size": `${p.readingSize}px`,
-    "--work-fold-monospace-font": p.codeFont === "menlo" ? 'Menlo, ui-monospace, monospace' : p.codeFont === "consolas" ? 'Consolas, "Liberation Mono", monospace' : 'ui-monospace, "SFMono-Regular", Consolas, monospace',
-    "--work-fold-chat-measure": { focused: "600px", standard: "760px", wide: "1100px" }[p.measure],
-    "--work-fold-reading-leading": { tight: "1.45", standard: "1.65", relaxed: "1.85" }[p.spacing],
-    "--work-fold-paragraph-gap": { tight: "0.65em", standard: "0.9em", relaxed: "1.2em" }[p.spacing],
-    "--work-fold-list-height": { compact: "28px", standard: "30px", spacious: "38px" }[p.density],
-    "--work-fold-list-padding": { compact: "2px", standard: "3px", spacious: "7px" }[p.density],
+    "--amplefile-font-family": font, "--amplefile-ui-font": font,
+    "--amplefile-font-size": `${{ compact: 14, standard: 15, comfortable: 16, large: 18 }[p.textSize]}px`,
+    "--amplefile-reading-font": p.readingFont === "serif" ? 'Georgia, "Times New Roman", serif' : p.readingFont === "system" ? 'system-ui, sans-serif' : font,
+    "--amplefile-reading-size": `${p.readingSize}px`,
+    "--amplefile-monospace-font": p.codeFont === "menlo" ? 'Menlo, ui-monospace, monospace' : p.codeFont === "consolas" ? 'Consolas, "Liberation Mono", monospace' : 'ui-monospace, "SFMono-Regular", Consolas, monospace',
+    "--amplefile-chat-measure": { focused: "600px", standard: "760px", wide: "1100px" }[p.measure],
+    "--amplefile-reading-leading": { tight: "1.45", standard: "1.65", relaxed: "1.85" }[p.spacing],
+    "--amplefile-paragraph-gap": { tight: "0.65em", standard: "0.9em", relaxed: "1.2em" }[p.spacing],
+    "--amplefile-list-height": { compact: "28px", standard: "30px", spacious: "38px" }[p.density],
+    "--amplefile-list-padding": { compact: "2px", standard: "3px", spacious: "7px" }[p.density],
   };
 }

@@ -22,11 +22,11 @@ if (process.platform !== "darwin") throw new Error(`${identity.productName} Safe
 
 if (!apply) {
   console.log(`This removes the ${identity.productName} Safe Storage key and encrypted provider/restricted-app credentials.`);
-  console.log("work-folders, chats, History, preferences, and ordinary app data are preserved.");
+  console.log("Connected Folders, chats, History, preferences, and ordinary app data are preserved.");
   console.log(`Quit ${identity.productName}, then rerun with: npm run desktop:reset:mac-safe-storage -- --yes --reopen`);
   process.exitCode = 2;
 } else {
-  assertWorkFoldIsClosed();
+  assertAmpleFileIsClosed();
   deleteSafeStorageKey();
   const removed = [];
   for (const name of protectedFiles) {
@@ -37,11 +37,11 @@ if (!apply) {
   }
 
   console.log(`[${identity.productName} Keychain reset] Removed ${removed.length ? removed.join(", ") : "no encrypted credential files"}.`);
-  console.log(`[${identity.productName} Keychain reset] work-folders and ordinary app data were preserved. Re-enter provider or app credentials as needed.`);
+  console.log(`[${identity.productName} Keychain reset] Connected Folders and ordinary app data were preserved. Re-enter provider or app credentials as needed.`);
   if (reopen) run("open", [`/Applications/${identity.productName}.app`], `Could not reopen ${identity.productName}`);
 }
 
-function assertWorkFoldIsClosed() {
+function assertAmpleFileIsClosed() {
   const result = spawnSync("pgrep", ["-f", `^/Applications/${identity.productName}\\.app/`], commandOptions());
   if (result.status === 0) throw new Error(`${identity.productName} is running. Quit it completely before resetting Safe Storage.`);
   if (result.status !== 1) throw new Error(`Could not inspect ${identity.productName} processes: ${compactText(result.stderr)}`);

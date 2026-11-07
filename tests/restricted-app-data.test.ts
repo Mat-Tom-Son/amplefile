@@ -17,7 +17,7 @@ const owner: RestrictedAppStorageOwner = {
 };
 const digest = "a".repeat(64);
 async function setup(t: test.TestContext) {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-app-data-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-app-data-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   return { root, store: new FileRestrictedAppStorage(root) };
 }

@@ -7,7 +7,7 @@ import type { ChecksStatus } from "../web-local/src/types.js";
 const base: ChecksStatus = {
   kind: "workspace.checks.experimental",
   version: 1,
-  workFolderId: "work-folder-1",
+  connectedFolderId: "connected-folder-1",
   state: "not-configured",
   configured: 0,
   proposed: 0,
@@ -22,7 +22,7 @@ const base: ChecksStatus = {
   lastRunAt: null,
 };
 
-test("Checks stay invisible in unconfigured work-folders", () => {
+test("Checks stay invisible in unconfigured Connected Folders", () => {
   assert.equal(checksToolbarPresentation(base), null);
 });
 

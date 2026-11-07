@@ -6,7 +6,7 @@ available to every shell-capable agent.
 
 ## Progress and evidence recovery
 
-Workers and the work-fold agent carry `progress` with a typed `input` object:
+Workers and the AmpleFile agent carry `progress` with a typed `input` object:
 `{ action: "list" }`, `{ action: "read", id }`, or
 `{ action: "save", summary, evidence?, files? }`. The native schema requires
 the fields each action needs. Completed native tool results, including nested calls, receive stable
@@ -64,7 +64,7 @@ original length and truncation disclosed. Requested read offsets/limits are
 retained separately from actual coverage. Original tool warnings remain intact;
 recovery cannot turn a partial observation into full coverage or recover image
 pixels. Explicit file reads are bracketed by SHA-256 fingerprints when their
-ordinary source is inside this work-folder and at most 32 MiB. Changes during
+ordinary source is inside this Connected Folder and at most 32 MiB. Changes during
 the call are flagged; a later recovery checks whether the captured source still
 matches. This is a bracketing observation, not an atomic file snapshot. Shell,
 helper and other implicit inputs remain untracked, and dynamic results remain
@@ -76,19 +76,19 @@ and its evidence references over repeatedly reconstructing long raw inventories.
 Findings and completed checklist items are agent claims,
 not host-attested conclusions. Files selected on a finding are fingerprinted at
 save time; that does not bind an earlier tool's output to those bytes. Reserved
-metadata, directories, escaping links and paths outside the work-folder cannot
+metadata, directories, escaping links and paths outside the Connected Folder cannot
 be selected for fingerprinting.
 
 ## Structured collaboration
 
 `chat_handoff`, `chat_steer`, `chat_copy`, `chat_report`, `chat_ask`,
 `chat_answer`, `chat_stop`, `chat_children` and `chat_wait` call the existing act facade directly. The host
-supplies the Worker's own current task and work-folder. Assignment text is
+supplies the Worker's own current task and Connected Folder. Assignment text is
 ordinary structured input, so code, quotes, dollar signs and newlines never
-pass through a shell. A handoff defaults to the same work-folder; another
+pass through a shell. A handoff defaults to the same Connected Folder; another
 destination must be named explicitly. Child ownership, file copies, selected
 results and one-time delivery are the collaboration contract's existing rules.
-After compaction, `chat_children` (CLI `chat children --work-folder <id>
+After compaction, `chat_children` (CLI `chat children --connected-folder <id>
 --task <own-task-id> --json`) recovers the caller's delegated task handles so
 `chat_wait` can read a result again. It exposes no unrelated Chats.
 
@@ -108,7 +108,7 @@ questions retain their existing behavior.
 
 `job_start` accepts `interactive: true`. `job_input` sends exact text, including
 newlines or Ctrl-C, with an optional EOF. The CLI equivalents are `jobs start
---interactive` and `jobs input --work-folder <id> --task <own-task-id> --job
+--interactive` and `jobs input --connected-folder <id> --task <own-task-id> --job
 <id> --text <text> [--eof]`. Input is limited to 64 KiB per call and is never
 copied into an act receipt. Inspect output before retrying uncertain input.
 
@@ -127,8 +127,8 @@ stops it. End services explicitly when the task no longer needs them.
 
 ## The built-in browser
 
-Every Worker and the work-fold agent in the desktop app carry the `browser_*`
-tools over work-fold's [built-in browser](built-in-browser.md): list the open
+Every Worker and the AmpleFile agent in the desktop app carry the `browser_*`
+tools over AmpleFile's [built-in browser](built-in-browser.md): list the open
 tabs, open or load an address, read a page's structure, text, or console, take
 screenshots, click with mouse buttons and modifiers, hover, drag, attach local
 files to file inputs, inspect download progress and saved paths, type, focus
@@ -138,30 +138,30 @@ the person has in front, and a tab it opens appears in their tab strip. A page
 a background job serves on this computer (`localhost:3000`) opens like any other.
 The tools teach Workers to verify the resulting page before claiming success,
 use only task-authorized files and destinations for uploads, and treat page
-content as untrusted data. The work-fold agent receives the same tools and
+content as untrusted data. The AmpleFile agent receives the same tools and
 instructions. New input actions use the same per-page queue and Stop signal.
 
 ## Managed working copies
 
 `worktree` creates, lists, archives or restores an isolated Git working copy.
-The CLI is `worktrees manage --work-folder <source-id> --task <own-task-id>
+The CLI is `worktrees manage --connected-folder <source-id> --task <own-task-id>
 --action create|list|archive|restore [--ref <committed-ref>] [--id <copy-id>]`.
-The source work-folder must be the repository root. Creation resolves and pins
+The source Connected Folder must be the repository root. Creation resolves and pins
 a committed revision (HEAD by default), journals before checkout, disables
-checkout hooks, excludes source `.work-fold/` identity/transcripts from
+checkout hooks, excludes source `.amplefile/` identity/transcripts from
 materialization, leaves legacy `.workspace/` metadata unmaterialized, and
-registers a new work-folder. Local uncommitted source
+registers a new Connected Folder. Local uncommitted source
 changes are left untouched and are not copied. Delegate edits to the returned
-workFolderId through the ordinary handoff path.
+connectedFolderId through the ordinary handoff path.
 
 Records live under application-data `worktrees/`; copies live in the sibling
-`<application-data>-working-copies/` directory so linked work-folder content
+`<application-data>-working-copies/` directory so linked Connected Folder content
 never contains application state. Every copy is a normal folder and a normal
 Git worktree. Archive refuses active work, removes only the registration, and
 retains tracked changes, untracked files, conversations and Git history.
 Restore validates the Git repository identity and re-registers that same
 folder. There is no automatic merge, dependency setup, file deletion or purge.
-The creating work-folder owns these management operations. A child edits and
+The creating Connected Folder owns these management operations. A child edits and
 reports from its own copy; it cannot list or archive its parent's copies.
 
 ## Read-only helpers
@@ -169,8 +169,8 @@ reports from its own copy; it cannot list or archive its parent's copies.
 The `helper` tool runs a focused task in a fresh context inside the current
 Worker turn. It sees the assignment, selected paths and Worker instructions,
 and returns the standard summary/data/files/outcome envelope. It creates no
-Chat, request, or session file. Paths resolve inside this work-folder and
-refuse `.work-fold`, `.pi`, `.workspace`, and links out. Traversal skips Git
+Chat, request, or session file. Paths resolve inside this Connected Folder and
+refuse `.amplefile`, `.pi`, `.workspace`, and links out. Traversal skips Git
 and dependency directories. Tools are read, grep, find and ls, optionally
 narrowed further with `tools`. It has no shell, edits, browser, MCP or nested
 helper. Read-only helpers may run in parallel through native Pi scheduling.

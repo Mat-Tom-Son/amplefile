@@ -43,12 +43,12 @@ test("a Worker session carries the checklist tool and saves the list for its own
   t.after(() => new Promise<void>((resolve, reject) => { providerServer.close((error) => error ? reject(error) : resolve()); }));
   const port = (providerServer.address() as AddressInfo).port;
 
-  const root = await mkdtemp(join(tmpdir(), "work-fold-checklist-session-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-checklist-session-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "agent");
-  const workFolderRoot = join(root, "work-folder");
+  const connectedFolderRoot = join(root, "connected-folder");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
-  await mkdir(workFolderRoot, { recursive: true });
+  await mkdir(connectedFolderRoot, { recursive: true });
   await writeFile(join(agentDir, "extensions", "checklist-provider.ts"), `export default function (pi) {
     pi.registerProvider("checklist-provider", {
       api: "openai-completions",
@@ -60,12 +60,12 @@ test("a Worker session carries the checklist tool and saves the list for its own
   const settingsManager = SettingsManager.inMemory({ defaultProvider: "checklist-provider", defaultModel: "checklist-model", defaultThinkingLevel: "off" });
   const provider: PiRuntimeProvider = { async resolveRuntime() { return { agentDir, settingsManager }; } };
   const saved: Array<{ taskId: string; items: unknown }> = [];
-  const client = new PiConversationClient("chat-checklist", workFolderRoot, provider, undefined, {
+  const client = new PiConversationClient("chat-checklist", connectedFolderRoot, provider, undefined, {
     checklist: { async set(input) { saved.push(input); return { items: input.items as never, updatedAt: new Date().toISOString(), taskId: input.taskId }; } },
   });
   t.after(() => client.stop());
 
-  const reply = await client.prompt("Plan the kitchen budget.", { workFolderTurn: { workFolderId: "space-0000000000000001", taskId: "task-checklist", requestId: "req-20261018000000-abcdef01" } });
+  const reply = await client.prompt("Plan the kitchen budget.", { connectedFolderTurn: { connectedFolderId: "space-0000000000000001", taskId: "task-checklist", requestId: "req-20261018000000-abcdef01" } });
   assert.equal(reply, "Plan saved.");
   assert.deepEqual(saved, [{ taskId: "task-checklist", items: [{ text: "Read the quotes", status: "doing" }, { text: "Write the summary", status: "todo" }] }]);
 });

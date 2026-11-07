@@ -7,7 +7,7 @@ import { runDocumentScript, DOCUMENT_LIMITS } from "../resources/included-tools/
 import { documentResultText } from "../resources/included-tools/documents/output.mjs";
 
 test("combined document result and logs fit one valid envelope while full return stays readable", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-document-envelope-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-document-envelope-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "script.mjs"), 'export default async () => { console.log("L".repeat(70000)); return { value: "V".repeat(60000) }; };');
   const result = await runDocumentScript({ script: "script.mjs", cwd: root, stateRoot: root });

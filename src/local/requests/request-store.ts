@@ -1,12 +1,12 @@
 /**
  * The durable request graph (docs/collaboration-contract.md, F25).
  *
- * Every accepted Worker or work-fold agent turn belongs to exactly one
- * machine-local request record. A work-fold agent turn creates a root;
+ * Every accepted Worker or AmpleFile agent turn belongs to exactly one
+ * machine-local request record. An AmpleFile agent turn creates a root;
  * `chat send --parent-task` creates a child under it; a Worker turn with no
  * parent is its own root. Records survive restart, are reconciled against the
  * turn journal, and are never replayed. This store replaces the in-memory
- * work-fold agent request registry, so it also carries the assignment text,
+ * AmpleFile agent request registry, so it also carries the assignment text,
  * the attachment references, and the attributed action trail that
  * `agent status` projects.
  *
@@ -52,52 +52,52 @@ import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:f
 import { dirname, join, resolve } from "node:path";
 
 import {
-  workFoldRequestContinuationsDefaultEnabled,
-  workFoldRequestLimits,
-} from "../../shared/work-fold-limits.js";
-import { syncDirectory, writeFileAtomic, type WorkFoldDurableTurnRecord, type WorkFoldDurableTurnUsage } from "../agent/turn-store.js";
-import { maxWorkFoldAgentAttachments, type WorkFoldAgentAttachmentRef } from "../work-fold-agent-attachments.js";
+  ampleFileRequestContinuationsDefaultEnabled,
+  ampleFileRequestLimits,
+} from "../../shared/amplefile-limits.js";
+import { syncDirectory, writeFileAtomic, type AmpleFileDurableTurnRecord, type AmpleFileDurableTurnUsage } from "../agent/turn-store.js";
+import { maxAmpleFileAgentAttachments, type AmpleFileAgentAttachmentRef } from "../amplefile-agent-attachments.js";
 import type { RestrictedAppJsonSchema } from "../agent/restricted-app-manifest.js";
 import {
-  computeWorkFoldRequestState,
-  isWorkFoldRequestTerminalState,
-  parseWorkFoldChecklistItems,
-  parseWorkFoldQuestionRecord,
-  parseWorkFoldRequestRecord,
-  parseWorkFoldResultEnvelope,
-  parseWorkFoldResultRecord,
-  workFoldQuestionRecordSchema,
-  workFoldRequestIdPattern,
-  workFoldRequestLimitError,
-  WorkFoldRequestLineageError,
-  workFoldRequestRecordSchema,
-  workFoldResultIdPattern,
-  workFoldResultRecordSchema,
-  type WorkFoldChecklist,
-  type WorkFoldQuestionRecord,
-  type WorkFoldRequestAction,
-  type WorkFoldRequestAppRef,
-  type WorkFoldRequestJobRef,
-  type WorkFoldRequestJobState,
-  type WorkFoldRequestKind,
-  type WorkFoldRequestOwner,
-  type WorkFoldRequestRecord,
-  type WorkFoldRequestSurface,
-  type WorkFoldRequestTurnRef,
-  type WorkFoldRequestTurnState,
-  type WorkFoldResultEnvelope,
-  type WorkFoldResultRecord,
+  computeAmpleFileRequestState,
+  isAmpleFileRequestTerminalState,
+  parseAmpleFileChecklistItems,
+  parseAmpleFileQuestionRecord,
+  parseAmpleFileRequestRecord,
+  parseAmpleFileResultEnvelope,
+  parseAmpleFileResultRecord,
+  ampleFileQuestionRecordSchema,
+  ampleFileRequestIdPattern,
+  ampleFileRequestLimitError,
+  AmpleFileRequestLineageError,
+  ampleFileRequestRecordSchema,
+  ampleFileResultIdPattern,
+  ampleFileResultRecordSchema,
+  type AmpleFileChecklist,
+  type AmpleFileQuestionRecord,
+  type AmpleFileRequestAction,
+  type AmpleFileRequestAppRef,
+  type AmpleFileRequestJobRef,
+  type AmpleFileRequestJobState,
+  type AmpleFileRequestKind,
+  type AmpleFileRequestOwner,
+  type AmpleFileRequestRecord,
+  type AmpleFileRequestSurface,
+  type AmpleFileRequestTurnRef,
+  type AmpleFileRequestTurnState,
+  type AmpleFileResultEnvelope,
+  type AmpleFileResultRecord,
 } from "./request-records.js";
 
 /** "Daily while awake": `purgeExpiredIfDue` runs at most this often by default. */
-export const WORKFOLD_REQUEST_PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+export const AMPLEFILE_REQUEST_PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 const defaultMaxRecords = 2_000;
 const defaultCompactBytes = 8 * 1024 * 1024;
 const maximumErrorLength = 2_048;
-const interruptedByShutdown = "work-fold closed before this turn finished.";
+const interruptedByShutdown = "AmpleFile closed before this turn finished.";
 
-export interface WorkFoldRequestStoreOptions {
+export interface AmpleFileRequestStoreOptions {
   rootPath: string;
   now?: () => Date;
   maxRecords?: number;
@@ -108,11 +108,11 @@ export interface WorkFoldRequestStoreOptions {
 }
 
 /** A result payload either read back whole, or reported as damaged — never silently dropped. */
-export type WorkFoldResultRead =
-  | { state: "ok"; record: WorkFoldResultRecord }
+export type AmpleFileResultRead =
+  | { state: "ok"; record: AmpleFileResultRecord }
   | { state: "damaged"; resultId: string; requestId: string; error: string };
 
-export interface WorkFoldRequestReconcileResult {
+export interface AmpleFileRequestReconcileResult {
   settled: number;
   expired: number;
 }
@@ -127,11 +127,11 @@ interface RequestSettingsFile {
 interface TrimmedRequestRef {
   requestId: string;
   rootId: string;
-  state: WorkFoldRequestRecord["state"];
+  state: AmpleFileRequestRecord["state"];
   settledAt: string | null;
 }
 
-export class WorkFoldRequestStore {
+export class AmpleFileRequestStore {
   readonly rootPath: string;
   readonly requestsPath: string;
   readonly questionsPath: string;
@@ -141,34 +141,34 @@ export class WorkFoldRequestStore {
   readonly #compactBytes: number;
   readonly #retentionDays: number;
   readonly #providerBudgetUsd: number | null;
-  readonly #records = new Map<string, WorkFoldRequestRecord>();
+  readonly #records = new Map<string, AmpleFileRequestRecord>();
   /** Records the read cache dropped; still on record, still subject only to retention. */
   readonly #trimmed = new Map<string, TrimmedRequestRef>();
   readonly #byTask = new Map<string, string>();
   readonly #byJob = new Map<string, string>();
-  readonly #questions = new Map<string, WorkFoldQuestionRecord>();
+  readonly #questions = new Map<string, AmpleFileQuestionRecord>();
   readonly #resultOwner = new Map<string, string>();
   #settings: RequestSettingsFile;
   #damaged = 0;
   #queue: Promise<unknown> = Promise.resolve();
 
-  private constructor(rootPath: string, options: WorkFoldRequestStoreOptions, settings: RequestSettingsFile) {
+  private constructor(rootPath: string, options: AmpleFileRequestStoreOptions, settings: RequestSettingsFile) {
     this.rootPath = rootPath;
     this.requestsPath = join(rootPath, "requests.jsonl");
     this.questionsPath = join(rootPath, "questions.jsonl");
     this.#now = options.now ?? (() => new Date());
     this.#maxRecords = options.maxRecords ?? defaultMaxRecords;
     this.#compactBytes = options.compactBytes ?? defaultCompactBytes;
-    this.#retentionDays = options.retentionDays ?? workFoldRequestLimits.retentionDays;
-    this.#providerBudgetUsd = options.providerBudgetUsd ?? workFoldRequestLimits.providerBudgetUsd;
+    this.#retentionDays = options.retentionDays ?? ampleFileRequestLimits.retentionDays;
+    this.#providerBudgetUsd = options.providerBudgetUsd ?? ampleFileRequestLimits.providerBudgetUsd;
     this.#settings = settings;
   }
 
-  static async open(options: WorkFoldRequestStoreOptions): Promise<WorkFoldRequestStore> {
+  static async open(options: AmpleFileRequestStoreOptions): Promise<AmpleFileRequestStore> {
     const rootPath = resolve(options.rootPath);
     await mkdir(join(rootPath, "results"), { recursive: true, mode: 0o700 });
     const settings = await loadSettings(join(rootPath, "settings.json"));
-    const store = new WorkFoldRequestStore(rootPath, options, settings.settings);
+    const store = new AmpleFileRequestStore(rootPath, options, settings.settings);
     if (settings.damaged) store.#damaged += 1;
     if (!settings.existed) await store.#writeSettings(settings.settings);
     await store.#load();
@@ -177,28 +177,28 @@ export class WorkFoldRequestStore {
 
   // --- reads -------------------------------------------------------------
 
-  get(requestId: string): WorkFoldRequestRecord | null {
+  get(requestId: string): AmpleFileRequestRecord | null {
     const record = this.#records.get(requestId);
     return record ? copyRecord(record) : null;
   }
 
-  byTaskId(taskId: string): WorkFoldRequestRecord | null {
+  byTaskId(taskId: string): AmpleFileRequestRecord | null {
     const requestId = this.#byTask.get(taskId);
     return requestId ? this.get(requestId) : null;
   }
 
   /** The request a background job belongs to (F31). */
-  byJobId(jobId: string): WorkFoldRequestRecord | null {
+  byJobId(jobId: string): AmpleFileRequestRecord | null {
     const requestId = this.#byJob.get(jobId);
     return requestId ? this.get(requestId) : null;
   }
 
-  children(requestId: string): WorkFoldRequestRecord[] {
+  children(requestId: string): AmpleFileRequestRecord[] {
     const record = this.#records.get(requestId);
     if (!record) return [];
     return record.childRequestIds
       .map((id) => this.#records.get(id))
-      .filter((child): child is WorkFoldRequestRecord => child !== undefined)
+      .filter((child): child is AmpleFileRequestRecord => child !== undefined)
       .map(copyRecord);
   }
 
@@ -208,7 +208,7 @@ export class WorkFoldRequestStore {
    * every record below a root carries the root's id, not its parent's. Use
    * `subtree` for the graph below an arbitrary request.
    */
-  rootDescendants(rootId: string): WorkFoldRequestRecord[] {
+  rootDescendants(rootId: string): AmpleFileRequestRecord[] {
     return this.#sorted(
       [...this.#records.values()].filter((record) => record.rootId === rootId && record.requestId !== rootId),
     ).map(copyRecord);
@@ -220,9 +220,9 @@ export class WorkFoldRequestStore {
    * answers for its own branch. A stop, and the overview's rolled-up child
    * turns, both need this rather than the root-only form.
    */
-  subtree(requestId: string): WorkFoldRequestRecord[] {
+  subtree(requestId: string): AmpleFileRequestRecord[] {
     const seen = new Set<string>([requestId]);
-    const found: WorkFoldRequestRecord[] = [];
+    const found: AmpleFileRequestRecord[] = [];
     const frontier = [requestId];
     while (frontier.length) {
       const current = frontier.shift()!;
@@ -240,7 +240,7 @@ export class WorkFoldRequestStore {
     return this.#sorted(found).map(copyRecord);
   }
 
-  latest(): WorkFoldRequestRecord | null {
+  latest(): AmpleFileRequestRecord | null {
     const records = this.#sorted([...this.#records.values()]);
     const latest = records.at(-1);
     return latest ? copyRecord(latest) : null;
@@ -249,24 +249,24 @@ export class WorkFoldRequestStore {
   /**
    * The newest request on one Chat, within one owner scope. The conversation
    * id alone is not identity: a Chat log travels with its folder, so a copied
-   * work-folder can hold the same conversation id under a different owner.
-   * Pass the work-folder that is asking (or nothing for the work-fold agent
-   * scope) so a reply can never join another work-folder's request.
+   * Connected Folder can hold the same conversation id under a different owner.
+   * Pass the Connected Folder that is asking (or nothing for the AmpleFile agent
+   * scope) so a reply can never join another Connected Folder's request.
    */
-  latestForConversation(conversationId: string, owner: { workFolderId?: string } = {}): WorkFoldRequestRecord | null {
+  latestForConversation(conversationId: string, owner: { connectedFolderId?: string } = {}): AmpleFileRequestRecord | null {
     const records = this.#sorted([...this.#records.values()].filter((record) =>
       record.owner.conversationId === conversationId
-      && (owner.workFolderId ?? null) === (record.owner.workFolderId ?? null)));
+      && (owner.connectedFolderId ?? null) === (record.owner.connectedFolderId ?? null)));
     const latest = records.at(-1);
     return latest ? copyRecord(latest) : null;
   }
 
   /** Oldest first, like the registry this store replaces. `limit` keeps the newest. */
-  list(options: { kind?: WorkFoldRequestKind; rootId?: string; workFolderId?: string; limit?: number } = {}): WorkFoldRequestRecord[] {
+  list(options: { kind?: AmpleFileRequestKind; rootId?: string; connectedFolderId?: string; limit?: number } = {}): AmpleFileRequestRecord[] {
     let records = [...this.#records.values()];
     if (options.kind) records = records.filter((record) => record.kind === options.kind);
     if (options.rootId) records = records.filter((record) => record.rootId === options.rootId);
-    if (options.workFolderId) records = records.filter((record) => record.owner.workFolderId === options.workFolderId);
+    if (options.connectedFolderId) records = records.filter((record) => record.owner.connectedFolderId === options.connectedFolderId);
     records = this.#sorted(records);
     if (options.limit !== undefined && records.length > options.limit) records = records.slice(-options.limit);
     return records.map(copyRecord);
@@ -278,7 +278,7 @@ export class WorkFoldRequestStore {
    * `updatedAt`; sorting explicitly means "newest request" means the same
    * thing before and after a restart.
    */
-  #sorted(records: WorkFoldRequestRecord[]): WorkFoldRequestRecord[] {
+  #sorted(records: AmpleFileRequestRecord[]): AmpleFileRequestRecord[] {
     return records.sort((left, right) =>
       left.createdAt.localeCompare(right.createdAt) || left.requestId.localeCompare(right.requestId));
   }
@@ -294,22 +294,22 @@ export class WorkFoldRequestStore {
   /**
    * The `--task` rule for `chat report`, `chat ask`, and `chat handoff`
    * (docs/collaboration-contract.md, F27): a task id must name the caller's
-   * own turn — the newest turn of a request the named work-folder owns — and
+   * own turn — the newest turn of a request the named Connected Folder owns — and
    * that turn must still be running, exactly the way `--parent-task` is
-   * checked. An id from an older turn, another work-folder, or another request
+   * checked. An id from an older turn, another Connected Folder, or another request
    * is refused by name. Returns the owning record so the verb can continue with it.
    */
-  assertOwnAcceptingTurn(taskId: string, owner: { workFolderId?: string }): WorkFoldRequestRecord {
+  assertOwnAcceptingTurn(taskId: string, owner: { connectedFolderId?: string }): AmpleFileRequestRecord {
     const record = this.byTaskId(taskId);
-    if (!record) throw new WorkFoldRequestLineageError("That task does not belong to a request on record.");
-    if ((owner.workFolderId ?? null) !== (record.owner.workFolderId ?? null)) {
-      throw new WorkFoldRequestLineageError("That task belongs to another work-folder's turn.");
+    if (!record) throw new AmpleFileRequestLineageError("That task does not belong to a request on record.");
+    if ((owner.connectedFolderId ?? null) !== (record.owner.connectedFolderId ?? null)) {
+      throw new AmpleFileRequestLineageError("That task belongs to another Connected Folder's turn.");
     }
     if (record.turns.at(-1)?.taskId !== taskId) {
-      throw new WorkFoldRequestLineageError("That task is an older turn of its request; use the turn that is running now.");
+      throw new AmpleFileRequestLineageError("That task is an older turn of its request; use the turn that is running now.");
     }
     if (!this.isAccepting(taskId)) {
-      throw new WorkFoldRequestLineageError("That task's turn is stopping or has already finished.");
+      throw new AmpleFileRequestLineageError("That task's turn is stopping or has already finished.");
     }
     return record;
   }
@@ -338,16 +338,16 @@ export class WorkFoldRequestStore {
     });
   }
 
-  question(questionId: string): WorkFoldQuestionRecord | null {
+  question(questionId: string): AmpleFileQuestionRecord | null {
     const record = this.#questions.get(questionId);
     return record ? { ...record } : null;
   }
 
-  questions(requestId: string): WorkFoldQuestionRecord[] {
+  questions(requestId: string): AmpleFileQuestionRecord[] {
     return [...this.#questions.values()].filter((record) => record.requestId === requestId).map((record) => ({ ...record }));
   }
 
-  openQuestions(rootId?: string): WorkFoldQuestionRecord[] {
+  openQuestions(rootId?: string): AmpleFileQuestionRecord[] {
     return [...this.#questions.values()]
       .filter((record) => record.state === "open" && (rootId === undefined || record.rootId === rootId))
       .map((record) => ({ ...record }));
@@ -356,16 +356,16 @@ export class WorkFoldRequestStore {
   // --- creation and joining ----------------------------------------------
 
   beginRoot(input: {
-    kind: WorkFoldRequestKind;
-    owner: WorkFoldRequestOwner;
-    surface: WorkFoldRequestSurface;
+    kind: AmpleFileRequestKind;
+    owner: AmpleFileRequestOwner;
+    surface: AmpleFileRequestSurface;
     taskId: string;
-    app?: WorkFoldRequestAppRef;
+    app?: AmpleFileRequestAppRef;
     content?: string;
-    attachments?: readonly WorkFoldAgentAttachmentRef[];
+    attachments?: readonly AmpleFileAgentAttachmentRef[];
     continuedFromTaskId?: string | null;
     acceptedAt?: string;
-  }): Promise<WorkFoldRequestRecord> {
+  }): Promise<AmpleFileRequestRecord> {
     return this.#run(async () => {
       const existing = this.#byTask.get(input.taskId);
       if (existing) return copyRecord(this.#records.get(existing)!);
@@ -385,15 +385,15 @@ export class WorkFoldRequestStore {
    */
   beginChild(input: {
     parentTaskId: string;
-    kind: WorkFoldRequestKind;
-    owner: WorkFoldRequestOwner;
-    surface: WorkFoldRequestSurface;
+    kind: AmpleFileRequestKind;
+    owner: AmpleFileRequestOwner;
+    surface: AmpleFileRequestSurface;
     taskId: string;
-    app?: WorkFoldRequestAppRef;
+    app?: AmpleFileRequestAppRef;
     content?: string;
-    attachments?: readonly WorkFoldAgentAttachmentRef[];
+    attachments?: readonly AmpleFileAgentAttachmentRef[];
     acceptedAt?: string;
-  }): Promise<WorkFoldRequestRecord> {
+  }): Promise<AmpleFileRequestRecord> {
     return this.#run(async () => {
       const existing = this.#byTask.get(input.taskId);
       if (existing) return copyRecord(this.#records.get(existing)!);
@@ -421,16 +421,16 @@ export class WorkFoldRequestStore {
     taskId: string;
     role?: "continuation";
     content?: string;
-    attachments?: readonly WorkFoldAgentAttachmentRef[];
+    attachments?: readonly AmpleFileAgentAttachmentRef[];
     acceptedAt?: string;
-  }): Promise<WorkFoldRequestRecord> {
+  }): Promise<AmpleFileRequestRecord> {
     return this.#run(async () => {
       const existing = this.#byTask.get(input.taskId);
       if (existing) return copyRecord(this.#records.get(existing)!);
       const record = this.#requireRecord(input.requestId);
       this.assertCanContinue(record.requestId);
       const at = input.acceptedAt ?? this.#now().toISOString();
-      const turn: WorkFoldRequestTurnRef = {
+      const turn: AmpleFileRequestTurnRef = {
         taskId: input.taskId,
         acceptedAt: at,
         role: input.role ?? "continuation",
@@ -439,11 +439,11 @@ export class WorkFoldRequestStore {
         messageId: null,
         error: null,
       };
-      const next: WorkFoldRequestRecord = {
+      const next: AmpleFileRequestRecord = {
         ...record,
         turns: [...record.turns, turn],
         content: input.content === undefined ? record.content : boundContent(input.content),
-        attachments: dedupeAttachments([...record.attachments, ...(input.attachments ?? [])]).slice(0, maxWorkFoldAgentAttachments),
+        attachments: dedupeAttachments([...record.attachments, ...(input.attachments ?? [])]).slice(0, maxAmpleFileAgentAttachments),
         continuedFromTaskId: record.turns.at(-1)?.taskId ?? record.continuedFromTaskId,
         // A joined turn reopens the request: it is working again, and its
         // settle time belongs to whatever this new turn does.
@@ -460,7 +460,7 @@ export class WorkFoldRequestStore {
 
   // --- turn lifecycle ----------------------------------------------------
 
-  markTurnRunning(taskId: string): Promise<WorkFoldRequestRecord | null> {
+  markTurnRunning(taskId: string): Promise<AmpleFileRequestRecord | null> {
     return this.#run(async () => await this.#updateTurn(taskId, (turn) =>
       turn.state === "accepted" ? { ...turn, state: "running" } : turn));
   }
@@ -471,7 +471,7 @@ export class WorkFoldRequestStore {
    * task id belongs to exactly one request, so the same turn resumes rather
    * than a second record appearing. The request is working again.
    */
-  reopenTurn(taskId: string): Promise<WorkFoldRequestRecord | null> {
+  reopenTurn(taskId: string): Promise<AmpleFileRequestRecord | null> {
     return this.#run(async () => await this.#updateTurn(taskId, (turn) =>
       turn.state === "accepted" || turn.state === "running"
         ? turn
@@ -485,12 +485,12 @@ export class WorkFoldRequestStore {
   settleTurn(
     taskId: string,
     input: {
-      status: Exclude<WorkFoldRequestTurnState, "accepted" | "running">;
+      status: Exclude<AmpleFileRequestTurnState, "accepted" | "running">;
       messageId?: string;
       error?: string;
-      usage?: WorkFoldDurableTurnUsage;
+      usage?: AmpleFileDurableTurnUsage;
     },
-  ): Promise<WorkFoldRequestRecord | null> {
+  ): Promise<AmpleFileRequestRecord | null> {
     return this.#run(async () => {
       const record = await this.#updateTurn(taskId, (turn) => {
         if (turn.state !== "accepted" && turn.state !== "running") return turn;
@@ -508,7 +508,7 @@ export class WorkFoldRequestStore {
     });
   }
 
-  markStopRequested(requestId: string): Promise<WorkFoldRequestRecord | null> {
+  markStopRequested(requestId: string): Promise<AmpleFileRequestRecord | null> {
     return this.#run(async () => {
       const record = this.#records.get(requestId);
       if (!record) return null;
@@ -526,13 +526,13 @@ export class WorkFoldRequestStore {
    * Attaches a job to the request whose turn started it, before its process
    * starts. A stopped request refuses, so no job outlives a Stop.
    */
-  noteJobStarted(input: { taskId: string; jobId: string; name: string; startedAt?: string; service?: boolean }): Promise<WorkFoldRequestRecord> {
+  noteJobStarted(input: { taskId: string; jobId: string; name: string; startedAt?: string; service?: boolean }): Promise<AmpleFileRequestRecord> {
     return this.#run(async () => {
       const existing = this.#byJob.get(input.jobId);
       if (existing) return copyRecord(this.#records.get(existing)!);
       const record = this.#requireByTask(input.taskId);
       this.assertCanContinue(record.requestId);
-      const ref: WorkFoldRequestJobRef = {
+      const ref: AmpleFileRequestJobRef = {
         ...(input.service ? { service: true } : {}),
         jobId: input.jobId,
         taskId: input.taskId,
@@ -549,7 +549,7 @@ export class WorkFoldRequestStore {
   }
 
   /** Records a job's end on its request. The first end stands. */
-  settleJob(jobId: string, input: { state: Exclude<WorkFoldRequestJobState, "running">; exitCode: number | null; settledAt?: string }): Promise<WorkFoldRequestRecord | null> {
+  settleJob(jobId: string, input: { state: Exclude<AmpleFileRequestJobState, "running">; exitCode: number | null; settledAt?: string }): Promise<AmpleFileRequestRecord | null> {
     return this.#run(async () => {
       const requestId = this.#byJob.get(jobId);
       const record = requestId ? this.#records.get(requestId) : undefined;
@@ -572,14 +572,14 @@ export class WorkFoldRequestStore {
    * (2026-10-18). Only that request's newest running turn may change it; an
    * empty list clears it.
    */
-  setChecklist(taskId: string, items: unknown): Promise<WorkFoldChecklist | null> {
+  setChecklist(taskId: string, items: unknown): Promise<AmpleFileChecklist | null> {
     return this.#run(async () => {
       const record = this.#requireByTask(taskId);
       if (record.turns.at(-1)?.taskId !== taskId || !this.isAccepting(taskId)) {
-        throw new WorkFoldRequestLineageError("Only the turn that is running now can change its request's checklist.");
+        throw new AmpleFileRequestLineageError("Only the turn that is running now can change its request's checklist.");
       }
-      const parsed = parseWorkFoldChecklistItems(items);
-      const checklist: WorkFoldChecklist | null = parsed.length ? { items: parsed, updatedAt: this.#now().toISOString(), taskId } : null;
+      const parsed = parseAmpleFileChecklistItems(items);
+      const checklist: AmpleFileChecklist | null = parsed.length ? { items: parsed, updatedAt: this.#now().toISOString(), taskId } : null;
       const { checklist: _previous, ...rest } = this.#records.get(record.requestId) ?? record;
       await this.#writeRequest(checklist ? { ...rest, checklist } : rest);
       return checklist ? { ...checklist, items: checklist.items.map((item) => ({ ...item })) } : null;
@@ -604,7 +604,7 @@ export class WorkFoldRequestStore {
    * request id it credited, or `null` when nothing was named or the trail is
    * already at its bound — attribution never refuses the act itself.
    */
-  recordAction(parentTaskId: string | undefined, action: WorkFoldRequestAction): Promise<string | null> {
+  recordAction(parentTaskId: string | undefined, action: AmpleFileRequestAction): Promise<string | null> {
     if (!parentTaskId) return Promise.resolve(null);
     return this.#run(async () => {
       const requestId = this.#byTask.get(parentTaskId);
@@ -625,18 +625,18 @@ export class WorkFoldRequestStore {
     /** Suggested answers shown as choices; a free-text answer is still accepted. */
     options?: readonly string[];
     asynchronous?: boolean;
-  }): Promise<WorkFoldQuestionRecord> {
+  }): Promise<AmpleFileQuestionRecord> {
     return this.#run(async () => {
       const record = this.#requireRecord(input.requestId);
-      if (isWorkFoldRequestTerminalState(record.state)) {
+      if (isAmpleFileRequestTerminalState(record.state)) {
         // A request that ran out of time hit a bound, not a lineage rule, so
         // the refusal names the number and where to see it (principle 6).
         throw this.#terminalRefusal(record, "This request has already finished, so it cannot ask a question.");
       }
       this.#requireOwnTurn(record, input.taskId);
       const at = this.#now().toISOString();
-      const question = parseWorkFoldQuestionRecord({
-        schema: workFoldQuestionRecordSchema,
+      const question = parseAmpleFileQuestionRecord({
+        schema: ampleFileQuestionRecordSchema,
         questionId: newId("q", at),
         requestId: record.requestId,
         rootId: record.rootId,
@@ -652,7 +652,7 @@ export class WorkFoldRequestStore {
         answer: null,
         answeredAt: null,
         continuationTaskId: null,
-        answeredByWorkFolderId: null,
+        answeredByConnectedFolderId: null,
       });
       await this.#writeQuestion(question);
       await this.#writeRequest({ ...this.#records.get(record.requestId)!, questionIds: [...record.questionIds, question.questionId] });
@@ -661,29 +661,29 @@ export class WorkFoldRequestStore {
     });
   }
 
-  /** Exactly one answer per question, from the work-folder that was asked. */
-  answer(input: { questionId: string; answer: string; answeredByWorkFolderId?: string }): Promise<WorkFoldQuestionRecord> {
+  /** Exactly one answer per question, from the Connected Folder that was asked. */
+  answer(input: { questionId: string; answer: string; answeredByConnectedFolderId?: string }): Promise<AmpleFileQuestionRecord> {
     return this.#run(async () => {
       const question = this.#questions.get(input.questionId);
-      if (!question) throw new WorkFoldRequestLineageError("That question is not on record.");
-      if (question.state === "answered") throw new WorkFoldRequestLineageError("This question already has an answer.");
-      if (question.state === "cancelled") throw new WorkFoldRequestLineageError("This question was withdrawn when its request stopped.");
+      if (!question) throw new AmpleFileRequestLineageError("That question is not on record.");
+      if (question.state === "answered") throw new AmpleFileRequestLineageError("This question already has an answer.");
+      if (question.state === "cancelled") throw new AmpleFileRequestLineageError("This question was withdrawn when its request stopped.");
       // A refused answer changes nothing: `expireDue` owns the transition, so
       // the request keeps the open question that makes it run out of time.
-      if (question.state === "expired") throw new WorkFoldRequestLineageError("That question has expired.");
+      if (question.state === "expired") throw new AmpleFileRequestLineageError("That question has expired.");
       const record = this.#requireRecord(question.requestId);
       this.assertCanContinue(record.requestId);
-      if (input.answeredByWorkFolderId !== undefined && record.owner.workFolderId !== input.answeredByWorkFolderId) {
-        throw new WorkFoldRequestLineageError("An answer can only come from the work-folder that was asked.");
+      if (input.answeredByConnectedFolderId !== undefined && record.owner.connectedFolderId !== input.answeredByConnectedFolderId) {
+        throw new AmpleFileRequestLineageError("An answer can only come from the Connected Folder that was asked.");
       }
       const at = this.#now().toISOString();
-      const answered = parseWorkFoldQuestionRecord({
+      const answered = parseAmpleFileQuestionRecord({
         ...question,
         updatedAt: at,
         state: "answered",
         answer: input.answer,
         answeredAt: at,
-        answeredByWorkFolderId: input.answeredByWorkFolderId ?? null,
+        answeredByConnectedFolderId: input.answeredByConnectedFolderId ?? null,
       });
       await this.#writeQuestion(answered);
       await this.#recomputeFrom(question.requestId);
@@ -692,16 +692,16 @@ export class WorkFoldRequestStore {
   }
 
   /** Links the one continuation turn an answer starts. Set once, never twice. */
-  linkContinuation(questionId: string, continuationTaskId: string): Promise<WorkFoldQuestionRecord> {
+  linkContinuation(questionId: string, continuationTaskId: string): Promise<AmpleFileQuestionRecord> {
     return this.#run(async () => {
       const question = this.#questions.get(questionId);
-      if (!question) throw new WorkFoldRequestLineageError("That question is not on record.");
-      if (question.state !== "answered") throw new WorkFoldRequestLineageError("A follow-up turn needs an answer first.");
+      if (!question) throw new AmpleFileRequestLineageError("That question is not on record.");
+      if (question.state !== "answered") throw new AmpleFileRequestLineageError("A follow-up turn needs an answer first.");
       if (question.continuationTaskId !== null) {
-        throw new WorkFoldRequestLineageError("This question already started its follow-up turn.");
+        throw new AmpleFileRequestLineageError("This question already started its follow-up turn.");
       }
       this.#requireOwnTurn(this.#requireRecord(question.requestId), continuationTaskId);
-      const linked = parseWorkFoldQuestionRecord({
+      const linked = parseAmpleFileQuestionRecord({
         ...question,
         updatedAt: this.#now().toISOString(),
         continuationTaskId,
@@ -724,17 +724,17 @@ export class WorkFoldRequestStore {
     receiptId: string;
     envelope: unknown;
     schema?: RestrictedAppJsonSchema;
-  }): Promise<WorkFoldResultRecord> {
+  }): Promise<AmpleFileResultRecord> {
     return this.#run(async () => {
       const record = this.#requireRecord(input.requestId);
       this.#requireOwnTurn(record, input.taskId);
-      const envelope: WorkFoldResultEnvelope = parseWorkFoldResultEnvelope(
+      const envelope: AmpleFileResultEnvelope = parseAmpleFileResultEnvelope(
         input.envelope,
         input.schema ? { schema: input.schema } : {},
       );
       const at = this.#now().toISOString();
-      const result = parseWorkFoldResultRecord({
-        schema: workFoldResultRecordSchema,
+      const result = parseAmpleFileResultRecord({
+        schema: ampleFileResultRecordSchema,
         resultId: newId("res", at),
         requestId: record.requestId,
         rootId: record.rootId,
@@ -763,16 +763,16 @@ export class WorkFoldRequestStore {
     });
   }
 
-  async result(resultId: string): Promise<WorkFoldResultRead | null> {
+  async result(resultId: string): Promise<AmpleFileResultRead | null> {
     const requestId = this.#resultOwner.get(resultId);
     if (!requestId) return null;
     return await this.#readResult(requestId, resultId);
   }
 
-  async results(requestId: string): Promise<WorkFoldResultRead[]> {
+  async results(requestId: string): Promise<AmpleFileResultRead[]> {
     const record = this.#records.get(requestId);
     if (!record) return [];
-    const reads: WorkFoldResultRead[] = [];
+    const reads: AmpleFileResultRead[] = [];
     for (const ref of record.results) reads.push(await this.#readResult(requestId, ref.resultId));
     return reads;
   }
@@ -781,25 +781,25 @@ export class WorkFoldRequestStore {
 
   /** Rechecked at acceptance, including every ancestor's stop and window. */
   assertCanContinue(requestId: string): void {
-    let record: WorkFoldRequestRecord | null = this.#requireRecord(requestId);
+    let record: AmpleFileRequestRecord | null = this.#requireRecord(requestId);
     const seen = new Set<string>();
     while (record && !seen.has(record.requestId)) {
       seen.add(record.requestId);
       if (record.stopRequestedAt || record.state === "stopped" || record.limitHit) {
         throw this.#terminalRefusal(record, "This request or its parent stopped and cannot continue.");
       }
-      if (record.state === "expired") throw new WorkFoldRequestLineageError("This request has expired.");
+      if (record.state === "expired") throw new AmpleFileRequestLineageError("This request has expired.");
       record = record.parentRequestId ? this.#requireRecord(record.parentRequestId) : null;
     }
   }
 
   /**
    * Every bound that can refuse a new child turn, in the order a person would
-   * read them. Each throws a `WorkFoldRequestLimitError` naming its number.
+   * read them. Each throws a `AmpleFileRequestLimitError` naming its number.
    */
   assertCanAddChild(parentTaskId: string): void {
     const parent = this.#requireByTask(parentTaskId);
-    if (isWorkFoldRequestTerminalState(parent.state)) {
+    if (isAmpleFileRequestTerminalState(parent.state)) {
       throw this.#terminalRefusal(parent, "The request this work belongs to is stopping or has already finished.");
     }
   }
@@ -820,10 +820,10 @@ export class WorkFoldRequestStore {
         return { allowed: false, count: root.continuationCount };
       }
       for (const id of jobIds) {
-        if (!(record.jobs ?? []).some((job) => job.jobId === id)) throw new WorkFoldRequestLineageError("A continuation can receive only its own background jobs.");
+        if (!(record.jobs ?? []).some((job) => job.jobId === id)) throw new AmpleFileRequestLineageError("A continuation can receive only its own background jobs.");
       }
       for (const id of childTaskIds) {
-        if (this.#requireByTask(id).parentRequestId !== requestId) throw new WorkFoldRequestLineageError("A continuation can receive only its own children's results.");
+        if (this.#requireByTask(id).parentRequestId !== requestId) throw new AmpleFileRequestLineageError("A continuation can receive only its own children's results.");
       }
       const count = root.continuationCount + 1;
       await this.#writeRequest({ ...root, continuationCount: count });
@@ -860,11 +860,11 @@ export class WorkFoldRequestStore {
     });
   }
 
-  #childDeliveryIds(record: WorkFoldRequestRecord, taskIds: string[]): string[] {
+  #childDeliveryIds(record: AmpleFileRequestRecord, taskIds: string[]): string[] {
     const delivered = new Map<string, string>();
     for (const id of [...record.deliveredChildTaskIds, ...taskIds]) {
       const child = this.#requireByTask(id);
-      if (child.parentRequestId !== record.requestId) throw new WorkFoldRequestLineageError("A request can receive only its own children's results.");
+      if (child.parentRequestId !== record.requestId) throw new AmpleFileRequestLineageError("A request can receive only its own children's results.");
       delivered.set(child.requestId, id);
     }
     return [...delivered.values()];
@@ -879,12 +879,12 @@ export class WorkFoldRequestStore {
    * This settles; it never dispatches. A request touched here carries
    * `reconciledAt` so nothing mistakes a recovered settle for fresh work.
    */
-  reconcile(input: { turns: readonly WorkFoldDurableTurnRecord[]; now?: Date }): Promise<WorkFoldRequestReconcileResult> {
+  reconcile(input: { turns: readonly AmpleFileDurableTurnRecord[]; now?: Date }): Promise<AmpleFileRequestReconcileResult> {
     return this.#run(async () => {
       const now = input.now ?? this.#now();
       const journal = new Map(input.turns.map((turn) => [turn.turnId, turn]));
       const targets = [...this.#records.values()]
-        .filter((record) => !isWorkFoldRequestTerminalState(record.state))
+        .filter((record) => !isAmpleFileRequestTerminalState(record.state))
         .sort((left, right) => right.depth - left.depth || left.createdAt.localeCompare(right.createdAt));
       let settled = 0;
       let expired = 0;
@@ -900,7 +900,7 @@ export class WorkFoldRequestStore {
           if (recovered?.usage) usage = accumulateUsage(usage, recovered.usage);
           return {
             ...turn,
-            state: (recovered?.status ?? "interrupted") as WorkFoldRequestTurnState,
+            state: (recovered?.status ?? "interrupted") as AmpleFileRequestTurnState,
             settledAt: recovered?.updatedAt ?? now.toISOString(),
             messageId: recovered?.messageId ?? turn.messageId,
             error: recovered?.error ?? (recovered ? turn.error : interruptedByShutdown),
@@ -928,7 +928,7 @@ export class WorkFoldRequestStore {
     return this.#run(async () => {
       const at = now ?? this.#now();
       const targets = [...this.#records.values()]
-        .filter((record) => !isWorkFoldRequestTerminalState(record.state) && record.deadline !== null && at.getTime() >= Date.parse(record.deadline))
+        .filter((record) => !isAmpleFileRequestTerminalState(record.state) && record.deadline !== null && at.getTime() >= Date.parse(record.deadline))
         .sort((left, right) => right.depth - left.depth);
       let requests = 0;
       let questions = 0;
@@ -968,7 +968,7 @@ export class WorkFoldRequestStore {
       const doomed: TrimmedRequestRef[] = [];
       for (const members of family.values()) {
         const settledOut = members.every((member) =>
-          isWorkFoldRequestTerminalState(member.state) && !(this.#records.get(member.requestId)?.jobs ?? []).some(job => job.state === "running" || (job.settledAt !== null && Date.parse(job.settledAt) > cutoff)) && member.settledAt !== null && Date.parse(member.settledAt) <= cutoff);
+          isAmpleFileRequestTerminalState(member.state) && !(this.#records.get(member.requestId)?.jobs ?? []).some(job => job.state === "running" || (job.settledAt !== null && Date.parse(job.settledAt) > cutoff)) && member.settledAt !== null && Date.parse(member.settledAt) <= cutoff);
         if (settledOut) doomed.push(...members);
       }
       // The ids retention removes are the only ids a rewrite may drop; the
@@ -1001,7 +1001,7 @@ export class WorkFoldRequestStore {
   }
 
   /** The wake-tolerant "once a day while awake" wrapper, like Recently deleted. */
-  async purgeExpiredIfDue(intervalMs: number = WORKFOLD_REQUEST_PURGE_INTERVAL_MS): Promise<{ purged: number } | null> {
+  async purgeExpiredIfDue(intervalMs: number = AMPLEFILE_REQUEST_PURGE_INTERVAL_MS): Promise<{ purged: number } | null> {
     if (!Number.isFinite(intervalMs) || intervalMs < 0) throw new Error("The purge interval must be a non-negative number of milliseconds.");
     const last = this.#settings.lastPurgeAt === null ? Number.NaN : Date.parse(this.#settings.lastPurgeAt);
     if (Number.isFinite(last) && this.#now().getTime() - last < intervalMs) return null;
@@ -1020,16 +1020,16 @@ export class WorkFoldRequestStore {
     return result;
   }
 
-  #requireRecord(requestId: string): WorkFoldRequestRecord {
+  #requireRecord(requestId: string): AmpleFileRequestRecord {
     const record = this.#records.get(requestId);
-    if (!record) throw new WorkFoldRequestLineageError("That request is not on record.");
+    if (!record) throw new AmpleFileRequestLineageError("That request is not on record.");
     return record;
   }
 
-  #requireByTask(taskId: string): WorkFoldRequestRecord {
+  #requireByTask(taskId: string): AmpleFileRequestRecord {
     const requestId = this.#byTask.get(taskId);
     const record = requestId ? this.#records.get(requestId) : undefined;
-    if (!record) throw new WorkFoldRequestLineageError("That task does not belong to a request on record.");
+    if (!record) throw new AmpleFileRequestLineageError("That task does not belong to a request on record.");
     return record;
   }
 
@@ -1040,9 +1040,9 @@ export class WorkFoldRequestStore {
    * section every bound names (docs/receipts-not-gates.md, principle 6). A
    * stopped or finished request keeps the plain lineage sentence.
    */
-  #terminalRefusal(record: WorkFoldRequestRecord, lineage: string): Error {
+  #terminalRefusal(record: AmpleFileRequestRecord, lineage: string): Error {
     if (record.limitHit?.limit === "providerBudget" && this.#providerBudgetUsd !== null) {
-      return workFoldRequestLimitError("providerBudget", this.#providerBudgetUsd);
+      return ampleFileRequestLimitError("providerBudget", this.#providerBudgetUsd);
     }
     if (record.state === "expired") {
       const deadline = record.deadline ? Date.parse(record.deadline) : Number.NaN;
@@ -1050,39 +1050,39 @@ export class WorkFoldRequestStore {
       const legacyWindowMs = Number.isFinite(deadline) && Number.isFinite(createdAt)
         ? Math.max(0, deadline - createdAt)
         : 0;
-      return workFoldRequestLimitError("deadline", legacyWindowMs);
+      return ampleFileRequestLimitError("deadline", legacyWindowMs);
     }
-    return new WorkFoldRequestLineageError(lineage);
+    return new AmpleFileRequestLineageError(lineage);
   }
 
   /** A verb may only speak for a turn of its own request. */
-  #requireOwnTurn(record: WorkFoldRequestRecord, taskId: string): void {
+  #requireOwnTurn(record: AmpleFileRequestRecord, taskId: string): void {
     if (!record.turns.some((turn) => turn.taskId === taskId)) {
-      throw new WorkFoldRequestLineageError("That task does not belong to this request.");
+      throw new AmpleFileRequestLineageError("That task does not belong to this request.");
     }
   }
 
   #newRecord(input: {
-    kind: WorkFoldRequestKind;
-    owner: WorkFoldRequestOwner;
-    surface: WorkFoldRequestSurface;
+    kind: AmpleFileRequestKind;
+    owner: AmpleFileRequestOwner;
+    surface: AmpleFileRequestSurface;
     taskId: string;
-    app?: WorkFoldRequestAppRef;
+    app?: AmpleFileRequestAppRef;
     content?: string;
-    attachments?: readonly WorkFoldAgentAttachmentRef[];
+    attachments?: readonly AmpleFileAgentAttachmentRef[];
     continuedFromTaskId?: string | null;
     acceptedAt?: string;
     parentTaskId?: string;
-    parent: WorkFoldRequestRecord | null;
-  }): WorkFoldRequestRecord {
+    parent: AmpleFileRequestRecord | null;
+  }): AmpleFileRequestRecord {
     const createdAt = input.acceptedAt ?? this.#now().toISOString();
     const requestId = newId("req", createdAt);
     const deadline = null;
-    const owner: WorkFoldRequestOwner = { conversationId: input.owner.conversationId };
-    if (input.owner.workFolderId !== undefined) owner.workFolderId = input.owner.workFolderId;
-    if (input.owner.workFolderName !== undefined) owner.workFolderName = input.owner.workFolderName;
-    const draft: WorkFoldRequestRecord = {
-      schema: workFoldRequestRecordSchema,
+    const owner: AmpleFileRequestOwner = { conversationId: input.owner.conversationId };
+    if (input.owner.connectedFolderId !== undefined) owner.connectedFolderId = input.owner.connectedFolderId;
+    if (input.owner.connectedFolderName !== undefined) owner.connectedFolderName = input.owner.connectedFolderName;
+    const draft: AmpleFileRequestRecord = {
+      schema: ampleFileRequestRecordSchema,
       requestId,
       kind: input.kind,
       rootId: input.parent ? input.parent.rootId : requestId,
@@ -1118,21 +1118,21 @@ export class WorkFoldRequestStore {
       remote: null,
       assignment: boundContent(input.content ?? ""),
       content: boundContent(input.content ?? ""),
-      attachments: dedupeAttachments([...(input.attachments ?? [])]).slice(0, maxWorkFoldAgentAttachments),
+      attachments: dedupeAttachments([...(input.attachments ?? [])]).slice(0, maxAmpleFileAgentAttachments),
       actions: [],
       continuedFromTaskId: input.continuedFromTaskId ?? null,
     };
     if (input.app) draft.app = { ...input.app };
     // Validating what is about to be appended keeps a malformed record from
     // reaching the journal at all, rather than only failing on the way back.
-    return parseWorkFoldRequestRecord(draft);
+    return parseAmpleFileRequestRecord(draft);
   }
 
   async #updateTurn(
     taskId: string,
-    mutate: (turn: WorkFoldRequestTurnRef) => WorkFoldRequestTurnRef,
-    usage?: WorkFoldDurableTurnUsage,
-  ): Promise<WorkFoldRequestRecord | null> {
+    mutate: (turn: AmpleFileRequestTurnRef) => AmpleFileRequestTurnRef,
+    usage?: AmpleFileDurableTurnUsage,
+  ): Promise<AmpleFileRequestRecord | null> {
     const requestId = this.#byTask.get(taskId);
     const record = requestId ? this.#records.get(requestId) : undefined;
     if (!record) return null;
@@ -1156,7 +1156,7 @@ export class WorkFoldRequestStore {
     let current: string | null = requestId;
     while (current && !seen.has(current)) {
       seen.add(current);
-      const record: WorkFoldRequestRecord | undefined = this.#records.get(current);
+      const record: AmpleFileRequestRecord | undefined = this.#records.get(current);
       if (!record) break;
       const next = this.#withComputedState(record, at);
       if (next.state !== record.state || next.settledAt !== record.settledAt) await this.#writeRequest(next);
@@ -1164,11 +1164,11 @@ export class WorkFoldRequestStore {
     }
   }
 
-  #withComputedState(record: WorkFoldRequestRecord, now: Date): WorkFoldRequestRecord {
+  #withComputedState(record: AmpleFileRequestRecord, now: Date): AmpleFileRequestRecord {
     // Completion can change when a descendant legitimately continues. Stop
     // and expiry remain final; they cannot be undone by a later child settle.
     if (record.state === "stopped" || record.state === "expired") return record;
-    const state = computeWorkFoldRequestState({
+    const state = computeAmpleFileRequestState({
       stopRequestedAt: record.stopRequestedAt,
       deadline: record.deadline,
       now,
@@ -1182,7 +1182,7 @@ export class WorkFoldRequestStore {
       limitHit: record.limitHit,
       jobStates: (record.jobs ?? []).filter(job => !job.service).map((job) => job.state),
     });
-    const terminal = isWorkFoldRequestTerminalState(state);
+    const terminal = isAmpleFileRequestTerminalState(state);
     return {
       ...record,
       state,
@@ -1252,16 +1252,16 @@ export class WorkFoldRequestStore {
   }
 
   #resultPath(requestId: string, resultId: string): string {
-    if (!workFoldRequestIdPattern.test(requestId) || !workFoldResultIdPattern.test(resultId)) {
+    if (!ampleFileRequestIdPattern.test(requestId) || !ampleFileResultIdPattern.test(resultId)) {
       throw new Error("A result path needs valid request and result ids.");
     }
     return join(this.rootPath, "results", requestId, `${resultId}.json`);
   }
 
-  async #readResult(requestId: string, resultId: string): Promise<WorkFoldResultRead> {
+  async #readResult(requestId: string, resultId: string): Promise<AmpleFileResultRead> {
     try {
       const text = await readFile(this.#resultPath(requestId, resultId), "utf8");
-      return { state: "ok", record: parseWorkFoldResultRecord(JSON.parse(text)) };
+      return { state: "ok", record: parseAmpleFileResultRecord(JSON.parse(text)) };
     } catch (error) {
       return { state: "damaged", resultId, requestId, error: errorMessage(error) };
     }
@@ -1269,15 +1269,15 @@ export class WorkFoldRequestStore {
 
   // --- persistence -------------------------------------------------------
 
-  async #writeRequest(record: WorkFoldRequestRecord): Promise<void> {
-    const next = parseWorkFoldRequestRecord({ ...record, updatedAt: this.#now().toISOString() });
+  async #writeRequest(record: AmpleFileRequestRecord): Promise<void> {
+    const next = parseAmpleFileRequestRecord({ ...record, updatedAt: this.#now().toISOString() });
     await this.#append(this.requestsPath, next);
     this.#rememberRequest(next);
     await this.#compact("requests", false);
   }
 
-  async #writeQuestion(record: WorkFoldQuestionRecord): Promise<void> {
-    const next = parseWorkFoldQuestionRecord(record);
+  async #writeQuestion(record: AmpleFileQuestionRecord): Promise<void> {
+    const next = parseAmpleFileQuestionRecord(record);
     await this.#append(this.questionsPath, next);
     this.#questions.set(next.questionId, next);
     await this.#compact("questions", false);
@@ -1293,7 +1293,7 @@ export class WorkFoldRequestStore {
     await appendFile(path, `${JSON.stringify(record)}\n`, { encoding: "utf8", mode: 0o600, flush: true });
   }
 
-  #rememberRequest(record: WorkFoldRequestRecord): void {
+  #rememberRequest(record: AmpleFileRequestRecord): void {
     this.#records.set(record.requestId, record);
     for (const turn of record.turns) this.#byTask.set(turn.taskId, record.requestId);
     for (const ref of record.results) this.#resultOwner.set(ref.resultId, record.requestId);
@@ -1303,14 +1303,14 @@ export class WorkFoldRequestStore {
   async #load(): Promise<void> {
     for (const line of await this.#readJournal(this.requestsPath)) {
       try {
-        this.#rememberRequest(parseWorkFoldRequestRecord(JSON.parse(line)));
+        this.#rememberRequest(parseAmpleFileRequestRecord(JSON.parse(line)));
       } catch {
         this.#damaged += 1;
       }
     }
     for (const line of await this.#readJournal(this.questionsPath)) {
       try {
-        const question = parseWorkFoldQuestionRecord(JSON.parse(line));
+        const question = parseAmpleFileQuestionRecord(JSON.parse(line));
         this.#questions.set(question.questionId, question);
       } catch {
         this.#damaged += 1;
@@ -1383,7 +1383,7 @@ export class WorkFoldRequestStore {
   #trimMemory(): void {
     if (this.#records.size <= this.#maxRecords) return;
     const records = [...this.#records.values()]
-      .filter((record) => isWorkFoldRequestTerminalState(record.state) && !(record.jobs ?? []).some(job => job.state === "running"))
+      .filter((record) => isAmpleFileRequestTerminalState(record.state) && !(record.jobs ?? []).some(job => job.state === "running"))
       .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
     for (const record of records.slice(0, Math.max(0, this.#records.size - this.#maxRecords))) {
       for (const turn of record.turns) this.#byTask.delete(turn.taskId);
@@ -1471,14 +1471,14 @@ function newId(prefix: "req" | "q" | "res", at: string): string {
 }
 
 function boundContent(content: string): string {
-  const limit = workFoldRequestLimits.maxRequestContentBytes;
+  const limit = ampleFileRequestLimits.maxRequestContentBytes;
   if (Buffer.byteLength(content, "utf8") <= limit) return content;
   // Cut on a byte bound, then drop a trailing partial character rather than
   // storing a replacement glyph the person never wrote.
   return Buffer.from(content, "utf8").subarray(0, limit).toString("utf8").replace(/\uFFFD+$/u, "");
 }
 
-function dedupeAttachments(attachments: readonly WorkFoldAgentAttachmentRef[]): WorkFoldAgentAttachmentRef[] {
+function dedupeAttachments(attachments: readonly AmpleFileAgentAttachmentRef[]): AmpleFileAgentAttachmentRef[] {
   const seen = new Set<string>();
   return attachments.filter((attachment) => {
     const key = `${attachment.kind}:${attachment.target}`;
@@ -1493,10 +1493,10 @@ function dedupeAttachments(attachments: readonly WorkFoldAgentAttachmentRef[]): 
  * published rates leaves the cost incomplete rather than counting as zero.
  */
 function accumulateUsage(
-  usage: WorkFoldRequestRecord["usage"],
-  turn: WorkFoldDurableTurnUsage,
-): WorkFoldRequestRecord["usage"] {
-  const next: WorkFoldRequestRecord["usage"] = {
+  usage: AmpleFileRequestRecord["usage"],
+  turn: AmpleFileDurableTurnUsage,
+): AmpleFileRequestRecord["usage"] {
+  const next: AmpleFileRequestRecord["usage"] = {
     turns: usage.turns + 1,
     inputTokens: usage.inputTokens + turn.inputTokens,
     outputTokens: usage.outputTokens + turn.outputTokens,
@@ -1507,7 +1507,7 @@ function accumulateUsage(
   return next;
 }
 
-function copyRecord(record: WorkFoldRequestRecord): WorkFoldRequestRecord {
+function copyRecord(record: AmpleFileRequestRecord): AmpleFileRequestRecord {
   return structuredClone(record);
 }
 
@@ -1515,7 +1515,7 @@ async function loadSettings(path: string): Promise<{ settings: RequestSettingsFi
   const fallback: RequestSettingsFile = {
     version: 1,
     lastPurgeAt: null,
-    continuationsEnabled: workFoldRequestContinuationsDefaultEnabled,
+    continuationsEnabled: ampleFileRequestContinuationsDefaultEnabled,
   };
   const raw = await readFile(path, "utf8").catch((error: unknown) => {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;

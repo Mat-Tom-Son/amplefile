@@ -1,11 +1,11 @@
-# Contributing to work-fold
+# Contributing to AmpleFile
 
-work-fold is an independent project, and help building and maintaining it is
+AmpleFile is an independent project, and help building and maintaining it is
 welcome. A focused bug fix, a clearer interaction, a useful test, or a better
 explanation is a good first contribution.
 
 Start with something you noticed while using the app. Describe it in an
-[issue](https://github.com/Mat-Tom-Son/work-fold/issues) or draft pull request
+[issue](https://github.com/Mat-Tom-Son/amplefile/issues) or draft pull request
 so we can discuss the approach as you work.
 
 ## First run
@@ -18,8 +18,8 @@ our packaging lane, rather than installed by a dependency hook. The package's
 minimum runtime remains Node 22.19.0.
 
 ```sh
-git clone https://github.com/Mat-Tom-Son/work-fold.git
-cd work-fold
+git clone https://github.com/Mat-Tom-Son/amplefile.git
+cd amplefile
 npm ci
 npm run repo:check
 npm run local:dev
@@ -58,9 +58,9 @@ your change; `AGENTS.md` identifies the required ones.
 |---|---|
 | Files, Chats, navigation, or UI | `web-local/src/`, [Desktop interaction](docs/ui-parity.md) |
 | Filesystem, Worker, or domain services | `src/local/`, [Architecture](docs/architecture.md) |
-| The work-fold agent, CLI, or shared task state | [Kernel](src/local/work-fold-kernel.ts), [CLI](src/local/cli/), [work-fold agent and CLI](docs/work-fold-agent-and-cli.md) |
-| Checks or cross-work-folder work | [Checks](docs/checks.md), [Automations](docs/automations.md) |
-| Worker-built work-folder apps | [App foundation](docs/app-platform-foundation.md), [Authoring](docs/restricted-app-authoring.md), [Runtime](docs/restricted-app-runtime.md) |
+| The AmpleFile agent, CLI, or shared task state | [Kernel](src/local/amplefile-kernel.ts), [CLI](src/local/cli/), [AmpleFile agent and CLI](docs/amplefile-agent-and-cli.md) |
+| Checks or cross–Connected Folder work | [Checks](docs/checks.md), [Automations](docs/automations.md) |
+| Worker-built Connected Folder apps | [App foundation](docs/app-platform-foundation.md), [Authoring](docs/restricted-app-authoring.md), [Runtime](docs/restricted-app-runtime.md) |
 | Native desktop behavior | `desktop/src/`, [macOS builds](docs/macos-build.md) |
 
 ## Verify and submit

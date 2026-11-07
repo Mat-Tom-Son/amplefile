@@ -1,64 +1,64 @@
 import { randomUUID } from "node:crypto";
 
-export const workFoldCheckProposalKind = "work-fold.check-proposal" as const;
-export const workFoldCheckDeclarationKind = "work-fold.check" as const;
-export const workFoldCheckContractVersion = 1 as const;
+export const ampleFileCheckProposalKind = "amplefile.check-proposal" as const;
+export const ampleFileCheckDeclarationKind = "amplefile.check" as const;
+export const ampleFileCheckContractVersion = 1 as const;
 
-export type WorkFoldCheckJson =
+export type AmpleFileCheckJson =
   | null
   | boolean
   | number
   | string
-  | WorkFoldCheckJson[]
-  | { [key: string]: WorkFoldCheckJson };
+  | AmpleFileCheckJson[]
+  | { [key: string]: AmpleFileCheckJson };
 
-export type WorkFoldCheckSeverity = "info" | "warning" | "error";
-export type WorkFoldCheckTargetRole = "primary" | "reference";
+export type AmpleFileCheckSeverity = "info" | "warning" | "error";
+export type AmpleFileCheckTargetRole = "primary" | "reference";
 
-export interface WorkFoldCheckFileTarget {
+export interface AmpleFileCheckFileTarget {
   kind: "file";
-  role: WorkFoldCheckTargetRole;
+  role: AmpleFileCheckTargetRole;
   path: string;
 }
 
-export interface WorkFoldCheckTreeTarget {
+export interface AmpleFileCheckTreeTarget {
   kind: "tree";
-  role: WorkFoldCheckTargetRole;
+  role: AmpleFileCheckTargetRole;
   path: string;
   recursive: boolean;
   extensions: string[];
 }
 
-export type WorkFoldCheckTarget = WorkFoldCheckFileTarget | WorkFoldCheckTreeTarget;
+export type AmpleFileCheckTarget = AmpleFileCheckFileTarget | AmpleFileCheckTreeTarget;
 
-export interface WorkFoldCheckSensorRef {
+export interface AmpleFileCheckSensorRef {
   id: string;
   revision: number;
-  parameters: { [key: string]: WorkFoldCheckJson };
+  parameters: { [key: string]: AmpleFileCheckJson };
 }
 
-export interface WorkFoldCheckDefinition {
+export interface AmpleFileCheckDefinition {
   title: string;
-  severity: WorkFoldCheckSeverity;
+  severity: AmpleFileCheckSeverity;
   trigger: "manual";
-  sensor: WorkFoldCheckSensorRef;
-  targets: WorkFoldCheckTarget[];
+  sensor: AmpleFileCheckSensorRef;
+  targets: AmpleFileCheckTarget[];
 }
 
-export interface WorkFoldCheckProposal {
-  kind: typeof workFoldCheckProposalKind;
-  version: typeof workFoldCheckContractVersion;
+export interface AmpleFileCheckProposal {
+  kind: typeof ampleFileCheckProposalKind;
+  version: typeof ampleFileCheckContractVersion;
   name: string;
   createdBy: "human" | "assistant" | "codex" | "claude-code" | "other";
   createdAt: string;
-  check: WorkFoldCheckDefinition;
+  check: AmpleFileCheckDefinition;
 }
 
-export interface WorkFoldCheckDeclaration extends WorkFoldCheckDefinition {
-  kind: typeof workFoldCheckDeclarationKind;
-  version: typeof workFoldCheckContractVersion;
+export interface AmpleFileCheckDeclaration extends AmpleFileCheckDefinition {
+  kind: typeof ampleFileCheckDeclarationKind;
+  version: typeof ampleFileCheckContractVersion;
   id: string;
-  createdBy: WorkFoldCheckProposal["createdBy"];
+  createdBy: AmpleFileCheckProposal["createdBy"];
   createdAt: string;
 }
 
@@ -74,14 +74,14 @@ const forbiddenParameterKeys = new Set([
   "system",
 ]);
 
-export function normalizeWorkFoldCheckProposal(value: unknown): WorkFoldCheckProposal {
+export function normalizeAmpleFileCheckProposal(value: unknown): AmpleFileCheckProposal {
   const record = objectRecord(value, "Check proposal must be a JSON object.");
   assertKeys(record, ["kind", "version", "name", "createdBy", "createdAt", "check"], [], "Check proposal");
-  if (record.kind !== workFoldCheckProposalKind) throw new Error(`Check proposal kind must be ${workFoldCheckProposalKind}.`);
+  if (record.kind !== ampleFileCheckProposalKind) throw new Error(`Check proposal kind must be ${ampleFileCheckProposalKind}.`);
   assertVersion(record.version, "Check proposal");
   return {
-    kind: workFoldCheckProposalKind,
-    version: workFoldCheckContractVersion,
+    kind: ampleFileCheckProposalKind,
+    version: ampleFileCheckContractVersion,
     name: boundedText(record.name, "Check proposal name", 120),
     createdBy: normalizeCreator(record.createdBy),
     createdAt: isoTimestamp(record.createdAt, "Check proposal createdAt"),
@@ -89,7 +89,7 @@ export function normalizeWorkFoldCheckProposal(value: unknown): WorkFoldCheckPro
   };
 }
 
-export function normalizeWorkFoldCheckDeclaration(value: unknown): WorkFoldCheckDeclaration {
+export function normalizeAmpleFileCheckDeclaration(value: unknown): AmpleFileCheckDeclaration {
   const record = objectRecord(value, "Check declaration must be a JSON object.");
   assertKeys(
     record,
@@ -97,11 +97,11 @@ export function normalizeWorkFoldCheckDeclaration(value: unknown): WorkFoldCheck
     [],
     "Check declaration",
   );
-  if (record.kind !== workFoldCheckDeclarationKind) throw new Error(`Check declaration kind must be ${workFoldCheckDeclarationKind}.`);
+  if (record.kind !== ampleFileCheckDeclarationKind) throw new Error(`Check declaration kind must be ${ampleFileCheckDeclarationKind}.`);
   assertVersion(record.version, "Check declaration");
   return {
-    kind: workFoldCheckDeclarationKind,
-    version: workFoldCheckContractVersion,
+    kind: ampleFileCheckDeclarationKind,
+    version: ampleFileCheckContractVersion,
     id: checkId(record.id),
     ...normalizeCheckDefinition({
       title: record.title,
@@ -115,13 +115,13 @@ export function normalizeWorkFoldCheckDeclaration(value: unknown): WorkFoldCheck
   };
 }
 
-export function declarationFromWorkFoldCheckProposal(
-  proposal: WorkFoldCheckProposal,
+export function declarationFromAmpleFileCheckProposal(
+  proposal: AmpleFileCheckProposal,
   id = `check-${randomUUID()}`,
-): WorkFoldCheckDeclaration {
-  return normalizeWorkFoldCheckDeclaration({
-    kind: workFoldCheckDeclarationKind,
-    version: workFoldCheckContractVersion,
+): AmpleFileCheckDeclaration {
+  return normalizeAmpleFileCheckDeclaration({
+    kind: ampleFileCheckDeclarationKind,
+    version: ampleFileCheckContractVersion,
     id,
     ...proposal.check,
     createdBy: proposal.createdBy,
@@ -129,19 +129,19 @@ export function declarationFromWorkFoldCheckProposal(
   });
 }
 
-export function normalizeWorkFoldCheckTargetPath(value: unknown, label = "Check target path"): string {
+export function normalizeAmpleFileCheckTargetPath(value: unknown, label = "Check target path"): string {
   if (typeof value !== "string" || value !== value.trim()) throw new Error(`${label} cannot have leading or trailing whitespace.`);
   const path = boundedText(value, label, 512).replaceAll("\\", "/");
-  if (path.startsWith("/") || /^[A-Za-z]:\//.test(path)) throw new Error(`${label} must be relative to the work-folder.`);
+  if (path.startsWith("/") || /^[A-Za-z]:\//.test(path)) throw new Error(`${label} must be relative to the Connected Folder.`);
   const segments = path.split("/");
   if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
     throw new Error(`${label} must be a normalized relative path.`);
   }
   if (segments.some((segment) => {
     const normalized = segment.toLocaleLowerCase("en-US");
-    return normalized === ".work-fold" || normalized === ".workspace" || normalized === ".pi";
+    return normalized === ".amplefile" || normalized === ".workspace" || normalized === ".pi";
   })) {
-    throw new Error(`${label} cannot select hidden work-fold or Pi configuration.`);
+    throw new Error(`${label} cannot select hidden AmpleFile or Pi configuration.`);
   }
   if (segments.some(isUnsafeWindowsPathSegment)) {
     throw new Error(`${label} contains a Windows-reserved or ambiguous path segment.`);
@@ -156,7 +156,7 @@ function isUnsafeWindowsPathSegment(segment: string): boolean {
     || /^com[1-9]$/.test(stem) || /^lpt[1-9]$/.test(stem);
 }
 
-function normalizeCheckDefinition(value: unknown): WorkFoldCheckDefinition {
+function normalizeCheckDefinition(value: unknown): AmpleFileCheckDefinition {
   const record = objectRecord(value, "Check definition must be a JSON object.");
   assertKeys(record, ["title", "severity", "trigger", "sensor", "targets"], [], "Check definition");
   const severity = record.severity;
@@ -178,7 +178,7 @@ function normalizeCheckDefinition(value: unknown): WorkFoldCheckDefinition {
   };
 }
 
-function normalizeSensor(value: unknown): WorkFoldCheckSensorRef {
+function normalizeSensor(value: unknown): AmpleFileCheckSensorRef {
   const record = objectRecord(value, "Check sensor must be a JSON object.");
   assertKeys(record, ["id", "revision", "parameters"], [], "Check sensor");
   const id = boundedText(record.id, "Sensor id", 160).toLocaleLowerCase("en-US");
@@ -192,22 +192,22 @@ function normalizeSensor(value: unknown): WorkFoldCheckSensorRef {
   return {
     id,
     revision: record.revision as number,
-    parameters: structuredClone(parameters) as { [key: string]: WorkFoldCheckJson },
+    parameters: structuredClone(parameters) as { [key: string]: AmpleFileCheckJson },
   };
 }
 
-function normalizeTarget(value: unknown, index: number): WorkFoldCheckTarget {
+function normalizeTarget(value: unknown, index: number): AmpleFileCheckTarget {
   const label = `Check target ${index + 1}`;
   const record = objectRecord(value, `${label} must be a JSON object.`);
   const role = record.role;
   if (role !== "primary" && role !== "reference") throw new Error(`${label} role must be primary or reference.`);
   if (record.kind === "file") {
     assertKeys(record, ["kind", "role", "path"], [], label);
-    return { kind: "file", role, path: normalizeWorkFoldCheckTargetPath(record.path, `${label} path`) };
+    return { kind: "file", role, path: normalizeAmpleFileCheckTargetPath(record.path, `${label} path`) };
   }
   if (record.kind === "tree") {
     assertKeys(record, ["kind", "role", "path", "recursive", "extensions"], [], label);
-    const path = normalizeWorkFoldCheckTargetPath(record.path, `${label} path`);
+    const path = normalizeAmpleFileCheckTargetPath(record.path, `${label} path`);
     if (record.recursive !== true && record.recursive !== false) throw new Error(`${label} recursive must be a boolean.`);
     if (!Array.isArray(record.extensions) || record.extensions.length < 1 || record.extensions.length > 256) {
       throw new Error(`${label} extensions must contain between 1 and 256 file extensions.`);
@@ -258,7 +258,7 @@ function checkId(value: unknown): string {
   return id;
 }
 
-function normalizeCreator(value: unknown): WorkFoldCheckProposal["createdBy"] {
+function normalizeCreator(value: unknown): AmpleFileCheckProposal["createdBy"] {
   if (value === "human" || value === "assistant" || value === "codex" || value === "claude-code" || value === "other") return value;
   throw new Error("Check proposal createdBy is invalid.");
 }
@@ -269,7 +269,7 @@ function isoTimestamp(value: unknown, label: string): string {
 }
 
 function assertVersion(value: unknown, label: string): void {
-  if (value !== workFoldCheckContractVersion) {
+  if (value !== ampleFileCheckContractVersion) {
     throw new Error(`${label} uses unsupported version ${String(value)}.`);
   }
 }

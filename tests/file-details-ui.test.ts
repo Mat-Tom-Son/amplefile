@@ -3,7 +3,7 @@ import test, { type TestContext } from "node:test";
 import { createRequire, registerHooks } from "node:module";
 import { createElement } from "react";
 import type { ClipboardContent } from "../src/shared/clipboard.js";
-import type { TreeEntry, WorkFolderSummary } from "../web-local/src/types.js";
+import type { TreeEntry, ConnectedFolderSummary } from "../web-local/src/types.js";
 import { createDomHarness } from "./support/dom.js";
 
 type Preview = { kind: "text"; content: string; truncated?: boolean; sizeBytes: number };
@@ -37,10 +37,10 @@ async function fileHarness(t: TestContext, initialPath = "notes.txt", initialCon
       return next(url, context);
     },
   });
-  window.workFoldDesktop = {
+  window.ampleFileDesktop = {
     api: { async getSessionHeaders() { return {}; } },
     clipboard: { async write(content: ClipboardContent) { copied.push(content); } },
-  } as typeof window.workFoldDesktop;
+  } as typeof window.ampleFileDesktop;
   t.mock.method(globalThis, "fetch", async (url: string, options?: RequestInit) => {
     reads.push(String(url));
     return new Response(rawRead ? await rawRead(options?.signal ?? undefined) : rawText);
@@ -49,7 +49,7 @@ async function fileHarness(t: TestContext, initialPath = "notes.txt", initialCon
   const { FileDetailsPane } = await import("../web-local/src/components/panes/FileDetailsPane.js");
   const render = async (path = initialPath, active = true) => {
     await dom.render(createElement(FileDetailsPane, {
-      workFolder: { id: "folder", workFolderRoot: "/folder" } as WorkFolderSummary,
+      connectedFolder: { id: "folder", connectedFolderRoot: "/folder" } as ConnectedFolderSummary,
       path, active, entry: { name: path, path, kind: "file", updatedAt: new Date(1_700_000_000_000 + preview.sizeBytes).toISOString() } as TreeEntry,
       onOpenLocal() {}, onAddToChatContext() {}, onShowVersionHistory() {},
     }));

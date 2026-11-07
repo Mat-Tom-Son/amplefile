@@ -14,9 +14,9 @@ import {
 } from "../src/local/agent/restricted-app-proposals.js";
 import { RestrictedAppService, type RestrictedAppInstalled } from "../src/local/agent/restricted-app-service.js";
 
-const workFolderId = "ws-proposal11111111";
+const connectedFolderId = "ws-proposal11111111";
 
-test("propose_space_app exposes only a work-folder-relative path and reports what was added and what still needs a person", async () => {
+test("propose_space_app exposes only a Connected Folder–relative path and reports what was added and what still needs a person", async () => {
   const calls: unknown[] = [];
   const host: RestrictedAppProposalHost = {
     async propose(input): Promise<RestrictedAppProposalResult> {
@@ -26,23 +26,23 @@ test("propose_space_app exposes only a work-folder-relative path and reports wha
     },
   };
   const tool = createRestrictedAppProposalTool({
-    workFolderId,
-    workFolderRoot: "C:\\work-folder",
+    connectedFolderId,
+    connectedFolderRoot: "C:\\connected-folder",
     conversationId: "chat-1",
     host,
   });
 
-  assert.equal(tool.name, "propose_work-folder_app");
+  assert.equal(tool.name, "propose_connected_folder_app");
   assert.equal(tool.executionMode, "sequential");
   assert.deepEqual(Object.keys((tool.parameters as any).properties), ["sourcePath"]);
   assert.equal((tool.parameters as any).additionalProperties, false);
   const guidance = tool.promptGuidelines?.join("\n") ?? "";
   // Something other people open on the web is a page (docs/pages.md), not an app.
-  assert.match(guidance, /An app is a tool for the person inside work-fold that uses their files, a Worker, notifications, or connections\./);
+  assert.match(guidance, /An app is a tool for the person inside AmpleFile that uses their files, a Worker, notifications, or connections\./);
   assert.match(guidance, /Something other people will open on the web \(a form, sign-up sheet, RSVP, poll, announcement, or a page made from a document\) is a page instead: build a page folder with page\.json/);
   assert.match(guidance, /cornerRadius is an optional whole number from 0 through 24/);
   assert.match(guidance, /agent-app\.json version 2/);
-  assert.match(guidance, /workFoldRestrictedApp/);
+  assert.match(guidance, /ampleFileRestrictedApp/);
   assert.match(guidance, /handleAutomation/);
   assert.match(guidance, /oauth2-pkce/);
   assert.match(guidance, /assistantActions/);
@@ -74,23 +74,23 @@ test("propose_space_app exposes only a work-folder-relative path and reports wha
   assert.doesNotMatch(tool.description, /human review|for review|review proposal/i);
 
   const result = await tool.execute("call-1", { sourcePath: " apps/mail " }, undefined, undefined, {} as any);
-  assert.deepEqual(calls, [{ workFolderId, workFolderRoot: "C:\\work-folder", conversationId: "chat-1", sourcePath: "apps/mail" }]);
+  assert.deepEqual(calls, [{ connectedFolderId, connectedFolderRoot: "C:\\connected-folder", conversationId: "chat-1", sourcePath: "apps/mail" }]);
   const text = result.content.find((item) => item.type === "text")?.text ?? "";
-  assert.match(text, /added Proposal mail as this work-folder's local preview/);
-  assert.match(text, /On now: 1 destination, 1 folder permission over the whole work-folder, 0 notifications, 1 automation/);
+  assert.match(text, /added Proposal mail as this Connected Folder's local preview/);
+  assert.match(text, /On now: 1 destination, 1 folder permission over the whole Connected Folder, 0 notifications, 1 automation/);
   assert.match(text, /Still needs you: connect mail-api in Settings → Apps → Proposal mail/);
   assert.match(text, /available from the next turn/);
   assert.doesNotMatch(text, /human review|no code was executed/i);
 });
 
 test("propose_space_app reports a failed install plainly and a cancelled one as nothing added", async () => {
-  const failed = createRestrictedAppProposalTool({ workFolderId, workFolderRoot: "/work-folder", conversationId: "chat-1", host: {
+  const failed = createRestrictedAppProposalTool({ connectedFolderId, connectedFolderRoot: "/connected-folder", conversationId: "chat-1", host: {
     async propose(input) { return { status: "failed", proposal: { ...proposalFixture(input), status: "failed", error: "A different package already owns this app id." } }; },
   } });
   const failedText = (await failed.execute("call-2", { sourcePath: "apps/mail" }, undefined, undefined, {} as any)).content.find((item) => item.type === "text")?.text ?? "";
   assert.match(failedText, /could not add Proposal mail: A different package already owns this app id\./);
   assert.match(failedText, /Fix the package and propose again/);
-  const cancelled = createRestrictedAppProposalTool({ workFolderId, workFolderRoot: "/work-folder", conversationId: "chat-1", host: {
+  const cancelled = createRestrictedAppProposalTool({ connectedFolderId, connectedFolderRoot: "/connected-folder", conversationId: "chat-1", host: {
     async propose() { return { status: "cancelled" }; },
   } });
   const cancelledText = (await cancelled.execute("call-3", { sourcePath: "apps/mail" }, undefined, undefined, {} as any)).content.find((item) => item.type === "text")?.text ?? "";
@@ -98,12 +98,12 @@ test("propose_space_app reports a failed install plainly and a cancelled one as 
 });
 
 test("proposal receipts persist, remain Chat-bound, and install the exact revision immediately with every declared power on", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-app-proposals-"));
-  const workFolderRoot = join(sandbox, "work-folder");
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-app-proposals-"));
+  const connectedFolderRoot = join(sandbox, "connected-folder");
   const stateRoot = join(sandbox, "state", "restricted-apps");
   const registryPath = join(stateRoot, "proposals.json");
   try {
-    await writePackage(join(workFolderRoot, "apps", "mail"));
+    await writePackage(join(connectedFolderRoot, "apps", "mail"));
     const service = await RestrictedAppService.create({ rootPath: stateRoot });
     const host = await RoutedRestrictedAppProposalHost.create({ service, registryPath });
     const emitted: string[] = [];
@@ -111,7 +111,7 @@ test("proposal receipts persist, remain Chat-bound, and install the exact revisi
     host.on("request", (proposal) => emitted.push(proposal.id));
     host.on("settled", ({ proposal }) => settled.push(`${proposal.id}:${proposal.status}`));
 
-    const result = await host.propose({ workFolderId, workFolderRoot, conversationId: "chat-1", sourcePath: "apps/mail" });
+    const result = await host.propose({ connectedFolderId, connectedFolderRoot, conversationId: "chat-1", sourcePath: "apps/mail" });
     assert.equal(result.status, "installed");
     assert.ok(result.proposal);
     assert.ok(result.app);
@@ -120,21 +120,21 @@ test("proposal receipts persist, remain Chat-bound, and install the exact revisi
     assert.equal(result.proposal.status, "installed");
     assert.deepEqual(result.needs, { connections: ["mail-api"], files: ["notes"], checks: [] }, "a secret and a file choice still need the person");
     assert.deepEqual(result.proposal.needs, result.needs, "the receipt records the needs");
-    const [installed] = await service.list(workFolderId);
+    const [installed] = await service.list(connectedFolderId);
     assert.equal(installed?.digest, result.proposal.review.digest, "the proposal installs the preview in the same call");
     assert.deepEqual(installed?.networkGrants, ["mail-api"]);
     assert.deepEqual(installed?.fileGrants, [{ id: "exports", declarationId: "exports", root: ".", access: "read-write" }]);
     assert.equal(installed?.automations[0]?.enabled, true);
-    assert.equal((await host.list({ workFolderId, conversationId: "chat-1" })).length, 1);
-    assert.equal((await host.list({ workFolderId, conversationId: "chat-2" })).length, 0);
+    assert.equal((await host.list({ connectedFolderId, conversationId: "chat-1" })).length, 1);
+    assert.equal((await host.list({ connectedFolderId, conversationId: "chat-2" })).length, 0);
 
     const reopened = await RoutedRestrictedAppProposalHost.create({ service, registryPath });
     assert.equal((await reopened.get(result.proposal.id))?.status, "installed");
     assert.equal((await reopened.install(result.proposal.id))?.digest, installed?.digest, "install stays idempotent");
-    const again = await reopened.propose({ workFolderId, workFolderRoot, conversationId: "chat-1", sourcePath: "apps/mail" });
+    const again = await reopened.propose({ connectedFolderId, connectedFolderRoot, conversationId: "chat-1", sourcePath: "apps/mail" });
     assert.equal(again.status, "installed");
     assert.equal(again.proposal?.id, result.proposal.id, "the same source and revision reuse the installed receipt");
-    assert.equal((await service.list(workFolderId)).length, 1);
+    assert.equal((await service.list(connectedFolderId)).length, 1);
     assert.equal(await reopened.dismiss(result.proposal.id), false, "an installed receipt is not dismissable");
     await service.close();
   } finally {
@@ -143,29 +143,29 @@ test("proposal receipts persist, remain Chat-bound, and install the exact revisi
 });
 
 test("a changed source installs its new revision; a failing install records failed with a plain error and can be dismissed", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-app-proposal-change-"));
-  const workFolderRoot = join(sandbox, "work-folder");
-  const sourceRoot = join(workFolderRoot, "apps", "mail");
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-app-proposal-change-"));
+  const connectedFolderRoot = join(sandbox, "connected-folder");
+  const sourceRoot = join(connectedFolderRoot, "apps", "mail");
   const stateRoot = join(sandbox, "state", "restricted-apps");
   try {
     await writePackage(sourceRoot);
     const service = await RestrictedAppService.create({ rootPath: stateRoot });
     const host = await RoutedRestrictedAppProposalHost.create({ service, registryPath: join(stateRoot, "proposals.json") });
-    const first = await host.propose({ workFolderId, workFolderRoot, conversationId: "chat-1", sourcePath: "apps/mail" });
+    const first = await host.propose({ connectedFolderId, connectedFolderRoot, conversationId: "chat-1", sourcePath: "apps/mail" });
     assert.equal(first.status, "installed");
     await writeFile(join(sourceRoot, "app.js"), "export async function handleAction() { return { count: 2 }; }\n", "utf8");
-    const second = await host.propose({ workFolderId, workFolderRoot, conversationId: "chat-1", sourcePath: "apps/mail" });
+    const second = await host.propose({ connectedFolderId, connectedFolderRoot, conversationId: "chat-1", sourcePath: "apps/mail" });
     assert.equal(second.status, "installed");
     assert.notEqual(second.proposal?.id, first.proposal?.id);
     assert.notEqual(second.app?.digest, first.app?.digest);
-    assert.equal((await service.list(workFolderId))[0]?.digest, second.app?.digest, "the new revision replaces the preview");
+    assert.equal((await service.list(connectedFolderId))[0]?.digest, second.app?.digest, "the new revision replaces the preview");
 
-    await writePackage(join(workFolderRoot, "apps", "takeover"), { packageName: "another-package" });
-    const failed = await host.propose({ workFolderId, workFolderRoot, conversationId: "chat-1", sourcePath: "apps/takeover" });
+    await writePackage(join(connectedFolderRoot, "apps", "takeover"), { packageName: "another-package" });
+    const failed = await host.propose({ connectedFolderId, connectedFolderRoot, conversationId: "chat-1", sourcePath: "apps/takeover" });
     assert.equal(failed.status, "failed");
     assert.equal(failed.proposal?.status, "failed");
     assert.match(failed.proposal?.error ?? "", /different package already owns/i);
-    assert.equal((await service.list(workFolderId))[0]?.digest, second.app?.digest, "a failed proposal changes nothing");
+    assert.equal((await service.list(connectedFolderId))[0]?.digest, second.app?.digest, "a failed proposal changes nothing");
     await assert.rejects(host.install(failed.proposal!.id), /different package already owns/i, "retrying a failed receipt reports the same cause");
     assert.equal(await host.dismiss(failed.proposal!.id), true);
     assert.equal((await host.get(failed.proposal!.id))?.status, "dismissed");
@@ -177,30 +177,30 @@ test("a changed source installs its new revision; a failing install records fail
 });
 
 test("the host defers the install to the supplied installer and records a thrown installer as failed", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-app-proposal-installer-"));
-  const workFolderRoot = join(sandbox, "work-folder");
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-app-proposal-installer-"));
+  const connectedFolderRoot = join(sandbox, "connected-folder");
   const stateRoot = join(sandbox, "state", "restricted-apps");
   try {
-    await writePackage(join(workFolderRoot, "apps", "mail"));
+    await writePackage(join(connectedFolderRoot, "apps", "mail"));
     const service = await RestrictedAppService.create({ rootPath: stateRoot });
     const contexts: unknown[] = [];
     let mode: "install" | "throw" = "throw";
     const host = await RoutedRestrictedAppProposalHost.create({ service, registryPath: join(stateRoot, "proposals.json"),
       installNow: async (id, context) => {
         contexts.push(context);
-        if (mode === "throw") throw new Error("Other work in this work-folder did not finish in time.");
+        if (mode === "throw") throw new Error("Other work in this Connected Folder did not finish in time.");
         return host.install(id);
       } });
-    const first = await host.propose({ workFolderId, workFolderRoot, conversationId: "chat-9", sourcePath: "apps/mail" });
-    assert.deepEqual(contexts, [{ workFolderId, conversationId: "chat-9" }]);
+    const first = await host.propose({ connectedFolderId, connectedFolderRoot, conversationId: "chat-9", sourcePath: "apps/mail" });
+    assert.deepEqual(contexts, [{ connectedFolderId, conversationId: "chat-9" }]);
     assert.equal(first.status, "failed");
     assert.equal(first.proposal?.status, "pending", "an installer that never reached the service leaves the receipt pending for a retry");
-    assert.deepEqual(await service.list(workFolderId), []);
+    assert.deepEqual(await service.list(connectedFolderId), []);
     mode = "install";
-    const retried = await host.propose({ workFolderId, workFolderRoot, conversationId: "chat-9", sourcePath: "apps/mail" });
+    const retried = await host.propose({ connectedFolderId, connectedFolderRoot, conversationId: "chat-9", sourcePath: "apps/mail" });
     assert.equal(retried.status, "installed");
     assert.equal(retried.proposal?.id, first.proposal?.id);
-    assert.equal((await service.list(workFolderId)).length, 1);
+    assert.equal((await service.list(connectedFolderId)).length, 1);
     await service.close();
   } finally {
     await rm(sandbox, { recursive: true, force: true });
@@ -239,7 +239,7 @@ async function writePackage(root: string, options: { packageName?: string } = {}
   ]);
 }
 
-function proposalFixture(input: { workFolderId: string; workFolderRoot: string; conversationId: string; sourcePath: string }) {
+function proposalFixture(input: { connectedFolderId: string; connectedFolderRoot: string; conversationId: string; sourcePath: string }) {
   const now = "2026-07-13T12:00:00.000Z";
   const manifest = {
     version: 2 as const,
@@ -256,10 +256,10 @@ function proposalFixture(input: { workFolderId: string; workFolderRoot: string; 
       notifications: [],
     },
   };
-  const review = { packageName: "proposal-mail", version: "0.1.0", digest: "a".repeat(64), artifactDigest: `work-fold.artifact.v1:sha256:${"a".repeat(64)}`, manifest, fileCount: 4, totalBytes: 100 };
+  const review = { packageName: "proposal-mail", version: "0.1.0", digest: "a".repeat(64), artifactDigest: `amplefile.artifact.v1:sha256:${"a".repeat(64)}`, manifest, fileCount: 4, totalBytes: 100 };
   const installedApp = {
     ...review,
-    workFolderId: input.workFolderId, sourceWorkFolderId: input.workFolderId, projectId: "project_1", tenantId: "tenant_1", principalId: "principal_1",
+    connectedFolderId: input.connectedFolderId, sourceConnectedFolderId: input.connectedFolderId, projectId: "project_1", tenantId: "tenant_1", principalId: "principal_1",
     runtimeInstanceId: "runtime-instance_1", runtimeInstanceKind: "development", releaseDigest: null,
     featureInstallationId: "feature-installation_1", dataNamespaceId: "data-namespace_1",
     authority: {} as never,

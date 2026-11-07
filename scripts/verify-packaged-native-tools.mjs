@@ -56,7 +56,7 @@ export async function verifyPackagedNativeTools(archivePath) {
   const security = await verifyPackagedImageSize(archivePath);
   const recovery = await verifyPackagedPiRecovery(archivePath);
   const identity = await verifyPackagedPiIdentity(archivePath);
-  const temporary = await mkdtemp(join(tmpdir(), "workfold-built-native-tools-"));
+  const temporary = await mkdtemp(join(tmpdir(), "amplefile-built-native-tools-"));
   try {
     const archive = join(temporary, "application", "app.asar");
     await mkdir(dirname(archive), { recursive: true });
@@ -90,16 +90,16 @@ export async function verifyPackagedNativeTools(archivePath) {
 /** Verify the signed helper's actual materialization path without starting it or
  * requesting OS permissions. The implementation comes from the built archive. */
 export async function verifyPackagedNativeHelpers(resourcesPath) {
-  const temporary = await mkdtemp(join(tmpdir(), "workfold-built-native-helpers-"));
+  const temporary = await mkdtemp(join(tmpdir(), "amplefile-built-native-helpers-"));
   try {
     const implementation = extractFile(join(resourcesPath, "app.asar"), "dist/desktop/desktop/src/computer-helper-installation.js");
     const modulePath = join(temporary, "installation.mjs"); await writeFile(modulePath, implementation);
     const { ComputerHelperInstallation } = await import(pathToFileURL(modulePath).href);
-    const sourceAppPath = join(resourcesPath, "computer-helper", "work-fold Computer.app");
+    const sourceAppPath = join(resourcesPath, "computer-helper", "AmpleFile Computer.app");
     const installation = await ComputerHelperInstallation.create({ sourceAppPath, stateRoot: join(temporary, "state") });
     await installation.prepare();
     if (!installation.helperAppPath.startsWith(join(temporary, "state", "native-helpers", "computer"))) throw new Error("Packaged Computer helper did not materialize outside the app bundle.");
-    const binary = join(resourcesPath, "chrome-native-host", "work-fold-chrome-host");
+    const binary = join(resourcesPath, "chrome-native-host", "amplefile-chrome-host");
     const reply = await new Promise((resolveReply, reject) => {
       const child = spawn(binary, ["chrome-extension://invalid-origin/"], { stdio: ["pipe", "pipe", "pipe"] });
       const chunks = []; let size = 0, stderr = "";

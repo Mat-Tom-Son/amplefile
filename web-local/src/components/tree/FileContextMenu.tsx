@@ -40,11 +40,11 @@ export function FileContextMenu({
   onNewFile?: (parentPath: string) => void;
   onUploadHere?: (parentPath: string) => void;
   onRefresh?: () => void;
-  /** "Make a work-folder": registers this plain folder as a nested work-folder with its own Worker. */
+  /** "Connect This Folder": registers this plain folder as a nested Connected Folder with its own Worker. */
   onGiveWorker?: (path: string) => void;
   onDelete: (path: string) => void | Promise<void>;
   onDeleteSelection?: (paths: string[]) => void | Promise<void>;
-  /** False for a folder that holds a nested work-folder, which cannot be deleted from here. */
+  /** False for a folder that holds a nested Connected Folder, which cannot be deleted from here. */
   canDelete?: boolean;
   onClose: () => void;
 }) {
@@ -96,7 +96,7 @@ export function FileContextMenu({
       {entry.kind === "folder" && onNewFile ? <button type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => onNewFile(entry.path))}><FilePlus2 size={15} />New File Here</button> : null}
       {entry.kind === "folder" && onUploadHere ? <button type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => onUploadHere(entry.path))}><Upload size={15} />Add Files Here</button> : null}
       {entry.kind === "folder" && onRefresh ? <button type="button" role="menuitem" tabIndex={-1} onClick={() => run(onRefresh)}><RefreshCw size={15} />Refresh</button> : null}
-      {entry.kind === "folder" && entry.path && onGiveWorker ? <><div className="context-menu-separator" role="separator" /><button type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => onGiveWorker(entry.path))}><span className="context-menu-brand-mark" aria-hidden="true" />Make a work-folder</button></> : null}
+      {entry.kind === "folder" && entry.path && onGiveWorker ? <><div className="context-menu-separator" role="separator" /><button type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => onGiveWorker(entry.path))}><span className="context-menu-brand-mark" aria-hidden="true" />Connect This Folder</button></> : null}
       {entry.path && (onRename || canDelete) ? <div className="context-menu-separator" role="separator" /> : null}
       {entry.path && onRename ? <button type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => onRename(entry.path))}><PencilLine size={15} />Rename</button> : null}
       {entry.path && canDelete ? <button className="danger" type="button" role="menuitem" tabIndex={-1} onClick={() => run(() => onDelete(entry.path))}><Trash2 size={15} />Delete {entry.kind === "folder" ? "Folder" : "File"}</button> : null}

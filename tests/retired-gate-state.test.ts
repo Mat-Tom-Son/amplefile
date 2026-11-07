@@ -20,15 +20,15 @@ const retiredFiles = [
 ];
 
 test("startup deletes retired gate state unread and never executes a pending act", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-retired-state-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-retired-state-"));
   const stateBase = join(sandbox, "state");
-  const options = { port: 0, stateBase, workFolderBase: join(sandbox, "content"), loadEnv: false };
+  const options = { port: 0, stateBase, connectedFolderBase: join(sandbox, "content"), loadEnv: false };
   const first = await startLocalApi(options);
-  const workFolder = (await first.actFacade.createWorkFolder({ name: "Kept" })).workFolder;
+  const connectedFolder = (await first.actFacade.createConnectedFolder({ name: "Kept" })).connectedFolder;
   await first.close();
 
   // An older build left a pending-decision store holding a never-confirmed
-  // managed deletion pinned to this work-folder, an Unrestricted authority file,
+  // managed deletion pinned to this Connected Folder, an Unrestricted authority file,
   // a standing-policy store, their journals, and a held automation declaration.
   const fold = join(stateBase, "fold");
   await mkdir(join(fold, "staged-routings"), { recursive: true });
@@ -39,9 +39,9 @@ test("startup deletes retired gate state unread and never executes a pending act
       schemaVersion: 2,
       id: pendingId,
       category: "destroy",
-      kind: "work-folder.delete-folder",
-      parameters: { workFolderId: workFolder.id },
-      pins: { workFolderId: workFolder.id, workFolderRoot: workFolder.workFolderRoot },
+      kind: "connected-folder.delete-folder",
+      parameters: { connectedFolderId: connectedFolder.id },
+      pins: { connectedFolderId: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot },
       provenance: { stagedVia: "act-cli", requestId: "req-old-stage" },
       state: "staged",
       createdAt: "2026-09-01T00:00:00.000Z",
@@ -61,9 +61,9 @@ test("startup deletes retired gate state unread and never executes a pending act
   try {
     for (const name of retiredFiles) assert.equal(existsSync(join(fold, name)), false, `${name} is removed at startup`);
     assert.equal(existsSync(join(fold, "staged-routings")), false, "the held automation declarations are removed");
-    assert.equal(existsSync(workFolder.workFolderRoot), true, "a never-confirmed deletion never runs");
-    assert.equal(existsSync(join(workFolder.workFolderRoot, ".work-fold", "work-folder.json")), true);
-    await second.actFacade.listConversations({ workFolder: workFolder.id });
+    assert.equal(existsSync(connectedFolder.connectedFolderRoot), true, "a never-confirmed deletion never runs");
+    assert.equal(existsSync(join(connectedFolder.connectedFolderRoot, ".amplefile", "connected-folder.json")), true);
+    await second.actFacade.listConversations({ connectedFolder: connectedFolder.id });
     const receipts = await readFile(join(stateBase, "cli", "receipts", "act.jsonl"), "utf8").catch(() => "");
     assert.equal(receipts.includes(pendingId), false, "the pending act leaves no receipt");
     assert.equal(receipts.includes("fold-decision:"), false);
@@ -78,7 +78,7 @@ test("startup deletes retired gate state unread and never executes a pending act
 });
 
 test("removing retired state tolerates a missing fold directory and unrelated files", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-retired-state-unit-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-retired-state-unit-"));
   try {
     await removeRetiredGateState(join(sandbox, "nowhere"));
     await mkdir(join(sandbox, "fold"), { recursive: true });

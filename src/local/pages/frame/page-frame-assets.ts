@@ -16,28 +16,28 @@
  * channel; the intermediary accepts only its exact child window, or its
  * parent with the channel; the runtime accepts only its parent.
  *
- *   intermediary → host   work-fold.page.ready                     (before a channel exists)
- *   host → intermediary   work-fold.page.init  { channel, html, title, owner, tables }
- *   child → host          work-fold.page.loaded                    (+ channel on the way)
- *   child → host          work-fold.page.call  { callId, call }    (+ channel)
- *   child → host          work-fold.page.link  { href }            (+ channel)
- *   host → child          work-fold.page.result { callId, ok, result | error }  (channel checked, then dropped)
- *   host → child          work-fold.page.changed { table }         (channel checked, then dropped)
- *   intermediary → host   work-fold.page.navigated                 (the page tried to leave)
+ *   intermediary → host   amplefile.page.ready                     (before a channel exists)
+ *   host → intermediary   amplefile.page.init  { channel, html, title, owner, tables }
+ *   child → host          amplefile.page.loaded                    (+ channel on the way)
+ *   child → host          amplefile.page.call  { callId, call }    (+ channel)
+ *   child → host          amplefile.page.link  { href }            (+ channel)
+ *   host → child          amplefile.page.result { callId, ok, result | error }  (channel checked, then dropped)
+ *   host → child          amplefile.page.changed { table }         (channel checked, then dropped)
+ *   intermediary → host   amplefile.page.navigated                 (the page tried to leave)
  *
  * The scripts are plain strings rather than stringified functions, so no
  * build step can rewrite them; tests run them in JSDOM.
  */
 
 export const PAGE_FRAME_MESSAGE = {
-  ready: "work-fold.page.ready",
-  init: "work-fold.page.init",
-  loaded: "work-fold.page.loaded",
-  call: "work-fold.page.call",
-  result: "work-fold.page.result",
-  link: "work-fold.page.link",
-  changed: "work-fold.page.changed",
-  navigated: "work-fold.page.navigated",
+  ready: "amplefile.page.ready",
+  init: "amplefile.page.init",
+  loaded: "amplefile.page.loaded",
+  call: "amplefile.page.call",
+  result: "amplefile.page.result",
+  link: "amplefile.page.link",
+  changed: "amplefile.page.changed",
+  navigated: "amplefile.page.navigated",
 } as const;
 
 /** What page code itself runs under: a meta policy at the top of the blob document. */
@@ -79,13 +79,13 @@ export const PAGE_FRAME_CONTENT_SECURITY_POLICY = [
 export const PAGE_FRAME_HTML = '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Page</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#fff}iframe{border:0;width:100%;height:100%;display:block;background:#fff}</style><script src="/page-frame.js" defer></script></head><body></body></html>\n';
 
 /**
- * `window.workFoldPage`, the form helper, and link handling (docs/pages.md,
+ * `window.ampleFilePage`, the form helper, and link handling (docs/pages.md,
  * "What a page's code can use"). The intermediary replaces the placeholder
  * with this view's configuration: `{ owner, tables: { table: { column: type } } }`.
  */
 export const PAGE_RUNTIME_SCRIPT = String.raw`(function () {
   "use strict";
-  var config = __WORK_FOLD_PAGE_CONFIG__;
+  var config = __AMPLEFILE_PAGE_CONFIG__;
   var host = window.parent;
   var hasOwn = Object.prototype.hasOwnProperty;
   var pending = new Map();
@@ -128,10 +128,10 @@ export const PAGE_RUNTIME_SCRIPT = String.raw`(function () {
       var callId = ++nextCallId;
       var timer = setTimeout(function () {
         pending.delete(callId);
-        reject(failure("UNAVAILABLE", "The page couldn't reach work-fold. Try again."));
+        reject(failure("UNAVAILABLE", "The page couldn't reach AmpleFile. Try again."));
       }, callTimeoutMs);
       pending.set(callId, { resolve: resolve, reject: reject, timer: timer });
-      post({ type: "work-fold.page.call", callId: callId, call: request });
+      post({ type: "amplefile.page.call", callId: callId, call: request });
     });
   }
 
@@ -145,7 +145,7 @@ export const PAGE_RUNTIME_SCRIPT = String.raw`(function () {
     if (event.source !== host) return;
     var data = event.data;
     if (!data || typeof data !== "object") return;
-    if (data.type === "work-fold.page.result") {
+    if (data.type === "amplefile.page.result") {
       var waiting = pending.get(data.callId);
       if (!waiting) return;
       clearTimeout(waiting.timer);
@@ -156,7 +156,7 @@ export const PAGE_RUNTIME_SCRIPT = String.raw`(function () {
         waiting.reject(failure(typeof error.code === "string" ? error.code : "UNAVAILABLE",
           typeof error.message === "string" && error.message ? error.message : "Something went wrong. Try again.", error.field));
       }
-    } else if (data.type === "work-fold.page.changed") {
+    } else if (data.type === "amplefile.page.changed") {
       notify({ table: typeof data.table === "string" ? data.table : null });
     }
   }, true);
@@ -173,13 +173,13 @@ export const PAGE_RUNTIME_SCRIPT = String.raw`(function () {
     remove: function (table, id) { return call("remove", table, { id: id }); },
     isOwner: function () { return Promise.resolve(config.owner === true); },
     onChange: function (callback) {
-      if (typeof callback !== "function") throw new TypeError("workFoldPage.onChange needs a function.");
+      if (typeof callback !== "function") throw new TypeError("ampleFilePage.onChange needs a function.");
       var listener = function (detail) { callback(detail); };
       listeners.add(listener);
       return function () { listeners.delete(listener); };
     },
   };
-  Object.defineProperty(window, "workFoldPage", { value: Object.freeze(api), enumerable: true, configurable: false, writable: false });
+  Object.defineProperty(window, "ampleFilePage", { value: Object.freeze(api), enumerable: true, configurable: false, writable: false });
 
   // The form helper: a form with data-page-table saves itself.
   var formRequests = new WeakMap();
@@ -306,12 +306,12 @@ export const PAGE_RUNTIME_SCRIPT = String.raw`(function () {
     event.preventDefault();
     var url;
     try { url = new URL(href); } catch (error) { return; }
-    if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:") post({ type: "work-fold.page.link", href: url.href });
+    if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "mailto:") post({ type: "amplefile.page.link", href: url.href });
   }
   document.addEventListener("click", followLink);
   document.addEventListener("auxclick", followLink);
 
-  function loaded() { post({ type: "work-fold.page.loaded" }); }
+  function loaded() { post({ type: "amplefile.page.loaded" }); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", loaded, { once: true });
   else loaded();
 })();`;
@@ -347,12 +347,12 @@ const PAGE_FRAME_SCRIPT_BODY = String.raw`(function () {
   addEventListener("message", function (event) {
     var data = event.data;
     if (!data || typeof data !== "object") return;
-    if (event.source === parent && data.type === "work-fold.page.init" && !frame) {
+    if (event.source === parent && data.type === "amplefile.page.init" && !frame) {
       if (typeof data.channel !== "string" || !data.channel || data.channel.length > 128) return;
       if (typeof data.html !== "string" || data.html.length > maximumHtmlLength) return;
       channel = data.channel;
       var config = { owner: data.owner === true, tables: columnTypes(data.tables) };
-      var runtime = PAGE_RUNTIME.replace("__WORK_FOLD_PAGE_CONFIG__", function () { return scriptJson(config); });
+      var runtime = PAGE_RUNTIME.replace("__AMPLEFILE_PAGE_CONFIG__", function () { return scriptJson(config); });
       var doctype = (data.html.match(/^\s*<!doctype[^>]*>/i) || [""])[0];
       var source = doctype
         + '<meta http-equiv="Content-Security-Policy" content="' + PAGE_POLICY + '">'
@@ -369,15 +369,15 @@ const PAGE_FRAME_SCRIPT_BODY = String.raw`(function () {
     }
     if (!frame) return;
     if (event.source === frame.contentWindow) {
-      if (data.type === "work-fold.page.loaded") send({ type: data.type, channel: channel });
-      else if (data.type === "work-fold.page.call" && typeof data.callId === "number" && Number.isSafeInteger(data.callId)) send({ type: data.type, channel: channel, callId: data.callId, call: data.call });
-      else if (data.type === "work-fold.page.link" && typeof data.href === "string" && data.href.length <= 8192) send({ type: data.type, channel: channel, href: data.href });
+      if (data.type === "amplefile.page.loaded") send({ type: data.type, channel: channel });
+      else if (data.type === "amplefile.page.call" && typeof data.callId === "number" && Number.isSafeInteger(data.callId)) send({ type: data.type, channel: channel, callId: data.callId, call: data.call });
+      else if (data.type === "amplefile.page.link" && typeof data.href === "string" && data.href.length <= 8192) send({ type: data.type, channel: channel, href: data.href });
       return;
     }
     if (event.source === parent && data.channel === channel && frame.contentWindow) {
-      if (data.type === "work-fold.page.result") {
+      if (data.type === "amplefile.page.result") {
         frame.contentWindow.postMessage({ type: data.type, callId: data.callId, ok: data.ok === true, result: data.result, error: data.error }, "*");
-      } else if (data.type === "work-fold.page.changed") {
+      } else if (data.type === "amplefile.page.changed") {
         frame.contentWindow.postMessage({ type: data.type, table: typeof data.table === "string" ? data.table : null }, "*");
       }
     }
@@ -385,9 +385,9 @@ const PAGE_FRAME_SCRIPT_BODY = String.raw`(function () {
   addEventListener("pagehide", function () { if (objectUrl) URL.revokeObjectURL(objectUrl); });
   addEventListener("securitypolicyviolation", function (event) {
     var directive = String(event.effectiveDirective || event.violatedDirective || "");
-    if (frame && directive.indexOf("frame-src") === 0) send({ type: "work-fold.page.navigated", channel: channel });
+    if (frame && directive.indexOf("frame-src") === 0) send({ type: "amplefile.page.navigated", channel: channel });
   });
-  send({ type: "work-fold.page.ready" });
+  send({ type: "amplefile.page.ready" });
 })();`;
 
 export const PAGE_FRAME_SCRIPT = "// The page sandbox intermediary (docs/pages.md, \"How a page runs\").\n"

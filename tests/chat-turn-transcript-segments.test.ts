@@ -73,9 +73,9 @@ test("a turn's commentary before and after tool calls is kept in the saved reply
   const root = await mkdtemp(join(tmpdir(), "workspace-transcript-segments-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "agent");
-  const workFolderRoot = join(root, "workspace");
+  const connectedFolderRoot = join(root, "workspace");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
-  await mkdir(workFolderRoot, { recursive: true });
+  await mkdir(connectedFolderRoot, { recursive: true });
   await writeFile(
     join(agentDir, "extensions", "segment-provider.ts"),
     `export default function (pi) {
@@ -106,7 +106,7 @@ test("a turn's commentary before and after tool calls is kept in the saved reply
       return { agentDir, settingsManager };
     },
   };
-  const client = new PiConversationClient("transcript-segments-test", workFolderRoot, provider);
+  const client = new PiConversationClient("transcript-segments-test", connectedFolderRoot, provider);
   t.after(() => client.stop());
   const events: PiChatEvent[] = [];
   client.on("event", (event: PiChatEvent) => events.push(event));

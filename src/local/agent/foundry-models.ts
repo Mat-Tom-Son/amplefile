@@ -14,7 +14,7 @@ export async function storedFoundryConnection(auth: CredentialStore, providerId 
   return normalizeFoundryConnection({
     baseUrl: env[spec.baseUrlEnv],
     deployments: JSON.parse(env[AZURE_OPENAI_DEPLOYMENTS_ENV]),
-    ...(env.WORKFOLD_FOUNDRY_MODEL_IDS ? { modelIds: JSON.parse(env.WORKFOLD_FOUNDRY_MODEL_IDS) } : {}),
+    ...(env.AMPLEFILE_FOUNDRY_MODEL_IDS ? { modelIds: JSON.parse(env.AMPLEFILE_FOUNDRY_MODEL_IDS) } : {}),
   }, providerId);
 }
 

@@ -10,7 +10,7 @@ import { appendMessage, readConversation, type ChatMessage } from "../src/local/
 import { PiConversationClient, PiTurnFailure, type PiChatEvent, type PiConversationClientOptions } from "../src/local/agent/pi-client.js";
 import { localEditPath, parseAssistantPresentation, projectNativeEdit, turnPresentation } from "../src/local/agent/turn-presentation.js";
 import { maxAssistantPresentationSegments, maxChatToolEditDiffBytes, maxTurnToolEditDiffBytes } from "../src/shared/chat-presentation.js";
-import { WorkFoldTurnStore } from "../src/local/agent/turn-store.js";
+import { AmpleFileTurnStore } from "../src/local/agent/turn-store.js";
 import { startLocalApi } from "../src/local/server.js";
 
 test("context snapshots grow while text streams and finalized usage replaces the estimate", async (t) => {
@@ -34,7 +34,7 @@ test("context snapshots grow while text streams and finalized usage replaces the
   }), "A live context snapshot");
   const firstSnapshot = nextRuntime(event => typeof sendMore === "function" && h.events.some(item => item.type === "assistant_delta")
     && event.runtime!.isStreaming && event.runtime!.usage.contextTokens! > 500);
-  const reply = h.client.prompt("Show a long reply.", { workFoldAgentTaskId: "context-owner" });
+  const reply = h.client.prompt("Show a long reply.", { ampleFileAgentTaskId: "context-owner" });
   const first = (await firstSnapshot).runtime!;
   const secondSnapshot = nextRuntime(event => event.runtime!.usage.contextTokens! > first.usage.contextTokens!);
   sendMore({ content: "More streaming text. ".repeat(300) });
@@ -68,14 +68,14 @@ test("native edit events retain selected diffs and exact progress/final boundari
   const h = await harness(t, (payload, send) => {
     if (!payload.messages.some((message: any) => message.role === "tool")) {
       send({ role: "assistant", content: "I will update the file." });
-      send({ tool_calls: [toolCall("edit-1", "edit", { path: join(h.workFolderRoot, "notes.txt"), edits: [{ oldText: "before", newText: "after" }] })] });
+      send({ tool_calls: [toolCall("edit-1", "edit", { path: join(h.connectedFolderRoot, "notes.txt"), edits: [{ oldText: "before", newText: "after" }] })] });
       send({}, "tool_calls");
     } else {
       send({ role: "assistant", content: "The file is updated." });
       send({}, "stop");
     }
   }, `export default function(pi) { pi.registerCommand("fixture", { description: "A fixture command", handler: async () => {} }); }`);
-  await writeFile(join(h.workFolderRoot, "notes.txt"), "before\n");
+  await writeFile(join(h.connectedFolderRoot, "notes.txt"), "before\n");
   const content = await h.client.prompt("Update notes.txt.");
   assert.equal(content, "I will update the file.\n\nThe file is updated.");
   assert.equal(h.events.filter((event) => event.type === "assistant_delta").map((event) => event.text ?? "").join(""), content);
@@ -92,7 +92,7 @@ test("native edit events retain selected diffs and exact progress/final boundari
   assert.match(completed.edit?.diff ?? "", /-1 before\n\+1 after/);
   const nativeDetails = (completed.raw as any).result.details;
   assert.equal(completed.edit?.diff, nativeDetails.diff);
-  assert.ok(nativeDetails.patch.includes(join(h.workFolderRoot, "notes.txt")));
+  assert.ok(nativeDetails.patch.includes(join(h.connectedFolderRoot, "notes.txt")));
   assert.equal("patch" in completed.edit!, false);
   const sessionFile = (await h.client.getState()).sessionFile!;
   const nativeResult = (await readFile(sessionFile, "utf8")).trim().split("\n").map((line) => JSON.parse(line))
@@ -101,8 +101,8 @@ test("native edit events retain selected diffs and exact progress/final boundari
 
   const trail = h.client.getTurnWorkTrail();
   const message: ChatMessage = { id: "reply", role: "assistant", content, createdAt: new Date().toISOString(), workTrail: trail, assistantPresentation: presentation };
-  await appendMessage(h.workFolderRoot, "presentation", message);
-  assert.deepEqual((await readConversation(h.workFolderRoot, "presentation"))[0], message);
+  await appendMessage(h.connectedFolderRoot, "presentation", message);
+  assert.deepEqual((await readConversation(h.connectedFolderRoot, "presentation"))[0], message);
   trail[0]!.edit!.diff = "mutated";
   assert.equal(h.client.getTurnWorkTrail()[0]?.edit?.diff, nativeDetails.diff);
   presentation!.segments[0]!.kind = "final";
@@ -116,7 +116,7 @@ test("native edit events retain selected diffs and exact progress/final boundari
   assert.deepEqual(h.client.getTurnPresentation(), { version: 1, segments: [{ start: 0, end: extensionCommand.length, kind: "command", order: 0 }], truncated: false });
 });
 
-test("native edits outside the work-folder, through symlinks, or into internal metadata keep generic activity only", async (t) => {
+test("native edits outside the Connected Folder, through symlinks, or into internal metadata keep generic activity only", async (t) => {
   const h = await harness(t, (payload, send) => {
     if (!payload.messages.some((message: any) => message.role === "tool")) {
       send({ role: "assistant", tool_calls: targets.map((path, index) => toolCall(`unsafe-${index}`, "edit", { path, edits: [{ oldText: "before", newText: "after" }] }, index)) });
@@ -130,15 +130,15 @@ test("native edits outside the work-folder, through symlinks, or into internal m
   const linked = join(h.root, "linked.txt");
   await writeFile(external, "before\n");
   await writeFile(linked, "before\n");
-  await symlink(linked, join(h.workFolderRoot, "link.txt"));
-  const targets = [external, "link.txt", ".work-fold/private.txt", ".pi/private.txt", ".workspace/private.txt"];
-  for (const directory of [".work-fold", ".pi", ".workspace"]) {
-    await mkdir(join(h.workFolderRoot, directory), { recursive: true });
-    await writeFile(join(h.workFolderRoot, directory, "private.txt"), "before\n");
+  await symlink(linked, join(h.connectedFolderRoot, "link.txt"));
+  const targets = [external, "link.txt", ".amplefile/private.txt", ".pi/private.txt", ".workspace/private.txt"];
+  for (const directory of [".amplefile", ".pi", ".workspace"]) {
+    await mkdir(join(h.connectedFolderRoot, directory), { recursive: true });
+    await writeFile(join(h.connectedFolderRoot, directory, "private.txt"), "before\n");
   }
-  await mkdir(join(h.workFolderRoot, "child", ".work-fold"), { recursive: true });
-  await writeFile(join(h.workFolderRoot, "child", ".work-fold", "work-folder.json"), JSON.stringify({ id: "child-folder" }));
-  await writeFile(join(h.workFolderRoot, "child", "notes.txt"), "before\n");
+  await mkdir(join(h.connectedFolderRoot, "child", ".amplefile"), { recursive: true });
+  await writeFile(join(h.connectedFolderRoot, "child", ".amplefile", "connected-folder.json"), JSON.stringify({ id: "child-folder" }));
+  await writeFile(join(h.connectedFolderRoot, "child", "notes.txt"), "before\n");
   targets.push("child/notes.txt");
   await h.client.prompt("Exercise the disposable paths.");
   const completed = h.events.filter((event) => event.type === "tool" && event.phase === "complete");
@@ -163,7 +163,7 @@ test("an Extension replacing edit does not inherit the built-in evidence project
       async execute() { return { content: [{ type: "text", text: "custom content" }], details: { diff: "private custom details", firstChangedLine: 1 } }; }
     });
   }`);
-  await writeFile(join(h.workFolderRoot, "notes.txt"), "before\n");
+  await writeFile(join(h.connectedFolderRoot, "notes.txt"), "before\n");
   await h.client.prompt("Use the custom tool.");
   const completed = h.events.find((event) => event.type === "tool" && event.phase === "complete")!;
   assert.equal((completed.raw as any).result.details.diff, "private custom details");
@@ -194,7 +194,7 @@ test("length-limited and tool-only final messages never relabel progress as a fi
       send({}, "stop");
     }
   });
-  await writeFile(join(empty.workFolderRoot, "notes.txt"), "Evidence\n");
+  await writeFile(join(empty.connectedFolderRoot, "notes.txt"), "Evidence\n");
   assert.equal(await empty.client.prompt("Inspect notes.txt."), "I will inspect the file.");
   assert.deepEqual(empty.client.getTurnPresentation()?.segments.map((segment) => segment.kind), ["progress"]);
   assert.equal(empty.client.getTurnWorkTrail().find((entry) => entry.toolName === "read")?.edit, undefined);
@@ -333,8 +333,8 @@ test("the local API persists native edit evidence and successful or interrupted 
     }
   });
   const stateRoot = join(h.root, "state");
-  const turnStore = await WorkFoldTurnStore.create({ stateRoot });
-  const options = { port: 0, stateBase: stateRoot, workFolderBase: join(h.root, "work-folders"), loadEnv: false, piRuntimeProvider: h.provider, turnStore };
+  const turnStore = await AmpleFileTurnStore.create({ stateRoot });
+  const options = { port: 0, stateBase: stateRoot, connectedFolderBase: join(h.root, "connected-folders"), loadEnv: false, piRuntimeProvider: h.provider, turnStore };
   // The harness closes the API before the mock provider and before removing
   // the root its Pi sessions and state live in. Closing alone stops a turn
   // waiting on the provider but not one still preparing, which would go on to
@@ -347,17 +347,17 @@ test("the local API persists native edit evidence and successful or interrupted 
     try {
       for (const task of (await api.kernel.getTasks({ kind: "renderer" })).tasks) {
         if (task.kind === "assistant_turn" && task.conversationId) {
-          await json(api.origin, `/api/work-folders/${task.workFolderId}/conversations/${task.conversationId}/abort`, {});
+          await json(api.origin, `/api/connected-folders/${task.connectedFolderId}/conversations/${task.conversationId}/abort`, {});
         }
       }
     } finally {
       await closeApi();
     }
   });
-  const created = await json(api.origin, "/api/work-folders", { name: "Presentation work-folder" });
-  await writeFile(join(created.workFolder.workFolderRoot, "notes.txt"), "before\n");
-  const conversation = await json(api.origin, `/api/work-folders/${created.workFolder.id}/conversations`, {});
-  const base = `/api/work-folders/${created.workFolder.id}/conversations/${conversation.conversation.id}`;
+  const created = await json(api.origin, "/api/connected-folders", { name: "Presentation Connected Folder" });
+  await writeFile(join(created.connectedFolder.connectedFolderRoot, "notes.txt"), "before\n");
+  const conversation = await json(api.origin, `/api/connected-folders/${created.connectedFolder.id}/conversations`, {});
+  const base = `/api/connected-folders/${created.connectedFolder.id}/conversations/${conversation.conversation.id}`;
   const accepted = await json(api.origin, `${base}/messages`, { content: "Update notes.txt.", requestId: "request-presentation", userMessageId: "message-presentation" });
   await until(() => turnStore.get(accepted.taskId)?.status === "succeeded");
   const completed = (await json(api.origin, base)).messages.find((message: ChatMessage) => message.role === "assistant") as ChatMessage;
@@ -384,7 +384,7 @@ test("the local API persists native edit evidence and successful or interrupted 
 });
 
 test("portable metadata rejects malformed ranges and unsafe edit paths, bounds diffs and strips raw extras", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-presentation-store-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-presentation-store-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const content = "Progress.\n\nDone.";
   const valid = turnPresentation([" Progress. ", "", "Done."], 2, false)!;
@@ -411,10 +411,10 @@ test("portable metadata rejects malformed ranges and unsafe edit paths, bounds d
   await appendMessage(root, "bounded", { id: "reply", role: "assistant", content, createdAt: "now", workTrail: trail, assistantPresentation: valid });
   const saved = (await readConversation(root, "bounded"))[0]!;
   assert.equal(saved.workTrail?.reduce((bytes, entry) => bytes + Buffer.byteLength(entry.edit?.diff ?? ""), 0), maxTurnToolEditDiffBytes);
-  const disk = await readFile(join(root, ".work-fold", "conversations", "bounded.jsonl"), "utf8");
+  const disk = await readFile(join(root, ".amplefile", "conversations", "bounded.jsonl"), "utf8");
   assert.doesNotMatch(disk, /should not persist|private absolute headers|unrelated/);
 
-  for (const path of ["../secret", "/private/secret", "C:/secret", "folder\\secret", ".WORK-FOLD/private", ".pi/private", ".workspace/private"]) {
+  for (const path of ["../secret", "/private/secret", "C:/secret", "folder\\secret", ".AMPLEFILE/private", ".pi/private", ".workspace/private"]) {
     await appendMessage(root, "unsafe", { id: path, role: "assistant", content, createdAt: "now", workTrail: [{ ...trail[0]!, edit: { ...edit, path } }] });
   }
   assert.ok((await readConversation(root, "unsafe")).every((message) => !message.workTrail?.[0]?.edit));
@@ -423,7 +423,7 @@ test("portable metadata rejects malformed ranges and unsafe edit paths, bounds d
 });
 
 test("edit path admission rejects symlink parents and rechecks a changed target", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-edit-path-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-edit-path-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "folder"));
   await writeFile(join(root, "folder", "notes.txt"), "before");
@@ -433,20 +433,20 @@ test("edit path admission rejects symlink parents and rechecks a changed target"
   await rm(join(root, "folder", "notes.txt"));
   await symlink(join(root, "elsewhere.txt"), join(root, "folder", "notes.txt"));
   assert.equal(localEditPath(root, "folder/notes.txt"), undefined);
-  await mkdir(join(root, "other", ".WORK-FOLD"), { recursive: true });
-  await writeFile(join(root, "other", ".WORK-FOLD", "WORK-FOLDER.JSON"), JSON.stringify({ id: "other-folder" }));
-  await writeFile(join(root, "other", "notes.txt"), "Other work-folder material.");
-  assert.equal(localEditPath(root, "other/notes.txt"), undefined, "portable identity case aliases cannot expose another work-folder");
+  await mkdir(join(root, "other", ".AMPLEFILE"), { recursive: true });
+  await writeFile(join(root, "other", ".AMPLEFILE", "CONNECTED-FOLDER.JSON"), JSON.stringify({ id: "other-folder" }));
+  await writeFile(join(root, "other", "notes.txt"), "Other Connected Folder material.");
+  assert.equal(localEditPath(root, "other/notes.txt"), undefined, "portable identity case aliases cannot expose another Connected Folder");
 });
 
 type Send = (delta: Record<string, unknown>, finishReason?: string) => void;
 
 async function harness(t: TestContext, respond: (payload: any, send: Send, response: ServerResponse) => void | "hold", extension?: string,
   compaction?: { enabled: boolean; reserveTokens: number; keepRecentTokens: number }, clientOptions: PiConversationClientOptions = {}) {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-native-presentation-"));
-  const workFolderRoot = join(root, "folder");
+  const root = await mkdtemp(join(tmpdir(), "amplefile-native-presentation-"));
+  const connectedFolderRoot = join(root, "folder");
   const agentDir = join(root, "pi");
-  await mkdir(workFolderRoot);
+  await mkdir(connectedFolderRoot);
   if (extension) {
     await mkdir(join(agentDir, "extensions"), { recursive: true });
     await writeFile(join(agentDir, "extensions", "fixture.ts"), extension);
@@ -472,7 +472,7 @@ async function harness(t: TestContext, respond: (payload: any, send: Send, respo
     models: [{ id: "presentation", name: "Presentation", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32768, maxTokens: 1024 }] });
   const settingsManager = SettingsManager.inMemory({ defaultProvider: "presentation", defaultModel: "presentation", defaultThinkingLevel: "off", ...(compaction ? { compaction } : {}) });
   const provider = { async resolveRuntime() { return { agentDir, credentials: authStorage, modelRuntime, settingsManager }; } };
-  const client = new PiConversationClient("native-presentation", workFolderRoot, provider, undefined, clientOptions);
+  const client = new PiConversationClient("native-presentation", connectedFolderRoot, provider, undefined, clientOptions);
   const events: PiChatEvent[] = [];
   client.on("event", (event: PiChatEvent) => events.push(event));
   // One hook, because node:test skips the remaining after hooks once one
@@ -498,7 +498,7 @@ async function harness(t: TestContext, respond: (payload: any, send: Send, respo
     await step("The temporary directory removal", () => rm(root, { recursive: true, force: true, maxRetries: 5 }));
     if (failures.length) throw new AggregateError(failures, "The presentation harness did not tear down cleanly.");
   });
-  return { root, workFolderRoot, client, events, requests, provider, cleanup: (run: () => unknown) => { cleanups.push(run); } };
+  return { root, connectedFolderRoot, client, events, requests, provider, cleanup: (run: () => unknown) => { cleanups.push(run); } };
 }
 
 async function within<T>(work: Promise<T>, label: string, timeoutMs = 15_000): Promise<T> {

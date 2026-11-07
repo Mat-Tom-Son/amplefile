@@ -3,16 +3,16 @@ import { constants, type Stats } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { normalizeWorkFoldCheckTargetPath } from "../../shared/checks.js";
-import { workFoldAutomationDeclarationBounds } from "../../shared/work-fold-limits.js";
+import { normalizeAmpleFileCheckTargetPath } from "../../shared/checks.js";
+import { ampleFileAutomationDeclarationBounds } from "../../shared/amplefile-limits.js";
 import { folderAutomationRoles, type FolderAutomationRole } from "../../shared/automation-presentation.js";
 import { restrictedAppAutomationIntervalMinutes } from "../agent/restricted-app-manifest.js";
-import { workFoldCheckDigest } from "../checks/check-integrity.js";
+import { ampleFileCheckDigest } from "../checks/check-integrity.js";
 
 /**
  * Automation declarations are closed, typed, machine-local data: a declared
  * trigger plus deterministic steps that move work
- * between work-folders. They carry no prompts beyond the literal chat- and
+ * between Connected Folders. They carry no prompts beyond the literal chat- and
  * agent-step message plus a closed set of host-filled placeholders, no
  * instructions, no source code, no shell commands, no model names, no
  * credentials, no connection data, and no expressions — the closed field
@@ -21,19 +21,19 @@ import { workFoldCheckDigest } from "../checks/check-integrity.js";
  * table; the automation store records an exact-digest enablement receipt over
  * whatever a parse produces.
  */
-export const workFoldAutomationProposalKind = "work-fold.automation-proposal" as const;
-export const workFoldAutomationDeclarationKind = "work-fold.automation" as const;
-export const workFoldAutomationContractVersion = 6 as const;
+export const ampleFileAutomationProposalKind = "amplefile.automation-proposal" as const;
+export const ampleFileAutomationDeclarationKind = "amplefile.automation" as const;
+export const ampleFileAutomationContractVersion = 6 as const;
 /**
- * Version 6 (2026-11-07) lets a folder-change trigger watch the work-folder's
+ * Version 6 (2026-11-07) lets a folder-change trigger watch the Connected Folder's
  * own top level, `"path": ""` without recursion, for the file manager's
  * ready-made Automations (Organize New Files, docs/automations.md).
  */
-export const workFoldAutomationSupportedContractVersions = [1, 2, 3, 4, 5, workFoldAutomationContractVersion] as const;
-export type WorkFoldAutomationContractVersion = (typeof workFoldAutomationSupportedContractVersions)[number];
+export const ampleFileAutomationSupportedContractVersions = [1, 2, 3, 4, 5, ampleFileAutomationContractVersion] as const;
+export type AmpleFileAutomationContractVersion = (typeof ampleFileAutomationSupportedContractVersions)[number];
 
-/** Filename convention for inert automation proposals in the work-fold agent's working folder. */
-export const workFoldAutomationProposalFileSuffix = ".work-fold-automation.json" as const;
+/** Filename convention for inert automation proposals in the AmpleFile agent's working folder. */
+export const ampleFileAutomationProposalFileSuffix = ".amplefile-automation.json" as const;
 
 /**
  * Every declaration bound, enforced at parse and re-enforced by the executor.
@@ -44,8 +44,8 @@ export const workFoldAutomationProposalFileSuffix = ".work-fold-automation.json"
  * handoffs may tighten but never widen the Check target resolver's hard
  * limits.
  */
-export const workFoldAutomationBounds = Object.freeze({
-  ...workFoldAutomationDeclarationBounds,
+export const ampleFileAutomationBounds = Object.freeze({
+  ...ampleFileAutomationDeclarationBounds,
   minIntervalMinutes: restrictedAppAutomationIntervalMinutes.minimum,
   maxIntervalMinutes: restrictedAppAutomationIntervalMinutes.maximum,
   maxHandoffFiles: 100_000,
@@ -56,68 +56,68 @@ export const workFoldAutomationBounds = Object.freeze({
  * Check-run settles an on-settled trigger may admit. `interrupted` is never
  * admissible — it records a crashed run, not a result.
  */
-export const workFoldAutomationCheckRunOutcomes = ["aborted", "failed", "succeeded"] as const;
-export type WorkFoldAutomationCheckRunOutcome = (typeof workFoldAutomationCheckRunOutcomes)[number];
+export const ampleFileAutomationCheckRunOutcomes = ["aborted", "failed", "succeeded"] as const;
+export type AmpleFileAutomationCheckRunOutcome = (typeof ampleFileAutomationCheckRunOutcomes)[number];
 
 /**
  * Automation-run settles an on-settled trigger may admit. `skipped` and
  * `cancelled` are never admissible — they are lifecycle artifacts of
  * non-overlap, suspension, and revocation, and chaining on them oscillates.
  */
-export const workFoldAutomationAppAutomationRunOutcomes = ["failure", "success"] as const;
-export type WorkFoldAutomationAppAutomationRunOutcome = (typeof workFoldAutomationAppAutomationRunOutcomes)[number];
+export const ampleFileAutomationAppAutomationRunOutcomes = ["failure", "success"] as const;
+export type AmpleFileAutomationAppAutomationRunOutcome = (typeof ampleFileAutomationAppAutomationRunOutcomes)[number];
 
-export interface WorkFoldAutomationCheckRunSettleSource {
+export interface AmpleFileAutomationCheckRunSettleSource {
   kind: "check-run";
-  workFolder: string;
-  /** Absent: any Check in the work-folder. */
+  connectedFolder: string;
+  /** Absent: any Check in the Connected Folder. */
   check?: string;
-  outcomes: WorkFoldAutomationCheckRunOutcome[];
+  outcomes: AmpleFileAutomationCheckRunOutcome[];
 }
 
-export interface WorkFoldAutomationAppAutomationRunSettleSource {
+export interface AmpleFileAutomationAppAutomationRunSettleSource {
   kind: "app-automation-run";
-  workFolder: string;
+  connectedFolder: string;
   appId: string;
   appAutomationId: string;
-  outcomes: WorkFoldAutomationAppAutomationRunOutcome[];
+  outcomes: AmpleFileAutomationAppAutomationRunOutcome[];
 }
 
-export type WorkFoldAutomationSettleSource =
-  | WorkFoldAutomationCheckRunSettleSource
-  | WorkFoldAutomationAppAutomationRunSettleSource;
+export type AmpleFileAutomationSettleSource =
+  | AmpleFileAutomationCheckRunSettleSource
+  | AmpleFileAutomationAppAutomationRunSettleSource;
 
 /** Run-now only; every enabled automation additionally accepts manual run-now. */
-export interface WorkFoldAutomationManualTrigger {
+export interface AmpleFileAutomationManualTrigger {
   kind: "manual";
 }
 
-export interface WorkFoldAutomationIntervalTrigger {
+export interface AmpleFileAutomationIntervalTrigger {
   kind: "interval";
   intervalMinutes: number;
 }
 
-export interface WorkFoldAutomationAtTrigger {
+export interface AmpleFileAutomationAtTrigger {
   kind: "at";
   /** Canonical absolute time; proposal input must name an explicit offset. */
   at: string;
   ifMissed: "run" | "skip";
 }
 
-export interface WorkFoldAutomationOnSettledTrigger {
+export interface AmpleFileAutomationOnSettledTrigger {
   kind: "on-settled";
-  source: WorkFoldAutomationSettleSource;
+  source: AmpleFileAutomationSettleSource;
 }
 
-export interface WorkFoldAutomationFilesChangedTrigger {
+export interface AmpleFileAutomationFilesChangedTrigger {
   kind: "files-changed";
-  workFolder: string;
-  watch: WorkFoldAutomationTreeSource;
+  connectedFolder: string;
+  watch: AmpleFileAutomationTreeSource;
   debounceSeconds: number;
   cooldownMinutes: number;
   /**
    * Version 5. `"run"` keeps a machine-local metadata snapshot of the watched
-   * files and, after work-fold was closed, asleep, turned off, or unable to
+   * files and, after AmpleFile was closed, asleep, turned off, or unable to
    * watch the folder, starts one run for the files added or changed in that
    * gap. Absent or `"skip"` keeps the original behavior: a fresh baseline
    * after every gap. Absent stays absent, so older declarations keep their
@@ -126,42 +126,42 @@ export interface WorkFoldAutomationFilesChangedTrigger {
   ifMissed?: "run" | "skip";
 }
 
-export type WorkFoldAutomationTrigger =
-  | WorkFoldAutomationManualTrigger
-  | WorkFoldAutomationIntervalTrigger
-  | WorkFoldAutomationAtTrigger
-  | WorkFoldAutomationOnSettledTrigger
-  | WorkFoldAutomationFilesChangedTrigger;
+export type AmpleFileAutomationTrigger =
+  | AmpleFileAutomationManualTrigger
+  | AmpleFileAutomationIntervalTrigger
+  | AmpleFileAutomationAtTrigger
+  | AmpleFileAutomationOnSettledTrigger
+  | AmpleFileAutomationFilesChangedTrigger;
 
 /**
- * Starts a new conversation in the named work-folder with exactly this message,
+ * Starts a new conversation in the named Connected Folder with exactly this message,
  * sent with no ambient additions beyond the closed placeholder set.
  */
-export interface WorkFoldAutomationChatStep {
+export interface AmpleFileAutomationChatStep {
   id: string;
   kind: "chat";
-  workFolder: string;
+  connectedFolder: string;
   message: string;
-  /** The model this step's new Chat uses, instead of the work-folder's own (version 4, 2026-10-11). */
-  model?: WorkFoldAutomationStepModel;
+  /** The model this step's new Chat uses, instead of the Connected Folder's own (version 4, 2026-10-11). */
+  model?: AmpleFileAutomationStepModel;
 }
 
 /**
  * A model named by provider and id, as Settings → AI Models lists them. It
  * applies only to the Chat the step starts; nothing else's model changes.
  */
-export interface WorkFoldAutomationStepModel {
+export interface AmpleFileAutomationStepModel {
   provider: string;
   id: string;
 }
 
-export interface WorkFoldAutomationExactPathsSource {
+export interface AmpleFileAutomationExactPathsSource {
   kind: "paths";
   paths: string[];
 }
 
 /** The bounded tree selector, reusing the Check target contract and resolver discipline. */
-export interface WorkFoldAutomationTreeSource {
+export interface AmpleFileAutomationTreeSource {
   kind: "tree";
   path: string;
   recursive: boolean;
@@ -173,7 +173,7 @@ export interface WorkFoldAutomationTreeSource {
  * added or changed, resolved host-side from that turn's own History
  * checkpoint pair. Bounds are mandatory in the declaration.
  */
-export interface WorkFoldAutomationStepCreatedFilesSource {
+export interface AmpleFileAutomationStepCreatedFilesSource {
   kind: "step-created-files";
   step: string;
   extensions?: string[];
@@ -181,59 +181,59 @@ export interface WorkFoldAutomationStepCreatedFilesSource {
   maxTotalBytes: number;
 }
 
-export type WorkFoldAutomationFilesSource =
-  | WorkFoldAutomationExactPathsSource
-  | WorkFoldAutomationTreeSource
-  | WorkFoldAutomationStepCreatedFilesSource;
+export type AmpleFileAutomationFilesSource =
+  | AmpleFileAutomationExactPathsSource
+  | AmpleFileAutomationTreeSource
+  | AmpleFileAutomationStepCreatedFilesSource;
 
-/** Copies additively from one work-folder into another; an automation never moves, renames, or deletes. */
-export interface WorkFoldAutomationFilesStep {
+/** Copies additively from one Connected Folder into another; an automation never moves, renames, or deletes. */
+export interface AmpleFileAutomationFilesStep {
   id: string;
   kind: "files";
-  fromWorkFolder: string;
-  from: WorkFoldAutomationFilesSource;
-  toWorkFolder: string;
+  fromConnectedFolder: string;
+  from: AmpleFileAutomationFilesSource;
+  toConnectedFolder: string;
   to: string;
 }
 
-export interface WorkFoldAutomationCheckStep {
+export interface AmpleFileAutomationCheckStep {
   id: string;
   kind: "check";
-  workFolder: string;
-  /** Absent: run all enabled Checks in the work-folder. */
+  connectedFolder: string;
+  /** Absent: run all enabled Checks in the Connected Folder. */
   check?: string;
 }
 
 /**
- * Starts a new work-fold agent chat with exactly this message, so a person
- * can put the work-fold agent on a cadence deliberately. It names no
- * work-folder: the work-fold agent sits above them. Version 4 only.
+ * Starts a new AmpleFile agent chat with exactly this message, so a person
+ * can put the AmpleFile agent on a cadence deliberately. It names no
+ * Connected Folder: the AmpleFile agent sits above them. Version 4 only.
  */
-export interface WorkFoldAutomationAgentStep {
+export interface AmpleFileAutomationAgentStep {
   id: string;
   kind: "agent";
   message: string;
-  /** The model this step's new work-fold agent chat uses, instead of the agent's own (2026-10-11). */
-  model?: WorkFoldAutomationStepModel;
+  /** The model this step's new AmpleFile agent chat uses, instead of the agent's own (2026-10-11). */
+  model?: AmpleFileAutomationStepModel;
 }
 
-export type WorkFoldAutomationStep =
-  | WorkFoldAutomationChatStep
-  | WorkFoldAutomationFilesStep
-  | WorkFoldAutomationCheckStep
-  | WorkFoldAutomationAgentStep;
+export type AmpleFileAutomationStep =
+  | AmpleFileAutomationChatStep
+  | AmpleFileAutomationFilesStep
+  | AmpleFileAutomationCheckStep
+  | AmpleFileAutomationAgentStep;
 
 /** The closed set of trigger placeholders a version-4 message may carry. */
-export const workFoldAutomationTriggerPlaceholders = [
+export const ampleFileAutomationTriggerPlaceholders = [
   "trigger.summary",
   "trigger.changedFiles",
   "trigger.findings",
 ] as const;
-export type WorkFoldAutomationTriggerPlaceholder = (typeof workFoldAutomationTriggerPlaceholders)[number];
+export type AmpleFileAutomationTriggerPlaceholder = (typeof ampleFileAutomationTriggerPlaceholders)[number];
 
 /** One `{{…}}` occurrence: a trigger name, or an earlier chat step's created files. */
-export interface WorkFoldAutomationPlaceholder {
-  name: WorkFoldAutomationTriggerPlaceholder | string;
+export interface AmpleFileAutomationPlaceholder {
+  name: AmpleFileAutomationTriggerPlaceholder | string;
   /** Present only for `steps.<id>.createdFiles`. */
   step?: string;
 }
@@ -248,14 +248,14 @@ const placeholderOccurrencePattern = /\{\{([^{}]*)\}\}/g;
  * interpolate something the person did not read. Versions 1–3 never reach
  * here — their messages are literal text, braces included.
  */
-export function workFoldAutomationMessagePlaceholders(
+export function ampleFileAutomationMessagePlaceholders(
   message: string,
   label = "This automation step",
-): WorkFoldAutomationPlaceholder[] {
-  const placeholders: WorkFoldAutomationPlaceholder[] = [];
+): AmpleFileAutomationPlaceholder[] {
+  const placeholders: AmpleFileAutomationPlaceholder[] = [];
   for (const match of message.matchAll(placeholderOccurrencePattern)) {
     const name = (match[1] ?? "").trim();
-    if ((workFoldAutomationTriggerPlaceholders as readonly string[]).includes(name)) {
+    if ((ampleFileAutomationTriggerPlaceholders as readonly string[]).includes(name)) {
       placeholders.push({ name });
       continue;
     }
@@ -272,37 +272,37 @@ export function workFoldAutomationMessagePlaceholders(
   return placeholders;
 }
 
-export interface WorkFoldAutomationDefinition {
+export interface AmpleFileAutomationDefinition {
   title: string;
-  trigger: WorkFoldAutomationTrigger;
-  steps: WorkFoldAutomationStep[];
+  trigger: AmpleFileAutomationTrigger;
+  steps: AmpleFileAutomationStep[];
 }
 
-export interface WorkFoldAutomationProposal {
-  kind: typeof workFoldAutomationProposalKind;
-  version: WorkFoldAutomationContractVersion;
+export interface AmpleFileAutomationProposal {
+  kind: typeof ampleFileAutomationProposalKind;
+  version: AmpleFileAutomationContractVersion;
   name: string;
   createdBy: "human" | "assistant" | "codex" | "claude-code" | "other";
   createdAt: string;
-  automation: WorkFoldAutomationDefinition;
+  automation: AmpleFileAutomationDefinition;
 }
 
-export interface WorkFoldAutomationDeclaration extends WorkFoldAutomationDefinition {
-  kind: typeof workFoldAutomationDeclarationKind;
-  version: WorkFoldAutomationContractVersion;
+export interface AmpleFileAutomationDeclaration extends AmpleFileAutomationDefinition {
+  kind: typeof ampleFileAutomationDeclarationKind;
+  version: AmpleFileAutomationContractVersion;
   id: string;
-  createdBy: WorkFoldAutomationProposal["createdBy"];
+  createdBy: AmpleFileAutomationProposal["createdBy"];
   createdAt: string;
 }
 
 /** Room for the largest step messages a declaration may carry. */
-export const workFoldAutomationDocumentMaxBytes = 64 * 1024 * 1024;
+export const ampleFileAutomationDocumentMaxBytes = 64 * 1024 * 1024;
 
-// Mirrors isWorkFolderId in src/local/work-folder.ts: automations pin
-// work-folders by stable registered work-folder id, never by name or path. The
+// Mirrors isConnectedFolderId in src/local/connected-folder.ts: automations pin
+// Connected Folders by stable registered Connected Folder id, never by name or path. The
 // CLI may resolve an exact name for convenience, but the stored declaration
 // records ids only.
-const workFolderIdPattern = /^space-[a-f0-9]{16}$/;
+const connectedFolderIdPattern = /^space-[a-f0-9]{16}$/;
 // Mirrors the Check id rule in src/shared/checks.ts.
 const checkIdPattern = /^check-[a-z0-9][a-z0-9-]{7,154}$/;
 const automationIdPattern = /^automation-[a-z0-9][a-z0-9-]{7,154}$/;
@@ -321,12 +321,12 @@ const extensionPattern = /^\.[a-z0-9][a-z0-9._+-]*$/;
  * (src/local/automations/automation-service.ts). Both go through this class so the
  * hop receipt records exactly the text the destination received.
  */
-export const workFoldAutomationForbiddenMessageCharacters = "\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069";
-const forbiddenMessageCharacters = new RegExp(`[${workFoldAutomationForbiddenMessageCharacters}]`);
+export const ampleFileAutomationForbiddenMessageCharacters = "\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069";
+const forbiddenMessageCharacters = new RegExp(`[${ampleFileAutomationForbiddenMessageCharacters}]`);
 
 /** Replaces every forbidden message character; the result is safe to substitute and to record. */
-export function scrubWorkFoldAutomationMessageText(value: string): string {
-  return value.replace(new RegExp(`[${workFoldAutomationForbiddenMessageCharacters}]`, "gu"), "\uFFFD");
+export function scrubAmpleFileAutomationMessageText(value: string): string {
+  return value.replace(new RegExp(`[${ampleFileAutomationForbiddenMessageCharacters}]`, "gu"), "\uFFFD");
 }
 
 const inadmissibleOutcomeReasons = new Map<string, string>([
@@ -335,13 +335,13 @@ const inadmissibleOutcomeReasons = new Map<string, string>([
   ["cancelled", "it is a lifecycle artifact of shutdown and revocation"],
 ]);
 
-export function normalizeWorkFoldAutomationProposal(value: unknown): WorkFoldAutomationProposal {
+export function normalizeAmpleFileAutomationProposal(value: unknown): AmpleFileAutomationProposal {
   const record = objectRecord(value, "Automation proposal must be a JSON object.");
   assertKeys(record, ["kind", "version", "name", "createdBy", "createdAt", "automation"], [], "Automation proposal");
-  if (record.kind !== workFoldAutomationProposalKind) throw new Error(`Automation proposal kind must be ${workFoldAutomationProposalKind}.`);
+  if (record.kind !== ampleFileAutomationProposalKind) throw new Error(`Automation proposal kind must be ${ampleFileAutomationProposalKind}.`);
   const version = contractVersion(record.version, "Automation proposal");
   return {
-    kind: workFoldAutomationProposalKind,
+    kind: ampleFileAutomationProposalKind,
     version,
     name: boundedText(record.name, "Automation proposal name", 120),
     createdBy: normalizeCreator(record.createdBy),
@@ -350,7 +350,7 @@ export function normalizeWorkFoldAutomationProposal(value: unknown): WorkFoldAut
   };
 }
 
-export function normalizeWorkFoldAutomationDeclaration(value: unknown): WorkFoldAutomationDeclaration {
+export function normalizeAmpleFileAutomationDeclaration(value: unknown): AmpleFileAutomationDeclaration {
   const record = objectRecord(value, "Automation declaration must be a JSON object.");
   assertKeys(
     record,
@@ -358,10 +358,10 @@ export function normalizeWorkFoldAutomationDeclaration(value: unknown): WorkFold
     [],
     "Automation declaration",
   );
-  if (record.kind !== workFoldAutomationDeclarationKind) throw new Error(`Automation declaration kind must be ${workFoldAutomationDeclarationKind}.`);
+  if (record.kind !== ampleFileAutomationDeclarationKind) throw new Error(`Automation declaration kind must be ${ampleFileAutomationDeclarationKind}.`);
   const version = contractVersion(record.version, "Automation declaration");
   return {
-    kind: workFoldAutomationDeclarationKind,
+    kind: ampleFileAutomationDeclarationKind,
     version,
     id: automationId(record.id),
     ...normalizeAutomationDefinition({ title: record.title, trigger: record.trigger, steps: record.steps }, version),
@@ -370,12 +370,12 @@ export function normalizeWorkFoldAutomationDeclaration(value: unknown): WorkFold
   };
 }
 
-export function declarationFromWorkFoldAutomationProposal(
-  proposal: WorkFoldAutomationProposal,
+export function declarationFromAmpleFileAutomationProposal(
+  proposal: AmpleFileAutomationProposal,
   id = `automation-${randomUUID()}`,
-): WorkFoldAutomationDeclaration {
-  return normalizeWorkFoldAutomationDeclaration({
-    kind: workFoldAutomationDeclarationKind,
+): AmpleFileAutomationDeclaration {
+  return normalizeAmpleFileAutomationDeclaration({
+    kind: ampleFileAutomationDeclarationKind,
     version: proposal.version,
     id,
     ...proposal.automation,
@@ -390,12 +390,12 @@ export function declarationFromWorkFoldAutomationProposal(
  * CLI's `automations enable --proposal` and Settings' pending-proposal scan both
  * go through this, so a scanned file's digest is exactly what enabling it pins.
  */
-export function contentAddressedWorkFoldAutomationDeclaration(
-  proposal: WorkFoldAutomationProposal,
-): { declaration: WorkFoldAutomationDeclaration; digest: string } {
-  const contentId = `automation-${workFoldAutomationDigest(proposal).slice(0, 16)}`;
-  const declaration = declarationFromWorkFoldAutomationProposal(proposal, contentId);
-  return { declaration, digest: workFoldAutomationDigest(declaration) };
+export function contentAddressedAmpleFileAutomationDeclaration(
+  proposal: AmpleFileAutomationProposal,
+): { declaration: AmpleFileAutomationDeclaration; digest: string } {
+  const contentId = `automation-${ampleFileAutomationDigest(proposal).slice(0, 16)}`;
+  const declaration = declarationFromAmpleFileAutomationProposal(proposal, contentId);
+  return { declaration, digest: ampleFileAutomationDigest(declaration) };
 }
 
 /**
@@ -404,32 +404,32 @@ export function contentAddressedWorkFoldAutomationDeclaration(
  * never coasts on a stale approval. Canonicalization is the same stable JSON
  * used for Check digests, so field order can never change authority.
  */
-export function workFoldAutomationDigest(value: unknown): string {
-  return workFoldCheckDigest(value);
+export function ampleFileAutomationDigest(value: unknown): string {
+  return ampleFileCheckDigest(value);
 }
 
 /**
- * Every work-folder an automation names, across its trigger source and all steps,
+ * Every Connected Folder an automation names, across its trigger source and all steps,
  * sorted and deduplicated. Removing any of them revokes the enablement grant
  * and suspends the automation.
  */
 /** True when a folder-change trigger declares the version-5 catch-up. */
-export function workFoldAutomationTriggerCatchesUp(
-  trigger: WorkFoldAutomationTrigger,
-): trigger is WorkFoldAutomationFilesChangedTrigger & { ifMissed: "run" } {
+export function ampleFileAutomationTriggerCatchesUp(
+  trigger: AmpleFileAutomationTrigger,
+): trigger is AmpleFileAutomationFilesChangedTrigger & { ifMissed: "run" } {
   return trigger.kind === "files-changed" && trigger.ifMissed === "run";
 }
 
-export function workFoldAutomationReferencedWorkFolderIds(definition: WorkFoldAutomationDefinition): string[] {
+export function ampleFileAutomationReferencedConnectedFolderIds(definition: AmpleFileAutomationDefinition): string[] {
   const ids = new Set<string>();
-  if (definition.trigger.kind === "files-changed") ids.add(definition.trigger.workFolder);
-  if (definition.trigger.kind === "on-settled") ids.add(definition.trigger.source.workFolder);
+  if (definition.trigger.kind === "files-changed") ids.add(definition.trigger.connectedFolder);
+  if (definition.trigger.kind === "on-settled") ids.add(definition.trigger.source.connectedFolder);
   for (const step of definition.steps) {
     if (step.kind === "files") {
-      ids.add(step.fromWorkFolder);
-      ids.add(step.toWorkFolder);
+      ids.add(step.fromConnectedFolder);
+      ids.add(step.toConnectedFolder);
     } else if (step.kind === "chat" || step.kind === "check") {
-      ids.add(step.workFolder);
+      ids.add(step.connectedFolder);
     }
     // An agent step names no work-folder: the work-fold agent sits above them.
   }
@@ -437,23 +437,23 @@ export function workFoldAutomationReferencedWorkFolderIds(definition: WorkFoldAu
 }
 
 /**
- * What this automation does in one work-folder, derived from the declaration alone:
+ * What this automation does in one Connected Folder, derived from the declaration alone:
  * the trigger watches it (a folder change, or a Check or app automation
  * settling there), a files step copies into or out of it, a chat step starts
  * a conversation there, a check step runs Checks there. Empty exactly when
- * `workFoldAutomationReferencedWorkFolderIds` does not name the work-folder.
+ * `ampleFileAutomationReferencedConnectedFolderIds` does not name the Connected Folder.
  */
-export function workFoldAutomationWorkFolderRoles(definition: WorkFoldAutomationDefinition, workFolderId: string): FolderAutomationRole[] {
+export function ampleFileAutomationConnectedFolderRoles(definition: AmpleFileAutomationDefinition, connectedFolderId: string): FolderAutomationRole[] {
   const roles = new Set<FolderAutomationRole>();
-  if (definition.trigger.kind === "files-changed" && definition.trigger.workFolder === workFolderId) roles.add("watches");
-  if (definition.trigger.kind === "on-settled" && definition.trigger.source.workFolder === workFolderId) roles.add("watches");
+  if (definition.trigger.kind === "files-changed" && definition.trigger.connectedFolder === connectedFolderId) roles.add("watches");
+  if (definition.trigger.kind === "on-settled" && definition.trigger.source.connectedFolder === connectedFolderId) roles.add("watches");
   for (const step of definition.steps) {
     if (step.kind === "files") {
-      if (step.toWorkFolder === workFolderId) roles.add("copies-to");
-      if (step.fromWorkFolder === workFolderId) roles.add("copies-from");
-    } else if (step.kind === "chat" && step.workFolder === workFolderId) {
+      if (step.toConnectedFolder === connectedFolderId) roles.add("copies-to");
+      if (step.fromConnectedFolder === connectedFolderId) roles.add("copies-from");
+    } else if (step.kind === "chat" && step.connectedFolder === connectedFolderId) {
       roles.add("chats-here");
-    } else if (step.kind === "check" && step.workFolder === workFolderId) {
+    } else if (step.kind === "check" && step.connectedFolder === connectedFolderId) {
       roles.add("checks-here");
     }
   }
@@ -465,25 +465,25 @@ export function workFoldAutomationWorkFolderRoles(definition: WorkFoldAutomation
  * The declaration parser validates only the stable shape because a stored
  * inert proposal must not become syntactically damaged merely as time passes.
  */
-export function assertWorkFoldAutomationAtAdmissionHorizon(
-  definition: Pick<WorkFoldAutomationDefinition, "trigger">,
+export function assertAmpleFileAutomationAtAdmissionHorizon(
+  definition: Pick<AmpleFileAutomationDefinition, "trigger">,
   now: Date,
 ): void {
   if (definition.trigger.kind !== "at") return;
   const nowMs = now.getTime();
   if (!Number.isFinite(nowMs)) throw new Error("Automation admission time is invalid.");
   const advanceMs = Date.parse(definition.trigger.at) - nowMs;
-  if (advanceMs < workFoldAutomationBounds.minAtAdvanceMs || advanceMs > workFoldAutomationBounds.maxAtAdvanceMs) {
+  if (advanceMs < ampleFileAutomationBounds.minAtAdvanceMs || advanceMs > ampleFileAutomationBounds.maxAtAdvanceMs) {
     throw new Error("Automation one-time trigger must be in the future, and at most ten years ahead, when it is enabled.");
   }
 }
 
-export async function readWorkFoldAutomationProposal(path: string): Promise<WorkFoldAutomationProposal> {
+export async function readAmpleFileAutomationProposal(path: string): Promise<AmpleFileAutomationProposal> {
   const resolved = resolve(path);
-  return normalizeWorkFoldAutomationProposal(JSON.parse(await readWorkFoldAutomationDocument(resolved)));
+  return normalizeAmpleFileAutomationProposal(JSON.parse(await readAmpleFileAutomationDocument(resolved)));
 }
 
-function normalizeAutomationDefinition(value: unknown, version: WorkFoldAutomationContractVersion): WorkFoldAutomationDefinition {
+function normalizeAutomationDefinition(value: unknown, version: AmpleFileAutomationContractVersion): AmpleFileAutomationDefinition {
   const record = objectRecord(value, "Automation definition must be a JSON object.");
   assertKeys(record, ["title", "trigger", "steps"], [], "Automation definition");
   if (!Array.isArray(record.steps) || record.steps.length < 1) {
@@ -506,8 +506,8 @@ function normalizeAutomationDefinition(value: unknown, version: WorkFoldAutomati
     }
     const source = steps[sourceIndex]!;
     if (source.kind !== "chat") throw new Error(`${label} must take created files from an earlier chat step.`);
-    if (source.workFolder !== step.fromWorkFolder) {
-      throw new Error(`${label} must copy from work-folder ${source.workFolder}, where its source chat step runs.`);
+    if (source.connectedFolder !== step.fromConnectedFolder) {
+      throw new Error(`${label} must copy from Connected Folder ${source.connectedFolder}, where its source chat step runs.`);
     }
   }
   if (version >= 4) assertPlaceholdersResolvable(steps, positions, trigger);
@@ -525,14 +525,14 @@ function normalizeAutomationDefinition(value: unknown, version: WorkFoldAutomati
  * empty sentence in a message a Worker already received.
  */
 function assertPlaceholdersResolvable(
-  steps: WorkFoldAutomationStep[],
+  steps: AmpleFileAutomationStep[],
   positions: Map<string, number>,
-  trigger: WorkFoldAutomationTrigger,
+  trigger: AmpleFileAutomationTrigger,
 ): void {
   for (const [index, step] of steps.entries()) {
     if (step.kind !== "chat" && step.kind !== "agent") continue;
     const label = `Automation step "${step.id}"`;
-    for (const placeholder of workFoldAutomationMessagePlaceholders(step.message, label)) {
+    for (const placeholder of ampleFileAutomationMessagePlaceholders(step.message, label)) {
       if (placeholder.name === "trigger.changedFiles" && trigger.kind !== "files-changed") {
         throw new Error(`${label} uses {{trigger.changedFiles}}, but the trigger is not a folder-change trigger.`);
       }
@@ -553,7 +553,7 @@ function assertPlaceholdersResolvable(
   }
 }
 
-function normalizeTrigger(value: unknown, version: WorkFoldAutomationContractVersion): WorkFoldAutomationTrigger {
+function normalizeTrigger(value: unknown, version: AmpleFileAutomationContractVersion): AmpleFileAutomationTrigger {
   const record = objectRecord(value, "Automation trigger must be a JSON object.");
   if (record.kind === "manual") {
     assertKeys(record, ["kind"], [], "Automation manual trigger");
@@ -566,8 +566,8 @@ function normalizeTrigger(value: unknown, version: WorkFoldAutomationContractVer
       intervalMinutes: boundedInteger(
         record.intervalMinutes,
         "Automation interval minutes",
-        workFoldAutomationBounds.minIntervalMinutes,
-        workFoldAutomationBounds.maxIntervalMinutes,
+        ampleFileAutomationBounds.minIntervalMinutes,
+        ampleFileAutomationBounds.maxIntervalMinutes,
       ),
     };
   }
@@ -585,7 +585,7 @@ function normalizeTrigger(value: unknown, version: WorkFoldAutomationContractVer
   }
   if (record.kind === "files-changed") {
     if (version < 3) throw new Error("folder-change triggers require contract version 3.");
-    assertKeys(record, ["kind", "workFolder", "watch", "debounceSeconds", "cooldownMinutes"], ["ifMissed"], "folder-change trigger");
+    assertKeys(record, ["kind", "connectedFolder", "watch", "debounceSeconds", "cooldownMinutes"], ["ifMissed"], "folder-change trigger");
     if (record.ifMissed !== undefined) {
       if (version < 5) throw new Error("A folder-change trigger's ifMissed requires contract version 5.");
       if (record.ifMissed !== "run" && record.ifMissed !== "skip") {
@@ -594,7 +594,7 @@ function normalizeTrigger(value: unknown, version: WorkFoldAutomationContractVer
     }
     const watch = normalizeWatchedFolder(record.watch, version);
     if (watch.kind !== "tree") throw new Error("A folder-change trigger requires one bounded folder selector.");
-    return { kind: "files-changed", workFolder: workFolderId(record.workFolder, "Watched work-folder"), watch,
+    return { kind: "files-changed", connectedFolder: connectedFolderId(record.connectedFolder, "Watched Connected Folder"), watch,
       debounceSeconds: boundedInteger(record.debounceSeconds, "folder-change debounce seconds", 1, 3_600),
       cooldownMinutes: boundedInteger(record.cooldownMinutes, "folder-change cooldown minutes", 0, 10_080),
       ...(record.ifMissed !== undefined ? { ifMissed: record.ifMissed as "run" | "skip" } : {}) };
@@ -608,60 +608,60 @@ function normalizeTrigger(value: unknown, version: WorkFoldAutomationContractVer
     : "Automation trigger kind must be manual, interval, or on-settled.");
 }
 
-function normalizeSettleSource(value: unknown): WorkFoldAutomationSettleSource {
+function normalizeSettleSource(value: unknown): AmpleFileAutomationSettleSource {
   const record = objectRecord(value, "Automation trigger source must be a JSON object.");
   if (record.kind === "check-run") {
-    assertKeys(record, ["kind", "workFolder"], ["check", "outcomes"], "Automation check-run trigger source");
+    assertKeys(record, ["kind", "connectedFolder"], ["check", "outcomes"], "Automation check-run trigger source");
     return {
       kind: "check-run",
-      workFolder: workFolderId(record.workFolder, "Automation check-run trigger source work-folder"),
+      connectedFolder: connectedFolderId(record.connectedFolder, "Automation check-run trigger source Connected Folder"),
       ...(record.check !== undefined ? { check: checkRef(record.check, "Automation check-run trigger source check") } : {}),
-      outcomes: normalizeOutcomes(record.outcomes, "Automation check-run trigger source", workFoldAutomationCheckRunOutcomes, ["succeeded"]),
+      outcomes: normalizeOutcomes(record.outcomes, "Automation check-run trigger source", ampleFileAutomationCheckRunOutcomes, ["succeeded"]),
     };
   }
   if (record.kind === "app-automation-run") {
-    assertKeys(record, ["kind", "workFolder", "appId", "appAutomationId"], ["outcomes"], "Automation app-automation-run trigger source");
+    assertKeys(record, ["kind", "connectedFolder", "appId", "appAutomationId"], ["outcomes"], "Automation app-automation-run trigger source");
     return {
       kind: "app-automation-run",
-      workFolder: workFolderId(record.workFolder, "Automation app-automation-run trigger source work-folder"),
+      connectedFolder: connectedFolderId(record.connectedFolder, "Automation app-automation-run trigger source Connected Folder"),
       appId: restrictedAppId(record.appId, "Automation app-automation-run trigger source appId"),
       appAutomationId: restrictedAppId(record.appAutomationId, "Automation app-automation-run trigger source automationId"),
-      outcomes: normalizeOutcomes(record.outcomes, "Automation app-automation-run trigger source", workFoldAutomationAppAutomationRunOutcomes, ["success"]),
+      outcomes: normalizeOutcomes(record.outcomes, "Automation app-automation-run trigger source", ampleFileAutomationAppAutomationRunOutcomes, ["success"]),
     };
   }
   throw new Error("Automation trigger source kind must be check-run or app-automation-run.");
 }
 
-function normalizeStep(value: unknown, index: number, version: WorkFoldAutomationContractVersion): WorkFoldAutomationStep {
+function normalizeStep(value: unknown, index: number, version: AmpleFileAutomationContractVersion): AmpleFileAutomationStep {
   const label = `Automation step ${index + 1}`;
   const record = objectRecord(value, `${label} must be a JSON object.`);
   if (record.kind === "chat") {
-    assertKeys(record, ["id", "kind", "workFolder", "message"], ["model"], label);
+    assertKeys(record, ["id", "kind", "connectedFolder", "message"], ["model"], label);
     return {
       id: stepId(record.id, `${label} id`),
       kind: "chat",
-      workFolder: workFolderId(record.workFolder, `${label} work-folder`),
+      connectedFolder: connectedFolderId(record.connectedFolder, `${label} Connected Folder`),
       message: boundedMessage(record.message, `${label} message`),
       ...(record.model !== undefined ? { model: stepModel(record.model, `${label} model`) } : {}),
     };
   }
   if (record.kind === "files") {
-    assertKeys(record, ["id", "kind", "fromWorkFolder", "from", "toWorkFolder", "to"], [], label);
+    assertKeys(record, ["id", "kind", "fromConnectedFolder", "from", "toConnectedFolder", "to"], [], label);
     return {
       id: stepId(record.id, `${label} id`),
       kind: "files",
-      fromWorkFolder: workFolderId(record.fromWorkFolder, `${label} fromWorkFolder`),
+      fromConnectedFolder: connectedFolderId(record.fromConnectedFolder, `${label} fromConnectedFolder`),
       from: normalizeFilesSource(record.from, label),
-      toWorkFolder: workFolderId(record.toWorkFolder, `${label} toWorkFolder`),
-      to: normalizeWorkFoldCheckTargetPath(record.to, `${label} destination`),
+      toConnectedFolder: connectedFolderId(record.toConnectedFolder, `${label} toConnectedFolder`),
+      to: normalizeAmpleFileCheckTargetPath(record.to, `${label} destination`),
     };
   }
   if (record.kind === "check") {
-    assertKeys(record, ["id", "kind", "workFolder"], ["check"], label);
+    assertKeys(record, ["id", "kind", "connectedFolder"], ["check"], label);
     return {
       id: stepId(record.id, `${label} id`),
       kind: "check",
-      workFolder: workFolderId(record.workFolder, `${label} work-folder`),
+      connectedFolder: connectedFolderId(record.connectedFolder, `${label} Connected Folder`),
       ...(record.check !== undefined ? { check: checkRef(record.check, `${label} check`) } : {}),
     };
   }
@@ -680,7 +680,7 @@ function normalizeStep(value: unknown, index: number, version: WorkFoldAutomatio
     : `${label} kind must be chat, files, or check.`);
 }
 
-function stepModel(value: unknown, label: string): WorkFoldAutomationStepModel {
+function stepModel(value: unknown, label: string): AmpleFileAutomationStepModel {
   const record = objectRecord(value, `${label} must be a JSON object with provider and id.`);
   assertKeys(record, ["provider", "id"], [], label);
   const part = (raw: unknown, name: string): string => {
@@ -693,22 +693,22 @@ function stepModel(value: unknown, label: string): WorkFoldAutomationStepModel {
 }
 
 /**
- * The folder a folder-change trigger watches. Version 6 adds the work-folder's
+ * The folder a folder-change trigger watches. Version 6 adds the Connected Folder's
  * own top level (`"path": ""`), only without recursion: the files directly in
- * it, never a subfolder, so a nested work-folder is never read.
+ * it, never a subfolder, so a nested Connected Folder is never read.
  */
-function normalizeWatchedFolder(value: unknown, version: WorkFoldAutomationContractVersion): WorkFoldAutomationFilesSource {
+function normalizeWatchedFolder(value: unknown, version: AmpleFileAutomationContractVersion): AmpleFileAutomationFilesSource {
   const record = objectRecord(value, "Watched folder source must be a JSON object.");
   if (record.kind === "tree" && record.path === "") {
-    if (version < 6) throw new Error("Watching a work-folder's top level requires contract version 6.");
+    if (version < 6) throw new Error("Watching a Connected Folder's top level requires contract version 6.");
     assertKeys(record, ["kind", "path", "recursive", "extensions"], [], "Watched folder source");
-    if (record.recursive !== false) throw new Error("A work-folder's top level can be watched only without recursion.");
+    if (record.recursive !== false) throw new Error("A Connected Folder's top level can be watched only without recursion.");
     return { kind: "tree", path: "", recursive: false, extensions: normalizeExtensions(record.extensions, "Watched folder source") };
   }
   return normalizeFilesSource(value, "Watched folder");
 }
 
-function normalizeFilesSource(value: unknown, stepLabel: string): WorkFoldAutomationFilesSource {
+function normalizeFilesSource(value: unknown, stepLabel: string): AmpleFileAutomationFilesSource {
   const label = `${stepLabel} source`;
   const record = objectRecord(value, `${label} must be a JSON object.`);
   if (record.kind === "paths") {
@@ -716,7 +716,7 @@ function normalizeFilesSource(value: unknown, stepLabel: string): WorkFoldAutoma
     if (!Array.isArray(record.paths) || record.paths.length < 1) {
       throw new Error(`${label} paths must contain at least one exact file path.`);
     }
-    const paths = record.paths.map((path, pathIndex) => normalizeWorkFoldCheckTargetPath(path, `${label} path ${pathIndex + 1}`));
+    const paths = record.paths.map((path, pathIndex) => normalizeAmpleFileCheckTargetPath(path, `${label} path ${pathIndex + 1}`));
     if (new Set(paths).size !== paths.length) throw new Error(`${label} paths repeat a path.`);
     return { kind: "paths", paths };
   }
@@ -725,7 +725,7 @@ function normalizeFilesSource(value: unknown, stepLabel: string): WorkFoldAutoma
     if (record.recursive !== true && record.recursive !== false) throw new Error(`${label} recursive must be a boolean.`);
     return {
       kind: "tree",
-      path: normalizeWorkFoldCheckTargetPath(record.path, `${label} path`),
+      path: normalizeAmpleFileCheckTargetPath(record.path, `${label} path`),
       recursive: record.recursive,
       extensions: normalizeExtensions(record.extensions, label),
     };
@@ -736,8 +736,8 @@ function normalizeFilesSource(value: unknown, stepLabel: string): WorkFoldAutoma
       kind: "step-created-files",
       step: stepId(record.step, `${label} step`),
       ...(record.extensions !== undefined ? { extensions: normalizeExtensions(record.extensions, label) } : {}),
-      maxFiles: boundedInteger(record.maxFiles, `${label} maxFiles`, 1, workFoldAutomationBounds.maxHandoffFiles),
-      maxTotalBytes: boundedInteger(record.maxTotalBytes, `${label} maxTotalBytes`, 1, workFoldAutomationBounds.maxHandoffTotalBytes),
+      maxFiles: boundedInteger(record.maxFiles, `${label} maxFiles`, 1, ampleFileAutomationBounds.maxHandoffFiles),
+      maxTotalBytes: boundedInteger(record.maxTotalBytes, `${label} maxTotalBytes`, 1, ampleFileAutomationBounds.maxHandoffTotalBytes),
     };
   }
   throw new Error(`${label} kind must be paths, tree, or step-created-files.`);
@@ -784,8 +784,8 @@ function boundedMessage(value: unknown, label: string): string {
   if (typeof value !== "string") throw new Error(`${label} must be text.`);
   const message = value.trim();
   if (!message) throw new Error(`${label} cannot be empty.`);
-  if (Buffer.byteLength(message, "utf8") > workFoldAutomationBounds.maxChatMessageBytes) {
-    throw new Error(`${label} exceeds ${workFoldAutomationBounds.maxChatMessageBytes} bytes.`);
+  if (Buffer.byteLength(message, "utf8") > ampleFileAutomationBounds.maxChatMessageBytes) {
+    throw new Error(`${label} exceeds ${ampleFileAutomationBounds.maxChatMessageBytes} bytes.`);
   }
   if (forbiddenMessageCharacters.test(message)) {
     throw new Error(`${label} contains control or direction-override characters, which are never allowed in an automation message.`);
@@ -793,9 +793,9 @@ function boundedMessage(value: unknown, label: string): string {
   return message;
 }
 
-function workFolderId(value: unknown, label: string): string {
-  if (typeof value !== "string" || !workFolderIdPattern.test(value)) {
-    throw new Error(`${label} must be a stable registered work-folder id, not a name or path.`);
+function connectedFolderId(value: unknown, label: string): string {
+  if (typeof value !== "string" || !connectedFolderIdPattern.test(value)) {
+    throw new Error(`${label} must be a stable registered Connected Folder id, not a name or path.`);
   }
   return value;
 }
@@ -831,7 +831,7 @@ function boundedInteger(value: unknown, label: string, minimum: number, maximum:
   return value as number;
 }
 
-function normalizeCreator(value: unknown): WorkFoldAutomationProposal["createdBy"] {
+function normalizeCreator(value: unknown): AmpleFileAutomationProposal["createdBy"] {
   if (value === "human" || value === "assistant" || value === "codex" || value === "claude-code" || value === "other") return value;
   throw new Error("Automation proposal createdBy is invalid.");
 }
@@ -852,11 +852,11 @@ function explicitOffsetTimestamp(value: unknown, label: string): string {
   return new Date(value).toISOString();
 }
 
-function contractVersion(value: unknown, label: string): WorkFoldAutomationContractVersion {
-  if (!(workFoldAutomationSupportedContractVersions as readonly unknown[]).includes(value)) {
+function contractVersion(value: unknown, label: string): AmpleFileAutomationContractVersion {
+  if (!(ampleFileAutomationSupportedContractVersions as readonly unknown[]).includes(value)) {
     throw new Error(`${label} uses unsupported version ${String(value)}.`);
   }
-  return value as WorkFoldAutomationContractVersion;
+  return value as AmpleFileAutomationContractVersion;
 }
 
 function boundedText(value: unknown, label: string, maximum: number): string {
@@ -887,10 +887,10 @@ function assertKeys(
 }
 
 /** The shared bounded, no-follow reader for proposal scans and enablement. */
-export async function readWorkFoldAutomationDocument(path: string): Promise<string> {
+export async function readAmpleFileAutomationDocument(path: string): Promise<string> {
   const info = await lstat(path);
   if (info.isSymbolicLink() || !info.isFile()) throw new Error("Automation document must be an ordinary file, not a link or special file.");
-  if (info.size > workFoldAutomationDocumentMaxBytes) throw new Error("Automation document exceeds the 64 MiB bound.");
+  if (info.size > ampleFileAutomationDocumentMaxBytes) throw new Error("Automation document exceeds the 64 MiB bound.");
   // A raced FIFO must not block the app; a raced symlink must not redirect it.
   const handle = await open(path, constants.O_RDONLY | noFollowFlag() | (constants.O_NONBLOCK ?? 0));
   try {

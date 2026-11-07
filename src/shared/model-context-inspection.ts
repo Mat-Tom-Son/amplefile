@@ -2,7 +2,7 @@
 export type ModelContextValue = null | boolean | number | string | ModelContextValue[] | { [key: string]: ModelContextValue };
 
 export interface ModelContextOwner {
-  workFolderRoot: string;
+  connectedFolderRoot: string;
   conversationId: string;
   sessionId: string;
   taskId?: string;
@@ -10,7 +10,7 @@ export interface ModelContextOwner {
 }
 
 export interface ModelContextFilter {
-  workFolderRoot?: string;
+  connectedFolderRoot?: string;
   conversationId?: string;
 }
 

@@ -105,7 +105,7 @@ interface NormalizedTransaction {
 }
 
 export interface RestrictedAppDataBackup {
-  format: "work-fold.app-data";
+  format: "amplefile.app-data";
   formatVersion: 1;
   appId: string;
   appDigest: string;
@@ -122,7 +122,7 @@ export interface RestrictedAppDataRecovery {
 }
 
 interface RecoveryFile {
-  format: "work-fold.app-data-recovery";
+  format: "amplefile.app-data-recovery";
   formatVersion: 1;
   id: string;
   createdAt: string;
@@ -136,7 +136,7 @@ export function validateRestrictedAppDataBackup(value: unknown, owner: Restricte
   const backup = value as RestrictedAppDataBackup;
   if (!backup || typeof backup !== "object" || Array.isArray(backup)
     || Object.keys(backup).some((key) => !["format", "formatVersion", "appId", "appDigest", "exportedAt", "complete", "data", "sha256"].includes(key))
-    || backup.format !== "work-fold.app-data" || backup.formatVersion !== 1 || backup.complete !== true
+    || backup.format !== "amplefile.app-data" || backup.formatVersion !== 1 || backup.complete !== true
     || backup.appId !== appId || backup.appDigest !== appDigest
     || typeof backup.exportedAt !== "string" || !Number.isFinite(Date.parse(backup.exportedAt))) {
     throw new RestrictedAppStorageError("STORAGE_INVALID", "Choose a complete backup of this app revision and installation.");
@@ -179,7 +179,7 @@ export class FileRestrictedAppStorage {
   async exportData(owner: RestrictedAppStorageOwner, appId: string, appDigest: string): Promise<RestrictedAppDataBackup> {
     const normalized = normalizeOwner(owner);
     return await this.#enqueue(normalized, async () => {
-      const payload = { format: "work-fold.app-data" as const, formatVersion: 1 as const, appId, appDigest,
+      const payload = { format: "amplefile.app-data" as const, formatVersion: 1 as const, appId, appDigest,
         exportedAt: new Date().toISOString(), complete: true as const, data: await this.#read(normalized) };
       return { ...payload, sha256: dataHash(payload) };
     });
@@ -221,7 +221,7 @@ export class FileRestrictedAppStorage {
       const next = normalizeFile({ ...current, revision: current.revision + 1, entries, usageBytes: storageUsage(entries) }, normalized, this.#limits);
       // The recovery receipt is durable before the atomic data replacement. A
       // crash before commit leaves it unavailable; no success is inferred.
-      const recovery: RecoveryFile = { format: "work-fold.app-data-recovery", formatVersion: 1,
+      const recovery: RecoveryFile = { format: "amplefile.app-data-recovery", formatVersion: 1,
         id: randomUUID(), createdAt: new Date().toISOString(), appDigest: input.appDigest,
         previous: current, resultSha256: dataHash(next) };
       await this.#write(normalized, recovery, authorizeCommit, "recovery.json");
@@ -367,7 +367,7 @@ export class FileRestrictedAppStorage {
       return normalizeFile(JSON.parse(bytes.toString("utf8")), owner, this.#limits);
     } catch (error) {
       if (error instanceof RestrictedAppStorageError) throw error;
-      throw new RestrictedAppStorageError("STORAGE_CORRUPT", `work-fold could not read restricted app storage: ${errorMessage(error)}`);
+      throw new RestrictedAppStorageError("STORAGE_CORRUPT", `AmpleFile could not read restricted app storage: ${errorMessage(error)}`);
     }
   }
 
@@ -420,7 +420,7 @@ export class FileRestrictedAppStorage {
     let record: RecoveryFile;
     try { record = JSON.parse(bytes.toString("utf8")) as RecoveryFile; }
     catch { throw new RestrictedAppStorageError("STORAGE_CORRUPT", "App recovery is unreadable."); }
-    if (!record || record.format !== "work-fold.app-data-recovery" || record.formatVersion !== 1
+    if (!record || record.format !== "amplefile.app-data-recovery" || record.formatVersion !== 1
       || Object.keys(record).some((key) => !["format", "formatVersion", "id", "createdAt", "appDigest", "previous", "resultSha256"].includes(key))
       || typeof record.id !== "string" || !/^[a-f0-9-]{36}$/.test(record.id)
       || typeof record.createdAt !== "string" || !Number.isFinite(Date.parse(record.createdAt))
@@ -479,7 +479,7 @@ function normalizeOwner(value: RestrictedAppStorageOwner): RestrictedAppStorageO
 
 function ownerHash(owner: RestrictedAppStorageOwner): string {
   return createHash("sha256")
-    .update("work-fold.restricted-app-storage.v3\0")
+    .update("amplefile.restricted-app-storage.v3\0")
     .update(owner.tenantId)
     .update("\0")
     .update(owner.dataNamespaceId)

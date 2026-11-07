@@ -15,7 +15,7 @@ const options = process.argv.slice(2);
 if (options.some((option) => option !== "--tag-check" && option !== "--main-only") || options.length > 1) {
   throw new Error("Usage: node scripts/verify-release-ci.mjs [--tag-check | --main-only]");
 }
-if (process.env.WORKFOLD_SOURCE_RELEASE_REPO && process.env.WORKFOLD_SOURCE_RELEASE_REPO !== repo) {
+if (process.env.AMPLEFILE_SOURCE_RELEASE_REPO && process.env.AMPLEFILE_SOURCE_RELEASE_REPO !== repo) {
   throw new Error(`Release CI can only be verified in the canonical source repository ${repo}.`);
 }
 if (process.env.GITHUB_REPOSITORY && process.env.GITHUB_REPOSITORY !== repo) throw new Error("GitHub Actions repository does not match the canonical source repository.");

@@ -33,15 +33,15 @@ test("copies are named as Finder names them, and nothing is ever replaced", asyn
   await assert.rejects(copyInto(join(root, "A"), join(root, "A")), /into itself/);
 });
 
-test("a copied folder leaves a work-folder's identity behind, and a move lands beside what is there", async (t) => {
+test("a copied folder leaves a Connected Folder's identity behind, and a move lands beside what is there", async (t) => {
   const root = await folder(t);
-  await mkdir(join(root, "Trip", ".work-fold"), { recursive: true });
-  await writeFile(join(root, "Trip", ".work-fold", "work-folder.json"), "{}");
+  await mkdir(join(root, "Trip", ".amplefile"), { recursive: true });
+  await writeFile(join(root, "Trip", ".amplefile", "connected-folder.json"), "{}");
   await writeFile(join(root, "Trip", "plan.md"), "plan");
   await mkdir(join(root, "Archive"));
   const copied = await copyInto(join(root, "Trip"), join(root, "Archive"));
   assert.ok(existsSync(join(copied, "plan.md")));
-  assert.ok(!existsSync(join(copied, ".work-fold")), "the copy is not the same work-folder");
+  assert.ok(!existsSync(join(copied, ".amplefile")), "the copy is not the same Connected Folder");
   await writeFile(join(root, "plan.md"), "loose");
   await writeFile(join(root, "Archive", "plan.md"), "kept");
   const moved = await moveInto(join(root, "plan.md"), join(root, "Archive"));
@@ -51,7 +51,7 @@ test("a copied folder leaves a work-folder's identity behind, and a move lands b
 
 test("Compress makes name.zip for one item and Archive.zip for several", async (t) => {
   const root = await folder(t);
-  await mkdir(join(root, "Quotes", ".work-fold"), { recursive: true });
+  await mkdir(join(root, "Quotes", ".amplefile"), { recursive: true });
   await writeFile(join(root, "Quotes", "a.txt"), "a");
   await writeFile(join(root, "b.txt"), "b");
   const single = await compressInto([join(root, "Quotes")], root);

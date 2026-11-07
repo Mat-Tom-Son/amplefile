@@ -1,5 +1,5 @@
 // Stages the app kit (stylesheet and Inter font) next to the compiled desktop
-// code, where the restricted-app host serves it under /__work-fold/.
+// code, where the restricted-app host serves it under /__amplefile/.
 import { copyFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

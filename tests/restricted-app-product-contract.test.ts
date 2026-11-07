@@ -4,12 +4,12 @@ import { join } from "node:path";
 import test from "node:test";
 
 const root = process.cwd();
-const [capabilities, apps, chat, workFolderApp, workFolderChrome, viewport, styles, professionalShell, professionalSurfaces, desktopHost, desktopMain, desktopPreload, tooltipOverlay, restrictedAppPreload] = await Promise.all([
+const [capabilities, apps, chat, connectedFolderApp, connectedFolderChrome, viewport, styles, professionalShell, professionalSurfaces, desktopHost, desktopMain, desktopPreload, tooltipOverlay, restrictedAppPreload] = await Promise.all([
   read("web-local/src/components/panes/CapabilitiesPane.tsx"),
   read("web-local/src/components/panes/RestrictedAppsSection.tsx"),
   read("web-local/src/components/chat/ChatPanel.tsx"),
   read("web-local/src/App.tsx"),
-  read("web-local/src/components/panes/workFolderChrome.tsx"),
+  read("web-local/src/components/panes/connectedFolderChrome.tsx"),
   read("web-local/src/components/panes/RestrictedAppViewport.tsx"),
   read("web-local/src/styles.css"),
   read("web-local/src/styles.css"),
@@ -23,11 +23,11 @@ const [capabilities, apps, chat, workFolderApp, workFolderChrome, viewport, styl
 
 test("Apps product hierarchy starts with the agent; Settings → Apps has no manual add path", () => {
   // A local preview arrives from a Worker's proposal in its Chat or from
-  // `work-fold apps install-preview`. Settings → Apps lists and manages apps;
+  // `amplefile apps install-preview`. Settings → Apps lists and manages apps;
   // the retired "section" presentation (its own heading, an App Studio button,
   // and an "Advanced Local Preview" path-entry dialog) is gone, along with the
   // routes only it called.
-  assert.doesNotMatch(apps, /Apps in This work-folder|Advanced Local Preview|Add Local Preview|presentation-\$\{|presentation\?: "section"/);
+  assert.doesNotMatch(apps, /Apps in This Connected Folder|Advanced Local Preview|Add Local Preview|presentation-\$\{|presentation\?: "section"/);
   assert.doesNotMatch(apps, /inspectRestrictedApp|installRestrictedApp|RestrictedAppReviewDialog|RestrictedAppSourceDialog/);
   // Building an app is a plain ask in a Chat; there is no button for it (2026-09-25).
   assert.doesNotMatch(apps, /Build with worker|onBuildApp/);
@@ -36,7 +36,7 @@ test("Apps product hierarchy starts with the agent; Settings → Apps has no man
   assert.doesNotMatch(apps, /\bwebsite\b/i, "the word website never appears in app copy");
 });
 
-test("Restore… accepts any export work-fold makes, checked against the host's shared bound", () => {
+test("Restore… accepts any export AmpleFile makes, checked against the host's shared bound", () => {
   assert.match(apps, /import \{ restrictedAppDataRestoreBytes \} from "\.\.\/\.\.\/\.\.\/\.\.\/src\/shared\/restricted-app-storage-limits";/);
   assert.match(apps, /file\.size > restrictedAppDataRestoreBytes/);
   assert.doesNotMatch(apps, /6 \* 1024 \* 1024|6 MiB/);
@@ -61,12 +61,12 @@ test("Skills & Extensions owns access, connection, and lifecycle management with
   assert.match(apps, /Revoke Access/);
   assert.match(apps, /Replace Connection/);
   assert.match(apps, /Disconnect/);
-  assert.match(apps, /work-folder files/);
+  assert.match(apps, /Connected Folder files/);
   assert.match(apps, /Automations/);
   assert.match(apps, /Local app data/);
   assert.match(apps, /App access overview/);
   assert.match(apps, /onEnabledChange=\{\(enabled\) => void changeAppAutomation\(automation, enabled\)\}/);
-  assert.match(apps, /"Whole work-folder"/);
+  assert.match(apps, /"Whole Connected Folder"/);
   assert.match(apps, /Limit to Folder/);
   // Removing a preview takes its data with it, and F20 makes that recoverable:
   // the confirm and the toast both say so rather than implying finality.
@@ -78,7 +78,7 @@ test("Skills & Extensions owns access, connection, and lifecycle management with
   assert.match(apps, /Earlier revision/);
   assert.match(apps, /<h3 id="restricted-app-notifications-title">Notifications<\/h3>/);
   assert.doesNotMatch(apps, /Windows notifications|Windows notification settings/);
-  assert.match(apps, /work-fold · \{app\.manifest\.title\} — \{permission\.title\}/);
+  assert.match(apps, /AmpleFile · \{app\.manifest\.title\} — \{permission\.title\}/);
   assert.match(apps, /Allow Notifications/);
   assert.match(apps, /Revoke Notifications/);
   // The app's recent notifications sit under its categories.
@@ -94,17 +94,17 @@ test("automation confirmations render above the capability dialog that requested
   assert.ok(confirmationLayer > capabilityLayer, `confirmation layer ${confirmationLayer} must exceed capability layer ${capabilityLayer}`);
 });
 
-test("notification clicks target their exact work-folder and stopped native views remount", () => {
-  assert.match(workFolderApp, /desktop\.onOpenRequest/);
-  assert.match(workFolderApp, /resolveRestrictedAppOpenRequest\(request, workFolders\)/);
-  assert.match(workFolderApp, /onSwitchWorkFolder\(target\.workFolder\)/);
-  assert.match(workFolderApp, /setActiveMode\(target\.mode\)/);
+test("notification clicks target their exact Connected Folder and stopped native views remount", () => {
+  assert.match(connectedFolderApp, /desktop\.onOpenRequest/);
+  assert.match(connectedFolderApp, /resolveRestrictedAppOpenRequest\(request, connectedFolders\)/);
+  assert.match(connectedFolderApp, /onSwitchConnectedFolder\(target\.connectedFolder\)/);
+  assert.match(connectedFolderApp, /setActiveMode\(target\.mode\)/);
   // A notification click opens the left pane — never a tab — at the app's
   // named route and state, and the rail button returns the app to its home.
-  assert.match(workFolderApp, /setRestrictedAppNavigatorTarget\(target\.target\)/);
-  assert.match(workFolderApp, /placement="navigator"\s+route=\{restrictedAppNavigatorTarget\?\.mode === activeMode \? restrictedAppNavigatorTarget\.route : "\/"\}/);
-  assert.match(workFolderApp, /openedFrom: restrictedAppNavigatorTarget\.openedFrom/);
-  assert.match(workFolderApp, /function selectRailMode[\s\S]*?setRestrictedAppNavigatorTarget\(null\)/);
+  assert.match(connectedFolderApp, /setRestrictedAppNavigatorTarget\(target\.target\)/);
+  assert.match(connectedFolderApp, /placement="navigator"\s+route=\{restrictedAppNavigatorTarget\?\.mode === activeMode \? restrictedAppNavigatorTarget\.route : "\/"\}/);
+  assert.match(connectedFolderApp, /openedFrom: restrictedAppNavigatorTarget\.openedFrom/);
+  assert.match(connectedFolderApp, /function selectRailMode[\s\S]*?setRestrictedAppNavigatorTarget\(null\)/);
   assert.match(viewport, /latest\.openedFrom && latest\.placement === "navigator"/);
   assert.match(desktopHost, /Only the left-pane view opens from a notification\./);
   assert.match(viewport, /event\.state === "stopped"/);
@@ -113,8 +113,8 @@ test("notification clicks target their exact work-folder and stopped native view
   assert.match(viewport, /disposed \|\| mountId !== mountIdRef\.current/);
 });
 
-test("the work-folder menu occludes native restricted-app views from the first animation frame", () => {
-  assert.match(workFolderChrome, /data-native-view-occluder="true"/);
+test("the Connected Folder menu occludes native restricted-app views from the first animation frame", () => {
+  assert.match(connectedFolderChrome, /data-native-view-occluder="true"/);
   assert.match(viewport, /const explicitOccluder = candidate\.dataset\.nativeViewOccluder === "true"/);
   assert.match(viewport, /\(!explicitOccluder && Number\(style\.opacity\) === 0\)/);
   assert.match(viewport, /style\.display === "none" \|\| style\.visibility === "hidden"/);
@@ -122,12 +122,12 @@ test("the work-folder menu occludes native restricted-app views from the first a
 
 test("rail controls omit hover tooltips without blanking restricted app views", () => {
   assert.doesNotMatch(viewport, /railTooltipOcclusionLeadMs|railTooltipTarget|data-rail-tooltip/);
-  assert.doesNotMatch(workFolderChrome, /useNativeRailTooltips|data-rail-tooltip/);
-  assert.match(workFolderChrome, /aria-label=\{item\.ariaLabel\}/);
+  assert.doesNotMatch(connectedFolderChrome, /useNativeRailTooltips|data-rail-tooltip/);
+  assert.match(connectedFolderChrome, /aria-label=\{item\.ariaLabel\}/);
 });
 
 test("contributed app canvases share built-in spacing and native rounded corners", () => {
-  assert.match(professionalSurfaces, /\.work-folder-mode-pane > \.restricted-app-view\s*\{[^}]*height:\s*auto;[^}]*margin:\s*12px;/s);
+  assert.match(professionalSurfaces, /\.connected-folder-mode-pane > \.restricted-app-view\s*\{[^}]*height:\s*auto;[^}]*margin:\s*12px;/s);
   assert.match(viewport, /resolveRestrictedAppCornerRadius\(app\.manifest\.ui\.cornerRadius\)/);
   assert.match(viewport, /style=\{\{ borderRadius: cornerRadius \}\}/);
   assert.match(viewport, /rail\.right \+ restrictedAppRailGuard/);
@@ -138,11 +138,11 @@ test("contributed app canvases share built-in spacing and native rounded corners
 test("owning Chat shows the added-app receipt with a retry for failures and opens the installed interactive app", () => {
   assert.match(chat, /restricted_app_proposal/);
   assert.match(chat, /restricted_app_proposal_settled/);
-  assert.match(chat, /data\.proposal\?\.workFolderId === workFolder\.id/);
+  assert.match(chat, /data\.proposal\?\.connectedFolderId === connectedFolder\.id/);
   assert.match(chat, /data\.proposal\.conversationId === conversationId/);
   assert.match(chat, /settled\.status === "installed" \|\| settled\.status === "failed"/);
   assert.match(chat, /function RestrictedAppAddedNotice/);
-  assert.match(chat, /Added \{title\} to this work-folder\./);
+  assert.match(chat, /Added \{title\} to this Connected Folder\./);
   assert.match(chat, /Still needs you:/);
   // The connection a person still owes is named where it lives, as everywhere else.
   assert.match(chat, /Connect \$\{needs\.connections\.join\(", "\)\} in Settings → Apps → \$\{title\}/);
@@ -150,12 +150,12 @@ test("owning Chat shows the added-app receipt with a retry for failures and open
   assert.match(chat, />Open App</);
   assert.match(chat, />Try Again</);
   assert.doesNotMatch(chat, /installDisabled=\{running\}|closeLabel="Decline"|RestrictedAppReviewDialog/);
-  assert.match(chat, /installRestrictedAppProposal\(workFolder\.id, proposal\.conversationId, proposal\.id\)/);
-  assert.match(workFolderApp, /restrictedAppsState\.upsertApp\(app\)/);
-  assert.match(workFolderApp, /setActiveMode\(restrictedAppRailMode\(targetWorkFolder\.id, app\.manifest\.id, app\.featureInstallationId\)\)/);
-  assert.match(workFolderApp, /<RestrictedAppViewport[^>]+app=\{activeRestrictedApp\} placement="navigator"/);
-  assert.match(workFolderApp, /tabs\.openRestrictedAppSurfaceTab/);
-  assert.doesNotMatch(workFolderApp, /surface\.execution === "restricted-app"/);
+  assert.match(chat, /installRestrictedAppProposal\(connectedFolder\.id, proposal\.conversationId, proposal\.id\)/);
+  assert.match(connectedFolderApp, /restrictedAppsState\.upsertApp\(app\)/);
+  assert.match(connectedFolderApp, /setActiveMode\(restrictedAppRailMode\(targetConnectedFolder\.id, app\.manifest\.id, app\.featureInstallationId\)\)/);
+  assert.match(connectedFolderApp, /<RestrictedAppViewport[^>]+app=\{activeRestrictedApp\} placement="navigator"/);
+  assert.match(connectedFolderApp, /tabs\.openRestrictedAppSurfaceTab/);
+  assert.doesNotMatch(connectedFolderApp, /surface\.execution === "restricted-app"/);
 });
 
 async function read(relativePath: string): Promise<string> {
@@ -181,7 +181,7 @@ test("bounded inference reaches app views and workers over its own channel", asy
   ]);
   // One channel, registered and removed with the others, admitted through the
   // same owned-power rule as an Worker request.
-  assert.match(desktopHost, /const assistantInferChannel = "work-fold:restricted-app:assistant-infer";/);
+  assert.match(desktopHost, /const assistantInferChannel = "amplefile:restricted-app:assistant-infer";/);
   assert.match(desktopHost, /ipcMain\.handle\(assistantInferChannel/);
   assert.match(desktopHost, /ipcMain\.removeHandler\(assistantInferChannel\);/);
   assert.match(desktopHost, /Inference needs an active app view or a running worker operation\./);
@@ -209,7 +209,7 @@ test("bounded inference reaches app views and workers over its own channel", asy
 
   // The app-builder guide teaches inference, and no longer teaches a
   // paired-browser viewer page.
-  assert.doesNotMatch(piClient, /declare viewer|workFoldViewerApp|workFoldBrowserApp/);
+  assert.doesNotMatch(piClient, /declare viewer|ampleFileViewerApp|ampleFileBrowserApp/);
   assert.match(piClient, /assistant\.infer\(\{ instructions, input, outputSchema\?, maxOutputBytes\? \}\)/);
   assert.match(piClient, /from an app view or from the app's worker module/);
   assert.match(piClient, /INFER_BUSY/);

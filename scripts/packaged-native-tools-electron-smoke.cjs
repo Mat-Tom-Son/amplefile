@@ -9,8 +9,8 @@ const [archiveArgument, rootArgument, documentFixture] = process.argv.slice(2);
 const archive = resolve(archiveArgument), root = resolve(rootArgument);
 const agentDir = join(root, "pi"), stateRoot = join(root, "state");
 process.env.PI_CODING_AGENT_DIR = agentDir;
-process.env.WORKFOLD_DESKTOP_STATE_DIR = stateRoot;
-process.env.WORKFOLD_STATE_DIR = stateRoot;
+process.env.AMPLEFILE_DESKTOP_STATE_DIR = stateRoot;
+process.env.AMPLEFILE_STATE_DIR = stateRoot;
 app.setPath("userData", join(root, "electron-profile"));
 app.dock?.hide();
 
@@ -71,7 +71,7 @@ app.dock?.hide();
     await fs.writeFile(configPath, JSON.stringify({ mcpServers: { fixture: { url: `http://127.0.0.1:${peer.address().port}/mcp`, exposure: "direct" } } }));
     try {
       // Cold product path: do not warm up Jiti with a differently configured loader.
-      const first = await client("mcp-work-folder-a"), second = await client("mcp-work-folder-b");
+      const first = await client("mcp-connected-folder-a"), second = await client("mcp-connected-folder-b");
       const until = async (owner) => {
         for (let attempt = 0; attempt < 200; attempt++) {
           if ((await owner.value.ensureSession()).agent.state.tools.some(tool => tool.name === "mcp__fixture__echo")) return;
@@ -112,7 +112,7 @@ app.dock?.hide();
     finally { await fs.rm(configPath, { force: true }); }
 
     try {
-      const first = await client("document-work-folder-a"), second = await client("document-work-folder-b");
+      const first = await client("document-connected-folder-a"), second = await client("document-connected-folder-b");
       const engineStatus = await call(first, "document_engine", { input: { operation: "status" } });
       assert.match(JSON.stringify(engineStatus.content), /libreoffice/);
       assert.match(JSON.stringify(engineStatus.content), /tesseract/);

@@ -10,8 +10,8 @@ import { RestrictedAppTaskService, RestrictedAppTaskError, restrictedAppTaskAuth
 import { RestrictedAppInferenceService, RestrictedAppInferenceError, type RestrictedAppInferenceActivity } from "./agent/restricted-app-inference.js";
 import { ModelContextInspector } from "./agent/model-context-inspector.js";
 import { type NativeResourceKind } from "./agent/resource-lifecycle.js";
-import { observeWorkFoldAutomationFiles, workFoldAutomationFileObserverBounds } from "./automations/automation-file-observer.js";
-import { isWorkFolderFileVisible } from "./work-folder-file-visibility.js";
+import { observeAmpleFileAutomationFiles, ampleFileAutomationFileObserverBounds } from "./automations/automation-file-observer.js";
+import { isConnectedFolderFileVisible } from "./connected-folder-file-visibility.js";
 import { turnFileChanges } from "./agent/turn-file-changes.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { workRequestLabel, type WorkRequestView } from "../shared/request-presentation.js";
@@ -72,9 +72,9 @@ import {
 import { parseAssistantPresentation } from "./agent/turn-presentation.js";
 import {
   maxDurableTurnTextChars,
-  WorkFoldTurnReplayConflictError,
-  WorkFoldTurnStore,
-  type WorkFoldDurableTurnRecord,
+  AmpleFileTurnReplayConflictError,
+  AmpleFileTurnStore,
+  type AmpleFileDurableTurnRecord,
 } from "./agent/turn-store.js";
 import { TurnCheckpointWriter } from "./agent/turn-checkpoint-writer.js";
 import {
@@ -119,9 +119,9 @@ import {
 } from "./agent/skill-import.js";
 import { normalizeWorkerInstructions } from "./agent/model-preferences.js";
 import {
-  RegisteredWorkFolderRuntimeProvider,
-  RegisteredWorkFolderTrustAuthority,
-} from "./agent/registered-work-folder-runtime.js";
+  RegisteredConnectedFolderRuntimeProvider,
+  RegisteredConnectedFolderTrustAuthority,
+} from "./agent/registered-connected-folder-runtime.js";
 import { RestrictedAppError } from "./agent/restricted-app-connections.js";
 import { RestrictedAppStorageError } from "./agent/restricted-app-storage.js";
 import { materializeRestrictedAppWorkingCopy } from "./agent/restricted-app-working-copy.js";
@@ -138,7 +138,7 @@ import {
   type LocalAppRelease,
   type LocalAppReleaseDeletionResult,
   type LocalAppRetainedData,
-  type LocalAppWorkFolderRecoveryCopy,
+  type LocalAppConnectedFolderRecoveryCopy,
   type RestrictedAppAutomationRunReceipt,
   type RestrictedAppInstallationNeeds,
   type RestrictedAppInstalled,
@@ -178,88 +178,88 @@ import { getFoundrySettings, saveFoundryConnection } from "./agent/foundry-conne
 import { AZURE_OPENAI_PROVIDER, foundryProvider, normalizeFoundryConnection, type FoundryConnection } from "../shared/foundry.js";
 import { loadConversationContextReferencesForTurn, previewConversationContextReference } from "./conversation-context.js";
 import {
-  classifyWorkFoldAgentAttachments,
-  loadWorkFoldAgentAttachmentsForTurn,
-  workFoldAgentAttachmentDispositions,
-  workFoldAgentAttachmentLinks,
-  maxWorkFoldAgentAttachments,
-  type WorkFoldAgentAttachmentRef,
-} from "./work-fold-agent-attachments.js";
+  classifyAmpleFileAgentAttachments,
+  loadAmpleFileAgentAttachmentsForTurn,
+  ampleFileAgentAttachmentDispositions,
+  ampleFileAgentAttachmentLinks,
+  maxAmpleFileAgentAttachments,
+  type AmpleFileAgentAttachmentRef,
+} from "./amplefile-agent-attachments.js";
 import {
-  WorkFoldRequestLimitError,
-  WorkFoldRequestLineageError,
-  isWorkFoldRequestTerminalState,
-  workFoldRequestLimitMessage,
-  workFoldRequestLimitsSection,
-  workFoldRequestStateToAgentPhase,
-  type WorkFoldRequestAction,
-  type WorkFoldRequestActionCommand,
-  type WorkFoldRequestAppRef,
-  type WorkFoldRequestJobState,
-  type WorkFoldRequestKind,
-  type WorkFoldRequestLimitName,
-  type WorkFoldRequestRecord,
-  type WorkFoldRequestSurface,
-  type WorkFoldQuestionRecord,
-  type WorkFoldResultEnvelope,
+  AmpleFileRequestLimitError,
+  AmpleFileRequestLineageError,
+  isAmpleFileRequestTerminalState,
+  ampleFileRequestLimitMessage,
+  ampleFileRequestLimitsSection,
+  ampleFileRequestStateToAgentPhase,
+  type AmpleFileRequestAction,
+  type AmpleFileRequestActionCommand,
+  type AmpleFileRequestAppRef,
+  type AmpleFileRequestJobState,
+  type AmpleFileRequestKind,
+  type AmpleFileRequestLimitName,
+  type AmpleFileRequestRecord,
+  type AmpleFileRequestSurface,
+  type AmpleFileQuestionRecord,
+  type AmpleFileResultEnvelope,
 } from "./requests/request-records.js";
-import { WorkFoldRequestStore } from "./requests/request-store.js";
+import { AmpleFileRequestStore } from "./requests/request-store.js";
 import {
   describeJobHistory,
   describeJobState,
-  isWorkFoldJobTerminalState,
-  WorkFoldJobLimitError,
-  WorkFoldJobNotFoundError,
-  type WorkFoldJobHistory,
-  type WorkFoldJobRecord,
+  isAmpleFileJobTerminalState,
+  AmpleFileJobLimitError,
+  AmpleFileJobNotFoundError,
+  type AmpleFileJobHistory,
+  type AmpleFileJobRecord,
 } from "./jobs/job-records.js";
 import { describeJobOutputRead, fenceJobOutput } from "./jobs/job-output.js";
-import { reapOrphanedJobProcesses, WorkFoldJobService, type WorkFoldJobShell } from "./jobs/job-service.js";
-import { WorkFoldJobStore } from "./jobs/job-store.js";
+import { reapOrphanedJobProcesses, AmpleFileJobService, type AmpleFileJobShell } from "./jobs/job-service.js";
+import { AmpleFileJobStore } from "./jobs/job-store.js";
 import { parseUntilPattern, type BackgroundJobToolHost } from "./agent/job-tools.js";
-import { workFoldRequestLimits, workFoldAutomationDeclarationBounds } from "../shared/work-fold-limits.js";
-import { workFolderOperationsGuideForScope } from "./agent/work-folder-operations-guide.js";
-import { buildWorkFolderTurnContext, workFolderTurnHistory, workFolderTurnParentHandle, type PiWorkFolderTurnContext } from "./agent/work-folder-turn-context.js";
+import { ampleFileRequestLimits, ampleFileAutomationDeclarationBounds } from "../shared/amplefile-limits.js";
+import { connectedFolderOperationsGuideForScope } from "./agent/connected-folder-operations-guide.js";
+import { buildConnectedFolderTurnContext, connectedFolderTurnHistory, connectedFolderTurnParentHandle, type PiConnectedFolderTurnContext } from "./agent/connected-folder-turn-context.js";
 import {
-  createWorkFolderCheckpoint,
-  createWorkFolderMutationCheckpoint,
-  discardWorkFolderCheckpoint,
-  getWorkFolderCheckpoint,
-  listWorkFolderCheckpoints,
-  listWorkFolderCheckpointPage,
+  createConnectedFolderCheckpoint,
+  createConnectedFolderMutationCheckpoint,
+  discardConnectedFolderCheckpoint,
+  getConnectedFolderCheckpoint,
+  listConnectedFolderCheckpoints,
+  listConnectedFolderCheckpointPage,
   listFileVersionPage,
   restoreFileVersion,
-  restoreWorkFolderCheckpoint,
-  previewWorkFolderCheckpointRestore,
-  type WorkFolderCheckpoint,
-  type WorkFolderFileVersion,
+  restoreConnectedFolderCheckpoint,
+  previewConnectedFolderCheckpointRestore,
+  type ConnectedFolderCheckpoint,
+  type ConnectedFolderFileVersion,
 } from "./history.js";
 import { compareHistoryFile, readHistoryFile } from "./history-review.js";
-import { searchWorkFolder } from "./search.js";
-import { WorkFolderAppearanceStore } from "./work-folder-appearance-store.js";
+import { searchConnectedFolder } from "./search.js";
+import { ConnectedFolderAppearanceStore } from "./connected-folder-appearance-store.js";
 import {
-  applyWorkFolderAppearanceParts,
-  resolveWorkFolderAppearanceParts,
-  workFolderAppearancePartsLabel,
-  WorkFolderAppearancePartsError,
-} from "./work-folder-appearance-parts.js";
+  applyConnectedFolderAppearanceParts,
+  resolveConnectedFolderAppearanceParts,
+  connectedFolderAppearancePartsLabel,
+  ConnectedFolderAppearancePartsError,
+} from "./connected-folder-appearance-parts.js";
 import { normalizeConversationTitle, normalizeGeneratedConversationTitle } from "../shared/chat-title.js";
 import {
   accentIdentityFromHex,
-  defaultWorkFolderAccent,
-  hasWorkFolderAppearanceCustomization,
-  parseWorkFolderAppearanceProposal,
+  defaultConnectedFolderAccent,
+  hasConnectedFolderAppearanceCustomization,
+  parseConnectedFolderAppearanceProposal,
   primaryAccentIdentity,
-  startingWorkFolderAccentHex,
-  workFolderAppearanceBannerNames,
-  type WorkFolderAppearanceCustomization,
-  type WorkFolderAppearanceProposal,
-} from "../shared/work-folder-appearance.js";
+  startingConnectedFolderAccentHex,
+  connectedFolderAppearanceBannerNames,
+  type ConnectedFolderAppearanceCustomization,
+  type ConnectedFolderAppearanceProposal,
+} from "../shared/connected-folder-appearance.js";
 import type { AppReleasePresentation } from "./agent/app-platform-release.js";
-import { WorkFoldCheckOperationConflictError, WorkFoldCheckService } from "./checks/check-service.js";
-import type { WorkFoldCheckDecisionKind } from "./checks/check-types.js";
-import { purgeWorkFoldCheckState } from "./checks/check-store.js";
-import { resolveWorkFoldCheckTargets } from "./checks/target-resolver.js";
+import { AmpleFileCheckOperationConflictError, AmpleFileCheckService } from "./checks/check-service.js";
+import type { AmpleFileCheckDecisionKind } from "./checks/check-types.js";
+import { purgeAmpleFileCheckState } from "./checks/check-store.js";
+import { resolveAmpleFileCheckTargets } from "./checks/target-resolver.js";
 import {
   PreparedActError,
   PreparedActExecutor,
@@ -273,176 +273,176 @@ import {
 } from "./prepared-acts.js";
 import { removeRetiredGateState } from "./retired-gate-state.js";
 import {
-  createWorkFoldOverviewAutomationRunReader,
-  parseWorkFoldOverviewCursor,
-  workFoldOverviewChatRecordFromMessages,
-  type WorkFoldOverviewAppAutomationReceiptRecord,
-  type WorkFoldOverviewAppAutomationRunRecord,
-  type WorkFoldOverviewCheckSource,
-  type WorkFoldOverviewAgentRequestRecord,
-  type WorkFoldOverviewSettledTurnRecord,
-  type WorkFoldOverviewSourceReaders,
+  createAmpleFileOverviewAutomationRunReader,
+  parseAmpleFileOverviewCursor,
+  ampleFileOverviewChatRecordFromMessages,
+  type AmpleFileOverviewAppAutomationReceiptRecord,
+  type AmpleFileOverviewAppAutomationRunRecord,
+  type AmpleFileOverviewCheckSource,
+  type AmpleFileOverviewAgentRequestRecord,
+  type AmpleFileOverviewSettledTurnRecord,
+  type AmpleFileOverviewSourceReaders,
 } from "./overview.js";
-import { WorkFoldOverviewSeenStore } from "./overview-seen-store.js";
-import { ensureWorkFoldAgentInstructions } from "./work-fold-agent-instructions.js";
+import { AmpleFileOverviewSeenStore } from "./overview-seen-store.js";
+import { ensureAmpleFileAgentInstructions } from "./amplefile-agent-instructions.js";
 import {
-  assertWorkFoldAutomationAtAdmissionHorizon,
-  contentAddressedWorkFoldAutomationDeclaration,
-  normalizeWorkFoldAutomationDeclaration,
-  normalizeWorkFoldAutomationProposal,
-  readWorkFoldAutomationDocument,
-  workFoldAutomationBounds,
-  workFoldAutomationDeclarationKind,
-  workFoldAutomationDigest,
-  workFoldAutomationProposalKind,
-  workFoldAutomationReferencedWorkFolderIds,
-  workFoldAutomationWorkFolderRoles,
-  type WorkFoldAutomationDeclaration,
-  type WorkFoldAutomationFilesStep,
+  assertAmpleFileAutomationAtAdmissionHorizon,
+  contentAddressedAmpleFileAutomationDeclaration,
+  normalizeAmpleFileAutomationDeclaration,
+  normalizeAmpleFileAutomationProposal,
+  readAmpleFileAutomationDocument,
+  ampleFileAutomationBounds,
+  ampleFileAutomationDeclarationKind,
+  ampleFileAutomationDigest,
+  ampleFileAutomationProposalKind,
+  ampleFileAutomationReferencedConnectedFolderIds,
+  ampleFileAutomationConnectedFolderRoles,
+  type AmpleFileAutomationDeclaration,
+  type AmpleFileAutomationFilesStep,
 } from "./automations/automation-declarations.js";
 import {
-  resolveWorkFoldAutomationProposalPath,
-  scanWorkFoldAutomationProposals,
+  resolveAmpleFileAutomationProposalPath,
+  scanAmpleFileAutomationProposals,
 } from "./automations/automation-proposal-scan.js";
 import {
-  WorkFoldAutomationService,
-  WorkFoldAutomationServiceError,
-  type WorkFoldAutomationHopPorts,
-  type WorkFoldAutomationProjection,
-  type WorkFoldAutomationServiceStatus,
+  AmpleFileAutomationService,
+  AmpleFileAutomationServiceError,
+  type AmpleFileAutomationHopPorts,
+  type AmpleFileAutomationProjection,
+  type AmpleFileAutomationServiceStatus,
 } from "./automations/automation-service.js";
 import {
-  WorkFoldAutomationStore,
-  WorkFoldAutomationStoreError,
-  workFoldAutomationReceiptsFile,
-  workFoldAutomationReceiptsRotatedFile,
-  type WorkFoldAutomationReceiptV1,
-  type WorkFoldAutomationRecord,
+  AmpleFileAutomationStore,
+  AmpleFileAutomationStoreError,
+  ampleFileAutomationReceiptsFile,
+  ampleFileAutomationReceiptsRotatedFile,
+  type AmpleFileAutomationReceiptV1,
+  type AmpleFileAutomationRecord,
 } from "./automations/automation-store.js";
-import { WorkFoldSettleSignal } from "./automations/settle-signal.js";
+import { AmpleFileSettleSignal } from "./automations/settle-signal.js";
 import {
-  configureWorkFoldStateRoot,
+  configureAmpleFileStateRoot,
   restrictedAppRoot,
-  workFolderStateDir,
-  workFoldAgentRoot,
-  workFoldAgentScopeId,
-  workFoldStateRoot,
-  workFoldRequestsRoot,
-  workFoldJobsRoot,
-  workFoldRecentlyDeletedRoot,
+  connectedFolderStateDir,
+  ampleFileAgentRoot,
+  ampleFileAgentScopeId,
+  ampleFileStateRoot,
+  ampleFileRequestsRoot,
+  ampleFileJobsRoot,
+  ampleFileRecentlyDeletedRoot,
 } from "./state-paths.js";
 import {
-  WorkFoldRecentlyDeletedError,
-  WorkFoldRecentlyDeletedStore,
-  workFoldRecentlyDeletedEntryIdPattern,
-  type WorkFoldRecentlyDeletedEntry,
-  type WorkFoldRecentlyDeletedKind,
-  type WorkFoldRecentlyDeletedReason,
-  type WorkFoldRecentlyDeletedUncoveredPath,
+  AmpleFileRecentlyDeletedError,
+  AmpleFileRecentlyDeletedStore,
+  ampleFileRecentlyDeletedEntryIdPattern,
+  type AmpleFileRecentlyDeletedEntry,
+  type AmpleFileRecentlyDeletedKind,
+  type AmpleFileRecentlyDeletedReason,
+  type AmpleFileRecentlyDeletedUncoveredPath,
 } from "./recently-deleted-store.js";
-import { WorkFoldKernel } from "./work-fold-kernel.js";
+import { AmpleFileKernel } from "./amplefile-kernel.js";
 import { ManagedWorktrees } from "./managed-worktrees.js";
 import {
-  WORKFOLD_CLI_ACT_SURFACES,
-  WorkFoldCliActReceipts,
-  type WorkFoldCliActReceipt,
-  type WorkFoldCliActSurface,
+  AMPLEFILE_CLI_ACT_SURFACES,
+  AmpleFileCliActReceipts,
+  type AmpleFileCliActReceipt,
+  type AmpleFileCliActSurface,
 } from "./cli/act-receipts.js";
-import { WorkFoldCliError } from "./cli/protocol.js";
+import { AmpleFileCliError } from "./cli/protocol.js";
 import type {
-  WorkFoldActAppAutomationRunRef,
-  WorkFoldActAppInstanceRef,
-  WorkFoldActAppOperationRef,
-  WorkFoldActAppPresentation,
-  WorkFoldActAppProposalRef,
-  WorkFoldActAppReleaseRef,
-  WorkFoldActChatLifecycleState,
-  WorkFoldActChatMessage,
-  WorkFoldActChatState,
-  WorkFoldActCheckpointSummary,
-  WorkFoldActConversationRef,
-  WorkFoldActFacade,
-  WorkFoldActFileVersionRef,
-  WorkFoldActAgentRequest,
-  WorkFoldActQuestionRef,
-  WorkFoldActRequestDetail,
-  WorkFoldActJobRef,
-  WorkFoldActRequestRef,
-  WorkFoldActRequestResult,
-  WorkFoldActRequestSummary,
-  WorkFoldActWaitingRef,
-  WorkFoldActAutomationReceipt,
-  WorkFoldActAutomationSummary,
-  WorkFoldActAutomationTriggerRef,
-  WorkFoldActWorkFolderRef,
-  WorkFoldActRecentlyDeletedEntry,
-  WorkFoldActTurnState,
-  WorkFoldActTurnStatus,
+  AmpleFileActAppAutomationRunRef,
+  AmpleFileActAppInstanceRef,
+  AmpleFileActAppOperationRef,
+  AmpleFileActAppPresentation,
+  AmpleFileActAppProposalRef,
+  AmpleFileActAppReleaseRef,
+  AmpleFileActChatLifecycleState,
+  AmpleFileActChatMessage,
+  AmpleFileActChatState,
+  AmpleFileActCheckpointSummary,
+  AmpleFileActConversationRef,
+  AmpleFileActFacade,
+  AmpleFileActFileVersionRef,
+  AmpleFileActAgentRequest,
+  AmpleFileActQuestionRef,
+  AmpleFileActRequestDetail,
+  AmpleFileActJobRef,
+  AmpleFileActRequestRef,
+  AmpleFileActRequestResult,
+  AmpleFileActRequestSummary,
+  AmpleFileActWaitingRef,
+  AmpleFileActAutomationReceipt,
+  AmpleFileActAutomationSummary,
+  AmpleFileActAutomationTriggerRef,
+  AmpleFileActConnectedFolderRef,
+  AmpleFileActRecentlyDeletedEntry,
+  AmpleFileActTurnState,
+  AmpleFileActTurnStatus,
 } from "./cli/act-facade.js";
-import { resolveWorkFoldCliWorkFolderSelector } from "./work-fold-cli-adapter.js";
+import { resolveAmpleFileCliConnectedFolderSelector } from "./amplefile-cli-adapter.js";
 import {
   createLocalDevelopmentApiOptions,
   loadLocalEnvironmentFile,
 } from "./server-dev-options.js";
-import { isAlwaysHiddenWorkFolderEntry, isWorkFolderIgnored, readWorkFolderIgnoreState, setWorkFolderIgnoreState } from "./work-folder-ignore.js";
-import { canonicalWorkFolderWatchRoot } from "./work-folder-watch.js";
+import { isAlwaysHiddenConnectedFolderEntry, isConnectedFolderIgnored, readConnectedFolderIgnoreState, setConnectedFolderIgnoreState } from "./connected-folder-ignore.js";
+import { canonicalConnectedFolderWatchRoot } from "./connected-folder-watch.js";
 import { handlePageRoute, servePageFrameAsset } from "./pages/page-routes.js";
 import { validatePageForAct } from "./pages/page-validate.js";
 import { PageCallError } from "../shared/pages/index.js";
 import {
-  beginWorkFolderRemoval,
-  copyPathIntoWorkFolder,
-  createManagedWorkFolder,
-  checkWorkFolderMoves,
-  createWorkFolderFolder,
-  createWorkFolderTextFile,
-  deleteWorkFolderEntry,
-  ensureSafeWorkFolderRoot,
-  finalizeWorkFolderRemoval,
-  findExistingWorkFolderFilePaths,
-  getWorkFolder,
-  getWorkFolderEntryInfo,
-  getWorkFolderFilePreview,
-  listWorkFolders,
-  listPendingWorkFolderRemovals,
-  managedWorkFolderDeletionPinIssue,
-  markWorkFolderRemovalAppStateRemoved,
-  moveWorkFolderEntry,
-  outermostWorkFolderPaths,
-  readWorkFolderTextFile,
-  renameWorkFolderEntry,
-  registerLinkedWorkFolder,
-  registerManagedWorkFolder,
-  renameWorkFolder,
-  resolveWorkFolderDeleteTarget,
-  resolveWorkFolderPath,
-  scanWorkFolderTree,
-  nestedRegisteredWorkFolderPaths,
-  registeredWorkFolderOutline,
+  beginConnectedFolderRemoval,
+  copyPathIntoConnectedFolder,
+  createManagedConnectedFolder,
+  checkConnectedFolderMoves,
+  createConnectedFolderFolder,
+  createConnectedFolderTextFile,
+  deleteConnectedFolderEntry,
+  ensureSafeConnectedFolderRoot,
+  finalizeConnectedFolderRemoval,
+  findExistingConnectedFolderFilePaths,
+  getConnectedFolder,
+  getConnectedFolderEntryInfo,
+  getConnectedFolderFilePreview,
+  listConnectedFolders,
+  listPendingConnectedFolderRemovals,
+  managedConnectedFolderDeletionPinIssue,
+  markConnectedFolderRemovalAppStateRemoved,
+  moveConnectedFolderEntry,
+  outermostConnectedFolderPaths,
+  readConnectedFolderTextFile,
+  renameConnectedFolderEntry,
+  registerLinkedConnectedFolder,
+  registerManagedConnectedFolder,
+  renameConnectedFolder,
+  resolveConnectedFolderDeleteTarget,
+  resolveConnectedFolderPath,
+  scanConnectedFolderTree,
+  nestedRegisteredConnectedFolderPaths,
+  registeredConnectedFolderOutline,
   resolveNestableFolderPath,
-  workFolderRemovalPendingResult,
-  touchWorkFolderRoot,
-  withWorkFolderHistoryOperation,
-  writeWorkFolderTextFile,
+  connectedFolderRemovalPendingResult,
+  touchConnectedFolderRoot,
+  withConnectedFolderHistoryOperation,
+  writeConnectedFolderTextFile,
   writeUploadedFiles,
-  type WorkFolderMovedEntry,
-  type WorkFolderRemovalIo,
-  type WorkFolderRemovalResult,
+  type ConnectedFolderMovedEntry,
+  type ConnectedFolderRemovalIo,
+  type ConnectedFolderRemovalResult,
   type TreeEntry,
-  type WorkFolderSummary,
-} from "./work-folder.js";
+  type ConnectedFolderSummary,
+} from "./connected-folder.js";
 
 export interface LocalFolderGrantProvider {
-  consumeLocalFolderGrant(input: { workFolderRoot: string; grantId: string }): boolean | Promise<boolean>;
+  consumeLocalFolderGrant(input: { connectedFolderRoot: string; grantId: string }): boolean | Promise<boolean>;
 }
 
 export interface LocalApiOptions {
   host?: "127.0.0.1";
   port?: number;
   appMode?: "dev" | "desktop";
-  /** Root used only for managed work-folder content. */
-  workFolderBase?: string;
-  /** work-fold app data: registry, chats, Pi sessions, resources, history. */
+  /** Root used only for managed Connected Folder content. */
+  connectedFolderBase?: string;
+  /** AmpleFile app data: registry, chats, Pi sessions, resources, history. */
   stateBase?: string;
   allowedOrigins?: string[];
   sessionToken?: string;
@@ -453,12 +453,12 @@ export interface LocalApiOptions {
   /** Separate from Pi packages: reviewed, staged apps that execute only in the desktop sandbox host. */
   restrictedAppService?: RestrictedAppService;
   restrictedAppProposalHost?: RoutedRestrictedAppProposalHost;
-  /** Machine-local work-folder appearance state, shared by the renderer and test harnesses. */
-  appearanceStore?: WorkFolderAppearanceStore;
+  /** Machine-local Connected Folder appearance state, shared by the renderer and test harnesses. */
+  appearanceStore?: ConnectedFolderAppearanceStore;
   /** A supplied kernel must use a provider wrapped by the same spaceTrustAuthority. */
-  kernel?: WorkFoldKernel;
+  kernel?: AmpleFileKernel;
   /** Shared with the desktop read CLI and interactive act facade. */
-  checkService?: WorkFoldCheckService;
+  checkService?: AmpleFileCheckService;
   /**
    * The one in-process settle seam between the Check and restricted-app
    * settlement funnels and the automation executor. Supply the same instance to
@@ -466,27 +466,27 @@ export interface LocalApiOptions {
    * automation triggers; when absent, the API creates one for the services it
    * constructs itself.
    */
-  settleSignal?: WorkFoldSettleSignal;
+  settleSignal?: AmpleFileSettleSignal;
   /**
-   * The act lane's durable receipts journal (the work-fold agent's one ledger). Supply
+   * The act lane's durable receipts journal (the AmpleFile agent's one ledger). Supply
    * the desktop CLI host's instance so decisions, Settings acts, and CLI acts
    * share one file and one at-most-once gate; when absent, the API constructs
    * one over the same state-root path the host uses.
    */
-  actReceipts?: WorkFoldCliActReceipts;
+  actReceipts?: AmpleFileCliActReceipts;
   /** Test seam for the machine-local durable agent-turn journal. */
-  turnStore?: WorkFoldTurnStore;
+  turnStore?: AmpleFileTurnStore;
   /** Test seam for the durable request graph (docs/collaboration-contract.md, F25). */
-  requestStore?: WorkFoldRequestStore;
+  requestStore?: AmpleFileRequestStore;
   /** Test seam for the background job journal (docs/background-jobs.md). */
-  jobStore?: WorkFoldJobStore;
+  jobStore?: AmpleFileJobStore;
   /** Shared with the desktop kernel so registry trust changes apply everywhere. */
-  workFolderTrustAuthority?: RegisteredWorkFolderTrustAuthority;
+  connectedFolderTrustAuthority?: RegisteredConnectedFolderTrustAuthority;
   localFolderGrantProvider?: LocalFolderGrantProvider;
-  /** Failure-injection seam for the durable work-folder-removal coordinator. */
-  workFolderRemovalIo?: Partial<WorkFolderRemovalIo>;
+  /** Failure-injection seam for the durable connected-folder-removal coordinator. */
+  connectedFolderRemovalIo?: Partial<ConnectedFolderRemovalIo>;
   /** Test seam for the machine-local trash behind Recently deleted (docs/receipts-not-gates.md, F20). */
-  recentlyDeletedStore?: WorkFoldRecentlyDeletedStore;
+  recentlyDeletedStore?: AmpleFileRecentlyDeletedStore;
   /**
    * The record of what apps' notifications did. The desktop host owns the one
    * instance its notification broker writes; without one the API opens the
@@ -495,12 +495,12 @@ export interface LocalApiOptions {
   appNotificationRecord?: RestrictedAppNotificationRecord;
   /**
    * The desktop's built-in browser (docs/built-in-browser.md). With it, every
-   * Worker and the work-fold agent carry the browser_* tools; a development API
+   * Worker and the AmpleFile agent carry the browser_* tools; a development API
    * without Electron has none.
    */
   browser?: BrowserToolHost;
-  /** Failure-injection seam that runs immediately before mandatory post-reservation work-folder validation. */
-  beforeRestrictedAppWorkFolderRevalidation?: (workFolderId: string) => Promise<void>;
+  /** Failure-injection seam that runs immediately before mandatory post-reservation Connected Folder validation. */
+  beforeRestrictedAppConnectedFolderRevalidation?: (connectedFolderId: string) => Promise<void>;
   maxBodyBytes?: number;
   loadEnv?: boolean;
   onAgentTurnActivity?: (activeTurns: number) => void;
@@ -511,15 +511,15 @@ export interface LocalApiOptions {
    */
   onAppAssistantActivity?: (activity: RestrictedAppAssistantActivity) => void;
   /**
-   * Failure-injection seam immediately before a Pi prompt starts. A work-folder
+   * Failure-injection seam immediately before a Pi prompt starts. A Connected Folder
    * turn's event carries the host-composed turn context (F26) so a test can
    * observe it without a second option.
    */
   beforeAgentPrompt?: (event: {
-    workFolderId: string;
+    connectedFolderId: string;
     conversationId: string;
     taskId: string;
-    workFolderTurn?: PiWorkFolderTurnContext;
+    connectedFolderTurn?: PiConnectedFolderTurnContext;
     automation?: { title: string };
   }) => Promise<void>;
   /**
@@ -527,9 +527,9 @@ export interface LocalApiOptions {
    * a delegated `chat send`. The child is not accepted yet when it runs, so
    * a parent stop inside it refuses the child at acceptance.
    */
-  beforeWorkFoldAgentActionRecord?: (event: { parentTaskId: string; command: "chat.send"; taskId: string }) => Promise<void>;
+  beforeAmpleFileAgentActionRecord?: (event: { parentTaskId: string; command: "chat.send"; taskId: string }) => Promise<void>;
   onHistoryCheckpoint?: (event: {
-    workFolderId: string;
+    connectedFolderId: string;
     conversationId: string;
     reason: "pre_turn" | "post_turn";
     checkpointId: string;
@@ -537,7 +537,7 @@ export interface LocalApiOptions {
   }) => void;
 }
 
-export type WorkFoldAutomationSettingsOutcome =
+export type AmpleFileAutomationSettingsOutcome =
   | "accepted"
   | "succeeded"
   | "failed"
@@ -546,14 +546,14 @@ export type WorkFoldAutomationSettingsOutcome =
   | "skipped"
   | "lapsed";
 
-export interface WorkFoldAutomationSettingsWorkFolderRef {
-  workFolderId: string;
-  workFolderName?: string;
+export interface AmpleFileAutomationSettingsConnectedFolderRef {
+  connectedFolderId: string;
+  connectedFolderName?: string;
 }
 
-export interface WorkFoldAutomationSettingsRunView {
+export interface AmpleFileAutomationSettingsRunView {
   runId: string;
-  outcome: WorkFoldAutomationSettingsOutcome;
+  outcome: AmpleFileAutomationSettingsOutcome;
   startedAt: string;
   finishedAt?: string;
   cause?: string;
@@ -563,38 +563,38 @@ export interface WorkFoldAutomationSettingsRunView {
   hops: Array<{
     hopId: string;
     kind: "chat" | "files" | "check" | "agent";
-    outcome: WorkFoldAutomationSettingsOutcome;
+    outcome: AmpleFileAutomationSettingsOutcome;
     partial?: true;
-    workFolderName?: string;
+    connectedFolderName?: string;
     detail?: string;
     evidence?: Array<{ label: string; value: string }>;
   }>;
 }
 
-export interface WorkFoldAutomationSettingsSummary {
+export interface AmpleFileAutomationSettingsSummary {
   automationId: string;
   title: string;
   health: "enabled" | "disabled" | "suspended" | "completed";
-  trigger: WorkFoldActAutomationTriggerRef;
-  fileWatch?: import("./automations/automation-file-observer.js").WorkFoldAutomationFileWatchStatus;
+  trigger: AmpleFileActAutomationTriggerRef;
+  fileWatch?: import("./automations/automation-file-observer.js").AmpleFileAutomationFileWatchStatus;
   stepCount: number;
-  /** Every work-folder the trigger or a step names, for the Settings work-folder filter. */
-  workFolders: WorkFoldAutomationSettingsWorkFolderRef[];
+  /** Every Connected Folder the trigger or a step names, for the Settings Connected Folder filter. */
+  connectedFolders: AmpleFileAutomationSettingsConnectedFolderRef[];
   nextScheduledAt?: string;
   lastScheduledAt?: string;
   activeRun?: { runId: string; startedAt: string };
-  lastRun?: Omit<WorkFoldAutomationSettingsRunView, "hops" | "cause" | "detail">;
-  /** The newest run that caught up on files changed while work-fold could not watch (`"ifMissed": "run"`). */
+  lastRun?: Omit<AmpleFileAutomationSettingsRunView, "hops" | "cause" | "detail">;
+  /** The newest run that caught up on files changed while AmpleFile could not watch (`"ifMissed": "run"`). */
   lastCatchUp?: { runId: string; at: string; count: number; reason: AutomationCatchUpReason };
-  suspension?: { at: string; reason?: string; missingWorkFolders?: WorkFoldAutomationSettingsWorkFolderRef[] };
+  suspension?: { at: string; reason?: string; missingConnectedFolders?: AmpleFileAutomationSettingsConnectedFolderRef[] };
 }
 
 /**
- * One `*.work-fold-automation.json` file at the top level of the work-fold
+ * One `*.amplefile-automation.json` file at the top level of the AmpleFile
  * agent's working folder that is not already a stored automation
  * (docs/automations.md, "Where automations live in the product").
  */
-export type WorkFoldAutomationSettingsProposalView =
+export type AmpleFileAutomationSettingsProposalView =
   | {
     valid: true;
     path: string;
@@ -602,61 +602,61 @@ export type WorkFoldAutomationSettingsProposalView =
     automationId: string;
     digest: string;
     title: string;
-    trigger: WorkFoldActAutomationTriggerRef;
+    trigger: AmpleFileActAutomationTriggerRef;
   }
   | { valid: false; path: string; fileName: string; problem: string };
 
-export interface WorkFoldAutomationSettingsFacade {
-  list(): Promise<{ automations: WorkFoldAutomationSettingsSummary[]; status: WorkFoldAutomationServiceStatus }>;
-  proposals(): Promise<{ proposals: WorkFoldAutomationSettingsProposalView[]; truncated: boolean }>;
+export interface AmpleFileAutomationSettingsFacade {
+  list(): Promise<{ automations: AmpleFileAutomationSettingsSummary[]; status: AmpleFileAutomationServiceStatus }>;
+  proposals(): Promise<{ proposals: AmpleFileAutomationSettingsProposalView[]; truncated: boolean }>;
   /** Turns on one pending proposal by its absolute path, through the CLI's enable path. */
   enableProposal(path: string): Promise<{
     automationId: string;
     requestId: string;
     enabled: true;
     alreadyEnabled: boolean;
-    automation: WorkFoldAutomationSettingsSummary;
+    automation: AmpleFileAutomationSettingsSummary;
   }>;
   show(automationId: string): Promise<{
-    automation: WorkFoldAutomationSettingsSummary & {
+    automation: AmpleFileAutomationSettingsSummary & {
       createdAt: string;
-      workFolders: WorkFoldAutomationSettingsWorkFolderRef[];
+      connectedFolders: AmpleFileAutomationSettingsConnectedFolderRef[];
       steps: Array<
-        | { id: string; kind: "chat"; workFolder: WorkFoldAutomationSettingsWorkFolderRef; message: string; model?: { provider: string; id: string } }
+        | { id: string; kind: "chat"; connectedFolder: AmpleFileAutomationSettingsConnectedFolderRef; message: string; model?: { provider: string; id: string } }
         | {
           id: string;
           kind: "files";
-          fromWorkFolder: WorkFoldAutomationSettingsWorkFolderRef;
-          toWorkFolder: WorkFoldAutomationSettingsWorkFolderRef;
+          fromConnectedFolder: AmpleFileAutomationSettingsConnectedFolderRef;
+          toConnectedFolder: AmpleFileAutomationSettingsConnectedFolderRef;
           to: string;
           source: ReturnType<typeof toActAutomationFilesSource>;
         }
-        | { id: string; kind: "check"; workFolder: WorkFoldAutomationSettingsWorkFolderRef; checkId?: string }
+        | { id: string; kind: "check"; connectedFolder: AmpleFileAutomationSettingsConnectedFolderRef; checkId?: string }
         | { id: string; kind: "agent"; message: string; model?: { provider: string; id: string } }
       >;
       completedAt?: string;
     };
   }>;
-  history(automationId: string): Promise<{ runs: WorkFoldAutomationSettingsRunView[]; truncated: boolean; damagedLineCount: number }>;
+  history(automationId: string): Promise<{ runs: AmpleFileAutomationSettingsRunView[]; truncated: boolean; damagedLineCount: number }>;
   enable(automationId: string): Promise<{ automationId: string; requestId: string; enabled: true; alreadyEnabled: boolean }>;
   /**
-   * Turns on a ready-made Automation for one work-folder (the file manager's
+   * Turns on a ready-made Automation for one Connected Folder (the file manager's
    * Info panel, 2026-11-07): the stored one when it was on before, else a new
    * declaration built by the host, through the same receipted enable path.
    */
-  enableTemplate(workFolderId: string, templateId: string): Promise<{ automationId: string; requestId: string; enabled: true; alreadyEnabled: boolean }>;
+  enableTemplate(connectedFolderId: string, templateId: string): Promise<{ automationId: string; requestId: string; enabled: true; alreadyEnabled: boolean }>;
   run(automationId: string): Promise<{ automationId: string; requestId: string; runId: string; accepted: true }>;
   stop(automationId: string): Promise<{ automationId: string; requestId: string; runId: string; stopped: true }>;
   disable(automationId: string): Promise<{ automationId: string; requestId: string; disabled: true; stoppedRunId: string | null }>;
   delete(automationId: string): Promise<{ automationId: string; requestId: string; deleted: true }>;
   /**
-   * The work-folder-owned Automations view (docs/automations.md, F15 as amended
-   * 2026-09-24): the automations whose trigger or any step names this work-folder,
-   * with what each does there. Served at `GET /api/work-folders/:id/automations`.
+   * The Connected Folder–owned Automations view (docs/automations.md, F15 as amended
+   * 2026-09-24): the automations whose trigger or any step names this Connected Folder,
+   * with what each does there. Served at `GET /api/connected-folders/:id/automations`.
    */
-  forWorkFolder(workFolderId: string): Promise<FolderAutomationsResponse>;
-  /** Refuses with notFound unless the automation names this work-folder; the gate for the work-folder view's actions. */
-  requireWorkFolderAutomation(workFolderId: string, automationId: string): Promise<void>;
+  forConnectedFolder(connectedFolderId: string): Promise<FolderAutomationsResponse>;
+  /** Refuses with notFound unless the automation names this Connected Folder; the gate for the Connected Folder view's actions. */
+  requireConnectedFolderAutomation(connectedFolderId: string, automationId: string): Promise<void>;
 }
 
 export interface LocalApiHandle {
@@ -670,27 +670,27 @@ export interface LocalApiHandle {
   appInference: Pick<RestrictedAppInferenceService, "infer" | "list">;
   origin: string;
   port: number;
-  kernel: WorkFoldKernel;
+  kernel: AmpleFileKernel;
   /** In-process bounded model transport for the desktop's shared Check service. */
-  reviewCheck: import("./checks/model-review-sensor.js").WorkFoldModelCheckReviewer;
+  reviewCheck: import("./checks/model-review-sensor.js").AmpleFileModelCheckReviewer;
   /** In-process authority for CLI act-lane commands; see cli/act-facade.ts. */
-  actFacade: WorkFoldActFacade;
-  /** Validates an explicitly named work-fold agent parent while its turn is active. */
-  resolveWorkFoldAgentLineageParent: (taskId: string) => { taskId: string } | null;
+  actFacade: AmpleFileActFacade;
+  /** Validates an explicitly named AmpleFile agent parent while its turn is active. */
+  resolveAmpleFileAgentLineageParent: (taskId: string) => { taskId: string } | null;
   /** The durable request graph every accepted turn belongs to (docs/collaboration-contract.md, F25). */
-  requests: WorkFoldRequestStore;
-  /** Background jobs Workers and the work-fold agent started (docs/background-jobs.md). */
-  jobs: WorkFoldJobService;
+  requests: AmpleFileRequestStore;
+  /** Background jobs Workers and the AmpleFile agent started (docs/background-jobs.md). */
+  jobs: AmpleFileJobService;
   /** The automation executor (docs/automations.md), for the desktop surfaces and lifecycle wiring. */
-  automations: WorkFoldAutomationService;
+  automations: AmpleFileAutomationService;
   /**
-   * Main-window Settings capability. The local HTTP API serves only its work-folder-scoped subset — `forWorkFolder` and the
-   * enable, disable, and run of an automation that names that work-folder — at
-   * `/api/work-folders/:id/automations` (docs/automations.md, F15 as amended).
+   * Main-window Settings capability. The local HTTP API serves only its Connected Folder–scoped subset — `forConnectedFolder` and the
+   * enable, disable, and run of an automation that names that Connected Folder — at
+   * `/api/connected-folders/:id/automations` (docs/automations.md, F15 as amended).
    */
-  automationSettings: WorkFoldAutomationSettingsFacade;
+  automationSettings: AmpleFileAutomationSettingsFacade;
   /** Recently deleted: the machine-local trash every destructive verb writes to first. */
-  recentlyDeleted: WorkFoldRecentlyDeletedStore;
+  recentlyDeleted: AmpleFileRecentlyDeletedStore;
   close: () => Promise<void>;
 }
 
@@ -699,7 +699,7 @@ interface LocalApiState {
   appInference: RestrictedAppInferenceService;
   appNotificationRecord: RestrictedAppNotificationRecord;
   appMode: "dev" | "desktop";
-  workFolderBase?: string;
+  connectedFolderBase?: string;
   allowedOrigins: string[];
   sessionToken?: string;
   maxBodyBytes: number;
@@ -710,29 +710,29 @@ interface LocalApiState {
   capabilityRegistry: CapabilityRegistryService;
   restrictedApps: RestrictedAppService;
   restrictedAppProposals: RoutedRestrictedAppProposalHost;
-  appearance: WorkFolderAppearanceStore;
-  kernel: WorkFoldKernel;
-  checks: WorkFoldCheckService;
-  settleSignal: WorkFoldSettleSignal;
-  actReceipts: WorkFoldCliActReceipts;
-  turnStore: WorkFoldTurnStore;
-  overviewSeen: WorkFoldOverviewSeenStore;
+  appearance: ConnectedFolderAppearanceStore;
+  kernel: AmpleFileKernel;
+  checks: AmpleFileCheckService;
+  settleSignal: AmpleFileSettleSignal;
+  actReceipts: AmpleFileCliActReceipts;
+  turnStore: AmpleFileTurnStore;
+  overviewSeen: AmpleFileOverviewSeenStore;
   /**
    * Constructed in a second phase after the state object exists, because the
    * prepared-act fence, adapters, and automation hop ports close over this
    * state. Both are assigned before the server accepts a request.
    */
   preparedActs: PreparedActExecutor;
-  automations: WorkFoldAutomationService;
-  workFolderTrustAuthority: RegisteredWorkFolderTrustAuthority;
-  workFoldAgentInstructionsError: string | null;
+  automations: AmpleFileAutomationService;
+  connectedFolderTrustAuthority: RegisteredConnectedFolderTrustAuthority;
+  ampleFileAgentInstructionsError: string | null;
   localFolderGrantProvider?: LocalFolderGrantProvider;
-  workFolderRemovalIo: Partial<WorkFolderRemovalIo>;
+  connectedFolderRemovalIo: Partial<ConnectedFolderRemovalIo>;
   /** Recently deleted (docs/receipts-not-gates.md, F20). */
-  recentlyDeleted: WorkFoldRecentlyDeletedStore;
-  beforeRestrictedAppWorkFolderRevalidation?: (workFolderId: string) => Promise<void>;
+  recentlyDeleted: AmpleFileRecentlyDeletedStore;
+  beforeRestrictedAppConnectedFolderRevalidation?: (connectedFolderId: string) => Promise<void>;
   /** Every accepted turn's request record (docs/collaboration-contract.md, F25). */
-  requests: WorkFoldRequestStore;
+  requests: AmpleFileRequestStore;
   /**
    * Turns that settled in this app run, as opposed to ones startup recovery
    * settled from the journal. A root continuation (F28) narrates only settles
@@ -746,11 +746,11 @@ interface LocalApiState {
    * Background jobs (docs/background-jobs.md). Constructed in the second
    * phase with the prepared-act executor: its ports close over this state.
    */
-  jobs: WorkFoldJobService;
+  jobs: AmpleFileJobService;
   /** Jobs that settled in this app run; like turnsSettledThisRun, only these can wake a Chat (F32). Bounded. */
   jobsSettledThisRun: Set<string>;
-  /** Per-launch salt behind the opaque parent handle a delegated work-folder turn sees (F26). */
-  workFolderTurnHandleSalt: string;
+  /** Per-launch salt behind the opaque parent handle a delegated Connected Folder turn sees (F26). */
+  connectedFolderTurnHandleSalt: string;
   chatStreams: Map<string, Set<LocalEventSink>>;
   controlStreams: Set<LocalEventSink>;
   localEventStreams: Set<LocalEventSink>;
@@ -768,7 +768,7 @@ interface LocalApiState {
   activeTurnPromises: Set<Promise<void>>;
   /** Acceptances past the closing check whose turns are not yet in activeTurnPromises; close() waits for them. */
   turnAcceptances: Set<Promise<unknown>>;
-  activeTurnTasks: Map<string, { workFolderId: string; conversationId: string }>;
+  activeTurnTasks: Map<string, { connectedFolderId: string; conversationId: string }>;
   cancelledTurnTasks: Set<string>;
   settledTurns: Map<string, SettledTurnRecord>;
   compactingConversations: Set<string>;
@@ -792,16 +792,16 @@ interface LocalApiState {
   queueRevisions: Map<string, number>;
   lastQueueRevision: number;
   capabilityMutations: Set<string>;
-  /** Turn clients whose work-folder changed under them; rebuilt when their turn settles. */
+  /** Turn clients whose Connected Folder changed under them; rebuilt when their turn settles. */
   clientsToRefresh: Set<string>;
   /** Settings → AI Models → Image model: one machine-wide choice, absent for Automatic. */
   imageModelPreference: ImageModelPreference;
-  /** Pictures generate_image made, kept outside every work-folder for Chats to show. */
+  /** Pictures generate_image made, kept outside every Connected Folder for Chats to show. */
   generatedImages: GeneratedImageStore;
-  /** The desktop's built-in browser, shared by every Worker and the work-fold agent. */
+  /** The desktop's built-in browser, shared by every Worker and the AmpleFile agent. */
   browser?: BrowserToolHost;
   checkRunReservations: Set<string>;
-  workFolderIdsByRoot: Map<string, string>;
+  connectedFolderIdsByRoot: Map<string, string>;
   extensionRequests: Map<string, PiExtensionUiRequest>;
   fileStreams: Map<() => void, string>;
   /** In-process observers of turn-boundary History checkpoints (automation chat hops). */
@@ -810,7 +810,7 @@ interface LocalApiState {
   acceptingTurns: boolean;
   onAgentTurnActivity?: (activeTurns: number) => void;
   beforeAgentPrompt?: LocalApiOptions["beforeAgentPrompt"];
-  beforeWorkFoldAgentActionRecord?: LocalApiOptions["beforeWorkFoldAgentActionRecord"];
+  beforeAmpleFileAgentActionRecord?: LocalApiOptions["beforeAmpleFileAgentActionRecord"];
   onHistoryCheckpoint?: LocalApiOptions["onHistoryCheckpoint"];
 }
 
@@ -822,7 +822,7 @@ interface LocalApiState {
  */
 interface SettledTurnRecord {
   taskId: string;
-  workFolderId: string;
+  connectedFolderId: string;
   conversationId: string;
   status: "succeeded" | "failed" | "aborted";
   endedAt: string;
@@ -845,7 +845,7 @@ interface ChatEventLog {
 }
 
 interface TurnCheckpointEvent {
-  workFolderId: string;
+  connectedFolderId: string;
   conversationId: string;
   reason: "pre_turn" | "post_turn";
   checkpointId: string;
@@ -872,18 +872,18 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     && (options.stateBase === undefined || options.port === undefined)
     ? createLocalDevelopmentApiOptions()
     : null;
-  configureWorkFoldStateRoot(options.stateBase ?? developmentDefaults?.stateBase);
-  // Recently deleted opens before anything can destroy: an interrupted work-folder
+  configureAmpleFileStateRoot(options.stateBase ?? developmentDefaults?.stateBase);
+  // Recently deleted opens before anything can destroy: an interrupted Connected Folder
   // deletion finished by startup recovery below must reach Recently deleted rather
   // than an erase (docs/receipts-not-gates.md, F20).
-  const recentlyDeleted = options.recentlyDeletedStore ?? await WorkFoldRecentlyDeletedStore.open({ rootPath: workFoldRecentlyDeletedRoot() });
+  const recentlyDeleted = options.recentlyDeletedStore ?? await AmpleFileRecentlyDeletedStore.open({ rootPath: ampleFileRecentlyDeletedRoot() });
   const host = options.host ?? "127.0.0.1";
-  const requestedPort = options.port ?? developmentDefaults?.port ?? numberFromEnv("WORKFOLD_LOCAL_API_PORT", 4327);
+  const requestedPort = options.port ?? developmentDefaults?.port ?? numberFromEnv("AMPLEFILE_LOCAL_API_PORT", 4327);
   const extensionUi = options.extensionUiBridge ?? new RoutedPiExtensionUiBridge();
   const modelContextInspector = new ModelContextInspector();
   const extensionRuntimeProvider: PiRuntimeProvider = {
-    async resolveRuntime(workFolderRoot) {
-      const runtime = await options.piRuntimeProvider?.resolveRuntime(workFolderRoot) ?? {};
+    async resolveRuntime(connectedFolderRoot) {
+      const runtime = await options.piRuntimeProvider?.resolveRuntime(connectedFolderRoot) ?? {};
       return {
         ...runtime,
         extensionUi,
@@ -891,13 +891,13 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
       };
     },
     ...(options.piRuntimeProvider?.setPreferredModel ? {
-      setPreferredModel: (workFolderRoot, model) => options.piRuntimeProvider!.setPreferredModel!(workFolderRoot, model),
+      setPreferredModel: (connectedFolderRoot, model) => options.piRuntimeProvider!.setPreferredModel!(connectedFolderRoot, model),
     } : {}),
     ...(options.piRuntimeProvider?.getWorkerInstructions ? {
-      getWorkerInstructions: (workFolderRoot) => options.piRuntimeProvider!.getWorkerInstructions!(workFolderRoot),
+      getWorkerInstructions: (connectedFolderRoot) => options.piRuntimeProvider!.getWorkerInstructions!(connectedFolderRoot),
     } : {}),
     ...(options.piRuntimeProvider?.setWorkerInstructions ? {
-      setWorkerInstructions: (workFolderRoot, instructions) => options.piRuntimeProvider!.setWorkerInstructions!(workFolderRoot, instructions),
+      setWorkerInstructions: (connectedFolderRoot, instructions) => options.piRuntimeProvider!.setWorkerInstructions!(connectedFolderRoot, instructions),
     } : {}),
     ...(options.piRuntimeProvider?.refreshModelCatalog ? {
       refreshModelCatalog: (providerId) => options.piRuntimeProvider!.refreshModelCatalog!(providerId),
@@ -908,9 +908,9 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   };
   const restrictedApps = options.restrictedAppService ?? await RestrictedAppService.create({
     rootPath: restrictedAppRoot(),
-    readCheckResult: async (workFolderId, checkId, digest) => checks.selectedResult(await getWorkFolder(workFolderId), checkId, digest),
-    // An install binds a declared Check slot only when the work-folder has exactly one Check.
-    listChecks: async (workFolderId) => (await checks.overview(await getWorkFolder(workFolderId))).checks
+    readCheckResult: async (connectedFolderId, checkId, digest) => checks.selectedResult(await getConnectedFolder(connectedFolderId), checkId, digest),
+    // An install binds a declared Check slot only when the Connected Folder has exactly one Check.
+    listChecks: async (connectedFolderId) => (await checks.overview(await getConnectedFolder(connectedFolderId))).checks
       .filter((item): item is typeof item & { digest: string } => typeof item.digest === "string")
       .map((item) => ({ checkId: item.id, declarationDigest: item.digest, title: item.title })),
     deferAppAutomationStart: true,
@@ -920,52 +920,52 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
       "The Local API requires an injected restricted App service whose automation startup is still deferred.",
     );
   }
-  // propose_work-folder_app installs the local preview inside the proposing turn's
-  // own tool call. That install waits for other work-folder work instead of refusing
+  // propose_connected_folder_app installs the local preview inside the proposing turn's
+  // own tool call. That install waits for other Connected Folder work instead of refusing
   // it and never stops the proposing turn's own Pi client.
   let proposalState: LocalApiState | undefined;
   const restrictedAppProposals = options.restrictedAppProposalHost ?? await RoutedRestrictedAppProposalHost.create({
     service: restrictedApps,
     registryPath: join(restrictedAppRoot(), "proposals.json"),
     installNow: async (id, context) => {
-      if (!proposalState) throw new Error("work-fold is still starting.");
+      if (!proposalState) throw new Error("AmpleFile is still starting.");
       const current = proposalState;
       const proposal = await current.restrictedAppProposals.get(id);
       if (proposal?.status === "installed") return current.restrictedAppProposals.install(id);
-      return runRestrictedAppMutationFromTurn(current, context.workFolderId, clientKey(context.workFolderId, context.conversationId),
+      return runRestrictedAppMutationFromTurn(current, context.connectedFolderId, clientKey(context.connectedFolderId, context.conversationId),
         () => current.restrictedAppProposals.install(id));
     },
   });
-  const recoveredRemovals = await recoverPendingWorkFolderRemovals(
+  const recoveredRemovals = await recoverPendingConnectedFolderRemovals(
     restrictedApps,
     restrictedAppProposals,
-    options.workFolderRemovalIo ?? {},
+    options.connectedFolderRemovalIo ?? {},
     recentlyDeleted,
   );
-  const recoveredWorkFolderRoots = recoveredRemovals.workFolderRoots;
-  const pendingWorkFolderIds = (await listPendingWorkFolderRemovals()).map((intent) => intent.workFolderId);
-  const appearance = options.appearanceStore ?? await WorkFolderAppearanceStore.create({
-    normalize: { allowedBannerNames: new Set(workFolderAppearanceBannerNames) },
+  const recoveredConnectedFolderRoots = recoveredRemovals.connectedFolderRoots;
+  const pendingConnectedFolderIds = (await listPendingConnectedFolderRemovals()).map((intent) => intent.connectedFolderId);
+  const appearance = options.appearanceStore ?? await ConnectedFolderAppearanceStore.create({
+    normalize: { allowedBannerNames: new Set(connectedFolderAppearanceBannerNames) },
   });
-  const workFolderTrustAuthority = options.workFolderTrustAuthority
-    ?? new RegisteredWorkFolderTrustAuthority((await listWorkFolders()).map((workFolder) => workFolder.workFolderRoot));
-  for (const rootPath of recoveredWorkFolderRoots) workFolderTrustAuthority.revoke(rootPath);
-  // The work-fold agent scope's root is app-owned state, so authorizing its
+  const connectedFolderTrustAuthority = options.connectedFolderTrustAuthority
+    ?? new RegisteredConnectedFolderTrustAuthority((await listConnectedFolders()).map((connectedFolder) => connectedFolder.connectedFolderRoot));
+  for (const rootPath of recoveredConnectedFolderRoots) connectedFolderTrustAuthority.revoke(rootPath);
+  // The AmpleFile agent scope's root is app-owned state, so authorizing its
   // runtime is an application decision rather than a registration ceremony.
-  // The only project configuration under it is what work-fold itself
-  // materializes here: the work-fold agent's AGENTS.md context file and the
-  // manage-work-folders Skill.
-  workFolderTrustAuthority.grant(workFoldAgentRoot());
-  let workFoldAgentInstructionsError: string | null = null;
+  // The only project configuration under it is what AmpleFile itself
+  // materializes here: the AmpleFile agent's AGENTS.md context file and the
+  // manage-connected-folders Skill.
+  connectedFolderTrustAuthority.grant(ampleFileAgentRoot());
+  let ampleFileAgentInstructionsError: string | null = null;
   try {
-    await ensureWorkFoldAgentInstructions();
+    await ensureAmpleFileAgentInstructions();
   } catch (error) {
-    workFoldAgentInstructionsError = errorMessage(error);
-    console.warn(`work-fold could not materialize the work-fold agent instructions; the work-fold agent is unavailable: ${workFoldAgentInstructionsError}`);
+    ampleFileAgentInstructionsError = errorMessage(error);
+    console.warn(`AmpleFile could not materialize the AmpleFile agent instructions; the AmpleFile agent is unavailable: ${ampleFileAgentInstructionsError}`);
   }
-  const runtimeProvider = new RegisteredWorkFolderRuntimeProvider(extensionRuntimeProvider, workFolderTrustAuthority);
-  const kernel = options.kernel ?? new WorkFoldKernel({ runtimeProvider });
-  const settleSignal = options.settleSignal ?? new WorkFoldSettleSignal();
+  const runtimeProvider = new RegisteredConnectedFolderRuntimeProvider(extensionRuntimeProvider, connectedFolderTrustAuthority);
+  const kernel = options.kernel ?? new AmpleFileKernel({ runtimeProvider });
+  const settleSignal = options.settleSignal ?? new AmpleFileSettleSignal();
   // Model reviews run side by side up to a provider-friendly ceiling; the rest wait their turn.
   const maxConcurrentModelReviews = 8;
   let activeModelReviews = 0;
@@ -978,7 +978,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     try {
       request.signal.throwIfAborted();
       if (!state.acceptingTurns) throw new Error("The Check runtime is closing.");
-      const client = await getClient(state, workFoldAgentScopeId, workFoldAgentRoot(), "check-review");
+      const client = await getClient(state, ampleFileAgentScopeId, ampleFileAgentRoot(), "check-review");
       return await client.reviewCheck(request);
     } finally {
       const next = waitingModelReviews.shift();
@@ -986,35 +986,35 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
       else activeModelReviews -= 1;
     }
   };
-  const checks = options.checkService ?? new WorkFoldCheckService({ kernel, settleSignal, reviewModel: reviewCheck });
-  // The work-fold agent's one ledger: the same act-receipts journal the desktop CLI host
+  const checks = options.checkService ?? new AmpleFileCheckService({ kernel, settleSignal, reviewModel: reviewCheck });
+  // The AmpleFile agent's one ledger: the same act-receipts journal the desktop CLI host
   // appends. Both instances write the identical state-root path, so prepared
   // acts land in the journal the act lane already audits.
-  const actReceipts = options.actReceipts ?? new WorkFoldCliActReceipts({ stateRoot: workFoldStateRoot() });
-  const turnStore = options.turnStore ?? await WorkFoldTurnStore.create({ stateRoot: workFoldStateRoot() });
+  const actReceipts = options.actReceipts ?? new AmpleFileCliActReceipts({ stateRoot: ampleFileStateRoot() });
+  const turnStore = options.turnStore ?? await AmpleFileTurnStore.create({ stateRoot: ampleFileStateRoot() });
   // The durable request graph beside the turn journal it aggregates. It is
   // reconciled against that journal after startup recovery below.
-  const requestStore = options.requestStore ?? await WorkFoldRequestStore.open({ rootPath: workFoldRequestsRoot() });
+  const requestStore = options.requestStore ?? await AmpleFileRequestStore.open({ rootPath: ampleFileRequestsRoot() });
   // Background jobs and their output live beside the requests they belong to.
-  const jobStore = options.jobStore ?? await WorkFoldJobStore.open({ rootPath: workFoldJobsRoot() });
+  const jobStore = options.jobStore ?? await AmpleFileJobStore.open({ rootPath: ampleFileJobsRoot() });
   // Gate state an older build left behind is removed unread before any
   // facade exists: a pending record there is an intent nobody confirmed
   // (docs/receipts-not-gates.md, F19).
   await removeRetiredGateState();
-  const automationStore = await WorkFoldAutomationStore.create();
-  const overviewSeen = new WorkFoldOverviewSeenStore();
+  const automationStore = await AmpleFileAutomationStore.create();
+  const overviewSeen = new AmpleFileOverviewSeenStore();
   const state: LocalApiState = {
     appAssistantTasks: undefined as unknown as RestrictedAppTaskService,
     appInference: undefined as unknown as RestrictedAppInferenceService,
     appNotificationRecord: options.appNotificationRecord ?? await RestrictedAppNotificationRecord.open({
-      path: join(workFoldStateRoot(), "restricted-apps", "notification-receipts.jsonl"),
+      path: join(ampleFileStateRoot(), "restricted-apps", "notification-receipts.jsonl"),
     }),
     appMode,
     ...(options.browser ? { browser: options.browser } : {}),
-    workFolderBase: options.workFolderBase ? resolve(options.workFolderBase) : undefined,
+    connectedFolderBase: options.connectedFolderBase ? resolve(options.connectedFolderBase) : undefined,
     allowedOrigins: options.allowedOrigins ?? ["http://127.0.0.1:5173", "http://localhost:5173"],
     sessionToken: options.sessionToken,
-    maxBodyBytes: options.maxBodyBytes ?? numberFromEnv("WORKFOLD_LOCAL_MAX_BODY_BYTES", 100 * 1024 * 1024),
+    maxBodyBytes: options.maxBodyBytes ?? numberFromEnv("AMPLEFILE_LOCAL_MAX_BODY_BYTES", 100 * 1024 * 1024),
     runtimeProvider,
     extensionUi,
     modelContextInspector,
@@ -1032,19 +1032,19 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     // Assigned in the second construction phase below, before the server
     // listens; their fences and hop ports close over this state object.
     preparedActs: undefined as unknown as PreparedActExecutor,
-    automations: undefined as unknown as WorkFoldAutomationService,
-    workFolderTrustAuthority,
-    workFoldAgentInstructionsError,
+    automations: undefined as unknown as AmpleFileAutomationService,
+    connectedFolderTrustAuthority,
+    ampleFileAgentInstructionsError,
     localFolderGrantProvider: options.localFolderGrantProvider,
-    workFolderRemovalIo: options.workFolderRemovalIo ?? {},
+    connectedFolderRemovalIo: options.connectedFolderRemovalIo ?? {},
     recentlyDeleted,
-    beforeRestrictedAppWorkFolderRevalidation: options.beforeRestrictedAppWorkFolderRevalidation,
+    beforeRestrictedAppConnectedFolderRevalidation: options.beforeRestrictedAppConnectedFolderRevalidation,
     requests: requestStore,
     turnsSettledThisRun: new Set(),
     requestSettleChain: Promise.resolve(),
-    jobs: undefined as unknown as WorkFoldJobService,
+    jobs: undefined as unknown as AmpleFileJobService,
     jobsSettledThisRun: new Set(),
-    workFolderTurnHandleSalt: randomBytes(16).toString("hex"),
+    connectedFolderTurnHandleSalt: randomBytes(16).toString("hex"),
     chatStreams: new Map(),
     controlStreams: new Set(),
     localEventStreams: new Set(),
@@ -1076,10 +1076,10 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     lastQueueRevision: 0,
     capabilityMutations: new Set(),
     clientsToRefresh: new Set(),
-    imageModelPreference: new ImageModelPreference(imageModelPreferencePath(workFoldStateRoot())),
-    generatedImages: new GeneratedImageStore(join(workFoldStateRoot(), "generated-images")),
+    imageModelPreference: new ImageModelPreference(imageModelPreferencePath(ampleFileStateRoot())),
+    generatedImages: new GeneratedImageStore(join(ampleFileStateRoot(), "generated-images")),
     checkRunReservations: new Set(),
-    workFolderIdsByRoot: new Map(),
+    connectedFolderIdsByRoot: new Map(),
     extensionRequests: new Map(),
     fileStreams: new Map(),
     turnCheckpointListeners: new Set(),
@@ -1087,7 +1087,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     acceptingTurns: true,
     onAgentTurnActivity: options.onAgentTurnActivity,
     beforeAgentPrompt: options.beforeAgentPrompt,
-    beforeWorkFoldAgentActionRecord: options.beforeWorkFoldAgentActionRecord,
+    beforeAmpleFileAgentActionRecord: options.beforeAmpleFileAgentActionRecord,
     onHistoryCheckpoint: options.onHistoryCheckpoint,
   };
 
@@ -1101,17 +1101,17 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     kernel,
   });
   state.appAssistantTasks = await RestrictedAppTaskService.create({
-    path: join(workFoldStateRoot(), "restricted-apps", "assistant-tasks.json"),
+    path: join(ampleFileStateRoot(), "restricted-apps", "assistant-tasks.json"),
     ports: {
       withApp: (scope, operation) => restrictedApps.withAssistantTaskApp(scope, async (actions, app) => {
-        await getWorkFolder(scope.workFolderId);
-        if (!state.acceptingTurns) throw new RestrictedAppTaskError("TASK_UNAVAILABLE", "work-fold is closing.");
+        await getConnectedFolder(scope.connectedFolderId);
+        if (!state.acceptingTurns) throw new RestrictedAppTaskError("TASK_UNAVAILABLE", "AmpleFile is closing.");
         return operation(actions, app);
       }),
       dispatch: async (receipt, app) => {
-        const workFolder = await getWorkFolder(receipt.scope.workFolderId);
-        await createConversation(workFolder.workFolderRoot, restrictedAppTaskChatTitle(app.title, receipt.title), receipt.conversationId);
-        await acceptConversationTurn(state, workFolder, receipt.conversationId, {
+        const connectedFolder = await getConnectedFolder(receipt.scope.connectedFolderId);
+        await createConversation(connectedFolder.connectedFolderRoot, restrictedAppTaskChatTitle(app.title, receipt.title), receipt.conversationId);
+        await acceptConversationTurn(state, connectedFolder, receipt.conversationId, {
           content: restrictedAppTaskPrompt(receipt, app.title), contextPaths: [], actorKind: "system",
           requestId: restrictedAppTaskTurnRequestId(receipt), userMessageId: `message-app-${receipt.id}`,
           // The message is the app's, not the person's; the Chat says so.
@@ -1121,7 +1121,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
           request: {
             kind: "app",
             app: {
-              workFolderId: receipt.scope.workFolderId,
+              connectedFolderId: receipt.scope.connectedFolderId,
               appId: receipt.scope.appId,
               featureInstallationId: receipt.scope.featureInstallationId,
               digest: receipt.scope.digest,
@@ -1129,10 +1129,10 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
           },
         });
       },
-      findTurn: (receipt) => turnStore.findRequest(receipt.scope.workFolderId, receipt.conversationId, restrictedAppTaskTurnRequestId(receipt)),
-      cancelTurn: async (_receipt, turnId) => { await stopWorkFoldAgentRequest(state, turnId); },
+      findTurn: (receipt) => turnStore.findRequest(receipt.scope.connectedFolderId, receipt.conversationId, restrictedAppTaskTurnRequestId(receipt)),
+      cancelTurn: async (_receipt, turnId) => { await stopAmpleFileAgentRequest(state, turnId); },
       findRequest: (receipt) => {
-        const origin = turnStore.findRequest(receipt.scope.workFolderId, receipt.conversationId, restrictedAppTaskTurnRequestId(receipt));
+        const origin = turnStore.findRequest(receipt.scope.connectedFolderId, receipt.conversationId, restrictedAppTaskTurnRequestId(receipt));
         const request = origin ? state.requests.byTaskId(origin.turnId) : null;
         const turn = request ? turnStore.get(request.turns.at(-1)!.taskId) : null;
         if (!request || !turn) return null;
@@ -1156,7 +1156,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
       // authority; the newest report for the latest own turn wins, and a turn that
       // reported nothing falls back to its final reply as the summary.
       findReport: async (receipt) => {
-        const turn = turnStore.findRequest(receipt.scope.workFolderId, receipt.conversationId, restrictedAppTaskTurnRequestId(receipt));
+        const turn = turnStore.findRequest(receipt.scope.connectedFolderId, receipt.conversationId, restrictedAppTaskTurnRequestId(receipt));
         const request = turn ? state.requests.byTaskId(turn.turnId) : null;
         const ref = [...(request?.results ?? [])].reverse().find((item) => item.taskId === request!.turns.at(-1)!.taskId);
         const read = ref ? await state.requests.result(ref.resultId) : null;
@@ -1174,19 +1174,19 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     },
   });
   // Bounded app inference (docs/receipts-not-gates.md, F22). The transport is
-  // the owning work-folder's own configured session, reached through a client whose
+  // the owning Connected Folder's own configured session, reached through a client whose
   // conversation is never prompted, so it stays at zero messages and re-reads
-  // the work-folder's saved model whenever a capability or model change rebuilds it.
+  // the Connected Folder's saved model whenever a capability or model change rebuilds it.
   state.appInference = await RestrictedAppInferenceService.create({
-    path: join(workFoldStateRoot(), "restricted-apps", "inference-receipts.jsonl"),
+    path: join(ampleFileStateRoot(), "restricted-apps", "inference-receipts.jsonl"),
     ports: {
       pin: (scope) => restrictedApps.withAssistantTaskApp(scope, async () => {
-        await getWorkFolder(scope.workFolderId);
-        if (!state.acceptingTurns) throw new RestrictedAppInferenceError("INFER_UNAVAILABLE", "work-fold is closing.");
+        await getConnectedFolder(scope.connectedFolderId);
+        if (!state.acceptingTurns) throw new RestrictedAppInferenceError("INFER_UNAVAILABLE", "AmpleFile is closing.");
       }),
-      infer: async (workFolderId, request) => {
-        const workFolder = await getWorkFolder(workFolderId);
-        const client = await getClient(state, workFolder.id, workFolder.workFolderRoot, workFoldAppInferenceConversationId);
+      infer: async (connectedFolderId, request) => {
+        const connectedFolder = await getConnectedFolder(connectedFolderId);
+        const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, ampleFileAppInferenceConversationId);
         return client.infer(request);
       },
     },
@@ -1204,7 +1204,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     publishControlHint(state, "apps");
     if (!change?.terminal) return;
     options.onAppAssistantActivity?.({
-      workFolderId: change.receipt.workFolderId,
+      connectedFolderId: change.receipt.connectedFolderId,
       appId: change.receipt.appId,
       featureInstallationId: change.receipt.featureInstallationId,
       taskIds: [],
@@ -1216,10 +1216,10 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   const appNotificationsChanged = () => publishControlHint(state, "apps");
   state.appNotificationRecord.on("changed", appNotificationsChanged);
   const unsubscribeAppCatalog = restrictedApps.subscribeCatalog(() => publishControlHint(state, "apps"));
-  state.automations = await WorkFoldAutomationService.create({
+  state.automations = await AmpleFileAutomationService.create({
     store: automationStore,
     ports: createAutomationHopPorts(state),
-    observeFiles: observeWorkFoldAutomationFiles,
+    observeFiles: observeAmpleFileAutomationFiles,
     settleSignal,
     tasks: {
       start: ({ automationId, runId }) =>
@@ -1229,11 +1229,11 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
       },
     },
   });
-  // work-folder removals that finalized (or remain pending) while the app was not
+  // Connected Folder removals that finalized (or remain pending) while the app was not
   // running still revoke standing authority: suspend automations referencing the
-  // removed work-folders, best-effort — the store already fails closed on damage.
-  for (const workFolderId of new Set([...recoveredRemovals.workFolderIds, ...pendingWorkFolderIds])) {
-    await state.automations.handleWorkFolderRemoved(workFolderId).catch(() => undefined);
+  // removed Connected Folders, best-effort — the store already fails closed on damage.
+  for (const connectedFolderId of new Set([...recoveredRemovals.connectedFolderIds, ...pendingConnectedFolderIds])) {
+    await state.automations.handleConnectedFolderRemoved(connectedFolderId).catch(() => undefined);
   }
   kernel.configureOverview({
     sources: createServerOverviewSources(state),
@@ -1252,12 +1252,12 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
         const automation = await state.automations.getAutomation(automationId);
         if (!automation) return null;
         return automation.declaration.steps
-          .filter((step): step is WorkFoldAutomationFilesStep => step.kind === "files")
-          .map((step) => step.toWorkFolder);
+          .filter((step): step is AmpleFileAutomationFilesStep => step.kind === "files")
+          .map((step) => step.toConnectedFolder);
       },
-      appAutomationRunsWithFileGrantInto: async (workFolderId) =>
+      appAutomationRunsWithFileGrantInto: async (connectedFolderId) =>
         (await state.restrictedApps.listActiveAppAutomationRuns())
-          .filter((run) => run.workFolderId === workFolderId && (run.fileGrantIds === null || run.fileGrantIds.length > 0))
+          .filter((run) => run.connectedFolderId === connectedFolderId && (run.fileGrantIds === null || run.fileGrantIds.length > 0))
           .map((run) => ({ appId: run.appId, appAutomationId: run.appAutomationId, runId: run.runId })),
     },
   });
@@ -1265,16 +1265,16 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   // Nothing runs across a restart: a job a previous run left running is
   // recorded interrupted and never re-run, and its process is stopped only
   // when it is provably the same process (docs/background-jobs.md, F31).
-  const interruptedJobs = await jobStore.reconcile("work-fold closed before this job finished.");
+  const interruptedJobs = await jobStore.reconcile("AmpleFile closed before this job finished.");
   if (interruptedJobs.length) {
     const reaped = await reapOrphanedJobProcesses(interruptedJobs);
-    console.info(`work-fold recorded ${interruptedJobs.length} background job${interruptedJobs.length === 1 ? "" : "s"} as interrupted${reaped ? ` and stopped ${reaped} left running` : ""}.`);
+    console.info(`AmpleFile recorded ${interruptedJobs.length} background job${interruptedJobs.length === 1 ? "" : "s"} as interrupted${reaped ? ` and stopped ${reaped} left running` : ""}.`);
   }
   state.jobs = createBackgroundJobService(state, jobStore);
   // A crash can land between a job's end and its request hearing of it; the
   // job journal is the authority, so its recorded end reaches the request.
   for (const job of jobStore.list()) {
-    if (isWorkFoldJobTerminalState(job.state) && state.requests.byJobId(job.jobId)?.jobs?.some((ref) => ref.jobId === job.jobId && ref.state === "running")) {
+    if (isAmpleFileJobTerminalState(job.state) && state.requests.byJobId(job.jobId)?.jobs?.some((ref) => ref.jobId === job.jobId && ref.state === "running")) {
       await settleBackgroundJobOnRequest(state, job);
     }
   }
@@ -1282,7 +1282,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   // already-repaired outcomes. It settles requests; it never dispatches one.
   const reconciled = await state.requests.reconcile({ turns: state.turnStore.list() });
   if (reconciled.settled || reconciled.expired) {
-    console.info(`work-fold reconciled ${reconciled.settled} request turn${reconciled.settled === 1 ? "" : "s"} against the turn journal (${reconciled.expired} ran out of time).`);
+    console.info(`AmpleFile reconciled ${reconciled.settled} request turn${reconciled.settled === 1 ? "" : "s"} against the turn journal (${reconciled.expired} ran out of time).`);
   }
   // Retention is background work, as for Recently deleted: nothing a task
   // needs sits behind it, and it never runs twice in one day.
@@ -1297,8 +1297,8 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   const drainRetention = () => Promise.allSettled([...retentionTasks]);
   // Start only once shutdown and listen-failure cleanup can own this work.
   // A large expired tree must not delay the port becoming available.
-  trackRetention(recentlyDeleted.purgeExpired(), "work-fold could not clean Recently deleted at startup");
-  trackRetention(state.requests.purgeExpiredIfDue(), "work-fold could not tidy its request records at startup");
+  trackRetention(recentlyDeleted.purgeExpired(), "AmpleFile could not clean Recently deleted at startup");
+  trackRetention(state.requests.purgeExpiredIfDue(), "AmpleFile could not tidy its request records at startup");
 
   const requestListener = (request: PiExtensionUiRequest) => routeExtensionRequest(state, request);
   const eventListener = (event: PiExtensionUiEvent) => routeExtensionEvent(state, event);
@@ -1327,15 +1327,15 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     // Retention runs "daily while awake": the store compares its own durable
     // lastPurgeAt, so sleeping past a deadline purges within the hour and
     // never twice in one day.
-    trackRetention(state.recentlyDeleted.purgeExpiredIfDue(), "work-fold could not clean Recently deleted");
+    trackRetention(state.recentlyDeleted.purgeExpiredIfDue(), "AmpleFile could not clean Recently deleted");
     // Requests past their window close, and settled graphs older than the
     // retention window leave, on the same cadence.
-    trackRetention(state.requests.expireDue().then(() => state.requests.purgeExpiredIfDue()), "work-fold could not tidy its request records");
-    trackRetention(state.jobs.store.purgeExpired(), "work-fold could not tidy its background job records");
+    trackRetention(state.requests.expireDue().then(() => state.requests.purgeExpiredIfDue()), "AmpleFile could not tidy its request records");
+    trackRetention(state.jobs.store.purgeExpired(), "AmpleFile could not tidy its background job records");
   }, 60 * 60 * 1_000);
   retentionTimer.unref();
   try {
-    restrictedApps.startAppAutomations(pendingWorkFolderIds);
+    restrictedApps.startAppAutomations(pendingConnectedFolderIds);
   } catch (error) {
     clearInterval(retentionTimer);
     await closeServer(server).catch(() => undefined);
@@ -1355,12 +1355,12 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     reviewCheck,
     appAssistantTasks: state.appAssistantTasks,
     appInference: state.appInference,
-    actFacade: createWorkFoldActFacade(state),
-    resolveWorkFoldAgentLineageParent: (taskId) => resolveWorkFoldAgentLineageParent(state, taskId),
+    actFacade: createAmpleFileActFacade(state),
+    resolveAmpleFileAgentLineageParent: (taskId) => resolveAmpleFileAgentLineageParent(state, taskId),
     requests: state.requests,
     jobs: state.jobs,
     automations: state.automations,
-    automationSettings: createWorkFoldAutomationSettingsFacade(state),
+    automationSettings: createAmpleFileAutomationSettingsFacade(state),
     recentlyDeleted,
     close: async () => {
       state.acceptingTurns = false;
@@ -1400,7 +1400,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
       await Promise.allSettled([...state.backgroundCompactions.keys()].map((key) => yieldBackgroundCompaction(state, key)));
       await Promise.allSettled([...state.clients.values()].map((client) => client.stop()));
       await Promise.allSettled([...state.activeTurnPromises]);
-      await shutdownIncludedToolHost(workFoldAgentRoot(), state.runtimeProvider).catch((error) => console.warn("Computer helper shutdown:", errorMessage(error)));
+      await shutdownIncludedToolHost(ampleFileAgentRoot(), state.runtimeProvider).catch((error) => console.warn("Computer helper shutdown:", errorMessage(error)));
       await state.requestSettleChain.catch(() => undefined);
       await flushAllTurnCheckpoints(state);
       await state.turnStore.flush();
@@ -1435,11 +1435,11 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   // never create clients/sessions or enter the CLI facade.
   const contextInspectionMatch = match(url.pathname, /^\/api\/model-context(?:\/([^/]+))?$/);
   if (contextInspectionMatch && (method === "GET" || method === "POST")) {
-    const workFolderId = url.searchParams.get("workFolderId");
+    const connectedFolderId = url.searchParams.get("connectedFolderId");
     const conversationId = url.searchParams.get("conversationId");
-    if (conversationId && !workFolderId) throw badRequest("Choose the Chat's work-folder when inspecting its context.");
-    const filter = workFolderId ? {
-      workFolderRoot: workFolderId === workFoldAgentScopeId ? workFoldAgentRoot() : (await getWorkFolder(workFolderId)).workFolderRoot,
+    if (conversationId && !connectedFolderId) throw badRequest("Choose the Chat's Connected Folder when inspecting its context.");
+    const filter = connectedFolderId ? {
+      connectedFolderRoot: connectedFolderId === ampleFileAgentScopeId ? ampleFileAgentRoot() : (await getConnectedFolder(connectedFolderId)).connectedFolderRoot,
       ...(conversationId ? { conversationId } : {}),
     } : undefined;
     const id = contextInspectionMatch[1];
@@ -1464,33 +1464,33 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   }
 
   if (method === "GET" && url.pathname === "/api/health") {
-    sendJson(res, { ok: true, app: "work-fold", mode: state.appMode });
+    sendJson(res, { ok: true, app: "amplefile", mode: state.appMode });
     return;
   }
 
   if (method === "GET" && url.pathname === "/api/bootstrap") {
-    const workFolders = (await state.kernel.getWorkFolders({ kind: "renderer" })).workFolders;
-    const agent = workFolders[0] ? await safeAgentStatus(workFolders[0].workFolderRoot, state.runtimeProvider) : emptyAgentStatus();
-    sendJson(res, { workFolders, agent, appearance: state.appearance.snapshot() });
+    const connectedFolders = (await state.kernel.getConnectedFolders({ kind: "renderer" })).connectedFolders;
+    const agent = connectedFolders[0] ? await safeAgentStatus(connectedFolders[0].connectedFolderRoot, state.runtimeProvider) : emptyAgentStatus();
+    sendJson(res, { connectedFolders, agent, appearance: state.appearance.snapshot() });
     return;
   }
 
-  // Which work-folder Workers are mid-turn right now, including turns no Chat tab
-  // is showing (a handoff into a nested work-folder). Content-free: ids only. The
+  // Which Connected Folder Workers are mid-turn right now, including turns no Chat tab
+  // is showing (a handoff into a nested Connected Folder). Content-free: ids only. The
   // renderer requeries on the "activity" control hint.
-  // The registered work-folders' ids, names, and roots for the @ menus: read from
+  // The registered Connected Folders' ids, names, and roots for the @ menus: read from
   // the registry alone, with no manifest writes or setup checks, so a
   // popover can ask on every show.
-  if (method === "GET" && url.pathname === "/api/work-folders/outline") {
-    const workFolders = (await registeredWorkFolderOutline()).filter((workFolder) => existsSync(workFolder.workFolderRoot));
-    sendJson(res, { workFolders });
+  if (method === "GET" && url.pathname === "/api/connected-folders/outline") {
+    const connectedFolders = (await registeredConnectedFolderOutline()).filter((connectedFolder) => existsSync(connectedFolder.connectedFolderRoot));
+    sendJson(res, { connectedFolders });
     return;
   }
 
-  if (method === "GET" && url.pathname === "/api/work-folders/activity") {
+  if (method === "GET" && url.pathname === "/api/connected-folders/activity") {
     const running = [...state.activeTurnTasks.values()]
-      .filter((task) => task.workFolderId !== workFoldAgentScopeId)
-      .map((task) => ({ workFolderId: task.workFolderId, conversationId: task.conversationId }));
+      .filter((task) => task.connectedFolderId !== ampleFileAgentScopeId)
+      .map((task) => ({ connectedFolderId: task.connectedFolderId, conversationId: task.conversationId }));
     sendJson(res, { running });
     return;
   }
@@ -1503,156 +1503,156 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   // Page folders, their preview, and test entries (docs/pages.md, "Local API").
   if (await handlePageRoute(req, res, url, { readJson: () => readJsonBody(state, req) })) return;
 
-  const checksStatusMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/status$/);
+  const checksStatusMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/status$/);
   if (checksStatusMatch && method === "GET") {
-    const workFolder = await getWorkFolder(checksStatusMatch[1]);
-    sendJson(res, { status: await state.checks.status(workFolder) });
+    const connectedFolder = await getConnectedFolder(checksStatusMatch[1]);
+    sendJson(res, { status: await state.checks.status(connectedFolder) });
     return;
   }
 
-  const checksDecorationsMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/decorations$/);
+  const checksDecorationsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/decorations$/);
   if (checksDecorationsMatch && method === "GET") {
-    const workFolder = await getWorkFolder(checksDecorationsMatch[1]);
-    sendJson(res, { decorations: await state.checks.decorations(workFolder) });
+    const connectedFolder = await getConnectedFolder(checksDecorationsMatch[1]);
+    sendJson(res, { decorations: await state.checks.decorations(connectedFolder) });
     return;
   }
 
-  const checksOverviewMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/overview$/);
+  const checksOverviewMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/overview$/);
   if (checksOverviewMatch && method === "POST") {
-    const workFolder = await getWorkFolder(checksOverviewMatch[1]);
+    const connectedFolder = await getConnectedFolder(checksOverviewMatch[1]);
     await readJsonBody<Record<string, never>>(state, req);
     const overview = await runReservedCheckOperation(
       state,
-      workFolder.id,
-      () => state.checks.overview(workFolder),
+      connectedFolder.id,
+      () => state.checks.overview(connectedFolder),
     );
     sendJson(res, { overview });
     return;
   }
 
-  const checksConfigureMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/configure$/);
+  const checksConfigureMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/configure$/);
   if (checksConfigureMatch && method === "POST") {
-    const workFolder = await getWorkFolder(checksConfigureMatch[1]);
+    const connectedFolder = await getConnectedFolder(checksConfigureMatch[1]);
     const body = await readJsonBody<{ proposal?: unknown }>(state, req);
-    const enabled = await runReservedCheckOperation(state, workFolder.id, () => state.checks.enable({ workFolder, proposal: body.proposal, actor: "human", proposeOnly: true }));
+    const enabled = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.enable({ connectedFolder, proposal: body.proposal, actor: "human", proposeOnly: true }));
     sendJson(res, enabled);
     return;
   }
-  const checksTrialMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/([^/]+)\/try$/);
+  const checksTrialMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/([^/]+)\/try$/);
   if (checksTrialMatch && method === "POST") {
-    const workFolder = await getWorkFolder(checksTrialMatch[1]);
+    const connectedFolder = await getConnectedFolder(checksTrialMatch[1]);
     const body = await readJsonBody<{ expectedDigest?: unknown }>(state, req);
     if (typeof body.expectedDigest !== "string") throw badRequest("Review the proposal before trying it.");
-    const task = await runReservedCheckOperation(state, workFolder.id, () => state.checks.run({
-      workFolder, checkId: checksTrialMatch[2], trialDigest: body.expectedDigest as string,
-      actor: { kind: "renderer", cwd: workFolder.workFolderRoot, workFolderId: workFolder.id },
+    const task = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.run({
+      connectedFolder, checkId: checksTrialMatch[2], trialDigest: body.expectedDigest as string,
+      actor: { kind: "renderer", cwd: connectedFolder.connectedFolderRoot, connectedFolderId: connectedFolder.id },
     }));
     sendJson(res, { task }, 202);
     return;
   }
-  const checksResultMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/tasks\/([^/]+)\/result$/);
+  const checksResultMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/tasks\/([^/]+)\/result$/);
   if (checksResultMatch && method === "GET") {
-    const workFolder = await getWorkFolder(checksResultMatch[1]);
-    sendJson(res, { run: await state.checks.taskResult(workFolder.id, checksResultMatch[2]) });
+    const connectedFolder = await getConnectedFolder(checksResultMatch[1]);
+    sendJson(res, { run: await state.checks.taskResult(connectedFolder.id, checksResultMatch[2]) });
     return;
   }
-  const checksEnableMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/([^/]+)\/enable$/);
+  const checksEnableMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/([^/]+)\/enable$/);
   if (checksEnableMatch && method === "POST") {
-    const workFolder = await getWorkFolder(checksEnableMatch[1]);
+    const connectedFolder = await getConnectedFolder(checksEnableMatch[1]);
     const body = await readJsonBody<{ expectedDigest?: string }>(state, req);
-    const enabled = await runReservedCheckOperation(state, workFolder.id, () => state.checks.enable({ workFolder, checkId: checksEnableMatch[2], expectedDigest: body.expectedDigest, actor: "human" }));
+    const enabled = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.enable({ connectedFolder, checkId: checksEnableMatch[2], expectedDigest: body.expectedDigest, actor: "human" }));
     sendJson(res, enabled);
     return;
   }
-  const checksDisableMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/([^/]+)\/disable$/);
+  const checksDisableMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/([^/]+)\/disable$/);
   if (checksDisableMatch && method === "POST") {
-    const workFolder = await getWorkFolder(checksDisableMatch[1]);
+    const connectedFolder = await getConnectedFolder(checksDisableMatch[1]);
     await readJsonBody<Record<string, never>>(state, req);
-    const disabled = await runReservedCheckOperation(state, workFolder.id, () => state.checks.disable(workFolder, checksDisableMatch[2]));
+    const disabled = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.disable(connectedFolder, checksDisableMatch[2]));
     sendJson(res, { disabled });
     return;
   }
 
-  const checksRunMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/run$/);
+  const checksRunMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/run$/);
   if (checksRunMatch && method === "POST") {
-    const workFolder = await getWorkFolder(checksRunMatch[1]);
+    const connectedFolder = await getConnectedFolder(checksRunMatch[1]);
     const body = await readJsonBody<{ checkId?: string }>(state, req);
     if (body.checkId !== undefined && typeof body.checkId !== "string") throw badRequest("Check id must be a string.");
     const checkId = body.checkId?.trim();
-    const accepted = await runReservedCheckOperation(state, workFolder.id, () => state.checks.run({
-      workFolder: workFolder,
+    const accepted = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.run({
+      connectedFolder: connectedFolder,
       ...(checkId ? { checkId } : {}),
-      actor: { kind: "renderer", cwd: workFolder.workFolderRoot, workFolderId: workFolder.id },
+      actor: { kind: "renderer", cwd: connectedFolder.connectedFolderRoot, connectedFolderId: connectedFolder.id },
     }));
     sendJson(res, { task: accepted }, 202);
     return;
   }
 
-  const checksTaskMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/tasks\/([^/]+)$/);
+  const checksTaskMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/tasks\/([^/]+)$/);
   if (checksTaskMatch && method === "GET") {
-    const workFolder = await getWorkFolder(checksTaskMatch[1]);
-    sendJson(res, { task: await state.checks.taskStatus(workFolder.id, checksTaskMatch[2]) });
+    const connectedFolder = await getConnectedFolder(checksTaskMatch[1]);
+    sendJson(res, { task: await state.checks.taskStatus(connectedFolder.id, checksTaskMatch[2]) });
     return;
   }
 
-  const checksAbortMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/tasks\/([^/]+)\/abort$/);
+  const checksAbortMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/tasks\/([^/]+)\/abort$/);
   if (checksAbortMatch && method === "POST") {
-    const workFolder = await getWorkFolder(checksAbortMatch[1]);
+    const connectedFolder = await getConnectedFolder(checksAbortMatch[1]);
     await readJsonBody<Record<string, never>>(state, req);
     const aborted = await runReservedCheckOperation(
       state,
-      workFolder.id,
-      () => state.checks.abort(workFolder.id, checksAbortMatch[2]),
+      connectedFolder.id,
+      () => state.checks.abort(connectedFolder.id, checksAbortMatch[2]),
     );
     sendJson(res, { taskId: checksAbortMatch[2], aborted });
     return;
   }
 
-  const checksCorrectionMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/corrections\/([^/]+)\/(review|apply|dismiss)$/);
+  const checksCorrectionMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/corrections\/([^/]+)\/(review|apply|dismiss)$/);
   if (checksCorrectionMatch && method === "POST") {
-    const workFolder = await getWorkFolder(checksCorrectionMatch[1]);
+    const connectedFolder = await getConnectedFolder(checksCorrectionMatch[1]);
     await readJsonBody<Record<string, never>>(state, req);
     const id = checksCorrectionMatch[2]!;
     if (checksCorrectionMatch[3] === "review") {
-      sendJson(res, await runReservedCheckOperation(state, workFolder.id, () => state.checks.reviewCorrection(workFolder, id)));
+      sendJson(res, await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.reviewCorrection(connectedFolder, id)));
     } else if (checksCorrectionMatch[3] === "dismiss") {
-      await runReservedCheckOperation(state, workFolder.id, () => state.checks.dismissCorrection(workFolder, id));
+      await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.dismissCorrection(connectedFolder, id));
       sendJson(res, { dismissed: true });
     } else {
-      const result = await runHistoryRestore(state, workFolder.id, () => state.checks.applyCorrection(workFolder, id));
+      const result = await runHistoryRestore(state, connectedFolder.id, () => state.checks.applyCorrection(connectedFolder, id));
       // Applying is durable before a separate Check task starts. A provider or
       // launch error must never make the correction look unapplied or clear.
-      let task: Awaited<ReturnType<WorkFoldCheckService["run"]>> | undefined;
+      let task: Awaited<ReturnType<AmpleFileCheckService["run"]>> | undefined;
       let rerunError: string | undefined;
-      try { task = await runReservedCheckOperation(state, workFolder.id, () => state.checks.run({ workFolder, checkId: result.checkId, actor: { kind: "renderer", cwd: workFolder.workFolderRoot, workFolderId: workFolder.id } })); }
+      try { task = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.run({ connectedFolder, checkId: result.checkId, actor: { kind: "renderer", cwd: connectedFolder.connectedFolderRoot, connectedFolderId: connectedFolder.id } })); }
       catch (error) { rerunError = errorMessage(error); }
       sendJson(res, { ...result, task, rerunError });
     }
     return;
   }
-  const checksHelpMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/findings\/([^/]+)\/help$/);
+  const checksHelpMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/findings\/([^/]+)\/help$/);
   if (checksHelpMatch && method === "POST") {
-    const workFolder = await getWorkFolder(checksHelpMatch[1]);
+    const connectedFolder = await getConnectedFolder(checksHelpMatch[1]);
     const body = await readJsonBody<{ fingerprint?: string }>(state, req);
-    const overview = await runReservedCheckOperation(state, workFolder.id, () => state.checks.overview(workFolder));
+    const overview = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.overview(connectedFolder));
     const finding = overview.findings.find((item) => item.id === checksHelpMatch[2] && item.fingerprint === body.fingerprint);
-    if (!finding) throw new WorkFoldCheckOperationConflictError("This finding changed or is no longer current. Refresh Checks before asking for help.");
+    if (!finding) throw new AmpleFileCheckOperationConflictError("This finding changed or is no longer current. Refresh Checks before asking for help.");
     const nextStep = finding.evidence.some((item) => item.kind === "text-span")
-      ? `Prepare a correction for review in Checks; leave the original unchanged. Read \`work-fold help checks\` for the correction format, then use \`work-fold checks problems --work-folder ${workFolder.id} --json\` and \`work-fold checks propose-fix --work-folder ${workFolder.id} --proposal <absolute-json-path> --json\`.`
+      ? `Prepare a correction for review in Checks; leave the original unchanged. Read \`amplefile help checks\` for the correction format, then use \`amplefile checks problems --connected-folder ${connectedFolder.id} --json\` and \`amplefile checks propose-fix --connected-folder ${connectedFolder.id} --proposal <absolute-json-path> --json\`.`
       : "Explain what is needed and propose a next step. We can rerun the Check afterward.";
     const draft = `Help me review ${JSON.stringify(finding.title)} in ${JSON.stringify(finding.targetPath)}. ${nextStep}\n\nFinding reference: ${finding.id}\nFingerprint: ${finding.fingerprint}\n\n${finding.detail ?? ""}`;
     sendJson(res, { draft });
     return;
   }
-  const checksDecisionMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/checks\/findings\/([^/]+)\/decision$/);
+  const checksDecisionMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/findings\/([^/]+)\/decision$/);
   if (checksDecisionMatch && method === "POST") {
-    const workFolder = await getWorkFolder(checksDecisionMatch[1]);
-    const body = await readJsonBody<{ decision?: WorkFoldCheckDecisionKind; deferUntil?: string }>(state, req);
+    const connectedFolder = await getConnectedFolder(checksDecisionMatch[1]);
+    const body = await readJsonBody<{ decision?: AmpleFileCheckDecisionKind; deferUntil?: string }>(state, req);
     const decisionKind = body.decision;
-    if (!isWorkFoldCheckDecisionKind(decisionKind)) throw badRequest("Choose a valid Check decision.");
+    if (!isAmpleFileCheckDecisionKind(decisionKind)) throw badRequest("Choose a valid Check decision.");
     if (body.deferUntil !== undefined && typeof body.deferUntil !== "string") throw badRequest("Check deferUntil must be a timestamp.");
-    const decision = await runReservedCheckOperation(state, workFolder.id, () => state.checks.decide({
-      workFolderId: workFolder.id,
+    const decision = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.decide({
+      connectedFolderId: connectedFolder.id,
       findingId: checksDecisionMatch[2],
       decision: decisionKind,
       actor: "renderer",
@@ -1662,70 +1662,70 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  if (method === "POST" && url.pathname === "/api/work-folders") {
+  if (method === "POST" && url.pathname === "/api/connected-folders") {
     const body = await readJsonBody<{ name?: string }>(state, req);
-    const workFolder = await runCheckWorkFolderRegistryMutation(
+    const connectedFolder = await runCheckConnectedFolderRegistryMutation(
       state,
-      () => createWorkFolderInternal(state, body.name ?? "Personal work-folder"),
+      () => createConnectedFolderInternal(state, body.name ?? "Personal Connected Folder"),
     );
-    sendJson(res, { workFolder }, 201);
+    sendJson(res, { connectedFolder }, 201);
     return;
   }
 
-  if (method === "POST" && url.pathname === "/api/work-folders/local-folder") {
-  const body = await readJsonBody<{ workFolderRoot?: string; folderGrantId?: string; providerHint?: "google-drive" }>(state, req);
-    if (!body.workFolderRoot?.trim()) throw badRequest("Choose a local folder to turn into a work-folder.");
+  if (method === "POST" && url.pathname === "/api/connected-folders/local-folder") {
+  const body = await readJsonBody<{ connectedFolderRoot?: string; folderGrantId?: string; providerHint?: "google-drive" }>(state, req);
+    if (!body.connectedFolderRoot?.trim()) throw badRequest("Choose a local folder to turn into a Connected Folder.");
     if (state.localFolderGrantProvider) {
-      if (!body.folderGrantId || !await state.localFolderGrantProvider.consumeLocalFolderGrant({ workFolderRoot: body.workFolderRoot, grantId: body.folderGrantId })) {
+      if (!body.folderGrantId || !await state.localFolderGrantProvider.consumeLocalFolderGrant({ connectedFolderRoot: body.connectedFolderRoot, grantId: body.folderGrantId })) {
         throw forbidden("The folder selection expired. Choose the folder again to add it.");
       }
     } else if (state.appMode === "desktop") {
-      throw forbidden("A folder must be selected in the desktop app before it can become a work-folder.");
+      throw forbidden("A folder must be selected in the desktop app before it can become a Connected Folder.");
     }
-    const workFolder = await runCheckWorkFolderRegistryMutation(
+    const connectedFolder = await runCheckConnectedFolderRegistryMutation(
       state,
-      () => registerWorkFolderInternal(state, body.workFolderRoot!, body.providerHint),
+      () => registerConnectedFolderInternal(state, body.connectedFolderRoot!, body.providerHint),
     );
-    sendJson(res, { workFolder }, 201);
+    sendJson(res, { connectedFolder }, 201);
     return;
   }
 
-  // "Make a work-folder" (2026-10-01): a person registers a folder inside
-  // a work-folder they already registered, from Files. The parent's registration
+  // "Connect This Folder" (2026-10-01): a person registers a folder inside
+  // a Connected Folder they already registered, from Files. The parent's registration
   // is the trust root for the path, so no fresh folder picker grant is asked
-  // for; the explicit click is this work-folder's registration act, exactly as
+  // for; the explicit click is this Connected Folder's registration act, exactly as
   // choosing a folder in the picker is.
-  const nestedFolderMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/nested-folders$/);
+  const nestedFolderMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/nested-folders$/);
   if (method === "POST" && nestedFolderMatch) {
-    const parent = await getWorkFolder(nestedFolderMatch[1]);
+    const parent = await getConnectedFolder(nestedFolderMatch[1]);
     const body = await readJsonBody<{ path?: unknown }>(state, req);
-    if (typeof body.path !== "string" || !body.path.trim()) throw badRequest("Choose a folder inside this work-folder.");
-    const target = await resolveNestableFolderPath(parent.workFolderRoot, body.path);
-    const workFolder = await runCheckWorkFolderRegistryMutation(state, () => registerWorkFolderInternal(state, target));
-    sendJson(res, { workFolder }, 201);
+    if (typeof body.path !== "string" || !body.path.trim()) throw badRequest("Choose a folder inside this Connected Folder.");
+    const target = await resolveNestableFolderPath(parent.connectedFolderRoot, body.path);
+    const connectedFolder = await runCheckConnectedFolderRegistryMutation(state, () => registerConnectedFolderInternal(state, target));
+    sendJson(res, { connectedFolder }, 201);
     return;
   }
 
-  const workFolderMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)$/);
-  if (workFolderMatch && (method === "PUT" || method === "PATCH")) {
+  const connectedFolderMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)$/);
+  if (connectedFolderMatch && (method === "PUT" || method === "PATCH")) {
     const body = await readJsonBody<{ name?: string }>(state, req);
-    if (!body.name?.trim()) throw badRequest("A work-folder name is required.");
-    sendJson(res, { workFolder: await renameWorkFolder(workFolderMatch[1], body.name) });
-    publishControlHint(state, "work-folders");
+    if (!body.name?.trim()) throw badRequest("A Connected Folder name is required.");
+    sendJson(res, { connectedFolder: await renameConnectedFolder(connectedFolderMatch[1], body.name) });
+    publishControlHint(state, "connected-folders");
     return;
   }
-  if (workFolderMatch && method === "DELETE") {
-    const workFolder = await getWorkFolder(workFolderMatch[1]);
+  if (connectedFolderMatch && method === "DELETE") {
+    const connectedFolder = await getConnectedFolder(connectedFolderMatch[1]);
     // Every deletion the desktop performs leaves a receipt
     // (docs/receipts-not-gates.md): the same journal the act lane writes,
     // stamped with the main-window surface. Removing a linked registration
     // destroys nothing, so it is journaled as the unregister it is.
-    const command = workFolder.location.storage === "managed" ? "work-folders.delete" : "work-folders.unregister";
+    const command = connectedFolder.location.storage === "managed" ? "connected-folders.delete" : "connected-folders.unregister";
     const removal = await runDesktopSettingsAct(state, command, async (requestId) => {
-      const value = await removeWorkFolderRegistrationInternal(state, workFolder, { receiptId: requestId });
+      const value = await removeConnectedFolderRegistrationInternal(state, connectedFolder, { receiptId: requestId });
       return {
         value,
-        detail: `work-folder ${workFolder.id}${value.recentlyDeleted ? `; trash ${value.recentlyDeleted.entryId}` : ""}`
+        detail: `Connected Folder ${connectedFolder.id}${value.recentlyDeleted ? `; trash ${value.recentlyDeleted.entryId}` : ""}`
           + (value.appRecentlyDeletedEntries.length ? `; app data ${value.appRecentlyDeletedEntries.map((item) => item.entryId).join(", ")}` : "")
           + (value.appStudioRecentlyDeleted ? `; App Studio ${value.appStudioRecentlyDeleted.entryId}` : ""),
       };
@@ -1734,23 +1734,23 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  // The work-folder-owned Automations view (docs/automations.md, F15 as amended
-  // 2026-09-24): a read of the automations that name this work-folder, and the same
+  // The Connected Folder–owned Automations view (docs/automations.md, F15 as amended
+  // 2026-09-24): a read of the automations that name this Connected Folder, and the same
   // Settings enable/disable/run acts — same facade, same receipts — refused
   // for an automation that does not name it.
-  const spaceAutomationsMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/automations$/);
+  const spaceAutomationsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/automations$/);
   if (spaceAutomationsMatch && method === "GET") {
-    const workFolder = await getWorkFolder(spaceAutomationsMatch[1]);
-    sendJson(res, await createWorkFoldAutomationSettingsFacade(state).forWorkFolder(workFolder.id));
+    const connectedFolder = await getConnectedFolder(spaceAutomationsMatch[1]);
+    sendJson(res, await createAmpleFileAutomationSettingsFacade(state).forConnectedFolder(connectedFolder.id));
     return;
   }
-  const spaceAutomationActMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/automations\/([^/]+)\/(enable|disable|run)$/);
+  const spaceAutomationActMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/automations\/([^/]+)\/(enable|disable|run)$/);
   if (spaceAutomationActMatch && method === "POST") {
-    const workFolder = await getWorkFolder(spaceAutomationActMatch[1]);
+    const connectedFolder = await getConnectedFolder(spaceAutomationActMatch[1]);
     await readJsonBody<Record<string, never>>(state, req);
     const automationId = spaceAutomationActMatch[2];
-    const facade = createWorkFoldAutomationSettingsFacade(state);
-    await facade.requireWorkFolderAutomation(workFolder.id, automationId);
+    const facade = createAmpleFileAutomationSettingsFacade(state);
+    await facade.requireConnectedFolderAutomation(connectedFolder.id, automationId);
     const action = spaceAutomationActMatch[3];
     sendJson(res, action === "enable"
       ? await facade.enable(automationId)
@@ -1760,68 +1760,68 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const workFolderAppearanceMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/appearance$/);
-  if (workFolderAppearanceMatch && method === "PUT") {
-    const workFolder = await getWorkFolder(workFolderAppearanceMatch[1]);
+  const connectedFolderAppearanceMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/appearance$/);
+  if (connectedFolderAppearanceMatch && method === "PUT") {
+    const connectedFolder = await getConnectedFolder(connectedFolderAppearanceMatch[1]);
     const body = await readJsonBody<{ customization?: unknown }>(state, req);
     if (!body.customization || typeof body.customization !== "object" || Array.isArray(body.customization)) {
-      throw badRequest("A work-folder appearance object is required.");
+      throw badRequest("A Connected Folder appearance object is required.");
     }
-    const appearance = await state.appearance.replaceWorkFolder(
-      workFolder.id,
+    const appearance = await state.appearance.replaceConnectedFolder(
+      connectedFolder.id,
       body.customization,
     );
     sendJson(res, { appearance });
     return;
   }
-  if (workFolderAppearanceMatch && method === "DELETE") {
-    const workFolder = await getWorkFolder(workFolderAppearanceMatch[1]);
-    sendJson(res, { appearance: await state.appearance.removeWorkFolder(workFolder.id) });
+  if (connectedFolderAppearanceMatch && method === "DELETE") {
+    const connectedFolder = await getConnectedFolder(connectedFolderAppearanceMatch[1]);
+    sendJson(res, { appearance: await state.appearance.removeConnectedFolder(connectedFolder.id) });
     return;
   }
 
-  const proposalCollectionMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)\/restricted-app-proposals$/);
+  const proposalCollectionMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/restricted-app-proposals$/);
   if (proposalCollectionMatch && method === "GET") {
-    const workFolder = await getWorkFolder(proposalCollectionMatch[1]);
-    if (!(await readConversation(workFolder.workFolderRoot, proposalCollectionMatch[2])).length) throw notFound("Conversation not found.");
-    const proposals = await state.restrictedAppProposals.list({ workFolderId: workFolder.id, conversationId: proposalCollectionMatch[2] });
+    const connectedFolder = await getConnectedFolder(proposalCollectionMatch[1]);
+    if (!(await readConversation(connectedFolder.connectedFolderRoot, proposalCollectionMatch[2])).length) throw notFound("Conversation not found.");
+    const proposals = await state.restrictedAppProposals.list({ connectedFolderId: connectedFolder.id, conversationId: proposalCollectionMatch[2] });
     sendJson(res, { proposals: proposals.map(rendererRestrictedAppProposal) });
     return;
   }
-  const proposalInstallMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)\/restricted-app-proposals\/([^/]+)\/install$/);
+  const proposalInstallMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/restricted-app-proposals\/([^/]+)\/install$/);
   if (proposalInstallMatch && method === "POST") {
-    const workFolder = await getWorkFolder(proposalInstallMatch[1]);
+    const connectedFolder = await getConnectedFolder(proposalInstallMatch[1]);
     const proposal = await state.restrictedAppProposals.get(proposalInstallMatch[3]);
-    if (!proposal || proposal.workFolderId !== workFolder.id || proposal.conversationId !== proposalInstallMatch[2]) throw notFound("App proposal not found.");
-    const app = await runRestrictedAppMutation(state, workFolder.id, () => state.restrictedAppProposals.install(proposal.id));
+    if (!proposal || proposal.connectedFolderId !== connectedFolder.id || proposal.conversationId !== proposalInstallMatch[2]) throw notFound("App proposal not found.");
+    const app = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedAppProposals.install(proposal.id));
     if (!app) throw httpError(409, "This app proposal is no longer available to install.");
     sendJson(res, { app, proposal: rendererRestrictedAppProposal((await state.restrictedAppProposals.get(proposal.id))!) }, 201);
     return;
   }
-  const proposalMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)\/restricted-app-proposals\/([^/]+)$/);
+  const proposalMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/restricted-app-proposals\/([^/]+)$/);
   if (proposalMatch && method === "DELETE") {
-    const workFolder = await getWorkFolder(proposalMatch[1]);
+    const connectedFolder = await getConnectedFolder(proposalMatch[1]);
     const proposal = await state.restrictedAppProposals.get(proposalMatch[3]);
-    if (!proposal || proposal.workFolderId !== workFolder.id || proposal.conversationId !== proposalMatch[2]) throw notFound("App proposal not found.");
+    if (!proposal || proposal.connectedFolderId !== connectedFolder.id || proposal.conversationId !== proposalMatch[2]) throw notFound("App proposal not found.");
     sendJson(res, { dismissed: await state.restrictedAppProposals.dismiss(proposal.id) });
     return;
   }
 
-  const localAppStudioMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/app-studio$/);
+  const localAppStudioMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio$/);
   if (localAppStudioMatch && method === "GET") {
-    const workFolder = await getWorkFolder(localAppStudioMatch[1]);
-    sendJson(res, { studio: await state.restrictedApps.localAppStudio(workFolder.id) });
+    const connectedFolder = await getConnectedFolder(localAppStudioMatch[1]);
+    sendJson(res, { studio: await state.restrictedApps.localAppStudio(connectedFolder.id) });
     return;
   }
 
-  const localAppRemovalImpactMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/app-removal-impact$/);
+  const localAppRemovalImpactMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-removal-impact$/);
   if (localAppRemovalImpactMatch && method === "GET") {
-    const workFolder = await getWorkFolder(localAppRemovalImpactMatch[1]);
-    sendJson(res, { impact: await state.restrictedApps.workFolderRemovalImpact(workFolder.id) });
+    const connectedFolder = await getConnectedFolder(localAppRemovalImpactMatch[1]);
+    sendJson(res, { impact: await state.restrictedApps.connectedFolderRemovalImpact(connectedFolder.id) });
     return;
   }
   if (localAppStudioMatch && method === "PUT") {
-    const workFolder = await getWorkFolder(localAppStudioMatch[1]);
+    const connectedFolder = await getConnectedFolder(localAppStudioMatch[1]);
     const body = await readJsonBody<{ title?: unknown; description?: unknown; icon?: unknown }>(state, req);
     if (typeof body.title !== "string"
       || (body.description !== undefined && body.description !== null && typeof body.description !== "string")
@@ -1831,50 +1831,50 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const title = body.title;
     const description = body.description === undefined ? null : body.description;
     const icon = body.icon === undefined ? null : body.icon;
-    const project = await runRestrictedAppMutation(state, workFolder.id, () => state.restrictedApps.declareLocalAppProject({
-      workFolderId: workFolder.id,
+    const project = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.declareLocalAppProject({
+      connectedFolderId: connectedFolder.id,
       presentation: { title, description, icon },
     }));
     sendJson(res, { project });
     return;
   }
 
-  const localAppReleasePrepareMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/app-studio\/releases\/prepare$/);
+  const localAppReleasePrepareMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/releases\/prepare$/);
   if (localAppReleasePrepareMatch && method === "POST") {
-    const workFolder = await getWorkFolder(localAppReleasePrepareMatch[1]);
+    const connectedFolder = await getConnectedFolder(localAppReleasePrepareMatch[1]);
     const body = await readJsonBody<{ displayVersion?: unknown }>(state, req);
     if (typeof body.displayVersion !== "string" || !body.displayVersion.trim()) throw badRequest("A Release version is required.");
     const displayVersion = body.displayVersion;
-    const prepared = await runRestrictedAppMutation(state, workFolder.id, () => state.restrictedApps.prepareLocalAppRelease({
-      workFolderId: workFolder.id,
+    const prepared = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.prepareLocalAppRelease({
+      connectedFolderId: connectedFolder.id,
       displayVersion,
     }));
     sendJson(res, { release: prepared }, 201);
     return;
   }
 
-  const localAppReleasePublishMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/app-studio\/releases\/publish$/);
+  const localAppReleasePublishMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/releases\/publish$/);
   if (localAppReleasePublishMatch && method === "POST") {
-    const workFolder = await getWorkFolder(localAppReleasePublishMatch[1]);
+    const connectedFolder = await getConnectedFolder(localAppReleasePublishMatch[1]);
     const body = await readJsonBody<{ releaseDigest?: unknown }>(state, req);
     if (typeof body.releaseDigest !== "string" || !body.releaseDigest.trim()) throw badRequest("A prepared Release digest is required.");
     const releaseDigest = body.releaseDigest;
-    const release = await runRestrictedAppMutation(state, workFolder.id, () => state.restrictedApps.publishLocalAppRelease({
-      workFolderId: workFolder.id,
+    const release = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.publishLocalAppRelease({
+      connectedFolderId: connectedFolder.id,
       releaseDigest,
     }));
     sendJson(res, { release });
     return;
   }
 
-  const localAppReleaseMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/app-studio\/releases\/([^/]+)$/);
+  const localAppReleaseMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/releases\/([^/]+)$/);
   if (localAppReleaseMatch && method === "DELETE") {
-    const workFolder = await getWorkFolder(localAppReleaseMatch[1]);
+    const connectedFolder = await getConnectedFolder(localAppReleaseMatch[1]);
     const releaseDigest = localAppReleaseMatch[2];
     // A copy of the Release lands in Recently deleted before it goes
     // (docs/receipts-not-gates.md, F20), the same order the CLI verb uses.
     const deleted = await runDesktopSettingsAct(state, "apps.release.delete", async (requestId) => {
-      const deletion = await deleteLocalAppReleaseIntoRecentlyDeleted(state, workFolder, releaseDigest, requestId);
+      const deletion = await deleteLocalAppReleaseIntoRecentlyDeleted(state, connectedFolder, releaseDigest, requestId);
       return {
         value: deletion,
         detail: `release ${releaseDigest}${deletion.recentlyDeleted ? `; trash ${deletion.recentlyDeleted.entryId}` : deletion.deleted ? "" : " (not found)"}`,
@@ -1884,42 +1884,42 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const localAppInstallPrepareMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/app-studio\/installs\/prepare$/);
+  const localAppInstallPrepareMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/installs\/prepare$/);
   if (localAppInstallPrepareMatch && method === "POST") {
-    const source = await getWorkFolder(localAppInstallPrepareMatch[1]);
-    const body = await readJsonBody<{ targetWorkFolderId?: unknown; releaseDigest?: unknown }>(state, req);
-    if (typeof body.targetWorkFolderId !== "string" || !body.targetWorkFolderId.trim()
+    const source = await getConnectedFolder(localAppInstallPrepareMatch[1]);
+    const body = await readJsonBody<{ targetConnectedFolderId?: unknown; releaseDigest?: unknown }>(state, req);
+    if (typeof body.targetConnectedFolderId !== "string" || !body.targetConnectedFolderId.trim()
       || typeof body.releaseDigest !== "string" || !body.releaseDigest.trim()) {
-      throw badRequest("A target work-folder and published Release are required.");
+      throw badRequest("A target Connected Folder and published Release are required.");
     }
-    const targetWorkFolderId = body.targetWorkFolderId;
+    const targetConnectedFolderId = body.targetConnectedFolderId;
     const releaseDigest = body.releaseDigest;
-    const target = await getWorkFolder(targetWorkFolderId);
+    const target = await getConnectedFolder(targetConnectedFolderId);
     const operation = await runRestrictedAppMutations(state, [source.id, target.id], () => state.restrictedApps.prepareLocalAppInstall({
-      sourceWorkFolderId: source.id,
-      targetWorkFolderId: target.id,
+      sourceConnectedFolderId: source.id,
+      targetConnectedFolderId: target.id,
       releaseDigest,
     }));
     sendJson(res, { operation }, 201);
     return;
   }
 
-  const localAppOperationActivateMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/app-studio\/operations\/([^/]+)\/activate$/);
+  const localAppOperationActivateMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/operations\/([^/]+)\/activate$/);
   if (localAppOperationActivateMatch && method === "POST") {
-    const source = await getWorkFolder(localAppOperationActivateMatch[1]);
+    const source = await getConnectedFolder(localAppOperationActivateMatch[1]);
     const studio = await state.restrictedApps.localAppStudio(source.id);
     const operation = studio.operations.find((item) => item.operationId === localAppOperationActivateMatch[2]);
     if (!operation) throw notFound("Prepared App operation not found.");
-    const target = await getWorkFolder(operation.targetWorkFolderId);
+    const target = await getConnectedFolder(operation.targetConnectedFolderId);
     const result = await runRestrictedAppMutations(state, [source.id, target.id], () => operation.kind === "install"
       ? state.restrictedApps.activateLocalAppInstall(operation.operationId)
       : state.restrictedApps.activateLocalAppUpdate(operation.operationId));
     sendJson(res, result);
     return;
   }
-  const localAppOperationMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/app-studio\/operations\/([^/]+)$/);
+  const localAppOperationMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/operations\/([^/]+)$/);
   if (localAppOperationMatch && method === "DELETE") {
-    const source = await getWorkFolder(localAppOperationMatch[1]);
+    const source = await getConnectedFolder(localAppOperationMatch[1]);
     const operationId = localAppOperationMatch[2];
     const cancelled = await runRestrictedAppMutation(state, source.id, async () => {
       const studio = await state.restrictedApps.localAppStudio(source.id);
@@ -1932,9 +1932,9 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const localAppUpdatePrepareMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/app-studio\/instances\/([^/]+)\/updates\/prepare$/);
+  const localAppUpdatePrepareMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/instances\/([^/]+)\/updates\/prepare$/);
   if (localAppUpdatePrepareMatch && method === "POST") {
-    const source = await getWorkFolder(localAppUpdatePrepareMatch[1]);
+    const source = await getConnectedFolder(localAppUpdatePrepareMatch[1]);
     const body = await readJsonBody<{ releaseDigest?: unknown; continuityPolicy?: unknown }>(state, req);
     if (typeof body.releaseDigest !== "string" || !body.releaseDigest.trim()) throw badRequest("A target published Release is required.");
     if (body.continuityPolicy !== undefined && body.continuityPolicy !== "eligible" && body.continuityPolicy !== "reset") {
@@ -1945,9 +1945,9 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const studio = await state.restrictedApps.localAppStudio(source.id);
     const instance = studio.instances.find((item) => item.runtimeInstanceId === localAppUpdatePrepareMatch[2]);
     if (!instance) throw notFound("Local App Instance not found.");
-    const target = await getWorkFolder(instance.workFolderId);
+    const target = await getConnectedFolder(instance.connectedFolderId);
     const operation = await runRestrictedAppMutations(state, [source.id, target.id], () => state.restrictedApps.prepareLocalAppUpdate({
-      sourceWorkFolderId: source.id,
+      sourceConnectedFolderId: source.id,
       runtimeInstanceId: instance.runtimeInstanceId,
       releaseDigest,
       ...(continuityPolicy ? { continuityPolicy } : {}),
@@ -1956,30 +1956,30 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const localAppInstanceMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/local-app-instances\/([^/]+)$/);
+  const localAppInstanceMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/local-app-instances\/([^/]+)$/);
   if (localAppInstanceMatch && method === "DELETE") {
-    const workFolder = await getWorkFolder(localAppInstanceMatch[1]);
+    const connectedFolder = await getConnectedFolder(localAppInstanceMatch[1]);
     const body = await readJsonBody<{ dataDisposition?: "retain" | "purge" }>(state, req);
     if (body.dataDisposition !== "retain" && body.dataDisposition !== "purge") {
       throw badRequest("Choose whether to retain or purge this App's local data.");
     }
-    const installed = (await state.restrictedApps.list(workFolder.id)).find((app) => (
+    const installed = (await state.restrictedApps.list(connectedFolder.id)).find((app) => (
       app.runtimeInstanceKind === "app" && app.runtimeInstanceId === localAppInstanceMatch[2]
     ));
     if (!installed) throw notFound("Local App Instance not found.");
     if (body.dataDisposition === "retain") {
-      const result = await runRestrictedAppMutations(state, [installed.sourceWorkFolderId, workFolder.id], () => state.restrictedApps.uninstallLocalApp({
+      const result = await runRestrictedAppMutations(state, [installed.sourceConnectedFolderId, connectedFolder.id], () => state.restrictedApps.uninstallLocalApp({
         runtimeInstanceId: localAppInstanceMatch[2],
         dataDisposition: "retain",
-      }), { requiredWorkFolderIds: [workFolder.id] });
+      }), { requiredConnectedFolderIds: [connectedFolder.id] });
       sendJson(res, { ...result, recentlyDeleted: [] });
       return;
     }
     // Purging carries copies of every affected namespace into Recently
     // deleted first (docs/receipts-not-gates.md, F20).
     const uninstalled = await runDesktopSettingsAct(state, "apps.uninstall", async (requestId) => (
-      runRestrictedAppMutations(state, [installed.sourceWorkFolderId, workFolder.id], async () => {
-        const entries = await moveUninstallPurgeExportsToRecentlyDeleted(state, localAppInstanceMatch[2], [workFolder.id, installed.sourceWorkFolderId], requestId);
+      runRestrictedAppMutations(state, [installed.sourceConnectedFolderId, connectedFolder.id], async () => {
+        const entries = await moveUninstallPurgeExportsToRecentlyDeleted(state, localAppInstanceMatch[2], [connectedFolder.id, installed.sourceConnectedFolderId], requestId);
         const result = await state.restrictedApps.uninstallLocalApp({
           runtimeInstanceId: localAppInstanceMatch[2],
           dataDisposition: "purge",
@@ -1988,20 +1988,20 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
           value: { ...result, recentlyDeleted: entries.map((entry) => ({ entryId: entry.id, restoreBy: entry.restoreBy })) },
           detail: `instance ${localAppInstanceMatch[2]}; trash ${entries.length} entr${entries.length === 1 ? "y" : "ies"}`,
         };
-      }, { requiredWorkFolderIds: [workFolder.id] })
+      }, { requiredConnectedFolderIds: [connectedFolder.id] })
     ));
     sendJson(res, uninstalled.value);
     return;
   }
 
-  const localAppRetainedDataMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/app-studio\/retained-data\/([^/]+)$/);
+  const localAppRetainedDataMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/retained-data\/([^/]+)$/);
   if (localAppRetainedDataMatch && method === "GET") {
-    const source = await getWorkFolder(localAppRetainedDataMatch[1]);
+    const source = await getConnectedFolder(localAppRetainedDataMatch[1]);
     sendJson(res, { backup: await state.restrictedApps.exportRetainedStorage(source.id, localAppRetainedDataMatch[2]) });
     return;
   }
   if (localAppRetainedDataMatch && method === "DELETE") {
-    const source = await getWorkFolder(localAppRetainedDataMatch[1]);
+    const source = await getConnectedFolder(localAppRetainedDataMatch[1]);
     const retainedDataId = localAppRetainedDataMatch[2];
     const purged = await runDesktopSettingsAct(state, "apps.retained.purge", async (requestId) => (
       runRestrictedAppMutation(state, source.id, async () => {
@@ -2020,29 +2020,29 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const restrictedCollectionMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps$/);
+  const restrictedCollectionMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps$/);
   if (restrictedCollectionMatch && method === "GET") {
-    const workFolder = await getWorkFolder(restrictedCollectionMatch[1]);
-    sendJson(res, { apps: await state.restrictedApps.list(workFolder.id) });
+    const connectedFolder = await getConnectedFolder(restrictedCollectionMatch[1]);
+    sendJson(res, { apps: await state.restrictedApps.list(connectedFolder.id) });
     return;
   }
   // A local preview is added by a Worker's proposal in its Chat or by
-  // `work-fold apps install-preview`; both inspect the package and own the
+  // `amplefile apps install-preview`; both inspect the package and own the
   // review digest host-side, so this collection has no desktop install route.
 
-  const restrictedItemMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)$/);
+  const restrictedItemMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)$/);
   if (restrictedItemMatch && method === "DELETE") {
-    const workFolder = await getWorkFolder(restrictedItemMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedItemMatch[1]);
     const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req);
     // Removing a preview takes its data with it, so a copy lands in Recently
     // deleted first (docs/receipts-not-gates.md, F20) — the same
     // export-then-destroy order "Clear data" and uninstall-with-purge use, and
     // the removal leaves a receipt naming the entry.
     const outcome = await runDesktopSettingsAct(state, "apps.remove", async (requestId) => (
-      runRestrictedAppMutation(state, workFolder.id, async () => {
-        const entry = await moveRemovedAppStorageToRecentlyDeleted(state, workFolder.id, restrictedItemMatch[2], "apps.remove", requestId, body);
+      runRestrictedAppMutation(state, connectedFolder.id, async () => {
+        const entry = await moveRemovedAppStorageToRecentlyDeleted(state, connectedFolder.id, restrictedItemMatch[2], "apps.remove", requestId, body);
         const removed = await state.restrictedApps.remove({
-          workFolderId: workFolder.id,
+          connectedFolderId: connectedFolder.id,
           appId: restrictedItemMatch[2],
           featureInstallationId: body.featureInstallationId,
           ...(body.expectedDigest ? { expectedDigest: body.expectedDigest } : {}),
@@ -2057,48 +2057,48 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const restrictedBuildContextMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/build-context$/);
+  const restrictedBuildContextMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/build-context$/);
   if (restrictedBuildContextMatch && method === "GET") {
-    const workFolder = await getWorkFolder(restrictedBuildContextMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedBuildContextMatch[1]);
     const expectedDigest = url.searchParams.get("expectedDigest");
     if (!expectedDigest) throw badRequest("An exact app revision is required.");
-    sendJson(res, { context: await state.restrictedAppProposals.buildContext(workFolder.id, restrictedBuildContextMatch[2], expectedDigest, url.searchParams.get("featureInstallationId") ?? undefined) });
+    sendJson(res, { context: await state.restrictedAppProposals.buildContext(connectedFolder.id, restrictedBuildContextMatch[2], expectedDigest, url.searchParams.get("featureInstallationId") ?? undefined) });
     return;
   }
 
-  const restrictedChangeMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/change$/);
+  const restrictedChangeMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/change$/);
   if (restrictedChangeMatch && method === "POST") {
-    const workFolder = await getWorkFolder(restrictedChangeMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedChangeMatch[1]);
     const body = await readJsonBody<{ requestId?: string; featureInstallationId?: string; expectedDigest?: string }>(state, req);
     if (typeof body.requestId !== "string" || typeof body.expectedDigest !== "string") throw badRequest("An exact app revision and change request are required.");
-    const app = await state.restrictedApps.runtimeDescriptor(workFolder.id, restrictedChangeMatch[2], body.expectedDigest, body.featureInstallationId);
-    const source = await getWorkFolder(app.sourceWorkFolderId);
-    const change = await runRestrictedAppMutations(state, [workFolder.id, source.id], () => state.restrictedAppProposals.prepareChange({
-      id: body.requestId!, workFolderId: workFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, expectedDigest: body.expectedDigest!,
+    const app = await state.restrictedApps.runtimeDescriptor(connectedFolder.id, restrictedChangeMatch[2], body.expectedDigest, body.featureInstallationId);
+    const source = await getConnectedFolder(app.sourceConnectedFolderId);
+    const change = await runRestrictedAppMutations(state, [connectedFolder.id, source.id], () => state.restrictedAppProposals.prepareChange({
+      id: body.requestId!, connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, expectedDigest: body.expectedDigest!,
     }, async (receipt, files) => {
-      if (receipt.sourceWorkFolderId !== source.id) throw httpError(409, "The app source changed. Refresh before starting an edit.");
-      await materializeRestrictedAppWorkingCopy(source.workFolderRoot, receipt, files, (paths) => createWorkFolderMutationCheckpoint(source.workFolderRoot, {
+      if (receipt.sourceConnectedFolderId !== source.id) throw httpError(409, "The app source changed. Refresh before starting an edit.");
+      await materializeRestrictedAppWorkingCopy(source.connectedFolderRoot, receipt, files, (paths) => createConnectedFolderMutationCheckpoint(source.connectedFolderRoot, {
         deleteOnRestore: paths, reason: "app-change", label: `Change ${app.manifest.title}`,
       }));
     }));
     // The Chat draft receives source/build context only, never target Instance data or authority.
     sendJson(res, { change: {
-      id: change.id, sourceWorkFolderId: change.sourceWorkFolderId, sourcePath: change.sourcePath,
+      id: change.id, sourceConnectedFolderId: change.sourceConnectedFolderId, sourcePath: change.sourcePath,
       appId: change.appId, title: change.title, version: change.version, baseDigest: change.baseDigest,
       buildConversationId: change.buildConversationId,
     } }, 201);
     return;
   }
 
-  const restrictedInvokeMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/invoke$/);
+  const restrictedInvokeMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/invoke$/);
   if (restrictedInvokeMatch && method === "POST") {
-    const workFolder = await getWorkFolder(restrictedInvokeMatch[1]);
-    assertNoCapabilityMutationForTurn(state, workFolder.id);
+    const connectedFolder = await getConnectedFolder(restrictedInvokeMatch[1]);
+    assertNoCapabilityMutationForTurn(state, connectedFolder.id);
     const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string; action?: string; input?: unknown }>(state, req);
     if (!body.expectedDigest?.trim() || !body.action?.trim()) throw badRequest("An installed revision and action are required.");
-    assertNoCapabilityMutationForTurn(state, workFolder.id);
+    assertNoCapabilityMutationForTurn(state, connectedFolder.id);
     const result = await state.restrictedApps.invoke({
-      workFolderId: workFolder.id,
+      connectedFolderId: connectedFolder.id,
       appId: restrictedInvokeMatch[2],
       featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest,
       action: body.action,
@@ -2108,13 +2108,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const restrictedConnectionsMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/connections$/);
+  const restrictedConnectionsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/connections$/);
   if (restrictedConnectionsMatch && method === "GET") {
-    const workFolder = await getWorkFolder(restrictedConnectionsMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedConnectionsMatch[1]);
     const expectedDigest = url.searchParams.get("expectedDigest")?.trim();
     if (!expectedDigest) throw badRequest("An installed revision is required.");
     sendJson(res, { connections: await state.restrictedApps.connectionStatus(
-      workFolder.id,
+      connectedFolder.id,
       restrictedConnectionsMatch[2],
       expectedDigest,
       url.searchParams.get("featureInstallationId") ?? undefined,
@@ -2122,14 +2122,14 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const restrictedNetworkGrantMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/permissions\/network\/([^/]+)$/);
+  const restrictedNetworkGrantMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/permissions\/network\/([^/]+)$/);
   if (restrictedNetworkGrantMatch && (method === "PUT" || method === "DELETE")) {
-    const workFolder = await getWorkFolder(restrictedNetworkGrantMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedNetworkGrantMatch[1]);
     const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req);
     if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
     const operation = method === "PUT" ? state.restrictedApps.grantNetwork.bind(state.restrictedApps) : state.restrictedApps.revokeNetwork.bind(state.restrictedApps);
-    const app = await runRestrictedAppMutation(state, workFolder.id, () => operation({
-      workFolderId: workFolder.id,
+    const app = await runRestrictedAppMutation(state, connectedFolder.id, () => operation({
+      connectedFolderId: connectedFolder.id,
       appId: restrictedNetworkGrantMatch[2],
       destinationId: restrictedNetworkGrantMatch[3],
       featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
@@ -2138,22 +2138,22 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const restrictedFileGrantMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/permissions\/files\/([^/]+)$/);
+  const restrictedFileGrantMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/permissions\/files\/([^/]+)$/);
   if (restrictedFileGrantMatch && (method === "PUT" || method === "DELETE")) {
-    const workFolder = await getWorkFolder(restrictedFileGrantMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedFileGrantMatch[1]);
     const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string; root?: string }>(state, req);
     if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
-    const app = await runRestrictedAppMutation(state, workFolder.id, () => method === "PUT"
+    const app = await runRestrictedAppMutation(state, connectedFolder.id, () => method === "PUT"
       ? state.restrictedApps.grantFiles({
-          workFolderId: workFolder.id,
-          workFolderRoot: workFolder.workFolderRoot,
+          connectedFolderId: connectedFolder.id,
+          connectedFolderRoot: connectedFolder.connectedFolderRoot,
           appId: restrictedFileGrantMatch[2],
           permissionId: restrictedFileGrantMatch[3],
           featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
           root: body.root ?? "",
         })
       : state.restrictedApps.revokeFiles({
-          workFolderId: workFolder.id,
+          connectedFolderId: connectedFolder.id,
           appId: restrictedFileGrantMatch[2],
           permissionId: restrictedFileGrantMatch[3],
           featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
@@ -2164,16 +2164,16 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
 
   // The trusted Apps tab lists an installation's requests across code changes
   // (Details, Open Chat, Stop); the app bridge stays pinned to its own revision.
-  const appTaskMatch = /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/assistant-tasks(?:\/([^/]+))?(?:\/(cancel))?$/.exec(url.pathname)
+  const appTaskMatch = /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/assistant-tasks(?:\/([^/]+))?(?:\/(cancel))?$/.exec(url.pathname)
     ?.map((value) => value === undefined ? "" : decodeURIComponent(value));
   if (appTaskMatch && (method === "GET" || method === "POST")) {
-    const workFolder = await getWorkFolder(appTaskMatch[1]);
+    const connectedFolder = await getConnectedFolder(appTaskMatch[1]);
     const body = method === "POST" ? await readJsonBody<Record<string, unknown>>(state, req) : Object.fromEntries(url.searchParams);
     if (typeof body.featureInstallationId !== "string" || typeof body.expectedDigest !== "string") throw badRequest("An exact app installation and revision are required.");
     const allowed = ["featureInstallationId", "expectedDigest"];
     if (Object.keys(body).some((key) => !allowed.includes(key))) throw badRequest("Worker request fields are invalid.");
-    const app = await state.restrictedApps.runtimeDescriptor(workFolder.id, appTaskMatch[2], body.expectedDigest, body.featureInstallationId);
-    const scope = { workFolderId: workFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId,
+    const app = await state.restrictedApps.runtimeDescriptor(connectedFolder.id, appTaskMatch[2], body.expectedDigest, body.featureInstallationId);
+    const scope = { connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId,
       digest: app.digest, authorityDigest: restrictedAppTaskAuthorityDigest(app.authority) };
     if (method === "GET" && !appTaskMatch[4]) {
       sendJson(res, appTaskMatch[3] ? { detail: await state.appAssistantTasks.detail(scope, appTaskMatch[3], "installation") }
@@ -2186,18 +2186,18 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
 
   // Bounded inference receipts for Settings → Apps: the installation's calls
   // across code changes, with the effective model and its usage.
-  const appInferenceMatch = /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/inference-receipts$/.exec(url.pathname)
+  const appInferenceMatch = /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/inference-receipts$/.exec(url.pathname)
     ?.map((value) => value === undefined ? "" : decodeURIComponent(value));
   if (appInferenceMatch && method === "GET") {
-    const workFolder = await getWorkFolder(appInferenceMatch[1]);
+    const connectedFolder = await getConnectedFolder(appInferenceMatch[1]);
     const query = Object.fromEntries(url.searchParams);
     if (typeof query.featureInstallationId !== "string" || typeof query.expectedDigest !== "string") {
       throw badRequest("An exact app installation and revision are required.");
     }
     const allowed = ["featureInstallationId", "expectedDigest"];
     if (Object.keys(query).some((key) => !allowed.includes(key))) throw badRequest("Inference receipt fields are invalid.");
-    const app = await state.restrictedApps.runtimeDescriptor(workFolder.id, appInferenceMatch[2], query.expectedDigest, query.featureInstallationId);
-    const scope = { workFolderId: workFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId,
+    const app = await state.restrictedApps.runtimeDescriptor(connectedFolder.id, appInferenceMatch[2], query.expectedDigest, query.featureInstallationId);
+    const scope = { connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId,
       digest: app.digest, authorityDigest: restrictedAppTaskAuthorityDigest(app.authority) };
     sendJson(res, { receipts: await state.appInference.list(scope, { ownership: "installation" }) });
     return;
@@ -2206,10 +2206,10 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   // Settings → Apps: what this installation's notifications did, newest first,
   // across code changes. The record names the category, never the route or
   // state the app attached.
-  const appNotificationRecordMatch = /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/notification-receipts$/.exec(url.pathname)
+  const appNotificationRecordMatch = /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/notification-receipts$/.exec(url.pathname)
     ?.map((value) => value === undefined ? "" : decodeURIComponent(value));
   if (appNotificationRecordMatch && method === "GET") {
-    const workFolder = await getWorkFolder(appNotificationRecordMatch[1]);
+    const connectedFolder = await getConnectedFolder(appNotificationRecordMatch[1]);
     const query = Object.fromEntries(url.searchParams);
     if (typeof query.featureInstallationId !== "string" || typeof query.expectedDigest !== "string") {
       throw badRequest("An exact app installation and revision are required.");
@@ -2219,40 +2219,40 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     }
     const limit = query.limit === undefined ? undefined : Number(query.limit);
     if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1)) throw badRequest("Choose how many notifications to show.");
-    const app = await state.restrictedApps.runtimeDescriptor(workFolder.id, appNotificationRecordMatch[2], query.expectedDigest, query.featureInstallationId);
+    const app = await state.restrictedApps.runtimeDescriptor(connectedFolder.id, appNotificationRecordMatch[2], query.expectedDigest, query.featureInstallationId);
     sendJson(res, {
       receipts: await state.appNotificationRecord.list(
-        { workFolderId: workFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId },
+        { connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId },
         limit,
       ),
     });
     return;
   }
 
-  const restrictedCheckGrantMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/permissions\/checks\/([^/]+)$/);
+  const restrictedCheckGrantMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/permissions\/checks\/([^/]+)$/);
   if (restrictedCheckGrantMatch && (method === "PUT" || method === "DELETE")) {
-    const workFolder = await getWorkFolder(restrictedCheckGrantMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedCheckGrantMatch[1]);
     const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string; checkId?: string; declarationDigest?: string }>(state, req);
     if (typeof body.featureInstallationId !== "string" || typeof body.expectedDigest !== "string") throw badRequest("An exact app installation and revision are required.");
     if (method === "PUT" && (typeof body.checkId !== "string" || typeof body.declarationDigest !== "string")) throw badRequest("Choose an exact Check revision.");
-    const app = await runRestrictedAppMutation(state, workFolder.id, () => state.restrictedApps.setCheckGrant({
-      workFolderId: workFolder.id, appId: restrictedCheckGrantMatch[2], featureInstallationId: body.featureInstallationId!, expectedDigest: body.expectedDigest!,
+    const app = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.setCheckGrant({
+      connectedFolderId: connectedFolder.id, appId: restrictedCheckGrantMatch[2], featureInstallationId: body.featureInstallationId!, expectedDigest: body.expectedDigest!,
       permissionId: restrictedCheckGrantMatch[3], selection: method === "PUT" ? { checkId: body.checkId!, declarationDigest: body.declarationDigest! } : null,
     }));
     sendJson(res, { app });
     return;
   }
 
-  const restrictedNotificationGrantMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/permissions\/notifications\/([^/]+)$/);
+  const restrictedNotificationGrantMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/permissions\/notifications\/([^/]+)$/);
   if (restrictedNotificationGrantMatch && (method === "PUT" || method === "DELETE")) {
-    const workFolder = await getWorkFolder(restrictedNotificationGrantMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedNotificationGrantMatch[1]);
     const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req);
     if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
     const operation = method === "PUT"
       ? state.restrictedApps.grantNotifications.bind(state.restrictedApps)
       : state.restrictedApps.revokeNotifications.bind(state.restrictedApps);
-    const app = await runRestrictedAppMutation(state, workFolder.id, () => operation({
-      workFolderId: workFolder.id,
+    const app = await runRestrictedAppMutation(state, connectedFolder.id, () => operation({
+      connectedFolderId: connectedFolder.id,
       appId: restrictedNotificationGrantMatch[2],
       permissionId: restrictedNotificationGrantMatch[3],
       featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
@@ -2261,13 +2261,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const restrictedAppAutomationRunMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/automations\/([^/]+)\/run$/);
+  const restrictedAppAutomationRunMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/automations\/([^/]+)\/run$/);
   if (restrictedAppAutomationRunMatch && method === "POST") {
-    const workFolder = await getWorkFolder(restrictedAppAutomationRunMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedAppAutomationRunMatch[1]);
     const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req);
     if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
-    const result = await runRestrictedAppMutation(state, workFolder.id, () => state.restrictedApps.runAppAutomationNow({
-      workFolderId: workFolder.id,
+    const result = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.runAppAutomationNow({
+      connectedFolderId: connectedFolder.id,
       appId: restrictedAppAutomationRunMatch[2],
       appAutomationId: restrictedAppAutomationRunMatch[3],
       featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
@@ -2276,13 +2276,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const restrictedAppAutomationRunsMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/automations\/([^/]+)\/runs$/);
+  const restrictedAppAutomationRunsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/automations\/([^/]+)\/runs$/);
   if (restrictedAppAutomationRunsMatch && method === "GET") {
-    const workFolder = await getWorkFolder(restrictedAppAutomationRunsMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedAppAutomationRunsMatch[1]);
     const expectedDigest = url.searchParams.get("expectedDigest")?.trim();
     if (!expectedDigest) throw badRequest("An installed revision is required.");
     const runs = await state.restrictedApps.listAppAutomationRuns(
-      workFolder.id,
+      connectedFolder.id,
       restrictedAppAutomationRunsMatch[2],
       expectedDigest,
       restrictedAppAutomationRunsMatch[3],
@@ -2292,13 +2292,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const restrictedAppAutomationMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/automations\/([^/]+)$/);
+  const restrictedAppAutomationMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/automations\/([^/]+)$/);
   if (restrictedAppAutomationMatch && (method === "PUT" || method === "DELETE")) {
-    const workFolder = await getWorkFolder(restrictedAppAutomationMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedAppAutomationMatch[1]);
     const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req);
     if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
-    const app = await runRestrictedAppMutation(state, workFolder.id, () => state.restrictedApps.setAppAutomationEnabled({
-      workFolderId: workFolder.id,
+    const app = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.setAppAutomationEnabled({
+      connectedFolderId: connectedFolder.id,
       appId: restrictedAppAutomationMatch[2],
       appAutomationId: restrictedAppAutomationMatch[3],
       featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
@@ -2308,15 +2308,15 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const restrictedStorageMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/storage$/);
+  const restrictedStorageMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/storage$/);
   if (restrictedStorageMatch && (method === "GET" || method === "DELETE")) {
-    const workFolder = await getWorkFolder(restrictedStorageMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedStorageMatch[1]);
     const body = method === "DELETE" ? await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req) : null;
     const expectedDigest = body?.expectedDigest ?? url.searchParams.get("expectedDigest")?.trim();
     if (!expectedDigest) throw badRequest("An installed revision is required.");
     const featureInstallationId = method === "DELETE" ? body!.featureInstallationId : url.searchParams.get("featureInstallationId") ?? undefined;
     if (method !== "DELETE") {
-      sendJson(res, { usage: await state.restrictedApps.storageUsage(workFolder.id, restrictedStorageMatch[2], expectedDigest, featureInstallationId) });
+      sendJson(res, { usage: await state.restrictedApps.storageUsage(connectedFolder.id, restrictedStorageMatch[2], expectedDigest, featureInstallationId) });
       return;
     }
     // A copy of the app's data lands in Recently deleted before the live data
@@ -2324,10 +2324,10 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     // authority: a stale installation or a changed revision is refused by its
     // own read before anything is exported or cleared.
     const cleared = await runDesktopSettingsAct(state, "apps.storage.clear", async (requestId) => (
-      runRestrictedAppMutation(state, workFolder.id, async () => {
-        const app = await requireInstalledAppForStorage(state, workFolder.id, restrictedStorageMatch[2], expectedDigest, featureInstallationId);
+      runRestrictedAppMutation(state, connectedFolder.id, async () => {
+        const app = await requireInstalledAppForStorage(state, connectedFolder.id, restrictedStorageMatch[2], expectedDigest, featureInstallationId);
         const entry = await moveAppStorageExportToRecentlyDeleted(state, app, "apps.storage.clear", requestId);
-        const usage = await state.restrictedApps.clearStorage(workFolder.id, restrictedStorageMatch[2], expectedDigest, featureInstallationId);
+        const usage = await state.restrictedApps.clearStorage(connectedFolder.id, restrictedStorageMatch[2], expectedDigest, featureInstallationId);
         return {
           value: { usage, recentlyDeleted: entry ? { entryId: entry.id, restoreBy: entry.restoreBy } : null },
           detail: `app ${app.manifest.id}${entry ? `; trash ${entry.id}` : ""}`,
@@ -2338,38 +2338,38 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const restrictedDataMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/storage\/(export|recovery|restore)$/);
+  const restrictedDataMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/storage\/(export|recovery|restore)$/);
   if (restrictedDataMatch && ((method === "GET" && restrictedDataMatch[3] !== "restore") || (method === "POST" && restrictedDataMatch[3] === "restore"))) {
-    const workFolder = await getWorkFolder(restrictedDataMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedDataMatch[1]);
     const appId = restrictedDataMatch[2];
     if (method === "POST") {
       // A restore carries a whole export, so its bound is the export's own
-      // (every export work-fold makes restores), above the general body cap.
+      // (every export AmpleFile makes restores), above the general body cap.
       const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest: string; expectedRevision: number; backup?: unknown; recoveryId?: string }>(
         state, req, restrictedAppDataRestoreBytes, { exceedDefaultLimit: true },
       );
       if (!body || typeof body !== "object" || Array.isArray(body)) throw badRequest("A backup or recovery point is required.");
-      const usage = await runRestrictedAppMutation(state, workFolder.id, () => state.restrictedApps.restoreStorage({
-        workFolderId: workFolder.id, appId, featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest, expectedRevision: body.expectedRevision,
+      const usage = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.restoreStorage({
+        connectedFolderId: connectedFolder.id, appId, featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest, expectedRevision: body.expectedRevision,
         backup: body.backup, recoveryId: body.recoveryId,
       }));
       sendJson(res, { usage });
     } else {
       const digest = url.searchParams.get("expectedDigest") ?? "";
       sendJson(res, restrictedDataMatch[3] === "export"
-        ? { backup: await state.restrictedApps.exportStorage(workFolder.id, appId, digest, url.searchParams.get("featureInstallationId") ?? undefined) }
-        : { recovery: await state.restrictedApps.storageRecovery(workFolder.id, appId, digest, url.searchParams.get("featureInstallationId") ?? undefined) });
+        ? { backup: await state.restrictedApps.exportStorage(connectedFolder.id, appId, digest, url.searchParams.get("featureInstallationId") ?? undefined) }
+        : { recovery: await state.restrictedApps.storageRecovery(connectedFolder.id, appId, digest, url.searchParams.get("featureInstallationId") ?? undefined) });
     }
     return;
   }
 
-  const restrictedOAuthMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/connections\/([^/]+)\/oauth$/);
+  const restrictedOAuthMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/connections\/([^/]+)\/oauth$/);
   if (restrictedOAuthMatch && method === "POST") {
-    const workFolder = await getWorkFolder(restrictedOAuthMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedOAuthMatch[1]);
     const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req);
     if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
-    const connection = await runRestrictedAppMutation(state, workFolder.id, () => state.restrictedApps.connectOAuth({
-      workFolderId: workFolder.id,
+    const connection = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.connectOAuth({
+      connectedFolderId: connectedFolder.id,
       appId: restrictedOAuthMatch[2],
       destinationId: restrictedOAuthMatch[3],
       featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
@@ -2378,22 +2378,22 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const restrictedConnectionMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/restricted-apps\/([^/]+)\/connections\/([^/]+)$/);
+  const restrictedConnectionMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/connections\/([^/]+)$/);
   if (restrictedConnectionMatch && (method === "PUT" || method === "DELETE")) {
-    const workFolder = await getWorkFolder(restrictedConnectionMatch[1]);
+    const connectedFolder = await getConnectedFolder(restrictedConnectionMatch[1]);
     const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string; credential?: unknown }>(state, req);
     if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
-    const result = await runRestrictedAppMutation(state, workFolder.id, async () => {
+    const result = await runRestrictedAppMutation(state, connectedFolder.id, async () => {
       if (method === "DELETE") {
         return { removed: await state.restrictedApps.deleteConnection({
-          workFolderId: workFolder.id,
+          connectedFolderId: connectedFolder.id,
           appId: restrictedConnectionMatch[2],
           destinationId: restrictedConnectionMatch[3],
           featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
         }) };
       }
       return { connection: await state.restrictedApps.setConnection({
-        workFolderId: workFolder.id,
+        connectedFolderId: connectedFolder.id,
         appId: restrictedConnectionMatch[2],
         destinationId: restrictedConnectionMatch[3],
         featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
@@ -2404,9 +2404,9 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const searchMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/search$/);
+  const searchMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/search$/);
   if (method === "GET" && searchMatch) {
-    const workFolder = await getWorkFolder(searchMatch[1]);
+    const connectedFolder = await getConnectedFolder(searchMatch[1]);
     const scope = url.searchParams.get("scope") ?? "all";
     if (scope !== "all" && scope !== "files" && scope !== "chats") throw badRequest("Search scope is unsupported.");
     const controller = new AbortController();
@@ -2414,7 +2414,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     req.once("aborted", abort);
     res.once("close", abort);
     try {
-      const result = await searchWorkFolder(workFolder.workFolderRoot, url.searchParams.get("q") ?? "", {
+      const result = await searchConnectedFolder(connectedFolder.connectedFolderRoot, url.searchParams.get("q") ?? "", {
         includeFiles: scope !== "chats",
         includeChats: scope !== "files",
         signal: controller.signal,
@@ -2434,9 +2434,9 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
 
   // Standard Folders (docs/product-model.md, "2026-11-06 file manager layout"):
   // Desktop, Documents, and Downloads for the file manager's sidebar. The host
-  // resolves each from the home folder; nothing here writes `.work-fold/` data.
+  // resolves each from the home folder; nothing here writes `.amplefile/` data.
   if (method === "GET" && url.pathname === "/api/standard-folders") {
-    sendJson(res, { folders: await listStandardFolders(await listWorkFolders()) });
+    sendJson(res, { folders: await listStandardFolders(await listConnectedFolders()) });
     return;
   }
   // Copy, paste, duplicate, and move across the file manager's places (2026-11-07).
@@ -2451,14 +2451,14 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     sendJson(res, await compressEntries(body), 201);
     return;
   }
-  // Recents: what changed lately across the work-folders and the top of Desktop, Documents, and Downloads.
+  // Recents: what changed lately across the Connected Folders and the top of Desktop, Documents, and Downloads.
   if (method === "GET" && url.pathname === "/api/recents") {
-    sendJson(res, { recents: await recentFiles(await listWorkFolders()) });
+    sendJson(res, { recents: await recentFiles(await listConnectedFolders()) });
     return;
   }
-  // Go to Folder (⇧⌘G): a typed path opens the work-folder or Standard Folder holding it, with completions.
+  // Go to Folder (⇧⌘G): a typed path opens the Connected Folder or Standard Folder holding it, with completions.
   if (method === "GET" && url.pathname === "/api/go-to-folder") {
-    sendJson(res, await goToFolder(url.searchParams.get("path") ?? "", await listWorkFolders()));
+    sendJson(res, await goToFolder(url.searchParams.get("path") ?? "", await listConnectedFolders()));
     return;
   }
   // Remove from Sidebar: a folder the person added with + leaves the list; the folder stays as it is.
@@ -2468,7 +2468,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     sendJson(res, { removed: true });
     return;
   }
-  const standardFolderMatch = match(url.pathname, /^\/api\/standard-folders\/([^/]+)\/(tree|file-info|raw-file|events|rename-local-entry|folders|work-folders)$/);
+  const standardFolderMatch = match(url.pathname, /^\/api\/standard-folders\/([^/]+)\/(tree|file-info|raw-file|events|rename-local-entry|folders|connected-folders)$/);
   if (standardFolderMatch) {
     const standardFolderId = standardFolderMatch[1];
     if (!isStandardFolderId(standardFolderId)) throw notFound("That standard folder isn’t on this computer.");
@@ -2485,7 +2485,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     }
     if (method === "GET" && route === "raw-file") {
       if (!path) throw badRequest("File path is required.");
-      await sendWorkFolderRawFile(res, standardFolderRoot(standardFolderId), path);
+      await sendConnectedFolderRawFile(res, standardFolderRoot(standardFolderId), path);
       return;
     }
     if (method === "GET" && route === "events") {
@@ -2505,90 +2505,90 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       sendJson(res, await createStandardFolderFolder(standardFolderId, body.parentPath ?? "", body.name), 201);
       return;
     }
-    // "Put This Folder to Work": the click is the registration act, as choosing
+    // "Connect This Folder": the click is the registration act, as choosing
     // a folder in the picker is; the host resolved the standard folder itself.
-    if (method === "POST" && route === "work-folders") {
+    if (method === "POST" && route === "connected-folders") {
       const body = await readJsonBody<{ path?: unknown }>(state, req);
       if (body.path !== undefined && typeof body.path !== "string") throw badRequest("Choose a folder.");
       const target = await standardFolderRegistrationTarget(standardFolderId, body.path ?? "");
-      const workFolder = await runCheckWorkFolderRegistryMutation(state, () => registerWorkFolderInternal(state, target));
-      sendJson(res, { workFolder }, 201);
+      const connectedFolder = await runCheckConnectedFolderRegistryMutation(state, () => registerConnectedFolderInternal(state, target));
+      sendJson(res, { connectedFolder }, 201);
       return;
     }
   }
 
   // Suggested messages written from the folder (owner request, 2026-11-06): one bounded model call on the
-  // work-folder's model over its names and recent Chat titles, kept until the folder or its Chats change.
-  const suggestionsMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/suggestions$/);
+  // Connected Folder's model over its names and recent Chat titles, kept until the folder or its Chats change.
+  const suggestionsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/suggestions$/);
   if (method === "GET" && suggestionsMatch) {
-    const workFolder = await getWorkFolder(suggestionsMatch[1]);
-    sendJson(res, { suggestions: await folderSuggestions(state, workFolder, url.searchParams.get("path") ?? "") });
+    const connectedFolder = await getConnectedFolder(suggestionsMatch[1]);
+    sendJson(res, { suggestions: await folderSuggestions(state, connectedFolder, url.searchParams.get("path") ?? "") });
     return;
   }
 
-  const treeMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/tree$/);
+  const treeMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/tree$/);
   if (method === "GET" && treeMatch) {
-    const workFolder = await getWorkFolder(treeMatch[1]);
+    const connectedFolder = await getConnectedFolder(treeMatch[1]);
     const maxDepthValue = Number(url.searchParams.get("maxDepth") ?? 20);
     const maxDepth = Number.isFinite(maxDepthValue) ? Math.min(Math.max(Math.floor(maxDepthValue), 0), 50) : 20;
-    const scan = await scanWorkFolderTree(
-      workFolder.workFolderRoot,
+    const scan = await scanConnectedFolderTree(
+      connectedFolder.connectedFolderRoot,
       maxDepth,
       url.searchParams.get("path") ?? "",
-      { includeIgnored: url.searchParams.get("includeIgnored") !== "0", nestedFolderPaths: await nestedRegisteredWorkFolderPaths(workFolder.workFolderRoot) },
+      { includeIgnored: url.searchParams.get("includeIgnored") !== "0", nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(connectedFolder.connectedFolderRoot) },
     );
     sendJson(res, { tree: scan.entries, truncated: scan.truncated });
     return;
   }
 
-  const fileMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/file$/);
+  const fileMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/file$/);
   if (method === "GET" && fileMatch) {
-    const workFolder = await getWorkFolder(fileMatch[1]);
+    const connectedFolder = await getConnectedFolder(fileMatch[1]);
     const path = url.searchParams.get("path") ?? "";
     if (!path) throw badRequest("File path is required.");
-    sendJson(res, await readWorkFolderTextFile(workFolder.workFolderRoot, path));
+    sendJson(res, await readConnectedFolderTextFile(connectedFolder.connectedFolderRoot, path));
     return;
   }
   if (method === "PUT" && fileMatch) {
-    const workFolder = await getWorkFolder(fileMatch[1]);
+    const connectedFolder = await getConnectedFolder(fileMatch[1]);
     const body = await readJsonBody<{ path?: string; text?: string }>(state, req);
     if (!body.path?.trim() || typeof body.text !== "string") throw badRequest("A file path and text are required.");
-    const safety = await createWorkFolderMutationCheckpoint(workFolder.workFolderRoot, {
+    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
       paths: [body.path],
       reason: "pre_edit",
       label: `Before editing ${body.path}`,
     });
-    const file = await runWithHistorySafety(workFolder.workFolderRoot, safety.checkpointId, () => writeWorkFolderTextFile(workFolder.workFolderRoot, body.path!, body.text!));
+    const file = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => writeConnectedFolderTextFile(connectedFolder.connectedFolderRoot, body.path!, body.text!));
     sendJson(res, { file, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles });
     return;
   }
 
-  const fileInfoMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/file-info$/);
+  const fileInfoMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/file-info$/);
   if (method === "GET" && fileInfoMatch) {
-    const workFolder = await getWorkFolder(fileInfoMatch[1]);
+    const connectedFolder = await getConnectedFolder(fileInfoMatch[1]);
     const path = url.searchParams.get("path") ?? "";
-    if (!path) throw badRequest("work-folder item path is required.");
-    sendJson(res, await getWorkFolderEntryInfo(workFolder.workFolderRoot, path));
+    if (!path) throw badRequest("Connected Folder item path is required.");
+    sendJson(res, await getConnectedFolderEntryInfo(connectedFolder.connectedFolderRoot, path));
     return;
   }
 
-  const filePreviewMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/file-preview$/);
+  const filePreviewMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/file-preview$/);
   if (method === "GET" && filePreviewMatch) {
-    const workFolder = await getWorkFolder(filePreviewMatch[1]);
+    const connectedFolder = await getConnectedFolder(filePreviewMatch[1]);
     const path = url.searchParams.get("path") ?? "";
-    if (!path) throw badRequest("work-folder item path is required.");
-    sendJson(res, { preview: await getWorkFolderFilePreview(workFolder.workFolderRoot, path) });
+    if (!path) throw badRequest("Connected Folder item path is required.");
+    sendJson(res, { preview: await getConnectedFolderFilePreview(connectedFolder.connectedFolderRoot, path) });
     return;
   }
 
-  const pathsExistMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/paths-exist$/);
+  const pathsExistMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/paths-exist$/);
   if (method === "POST" && pathsExistMatch) {
-    const workFolder = await getWorkFolder(pathsExistMatch[1]);
+    const connectedFolder = await getConnectedFolder(pathsExistMatch[1]);
     const body = await readJsonBody<{ paths?: unknown }>(state, req);
     if (!Array.isArray(body.paths) || body.paths.some((path) => typeof path !== "string")) {
-      throw badRequest("work-folder paths must be an array of strings.");
+      throw badRequest("Connected Folder paths must be an array of strings.");
     }
-    sendJson(res, { existing: await findExistingWorkFolderFilePaths(workFolder.workFolderRoot, body.paths) });
+    sendJson(res, { existing: await findExistingConnectedFolderFilePaths(connectedFolder.connectedFolderRoot, body.paths) });
     return;
   }
 
@@ -2607,14 +2607,14 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     res.end(found.bytes);
     return;
   }
-  const workFolderImageMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/generated-images\/([^/]+)(\/add)?$/);
-  if (workFolderImageMatch && (method === "GET" || (method === "POST" && workFolderImageMatch[3]))) {
-    const workFolder = await getWorkFolder(workFolderImageMatch[1]);
-    const imageId = workFolderImageMatch[2]!;
+  const connectedFolderImageMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/generated-images\/([^/]+)(\/add)?$/);
+  if (connectedFolderImageMatch && (method === "GET" || (method === "POST" && connectedFolderImageMatch[3]))) {
+    const connectedFolder = await getConnectedFolder(connectedFolderImageMatch[1]);
+    const imageId = connectedFolderImageMatch[2]!;
     const record = isGeneratedImageId(imageId) ? await state.generatedImages.get(imageId) : null;
     if (!record) throw notFound("This picture is not on this computer.");
-    const addedPath = record.added?.[workFolder.id];
-    const stillThere = addedPath ? await state.generatedImages.matches(record, resolveWorkFolderPath(workFolder.workFolderRoot, addedPath)).catch(() => false) : false;
+    const addedPath = record.added?.[connectedFolder.id];
+    const stillThere = addedPath ? await state.generatedImages.matches(record, resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, addedPath)).catch(() => false) : false;
     if (method === "GET") {
       sendJson(res, { name: record.name, mimeType: record.mimeType, ...(stillThere ? { addedPath } : {}) });
       return;
@@ -2623,39 +2623,39 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (stillThere) { sendJson(res, { path: addedPath, added: false }); return; }
     const found = await state.generatedImages.read(imageId);
     if (!found) throw notFound("This picture is not on this computer.");
-    const [written] = await writeUploadedFiles(workFolder.workFolderRoot, "", [{ fileName: record.name, data: found.bytes }]);
-    await checkpointAdditiveWritesOrUndo(workFolder.workFolderRoot, [written!.path], {
+    const [written] = await writeUploadedFiles(connectedFolder.connectedFolderRoot, "", [{ fileName: record.name, data: found.bytes }]);
+    await checkpointAdditiveWritesOrUndo(connectedFolder.connectedFolderRoot, [written!.path], {
       reason: "pre_upload",
       label: `Before adding ${record.name}`,
     });
-    await state.generatedImages.noteAdded(imageId, workFolder.id, written!.path);
+    await state.generatedImages.noteAdded(imageId, connectedFolder.id, written!.path);
     sendJson(res, { path: written!.path, added: true }, 201);
     return;
   }
 
-  const rawFileMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/raw-file$/);
+  const rawFileMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/raw-file$/);
   if (method === "GET" && rawFileMatch) {
-    const workFolder = await getWorkFolder(rawFileMatch[1]);
+    const connectedFolder = await getConnectedFolder(rawFileMatch[1]);
     const path = url.searchParams.get("path") ?? "";
     if (!path) throw badRequest("File path is required.");
-    await sendWorkFolderRawFile(res, workFolder.workFolderRoot, path);
+    await sendConnectedFolderRawFile(res, connectedFolder.connectedFolderRoot, path);
     return;
   }
 
-  const moveMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/move-local-entry$/);
+  const moveMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/move-local-entry$/);
   if (method === "POST" && moveMatch) {
-    const workFolder = await getWorkFolder(moveMatch[1]);
+    const connectedFolder = await getConnectedFolder(moveMatch[1]);
     const body = await readJsonBody<{ sourcePath?: string; targetFolderPath?: string }>(state, req);
     if (!body.sourcePath?.trim()) throw badRequest("Select a file or folder to move.");
-    const moveSource = normalizeWorkFolderRelativePath(body.sourcePath);
-    const moveTargetFolder = normalizeWorkFolderRelativePath(body.targetFolderPath ?? "");
+    const moveSource = normalizeConnectedFolderRelativePath(body.sourcePath);
+    const moveTargetFolder = normalizeConnectedFolderRelativePath(body.targetFolderPath ?? "");
     const moveDestination = [moveTargetFolder, basename(moveSource)].filter(Boolean).join("/");
-    const safety = await createWorkFolderMutationCheckpoint(workFolder.workFolderRoot, {
+    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
       movesOnRestore: [{ fromPath: moveDestination, toPath: moveSource }],
       reason: "pre_move",
       label: `Before moving ${body.sourcePath}`,
     });
-    const moved = await runWithHistorySafety(workFolder.workFolderRoot, safety.checkpointId, () => moveWorkFolderEntry(workFolder.workFolderRoot, {
+    const moved = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => moveConnectedFolderEntry(connectedFolder.connectedFolderRoot, {
       sourcePath: moveSource,
       targetFolderPath: body.targetFolderPath ?? "",
     }));
@@ -2664,82 +2664,82 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   }
 
   // Several Files rows into one folder under one restore point (2026-11-05).
-  const moveManyMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/move-local-entries$/);
+  const moveManyMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/move-local-entries$/);
   if (method === "POST" && moveManyMatch) {
-    const workFolder = await getWorkFolder(moveManyMatch[1]);
+    const connectedFolder = await getConnectedFolder(moveManyMatch[1]);
     const body = await readJsonBody<{ sourcePaths?: unknown; targetFolderPath?: unknown }>(state, req);
-    const sourcePaths = workFolderPathList(body.sourcePaths, "Select files or folders to move.");
+    const sourcePaths = connectedFolderPathList(body.sourcePaths, "Select files or folders to move.");
     if (body.targetFolderPath !== undefined && typeof body.targetFolderPath !== "string") throw badRequest("Choose a folder to move them into.");
-    const result = await moveWorkFolderEntriesWithHistory(workFolder, sourcePaths, body.targetFolderPath ?? "");
+    const result = await moveConnectedFolderEntriesWithHistory(connectedFolder, sourcePaths, body.targetFolderPath ?? "");
     sendJson(res, result);
     return;
   }
 
-  const renameMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/rename-local-entry$/);
+  const renameMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/rename-local-entry$/);
   if (method === "POST" && renameMatch) {
-    const workFolder = await getWorkFolder(renameMatch[1]);
+    const connectedFolder = await getConnectedFolder(renameMatch[1]);
     const body = await readJsonBody<{ path?: string; newName?: string }>(state, req);
-    if (!body.path?.trim() || !body.newName?.trim()) throw badRequest("A work-folder item and new name are required.");
-    const renameSource = normalizeWorkFolderRelativePath(body.path);
+    if (!body.path?.trim() || !body.newName?.trim()) throw badRequest("A Connected Folder item and new name are required.");
+    const renameSource = normalizeConnectedFolderRelativePath(body.path);
     const renameParent = renameSource.includes("/") ? renameSource.slice(0, renameSource.lastIndexOf("/")) : "";
     const renameDestination = [renameParent, body.newName].filter(Boolean).join("/");
-    const safety = await createWorkFolderMutationCheckpoint(workFolder.workFolderRoot, {
+    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
       movesOnRestore: [{ fromPath: renameDestination, toPath: renameSource }],
       reason: "pre_rename",
       label: `Before renaming ${body.path}`,
     });
-    const renamed = await runWithHistorySafety(workFolder.workFolderRoot, safety.checkpointId, () => renameWorkFolderEntry(workFolder.workFolderRoot, { path: body.path!, newName: body.newName! }));
+    const renamed = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => renameConnectedFolderEntry(connectedFolder.connectedFolderRoot, { path: body.path!, newName: body.newName! }));
     sendJson(res, { renamed, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles });
     return;
   }
 
-  const foldersMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/folders$/);
+  const foldersMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/folders$/);
   if (method === "POST" && foldersMatch) {
-    const workFolder = await getWorkFolder(foldersMatch[1]);
+    const connectedFolder = await getConnectedFolder(foldersMatch[1]);
     const body = await readJsonBody<{ parentPath?: string; name?: string }>(state, req);
     if (!body.name?.trim()) throw badRequest("A folder name is required.");
-    const folderTarget = [normalizeWorkFolderRelativePath(body.parentPath ?? ""), body.name].filter(Boolean).join("/");
-    const safety = await createWorkFolderMutationCheckpoint(workFolder.workFolderRoot, {
+    const folderTarget = [normalizeConnectedFolderRelativePath(body.parentPath ?? ""), body.name].filter(Boolean).join("/");
+    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
       deleteOnRestore: [folderTarget],
       reason: "pre_create",
       label: `Before creating ${body.name}`,
     });
-    const folder = await runWithHistorySafety(workFolder.workFolderRoot, safety.checkpointId, () => createWorkFolderFolder(workFolder.workFolderRoot, body.parentPath ?? "", body.name!));
+    const folder = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => createConnectedFolderFolder(connectedFolder.connectedFolderRoot, body.parentPath ?? "", body.name!));
     sendJson(res, { folder, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles }, 201);
     return;
   }
 
-  const filesMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/files$/);
+  const filesMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/files$/);
   if (method === "POST" && filesMatch) {
-    const workFolder = await getWorkFolder(filesMatch[1]);
+    const connectedFolder = await getConnectedFolder(filesMatch[1]);
     const body = await readJsonBody<{ parentPath?: string; name?: string; text?: string }>(state, req);
     if (!body.name?.trim()) throw badRequest("A file name is required.");
-    const fileTarget = [normalizeWorkFolderRelativePath(body.parentPath ?? ""), body.name].filter(Boolean).join("/");
-    const safety = await createWorkFolderMutationCheckpoint(workFolder.workFolderRoot, {
+    const fileTarget = [normalizeConnectedFolderRelativePath(body.parentPath ?? ""), body.name].filter(Boolean).join("/");
+    const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
       deleteOnRestore: [fileTarget],
       reason: "pre_create",
       label: `Before creating ${body.name}`,
     });
-    const file = await runWithHistorySafety(workFolder.workFolderRoot, safety.checkpointId, () => createWorkFolderTextFile(workFolder.workFolderRoot, body.parentPath ?? "", body.name!, body.text ?? ""));
+    const file = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => createConnectedFolderTextFile(connectedFolder.connectedFolderRoot, body.parentPath ?? "", body.name!, body.text ?? ""));
     sendJson(res, { file, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles }, 201);
     return;
   }
 
-  const deleteMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/local-file$/);
+  const deleteMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/local-file$/);
   if (method === "DELETE" && deleteMatch) {
-    const workFolder = await getWorkFolder(deleteMatch[1]);
+    const connectedFolder = await getConnectedFolder(deleteMatch[1]);
     const body = await readJsonBody<{ path?: string }>(state, req);
     if (!body.path?.trim()) throw badRequest("Select a file or folder to delete.");
     // Every deletion the desktop performs leaves a receipt, and a delete
     // History cannot fully keep a copy of lands in Recently deleted rather
     // than being refused (docs/receipts-not-gates.md, F20).
     const removal = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
-      const value = await deleteWorkFolderEntryWithRecovery(state, workFolder, body.path!, { receiptId: requestId });
+      const value = await deleteConnectedFolderEntryWithRecovery(state, connectedFolder, body.path!, { receiptId: requestId });
       return {
         value,
         detail: value.recovery.kind === "recently-deleted"
-          ? `work-folder ${workFolder.id}; trash ${value.recovery.entryId}`
-          : `work-folder ${workFolder.id}; checkpoint ${value.safetyCheckpointId}`,
+          ? `Connected Folder ${connectedFolder.id}; trash ${value.recovery.entryId}`
+          : `Connected Folder ${connectedFolder.id}; checkpoint ${value.safetyCheckpointId}`,
       };
     });
     const { recovery, ...deleted } = removal.value;
@@ -2755,12 +2755,12 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
 
   // Several Files rows under one restore point (2026-11-05): each row still
   // gets its own receipt and its own History or Recently deleted recovery.
-  const deleteManyMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/local-files$/);
+  const deleteManyMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/local-files$/);
   if (method === "DELETE" && deleteManyMatch) {
-    const workFolder = await getWorkFolder(deleteManyMatch[1]);
+    const connectedFolder = await getConnectedFolder(deleteManyMatch[1]);
     const body = await readJsonBody<{ paths?: unknown }>(state, req);
-    const paths = workFolderPathList(body.paths, "Select files or folders to delete.");
-    const result = await deleteWorkFolderEntriesWithRecovery(state, workFolder, paths);
+    const paths = connectedFolderPathList(body.paths, "Select files or folders to delete.");
+    const result = await deleteConnectedFolderEntriesWithRecovery(state, connectedFolder, paths);
     sendJson(res, {
       deleted: result.deleted.map(({ recovery, ...row }) => ({
         ...row,
@@ -2775,40 +2775,40 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const ignoreMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/ignore-paths$/);
+  const ignoreMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/ignore-paths$/);
   if (method === "GET" && ignoreMatch) {
-    const workFolder = await getWorkFolder(ignoreMatch[1]);
-    sendJson(res, await readWorkFolderIgnoreState(workFolder.workFolderRoot));
+    const connectedFolder = await getConnectedFolder(ignoreMatch[1]);
+    sendJson(res, await readConnectedFolderIgnoreState(connectedFolder.connectedFolderRoot));
     return;
   }
   if (method === "POST" && ignoreMatch) {
-    const workFolder = await getWorkFolder(ignoreMatch[1]);
+    const connectedFolder = await getConnectedFolder(ignoreMatch[1]);
     const body = await readJsonBody<{ paths?: unknown; ignored?: unknown }>(state, req);
     if (!Array.isArray(body.paths) || body.paths.some((path) => typeof path !== "string") || typeof body.ignored !== "boolean") {
-      throw badRequest("work-folder paths and an ignore decision are required.");
+      throw badRequest("Connected Folder paths and an ignore decision are required.");
     }
-    sendJson(res, await setWorkFolderIgnoreState(workFolder.workFolderRoot, body.paths, body.ignored));
+    sendJson(res, await setConnectedFolderIgnoreState(connectedFolder.connectedFolderRoot, body.paths, body.ignored));
     return;
   }
 
-  const fileEventsMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/file-events$/);
+  const fileEventsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/file-events$/);
   if (method === "GET" && fileEventsMatch) {
-    const workFolder = await getWorkFolder(fileEventsMatch[1]);
-    await openWorkFolderFileStream(state, createLocalEventSink(res), workFolder.workFolderRoot, fileEventsMatch[1]);
+    const connectedFolder = await getConnectedFolder(fileEventsMatch[1]);
+    await openConnectedFolderFileStream(state, createLocalEventSink(res), connectedFolder.connectedFolderRoot, fileEventsMatch[1]);
     return;
   }
 
-  const uploadMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/upload-local-files$/);
+  const uploadMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/upload-local-files$/);
   if (method === "POST" && uploadMatch) {
-    const workFolder = await getWorkFolder(uploadMatch[1]);
+    const connectedFolder = await getConnectedFolder(uploadMatch[1]);
     const multipart = await readMultipartBody(state, req);
     const relativePaths = parseRelativePaths(multipart.fields.get("relativePaths"), multipart.files.length);
     const uploaded = await writeUploadedFiles(
-      workFolder.workFolderRoot,
+      connectedFolder.connectedFolderRoot,
       multipart.fields.get("targetFolderPath") ?? "",
       multipart.files.map((file, index) => ({ fileName: file.fileName, relativePath: relativePaths[index], data: file.data })),
     );
-    const safety = await checkpointAdditiveWritesOrUndo(workFolder.workFolderRoot, uploaded.map((file) => file.path), {
+    const safety = await checkpointAdditiveWritesOrUndo(connectedFolder.connectedFolderRoot, uploaded.map((file) => file.path), {
       reason: "pre_upload",
       label: `Before uploading ${uploaded.length} file${uploaded.length === 1 ? "" : "s"}`,
     });
@@ -2816,40 +2816,40 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const checkpointCollectionMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/history\/checkpoints$/);
+  const checkpointCollectionMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/checkpoints$/);
   if (checkpointCollectionMatch && method === "GET") {
-    const workFolder = await getWorkFolder(checkpointCollectionMatch[1]);
-    sendJson(res, await listWorkFolderCheckpointPage(workFolder.workFolderRoot, { cursor: url.searchParams.get("cursor") ?? undefined, limit: optionalBoundedInteger(url.searchParams.get("limit"), "limit") }));
+    const connectedFolder = await getConnectedFolder(checkpointCollectionMatch[1]);
+    sendJson(res, await listConnectedFolderCheckpointPage(connectedFolder.connectedFolderRoot, { cursor: url.searchParams.get("cursor") ?? undefined, limit: optionalBoundedInteger(url.searchParams.get("limit"), "limit") }));
     return;
   }
   if (checkpointCollectionMatch && method === "POST") {
-    const workFolder = await getWorkFolder(checkpointCollectionMatch[1]);
+    const connectedFolder = await getConnectedFolder(checkpointCollectionMatch[1]);
     const body = await readJsonBody<{ label?: string }>(state, req);
-    const existingIds = new Set((await listWorkFolderCheckpoints(workFolder.workFolderRoot, 1000)).map((checkpoint) => checkpoint.checkpointId));
-    const checkpoint = await createWorkFolderCheckpoint(workFolder.workFolderRoot, { label: body.label, reason: "manual" });
+    const existingIds = new Set((await listConnectedFolderCheckpoints(connectedFolder.connectedFolderRoot, 1000)).map((checkpoint) => checkpoint.checkpointId));
+    const checkpoint = await createConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, { label: body.label, reason: "manual" });
     const created = !existingIds.has(checkpoint.checkpointId);
     sendJson(res, { checkpoint, created }, created ? 201 : 200);
     return;
   }
-  const checkpointRestoreMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/history\/checkpoints\/([^/]+)\/restore$/);
+  const checkpointRestoreMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/checkpoints\/([^/]+)\/restore$/);
   if (method === "POST" && checkpointRestoreMatch) {
-    const workFolder = await getWorkFolder(checkpointRestoreMatch[1]);
-    sendJson(res, await runHistoryRestore(state, workFolder.id, () => restoreWorkFolderCheckpoint(workFolder.workFolderRoot, checkpointRestoreMatch[2])));
+    const connectedFolder = await getConnectedFolder(checkpointRestoreMatch[1]);
+    sendJson(res, await runHistoryRestore(state, connectedFolder.id, () => restoreConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, checkpointRestoreMatch[2])));
     return;
   }
 
-  const checkpointPreviewMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/history\/checkpoints\/([^/]+)\/preview$/);
+  const checkpointPreviewMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/checkpoints\/([^/]+)\/preview$/);
   if (method === "GET" && checkpointPreviewMatch) {
-    const workFolder = await getWorkFolder(checkpointPreviewMatch[1]);
-    sendJson(res, { preview: await previewWorkFolderCheckpointRestore(workFolder.workFolderRoot, checkpointPreviewMatch[2]) });
+    const connectedFolder = await getConnectedFolder(checkpointPreviewMatch[1]);
+    sendJson(res, { preview: await previewConnectedFolderCheckpointRestore(connectedFolder.connectedFolderRoot, checkpointPreviewMatch[2]) });
     return;
   }
 
-  const historyReviewMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/history\/(read|diff)$/);
+  const historyReviewMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/(read|diff)$/);
   if (method === "GET" && historyReviewMatch) {
-    const workFolder = await getWorkFolder(historyReviewMatch[1]);
+    const connectedFolder = await getConnectedFolder(historyReviewMatch[1]);
     const path = url.searchParams.get("path")?.trim();
-    if (!path) throw badRequest("A work-folder-relative file path is required.");
+    if (!path) throw badRequest("A Connected Folder–relative file path is required.");
     if (historyReviewMatch[2] === "read") {
       const checkpointId = url.searchParams.get("checkpointId")?.trim();
       if (!checkpointId) throw badRequest("A checkpointId is required.");
@@ -2857,7 +2857,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       const abort = () => controller.abort();
       req.once("aborted", abort); res.once("close", abort);
       try {
-        const review = await readHistoryFile(workFolder.workFolderRoot, {
+        const review = await readHistoryFile(connectedFolder.connectedFolderRoot, {
           path, checkpointId, signal: controller.signal,
           offsetBytes: optionalBoundedInteger(url.searchParams.get("offsetBytes"), "offsetBytes"),
           lengthBytes: optionalBoundedInteger(url.searchParams.get("lengthBytes"), "lengthBytes"),
@@ -2870,32 +2870,32 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       const fromCheckpointId = url.searchParams.get("fromCheckpointId")?.trim();
       if (!fromCheckpointId) throw badRequest("A fromCheckpointId is required.");
       const toCheckpointId = url.searchParams.get("toCheckpointId")?.trim();
-      sendJson(res, { comparison: await compareHistoryFile(workFolder.workFolderRoot, {
+      sendJson(res, { comparison: await compareHistoryFile(connectedFolder.connectedFolderRoot, {
         path, fromCheckpointId, ...(toCheckpointId ? { toCheckpointId } : {}),
       }) });
     }
     return;
   }
 
-  const fileVersionsMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/history\/file-versions$/);
+  const fileVersionsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/file-versions$/);
   if (method === "GET" && fileVersionsMatch) {
-    const workFolder = await getWorkFolder(fileVersionsMatch[1]);
+    const connectedFolder = await getConnectedFolder(fileVersionsMatch[1]);
     const path = url.searchParams.get("path")?.trim();
-    if (!path) throw badRequest("A work-folder-relative file path is required.");
-    sendJson(res, { path, ...await listFileVersionPage(workFolder.workFolderRoot, path, { cursor: url.searchParams.get("cursor") ?? undefined, limit: optionalBoundedInteger(url.searchParams.get("limit"), "limit") }) });
+    if (!path) throw badRequest("A Connected Folder–relative file path is required.");
+    sendJson(res, { path, ...await listFileVersionPage(connectedFolder.connectedFolderRoot, path, { cursor: url.searchParams.get("cursor") ?? undefined, limit: optionalBoundedInteger(url.searchParams.get("limit"), "limit") }) });
     return;
   }
   if (method === "POST" && fileVersionsMatch) {
-    const workFolder = await getWorkFolder(fileVersionsMatch[1]);
+    const connectedFolder = await getConnectedFolder(fileVersionsMatch[1]);
     const body = await readJsonBody<{ path?: string; hashSha256?: string }>(state, req);
     if (!body.path?.trim() || !body.hashSha256?.trim()) throw badRequest("A file path and version hash are required.");
-    sendJson(res, { result: await runHistoryRestore(state, workFolder.id, () => restoreFileVersion(workFolder.workFolderRoot, body.path!, body.hashSha256!)) });
+    sendJson(res, { result: await runHistoryRestore(state, connectedFolder.id, () => restoreFileVersion(connectedFolder.connectedFolderRoot, body.path!, body.hashSha256!)) });
     return;
   }
 
   // Settings → AI Models → Image model (2026-10-11): one choice for every Worker
-  // and the work-fold agent; null is Automatic. Credentials are machine-wide, so
-  // the work-fold agent's runtime lists what every scope can use.
+  // and the AmpleFile agent; null is Automatic. Credentials are machine-wide, so
+  // the AmpleFile agent's runtime lists what every scope can use.
   if (method === "GET" && url.pathname === "/api/agent/image-models") {
     sendJson(res, await imageModelSettings(state));
     return;
@@ -2907,7 +2907,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     } else {
       const model = normalizeImageModelChoice(body.model);
       if (!model) throw badRequest("Choose an image model, or null for Automatic.");
-      const { models } = await listPiImageModels(workFoldAgentRoot(), state.runtimeProvider);
+      const { models } = await listPiImageModels(ampleFileAgentRoot(), state.runtimeProvider);
       if (!models.some((item) => item.provider === model.provider && item.id === model.id)) {
         throw badRequest("That image model is not connected. Connect its provider first, or choose another.");
       }
@@ -2919,18 +2919,18 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   if (method === "GET" && url.pathname === "/api/agent/provider-account") {
     const provider = url.searchParams.get("provider");
     if (provider !== "openai" && provider !== "openai-codex") throw badRequest("Choose an OpenAI account connection.");
-    const scope = await modelScope(url.searchParams.get("scope"), url.searchParams.get("workFolderId"));
-    const runtime = await resolvePiRuntime(scope.workFolderRoot, state.runtimeProvider, { requestProjectTrust: false });
+    const scope = await modelScope(url.searchParams.get("scope"), url.searchParams.get("connectedFolderId"));
+    const runtime = await resolvePiRuntime(scope.connectedFolderRoot, state.runtimeProvider, { requestProjectTrust: false });
     const account = await readOpenAiAccount(runtime, provider);
     res.setHeader("Cache-Control", "no-store");
     sendJson(res, { account });
     return;
   }
   if (method === "GET" && url.pathname === "/api/agent/models") {
-    const workFolderId = url.searchParams.get("workFolderId");
-    const scope = await modelScope(url.searchParams.get("scope"), workFolderId);
-    const models = await listPiModels(scope.workFolderRoot, state.runtimeProvider);
-    const status = await getPiSetupStatus(scope.workFolderRoot, state.runtimeProvider);
+    const connectedFolderId = url.searchParams.get("connectedFolderId");
+    const scope = await modelScope(url.searchParams.get("scope"), connectedFolderId);
+    const models = await listPiModels(scope.connectedFolderRoot, state.runtimeProvider);
+    const status = await getPiSetupStatus(scope.connectedFolderRoot, state.runtimeProvider);
     sendJson(res, {
       models: models.map((model) => ({
         ...model,
@@ -2939,44 +2939,44 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       status: normalizeStatus(status),
       providers: providerSetupResponse(status, Boolean(state.piOAuthHooks)),
       catalogs: await listPiModelCatalogs(state.runtimeProvider),
-      ...(await getFoundrySettings(scope.workFolderRoot, state.runtimeProvider)),
-      instructions: scope.id === workFoldAgentScopeId
+      ...(await getFoundrySettings(scope.connectedFolderRoot, state.runtimeProvider)),
+      instructions: scope.id === ampleFileAgentScopeId
         ? null
-        : await getPiWorkerInstructions(scope.workFolderRoot, state.runtimeProvider),
+        : await getPiWorkerInstructions(scope.connectedFolderRoot, state.runtimeProvider),
       // The Image model section rides this load, so opening Settings costs no extra request.
       ...(await imageModelSettings(state).then((imageModels) => ({ imageModels }), () => ({}))),
     });
     return;
   }
   if (method === "POST" && url.pathname === "/api/agent/models/refresh") {
-    const body = await readJsonBody<{ workFolderId?: string; scope?: string; provider?: string }>(state, req);
-    const scope = await modelScope(body.scope, body.workFolderId);
+    const body = await readJsonBody<{ connectedFolderId?: string; scope?: string; provider?: string }>(state, req);
+    const scope = await modelScope(body.scope, body.connectedFolderId);
     if (!body.provider?.trim()) throw badRequest("A provider is required.");
     const refresh = await refreshPiModelCatalog(body.provider, state.runtimeProvider);
     sendJson(res, {
       refresh,
-      models: await listPiModels(scope.workFolderRoot, state.runtimeProvider),
-      status: normalizeStatus(await getPiSetupStatus(scope.workFolderRoot, state.runtimeProvider)),
+      models: await listPiModels(scope.connectedFolderRoot, state.runtimeProvider),
+      status: normalizeStatus(await getPiSetupStatus(scope.connectedFolderRoot, state.runtimeProvider)),
       catalogs: await listPiModelCatalogs(state.runtimeProvider),
     });
     return;
   }
   if (method === "GET" && url.pathname === "/api/agent/status") {
-    const workFolderId = url.searchParams.get("workFolderId");
-    const scope = await modelScope(url.searchParams.get("scope"), workFolderId);
-    sendJson(res, { status: await safeAgentStatus(scope.workFolderRoot, state.runtimeProvider) });
+    const connectedFolderId = url.searchParams.get("connectedFolderId");
+    const scope = await modelScope(url.searchParams.get("scope"), connectedFolderId);
+    sendJson(res, { status: await safeAgentStatus(scope.connectedFolderRoot, state.runtimeProvider) });
     return;
   }
   if (method === "GET" && url.pathname === "/api/agent/composer") {
-    const workFolderId = url.searchParams.get("workFolderId");
-    const scope = await modelScope(url.searchParams.get("scope"), workFolderId);
-    sendJson(res, { composer: await getPiComposerState(scope.workFolderRoot, state.runtimeProvider) });
+    const connectedFolderId = url.searchParams.get("connectedFolderId");
+    const scope = await modelScope(url.searchParams.get("scope"), connectedFolderId);
+    sendJson(res, { composer: await getPiComposerState(scope.connectedFolderRoot, state.runtimeProvider) });
     return;
   }
   if (method === "POST" && url.pathname === "/api/agent/instructions") {
-    const body = await readJsonBody<{ workFolderId?: string; scope?: string; instructions?: unknown }>(state, req);
-    const scope = await modelScope(body.scope, body.workFolderId);
-    if (scope.id === workFoldAgentScopeId) throw badRequest("Worker instructions require a work-folder.");
+    const body = await readJsonBody<{ connectedFolderId?: string; scope?: string; instructions?: unknown }>(state, req);
+    const scope = await modelScope(body.scope, body.connectedFolderId);
+    if (scope.id === ampleFileAgentScopeId) throw badRequest("Worker instructions require a Connected Folder.");
     if (typeof body.instructions !== "string") throw badRequest("Worker instructions must be text.");
     let instructions: string;
     try {
@@ -2989,19 +2989,19 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
   if (method === "POST" && url.pathname === "/api/agent/thinking") {
-    const body = await readJsonBody<{ workFolderId?: string; scope?: string; level?: unknown }>(state, req);
-    const scope = await modelScope(body.scope, body.workFolderId);
+    const body = await readJsonBody<{ connectedFolderId?: string; scope?: string; level?: unknown }>(state, req);
+    const scope = await modelScope(body.scope, body.connectedFolderId);
     if (typeof body.level !== "string" || !body.level.trim()) throw badRequest("A thinking level is required.");
     try {
-      sendJson(res, { composer: await setPiDefaultThinkingLevel(scope.workFolderRoot, body.level, state.runtimeProvider) });
+      sendJson(res, { composer: await setPiDefaultThinkingLevel(scope.connectedFolderRoot, body.level, state.runtimeProvider) });
     } catch (error) {
       throw badRequest(errorMessage(error));
     }
     return;
   }
   if (method === "POST" && url.pathname === "/api/agent/configure") {
-    const body = await readJsonBody<{ workFolderId?: string; scope?: string; provider?: string; model?: string; apiKey?: string; azure?: unknown; foundry?: unknown }>(state, req);
-    const scope = await modelScope(body.scope, body.workFolderId);
+    const body = await readJsonBody<{ connectedFolderId?: string; scope?: string; provider?: string; model?: string; apiKey?: string; azure?: unknown; foundry?: unknown }>(state, req);
+    const scope = await modelScope(body.scope, body.connectedFolderId);
     if (!body.provider?.trim()) throw badRequest("A provider is required.");
     if (!body.model?.trim() && !body.apiKey?.trim() && body.azure === undefined && body.foundry === undefined) throw badRequest("A model or API key is required.");
     if (body.azure !== undefined && body.foundry !== undefined) throw badRequest("Submit one Foundry connection at a time.");
@@ -3014,73 +3014,73 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       if (!foundryProvider(body.provider)) throw badRequest("Foundry settings require a Microsoft Foundry provider.");
       try { azure = normalizeFoundryConnection(body.foundry, body.provider); } catch (error) { throw badRequest(errorMessage(error)); }
     }
-    const available = await listPiModels(scope.workFolderRoot, state.runtimeProvider);
+    const available = await listPiModels(scope.connectedFolderRoot, state.runtimeProvider);
     const selected = available.find((model) => model.provider === body.provider && model.id === body.model);
     if (azure) {
       if (body.model && !azure.deployments.includes(body.model)) throw badRequest("Choose one of the Azure deployment names you entered.");
     } else if (body.model && !selected) throw badRequest(`The selected Pi model is not available for ${scope.label}.`);
     const providerAuth = azure
-      ? (await getPiSetupStatus(scope.workFolderRoot, state.runtimeProvider)).providers.some((item) => item.id === body.provider && item.configured)
+      ? (await getPiSetupStatus(scope.connectedFolderRoot, state.runtimeProvider)).providers.some((item) => item.id === body.provider && item.configured)
       : selected?.authConfigured;
     if (!body.apiKey?.trim() && !providerAuth) {
       throw badRequest(`Enter an API key for ${selected?.providerName ?? foundryProvider(body.provider)?.name ?? body.provider}.`);
     }
     await runCapabilityMutation(state, scope, "global", async () => {
       if (azure) {
-        await saveFoundryConnection(scope.workFolderRoot, azure, body.apiKey, state.runtimeProvider, body.provider!);
+        await saveFoundryConnection(scope.connectedFolderRoot, azure, body.apiKey, state.runtimeProvider, body.provider!);
       } else if (body.apiKey?.trim()) {
-        await savePiApiKey(scope.workFolderRoot, body.provider!, body.apiKey, { runtimeProvider: state.runtimeProvider });
+        await savePiApiKey(scope.connectedFolderRoot, body.provider!, body.apiKey, { runtimeProvider: state.runtimeProvider });
         // A first connection also gives every Worker a model to start on.
-        if (!body.model) await ensurePiDefaultModel(scope.workFolderRoot, body.provider!, state.runtimeProvider);
+        if (!body.model) await ensurePiDefaultModel(scope.connectedFolderRoot, body.provider!, state.runtimeProvider);
       }
-      if (body.model) await setPiDefaultModel(scope.workFolderRoot, { provider: body.provider!, id: body.model }, state.runtimeProvider);
+      if (body.model) await setPiDefaultModel(scope.connectedFolderRoot, { provider: body.provider!, id: body.model }, state.runtimeProvider);
     }, { requireProjectTrust: false });
-    const status = await getPiSetupStatus(scope.workFolderRoot, state.runtimeProvider);
+    const status = await getPiSetupStatus(scope.connectedFolderRoot, state.runtimeProvider);
     sendJson(res, {
       status: normalizeStatus(status),
       providers: providerSetupResponse(status, Boolean(state.piOAuthHooks)),
-      models: (await listPiModels(scope.workFolderRoot, state.runtimeProvider)).map((model) => ({
+      models: (await listPiModels(scope.connectedFolderRoot, state.runtimeProvider)).map((model) => ({
         ...model, oauthSupported: model.oauthSupported && Boolean(state.piOAuthHooks),
       })),
-      ...(azure ? await getFoundrySettings(scope.workFolderRoot, state.runtimeProvider) : {}),
+      ...(azure ? await getFoundrySettings(scope.connectedFolderRoot, state.runtimeProvider) : {}),
     });
     return;
   }
   if (method === "DELETE" && url.pathname === "/api/agent/auth") {
-    const body = await readJsonBody<{ workFolderId?: string; scope?: string; provider?: string }>(state, req);
-    const scope = await modelScope(body.scope, body.workFolderId);
+    const body = await readJsonBody<{ connectedFolderId?: string; scope?: string; provider?: string }>(state, req);
+    const scope = await modelScope(body.scope, body.connectedFolderId);
     if (!body.provider?.trim()) throw badRequest("A provider is required.");
     await runCapabilityMutation(state, scope, "global", async () => {
-      await removePiProviderAuth(scope.workFolderRoot, body.provider!, state.runtimeProvider);
+      await removePiProviderAuth(scope.connectedFolderRoot, body.provider!, state.runtimeProvider);
     }, { requireProjectTrust: false });
-    const status = await getPiSetupStatus(scope.workFolderRoot, state.runtimeProvider);
+    const status = await getPiSetupStatus(scope.connectedFolderRoot, state.runtimeProvider);
     sendJson(res, {
-      models: await listPiModels(scope.workFolderRoot, state.runtimeProvider),
+      models: await listPiModels(scope.connectedFolderRoot, state.runtimeProvider),
       status: normalizeStatus(status),
       providers: providerSetupResponse(status, Boolean(state.piOAuthHooks)),
-      ...(foundryProvider(body.provider) ? await getFoundrySettings(scope.workFolderRoot, state.runtimeProvider) : {}),
+      ...(foundryProvider(body.provider) ? await getFoundrySettings(scope.connectedFolderRoot, state.runtimeProvider) : {}),
     });
     return;
   }
   if (method === "POST" && ["/api/agent/oauth", "/api/agent/login"].includes(url.pathname)) {
-    if (!state.piOAuthHooks) throw unavailable("Guided provider setup requires the work-fold desktop app.");
-    const body = await readJsonBody<{ workFolderId?: string; scope?: string; provider?: string; model?: string; method?: string }>(state, req);
-    const scope = await modelScope(body.scope, body.workFolderId);
+    if (!state.piOAuthHooks) throw unavailable("Guided provider setup requires the AmpleFile desktop app.");
+    const body = await readJsonBody<{ connectedFolderId?: string; scope?: string; provider?: string; model?: string; method?: string }>(state, req);
+    const scope = await modelScope(body.scope, body.connectedFolderId);
     if (!body.provider?.trim()) throw badRequest("A provider is required.");
     const authMethod = url.pathname === "/api/agent/oauth" ? "oauth" : body.method;
     if (authMethod !== "oauth" && authMethod !== "api_key") throw badRequest("Choose account sign-in or API-key setup.");
-    if (body.model && !(await listPiModels(scope.workFolderRoot, state.runtimeProvider)).some((item) => item.provider === body.provider && item.id === body.model)) {
+    if (body.model && !(await listPiModels(scope.connectedFolderRoot, state.runtimeProvider)).some((item) => item.provider === body.provider && item.id === body.model)) {
       throw badRequest(`The selected Pi model is not available for ${scope.label}.`);
     }
     await runCapabilityMutation(state, scope, "global", async () => {
-      await loginPiProvider(scope.workFolderRoot, body.provider!, authMethod, state.piOAuthHooks!, state.runtimeProvider);
-      if (body.model) await setPiDefaultModel(scope.workFolderRoot, { provider: body.provider!, id: body.model }, state.runtimeProvider);
-      else await ensurePiDefaultModel(scope.workFolderRoot, body.provider!, state.runtimeProvider);
+      await loginPiProvider(scope.connectedFolderRoot, body.provider!, authMethod, state.piOAuthHooks!, state.runtimeProvider);
+      if (body.model) await setPiDefaultModel(scope.connectedFolderRoot, { provider: body.provider!, id: body.model }, state.runtimeProvider);
+      else await ensurePiDefaultModel(scope.connectedFolderRoot, body.provider!, state.runtimeProvider);
     }, { requireProjectTrust: false });
-    const status = await getPiSetupStatus(scope.workFolderRoot, state.runtimeProvider);
+    const status = await getPiSetupStatus(scope.connectedFolderRoot, state.runtimeProvider);
     sendJson(res, {
       status: normalizeStatus(status), providers: providerSetupResponse(status, true),
-      models: await listPiModels(scope.workFolderRoot, state.runtimeProvider),
+      models: await listPiModels(scope.connectedFolderRoot, state.runtimeProvider),
     });
     return;
   }
@@ -3102,9 +3102,9 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
   if (method === "POST" && url.pathname === "/api/agent/capabilities/install") {
-    const body = await readJsonBody<{ workFolderId?: string; id?: string; scope?: "global" | "project" }>(state, req);
-    if (!body.workFolderId || !body.id?.trim()) throw badRequest("A work-folder and capability are required.");
-    const workFolder = await getWorkFolder(body.workFolderId);
+    const body = await readJsonBody<{ connectedFolderId?: string; id?: string; scope?: "global" | "project" }>(state, req);
+    if (!body.connectedFolderId || !body.id?.trim()) throw badRequest("A Connected Folder and capability are required.");
+    const connectedFolder = await getConnectedFolder(body.connectedFolderId);
     const scope = capabilityScope(body.scope);
     // Remote inspection is read-only and can take several seconds. Complete it
     // before reserving the mutation so discovery never blocks an unrelated turn.
@@ -3114,16 +3114,16 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       : null;
     const installSource = item.installSource;
     if (!bundle && !installSource) throw badRequest("This capability is a reference and cannot be installed directly.");
-    const installed = await runCapabilityMutation(state, workFolder, scope, async () => {
+    const installed = await runCapabilityMutation(state, connectedFolder, scope, async () => {
       if (bundle) {
-        const imported = await importPiSkillBundle(workFolder.workFolderRoot, {
+        const imported = await importPiSkillBundle(connectedFolder.connectedFolderRoot, {
           fileName: bundle.fileName,
           bytes: bundle.bytes,
           scope: scope === "project" ? "project" : "user",
         }, state.runtimeProvider);
         return { kind: "skill" as const, item, imported };
       }
-      await installPiPackage(workFolder.workFolderRoot, installSource!, {
+      await installPiPackage(connectedFolder.connectedFolderRoot, installSource!, {
         scope: scope === "project" ? "project" : "user",
         runtimeProvider: state.runtimeProvider,
       });
@@ -3133,28 +3133,28 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
   if (method === "POST" && url.pathname === "/api/agent/mcp-setup") {
-    const body = await readJsonBody<{ workFolderId?: string; sessionId?: string; operation?: string; scope?: "global" | "project"; name?: string; definition?: unknown; token?: string; jobId?: string; expectedRevision?: string; enabled?: unknown }>(state, req);
-    if (!body.workFolderId || !body.operation) throw badRequest("A work-folder and setup operation are required.");
+    const body = await readJsonBody<{ connectedFolderId?: string; sessionId?: string; operation?: string; scope?: "global" | "project"; name?: string; definition?: unknown; token?: string; jobId?: string; expectedRevision?: string; enabled?: unknown }>(state, req);
+    if (!body.connectedFolderId || !body.operation) throw badRequest("A Connected Folder and setup operation are required.");
     let sessions = mcpSetupSessions.get(state);
     if (!sessions) { sessions = new Map(); mcpSetupSessions.set(state, sessions); }
     if (body.operation === "close") {
       const entry = body.sessionId ? sessions.get(body.sessionId) : undefined;
-      if (!entry || entry.workFolderId !== body.workFolderId) { sendJson(res, { closed: true }); return; }
+      if (!entry || entry.connectedFolderId !== body.connectedFolderId) { sendJson(res, { closed: true }); return; }
       clearTimeout(entry.timer); sessions.delete(body.sessionId!); await entry.service.dispose(); sendJson(res, { closed: true }); return;
     }
-    const workFolder = await getWorkFolder(body.workFolderId);
+    const connectedFolder = await getConnectedFolder(body.connectedFolderId);
     if (body.operation === "open") {
-      const runtime = await resolvePiRuntime(workFolder.workFolderRoot, state.runtimeProvider, { requestProjectTrust: false });
+      const runtime = await resolvePiRuntime(connectedFolder.connectedFolderRoot, state.runtimeProvider, { requestProjectTrust: false });
       if (!runtime.config.includedTools) throw badRequest("Included service connections are unavailable in this host.");
       if (sessions.size >= 16) throw httpError(409, "Close another service setup before opening one.");
       const id = randomUUID();
       const assertCurrentOwner = async () => {
-        const current = await getWorkFolder(workFolder.id);
-        if (current.workFolderRoot !== workFolder.workFolderRoot) throw badRequest("This work-folder moved. Open connection setup again.");
-        const currentRuntime = await resolvePiRuntime(current.workFolderRoot, state.runtimeProvider, { requestProjectTrust: false });
+        const current = await getConnectedFolder(connectedFolder.id);
+        if (current.connectedFolderRoot !== connectedFolder.connectedFolderRoot) throw badRequest("This Connected Folder moved. Open connection setup again.");
+        const currentRuntime = await resolvePiRuntime(current.connectedFolderRoot, state.runtimeProvider, { requestProjectTrust: false });
         if (currentRuntime.agentDir !== runtime.agentDir || !currentRuntime.projectTrust.trusted) throw badRequest("The agent resource scope changed. Open connection setup again.");
       };
-      const service = createIncludedMcpSetup({ agentDir: runtime.agentDir, mcpCredentialBackend: runtime.config.mcpCredentialBackend, credentials: runtime.credentials, providerToken: async (id) => (await runtime.modelRuntime.getAuth(id))?.auth.apiKey, ...(runtime.projectTrust.trusted ? { cwd: workFolder.workFolderRoot } : {}),
+      const service = createIncludedMcpSetup({ agentDir: runtime.agentDir, mcpCredentialBackend: runtime.config.mcpCredentialBackend, credentials: runtime.credentials, providerToken: async (id) => (await runtime.modelRuntime.getAuth(id))?.auth.apiKey, ...(runtime.projectTrust.trusted ? { cwd: connectedFolder.connectedFolderRoot } : {}),
         openAuthorizationUrl: async (url) => {
           await assertCurrentOwner();
           const parsed = new URL(url);
@@ -3164,25 +3164,25 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
         },
         withMutation: async (selection, operation) => {
           const mutation = await runDesktopSettingsAct(state, "tools.connection.configure", async () => ({
-            value: await runCapabilityMutation(state, workFolder, selection.scope, async () => {
+            value: await runCapabilityMutation(state, connectedFolder, selection.scope, async () => {
               await assertCurrentOwner();
               // Drain and revoke native session credentials before changing standing auth.
               if (selection.scope === "global") await invalidateAllClients(state);
-              else await invalidateWorkFoldClients(state, workFolder.id);
+              else await invalidateAmpleFileClients(state, connectedFolder.id);
               return operation();
             }), detail: `Updated service connection ${selection.name} (${selection.scope}).`,
           }));
           return mutation.value;
         },
       });
-      const entry = { workFolderId: workFolder.id, service, timer: setTimeout(() => undefined, 0) };
+      const entry = { connectedFolderId: connectedFolder.id, service, timer: setTimeout(() => undefined, 0) };
       sessions.set(id, entry); resetMcpSetupExpiry(state, id, entry);
       try { sendJson(res, { sessionId: id, servers: await service.list() }); }
       catch (error) { clearTimeout(entry.timer); sessions.delete(id); await service.dispose().catch(() => undefined); throw error; }
       return;
     }
     const entry = body.sessionId ? sessions.get(body.sessionId) : undefined;
-    if (!entry || entry.workFolderId !== workFolder.id) throw badRequest("This connection setup has closed. Open it again.");
+    if (!entry || entry.connectedFolderId !== connectedFolder.id) throw badRequest("This connection setup has closed. Open it again.");
     resetMcpSetupExpiry(state, body.sessionId!, entry);
     if (body.operation === "list") { sendJson(res, { servers: await entry.service.list({ inspectCredentials: true }) }); return; }
     if (body.operation === "oauth-status") { sendJson(res, { job: entry.service.oauthStatus(body.jobId ?? "") }); return; }
@@ -3214,40 +3214,40 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     sendJson(res, { servers: await entry.service.list({ inspectCredentials: true }) }); return;
   }
   if (method === "GET" && url.pathname === "/api/agent/included-tools") {
-    // The included tools are machine-wide; first run sets them up before any work-folder exists.
-    const workFolder = await includedToolScope(url.searchParams.get("workFolderId"));
-    sendJson(res, { tools: await listIncludedToolStatus(workFolder.workFolderRoot, state.runtimeProvider) });
+    // The included tools are machine-wide; first run sets them up before any Connected Folder exists.
+    const connectedFolder = await includedToolScope(url.searchParams.get("connectedFolderId"));
+    sendJson(res, { tools: await listIncludedToolStatus(connectedFolder.connectedFolderRoot, state.runtimeProvider) });
     return;
   }
   if (method === "POST" && url.pathname === "/api/agent/included-tools/setup") {
-    const body = await readJsonBody<{ workFolderId?: string; id?: IncludedToolId; action?: IncludedSetupAction; secret?: string }>(state, req);
+    const body = await readJsonBody<{ connectedFolderId?: string; id?: IncludedToolId; action?: IncludedSetupAction; secret?: string }>(state, req);
     if (!includedToolDefinitions.some((item) => item.id === body.id) || typeof body.action !== "string") throw badRequest("An included tool and setup action are required.");
     if (body.secret !== undefined && typeof body.secret !== "string") throw badRequest("The connection key must be text.");
-    const workFolder = await includedToolScope(body.workFolderId);
+    const connectedFolder = await includedToolScope(body.connectedFolderId);
     const signal = new AbortController();
     const closed = () => { if (!res.writableEnded) signal.abort(); };
     res.once("close", closed);
     try {
-      const operation = () => setupIncludedTool(workFolder.workFolderRoot, body.id!, body.action!, { secret: body.secret }, state.runtimeProvider, signal.signal);
+      const operation = () => setupIncludedTool(connectedFolder.connectedFolderRoot, body.id!, body.action!, { secret: body.secret }, state.runtimeProvider, signal.signal);
       // Observation and deliberate start never repair or dispose peer Chats.
       // Repair/permission setup keeps the mutation fence and idle-client reset.
-      const result = body.action === "check" || body.id === "computer" && body.action === "start-check" ? await operation() : await runCapabilityMutation(state, workFolder, "global", operation);
+      const result = body.action === "check" || body.id === "computer" && body.action === "start-check" ? await operation() : await runCapabilityMutation(state, connectedFolder, "global", operation);
       sendJson(res, result);
     } finally { res.off("close", closed); }
     return;
   }
   if (method === "POST" && url.pathname === "/api/agent/resources/enabled") {
-    const body = await readJsonBody<{ workFolderId?: string; path?: string; kind?: NativeResourceKind; enabled?: boolean; scope?: "global" | "project" }>(state, req);
-    if (!body.workFolderId || !body.path || !body.kind || !["extensions", "skills", "prompts", "themes"].includes(body.kind)
+    const body = await readJsonBody<{ connectedFolderId?: string; path?: string; kind?: NativeResourceKind; enabled?: boolean; scope?: "global" | "project" }>(state, req);
+    if (!body.connectedFolderId || !body.path || !body.kind || !["extensions", "skills", "prompts", "themes"].includes(body.kind)
       || typeof body.enabled !== "boolean" || !["global", "project"].includes(body.scope ?? "")) {
-      throw badRequest("A work-folder, resource, kind, enabled state, and scope are required.");
+      throw badRequest("A Connected Folder, resource, kind, enabled state, and scope are required.");
     }
-    const workFolder = await getWorkFolder(body.workFolderId);
+    const connectedFolder = await getConnectedFolder(body.connectedFolderId);
     const scope = capabilityScope(body.scope);
     const result = await runDesktopSettingsAct(state, "tools.enabled", async (requestId) => {
-      const value = await createWorkFoldActFacade(state).toolsSetEnabled({
-        path: body.path!, kind: body.kind!, enabled: body.enabled!, scope: scope === "project" ? "work-folder" : "everywhere",
-        ...(scope === "project" ? { workFolder: workFolder.id } : {}), requestId,
+      const value = await createAmpleFileActFacade(state).toolsSetEnabled({
+        path: body.path!, kind: body.kind!, enabled: body.enabled!, scope: scope === "project" ? "connected-folder" : "everywhere",
+        ...(scope === "project" ? { connectedFolder: connectedFolder.id } : {}), requestId,
       });
       return { value, detail: `Turned ${body.enabled ? "on" : "off"} ${body.kind} resource ${body.path}.` };
     });
@@ -3255,12 +3255,12 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
   if (method === "POST" && url.pathname === "/api/agent/packages/install") {
-    const body = await readJsonBody<{ workFolderId?: string; source?: string; scope?: "global" | "project" }>(state, req);
-    if (!body.workFolderId || !body.source?.trim()) throw badRequest("A work-folder and package source are required.");
-    const workFolder = await getWorkFolder(body.workFolderId);
+    const body = await readJsonBody<{ connectedFolderId?: string; source?: string; scope?: "global" | "project" }>(state, req);
+    if (!body.connectedFolderId || !body.source?.trim()) throw badRequest("A Connected Folder and package source are required.");
+    const connectedFolder = await getConnectedFolder(body.connectedFolderId);
     const scope = capabilityScope(body.scope);
-    await runCapabilityMutation(state, workFolder, scope, async () => {
-      await installPiPackage(workFolder.workFolderRoot, body.source!, {
+    await runCapabilityMutation(state, connectedFolder, scope, async () => {
+      await installPiPackage(connectedFolder.connectedFolderRoot, body.source!, {
         scope: scope === "project" ? "project" : "user",
         runtimeProvider: state.runtimeProvider,
       });
@@ -3269,14 +3269,14 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
   if (method === "POST" && url.pathname === "/api/agent/packages/update") {
-    const body = await readJsonBody<{ workFolderId?: string; source?: string; scope?: "global" | "project" }>(state, req);
-    if (!body.workFolderId || !body.source?.trim() || !body.scope) {
-      throw badRequest("A work-folder, package source, and scope are required.");
+    const body = await readJsonBody<{ connectedFolderId?: string; source?: string; scope?: "global" | "project" }>(state, req);
+    if (!body.connectedFolderId || !body.source?.trim() || !body.scope) {
+      throw badRequest("A Connected Folder, package source, and scope are required.");
     }
-    const workFolder = await getWorkFolder(body.workFolderId);
+    const connectedFolder = await getConnectedFolder(body.connectedFolderId);
     const scope = capabilityScope(body.scope);
-    await runCapabilityMutation(state, workFolder, scope, async () => {
-      await updatePiPackages(workFolder.workFolderRoot, body.source, {
+    await runCapabilityMutation(state, connectedFolder, scope, async () => {
+      await updatePiPackages(connectedFolder.connectedFolderRoot, body.source, {
         scope: scope === "project" ? "project" : "user",
         runtimeProvider: state.runtimeProvider,
       });
@@ -3285,14 +3285,14 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
   if (method === "POST" && url.pathname === "/api/agent/packages/remove") {
-    const body = await readJsonBody<{ workFolderId?: string; source?: string; scope?: "global" | "project" }>(state, req);
-    if (!body.workFolderId || !body.source?.trim() || !body.scope) {
-      throw badRequest("A work-folder, package source, and scope are required.");
+    const body = await readJsonBody<{ connectedFolderId?: string; source?: string; scope?: "global" | "project" }>(state, req);
+    if (!body.connectedFolderId || !body.source?.trim() || !body.scope) {
+      throw badRequest("A Connected Folder, package source, and scope are required.");
     }
-    const workFolder = await getWorkFolder(body.workFolderId);
+    const connectedFolder = await getConnectedFolder(body.connectedFolderId);
     const scope = capabilityScope(body.scope);
-    const removed = await runCapabilityMutation(state, workFolder, scope, async () =>
-      await removePiPackage(workFolder.workFolderRoot, body.source!, {
+    const removed = await runCapabilityMutation(state, connectedFolder, scope, async () =>
+      await removePiPackage(connectedFolder.connectedFolderRoot, body.source!, {
         scope: scope === "project" ? "project" : "user",
         runtimeProvider: state.runtimeProvider,
       }));
@@ -3300,31 +3300,31 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
   if (method === "POST" && url.pathname === "/api/agent/skills/remove") {
-    const body = await readJsonBody<{ workFolderId?: string; path?: string; scope?: "global" | "project" }>(state, req);
-    if (!body.workFolderId || !body.path?.trim()) throw badRequest("A work-folder and Skill path are required.");
-    const workFolder = await getWorkFolder(body.workFolderId);
+    const body = await readJsonBody<{ connectedFolderId?: string; path?: string; scope?: "global" | "project" }>(state, req);
+    if (!body.connectedFolderId || !body.path?.trim()) throw badRequest("A Connected Folder and Skill path are required.");
+    const connectedFolder = await getConnectedFolder(body.connectedFolderId);
     const scope = capabilityScope(body.scope);
     const removed = await runDesktopSettingsAct(state, "skills.remove", async (requestId) => {
-      const value = await removeImportedSkill(state, workFolder, scope, body.path!, { receiptId: requestId });
-      return { value, detail: `${scope === "project" ? `work-folder ${workFolder.id}` : "everywhere"}; skill ${value.skillName}; trash ${value.recentlyDeleted.entryId}` };
+      const value = await removeImportedSkill(state, connectedFolder, scope, body.path!, { receiptId: requestId });
+      return { value, detail: `${scope === "project" ? `Connected Folder ${connectedFolder.id}` : "everywhere"}; skill ${value.skillName}; trash ${value.recentlyDeleted.entryId}` };
     });
     sendJson(res, { removed: true, path: removed.value.removedPath, recentlyDeleted: removed.value.recentlyDeleted });
     return;
   }
   if (method === "POST" && url.pathname === "/api/agent/skills/import") {
     const multipart = await readMultipartBody(state, req);
-    const workFolderId = multipart.fields.get("workFolderId");
-    if (!workFolderId || !multipart.files.length) throw badRequest("A work-folder and Skill files are required.");
-    const workFolder = await getWorkFolder(workFolderId);
+    const connectedFolderId = multipart.fields.get("connectedFolderId");
+    if (!connectedFolderId || !multipart.files.length) throw badRequest("A Connected Folder and Skill files are required.");
+    const connectedFolder = await getConnectedFolder(connectedFolderId);
     const scope = multipart.fields.get("scope") === "project" ? "project" : "user";
     const imported = await runCapabilityMutation(
       state,
-      workFolder,
+      connectedFolder,
       scope === "project" ? "project" : "global",
       async () => {
         const results = [];
         for (const file of multipart.files) {
-          results.push(await importPiSkillBundle(workFolder.workFolderRoot, { fileName: file.fileName, bytes: file.data, scope }, state.runtimeProvider));
+          results.push(await importPiSkillBundle(connectedFolder.connectedFolderRoot, { fileName: file.fileName, bytes: file.data, scope }, state.runtimeProvider));
         }
         return results;
       },
@@ -3333,35 +3333,35 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const catalogMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/agent\/catalog$/);
+  const catalogMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/agent\/catalog$/);
   if (method === "GET" && catalogMatch) {
-    const snapshot = await state.kernel.getCapabilities({ kind: "renderer", workFolderId: catalogMatch[1] });
+    const snapshot = await state.kernel.getCapabilities({ kind: "renderer", connectedFolderId: catalogMatch[1] });
     sendJson(res, snapshot.catalog);
     return;
   }
-  const conversationsMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations$/);
+  const conversationsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations$/);
   if (conversationsMatch && method === "GET") {
-    const workFolder = await getWorkFolder(conversationsMatch[1]);
-    sendJson(res, { conversations: await listConversations(workFolder.workFolderRoot) });
+    const connectedFolder = await getConnectedFolder(conversationsMatch[1]);
+    sendJson(res, { conversations: await listConversations(connectedFolder.connectedFolderRoot) });
     return;
   }
   if (conversationsMatch && method === "POST") {
-    const workFolder = await getWorkFolder(conversationsMatch[1]);
+    const connectedFolder = await getConnectedFolder(conversationsMatch[1]);
     const body = await readJsonBody<{ conversationId?: unknown }>(state, req);
     const conversationId = body.conversationId === undefined
       ? undefined
       : conversationIdentity(body.conversationId);
     const conversation = conversationId === undefined
-      ? await createConversation(workFolder.workFolderRoot)
-      : await runConversationMutation(state, workFolder.id, conversationId, () =>
-        createConversation(workFolder.workFolderRoot, undefined, conversationId));
+      ? await createConversation(connectedFolder.connectedFolderRoot)
+      : await runConversationMutation(state, connectedFolder.id, conversationId, () =>
+        createConversation(connectedFolder.connectedFolderRoot, undefined, conversationId));
     sendJson(res, { conversation }, 201);
     return;
   }
 
-  const conversationMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)$/);
+  const conversationMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)$/);
   if (conversationMatch && (method === "PUT" || method === "PATCH")) {
-    const workFolder = await getWorkFolder(conversationMatch[1]);
+    const connectedFolder = await getConnectedFolder(conversationMatch[1]);
     const conversationId = conversationMatch[2];
     const body = await readJsonBody<{ title?: string; archived?: boolean; snoozedUntil?: string | null }>(state, req);
     const changes = [
@@ -3378,49 +3378,49 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       }
       if (Date.parse(body.snoozedUntil) <= Date.now()) throw badRequest("Choose a future snooze time.");
     }
-    const conversation = await runConversationMutation(state, workFolder.id, conversationId, async () => {
+    const conversation = await runConversationMutation(state, connectedFolder.id, conversationId, async () => {
       const updated = body.title !== undefined
-        ? await renameConversation(workFolder.workFolderRoot, conversationId, body.title)
-        : await updateConversationLifecycle(workFolder.workFolderRoot, conversationId, {
+        ? await renameConversation(connectedFolder.connectedFolderRoot, conversationId, body.title)
+        : await updateConversationLifecycle(connectedFolder.connectedFolderRoot, conversationId, {
             ...(body.archived !== undefined ? { archived: body.archived } : {}),
             ...(body.snoozedUntil !== undefined ? { snoozedUntil: body.snoozedUntil } : {}),
           });
-      if (body.title !== undefined) state.clients.get(clientKey(workFolder.id, conversationId))?.setSessionName(updated.title);
+      if (body.title !== undefined) state.clients.get(clientKey(connectedFolder.id, conversationId))?.setSessionName(updated.title);
       return updated;
     });
     sendJson(res, { conversation });
     return;
   }
   if (conversationMatch && method === "DELETE") {
-    const workFolder = await getWorkFolder(conversationMatch[1]);
+    const connectedFolder = await getConnectedFolder(conversationMatch[1]);
     const deleted = await runDesktopSettingsAct(state, "chats.delete", async (requestId) => {
-      const value = await deleteWorkFolderConversation(state, workFolder, conversationMatch[2], { receiptId: requestId });
-      return { value, detail: `work-folder ${workFolder.id}; conversation ${value.conversationId}; trash ${value.recentlyDeleted.entryId}` };
+      const value = await deleteConnectedFolderConversation(state, connectedFolder, conversationMatch[2], { receiptId: requestId });
+      return { value, detail: `Connected Folder ${connectedFolder.id}; conversation ${value.conversationId}; trash ${value.recentlyDeleted.entryId}` };
     });
     sendJson(res, { deleted: deleted.value });
     return;
   }
 
-  const conversationRuntimeMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)\/runtime$/);
+  const conversationRuntimeMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/runtime$/);
   if (conversationRuntimeMatch && method === "GET") {
-    const workFolder = await getWorkFolder(conversationRuntimeMatch[1]);
+    const connectedFolder = await getConnectedFolder(conversationRuntimeMatch[1]);
     const conversationId = conversationRuntimeMatch[2];
-    if (!(await readConversation(workFolder.workFolderRoot, conversationId)).length) throw notFound("Conversation not found.");
-    const client = await getClient(state, workFolder.id, workFolder.workFolderRoot, conversationId);
+    if (!(await readConversation(connectedFolder.connectedFolderRoot, conversationId)).length) throw notFound("Conversation not found.");
+    const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, conversationId);
     sendJson(res, { runtime: await client.getState() });
     return;
   }
 
-  const conversationThinkingMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)\/thinking$/);
+  const conversationThinkingMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/thinking$/);
   if (conversationThinkingMatch && method === "POST") {
-    const workFolder = await getWorkFolder(conversationThinkingMatch[1]);
+    const connectedFolder = await getConnectedFolder(conversationThinkingMatch[1]);
     const conversationId = conversationThinkingMatch[2];
-    if (!(await readConversation(workFolder.workFolderRoot, conversationId)).length) throw notFound("Conversation not found.");
+    if (!(await readConversation(connectedFolder.connectedFolderRoot, conversationId)).length) throw notFound("Conversation not found.");
     const body = await readJsonBody<{ level?: unknown }>(state, req);
     if (typeof body.level !== "string" || !body.level.trim()) throw badRequest("A thinking level is required.");
-    const key = clientKey(workFolder.id, conversationId);
+    const key = clientKey(connectedFolder.id, conversationId);
     if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current agent turn to finish before changing the thinking level.");
-    const client = await getClient(state, workFolder.id, workFolder.workFolderRoot, conversationId);
+    const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, conversationId);
     let result: { level: string; available: string[] };
     try {
       result = await client.setThinkingLevel(body.level);
@@ -3431,42 +3431,42 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const contextAttachmentMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/context-attachments$/);
+  const contextAttachmentMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/context-attachments$/);
   if (contextAttachmentMatch && method === "POST") {
-    const workFolder = await getWorkFolder(contextAttachmentMatch[1]);
+    const connectedFolder = await getConnectedFolder(contextAttachmentMatch[1]);
     const body = await readJsonBody<{ path?: string }>(state, req);
     if (!body.path?.trim()) throw badRequest("A file path is required.");
-    sendJson(res, { attachment: await previewConversationContextReference(workFolder.workFolderRoot, { path: body.path }) }, 201);
+    sendJson(res, { attachment: await previewConversationContextReference(connectedFolder.connectedFolderRoot, { path: body.path }) }, 201);
     return;
   }
 
-  const eventsMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)\/events$/);
+  const eventsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/events$/);
   if (method === "GET" && eventsMatch) {
-    const workFolder = await getWorkFolder(eventsMatch[1]);
-    rememberWorkFolderRoot(state, workFolder.id, workFolder.workFolderRoot);
+    const connectedFolder = await getConnectedFolder(eventsMatch[1]);
+    rememberConnectedFolderRoot(state, connectedFolder.id, connectedFolder.connectedFolderRoot);
     openChatStream(state, createLocalEventSink(res), eventsMatch[1], eventsMatch[2], req.headers["last-event-id"]);
     return;
   }
-  const queueMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)\/queue$/);
+  const queueMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/queue$/);
   if (queueMatch && (method === "PUT" || method === "DELETE")) {
-    const workFolder = await getWorkFolder(queueMatch[1]);
-    if (!(await readConversationSummary(workFolder.workFolderRoot, queueMatch[2]))) throw notFound("Conversation not found.");
+    const connectedFolder = await getConnectedFolder(queueMatch[1]);
+    if (!(await readConversationSummary(connectedFolder.connectedFolderRoot, queueMatch[2]))) throw notFound("Conversation not found.");
     if (method === "DELETE") {
-      sendJson(res, cancelQueuedMessage(state, workFolder.id, queueMatch[2]));
+      sendJson(res, cancelQueuedMessage(state, connectedFolder.id, queueMatch[2]));
       return;
     }
-    const body = await readJsonBody<{ content?: string; contextPaths?: string[]; addressedWorkFolderIds?: unknown }>(state, req);
+    const body = await readJsonBody<{ content?: string; contextPaths?: string[]; addressedConnectedFolderIds?: unknown }>(state, req);
     const content = body.content?.trim();
     if (!content) throw badRequest("Message content is required.");
-    const contextPaths = normalizeContextPaths(workFolder.workFolderRoot, body.contextPaths);
+    const contextPaths = normalizeContextPaths(connectedFolder.connectedFolderRoot, body.contextPaths);
     // Workers the message addresses with @ travel with it, as on the ordinary message route.
-    const addressedWorkFolderIds = await normalizeAddressedWorkFolderIds(body.addressedWorkFolderIds, workFolder.id);
-    sendJson(res, queueChatMessage(state, workFolder.id, queueMatch[2], { content, contextPaths, addressedWorkFolderIds }));
+    const addressedConnectedFolderIds = await normalizeAddressedConnectedFolderIds(body.addressedConnectedFolderIds, connectedFolder.id);
+    sendJson(res, queueChatMessage(state, connectedFolder.id, queueMatch[2], { content, contextPaths, addressedConnectedFolderIds }));
     return;
   }
-  const messagesPostMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)\/messages$/);
+  const messagesPostMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/messages$/);
   if (method === "POST" && messagesPostMatch) {
-    const workFolder = await getWorkFolder(messagesPostMatch[1]);
+    const connectedFolder = await getConnectedFolder(messagesPostMatch[1]);
     const conversationId = messagesPostMatch[2];
     const body = await readJsonBody<{
       content?: string;
@@ -3476,13 +3476,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       requestId?: unknown;
       userMessageId?: unknown;
       delivery?: unknown;
-      addressedWorkFolderIds?: unknown;
+      addressedConnectedFolderIds?: unknown;
     }>(state, req);
     const content = body.content?.trim();
     if (!content) throw badRequest("Message content is required.");
     if (body.delivery !== undefined && body.delivery !== "steer") throw badRequest("Message delivery must be \"steer\" when present.");
     if (body.delivery === "steer") {
-      const steered = await steerConversationTurn(state, workFolder, conversationId, {
+      const steered = await steerConversationTurn(state, connectedFolder, conversationId, {
         content,
         requestId: optionalTurnIdentity(body.requestId, "requestId"),
         userMessageId: optionalTurnIdentity(body.userMessageId, "userMessageId"),
@@ -3490,115 +3490,115 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       sendJson(res, { accepted: true, delivery: "steer", message: steered.message, taskId: steered.taskId, replayed: steered.replayed }, 202);
       return;
     }
-    const contextPaths = normalizeContextPaths(workFolder.workFolderRoot, body.contextPaths);
-    const addressedWorkFolderIds = await normalizeAddressedWorkFolderIds(body.addressedWorkFolderIds, workFolder.id);
-    const { message, taskId, replayed } = await acceptConversationTurn(state, workFolder, conversationId, {
+    const contextPaths = normalizeContextPaths(connectedFolder.connectedFolderRoot, body.contextPaths);
+    const addressedConnectedFolderIds = await normalizeAddressedConnectedFolderIds(body.addressedConnectedFolderIds, connectedFolder.id);
+    const { message, taskId, replayed } = await acceptConversationTurn(state, connectedFolder, conversationId, {
       content,
       contextPaths,
       actorKind: "assistant",
-      ...(addressedWorkFolderIds.length ? { addressedWorkFolderIds } : {}),
+      ...(addressedConnectedFolderIds.length ? { addressedConnectedFolderIds } : {}),
       requestId: optionalTurnIdentity(body.requestId, "requestId"),
       userMessageId: optionalTurnIdentity(body.userMessageId, "userMessageId"),
     });
     sendJson(res, { accepted: true, message, taskId, replayed }, 202);
     return;
   }
-  const abortMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)\/abort$/);
+  const abortMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/abort$/);
   if (method === "POST" && abortMatch) {
-    const workFolder = await getWorkFolder(abortMatch[1]);
-    const key = clientKey(workFolder.id, abortMatch[2]);
+    const connectedFolder = await getConnectedFolder(abortMatch[1]);
+    const key = clientKey(connectedFolder.id, abortMatch[2]);
     const client = state.clients.get(key);
-    const request = state.requests.latestForConversation(abortMatch[2], { workFolderId: workFolder.id });
+    const request = state.requests.latestForConversation(abortMatch[2], { connectedFolderId: connectedFolder.id });
     if (request) {
-      const stopped = await stopWorkFoldAgentRequest(state, request.turns.at(-1)!.taskId);
-      sendJson(res, { aborted: stopped.workFoldAgentAborted || stopped.children.some((child) => child.aborted), stopped });
+      const stopped = await stopAmpleFileAgentRequest(state, request.turns.at(-1)!.taskId);
+      sendJson(res, { aborted: stopped.ampleFileAgentAborted || stopped.children.some((child) => child.aborted), stopped });
     } else sendJson(res, { aborted: client ? await client.abort() : false });
     return;
   }
 
   // Make a Copy (2026-10-18): a new Chat with this one's history as of its
   // last finished reply. The same copy the act lane's `chat copy` makes.
-  const copyMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)\/copy$/);
+  const copyMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/copy$/);
   if (method === "POST" && copyMatch) {
-    const workFolder = await getWorkFolder(copyMatch[1]);
+    const connectedFolder = await getConnectedFolder(copyMatch[1]);
     const body = await readJsonBody<{ title?: unknown }>(state, req);
-    const copied = await copyConversation(state, workFolder, copyMatch[2], typeof body.title === "string" ? body.title : undefined);
-    publishControlHint(state, "work-folders");
+    const copied = await copyConversation(state, connectedFolder, copyMatch[2], typeof body.title === "string" ? body.title : undefined);
+    publishControlHint(state, "connected-folders");
     sendJson(res, { conversation: copied.conversation, copiedMessages: copied.copiedMessages });
     return;
   }
 
-  const compactMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)\/compact$/);
+  const compactMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/compact$/);
   if (method === "POST" && compactMatch) {
-    const workFolder = await getWorkFolder(compactMatch[1]);
-    if (!(await readConversation(workFolder.workFolderRoot, compactMatch[2])).length) throw notFound("Conversation not found.");
-    const key = clientKey(workFolder.id, compactMatch[2]);
+    const connectedFolder = await getConnectedFolder(compactMatch[1]);
+    if (!(await readConversation(connectedFolder.connectedFolderRoot, compactMatch[2])).length) throw notFound("Conversation not found.");
+    const key = clientKey(connectedFolder.id, compactMatch[2]);
     const body = await readJsonBody<{ customInstructions?: string }>(state, req);
     await yieldBackgroundCompaction(state, key);
-    assertNoCapabilityMutationForTurn(state, workFolder.id);
+    assertNoCapabilityMutationForTurn(state, connectedFolder.id);
     if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current agent turn to finish.");
     if (state.compactingConversations.has(key)) throw httpError(409, "Wait for the current Chat compaction to finish.");
     state.compactingConversations.add(key);
     const task = state.kernel.startTask({
       kind: "compaction",
-      workFolderId: workFolder.id,
+      connectedFolderId: connectedFolder.id,
       conversationId: compactMatch[2],
-      actor: { kind: "assistant", cwd: workFolder.workFolderRoot, workFolderId: workFolder.id, conversationId: compactMatch[2] },
+      actor: { kind: "assistant", cwd: connectedFolder.connectedFolderRoot, connectedFolderId: connectedFolder.id, conversationId: compactMatch[2] },
     });
     try {
-      const client = await getClient(state, workFolder.id, workFolder.workFolderRoot, compactMatch[2]);
+      const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, compactMatch[2]);
       await client.compact(body.customInstructions?.trim() || undefined);
-      broadcast(state, streamKey(workFolder.id, compactMatch[2]), { type: "done", conversationId: compactMatch[2] });
+      broadcast(state, streamKey(connectedFolder.id, compactMatch[2]), { type: "done", conversationId: compactMatch[2] });
     } finally {
       state.compactingConversations.delete(key);
       await refreshClientIfMarked(state, key);
       state.kernel.finishTask(task.id);
-      queueConversationRequestEvaluation(state, workFolder.id, compactMatch[2]);
+      queueConversationRequestEvaluation(state, connectedFolder.id, compactMatch[2]);
     }
     sendJson(res, { compacted: true });
     return;
   }
-  const messagesGetMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)$/);
+  const messagesGetMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)$/);
   if (method === "GET" && messagesGetMatch) {
-    const workFolder = await getWorkFolder(messagesGetMatch[1]);
-    sendJson(res, { messages: await readConversation(workFolder.workFolderRoot, messagesGetMatch[2]) });
+    const connectedFolder = await getConnectedFolder(messagesGetMatch[1]);
+    sendJson(res, { messages: await readConversation(connectedFolder.connectedFolderRoot, messagesGetMatch[2]) });
     return;
   }
   // Management conversation surface: the same acceptance path, task records,
-  // and event stream as work-folder Chats, exposed for renderer clients (the
-  // menu-bar popover) under the work-fold agent scope id instead of a work-folder id.
-  if (url.pathname === "/api/work-fold-agent/summary" && method === "GET") {
-    if (state.workFoldAgentInstructionsError) {
-      sendJson(res, { available: false, reason: state.workFoldAgentInstructionsError, conversation: null, state: "idle", latestRequest: null });
+  // and event stream as Connected Folder Chats, exposed for renderer clients (the
+  // menu-bar popover) under the AmpleFile agent scope id instead of a Connected Folder id.
+  if (url.pathname === "/api/amplefile-agent/summary" && method === "GET") {
+    if (state.ampleFileAgentInstructionsError) {
+      sendJson(res, { available: false, reason: state.ampleFileAgentInstructionsError, conversation: null, state: "idle", latestRequest: null });
       return;
     }
     const selectedId = url.searchParams.get("conversationId");
     const conversation = selectedId
-      ? (await listConversations(workFoldAgentRoot())).find((item) => item.id === selectedId)
-      : await resolveWorkFoldAgentConversation(false).catch(() => null);
-    if (selectedId && !conversation) throw notFound("This work-fold agent chat is no longer available.");
+      ? (await listConversations(ampleFileAgentRoot())).find((item) => item.id === selectedId)
+      : await resolveAmpleFileAgentConversation(false).catch(() => null);
+    if (selectedId && !conversation) throw notFound("This AmpleFile agent chat is no longer available.");
     // The selected transcript and its request must describe the same work,
-    // even when another surface has started a newer work-fold agent.
+    // even when another surface has started a newer AmpleFile agent.
     const latest = conversation ? state.requests.latestForConversation(conversation.id) : null;
     sendJson(res, {
       available: true,
       conversation: conversation ? toActConversationRef(conversation) : null,
-      state: conversation ? conversationRuntimeState(state, workFoldAgentScopeId, conversation.id) : "idle",
-      latestRequest: latest ? await workFoldAgentRequestView(state, latest.turns.at(-1)!.taskId) : null,
+      state: conversation ? conversationRuntimeState(state, ampleFileAgentScopeId, conversation.id) : "idle",
+      latestRequest: latest ? await ampleFileAgentRequestView(state, latest.turns.at(-1)!.taskId) : null,
     });
     return;
   }
-  if (url.pathname === "/api/work-fold-agent/conversations" && method === "GET") {
-    assertWorkFoldAgentReadyForRoutes(state);
-    const conversations = await listConversations(workFoldAgentRoot());
+  if (url.pathname === "/api/amplefile-agent/conversations" && method === "GET") {
+    assertAmpleFileAgentReadyForRoutes(state);
+    const conversations = await listConversations(ampleFileAgentRoot());
     sendJson(res, { conversations: await Promise.all(conversations.map(async (conversation) => ({
       ...toActConversationRef(conversation),
-      ...await workFoldAgentConversationAttention(state, conversation.id),
+      ...await ampleFileAgentConversationAttention(state, conversation.id),
     }))) });
     return;
   }
-  if (url.pathname === "/api/work-fold-agent/messages" && method === "POST") {
-    assertWorkFoldAgentReadyForRoutes(state);
+  if (url.pathname === "/api/amplefile-agent/messages" && method === "POST") {
+    assertAmpleFileAgentReadyForRoutes(state);
     const body = await readJsonBody<{
       content?: string;
       attachments?: unknown;
@@ -3607,19 +3607,19 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       continuationTaskId?: unknown;
       requestId?: unknown;
       userMessageId?: unknown;
-      addressedWorkFolderIds?: unknown;
+      addressedConnectedFolderIds?: unknown;
       delivery?: unknown;
     }>(state, req);
     const content = body.content?.trim();
     if (!content) throw badRequest("Message content is required.");
     if (body.delivery !== undefined && body.delivery !== "steer") throw badRequest("Message delivery must be \"steer\" when present.");
     if (body.delivery === "steer") {
-      // The menu-bar panel and the agent panel reach a running turn the way a work-folder Chat does (2026-10-27).
+      // The menu-bar panel and the agent panel reach a running turn the way a Connected Folder Chat does (2026-10-27).
       const steerConversationId = boundedOptionalId(body.conversationId, "conversationId");
       if (!steerConversationId) throw badRequest("Steering needs the conversationId of the running Chat.");
       if (Array.isArray(body.attachments) && body.attachments.length) throw badRequest("Attachments cannot be added to a running turn.");
-      const scope = workFoldAgentScopeForRoutes(state);
-      const steered = await steerConversationTurn(state, { id: scope.id, workFolderRoot: scope.rootPath }, steerConversationId, {
+      const scope = ampleFileAgentScopeForRoutes(state);
+      const steered = await steerConversationTurn(state, { id: scope.id, connectedFolderRoot: scope.rootPath }, steerConversationId, {
         content,
         requestId: optionalTurnIdentity(body.requestId, "requestId"),
         userMessageId: optionalTurnIdentity(body.userMessageId, "userMessageId"),
@@ -3627,10 +3627,10 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       sendJson(res, { accepted: true, delivery: "steer", conversationId: steerConversationId, message: steered.message, taskId: steered.taskId, replayed: steered.replayed }, 202);
       return;
     }
-    const addressedWorkFolderIds = await normalizeAddressedWorkFolderIds(body.addressedWorkFolderIds, workFoldAgentScopeId);
+    const addressedConnectedFolderIds = await normalizeAddressedConnectedFolderIds(body.addressedConnectedFolderIds, ampleFileAgentScopeId);
     const rawAttachments = Array.isArray(body.attachments) ? body.attachments : [];
-    if (rawAttachments.length > maxWorkFoldAgentAttachments) {
-      throw badRequest(`At most ${maxWorkFoldAgentAttachments} attachments are allowed per request.`);
+    if (rawAttachments.length > maxAmpleFileAgentAttachments) {
+      throw badRequest(`At most ${maxAmpleFileAgentAttachments} attachments are allowed per request.`);
     }
     if (rawAttachments.some((item) => typeof item !== "string")) {
       throw badRequest("Attachments must be absolute paths or http(s) links.");
@@ -3648,43 +3648,43 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (continuationTaskId && (!conversationIdInput || body.newConversation === true)) {
       throw badRequest("A continuation requires the existing conversationId.");
     }
-    let attachments: WorkFoldAgentAttachmentRef[];
+    let attachments: AmpleFileAgentAttachmentRef[];
     try {
-      attachments = await classifyWorkFoldAgentAttachments(rawAttachments as string[], workFoldAgentRoot());
+      attachments = await classifyAmpleFileAgentAttachments(rawAttachments as string[], ampleFileAgentRoot());
     } catch (error) {
       throw badRequest(errorMessage(error));
     }
-    const scope = workFoldAgentScopeForRoutes(state);
+    const scope = ampleFileAgentScopeForRoutes(state);
     const priorAcceptance = requestId ? state.turnStore.findScopeRequest(scope.id, requestId) : null;
     if (priorAcceptance && conversationIdInput && priorAcceptance.conversationId !== conversationIdInput) {
-      throw httpError(409, "This turn request id was already accepted in another work-fold agent Chat.");
+      throw httpError(409, "This turn request id was already accepted in another AmpleFile agent Chat.");
     }
     const conversationId = priorAcceptance?.conversationId
       ?? (body.newConversation === true
         ? (await createConversation(scope.rootPath)).id
-        : conversationIdInput ?? (await resolveWorkFoldAgentConversation(true)).id);
+        : conversationIdInput ?? (await resolveAmpleFileAgentConversation(true)).id);
     if (continuationTaskId) {
-      const previous = await workFoldAgentRequestView(state, continuationTaskId);
+      const previous = await ampleFileAgentRequestView(state, continuationTaskId);
       if (!previous || previous.conversationId !== conversationId || previous.phase !== "needs_you") {
-        throw httpError(409, "That work-fold agent request is no longer waiting for a reply.");
+        throw httpError(409, "That AmpleFile agent request is no longer waiting for a reply.");
       }
       const combinedAttachmentCount = new Set(
         [...previous.attachments, ...attachments].map((attachment) => `${attachment.kind}:${attachment.target}`),
       ).size;
-      if (combinedAttachmentCount > maxWorkFoldAgentAttachments) {
-        throw badRequest(`A continued request can reference at most ${maxWorkFoldAgentAttachments} attachments in total.`);
+      if (combinedAttachmentCount > maxAmpleFileAgentAttachments) {
+        throw badRequest(`A continued request can reference at most ${maxAmpleFileAgentAttachments} attachments in total.`);
       }
     }
     // A reply to a waiting request joins that request (F25): one record, one
     // story, a further turn — never a second record copying the trail.
     const continuedRequestId = continuationTaskId ? state.requests.byTaskId(continuationTaskId)?.requestId : undefined;
-    const { message, taskId } = await acceptConversationTurn(state, { id: scope.id, workFolderRoot: scope.rootPath }, conversationId, {
+    const { message, taskId } = await acceptConversationTurn(state, { id: scope.id, connectedFolderRoot: scope.rootPath }, conversationId, {
       content,
       contextPaths: [],
       actorKind: "renderer",
-      workFoldAgentAttachments: attachments,
-      ...(addressedWorkFolderIds.length ? { addressedWorkFolderIds } : {}),
-      ...(continuationTaskId ? { continuedFromWorkFoldAgentTaskId: continuationTaskId } : {}),
+      ampleFileAgentAttachments: attachments,
+      ...(addressedConnectedFolderIds.length ? { addressedConnectedFolderIds } : {}),
+      ...(continuationTaskId ? { continuedFromAmpleFileAgentTaskId: continuationTaskId } : {}),
       ...(continuedRequestId ? { request: { joinRequestId: continuedRequestId } } : {}),
       requestId,
       userMessageId,
@@ -3692,73 +3692,73 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     sendJson(res, { accepted: true, conversationId, message, taskId, attachments }, 202);
     return;
   }
-  const workFoldAgentRequestMatch = match(url.pathname, /^\/api\/work-fold-agent\/requests\/([^/]+)$/);
-  if (workFoldAgentRequestMatch && method === "GET") {
-    assertWorkFoldAgentReadyForRoutes(state);
-    const request = await workFoldAgentRequestView(state, workFoldAgentRequestMatch[1]);
+  const ampleFileAgentRequestMatch = match(url.pathname, /^\/api\/amplefile-agent\/requests\/([^/]+)$/);
+  if (ampleFileAgentRequestMatch && method === "GET") {
+    assertAmpleFileAgentReadyForRoutes(state);
+    const request = await ampleFileAgentRequestView(state, ampleFileAgentRequestMatch[1]);
     if (!request) throw notFound(`Request not found. Requests are kept for ${state.requests.retentionDays()} days.`);
     sendJson(res, { request });
     return;
   }
-  const workFoldAgentStopMatch = match(url.pathname, /^\/api\/work-fold-agent\/requests\/([^/]+)\/stop$/);
-  if (workFoldAgentStopMatch && method === "POST") {
-    assertWorkFoldAgentReadyForRoutes(state);
+  const ampleFileAgentStopMatch = match(url.pathname, /^\/api\/amplefile-agent\/requests\/([^/]+)\/stop$/);
+  if (ampleFileAgentStopMatch && method === "POST") {
+    assertAmpleFileAgentReadyForRoutes(state);
     await readJsonBody<Record<string, never>>(state, req);
     try {
-      sendJson(res, { stopped: await stopWorkFoldAgentRequest(state, workFoldAgentStopMatch[1]) });
+      sendJson(res, { stopped: await stopAmpleFileAgentRequest(state, ampleFileAgentStopMatch[1]) });
     } catch (error) {
-      if (error instanceof WorkFoldCliError && error.code === "notFound") throw notFound(error.message);
+      if (error instanceof AmpleFileCliError && error.code === "notFound") throw notFound(error.message);
       throw error;
     }
     return;
   }
-  const workFoldAgentConversationMatch = match(url.pathname, /^\/api\/work-fold-agent\/conversations\/([^/]+)$/);
-  if (workFoldAgentConversationMatch && method === "GET") {
-    assertWorkFoldAgentReadyForRoutes(state);
-    sendJson(res, { messages: await readConversation(workFoldAgentRoot(), workFoldAgentConversationMatch[1]) });
+  const ampleFileAgentConversationMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)$/);
+  if (ampleFileAgentConversationMatch && method === "GET") {
+    assertAmpleFileAgentReadyForRoutes(state);
+    sendJson(res, { messages: await readConversation(ampleFileAgentRoot(), ampleFileAgentConversationMatch[1]) });
     return;
   }
-  const workFoldAgentConversationTitleMatch = match(url.pathname, /^\/api\/work-fold-agent\/conversations\/([^/]+)\/title$/);
-  if (workFoldAgentConversationTitleMatch && method === "POST") {
-    assertWorkFoldAgentReadyForRoutes(state);
-    const conversationId = workFoldAgentConversationTitleMatch[1];
+  const ampleFileAgentConversationTitleMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)\/title$/);
+  if (ampleFileAgentConversationTitleMatch && method === "POST") {
+    assertAmpleFileAgentReadyForRoutes(state);
+    const conversationId = ampleFileAgentConversationTitleMatch[1];
     const body = await readJsonBody<{ title?: unknown }>(state, req);
     if (typeof body.title !== "string") throw badRequest("Chat title must be text.");
     const title = normalizeConversationTitle(body.title);
     if (!title) throw badRequest("Enter a Chat title.");
-    const conversation = await renameWorkFoldAgentConversation(state, conversationId, title);
-    state.clients.get(clientKey(workFoldAgentScopeId, conversationId))?.setSessionName(conversation.title);
+    const conversation = await renameAmpleFileAgentConversation(state, conversationId, title);
+    state.clients.get(clientKey(ampleFileAgentScopeId, conversationId))?.setSessionName(conversation.title);
     sendJson(res, {
       conversation: toActConversationRef(conversation),
-      state: conversationRuntimeState(state, workFoldAgentScopeId, conversationId),
+      state: conversationRuntimeState(state, ampleFileAgentScopeId, conversationId),
     });
     return;
   }
-  if (workFoldAgentConversationMatch && method === "DELETE") {
-    assertWorkFoldAgentReadyForRoutes(state);
-    const deleted = await deleteWorkFoldAgentConversation(state, workFoldAgentConversationMatch[1], { receiptId: null });
+  if (ampleFileAgentConversationMatch && method === "DELETE") {
+    assertAmpleFileAgentReadyForRoutes(state);
+    const deleted = await deleteAmpleFileAgentConversation(state, ampleFileAgentConversationMatch[1], { receiptId: null });
     sendJson(res, { deleted });
     return;
   }
-  const workFoldAgentRuntimeMatch = match(url.pathname, /^\/api\/work-fold-agent\/conversations\/([^/]+)\/runtime$/);
-  if (workFoldAgentRuntimeMatch && method === "GET") {
-    assertWorkFoldAgentReadyForRoutes(state);
-    const conversationId = workFoldAgentRuntimeMatch[1];
-    if (!(await readConversation(workFoldAgentRoot(), conversationId)).length) throw notFound("Conversation not found.");
-    const client = await getClient(state, workFoldAgentScopeId, workFoldAgentRoot(), conversationId);
+  const ampleFileAgentRuntimeMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)\/runtime$/);
+  if (ampleFileAgentRuntimeMatch && method === "GET") {
+    assertAmpleFileAgentReadyForRoutes(state);
+    const conversationId = ampleFileAgentRuntimeMatch[1];
+    if (!(await readConversation(ampleFileAgentRoot(), conversationId)).length) throw notFound("Conversation not found.");
+    const client = await getClient(state, ampleFileAgentScopeId, ampleFileAgentRoot(), conversationId);
     sendJson(res, { runtime: await client.getState() });
     return;
   }
-  const workFoldAgentThinkingMatch = match(url.pathname, /^\/api\/work-fold-agent\/conversations\/([^/]+)\/thinking$/);
-  if (workFoldAgentThinkingMatch && method === "POST") {
-    assertWorkFoldAgentReadyForRoutes(state);
-    const conversationId = workFoldAgentThinkingMatch[1];
-    if (!(await readConversation(workFoldAgentRoot(), conversationId)).length) throw notFound("Conversation not found.");
+  const ampleFileAgentThinkingMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)\/thinking$/);
+  if (ampleFileAgentThinkingMatch && method === "POST") {
+    assertAmpleFileAgentReadyForRoutes(state);
+    const conversationId = ampleFileAgentThinkingMatch[1];
+    if (!(await readConversation(ampleFileAgentRoot(), conversationId)).length) throw notFound("Conversation not found.");
     const body = await readJsonBody<{ level?: unknown }>(state, req);
     if (typeof body.level !== "string" || !body.level.trim()) throw badRequest("A thinking level is required.");
-    const key = clientKey(workFoldAgentScopeId, conversationId);
-    if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current work-fold agent turn to finish before changing the thinking level.");
-    const client = await getClient(state, workFoldAgentScopeId, workFoldAgentRoot(), conversationId);
+    const key = clientKey(ampleFileAgentScopeId, conversationId);
+    if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current AmpleFile agent turn to finish before changing the thinking level.");
+    const client = await getClient(state, ampleFileAgentScopeId, ampleFileAgentRoot(), conversationId);
     let result: { level: string; available: string[] };
     try {
       result = await client.setThinkingLevel(body.level);
@@ -3768,21 +3768,21 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     sendJson(res, { thinking: result, runtime: await client.getState() });
     return;
   }
-  const workFoldAgentEventsMatch = match(url.pathname, /^\/api\/work-fold-agent\/conversations\/([^/]+)\/events$/);
-  if (workFoldAgentEventsMatch && method === "GET") {
-    assertWorkFoldAgentReadyForRoutes(state);
-    openChatStream(state, createLocalEventSink(res), workFoldAgentScopeId, workFoldAgentEventsMatch[1], req.headers["last-event-id"]);
+  const ampleFileAgentEventsMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)\/events$/);
+  if (ampleFileAgentEventsMatch && method === "GET") {
+    assertAmpleFileAgentReadyForRoutes(state);
+    openChatStream(state, createLocalEventSink(res), ampleFileAgentScopeId, ampleFileAgentEventsMatch[1], req.headers["last-event-id"]);
     return;
   }
 
-  const workFolderWorkMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)\/work$/);
-  const workFoldAgentWorkMatch = match(url.pathname, /^\/api\/work-fold-agent\/conversations\/([^/]+)\/work$/);
+  const connectedFolderWorkMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/work$/);
+  const ampleFileAgentWorkMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)\/work$/);
   const taskWorkMatch = match(url.pathname, /^\/api\/tasks\/([^/]+)\/work$/);
-  if (method === "GET" && (workFolderWorkMatch || workFoldAgentWorkMatch || taskWorkMatch)) {
-    if (workFolderWorkMatch) await getWorkFolder(workFolderWorkMatch[1]);
+  if (method === "GET" && (connectedFolderWorkMatch || ampleFileAgentWorkMatch || taskWorkMatch)) {
+    if (connectedFolderWorkMatch) await getConnectedFolder(connectedFolderWorkMatch[1]);
     const record = taskWorkMatch ? state.requests.byTaskId(taskWorkMatch[1])
-      : state.requests.latestForConversation(workFolderWorkMatch?.[2] ?? workFoldAgentWorkMatch![1],
-        workFolderWorkMatch ? { workFolderId: workFolderWorkMatch[1] } : {});
+      : state.requests.latestForConversation(connectedFolderWorkMatch?.[2] ?? ampleFileAgentWorkMatch![1],
+        connectedFolderWorkMatch ? { connectedFolderId: connectedFolderWorkMatch[1] } : {});
     sendJson(res, { work: record ? await requestPresentation(state, record) : null });
     return;
   }
@@ -3818,21 +3818,21 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
           if (state.controlStreams.size >= 64) throw httpError(429, "Too many control event connections.");
           openControlEventStream(state, channel);
         } else if (target.kind === "agent") {
-          assertWorkFoldAgentReadyForRoutes(state);
-          if (!await readConversationSummary(workFoldAgentRoot(), target.conversationId)) throw notFound("Conversation not found.");
+          assertAmpleFileAgentReadyForRoutes(state);
+          if (!await readConversationSummary(ampleFileAgentRoot(), target.conversationId)) throw notFound("Conversation not found.");
           if (channel.closed) return;
-          openChatStream(state, channel, workFoldAgentScopeId, target.conversationId, subscription.lastEventId);
+          openChatStream(state, channel, ampleFileAgentScopeId, target.conversationId, subscription.lastEventId);
         } else {
-          const workFolder = await getWorkFolder(target.workFolderId);
+          const connectedFolder = await getConnectedFolder(target.connectedFolderId);
           if (channel.closed) return;
-          if (target.kind === "files") await openWorkFolderFileStream(state, channel, workFolder.workFolderRoot, target.workFolderId);
+          if (target.kind === "files") await openConnectedFolderFileStream(state, channel, connectedFolder.connectedFolderRoot, target.connectedFolderId);
           else {
-            if (!await readConversationSummary(workFolder.workFolderRoot, target.conversationId)) throw notFound("Conversation not found.");
-            const registered = await getWorkFolder(target.workFolderId);
-            if (registered.workFolderRoot !== workFolder.workFolderRoot) throw notFound("work-folder changed while opening this Chat.");
+            if (!await readConversationSummary(connectedFolder.connectedFolderRoot, target.conversationId)) throw notFound("Conversation not found.");
+            const registered = await getConnectedFolder(target.connectedFolderId);
+            if (registered.connectedFolderRoot !== connectedFolder.connectedFolderRoot) throw notFound("Connected Folder changed while opening this Chat.");
             if (channel.closed) return;
-            rememberWorkFolderRoot(state, registered.id, registered.workFolderRoot);
-            openChatStream(state, channel, target.workFolderId, target.conversationId, subscription.lastEventId);
+            rememberConnectedFolderRoot(state, registered.id, registered.connectedFolderRoot);
+            openChatStream(state, channel, target.connectedFolderId, target.conversationId, subscription.lastEventId);
           }
         }
         if (!channel.closed) connection.send({ subscriptionId: subscription.id, ready: true } satisfies LocalEventEnvelope);
@@ -3850,28 +3850,28 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
 
   // Content-free control hints for the renderer: which registry changed, so
   // the surfaces requery instead of accumulating an event queue.
-  if (url.pathname === "/api/work-fold-agent/control-events" && method === "GET") {
+  if (url.pathname === "/api/amplefile-agent/control-events" && method === "GET") {
     if (state.controlStreams.size >= 64) throw httpError(429, "Too many control event connections.");
     openControlEventStream(state, createLocalEventSink(res));
     return;
   }
-  // The overview (docs/work-fold-agent-overview.md): the app-composed digest for the popover
+  // The overview (docs/amplefile-agent-overview.md): the app-composed digest for the popover
   // and the main window, on the renderer session. Deliberately no
   // management-readiness gate — the digest reads recorded state, not the
   // management Pi session, so it stays available even when management
   // commands fail closed; only narration needs the conversation.
-  if (url.pathname === "/api/work-fold-agent/overview" && method === "GET") {
+  if (url.pathname === "/api/amplefile-agent/overview" && method === "GET") {
     sendJson(res, { overview: await state.kernel.getOverview({ kind: "renderer" }) });
     return;
   }
-  if (url.pathname === "/api/work-fold-agent/overview/seen" && method === "POST") {
+  if (url.pathname === "/api/amplefile-agent/overview/seen" && method === "POST") {
     const body = await readJsonBody<{ surface?: unknown; cursor?: unknown }>(state, req);
     // The renderer lane advances only the two desktop surfaces, so one
     // surface can never acknowledge for another.
     if (body.surface !== "popover" && body.surface !== "main-window") {
       throw badRequest("The overview surface must be popover or main-window.");
     }
-    if (typeof body.cursor !== "string" || !parseWorkFoldOverviewCursor(body.cursor)) {
+    if (typeof body.cursor !== "string" || !parseAmpleFileOverviewCursor(body.cursor)) {
       throw badRequest("A rendered overview cursor is required to mark seen.");
     }
     // Monotonic by construction: fetching never advances a marker, a replayed
@@ -3887,8 +3887,8 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   // every other trusted-Settings mutation. Nothing here empties the store.
   if (url.pathname === "/api/settings/recently-deleted" && method === "GET") {
     const listing = await state.recentlyDeleted.list();
-    const registered = new Set((await listWorkFolders()).map((workFolder) => workFolder.id));
-    const appStudioWaiting = appStudioWaitingWorkFolders(listing.entries);
+    const registered = new Set((await listConnectedFolders()).map((connectedFolder) => connectedFolder.id));
+    const appStudioWaiting = appStudioWaitingConnectedFolders(listing.entries);
     const entries = [];
     for (const entry of listing.entries) entries.push(await recentlyDeletedEntryView(state, entry, registered, appStudioWaiting));
     sendJson(res, { entries, damaged: listing.damaged, retentionDays: listing.retentionDays });
@@ -3928,7 +3928,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   const recentlyDeletedEntryMatch = match(url.pathname, /^\/api\/settings\/recently-deleted\/([^/]+)$/);
   if (recentlyDeletedEntryMatch && method === "DELETE") {
     const entryId = recentlyDeletedEntryMatch[1];
-    if (!workFoldRecentlyDeletedEntryIdPattern.test(entryId)) throw notFound("That item is no longer in Recently deleted.");
+    if (!ampleFileRecentlyDeletedEntryIdPattern.test(entryId)) throw notFound("That item is no longer in Recently deleted.");
     try {
       const removed = await runDesktopSettingsAct(state, "recently-deleted.delete-now", async () => ({
         value: await state.recentlyDeleted.remove(entryId),
@@ -3936,7 +3936,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       }));
       sendJson(res, removed.value);
     } catch (error) {
-      if (error instanceof WorkFoldRecentlyDeletedError && error.code === "HELD") {
+      if (error instanceof AmpleFileRecentlyDeletedError && error.code === "HELD") {
         sendJson(res, { error: error.message }, 409);
         return;
       }
@@ -3957,7 +3957,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   const recentlyDeletedExportMatch = match(url.pathname, /^\/api\/settings\/recently-deleted\/([^/]+)\/export$/);
   if (recentlyDeletedExportMatch && method === "GET") {
     const entryId = recentlyDeletedExportMatch[1];
-    if (!workFoldRecentlyDeletedEntryIdPattern.test(entryId)) throw notFound("That item is no longer in Recently deleted.");
+    if (!ampleFileRecentlyDeletedEntryIdPattern.test(entryId)) throw notFound("That item is no longer in Recently deleted.");
     const entry = await state.recentlyDeleted.get(entryId);
     if (!entry || (entry.kind !== "app-storage" && entry.kind !== "app-retained")) {
       throw notFound("Only kept app data can be saved as a copy.");
@@ -3966,13 +3966,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const extensionResponseMatch = match(url.pathname, /^\/api\/work-folders\/([^/]+)\/conversations\/([^/]+)\/extension-ui(?:\/([^/]+))?$/);
-  const workFoldAgentExtensionMatch = match(url.pathname, /^\/api\/work-fold-agent\/conversations\/([^/]+)\/extension-ui(?:\/([^/]+))?$/);
-  if ((extensionResponseMatch || workFoldAgentExtensionMatch) && (method === "GET" || method === "POST")) {
+  const extensionResponseMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/extension-ui(?:\/([^/]+))?$/);
+  const ampleFileAgentExtensionMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)\/extension-ui(?:\/([^/]+))?$/);
+  if ((extensionResponseMatch || ampleFileAgentExtensionMatch) && (method === "GET" || method === "POST")) {
     const scope: PiExtensionUiScope = extensionResponseMatch
-      ? { workFolderRoot: (await getWorkFolder(extensionResponseMatch[1])).workFolderRoot, conversationId: extensionResponseMatch[2] }
-      : { workFolderRoot: workFoldAgentRoot(), conversationId: workFoldAgentExtensionMatch![1] };
-    const id = extensionResponseMatch?.[3] ?? workFoldAgentExtensionMatch?.[2];
+      ? { connectedFolderRoot: (await getConnectedFolder(extensionResponseMatch[1])).connectedFolderRoot, conversationId: extensionResponseMatch[2] }
+      : { connectedFolderRoot: ampleFileAgentRoot(), conversationId: ampleFileAgentExtensionMatch![1] };
+    const id = extensionResponseMatch?.[3] ?? ampleFileAgentExtensionMatch?.[2];
     if (!id && method === "GET") {
       sendJson(res, { requests: extensionSnapshot(state, scope) });
       return;
@@ -3994,17 +3994,17 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
  * caller obeys identical concurrency and persistence rules.
  */
 /**
- * F25 lineage for one accepted turn. Absent means "a work-folder turn with no
+ * F25 lineage for one accepted turn. Absent means "a Connected Folder turn with no
  * parent": the turn is its own root. `parentTaskId` makes it a child request
  * under the request that task belongs to; `joinRequestId` makes it a further
  * turn of an existing request (a reply to a question, a follow-up turn).
  */
 interface AcceptedTurnRequestInput {
-  kind?: WorkFoldRequestKind;
-  surface?: WorkFoldRequestSurface;
+  kind?: AmpleFileRequestKind;
+  surface?: AmpleFileRequestSurface;
   parentTaskId?: string;
   joinRequestId?: string;
-  app?: WorkFoldRequestAppRef;
+  app?: AmpleFileRequestAppRef;
   /** The assignment text when it differs from this turn's message (an answer continuation). */
   assignment?: string;
   /**
@@ -4019,7 +4019,7 @@ async function acceptConversationTurn(
   ...args: Parameters<typeof admitConversationTurn>
 ): ReturnType<typeof admitConversationTurn> {
   const [state] = args;
-  if (!state.acceptingTurns) throw httpError(503, "work-fold is closing and cannot accept another turn.");
+  if (!state.acceptingTurns) throw httpError(503, "AmpleFile is closing and cannot accept another turn.");
   // An acceptance already past this check finishes before close() drains
   // turns, so its turn is drained too rather than dispatched afterwards and
   // left running unseen.
@@ -4034,17 +4034,17 @@ async function acceptConversationTurn(
 
 async function admitConversationTurn(
   state: LocalApiState,
-  workFolder: { id: string; workFolderRoot: string; name?: string },
+  connectedFolder: { id: string; connectedFolderRoot: string; name?: string },
   conversationId: string,
   input: {
     content: string;
     contextPaths: string[];
     /** `system` marks turns app code dispatches (automation chat hops). */
     actorKind: "assistant" | "cli" | "renderer" | "system";
-    /** Management-scope reference attachments; never used for work-folder Chats. */
-    workFoldAgentAttachments?: WorkFoldAgentAttachmentRef[];
+    /** Management-scope reference attachments; never used for Connected Folder Chats. */
+    ampleFileAgentAttachments?: AmpleFileAgentAttachmentRef[];
     /** Previous needs-you request whose audit trail this reply continues. */
-    continuedFromWorkFoldAgentTaskId?: string;
+    continuedFromAmpleFileAgentTaskId?: string;
     /** An app's `assistant.request`: persisted on the message so the Chat shows who asked. */
     appSource?: { appId: string; title: string };
     /** An automation's chat or agent step: its turn learns that no one is watching and how to report. */
@@ -4057,20 +4057,20 @@ async function admitConversationTurn(
     releasedChildTaskIds?: string[];
     /** Which durable request this turn creates or joins (docs/collaboration-contract.md, F25). */
     request?: AcceptedTurnRequestInput;
-    /** work-folder Workers the person addressed with @ (2026-10-01); registered ids, never this scope's own. */
-    addressedWorkFolderIds?: string[];
+    /** Connected Folder Workers the person addressed with @ (2026-10-01); registered ids, never this scope's own. */
+    addressedConnectedFolderIds?: string[];
   },
 ): Promise<{ message: { id: string; role: "user"; content: string; createdAt: string; attachments?: ChatMessageAttachmentRef[] }; taskId: string; replayed: boolean }> {
-  const turnKey = clientKey(workFolder.id, conversationId);
+  const turnKey = clientKey(connectedFolder.id, conversationId);
   await yieldBackgroundCompaction(state, turnKey);
-  const fileAttachments = workFolder.id === workFoldAgentScopeId ? [] : contextPathAttachments(workFolder.workFolderRoot, input.contextPaths);
+  const fileAttachments = connectedFolder.id === ampleFileAgentScopeId ? [] : contextPathAttachments(connectedFolder.connectedFolderRoot, input.contextPaths);
   const attachmentFields = fileAttachments.length ? { attachments: fileAttachments } : {};
-  const existing = await readConversationSummary(workFolder.workFolderRoot, conversationId);
+  const existing = await readConversationSummary(connectedFolder.connectedFolderRoot, conversationId);
   if (!existing) throw notFound("Conversation not found.");
   const requestId = turnIdentity(input.requestId ?? `request-${randomUUID()}`, "request id");
   const requestDigest = assistantTurnRequestDigest(input);
-  const prior = state.turnStore.findRequest(workFolder.id, conversationId, requestId);
-  let durable: WorkFoldDurableTurnRecord | null = null;
+  const prior = state.turnStore.findRequest(connectedFolder.id, conversationId, requestId);
+  let durable: AmpleFileDurableTurnRecord | null = null;
   if (prior) {
     if (prior.requestDigest !== requestDigest) throw httpError(409, "This turn request id was already used for different input.");
     if (!prior.userMessagePersisted) {
@@ -4079,7 +4079,7 @@ async function admitConversationTurn(
       if (!durable || durable.userMessagePersisted) throw httpError(409, "This turn can no longer be resumed safely.");
       state.settledTurns.delete(prior.turnId);
     } else {
-      const messages = await readConversation(workFolder.workFolderRoot, conversationId);
+      const messages = await readConversation(connectedFolder.connectedFolderRoot, conversationId);
       const persisted = messages.find((candidate) => candidate.id === prior.userMessageId && candidate.role === "user");
       return {
         message: persisted
@@ -4094,7 +4094,7 @@ async function admitConversationTurn(
   if (existing.snoozedUntil && Date.parse(existing.snoozedUntil) > Date.now()) {
     throw httpError(409, "Resume this Chat before sending another message.");
   }
-  assertNoCapabilityMutationForTurn(state, workFolder.id);
+  assertNoCapabilityMutationForTurn(state, connectedFolder.id);
   if (state.compactingConversations.has(turnKey)) throw httpError(409, "Wait for the current Chat compaction to finish.");
   if (state.runningTurns.has(turnKey)) throw httpError(409, "Wait for the current agent turn to finish.");
   if (input.request?.joinRequestId) {
@@ -4114,7 +4114,7 @@ async function admitConversationTurn(
   // The summary read above can overlap a completed deletion. Recheck the
   // transcript synchronously at admission so accepting a stale send cannot
   // recreate the Chat after its recoverable copy has moved into Recently deleted.
-  if (!existsSync(join(conversationsDir(workFolder.workFolderRoot), `${conversationId}.jsonl`))) {
+  if (!existsSync(join(conversationsDir(connectedFolder.connectedFolderRoot), `${conversationId}.jsonl`))) {
     throw notFound("Conversation not found.");
   }
   state.runningTurns.add(turnKey);
@@ -4133,7 +4133,7 @@ async function admitConversationTurn(
         requestDigest,
         userMessageId,
         userMessageCreatedAt,
-        workFolderId: workFolder.id,
+        connectedFolderId: connectedFolder.id,
         conversationId,
         actorKind: input.actorKind,
       });
@@ -4149,22 +4149,22 @@ async function admitConversationTurn(
     }
   } catch (error) {
     state.runningTurns.delete(turnKey);
-    if (error instanceof WorkFoldTurnReplayConflictError) throw httpError(409, error.message);
+    if (error instanceof AmpleFileTurnReplayConflictError) throw httpError(409, error.message);
     throw error;
   }
   if (!durable) throw new Error("Turn reservation was not created.");
   const task = state.kernel.startTask({
     id: durable.turnId,
     kind: "assistant_turn",
-    workFolderId: workFolder.id,
+    connectedFolderId: connectedFolder.id,
     conversationId,
-    actor: { kind: input.actorKind, cwd: workFolder.workFolderRoot, workFolderId: workFolder.id, conversationId },
+    actor: { kind: input.actorKind, cwd: connectedFolder.connectedFolderRoot, connectedFolderId: connectedFolder.id, conversationId },
   });
-  state.activeTurnTasks.set(task.id, { workFolderId: workFolder.id, conversationId });
+  state.activeTurnTasks.set(task.id, { connectedFolderId: connectedFolder.id, conversationId });
   state.activeTurnIdsByKey.set(turnKey, task.id);
   publishControlHint(state, "activity");
-  const workFoldAgentAttachments = workFolder.id === workFoldAgentScopeId
-    ? input.workFoldAgentAttachments ?? []
+  const ampleFileAgentAttachments = connectedFolder.id === ampleFileAgentScopeId
+    ? input.ampleFileAgentAttachments ?? []
     : undefined;
   const message = {
     id: durable.userMessageId,
@@ -4174,8 +4174,8 @@ async function admitConversationTurn(
     createdAt: durable.userMessageCreatedAt,
     turnId: task.id,
     requestId,
-    ...(workFoldAgentAttachments?.length
-      ? { attachments: workFoldAgentAttachments.map((ref) => ({ kind: ref.kind, target: ref.target, name: ref.name })) }
+    ...(ampleFileAgentAttachments?.length
+      ? { attachments: ampleFileAgentAttachments.map((ref) => ({ kind: ref.kind, target: ref.target, name: ref.name })) }
       : attachmentFields),
     ...(input.appSource ? {
       source: "app" as const,
@@ -4188,9 +4188,9 @@ async function admitConversationTurn(
     // Every accepted turn belongs to exactly one request record (F25). The
     // record is created before the user message lands so a refused child
     // never leaves a message behind; a failure here rolls back with the rest.
-    const lineage = await recordAcceptedTurnRequest(state, workFolder, conversationId, task.id, input, workFoldAgentAttachments);
+    const lineage = await recordAcceptedTurnRequest(state, connectedFolder, conversationId, task.id, input, ampleFileAgentAttachments);
     answeredQuestionIds = lineage.answers;
-    await appendMessage(workFolder.workFolderRoot, conversationId, message);
+    await appendMessage(connectedFolder.connectedFolderRoot, conversationId, message);
     await state.turnStore.markRunning(task.id);
     await state.requests.markTurnRunning(task.id);
     // A person's free-text reply is a supported way to answer (F27): once
@@ -4207,7 +4207,7 @@ async function admitConversationTurn(
     state.activeTurnIdsByKey.delete(turnKey);
     state.kernel.finishTask(task.id);
     publishControlHint(state, "activity");
-    const detail = error instanceof WorkFoldRequestLimitError || error instanceof WorkFoldRequestLineageError
+    const detail = error instanceof AmpleFileRequestLimitError || error instanceof AmpleFileRequestLineageError
       ? error.message
       : "The accepted user message could not be persisted.";
     await state.turnStore.settle(task.id, { status: "failed", error: detail }).catch(() => undefined);
@@ -4221,14 +4221,14 @@ async function admitConversationTurn(
   broadcast(state, turnKey, turnStateEvent(conversationId, true));
   const turn = runAgentTurn(
     state,
-    workFolder.id,
-    workFolder.workFolderRoot,
+    connectedFolder.id,
+    connectedFolder.connectedFolderRoot,
     conversationId,
     input.content,
     input.contextPaths,
     task.id,
     {
-      ...(workFoldAgentAttachments ? { workFoldAgentAttachments } : {}),
+      ...(ampleFileAgentAttachments ? { ampleFileAgentAttachments } : {}),
       ...(input.request?.parentTaskId ? { parentTaskId: input.request.parentTaskId } : {}),
       ...(input.request?.assignment !== undefined ? { assignment: input.request.assignment } : {}),
       // The continuation's own link to the question it answers (F27), built
@@ -4236,7 +4236,7 @@ async function admitConversationTurn(
       // `chat answer` names the question, and a person's free-text reply
       // answers whichever of this request's questions were waiting on them.
       ...(answeredQuestionId ? { answeredQuestionId } : {}),
-      ...(input.addressedWorkFolderIds?.length ? { addressedWorkFolderIds: input.addressedWorkFolderIds } : {}),
+      ...(input.addressedConnectedFolderIds?.length ? { addressedConnectedFolderIds: input.addressedConnectedFolderIds } : {}),
       ...(input.automationSource ? { automation: { title: input.automationSource.title } } : {}),
     },
   );
@@ -4257,7 +4257,7 @@ async function admitConversationTurn(
  * the person or agent reads. Anything else passes through unchanged.
  */
 function requestRefusal(error: unknown): unknown {
-  if (error instanceof WorkFoldRequestLimitError || error instanceof WorkFoldRequestLineageError) {
+  if (error instanceof AmpleFileRequestLimitError || error instanceof AmpleFileRequestLineageError) {
     return httpError(409, error.message);
   }
   return error;
@@ -4267,63 +4267,63 @@ function requestRefusal(error: unknown): unknown {
  * Creates or joins the durable request record for one accepted turn. Kind
  * and surface default from the scope and actor when the caller names none:
  *
- *   work-fold agent scope, renderer                    → management / popover
- *   work-fold agent scope, cli                         → management / cli
- *   work-fold agent scope, system (automation agent hop)   → automation / system
- *   work-folder scope, system, app dispatch             → app / system
- *   work-folder scope, system (automation chat hop)        → automation / system
- *   work-folder scope, cli                              → cli / cli
- *   work-folder scope, assistant (renderer work-folder Chat)  → work-folder / renderer
+ *   AmpleFile agent scope, renderer                    → management / popover
+ *   AmpleFile agent scope, cli                         → management / cli
+ *   AmpleFile agent scope, system (automation agent hop)   → automation / system
+ *   Connected Folder scope, system, app dispatch             → app / system
+ *   Connected Folder scope, system (automation chat hop)        → automation / system
+ *   Connected Folder scope, cli                              → cli / cli
+ *   Connected Folder scope, assistant (renderer Connected Folder Chat)  → Connected Folder / renderer
  *
  * A child of an explicit parent keeps the parent's root; a needs-you reply
  * joins its earlier request instead of copying its trail into a second one.
  */
 async function recordAcceptedTurnRequest(
   state: LocalApiState,
-  workFolder: { id: string; workFolderRoot: string; name?: string },
+  connectedFolder: { id: string; connectedFolderRoot: string; name?: string },
   conversationId: string,
   taskId: string,
   input: {
     content: string;
     actorKind: "assistant" | "cli" | "renderer" | "system";
-    continuedFromWorkFoldAgentTaskId?: string;
+    continuedFromAmpleFileAgentTaskId?: string;
     request?: AcceptedTurnRequestInput;
   },
-  workFoldAgentAttachments: WorkFoldAgentAttachmentRef[] | undefined,
-): Promise<{ record: WorkFoldRequestRecord; answers: string[] }> {
-  const isWorkFoldAgent = workFolder.id === workFoldAgentScopeId;
+  ampleFileAgentAttachments: AmpleFileAgentAttachmentRef[] | undefined,
+): Promise<{ record: AmpleFileRequestRecord; answers: string[] }> {
+  const isAmpleFileAgent = connectedFolder.id === ampleFileAgentScopeId;
   // This Chat's newest request is waiting on the person and no parent was
   // named: the reply joins that request rather than opening a second root,
   // whether the caller named the request it continues or not.
   const pending = input.request?.parentTaskId || input.request?.answeringQuestionId
     ? null
-    : pendingPersonQuestions(state, conversationId, isWorkFoldAgent ? {} : { workFolderId: workFolder.id });
+    : pendingPersonQuestions(state, conversationId, isAmpleFileAgent ? {} : { connectedFolderId: connectedFolder.id });
   const joinRequestId = input.request?.joinRequestId ?? pending?.requestId;
   const answers = pending && pending.requestId === joinRequestId ? pending.questionIds : [];
   const request: AcceptedTurnRequestInput | undefined = joinRequestId
     ? { ...input.request, joinRequestId }
     : input.request;
   input = { ...input, request };
-  const owner = isWorkFoldAgent
+  const owner = isAmpleFileAgent
     ? { conversationId }
-    : { workFolderId: workFolder.id, ...(workFolder.name ? { workFolderName: workFolder.name } : {}), conversationId };
-  const kind: WorkFoldRequestKind = input.request?.kind
-    ?? (isWorkFoldAgent
+    : { connectedFolderId: connectedFolder.id, ...(connectedFolder.name ? { connectedFolderName: connectedFolder.name } : {}), conversationId };
+  const kind: AmpleFileRequestKind = input.request?.kind
+    ?? (isAmpleFileAgent
       ? (input.actorKind === "system" ? "automation" : "agent")
       : input.actorKind === "system"
         ? (input.request?.app ? "app" : "automation")
         : input.actorKind === "cli"
           ? "cli"
-          : "work-folder");
-  const surface: WorkFoldRequestSurface = input.request?.surface
+          : "connected-folder");
+  const surface: AmpleFileRequestSurface = input.request?.surface
     ?? (input.actorKind === "system"
       ? "system"
       : input.actorKind === "cli"
         ? "cli"
-        : isWorkFoldAgent
+        : isAmpleFileAgent
           ? "popover"
           : "renderer");
-  const attachments = workFoldAgentAttachments ?? [];
+  const attachments = ampleFileAgentAttachments ?? [];
   const record = input.request?.joinRequestId
     ? await state.requests.joinTurn({
       requestId: input.request.joinRequestId,
@@ -4351,7 +4351,7 @@ async function recordAcceptedTurnRequest(
         content: input.content,
         attachments,
         ...(input.request?.app ? { app: input.request.app } : {}),
-        ...(input.continuedFromWorkFoldAgentTaskId ? { continuedFromTaskId: input.continuedFromWorkFoldAgentTaskId } : {}),
+        ...(input.continuedFromAmpleFileAgentTaskId ? { continuedFromTaskId: input.continuedFromAmpleFileAgentTaskId } : {}),
       });
   // A retried acceptance whose earlier attempt could not persist its message
   // reopens the same turn: a task id belongs to exactly one request.
@@ -4365,13 +4365,13 @@ async function recordAcceptedTurnRequest(
 /**
  * The open questions addressed to the person on this Chat's newest request,
  * if it is waiting on them. Scoped to the owner: a conversation id lives in
- * the work-folder's folder and travels with it, so two registered work-folders can hold the
+ * the Connected Folder's folder and travels with it, so two registered Connected Folders can hold the
  * same id and a reply must never join the other one's request.
  */
 function pendingPersonQuestions(
   state: LocalApiState,
   conversationId: string,
-  owner: { workFolderId?: string },
+  owner: { connectedFolderId?: string },
 ): { requestId: string; questionIds: string[] } | null {
   const latest = state.requests.latestForConversation(conversationId, owner);
   if (!latest || latest.state !== "waiting") return null;
@@ -4387,8 +4387,8 @@ function pendingPersonQuestions(
  * answered meanwhile) is left as it is, and the turn still runs.
  */
 async function answerPersonQuestionsWithReply(state: LocalApiState, questionIds: string[], taskId: string, content: string): Promise<void> {
-  const answer = Buffer.byteLength(content, "utf8") > workFoldRequestLimits.maxAnswerTextBytes
-    ? Buffer.from(content, "utf8").subarray(0, workFoldRequestLimits.maxAnswerTextBytes).toString("utf8").replace(/\uFFFD+$/u, "")
+  const answer = Buffer.byteLength(content, "utf8") > ampleFileRequestLimits.maxAnswerTextBytes
+    ? Buffer.from(content, "utf8").subarray(0, ampleFileRequestLimits.maxAnswerTextBytes).toString("utf8").replace(/\uFFFD+$/u, "")
     : content;
   for (const questionId of questionIds) {
     try {
@@ -4408,11 +4408,11 @@ async function answerPersonQuestionsWithReply(state: LocalApiState, questionIds:
  */
 async function steerConversationTurn(
   state: LocalApiState,
-  workFolder: { id: string; workFolderRoot: string },
+  connectedFolder: { id: string; connectedFolderRoot: string },
   conversationId: string,
   input: { content: string; requestId?: string; userMessageId?: string },
 ): Promise<{ message: ChatMessage; taskId: string; replayed: boolean }> {
-  const key = clientKey(workFolder.id, conversationId);
+  const key = clientKey(connectedFolder.id, conversationId);
   const taskId = state.activeTurnIdsByKey.get(key);
   const client = state.clients.get(key);
   if (!taskId || !client || !state.runningTurns.has(key)) {
@@ -4424,7 +4424,7 @@ async function steerConversationTurn(
   if (prior) return { message: prior, taskId, replayed: true };
   const inFlight = state.steeringInFlight.get(replayKey);
   if (inFlight) return { message: await inFlight, taskId, replayed: true };
-  const delivery = deliverSteer(state, workFolder, conversationId, client, taskId, requestId, replayKey, input);
+  const delivery = deliverSteer(state, connectedFolder, conversationId, client, taskId, requestId, replayKey, input);
   state.steeringInFlight.set(replayKey, delivery);
   try {
     return { message: await delivery, taskId, replayed: false };
@@ -4435,7 +4435,7 @@ async function steerConversationTurn(
 
 async function deliverSteer(
   state: LocalApiState,
-  workFolder: { id: string; workFolderRoot: string },
+  connectedFolder: { id: string; connectedFolderRoot: string },
   conversationId: string,
   client: PiConversationClient,
   taskId: string,
@@ -4458,13 +4458,13 @@ async function deliverSteer(
     if (isPiTurnNotRunningError(error)) throw httpError(409, errorMessage(error));
     throw error;
   }
-  await appendMessage(workFolder.workFolderRoot, conversationId, message);
+  await appendMessage(connectedFolder.connectedFolderRoot, conversationId, message);
   state.steeredMessages.set(replayKey, message);
   if (state.steeredMessages.size > maxRememberedSteeredMessages) {
     const oldest = state.steeredMessages.keys().next().value;
     if (oldest !== undefined) state.steeredMessages.delete(oldest);
   }
-  broadcast(state, streamKey(workFolder.id, conversationId), {
+  broadcast(state, streamKey(connectedFolder.id, conversationId), {
     type: "status",
     conversationId,
     message: "Your message will reach the agent after its current step.",
@@ -4477,9 +4477,9 @@ const maxRememberedSteeredMessages = 500;
 function assistantTurnRequestDigest(input: {
   content: string;
   contextPaths: string[];
-  workFoldAgentAttachments?: WorkFoldAgentAttachmentRef[];
+  ampleFileAgentAttachments?: AmpleFileAgentAttachmentRef[];
   actorKind?: string;
-  continuedFromWorkFoldAgentTaskId?: string;
+  continuedFromAmpleFileAgentTaskId?: string;
 }): string {
   // Addressed Workers are deliberately outside the digest: they are a hint for
   // this turn's context, and a retry must replay even if one of them was
@@ -4490,8 +4490,8 @@ function assistantTurnRequestDigest(input: {
     // Kept constant so digests from before the selected path was dropped still match.
     selectedPath: null,
     actorKind: input.actorKind ?? null,
-    continuedFromWorkFoldAgentTaskId: input.continuedFromWorkFoldAgentTaskId ?? null,
-    workFoldAgentAttachments: (input.workFoldAgentAttachments ?? []).map((attachment) => ({
+    continuedFromAmpleFileAgentTaskId: input.continuedFromAmpleFileAgentTaskId ?? null,
+    ampleFileAgentAttachments: (input.ampleFileAgentAttachments ?? []).map((attachment) => ({
       kind: attachment.kind,
       target: attachment.target,
       name: attachment.name,
@@ -4517,58 +4517,58 @@ function conversationIdentity(value: unknown): string {
   return value;
 }
 
-async function createWorkFolderInternal(state: LocalApiState, name: string): Promise<WorkFolderSummary> {
-  const workFolder = await createManagedWorkFolder(name, state.workFolderBase);
-  state.workFolderTrustAuthority.grant(workFolder.workFolderRoot);
-  await giveStartingColor(state, workFolder.id);
-  publishControlHint(state, "work-folders");
-  return workFolder;
+async function createConnectedFolderInternal(state: LocalApiState, name: string): Promise<ConnectedFolderSummary> {
+  const connectedFolder = await createManagedConnectedFolder(name, state.connectedFolderBase);
+  state.connectedFolderTrustAuthority.grant(connectedFolder.connectedFolderRoot);
+  await giveStartingColor(state, connectedFolder.id);
+  publishControlHint(state, "connected-folders");
+  return connectedFolder;
 }
 
-async function registerWorkFolderInternal(state: LocalApiState, rootPath: string, providerHint?: "google-drive"): Promise<WorkFolderSummary> {
-  const known = new Set((await registeredWorkFolderOutline()).map((item) => item.id));
-  const workFolder = await registerLinkedWorkFolder(rootPath, providerHint);
-  state.workFolderTrustAuthority.grant(workFolder.workFolderRoot);
-  // A folder that already carried a work-folder identity keeps the color it had.
-  if (!known.has(workFolder.id) && workFolder.createdAt === workFolder.updatedAt) await giveStartingColor(state, workFolder.id);
-  // Copy-level note when a suspended automation's missing work-folder returns with its
+async function registerConnectedFolderInternal(state: LocalApiState, rootPath: string, providerHint?: "google-drive"): Promise<ConnectedFolderSummary> {
+  const known = new Set((await registeredConnectedFolderOutline()).map((item) => item.id));
+  const connectedFolder = await registerLinkedConnectedFolder(rootPath, providerHint);
+  state.connectedFolderTrustAuthority.grant(connectedFolder.connectedFolderRoot);
+  // A folder that already carried a Connected Folder identity keeps the color it had.
+  if (!known.has(connectedFolder.id) && connectedFolder.createdAt === connectedFolder.updatedAt) await giveStartingColor(state, connectedFolder.id);
+  // Copy-level note when a suspended automation's missing Connected Folder returns with its
   // portable identity; the automation stays suspended — registration never
   // silently re-arms standing behavior — so a failure to note it is tolerable.
-  await state.automations.handleWorkFolderReRegistered(workFolder.id).catch(() => undefined);
-  publishControlHint(state, "work-folders");
-  return workFolder;
+  await state.automations.handleConnectedFolderReRegistered(connectedFolder.id).catch(() => undefined);
+  publishControlHint(state, "connected-folders");
+  return connectedFolder;
 }
 
 /**
- * A new work-folder starts in the color the fewest others use, so two rarely
+ * A new Connected Folder starts in the color the fewest others use, so two rarely
  * share one (2026-10-30). Nothing is saved when that is already the color its
  * id picks, and a saved choice always wins. The color is a nicety: failing to
  * save it never fails the creation.
  */
-async function giveStartingColor(state: LocalApiState, workFolderId: string): Promise<void> {
+async function giveStartingColor(state: LocalApiState, connectedFolderId: string): Promise<void> {
   try {
     const { customizations } = state.appearance.snapshot();
-    if (customizations[workFolderId]) return;
-    const others = (await registeredWorkFolderOutline())
-      .filter((item) => item.id !== workFolderId)
-      .map((item) => primaryAccentIdentity(customizations[item.id], defaultWorkFolderAccent(item.id).hex).referenceHex);
-    const hex = startingWorkFolderAccentHex(workFolderId, others);
-    if (hex === defaultWorkFolderAccent(workFolderId).hex) return;
-    await state.appearance.replaceWorkFolder(workFolderId, { primary: accentIdentityFromHex(hex) });
+    if (customizations[connectedFolderId]) return;
+    const others = (await registeredConnectedFolderOutline())
+      .filter((item) => item.id !== connectedFolderId)
+      .map((item) => primaryAccentIdentity(customizations[item.id], defaultConnectedFolderAccent(item.id).hex).referenceHex);
+    const hex = startingConnectedFolderAccentHex(connectedFolderId, others);
+    if (hex === defaultConnectedFolderAccent(connectedFolderId).hex) return;
+    await state.appearance.replaceConnectedFolder(connectedFolderId, { primary: accentIdentityFromHex(hex) });
   } catch {
     // The work-folder keeps the color its id picks.
   }
 }
 
 /** What a Recently deleted entry can still do, and why when it cannot go back. */
-export interface WorkFoldRecentlyDeletedEntryView {
+export interface AmpleFileRecentlyDeletedEntryView {
   id: string;
-  kind: WorkFoldRecentlyDeletedKind;
-  reason: WorkFoldRecentlyDeletedReason;
-  workFolderId: string;
-  workFolderName?: string;
+  kind: AmpleFileRecentlyDeletedKind;
+  reason: AmpleFileRecentlyDeletedReason;
+  connectedFolderId: string;
+  connectedFolderName?: string;
   /** skill only: the scope it goes back into. */
-  scope?: "everywhere" | "work-folder";
+  scope?: "everywhere" | "connected-folder";
   originalPath: string;
   name: string;
   sizeBytes: number;
@@ -4576,7 +4576,7 @@ export interface WorkFoldRecentlyDeletedEntryView {
   deletedAt: string;
   restoreBy: string;
   receiptId: string | null;
-  uncovered?: WorkFoldRecentlyDeletedUncoveredPath[];
+  uncovered?: AmpleFileRecentlyDeletedUncoveredPath[];
   held?: { reason: "legacy-metadata" | "unreadable"; noticedAt: string };
   /**
    * `in-place` goes back where it came from; `save-only` can only be written
@@ -4587,24 +4587,24 @@ export interface WorkFoldRecentlyDeletedEntryView {
   note?: string;
 }
 
-export type WorkFoldRecentlyDeletedRestoreResult =
+export type AmpleFileRecentlyDeletedRestoreResult =
   /**
    * `safetyCheckpointId` is null when History could not record the restore
    * point. The content is back either way, and the entry is already gone, so
    * reporting the restore as a failure would be a lie that also removes the
    * thing the person would retry from.
    */
-  | { kind: "file" | "folder"; entryId: string; workFolder: WorkFoldActWorkFolderRef; path: string; renamed: boolean; safetyCheckpointId: string | null }
-  | { kind: "work-folder"; entryId: string; workFolder: WorkFoldActWorkFolderRef; workFolderRoot: string; renamed: boolean }
+  | { kind: "file" | "folder"; entryId: string; connectedFolder: AmpleFileActConnectedFolderRef; path: string; renamed: boolean; safetyCheckpointId: string | null }
+  | { kind: "connected-folder"; entryId: string; connectedFolder: AmpleFileActConnectedFolderRef; connectedFolderRoot: string; renamed: boolean }
   /** `workFolder` names the work-folder for that scope only; `path` is the restored Skill folder. */
-  | { kind: "skill"; entryId: string; scope: "everywhere" | "work-folder"; workFolder?: WorkFoldActWorkFolderRef; name: string; path: string }
-  | { kind: "app-storage"; entryId: string; workFolder: WorkFoldActWorkFolderRef; appId: string; usage: { revision: number; usageBytes: number } }
-  | { kind: "app-release"; entryId: string; workFolder: WorkFoldActWorkFolderRef; releaseDigest: string; displayVersion: string }
+  | { kind: "skill"; entryId: string; scope: "everywhere" | "connected-folder"; connectedFolder?: AmpleFileActConnectedFolderRef; name: string; path: string }
+  | { kind: "app-storage"; entryId: string; connectedFolder: AmpleFileActConnectedFolderRef; appId: string; usage: { revision: number; usageBytes: number } }
+  | { kind: "app-release"; entryId: string; connectedFolder: AmpleFileActConnectedFolderRef; releaseDigest: string; displayVersion: string }
   | {
     kind: "app-studio";
     entryId: string;
-    workFolder: WorkFoldActWorkFolderRef;
-    /** The App Project's title, or null when only prepared installs aimed at the work-folder were kept. */
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    /** The App Project's title, or null when only prepared installs aimed at the Connected Folder were kept. */
     projectTitle: string | null;
     previewCount: number;
     releaseCount: number;
@@ -4619,22 +4619,22 @@ export type WorkFoldRecentlyDeletedRestoreResult =
 /**
  * Whether an entry can go back where it came from, and the plain reason when
  * it cannot. App data only goes back into the same installation at the same
- * revision — work-fold never adopts one app's data into another
+ * revision — AmpleFile never adopts one app's data into another
  * (docs/app-data-recovery.md) — so everything else is "save a copy".
  */
 async function recentlyDeletedEntryView(
   state: LocalApiState,
-  entry: WorkFoldRecentlyDeletedEntry,
+  entry: AmpleFileRecentlyDeletedEntry,
   registered?: ReadonlySet<string>,
-  /** work-folders whose App Studio history is waiting in Recently deleted too. */
+  /** Connected Folders whose App Studio history is waiting in Recently deleted too. */
   appStudioWaiting?: ReadonlySet<string>,
-): Promise<WorkFoldRecentlyDeletedEntryView> {
-  const base: WorkFoldRecentlyDeletedEntryView = {
+): Promise<AmpleFileRecentlyDeletedEntryView> {
+  const base: AmpleFileRecentlyDeletedEntryView = {
     id: entry.id,
     kind: entry.kind,
     reason: entry.reason,
-    workFolderId: entry.workFolderId,
-    ...(entry.workFolderName === undefined ? {} : { workFolderName: entry.workFolderName }),
+    connectedFolderId: entry.connectedFolderId,
+    ...(entry.connectedFolderName === undefined ? {} : { connectedFolderName: entry.connectedFolderName }),
     ...(entry.payload.kind === "skill" ? { scope: entry.payload.scope } : {}),
     originalPath: entry.originalPath,
     name: entry.displayName ?? (entry.payload.kind === "tree"
@@ -4654,32 +4654,32 @@ async function recentlyDeletedEntryView(
     restorable: "in-place",
   };
   if (entry.kind === "file" || entry.kind === "folder") {
-    if (isWorkFoldAgentConversationRecentlyDeletedEntry(entry)) return base;
-    const present = registered ? registered.has(entry.workFolderId) : Boolean(await getWorkFolder(entry.workFolderId).catch(() => null));
-    // A file or folder goes back into its own work-folder or nowhere: work-fold
-    // never guesses another work-folder for someone's content.
+    if (isAmpleFileAgentConversationRecentlyDeletedEntry(entry)) return base;
+    const present = registered ? registered.has(entry.connectedFolderId) : Boolean(await getConnectedFolder(entry.connectedFolderId).catch(() => null));
+    // A file or folder goes back into its own Connected Folder or nowhere: AmpleFile
+    // never guesses another Connected Folder for someone's content.
     return present
       ? base
-      : { ...base, restorable: "blocked", note: "The work-folder this came from is no longer registered." };
+      : { ...base, restorable: "blocked", note: "The Connected Folder this came from is no longer registered." };
   }
-  if (entry.kind === "work-folder") return base;
+  if (entry.kind === "connected-folder") return base;
   if (entry.kind === "skill") {
-    // A work-folder Skill goes back only into its own work-folder's .pi/skills.
+    // A Connected Folder Skill goes back only into its own Connected Folder's .pi/skills.
     if (entry.payload.kind !== "skill") return { ...base, restorable: "blocked" };
     if (entry.payload.scope === "everywhere") return base;
-    const present = registered ? registered.has(entry.workFolderId) : Boolean(await getWorkFolder(entry.workFolderId).catch(() => null));
+    const present = registered ? registered.has(entry.connectedFolderId) : Boolean(await getConnectedFolder(entry.connectedFolderId).catch(() => null));
     return present
       ? base
-      : { ...base, restorable: "blocked", note: "The work-folder this Skill came from is no longer registered." };
+      : { ...base, restorable: "blocked", note: "The Connected Folder this Skill came from is no longer registered." };
   }
   if (entry.kind === "app-release") {
     // A Release goes back only into the App Project it came from, and only
     // while its version has not been prepared again in the meantime.
     const payload = entry.payload;
     if (payload.kind !== "app-release") return { ...base, restorable: "blocked" };
-    const studio = await state.restrictedApps.localAppStudio(entry.workFolderId).catch(() => null);
+    const studio = await state.restrictedApps.localAppStudio(entry.connectedFolderId).catch(() => null);
     if (!studio?.project || studio.project.projectId !== payload.projectId) {
-      return { ...base, restorable: "blocked", note: "The App Project this Release came from is no longer in that work-folder." };
+      return { ...base, restorable: "blocked", note: "The App Project this Release came from is no longer in that Connected Folder." };
     }
     if (studio.releases.some((release) => release.displayVersion === payload.displayVersion && release.releaseDigest !== payload.releaseDigest)) {
       return { ...base, restorable: "blocked", note: `Another Release ${payload.displayVersion} has been prepared since this one was deleted.` };
@@ -4687,13 +4687,13 @@ async function recentlyDeletedEntryView(
     return base;
   }
   if (entry.kind === "app-studio") {
-    // App Studio history goes back only into its own work-folder, and never
+    // App Studio history goes back only into its own Connected Folder, and never
     // over a different App Project that has work of its own there.
     const payload = entry.payload;
     if (payload.kind !== "app-studio") return { ...base, restorable: "blocked" };
-    const present = registered ? registered.has(entry.workFolderId) : Boolean(await getWorkFolder(entry.workFolderId).catch(() => null));
-    if (!present) return { ...base, restorable: "blocked", note: appStudioWorkFolderMissingNote(entry) };
-    const blocker = await state.restrictedApps.workFolderAppStudioRestoreBlocker(entry.workFolderId, payload.projectId).catch(() => null);
+    const present = registered ? registered.has(entry.connectedFolderId) : Boolean(await getConnectedFolder(entry.connectedFolderId).catch(() => null));
+    if (!present) return { ...base, restorable: "blocked", note: appStudioConnectedFolderMissingNote(entry) };
+    const blocker = await state.restrictedApps.connectedFolderAppStudioRestoreBlocker(entry.connectedFolderId, payload.projectId).catch(() => null);
     return blocker ? { ...base, restorable: "blocked", note: blocker } : base;
   }
   if (entry.kind === "app-retained") {
@@ -4701,11 +4701,11 @@ async function recentlyDeletedEntryView(
   }
   const payload = entry.payload;
   if (payload.kind !== "app-data") return { ...base, restorable: "blocked" };
-  const app = await state.restrictedApps.findByFeatureInstallation(entry.workFolderId, payload.featureInstallationId).catch(() => undefined);
-  if (!app && entry.reason === "apps.work-folder.removed" && appStudioWaiting?.has(entry.workFolderId)) {
-    // The app went with its work-folder's App Studio history; putting that
+  const app = await state.restrictedApps.findByFeatureInstallation(entry.connectedFolderId, payload.featureInstallationId).catch(() => undefined);
+  if (!app && entry.reason === "apps.connected-folder.removed" && appStudioWaiting?.has(entry.connectedFolderId)) {
+    // The app went with its Connected Folder's App Studio history; putting that
     // back brings the app back and this data with it.
-    return { ...base, restorable: "save-only", note: "Restore this work-folder's App Studio history first; this app and its data come back with it." };
+    return { ...base, restorable: "save-only", note: "Restore this Connected Folder's App Studio history first; this app and its data come back with it." };
   }
   if (!app) return { ...base, restorable: "save-only", note: "That app is no longer installed." };
   if (app.digest !== payload.appDigest || app.dataNamespaceId !== payload.dataNamespaceId) {
@@ -4716,145 +4716,145 @@ async function recentlyDeletedEntryView(
 
 /**
  * Brings one Recently deleted entry back (docs/receipts-not-gates.md, F20).
- * A file or folder returns to its work-folder at its original path, renamed when
+ * A file or folder returns to its Connected Folder at its original path, renamed when
  * something else took the name, and the restore itself is History-undoable.
- * A work-folder's folder returns to the managed base and is re-registered with its
+ * A Connected Folder's folder returns to the managed base and is re-registered with its
  * portable identity, so its Chats and History come with it. App data goes
  * back into the same installation at the same revision, or is saved as a
- * plain export file at an explicitly named path outside every work-folder.
+ * plain export file at an explicitly named path outside every Connected Folder.
  */
 async function restoreRecentlyDeletedEntry(
   state: LocalApiState,
   id: string,
   context: { receiptId: string | null; toPath?: string },
-): Promise<WorkFoldRecentlyDeletedRestoreResult> {
-  if (!workFoldRecentlyDeletedEntryIdPattern.test(id)) {
-    throw new WorkFoldCliError("usage", "That is not a Recently deleted item id.");
+): Promise<AmpleFileRecentlyDeletedRestoreResult> {
+  if (!ampleFileRecentlyDeletedEntryIdPattern.test(id)) {
+    throw new AmpleFileCliError("usage", "That is not a Recently deleted item id.");
   }
   const entry = await state.recentlyDeleted.get(id).catch((error: unknown) => {
     throw recentlyDeletedCliError(error);
   });
-  if (!entry) throw new WorkFoldCliError("notFound", "That item is no longer in Recently deleted.");
+  if (!entry) throw new AmpleFileCliError("notFound", "That item is no longer in Recently deleted.");
   if (entry.kind === "app-storage" || entry.kind === "app-retained") {
     return restoreRecentlyDeletedAppData(state, entry, context);
   }
   if (context.toPath !== undefined) {
-    throw new WorkFoldCliError(
+    throw new AmpleFileCliError(
       "usage",
-      "'--to' saves a copy of app data; files, folders, work-folders, Skills, Releases, and App Studio history go back where they came from.",
+      "'--to' saves a copy of app data; files, folders, Connected Folders, Skills, Releases, and App Studio history go back where they came from.",
     );
   }
   if (entry.kind === "skill") return restoreRecentlyDeletedSkill(state, entry);
   if (entry.kind === "app-release") return restoreRecentlyDeletedAppRelease(state, entry);
   if (entry.kind === "app-studio") return restoreRecentlyDeletedAppStudio(state, entry);
-  if (entry.kind === "work-folder") return restoreRecentlyDeletedWorkFolder(state, entry);
-  if (isWorkFoldAgentConversationRecentlyDeletedEntry(entry)) return restoreWorkFoldAgentConversationRecentlyDeletedEntry(state, entry);
-  if (isWorkFolderConversationRecentlyDeletedEntry(entry)) return restoreWorkFolderConversationRecentlyDeletedEntry(state, entry);
-  const workFolder = await getWorkFolder(entry.workFolderId).catch(() => null);
-  if (!workFolder) {
-    throw new WorkFoldCliError(
+  if (entry.kind === "connected-folder") return restoreRecentlyDeletedConnectedFolder(state, entry);
+  if (isAmpleFileAgentConversationRecentlyDeletedEntry(entry)) return restoreAmpleFileAgentConversationRecentlyDeletedEntry(state, entry);
+  if (isConnectedFolderConversationRecentlyDeletedEntry(entry)) return restoreConnectedFolderConversationRecentlyDeletedEntry(state, entry);
+  const connectedFolder = await getConnectedFolder(entry.connectedFolderId).catch(() => null);
+  if (!connectedFolder) {
+    throw new AmpleFileCliError(
       "conflict",
-      "The work-folder this came from is no longer registered, so there is nowhere to put it back. Register that work-folder again first.",
+      "The Connected Folder this came from is no longer registered, so there is nowhere to put it back. Register that Connected Folder again first.",
     );
   }
-  const destination = resolveWorkFolderPath(workFolder.workFolderRoot, entry.originalPath);
+  const destination = resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, entry.originalPath);
   const restored = await state.recentlyDeleted.restoreTree(id, { absolutePath: destination }).catch((error: unknown) => {
     throw recentlyDeletedCliError(error);
   });
-  const relativePath = normalizeWorkFolderRelativePath(relative(workFolder.workFolderRoot, restored.restoredPath));
+  const relativePath = normalizeConnectedFolderRelativePath(relative(connectedFolder.connectedFolderRoot, restored.restoredPath));
   // Restoring is additive, so its own undo is a restore point that removes
   // what came back — the same shape `files add` records. The tree is already
   // back and the entry is already gone by now, so a History failure here is
   // reported as a missing undo point, never as a failed restore: the
   // additive-write rollback helper is the wrong shape, because its rollback
   // would delete exactly the content just restored.
-  const safety = await createWorkFolderMutationCheckpoint(workFolder.workFolderRoot, {
+  const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
     deleteOnRestore: [relativePath],
     reason: "post_restore",
     label: `Before restoring ${basename(restored.restoredPath)} from Recently deleted`,
   }).catch(() => null);
-  await touchWorkFolderRoot(workFolder.workFolderRoot).catch(() => undefined);
-  publishControlHint(state, "work-folders");
+  await touchConnectedFolderRoot(connectedFolder.connectedFolderRoot).catch(() => undefined);
+  publishControlHint(state, "connected-folders");
   return {
     kind: entry.kind,
     entryId: entry.id,
-    workFolder: toActWorkFolderRef(workFolder),
+    connectedFolder: toActConnectedFolderRef(connectedFolder),
     path: relativePath,
     renamed: restored.renamed,
     safetyCheckpointId: safety?.checkpointId ?? null,
   };
 }
 
-function isWorkFoldAgentConversationRecentlyDeletedEntry(entry: WorkFoldRecentlyDeletedEntry): boolean {
+function isAmpleFileAgentConversationRecentlyDeletedEntry(entry: AmpleFileRecentlyDeletedEntry): boolean {
   return entry.kind === "file"
     && entry.reason === "agent.chat.delete"
-    && entry.workFolderId === workFoldAgentScopeId
-    && /^\.work-fold\/conversations\/[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\.jsonl$/.test(entry.originalPath);
+    && entry.connectedFolderId === ampleFileAgentScopeId
+    && /^\.amplefile\/conversations\/[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\.jsonl$/.test(entry.originalPath);
 }
 
-function isWorkFolderConversationRecentlyDeletedEntry(entry: WorkFoldRecentlyDeletedEntry): boolean {
+function isConnectedFolderConversationRecentlyDeletedEntry(entry: AmpleFileRecentlyDeletedEntry): boolean {
   return entry.kind === "file"
     && entry.reason === "chats.delete"
-    && entry.workFolderId !== workFoldAgentScopeId
-    && /^\.work-fold\/conversations\/[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\.jsonl$/.test(entry.originalPath);
+    && entry.connectedFolderId !== ampleFileAgentScopeId
+    && /^\.amplefile\/conversations\/[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\.jsonl$/.test(entry.originalPath);
 }
 
 /**
- * A Worker Chat goes back into its own work-folder's `.work-fold/conversations/`
- * under the same transcript name, or nowhere: work-fold never guesses another
- * work-folder, and never collision-renames a transcript into a different identity.
+ * A Worker Chat goes back into its own Connected Folder's `.amplefile/conversations/`
+ * under the same transcript name, or nowhere: AmpleFile never guesses another
+ * Connected Folder, and never collision-renames a transcript into a different identity.
  */
-async function restoreWorkFolderConversationRecentlyDeletedEntry(
+async function restoreConnectedFolderConversationRecentlyDeletedEntry(
   state: LocalApiState,
-  entry: WorkFoldRecentlyDeletedEntry,
-): Promise<WorkFoldRecentlyDeletedRestoreResult> {
-  const workFolder = await getWorkFolder(entry.workFolderId).catch(() => null);
-  if (!workFolder) {
-    throw new WorkFoldCliError(
+  entry: AmpleFileRecentlyDeletedEntry,
+): Promise<AmpleFileRecentlyDeletedRestoreResult> {
+  const connectedFolder = await getConnectedFolder(entry.connectedFolderId).catch(() => null);
+  if (!connectedFolder) {
+    throw new AmpleFileCliError(
       "conflict",
       "The folder this Chat came from is no longer registered, so there is nowhere to put it back. Add that folder again first.",
     );
   }
   const conversationId = basename(entry.originalPath, ".jsonl");
-  return runActOperation(() => runConversationMutation(state, workFolder.id, conversationId, async () => {
-    const destination = resolve(workFolder.workFolderRoot, entry.originalPath);
-    if (!pathContainsPath(conversationsDir(workFolder.workFolderRoot), destination)) {
-      throw new WorkFoldCliError("failure", "This Chat recovery item has an invalid destination.");
+  return runActOperation(() => runConversationMutation(state, connectedFolder.id, conversationId, async () => {
+    const destination = resolve(connectedFolder.connectedFolderRoot, entry.originalPath);
+    if (!pathContainsPath(conversationsDir(connectedFolder.connectedFolderRoot), destination)) {
+      throw new AmpleFileCliError("failure", "This Chat recovery item has an invalid destination.");
     }
     if (existsSync(destination)) {
-      throw new WorkFoldCliError("conflict", "A Chat with this identity already exists. Remove that Chat before restoring this one.");
+      throw new AmpleFileCliError("conflict", "A Chat with this identity already exists. Remove that Chat before restoring this one.");
     }
-    await mkdir(conversationsDir(workFolder.workFolderRoot), { recursive: true });
+    await mkdir(conversationsDir(connectedFolder.connectedFolderRoot), { recursive: true });
     const restored = await state.recentlyDeleted.restoreTree(entry.id, { absolutePath: destination, onConflict: "error" }).catch((error: unknown) => {
       throw recentlyDeletedCliError(error);
     });
-    publishControlHint(state, "work-folders");
+    publishControlHint(state, "connected-folders");
     return {
       kind: "file",
       entryId: entry.id,
-      workFolder: toActWorkFolderRef(workFolder),
-      path: `.work-fold/conversations/${basename(restored.restoredPath)}`,
+      connectedFolder: toActConnectedFolderRef(connectedFolder),
+      path: `.amplefile/conversations/${basename(restored.restoredPath)}`,
       renamed: restored.renamed,
-      // `.work-fold/` is excluded from History capture, so there is no restore point.
+      // `.amplefile/` is excluded from History capture, so there is no restore point.
       safetyCheckpointId: null,
     };
   }));
 }
 
-async function restoreWorkFoldAgentConversationRecentlyDeletedEntry(
+async function restoreAmpleFileAgentConversationRecentlyDeletedEntry(
   state: LocalApiState,
-  entry: WorkFoldRecentlyDeletedEntry,
-): Promise<WorkFoldRecentlyDeletedRestoreResult> {
-  const root = workFoldAgentRoot();
+  entry: AmpleFileRecentlyDeletedEntry,
+): Promise<AmpleFileRecentlyDeletedRestoreResult> {
+  const root = ampleFileAgentRoot();
   const destination = resolve(root, entry.originalPath);
   if (!pathContainsPath(root, destination)) {
-    throw new WorkFoldCliError("failure", "This work-fold agent Chat recovery item has an invalid destination.");
+    throw new AmpleFileCliError("failure", "This AmpleFile agent Chat recovery item has an invalid destination.");
   }
-  // A transcript filename is the Chat identity. Unlike ordinary work-folder files,
+  // A transcript filename is the Chat identity. Unlike ordinary Connected Folder files,
   // collision-renaming it would create an invalid or different conversation,
   // so leave the recovery item intact until the current Chat is removed.
   if (existsSync(destination)) {
-    throw new WorkFoldCliError("conflict", "A Chat with this identity already exists. Remove that Chat before restoring this one.");
+    throw new AmpleFileCliError("conflict", "A Chat with this identity already exists. Remove that Chat before restoring this one.");
   }
   const restored = await state.recentlyDeleted.restoreTree(entry.id, { absolutePath: destination, onConflict: "error" }).catch((error: unknown) => {
     throw recentlyDeletedCliError(error);
@@ -4862,10 +4862,10 @@ async function restoreWorkFoldAgentConversationRecentlyDeletedEntry(
   return {
     kind: "file",
     entryId: entry.id,
-    workFolder: { id: workFoldAgentScopeId, name: "work-fold agent", workFolderRoot: root },
-    path: `.work-fold/conversations/${basename(restored.restoredPath)}`,
+    connectedFolder: { id: ampleFileAgentScopeId, name: "AmpleFile agent", connectedFolderRoot: root },
+    path: `.amplefile/conversations/${basename(restored.restoredPath)}`,
     renamed: restored.renamed,
-    // Management Chats are machine-local and never belong to work-folder History.
+    // Management Chats are machine-local and never belong to Connected Folder History.
     safetyCheckpointId: null,
   };
 }
@@ -4875,18 +4875,18 @@ async function restoreWorkFoldAgentConversationRecentlyDeletedEntry(
  * F20). `.pi/` and Pi's own folder are outside History, so the whole Skill
  * folder moves there with its scope and its path inside that scope's skills
  * folder, under the same capability fence and client reload as an install.
- * An Everywhere Skill belongs to no work-folder; its entry is kept under the
- * work-fold agent's scope id, like that agent's Chats.
+ * An Everywhere Skill belongs to no Connected Folder; its entry is kept under the
+ * AmpleFile agent's scope id, like that agent's Chats.
  */
 async function removeImportedSkill(
   state: LocalApiState,
-  workFolder: WorkFolderSummary,
+  connectedFolder: ConnectedFolderSummary,
   scope: CapabilityScope,
   skillPath: string,
   context: { receiptId: string | null },
 ): Promise<{ removedPath: string; skillName: string; recentlyDeleted: { entryId: string; restoreBy: string } }> {
-  const removed = await runCapabilityMutation(state, workFolder, scope, async () =>
-    await removePiSkill(workFolder.workFolderRoot, {
+  const removed = await runCapabilityMutation(state, connectedFolder, scope, async () =>
+    await removePiSkill(connectedFolder.connectedFolderRoot, {
       skillPath,
       scope: scope === "project" ? "project" : "user",
       keep: async (skill) => {
@@ -4896,19 +4896,19 @@ async function removeImportedSkill(
             reason: "skills.remove",
             sourcePath: skill.skillDir,
             ...(skill.scope === "project"
-              ? { workFolderId: workFolder.id, workFolderName: workFolder.name }
-              : { workFolderId: workFoldAgentScopeId, workFolderName: "Everywhere" }),
+              ? { connectedFolderId: connectedFolder.id, connectedFolderName: connectedFolder.name }
+              : { connectedFolderId: ampleFileAgentScopeId, connectedFolderName: "Everywhere" }),
             displayName: skill.skillName,
             originalPath: skill.relativePath,
             receiptId: context.receiptId,
-            skill: { scope: skill.scope === "project" ? "work-folder" : "everywhere", skillName: skill.skillName },
+            skill: { scope: skill.scope === "project" ? "connected-folder" : "everywhere", skillName: skill.skillName },
           });
         } catch (error) {
           // An error naming an entry means a complete copy already landed there.
-          const landed = error instanceof WorkFoldRecentlyDeletedError && error.entryId !== undefined;
-          throw new WorkFoldCliError(
+          const landed = error instanceof AmpleFileRecentlyDeletedError && error.entryId !== undefined;
+          throw new AmpleFileCliError(
             "failure",
-            `work-fold could not move this Skill to Recently deleted: ${errorMessage(error)}${landed ? "" : " Nothing was removed."}`,
+            `AmpleFile could not move this Skill to Recently deleted: ${errorMessage(error)}${landed ? "" : " Nothing was removed."}`,
             { cause: error },
           );
         }
@@ -4930,36 +4930,36 @@ async function removeImportedSkill(
  */
 async function restoreRecentlyDeletedSkill(
   state: LocalApiState,
-  entry: WorkFoldRecentlyDeletedEntry,
-): Promise<WorkFoldRecentlyDeletedRestoreResult> {
+  entry: AmpleFileRecentlyDeletedEntry,
+): Promise<AmpleFileRecentlyDeletedRestoreResult> {
   const payload = entry.payload;
-  if (payload.kind !== "skill") throw new WorkFoldCliError("failure", "This Skill recovery item is damaged.");
-  let target: { id: string; workFolderRoot: string };
-  let workFolder: WorkFolderSummary | null = null;
-  if (payload.scope === "work-folder") {
-    workFolder = await getWorkFolder(entry.workFolderId).catch(() => null);
-    if (!workFolder) {
-      throw new WorkFoldCliError(
+  if (payload.kind !== "skill") throw new AmpleFileCliError("failure", "This Skill recovery item is damaged.");
+  let target: { id: string; connectedFolderRoot: string };
+  let connectedFolder: ConnectedFolderSummary | null = null;
+  if (payload.scope === "connected-folder") {
+    connectedFolder = await getConnectedFolder(entry.connectedFolderId).catch(() => null);
+    if (!connectedFolder) {
+      throw new AmpleFileCliError(
         "conflict",
-        "The work-folder this Skill came from is no longer registered, so there is nowhere to put it back. Register that work-folder again first.",
+        "The Connected Folder this Skill came from is no longer registered, so there is nowhere to put it back. Register that Connected Folder again first.",
       );
     }
-    target = workFolder;
+    target = connectedFolder;
   } else {
     // The same resolution context `tools remove --scope everywhere` uses.
-    target = { id: workFoldAgentScopeId, workFolderRoot: workFoldAgentRoot() };
+    target = { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot() };
   }
-  const restored = await runActOperation(() => runCapabilityMutation(state, target, payload.scope === "work-folder" ? "project" : "global", async () => {
+  const restored = await runActOperation(() => runCapabilityMutation(state, target, payload.scope === "connected-folder" ? "project" : "global", async () => {
     try {
-      return await restorePiSkill(target.workFolderRoot, {
-        scope: payload.scope === "work-folder" ? "project" : "user",
+      return await restorePiSkill(target.connectedFolderRoot, {
+        scope: payload.scope === "connected-folder" ? "project" : "user",
         relativePath: entry.originalPath,
         skillName: payload.skillName,
         putBack: (destination) => state.recentlyDeleted.restoreTree(entry.id, { absolutePath: destination, onConflict: "error" }),
       }, state.runtimeProvider);
     } catch (error) {
-      if (error instanceof PiSkillRestoreConflictError) throw new WorkFoldCliError("conflict", error.message, { cause: error });
-      if (error instanceof WorkFoldRecentlyDeletedError) throw recentlyDeletedCliError(error);
+      if (error instanceof PiSkillRestoreConflictError) throw new AmpleFileCliError("conflict", error.message, { cause: error });
+      if (error instanceof AmpleFileRecentlyDeletedError) throw recentlyDeletedCliError(error);
       throw error;
     }
   }));
@@ -4967,52 +4967,52 @@ async function restoreRecentlyDeletedSkill(
     kind: "skill",
     entryId: entry.id,
     scope: payload.scope,
-    ...(workFolder ? { workFolder: toActWorkFolderRef(workFolder) } : {}),
+    ...(connectedFolder ? { connectedFolder: toActConnectedFolderRef(connectedFolder) } : {}),
     name: payload.skillName,
     path: restored.restored.restoredPath,
   };
 }
 
-async function restoreRecentlyDeletedWorkFolder(state: LocalApiState, entry: WorkFoldRecentlyDeletedEntry): Promise<WorkFoldRecentlyDeletedRestoreResult> {
+async function restoreRecentlyDeletedConnectedFolder(state: LocalApiState, entry: AmpleFileRecentlyDeletedEntry): Promise<AmpleFileRecentlyDeletedRestoreResult> {
   // A portable identity that is registered somewhere else is a real conflict:
-  // work-fold never adopts one work-folder's records into another folder.
-  if ((await listWorkFolders()).some((workFolder) => workFolder.id === entry.workFolderId)) {
-    throw new WorkFoldCliError(
+  // AmpleFile never adopts one Connected Folder's records into another folder.
+  if ((await listConnectedFolders()).some((connectedFolder) => connectedFolder.id === entry.connectedFolderId)) {
+    throw new AmpleFileCliError(
       "conflict",
-      `A work-folder with this identity is already registered. Remove that registration before restoring "${entry.workFolderName ?? entry.originalPath}".`,
+      `A Connected Folder with this identity is already registered. Remove that registration before restoring "${entry.connectedFolderName ?? entry.originalPath}".`,
     );
   }
   const restored = await state.recentlyDeleted.restoreTree(entry.id, {
     absolutePath: entry.originalPath,
-    stateDirFor: (finalPath) => workFolderStateDir(finalPath),
+    stateDirFor: (finalPath) => connectedFolderStateDir(finalPath),
   }).catch((error: unknown) => {
     throw recentlyDeletedCliError(error);
   });
-  let workFolder: WorkFolderSummary;
+  let connectedFolder: ConnectedFolderSummary;
   try {
-    workFolder = await registerManagedWorkFolder(
+    connectedFolder = await registerManagedConnectedFolder(
       restored.restoredPath,
-      entry.workFolderName ?? basename(restored.restoredPath),
-      state.workFolderBase,
+      entry.connectedFolderName ?? basename(restored.restoredPath),
+      state.connectedFolderBase,
     );
   } catch (error) {
     // The folder is back on disk with its portable identity; only the
     // registration failed, so say where it is instead of implying it is lost.
-    throw new WorkFoldCliError(
+    throw new AmpleFileCliError(
       "conflict",
-      `The folder is back at ${restored.restoredPath}, but work-fold could not register it as a work-folder: ${errorMessage(error)} `
-        + "Use existing folder in Manage work-folders to finish bringing it back.",
+      `The folder is back at ${restored.restoredPath}, but AmpleFile could not register it as a Connected Folder: ${errorMessage(error)} `
+        + "Connect Folder in Manage Connected Folders to finish bringing it back.",
       { cause: error },
     );
   }
-  state.workFolderTrustAuthority.grant(workFolder.workFolderRoot);
-  await state.automations.handleWorkFolderReRegistered(workFolder.id).catch(() => undefined);
-  publishControlHint(state, "work-folders");
+  state.connectedFolderTrustAuthority.grant(connectedFolder.connectedFolderRoot);
+  await state.automations.handleConnectedFolderReRegistered(connectedFolder.id).catch(() => undefined);
+  publishControlHint(state, "connected-folders");
   return {
-    kind: "work-folder",
+    kind: "connected-folder",
     entryId: entry.id,
-    workFolder: toActWorkFolderRef(workFolder),
-    workFolderRoot: workFolder.workFolderRoot,
+    connectedFolder: toActConnectedFolderRef(connectedFolder),
+    connectedFolderRoot: connectedFolder.connectedFolderRoot,
     renamed: restored.renamed,
   };
 }
@@ -5024,20 +5024,20 @@ async function restoreRecentlyDeletedWorkFolder(state: LocalApiState, entry: Wor
  */
 async function restoreRecentlyDeletedAppRelease(
   state: LocalApiState,
-  entry: WorkFoldRecentlyDeletedEntry,
-): Promise<WorkFoldRecentlyDeletedRestoreResult> {
+  entry: AmpleFileRecentlyDeletedEntry,
+): Promise<AmpleFileRecentlyDeletedRestoreResult> {
   const kept = await state.recentlyDeleted.readAppRelease(entry.id).catch((error: unknown) => {
     throw recentlyDeletedCliError(error);
   });
-  const workFolder = await getWorkFolder(entry.workFolderId).catch(() => null);
-  if (!workFolder) {
-    throw new WorkFoldCliError(
+  const connectedFolder = await getConnectedFolder(entry.connectedFolderId).catch(() => null);
+  if (!connectedFolder) {
+    throw new AmpleFileCliError(
       "conflict",
-      "The work-folder this Release came from is no longer registered, so there is nowhere to put it back. Register that work-folder again first.",
+      "The Connected Folder this Release came from is no longer registered, so there is nowhere to put it back. Register that Connected Folder again first.",
     );
   }
-  const release = await runRestrictedAppMutation(state, workFolder.id, () => state.restrictedApps.restoreLocalAppRelease({
-    workFolderId: workFolder.id,
+  const release = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.restoreLocalAppRelease({
+    connectedFolderId: connectedFolder.id,
     record: kept.record,
     release: kept.release,
   }));
@@ -5045,58 +5045,58 @@ async function restoreRecentlyDeletedAppRelease(
   return {
     kind: "app-release",
     entryId: entry.id,
-    workFolder: toActWorkFolderRef(workFolder),
+    connectedFolder: toActConnectedFolderRef(connectedFolder),
     releaseDigest: release.releaseDigest,
     displayVersion: release.displayVersion,
   };
 }
 
-/** The work-folders whose App Studio history is waiting in this listing. */
-function appStudioWaitingWorkFolders(entries: readonly WorkFoldRecentlyDeletedEntry[]): Set<string> {
-  return new Set(entries.filter((entry) => entry.kind === "app-studio").map((entry) => entry.workFolderId));
+/** The Connected Folders whose App Studio history is waiting in this listing. */
+function appStudioWaitingConnectedFolders(entries: readonly AmpleFileRecentlyDeletedEntry[]): Set<string> {
+  return new Set(entries.filter((entry) => entry.kind === "app-studio").map((entry) => entry.connectedFolderId));
 }
 
-function appStudioWorkFolderMissingNote(entry: WorkFoldRecentlyDeletedEntry): string {
-  const name = entry.workFolderName ? `"${entry.workFolderName}"` : "the work-folder it came from";
-  return `Put ${name} back first — restore it here, or add its folder again with Use existing folder — then restore this.`;
+function appStudioConnectedFolderMissingNote(entry: AmpleFileRecentlyDeletedEntry): string {
+  const name = entry.connectedFolderName ? `"${entry.connectedFolderName}"` : "the Connected Folder it came from";
+  return `Put ${name} back first — restore it here, or add its folder again with Connect Folder — then restore this.`;
 }
 
 /**
- * Puts a removed work-folder's App Studio history back (docs/receipts-not-gates.md,
+ * Puts a removed Connected Folder's App Studio history back (docs/receipts-not-gates.md,
  * F20): its App Project, Development Instance and previews, Releases,
  * prepared operations, and receipts, each re-checked by the service. It needs
- * the work-folder registered again and refuses plainly until it is. The
+ * the Connected Folder registered again and refuses plainly until it is. The
  * previews' own data, which the removal kept as separate items, goes back
  * into them in the same act; any that cannot stays in Recently deleted.
  */
 async function restoreRecentlyDeletedAppStudio(
   state: LocalApiState,
-  entry: WorkFoldRecentlyDeletedEntry,
-): Promise<WorkFoldRecentlyDeletedRestoreResult> {
-  const workFolder = await getWorkFolder(entry.workFolderId).catch(() => null);
-  if (!workFolder) throw new WorkFoldCliError("conflict", appStudioWorkFolderMissingNote(entry));
+  entry: AmpleFileRecentlyDeletedEntry,
+): Promise<AmpleFileRecentlyDeletedRestoreResult> {
+  const connectedFolder = await getConnectedFolder(entry.connectedFolderId).catch(() => null);
+  if (!connectedFolder) throw new AmpleFileCliError("conflict", appStudioConnectedFolderMissingNote(entry));
   const kept = await state.recentlyDeleted.readAppStudio(entry.id).catch((error: unknown) => {
     throw recentlyDeletedCliError(error);
   });
-  const registered = new Set((await listWorkFolders()).map((item) => item.id));
+  const registered = new Set((await listConnectedFolders()).map((item) => item.id));
   const targets = kept.studio.operations
-    .map((operation) => (operation && typeof operation === "object" ? (operation as { targetWorkFolderId?: unknown }).targetWorkFolderId : undefined))
+    .map((operation) => (operation && typeof operation === "object" ? (operation as { targetConnectedFolderId?: unknown }).targetConnectedFolderId : undefined))
     .filter((id): id is string => typeof id === "string" && registered.has(id));
-  const result = await runRestrictedAppMutations(state, [workFolder.id, ...targets], () => state.restrictedApps.restoreWorkFolderAppStudio({
-    workFolderId: workFolder.id,
+  const result = await runRestrictedAppMutations(state, [connectedFolder.id, ...targets], () => state.restrictedApps.restoreConnectedFolderAppStudio({
+    connectedFolderId: connectedFolder.id,
     studio: kept.studio,
     releases: kept.releases,
     packageRoots: kept.packageRoots,
-    registeredWorkFolderIds: registered,
-  }), { requiredWorkFolderIds: [workFolder.id] });
+    registeredConnectedFolderIds: registered,
+  }), { requiredConnectedFolderIds: [connectedFolder.id] });
   const appDataEntryIds: string[] = [];
   if (result.restored && result.previews.length) {
     const handled = new Set<string>();
     // Newest first, so a removal retried after an interruption brings back its latest copy.
     for (const candidate of (await state.recentlyDeleted.list()).entries) {
       const payload = candidate.payload;
-      if (candidate.kind !== "app-storage" || candidate.reason !== "apps.work-folder.removed"
-        || candidate.workFolderId !== workFolder.id || payload.kind !== "app-data" || handled.has(payload.featureInstallationId)) continue;
+      if (candidate.kind !== "app-storage" || candidate.reason !== "apps.connected-folder.removed"
+        || candidate.connectedFolderId !== connectedFolder.id || payload.kind !== "app-data" || handled.has(payload.featureInstallationId)) continue;
       const preview = result.previews.find((app) => app.featureInstallationId === payload.featureInstallationId
         && app.digest === payload.appDigest && app.dataNamespaceId === payload.dataNamespaceId);
       if (!preview) continue;
@@ -5114,7 +5114,7 @@ async function restoreRecentlyDeletedAppStudio(
   return {
     kind: "app-studio",
     entryId: entry.id,
-    workFolder: toActWorkFolderRef(workFolder),
+    connectedFolder: toActConnectedFolderRef(connectedFolder),
     projectTitle: result.project?.presentation.title ?? null,
     previewCount: result.previews.length,
     releaseCount: result.releases.length,
@@ -5125,17 +5125,17 @@ async function restoreRecentlyDeletedAppStudio(
 }
 
 /**
- * Writes what removing a work-folder takes out of App Studio into Recently
+ * Writes what removing a Connected Folder takes out of App Studio into Recently
  * deleted (docs/receipts-not-gates.md, F20), before the service removes it.
  */
-async function keepWorkFolderAppStudioInRecentlyDeleted(
-  recentlyDeleted: WorkFoldRecentlyDeletedStore,
-  copy: LocalAppWorkFolderRecoveryCopy,
-  context: { workFolderName?: string; receiptId: string | null },
-): Promise<WorkFoldRecentlyDeletedEntry> {
+async function keepConnectedFolderAppStudioInRecentlyDeleted(
+  recentlyDeleted: AmpleFileRecentlyDeletedStore,
+  copy: LocalAppConnectedFolderRecoveryCopy,
+  context: { connectedFolderName?: string; receiptId: string | null },
+): Promise<AmpleFileRecentlyDeletedEntry> {
   return await recentlyDeleted.moveAppStudioToRecentlyDeleted({
-    reason: "apps.work-folder.removed",
-    identity: { kind: "app-studio", workFolderId: copy.workFolderId, projectId: copy.project?.projectId ?? null },
+    reason: "apps.connected-folder.removed",
+    identity: { kind: "app-studio", connectedFolderId: copy.connectedFolderId, projectId: copy.project?.projectId ?? null },
     studio: {
       project: copy.project,
       runtimeInstances: copy.runtimeInstances,
@@ -5145,26 +5145,26 @@ async function keepWorkFolderAppStudioInRecentlyDeleted(
     },
     releases: copy.releases,
     packages: copy.packages,
-    workFolderId: copy.workFolderId,
-    ...(context.workFolderName ? recentlyDeletedWorkFolderName(context.workFolderName) : {}),
+    connectedFolderId: copy.connectedFolderId,
+    ...(context.connectedFolderName ? recentlyDeletedConnectedFolderName(context.connectedFolderName) : {}),
     ...recentlyDeletedDisplayName(copy.project ? copy.project.presentation.title : "Prepared App installs"),
     receiptId: context.receiptId,
   });
 }
 
-/** A work-folder name the Recently deleted manifest accepts, or none. */
-function recentlyDeletedWorkFolderName(text: string): { workFolderName?: string } {
+/** A Connected Folder name the Recently deleted manifest accepts, or none. */
+function recentlyDeletedConnectedFolderName(text: string): { connectedFolderName?: string } {
   const printable = text.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "").trim().slice(0, 200).trim();
-  return printable ? { workFolderName: printable } : {};
+  return printable ? { connectedFolderName: printable } : {};
 }
 
 async function restoreRecentlyDeletedAppData(
   state: LocalApiState,
-  entry: WorkFoldRecentlyDeletedEntry,
+  entry: AmpleFileRecentlyDeletedEntry,
   context: { toPath?: string },
-): Promise<WorkFoldRecentlyDeletedRestoreResult> {
+): Promise<AmpleFileRecentlyDeletedRestoreResult> {
   const payload = entry.payload;
-  if (payload.kind !== "app-data") throw new WorkFoldCliError("failure", "This item is not app data.");
+  if (payload.kind !== "app-data") throw new AmpleFileCliError("failure", "This item is not app data.");
   const backup = await state.recentlyDeleted.readAppData(entry.id).catch((error: unknown) => {
     throw recentlyDeletedCliError(error);
   });
@@ -5175,20 +5175,20 @@ async function restoreRecentlyDeletedAppData(
   }
   const view = await recentlyDeletedEntryView(state, entry);
   if (view.restorable === "save-only") {
-    throw new WorkFoldCliError(
+    throw new AmpleFileCliError(
       "conflict",
       `${view.note ?? "This app's data has no app to go back into."} `
         + "Save a copy from Settings → Recently deleted, or with 'recently-deleted restore --entry "
         + `${entry.id} --to <absolute-file-path>'.`,
     );
   }
-  const workFolder = await getWorkFolder(entry.workFolderId);
-  const app = await state.restrictedApps.findByFeatureInstallation(entry.workFolderId, payload.featureInstallationId);
-  if (!app) throw new WorkFoldCliError("conflict", "That app is no longer installed.");
-  const usage = await runRestrictedAppMutation(state, workFolder.id, async () => {
-    const current = await state.restrictedApps.storageUsage(workFolder.id, app.manifest.id, app.digest, app.featureInstallationId);
+  const connectedFolder = await getConnectedFolder(entry.connectedFolderId);
+  const app = await state.restrictedApps.findByFeatureInstallation(entry.connectedFolderId, payload.featureInstallationId);
+  if (!app) throw new AmpleFileCliError("conflict", "That app is no longer installed.");
+  const usage = await runRestrictedAppMutation(state, connectedFolder.id, async () => {
+    const current = await state.restrictedApps.storageUsage(connectedFolder.id, app.manifest.id, app.digest, app.featureInstallationId);
     return state.restrictedApps.restoreStorage({
-      workFolderId: workFolder.id,
+      connectedFolderId: connectedFolder.id,
       appId: app.manifest.id,
       featureInstallationId: app.featureInstallationId,
       expectedDigest: app.digest,
@@ -5200,7 +5200,7 @@ async function restoreRecentlyDeletedAppData(
   return {
     kind: "app-storage",
     entryId: entry.id,
-    workFolder: toActWorkFolderRef(workFolder),
+    connectedFolder: toActConnectedFolderRef(connectedFolder),
     appId: app.manifest.id,
     usage: { revision: usage.revision, usageBytes: usage.usageBytes },
   };
@@ -5208,22 +5208,22 @@ async function restoreRecentlyDeletedAppData(
 
 /**
  * "Save a copy": the verified export is written to an absolute path the
- * person named, deliberately outside every work-folder and outside work-fold's own
+ * person named, deliberately outside every Connected Folder and outside AmpleFile's own
  * state, so a recovery file never becomes agent context by accident.
  */
 async function saveRecentlyDeletedAppDataCopy(backup: RestrictedAppDataBackup, toPath: string): Promise<string> {
   const destination = resolve(toPath.trim());
-  if (!isAbsolute(toPath.trim())) throw new WorkFoldCliError("usage", "'--to' needs an absolute file path.");
-  const stateRoot = resolve(workFoldStateRoot());
+  if (!isAbsolute(toPath.trim())) throw new AmpleFileCliError("usage", "'--to' needs an absolute file path.");
+  const stateRoot = resolve(ampleFileStateRoot());
   if (destination === stateRoot || destination.startsWith(`${stateRoot}${sep}`)) {
-    throw new WorkFoldCliError("usage", "Save the copy somewhere of your own, not inside work-fold's own files.");
+    throw new AmpleFileCliError("usage", "Save the copy somewhere of your own, not inside AmpleFile's own files.");
   }
-  for (const workFolder of await listWorkFolders()) {
-    const root = resolve(workFolder.workFolderRoot);
+  for (const connectedFolder of await listConnectedFolders()) {
+    const root = resolve(connectedFolder.connectedFolderRoot);
     if (destination === root || destination.startsWith(`${root}${sep}`)) {
-      throw new WorkFoldCliError(
+      throw new AmpleFileCliError(
         "usage",
-        `Save the copy outside your work-folders; ${workFolder.name} would pick it up as content. Use 'files add' if you want it in a work-folder.`,
+        `Save the copy outside your Connected Folders; ${connectedFolder.name} would pick it up as content. Use 'files add' if you want it in a Connected Folder.`,
       );
     }
   }
@@ -5233,9 +5233,9 @@ async function saveRecentlyDeletedAppDataCopy(backup: RestrictedAppDataBackup, t
 }
 
 /** Store failures become the act lane's typed errors; nothing leaks a stack. */
-function recentlyDeletedCliError(error: unknown): WorkFoldCliError {
-  if (!(error instanceof WorkFoldRecentlyDeletedError)) {
-    return new WorkFoldCliError("failure", errorMessage(error), { cause: error });
+function recentlyDeletedCliError(error: unknown): AmpleFileCliError {
+  if (!(error instanceof AmpleFileRecentlyDeletedError)) {
+    return new AmpleFileCliError("failure", errorMessage(error), { cause: error });
   }
   const code = error.code === "NOT_FOUND"
     ? "notFound"
@@ -5244,84 +5244,84 @@ function recentlyDeletedCliError(error: unknown): WorkFoldCliError {
       : error.code === "HELD"
         ? "conflict"
         : "failure";
-  return new WorkFoldCliError(code, error.message, { cause: error });
+  return new AmpleFileCliError(code, error.message, { cause: error });
 }
 
 /**
- * The one work-folder-removal path, shared by the desktop DELETE route, the
- * `work-folder.delete-folder` prepared act behind `work-folders delete`, and the act
- * facade's `work-folders unregister`:
+ * The one connected-folder-removal path, shared by the desktop DELETE route, the
+ * `connected-folder.delete-folder` prepared act behind `connected-folders delete`, and the act
+ * facade's `connected-folders unregister`:
  * App Studio impact checks, the durable removal intent, runtime-authorization
  * revocation, per-service app-state cleanup with the crash-safe pending
  * result, and finalization. A linked registration removal always leaves the
- * folder and its portable `.work-fold/` identity in place; a managed work-folder
+ * folder and its portable `.amplefile/` identity in place; a managed Connected Folder
  * deletes its folder tree unless the caller passes the preserve disposition
- * (the act lane's `work-folders unregister`), which records an intent that provably
+ * (the act lane's `connected-folders unregister`), which records an intent that provably
  * holds no deletion authority.
  */
 /**
  * The managed-deletion seam of docs/receipts-not-gates.md F20: the folder the
  * removal machinery has already claimed by exact identity is *moved* into
- * Recently deleted with the work-folder's machine-local History state, never
+ * Recently deleted with the Connected Folder's machine-local History state, never
  * erased. Everything about the claim-verified removal above it is unchanged —
  * this only replaces the final erase.
  *
- * An injected `removeClaimedManagedRoot`/`removeWorkFolderState` still wins, so
+ * An injected `removeClaimedManagedRoot`/`removeConnectedFolderState` still wins, so
  * the removal-atomicity failure-injection seams keep working, and a preserve
- * removal (`work-folders unregister`) never reaches the claim path at all: its
+ * removal (`connected-folders unregister`) never reaches the claim path at all: its
  * state directory is removed exactly as before.
  */
-function managedWorkFolderRemovalIo(
-  recentlyDeleted: WorkFoldRecentlyDeletedStore,
-  overrides: Partial<WorkFolderRemovalIo>,
-  context: { workFolderId: string; workFolderRoot: string; workFolderName?: string; receiptId: string | null; managedDeletion: boolean },
-): { io: Partial<WorkFolderRemovalIo>; entry: () => WorkFoldRecentlyDeletedEntry | null } {
-  let entry: WorkFoldRecentlyDeletedEntry | null = null;
-  const io: Partial<WorkFolderRemovalIo> = {
+function managedConnectedFolderRemovalIo(
+  recentlyDeleted: AmpleFileRecentlyDeletedStore,
+  overrides: Partial<ConnectedFolderRemovalIo>,
+  context: { connectedFolderId: string; connectedFolderRoot: string; connectedFolderName?: string; receiptId: string | null; managedDeletion: boolean },
+): { io: Partial<ConnectedFolderRemovalIo>; entry: () => AmpleFileRecentlyDeletedEntry | null } {
+  let entry: AmpleFileRecentlyDeletedEntry | null = null;
+  const io: Partial<ConnectedFolderRemovalIo> = {
     ...overrides,
     removeClaimedManagedRoot: overrides.removeClaimedManagedRoot ?? (async (claimPath) => {
-      const workFolderName = context.workFolderName ?? await claimedWorkFolderName(claimPath) ?? basename(context.workFolderRoot);
+      const connectedFolderName = context.connectedFolderName ?? await claimedConnectedFolderName(claimPath) ?? basename(context.connectedFolderRoot);
       entry = await recentlyDeleted.moveTreeToRecentlyDeleted({
-        kind: "work-folder",
-        reason: "work-folders.delete",
+        kind: "connected-folder",
+        reason: "connected-folders.delete",
         sourcePath: claimPath,
-        workFolderId: context.workFolderId,
-        workFolderName,
-        originalPath: context.workFolderRoot,
+        connectedFolderId: context.connectedFolderId,
+        connectedFolderName,
+        originalPath: context.connectedFolderRoot,
         receiptId: context.receiptId,
-        stateDirPath: workFolderStateDir(context.workFolderRoot),
+        stateDirPath: connectedFolderStateDir(context.connectedFolderRoot),
       });
     }),
-    removeWorkFolderState: async (workFolderRoot) => {
+    removeConnectedFolderState: async (connectedFolderRoot) => {
       // The folder's move already carried the History state into the entry.
       if (entry) return;
-      if (overrides.removeWorkFolderState) return overrides.removeWorkFolderState(workFolderRoot);
+      if (overrides.removeConnectedFolderState) return overrides.removeConnectedFolderState(connectedFolderRoot);
       // On restart the claimed folder may already have reached Recently
       // deleted while its History directory is still at the old state path.
       // Recover that second move before committing removal; never erase the
       // remaining History when its destination cannot be proved.
-      if (context.managedDeletion && !overrides.removeClaimedManagedRoot && existsSync(workFolderStateDir(workFolderRoot))) {
+      if (context.managedDeletion && !overrides.removeClaimedManagedRoot && existsSync(connectedFolderStateDir(connectedFolderRoot))) {
         const listing = await recentlyDeleted.list();
-        const matching = listing.entries.filter((item) => item.kind === "work-folder"
-          && item.reason === "work-folders.delete"
-          && item.workFolderId === context.workFolderId
-          && workFolderRootKey(item.originalPath) === workFolderRootKey(context.workFolderRoot));
+        const matching = listing.entries.filter((item) => item.kind === "connected-folder"
+          && item.reason === "connected-folders.delete"
+          && item.connectedFolderId === context.connectedFolderId
+          && connectedFolderRootKey(item.originalPath) === connectedFolderRootKey(context.connectedFolderRoot));
         if (matching.length !== 1 || listing.damaged.length) {
-          throw new Error("The deleted work-folder's History could not be matched to one intact Recently deleted entry. It was kept at its original state path.");
+          throw new Error("The deleted Connected Folder's History could not be matched to one intact Recently deleted entry. It was kept at its original state path.");
         }
-        entry = await recentlyDeleted.attachWorkFolderState(matching[0]!.id, workFolderStateDir(workFolderRoot));
+        entry = await recentlyDeleted.attachConnectedFolderState(matching[0]!.id, connectedFolderStateDir(connectedFolderRoot));
         return;
       }
-      await rm(workFolderStateDir(workFolderRoot), { recursive: true, force: true });
+      await rm(connectedFolderStateDir(connectedFolderRoot), { recursive: true, force: true });
     },
   };
   return { io, entry: () => entry };
 }
 
 /** Best-effort display name for a folder already claimed for removal. */
-async function claimedWorkFolderName(claimPath: string): Promise<string | null> {
+async function claimedConnectedFolderName(claimPath: string): Promise<string | null> {
   try {
-    const raw = await readFile(join(claimPath, ".work-fold", "work-folder.json"), "utf8");
+    const raw = await readFile(join(claimPath, ".amplefile", "connected-folder.json"), "utf8");
     const parsed = JSON.parse(raw) as { name?: unknown };
     return typeof parsed.name === "string" && parsed.name.trim() ? parsed.name.trim().slice(0, 200) : null;
   } catch {
@@ -5329,44 +5329,44 @@ async function claimedWorkFolderName(claimPath: string): Promise<string | null> 
   }
 }
 
-async function removeWorkFolderRegistrationInternal(
+async function removeConnectedFolderRegistrationInternal(
   state: LocalApiState,
-  workFolder: WorkFolderSummary,
+  connectedFolder: ConnectedFolderSummary,
   options: { managedFolderDisposition?: "delete" | "preserve"; receiptId?: string | null } = {},
-): Promise<WorkFolderRemovalResult & {
+): Promise<ConnectedFolderRemovalResult & {
   recentlyDeleted: { entryId: string; restoreBy: string } | null;
   appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
   appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
 }> {
-  const affectedWorkFolderIds = await state.restrictedApps.workFolderRemovalMutationWorkFolderIds(workFolder.id);
+  const affectedConnectedFolderIds = await state.restrictedApps.connectedFolderRemovalMutationConnectedFolderIds(connectedFolder.id);
   // A preserve removal keeps the folder, so it keeps the plain state-directory
   // removal; a delete removal sends the claimed folder to Recently deleted.
   const removal = options.managedFolderDisposition === "preserve"
-    ? { io: state.workFolderRemovalIo, entry: () => null as WorkFoldRecentlyDeletedEntry | null }
-    : managedWorkFolderRemovalIo(state.recentlyDeleted, state.workFolderRemovalIo, {
-      workFolderId: workFolder.id,
-      workFolderRoot: workFolder.workFolderRoot,
-      workFolderName: workFolder.name,
+    ? { io: state.connectedFolderRemovalIo, entry: () => null as AmpleFileRecentlyDeletedEntry | null }
+    : managedConnectedFolderRemovalIo(state.recentlyDeleted, state.connectedFolderRemovalIo, {
+      connectedFolderId: connectedFolder.id,
+      connectedFolderRoot: connectedFolder.connectedFolderRoot,
+      connectedFolderName: connectedFolder.name,
       receiptId: options.receiptId ?? null,
-      managedDeletion: workFolder.location.storage === "managed",
+      managedDeletion: connectedFolder.location.storage === "managed",
     });
-  // Removing the work-folder removes every preview app installed in it, and that
+  // Removing the Connected Folder removes every preview app installed in it, and that
   // takes each app's data with it. A copy of each reaches Recently deleted
   // before the registry drops them (docs/receipts-not-gates.md, F20), so
-  // restoring the folder never restores a work-folder whose app data is gone. The
-  // entry ids ride on the result so the `work-folders delete` receipt names them.
-  // The work-folder's App Studio history — its App Project, previews,
+  // restoring the folder never restores a Connected Folder whose app data is gone. The
+  // entry ids ride on the result so the `connected-folders delete` receipt names them.
+  // The Connected Folder's App Studio history — its App Project, previews,
   // Releases, prepared operations, and receipts — goes the same way, as one
   // more item.
-  const appEntries: WorkFoldRecentlyDeletedEntry[] = [];
-  let appStudioEntry: WorkFoldRecentlyDeletedEntry | null = null;
-  const withRecentlyDeleted = <T extends WorkFolderRemovalResult>(result: T): T & {
+  const appEntries: AmpleFileRecentlyDeletedEntry[] = [];
+  let appStudioEntry: AmpleFileRecentlyDeletedEntry | null = null;
+  const withRecentlyDeleted = <T extends ConnectedFolderRemovalResult>(result: T): T & {
     recentlyDeleted: { entryId: string; restoreBy: string } | null;
     appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
     appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
   } => {
     const entry = removal.entry();
-    const studio = appStudioEntry as WorkFoldRecentlyDeletedEntry | null;
+    const studio = appStudioEntry as AmpleFileRecentlyDeletedEntry | null;
     return {
       ...result,
       recentlyDeleted: entry ? { entryId: entry.id, restoreBy: entry.restoreBy } : null,
@@ -5374,72 +5374,72 @@ async function removeWorkFolderRegistrationInternal(
       appStudioRecentlyDeleted: studio ? { entryId: studio.id, restoreBy: studio.restoreBy } : null,
     };
   };
-  return runRestrictedAppMutations(state, affectedWorkFolderIds, () => runSettledWorkFolderDeletion(state, workFolder.id, async () => {
-    const releaseCheckRemoval = state.checks.tryReserveWorkFolderRemoval(workFolder.id);
-    if (!releaseCheckRemoval) throw httpError(409, "Wait for the current Check operation before removing this work-folder.");
+  return runRestrictedAppMutations(state, affectedConnectedFolderIds, () => runSettledConnectedFolderDeletion(state, connectedFolder.id, async () => {
+    const releaseCheckRemoval = state.checks.tryReserveConnectedFolderRemoval(connectedFolder.id);
+    if (!releaseCheckRemoval) throw httpError(409, "Wait for the current Check operation before removing this Connected Folder.");
     try {
-      const impact = await state.restrictedApps.workFolderRemovalImpact(workFolder.id);
+      const impact = await state.restrictedApps.connectedFolderRemovalImpact(connectedFolder.id);
       if (impact.activeSourceInstanceCount > 0 || impact.activeTargetInstanceCount > 0) {
-        throw badRequest("Uninstall release-backed Apps from this work-folder before removing it.");
+        throw badRequest("Uninstall release-backed Apps from this Connected Folder before removing it.");
       }
       if (impact.retainedDataCount > 0) {
-        throw badRequest("Purge this App Project's retained local data in App Studio before removing its source work-folder.");
+        throw badRequest("Purge this App Project's retained local data in App Studio before removing its source Connected Folder.");
       }
-      const intent = await beginWorkFolderRemoval(workFolder.id, state.workFolderBase, removal.io, {
+      const intent = await beginConnectedFolderRemoval(connectedFolder.id, state.connectedFolderBase, removal.io, {
         ...(options.managedFolderDisposition ? { folderDisposition: options.managedFolderDisposition } : {}),
       });
-      state.restrictedApps.fenceWorkFolderRemoval(workFolder.id);
-      state.workFolderTrustAuthority.revoke(workFolder.workFolderRoot);
-      state.workFolderIdsByRoot.delete(workFolderRootKey(workFolder.workFolderRoot));
-      await invalidateWorkFoldClients(state, workFolder.id);
-      closeWorkFolderStreams(state, workFolder.id);
+      state.restrictedApps.fenceConnectedFolderRemoval(connectedFolder.id);
+      state.connectedFolderTrustAuthority.revoke(connectedFolder.connectedFolderRoot);
+      state.connectedFolderIdsByRoot.delete(connectedFolderRootKey(connectedFolder.connectedFolderRoot));
+      await invalidateAmpleFileClients(state, connectedFolder.id);
+      closeConnectedFolderStreams(state, connectedFolder.id);
       for (const request of [...state.extensionRequests.values()]) {
-        if (request.workFolderRoot !== workFolder.workFolderRoot) continue;
+        if (request.connectedFolderRoot !== connectedFolder.connectedFolderRoot) continue;
         state.extensionUi.cancel(request.id);
         state.extensionRequests.delete(request.id);
       }
       try {
-        await state.checks.removeWorkFolder(workFolder.id);
+        await state.checks.removeConnectedFolder(connectedFolder.id);
       } catch {
-        return withRecentlyDeleted(await workFolderRemovalPendingResult(intent));
+        return withRecentlyDeleted(await connectedFolderRemovalPendingResult(intent));
       }
       // The same revocation moment as Check authority: enabled automations
-      // referencing this work-folder suspend (their active runs stop). Suspension
+      // referencing this Connected Folder suspend (their active runs stop). Suspension
       // failing leaves the durable intent pending — startup retries the
       // cascade.
       try {
-        await state.automations.handleWorkFolderRemoved(workFolder.id);
+        await state.automations.handleConnectedFolderRemoved(connectedFolder.id);
       } catch {
-        return withRecentlyDeleted(await workFolderRemovalPendingResult(intent));
+        return withRecentlyDeleted(await connectedFolderRemovalPendingResult(intent));
       }
       try {
-        for (const app of await state.restrictedApps.list(workFolder.id)) {
-          const entry = await moveAppStorageExportToRecentlyDeleted(state, app, "apps.work-folder.removed", options.receiptId ?? null, { skipWhenStorageUnavailable: true });
+        for (const app of await state.restrictedApps.list(connectedFolder.id)) {
+          const entry = await moveAppStorageExportToRecentlyDeleted(state, app, "apps.connected-folder.removed", options.receiptId ?? null, { skipWhenStorageUnavailable: true });
           if (entry) appEntries.push(entry);
         }
-        await removeWorkFolderAppStudioIntoRecentlyDeleted(state.restrictedApps, state.recentlyDeleted, workFolder.id, {
-          workFolderName: workFolder.name,
+        await removeConnectedFolderAppStudioIntoRecentlyDeleted(state.restrictedApps, state.recentlyDeleted, connectedFolder.id, {
+          connectedFolderName: connectedFolder.name,
           receiptId: options.receiptId ?? null,
           onKept: (entry) => { appStudioEntry = entry; },
         });
-        await state.restrictedAppProposals.removeWorkFolder(workFolder.id);
+        await state.restrictedAppProposals.removeConnectedFolder(connectedFolder.id);
       } catch {
-        return withRecentlyDeleted(await workFolderRemovalPendingResult(intent));
+        return withRecentlyDeleted(await connectedFolderRemovalPendingResult(intent));
       }
       try {
-        await markWorkFolderRemovalAppStateRemoved(intent.workFolderId, removal.io);
+        await markConnectedFolderRemovalAppStateRemoved(intent.connectedFolderId, removal.io);
       } catch {
-        return withRecentlyDeleted(await workFolderRemovalPendingResult(intent));
+        return withRecentlyDeleted(await connectedFolderRemovalPendingResult(intent));
       }
-      const result = await finalizeWorkFolderRemoval(intent.workFolderId, removal.io);
-      if (!result.cleanupPending) await state.appearance.removeWorkFolder(workFolder.id);
-      if (!result.cleanupPending) state.restrictedApps.releaseWorkFolderRemovalFence(workFolder.id);
+      const result = await finalizeConnectedFolderRemoval(intent.connectedFolderId, removal.io);
+      if (!result.cleanupPending) await state.appearance.removeConnectedFolder(connectedFolder.id);
+      if (!result.cleanupPending) state.restrictedApps.releaseConnectedFolderRemovalFence(connectedFolder.id);
       return withRecentlyDeleted(result);
     } finally {
       releaseCheckRemoval();
-      publishControlHint(state, "work-folders");
+      publishControlHint(state, "connected-folders");
     }
-  }), { requiredWorkFolderIds: [workFolder.id] });
+  }), { requiredConnectedFolderIds: [connectedFolder.id] });
 }
 
 /**
@@ -5458,94 +5458,94 @@ async function removeWorkFolderRegistrationInternal(
 /** One `apps list` response stays a readable projection, not a package dump. */
 const maxActAppListings = 64;
 
-const workFoldActInstallPreviewConversationId = "work-fold.act.install-preview";
+const ampleFileActInstallPreviewConversationId = "amplefile.act.install-preview";
 
 /**
- * The per-work-folder client that carries bounded app inference. It is streamed,
+ * The per–Connected Folder client that carries bounded app inference. It is streamed,
  * never prompted, so no Chat is created and no transcript exists; the name
- * only keeps it separate from the work-folder's real conversations.
+ * only keeps it separate from the Connected Folder's real conversations.
  */
-const workFoldAppInferenceConversationId = "work-fold.app-inference";
+const ampleFileAppInferenceConversationId = "amplefile.app-inference";
 
-function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
-  const resolveWorkFolder = async (selector: string): Promise<WorkFolderSummary> => {
-    const resolved = resolveWorkFoldCliWorkFolderSelector(await listWorkFolders(), selector.trim() || undefined);
-    if (!resolved) throw new WorkFoldCliError("usage", "Act commands require an explicit --work-folder <id-or-name>.");
+function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
+  const resolveConnectedFolder = async (selector: string): Promise<ConnectedFolderSummary> => {
+    const resolved = resolveAmpleFileCliConnectedFolderSelector(await listConnectedFolders(), selector.trim() || undefined);
+    if (!resolved) throw new AmpleFileCliError("usage", "Act commands require an explicit --connected-folder <id-or-name>.");
     return resolved;
   };
   /**
-   * Per-work-folder appearance undo slot for this app run: the customization a
+   * Per–Connected Folder appearance undo slot for this app run: the customization a
    * receipted appearance act displaced and the customization it left in
-   * place. `work-folders appearance undo` swaps them; a desktop-side change makes
+   * place. `connected-folders appearance undo` swaps them; a desktop-side change makes
    * the recorded slot stale, which the equality check below turns into a
    * typed refusal instead of restoring a state the receipt never described.
    */
   const appearanceUndoSlots = new Map<string, {
-    displaced: WorkFolderAppearanceCustomization | null;
-    result: WorkFolderAppearanceCustomization | null;
+    displaced: ConnectedFolderAppearanceCustomization | null;
+    result: ConnectedFolderAppearanceCustomization | null;
   }>();
-  const currentAppearanceCustomization = (workFolderId: string): WorkFolderAppearanceCustomization | null =>
-    state.appearance.snapshot().customizations[workFolderId] ?? null;
+  const currentAppearanceCustomization = (connectedFolderId: string): ConnectedFolderAppearanceCustomization | null =>
+    state.appearance.snapshot().customizations[connectedFolderId] ?? null;
   /** The conversation PATCH route's 409s, mapped to CLI conflict errors. */
-  const assertChatMutable = (workFolderId: string, conversationId: string): void => {
-    const key = clientKey(workFolderId, conversationId);
+  const assertChatMutable = (connectedFolderId: string, conversationId: string): void => {
+    const key = clientKey(connectedFolderId, conversationId);
     if (state.runningTurns.has(key)) {
-      throw new WorkFoldCliError("conflict", "Wait for the current turn to finish.");
+      throw new AmpleFileCliError("conflict", "Wait for the current turn to finish.");
     }
     if (state.compactingConversations.has(key)) {
-      throw new WorkFoldCliError("conflict", "Wait for the current Chat compaction to finish.");
+      throw new AmpleFileCliError("conflict", "Wait for the current Chat compaction to finish.");
     }
   };
   const requireConversationSummary = async (
-    workFolderRoot: string,
+    connectedFolderRoot: string,
     conversationId: string,
   ): Promise<ConversationSummary> => {
-    const summary = await runActOperation(() => readConversationSummary(workFolderRoot, conversationId));
-    if (!summary) throw new WorkFoldCliError("notFound", "Conversation not found.");
+    const summary = await runActOperation(() => readConversationSummary(connectedFolderRoot, conversationId));
+    if (!summary) throw new AmpleFileCliError("notFound", "Conversation not found.");
     return summary;
   };
-  const chatAsk = async (workFolder: Pick<WorkFolderSummary, "id" | "name" | "workFolderRoot">, input: Omit<Parameters<WorkFoldActFacade["chatAsk"]>[0], "workFolder">) => {
-    assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
+  const chatAsk = async (connectedFolder: Pick<ConnectedFolderSummary, "id" | "name" | "connectedFolderRoot">, input: Omit<Parameters<AmpleFileActFacade["chatAsk"]>[0], "connectedFolder">) => {
+    assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
     const taskId = input.taskId.trim();
-    if (!taskId) throw new WorkFoldCliError("usage", "Provide --task <own-task-id>.");
+    if (!taskId) throw new AmpleFileCliError("usage", "Provide --task <own-task-id>.");
     return runActOperation(async () => {
-      const record = assertOwnTask(state, workFolder.id, taskId);
+      const record = assertOwnTask(state, connectedFolder.id, taskId);
       // A root has nothing above it, so `parent` reaches the person and the
       // result says so (contract bullet 2). The asking turn is never
       // suspended: the turn goes on or ends as it likes; the request waits.
       const redirectedToPerson = input.respondent === "parent" && record.parentRequestId === null;
       const respondent = redirectedToPerson ? "person" : input.respondent;
-      let question: WorkFoldQuestionRecord;
+      let question: AmpleFileQuestionRecord;
       try {
         question = await state.requests.ask({ requestId: record.requestId, taskId, respondent, text: input.question, ...(input.options?.length ? { options: input.options } : {}), ...(input.asynchronous ? { asynchronous: true } : {}) });
       } catch (error) {
         throw collaborationRefusal(error);
       }
-      await recordFacadeAction(state, input.parentTaskId, { command: "chat.ask", workFolder, taskId });
-      publishControlHint(state, "work-folders");
+      await recordFacadeAction(state, input.parentTaskId, { command: "chat.ask", connectedFolder, taskId });
+      publishControlHint(state, "connected-folders");
       void state.appAssistantTasks.refresh().catch((error) => console.error(errorMessage(error)));
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         taskId,
         question: toActQuestionRef(question),
-        request: toActRequestRefForWorkFolder(state, state.requests.get(record.requestId) ?? record),
+        request: toActRequestRefForConnectedFolder(state, state.requests.get(record.requestId) ?? record),
         redirectedToPerson,
       };
     });
   };
-  const chatAnswer = async (workFolder: Pick<WorkFolderSummary, "id" | "name" | "workFolderRoot">, input: Omit<Parameters<WorkFoldActFacade["chatAnswer"]>[0], "workFolder">) => {
-    assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
+  const chatAnswer = async (connectedFolder: Pick<ConnectedFolderSummary, "id" | "name" | "connectedFolderRoot">, input: Omit<Parameters<AmpleFileActFacade["chatAnswer"]>[0], "connectedFolder">) => {
+    assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
     const questionId = input.questionId.trim();
-    if (!questionId) throw new WorkFoldCliError("usage", "Provide --question <id>.");
+    if (!questionId) throw new AmpleFileCliError("usage", "Provide --question <id>.");
     const answer = input.answer.trim();
-    if (!answer) throw new WorkFoldCliError("usage", "Provide --answer <text>.");
+    if (!answer) throw new AmpleFileCliError("usage", "Provide --answer <text>.");
     return runActOperation(async () => {
       const question = state.requests.question(questionId);
       if (!question) {
-        throw new WorkFoldCliError("notFound", `Question not found. Requests are kept for ${state.requests.retentionDays()} days.`);
+        throw new AmpleFileCliError("notFound", `Question not found. Requests are kept for ${state.requests.retentionDays()} days.`);
       }
       const record = state.requests.get(question.requestId);
-      if (!record) throw new WorkFoldCliError("notFound", "The request that asked this question is no longer on record.");
+      if (!record) throw new AmpleFileCliError("notFound", "The request that asked this question is no longer on record.");
       // An answer is recorded before its continuation starts. Every fence
       // acceptance applies is checked first, but a turn can still start in
       // that Chat between the two, and a crash can land between them, so
@@ -5555,52 +5555,52 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       // and leaving the answer with nowhere to go (F27: one accepted answer
       // starts exactly one linked continuation).
       const resuming = question.state === "answered" && question.continuationTaskId === null;
-      if (resuming && question.asynchronous && question.answer !== answer) throw new WorkFoldCliError("conflict", "That question already has a different recorded answer. Retry the same answer to continue it.");
+      if (resuming && question.asynchronous && question.answer !== answer) throw new AmpleFileCliError("conflict", "That question already has a different recorded answer. Retry the same answer to continue it.");
       // Every other refusal is named before anything changes: a second
-      // answer, an expired question, a closed request, the wrong work-folder, a
+      // answer, an expired question, a closed request, the wrong Connected Folder, a
       // busy Chat.
       if (question.state === "answered" && !resuming) {
-        throw new WorkFoldCliError("conflict", "That question already has an answer.");
+        throw new AmpleFileCliError("conflict", "That question already has an answer.");
       }
-      if (question.state === "cancelled") throw new WorkFoldCliError("conflict", "That request was stopped, so its question is closed.");
+      if (question.state === "cancelled") throw new AmpleFileCliError("conflict", "That request was stopped, so its question is closed.");
       if (!resuming && (question.state === "expired" || (question.expiresAt !== null && Date.now() >= Date.parse(question.expiresAt)))) {
-        throw new WorkFoldCliError("conflict", requestLimitRefusalMessage("questionLifetime"));
+        throw new AmpleFileCliError("conflict", requestLimitRefusalMessage("questionLifetime"));
       }
-      if ((record.owner.workFolderId ?? workFoldAgentScopeId) !== workFolder.id) {
-        const owner = record.owner.workFolderName ?? record.owner.workFolderId ?? "the work-fold agent";
-        throw new WorkFoldCliError("conflict", `Question ${questionId} belongs to ${owner}; answer it there.`);
+      if ((record.owner.connectedFolderId ?? ampleFileAgentScopeId) !== connectedFolder.id) {
+        const owner = record.owner.connectedFolderName ?? record.owner.connectedFolderId ?? "the AmpleFile agent";
+        throw new AmpleFileCliError("conflict", `Question ${questionId} belongs to ${owner}; answer it there.`);
       }
       const root = state.requests.get(record.rootId) ?? record;
       if (root.stopRequestedAt !== null || record.stopRequestedAt !== null) {
-        throw new WorkFoldCliError("conflict", "That request was stopped, so its question is closed.");
+        throw new AmpleFileCliError("conflict", "That request was stopped, so its question is closed.");
       }
       if (root.state === "expired" || record.state === "expired") {
-        throw new WorkFoldCliError("conflict", requestLimitRefusalMessage("questionLifetime"));
+        throw new AmpleFileCliError("conflict", requestLimitRefusalMessage("questionLifetime"));
       }
       // Every fence acceptance would apply is checked before the question
       // flips, so a refusal leaves it open and answerable later: a busy
       // Chat, a capability change in flight, an archived or snoozed Chat.
-      const answerKey = clientKey(workFolder.id, record.owner.conversationId);
+      const answerKey = clientKey(connectedFolder.id, record.owner.conversationId);
       const queued = question.asynchronous === true && (state.runningTurns.has(answerKey) || state.compactingConversations.has(answerKey));
-      if (!queued) assertChatMutable(workFolder.id, record.owner.conversationId);
-      assertNoCapabilityMutationForTurn(state, workFolder.id);
-      const summary = await requireConversationSummary(workFolder.workFolderRoot, record.owner.conversationId);
-      if (summary.archivedAt) throw new WorkFoldCliError("conflict", "Restore this Chat before answering its question.");
+      if (!queued) assertChatMutable(connectedFolder.id, record.owner.conversationId);
+      assertNoCapabilityMutationForTurn(state, connectedFolder.id);
+      const summary = await requireConversationSummary(connectedFolder.connectedFolderRoot, record.owner.conversationId);
+      if (summary.archivedAt) throw new AmpleFileCliError("conflict", "Restore this Chat before answering its question.");
       if (summary.snoozedUntil && Date.parse(summary.snoozedUntil) > Date.now()) {
-        throw new WorkFoldCliError("conflict", "Resume this Chat before answering its question.");
+        throw new AmpleFileCliError("conflict", "Resume this Chat before answering its question.");
       }
-      let answered: WorkFoldQuestionRecord = question;
+      let answered: AmpleFileQuestionRecord = question;
       if (!resuming) {
         try {
-          answered = await state.requests.answer({ questionId, answer, ...(workFolder.id === workFoldAgentScopeId ? {} : { answeredByWorkFolderId: workFolder.id }) });
+          answered = await state.requests.answer({ questionId, answer, ...(connectedFolder.id === ampleFileAgentScopeId ? {} : { answeredByConnectedFolderId: connectedFolder.id }) });
         } catch (error) {
           throw collaborationRefusal(error);
         }
       }
       if (queued) {
-        await recordFacadeAction(state, input.parentTaskId, { command: "chat.answer", workFolder, conversationId: record.owner.conversationId });
-        publishControlHint(state, "work-folders");
-        return { workFolder: toActWorkFolderRef(workFolder), question: toActQuestionRef(answered), continuation: null, queued: true, request: toActRequestRefForWorkFolder(state, state.requests.get(record.requestId) ?? record) };
+        await recordFacadeAction(state, input.parentTaskId, { command: "chat.answer", connectedFolder, conversationId: record.owner.conversationId });
+        publishControlHint(state, "connected-folders");
+        return { connectedFolder: toActConnectedFolderRef(connectedFolder), question: toActQuestionRef(answered), continuation: null, queued: true, request: toActRequestRefForConnectedFolder(state, state.requests.get(record.requestId) ?? record) };
       }
       // Journal-first: the question is answered; now exactly one linked
       // continuation turn, deduplicated by the turn store under a request
@@ -5613,7 +5613,7 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       const delivered = resuming ? answered.answer ?? answer : answer;
       let accepted: Awaited<ReturnType<typeof acceptConversationTurn>>;
       try {
-        accepted = await acceptConversationTurn(state, workFolder, record.owner.conversationId, {
+        accepted = await acceptConversationTurn(state, connectedFolder, record.owner.conversationId, {
           content: delivered,
           contextPaths: [],
           actorKind: "cli",
@@ -5621,7 +5621,7 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
           request: { joinRequestId: record.requestId, answeringQuestionId: questionId },
         });
       } catch (error) {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "failure",
           `The answer to question ${questionId} is recorded, but the Chat could not continue: ${errorMessage(error)}. Send the same answer again to continue it.`,
           { cause: error },
@@ -5634,22 +5634,22 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       } catch (error) {
         // The turn store already returned the one continuation for this
         // answer; a second link attempt (a replayed answer) is a no-op.
-        if (!(error instanceof WorkFoldRequestLineageError)) throw error;
+        if (!(error instanceof AmpleFileRequestLineageError)) throw error;
         linked = state.requests.question(questionId) ?? answered;
       }
       await recordFacadeAction(state, input.parentTaskId, {
         command: "chat.answer",
-        workFolder,
+        connectedFolder,
         conversationId: record.owner.conversationId,
         taskId,
       });
-      publishControlHint(state, "work-folders");
+      publishControlHint(state, "connected-folders");
       void state.appAssistantTasks.refresh().catch((error) => console.error(errorMessage(error)));
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         question: toActQuestionRef(linked),
         continuation: { taskId, messageId: message.id, conversationId: record.owner.conversationId },
-        request: toActRequestRefForWorkFolder(state, state.requests.get(record.requestId) ?? record),
+        request: toActRequestRefForConnectedFolder(state, state.requests.get(record.requestId) ?? record),
       };
     });
   };
@@ -5660,14 +5660,14 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
    * revision change between lookup and act then fails with the service's
    * REVISION_CHANGED instead of acting on different bytes.
    */
-  const requireInstalledApp = async (workFolder: WorkFolderSummary, appId: string): Promise<RestrictedAppInstalled> => {
+  const requireInstalledApp = async (connectedFolder: ConnectedFolderSummary, appId: string): Promise<RestrictedAppInstalled> => {
     const id = appId.trim();
-    if (!id) throw new WorkFoldCliError("usage", "Provide --app <id>.");
-    const matches = (await runActOperation(() => state.restrictedApps.list(workFolder.id)))
+    if (!id) throw new AmpleFileCliError("usage", "Provide --app <id>.");
+    const matches = (await runActOperation(() => state.restrictedApps.list(connectedFolder.id)))
       .filter((item) => item.manifest.id === id || item.featureInstallationId === id);
-    if (matches.length > 1) throw new WorkFoldCliError("usage", `More than one installation matches. Use --app with an exact installation: ${matches.map((app) => `${app.runtimeInstanceKind === "development" ? "preview" : "installed App"} ${app.featureInstallationId}`).join(", ")}.`);
+    if (matches.length > 1) throw new AmpleFileCliError("usage", `More than one installation matches. Use --app with an exact installation: ${matches.map((app) => `${app.runtimeInstanceKind === "development" ? "preview" : "installed App"} ${app.featureInstallationId}`).join(", ")}.`);
     const app = matches[0];
-    if (!app) throw new WorkFoldCliError("notFound", "No app with this id is installed in this work-folder.");
+    if (!app) throw new AmpleFileCliError("notFound", "No app with this id is installed in this Connected Folder.");
     return app;
   };
   /**
@@ -5700,45 +5700,45 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
     }));
     return requestId;
   };
-  /** work-folder-scoped capability changes require the work-folder's project trust, exactly as the desktop routes do. */
-  const assertWorkFolderCapabilityTrust = async (workFolder: WorkFolderSummary): Promise<void> => {
-    if (!await isPiProjectMutationTrusted(workFolder.workFolderRoot, state.runtimeProvider)) {
-      throw new WorkFoldCliError("permissionDenied", "Trust this work-folder before changing work-folder-scoped capabilities.");
+  /** Connected Folder–scoped capability changes require the Connected Folder's project trust, exactly as the desktop routes do. */
+  const assertConnectedFolderCapabilityTrust = async (connectedFolder: ConnectedFolderSummary): Promise<void> => {
+    if (!await isPiProjectMutationTrusted(connectedFolder.connectedFolderRoot, state.runtimeProvider)) {
+      throw new AmpleFileCliError("permissionDenied", "Trust this Connected Folder before changing Connected Folder–scoped capabilities.");
     }
   };
   /**
-   * Whole-work-folder restore replaces the working set running work may be reading,
+   * Whole–Connected Folder restore replaces the working set running work may be reading,
    * so the act lane refuses concurrency the desktop still leaves to a confirm
    * dialog (docs/act-ledger.md, conflict rule 7). The live route state
    * covers turns, compactions, and Check work; the kernel's
    * experimental fence covers active automation runs with files hops into the
-   * work-folder and — once its reader exists — restricted-app automation runs whose
+   * Connected Folder and — once its reader exists — restricted-app automation runs whose
    * apps hold file grants into it (the ledger's item 4).
    */
-  const assertWorkFolderQuietForHistoryRestore = async (workFolderId: string): Promise<void> => {
-    const prefix = `${workFolderId}:`;
+  const assertConnectedFolderQuietForHistoryRestore = async (connectedFolderId: string): Promise<void> => {
+    const prefix = `${connectedFolderId}:`;
     if ([...state.runningTurns].some((key) => key.startsWith(prefix))) {
-      throw new WorkFoldCliError("conflict", "Wait for the running turn in this work-folder to finish before restoring.");
+      throw new AmpleFileCliError("conflict", "Wait for the running turn in this Connected Folder to finish before restoring.");
     }
     if ([...state.compactingConversations].some((key) => key.startsWith(prefix))) {
-      throw new WorkFoldCliError("conflict", "Wait for the running Chat compaction in this work-folder to finish before restoring.");
+      throw new AmpleFileCliError("conflict", "Wait for the running Chat compaction in this Connected Folder to finish before restoring.");
     }
-    if (state.checkRunReservations.has(workFolderId) || state.checks.hasActiveRun(workFolderId)) {
-      throw new WorkFoldCliError("conflict", "Wait for the running Check work in this work-folder to finish before restoring.");
+    if (state.checkRunReservations.has(connectedFolderId) || state.checks.hasActiveRun(connectedFolderId)) {
+      throw new AmpleFileCliError("conflict", "Wait for the running Check work in this Connected Folder to finish before restoring.");
     }
-    const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(workFolderId);
-    if (blockers.length) throw new WorkFoldCliError("conflict", blockers[0]!);
+    const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
+    if (blockers.length) throw new AmpleFileCliError("conflict", blockers[0]!);
   };
   return {
     async workerShow(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const [status, instructions, models] = await Promise.all([
-        runActOperation(() => getPiSetupStatus(workFolder.workFolderRoot, state.runtimeProvider)),
-        runActOperation(() => getPiWorkerInstructions(workFolder.workFolderRoot, state.runtimeProvider)),
-        runActOperation(() => listPiModels(workFolder.workFolderRoot, state.runtimeProvider)),
+        runActOperation(() => getPiSetupStatus(connectedFolder.connectedFolderRoot, state.runtimeProvider)),
+        runActOperation(() => getPiWorkerInstructions(connectedFolder.connectedFolderRoot, state.runtimeProvider)),
+        runActOperation(() => listPiModels(connectedFolder.connectedFolderRoot, state.runtimeProvider)),
       ]);
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         model: status.provider && status.model ? { provider: status.provider, id: status.model } : null,
         availableModels: models
           .filter((model) => model.authConfigured)
@@ -5747,31 +5747,31 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async workerSetModel(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const selected = await runActOperation(() => runCapabilityMutation(state, workFolder, "project", async () => {
-        const match = (await listPiModels(workFolder.workFolderRoot, state.runtimeProvider))
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const selected = await runActOperation(() => runCapabilityMutation(state, connectedFolder, "project", async () => {
+        const match = (await listPiModels(connectedFolder.connectedFolderRoot, state.runtimeProvider))
           .find((model) => model.provider === input.provider.trim() && model.id === input.model.trim());
-        if (!match) throw new WorkFoldCliError("usage", "The selected model is not available in this work-folder.");
+        if (!match) throw new AmpleFileCliError("usage", "The selected model is not available in this Connected Folder.");
         if (!match.authConfigured) {
-          throw new WorkFoldCliError("permissionDenied", "Connect this provider in Settings → AI Models before assigning its model.");
+          throw new AmpleFileCliError("permissionDenied", "Connect this provider in Settings → AI Models before assigning its model.");
         }
         await setPiDefaultModel(
-          workFolder.workFolderRoot,
+          connectedFolder.connectedFolderRoot,
           { provider: match.provider, id: match.id },
           state.runtimeProvider,
         );
         return match;
       }, { requireProjectTrust: false }));
-      await recordFacadeAction(state, input.parentTaskId, { command: "work-folders.worker.model", workFolder });
-      return { workFolder: toActWorkFolderRef(workFolder), model: { provider: selected.provider, id: selected.id } };
+      await recordFacadeAction(state, input.parentTaskId, { command: "connected-folders.worker.model", connectedFolder });
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), model: { provider: selected.provider, id: selected.id } };
     },
     async workerSetInstructions(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       let instructions: string;
       let appended: boolean | undefined;
-      const saved = input.append ? await runActOperation(() => getPiWorkerInstructions(workFolder.workFolderRoot, state.runtimeProvider)) : "";
+      const saved = input.append ? await runActOperation(() => getPiWorkerInstructions(connectedFolder.connectedFolderRoot, state.runtimeProvider)) : "";
       try {
         if (input.append) {
           const line = normalizeWorkerInstructions(input.instructions);
@@ -5784,42 +5784,42 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
           instructions = normalizeWorkerInstructions(input.instructions);
         }
       } catch (error) {
-        throw new WorkFoldCliError("usage", errorMessage(error));
+        throw new AmpleFileCliError("usage", errorMessage(error));
       }
-      if (appended !== false) await runActOperation(() => saveWorkerInstructions(state, workFolder, instructions));
-      await recordFacadeAction(state, input.parentTaskId, { command: "work-folders.worker.instructions", workFolder });
-      return { workFolder: toActWorkFolderRef(workFolder), instructions, ...(appended !== undefined ? { appended } : {}) };
+      if (appended !== false) await runActOperation(() => saveWorkerInstructions(state, connectedFolder, instructions));
+      await recordFacadeAction(state, input.parentTaskId, { command: "connected-folders.worker.instructions", connectedFolder });
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), instructions, ...(appended !== undefined ? { appended } : {}) };
     },
     async createConversation(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const conversation = await runActOperation(() => createConversation(workFolder.workFolderRoot));
-      return { workFolder: toActWorkFolderRef(workFolder), conversation: toActConversationRef(conversation) };
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const conversation = await runActOperation(() => createConversation(connectedFolder.connectedFolderRoot));
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), conversation: toActConversationRef(conversation) };
     },
     async listConversations(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const conversations = await runActOperation(() => listConversations(workFolder.workFolderRoot));
-      return { workFolder: toActWorkFolderRef(workFolder), conversations: conversations.map(toActConversationRef) };
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const conversations = await runActOperation(() => listConversations(connectedFolder.connectedFolderRoot));
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), conversations: conversations.map(toActConversationRef) };
     },
     async sendMessage(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const content = input.content.trim();
-      if (!content) throw new WorkFoldCliError("usage", "Message content is required.");
+      if (!content) throw new AmpleFileCliError("usage", "Message content is required.");
       if (!input.conversationId && !input.newConversation) {
-        throw new WorkFoldCliError("usage", "Provide --conversation <id> or --new.");
+        throw new AmpleFileCliError("usage", "Provide --conversation <id> or --new.");
       }
       return runActOperation(async () => {
-        assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
+        assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
         if (input.parentTaskId) {
-          await state.beforeWorkFoldAgentActionRecord?.({ parentTaskId: input.parentTaskId, command: "chat.send", taskId: "" });
+          await state.beforeAmpleFileAgentActionRecord?.({ parentTaskId: input.parentTaskId, command: "chat.send", taskId: "" });
         }
         const conversationId = input.newConversation
-          ? (await createConversation(workFolder.workFolderRoot)).id
+          ? (await createConversation(connectedFolder.connectedFolderRoot)).id
           : input.conversationId!;
         // A delegated send is a child request under the named parent (F25).
         // The parent check and every request bound run inside acceptance,
         // before the user message lands, so a refused child is never
         // accepted and then cancelled.
-        const { message, taskId } = await acceptConversationTurn(state, workFolder, conversationId, {
+        const { message, taskId } = await acceptConversationTurn(state, connectedFolder, conversationId, {
           content,
           contextPaths: [],
           actorKind: "cli",
@@ -5829,76 +5829,76 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         await state.requests.recordAction(input.parentTaskId, {
           command: "chat.send",
           at: new Date().toISOString(),
-          workFolderId: workFolder.id,
-          workFolderName: workFolder.name,
+          connectedFolderId: connectedFolder.id,
+          connectedFolderName: connectedFolder.name,
           conversationId,
           taskId,
         });
-        return { workFolder: toActWorkFolderRef(workFolder), conversationId, messageId: message.id, taskId };
+        return { connectedFolder: toActConnectedFolderRef(connectedFolder), conversationId, messageId: message.id, taskId };
       });
     },
     async conversationStatus(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const summary = await runActOperation(() => readConversationSummary(workFolder.workFolderRoot, input.conversationId));
-      if (!summary) throw new WorkFoldCliError("notFound", "Conversation not found.");
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const summary = await runActOperation(() => readConversationSummary(connectedFolder.connectedFolderRoot, input.conversationId));
+      if (!summary) throw new AmpleFileCliError("notFound", "Conversation not found.");
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         conversation: toActConversationRef(summary),
-        state: conversationRuntimeState(state, workFolder.id, input.conversationId),
+        state: conversationRuntimeState(state, connectedFolder.id, input.conversationId),
       };
     },
     async conversationResult(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const result = await conversationResultForScope(state, workFolder.id, workFolder.workFolderRoot, input.conversationId, input.messages);
-      return { workFolder: toActWorkFolderRef(workFolder), ...result };
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const result = await conversationResultForScope(state, connectedFolder.id, connectedFolder.connectedFolderRoot, input.conversationId, input.messages);
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), ...result };
     },
     async abortTurn(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const client = state.clients.get(clientKey(workFolder.id, input.conversationId));
-      const request = state.requests.latestForConversation(input.conversationId, { workFolderId: workFolder.id });
-      const stopped = request ? await stopWorkFoldAgentRequest(state, request.turns.at(-1)!.taskId) : null;
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const client = state.clients.get(clientKey(connectedFolder.id, input.conversationId));
+      const request = state.requests.latestForConversation(input.conversationId, { connectedFolderId: connectedFolder.id });
+      const stopped = request ? await stopAmpleFileAgentRequest(state, request.turns.at(-1)!.taskId) : null;
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         conversationId: input.conversationId,
-        aborted: stopped ? stopped.workFoldAgentAborted || stopped.children.some(child => child.aborted) : client ? await client.abort() : false,
+        aborted: stopped ? stopped.ampleFileAgentAborted || stopped.children.some(child => child.aborted) : client ? await client.abort() : false,
       };
     },
     async turnStatus(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const taskId = input.taskId.trim();
-      if (!taskId) throw new WorkFoldCliError("usage", "Provide --task <id>.");
-      const task = turnStatusFor(state, workFolder.id, taskId);
+      if (!taskId) throw new AmpleFileCliError("usage", "Provide --task <id>.");
+      const task = turnStatusFor(state, connectedFolder.id, taskId);
       const record = state.requests.byTaskId(taskId);
-      // Both fields are scoped to the named work-folder: a task id is easy to come
-      // by, and a question another work-folder's agent asked is that work-folder's
+      // Both fields are scoped to the named Connected Folder: a task id is easy to come
+      // by, and a question another Connected Folder's agent asked is that Connected Folder's
       // content, never this caller's (F9 as amended, F26).
-      const owned = record !== null && record.owner.workFolderId === workFolder.id;
+      const owned = record !== null && record.owner.connectedFolderId === connectedFolder.id;
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         task,
         waiting: owned ? waitingRefForTask(state, taskId) : null,
-        request: owned ? toActRequestRefForWorkFolder(state, record) : null,
+        request: owned ? toActRequestRefForConnectedFolder(state, record) : null,
       };
     },
     async turnResult(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const taskId = input.taskId.trim();
-      if (!taskId) throw new WorkFoldCliError("usage", "Provide --task <id>.");
-      const result = await turnResultForScope(state, workFolder.id, workFolder.workFolderRoot, taskId);
-      return { workFolder: toActWorkFolderRef(workFolder), ...result };
+      if (!taskId) throw new AmpleFileCliError("usage", "Provide --task <id>.");
+      const result = await turnResultForScope(state, connectedFolder.id, connectedFolder.connectedFolderRoot, taskId);
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), ...result };
     },
     // --- the collaboration verbs (docs/collaboration-contract.md, F27) ---
     async chatReport(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const taskId = input.taskId.trim();
-      if (!taskId) throw new WorkFoldCliError("usage", "Provide --task <own-task-id>.");
+      if (!taskId) throw new AmpleFileCliError("usage", "Provide --task <own-task-id>.");
       return runActOperation(async () => {
-        const record = assertOwnTask(state, workFolder.id, taskId);
+        const record = assertOwnTask(state, connectedFolder.id, taskId);
         const data = input.dataPath !== undefined
-          ? await readReportDataFile(input.dataPath, input.cwd ?? workFolder.workFolderRoot)
+          ? await readReportDataFile(input.dataPath, input.cwd ?? connectedFolder.connectedFolderRoot)
           : input.data;
-        const files = await resolveReportFiles(workFolder, input.files);
+        const files = await resolveReportFiles(connectedFolder, input.files);
         // When an app asked for this work and declared a shape for the
         // details, the report is checked against that shape here, while the
         // turn is still running and can correct it (F29: validated when the
@@ -5907,7 +5907,7 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         // as matching details.
         const schema = record.kind === "app" && record.app
           ? state.appAssistantTasks.outputSchemaForTurn({
-            workFolderId: record.app.workFolderId,
+            connectedFolderId: record.app.connectedFolderId,
             conversationId: record.owner.conversationId,
             taskId,
           })
@@ -5931,46 +5931,46 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
           if (refusal !== error) throw refusal;
           // A shape the report does not fit is the agent's to correct, so
           // it reads as a usage refusal naming the property, not a failure.
-          throw new WorkFoldCliError("usage", errorMessage(error), { cause: error });
+          throw new AmpleFileCliError("usage", errorMessage(error), { cause: error });
         }
-        await recordFacadeAction(state, input.parentTaskId, { command: "chat.report", workFolder, taskId });
-        publishControlHint(state, "work-folders");
+        await recordFacadeAction(state, input.parentTaskId, { command: "chat.report", connectedFolder, taskId });
+        publishControlHint(state, "connected-folders");
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           taskId,
           resultId: result.resultId,
           result: result.envelope,
-          request: toActRequestRefForWorkFolder(state, state.requests.get(record.requestId) ?? record),
+          request: toActRequestRefForConnectedFolder(state, state.requests.get(record.requestId) ?? record),
         };
       });
     },
     async chatChildren(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const own = assertOwnTask(state, workFolder.id, input.taskId);
-      return { children: state.requests.children(own.requestId).map(child => ({ taskId: child.turns.at(-1)!.taskId, conversationId: child.owner.conversationId, ...(child.owner.workFolderId ? { workFolderId: child.owner.workFolderId } : {}), state: child.state, resultAvailable: child.results.length > 0 })) };
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const own = assertOwnTask(state, connectedFolder.id, input.taskId);
+      return { children: state.requests.children(own.requestId).map(child => ({ taskId: child.turns.at(-1)!.taskId, conversationId: child.owner.conversationId, ...(child.owner.connectedFolderId ? { connectedFolderId: child.owner.connectedFolderId } : {}), state: child.state, resultAvailable: child.results.length > 0 })) };
     },
-    async chatAsk(input) { return chatAsk(await resolveWorkFolder(input.workFolder), input); },
-    async chatAnswer(input) { return chatAnswer(await resolveWorkFolder(input.workFolder), input); },
+    async chatAsk(input) { return chatAsk(await resolveConnectedFolder(input.connectedFolder), input); },
+    async chatAnswer(input) { return chatAnswer(await resolveConnectedFolder(input.connectedFolder), input); },
     async agentAsk(input) {
-      const scope = workFoldAgentScope(state);
-      const { workFolder: _workFolder, ...result } = await chatAsk({ id: scope.id, workFolderRoot: scope.rootPath, name: "work-fold agent" }, { ...input, respondent: "person" });
+      const scope = ampleFileAgentScope(state);
+      const { connectedFolder: _connectedFolder, ...result } = await chatAsk({ id: scope.id, connectedFolderRoot: scope.rootPath, name: "AmpleFile agent" }, { ...input, respondent: "person" });
       return result;
     },
     async agentAnswer(input) {
-      const scope = workFoldAgentScope(state);
-      const { workFolder: _workFolder, ...result } = await chatAnswer({ id: scope.id, workFolderRoot: scope.rootPath, name: "work-fold agent" }, input);
+      const scope = ampleFileAgentScope(state);
+      const { connectedFolder: _connectedFolder, ...result } = await chatAnswer({ id: scope.id, connectedFolderRoot: scope.rootPath, name: "AmpleFile agent" }, input);
       return result;
     },
     async chatHandoff(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const destination = await resolveWorkFolder(input.toWorkFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const destination = await resolveConnectedFolder(input.toConnectedFolder);
       const taskId = input.taskId.trim();
-      if (!taskId) throw new WorkFoldCliError("usage", "Provide --task <own-task-id>.");
+      if (!taskId) throw new AmpleFileCliError("usage", "Provide --task <own-task-id>.");
       const content = input.message.trim();
-      if (!content) throw new WorkFoldCliError("usage", "Message content is required.");
+      if (!content) throw new AmpleFileCliError("usage", "Message content is required.");
       return runActOperation(async () => {
-        const record = assertOwnTask(state, workFolder.id, taskId);
+        const record = assertOwnTask(state, connectedFolder.id, taskId);
         // Every bound that could refuse the child is checked before a single
         // byte is copied, naming the limit.
         try {
@@ -5978,134 +5978,134 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         } catch (error) {
           throw collaborationRefusal(error);
         }
-        if (destination.id === workFolder.id && input.files.length) {
-          throw new WorkFoldCliError(
+        if (destination.id === connectedFolder.id && input.files.length) {
+          throw new AmpleFileCliError(
             "usage",
-            "A handoff to the same work-folder needs no copies: the files are already there, so leave --file off.",
+            "A handoff to the same Connected Folder needs no copies: the files are already there, so leave --file off.",
           );
         }
-        const sources = input.files.map((file) => resolveHandoffSource(workFolder, file));
+        const sources = input.files.map((file) => resolveHandoffSource(connectedFolder, file));
         // A follow-up goes into a Chat this Chat already handed work to, so
         // that Worker keeps everything it learned (2026-10-18).
         const followUpId = input.toConversationId?.trim();
         if (followUpId) {
-          if (!(await readConversationSummary(destination.workFolderRoot, followUpId))) throw new WorkFoldCliError("notFound", "Conversation not found.");
-          assertCallerHandedWorkTo(state, taskId, { workFolderId: destination.id, conversationId: followUpId });
+          if (!(await readConversationSummary(destination.connectedFolderRoot, followUpId))) throw new AmpleFileCliError("notFound", "Conversation not found.");
+          assertCallerHandedWorkTo(state, taskId, { connectedFolderId: destination.id, conversationId: followUpId });
           const key = clientKey(destination.id, followUpId);
           if (state.runningTurns.has(key) || state.compactingConversations.has(key)) {
-            throw new WorkFoldCliError("conflict", "That Chat is still working. Redirect it with chat steer, or wait for it and follow up.");
+            throw new AmpleFileCliError("conflict", "That Chat is still working. Redirect it with chat steer, or wait for it and follow up.");
           }
         }
         // Copy first, through the same additive, restore-pointed path as
         // `files add`, so a refused copy never leaves a started Chat behind.
         const copy = sources.length
-          ? await addExternalFilesInternal(destination, { fromPaths: sources, cwd: destination.workFolderRoot })
+          ? await addExternalFilesInternal(destination, { fromPaths: sources, cwd: destination.connectedFolderRoot })
           : { copied: [], checkpointId: null };
-        const conversation = followUpId ? { id: followUpId } : await createConversation(destination.workFolderRoot);
+        const conversation = followUpId ? { id: followUpId } : await createConversation(destination.connectedFolderRoot);
         const { message, taskId: childTaskId } = await acceptConversationTurn(state, destination, conversation.id, {
           content,
           contextPaths: [],
           actorKind: "cli",
           requestId: input.requestId,
-          request: { parentTaskId: taskId, kind: "work-folder" },
+          request: { parentTaskId: taskId, kind: "connected-folder" },
         });
         await recordFacadeAction(state, input.parentTaskId, {
           command: "chat.handoff",
-          workFolder: destination,
+          connectedFolder: destination,
           conversationId: conversation.id,
           taskId: childTaskId,
           checkpointId: copy.checkpointId,
           copied: copy.copied,
         });
-        publishControlHint(state, "work-folders");
+        publishControlHint(state, "connected-folders");
         const child = state.requests.byTaskId(childTaskId);
         return {
-          workFolder: toActWorkFolderRef(workFolder),
-          toWorkFolder: toActWorkFolderRef(destination),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
+          toConnectedFolder: toActConnectedFolderRef(destination),
           conversationId: conversation.id,
           messageId: message.id,
           taskId: childTaskId,
           copied: copy.copied,
           checkpointId: copy.checkpointId,
-          request: toActRequestRefForWorkFolder(state, child ?? record),
+          request: toActRequestRefForConnectedFolder(state, child ?? record),
           ...(followUpId ? { followUp: true } : {}),
         };
       });
     },
     async chatSteer(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const conversationId = input.conversationId.trim();
       const content = input.message.trim();
-      if (!content) throw new WorkFoldCliError("usage", "Message content is required.");
+      if (!content) throw new AmpleFileCliError("usage", "Message content is required.");
       return runActOperation(async () => {
-        if (!(await readConversationSummary(workFolder.workFolderRoot, conversationId))) throw new WorkFoldCliError("notFound", "Conversation not found.");
+        if (!(await readConversationSummary(connectedFolder.connectedFolderRoot, conversationId))) throw new AmpleFileCliError("notFound", "Conversation not found.");
         const callerTaskId = input.taskId?.trim();
-        if (callerTaskId) assertCallerHandedWorkTo(state, callerTaskId, { workFolderId: workFolder.id, conversationId });
-        const running = state.runningTurns.has(clientKey(workFolder.id, conversationId));
+        if (callerTaskId) assertCallerHandedWorkTo(state, callerTaskId, { connectedFolderId: connectedFolder.id, conversationId });
+        const running = state.runningTurns.has(clientKey(connectedFolder.id, conversationId));
         let steered: Awaited<ReturnType<typeof steerConversationTurn>>;
         try {
-          steered = await steerConversationTurn(state, workFolder, conversationId, { content, ...(input.requestId ? { requestId: input.requestId } : {}) });
+          steered = await steerConversationTurn(state, connectedFolder, conversationId, { content, ...(input.requestId ? { requestId: input.requestId } : {}) });
         } catch (error) {
           if ((error as { statusCode?: unknown })?.statusCode === 409) {
-            throw new WorkFoldCliError("conflict", running
+            throw new AmpleFileCliError("conflict", running
               ? "That Chat's turn is starting or finishing and cannot take a message right now. Try again in a moment, or follow up once it ends."
               : "That Chat has no turn running. Follow up with chat handoff --to-conversation, or chat send.");
           }
           throw error;
         }
-        await recordFacadeAction(state, input.parentTaskId, { command: "chat.steer", workFolder, conversationId, taskId: steered.taskId });
-        return { workFolder: toActWorkFolderRef(workFolder), conversationId, taskId: steered.taskId, messageId: steered.message.id, replayed: steered.replayed };
+        await recordFacadeAction(state, input.parentTaskId, { command: "chat.steer", connectedFolder, conversationId, taskId: steered.taskId });
+        return { connectedFolder: toActConnectedFolderRef(connectedFolder), conversationId, taskId: steered.taskId, messageId: steered.message.id, replayed: steered.replayed };
       });
     },
     async chatCopy(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const sourceId = input.conversationId.trim();
       const content = input.message?.trim();
-      if (input.message !== undefined && !content) throw new WorkFoldCliError("usage", "Message content is required.");
+      if (input.message !== undefined && !content) throw new AmpleFileCliError("usage", "Message content is required.");
       return runActOperation(async () => {
         const callerTaskId = input.taskId?.trim();
         if (callerTaskId) {
           // A Worker copies its own Chat, or one its Chat handed work to.
           const caller = assertCallerTurn(state, callerTaskId);
-          const ownChat = (caller.owner.workFolderId ?? workFoldAgentScopeId) === workFolder.id && caller.owner.conversationId === sourceId;
-          if (!ownChat) assertCallerHandedWorkTo(state, callerTaskId, { workFolderId: workFolder.id, conversationId: sourceId });
+          const ownChat = (caller.owner.connectedFolderId ?? ampleFileAgentScopeId) === connectedFolder.id && caller.owner.conversationId === sourceId;
+          if (!ownChat) assertCallerHandedWorkTo(state, callerTaskId, { connectedFolderId: connectedFolder.id, conversationId: sourceId });
           try {
             state.requests.assertCanAddChild(callerTaskId);
           } catch (error) {
             throw collaborationRefusal(error);
           }
         }
-        const copied = await copyConversation(state, workFolder, sourceId, input.title);
+        const copied = await copyConversation(state, connectedFolder, sourceId, input.title);
         let started: { taskId: string } | null = null;
         if (content) {
-          started = await acceptConversationTurn(state, workFolder, copied.conversation.id, {
+          started = await acceptConversationTurn(state, connectedFolder, copied.conversation.id, {
             content,
             contextPaths: [],
             actorKind: "cli",
             requestId: input.requestId,
-            ...(callerTaskId ? { request: { parentTaskId: callerTaskId, kind: "work-folder" as const } }
+            ...(callerTaskId ? { request: { parentTaskId: callerTaskId, kind: "connected-folder" as const } }
               : input.parentTaskId ? { request: { parentTaskId: input.parentTaskId } } : {}),
           });
         }
         await recordFacadeAction(state, input.parentTaskId, {
-          command: "chat.copy", workFolder, conversationId: copied.conversation.id, ...(started ? { taskId: started.taskId } : {}),
+          command: "chat.copy", connectedFolder, conversationId: copied.conversation.id, ...(started ? { taskId: started.taskId } : {}),
         });
-        publishControlHint(state, "work-folders");
+        publishControlHint(state, "connected-folders");
         const child = started ? state.requests.byTaskId(started.taskId) : null;
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           conversation: toActConversationRef(copied.conversation),
           copiedFromConversationId: sourceId,
           copiedMessages: copied.copiedMessages,
           ...(started ? { taskId: started.taskId } : {}),
-          ...(child ? { request: toActRequestRefForWorkFolder(state, child) } : {}),
+          ...(child ? { request: toActRequestRefForConnectedFolder(state, child) } : {}),
         };
       });
     },
     async requestsList(input) {
-      await assertRequestsAboveWorkFolders(input?.cwd);
+      await assertRequestsAboveConnectedFolders(input?.cwd);
       const roots = state.requests.list()
         .filter((record) => record.requestId === record.rootId)
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
@@ -6115,25 +6115,25 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async requestsShow(input) {
-      await assertRequestsAboveWorkFolders(input.cwd);
+      await assertRequestsAboveConnectedFolders(input.cwd);
       const requestId = input.request.trim();
       const record = requestId ? state.requests.get(requestId) : null;
       if (!record) {
-        throw new WorkFoldCliError("notFound", `Request not found. Requests are kept for ${state.requests.retentionDays()} days.`);
+        throw new AmpleFileCliError("notFound", `Request not found. Requests are kept for ${state.requests.retentionDays()} days.`);
       }
       return { request: await requestDetailView(state, record) };
     },
     // Background jobs (docs/background-jobs.md): the same service and records
     // as job_start, job_output, and job_stop.
     async jobsStart(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      assertOwnTask(state, workFolder.id, input.taskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      assertOwnTask(state, connectedFolder.id, input.taskId);
       const cwd = input.cwd?.trim()
-        ? (isAbsolute(input.cwd.trim()) ? resolve(input.cwd.trim()) : resolve(workFolder.workFolderRoot, input.cwd.trim()))
-        : workFolder.workFolderRoot;
-      // The work-folder's own Pi shell settings, so a job runs the way its bash would.
-      const runtime = await resolvePiRuntime(workFolder.workFolderRoot, state.runtimeProvider, { requestProjectTrust: false }).catch(() => null);
-      const shell: WorkFoldJobShell | undefined = runtime ? {
+        ? (isAbsolute(input.cwd.trim()) ? resolve(input.cwd.trim()) : resolve(connectedFolder.connectedFolderRoot, input.cwd.trim()))
+        : connectedFolder.connectedFolderRoot;
+      // The Connected Folder's own Pi shell settings, so a job runs the way its bash would.
+      const runtime = await resolvePiRuntime(connectedFolder.connectedFolderRoot, state.runtimeProvider, { requestProjectTrust: false }).catch(() => null);
+      const shell: AmpleFileJobShell | undefined = runtime ? {
         ...(runtime.settingsManager.getShellPath() ? { shellPath: runtime.settingsManager.getShellPath() } : {}),
         ...(runtime.settingsManager.getShellCommandPrefix() ? { commandPrefix: runtime.settingsManager.getShellCommandPrefix() } : {}),
         binDir: join(runtime.agentDir, "bin"),
@@ -6149,40 +6149,40 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         surface: "cli",
         ...(shell ? { shell } : {}),
       }));
-      return { workFolder: toActWorkFolderRef(workFolder), job: toActJobRef(job) };
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), job: toActJobRef(job) };
     },
     async jobsInput(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const record = assertOwnTask(state, workFolder.id, input.taskId);
-      const host = createBackgroundJobToolHost(state, workFolder.id, record.owner.conversationId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const record = assertOwnTask(state, connectedFolder.id, input.taskId);
+      const host = createBackgroundJobToolHost(state, connectedFolder.id, record.owner.conversationId);
       const job = await host.input!({ taskId: input.taskId, jobId: input.jobId, text: input.text, ...(input.eof ? { eof: true } : {}) });
-      return { workFolder: toActWorkFolderRef(workFolder), job: toActJobRef(job) };
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), job: toActJobRef(job) };
     },
     async worktreesManage(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      return createWorktreeToolHost(state, workFolder.id).invoke(input.taskId, input);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return createWorktreeToolHost(state, connectedFolder.id).invoke(input.taskId, input);
     },
     async jobsList(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const jobs = state.jobs.list({
-        workFolderId: workFolder.id,
+        connectedFolderId: connectedFolder.id,
         ...(input.conversationId ? { conversationId: input.conversationId } : {}),
         ...(input.running ? { running: true } : {}),
       });
-      return { workFolder: toActWorkFolderRef(workFolder), jobs: jobs.map(toActJobRef) };
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), jobs: jobs.map(toActJobRef) };
     },
     async jobsShow(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      return { workFolder: toActWorkFolderRef(workFolder), job: toActJobRef(ownedJob(state, workFolder.id, input.jobId)) };
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), job: toActJobRef(ownedJob(state, connectedFolder.id, input.jobId)) };
     },
     async jobsOutput(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const owned = ownedJob(state, workFolder.id, input.jobId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const owned = ownedJob(state, connectedFolder.id, input.jobId);
       let until: RegExp | undefined;
       try {
         until = parseUntilPattern(input.until);
       } catch (error) {
-        throw new WorkFoldCliError("usage", errorMessage(error), { cause: error });
+        throw new AmpleFileCliError("usage", errorMessage(error), { cause: error });
       }
       const waited = (input.waitSeconds ?? 0) > 0 || until
         ? await state.jobs.wait(owned.jobId, {
@@ -6196,13 +6196,13 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         ...(input.limit !== undefined ? { limit: input.limit } : {}),
       });
       // A read from a running turn in the job's own Chat is its delivery (F32).
-      if (input.taskId && isWorkFoldJobTerminalState(job.state) && job.settledAt && state.requests.isAccepting(input.taskId)
+      if (input.taskId && isAmpleFileJobTerminalState(job.state) && job.settledAt && state.requests.isAccepting(input.taskId)
         && state.requests.byTaskId(input.taskId)?.owner.conversationId === job.conversationId
-        && (state.requests.byTaskId(input.taskId)?.owner.workFolderId ?? null) === (job.workFolderId ?? null)) {
+        && (state.requests.byTaskId(input.taskId)?.owner.connectedFolderId ?? null) === (job.connectedFolderId ?? null)) {
         await deliverBackgroundJobs(state, [job], "read", input.taskId);
       }
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         job: toActJobRef(state.jobs.get(job.jobId) ?? job),
         output,
         wait: waited ? {
@@ -6212,127 +6212,127 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async jobsStop(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const owned = ownedJob(state, workFolder.id, input.jobId);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const owned = ownedJob(state, connectedFolder.id, input.jobId);
       const job = await runJobOperation(() => stopBackgroundJob(state, owned.jobId, "cli", input.parentTaskId));
-      return { workFolder: toActWorkFolderRef(workFolder), job: toActJobRef(job) };
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), job: toActJobRef(job) };
     },
     async chatRename(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const title = input.title.trim();
-      if (!title) throw new WorkFoldCliError("usage", "Chat title is required.");
-      return runActOperation(() => runConversationMutation(state, workFolder.id, input.conversationId, async () => {
-        const summary = await requireConversationSummary(workFolder.workFolderRoot, input.conversationId);
-        const conversation = await runActOperation(() => renameConversation(workFolder.workFolderRoot, input.conversationId, title));
-        state.clients.get(clientKey(workFolder.id, input.conversationId))?.setSessionName(conversation.title);
-        await recordFacadeAction(state, input.parentTaskId, { command: "chat.rename", workFolder, conversationId: conversation.id });
+      if (!title) throw new AmpleFileCliError("usage", "Chat title is required.");
+      return runActOperation(() => runConversationMutation(state, connectedFolder.id, input.conversationId, async () => {
+        const summary = await requireConversationSummary(connectedFolder.connectedFolderRoot, input.conversationId);
+        const conversation = await runActOperation(() => renameConversation(connectedFolder.connectedFolderRoot, input.conversationId, title));
+        state.clients.get(clientKey(connectedFolder.id, input.conversationId))?.setSessionName(conversation.title);
+        await recordFacadeAction(state, input.parentTaskId, { command: "chat.rename", connectedFolder, conversationId: conversation.id });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           conversation: toActConversationRef(conversation),
           priorTitle: summary.title,
         };
       }));
     },
     async chatSnooze(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const until = input.until.trim();
-      if (!Number.isFinite(Date.parse(until))) throw new WorkFoldCliError("usage", "Snooze time is invalid.");
-      if (Date.parse(until) <= Date.now()) throw new WorkFoldCliError("usage", "Choose a future snooze time.");
-      return runActOperation(() => runConversationMutation(state, workFolder.id, input.conversationId, async () => {
-        const summary = await requireConversationSummary(workFolder.workFolderRoot, input.conversationId);
-        if (summary.archivedAt) throw new WorkFoldCliError("conflict", "Unarchive this Chat before snoozing it.");
+      if (!Number.isFinite(Date.parse(until))) throw new AmpleFileCliError("usage", "Snooze time is invalid.");
+      if (Date.parse(until) <= Date.now()) throw new AmpleFileCliError("usage", "Choose a future snooze time.");
+      return runActOperation(() => runConversationMutation(state, connectedFolder.id, input.conversationId, async () => {
+        const summary = await requireConversationSummary(connectedFolder.connectedFolderRoot, input.conversationId);
+        if (summary.archivedAt) throw new AmpleFileCliError("conflict", "Unarchive this Chat before snoozing it.");
         const conversation = await runActOperation(() =>
-          updateConversationLifecycle(workFolder.workFolderRoot, input.conversationId, { snoozedUntil: until }));
-        await recordFacadeAction(state, input.parentTaskId, { command: "chat.snooze", workFolder, conversationId: conversation.id });
+          updateConversationLifecycle(connectedFolder.connectedFolderRoot, input.conversationId, { snoozedUntil: until }));
+        await recordFacadeAction(state, input.parentTaskId, { command: "chat.snooze", connectedFolder, conversationId: conversation.id });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           conversation: toActConversationRef(conversation),
           priorLifecycle: toActChatLifecycleState(summary),
         };
       }));
     },
     async chatArchive(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      return runActOperation(() => runConversationMutation(state, workFolder.id, input.conversationId, async () => {
-        const summary = await requireConversationSummary(workFolder.workFolderRoot, input.conversationId);
-        if (summary.archivedAt) throw new WorkFoldCliError("conflict", "This Chat is already archived.");
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return runActOperation(() => runConversationMutation(state, connectedFolder.id, input.conversationId, async () => {
+        const summary = await requireConversationSummary(connectedFolder.connectedFolderRoot, input.conversationId);
+        if (summary.archivedAt) throw new AmpleFileCliError("conflict", "This Chat is already archived.");
         const conversation = await runActOperation(() =>
-          updateConversationLifecycle(workFolder.workFolderRoot, input.conversationId, { archived: true }));
-        await recordFacadeAction(state, input.parentTaskId, { command: "chat.archive", workFolder, conversationId: conversation.id });
+          updateConversationLifecycle(connectedFolder.connectedFolderRoot, input.conversationId, { archived: true }));
+        await recordFacadeAction(state, input.parentTaskId, { command: "chat.archive", connectedFolder, conversationId: conversation.id });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           conversation: toActConversationRef(conversation),
           priorLifecycle: toActChatLifecycleState(summary),
         };
       }));
     },
     async chatResume(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      return runActOperation(() => runConversationMutation(state, workFolder.id, input.conversationId, async () => {
-        const summary = await requireConversationSummary(workFolder.workFolderRoot, input.conversationId);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return runActOperation(() => runConversationMutation(state, connectedFolder.id, input.conversationId, async () => {
+        const summary = await requireConversationSummary(connectedFolder.connectedFolderRoot, input.conversationId);
         if (!summary.archivedAt && !summary.snoozedUntil) {
-          throw new WorkFoldCliError("conflict", "This Chat is already active.");
+          throw new AmpleFileCliError("conflict", "This Chat is already active.");
         }
         // One lifecycle change per act, mirroring the renderer: an archived Chat
         // restores to Active; a snoozed (or snooze-expired) Chat clears its snooze.
         const conversation = await runActOperation(() =>
           updateConversationLifecycle(
-            workFolder.workFolderRoot,
+            connectedFolder.connectedFolderRoot,
             input.conversationId,
             summary.archivedAt ? { archived: false } : { snoozedUntil: null },
           ));
-        await recordFacadeAction(state, input.parentTaskId, { command: "chat.resume", workFolder, conversationId: conversation.id });
+        await recordFacadeAction(state, input.parentTaskId, { command: "chat.resume", connectedFolder, conversationId: conversation.id });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           conversation: toActConversationRef(conversation),
           priorLifecycle: toActChatLifecycleState(summary),
         };
       }));
     },
     async chatCompact(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       return runActOperation(async () => {
         // Exactly the composer's /compact route: same not-found check, same
         // capability-mutation fence, same 409s, and the same kernel
         // `compaction` task lifecycle — started before the compaction and
         // finished on every outcome, so no ghost task survives a failure.
-        if (!(await readConversation(workFolder.workFolderRoot, input.conversationId)).length) {
-          throw new WorkFoldCliError("notFound", "Conversation not found.");
+        if (!(await readConversation(connectedFolder.connectedFolderRoot, input.conversationId)).length) {
+          throw new AmpleFileCliError("notFound", "Conversation not found.");
         }
-        const key = clientKey(workFolder.id, input.conversationId);
-        assertNoCapabilityMutationForTurn(state, workFolder.id);
-        assertChatMutable(workFolder.id, input.conversationId);
+        const key = clientKey(connectedFolder.id, input.conversationId);
+        assertNoCapabilityMutationForTurn(state, connectedFolder.id);
+        assertChatMutable(connectedFolder.id, input.conversationId);
         state.compactingConversations.add(key);
         const task = state.kernel.startTask({
           kind: "compaction",
-          workFolderId: workFolder.id,
+          connectedFolderId: connectedFolder.id,
           conversationId: input.conversationId,
-          actor: { kind: "cli", cwd: workFolder.workFolderRoot, workFolderId: workFolder.id, conversationId: input.conversationId },
+          actor: { kind: "cli", cwd: connectedFolder.connectedFolderRoot, connectedFolderId: connectedFolder.id, conversationId: input.conversationId },
         });
         try {
-          const client = await getClient(state, workFolder.id, workFolder.workFolderRoot, input.conversationId);
+          const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, input.conversationId);
           await client.compact();
-          broadcast(state, streamKey(workFolder.id, input.conversationId), { type: "done", conversationId: input.conversationId });
+          broadcast(state, streamKey(connectedFolder.id, input.conversationId), { type: "done", conversationId: input.conversationId });
         } finally {
           state.compactingConversations.delete(key);
           await refreshClientIfMarked(state, key);
           state.kernel.finishTask(task.id);
-          queueConversationRequestEvaluation(state, workFolder.id, input.conversationId);
+          queueConversationRequestEvaluation(state, connectedFolder.id, input.conversationId);
         }
         await recordFacadeAction(state, input.parentTaskId, {
           command: "chat.compact",
-          workFolder,
+          connectedFolder,
           conversationId: input.conversationId,
           taskId: task.id,
         });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           conversationId: input.conversationId,
           compacted: true as const,
           taskId: task.id,
@@ -6340,47 +6340,47 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       });
     },
     async historyList(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const page = await runActOperation(() => listWorkFolderCheckpointPage(workFolder.workFolderRoot, input));
-      return { workFolder: toActWorkFolderRef(workFolder), ...page, checkpoints: page.checkpoints.map(toActCheckpointSummary) };
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const page = await runActOperation(() => listConnectedFolderCheckpointPage(connectedFolder.connectedFolderRoot, input));
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), ...page, checkpoints: page.checkpoints.map(toActCheckpointSummary) };
     },
     async historySave(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       return runActOperation(async () => {
-        // Same internals as the History pane's save route: an unchanged work-folder
+        // Same internals as the History pane's save route: an unchanged Connected Folder
         // returns the latest matching restore point instead of a duplicate.
         const existingIds = new Set(
-          (await listWorkFolderCheckpoints(workFolder.workFolderRoot, 1000)).map((checkpoint) => checkpoint.checkpointId),
+          (await listConnectedFolderCheckpoints(connectedFolder.connectedFolderRoot, 1000)).map((checkpoint) => checkpoint.checkpointId),
         );
-        const checkpoint = await createWorkFolderCheckpoint(workFolder.workFolderRoot, {
+        const checkpoint = await createConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, {
           ...(input.label !== undefined ? { label: input.label } : {}),
           reason: "manual",
         });
         await recordFacadeAction(state, input.parentTaskId, {
           command: "history.save",
-          workFolder,
+          connectedFolder,
           checkpointId: checkpoint.checkpointId,
         });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           checkpoint: toActCheckpointSummary(checkpoint),
           created: !existingIds.has(checkpoint.checkpointId),
         };
       });
     },
     async historyRestore(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      await assertWorkFolderQuietForHistoryRestore(workFolder.id);
-      const result = await runActOperation(() => runHistoryRestore(state, workFolder.id, () => restoreWorkFolderCheckpoint(workFolder.workFolderRoot, input.checkpointId)));
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      await assertConnectedFolderQuietForHistoryRestore(connectedFolder.id);
+      const result = await runActOperation(() => runHistoryRestore(state, connectedFolder.id, () => restoreConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, input.checkpointId)));
       await recordFacadeAction(state, input.parentTaskId, {
         command: "history.restore",
-        workFolder,
+        connectedFolder,
         checkpointId: result.safetyCheckpointId,
       });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         restored: true,
         checkpointId: result.checkpointId,
         safetyCheckpointId: result.safetyCheckpointId,
@@ -6392,70 +6392,70 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async pagesValidate(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      return runActOperation(() => validatePageForAct(toActWorkFolderRef(workFolder), input.page));
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return runActOperation(() => validatePageForAct(toActConnectedFolderRef(connectedFolder), input.page));
     },
     async historyVersions(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const path = input.path.trim();
-      if (!path) throw new WorkFoldCliError("usage", "A work-folder-relative file path is required.");
-      const page = await runActOperation(() => listFileVersionPage(workFolder.workFolderRoot, path, input));
-      return { workFolder: toActWorkFolderRef(workFolder), path, ...page, versions: page.versions.map(toActFileVersionRef) };
+      if (!path) throw new AmpleFileCliError("usage", "A Connected Folder–relative file path is required.");
+      const page = await runActOperation(() => listFileVersionPage(connectedFolder.connectedFolderRoot, path, input));
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), path, ...page, versions: page.versions.map(toActFileVersionRef) };
     },
     async historyRead(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const review = await runActOperation(() => readHistoryFile(workFolder.workFolderRoot, input));
-      return { workFolder: toActWorkFolderRef(workFolder), review };
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const review = await runActOperation(() => readHistoryFile(connectedFolder.connectedFolderRoot, input));
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), review };
     },
     async historyDiff(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const comparison = await runActOperation(() => compareHistoryFile(workFolder.workFolderRoot, input));
-      return { workFolder: toActWorkFolderRef(workFolder), comparison };
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const comparison = await runActOperation(() => compareHistoryFile(connectedFolder.connectedFolderRoot, input));
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), comparison };
     },
     async historyRestoreFile(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       if (!/^[a-f0-9]{64}$/i.test(input.version.trim())) {
-        throw new WorkFoldCliError("usage", "Provide --version as the 64-character SHA-256 hash shown by 'history versions'.");
+        throw new AmpleFileCliError("usage", "Provide --version as the 64-character SHA-256 hash shown by 'history versions'.");
       }
       return runActOperation(async () => {
-        const target = await stat(resolveWorkFolderPath(workFolder.workFolderRoot, input.path)).catch(() => null);
+        const target = await stat(resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, input.path)).catch(() => null);
         if (target && !target.isFile()) {
-          throw new WorkFoldCliError("conflict", "The selected path is currently a folder.");
+          throw new AmpleFileCliError("conflict", "The selected path is currently a folder.");
         }
-        const result = await runHistoryRestore(state, workFolder.id, () => restoreFileVersion(workFolder.workFolderRoot, input.path, input.version.trim()));
+        const result = await runHistoryRestore(state, connectedFolder.id, () => restoreFileVersion(connectedFolder.connectedFolderRoot, input.path, input.version.trim()));
         await recordFacadeAction(state, input.parentTaskId, {
           command: "history.restore-file",
-          workFolder,
+          connectedFolder,
           checkpointId: result.safetyCheckpointId,
         });
-        return { workFolder: toActWorkFolderRef(workFolder), ...result };
+        return { connectedFolder: toActConnectedFolderRef(connectedFolder), ...result };
       });
     },
     async filesMove(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const sourceRaw = input.fromPath.trim();
-      if (!sourceRaw) throw new WorkFoldCliError("usage", "Select a file or folder to move.");
+      if (!sourceRaw) throw new AmpleFileCliError("usage", "Select a file or folder to move.");
       return runActOperation(async () => {
         // Exactly the desktop move route: a targeted restore point that undoes
         // the move, then the mutation, with the unused restore point discarded
         // when the mutation fails.
-        const moveSource = normalizeWorkFolderRelativePath(sourceRaw);
-        const moveTargetFolder = normalizeWorkFolderRelativePath(input.toDir);
+        const moveSource = normalizeConnectedFolderRelativePath(sourceRaw);
+        const moveTargetFolder = normalizeConnectedFolderRelativePath(input.toDir);
         const moveDestination = [moveTargetFolder, basename(moveSource)].filter(Boolean).join("/");
-        const safety = await createWorkFolderMutationCheckpoint(workFolder.workFolderRoot, {
+        const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
           movesOnRestore: [{ fromPath: moveDestination, toPath: moveSource }],
           reason: "pre_move",
           label: `Before moving ${sourceRaw}`,
         });
-        const moved = await runWithHistorySafety(workFolder.workFolderRoot, safety.checkpointId, () => moveWorkFolderEntry(workFolder.workFolderRoot, {
+        const moved = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => moveConnectedFolderEntry(connectedFolder.connectedFolderRoot, {
           sourcePath: moveSource,
           targetFolderPath: input.toDir,
         }));
-        await recordFacadeAction(state, input.parentTaskId, { command: "files.move", workFolder, checkpointId: safety.checkpointId });
+        await recordFacadeAction(state, input.parentTaskId, { command: "files.move", connectedFolder, checkpointId: safety.checkpointId });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           fromPath: moved.fromPath,
           path: moved.path,
           kind: moved.kind,
@@ -6464,24 +6464,24 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       });
     },
     async filesRename(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const sourceRaw = input.path.trim();
       const newName = input.newName.trim();
-      if (!sourceRaw || !newName) throw new WorkFoldCliError("usage", "A work-folder item and new name are required.");
+      if (!sourceRaw || !newName) throw new AmpleFileCliError("usage", "A Connected Folder item and new name are required.");
       return runActOperation(async () => {
-        const renameSource = normalizeWorkFolderRelativePath(sourceRaw);
+        const renameSource = normalizeConnectedFolderRelativePath(sourceRaw);
         const renameParent = renameSource.includes("/") ? renameSource.slice(0, renameSource.lastIndexOf("/")) : "";
         const renameDestination = [renameParent, newName].filter(Boolean).join("/");
-        const safety = await createWorkFolderMutationCheckpoint(workFolder.workFolderRoot, {
+        const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
           movesOnRestore: [{ fromPath: renameDestination, toPath: renameSource }],
           reason: "pre_rename",
           label: `Before renaming ${sourceRaw}`,
         });
-        const renamed = await runWithHistorySafety(workFolder.workFolderRoot, safety.checkpointId, () => renameWorkFolderEntry(workFolder.workFolderRoot, { path: sourceRaw, newName }));
-        await recordFacadeAction(state, input.parentTaskId, { command: "files.rename", workFolder, checkpointId: safety.checkpointId });
+        const renamed = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => renameConnectedFolderEntry(connectedFolder.connectedFolderRoot, { path: sourceRaw, newName }));
+        await recordFacadeAction(state, input.parentTaskId, { command: "files.rename", connectedFolder, checkpointId: safety.checkpointId });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           fromPath: renamed.fromPath,
           path: renamed.path,
           priorName: basename(renameSource),
@@ -6491,36 +6491,36 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       });
     },
     async filesDelete(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const target = input.path.trim();
-      if (!target) throw new WorkFoldCliError("usage", "Select a file or folder to delete.");
+      if (!target) throw new AmpleFileCliError("usage", "Select a file or folder to delete.");
       return runActOperation(async () => {
-        const deleted = await deleteWorkFolderEntryWithRecovery(state, workFolder, target, {
+        const deleted = await deleteConnectedFolderEntryWithRecovery(state, connectedFolder, target, {
           receiptId: input.requestId ?? null,
         });
         await recordFacadeAction(state, input.parentTaskId, {
           command: "files.delete",
-          workFolder,
+          connectedFolder,
           checkpointId: deleted.safetyCheckpointId,
         });
-        return { workFolder: toActWorkFolderRef(workFolder), ...deleted };
+        return { connectedFolder: toActConnectedFolderRef(connectedFolder), ...deleted };
       });
     },
     async filesMkdir(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const { target, parentPath, name } = splitActEntryPath(input.path, "A folder path is required.");
       return runActOperation(async () => {
-        const safety = await createWorkFolderMutationCheckpoint(workFolder.workFolderRoot, {
+        const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
           deleteOnRestore: [target],
           reason: "pre_create",
           label: `Before creating ${name}`,
         });
-        const folder = await runWithHistorySafety(workFolder.workFolderRoot, safety.checkpointId, () => createWorkFolderFolder(workFolder.workFolderRoot, parentPath, name));
-        await recordFacadeAction(state, input.parentTaskId, { command: "files.mkdir", workFolder, checkpointId: safety.checkpointId });
+        const folder = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => createConnectedFolderFolder(connectedFolder.connectedFolderRoot, parentPath, name));
+        await recordFacadeAction(state, input.parentTaskId, { command: "files.mkdir", connectedFolder, checkpointId: safety.checkpointId });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           created: true as const,
           path: folder.path,
           kind: "folder" as const,
@@ -6529,19 +6529,19 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       });
     },
     async filesCreate(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const { target, parentPath, name } = splitActEntryPath(input.path, "A file path is required.");
       return runActOperation(async () => {
-        const safety = await createWorkFolderMutationCheckpoint(workFolder.workFolderRoot, {
+        const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
           deleteOnRestore: [target],
           reason: "pre_create",
           label: `Before creating ${name}`,
         });
-        const file = await runWithHistorySafety(workFolder.workFolderRoot, safety.checkpointId, () => createWorkFolderTextFile(workFolder.workFolderRoot, parentPath, name, ""));
-        await recordFacadeAction(state, input.parentTaskId, { command: "files.create", workFolder, checkpointId: safety.checkpointId });
+        const file = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => createConnectedFolderTextFile(connectedFolder.connectedFolderRoot, parentPath, name, ""));
+        await recordFacadeAction(state, input.parentTaskId, { command: "files.create", connectedFolder, checkpointId: safety.checkpointId });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           created: true as const,
           path: file.path,
           kind: "file" as const,
@@ -6550,56 +6550,56 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       });
     },
     async search(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const query = input.query.trim();
-      if (!query) throw new WorkFoldCliError("usage", "Enter something to search for.");
+      if (!query) throw new AmpleFileCliError("usage", "Enter something to search for.");
       const scope = input.scope ?? "all";
-      const result = await runActOperation(() => searchWorkFolder(workFolder.workFolderRoot, query, {
+      const result = await runActOperation(() => searchConnectedFolder(connectedFolder.connectedFolderRoot, query, {
         includeFiles: scope !== "chats",
         includeChats: scope !== "files",
         path: input.path, cursor: input.cursor, maxMatches: input.limit,
       }));
-      return { workFolder: toActWorkFolderRef(workFolder), scope, ...result };
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), scope, ...result };
     },
-    async createWorkFolder(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
+    async createConnectedFolder(input) {
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const name = input.name.trim();
-      if (!name) throw new WorkFoldCliError("usage", "A work-folder name is required.");
-      const workFolder = await runActOperation(() => runCheckWorkFolderRegistryMutation(state, () => createWorkFolderInternal(state, name)));
+      if (!name) throw new AmpleFileCliError("usage", "A Connected Folder name is required.");
+      const connectedFolder = await runActOperation(() => runCheckConnectedFolderRegistryMutation(state, () => createConnectedFolderInternal(state, name)));
       await state.requests.recordAction(input.parentTaskId, {
-        command: "work-folders.create",
+        command: "connected-folders.create",
         at: new Date().toISOString(),
-        workFolderId: workFolder.id,
-        workFolderName: workFolder.name,
-        workFolderRoot: workFolder.workFolderRoot,
+        connectedFolderId: connectedFolder.id,
+        connectedFolderName: connectedFolder.name,
+        connectedFolderRoot: connectedFolder.connectedFolderRoot,
       });
-      return { workFolder: toActWorkFolderRef(workFolder) };
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder) };
     },
-    async registerWorkFolder(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const rootPath = input.workFolderRoot.trim();
+    async registerConnectedFolder(input) {
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const rootPath = input.connectedFolderRoot.trim();
       if (!rootPath || !isAbsolute(rootPath)) {
-        throw new WorkFoldCliError("usage", "Provide an absolute folder path to register.");
+        throw new AmpleFileCliError("usage", "Provide an absolute folder path to register.");
       }
-      const workFolder = await runActOperation(() => runCheckWorkFolderRegistryMutation(state, () => registerWorkFolderInternal(state, rootPath)));
+      const connectedFolder = await runActOperation(() => runCheckConnectedFolderRegistryMutation(state, () => registerConnectedFolderInternal(state, rootPath)));
       await state.requests.recordAction(input.parentTaskId, {
-        command: "work-folders.register",
+        command: "connected-folders.register",
         at: new Date().toISOString(),
-        workFolderId: workFolder.id,
-        workFolderName: workFolder.name,
-        workFolderRoot: workFolder.workFolderRoot,
+        connectedFolderId: connectedFolder.id,
+        connectedFolderName: connectedFolder.name,
+        connectedFolderRoot: connectedFolder.connectedFolderRoot,
       });
-      return { workFolder: toActWorkFolderRef(workFolder) };
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder) };
     },
     async addFiles(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const result = await runActOperation(() => addExternalFilesInternal(workFolder, input));
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const result = await runActOperation(() => addExternalFilesInternal(connectedFolder, input));
       await state.requests.recordAction(input.parentTaskId, {
         command: "files.add",
         at: new Date().toISOString(),
-        workFolderId: workFolder.id,
-        workFolderName: workFolder.name,
+        connectedFolderId: connectedFolder.id,
+        connectedFolderName: connectedFolder.name,
         sources: input.fromPaths.map((raw) => {
           const trimmed = raw.trim();
           return isAbsolute(trimmed) ? resolve(trimmed) : resolve(input.cwd, trimmed);
@@ -6607,52 +6607,52 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         copied: result.copied,
         checkpointId: result.checkpointId,
       });
-      return { workFolder: toActWorkFolderRef(workFolder), ...result };
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), ...result };
     },
-    async workFoldersRename(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+    async connectedFoldersRename(input) {
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const name = input.name.trim();
-      if (!name) throw new WorkFoldCliError("usage", "A work-folder name is required.");
+      if (!name) throw new AmpleFileCliError("usage", "A Connected Folder name is required.");
       // The ledger's ambiguous-making rule: a duplicate exact name under the
-      // CLI selector's case-insensitive match would break `--work-folder` selection
+      // CLI selector's case-insensitive match would break `--connected-folder` selection
       // by name, so it is refused here. The comparison folds the same way the
-      // selector does; renaming a work-folder to a case variant of itself stays
+      // selector does; renaming a Connected Folder to a case variant of itself stays
       // allowed.
       const folded = name.replace(/\s+/g, " ").slice(0, 80).toLocaleLowerCase("en-US");
-      const collision = (await listWorkFolders()).find((item) =>
-        item.id !== workFolder.id && item.name.toLocaleLowerCase("en-US") === folded);
+      const collision = (await listConnectedFolders()).find((item) =>
+        item.id !== connectedFolder.id && item.name.toLocaleLowerCase("en-US") === folded);
       if (collision) {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "conflict",
-          `Another work-folder is already named ${collision.name} [${collision.id}]; a duplicate exact name would make --work-folder selection ambiguous.`,
+          `Another Connected Folder is already named ${collision.name} [${collision.id}]; a duplicate exact name would make --connected-folder selection ambiguous.`,
         );
       }
-      const renamed = await runActOperation(() => renameWorkFolder(workFolder.id, name));
-      publishControlHint(state, "work-folders");
-      await recordFacadeAction(state, input.parentTaskId, { command: "work-folders.rename", workFolder: renamed });
-      return { workFolder: toActWorkFolderRef(renamed), priorName: workFolder.name };
+      const renamed = await runActOperation(() => renameConnectedFolder(connectedFolder.id, name));
+      publishControlHint(state, "connected-folders");
+      await recordFacadeAction(state, input.parentTaskId, { command: "connected-folders.rename", connectedFolder: renamed });
+      return { connectedFolder: toActConnectedFolderRef(renamed), priorName: connectedFolder.name };
     },
-    async workFoldersUnregister(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const storage = workFolder.location.storage;
+    async connectedFoldersUnregister(input) {
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const storage = connectedFolder.location.storage;
       // Both storage kinds run the same removal orchestration — App Studio
       // impact checks, automation suspension, durable intent, app-state
-      // cleanup. A managed work-folder records a
+      // cleanup. A managed Connected Folder records a
       // preserve-disposition intent that provably holds no deletion
-      // authority, so the folder and its portable `.work-fold/` identity
+      // authority, so the folder and its portable `.amplefile/` identity
       // remain exactly as they do for a linked registration; deleting the
-      // managed folder is `work-folders delete`, a receipted act of its own.
+      // managed folder is `connected-folders delete`, a receipted act of its own.
       const removal = await runActOperation(() =>
-        removeWorkFolderRegistrationInternal(state, workFolder, {
+        removeConnectedFolderRegistrationInternal(state, connectedFolder, {
           managedFolderDisposition: "preserve",
           receiptId: input.requestId ?? null,
         }));
-      appearanceUndoSlots.delete(workFolder.id);
-      await recordFacadeAction(state, input.parentTaskId, { command: "work-folders.unregister", workFolder });
+      appearanceUndoSlots.delete(connectedFolder.id);
+      await recordFacadeAction(state, input.parentTaskId, { command: "connected-folders.unregister", connectedFolder });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         storage,
         removed: true as const,
         cleanupPending: removal.cleanupPending,
@@ -6660,97 +6660,97 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         appStudioRecentlyDeleted: removal.appStudioRecentlyDeleted,
       };
     },
-    async workFoldersAppearanceApply(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const proposal = input.proposalPath !== undefined ? await readWorkFolderAppearanceProposalFile(input.proposalPath, input.cwd) : null;
+    async connectedFoldersAppearanceApply(input) {
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const proposal = input.proposalPath !== undefined ? await readConnectedFolderAppearanceProposalFile(input.proposalPath, input.cwd) : null;
       // Named parts are read and encoded first, so an unusable image refuses before anything changes.
-      const parts = proposal ? null : await resolveWorkFolderAppearanceParts(input.parts ?? {}, input.cwd).catch((error: unknown) => {
-        if (error instanceof WorkFolderAppearancePartsError) throw new WorkFoldCliError(error.code, error.message, { cause: error });
+      const parts = proposal ? null : await resolveConnectedFolderAppearanceParts(input.parts ?? {}, input.cwd).catch((error: unknown) => {
+        if (error instanceof ConnectedFolderAppearancePartsError) throw new AmpleFileCliError(error.code, error.message, { cause: error });
         throw error;
       });
-      if (!proposal && (!parts || !workFolderAppearancePartsLabel(parts))) {
-        throw new WorkFoldCliError("usage", "Provide a proposal, or a banner image, icon, or color to change.");
+      if (!proposal && (!parts || !connectedFolderAppearancePartsLabel(parts))) {
+        throw new AmpleFileCliError("usage", "Provide a proposal, or a banner image, icon, or color to change.");
       }
-      if (proposal?.target?.workFolderId && proposal.target.workFolderId !== workFolder.id) {
-        throw new WorkFoldCliError(
+      if (proposal?.target?.connectedFolderId && proposal.target.connectedFolderId !== connectedFolder.id) {
+        throw new AmpleFileCliError(
           "conflict",
-          `This appearance proposal targets a different work-folder (${proposal.target.workFolderId}). Apply it with that --work-folder, or use a proposal authored for this one.`,
+          `This appearance proposal targets a different Connected Folder (${proposal.target.connectedFolderId}). Apply it with that --connected-folder, or use a proposal authored for this one.`,
         );
       }
       return runActOperation(async () => {
-        const displaced = currentAppearanceCustomization(workFolder.id);
-        // Exactly the Customize work-folder import route's mutation: the store
+        const displaced = currentAppearanceCustomization(connectedFolder.id);
+        // Exactly the Customize Connected Folder import route's mutation: the store
         // normalizes and persists the typed customization atomically. Named
         // parts change only themselves on top of the current appearance.
-        const applied = await state.appearance.replaceWorkFolder(
-          workFolder.id,
-          proposal ? proposal.customization : applyWorkFolderAppearanceParts(displaced, parts!),
+        const applied = await state.appearance.replaceConnectedFolder(
+          connectedFolder.id,
+          proposal ? proposal.customization : applyConnectedFolderAppearanceParts(displaced, parts!),
         );
-        const result = applied.customizations[workFolder.id] ?? null;
-        appearanceUndoSlots.set(workFolder.id, { displaced, result });
-        await recordFacadeAction(state, input.parentTaskId, { command: "work-folders.appearance.apply", workFolder });
+        const result = applied.customizations[connectedFolder.id] ?? null;
+        appearanceUndoSlots.set(connectedFolder.id, { displaced, result });
+        await recordFacadeAction(state, input.parentTaskId, { command: "connected-folders.appearance.apply", connectedFolder });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           applied: true as const,
-          proposalName: proposal ? proposal.name : workFolderAppearancePartsLabel(parts!),
+          proposalName: proposal ? proposal.name : connectedFolderAppearancePartsLabel(parts!),
           appearanceRef: appearanceCustomizationRef(result),
           priorAppearanceRef: appearanceCustomizationRef(displaced),
         };
       });
     },
-    async workFoldersAppearanceReset(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+    async connectedFoldersAppearanceReset(input) {
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       return runActOperation(async () => {
-        const displaced = currentAppearanceCustomization(workFolder.id);
+        const displaced = currentAppearanceCustomization(connectedFolder.id);
         if (displaced === null) {
-          // An already-default work-folder is an honest no-op that arms no undo.
+          // An already-default Connected Folder is an honest no-op that arms no undo.
           return {
-            workFolder: toActWorkFolderRef(workFolder),
+            connectedFolder: toActConnectedFolderRef(connectedFolder),
             reset: true as const,
             changed: false,
             priorAppearanceRef: null,
           };
         }
-        await state.appearance.removeWorkFolder(workFolder.id);
-        appearanceUndoSlots.set(workFolder.id, { displaced, result: null });
-        await recordFacadeAction(state, input.parentTaskId, { command: "work-folders.appearance.reset", workFolder });
+        await state.appearance.removeConnectedFolder(connectedFolder.id);
+        appearanceUndoSlots.set(connectedFolder.id, { displaced, result: null });
+        await recordFacadeAction(state, input.parentTaskId, { command: "connected-folders.appearance.reset", connectedFolder });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           reset: true as const,
           changed: true,
           priorAppearanceRef: appearanceCustomizationRef(displaced),
         };
       });
     },
-    async workFoldersAppearanceUndo(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const slot = appearanceUndoSlots.get(workFolder.id);
+    async connectedFoldersAppearanceUndo(input) {
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const slot = appearanceUndoSlots.get(connectedFolder.id);
       if (!slot) {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "conflict",
-          "No receipted appearance act recorded a prior customization for this work-folder in this app run, so there is nothing to undo. Apply a proposal or reset explicitly instead.",
+          "No receipted appearance act recorded a prior customization for this Connected Folder in this app run, so there is nothing to undo. Apply a proposal or reset explicitly instead.",
         );
       }
-      if (!appearanceCustomizationsEqual(currentAppearanceCustomization(workFolder.id), slot.result)) {
-        throw new WorkFoldCliError(
+      if (!appearanceCustomizationsEqual(currentAppearanceCustomization(connectedFolder.id), slot.result)) {
+        throw new AmpleFileCliError(
           "conflict",
-          "This work-folder's appearance was changed outside the act lane (for example on the desktop) since the last receipted appearance act, so the recorded prior customization no longer describes what an undo would displace. Apply a proposal or reset explicitly instead.",
+          "This Connected Folder's appearance was changed outside the act lane (for example on the desktop) since the last receipted appearance act, so the recorded prior customization no longer describes what an undo would displace. Apply a proposal or reset explicitly instead.",
         );
       }
       return runActOperation(async () => {
         const next = slot.displaced;
-        const stateAfter = next !== null && hasWorkFolderAppearanceCustomization(next)
-          ? await state.appearance.replaceWorkFolder(workFolder.id, next)
-          : await state.appearance.removeWorkFolder(workFolder.id);
-        const restored = stateAfter.customizations[workFolder.id] ?? null;
+        const stateAfter = next !== null && hasConnectedFolderAppearanceCustomization(next)
+          ? await state.appearance.replaceConnectedFolder(connectedFolder.id, next)
+          : await state.appearance.removeConnectedFolder(connectedFolder.id);
+        const restored = stateAfter.customizations[connectedFolder.id] ?? null;
         // Undo is its own inverse: the displaced and restored refs swap.
-        appearanceUndoSlots.set(workFolder.id, { displaced: slot.result, result: restored });
-        await recordFacadeAction(state, input.parentTaskId, { command: "work-folders.appearance.undo", workFolder });
+        appearanceUndoSlots.set(connectedFolder.id, { displaced: slot.result, result: restored });
+        await recordFacadeAction(state, input.parentTaskId, { command: "connected-folders.appearance.undo", connectedFolder });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           restored: true as const,
           restoredAppearanceRef: appearanceCustomizationRef(restored),
           displacedAppearanceRef: appearanceCustomizationRef(slot.result),
@@ -6758,29 +6758,29 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       });
     },
     async toolsRemove(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const source = input.source.trim();
-      if (!source) throw new WorkFoldCliError("usage", "A package source is required.");
-      if (input.scope === "work-folder") {
-        const workFolder = await resolveWorkFolder(input.workFolder ?? "");
+      if (!source) throw new AmpleFileCliError("usage", "A package source is required.");
+      if (input.scope === "connected-folder") {
+        const connectedFolder = await resolveConnectedFolder(input.connectedFolder ?? "");
         // Exactly the desktop packages/remove route: project scope requires
-        // the work-folder's Pi project trust and the per-work-folder capability fence.
-        const removed = await runActOperation(() => runCapabilityMutation(state, workFolder, "project", () =>
-          removePiPackage(workFolder.workFolderRoot, source, {
+        // the Connected Folder's Pi project trust and the per–Connected Folder capability fence.
+        const removed = await runActOperation(() => runCapabilityMutation(state, connectedFolder, "project", () =>
+          removePiPackage(connectedFolder.connectedFolderRoot, source, {
             scope: "project",
             runtimeProvider: state.runtimeProvider,
           })));
-        await recordFacadeAction(state, input.parentTaskId, { command: "tools.remove", workFolder });
-        return { scope: "work-folder" as const, workFolder: toActWorkFolderRef(workFolder), source, removed };
+        await recordFacadeAction(state, input.parentTaskId, { command: "tools.remove", connectedFolder });
+        return { scope: "connected-folder" as const, connectedFolder: toActConnectedFolderRef(connectedFolder), source, removed };
       }
       // Everywhere scope mutates the user-scope Pi settings every
-      // work-folder runtime loads. The app-owned management root is the resolution
-      // context — the same root the work-fold agent's own runtime
+      // Connected Folder runtime loads. The app-owned management root is the resolution
+      // context — the same root the AmpleFile agent's own runtime
       // uses — and the global capability fence refuses while any agent,
       // compaction, or Check work is active anywhere.
-      const workFoldAgentRootScope = { id: workFoldAgentScopeId, workFolderRoot: workFoldAgentRoot() };
-      const removed = await runActOperation(() => runCapabilityMutation(state, workFoldAgentRootScope, "global", () =>
-        removePiPackage(workFoldAgentRootScope.workFolderRoot, source, {
+      const ampleFileAgentRootScope = { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot() };
+      const removed = await runActOperation(() => runCapabilityMutation(state, ampleFileAgentRootScope, "global", () =>
+        removePiPackage(ampleFileAgentRootScope.connectedFolderRoot, source, {
           scope: "user",
           runtimeProvider: state.runtimeProvider,
         })));
@@ -6788,8 +6788,8 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       return { scope: "everywhere" as const, source, removed };
     },
     async appsList(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const apps = await runActOperation(() => state.restrictedApps.list(workFolder.id));
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const apps = await runActOperation(() => state.restrictedApps.list(connectedFolder.id));
       const listed = apps.slice(0, maxActAppListings);
       const listing = await Promise.all(listed.map(async (app) => ({
         appId: app.manifest.id,
@@ -6816,7 +6816,7 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
           checks: (app.checkGrants ?? []).map((grant) => ({ permissionId: grant.permissionId, checkId: grant.checkId })),
         },
         connections: (await runActOperation(() =>
-          state.restrictedApps.connectionStatus(workFolder.id, app.manifest.id, app.digest, app.featureInstallationId)))
+          state.restrictedApps.connectionStatus(connectedFolder.id, app.manifest.id, app.digest, app.featureInstallationId)))
           .map((connection) => ({ destinationId: connection.destinationId, kind: connection.kind, configured: connection.configured })),
         automations: app.automations.map((automation) => ({
           id: automation.id,
@@ -6826,32 +6826,32 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
           lastRunAt: automation.lastRunAt ?? null,
         })),
       })));
-      return { workFolder: toActWorkFolderRef(workFolder), apps: listing, truncated: apps.length > listed.length };
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), apps: listing, truncated: apps.length > listed.length };
     },
     async appsInvoke(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const app = await requireInstalledApp(workFolder, input.app);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const app = await requireInstalledApp(connectedFolder, input.app);
       const toolName = input.tool.trim();
-      if (!toolName) throw new WorkFoldCliError("usage", "Provide --tool <name>.");
+      if (!toolName) throw new AmpleFileCliError("usage", "Provide --tool <name>.");
       const tool = app.manifest.tools.find((item) => item.name === toolName);
       if (!tool) {
-        throw new WorkFoldCliError("notFound", `${app.manifest.title} has no tool named ${toolName}. Run apps list --json to see its tools.`);
+        throw new AmpleFileCliError("notFound", `${app.manifest.title} has no tool named ${toolName}. Run apps list --json to see its tools.`);
       }
       // The same service path a Chat tool call takes: the revision resolved
       // above is pinned, and the runtime validates input and result against
       // the tool's own declared schemas.
       const result = await runActOperation(() => state.restrictedApps.invoke({
-        workFolderId: workFolder.id,
+        connectedFolderId: connectedFolder.id,
         appId: app.manifest.id,
         featureInstallationId: app.featureInstallationId,
         expectedDigest: app.digest,
         action: tool.action,
         input: input.input,
       }));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.invoke", workFolder, apps: [workFoldAgentAppResultRef(app)] });
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.invoke", connectedFolder, apps: [ampleFileAgentAppResultRef(app)] });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         appId: app.manifest.id,
         featureInstallationId: app.featureInstallationId,
         digest: app.digest,
@@ -6861,50 +6861,50 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async appsProposalsList(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       // The desktop proposal route's own scope rule: proposals are bound to
-      // one Chat, and the Chat must exist in this work-folder.
-      if (!(await runActOperation(() => readConversation(workFolder.workFolderRoot, input.conversationId))).length) {
-        throw new WorkFoldCliError("notFound", "Conversation not found.");
+      // one Chat, and the Chat must exist in this Connected Folder.
+      if (!(await runActOperation(() => readConversation(connectedFolder.connectedFolderRoot, input.conversationId))).length) {
+        throw new AmpleFileCliError("notFound", "Conversation not found.");
       }
       const proposals = await runActOperation(() =>
-        state.restrictedAppProposals.list({ workFolderId: workFolder.id, conversationId: input.conversationId }));
+        state.restrictedAppProposals.list({ connectedFolderId: connectedFolder.id, conversationId: input.conversationId }));
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         conversationId: input.conversationId,
         proposals: proposals.map(toActAppProposalRef),
       };
     },
     async appsProposalsDismiss(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const proposal = await runActOperation(() => state.restrictedAppProposals.get(input.proposal));
-      if (!proposal || proposal.workFolderId !== workFolder.id || proposal.conversationId !== input.conversationId) {
-        throw new WorkFoldCliError("notFound", "App proposal not found.");
+      if (!proposal || proposal.connectedFolderId !== connectedFolder.id || proposal.conversationId !== input.conversationId) {
+        throw new AmpleFileCliError("notFound", "App proposal not found.");
       }
       const dismissed = await runActOperation(() => state.restrictedAppProposals.dismiss(proposal.id));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.proposals.dismiss", workFolder, conversationId: input.conversationId });
-      return { workFolder: toActWorkFolderRef(workFolder), proposalId: proposal.id, dismissed };
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.proposals.dismiss", connectedFolder, conversationId: input.conversationId });
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), proposalId: proposal.id, dismissed };
     },
     async appsRemove(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const app = await requireInstalledApp(workFolder, input.app);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const app = await requireInstalledApp(connectedFolder, input.app);
       // The exact desktop DELETE route, with the resolved digest pinned; the
       // service refuses release-backed Instances toward `apps uninstall` and
       // stops the running app host before the registration goes. A copy of the
       // app's data reaches Recently deleted first (F20), the same order the
       // clear and uninstall-with-purge paths use.
-      const outcome = await runActOperation(() => runRestrictedAppMutation(state, workFolder.id, async () => {
+      const outcome = await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, async () => {
         const entry = await moveAppStorageExportToRecentlyDeleted(state, app, "apps.remove", input.requestId ?? null, { skipWhenStorageUnavailable: true });
         const removed = await state.restrictedApps.remove({
-          workFolderId: workFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, expectedDigest: app.digest,
+          connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, expectedDigest: app.digest,
         });
         return { removed, entry };
       }));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.remove", workFolder });
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.remove", connectedFolder });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         appId: app.manifest.id,
         digest: app.digest,
         removed: outcome.removed,
@@ -6912,27 +6912,27 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async appsRevoke(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const digest = input.digest.trim();
-      if (!digest) throw new WorkFoldCliError("usage", "Provide --digest <sha256>.");
+      if (!digest) throw new AmpleFileCliError("usage", "Provide --digest <sha256>.");
       const declaration = input.declaration.trim();
-      if (!declaration) throw new WorkFoldCliError("usage", "Provide --declaration <id>.");
-      const app = await requireInstalledApp(workFolder, input.app);
+      if (!declaration) throw new AmpleFileCliError("usage", "Provide --declaration <id>.");
+      const app = await requireInstalledApp(connectedFolder, input.app);
       // Grants bind to the exact reviewed digest, so revocation names it too.
       const granted = input.kind === "network"
         ? app.networkGrants.includes(declaration)
         : input.kind === "files"
           ? app.fileGrants.some((grant) => grant.declarationId === declaration)
           : app.notificationGrants.includes(declaration);
-      await runActOperation(() => runRestrictedAppMutation(state, workFolder.id, () => input.kind === "network"
-        ? state.restrictedApps.revokeNetwork({ workFolderId: workFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, destinationId: declaration, expectedDigest: digest })
+      await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, () => input.kind === "network"
+        ? state.restrictedApps.revokeNetwork({ connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, destinationId: declaration, expectedDigest: digest })
         : input.kind === "files"
-          ? state.restrictedApps.revokeFiles({ workFolderId: workFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, permissionId: declaration, expectedDigest: digest })
-          : state.restrictedApps.revokeNotifications({ workFolderId: workFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, permissionId: declaration, expectedDigest: digest })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.revoke", workFolder });
+          ? state.restrictedApps.revokeFiles({ connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, permissionId: declaration, expectedDigest: digest })
+          : state.restrictedApps.revokeNotifications({ connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, permissionId: declaration, expectedDigest: digest })));
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.revoke", connectedFolder });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         appId: app.manifest.id,
         grantKind: input.kind,
         declaration,
@@ -6940,41 +6940,41 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async appsDisconnect(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const destination = input.destination.trim();
-      if (!destination) throw new WorkFoldCliError("usage", "Provide --destination <id>.");
-      const app = await requireInstalledApp(workFolder, input.app);
-      const disconnected = await runActOperation(() => runRestrictedAppMutation(state, workFolder.id, () =>
+      if (!destination) throw new AmpleFileCliError("usage", "Provide --destination <id>.");
+      const app = await requireInstalledApp(connectedFolder, input.app);
+      const disconnected = await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, () =>
         state.restrictedApps.deleteConnection({
-          workFolderId: workFolder.id,
+          connectedFolderId: connectedFolder.id,
           appId: app.manifest.id,
           destinationId: destination,
           featureInstallationId: app.featureInstallationId,
           expectedDigest: app.digest,
         })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.disconnect", workFolder });
-      return { workFolder: toActWorkFolderRef(workFolder), appId: app.manifest.id, destination, disconnected };
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.disconnect", connectedFolder });
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), appId: app.manifest.id, destination, disconnected };
     },
     async appsAutomationDisable(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const appAutomationId = input.automation.trim();
-      if (!appAutomationId) throw new WorkFoldCliError("usage", "Provide --automation <id>.");
-      const app = await requireInstalledApp(workFolder, input.app);
+      if (!appAutomationId) throw new AmpleFileCliError("usage", "Provide --automation <id>.");
+      const app = await requireInstalledApp(connectedFolder, input.app);
       const wasEnabled = app.automations.some((automation) => automation.id === appAutomationId && automation.enabled);
-      await runActOperation(() => runRestrictedAppMutation(state, workFolder.id, () =>
+      await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, () =>
         state.restrictedApps.setAppAutomationEnabled({
-          workFolderId: workFolder.id,
+          connectedFolderId: connectedFolder.id,
           appId: app.manifest.id,
           appAutomationId,
           featureInstallationId: app.featureInstallationId,
           expectedDigest: app.digest,
           enabled: false,
         })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.automation.disable", workFolder });
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.automation.disable", connectedFolder });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         appId: app.manifest.id,
         appAutomationId,
         disabled: true as const,
@@ -6982,37 +6982,37 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async appsAutomationRun(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const appAutomationId = input.automation.trim();
-      if (!appAutomationId) throw new WorkFoldCliError("usage", "Provide --automation <id>.");
-      const app = await requireInstalledApp(workFolder, input.app);
-      const result = await runActOperation(() => runRestrictedAppMutation(state, workFolder.id, () =>
+      if (!appAutomationId) throw new AmpleFileCliError("usage", "Provide --automation <id>.");
+      const app = await requireInstalledApp(connectedFolder, input.app);
+      const result = await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, () =>
         state.restrictedApps.runAppAutomationNow({
-          workFolderId: workFolder.id,
+          connectedFolderId: connectedFolder.id,
           appId: app.manifest.id,
           appAutomationId,
           featureInstallationId: app.featureInstallationId,
           expectedDigest: app.digest,
         })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.automation.run", workFolder });
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.automation.run", connectedFolder });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         appId: app.manifest.id,
         appAutomationId,
         run: toActAppAutomationRunRef(result.run),
       };
     },
     async appsProjectDeclare(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const presentation = await readAppPresentationFile(input.presentationPath, input.cwd);
-      return runActOperation(() => runRestrictedAppMutation(state, workFolder.id, async () => {
-        const prior = (await state.restrictedApps.localAppStudio(workFolder.id)).project?.presentation ?? null;
-        const project = await state.restrictedApps.declareLocalAppProject({ workFolderId: workFolder.id, presentation });
-        await recordFacadeAction(state, input.parentTaskId, { command: "apps.project.declare", workFolder });
+      return runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, async () => {
+        const prior = (await state.restrictedApps.localAppStudio(connectedFolder.id)).project?.presentation ?? null;
+        const project = await state.restrictedApps.declareLocalAppProject({ connectedFolderId: connectedFolder.id, presentation });
+        await recordFacadeAction(state, input.parentTaskId, { command: "apps.project.declare", connectedFolder });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           project: { projectId: project.projectId, presentation: toActAppPresentation(project.presentation) },
           priorPresentation: prior ? toActAppPresentation(prior) : null,
           priorPresentationRef: prior ? shortContentRef(prior) : null,
@@ -7020,28 +7020,28 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       }));
     },
     async appsReleasePrepare(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const release = await runActOperation(() => runRestrictedAppMutation(state, workFolder.id, () =>
-        state.restrictedApps.prepareLocalAppRelease({ workFolderId: workFolder.id, displayVersion: input.version })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.release.prepare", workFolder });
-      return { workFolder: toActWorkFolderRef(workFolder), release: toActAppReleaseRef(release) };
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const release = await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, () =>
+        state.restrictedApps.prepareLocalAppRelease({ connectedFolderId: connectedFolder.id, displayVersion: input.version })));
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.release.prepare", connectedFolder });
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), release: toActAppReleaseRef(release) };
     },
     async appsReleasePublish(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const release = await runActOperation(() => runRestrictedAppMutation(state, workFolder.id, () =>
-        state.restrictedApps.publishLocalAppRelease({ workFolderId: workFolder.id, releaseDigest: input.release })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.release.publish", workFolder });
-      return { workFolder: toActWorkFolderRef(workFolder), release: toActAppReleaseRef(release) };
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const release = await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, () =>
+        state.restrictedApps.publishLocalAppRelease({ connectedFolderId: connectedFolder.id, releaseDigest: input.release })));
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.release.publish", connectedFolder });
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), release: toActAppReleaseRef(release) };
     },
     async appsReleaseDelete(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const deletion = await runActOperation(() => deleteLocalAppReleaseIntoRecentlyDeleted(state, workFolder, input.release, input.requestId ?? null));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.release.delete", workFolder });
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const deletion = await runActOperation(() => deleteLocalAppReleaseIntoRecentlyDeleted(state, connectedFolder, input.release, input.requestId ?? null));
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.release.delete", connectedFolder });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         releaseDigest: input.release,
         deleted: deletion.deleted,
         cleanupPending: deletion.cleanupPending,
@@ -7049,59 +7049,59 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async appsInstallPrepare(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const target = await resolveWorkFolder(input.targetWorkFolder);
-      const operation = await runActOperation(() => runRestrictedAppMutations(state, [workFolder.id, target.id], () =>
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const target = await resolveConnectedFolder(input.targetConnectedFolder);
+      const operation = await runActOperation(() => runRestrictedAppMutations(state, [connectedFolder.id, target.id], () =>
         state.restrictedApps.prepareLocalAppInstall({
-          sourceWorkFolderId: workFolder.id,
-          targetWorkFolderId: target.id,
+          sourceConnectedFolderId: connectedFolder.id,
+          targetConnectedFolderId: target.id,
           releaseDigest: input.release,
         })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.install.prepare", workFolder });
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.install.prepare", connectedFolder });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
-        targetWorkFolder: toActWorkFolderRef(target),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
+        targetConnectedFolder: toActConnectedFolderRef(target),
         operation: toActAppOperationRef(operation),
       };
     },
     async appsUpdatePrepare(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       return runActOperation(async () => {
-        const studio = await state.restrictedApps.localAppStudio(workFolder.id);
+        const studio = await state.restrictedApps.localAppStudio(connectedFolder.id);
         const instance = studio.instances.find((item) => item.runtimeInstanceId === input.instance);
-        if (!instance) throw new WorkFoldCliError("notFound", "Local App Instance not found.");
-        const target = await getWorkFolder(instance.workFolderId);
-        const operation = await runRestrictedAppMutations(state, [workFolder.id, target.id], () =>
+        if (!instance) throw new AmpleFileCliError("notFound", "Local App Instance not found.");
+        const target = await getConnectedFolder(instance.connectedFolderId);
+        const operation = await runRestrictedAppMutations(state, [connectedFolder.id, target.id], () =>
           state.restrictedApps.prepareLocalAppUpdate({
-            sourceWorkFolderId: workFolder.id,
+            sourceConnectedFolderId: connectedFolder.id,
             runtimeInstanceId: instance.runtimeInstanceId,
             releaseDigest: input.release,
           }));
-        await recordFacadeAction(state, input.parentTaskId, { command: "apps.update.prepare", workFolder });
+        await recordFacadeAction(state, input.parentTaskId, { command: "apps.update.prepare", connectedFolder });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
-          targetWorkFolder: toActWorkFolderRef(target),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
+          targetConnectedFolder: toActConnectedFolderRef(target),
           operation: toActAppOperationRef(operation),
         };
       });
     },
     async appsOperationActivate(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       return runActOperation(async () => {
-        const studio = await state.restrictedApps.localAppStudio(workFolder.id);
+        const studio = await state.restrictedApps.localAppStudio(connectedFolder.id);
         const operation = studio.operations.find((item) => item.operationId === input.operation);
-        if (!operation) throw new WorkFoldCliError("notFound", "Prepared App operation not found.");
-        const target = await getWorkFolder(operation.targetWorkFolderId);
-        const result = await runRestrictedAppMutations(state, [workFolder.id, target.id], () => operation.kind === "install"
+        if (!operation) throw new AmpleFileCliError("notFound", "Prepared App operation not found.");
+        const target = await getConnectedFolder(operation.targetConnectedFolderId);
+        const result = await runRestrictedAppMutations(state, [connectedFolder.id, target.id], () => operation.kind === "install"
           ? state.restrictedApps.activateLocalAppInstall(operation.operationId)
           : state.restrictedApps.activateLocalAppUpdate(operation.operationId));
-        await recordFacadeAction(state, input.parentTaskId, { command: "apps.operation.activate", workFolder,
-          apps: result.apps.map((app) => ({ ...workFoldAgentAppResultRef(app), ...(app.workFolderId === target.id ? { workFolderName: target.name } : {}) })) });
+        await recordFacadeAction(state, input.parentTaskId, { command: "apps.operation.activate", connectedFolder,
+          apps: result.apps.map((app) => ({ ...ampleFileAgentAppResultRef(app), ...(app.connectedFolderId === target.id ? { connectedFolderName: target.name } : {}) })) });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           operationId: operation.operationId,
           operationKind: operation.kind,
           instance: toActAppInstanceRef(result.instance),
@@ -7109,36 +7109,36 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       });
     },
     async appsOperationCancel(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const cancelled = await runActOperation(() => runRestrictedAppMutation(state, workFolder.id, async () => {
-        const studio = await state.restrictedApps.localAppStudio(workFolder.id);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const cancelled = await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, async () => {
+        const studio = await state.restrictedApps.localAppStudio(connectedFolder.id);
         if (!studio.operations.some((operation) => operation.operationId === input.operation)) {
-          throw new WorkFoldCliError("notFound", "Prepared App operation not found.");
+          throw new AmpleFileCliError("notFound", "Prepared App operation not found.");
         }
         return state.restrictedApps.cancelLocalAppOperation(input.operation);
       }));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.operation.cancel", workFolder });
-      return { workFolder: toActWorkFolderRef(workFolder), operationId: input.operation, cancelled };
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.operation.cancel", connectedFolder });
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), operationId: input.operation, cancelled };
     },
     async appsUninstall(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       return runActOperation(async () => {
-        const installed = (await state.restrictedApps.list(workFolder.id)).find((app) => (
+        const installed = (await state.restrictedApps.list(connectedFolder.id)).find((app) => (
           app.runtimeInstanceKind === "app" && app.runtimeInstanceId === input.instance
         ));
-        if (!installed) throw new WorkFoldCliError("notFound", "Local App Instance not found.");
-        const result = await runRestrictedAppMutations(state, [installed.sourceWorkFolderId, workFolder.id], () =>
+        if (!installed) throw new AmpleFileCliError("notFound", "Local App Instance not found.");
+        const result = await runRestrictedAppMutations(state, [installed.sourceConnectedFolderId, connectedFolder.id], () =>
           state.restrictedApps.uninstallLocalApp({
             runtimeInstanceId: input.instance,
             // The purge disposition is `appsUninstallPurge` on the prepared-act
             // path; this facade method is deliberately retain-only.
             dataDisposition: "retain",
-          }), { requiredWorkFolderIds: [workFolder.id] });
-        await recordFacadeAction(state, input.parentTaskId, { command: "apps.uninstall", workFolder });
+          }), { requiredConnectedFolderIds: [connectedFolder.id] });
+        await recordFacadeAction(state, input.parentTaskId, { command: "apps.uninstall", connectedFolder });
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           runtimeInstanceId: input.instance,
           removed: result.removed,
           retainedNamespaceIds: result.retainedData.map((item) => item.dataNamespaceId),
@@ -7146,40 +7146,40 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         };
       });
     },
-    async workFoldersDelete(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      if (workFolder.location.storage !== "managed") {
-        throw new WorkFoldCliError(
+    async connectedFoldersDelete(input) {
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      if (connectedFolder.location.storage !== "managed") {
+        throw new AmpleFileCliError(
           "conflict",
-          "Only a managed work-folder's folder can be deleted. Removing a linked registration is 'work-folders unregister'; the folder is yours either way.",
+          "Only a managed Connected Folder's folder can be deleted. Removing a linked registration is 'connected-folders unregister'; the folder is yours either way.",
         );
       }
       // The same read-only impact checks the removal orchestration runs
       // (docs/act-ledger.md, conflict rule 4): the verb refuses what the
       // desktop removal would refuse.
-      const impact = await runActOperation(() => state.restrictedApps.workFolderRemovalImpact(workFolder.id));
+      const impact = await runActOperation(() => state.restrictedApps.connectedFolderRemovalImpact(connectedFolder.id));
       if (impact.activeSourceInstanceCount > 0 || impact.activeTargetInstanceCount > 0) {
-        throw new WorkFoldCliError("conflict", "Uninstall release-backed Apps from this work-folder before deleting it.");
+        throw new AmpleFileCliError("conflict", "Uninstall release-backed Apps from this Connected Folder before deleting it.");
       }
       if (impact.retainedDataCount > 0) {
-        throw new WorkFoldCliError("conflict", "Purge this App Project's retained local data in App Studio before deleting its source work-folder.");
+        throw new AmpleFileCliError("conflict", "Purge this App Project's retained local data in App Studio before deleting its source Connected Folder.");
       }
-      const context: PreparedActOutcome<WorkFolderRemovalResult & {
+      const context: PreparedActOutcome<ConnectedFolderRemovalResult & {
         recentlyDeleted: { entryId: string; restoreBy: string } | null;
         appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
         appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
       }> = {};
       await runPreparedAct({
-        kind: "work-folder.delete-folder",
-        parameters: { workFolderId: workFolder.id },
-        pins: { workFolderId: workFolder.id, workFolderRoot: workFolder.workFolderRoot },
+        kind: "connected-folder.delete-folder",
+        parameters: { connectedFolderId: connectedFolder.id },
+        pins: { connectedFolderId: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot },
         requestId: input.requestId,
         context,
       });
-      await recordFacadeAction(state, input.parentTaskId, { command: "work-folders.delete", workFolder });
+      await recordFacadeAction(state, input.parentTaskId, { command: "connected-folders.delete", connectedFolder });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         storage: "managed" as const,
         removed: true as const,
         cleanupPending: context.outcome?.cleanupPending ?? false,
@@ -7189,33 +7189,33 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async toolsImportSkill(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = input.scope === "work-folder" ? await resolveWorkFolder(input.workFolder ?? "") : undefined;
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = input.scope === "connected-folder" ? await resolveConnectedFolder(input.connectedFolder ?? "") : undefined;
       const source = isAbsolute(input.from) ? resolve(input.from) : resolve(input.cwd, input.from);
       const info = await lstat(source).catch(() => null);
       if (!info || info.isSymbolicLink() || !info.isFile()) {
-        throw new WorkFoldCliError("notFound", "The skill bundle must be a regular file on this machine.");
+        throw new AmpleFileCliError("notFound", "The skill bundle must be a regular file on this machine.");
       }
       if (info.size > 100 * 1024 * 1024) {
-        throw new WorkFoldCliError("usage", "The skill bundle exceeds the 100 MB archive limit.");
+        throw new AmpleFileCliError("usage", "The skill bundle exceeds the 100 MB archive limit.");
       }
       const bytes = await readFile(source);
       const contentDigest = piSkillBundleContentDigest(bytes);
       const skillNames = await enumerateSkillBundleNames(basename(source), bytes);
-      if (workFolder) await assertWorkFolderCapabilityTrust(workFolder);
-      const scopedWorkFolder: PreparedActFields = workFolder ? { workFolderId: workFolder.id } : {};
+      if (connectedFolder) await assertConnectedFolderCapabilityTrust(connectedFolder);
+      const scopedConnectedFolder: PreparedActFields = connectedFolder ? { connectedFolderId: connectedFolder.id } : {};
       const context: PreparedActOutcome<PiSkillBundleImportResult> = {};
       await runPreparedAct({
         kind: "capability.skills.import",
-        parameters: { source, scope: input.scope, ...scopedWorkFolder },
+        parameters: { source, scope: input.scope, ...scopedConnectedFolder },
         pins: { source, contentDigest, skillNames },
         requestId: input.requestId,
         context,
       });
-      await recordFacadeAction(state, input.parentTaskId, { command: "tools.import-skill", ...(workFolder ? { workFolder } : {}) });
+      await recordFacadeAction(state, input.parentTaskId, { command: "tools.import-skill", ...(connectedFolder ? { connectedFolder } : {}) });
       return {
         scope: input.scope,
-        ...(workFolder ? { workFolder: toActWorkFolderRef(workFolder) } : {}),
+        ...(connectedFolder ? { connectedFolder: toActConnectedFolderRef(connectedFolder) } : {}),
         source,
         contentDigest,
         skillNames,
@@ -7223,18 +7223,18 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async toolsInstall(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = input.scope === "work-folder" ? await resolveWorkFolder(input.workFolder ?? "") : undefined;
-      if (workFolder) await assertWorkFolderCapabilityTrust(workFolder);
-      const scopedWorkFolder: PreparedActFields = workFolder ? { workFolderId: workFolder.id } : {};
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = input.scope === "connected-folder" ? await resolveConnectedFolder(input.connectedFolder ?? "") : undefined;
+      if (connectedFolder) await assertConnectedFolderCapabilityTrust(connectedFolder);
+      const scopedConnectedFolder: PreparedActFields = connectedFolder ? { connectedFolderId: connectedFolder.id } : {};
       const record = async (): Promise<void> => {
-        await recordFacadeAction(state, input.parentTaskId, { command: "tools.install", ...(workFolder ? { workFolder } : {}) });
+        await recordFacadeAction(state, input.parentTaskId, { command: "tools.install", ...(connectedFolder ? { connectedFolder } : {}) });
       };
       const installBundle = async (source: string, contentDigest: string, skillNames: string[]) => {
         const context: PreparedActOutcome<PiSkillBundleImportResult> = {};
         await runPreparedAct({
           kind: "capability.skills.import",
-          parameters: { source, scope: input.scope, ...scopedWorkFolder },
+          parameters: { source, scope: input.scope, ...scopedConnectedFolder },
           pins: { source, contentDigest, skillNames },
           requestId: input.requestId,
           context,
@@ -7242,7 +7242,7 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         await record();
         return {
           scope: input.scope,
-          ...(workFolder ? { workFolder: toActWorkFolderRef(workFolder) } : {}),
+          ...(connectedFolder ? { connectedFolder: toActConnectedFolderRef(connectedFolder) } : {}),
           source,
           contentDigest,
           skillNames,
@@ -7269,7 +7269,7 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         await record();
         return {
           scope: input.scope,
-          ...(workFolder ? { workFolder: toActWorkFolderRef(workFolder) } : {}),
+          ...(connectedFolder ? { connectedFolder: toActConnectedFolderRef(connectedFolder) } : {}),
           source: details.installSource,
           packageId: details.id,
           version: details.version,
@@ -7282,7 +7282,7 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         // before anything is pinned, exactly as the desktop review does.
         const details = await runActOperation(() => state.capabilityRegistry.details(input.catalogId!));
         if (details.sourceKind === "reference") {
-          throw new WorkFoldCliError("usage", "This capability is a reference and cannot be installed directly.");
+          throw new AmpleFileCliError("usage", "This capability is a reference and cannot be installed directly.");
         }
         if (details.sourceKind === "bundle") {
           // An official catalog skill bundle makes bytes runnable as a skill
@@ -7296,81 +7296,81 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
           return installBundle(input.catalogId, contentDigest, skillNames);
         }
         if (!details.installSource || !details.version) {
-          throw new WorkFoldCliError(
+          throw new AmpleFileCliError(
             "unavailable",
-            "work-fold cannot pin an exact version for this package source yet, so it cannot install it from here. Install it from Skills & Extensions on the desktop.",
+            "AmpleFile cannot pin an exact version for this package source yet, so it cannot install it from here. Install it from Skills & Extensions on the desktop.",
           );
         }
         return installPackage(
-          { catalogId: input.catalogId, scope: input.scope, ...scopedWorkFolder },
+          { catalogId: input.catalogId, scope: input.scope, ...scopedConnectedFolder },
           { id: details.id, version: details.version, installSource: details.installSource },
           capabilityResourceSummary(details),
         );
       }
       const identity = npmSourceIdentity(input.source ?? "");
       if (!identity) {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "unavailable",
-          "work-fold can pin an exact version only for npm package sources yet, so it cannot install this source from here. Install it from Skills & Extensions on the desktop.",
+          "AmpleFile can pin an exact version only for npm package sources yet, so it cannot install this source from here. Install it from Skills & Extensions on the desktop.",
         );
       }
       const details = await runActOperation(() => state.capabilityRegistry.details(`npm:${identity.packageName}`));
       if (!details.installSource || !details.version) {
-        throw new WorkFoldCliError("unavailable", "npm did not report an exact installable version for this package.");
+        throw new AmpleFileCliError("unavailable", "npm did not report an exact installable version for this package.");
       }
       if (identity.pinnedVersion !== undefined && identity.pinnedVersion !== details.version) {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "conflict",
-          `work-fold inspects the latest published version (${details.version}) and installs only that exact version; `
+          `AmpleFile inspects the latest published version (${details.version}) and installs only that exact version; `
             + `the source pins ${identity.pinnedVersion}. Install without a version pin, or use the inspected version.`,
         );
       }
       return installPackage(
-        { source: details.installSource, scope: input.scope, ...scopedWorkFolder },
+        { source: details.installSource, scope: input.scope, ...scopedConnectedFolder },
         { id: details.id, version: details.version, installSource: details.installSource },
         capabilityResourceSummary(details),
       );
     },
     async toolsSetEnabled(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = input.scope === "work-folder" ? await resolveWorkFolder(input.workFolder ?? "") : undefined;
-      const root = workFolder?.workFolderRoot ?? workFoldAgentRoot();
-      if (workFolder) await assertWorkFolderCapabilityTrust(workFolder);
-      const act = await prepareResourceEnable(root, { path: input.path, kind: input.kind, enabled: input.enabled, scope: input.scope, ...(workFolder ? { workFolderId: workFolder.id } : {}) }, state.runtimeProvider);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = input.scope === "connected-folder" ? await resolveConnectedFolder(input.connectedFolder ?? "") : undefined;
+      const root = connectedFolder?.connectedFolderRoot ?? ampleFileAgentRoot();
+      if (connectedFolder) await assertConnectedFolderCapabilityTrust(connectedFolder);
+      const act = await prepareResourceEnable(root, { path: input.path, kind: input.kind, enabled: input.enabled, scope: input.scope, ...(connectedFolder ? { connectedFolderId: connectedFolder.id } : {}) }, state.runtimeProvider);
       await runPreparedAct({ ...act, requestId: input.requestId });
-      await recordFacadeAction(state, input.parentTaskId, { command: input.enabled ? "tools.enable" : "tools.disable", ...(workFolder ? { workFolder } : {}) });
-      return { scope: input.scope, ...(workFolder ? { workFolder: toActWorkFolderRef(workFolder) } : {}), path: String(act.parameters.path), enabled: input.enabled };
+      await recordFacadeAction(state, input.parentTaskId, { command: input.enabled ? "tools.enable" : "tools.disable", ...(connectedFolder ? { connectedFolder } : {}) });
+      return { scope: input.scope, ...(connectedFolder ? { connectedFolder: toActConnectedFolderRef(connectedFolder) } : {}), path: String(act.parameters.path), enabled: input.enabled };
     },
     async toolsUpdate(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = input.scope === "work-folder" ? await resolveWorkFolder(input.workFolder ?? "") : undefined;
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = input.scope === "connected-folder" ? await resolveConnectedFolder(input.connectedFolder ?? "") : undefined;
       const source = input.source.trim();
       const identity = npmSourceIdentity(source);
       if (!identity) {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "unavailable",
-          "work-fold can pin an exact version only for npm package sources yet, so it cannot update this source from here. Update it from Skills & Extensions on the desktop.",
+          "AmpleFile can pin an exact version only for npm package sources yet, so it cannot update this source from here. Update it from Skills & Extensions on the desktop.",
         );
       }
       // Mirror the update path's configured-scope requirement early so the
       // refusal is honest; the capability fence is not needed for this read.
-      const root = workFolder ? workFolder.workFolderRoot : workFoldAgentRoot();
-      const piScope = workFolder ? "project" : "user";
+      const root = connectedFolder ? connectedFolder.connectedFolderRoot : ampleFileAgentRoot();
+      const piScope = connectedFolder ? "project" : "user";
       const configured = (await runActOperation(() => listPiPackages(root, state.runtimeProvider)))
         .find((item) => item.source === source && item.scope === piScope);
       if (!configured) {
-        throw new WorkFoldCliError("notFound", `Package is not configured in the requested scope: ${source}`);
+        throw new AmpleFileCliError("notFound", `Package is not configured in the requested scope: ${source}`);
       }
-      if (workFolder) await assertWorkFolderCapabilityTrust(workFolder);
+      if (connectedFolder) await assertConnectedFolderCapabilityTrust(connectedFolder);
       const details = await runActOperation(() => state.capabilityRegistry.details(`npm:${identity.packageName}`));
       if (!details.version) {
-        throw new WorkFoldCliError("unavailable", "npm did not report an exact version for this package.");
+        throw new AmpleFileCliError("unavailable", "npm did not report an exact version for this package.");
       }
       const resourceSummary = capabilityResourceSummary(details);
-      const scopedWorkFolder: PreparedActFields = workFolder ? { workFolderId: workFolder.id } : {};
+      const scopedConnectedFolder: PreparedActFields = connectedFolder ? { connectedFolderId: connectedFolder.id } : {};
       await runPreparedAct({
         kind: "capability.package.update",
-        parameters: { source, scope: input.scope, ...scopedWorkFolder },
+        parameters: { source, scope: input.scope, ...scopedConnectedFolder },
         pins: {
           packageId: details.id,
           version: details.version,
@@ -7380,10 +7380,10 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         },
         requestId: input.requestId,
       });
-      await recordFacadeAction(state, input.parentTaskId, { command: "tools.update", ...(workFolder ? { workFolder } : {}) });
+      await recordFacadeAction(state, input.parentTaskId, { command: "tools.update", ...(connectedFolder ? { connectedFolder } : {}) });
       return {
         scope: input.scope,
-        ...(workFolder ? { workFolder: toActWorkFolderRef(workFolder) } : {}),
+        ...(connectedFolder ? { connectedFolder: toActConnectedFolderRef(connectedFolder) } : {}),
         source,
         packageId: details.id,
         version: details.version,
@@ -7392,14 +7392,14 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async appsInstallProposal(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const proposal = await runActOperation(() => state.restrictedAppProposals.get(input.proposal));
-      if (!proposal || proposal.workFolderId !== workFolder.id || proposal.conversationId !== input.conversationId) {
-        throw new WorkFoldCliError("notFound", "App proposal not found.");
+      if (!proposal || proposal.connectedFolderId !== connectedFolder.id || proposal.conversationId !== input.conversationId) {
+        throw new AmpleFileCliError("notFound", "App proposal not found.");
       }
       if (proposal.status !== "pending" && proposal.status !== "failed") {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "conflict",
           proposal.status === "revision-changed"
             ? "The package changed after review; review the new revision before installing it."
@@ -7409,26 +7409,26 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       const context: PreparedActOutcome<RestrictedAppInstalled> = {};
       await runPreparedAct({
         kind: "app.review.install",
-        parameters: { workFolderId: workFolder.id, proposalId: proposal.id },
+        parameters: { connectedFolderId: connectedFolder.id, proposalId: proposal.id },
         pins: { proposalId: proposal.id, reviewDigest: proposal.review.digest },
         requestId: input.requestId,
         context,
       });
-      if (!context.outcome) throw new WorkFoldCliError("failure", "The app review did not report an installed app.");
-      const app = workFoldAgentAppResultRef(context.outcome);
+      if (!context.outcome) throw new AmpleFileCliError("failure", "The app review did not report an installed app.");
+      const app = ampleFileAgentAppResultRef(context.outcome);
       const settled = await runActOperation(() => state.restrictedAppProposals.get(proposal.id));
-      const outcome = workFoldAgentInstallOutcome(context.outcome, settled?.needs);
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.install-proposal", workFolder, apps: [app] });
-      return { workFolder: toActWorkFolderRef(workFolder), proposalId: proposal.id, digest: proposal.review.digest, app, ...outcome };
+      const outcome = ampleFileAgentInstallOutcome(context.outcome, settled?.needs);
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.install-proposal", connectedFolder, apps: [app] });
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), proposalId: proposal.id, digest: proposal.review.digest, app, ...outcome };
     },
     async appsInstallPreview(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const packagePath = input.packagePath.trim();
-      if (!packagePath) throw new WorkFoldCliError("usage", "Provide --package <work-folder-path>.");
+      if (!packagePath) throw new AmpleFileCliError("usage", "Provide --package <connected-folder-path>.");
       // `propose` installs in the same call, so what the package replaces is
       // read before it runs: the Local preview of each app id, by revision.
-      const previewsBefore = new Map((await runActOperation(() => state.restrictedApps.list(workFolder.id)))
+      const previewsBefore = new Map((await runActOperation(() => state.restrictedApps.list(connectedFolder.id)))
         .filter((app) => app.runtimeInstanceKind === "development")
         .map((app) => [app.manifest.id, app.digest]));
       // The host inspects the package and owns every review field and the
@@ -7437,16 +7437,16 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       // once through the same digest-checked path as a Chat proposal.
       const proposal = await runActOperation(async () => {
         const result = await state.restrictedAppProposals.propose({
-          workFolderId: workFolder.id,
-          workFolderRoot: workFolder.workFolderRoot,
-          conversationId: workFoldActInstallPreviewConversationId,
+          connectedFolderId: connectedFolder.id,
+          connectedFolderRoot: connectedFolder.connectedFolderRoot,
+          conversationId: ampleFileActInstallPreviewConversationId,
           sourcePath: packagePath,
         });
         if (!result.proposal || result.status === "cancelled") {
-          throw new WorkFoldCliError("failure", "The package review could not be recorded.");
+          throw new AmpleFileCliError("failure", "The package review could not be recorded.");
         }
         if (result.status === "failed") {
-          throw new WorkFoldCliError("failure", result.proposal.error ?? "The package could not be added.");
+          throw new AmpleFileCliError("failure", result.proposal.error ?? "The package could not be added.");
         }
         return result.proposal;
       });
@@ -7457,18 +7457,18 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       const context: PreparedActOutcome<RestrictedAppInstalled> = {};
       await runPreparedAct({
         kind: "app.review.install",
-        parameters: { workFolderId: workFolder.id, proposalId: proposal.id },
+        parameters: { connectedFolderId: connectedFolder.id, proposalId: proposal.id },
         pins: { proposalId: proposal.id, reviewDigest: proposal.review.digest },
         requestId: input.requestId,
         context,
       });
-      if (!context.outcome) throw new WorkFoldCliError("failure", "The package review did not report an installed app.");
-      const app = workFoldAgentAppResultRef(context.outcome);
+      if (!context.outcome) throw new AmpleFileCliError("failure", "The package review did not report an installed app.");
+      const app = ampleFileAgentAppResultRef(context.outcome);
       const settled = await runActOperation(() => state.restrictedAppProposals.get(proposal.id));
-      const outcome = workFoldAgentInstallOutcome(context.outcome, settled?.needs);
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.install-preview", workFolder, apps: [app] });
+      const outcome = ampleFileAgentInstallOutcome(context.outcome, settled?.needs);
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.install-preview", connectedFolder, apps: [app] });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         proposalId: proposal.id,
         digest: proposal.review.digest,
         title: proposal.review.manifest.title,
@@ -7480,11 +7480,11 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async appsGrant(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const app = await requireInstalledApp(workFolder, input.app);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const app = await requireInstalledApp(connectedFolder, input.app);
       if (input.digest.trim() !== app.digest) {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "conflict",
           "Grants bind to the exact reviewed digest, and the installed app's digest is different. Read the current revision's review first.",
         );
@@ -7498,22 +7498,22 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         : input.kind === "files"
           ? Boolean(filePermission)
           : app.manifest.permissions.notifications.some((item) => item.id === declaration);
-      if (!declared) throw new WorkFoldCliError("notFound", "The app does not declare this permission.");
-      // A folder permission binds to the whole work-folder (docs/receipts-not-gates.md,
+      if (!declared) throw new AmpleFileCliError("notFound", "The app does not declare this permission.");
+      // A folder permission binds to the whole Connected Folder (docs/receipts-not-gates.md,
       // F21) and takes no file. A permission that names a single file binds to
-      // the exact work-folder-relative file named here; without one there is nothing
-      // to hand the broker but a work-folder root it would reject.
+      // the exact Connected Folder–relative file named here; without one there is nothing
+      // to hand the broker but a Connected Folder root it would reject.
       const requestedPath = input.path?.trim();
       if (requestedPath !== undefined && requestedPath !== "" && (input.kind !== "files" || filePermission?.target === "directory")) {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "usage",
-          "Only a permission that names a single file takes a file; a folder permission covers the whole work-folder.",
+          "Only a permission that names a single file takes a file; a folder permission covers the whole Connected Folder.",
         );
       }
       if (filePermission && filePermission.target !== "directory" && !requestedPath) {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "usage",
-          `This permission needs one file. Name it with --path <work-folder-path>, or pick it for “${declaration}” in Settings → Apps, under work-folder files.`,
+          `This permission needs one file. Name it with --path <connected-folder-path>, or pick it for “${declaration}” in Settings → Apps, under Connected Folder files.`,
         );
       }
       const kind = input.kind === "network"
@@ -7524,11 +7524,11 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       const root = input.kind !== "files"
         ? undefined
         : requestedPath
-          ? await grantedWorkFolderFile(workFolder.workFolderRoot, requestedPath)
+          ? await grantedConnectedFolderFile(connectedFolder.connectedFolderRoot, requestedPath)
           : ".";
       await runPreparedAct({
         kind,
-        parameters: { workFolderId: workFolder.id, appInstanceId: app.featureInstallationId, declarationId: declaration },
+        parameters: { connectedFolderId: connectedFolder.id, appInstanceId: app.featureInstallationId, declarationId: declaration },
         pins: {
           appInstanceId: app.featureInstallationId,
           declarationId: declaration,
@@ -7537,9 +7537,9 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         requestId: input.requestId,
         ...(root !== undefined ? { context: { root } } : {}),
       });
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.grant", workFolder });
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.grant", connectedFolder });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         appId: app.manifest.id,
         grantKind: input.kind,
         declaration,
@@ -7548,11 +7548,11 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async appsConnect(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const app = await requireInstalledApp(workFolder, input.app);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const app = await requireInstalledApp(connectedFolder, input.app);
       const destination = app.manifest.permissions.network.find((item) => item.id === input.destination.trim());
-      if (!destination) throw new WorkFoldCliError("notFound", "The app does not declare this connection destination.");
+      if (!destination) throw new AmpleFileCliError("notFound", "The app does not declare this connection destination.");
       const target = destination.target.kind === "public-https"
         ? String(destination.target.origin)
         : `http://${String(destination.target.host)}:${String(destination.target.port)}`;
@@ -7562,9 +7562,9 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       const adapterKind = destination.auth.some((item) => item.kind === "oauth2-pkce")
         ? "oauth2-pkce"
         : destination.auth[0]?.kind;
-      if (!adapterKind) throw new WorkFoldCliError("conflict", "This destination declares no credential adapter to connect with.");
+      if (!adapterKind) throw new AmpleFileCliError("conflict", "This destination declares no credential adapter to connect with.");
       if (adapterKind !== "oauth2-pkce") {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "permissionDenied",
           "This destination takes a secret typed on the desktop. Connect it from Settings → Apps.",
         );
@@ -7572,7 +7572,7 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       const context: PreparedActOutcome<RestrictedAppConnectionStatus> = {};
       await runPreparedAct({
         kind: "app.connection.save",
-        parameters: { workFolderId: workFolder.id, appInstanceId: app.featureInstallationId, destinationId: destination.id },
+        parameters: { connectedFolderId: connectedFolder.id, appInstanceId: app.featureInstallationId, destinationId: destination.id },
         pins: {
           appInstanceId: app.featureInstallationId,
           declarationId: destination.id,
@@ -7582,10 +7582,10 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         requestId: input.requestId,
         context,
       });
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.connect", workFolder });
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.connect", connectedFolder });
       const connection = context.outcome;
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         appId: app.manifest.id,
         destination: destination.id,
         target,
@@ -7598,19 +7598,19 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async appsAutomationEnable(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const app = await requireInstalledApp(workFolder, input.app);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const app = await requireInstalledApp(connectedFolder, input.app);
       const appAutomationId = input.automation.trim();
       const declaration = app.manifest.automations.find((item) => item.id === appAutomationId);
-      if (!declaration) throw new WorkFoldCliError("notFound", "The app does not declare this automation.");
+      if (!declaration) throw new AmpleFileCliError("notFound", "The app does not declare this automation.");
       if (app.automations.some((automation) => automation.id === appAutomationId && automation.enabled)) {
-        throw new WorkFoldCliError("conflict", "This automation is already enabled.");
+        throw new AmpleFileCliError("conflict", "This automation is already enabled.");
       }
       const scheduleSummary = restrictedAppAutomationScheduleSummary(declaration);
       await runPreparedAct({
         kind: "app.automation.enable",
-        parameters: { workFolderId: workFolder.id, appInstanceId: app.featureInstallationId, appAutomationId },
+        parameters: { connectedFolderId: connectedFolder.id, appInstanceId: app.featureInstallationId, appAutomationId },
         pins: {
           appInstanceId: app.featureInstallationId,
           appAutomationId,
@@ -7619,9 +7619,9 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         },
         requestId: input.requestId,
       });
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.automation.enable", workFolder });
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.automation.enable", connectedFolder });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         appId: app.manifest.id,
         appAutomationId,
         scheduleSummary,
@@ -7629,17 +7629,17 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async appsStorageClear(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const app = await requireInstalledApp(workFolder, input.app);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const app = await requireInstalledApp(connectedFolder, input.app);
       // The receipt states the byte count being cleared; without an
       // observable count the act refuses instead of clearing blind, and a
       // count that changes before the effect is a conflict.
-      const usage = await runActOperation(() => state.restrictedApps.storageUsage(workFolder.id, app.manifest.id, app.digest, app.featureInstallationId));
+      const usage = await runActOperation(() => state.restrictedApps.storageUsage(connectedFolder.id, app.manifest.id, app.digest, app.featureInstallationId));
       const context: PreparedActOutcome<{ remainingBytes: number; recentlyDeleted: RecentlyDeletedRef | null }> = {};
       await runPreparedAct({
         kind: "app.storage.clear",
-        parameters: { workFolderId: workFolder.id, appInstanceId: app.featureInstallationId },
+        parameters: { connectedFolderId: connectedFolder.id, appInstanceId: app.featureInstallationId },
         pins: {
           appInstanceId: app.featureInstallationId,
           dataNamespaceIds: [app.dataNamespaceId],
@@ -7648,9 +7648,9 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
         requestId: input.requestId,
         context,
       });
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.storage.clear", workFolder });
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.storage.clear", connectedFolder });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         appId: app.manifest.id,
         clearedBytes: usage.usageBytes,
         remainingBytes: context.outcome?.remainingBytes ?? 0,
@@ -7658,27 +7658,27 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async appsRetainedPurge(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const studio = await runActOperation(() => state.restrictedApps.localAppStudio(workFolder.id));
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const studio = await runActOperation(() => state.restrictedApps.localAppStudio(connectedFolder.id));
       const retained = studio.retainedData.find((item) => item.retainedDataId === input.retained.trim());
-      if (!retained) throw new WorkFoldCliError("notFound", "Retained App data record not found in this work-folder's App Studio.");
+      if (!retained) throw new AmpleFileCliError("notFound", "Retained App data record not found in this Connected Folder's App Studio.");
       const context: PreparedActOutcome<{ cleanupPending: boolean; recentlyDeleted: RecentlyDeletedRef[] }> = {};
       await runPreparedAct({
         kind: "app.data.purge",
-        parameters: { workFolderId: workFolder.id, appInstanceId: retained.featureInstallationId, purgeTarget: "retained" },
+        parameters: { connectedFolderId: connectedFolder.id, appInstanceId: retained.featureInstallationId, purgeTarget: "retained" },
         pins: {
           appInstanceId: retained.featureInstallationId,
           dataNamespaceIds: [retained.dataNamespaceId],
           retainedDataId: retained.retainedDataId,
-          sourceWorkFolderId: workFolder.id,
+          sourceConnectedFolderId: connectedFolder.id,
         },
         requestId: input.requestId,
         context,
       });
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.retained.purge", workFolder });
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.retained.purge", connectedFolder });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         retainedDataId: retained.retainedDataId,
         dataNamespaceIds: [retained.dataNamespaceId],
         purged: true as const,
@@ -7687,28 +7687,28 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async appsUninstallPurge(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      const installed = (await runActOperation(() => state.restrictedApps.list(workFolder.id))).find((app) => (
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      const installed = (await runActOperation(() => state.restrictedApps.list(connectedFolder.id))).find((app) => (
         app.runtimeInstanceKind === "app" && app.runtimeInstanceId === input.instance
       ));
-      if (!installed) throw new WorkFoldCliError("notFound", "Local App Instance not found.");
+      if (!installed) throw new AmpleFileCliError("notFound", "Local App Instance not found.");
       const context: PreparedActOutcome<{ cleanupPending: boolean; recentlyDeleted: RecentlyDeletedRef[] }> = {};
       await runPreparedAct({
         kind: "app.data.purge",
-        parameters: { workFolderId: workFolder.id, appInstanceId: installed.featureInstallationId, purgeTarget: "runtime-instance" },
+        parameters: { connectedFolderId: connectedFolder.id, appInstanceId: installed.featureInstallationId, purgeTarget: "runtime-instance" },
         pins: {
           appInstanceId: installed.featureInstallationId,
           dataNamespaceIds: [installed.dataNamespaceId],
           runtimeInstanceId: installed.runtimeInstanceId,
-          sourceWorkFolderId: installed.sourceWorkFolderId,
+          sourceConnectedFolderId: installed.sourceConnectedFolderId,
         },
         requestId: input.requestId,
         context,
       });
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.uninstall", workFolder });
+      await recordFacadeAction(state, input.parentTaskId, { command: "apps.uninstall", connectedFolder });
       return {
-        workFolder: toActWorkFolderRef(workFolder),
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         runtimeInstanceId: installed.runtimeInstanceId,
         purgedNamespaceIds: [installed.dataNamespaceId],
         removed: true as const,
@@ -7717,7 +7717,7 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async automationsEnable(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const { declaration, digest } = await readAutomationStagingFile(input.proposalPath, input.cwd);
       const enabled = await enableStoredAutomationDeclaration(state, declaration, digest, {
         surface: "cli",
@@ -7729,50 +7729,50 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
     },
     async recentlyDeletedList() {
       const listing = await runActOperation(() => state.recentlyDeleted.list());
-      const registered = new Set((await listWorkFolders()).map((workFolder) => workFolder.id));
-      const appStudioWaiting = appStudioWaitingWorkFolders(listing.entries);
-      const entries: WorkFoldActRecentlyDeletedEntry[] = [];
+      const registered = new Set((await listConnectedFolders()).map((connectedFolder) => connectedFolder.id));
+      const appStudioWaiting = appStudioWaitingConnectedFolders(listing.entries);
+      const entries: AmpleFileActRecentlyDeletedEntry[] = [];
       for (const entry of listing.entries) entries.push(await recentlyDeletedEntryView(state, entry, registered, appStudioWaiting));
       return { entries, retentionDays: listing.retentionDays, damagedCount: listing.damaged.length };
     },
     async recentlyDeletedRestore(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const entryId = input.entry.trim();
-      if (!workFoldRecentlyDeletedEntryIdPattern.test(entryId)) {
-        throw new WorkFoldCliError("usage", "'--entry' takes a Recently deleted item id from 'recently-deleted list'.");
+      if (!ampleFileRecentlyDeletedEntryIdPattern.test(entryId)) {
+        throw new AmpleFileCliError("usage", "'--entry' takes a Recently deleted item id from 'recently-deleted list'.");
       }
       const before = await runActOperation(() => state.recentlyDeleted.get(entryId).catch(() => null));
       const restored = await runActOperation(() => restoreRecentlyDeletedEntry(state, entryId, {
         receiptId: input.requestId ?? null,
         ...(input.toPath === undefined ? {} : { toPath: input.toPath }),
       }));
-      const workFolder = "workFolder" in restored && restored.workFolder ? await getWorkFolder(restored.workFolder.id).catch(() => null) : null;
+      const connectedFolder = "connectedFolder" in restored && restored.connectedFolder ? await getConnectedFolder(restored.connectedFolder.id).catch(() => null) : null;
       await recordFacadeAction(state, input.parentTaskId, {
         command: "recently-deleted.restore",
-        ...(workFolder ? { workFolder } : {}),
+        ...(connectedFolder ? { connectedFolder } : {}),
       });
       // The entry id is the request's own input; the result reports what came
       // back, with the entry it came from alongside.
       const effect = restored.kind === "saved-copy"
         ? { kind: restored.kind, path: restored.path }
-        : restored.kind === "work-folder"
-          ? { kind: restored.kind, workFolder: restored.workFolder, workFolderRoot: restored.workFolderRoot, renamed: restored.renamed }
+        : restored.kind === "connected-folder"
+          ? { kind: restored.kind, connectedFolder: restored.connectedFolder, connectedFolderRoot: restored.connectedFolderRoot, renamed: restored.renamed }
           : restored.kind === "skill"
             ? {
               kind: restored.kind,
               scope: restored.scope,
-              ...(restored.workFolder ? { workFolder: restored.workFolder } : {}),
+              ...(restored.connectedFolder ? { connectedFolder: restored.connectedFolder } : {}),
               name: restored.name,
               path: restored.path,
             }
           : restored.kind === "app-storage"
-            ? { kind: restored.kind, workFolder: restored.workFolder, appId: restored.appId, usage: restored.usage }
+            ? { kind: restored.kind, connectedFolder: restored.connectedFolder, appId: restored.appId, usage: restored.usage }
             : restored.kind === "app-release"
-              ? { kind: restored.kind, workFolder: restored.workFolder, releaseDigest: restored.releaseDigest, displayVersion: restored.displayVersion }
+              ? { kind: restored.kind, connectedFolder: restored.connectedFolder, releaseDigest: restored.releaseDigest, displayVersion: restored.displayVersion }
               : restored.kind === "app-studio"
                 ? {
                   kind: restored.kind,
-                  workFolder: restored.workFolder,
+                  connectedFolder: restored.connectedFolder,
                   projectTitle: restored.projectTitle,
                   previewCount: restored.previewCount,
                   releaseCount: restored.releaseCount,
@@ -7782,7 +7782,7 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
                 }
                 : {
               kind: restored.kind,
-              workFolder: restored.workFolder,
+              connectedFolder: restored.connectedFolder,
               path: restored.path,
               renamed: restored.renamed,
               safetyCheckpointId: restored.safetyCheckpointId,
@@ -7797,7 +7797,7 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       return { automations: projections.map(toActAutomationSummary) };
     },
     async automationsModels() {
-      const models = await listPiModels(workFoldAgentScopeForRoutes(state).rootPath, state.runtimeProvider);
+      const models = await listPiModels(ampleFileAgentScopeForRoutes(state).rootPath, state.runtimeProvider);
       return {
         models: models.filter((model) => model.configured)
           .map((model) => ({ provider: model.provider, providerName: model.providerName, id: model.id, name: model.name, seesImages: model.input.includes("image") }))
@@ -7807,31 +7807,31 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
     async automationsShow(input) {
       const automationId = input.automation.trim();
       const projection = await runActOperation(() => state.automations.getAutomation(automationId));
-      if (!projection) throw new WorkFoldCliError("notFound", "No automation has this id on this machine.");
-      const workFolderNames = new Map<string, string>();
-      for (const workFolderId of workFoldAutomationReferencedWorkFolderIds(projection.declaration)) {
-        const registered = await getWorkFolder(workFolderId).catch(() => null);
-        if (registered) workFolderNames.set(workFolderId, registered.name);
+      if (!projection) throw new AmpleFileCliError("notFound", "No automation has this id on this machine.");
+      const connectedFolderNames = new Map<string, string>();
+      for (const connectedFolderId of ampleFileAutomationReferencedConnectedFolderIds(projection.declaration)) {
+        const registered = await getConnectedFolder(connectedFolderId).catch(() => null);
+        if (registered) connectedFolderNames.set(connectedFolderId, registered.name);
       }
-      const named = (workFolderId: string) => (workFolderNames.has(workFolderId) ? { workFolderName: workFolderNames.get(workFolderId)! } : {});
+      const named = (connectedFolderId: string) => (connectedFolderNames.has(connectedFolderId) ? { connectedFolderName: connectedFolderNames.get(connectedFolderId)! } : {});
       return {
         automation: {
           ...toActAutomationSummary(projection),
           steps: projection.declaration.steps.map((step) => step.kind === "chat"
-            ? { id: step.id, kind: "chat" as const, workFolderId: step.workFolder, ...named(step.workFolder), message: step.message, ...(step.model ? { model: step.model } : {}) }
+            ? { id: step.id, kind: "chat" as const, connectedFolderId: step.connectedFolder, ...named(step.connectedFolder), message: step.message, ...(step.model ? { model: step.model } : {}) }
             : step.kind === "files"
               ? {
                 id: step.id,
                 kind: "files" as const,
-                fromWorkFolderId: step.fromWorkFolder,
-                ...(workFolderNames.has(step.fromWorkFolder) ? { fromWorkFolderName: workFolderNames.get(step.fromWorkFolder)! } : {}),
+                fromConnectedFolderId: step.fromConnectedFolder,
+                ...(connectedFolderNames.has(step.fromConnectedFolder) ? { fromConnectedFolderName: connectedFolderNames.get(step.fromConnectedFolder)! } : {}),
                 source: toActAutomationFilesSource(step.from),
-                toWorkFolderId: step.toWorkFolder,
-                ...(workFolderNames.has(step.toWorkFolder) ? { toWorkFolderName: workFolderNames.get(step.toWorkFolder)! } : {}),
+                toConnectedFolderId: step.toConnectedFolder,
+                ...(connectedFolderNames.has(step.toConnectedFolder) ? { toConnectedFolderName: connectedFolderNames.get(step.toConnectedFolder)! } : {}),
                 to: step.to,
               }
               : step.kind === "check"
-                ? { id: step.id, kind: "check" as const, workFolderId: step.workFolder, ...named(step.workFolder), ...(step.check ? { checkId: step.check } : {}) }
+                ? { id: step.id, kind: "check" as const, connectedFolderId: step.connectedFolder, ...named(step.connectedFolder), ...(step.check ? { checkId: step.check } : {}) }
                 : { id: step.id, kind: "agent" as const, message: step.message, ...(step.model ? { model: step.model } : {}) }),
           grants: projection.grants.map((grant) => ({
             digest: grant.digest,
@@ -7844,10 +7844,10 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async automationsRun(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const automationId = input.automation.trim();
       const projection = await runActOperation(() => state.automations.getAutomation(automationId));
-      if (!projection) throw new WorkFoldCliError("notFound", "No automation has this id on this machine.");
+      if (!projection) throw new AmpleFileCliError("notFound", "No automation has this id on this machine.");
       const run = await runActOperation(() => state.automations.runNow(automationId, {
         ...(input.requestId ? { requestId: input.requestId } : {}),
       }));
@@ -7864,16 +7864,16 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async automationsStop(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const automationId = input.automation.trim();
       const stopped = state.automations.stopRun(automationId);
       if (!stopped) {
-        throw new WorkFoldCliError("conflict", "This automation has no active run; its settled state already stands.");
+        throw new AmpleFileCliError("conflict", "This automation has no active run; its settled state already stands.");
       }
       return { automationId, stopped: true as const, runId: stopped.runId };
     },
     async automationsDisable(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const automationId = input.automation.trim();
       const result = await runActOperation(() => state.automations.disable(automationId));
       return {
@@ -7884,11 +7884,11 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async automationsDelete(input) {
-      assertWorkFoldAgentParentAccepting(state, input.parentTaskId);
+      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const automationId = input.automation.trim();
       const record = await runActOperation(() => state.automations.deleteAutomation(automationId));
       if (record.health !== "disabled" && record.health !== "suspended" && record.health !== "completed") {
-        throw new WorkFoldCliError("failure", "The automation was deleted in an unexpected health state.");
+        throw new AmpleFileCliError("failure", "The automation was deleted in an unexpected health state.");
       }
       return { automationId, deleted: true as const, digest: record.digest, finalHealth: record.health };
     },
@@ -7897,19 +7897,19 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       return { ...projection, receipts: [...projection.receipts].reverse() };
     },
     async checksEnable(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      return runReservedCheckOperation(state, workFolder.id, async () => {
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return runReservedCheckOperation(state, connectedFolder.id, async () => {
         const proposalPath = isAbsolute(input.proposalPath)
           ? resolve(input.proposalPath)
           : resolve(input.cwd, input.proposalPath);
         const enabled = await runActOperation(() => state.checks.enable({
-          workFolder: workFolder,
+          connectedFolder: connectedFolder,
           proposalPath,
           actor: "cli",
           ...(input.proposeOnly ? { proposeOnly: true } : {}),
         }));
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           check: {
             id: enabled.declaration.id,
             title: enabled.declaration.title,
@@ -7925,113 +7925,113 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       });
     },
     async checksProposeFix(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const proposalPath = isAbsolute(input.proposalPath) ? resolve(input.proposalPath) : resolve(input.cwd, input.proposalPath);
-      const correction = await runReservedCheckOperation(state, workFolder.id, () => state.checks.proposeCorrection({ workFolder, proposalPath }));
-      return { workFolder: toActWorkFolderRef(workFolder), correction };
+      const correction = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.proposeCorrection({ connectedFolder, proposalPath }));
+      return { connectedFolder: toActConnectedFolderRef(connectedFolder), correction };
     },
     async checksDisable(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      return runReservedCheckOperation(state, workFolder.id, async () => ({
-        workFolder: toActWorkFolderRef(workFolder),
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return runReservedCheckOperation(state, connectedFolder.id, async () => ({
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         checkId: input.checkId,
-        disabled: await runActOperation(() => state.checks.disable(workFolder, input.checkId)),
+        disabled: await runActOperation(() => state.checks.disable(connectedFolder, input.checkId)),
       }));
     },
     async checksRun(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      return runReservedCheckOperation(state, workFolder.id, async () => {
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return runReservedCheckOperation(state, connectedFolder.id, async () => {
         const accepted = await runActOperation(() => state.checks.run({
-          workFolder: workFolder,
+          connectedFolder: connectedFolder,
           ...(input.checkId ? { checkId: input.checkId } : {}),
-          actor: { kind: "cli", cwd: workFolder.workFolderRoot, workFolderId: workFolder.id },
+          actor: { kind: "cli", cwd: connectedFolder.connectedFolderRoot, connectedFolderId: connectedFolder.id },
         }));
-        return { workFolder: toActWorkFolderRef(workFolder), ...accepted };
+        return { connectedFolder: toActConnectedFolderRef(connectedFolder), ...accepted };
       });
     },
     async checksTask(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      return runReservedCheckOperation(state, workFolder.id, async () => ({
-        workFolder: toActWorkFolderRef(workFolder),
-        task: await state.checks.taskStatus(workFolder.id, input.taskId),
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return runReservedCheckOperation(state, connectedFolder.id, async () => ({
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
+        task: await state.checks.taskStatus(connectedFolder.id, input.taskId),
       }));
     },
     async checksResult(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      return runReservedCheckOperation(state, workFolder.id, async () => {
-        const run = await runActOperation(() => state.checks.taskResult(workFolder.id, input.taskId));
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return runReservedCheckOperation(state, connectedFolder.id, async () => {
+        const run = await runActOperation(() => state.checks.taskResult(connectedFolder.id, input.taskId));
         if (run.state === "aborted" || run.state === "interrupted") {
-          throw new WorkFoldCliError("conflict", run.error ?? "The Check run did not finish.");
+          throw new AmpleFileCliError("conflict", run.error ?? "The Check run did not finish.");
         }
-        if (run.state === "failed") throw new WorkFoldCliError("failure", run.error ?? "The Check run failed.");
-        return { workFolder: toActWorkFolderRef(workFolder), run };
+        if (run.state === "failed") throw new AmpleFileCliError("failure", run.error ?? "The Check run failed.");
+        return { connectedFolder: toActConnectedFolderRef(connectedFolder), run };
       });
     },
     async checksAbort(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      return runReservedCheckOperation(state, workFolder.id, async () => ({
-        workFolder: toActWorkFolderRef(workFolder),
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return runReservedCheckOperation(state, connectedFolder.id, async () => ({
+        connectedFolder: toActConnectedFolderRef(connectedFolder),
         taskId: input.taskId,
-        aborted: await state.checks.abort(workFolder.id, input.taskId),
+        aborted: await state.checks.abort(connectedFolder.id, input.taskId),
       }));
     },
     async checksProblems(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      return runReservedCheckOperation(state, workFolder.id, async () => {
-        const result = await runActOperation(() => state.checks.problems(workFolder, input.checkId));
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return runReservedCheckOperation(state, connectedFolder.id, async () => {
+        const result = await runActOperation(() => state.checks.problems(connectedFolder, input.checkId));
         return {
-          workFolder: toActWorkFolderRef(workFolder),
+          connectedFolder: toActConnectedFolderRef(connectedFolder),
           ...(input.checkId ? { checkId: input.checkId } : {}),
           ...result,
         };
       });
     },
     async checksDecide(input) {
-      const workFolder = await resolveWorkFolder(input.workFolder);
-      return runReservedCheckOperation(state, workFolder.id, async () => {
+      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
+      return runReservedCheckOperation(state, connectedFolder.id, async () => {
         const decision = await runActOperation(() => state.checks.decide({
-          workFolderId: workFolder.id,
+          connectedFolderId: connectedFolder.id,
           findingId: input.findingId,
           decision: input.decision,
           actor: "cli",
           ...(input.deferUntil ? { deferUntil: input.deferUntil } : {}),
         }));
-        return { workFolder: toActWorkFolderRef(workFolder), findingId: input.findingId, decision };
+        return { connectedFolder: toActConnectedFolderRef(connectedFolder), findingId: input.findingId, decision };
       });
     },
     async agentList() {
-      const scope = workFoldAgentScope(state);
+      const scope = ampleFileAgentScope(state);
       const conversations = await runActOperation(() => listConversations(scope.rootPath));
       return { conversations: conversations.map(toActConversationRef) };
     },
     async agentSend(input) {
       const content = input.content.trim();
-      if (!content) throw new WorkFoldCliError("usage", "Message content is required.");
-      const scope = workFoldAgentScope(state);
-      const attachments = await classifyActWorkFoldAgentAttachments(input.attachments ?? [], input.cwd);
+      if (!content) throw new AmpleFileCliError("usage", "Message content is required.");
+      const scope = ampleFileAgentScope(state);
+      const attachments = await classifyActAmpleFileAgentAttachments(input.attachments ?? [], input.cwd);
       return runActOperation(async () => {
         const conversationId = input.newConversation
           ? (await createConversation(scope.rootPath)).id
-          : input.conversationId ?? (await resolveWorkFoldAgentConversation(true)).id;
-        const { message, taskId } = await acceptConversationTurn(state, { id: scope.id, workFolderRoot: scope.rootPath }, conversationId, {
+          : input.conversationId ?? (await resolveAmpleFileAgentConversation(true)).id;
+        const { message, taskId } = await acceptConversationTurn(state, { id: scope.id, connectedFolderRoot: scope.rootPath }, conversationId, {
           content,
           contextPaths: [],
           actorKind: "cli",
-          workFoldAgentAttachments: attachments,
+          ampleFileAgentAttachments: attachments,
           requestId: input.requestId,
         });
         return { conversationId, messageId: message.id, taskId, attachments };
       });
     },
     async agentConversationStatus(input) {
-      const scope = workFoldAgentScope(state);
+      const scope = ampleFileAgentScope(state);
       const conversation = input.conversationId
         ? await runActOperation(() => readConversationSummary(scope.rootPath, input.conversationId!))
-        : await runActOperation(() => resolveWorkFoldAgentConversation(false).catch(() => null));
+        : await runActOperation(() => resolveAmpleFileAgentConversation(false).catch(() => null));
       if (!conversation) {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "notFound",
-          input.conversationId ? "Conversation not found." : "No work-fold agent exists yet. Send a message to start one.",
+          input.conversationId ? "Conversation not found." : "No AmpleFile agent exists yet. Send a message to start one.",
         );
       }
       return {
@@ -8040,45 +8040,45 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
       };
     },
     async agentTurnStatus(input) {
-      assertWorkFoldAgentInstructionsReady(state);
+      assertAmpleFileAgentInstructionsReady(state);
       const taskId = input.taskId.trim();
-      if (!taskId) throw new WorkFoldCliError("usage", "Provide --task <id>.");
+      if (!taskId) throw new AmpleFileCliError("usage", "Provide --task <id>.");
       const record = state.requests.byTaskId(taskId);
       return {
-        task: turnStatusFor(state, workFoldAgentScopeId, taskId),
-        request: await workFoldAgentRequestView(state, taskId),
+        task: turnStatusFor(state, ampleFileAgentScopeId, taskId),
+        request: await ampleFileAgentRequestView(state, taskId),
         waiting: waitingRefForTask(state, taskId),
         requestGraph: record ? toActRequestRef(state, record) : null,
       };
     },
     async agentStop(input) {
-      assertWorkFoldAgentInstructionsReady(state);
+      assertAmpleFileAgentInstructionsReady(state);
       const taskId = input.taskId.trim();
-      if (!taskId) throw new WorkFoldCliError("usage", "Provide --task <id>.");
-      return stopWorkFoldAgentRequest(state, taskId);
+      if (!taskId) throw new AmpleFileCliError("usage", "Provide --task <id>.");
+      return stopAmpleFileAgentRequest(state, taskId);
     },
     async agentConversationResult(input) {
-      const scope = workFoldAgentScope(state);
+      const scope = ampleFileAgentScope(state);
       const conversationId = input.conversationId
-        ?? (await runActOperation(() => resolveWorkFoldAgentConversation(false).catch(() => null)))?.id;
+        ?? (await runActOperation(() => resolveAmpleFileAgentConversation(false).catch(() => null)))?.id;
       if (!conversationId) {
-        throw new WorkFoldCliError("notFound", "No work-fold agent exists yet. Send a message to start one.");
+        throw new AmpleFileCliError("notFound", "No AmpleFile agent exists yet. Send a message to start one.");
       }
       return conversationResultForScope(state, scope.id, scope.rootPath, conversationId, input.messages);
     },
     async agentTurnResult(input) {
-      assertWorkFoldAgentInstructionsReady(state);
+      assertAmpleFileAgentInstructionsReady(state);
       const taskId = input.taskId.trim();
-      if (!taskId) throw new WorkFoldCliError("usage", "Provide --task <id>.");
-      const scope = workFoldAgentScope(state);
+      if (!taskId) throw new AmpleFileCliError("usage", "Provide --task <id>.");
+      const scope = ampleFileAgentScope(state);
       return turnResultForScope(state, scope.id, scope.rootPath, taskId);
     },
     async agentAbort(input) {
-      const scope = workFoldAgentScope(state);
+      const scope = ampleFileAgentScope(state);
       const conversationId = input.conversationId
-        ?? (await runActOperation(() => resolveWorkFoldAgentConversation(false).catch(() => null)))?.id;
+        ?? (await runActOperation(() => resolveAmpleFileAgentConversation(false).catch(() => null)))?.id;
       if (!conversationId) {
-        throw new WorkFoldCliError("notFound", "No work-fold agent exists yet. Send a message to start one.");
+        throw new AmpleFileCliError("notFound", "No AmpleFile agent exists yet. Send a message to start one.");
       }
       const client = state.clients.get(clientKey(scope.id, conversationId));
       return { conversationId, aborted: client ? await client.abort() : false };
@@ -8086,66 +8086,66 @@ function createWorkFoldActFacade(state: LocalApiState): WorkFoldActFacade {
     async agentOverview() {
       // Deliberately no management-readiness gate: the overview reads recorded
       // state through the kernel, never the agent, and stays available
-      // while the work-fold agent is not.
+      // while the AmpleFile agent is not.
       return runActOperation(() => state.kernel.getOverview({ kind: "cli" }));
     },
   };
 }
 
-/** The work-fold agent scope shaped like the work-folder refs the turn internals take. */
-function workFoldAgentScope(state?: LocalApiState): { id: string; rootPath: string } {
-  if (state) assertWorkFoldAgentInstructionsReady(state);
-  return { id: workFoldAgentScopeId, rootPath: workFoldAgentRoot() };
+/** The AmpleFile agent scope shaped like the Connected Folder refs the turn internals take. */
+function ampleFileAgentScope(state?: LocalApiState): { id: string; rootPath: string } {
+  if (state) assertAmpleFileAgentInstructionsReady(state);
+  return { id: ampleFileAgentScopeId, rootPath: ampleFileAgentRoot() };
 }
 
-function assertWorkFoldAgentInstructionsReady(state: LocalApiState): void {
-  if (!state.workFoldAgentInstructionsError) return;
-  throw new WorkFoldCliError(
+function assertAmpleFileAgentInstructionsReady(state: LocalApiState): void {
+  if (!state.ampleFileAgentInstructionsError) return;
+  throw new AmpleFileCliError(
     "unavailable",
-    "The work-fold agent is unavailable because work-fold could not prepare its required instructions. Restart work-fold; if this continues, check the app-data work-fold agent folder.",
+    "The AmpleFile agent is unavailable because AmpleFile could not prepare its required instructions. Restart AmpleFile; if this continues, check the app-data AmpleFile agent folder.",
   );
 }
 
 /** HTTP mirror of the fail-closed instructions gate: 503 instead of a CLI error. */
-function assertWorkFoldAgentReadyForRoutes(state: LocalApiState): void {
-  if (!state.workFoldAgentInstructionsError) return;
-  throw httpError(503, "The work-fold agent is unavailable because work-folder could not prepare its required instructions. Restart work-folder; if this continues, check the app-data work-fold agent folder.");
+function assertAmpleFileAgentReadyForRoutes(state: LocalApiState): void {
+  if (!state.ampleFileAgentInstructionsError) return;
+  throw httpError(503, "The AmpleFile agent is unavailable because Connected Folder could not prepare its required instructions. Restart Connected Folder; if this continues, check the app-data AmpleFile agent folder.");
 }
 
-function workFoldAgentScopeForRoutes(state: LocalApiState): { id: string; rootPath: string } {
-  assertWorkFoldAgentReadyForRoutes(state);
-  return { id: workFoldAgentScopeId, rootPath: workFoldAgentRoot() };
+function ampleFileAgentScopeForRoutes(state: LocalApiState): { id: string; rootPath: string } {
+  assertAmpleFileAgentReadyForRoutes(state);
+  return { id: ampleFileAgentScopeId, rootPath: ampleFileAgentRoot() };
 }
 
 /**
- * The default work-fold agent is the most recent active one; the
- * work-fold agent surface is "one conversation" unless the caller asks for more.
+ * The default AmpleFile agent is the most recent active one; the
+ * AmpleFile agent surface is "one conversation" unless the caller asks for more.
  */
-async function resolveWorkFoldAgentConversation(create: boolean): Promise<ConversationSummary> {
-  const scope = workFoldAgentScope();
+async function resolveAmpleFileAgentConversation(create: boolean): Promise<ConversationSummary> {
+  const scope = ampleFileAgentScope();
   const conversations = await listConversations(scope.rootPath);
   const active = conversations.find((item) =>
     !item.archivedAt && (!item.snoozedUntil || Date.parse(item.snoozedUntil) <= Date.now()));
   if (active) return active;
-  if (!create) throw new WorkFoldCliError("notFound", "No work-fold agent exists yet. Send a message to start one.");
+  if (!create) throw new AmpleFileCliError("notFound", "No AmpleFile agent exists yet. Send a message to start one.");
   return createConversation(scope.rootPath);
 }
 
 /**
- * The work-fold agent transcript lives outside every work-folder, so it has no History
+ * The AmpleFile agent transcript lives outside every Connected Folder, so it has no History
  * checkpoint to hold it. Its only deletion path moves the exact validated
  * transcript into Recently deleted. It deliberately never accepts a path.
  */
-async function deleteWorkFoldAgentConversation(
+async function deleteAmpleFileAgentConversation(
   state: LocalApiState,
   conversationId: string,
   context: { receiptId: string | null },
 ): Promise<{ conversationId: string; recentlyDeleted: { entryId: string; restoreBy: string } }> {
-  const root = workFoldAgentRoot();
-  const key = clientKey(workFoldAgentScopeId, conversationId);
+  const root = ampleFileAgentRoot();
+  const key = clientKey(ampleFileAgentScopeId, conversationId);
   await yieldBackgroundCompaction(state, key);
   changeQueuedMessage(state, key, null);
-  assertWorkFoldAgentConversationMutable(state, conversationId);
+  assertAmpleFileAgentConversationMutable(state, conversationId);
   // This reservation uses the same conflict fence as compaction because a
   // transcript move must not race a new turn, rename, or real compaction.
   state.compactingConversations.add(key);
@@ -8155,7 +8155,7 @@ async function deleteWorkFoldAgentConversation(
     });
     if (!summary) throw notFound("Conversation not found.");
     if (state.requests.list().some((request) =>
-      request.owner.workFolderId === undefined
+      request.owner.connectedFolderId === undefined
       && request.owner.conversationId === conversationId
       && requestHasUnsettledWork(state, request))) {
       throw httpError(409, "Finish or stop this Chat's outstanding work before deleting it.");
@@ -8165,24 +8165,24 @@ async function deleteWorkFoldAgentConversation(
     await state.clients.get(key)?.stop();
     // `readConversationSummary` validated the id before this join. The source
     // remains a single known transcript below the app-owned management root.
-    const relativePath = `.work-fold/conversations/${conversationId}.jsonl`;
+    const relativePath = `.amplefile/conversations/${conversationId}.jsonl`;
     const sourcePath = join(root, relativePath);
-    let entry: WorkFoldRecentlyDeletedEntry;
+    let entry: AmpleFileRecentlyDeletedEntry;
     try {
       entry = await state.recentlyDeleted.moveTreeToRecentlyDeleted({
         kind: "file",
         reason: "agent.chat.delete",
         sourcePath,
-        workFolderId: workFoldAgentScopeId,
-        workFolderName: "work-fold agent",
+        connectedFolderId: ampleFileAgentScopeId,
+        connectedFolderName: "AmpleFile agent",
         displayName: summary.title,
         originalPath: relativePath,
         receiptId: context.receiptId,
       });
     } catch (error) {
-      throw new WorkFoldCliError(
+      throw new AmpleFileCliError(
         "failure",
-        `work-fold could not move this Chat to Recently deleted: ${errorMessage(error)}. Nothing was deleted.`,
+        `AmpleFile could not move this Chat to Recently deleted: ${errorMessage(error)}. Nothing was deleted.`,
         { cause: error },
       );
     }
@@ -8194,18 +8194,18 @@ async function deleteWorkFoldAgentConversation(
 }
 
 /**
- * A Worker Chat's transcript is portable `.work-fold/` metadata, which History
+ * A Worker Chat's transcript is portable `.amplefile/` metadata, which History
  * never captures, so deletion moves the exact validated transcript into
  * Recently deleted. The Pi session stays in machine-local state, so a restored
  * Chat resumes where it was. It deliberately never accepts a path.
  */
-async function deleteWorkFolderConversation(
+async function deleteConnectedFolderConversation(
   state: LocalApiState,
-  workFolder: WorkFolderSummary,
+  connectedFolder: ConnectedFolderSummary,
   conversationId: string,
   context: { receiptId: string | null },
 ): Promise<{ conversationId: string; recentlyDeleted: { entryId: string; restoreBy: string } }> {
-  const key = clientKey(workFolder.id, conversationId);
+  const key = clientKey(connectedFolder.id, conversationId);
   await yieldBackgroundCompaction(state, key);
   changeQueuedMessage(state, key, null);
   if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current turn to finish.");
@@ -8214,36 +8214,36 @@ async function deleteWorkFolderConversation(
   // a new turn, rename, lifecycle change, or real compaction.
   state.compactingConversations.add(key);
   try {
-    const summary = await readConversationSummary(workFolder.workFolderRoot, conversationId).catch((error) => {
+    const summary = await readConversationSummary(connectedFolder.connectedFolderRoot, conversationId).catch((error) => {
       throw badRequest(errorMessage(error));
     });
     if (!summary) throw notFound("Conversation not found.");
     if (state.requests.list().some((request) =>
-      request.owner.workFolderId === workFolder.id
+      request.owner.connectedFolderId === connectedFolder.id
       && request.owner.conversationId === conversationId
       && requestHasUnsettledWork(state, request))) {
       throw httpError(409, "Finish or stop this Chat's outstanding work before deleting it.");
     }
     await state.clients.get(key)?.stop();
     // `readConversationSummary` validated the id before this join.
-    const relativePath = `.work-fold/conversations/${conversationId}.jsonl`;
-    const sourcePath = join(conversationsDir(workFolder.workFolderRoot), `${conversationId}.jsonl`);
-    let entry: WorkFoldRecentlyDeletedEntry;
+    const relativePath = `.amplefile/conversations/${conversationId}.jsonl`;
+    const sourcePath = join(conversationsDir(connectedFolder.connectedFolderRoot), `${conversationId}.jsonl`);
+    let entry: AmpleFileRecentlyDeletedEntry;
     try {
       entry = await state.recentlyDeleted.moveTreeToRecentlyDeleted({
         kind: "file",
         reason: "chats.delete",
         sourcePath,
-        workFolderId: workFolder.id,
-        workFolderName: workFolder.name,
+        connectedFolderId: connectedFolder.id,
+        connectedFolderName: connectedFolder.name,
         displayName: summary.title,
         originalPath: relativePath,
         receiptId: context.receiptId,
       });
     } catch (error) {
-      throw new WorkFoldCliError(
+      throw new AmpleFileCliError(
         "failure",
-        `work-fold could not move this Chat to Recently deleted: ${errorMessage(error)}. Nothing was deleted.`,
+        `AmpleFile could not move this Chat to Recently deleted: ${errorMessage(error)}. Nothing was deleted.`,
         { cause: error },
       );
     }
@@ -8257,11 +8257,11 @@ async function deleteWorkFolderConversation(
 /** Reserve every transcript mutation through its final write, including CLI writes and restores. */
 async function runConversationMutation<T>(
   state: LocalApiState,
-  workFolderId: string,
+  connectedFolderId: string,
   conversationId: string,
   operation: () => Promise<T>,
 ): Promise<T> {
-  const key = clientKey(workFolderId, conversationId);
+  const key = clientKey(connectedFolderId, conversationId);
   if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current turn to finish.");
   if (state.compactingConversations.has(key)) throw httpError(409, "Wait for the current Chat compaction to finish.");
   state.compactingConversations.add(key);
@@ -8272,35 +8272,35 @@ async function runConversationMutation<T>(
   }
 }
 
-function assertWorkFoldAgentConversationMutable(state: LocalApiState, conversationId: string): void {
-  const key = clientKey(workFoldAgentScopeId, conversationId);
+function assertAmpleFileAgentConversationMutable(state: LocalApiState, conversationId: string): void {
+  const key = clientKey(ampleFileAgentScopeId, conversationId);
   if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current turn to finish.");
   if (state.compactingConversations.has(key)) throw httpError(409, "Wait for the current Chat compaction to finish.");
 }
 
-async function renameWorkFoldAgentConversation(
+async function renameAmpleFileAgentConversation(
   state: LocalApiState,
   conversationId: string,
   title: string,
 ): Promise<ConversationSummary> {
-  const key = clientKey(workFoldAgentScopeId, conversationId);
-  assertWorkFoldAgentConversationMutable(state, conversationId);
+  const key = clientKey(ampleFileAgentScopeId, conversationId);
+  assertAmpleFileAgentConversationMutable(state, conversationId);
   // Renaming appends a transcript event, so reserve the same fence deletion
   // and compaction use before awaiting that write.
   state.compactingConversations.add(key);
   try {
-    return await renameConversation(workFoldAgentRoot(), conversationId, title);
+    return await renameConversation(ampleFileAgentRoot(), conversationId, title);
   } finally {
     state.compactingConversations.delete(key);
   }
 }
 
-async function classifyActWorkFoldAgentAttachments(raw: string[], cwd: string | undefined): Promise<WorkFoldAgentAttachmentRef[]> {
+async function classifyActAmpleFileAgentAttachments(raw: string[], cwd: string | undefined): Promise<AmpleFileAgentAttachmentRef[]> {
   if (!raw.length) return [];
   try {
-    return await classifyWorkFoldAgentAttachments(raw, cwd ?? workFoldAgentRoot());
+    return await classifyAmpleFileAgentAttachments(raw, cwd ?? ampleFileAgentRoot());
   } catch (error) {
-    throw new WorkFoldCliError("usage", errorMessage(error), { cause: error });
+    throw new AmpleFileCliError("usage", errorMessage(error), { cause: error });
   }
 }
 
@@ -8318,29 +8318,29 @@ async function classifyActWorkFoldAgentAttachments(raw: string[], cwd: string | 
  * The view names the newest turn of the request, so a task id whose request
  * was continued resolves to the continued story rather than a stale copy.
  */
-async function workFoldAgentRequestView(
+async function ampleFileAgentRequestView(
   state: LocalApiState,
   taskId: string,
-): Promise<WorkFoldActAgentRequest | null> {
+): Promise<AmpleFileActAgentRequest | null> {
   const record = state.requests.byTaskId(taskId);
   if (!record) return null;
-  const scopeId = record.owner.workFolderId ?? workFoldAgentScopeId;
+  const scopeId = record.owner.connectedFolderId ?? ampleFileAgentScopeId;
   const newestTurn = record.turns.at(-1)!;
   const turn = turnStatusFor(state, scopeId, newestTurn.taskId);
   const children = state.requests.children(record.requestId).map((child): {
     taskId: string;
-    workFolderId: string;
-    workFolderName: string;
+    connectedFolderId: string;
+    connectedFolderName: string;
     conversationId: string;
-    state: WorkFoldActTurnState;
+    state: AmpleFileActTurnState;
     error: string | null;
     files: string[];
   } => {
     const childTurn = child.turns.at(-1)!;
-    const live = child.owner.workFolderId ? turnStatusFor(state, child.owner.workFolderId, childTurn.taskId) : null;
+    const live = child.owner.connectedFolderId ? turnStatusFor(state, child.owner.connectedFolderId, childTurn.taskId) : null;
     // A live turn's own status is sharper than the record's; a settled one
     // reads the record, which the turn journal already reconciled.
-    const childState: WorkFoldActTurnState = live && live.state !== "unknown"
+    const childState: AmpleFileActTurnState = live && live.state !== "unknown"
       ? live.state
       : childTurn.state === "accepted" || childTurn.state === "running"
         ? "running"
@@ -8349,8 +8349,8 @@ async function workFoldAgentRequestView(
           : childTurn.state;
     return {
       taskId: childTurn.taskId,
-      workFolderId: child.owner.workFolderId ?? workFoldAgentScopeId,
-      workFolderName: child.owner.workFolderName ?? child.owner.workFolderId ?? "the work-fold agent",
+      connectedFolderId: child.owner.connectedFolderId ?? ampleFileAgentScopeId,
+      connectedFolderName: child.owner.connectedFolderName ?? child.owner.connectedFolderId ?? "the AmpleFile agent",
       conversationId: child.owner.conversationId,
       state: childState,
       error: live?.error ?? childTurn.error,
@@ -8361,10 +8361,10 @@ async function workFoldAgentRequestView(
   // prose parsing or folder scan; every candidate comes from the child's journal.
   const candidates = children.flatMap((child) => {
     const durable = state.turnStore.get(child.taskId);
-    if (child.state === "running" || !durable || durable.workFolderId !== child.workFolderId || durable.conversationId !== child.conversationId) return [];
+    if (child.state === "running" || !durable || durable.connectedFolderId !== child.connectedFolderId || durable.conversationId !== child.conversationId) return [];
     return (durable.fileChanges?.files ?? []).map((file) => ({ child, path: file.path }));
   });
-  const visible = await Promise.all(candidates.map(async (item) => await isWorkFolderFileVisible(item.child.workFolderId, item.path) ? item : null));
+  const visible = await Promise.all(candidates.map(async (item) => await isConnectedFolderFileVisible(item.child.connectedFolderId, item.path) ? item : null));
   for (const item of visible.filter((item) => item !== null)) item.child.files.push(item.path);
   const actions = record.actions;
   let reply: { messageId: string; content: string } | null = null;
@@ -8374,9 +8374,9 @@ async function workFoldAgentRequestView(
       ? newestTurn.messageId
       : null;
   if (replyMessageId) {
-    const transcriptRoot = record.owner.workFolderId
-      ? await getWorkFolder(record.owner.workFolderId).then((workFolder) => workFolder.workFolderRoot).catch(() => null)
-      : workFoldAgentRoot();
+    const transcriptRoot = record.owner.connectedFolderId
+      ? await getConnectedFolder(record.owner.connectedFolderId).then((connectedFolder) => connectedFolder.connectedFolderRoot).catch(() => null)
+      : ampleFileAgentRoot();
     const messages = transcriptRoot ? await readConversation(transcriptRoot, record.owner.conversationId).catch(() => []) : [];
     const message = messages.find((item) => item.id === replyMessageId);
     if (message) reply = { messageId: message.id, content: message.content };
@@ -8384,7 +8384,7 @@ async function workFoldAgentRequestView(
   const failedChild = children.find((child) => child.state === "failed" || child.state === "unknown");
   // The durable record already knows whether a child is still live; the
   // in-memory task view only sharpens what a live turn reports.
-  const phase = workFoldRequestStateToAgentPhase(record.state);
+  const phase = ampleFileRequestStateToAgentPhase(record.state);
   const settledAt = record.settledAt ?? newestTurn.settledAt ?? turn.endedAt;
   const questions = state.requests.questions(record.requestId).map((question) => ({
     questionId: question.questionId,
@@ -8401,11 +8401,11 @@ async function workFoldAgentRequestView(
     startedAt: record.createdAt,
     endedAt: phase === "working" || phase === "handed_off" ? null : settledAt,
     error: turn.error ?? newestTurn.error ?? failedChild?.error ?? (failedChild?.state === "unknown"
-      ? `work-folder lost track of work started in ${failedChild.workFolderName}.`
+      ? `Connected Folder lost track of work started in ${failedChild.connectedFolderName}.`
       : record.limitHit ? requestLimitStopMessage(record.limitHit.limit) : null),
     content: record.content,
     attachments: record.attachments,
-    dispositions: workFoldAgentAttachmentDispositions({ attachments: record.attachments, actions: record.actions }),
+    dispositions: ampleFileAgentAttachmentDispositions({ attachments: record.attachments, actions: record.actions }),
     actions,
     children: children.map(({ files, ...child }) => files.length ? { ...child, files } : child),
     reply,
@@ -8427,15 +8427,15 @@ async function workFoldAgentRequestView(
 }
 
 /** The person-facing sentence for a bound a request stopped at; it names the Settings section like every refusal. */
-function requestLimitStopMessage(limit: WorkFoldRequestLimitName): string {
-  const shows = `${workFoldRequestLimitsSection} shows this number.`;
+function requestLimitStopMessage(limit: AmpleFileRequestLimitName): string {
+  const shows = `${ampleFileRequestLimitsSection} shows this number.`;
   switch (limit) {
     case "providerBudget":
-      return `This request reached its model spending limit, so work-fold stopped it. ${shows}`;
+      return `This request reached its model spending limit, so AmpleFile stopped it. ${shows}`;
     case "deadline":
-      return `This request passed its time window, so work-fold stopped it. ${shows}`;
+      return `This request passed its time window, so AmpleFile stopped it. ${shows}`;
     default:
-      return `This request reached one of its limits, so work-fold stopped it. ${shows}`;
+      return `This request reached one of its limits, so AmpleFile stopped it. ${shows}`;
   }
 }
 
@@ -8443,41 +8443,41 @@ function requestLimitStopMessage(limit: WorkFoldRequestLimitName): string {
 
 /**
  * Request-level stop. Aborting the request's own turn does not implicitly
- * stop a review already running in a work-folder — only turns recorded under this
+ * stop a review already running in a Connected Folder — only turns recorded under this
  * request are aborted, each explicitly, and the result names every turn it
  * touched. The stop cascades through the whole owned graph: every descendant
  * request is marked, its open questions are withdrawn, and its running turn
  * is cancelled (docs/collaboration-contract.md, F25).
  */
-async function stopWorkFoldAgentRequest(
+async function stopAmpleFileAgentRequest(
   state: LocalApiState,
   taskId: string,
-): Promise<{ taskId: string; workFoldAgentAborted: boolean; children: Array<{ taskId: string; conversationId: string; workFolderId: string; aborted: boolean }> }> {
+): Promise<{ taskId: string; ampleFileAgentAborted: boolean; children: Array<{ taskId: string; conversationId: string; connectedFolderId: string; aborted: boolean }> }> {
   const record = state.requests.byTaskId(taskId);
   if (!record) {
-    throw new WorkFoldCliError("notFound", `Request not found. Requests are kept for ${state.requests.retentionDays()} days.`);
+    throw new AmpleFileCliError("notFound", `Request not found. Requests are kept for ${state.requests.retentionDays()} days.`);
   }
-  const scopeId = record.owner.workFolderId ?? workFoldAgentScopeId;
+  const scopeId = record.owner.connectedFolderId ?? ampleFileAgentScopeId;
   const ownTurn = record.turns.at(-1)!;
-  const workFoldAgentWasRunning = turnStatusFor(state, scopeId, ownTurn.taskId).state === "running";
+  const ampleFileAgentWasRunning = turnStatusFor(state, scopeId, ownTurn.taskId).state === "running";
   // The whole graph below this request, not only a root's: `agent stop`
   // takes any task id, so a mid-graph request must still close everything it
   // handed on (docs/collaboration-contract.md, F25).
   const descendants = state.requests.subtree(record.requestId);
   const runningChildren = descendants.flatMap((descendant) => {
-    if (descendant.owner.workFolderId === undefined) return [];
+    if (descendant.owner.connectedFolderId === undefined) return [];
     const turn = descendant.turns.at(-1)!;
-    return turnStatusFor(state, descendant.owner.workFolderId, turn.taskId).state === "running"
-      ? [{ taskId: turn.taskId, conversationId: descendant.owner.conversationId, workFolderId: descendant.owner.workFolderId, requestId: descendant.requestId }]
+    return turnStatusFor(state, descendant.owner.connectedFolderId, turn.taskId).state === "running"
+      ? [{ taskId: turn.taskId, conversationId: descendant.owner.conversationId, connectedFolderId: descendant.owner.connectedFolderId, requestId: descendant.requestId }]
       : [];
   });
   // A stop reaches everything still open under this request, not only the
   // turns running this instant: a child whose turn ended while waiting on an
   // answer is closed too, so a late `chat answer` is refused and no
   // continuation turn can follow (docs/collaboration-contract.md, F28).
-  const openBelow = !isWorkFoldRequestTerminalState(record.state)
-    || descendants.some((descendant) => !isWorkFoldRequestTerminalState(descendant.state));
-  if (workFoldAgentWasRunning || runningChildren.length || openBelow) {
+  const openBelow = !isAmpleFileRequestTerminalState(record.state)
+    || descendants.some((descendant) => !isAmpleFileRequestTerminalState(descendant.state));
+  if (ampleFileAgentWasRunning || runningChildren.length || openBelow) {
     await state.requests.markStopRequested(record.requestId);
     await state.requests.cancelQuestions(record.requestId, "stopped");
     for (const descendant of descendants) {
@@ -8495,63 +8495,63 @@ async function stopWorkFoldAgentRequest(
       console.error(`Background jobs could not all be stopped: ${errorMessage(error)}`);
     });
   }
-  let workFoldAgentAborted = false;
-  if (workFoldAgentWasRunning) {
-    workFoldAgentAborted = await cancelAcceptedTurn(state, scopeId, record.owner.conversationId, ownTurn.taskId);
+  let ampleFileAgentAborted = false;
+  if (ampleFileAgentWasRunning) {
+    ampleFileAgentAborted = await cancelAcceptedTurn(state, scopeId, record.owner.conversationId, ownTurn.taskId);
   }
-  const children: Array<{ taskId: string; conversationId: string; workFolderId: string; aborted: boolean }> = [];
+  const children: Array<{ taskId: string; conversationId: string; connectedFolderId: string; aborted: boolean }> = [];
   for (const child of runningChildren) {
-    const aborted = await cancelAcceptedTurn(state, child.workFolderId, child.conversationId, child.taskId);
+    const aborted = await cancelAcceptedTurn(state, child.connectedFolderId, child.conversationId, child.taskId);
     children.push({
       taskId: child.taskId,
       conversationId: child.conversationId,
-      workFolderId: child.workFolderId,
+      connectedFolderId: child.connectedFolderId,
       aborted,
     });
   }
-  return { taskId, workFoldAgentAborted, children };
+  return { taskId, ampleFileAgentAborted, children };
 }
 
-function assertWorkFoldAgentParentAccepting(state: LocalApiState, parentTaskId: string | undefined): void {
+function assertAmpleFileAgentParentAccepting(state: LocalApiState, parentTaskId: string | undefined): void {
   if (!parentTaskId) return;
   if (!state.requests.isAccepting(parentTaskId)) {
-    throw new WorkFoldCliError("conflict", "The work-fold agent request is stopping or has already finished.");
+    throw new AmpleFileCliError("conflict", "The AmpleFile agent request is stopping or has already finished.");
   }
 }
 
 /**
  * Attributes one applied facade mutation to its explicitly named management
  * request, so the request's recorded story stays complete across every landed
- * verb. work-folder-free acts (Everywhere-scope tools) record
- * no work-folder fields. `chat.send` keeps its own inline recording because it also
+ * verb. Connected Folder–free acts (Everywhere-scope tools) record
+ * no Connected Folder fields. `chat.send` keeps its own inline recording because it also
  * threads child-task bookkeeping and post-acceptance cancellation.
  */
 async function recordFacadeAction(
   state: LocalApiState,
   parentTaskId: string | undefined,
   input: {
-    command: WorkFoldRequestActionCommand;
-    workFolder?: Pick<WorkFolderSummary, "id" | "name" | "workFolderRoot">;
+    command: AmpleFileRequestActionCommand;
+    connectedFolder?: Pick<ConnectedFolderSummary, "id" | "name" | "connectedFolderRoot">;
     conversationId?: string;
     checkpointId?: string | null;
     taskId?: string;
     copied?: string[];
-    apps?: WorkFoldRequestAction["apps"];
+    apps?: AmpleFileRequestAction["apps"];
   },
 ): Promise<void> {
   if (!parentTaskId) return;
   await state.requests.recordAction(parentTaskId, {
     command: input.command,
     at: new Date().toISOString(),
-    ...(input.workFolder ? { workFolderId: input.workFolder.id, workFolderName: input.workFolder.name } : {}),
+    ...(input.connectedFolder ? { connectedFolderId: input.connectedFolder.id, connectedFolderName: input.connectedFolder.name } : {}),
     ...(input.conversationId ? { conversationId: input.conversationId } : {}),
     ...(input.checkpointId !== undefined ? { checkpointId: input.checkpointId } : {}),
     ...(input.taskId ? { taskId: input.taskId } : {}),
     ...(input.copied ? { copied: input.copied } : {}),
-    // Each app result names its own work-folder so a result link can label
-    // it; an installation in the act's work-folder takes that name.
-    ...(input.apps ? { apps: input.apps.slice(0, 64).map((app) => app.workFolderName === undefined && input.workFolder && app.workFolderId === input.workFolder.id
-      ? { ...app, workFolderName: input.workFolder.name }
+    // Each app result names its own Connected Folder so a result link can label
+    // it; an installation in the act's Connected Folder takes that name.
+    ...(input.apps ? { apps: input.apps.slice(0, 64).map((app) => app.connectedFolderName === undefined && input.connectedFolder && app.connectedFolderId === input.connectedFolder.id
+      ? { ...app, connectedFolderName: input.connectedFolder.name }
       : app) } : {}),
   });
 }
@@ -8559,21 +8559,21 @@ async function recordFacadeAction(
 /**
  * "On now" and "Still needs you" for an act-lane install, the same two halves
  * the Chat path reports (`restrictedAppProposalResultText` in
- * src/local/agent/pi-client.ts). F21 puts the work-fold agent on the same footing as a
- * work-folder Chat, so an install that reports only "Installed" leaves the work-fold agent
+ * src/local/agent/pi-client.ts). F21 puts the AmpleFile agent on the same footing as a
+ * Connected Folder Chat, so an install that reports only "Installed" leaves the AmpleFile agent
  * unable to tell the person what is missing.
  */
-function workFoldAgentInstallOutcome(
+function ampleFileAgentInstallOutcome(
   app: RestrictedAppInstalled,
   needs: RestrictedAppInstallationNeeds | undefined,
 ): {
-  granted: { destinations: number; wholeWorkFolderFolders: number; notifications: number; checks: number; automations: number };
+  granted: { destinations: number; wholeConnectedFolderFolders: number; notifications: number; checks: number; automations: number };
   needs: RestrictedAppInstallationNeeds;
 } {
   return {
     granted: {
       destinations: app.networkGrants.length,
-      wholeWorkFolderFolders: app.fileGrants.filter((grant) => grant.root === ".").length,
+      wholeConnectedFolderFolders: app.fileGrants.filter((grant) => grant.root === ".").length,
       notifications: app.notificationGrants.length,
       checks: app.checkGrants?.length ?? 0,
       automations: app.automations.filter((automation) => automation.enabled).length,
@@ -8582,19 +8582,19 @@ function workFoldAgentInstallOutcome(
   };
 }
 
-function workFoldAgentAppResultRef(app: import("./agent/restricted-app-service.js").RestrictedAppInstalled): NonNullable<WorkFoldRequestAction["apps"]>[number] {
-  return { workFolderId: app.workFolderId, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, digest: app.digest, title: app.manifest.title, version: app.version };
+function ampleFileAgentAppResultRef(app: import("./agent/restricted-app-service.js").RestrictedAppInstalled): NonNullable<AmpleFileRequestAction["apps"]>[number] {
+  return { connectedFolderId: app.connectedFolderId, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, digest: app.digest, title: app.manifest.title, version: app.version };
 }
 
 async function cancelAcceptedTurn(
   state: LocalApiState,
-  workFolderId: string,
+  connectedFolderId: string,
   conversationId: string,
   taskId: string,
 ): Promise<boolean> {
-  if (turnStatusFor(state, workFolderId, taskId).state !== "running") return false;
+  if (turnStatusFor(state, connectedFolderId, taskId).state !== "running") return false;
   state.cancelledTurnTasks.add(taskId);
-  const client = state.clients.get(clientKey(workFolderId, conversationId));
+  const client = state.clients.get(clientKey(connectedFolderId, conversationId));
   await client?.abort().catch(() => false);
   return true;
 }
@@ -8604,32 +8604,32 @@ async function turnResultForScope(
   scopeId: string,
   rootPath: string,
   taskId: string,
-): ReturnType<WorkFoldActFacade["agentTurnResult"]> {
+): ReturnType<AmpleFileActFacade["agentTurnResult"]> {
   const request = state.requests.byTaskId(taskId);
-  if (request && (request.owner.workFolderId ?? workFoldAgentScopeId) === scopeId) {
-    if (!isWorkFoldRequestTerminalState(request.state)) throw new WorkFoldCliError("conflict", "The request is still outstanding. Use chat wait or chat status --task.");
+  if (request && (request.owner.connectedFolderId ?? ampleFileAgentScopeId) === scopeId) {
+    if (!isAmpleFileRequestTerminalState(request.state)) throw new AmpleFileCliError("conflict", "The request is still outstanding. Use chat wait or chat status --task.");
     taskId = request.turns.at(-1)!.taskId;
   }
   const task = turnStatusFor(state, scopeId, taskId);
   if (task.state === "running") {
-    throw new WorkFoldCliError("conflict", "The turn is still running. Use chat wait or chat status --task.");
+    throw new AmpleFileCliError("conflict", "The turn is still running. Use chat wait or chat status --task.");
   }
   if (task.state === "unknown") {
-    throw new WorkFoldCliError("notFound", "Task not found. Recent turn outcomes are kept in a bounded durable journal.");
+    throw new AmpleFileCliError("notFound", "Task not found. Recent turn outcomes are kept in a bounded durable journal.");
   }
-  if (task.state === "aborted") throw new WorkFoldCliError("conflict", "The turn was aborted before it finished.");
-  if (task.state === "failed") throw new WorkFoldCliError("failure", task.error ?? "The turn failed.");
+  if (task.state === "aborted") throw new AmpleFileCliError("conflict", "The turn was aborted before it finished.");
+  if (task.state === "failed") throw new AmpleFileCliError("failure", task.error ?? "The turn failed.");
   const conversationId = task.conversationId!;
   const messages = await runActOperation(() => readConversation(rootPath, conversationId));
   const message = messages.find((item) => item.id === task.messageId);
-  if (!message) throw new WorkFoldCliError("failure", "The turn's response message could not be found in the transcript.");
+  if (!message) throw new AmpleFileCliError("failure", "The turn's response message could not be found in the transcript.");
   const result = await completedRequestEnvelope(state, taskId);
   await noteResultReadByRunningParent(state, taskId);
   return {
     conversationId,
     task: { taskId, state: "succeeded" as const, endedAt: task.endedAt! },
     message: toActChatMessage(message),
-    request: state.requests.byTaskId(taskId) ? toActRequestRefForWorkFolder(state, state.requests.byTaskId(taskId)!) : null,
+    request: state.requests.byTaskId(taskId) ? toActRequestRefForConnectedFolder(state, state.requests.byTaskId(taskId)!) : null,
     result,
   };
 }
@@ -8644,7 +8644,7 @@ async function turnResultForScope(
  */
 async function noteResultReadByRunningParent(state: LocalApiState, taskId: string): Promise<void> {
   const child = state.requests.byTaskId(taskId);
-  if (!child?.parentRequestId || !isWorkFoldRequestTerminalState(child.state) || child.turns.at(-1)!.taskId !== taskId) return;
+  if (!child?.parentRequestId || !isAmpleFileRequestTerminalState(child.state) || child.turns.at(-1)!.taskId !== taskId) return;
   const parent = state.requests.get(child.parentRequestId);
   const parentTurn = parent?.turns.at(-1);
   if (!parent || !parentTurn || (parentTurn.state !== "accepted" && parentTurn.state !== "running")) return;
@@ -8660,20 +8660,20 @@ function turnReportedResult(state: LocalApiState, taskId: string): boolean {
   return Boolean(request && latest && request.results.some((item) => item.taskId === latest.taskId));
 }
 
-async function completedRequestEnvelope(state: LocalApiState, taskId: string): Promise<WorkFoldResultEnvelope | null> {
+async function completedRequestEnvelope(state: LocalApiState, taskId: string): Promise<AmpleFileResultEnvelope | null> {
   const request = state.requests.byTaskId(taskId);
-  if (!request || !isWorkFoldRequestTerminalState(request.state)) return null;
+  if (!request || !isAmpleFileRequestTerminalState(request.state)) return null;
   const latest = request.turns.at(-1)!;
   const ref = [...request.results].reverse().find((item) => item.taskId === latest.taskId);
   if (ref) {
     const read = await state.requests.result(ref.resultId);
-    if (read?.state !== "ok") throw new WorkFoldCliError("failure", "The selected result is unavailable; its receipt remains on record.");
+    if (read?.state !== "ok") throw new AmpleFileCliError("failure", "The selected result is unavailable; its receipt remains on record.");
     return { ...read.record.envelope,
       ...(request.state === "partial" && read.record.envelope.outcome === "succeeded" ? { outcome: "partial" as const } : {}) };
   }
   const turn = state.turnStore.get(latest.taskId);
   return {
-    summary: clampUtf8(turn?.assistantText || latest.error || "The request ended without a reported result.", workFoldRequestLimits.maxResultSummaryBytes),
+    summary: clampUtf8(turn?.assistantText || latest.error || "The request ended without a reported result.", ampleFileRequestLimits.maxResultSummaryBytes),
     outcome: request.state === "done" ? "succeeded" : request.state === "partial" ? "partial" : "failed",
   };
 }
@@ -8686,13 +8686,13 @@ async function conversationResultForScope(
   messageLimit?: number,
 ): Promise<{
   conversationId: string;
-  state: WorkFoldActChatState;
+  state: AmpleFileActChatState;
   total: number;
   lastAssistant: string | null;
-  messages: WorkFoldActChatMessage[];
+  messages: AmpleFileActChatMessage[];
 }> {
   const all = await runActOperation(() => readConversation(rootPath, conversationId));
-  if (!all.length) throw new WorkFoldCliError("notFound", "Conversation not found.");
+  if (!all.length) throw new AmpleFileCliError("notFound", "Conversation not found.");
   const visible = all.filter((message) => message.role === "user" || message.role === "assistant");
   const limit = Math.max(Math.floor(messageLimit ?? 10), 1);
   const lastAssistant = [...visible].reverse().find((message) => message.role === "assistant")?.content ?? null;
@@ -8706,57 +8706,57 @@ async function conversationResultForScope(
 }
 
 async function addExternalFilesInternal(
-  workFolder: WorkFolderSummary,
+  connectedFolder: ConnectedFolderSummary,
   input: { fromPaths: string[]; toDir?: string; cwd: string },
 ): Promise<{ copied: string[]; checkpointId: string | null }> {
-  if (!input.fromPaths.length) throw new WorkFoldCliError("usage", "Provide at least one --from <path> to add.");
-  const toDir = normalizeWorkFolderRelativePath(input.toDir ?? "");
+  if (!input.fromPaths.length) throw new AmpleFileCliError("usage", "Provide at least one --from <path> to add.");
+  const toDir = normalizeConnectedFolderRelativePath(input.toDir ?? "");
   const sources: string[] = [];
   for (const raw of input.fromPaths) {
     const trimmed = raw.trim();
-    if (!trimmed) throw new WorkFoldCliError("usage", "Source paths cannot be empty.");
+    if (!trimmed) throw new AmpleFileCliError("usage", "Source paths cannot be empty.");
     const source = isAbsolute(trimmed) ? resolve(trimmed) : resolve(input.cwd, trimmed);
     const info = await lstat(source).catch(() => null);
-    if (!info) throw new WorkFoldCliError("notFound", `Source not found: ${trimmed}.`);
-    if (info.isSymbolicLink()) throw new WorkFoldCliError("usage", `Symbolic-link sources cannot be added: ${trimmed}.`);
+    if (!info) throw new AmpleFileCliError("notFound", `Source not found: ${trimmed}.`);
+    if (info.isSymbolicLink()) throw new AmpleFileCliError("usage", `Symbolic-link sources cannot be added: ${trimmed}.`);
     if (!info.isFile() && !info.isDirectory()) {
-      throw new WorkFoldCliError("usage", `Only files and folders can be added: ${trimmed}.`);
+      throw new AmpleFileCliError("usage", `Only files and folders can be added: ${trimmed}.`);
     }
-    if (pathContainsPath(workFolder.workFolderRoot, source)) {
-      throw new WorkFoldCliError("usage", `Source is already inside this work-folder: ${trimmed}. Move it in Files instead.`);
+    if (pathContainsPath(connectedFolder.connectedFolderRoot, source)) {
+      throw new AmpleFileCliError("usage", `Source is already inside this Connected Folder: ${trimmed}. Move it in Files instead.`);
     }
-    if (pathContainsPath(source, workFolder.workFolderRoot)) {
-      throw new WorkFoldCliError("usage", `Source contains this work-folder and cannot be copied into it: ${trimmed}.`);
+    if (pathContainsPath(source, connectedFolder.connectedFolderRoot)) {
+      throw new AmpleFileCliError("usage", `Source contains this Connected Folder and cannot be copied into it: ${trimmed}.`);
     }
     sources.push(source);
   }
   const copied: string[] = [];
   try {
-    for (const source of sources) copied.push(await copyPathIntoWorkFolder(source, workFolder.workFolderRoot, toDir));
+    for (const source of sources) copied.push(await copyPathIntoConnectedFolder(source, connectedFolder.connectedFolderRoot, toDir));
   } catch (error) {
     // A mid-batch failure must not strand earlier copies without a restore
     // point: undo them best-effort, then surface the failure.
     await Promise.all(copied.map((path) =>
-      rm(resolveWorkFolderPath(workFolder.workFolderRoot, path), { recursive: true, force: true }).catch(() => undefined)));
+      rm(resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path), { recursive: true, force: true }).catch(() => undefined)));
     throw error;
   }
-  const safety = await checkpointAdditiveWritesOrUndo(workFolder.workFolderRoot, copied, {
+  const safety = await checkpointAdditiveWritesOrUndo(connectedFolder.connectedFolderRoot, copied, {
     reason: "pre_add",
     label: `Before adding ${copied.length} item${copied.length === 1 ? "" : "s"}`,
   });
   return { copied, checkpointId: safety?.checkpointId ?? null };
 }
 
-export type WorkFoldDeleteRecovery =
+export type AmpleFileDeleteRecovery =
   | { kind: "history" }
-  | { kind: "recently-deleted"; entryId: string; restoreBy: string; uncovered: WorkFoldRecentlyDeletedUncoveredPath[] };
+  | { kind: "recently-deleted"; entryId: string; restoreBy: string; uncovered: AmpleFileRecentlyDeletedUncoveredPath[] };
 
-export interface WorkFoldDeleteResult {
+export interface AmpleFileDeleteResult {
   deleted: true;
   path: string;
   kind: "file" | "folder";
   safetyCheckpointId: string;
-  recovery: WorkFoldDeleteRecovery;
+  recovery: AmpleFileDeleteRecovery;
 }
 
 /**
@@ -8766,37 +8766,37 @@ export interface WorkFoldDeleteResult {
  * cover every matched file the selected entry is *moved* into Recently
  * deleted instead of erased, so one delete keeps one undo reference.
  *
- * `.work-fold/`, `.pi/`, and `.workspace/` remain invalid endpoints, and the
- * work-folder root still cannot be deleted: the path policy runs first, unchanged.
+ * `.amplefile/`, `.pi/`, and `.workspace/` remain invalid endpoints, and the
+ * Connected Folder root still cannot be deleted: the path policy runs first, unchanged.
  */
-async function deleteWorkFolderEntryWithRecovery(
+async function deleteConnectedFolderEntryWithRecovery(
   state: LocalApiState,
-  workFolder: WorkFolderSummary,
+  connectedFolder: ConnectedFolderSummary,
   target: string,
   context: { receiptId: string | null },
-): Promise<WorkFoldDeleteResult> {
-  reserveCapabilityMutation(state, workFolder.id, "project", workFolder.id);
+): Promise<AmpleFileDeleteResult> {
+  reserveCapabilityMutation(state, connectedFolder.id, "project", connectedFolder.id);
   try {
-    return await runSettledWorkFolderDeletion(state, workFolder.id, () => deleteSettledWorkFolderEntryWithRecovery(state, workFolder, target, context));
+    return await runSettledConnectedFolderDeletion(state, connectedFolder.id, () => deleteSettledConnectedFolderEntryWithRecovery(state, connectedFolder, target, context));
   } finally {
-    state.capabilityMutations.delete(workFolder.id);
+    state.capabilityMutations.delete(connectedFolder.id);
   }
 }
 
-async function deleteSettledWorkFolderEntryWithRecovery(
+async function deleteSettledConnectedFolderEntryWithRecovery(
   state: LocalApiState,
-  workFolder: WorkFolderSummary,
+  connectedFolder: ConnectedFolderSummary,
   target: string,
   context: { receiptId: string | null },
-): Promise<WorkFoldDeleteResult> {
-  const safety = await createWorkFolderMutationCheckpoint(workFolder.workFolderRoot, {
+): Promise<AmpleFileDeleteResult> {
+  const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
     paths: [target],
     reason: "pre_delete",
     label: `Before deleting ${target}`,
   });
-  return runWithHistorySafety(workFolder.workFolderRoot, safety.checkpointId, () => applyWorkFolderDelete(
+  return runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => applyConnectedFolderDelete(
     state,
-    workFolder,
+    connectedFolder,
     target,
     safety.skippedFiles.map((file) => ({ path: file.path, reason: file.reason })),
     safety.checkpointId,
@@ -8809,39 +8809,39 @@ async function deleteSettledWorkFolderEntryWithRecovery(
  * copy of all of it, else moved whole into Recently deleted with the files
  * History could not keep. One row and each row of a several-row delete run it.
  */
-async function applyWorkFolderDelete(
+async function applyConnectedFolderDelete(
   state: LocalApiState,
-  workFolder: WorkFolderSummary,
+  connectedFolder: ConnectedFolderSummary,
   target: string,
-  uncovered: WorkFoldRecentlyDeletedUncoveredPath[],
+  uncovered: AmpleFileRecentlyDeletedUncoveredPath[],
   safetyCheckpointId: string,
   context: { receiptId: string | null },
-): Promise<WorkFoldDeleteResult> {
+): Promise<AmpleFileDeleteResult> {
   if (!uncovered.length) {
-    const deleted = await deleteWorkFolderEntry(workFolder.workFolderRoot, target);
+    const deleted = await deleteConnectedFolderEntry(connectedFolder.connectedFolderRoot, target);
     return { ...deleted, safetyCheckpointId, recovery: { kind: "history" as const } };
   }
-  const entry = await resolveWorkFolderDeleteTarget(workFolder.workFolderRoot, target);
-  let trashed: WorkFoldRecentlyDeletedEntry;
+  const entry = await resolveConnectedFolderDeleteTarget(connectedFolder.connectedFolderRoot, target);
+  let trashed: AmpleFileRecentlyDeletedEntry;
   try {
     trashed = await state.recentlyDeleted.moveTreeToRecentlyDeleted({
       kind: entry.kind,
       reason: "files.delete",
       sourcePath: entry.absolutePath,
-      workFolderId: workFolder.id,
-      workFolderName: workFolder.name,
+      connectedFolderId: connectedFolder.id,
+      connectedFolderName: connectedFolder.name,
       originalPath: entry.path,
       receiptId: context.receiptId,
       uncovered,
     });
   } catch (error) {
-    throw new WorkFoldCliError(
+    throw new AmpleFileCliError(
       "failure",
-      `work-fold could not move ${entry.path} to Recently deleted: ${errorMessage(error)}. Nothing was deleted.`,
+      `AmpleFile could not move ${entry.path} to Recently deleted: ${errorMessage(error)}. Nothing was deleted.`,
       { cause: error },
     );
   }
-  await touchWorkFolderRoot(workFolder.workFolderRoot).catch(() => undefined);
+  await touchConnectedFolderRoot(connectedFolder.connectedFolderRoot).catch(() => undefined);
   return {
     deleted: true as const,
     path: entry.path,
@@ -8851,15 +8851,15 @@ async function applyWorkFolderDelete(
   };
 }
 
-/** A JSON list of work-folder paths from a request body. */
-function workFolderPathList(value: unknown, emptyMessage: string): string[] {
+/** A JSON list of Connected Folder paths from a request body. */
+function connectedFolderPathList(value: unknown, emptyMessage: string): string[] {
   if (!Array.isArray(value) || !value.length) throw badRequest(emptyMessage);
-  if (value.some((path) => typeof path !== "string" || !path.trim())) throw badRequest("Each item must be a work-folder path.");
+  if (value.some((path) => typeof path !== "string" || !path.trim())) throw badRequest("Each item must be a Connected Folder path.");
   return value as string[];
 }
 
-export interface WorkFoldBatchDeleteResult {
-  deleted: Array<WorkFoldDeleteResult & { receiptId: string }>;
+export interface AmpleFileBatchDeleteResult {
+  deleted: Array<AmpleFileDeleteResult & { receiptId: string }>;
   safetyCheckpointId: string;
   /** Set when a row failed after earlier rows were deleted; the restore point still covers every row. */
   failed?: { path: string; error: string };
@@ -8879,63 +8879,63 @@ export interface WorkFoldBatchDeleteResult {
  * is discarded, exactly as for one row. A row inside another row is deleted
  * with it.
  */
-async function deleteWorkFolderEntriesWithRecovery(
+async function deleteConnectedFolderEntriesWithRecovery(
   state: LocalApiState,
-  workFolder: WorkFolderSummary,
+  connectedFolder: ConnectedFolderSummary,
   targets: readonly string[],
-): Promise<WorkFoldBatchDeleteResult> {
-  reserveCapabilityMutation(state, workFolder.id, "project", workFolder.id);
+): Promise<AmpleFileBatchDeleteResult> {
+  reserveCapabilityMutation(state, connectedFolder.id, "project", connectedFolder.id);
   try {
-    return await runSettledWorkFolderDeletion(state, workFolder.id, () => deleteSettledWorkFolderEntries(state, workFolder, targets));
+    return await runSettledConnectedFolderDeletion(state, connectedFolder.id, () => deleteSettledConnectedFolderEntries(state, connectedFolder, targets));
   } finally {
-    state.capabilityMutations.delete(workFolder.id);
+    state.capabilityMutations.delete(connectedFolder.id);
   }
 }
 
-async function deleteSettledWorkFolderEntries(
+async function deleteSettledConnectedFolderEntries(
   state: LocalApiState,
-  workFolder: WorkFolderSummary,
+  connectedFolder: ConnectedFolderSummary,
   targets: readonly string[],
-): Promise<WorkFoldBatchDeleteResult> {
-  const root = workFolder.workFolderRoot;
-  const paths = outermostWorkFolderPaths(targets);
+): Promise<AmpleFileBatchDeleteResult> {
+  const root = connectedFolder.connectedFolderRoot;
+  const paths = outermostConnectedFolderPaths(targets);
   if (!paths.length) throw badRequest("Select files or folders to delete.");
   const entries: Array<{ absolutePath: string; path: string; kind: "file" | "folder" }> = [];
-  for (const path of paths) entries.push(await resolveWorkFolderDeleteTarget(root, path));
-  const safety = await createWorkFolderMutationCheckpoint(root, {
+  for (const path of paths) entries.push(await resolveConnectedFolderDeleteTarget(root, path));
+  const safety = await createConnectedFolderMutationCheckpoint(root, {
     paths: entries.map((entry) => entry.path),
     reason: "pre_delete",
     label: entries.length === 1 ? `Before deleting ${entries[0]!.path}` : `Before deleting ${entries.length} items`,
   });
   // History names the files it could not keep the way it names its capture
   // roots; each one belongs to exactly one row.
-  const historyRoot = ensureSafeWorkFolderRoot(root);
+  const historyRoot = ensureSafeConnectedFolderRoot(root);
   const capturedAs = entries.map((entry) => relative(historyRoot, entry.absolutePath).split(sep).join("/"));
-  const uncovered = entries.map((): WorkFoldRecentlyDeletedUncoveredPath[] => []);
+  const uncovered = entries.map((): AmpleFileRecentlyDeletedUncoveredPath[] => []);
   for (const file of safety.skippedFiles) {
     const row = capturedAs.findIndex((path) => file.path === path || file.path.startsWith(`${path}/`));
     if (row < 0) {
-      await discardWorkFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-      throw new WorkFoldCliError("failure", `work-fold could not tell which item ${file.path} belongs to. Nothing was deleted.`);
+      await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
+      throw new AmpleFileCliError("failure", `AmpleFile could not tell which item ${file.path} belongs to. Nothing was deleted.`);
     }
     uncovered[row]!.push({ path: file.path, reason: file.reason });
   }
-  const deleted: WorkFoldBatchDeleteResult["deleted"] = [];
+  const deleted: AmpleFileBatchDeleteResult["deleted"] = [];
   for (const [index, entry] of entries.entries()) {
     try {
       const row = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
-        const value = await applyWorkFolderDelete(state, workFolder, entry.path, uncovered[index]!, safety.checkpointId, { receiptId: requestId });
+        const value = await applyConnectedFolderDelete(state, connectedFolder, entry.path, uncovered[index]!, safety.checkpointId, { receiptId: requestId });
         return {
           value,
           detail: value.recovery.kind === "recently-deleted"
-            ? `work-folder ${workFolder.id}; trash ${value.recovery.entryId}`
-            : `work-folder ${workFolder.id}; checkpoint ${value.safetyCheckpointId}`,
+            ? `Connected Folder ${connectedFolder.id}; trash ${value.recovery.entryId}`
+            : `Connected Folder ${connectedFolder.id}; checkpoint ${value.safetyCheckpointId}`,
         };
       });
       deleted.push({ ...row.value, receiptId: row.requestId });
     } catch (error) {
       if (!deleted.length) {
-        await discardWorkFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
+        await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
         throw error;
       }
       return {
@@ -8949,8 +8949,8 @@ async function deleteSettledWorkFolderEntries(
   return { deleted, safetyCheckpointId: safety.checkpointId };
 }
 
-export interface WorkFoldBatchMoveResult {
-  moved: WorkFolderMovedEntry[];
+export interface AmpleFileBatchMoveResult {
+  moved: ConnectedFolderMovedEntry[];
   safetyCheckpointId: string;
   historySkippedPaths: string[];
   /** Set when an item failed after others had moved; the restore point then names exactly the moves that happened. */
@@ -8961,35 +8961,35 @@ export interface WorkFoldBatchMoveResult {
 /**
  * Several items moved into one folder under one History restore point
  * (2026-11-05). Every item passes every check one move makes before any of
- * them moves, then each runs through `moveWorkFolderEntry`, the move one item
+ * them moves, then each runs through `moveConnectedFolderEntry`, the move one item
  * takes. If one still fails partway, the items already moved stay moved, the
  * rest stay put, and the restore point is replaced by one that names exactly
  * the moves that happened, so restoring it undoes them. When the first item
  * fails, nothing moved and the restore point is discarded, as for one item.
  * An item inside another item moves with it.
  */
-async function moveWorkFolderEntriesWithHistory(
-  workFolder: WorkFolderSummary,
+async function moveConnectedFolderEntriesWithHistory(
+  connectedFolder: ConnectedFolderSummary,
   sourcePaths: readonly string[],
   targetFolderPath: string,
-): Promise<WorkFoldBatchMoveResult> {
-  const root = workFolder.workFolderRoot;
-  const sources = outermostWorkFolderPaths(sourcePaths);
+): Promise<AmpleFileBatchMoveResult> {
+  const root = connectedFolder.connectedFolderRoot;
+  const sources = outermostConnectedFolderPaths(sourcePaths);
   if (!sources.length) throw badRequest("Select files or folders to move.");
-  const plans = await checkWorkFolderMoves(root, sources, targetFolderPath);
+  const plans = await checkConnectedFolderMoves(root, sources, targetFolderPath);
   const label = plans.length === 1 ? `Before moving ${plans[0]!.fromPath}` : `Before moving ${plans.length} items`;
-  const safety = await createWorkFolderMutationCheckpoint(root, {
+  const safety = await createConnectedFolderMutationCheckpoint(root, {
     movesOnRestore: plans.map((plan) => ({ fromPath: plan.toPath, toPath: plan.fromPath })),
     reason: "pre_move",
     label,
   });
-  const moved: WorkFolderMovedEntry[] = [];
+  const moved: ConnectedFolderMovedEntry[] = [];
   for (const [index, plan] of plans.entries()) {
     try {
-      moved.push(await moveWorkFolderEntry(root, { sourcePath: plan.fromPath, targetFolderPath }));
+      moved.push(await moveConnectedFolderEntry(root, { sourcePath: plan.fromPath, targetFolderPath }));
     } catch (error) {
       if (!moved.length) {
-        await discardWorkFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
+        await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
         throw error;
       }
       const kept = await restorePointForMoves(root, moved, label, safety.checkpointId, error);
@@ -9013,26 +9013,26 @@ async function moveWorkFolderEntriesWithHistory(
  */
 async function restorePointForMoves(
   root: string,
-  moved: readonly WorkFolderMovedEntry[],
+  moved: readonly ConnectedFolderMovedEntry[],
   label: string,
   plannedCheckpointId: string,
   cause: unknown,
-): Promise<Awaited<ReturnType<typeof createWorkFolderMutationCheckpoint>>> {
+): Promise<Awaited<ReturnType<typeof createConnectedFolderMutationCheckpoint>>> {
   try {
-    const kept = await createWorkFolderMutationCheckpoint(root, {
+    const kept = await createConnectedFolderMutationCheckpoint(root, {
       movesOnRestore: moved.map((item) => ({ fromPath: item.path, toPath: item.fromPath })),
       reason: "pre_move",
       label,
     });
-    await discardWorkFolderCheckpoint(root, plannedCheckpointId).catch(() => undefined);
+    await discardConnectedFolderCheckpoint(root, plannedCheckpointId).catch(() => undefined);
     return kept;
   } catch (recordError) {
     for (const item of [...moved].reverse()) {
       const parent = item.fromPath.includes("/") ? item.fromPath.slice(0, item.fromPath.lastIndexOf("/")) : "";
-      await moveWorkFolderEntry(root, { sourcePath: item.path, targetFolderPath: parent });
+      await moveConnectedFolderEntry(root, { sourcePath: item.path, targetFolderPath: parent });
     }
-    await discardWorkFolderCheckpoint(root, plannedCheckpointId).catch(() => undefined);
-    throw new WorkFoldCliError("failure", `${errorMessage(cause)} History could not record the moves (${errorMessage(recordError)}), so they were put back.`, { cause });
+    await discardConnectedFolderCheckpoint(root, plannedCheckpointId).catch(() => undefined);
+    throw new AmpleFileCliError("failure", `${errorMessage(cause)} History could not record the moves (${errorMessage(recordError)}), so they were put back.`, { cause });
   }
 }
 
@@ -9041,7 +9041,7 @@ async function restorePointForMoves(
  * Recently deleted (docs/receipts-not-gates.md, F20). The restricted-app
  * service is deliberately not given a Recently deleted dependency: the host composes
  * export → keep → destroy, so the export path stays the one Settings → Apps
- * already uses and the copy is a plain `work-fold.app-data` envelope.
+ * already uses and the copy is a plain `amplefile.app-data` envelope.
  *
  * Clearing storage that holds nothing writes no entry: there is nothing to
  * bring back, and an empty shell in Recently deleted would only be noise.
@@ -9049,39 +9049,39 @@ async function restorePointForMoves(
 async function moveAppStorageExportToRecentlyDeleted(
   state: LocalApiState,
   app: RestrictedAppInstalled,
-  reason: WorkFoldRecentlyDeletedReason,
+  reason: AmpleFileRecentlyDeletedReason,
   receiptId: string | null,
   options: { skipWhenStorageUnavailable?: boolean } = {},
-): Promise<WorkFoldRecentlyDeletedEntry | null> {
+): Promise<AmpleFileRecentlyDeletedEntry | null> {
   return await keepAppStorageInRecentlyDeleted(state.restrictedApps, state.recentlyDeleted, app, reason, receiptId, options);
 }
 
 async function keepAppStorageInRecentlyDeleted(
   restrictedApps: RestrictedAppService,
-  recentlyDeleted: WorkFoldRecentlyDeletedStore,
+  recentlyDeleted: AmpleFileRecentlyDeletedStore,
   app: RestrictedAppInstalled,
-  reason: WorkFoldRecentlyDeletedReason,
+  reason: AmpleFileRecentlyDeletedReason,
   receiptId: string | null,
   options: { skipWhenStorageUnavailable?: boolean } = {},
-): Promise<WorkFoldRecentlyDeletedEntry | null> {
+): Promise<AmpleFileRecentlyDeletedEntry | null> {
   // Removal paths must never fail because this process has no storage host:
   // without one there is no live app data in it to lose, so there is nothing
   // to export and the removal proceeds. Every other failure still fails the
   // removal, so data is never destroyed without a recoverable copy.
   const usage = await restrictedApps
-    .storageUsage(app.workFolderId, app.manifest.id, app.digest, app.featureInstallationId)
+    .storageUsage(app.connectedFolderId, app.manifest.id, app.digest, app.featureInstallationId)
     .catch((error: unknown) => {
       if (options.skipWhenStorageUnavailable && error instanceof RestrictedAppError && error.code === "APP_UNAVAILABLE") return null;
       throw error;
     });
   if (!usage || usage.usageBytes === 0) return null;
-  const backup = await restrictedApps.exportStorage(app.workFolderId, app.manifest.id, app.digest, app.featureInstallationId);
+  const backup = await restrictedApps.exportStorage(app.connectedFolderId, app.manifest.id, app.digest, app.featureInstallationId);
   return recentlyDeleted.moveAppDataToRecentlyDeleted({
     kind: "app-storage",
     reason,
     backup,
-    workFolderId: app.workFolderId,
-    ...(await workFolderDisplayName(app.workFolderId)),
+    connectedFolderId: app.connectedFolderId,
+    ...(await connectedFolderDisplayName(app.connectedFolderId)),
     receiptId,
     identity: {
       kind: "app-data",
@@ -9090,7 +9090,7 @@ async function keepAppStorageInRecentlyDeleted(
       featureInstallationId: app.featureInstallationId,
       runtimeInstanceId: app.runtimeInstanceId,
       dataNamespaceId: app.dataNamespaceId,
-      sourceWorkFolderId: app.sourceWorkFolderId,
+      sourceConnectedFolderId: app.sourceConnectedFolderId,
       projectId: app.projectId,
       releaseDigest: app.releaseDigest,
     },
@@ -9106,13 +9106,13 @@ async function keepAppStorageInRecentlyDeleted(
  */
 async function moveRemovedAppStorageToRecentlyDeleted(
   state: LocalApiState,
-  workFolderId: string,
+  connectedFolderId: string,
   appId: string,
-  reason: WorkFoldRecentlyDeletedReason,
+  reason: AmpleFileRecentlyDeletedReason,
   receiptId: string | null,
   selector: { featureInstallationId?: string; expectedDigest?: string } = {},
-): Promise<WorkFoldRecentlyDeletedEntry | null> {
-  const app = (await state.restrictedApps.list(workFolderId)).find((item) => (
+): Promise<AmpleFileRecentlyDeletedEntry | null> {
+  const app = (await state.restrictedApps.list(connectedFolderId)).find((item) => (
     item.manifest.id === appId
     && (selector.featureInstallationId === undefined || item.featureInstallationId === selector.featureInstallationId)
     && (selector.expectedDigest === undefined || item.digest === selector.expectedDigest)
@@ -9122,36 +9122,36 @@ async function moveRemovedAppStorageToRecentlyDeleted(
 }
 
 /**
- * Clears a removed work-folder's App Studio state after its copy is in
+ * Clears a removed Connected Folder's App Studio state after its copy is in
  * Recently deleted (docs/receipts-not-gates.md, F20). The service hands over
  * the copy only once every blocker has passed; if the copy cannot be written,
  * nothing is cleared. If the copy landed but the history is still in App
  * Studio afterwards, the copy is withdrawn so Recently deleted never shows
  * something that was not removed.
  */
-async function removeWorkFolderAppStudioIntoRecentlyDeleted(
+async function removeConnectedFolderAppStudioIntoRecentlyDeleted(
   restrictedApps: RestrictedAppService,
-  recentlyDeleted: WorkFoldRecentlyDeletedStore,
-  workFolderId: string,
-  context: { workFolderName?: string; receiptId: string | null; onKept?: (entry: WorkFoldRecentlyDeletedEntry) => void },
+  recentlyDeleted: AmpleFileRecentlyDeletedStore,
+  connectedFolderId: string,
+  context: { connectedFolderName?: string; receiptId: string | null; onKept?: (entry: AmpleFileRecentlyDeletedEntry) => void },
 ): Promise<void> {
-  let kept: { entry: WorkFoldRecentlyDeletedEntry; copy: LocalAppWorkFolderRecoveryCopy } | null = null;
+  let kept: { entry: AmpleFileRecentlyDeletedEntry; copy: LocalAppConnectedFolderRecoveryCopy } | null = null;
   try {
-    await restrictedApps.removeWorkFolder(workFolderId, {
+    await restrictedApps.removeConnectedFolder(connectedFolderId, {
       keep: async (copy) => {
-        const entry = await keepWorkFolderAppStudioInRecentlyDeleted(recentlyDeleted, copy, context);
+        const entry = await keepConnectedFolderAppStudioInRecentlyDeleted(recentlyDeleted, copy, context);
         kept = { entry, copy };
         context.onKept?.(entry);
       },
     });
   } catch (error) {
-    const landed = kept as { entry: WorkFoldRecentlyDeletedEntry; copy: LocalAppWorkFolderRecoveryCopy } | null;
+    const landed = kept as { entry: AmpleFileRecentlyDeletedEntry; copy: LocalAppConnectedFolderRecoveryCopy } | null;
     if (landed) {
       const stillThere = landed.copy.project
-        ? await restrictedApps.localAppStudio(workFolderId)
+        ? await restrictedApps.localAppStudio(connectedFolderId)
           .then((studio) => studio.project?.projectId === landed.copy.project?.projectId)
           .catch(() => false)
-        : await restrictedApps.workFolderRemovalImpact(workFolderId)
+        : await restrictedApps.connectedFolderRemovalImpact(connectedFolderId)
           .then((impact) => impact.incomingPreparedOperationCount > 0)
           .catch(() => false);
       if (stillThere) await recentlyDeleted.remove(landed.entry.id).catch(() => undefined);
@@ -9171,15 +9171,15 @@ async function removeWorkFolderAppStudioIntoRecentlyDeleted(
  */
 async function deleteLocalAppReleaseIntoRecentlyDeleted(
   state: LocalApiState,
-  workFolder: WorkFolderSummary,
+  connectedFolder: ConnectedFolderSummary,
   releaseDigest: string,
   receiptId: string | null,
 ): Promise<LocalAppReleaseDeletionResult & { recentlyDeleted: { entryId: string; restoreBy: string } | null }> {
-  return await runRestrictedAppMutation(state, workFolder.id, async () => {
-    let kept: { entry: WorkFoldRecentlyDeletedEntry; releaseDigest: string } | null = null;
+  return await runRestrictedAppMutation(state, connectedFolder.id, async () => {
+    let kept: { entry: AmpleFileRecentlyDeletedEntry; releaseDigest: string } | null = null;
     try {
       const deletion = await state.restrictedApps.deleteLocalAppRelease({
-        workFolderId: workFolder.id,
+        connectedFolderId: connectedFolder.id,
         releaseDigest,
         keep: async (copy) => {
           const entry = await state.recentlyDeleted.moveAppReleaseToRecentlyDeleted({
@@ -9189,24 +9189,24 @@ async function deleteLocalAppReleaseIntoRecentlyDeleted(
               projectId: copy.record.projectId,
               releaseDigest: copy.record.releaseDigest,
               displayVersion: copy.record.displayVersion,
-              sourceWorkFolderId: copy.record.sourceWorkFolderId,
+              sourceConnectedFolderId: copy.record.sourceConnectedFolderId,
             },
             record: copy.record,
             release: copy.release,
-            workFolderId: workFolder.id,
-            workFolderName: workFolder.name,
+            connectedFolderId: connectedFolder.id,
+            connectedFolderName: connectedFolder.name,
             ...recentlyDeletedDisplayName(`${copy.record.presentation.title} ${copy.record.displayVersion}`),
             receiptId,
           });
           kept = { entry, releaseDigest: copy.record.releaseDigest };
         },
       });
-      const landed = kept as { entry: WorkFoldRecentlyDeletedEntry } | null;
+      const landed = kept as { entry: AmpleFileRecentlyDeletedEntry } | null;
       return { ...deletion, recentlyDeleted: landed ? { entryId: landed.entry.id, restoreBy: landed.entry.restoreBy } : null };
     } catch (error) {
-      const landed = kept as { entry: WorkFoldRecentlyDeletedEntry; releaseDigest: string } | null;
+      const landed = kept as { entry: AmpleFileRecentlyDeletedEntry; releaseDigest: string } | null;
       if (landed) {
-        const stillThere = await state.restrictedApps.localAppStudio(workFolder.id)
+        const stillThere = await state.restrictedApps.localAppStudio(connectedFolder.id)
           .then((studio) => studio.releases.some((release) => release.releaseDigest === landed.releaseDigest))
           .catch(() => false);
         if (stillThere) await state.recentlyDeleted.remove(landed.entry.id).catch(() => undefined);
@@ -9224,18 +9224,18 @@ function recentlyDeletedDisplayName(text: string): { displayName?: string } {
 
 async function moveRetainedExportToRecentlyDeleted(
   state: LocalApiState,
-  sourceWorkFolderId: string,
+  sourceConnectedFolderId: string,
   retained: LocalAppRetainedData,
-  reason: WorkFoldRecentlyDeletedReason,
+  reason: AmpleFileRecentlyDeletedReason,
   receiptId: string | null,
-): Promise<WorkFoldRecentlyDeletedEntry> {
-  const backup = await state.restrictedApps.exportRetainedStorage(sourceWorkFolderId, retained.retainedDataId);
+): Promise<AmpleFileRecentlyDeletedEntry> {
+  const backup = await state.restrictedApps.exportRetainedStorage(sourceConnectedFolderId, retained.retainedDataId);
   return state.recentlyDeleted.moveAppDataToRecentlyDeleted({
     kind: "app-retained",
     reason,
     backup,
-    workFolderId: sourceWorkFolderId,
-    ...(await workFolderDisplayName(sourceWorkFolderId)),
+    connectedFolderId: sourceConnectedFolderId,
+    ...(await connectedFolderDisplayName(sourceConnectedFolderId)),
     receiptId,
     identity: {
       kind: "app-data",
@@ -9244,7 +9244,7 @@ async function moveRetainedExportToRecentlyDeleted(
       featureInstallationId: retained.featureInstallationId,
       runtimeInstanceId: retained.runtimeInstanceId,
       dataNamespaceId: retained.dataNamespaceId,
-      sourceWorkFolderId,
+      sourceConnectedFolderId,
       projectId: retained.projectId,
       releaseDigest: retained.releaseDigest,
       retainedDataId: retained.retainedDataId,
@@ -9261,24 +9261,24 @@ async function moveRetainedExportToRecentlyDeleted(
 async function moveUninstallPurgeExportsToRecentlyDeleted(
   state: LocalApiState,
   runtimeInstanceId: string,
-  workFolderIds: readonly string[],
+  connectedFolderIds: readonly string[],
   receiptId: string | null,
-): Promise<WorkFoldRecentlyDeletedEntry[]> {
-  const entries: WorkFoldRecentlyDeletedEntry[] = [];
-  const sourceWorkFolderIds = new Set<string>();
-  for (const workFolderId of new Set(workFolderIds)) {
-    for (const app of await state.restrictedApps.list(workFolderId)) {
+): Promise<AmpleFileRecentlyDeletedEntry[]> {
+  const entries: AmpleFileRecentlyDeletedEntry[] = [];
+  const sourceConnectedFolderIds = new Set<string>();
+  for (const connectedFolderId of new Set(connectedFolderIds)) {
+    for (const app of await state.restrictedApps.list(connectedFolderId)) {
       if (app.runtimeInstanceId !== runtimeInstanceId) continue;
-      sourceWorkFolderIds.add(app.sourceWorkFolderId);
+      sourceConnectedFolderIds.add(app.sourceConnectedFolderId);
       const entry = await moveAppStorageExportToRecentlyDeleted(state, app, "apps.uninstall.purge", receiptId);
       if (entry) entries.push(entry);
     }
   }
-  for (const sourceWorkFolderId of sourceWorkFolderIds) {
-    const studio = await state.restrictedApps.localAppStudio(sourceWorkFolderId).catch(() => null);
+  for (const sourceConnectedFolderId of sourceConnectedFolderIds) {
+    const studio = await state.restrictedApps.localAppStudio(sourceConnectedFolderId).catch(() => null);
     for (const retained of studio?.retainedData ?? []) {
       if (retained.runtimeInstanceId !== runtimeInstanceId) continue;
-      entries.push(await moveRetainedExportToRecentlyDeleted(state, sourceWorkFolderId, retained, "apps.uninstall.purge", receiptId));
+      entries.push(await moveRetainedExportToRecentlyDeleted(state, sourceConnectedFolderId, retained, "apps.uninstall.purge", receiptId));
     }
   }
   return entries;
@@ -9291,35 +9291,35 @@ async function moveUninstallPurgeExportsToRecentlyDeleted(
  */
 async function requireInstalledAppForStorage(
   state: LocalApiState,
-  workFolderId: string,
+  connectedFolderId: string,
   appId: string,
   expectedDigest: string,
   featureInstallationId?: string,
 ): Promise<RestrictedAppInstalled> {
-  await state.restrictedApps.storageUsage(workFolderId, appId, expectedDigest, featureInstallationId);
-  const app = (await state.restrictedApps.list(workFolderId)).find((item) => (
+  await state.restrictedApps.storageUsage(connectedFolderId, appId, expectedDigest, featureInstallationId);
+  const app = (await state.restrictedApps.list(connectedFolderId)).find((item) => (
     item.manifest.id === appId
     && item.digest === expectedDigest
     && (featureInstallationId === undefined || item.featureInstallationId === featureInstallationId)
   ));
-  if (!app) throw notFound("This app is not installed in this work-folder at that revision.");
+  if (!app) throw notFound("This app is not installed in this Connected Folder at that revision.");
   return app;
 }
 
-/** The work-folder's display name for a trash entry, when it is still registered. */
-async function workFolderDisplayName(workFolderId: string): Promise<{ workFolderName?: string }> {
-  const workFolder = await getWorkFolder(workFolderId).catch(() => null);
-  return workFolder ? { workFolderName: workFolder.name } : {};
+/** The Connected Folder's display name for a trash entry, when it is still registered. */
+async function connectedFolderDisplayName(connectedFolderId: string): Promise<{ connectedFolderName?: string }> {
+  const connectedFolder = await getConnectedFolder(connectedFolderId).catch(() => null);
+  return connectedFolder ? { connectedFolderName: connectedFolder.name } : {};
 }
 
 /**
- * Splits one work-folder-relative act path into the desktop create routes' parent
+ * Splits one Connected Folder–relative act path into the desktop create routes' parent
  * and name inputs, so `files mkdir`/`files create` run the exact same
- * `createWorkFolderFolder`/`createWorkFolderTextFile` internals as the renderer.
+ * `createConnectedFolderFolder`/`createConnectedFolderTextFile` internals as the renderer.
  */
 function splitActEntryPath(rawPath: string, missingMessage: string): { target: string; parentPath: string; name: string } {
-  const target = normalizeWorkFolderRelativePath(rawPath);
-  if (!target) throw new WorkFoldCliError("usage", missingMessage);
+  const target = normalizeConnectedFolderRelativePath(rawPath);
+  if (!target) throw new AmpleFileCliError("usage", missingMessage);
   const lastSlash = target.lastIndexOf("/");
   return {
     target,
@@ -9334,17 +9334,17 @@ const maxActAppearanceProposalBytes = 1_048_576;
 const maxActPresentationFileBytes = 65_536;
 
 /**
- * Reads and validates one typed `work-folder-appearance` proposal file, resolved
+ * Reads and validates one typed `connected-folder-appearance` proposal file, resolved
  * host-side against the caller's working directory — the same file-borne
  * input pattern as `checks enable --proposal`. Nothing but the typed proposal
  * is accepted: no free-form argv colors, no other JSON shapes.
  */
-async function readWorkFolderAppearanceProposalFile(rawPath: string, cwd: string): Promise<WorkFolderAppearanceProposal> {
+async function readConnectedFolderAppearanceProposalFile(rawPath: string, cwd: string): Promise<ConnectedFolderAppearanceProposal> {
   const parsed = await readBoundedActJsonFile(rawPath, cwd, maxActAppearanceProposalBytes, "appearance proposal");
   try {
-    return parseWorkFolderAppearanceProposal(parsed);
+    return parseConnectedFolderAppearanceProposal(parsed);
   } catch (error) {
-    throw new WorkFoldCliError("usage", errorMessage(error), { cause: error });
+    throw new AmpleFileCliError("usage", errorMessage(error), { cause: error });
   }
 }
 
@@ -9361,7 +9361,7 @@ async function readAppPresentationFile(rawPath: string, cwd: string): Promise<Ap
   if (typeof body.title !== "string"
     || (body.description !== undefined && body.description !== null && typeof body.description !== "string")
     || (body.icon !== undefined && body.icon !== null && typeof body.icon !== "string")) {
-    throw new WorkFoldCliError("usage", "An App title plus optional text description and icon id are required.");
+    throw new AmpleFileCliError("usage", "An App title plus optional text description and icon id are required.");
   }
   return {
     title: body.title,
@@ -9377,17 +9377,17 @@ async function readBoundedActJsonFile(
   label: string,
 ): Promise<unknown> {
   const trimmed = rawPath.trim();
-  if (!trimmed) throw new WorkFoldCliError("usage", `A ${label} file path is required.`);
+  if (!trimmed) throw new AmpleFileCliError("usage", `A ${label} file path is required.`);
   const path = isAbsolute(trimmed) ? resolve(trimmed) : resolve(cwd, trimmed);
   const info = await stat(path).catch(() => null);
-  if (!info || !info.isFile()) throw new WorkFoldCliError("notFound", `The ${label} file was not found: ${trimmed}.`);
+  if (!info || !info.isFile()) throw new AmpleFileCliError("notFound", `The ${label} file was not found: ${trimmed}.`);
   if (info.size > maximumBytes) {
-    throw new WorkFoldCliError("usage", `The ${label} file is larger than ${maximumBytes} bytes and cannot be a typed work-fold file.`);
+    throw new AmpleFileCliError("usage", `The ${label} file is larger than ${maximumBytes} bytes and cannot be a typed AmpleFile file.`);
   }
   try {
     return JSON.parse(await readFile(path, "utf8")) as unknown;
   } catch (error) {
-    throw new WorkFoldCliError("usage", `The ${label} file is not valid JSON.`, { cause: error });
+    throw new AmpleFileCliError("usage", `The ${label} file is not valid JSON.`, { cause: error });
   }
 }
 
@@ -9401,22 +9401,22 @@ function shortContentRef(value: unknown): string {
   return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16)}`;
 }
 
-function appearanceCustomizationRef(customization: WorkFolderAppearanceCustomization | null): string | null {
+function appearanceCustomizationRef(customization: ConnectedFolderAppearanceCustomization | null): string | null {
   return customization === null ? null : shortContentRef(customization);
 }
 
 function appearanceCustomizationsEqual(
-  left: WorkFolderAppearanceCustomization | null,
-  right: WorkFolderAppearanceCustomization | null,
+  left: ConnectedFolderAppearanceCustomization | null,
+  right: ConnectedFolderAppearanceCustomization | null,
 ): boolean {
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
 
-function toActAppPresentation(presentation: AppReleasePresentation): WorkFoldActAppPresentation {
+function toActAppPresentation(presentation: AppReleasePresentation): AmpleFileActAppPresentation {
   return { title: presentation.title, description: presentation.description, icon: presentation.icon };
 }
 
-function toActAppReleaseRef(release: LocalAppRelease): WorkFoldActAppReleaseRef {
+function toActAppReleaseRef(release: LocalAppRelease): AmpleFileActAppReleaseRef {
   return {
     releaseDigest: release.releaseDigest,
     displayVersion: release.displayVersion,
@@ -9427,13 +9427,13 @@ function toActAppReleaseRef(release: LocalAppRelease): WorkFoldActAppReleaseRef 
   };
 }
 
-function toActAppOperationRef(operation: LocalAppOperation): WorkFoldActAppOperationRef {
+function toActAppOperationRef(operation: LocalAppOperation): AmpleFileActAppOperationRef {
   return {
     operationId: operation.operationId,
     kind: operation.kind,
     releaseDigest: operation.releaseDigest,
     runtimeInstanceId: operation.runtimeInstanceId,
-    targetWorkFolderId: operation.targetWorkFolderId,
+    targetConnectedFolderId: operation.targetConnectedFolderId,
     preparedAt: operation.preparedAt,
     ...(operation.kind === "update"
       ? { fromReleaseDigest: operation.plan.fromReleaseDigest, continuityPolicy: operation.continuityPolicy }
@@ -9441,16 +9441,16 @@ function toActAppOperationRef(operation: LocalAppOperation): WorkFoldActAppOpera
   };
 }
 
-function toActAppInstanceRef(instance: LocalAppInstance): WorkFoldActAppInstanceRef {
+function toActAppInstanceRef(instance: LocalAppInstance): AmpleFileActAppInstanceRef {
   return {
     runtimeInstanceId: instance.runtimeInstanceId,
-    workFolderId: instance.workFolderId,
+    connectedFolderId: instance.connectedFolderId,
     releaseDigest: instance.releaseDigest,
     displayVersion: instance.displayVersion,
   };
 }
 
-function toActAppProposalRef(proposal: RestrictedAppProposalReceipt): WorkFoldActAppProposalRef {
+function toActAppProposalRef(proposal: RestrictedAppProposalReceipt): AmpleFileActAppProposalRef {
   return {
     id: proposal.id,
     status: proposal.status,
@@ -9464,7 +9464,7 @@ function toActAppProposalRef(proposal: RestrictedAppProposalReceipt): WorkFoldAc
   };
 }
 
-function toActAppAutomationRunRef(run: RestrictedAppAutomationRunReceipt): WorkFoldActAppAutomationRunRef {
+function toActAppAutomationRunRef(run: RestrictedAppAutomationRunReceipt): AmpleFileActAppAutomationRunRef {
   return {
     runId: run.runId,
     outcome: run.outcome,
@@ -9474,11 +9474,11 @@ function toActAppAutomationRunRef(run: RestrictedAppAutomationRunReceipt): WorkF
   };
 }
 
-function toActAutomationTriggerRef(trigger: WorkFoldAutomationDeclaration["trigger"]): WorkFoldActAutomationTriggerRef {
+function toActAutomationTriggerRef(trigger: AmpleFileAutomationDeclaration["trigger"]): AmpleFileActAutomationTriggerRef {
   if (trigger.kind === "files-changed") {
     return {
       kind: trigger.kind,
-      workFolderId: trigger.workFolder,
+      connectedFolderId: trigger.connectedFolder,
       watch: structuredClone(trigger.watch),
       debounceSeconds: trigger.debounceSeconds,
       cooldownMinutes: trigger.cooldownMinutes,
@@ -9494,7 +9494,7 @@ function toActAutomationTriggerRef(trigger: WorkFoldAutomationDeclaration["trigg
         kind: "on-settled",
         source: {
           kind: "check-run",
-          workFolderId: source.workFolder,
+          connectedFolderId: source.connectedFolder,
           ...(source.check ? { checkId: source.check } : {}),
           outcomes: [...source.outcomes],
         },
@@ -9504,7 +9504,7 @@ function toActAutomationTriggerRef(trigger: WorkFoldAutomationDeclaration["trigg
       kind: "on-settled",
       source: {
         kind: "app-automation-run",
-        workFolderId: source.workFolder,
+        connectedFolderId: source.connectedFolder,
         appId: source.appId,
         appAutomationId: source.appAutomationId,
         outcomes: [...source.outcomes],
@@ -9514,7 +9514,7 @@ function toActAutomationTriggerRef(trigger: WorkFoldAutomationDeclaration["trigg
   return { kind: "manual" };
 }
 
-function toActAutomationSummary(projection: WorkFoldAutomationProjection): WorkFoldActAutomationSummary {
+function toActAutomationSummary(projection: AmpleFileAutomationProjection): AmpleFileActAutomationSummary {
   return {
     automationId: projection.declaration.id,
     title: projection.declaration.title,
@@ -9523,7 +9523,7 @@ function toActAutomationSummary(projection: WorkFoldAutomationProjection): WorkF
     trigger: toActAutomationTriggerRef(projection.declaration.trigger),
     ...(projection.fileWatch ? { fileWatch: projection.fileWatch } : {}),
     stepCount: projection.declaration.steps.length,
-    referencedWorkFolderIds: workFoldAutomationReferencedWorkFolderIds(projection.declaration),
+    referencedConnectedFolderIds: ampleFileAutomationReferencedConnectedFolderIds(projection.declaration),
     ...(projection.health === "enabled" && projection.grants.length > 0
       ? { enabledAt: projection.grants[projection.grants.length - 1]!.enabledAt }
       : {}),
@@ -9532,8 +9532,8 @@ function toActAutomationSummary(projection: WorkFoldAutomationProjection): WorkF
       ? {
         suspension: {
           at: projection.suspension.at,
-          missingWorkFolderIds: [...projection.suspension.missingWorkFolderIds],
-          reRegisteredWorkFolderIds: [...projection.suspension.reRegisteredWorkFolderIds],
+          missingConnectedFolderIds: [...projection.suspension.missingConnectedFolderIds],
+          reRegisteredConnectedFolderIds: [...projection.suspension.reRegisteredConnectedFolderIds],
         },
       }
       : {}),
@@ -9548,7 +9548,7 @@ function toActAutomationSummary(projection: WorkFoldAutomationProjection): WorkF
 }
 
 function toActAutomationFilesSource(
-  source: Extract<WorkFoldAutomationDeclaration["steps"][number], { kind: "files" }>["from"],
+  source: Extract<AmpleFileAutomationDeclaration["steps"][number], { kind: "files" }>["from"],
 ): { kind: "paths"; paths: string[] }
   | { kind: "tree"; path: string; recursive: boolean; extensions: string[] }
   | { kind: "step-created-files"; step: string; extensions?: string[]; maxFiles: number; maxTotalBytes: number } {
@@ -9568,11 +9568,11 @@ const automationReceiptTextLimit = 4_096;
 const automationReceiptListLimit = 128;
 
 async function readAutomationReceiptProjection(automationId?: string): Promise<{
-  receipts: WorkFoldActAutomationReceipt[];
+  receipts: AmpleFileActAutomationReceipt[];
   truncated: boolean;
   damagedLineCount: number;
 }> {
-  const matching: WorkFoldActAutomationReceipt[] = [];
+  const matching: AmpleFileActAutomationReceipt[] = [];
   const damagedLineCount = await visitAutomationReceipts((projected) => {
     if (automationId === undefined || projected.automationId === automationId) matching.push(projected);
   });
@@ -9584,11 +9584,11 @@ async function readAutomationReceiptProjection(automationId?: string): Promise<{
 }
 
 async function readAutomationReceiptProjectionsByAutomation(): Promise<{
-  receipts: WorkFoldActAutomationReceipt[];
+  receipts: AmpleFileActAutomationReceipt[];
   truncated: boolean;
   damagedLineCount: number;
 }> {
-  const matchingByAutomation = new Map<string, WorkFoldActAutomationReceipt[]>();
+  const matchingByAutomation = new Map<string, AmpleFileActAutomationReceipt[]>();
   let truncated = false;
   const damagedLineCount = await visitAutomationReceipts((projected) => {
     const bucket = matchingByAutomation.get(projected.automationId) ?? [];
@@ -9606,12 +9606,12 @@ async function readAutomationReceiptProjectionsByAutomation(): Promise<{
   };
 }
 
-async function visitAutomationReceipts(visitor: (receipt: WorkFoldActAutomationReceipt) => void): Promise<number> {
+async function visitAutomationReceipts(visitor: (receipt: AmpleFileActAutomationReceipt) => void): Promise<number> {
   let damagedLineCount = 0;
-  for (const path of [workFoldAutomationReceiptsRotatedFile(), workFoldAutomationReceiptsFile()]) {
+  for (const path of [ampleFileAutomationReceiptsRotatedFile(), ampleFileAutomationReceiptsFile()]) {
     const text = await readFile(path, "utf8").catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw new WorkFoldCliError("failure", "work-fold could not read the automation run history.", { cause: error });
+      throw new AmpleFileCliError("failure", "AmpleFile could not read the automation run history.", { cause: error });
     });
     if (text === null) continue;
     for (const line of text.split("\n")) {
@@ -9634,17 +9634,17 @@ async function visitAutomationReceipts(visitor: (receipt: WorkFoldActAutomationR
   return damagedLineCount;
 }
 
-function projectAutomationReceipt(value: unknown): WorkFoldActAutomationReceipt | null {
+function projectAutomationReceipt(value: unknown): AmpleFileActAutomationReceipt | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const receipt = value as Partial<WorkFoldAutomationReceiptV1>;
+  const receipt = value as Partial<AmpleFileAutomationReceiptV1>;
   const at = automationReceiptTimestamp(receipt.at);
   const automationId = automationReceiptText(receipt.automationId);
   const outcome = automationReceiptText(receipt.outcome);
   if (!at || !automationId || !outcome || (receipt.scope !== "automation" && receipt.scope !== "run" && receipt.scope !== "hop")) {
     return null;
   }
-  const projected: WorkFoldActAutomationReceipt = { at, scope: receipt.scope, outcome, automationId };
-  const addText = (key: keyof WorkFoldActAutomationReceipt, candidate: unknown) => {
+  const projected: AmpleFileActAutomationReceipt = { at, scope: receipt.scope, outcome, automationId };
+  const addText = (key: keyof AmpleFileActAutomationReceipt, candidate: unknown) => {
     const text = automationReceiptText(candidate);
     if (text !== undefined) (projected as unknown as Record<string, unknown>)[key] = text;
   };
@@ -9659,9 +9659,9 @@ function projectAutomationReceipt(value: unknown): WorkFoldActAutomationReceipt 
   if (receipt.partial === true && outcome === "succeeded") projected.partial = true;
   const cause = projectAutomationReceiptCause(receipt.cause);
   if (cause !== undefined) projected.cause = cause;
-  addText("workFolderId", receipt.workFolderId);
-  addText("fromWorkFolderId", receipt.fromWorkFolderId);
-  addText("toWorkFolderId", receipt.toWorkFolderId);
+  addText("connectedFolderId", receipt.connectedFolderId);
+  addText("fromConnectedFolderId", receipt.fromConnectedFolderId);
+  addText("toConnectedFolderId", receipt.toConnectedFolderId);
   addText("conversationId", receipt.conversationId);
   addText("taskId", receipt.taskId);
   addText("restorePointId", receipt.restorePointId);
@@ -9672,7 +9672,7 @@ function projectAutomationReceipt(value: unknown): WorkFoldActAutomationReceipt 
   addText("requestId", receipt.requestId);
   addText("occurrenceId", receipt.occurrenceId);
   addText("scheduledRunId", receipt.scheduledRunId);
-  const addList = (key: keyof WorkFoldActAutomationReceipt, candidate: unknown) => {
+  const addList = (key: keyof AmpleFileActAutomationReceipt, candidate: unknown) => {
     const list = automationReceiptTextList(candidate);
     if (list !== undefined) (projected as unknown as Record<string, unknown>)[key] = list;
   };
@@ -9681,8 +9681,8 @@ function projectAutomationReceipt(value: unknown): WorkFoldActAutomationReceipt 
   addList("copiedPaths", receipt.copiedPaths);
   addList("checkIds", receipt.checkIds);
   addList("stoppedHopTaskIds", receipt.stoppedHopTaskIds);
-  addList("missingWorkFolderIds", receipt.missingWorkFolderIds);
-  const addCount = (key: keyof WorkFoldActAutomationReceipt, candidate: unknown) => {
+  addList("missingConnectedFolderIds", receipt.missingConnectedFolderIds);
+  const addCount = (key: keyof AmpleFileActAutomationReceipt, candidate: unknown) => {
     if (typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0) {
       (projected as unknown as Record<string, unknown>)[key] = Math.floor(candidate);
     }
@@ -9698,7 +9698,7 @@ function projectAutomationReceipt(value: unknown): WorkFoldActAutomationReceipt 
 }
 
 /**
- * What work-fold filled into a hop's message, bounded exactly as the executor
+ * What AmpleFile filled into a hop's message, bounded exactly as the executor
  * bounded it. Text keeps its newlines — it is a list — so it is length-bounded
  * rather than run through the single-line text projector.
  */
@@ -9712,7 +9712,7 @@ function projectAutomationReceiptPlaceholders(
     const placeholder = entry as Record<string, unknown>;
     const name = automationReceiptText(placeholder.name);
     if (!name || name.length > 128) return undefined;
-    if (typeof placeholder.text !== "string" || placeholder.text.length > workFoldAutomationBounds.maxPlaceholderTextBytes) {
+    if (typeof placeholder.text !== "string" || placeholder.text.length > ampleFileAutomationBounds.maxPlaceholderTextBytes) {
       return undefined;
     }
     if (!Number.isSafeInteger(placeholder.bytes) || (placeholder.bytes as number) < 0) return undefined;
@@ -9735,12 +9735,12 @@ function projectAutomationReceiptCause(value: unknown): unknown {
   }
   // A live change and a catch-up both list at most the observer's files on
   // each side of the comparison, so the true count never exceeds twice that.
-  if (cause.kind === "files-changed" && typeof cause.snapshotDigest === "string" && /^[a-f0-9]{64}$/.test(cause.snapshotDigest) && Number.isSafeInteger(cause.changedCount) && (cause.changedCount as number) > 0 && (cause.changedCount as number) <= 2 * workFoldAutomationFileObserverBounds.maxFiles && automationReceiptText(cause.workFolderId)) {
+  if (cause.kind === "files-changed" && typeof cause.snapshotDigest === "string" && /^[a-f0-9]{64}$/.test(cause.snapshotDigest) && Number.isSafeInteger(cause.changedCount) && (cause.changedCount as number) > 0 && (cause.changedCount as number) <= 2 * ampleFileAutomationFileObserverBounds.maxFiles && automationReceiptText(cause.connectedFolderId)) {
     const changedPaths = automationReceiptTextList(cause.changedPaths);
     const catchUp = automationReceiptCatchUp(cause.catchUp, cause.changedCount as number);
     return {
       kind: cause.kind,
-      workFolderId: automationReceiptText(cause.workFolderId),
+      connectedFolderId: automationReceiptText(cause.connectedFolderId),
       snapshotDigest: cause.snapshotDigest,
       changedCount: cause.changedCount,
       ...(changedPaths?.length ? { changedPaths } : {}),
@@ -9748,7 +9748,7 @@ function projectAutomationReceiptCause(value: unknown): unknown {
     };
   }
   if (cause.kind === "run-now") {
-    const surface = typeof cause.surface === "string" && WORKFOLD_CLI_ACT_SURFACES.includes(cause.surface as never)
+    const surface = typeof cause.surface === "string" && AMPLEFILE_CLI_ACT_SURFACES.includes(cause.surface as never)
       ? cause.surface
       : undefined;
     return {
@@ -9761,19 +9761,19 @@ function projectAutomationReceiptCause(value: unknown): unknown {
     return undefined;
   }
   const source = cause.source as Record<string, unknown>;
-  const workFolderId = automationReceiptText(source.workFolderId);
+  const connectedFolderId = automationReceiptText(source.connectedFolderId);
   const runId = automationReceiptText(source.runId);
   // A Check-run settle records `state`; an app-automation settle records
   // `outcome`. Both read as the settled result here.
   const outcome = automationReceiptText(source.outcome) ?? automationReceiptText(source.state);
-  if (!workFolderId || !runId || !outcome) return undefined;
+  if (!connectedFolderId || !runId || !outcome) return undefined;
   if (source.kind === "check-run") {
     const checkIds = automationReceiptTextList(source.checkIds);
     return {
       kind: "on-settled",
       source: {
         kind: "check-run",
-        workFolderId,
+        connectedFolderId,
         runId,
         outcome,
         ...(automationReceiptText(source.taskId) ? { taskId: automationReceiptText(source.taskId) } : {}),
@@ -9786,7 +9786,7 @@ function projectAutomationReceiptCause(value: unknown): unknown {
     const appId = automationReceiptText(source.appId);
     const appAutomationId = automationReceiptText(source.appAutomationId);
     if (!appId || !appAutomationId) return undefined;
-    return { kind: "on-settled", source: { kind: "app-automation-run", workFolderId, appId, appAutomationId, runId, outcome } };
+    return { kind: "on-settled", source: { kind: "app-automation-run", connectedFolderId, appId, appAutomationId, runId, outcome } };
   }
   return undefined;
 }
@@ -9817,12 +9817,12 @@ function automationReceiptTextList(value: unknown): string[] | undefined {
   return values.every((item): item is string => item !== undefined) ? values : undefined;
 }
 
-function createWorkFoldAutomationSettingsFacade(state: LocalApiState): WorkFoldAutomationSettingsFacade {
+function createAmpleFileAutomationSettingsFacade(state: LocalApiState): AmpleFileAutomationSettingsFacade {
   return {
     async list() {
       const projections = await runActOperation(() => state.automations.listAutomations());
       const receiptProjection = await readAutomationReceiptProjectionsByAutomation();
-      const historyByAutomation = new Map<string, WorkFoldAutomationSettingsHistory>();
+      const historyByAutomation = new Map<string, AmpleFileAutomationSettingsHistory>();
       for (const projection of projections) {
         const history = await automationSettingsHistoryFromProjection(
           projection.declaration.id,
@@ -9837,12 +9837,12 @@ function createWorkFoldAutomationSettingsFacade(state: LocalApiState): WorkFoldA
       };
     },
     async proposals() {
-      const scan = await scanWorkFoldAutomationProposals(workFoldAgentRoot());
+      const scan = await scanAmpleFileAutomationProposals(ampleFileAgentRoot());
       // A proposal already stored at the same digest shows once, in the main
       // list, whatever its health.
       const stored = new Set((await runActOperation(() => state.automations.listAutomations()))
         .map((projection) => `${projection.declaration.id}\n${projection.digest}`));
-      const proposals: WorkFoldAutomationSettingsProposalView[] = [];
+      const proposals: AmpleFileAutomationSettingsProposalView[] = [];
       for (const entry of scan.entries) {
         const normalized = entry.valid ? entry : entry.normalized;
         if (normalized && stored.has(`${normalized.declaration.id}\n${normalized.digest}`)) continue;
@@ -9851,15 +9851,15 @@ function createWorkFoldAutomationSettingsFacade(state: LocalApiState): WorkFoldA
           continue;
         }
         const missing: string[] = [];
-        for (const workFolderId of workFoldAutomationReferencedWorkFolderIds(entry.declaration)) {
-          if (!await getWorkFolder(workFolderId).catch(() => null)) missing.push(workFolderId);
+        for (const connectedFolderId of ampleFileAutomationReferencedConnectedFolderIds(entry.declaration)) {
+          if (!await getConnectedFolder(connectedFolderId).catch(() => null)) missing.push(connectedFolderId);
         }
         if (missing.length) {
           proposals.push({
             valid: false,
             path: entry.path,
             fileName: entry.fileName,
-            problem: `Names a work-folder that is not on this computer (${missing.join(", ")}).`,
+            problem: `Names a Connected Folder that is not on this computer (${missing.join(", ")}).`,
           });
           continue;
         }
@@ -9878,14 +9878,14 @@ function createWorkFoldAutomationSettingsFacade(state: LocalApiState): WorkFoldA
     async enableProposal(path) {
       let proposalPath: string;
       try {
-        proposalPath = resolveWorkFoldAutomationProposalPath(workFoldAgentRoot(), path);
+        proposalPath = resolveAmpleFileAutomationProposalPath(ampleFileAgentRoot(), path);
       } catch (error) {
-        throw new WorkFoldCliError("usage", errorMessage(error), { cause: error });
+        throw new AmpleFileCliError("usage", errorMessage(error), { cause: error });
       }
       // The exact CLI enable path: read and digest the file now, then the
       // journaled prepared-act enablement pinned to that digest.
       const result = await runDesktopSettingsAct(state, "automations.enable", async (requestId) => {
-        const { declaration, digest } = await readAutomationStagingFile(proposalPath, workFoldAgentRoot());
+        const { declaration, digest } = await readAutomationStagingFile(proposalPath, ampleFileAgentRoot());
         const enabled = await enableStoredAutomationDeclaration(state, declaration, digest, {
           requestId,
           surface: "main-window",
@@ -9906,22 +9906,22 @@ function createWorkFoldAutomationSettingsFacade(state: LocalApiState): WorkFoldA
       const projection = await requireSettingsAutomation(state, automationId);
       const history = await automationSettingsHistory(projection.declaration.id);
       const summary = await automationSettingsSummary(projection, history);
-      const workFolders = summary.workFolders;
-      const byId = new Map(workFolders.map((workFolder) => [workFolder.workFolderId, workFolder]));
-      const named = (workFolderId: string): WorkFoldAutomationSettingsWorkFolderRef => byId.get(workFolderId) ?? { workFolderId };
+      const connectedFolders = summary.connectedFolders;
+      const byId = new Map(connectedFolders.map((connectedFolder) => [connectedFolder.connectedFolderId, connectedFolder]));
+      const named = (connectedFolderId: string): AmpleFileAutomationSettingsConnectedFolderRef => byId.get(connectedFolderId) ?? { connectedFolderId };
       return {
         automation: {
           ...summary,
           createdAt: projection.declaration.createdAt,
-          workFolders,
+          connectedFolders,
           steps: projection.declaration.steps.map((step) => step.kind === "chat"
-            ? { id: step.id, kind: "chat" as const, workFolder: named(step.workFolder), message: step.message, ...(step.model ? { model: step.model } : {}) }
+            ? { id: step.id, kind: "chat" as const, connectedFolder: named(step.connectedFolder), message: step.message, ...(step.model ? { model: step.model } : {}) }
             : step.kind === "files"
               ? {
                 id: step.id,
                 kind: "files" as const,
-                fromWorkFolder: named(step.fromWorkFolder),
-                toWorkFolder: named(step.toWorkFolder),
+                fromConnectedFolder: named(step.fromConnectedFolder),
+                toConnectedFolder: named(step.toConnectedFolder),
                 to: step.to,
                 source: toActAutomationFilesSource(step.from),
               }
@@ -9929,7 +9929,7 @@ function createWorkFoldAutomationSettingsFacade(state: LocalApiState): WorkFoldA
                 ? {
                   id: step.id,
                   kind: "check" as const,
-                  workFolder: named(step.workFolder),
+                  connectedFolder: named(step.connectedFolder),
                   ...(step.check ? { checkId: step.check } : {}),
                 }
                 : { id: step.id, kind: "agent" as const, message: step.message, ...(step.model ? { model: step.model } : {}) }),
@@ -9948,12 +9948,12 @@ function createWorkFoldAutomationSettingsFacade(state: LocalApiState): WorkFoldA
     async enable(automationId) {
       const projection = await requireSettingsAutomation(state, automationId);
       if (projection.health === "enabled") {
-        throw new WorkFoldCliError("conflict", "This automation is already on.");
+        throw new AmpleFileCliError("conflict", "This automation is already on.");
       }
       if (projection.health === "completed") {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "conflict",
-          "This one-time automation is complete. Ask the work-fold agent to set up a new automation for another time.",
+          "This one-time automation is complete. Ask the AmpleFile agent to set up a new automation for another time.",
         );
       }
       const result = await runDesktopSettingsAct(state, "automations.enable", async (requestId) => {
@@ -9973,21 +9973,21 @@ function createWorkFoldAutomationSettingsFacade(state: LocalApiState): WorkFoldA
       });
       return result.value;
     },
-    async enableTemplate(workFolderId, templateId) {
-      if (!isAutomationTemplateId(templateId)) throw new WorkFoldCliError("usage", "That ready-made Automation doesn't exist.");
-      const workFolder = await getWorkFolder(workFolderId);
-      const automationId = automationTemplateAutomationId(templateId, workFolder.id);
+    async enableTemplate(connectedFolderId, templateId) {
+      if (!isAutomationTemplateId(templateId)) throw new AmpleFileCliError("usage", "That ready-made Automation doesn't exist.");
+      const connectedFolder = await getConnectedFolder(connectedFolderId);
+      const automationId = automationTemplateAutomationId(templateId, connectedFolder.id);
       const stored = await runActOperation(() => state.automations.getAutomation(automationId));
       if (stored?.health === "enabled") return { automationId, requestId: "", enabled: true as const, alreadyEnabled: true };
       // A ready-made Automation turned off earlier keeps its declaration, so Turn on is the same Automation.
       const { declaration, digest } = stored && stored.health !== "completed"
         ? { declaration: stored.declaration, digest: stored.digest }
-        : automationTemplateDeclaration(templateId, workFolder.id);
+        : automationTemplateDeclaration(templateId, connectedFolder.id);
       const result = await runDesktopSettingsAct(state, "automations.enable", async (requestId) => {
         const enabled = await enableStoredAutomationDeclaration(state, declaration, digest, { requestId, surface: "main-window" });
         return {
           value: { automationId: enabled.automationId, requestId, enabled: true as const, alreadyEnabled: enabled.alreadyEnabled },
-          detail: `Enabled the ready-made automation ${enabled.automationId} in ${workFolder.name}.`,
+          detail: `Enabled the ready-made automation ${enabled.automationId} in ${connectedFolder.name}.`,
         };
       });
       return result.value;
@@ -9998,9 +9998,9 @@ function createWorkFoldAutomationSettingsFacade(state: LocalApiState): WorkFoldA
       const requestId = `settings:${randomUUID()}`;
       const receipt = { requestId, command: "automations.run", surface: "main-window" as const };
       if (!await state.actReceipts.append({ ...receipt, outcome: "accepted" })) {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "failure",
-          "work-fold could not journal this Settings action, so nothing was changed.",
+          "AmpleFile could not journal this Settings action, so nothing was changed.",
         );
       }
       let admission;
@@ -10013,7 +10013,7 @@ function createWorkFoldAutomationSettingsFacade(state: LocalApiState): WorkFoldA
         await state.actReceipts.append({
           ...receipt,
           outcome: "error",
-          ...(error instanceof WorkFoldCliError ? { errorCode: error.code } : {}),
+          ...(error instanceof AmpleFileCliError ? { errorCode: error.code } : {}),
           detail: errorMessage(error),
         }).catch(() => false);
         throw error;
@@ -10036,7 +10036,7 @@ function createWorkFoldAutomationSettingsFacade(state: LocalApiState): WorkFoldA
       const projection = await requireSettingsAutomation(state, automationId);
       const result = await runDesktopSettingsAct(state, "automations.stop", async (requestId) => {
         const stopped = state.automations.stopRun(projection.declaration.id, { requestId, surface: "main-window" });
-        if (!stopped) throw new WorkFoldCliError("conflict", "This automation has no active run.");
+        if (!stopped) throw new AmpleFileCliError("conflict", "This automation has no active run.");
         return {
           value: stopped,
           detail: `Stopped automation ${projection.declaration.id} run ${stopped.runId}.`,
@@ -10071,10 +10071,10 @@ function createWorkFoldAutomationSettingsFacade(state: LocalApiState): WorkFoldA
     async delete(automationId) {
       const projection = await requireSettingsAutomation(state, automationId);
       if (projection.health === "enabled") {
-        throw new WorkFoldCliError("conflict", "Turn this automation off before deleting it.");
+        throw new AmpleFileCliError("conflict", "Turn this automation off before deleting it.");
       }
       if (projection.activeRunId) {
-        throw new WorkFoldCliError("conflict", "Stop this automation's active run before deleting it.");
+        throw new AmpleFileCliError("conflict", "Stop this automation's active run before deleting it.");
       }
       const result = await runDesktopSettingsAct(state, "automations.delete", async (requestId) => {
         await runActOperation(() => state.automations.deleteAutomation(projection.declaration.id, {
@@ -10085,41 +10085,41 @@ function createWorkFoldAutomationSettingsFacade(state: LocalApiState): WorkFoldA
       });
       return { automationId: projection.declaration.id, requestId: result.requestId, deleted: true };
     },
-    async forWorkFolder(workFolderId) {
+    async forConnectedFolder(connectedFolderId) {
       const projections = (await runActOperation(() => state.automations.listAutomations()))
-        .filter((projection) => workFoldAutomationReferencedWorkFolderIds(projection.declaration).includes(workFolderId));
+        .filter((projection) => ampleFileAutomationReferencedConnectedFolderIds(projection.declaration).includes(connectedFolderId));
       if (!projections.length) return { automations: [] };
       const receiptProjection = await readAutomationReceiptProjectionsByAutomation();
       const automations: FolderAutomationView[] = [];
       for (const projection of projections) {
         const history = await automationSettingsHistoryFromProjection(projection.declaration.id, receiptProjection);
         const summary = await automationSettingsSummary(projection, history);
-        automations.push(folderAutomationView(projection, summary, workFolderId));
+        automations.push(folderAutomationView(projection, summary, connectedFolderId));
       }
       return { automations };
     },
-    async requireWorkFolderAutomation(workFolderId, automationId) {
+    async requireConnectedFolderAutomation(connectedFolderId, automationId) {
       const projection = await requireSettingsAutomation(state, automationId);
-      if (!workFoldAutomationReferencedWorkFolderIds(projection.declaration).includes(workFolderId)) {
-        throw new WorkFoldCliError("notFound", "This automation does not touch this folder.");
+      if (!ampleFileAutomationReferencedConnectedFolderIds(projection.declaration).includes(connectedFolderId)) {
+        throw new AmpleFileCliError("notFound", "This automation does not touch this folder.");
       }
     },
   };
 }
 
 function folderAutomationView(
-  projection: WorkFoldAutomationProjection,
-  summary: WorkFoldAutomationSettingsSummary,
-  workFolderId: string,
+  projection: AmpleFileAutomationProjection,
+  summary: AmpleFileAutomationSettingsSummary,
+  connectedFolderId: string,
 ): FolderAutomationView {
   // The act-lane trigger ref is the loose superset of the discriminated view
   // Settings already renders over IPC; the settled source gains its name.
   const view = summary.trigger as AutomationTriggerView;
   const sourceName = view.kind === "on-settled"
-    ? summary.workFolders.find((workFolder) => workFolder.workFolderId === view.source.workFolderId)?.workFolderName
+    ? summary.connectedFolders.find((connectedFolder) => connectedFolder.connectedFolderId === view.source.connectedFolderId)?.connectedFolderName
     : undefined;
   const trigger: AutomationTriggerView = view.kind === "on-settled" && sourceName
-    ? { ...view, source: { ...view.source, workFolderName: sourceName } }
+    ? { ...view, source: { ...view.source, connectedFolderName: sourceName } }
     : view;
   const state: FolderAutomationState = summary.activeRun
     ? "running"
@@ -10133,45 +10133,45 @@ function folderAutomationView(
     lastRun: summary.lastRun
       ? { at: summary.lastRun.startedAt, outcome: summary.lastRun.outcome, ...(summary.lastRun.partial ? { partial: true as const } : {}) }
       : null,
-    roles: workFoldAutomationWorkFolderRoles(projection.declaration, workFolderId),
+    roles: ampleFileAutomationConnectedFolderRoles(projection.declaration, connectedFolderId),
   };
 }
 
-async function requireSettingsAutomation(state: LocalApiState, automationId: string): Promise<WorkFoldAutomationProjection> {
+async function requireSettingsAutomation(state: LocalApiState, automationId: string): Promise<AmpleFileAutomationProjection> {
   const id = automationId.trim();
-  if (!id) throw new WorkFoldCliError("usage", "An automation id is required.");
+  if (!id) throw new AmpleFileCliError("usage", "An automation id is required.");
   const projection = await runActOperation(() => state.automations.getAutomation(id));
-  if (!projection) throw new WorkFoldCliError("notFound", "No automation has this id on this machine.");
+  if (!projection) throw new AmpleFileCliError("notFound", "No automation has this id on this machine.");
   return projection;
 }
 
-function automationHealthConflict(health: WorkFoldAutomationProjection["health"]): WorkFoldCliError {
-  return new WorkFoldCliError(
+function automationHealthConflict(health: AmpleFileAutomationProjection["health"]): AmpleFileCliError {
+  return new AmpleFileCliError(
     "conflict",
     health === "completed"
       ? "This one-time automation is complete."
       : health === "suspended"
-        ? "This automation is suspended because a referenced work-folder was removed."
+        ? "This automation is suspended because a referenced Connected Folder was removed."
         : "This automation is off.",
   );
 }
 
-async function automationSettingsWorkFolderRefs(workFolderIds: string[]): Promise<WorkFoldAutomationSettingsWorkFolderRef[]> {
-  return await Promise.all(workFolderIds.map(async (workFolderId) => {
-    const workFolder = await getWorkFolder(workFolderId).catch(() => null);
-    return { workFolderId, ...(workFolder ? { workFolderName: workFolder.name } : {}) };
+async function automationSettingsConnectedFolderRefs(connectedFolderIds: string[]): Promise<AmpleFileAutomationSettingsConnectedFolderRef[]> {
+  return await Promise.all(connectedFolderIds.map(async (connectedFolderId) => {
+    const connectedFolder = await getConnectedFolder(connectedFolderId).catch(() => null);
+    return { connectedFolderId, ...(connectedFolder ? { connectedFolderName: connectedFolder.name } : {}) };
   }));
 }
 
 async function automationSettingsSummary(
-  projection: WorkFoldAutomationProjection,
-  history: Pick<WorkFoldAutomationSettingsHistory, "runs" | "lastCatchUp">,
-): Promise<WorkFoldAutomationSettingsSummary> {
+  projection: AmpleFileAutomationProjection,
+  history: Pick<AmpleFileAutomationSettingsHistory, "runs" | "lastCatchUp">,
+): Promise<AmpleFileAutomationSettingsSummary> {
   const runs = history.runs;
   const lastRun = runs[0];
   const active = projection.activeRunId ? runs.find((run) => run.runId === projection.activeRunId) : undefined;
-  const missingWorkFolders = projection.suspension
-    ? await automationSettingsWorkFolderRefs(projection.suspension.missingWorkFolderIds)
+  const missingConnectedFolders = projection.suspension
+    ? await automationSettingsConnectedFolderRefs(projection.suspension.missingConnectedFolderIds)
     : undefined;
   return {
     automationId: projection.declaration.id,
@@ -10180,7 +10180,7 @@ async function automationSettingsSummary(
     trigger: toActAutomationTriggerRef(projection.declaration.trigger),
     ...(projection.fileWatch ? { fileWatch: projection.fileWatch } : {}),
     stepCount: projection.declaration.steps.length,
-    workFolders: await automationSettingsWorkFolderRefs(workFoldAutomationReferencedWorkFolderIds(projection.declaration)),
+    connectedFolders: await automationSettingsConnectedFolderRefs(ampleFileAutomationReferencedConnectedFolderIds(projection.declaration)),
     ...(projection.nextScheduledAt ? { nextScheduledAt: projection.nextScheduledAt } : {}),
     ...(projection.lastScheduledAt ? { lastScheduledAt: projection.lastScheduledAt } : {}),
     ...(projection.activeRunId && active ? { activeRun: { runId: projection.activeRunId, startedAt: active.startedAt } } : {}),
@@ -10200,22 +10200,22 @@ async function automationSettingsSummary(
       ? {
         suspension: {
           at: projection.suspension.at,
-          reason: "A referenced work-folder was removed. Review the automation before turning it on again.",
-          ...(missingWorkFolders?.length ? { missingWorkFolders } : {}),
+          reason: "A referenced Connected Folder was removed. Review the automation before turning it on again.",
+          ...(missingConnectedFolders?.length ? { missingConnectedFolders } : {}),
         },
       }
       : {}),
   };
 }
 
-type WorkFoldAutomationSettingsHistory = {
-  runs: WorkFoldAutomationSettingsRunView[];
+type AmpleFileAutomationSettingsHistory = {
+  runs: AmpleFileAutomationSettingsRunView[];
   truncated: boolean;
   damagedLineCount: number;
-  lastCatchUp?: WorkFoldAutomationSettingsSummary["lastCatchUp"];
+  lastCatchUp?: AmpleFileAutomationSettingsSummary["lastCatchUp"];
 };
 
-async function automationSettingsHistory(automationId: string): Promise<WorkFoldAutomationSettingsHistory> {
+async function automationSettingsHistory(automationId: string): Promise<AmpleFileAutomationSettingsHistory> {
   const projected = await readAutomationReceiptProjection(automationId);
   return await automationSettingsHistoryFromProjection(automationId, projected);
 }
@@ -10223,21 +10223,21 @@ async function automationSettingsHistory(automationId: string): Promise<WorkFold
 async function automationSettingsHistoryFromProjection(
   automationId: string,
   projection: Awaited<ReturnType<typeof readAutomationReceiptProjection>>,
-): Promise<WorkFoldAutomationSettingsHistory> {
+): Promise<AmpleFileAutomationSettingsHistory> {
   const projected = {
     ...projection,
     receipts: projection.receipts.filter((receipt) => receipt.automationId === automationId),
   };
-  const workFolderIds = new Set<string>();
+  const connectedFolderIds = new Set<string>();
   for (const receipt of projected.receipts) {
-    if (receipt.workFolderId) workFolderIds.add(receipt.workFolderId);
-    if (receipt.fromWorkFolderId) workFolderIds.add(receipt.fromWorkFolderId);
-    if (receipt.toWorkFolderId) workFolderIds.add(receipt.toWorkFolderId);
+    if (receipt.connectedFolderId) connectedFolderIds.add(receipt.connectedFolderId);
+    if (receipt.fromConnectedFolderId) connectedFolderIds.add(receipt.fromConnectedFolderId);
+    if (receipt.toConnectedFolderId) connectedFolderIds.add(receipt.toConnectedFolderId);
   }
-  const workFolders = await automationSettingsWorkFolderRefs([...workFolderIds]);
-  const workFolderNames = new Map(workFolders.filter((workFolder) => workFolder.workFolderName).map((workFolder) => [workFolder.workFolderId, workFolder.workFolderName!]));
-  const runs = new Map<string, WorkFoldAutomationSettingsRunView & { hopsById: Map<string, WorkFoldAutomationSettingsRunView["hops"][number]> }>();
-  let lastCatchUp: WorkFoldAutomationSettingsHistory["lastCatchUp"];
+  const connectedFolders = await automationSettingsConnectedFolderRefs([...connectedFolderIds]);
+  const connectedFolderNames = new Map(connectedFolders.filter((connectedFolder) => connectedFolder.connectedFolderName).map((connectedFolder) => [connectedFolder.connectedFolderId, connectedFolder.connectedFolderName!]));
+  const runs = new Map<string, AmpleFileAutomationSettingsRunView & { hopsById: Map<string, AmpleFileAutomationSettingsRunView["hops"][number]> }>();
+  let lastCatchUp: AmpleFileAutomationSettingsHistory["lastCatchUp"];
   for (const receipt of [...projected.receipts].reverse()) {
     if (!receipt.runId || (receipt.scope !== "run" && receipt.scope !== "hop")) continue;
     if (receipt.scope === "run" && receipt.outcome === "accepted") {
@@ -10279,8 +10279,8 @@ async function automationSettingsHistoryFromProjection(
     }
     if (isAutomationSettingsOutcome(receipt.outcome)) hop.outcome = receipt.outcome;
     if (receipt.partial) hop.partial = true;
-    const workFolderId = receipt.workFolderId ?? receipt.toWorkFolderId ?? receipt.fromWorkFolderId;
-    if (workFolderId && workFolderNames.has(workFolderId)) hop.workFolderName = workFolderNames.get(workFolderId);
+    const connectedFolderId = receipt.connectedFolderId ?? receipt.toConnectedFolderId ?? receipt.fromConnectedFolderId;
+    if (connectedFolderId && connectedFolderNames.has(connectedFolderId)) hop.connectedFolderName = connectedFolderNames.get(connectedFolderId);
     if (receipt.detail) hop.detail = receipt.detail;
     const evidence = automationSettingsEvidence(receipt);
     if (evidence.length) hop.evidence = evidence;
@@ -10302,7 +10302,7 @@ function automationSettingsCatchUp(value: unknown): { count: number; reason: Aut
   return cause.kind === "files-changed" ? automationReceiptCatchUp(cause.catchUp, Number(cause.changedCount)) : undefined;
 }
 
-function isAutomationSettingsOutcome(value: string): value is WorkFoldAutomationSettingsOutcome {
+function isAutomationSettingsOutcome(value: string): value is AmpleFileAutomationSettingsOutcome {
   return value === "accepted"
     || value === "succeeded"
     || value === "failed"
@@ -10330,7 +10330,7 @@ function automationSettingsCause(value: unknown): string | undefined {
   return undefined;
 }
 
-function automationSettingsEvidence(receipt: WorkFoldActAutomationReceipt): Array<{ label: string; value: string }> {
+function automationSettingsEvidence(receipt: AmpleFileActAutomationReceipt): Array<{ label: string; value: string }> {
   const evidence: Array<{ label: string; value: string }> = [];
   if (receipt.conversationId) evidence.push({ label: "Chat", value: receipt.conversationId });
   if (receipt.taskId) evidence.push({ label: "Task", value: receipt.taskId });
@@ -10352,18 +10352,18 @@ async function runActOperation<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
   } catch (error) {
-    if (error instanceof WorkFoldCliError) throw error;
+    if (error instanceof AmpleFileCliError) throw error;
     // Exactly the HTTP boundary's status translation (sendError), so a
     // restricted-app or route error means the same thing on both surfaces.
     const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === "number"
       ? (error as { statusCode: number }).statusCode
       : automationErrorStatus(error) ?? restrictedAppErrorStatus(error);
-    const message = error instanceof Error ? error.message : String(error ?? "work-folder act command failed.");
-    if (statusCode === 400) throw new WorkFoldCliError("usage", message, { cause: error });
-    if (statusCode === 403) throw new WorkFoldCliError("permissionDenied", message, { cause: error });
-    if (statusCode === 404) throw new WorkFoldCliError("notFound", message, { cause: error });
-    if (statusCode === 409) throw new WorkFoldCliError("conflict", message, { cause: error });
-    throw new WorkFoldCliError("failure", message, { cause: error });
+    const message = error instanceof Error ? error.message : String(error ?? "Connected Folder act command failed.");
+    if (statusCode === 400) throw new AmpleFileCliError("usage", message, { cause: error });
+    if (statusCode === 403) throw new AmpleFileCliError("permissionDenied", message, { cause: error });
+    if (statusCode === 404) throw new AmpleFileCliError("notFound", message, { cause: error });
+    if (statusCode === 409) throw new AmpleFileCliError("conflict", message, { cause: error });
+    throw new AmpleFileCliError("failure", message, { cause: error });
   }
 }
 
@@ -10382,9 +10382,9 @@ async function beginDesktopSettingsAct<T>(
   const requestId = `settings:${randomUUID()}`;
   const base = { requestId, command, surface: "main-window" as const };
   if (!await state.actReceipts.append({ ...base, outcome: "accepted" })) {
-    throw new WorkFoldCliError(
+    throw new AmpleFileCliError(
       "failure",
-      "work-fold could not journal this Settings action, so nothing was changed.",
+      "AmpleFile could not journal this Settings action, so nothing was changed.",
     );
   }
   const result = (async () => {
@@ -10396,7 +10396,7 @@ async function beginDesktopSettingsAct<T>(
       await state.actReceipts.append({
         ...base,
         outcome: "error",
-        ...(error instanceof WorkFoldCliError ? { errorCode: error.code } : {}),
+        ...(error instanceof AmpleFileCliError ? { errorCode: error.code } : {}),
         detail: errorMessage(error),
       }).catch(() => false);
       throw error;
@@ -10405,7 +10405,7 @@ async function beginDesktopSettingsAct<T>(
   return { requestId, result };
 }
 
-type McpSetupSession = { workFolderId: string; service: ReturnType<typeof createIncludedMcpSetup>; timer: ReturnType<typeof setTimeout> };
+type McpSetupSession = { connectedFolderId: string; service: ReturnType<typeof createIncludedMcpSetup>; timer: ReturnType<typeof setTimeout> };
 const mcpSetupSessions = new WeakMap<LocalApiState, Map<string, McpSetupSession>>();
 function resetMcpSetupExpiry(state: LocalApiState, id: string, entry: McpSetupSession): void {
   clearTimeout(entry.timer);
@@ -10426,13 +10426,13 @@ async function runDesktopSettingsAct<T>(
   return { requestId: started.requestId, value: await started.result };
 }
 
-function turnStatusFor(state: LocalApiState, workFolderId: string, taskId: string): WorkFoldActTurnStatus {
+function turnStatusFor(state: LocalApiState, connectedFolderId: string, taskId: string): AmpleFileActTurnStatus {
   const active = state.activeTurnTasks.get(taskId);
-  if (active && active.workFolderId === workFolderId) {
+  if (active && active.connectedFolderId === connectedFolderId) {
     return { taskId, state: "running", conversationId: active.conversationId, messageId: null, error: null, endedAt: null };
   }
   const settled = state.settledTurns.get(taskId);
-  if (settled && settled.workFolderId === workFolderId) {
+  if (settled && settled.connectedFolderId === connectedFolderId) {
     return {
       taskId,
       state: settled.status,
@@ -10444,7 +10444,7 @@ function turnStatusFor(state: LocalApiState, workFolderId: string, taskId: strin
   }
   // Older than the in-memory window: the durable turn journal still knows it.
   const durable = state.turnStore.get(taskId);
-  if (durable && durable.workFolderId === workFolderId && durable.status !== "accepted" && durable.status !== "running") {
+  if (durable && durable.connectedFolderId === connectedFolderId && durable.status !== "accepted" && durable.status !== "running") {
     return {
       taskId,
       state: durable.status === "interrupted" ? "failed" : durable.status,
@@ -10464,21 +10464,21 @@ const maxTurnsRememberedThisRun = 4_000;
 /**
  * The `--task` rule for `chat report`, `chat ask`, and `chat handoff`: the
  * id must name the caller's own turn — the newest, still-running turn of a
- * request the named work-folder owns — checked exactly as `--parent-task` is. The
+ * request the named Connected Folder owns — checked exactly as `--parent-task` is. The
  * store's lineage refusal reaches the caller as a conflict by name.
  */
-function assertOwnTask(state: LocalApiState, workFolderId: string, taskId: string): WorkFoldRequestRecord {
+function assertOwnTask(state: LocalApiState, connectedFolderId: string, taskId: string): AmpleFileRequestRecord {
   try {
-    return state.requests.assertOwnAcceptingTurn(taskId, workFolderId === workFoldAgentScopeId ? {} : { workFolderId });
+    return state.requests.assertOwnAcceptingTurn(taskId, connectedFolderId === ampleFileAgentScopeId ? {} : { connectedFolderId });
   } catch (error) {
     throw collaborationRefusal(error);
   }
 }
 
 /** The caller's own turn, in whichever scope it runs, while it is still running. */
-function assertCallerTurn(state: LocalApiState, callerTaskId: string): WorkFoldRequestRecord {
+function assertCallerTurn(state: LocalApiState, callerTaskId: string): AmpleFileRequestRecord {
   const record = state.requests.byTaskId(callerTaskId);
-  return assertOwnTask(state, record?.owner.workFolderId ?? workFoldAgentScopeId, callerTaskId);
+  return assertOwnTask(state, record?.owner.connectedFolderId ?? ampleFileAgentScopeId, callerTaskId);
 }
 
 /**
@@ -10488,25 +10488,25 @@ function assertCallerTurn(state: LocalApiState, callerTaskId: string): WorkFoldR
  * an unrelated Chat (F9 as amended, 2026-10-18). The caller's task must be
  * its own turn that is still running.
  */
-function assertCallerHandedWorkTo(state: LocalApiState, callerTaskId: string, target: { workFolderId: string; conversationId: string }): WorkFoldRequestRecord {
+function assertCallerHandedWorkTo(state: LocalApiState, callerTaskId: string, target: { connectedFolderId: string; conversationId: string }): AmpleFileRequestRecord {
   const caller = assertCallerTurn(state, callerTaskId);
-  const callerScope = caller.owner.workFolderId ?? workFoldAgentScopeId;
+  const callerScope = caller.owner.connectedFolderId ?? ampleFileAgentScopeId;
   const handedTo = state.requests.list().some((record) => {
-    if ((record.owner.workFolderId ?? workFoldAgentScopeId) !== target.workFolderId || record.owner.conversationId !== target.conversationId) return false;
+    if ((record.owner.connectedFolderId ?? ampleFileAgentScopeId) !== target.connectedFolderId || record.owner.conversationId !== target.conversationId) return false;
     const parent = record.parentRequestId ? state.requests.get(record.parentRequestId) : null;
     return parent !== null && parent !== undefined
-      && (parent.owner.workFolderId ?? workFoldAgentScopeId) === callerScope
+      && (parent.owner.connectedFolderId ?? ampleFileAgentScopeId) === callerScope
       && parent.owner.conversationId === caller.owner.conversationId;
   });
   if (!handedTo) {
-    throw new WorkFoldCliError("conflict", "That Chat is not one this Chat handed work to. Hand off new work with chat handoff instead.");
+    throw new AmpleFileCliError("conflict", "That Chat is not one this Chat handed work to. Hand off new work with chat handoff instead.");
   }
   return caller;
 }
 
 /**
  * Copies a Chat as of its last finished reply into a new Chat in the same
- * work-folder (2026-10-18, `chat copy`): the visible transcript up to that
+ * Connected Folder (2026-10-18, `chat copy`): the visible transcript up to that
  * reply, and the Pi session along the same path, so the copy starts with the
  * same context. Copied messages get new ids and lose their turn and request
  * identities, which belong to the original Chat; the original is never
@@ -10514,40 +10514,40 @@ function assertCallerHandedWorkTo(state: LocalApiState, callerTaskId: string, ta
  */
 async function copyConversation(
   state: LocalApiState,
-  workFolder: { id: string; workFolderRoot: string },
+  connectedFolder: { id: string; connectedFolderRoot: string },
   sourceConversationId: string,
   title?: string,
 ): Promise<{ conversation: ConversationSummary; copiedMessages: number }> {
-  await yieldBackgroundCompaction(state, clientKey(workFolder.id, sourceConversationId));
-  const summary = await readConversationSummary(workFolder.workFolderRoot, sourceConversationId);
-  if (!summary) throw new WorkFoldCliError("notFound", "Conversation not found.");
-  if (state.compactingConversations.has(clientKey(workFolder.id, sourceConversationId))) {
-    throw new WorkFoldCliError("conflict", "That Chat is being compacted. Copy it once that finishes.");
+  await yieldBackgroundCompaction(state, clientKey(connectedFolder.id, sourceConversationId));
+  const summary = await readConversationSummary(connectedFolder.connectedFolderRoot, sourceConversationId);
+  if (!summary) throw new AmpleFileCliError("notFound", "Conversation not found.");
+  if (state.compactingConversations.has(clientKey(connectedFolder.id, sourceConversationId))) {
+    throw new AmpleFileCliError("conflict", "That Chat is being compacted. Copy it once that finishes.");
   }
-  const messages = await readConversation(workFolder.workFolderRoot, sourceConversationId);
+  const messages = await readConversation(connectedFolder.connectedFolderRoot, sourceConversationId);
   const lastReply = messages.reduce((found, message, index) => message.role === "assistant" ? index : found, -1);
   const carried = messages.slice(0, lastReply + 1).filter((message) => message.role !== "system");
   const forkTitle = (title?.trim() || `${summary.title} (copy)`).slice(0, 200);
-  const conversation = await createConversation(workFolder.workFolderRoot, forkTitle);
+  const conversation = await createConversation(connectedFolder.connectedFolderRoot, forkTitle);
   for (const message of carried) {
     const { turnId: _turnId, requestId: _requestId, delivery: _delivery, ...content } = message;
-    await appendMessage(workFolder.workFolderRoot, conversation.id, { ...content, id: randomUUID() });
+    await appendMessage(connectedFolder.connectedFolderRoot, conversation.id, { ...content, id: randomUUID() });
   }
   if (carried.length) {
     await copyPiConversationSession({
-      workFolderRoot: workFolder.workFolderRoot,
+      connectedFolderRoot: connectedFolder.connectedFolderRoot,
       runtimeProvider: state.runtimeProvider,
       sourceConversationId,
       targetConversationId: conversation.id,
     });
   }
-  return { conversation: (await readConversationSummary(workFolder.workFolderRoot, conversation.id)) ?? conversation, copiedMessages: carried.length };
+  return { conversation: (await readConversationSummary(connectedFolder.connectedFolderRoot, conversation.id)) ?? conversation, copiedMessages: carried.length };
 }
 
 /** A request bound or lineage refusal is a conflict that carries the store's own sentence; anything else passes through. */
 function collaborationRefusal(error: unknown): unknown {
-  if (error instanceof WorkFoldRequestLimitError || error instanceof WorkFoldRequestLineageError) {
-    return new WorkFoldCliError("conflict", error.message, { cause: error });
+  if (error instanceof AmpleFileRequestLimitError || error instanceof AmpleFileRequestLineageError) {
+    return new AmpleFileCliError("conflict", error.message, { cause: error });
   }
   return error;
 }
@@ -10561,7 +10561,7 @@ function requestLimitRefusalMessage(limit: "questionLifetime" | "deadline"): str
  * or null. A question past its window by wall-clock is never reported live
  * even before the store's sweep marks it expired.
  */
-function waitingRefForTask(state: LocalApiState, taskId: string): WorkFoldActWaitingRef | null {
+function waitingRefForTask(state: LocalApiState, taskId: string): AmpleFileActWaitingRef | null {
   const record = state.requests.byTaskId(taskId);
   if (!record) return null;
   const now = Date.now();
@@ -10581,31 +10581,31 @@ function waitingRefForTask(state: LocalApiState, taskId: string): WorkFoldActWai
 }
 
 /**
- * The request reference a work-folder-scoped verb hands back to the caller.
+ * The request reference a Connected Folder–scoped verb hands back to the caller.
  *
- * Identical to `toActRequestRef` except for one field: a delegated work-folder
+ * Identical to `toActRequestRef` except for one field: a delegated Connected Folder
  * request's `rootId` is usually the FOLD's root request id, and
- * `requests show` reads a request by id. Handing that id into a work-folder turn
- * would put the work-fold agent's own content and other work-folders' results one taught
- * command away — the same leak `work-folder-turn-context.ts` withholds the parent
+ * `requests show` reads a request by id. Handing that id into a Connected Folder turn
+ * would put the AmpleFile agent's own content and other Connected Folders' results one taught
+ * command away — the same leak `connected-folder-turn-context.ts` withholds the parent
  * request id to avoid — so it is projected through the same opaque handle no
- * verb accepts. A work-folder's own root still names itself.
+ * verb accepts. A Connected Folder's own root still names itself.
  */
-function toActRequestRefForWorkFolder(state: LocalApiState, record: WorkFoldRequestRecord): WorkFoldActRequestRef {
+function toActRequestRefForConnectedFolder(state: LocalApiState, record: AmpleFileRequestRecord): AmpleFileActRequestRef {
   const ref = toActRequestRef(state, record);
-  if (record.owner.workFolderId === undefined || record.rootId === record.requestId) return ref;
-  return { ...ref, rootId: workFolderTurnParentHandle(record.rootId, state.workFolderTurnHandleSalt) };
+  if (record.owner.connectedFolderId === undefined || record.rootId === record.requestId) return ref;
+  return { ...ref, rootId: connectedFolderTurnParentHandle(record.rootId, state.connectedFolderTurnHandleSalt) };
 }
 
-function toActRequestRef(state: LocalApiState, record: WorkFoldRequestRecord): WorkFoldActRequestRef {
+function toActRequestRef(state: LocalApiState, record: AmpleFileRequestRecord): AmpleFileActRequestRef {
   return {
     id: record.requestId,
     rootId: record.rootId,
     kind: record.kind,
     state: record.state,
     depth: record.depth,
-    workFolderId: record.owner.workFolderId ?? null,
-    workFolderName: record.owner.workFolderName ?? null,
+    connectedFolderId: record.owner.connectedFolderId ?? null,
+    connectedFolderName: record.owner.connectedFolderName ?? null,
     conversationId: record.owner.conversationId,
     deadline: record.deadline,
     openQuestions: state.requests.questions(record.requestId).filter((question) => question.state === "open").length,
@@ -10614,7 +10614,7 @@ function toActRequestRef(state: LocalApiState, record: WorkFoldRequestRecord): W
   };
 }
 
-function toActQuestionRef(question: WorkFoldQuestionRecord): WorkFoldActQuestionRef {
+function toActQuestionRef(question: AmpleFileQuestionRecord): AmpleFileActQuestionRef {
   return {
     questionId: question.questionId,
     requestId: question.requestId,
@@ -10632,7 +10632,7 @@ function toActQuestionRef(question: WorkFoldQuestionRecord): WorkFoldActQuestion
   };
 }
 
-function requestSummaryView(state: LocalApiState, record: WorkFoldRequestRecord): WorkFoldActRequestSummary {
+function requestSummaryView(state: LocalApiState, record: AmpleFileRequestRecord): AmpleFileActRequestSummary {
   return {
     ...toActRequestRef(state, record),
     surface: record.surface,
@@ -10647,33 +10647,33 @@ function requestSummaryView(state: LocalApiState, record: WorkFoldRequestRecord)
 
 /**
  * `requests list` and `requests show` are management-scope reads: the whole
- * graph, including the work-fold agent's own assignment text and every work-folder's result
- * envelope. A caller working inside a registered work-folder is inside that work-folder's
- * scope, and what may reach a work-folder is its assignment, answers to its own
+ * graph, including the AmpleFile agent's own assignment text and every Connected Folder's result
+ * envelope. A caller working inside a registered Connected Folder is inside that Connected Folder's
+ * scope, and what may reach a Connected Folder is its assignment, answers to its own
  * questions, and payloads released to it — never the graph (F9 as amended,
  * F26). The caller's directory resolves its scope exactly as `context` does,
- * and the refusal names the boundary and the verbs that do belong to a work-folder.
+ * and the refusal names the boundary and the verbs that do belong to a Connected Folder.
  */
-async function assertRequestsAboveWorkFolders(cwd: string | undefined): Promise<void> {
+async function assertRequestsAboveConnectedFolders(cwd: string | undefined): Promise<void> {
   const candidate = cwd?.trim();
   if (!candidate) return;
   const resolved = resolve(candidate);
-  const containing = (await listWorkFolders())
-    .filter((workFolder) => pathContainsPath(workFolder.workFolderRoot, resolved))
-    .sort((left, right) => resolve(right.workFolderRoot).length - resolve(left.workFolderRoot).length)[0];
+  const containing = (await listConnectedFolders())
+    .filter((connectedFolder) => pathContainsPath(connectedFolder.connectedFolderRoot, resolved))
+    .sort((left, right) => resolve(right.connectedFolderRoot).length - resolve(left.connectedFolderRoot).length)[0];
   if (!containing) return;
-  throw new WorkFoldCliError(
+  throw new AmpleFileCliError(
     "permissionDenied",
-    `The request record sits above work-folders, and this ran inside "${containing.name}". Follow your own work with 'chat status' and 'chat wait', and report with 'chat report'.`,
+    `The request record sits above Connected Folders, and this ran inside "${containing.name}". Follow your own work with 'chat status' and 'chat wait', and report with 'chat report'.`,
   );
 }
 
 /** `requests show`: the complete subtree, rejecting damaged cycles. */
-async function requestDetailView(state: LocalApiState, record: WorkFoldRequestRecord, ancestors = new Set<string>()): Promise<WorkFoldActRequestDetail> {
+async function requestDetailView(state: LocalApiState, record: AmpleFileRequestRecord, ancestors = new Set<string>()): Promise<AmpleFileActRequestDetail> {
   if (ancestors.has(record.requestId)) throw new Error("Request graph contains a cycle.");
   const path = new Set(ancestors).add(record.requestId);
   const reads = await state.requests.results(record.requestId);
-  const resultRecords: WorkFoldActRequestResult[] = record.results.map((ref) => {
+  const resultRecords: AmpleFileActRequestResult[] = record.results.map((ref) => {
     const read = reads.find((candidate) => (candidate.state === "ok" ? candidate.record.resultId : candidate.resultId) === ref.resultId);
     return {
       resultId: ref.resultId,
@@ -10686,7 +10686,7 @@ async function requestDetailView(state: LocalApiState, record: WorkFoldRequestRe
       ...(read?.state === "damaged" ? { damaged: read.error } : {}),
     };
   });
-  const childRequests: WorkFoldActRequestDetail[] = [];
+  const childRequests: AmpleFileActRequestDetail[] = [];
   if (state.requests.children(record.requestId).length) {
     for (const child of state.requests.children(record.requestId)) {
       childRequests.push(await requestDetailView(state, child, path));
@@ -10716,26 +10716,26 @@ async function requestDetailView(state: LocalApiState, record: WorkFoldRequestRe
 }
 
 /**
- * A report's deliverables: each named path must be a file inside the work-folder,
+ * A report's deliverables: each named path must be a file inside the Connected Folder,
  * outside the reserved folders, and is recorded by content hash and size so
  * the envelope says exactly which bytes were meant.
  */
 async function resolveReportFiles(
-  workFolder: WorkFolderSummary,
+  connectedFolder: ConnectedFolderSummary,
   files: string[],
 ): Promise<Array<{ path: string; sha256: string; sizeBytes: number }>> {
   const resolved: Array<{ path: string; sha256: string; sizeBytes: number }> = [];
   for (const raw of files) {
-    const relativePath = normalizeWorkFolderRelativePath(raw);
+    const relativePath = normalizeConnectedFolderRelativePath(raw);
     let absolute: string;
     try {
-      absolute = resolveWorkFolderPath(workFolder.workFolderRoot, relativePath);
+      absolute = resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, relativePath);
     } catch (error) {
-      throw new WorkFoldCliError("usage", `--file ${raw}: ${errorMessage(error)}`, { cause: error });
+      throw new AmpleFileCliError("usage", `--file ${raw}: ${errorMessage(error)}`, { cause: error });
     }
     const info = await stat(absolute).catch(() => null);
-    if (!info) throw new WorkFoldCliError("notFound", `--file ${raw}: not found in ${workFolder.name}.`);
-    if (!info.isFile()) throw new WorkFoldCliError("usage", `--file ${raw}: a result names files, not folders.`);
+    if (!info) throw new AmpleFileCliError("notFound", `--file ${raw}: not found in ${connectedFolder.name}.`);
+    if (!info.isFile()) throw new AmpleFileCliError("usage", `--file ${raw}: a result names files, not folders.`);
     const hash = createHash("sha256");
     await new Promise<void>((resolveHash, reject) => {
       createReadStream(absolute)
@@ -10752,24 +10752,24 @@ async function resolveReportFiles(
 async function readReportDataFile(dataPath: string, cwd: string): Promise<unknown> {
   const absolute = isAbsolute(dataPath) ? resolve(dataPath) : resolve(cwd, dataPath);
   const info = await stat(absolute).catch(() => null);
-  if (!info || !info.isFile()) throw new WorkFoldCliError("notFound", `--data @${dataPath}: file not found.`);
-  if (info.size > workFoldRequestLimits.maxResultDataBytes) {
-    throw new WorkFoldCliError("usage", workFoldRequestLimitMessage("resultData", workFoldRequestLimits.maxResultDataBytes));
+  if (!info || !info.isFile()) throw new AmpleFileCliError("notFound", `--data @${dataPath}: file not found.`);
+  if (info.size > ampleFileRequestLimits.maxResultDataBytes) {
+    throw new AmpleFileCliError("usage", ampleFileRequestLimitMessage("resultData", ampleFileRequestLimits.maxResultDataBytes));
   }
   const text = await readFile(absolute, "utf8");
   try {
     return JSON.parse(text) as unknown;
   } catch (error) {
-    throw new WorkFoldCliError("usage", `--data @${dataPath}: the file is not valid JSON.`, { cause: error });
+    throw new AmpleFileCliError("usage", `--data @${dataPath}: the file is not valid JSON.`, { cause: error });
   }
 }
 
-/** A handoff source is a work-folder-relative path resolved inside the caller's own work-folder. */
-function resolveHandoffSource(workFolder: WorkFolderSummary, raw: string): string {
+/** A handoff source is a Connected Folder–relative path resolved inside the caller's own Connected Folder. */
+function resolveHandoffSource(connectedFolder: ConnectedFolderSummary, raw: string): string {
   try {
-    return resolveWorkFolderPath(workFolder.workFolderRoot, normalizeWorkFolderRelativePath(raw));
+    return resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, normalizeConnectedFolderRelativePath(raw));
   } catch (error) {
-    throw new WorkFoldCliError("usage", `--file ${raw}: ${errorMessage(error)}`, { cause: error });
+    throw new AmpleFileCliError("usage", `--file ${raw}: ${errorMessage(error)}`, { cause: error });
   }
 }
 
@@ -10794,10 +10794,10 @@ function queueRequestGraphSettle(state: LocalApiState, taskId: string): void {
 }
 
 /** Releasing compaction makes pending deliveries eligible without inventing a new turn settlement. */
-function queueConversationRequestEvaluation(state: LocalApiState, workFolderId: string, conversationId: string): void {
+function queueConversationRequestEvaluation(state: LocalApiState, connectedFolderId: string, conversationId: string): void {
   state.requestSettleChain = state.requestSettleChain
     .then(async () => {
-      for (const request of state.requests.list({ workFolderId })) {
+      for (const request of state.requests.list({ connectedFolderId })) {
         if (request.owner.conversationId === conversationId) {
           await evaluateRequestGraphSettle(state, request.turns.at(-1)!.taskId);
         }
@@ -10812,8 +10812,8 @@ function queueConversationRequestEvaluation(state: LocalApiState, workFolderId: 
 async function evaluateRequestGraphSettle(state: LocalApiState, taskId: string): Promise<void> {
   const record = state.requests.byTaskId(taskId);
   if (!record) return;
-  const candidates = new Map<string, WorkFoldRequestRecord>();
-  let current: WorkFoldRequestRecord | null = record;
+  const candidates = new Map<string, AmpleFileRequestRecord>();
+  let current: AmpleFileRequestRecord | null = record;
   while (current) {
     candidates.set(current.requestId, current);
     current = current.parentRequestId ? state.requests.get(current.parentRequestId) : null;
@@ -10821,17 +10821,17 @@ async function evaluateRequestGraphSettle(state: LocalApiState, taskId: string):
   // Finishing any turn frees its Chat, including one that was occupied by a
   // newer request when this request's children finished.
   for (const other of state.requests.list()) {
-    if (other.owner.workFolderId === record.owner.workFolderId && other.owner.conversationId === record.owner.conversationId) {
+    if (other.owner.connectedFolderId === record.owner.connectedFolderId && other.owner.conversationId === record.owner.conversationId) {
       candidates.set(other.requestId, other);
     }
   }
   for (const candidate of [...candidates.values()].sort((a, b) => b.depth - a.depth)) {
-    const key = clientKey(candidate.owner.workFolderId ?? workFoldAgentScopeId, candidate.owner.conversationId);
+    const key = clientKey(candidate.owner.connectedFolderId ?? ampleFileAgentScopeId, candidate.owner.conversationId);
     if (!state.runningTurns.has(key) && !state.compactingConversations.has(key)) {
       const answered = state.requests.questions(candidate.requestId).find(question => question.asynchronous && question.state === "answered" && question.continuationTaskId === null);
       if (answered && candidate.stopRequestedAt === null) {
-        const facade = createWorkFoldActFacade(state);
-        if (candidate.owner.workFolderId) await facade.chatAnswer({ workFolder: candidate.owner.workFolderId, questionId: answered.questionId, answer: answered.answer! });
+        const facade = createAmpleFileActFacade(state);
+        if (candidate.owner.connectedFolderId) await facade.chatAnswer({ connectedFolder: candidate.owner.connectedFolderId, questionId: answered.questionId, answer: answered.answer! });
         else await facade.agentAnswer({ questionId: answered.questionId, answer: answered.answer! });
         continue;
       }
@@ -10841,17 +10841,17 @@ async function evaluateRequestGraphSettle(state: LocalApiState, taskId: string):
 }
 
 /** Person-facing work is scoped to one request and its deliberately linked work. */
-async function workFoldAgentConversationAttention(state: LocalApiState, conversationId: string) {
+async function ampleFileAgentConversationAttention(state: LocalApiState, conversationId: string) {
   const record = state.requests.latestForConversation(conversationId);
   const work = record?.state === "waiting" ? await requestPresentation(state, record) : null;
   return { requestState: record?.state ?? null, needsAnswer: (work?.questionCount ?? 0) > 0
-    || extensionSnapshot(state, { workFolderRoot: workFoldAgentRoot(), conversationId }).length > 0 };
+    || extensionSnapshot(state, { connectedFolderRoot: ampleFileAgentRoot(), conversationId }).length > 0 };
 }
 
-async function requestPresentation(state: LocalApiState, record: WorkFoldRequestRecord): Promise<WorkRequestView> {
+async function requestPresentation(state: LocalApiState, record: AmpleFileRequestRecord): Promise<WorkRequestView> {
   const family = [record, ...state.requests.subtree(record.requestId)];
   const latest = record.turns.at(-1)!;
-  const outstanding = family.some((item) => !isWorkFoldRequestTerminalState(item.state));
+  const outstanding = family.some((item) => !isAmpleFileRequestTerminalState(item.state));
   const questions: WorkRequestView["questions"] = [];
   let questionCount = 0;
   let savedAnswerCount = 0;
@@ -10863,13 +10863,13 @@ async function requestPresentation(state: LocalApiState, record: WorkFoldRequest
       if (question.state === "answered") savedAnswerCount++;
       // A page of exact questions, not truncated question text. After an
       // answer the next question becomes visible. The digest retains all ids.
-      if (questions.length >= workFoldRequestLimits.questionsPerPresentation) continue;
+      if (questions.length >= ampleFileRequestLimits.questionsPerPresentation) continue;
       let reason: string | undefined;
       try { state.requests.assertCanContinue(item.requestId); } catch (error) { reason = errorMessage(error); }
-      const key = clientKey(item.owner.workFolderId ?? workFoldAgentScopeId, item.owner.conversationId);
+      const key = clientKey(item.owner.connectedFolderId ?? ampleFileAgentScopeId, item.owner.conversationId);
       if (!question.asynchronous && (state.runningTurns.has(key) || state.compactingConversations.has(key))) reason = "The agent is finishing its current turn. You can write your answer now.";
       questions.push({ id: question.questionId, requestId: item.requestId, text: question.text,
-        from: item.owner.workFolderName ?? (item.owner.workFolderId ? "Worker" : "work-fold"),
+        from: item.owner.connectedFolderName ?? (item.owner.connectedFolderId ? "Worker" : "AmpleFile"),
         state: question.state === "answered" ? "recorded" : "open",
         ...(question.options?.length && question.state !== "answered" ? { options: [...question.options] } : {}),
         ...(question.state === "answered" && question.answer ? { answer: question.answer } : {}),
@@ -10888,7 +10888,7 @@ async function requestPresentation(state: LocalApiState, record: WorkFoldRequest
   if (!outstanding && !questionCount && (record.continuationState === "failed" || readyResults)) {
     try {
       state.requests.assertCanContinue(record.requestId);
-      const key = clientKey(record.owner.workFolderId ?? workFoldAgentScopeId, record.owner.conversationId);
+      const key = clientKey(record.owner.connectedFolderId ?? ampleFileAgentScopeId, record.owner.conversationId);
       canContinue = !state.runningTurns.has(key) && !state.compactingConversations.has(key);
       if (!detail) detail = "The delegated work is ready. Continue to bring its results together.";
     } catch { canContinue = false; }
@@ -10907,39 +10907,39 @@ async function requestPresentation(state: LocalApiState, record: WorkFoldRequest
   else if (record.state === "expired") detail = "This request’s time window ended. Its saved work remains; start a new message to pick it up.";
   else if (latest.state === "interrupted") detail = "Work was interrupted when the app closed. Saved work remains; nothing was restarted automatically.";
   else if (record.state === "failed" && (record.jobs ?? []).some((job) => job.state === "interrupted")) {
-    detail = "A background job was interrupted when work-fold closed. Saved work remains; nothing was restarted automatically.";
+    detail = "A background job was interrupted when AmpleFile closed. Saved work remains; nothing was restarted automatically.";
   }
   else if (record.state === "failed" && !detail) detail = latest.error ?? "The agent could not finish. Its saved work remains in the Chat.";
   let result: WorkRequestView["result"] = null;
-  if (isWorkFoldRequestTerminalState(record.state) && record.state !== "stopped" && record.state !== "expired") {
+  if (isAmpleFileRequestTerminalState(record.state) && record.state !== "stopped" && record.state !== "expired") {
     const selected = [...record.results].reverse().find((item) => item.taskId === latest.taskId);
     if (selected) {
       const read = await state.requests.result(selected.resultId);
       if (read?.state === "ok") {
         const envelope = read.record.envelope;
         const files: NonNullable<WorkRequestView["result"]>["files"] = [];
-        if (record.owner.workFolderId) for (const file of envelope.files ?? []) {
-          files.push({ ...file, workFolderId: record.owner.workFolderId, workFolderName: record.owner.workFolderName ?? "work-folder" });
+        if (record.owner.connectedFolderId) for (const file of envelope.files ?? []) {
+          files.push({ ...file, connectedFolderId: record.owner.connectedFolderId, connectedFolderName: record.owner.connectedFolderName ?? "Connected Folder" });
         }
         result = { summary: envelope.summary, outcome: record.state === "partial" ? "partial" : envelope.outcome, files };
       } else detail = "The selected result could not be read. Its receipt remains; try again or open the Chat.";
     }
   }
   // Direct-child reports are deliberately released deliverables. Fold
-  // requests have no work-folder file root of their own; retain each file's origin.
-  if (isWorkFoldRequestTerminalState(record.state) && record.state !== "stopped" && record.state !== "expired") {
+  // requests have no Connected Folder file root of their own; retain each file's origin.
+  if (isAmpleFileRequestTerminalState(record.state) && record.state !== "stopped" && record.state !== "expired") {
     const files = result?.files ?? [];
-    const seen = new Set(files.map((file) => `${file.workFolderId}:${file.path}`));
+    const seen = new Set(files.map((file) => `${file.connectedFolderId}:${file.path}`));
     for (const child of state.requests.children(record.requestId)) {
       const childTurn = child.turns.at(-1)!;
       const selected = [...child.results].reverse().find((item) => item.taskId === childTurn.taskId);
-      if (!selected || !child.owner.workFolderId) continue;
+      if (!selected || !child.owner.connectedFolderId) continue;
       const read = await state.requests.result(selected.resultId);
       if (read?.state !== "ok") continue;
       for (const file of read.record.envelope.files ?? []) {
-        const key = `${child.owner.workFolderId}:${file.path}`;
+        const key = `${child.owner.connectedFolderId}:${file.path}`;
         if (seen.has(key)) continue;
-        seen.add(key); files.push({ ...file, workFolderId: child.owner.workFolderId, workFolderName: child.owner.workFolderName ?? "work-folder" });
+        seen.add(key); files.push({ ...file, connectedFolderId: child.owner.connectedFolderId, connectedFolderName: child.owner.connectedFolderName ?? "Connected Folder" });
       }
     }
     if (files.length && !result) result = { summary: "Files from the completed work.", outcome: record.state === "done" ? "succeeded" : record.state === "partial" ? "partial" : "failed", files };
@@ -10950,7 +10950,7 @@ async function requestPresentation(state: LocalApiState, record: WorkFoldRequest
     hadQuestions: family.some((item) => item.questionIds.length > 0), result,
     ...(record.checklist?.items.length ? { checklist: record.checklist.items.map((item) => ({ ...item })) } : {}),
     children: state.requests.children(record.requestId).map((child) => ({ requestId: child.requestId,
-      title: child.owner.workFolderName ?? "work-fold", state: child.state,
+      title: child.owner.connectedFolderName ?? "AmpleFile", state: child.state,
       label: workRequestLabel(child.state,
         state.requests.questions(child.requestId).filter((q) => q.respondent === "person" && q.state === "open").length,
         state.requests.questions(child.requestId).filter((q) => q.respondent === "person" && q.state === "answered" && !q.continuationTaskId).length) })) };
@@ -10964,12 +10964,12 @@ function formatRunningFor(milliseconds: number): string {
   return `running for ${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
-async function performWorkAction(state: LocalApiState, record: WorkFoldRequestRecord, action: string, input: Record<string, unknown>): Promise<void> {
+async function performWorkAction(state: LocalApiState, record: AmpleFileRequestRecord, action: string, input: Record<string, unknown>): Promise<void> {
   const receipt = { requestId: `work-ui:${randomUUID()}`, command: action === "answer" ? "chat.answer" : action === "stop" ? "agent.stop" : "chat.send",
     surface: input.surface === "popover" ? "popover" as const : "main-window" as const };
   if (!await state.actReceipts.append({ ...receipt, outcome: "accepted" })) throw httpError(503, "Could not record this action. Please try again.");
   try {
-    if (action === "stop") await stopWorkFoldAgentRequest(state, record.turns.at(-1)!.taskId);
+    if (action === "stop") await stopAmpleFileAgentRequest(state, record.turns.at(-1)!.taskId);
     else if (action === "answer") {
       if (typeof input.questionId !== "string" || typeof input.answer !== "string" || !input.answer.trim()) throw badRequest("Write an answer before sending.");
       const question = state.requests.question(input.questionId);
@@ -10981,16 +10981,16 @@ async function performWorkAction(state: LocalApiState, record: WorkFoldRequestRe
         await state.actReceipts.append({ ...receipt, outcome: "ok", detail: `request ${record.requestId}; answer already delivered` });
         return;
       }
-      const facade = createWorkFoldActFacade(state);
-      if (owner.owner.workFolderId) await facade.chatAnswer({ workFolder: owner.owner.workFolderId, questionId: question.questionId, answer: input.answer });
+      const facade = createAmpleFileActFacade(state);
+      if (owner.owner.connectedFolderId) await facade.chatAnswer({ connectedFolder: owner.owner.connectedFolderId, questionId: question.questionId, answer: input.answer });
       else await facade.agentAnswer({ questionId: question.questionId, answer: input.answer });
     } else if (action === "continue") {
       const deliveryId = workDeliveryId(input.deliveryId);
       const view = await requestPresentation(state, record);
       const replay = record.turns.some((turn) => state.turnStore.get(turn.taskId)?.requestId === deliveryId);
       if (!view.canContinue && !replay) throw httpError(409, "This work cannot continue here. Open the Chat for its current state.");
-      const workFolder = record.owner.workFolderId ? await getWorkFolder(record.owner.workFolderId) : workFoldAgentScope(state);
-      await acceptConversationTurn(state, { id: record.owner.workFolderId ?? workFoldAgentScopeId, workFolderRoot: "workFolderRoot" in workFolder ? workFolder.workFolderRoot : workFolder.rootPath }, record.owner.conversationId, {
+      const connectedFolder = record.owner.connectedFolderId ? await getConnectedFolder(record.owner.connectedFolderId) : ampleFileAgentScope(state);
+      await acceptConversationTurn(state, { id: record.owner.connectedFolderId ?? ampleFileAgentScopeId, connectedFolderRoot: "connectedFolderRoot" in connectedFolder ? connectedFolder.connectedFolderRoot : connectedFolder.rootPath }, record.owner.conversationId, {
         content: await composeContinuationMessage(state, record, state.requests.children(record.requestId)), contextPaths: [],
         releasedChildTaskIds: state.requests.children(record.requestId).map((child) => child.turns.at(-1)!.taskId),
         actorKind: "system", requestId: deliveryId, request: { joinRequestId: record.requestId },
@@ -11000,7 +11000,7 @@ async function performWorkAction(state: LocalApiState, record: WorkFoldRequestRe
   } catch (error) {
     await state.actReceipts.append({ ...receipt, outcome: "error", detail: errorMessage(error) }).catch(() => false);
     throw error;
-  } finally { publishControlHint(state, "work-folders"); }
+  } finally { publishControlHint(state, "connected-folders"); }
 }
 
 /** The id a Continue click carries, so a retried click starts its turn once. */
@@ -11016,8 +11016,8 @@ async function maybeStartRequestContinuation(state: LocalApiState, requestId: st
   if (!state.requests.continuationsEnabled() || !state.acceptingTurns) return;
   const request = state.requests.get(requestId);
   if (!request || request.stopRequestedAt || request.state === "stopped" || request.state === "expired" || request.limitHit) return;
-  const scopeId = request.owner.workFolderId ?? workFoldAgentScopeId;
-  if (scopeId === workFoldAgentScopeId && state.workFoldAgentInstructionsError) return;
+  const scopeId = request.owner.connectedFolderId ?? ampleFileAgentScopeId;
+  if (scopeId === ampleFileAgentScopeId && state.ampleFileAgentInstructionsError) return;
   const own = request.turns.at(-1)!;
   if (own.state === "accepted" || own.state === "running" || own.state === "aborted") return;
   if (state.requests.questions(requestId).some((q) => q.state === "open" || (q.state === "answered" && q.continuationTaskId === null))) return;
@@ -11037,15 +11037,15 @@ async function maybeStartRequestContinuation(state: LocalApiState, requestId: st
   if (!batch.length && !jobs.length) return;
   // Compose before claiming: a read failure has not accepted a delivery.
   const content = await composeContinuationMessage(state, request, batch, jobs);
-  const workFolder = request.owner.workFolderId ? await getWorkFolder(request.owner.workFolderId)
-    : { id: workFoldAgentScopeId, workFolderRoot: workFoldAgentScope(state).rootPath };
+  const connectedFolder = request.owner.connectedFolderId ? await getConnectedFolder(request.owner.connectedFolderId)
+    : { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentScope(state).rootPath };
   const note = await state.requests.noteContinuation(requestId, batch.map((child) => child.turns.at(-1)!.taskId), jobs.map((job) => job.jobId));
   if (!note.allowed) return;
   let followUpTaskId: string | null = null;
   try {
-    const accepted = await acceptConversationTurn(state, workFolder, request.owner.conversationId, {
+    const accepted = await acceptConversationTurn(state, connectedFolder, request.owner.conversationId, {
       content, contextPaths: [], actorKind: "system",
-      ...(request.owner.workFolderId ? {} : { workFoldAgentAttachments: [] }),
+      ...(request.owner.connectedFolderId ? {} : { ampleFileAgentAttachments: [] }),
       requestId: `continuation-${requestId}-${note.count}`,
       request: { joinRequestId: requestId },
     });
@@ -11066,22 +11066,22 @@ async function maybeStartRequestContinuation(state: LocalApiState, requestId: st
  */
 async function composeContinuationMessage(
   state: LocalApiState,
-  root: WorkFoldRequestRecord,
-  batch: WorkFoldRequestRecord[],
-  jobs: WorkFoldJobRecord[] = [],
+  root: AmpleFileRequestRecord,
+  batch: AmpleFileRequestRecord[],
+  jobs: AmpleFileJobRecord[] = [],
 ): Promise<string> {
   const jobsFinished = jobs.length === 1 ? "a background job this Chat started has finished" : `${jobs.length} background jobs this Chat started have finished`;
   const lines: string[] = [
     !jobs.length
-      ? `work-fold is continuing request ${root.requestId}: selected results or questions from work it handed out are ready. Nobody typed this message.`
+      ? `AmpleFile is continuing request ${root.requestId}: selected results or questions from work it handed out are ready. Nobody typed this message.`
       : !batch.length
-        ? `work-fold is continuing request ${root.requestId}: ${jobsFinished}. Nobody typed this message.`
-        : `work-fold is continuing request ${root.requestId}: ${jobsFinished}, and selected results or questions from work it handed out are ready. Nobody typed this message.`,
+        ? `AmpleFile is continuing request ${root.requestId}: ${jobsFinished}. Nobody typed this message.`
+        : `AmpleFile is continuing request ${root.requestId}: ${jobsFinished}, and selected results or questions from work it handed out are ready. Nobody typed this message.`,
     "",
   ];
   for (const child of batch) {
     const turn = child.turns.at(-1)!;
-    const where = `${child.owner.workFolderName ?? child.owner.workFolderId ?? "a work-folder"} [${child.owner.workFolderId ?? ""}]`;
+    const where = `${child.owner.connectedFolderName ?? child.owner.connectedFolderId ?? "a Connected Folder"} [${child.owner.connectedFolderId ?? ""}]`;
     const ref = [...child.results].reverse().find((result) => result.taskId === turn.taskId);
     const newest = ref ? await state.requests.result(ref.resultId) : null;
     if (ref && newest?.state !== "ok") throw new Error("The selected child result is unavailable; its receipt remains on record.");
@@ -11106,8 +11106,8 @@ async function composeContinuationMessage(
           ? "you"
           : "the request above it";
       lines.push(`  waiting on ${to}: question ${question.questionId} — ${question.text}`);
-      if (to === "you" && child.owner.workFolderId) {
-        lines.push(`    answer it with: work-fold chat answer --work-folder ${child.owner.workFolderId} --question ${question.questionId} --answer "<text>" --parent-task <this-request-task-id> --json`);
+      if (to === "you" && child.owner.connectedFolderId) {
+        lines.push(`    answer it with: amplefile chat answer --connected-folder ${child.owner.connectedFolderId} --question ${question.questionId} --answer "<text>" --parent-task <this-request-task-id> --json`);
       }
     }
   }
@@ -11119,14 +11119,14 @@ async function composeContinuationMessage(
   lines.push(
     "",
     batch.length
-      ? `${root.owner.workFolderId
-        ? "Bring these selected results together for your assignment. Answer questions addressed to you. Submit any needed chat report before your final reply, then give the complete useful answer in that reply. Child files remain in their source work-folder until explicitly copied."
-        : `The whole record: work-fold requests show --request ${root.requestId} --json. Bring these results together for the person; answer what is yours to answer; if the request is finished, say so and end your turn.`}${jobs.length ? ` ${jobsClosing}` : ""}`
-      : root.owner.workFolderId
+      ? `${root.owner.connectedFolderId
+        ? "Bring these selected results together for your assignment. Answer questions addressed to you. Submit any needed chat report before your final reply, then give the complete useful answer in that reply. Child files remain in their source Connected Folder until explicitly copied."
+        : `The whole record: amplefile requests show --request ${root.requestId} --json. Bring these results together for the person; answer what is yours to answer; if the request is finished, say so and end your turn.`}${jobs.length ? ` ${jobsClosing}` : ""}`
+      : root.owner.connectedFolderId
         ? `Carry on with the work ${jobs.length === 1 ? "this job was" : "these jobs were"} part of. ${jobsClosing} Submit any needed chat report before your final reply, then give the complete useful answer in that reply.`
         : `Carry on with the work ${jobs.length === 1 ? "this job was" : "these jobs were"} part of. ${jobsClosing} Tell the person how it went; if the request is finished, say so and end your turn.`,
   );
-  return clampUtf8(lines.join("\n"), workFoldAutomationDeclarationBounds.maxResolvedMessageBytes);
+  return clampUtf8(lines.join("\n"), ampleFileAutomationDeclarationBounds.maxResolvedMessageBytes);
 }
 
 // ---------------------------------------------------------------------------
@@ -11137,8 +11137,8 @@ async function composeContinuationMessage(
 
 const maxJobsRememberedThisRun = 4_000;
 
-function createBackgroundJobService(state: LocalApiState, store: WorkFoldJobStore): WorkFoldJobService {
-  return new WorkFoldJobService({
+function createBackgroundJobService(state: LocalApiState, store: AmpleFileJobStore): AmpleFileJobService {
+  return new AmpleFileJobService({
     store,
     ports: {
       // Journal-first in both records: the request knows about the job before
@@ -11149,7 +11149,7 @@ function createBackgroundJobService(state: LocalApiState, store: WorkFoldJobStor
           jobId: job.jobId,
           name: job.name,
           conversationId: job.conversationId,
-          ...(job.workFolderId ? { workFolderId: job.workFolderId } : {}),
+          ...(job.connectedFolderId ? { connectedFolderId: job.connectedFolderId } : {}),
           actor: { kind: job.surface === "cli" ? "cli" : "assistant" },
         });
       },
@@ -11164,24 +11164,24 @@ function createBackgroundJobService(state: LocalApiState, store: WorkFoldJobStor
   });
 }
 
-function requestJobState(jobState: WorkFoldJobRecord["state"]): Exclude<WorkFoldRequestJobState, "running"> {
+function requestJobState(jobState: AmpleFileJobRecord["state"]): Exclude<AmpleFileRequestJobState, "running"> {
   return jobState === "accepted" || jobState === "running" ? "interrupted" : jobState;
 }
 
 /** The turn's own checkpoint came before the job ended; this one covers its later writes. */
-async function captureBackgroundJobHistory(job: WorkFoldJobRecord): Promise<WorkFoldJobHistory> {
-  if (!job.workFolderId) return { status: "not_applicable", reason: "the work-fold agent's working folder has no History." };
-  let workFolder: WorkFolderSummary;
+async function captureBackgroundJobHistory(job: AmpleFileJobRecord): Promise<AmpleFileJobHistory> {
+  if (!job.connectedFolderId) return { status: "not_applicable", reason: "the AmpleFile agent's working folder has no History." };
+  let connectedFolder: ConnectedFolderSummary;
   try {
-    workFolder = await getWorkFolder(job.workFolderId);
+    connectedFolder = await getConnectedFolder(job.connectedFolderId);
   } catch {
-    return { status: "unavailable", reason: "its work-folder is no longer registered." };
+    return { status: "unavailable", reason: "its Connected Folder is no longer registered." };
   }
-  const checkpoint = await createWorkFolderCheckpoint(workFolder.workFolderRoot, {
+  const checkpoint = await createConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, {
     reason: "background_job",
     label: `After background job: ${job.name}`,
   });
-  const summary = workFolderTurnHistory(checkpoint);
+  const summary = connectedFolderTurnHistory(checkpoint);
   return summary.status === "captured" ? summary : { status: "unavailable", reason: "History could not save a checkpoint." };
 }
 
@@ -11190,7 +11190,7 @@ async function captureBackgroundJobHistory(job: WorkFoldJobRecord): Promise<Work
  * job on its request. A reserved follow-up keeps the request working, so it
  * never reads done between a job's end and the turn that reports it.
  */
-function queueBackgroundJobSettle(state: LocalApiState, job: WorkFoldJobRecord): void {
+function queueBackgroundJobSettle(state: LocalApiState, job: AmpleFileJobRecord): void {
   state.jobsSettledThisRun.add(job.jobId);
   while (state.jobsSettledThisRun.size > maxJobsRememberedThisRun) {
     const oldest = state.jobsSettledThisRun.values().next().value;
@@ -11205,7 +11205,7 @@ function queueBackgroundJobSettle(state: LocalApiState, job: WorkFoldJobRecord):
     .then(() => settleBackgroundJobOnRequest(state, job));
 }
 
-async function settleBackgroundJobOnRequest(state: LocalApiState, job: WorkFoldJobRecord): Promise<void> {
+async function settleBackgroundJobOnRequest(state: LocalApiState, job: AmpleFileJobRecord): Promise<void> {
   await state.requests.settleJob(job.jobId, {
     state: requestJobState(job.state),
     exitCode: job.exitCode,
@@ -11214,7 +11214,7 @@ async function settleBackgroundJobOnRequest(state: LocalApiState, job: WorkFoldJ
 }
 
 /** Finished jobs of this request whose end has not reached its Chat, settled in this run only. */
-function undeliveredSettledJobs(state: LocalApiState, request: WorkFoldRequestRecord): WorkFoldJobRecord[] {
+function undeliveredSettledJobs(state: LocalApiState, request: AmpleFileRequestRecord): AmpleFileJobRecord[] {
   const delivered = new Set(request.deliveredJobIds ?? []);
   // The job journal decides "ended"; the request's own reference settles
   // after this decision (queueBackgroundJobSettle).
@@ -11222,14 +11222,14 @@ function undeliveredSettledJobs(state: LocalApiState, request: WorkFoldRequestRe
     if (ref.service) return [];
     if (delivered.has(ref.jobId) || !state.jobsSettledThisRun.has(ref.jobId)) return [];
     const job = state.jobs.get(ref.jobId);
-    return job && isWorkFoldJobTerminalState(job.state) && job.settledAt && !job.delivery ? [job] : [];
+    return job && isAmpleFileJobTerminalState(job.state) && job.settledAt && !job.delivery ? [job] : [];
   });
 }
 
 /** One delivery per job's end, recorded in the job journal and on its request (F32). */
 async function deliverBackgroundJobs(
   state: LocalApiState,
-  jobs: readonly WorkFoldJobRecord[],
+  jobs: readonly AmpleFileJobRecord[],
   by: "read" | "turn_context" | "follow_up",
   taskId: string | null,
 ): Promise<void> {
@@ -11240,7 +11240,7 @@ async function deliverBackgroundJobs(
 }
 
 /** Each finished job's state, History, and the end of its output, for a follow-up message. */
-async function composeBackgroundJobLines(state: LocalApiState, jobs: readonly WorkFoldJobRecord[]): Promise<string[]> {
+async function composeBackgroundJobLines(state: LocalApiState, jobs: readonly AmpleFileJobRecord[]): Promise<string[]> {
   const lines: string[] = [];
   const now = new Date();
   for (const job of jobs) {
@@ -11265,15 +11265,15 @@ async function composeBackgroundJobLines(state: LocalApiState, jobs: readonly Wo
  */
 async function backgroundJobsForTurn(
   state: LocalApiState,
-  workFolderId: string,
+  connectedFolderId: string,
   conversationId: string,
   taskId: string,
 ): Promise<NonNullable<import("./agent/pi-client.js").PiTurnContext["backgroundJobs"]>> {
-  const jobs = state.jobs.list({ workFolderId: workFolderId === workFoldAgentScopeId ? null : workFolderId, conversationId });
+  const jobs = state.jobs.list({ connectedFolderId: connectedFolderId === ampleFileAgentScopeId ? null : connectedFolderId, conversationId });
   if (!jobs.length) return [];
   const now = new Date();
-  const ending = jobs.filter((job) => !isWorkFoldJobTerminalState(job.state) || job.settledAt === null);
-  const finished = jobs.filter((job) => isWorkFoldJobTerminalState(job.state) && job.settledAt !== null && !job.delivery
+  const ending = jobs.filter((job) => !isAmpleFileJobTerminalState(job.state) || job.settledAt === null);
+  const finished = jobs.filter((job) => isAmpleFileJobTerminalState(job.state) && job.settledAt !== null && !job.delivery
     && state.jobsSettledThisRun.has(job.jobId)
     && !(state.requests.get(job.requestId)?.deliveredJobIds ?? []).includes(job.jobId));
   await deliverBackgroundJobs(state, finished, "turn_context", taskId);
@@ -11296,17 +11296,17 @@ async function startBackgroundJob(state: LocalApiState, input: {
   cwd: string;
   timeoutSeconds?: number;
   surface: "tool" | "cli";
-  shell?: WorkFoldJobShell;
-}): Promise<WorkFoldJobRecord> {
+  shell?: AmpleFileJobShell;
+}): Promise<AmpleFileJobRecord> {
   const request = state.requests.byTaskId(input.taskId);
   if (!request || !state.requests.isAccepting(input.taskId)) {
-    throw new WorkFoldRequestLineageError("A background job starts only from a running turn of its own request.");
+    throw new AmpleFileRequestLineageError("A background job starts only from a running turn of its own request.");
   }
   const job = await state.jobs.start({
     owner: {
       conversationId: request.owner.conversationId,
-      ...(request.owner.workFolderId ? { workFolderId: request.owner.workFolderId } : {}),
-      ...(request.owner.workFolderName ? { workFolderName: request.owner.workFolderName } : {}),
+      ...(request.owner.connectedFolderId ? { connectedFolderId: request.owner.connectedFolderId } : {}),
+      ...(request.owner.connectedFolderName ? { connectedFolderName: request.owner.connectedFolderName } : {}),
     },
     taskId: input.taskId,
     requestId: request.requestId,
@@ -11322,8 +11322,8 @@ async function startBackgroundJob(state: LocalApiState, input: {
   await state.requests.recordAction(input.taskId, {
     command: "jobs.start",
     at: new Date().toISOString(),
-    ...(request.owner.workFolderId ? { workFolderId: request.owner.workFolderId } : {}),
-    ...(request.owner.workFolderName ? { workFolderName: request.owner.workFolderName } : {}),
+    ...(request.owner.connectedFolderId ? { connectedFolderId: request.owner.connectedFolderId } : {}),
+    ...(request.owner.connectedFolderName ? { connectedFolderName: request.owner.connectedFolderName } : {}),
     conversationId: request.owner.conversationId,
     taskId: input.taskId,
   }).catch(() => null);
@@ -11331,14 +11331,14 @@ async function startBackgroundJob(state: LocalApiState, input: {
 }
 
 /** Stops one job and attributes the stop to the turn that asked, when one did. */
-async function stopBackgroundJob(state: LocalApiState, jobId: string, cause: "agent" | "cli", taskId?: string): Promise<WorkFoldJobRecord> {
+async function stopBackgroundJob(state: LocalApiState, jobId: string, cause: "agent" | "cli", taskId?: string): Promise<AmpleFileJobRecord> {
   const job = await state.jobs.stop(jobId, cause);
   if (taskId) {
     await state.requests.recordAction(taskId, {
       command: "jobs.stop",
       at: new Date().toISOString(),
-      ...(job.workFolderId ? { workFolderId: job.workFolderId } : {}),
-      ...(job.workFolderName ? { workFolderName: job.workFolderName } : {}),
+      ...(job.connectedFolderId ? { connectedFolderId: job.connectedFolderId } : {}),
+      ...(job.connectedFolderName ? { connectedFolderName: job.connectedFolderName } : {}),
       conversationId: job.conversationId,
       taskId: job.taskId,
     }).catch(() => null);
@@ -11346,11 +11346,11 @@ async function stopBackgroundJob(state: LocalApiState, jobId: string, cause: "ag
   return job;
 }
 
-/** A job addressed through a work-folder must belong to it. */
-function ownedJob(state: LocalApiState, workFolderId: string, jobId: string): WorkFoldJobRecord {
+/** A job addressed through a Connected Folder must belong to it. */
+function ownedJob(state: LocalApiState, connectedFolderId: string, jobId: string): AmpleFileJobRecord {
   const job = state.jobs.get(jobId.trim());
-  if (!job || job.workFolderId !== workFolderId) {
-    throw new WorkFoldCliError("notFound", `That background job is not on record in this work-folder. Finished jobs are kept for ${state.requests.retentionDays()} days.`);
+  if (!job || job.connectedFolderId !== connectedFolderId) {
+    throw new AmpleFileCliError("notFound", `That background job is not on record in this Connected Folder. Finished jobs are kept for ${state.requests.retentionDays()} days.`);
   }
   return job;
 }
@@ -11360,19 +11360,19 @@ async function runJobOperation<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
   } catch (error) {
-    if (error instanceof WorkFoldCliError) throw error;
-    if (error instanceof WorkFoldJobLimitError) throw new WorkFoldCliError("conflict", error.message, { cause: error });
-    if (error instanceof WorkFoldJobNotFoundError) throw new WorkFoldCliError("notFound", error.message, { cause: error });
-    if (error instanceof WorkFoldRequestLimitError || error instanceof WorkFoldRequestLineageError) throw collaborationRefusal(error);
+    if (error instanceof AmpleFileCliError) throw error;
+    if (error instanceof AmpleFileJobLimitError) throw new AmpleFileCliError("conflict", error.message, { cause: error });
+    if (error instanceof AmpleFileJobNotFoundError) throw new AmpleFileCliError("notFound", error.message, { cause: error });
+    if (error instanceof AmpleFileRequestLimitError || error instanceof AmpleFileRequestLineageError) throw collaborationRefusal(error);
     const message = errorMessage(error);
     if (/needs a command|does not exist|timeout must|command can be at most|NUL character/.test(message)) {
-      throw new WorkFoldCliError("usage", message, { cause: error });
+      throw new AmpleFileCliError("usage", message, { cause: error });
     }
-    throw new WorkFoldCliError("failure", message, { cause: error });
+    throw new AmpleFileCliError("failure", message, { cause: error });
   }
 }
 
-function toActJobRef(job: WorkFoldJobRecord): WorkFoldActJobRef {
+function toActJobRef(job: AmpleFileJobRecord): AmpleFileActJobRef {
   return {
     jobId: job.jobId,
     name: job.name,
@@ -11401,13 +11401,13 @@ function toActJobRef(job: WorkFoldJobRecord): WorkFoldActJobRef {
 
 /** job_start, job_output, and job_stop for one Chat: jobs of this scope only. */
 function createBackgroundJobToolHost(state: LocalApiState, scopeId: string, conversationId: string): BackgroundJobToolHost {
-  const workFolderId = scopeId === workFoldAgentScopeId ? undefined : scopeId;
-  const owned = (jobId: string): WorkFoldJobRecord => {
+  const connectedFolderId = scopeId === ampleFileAgentScopeId ? undefined : scopeId;
+  const owned = (jobId: string): AmpleFileJobRecord => {
     const job = state.jobs.get(jobId);
-    if (!job || (job.workFolderId ?? null) !== (workFolderId ?? null)) {
-      throw new WorkFoldJobNotFoundError(workFolderId
-        ? "That background job is not on record in this work-folder."
-        : "That background job is not one of the work-fold agent's.");
+    if (!job || (job.connectedFolderId ?? null) !== (connectedFolderId ?? null)) {
+      throw new AmpleFileJobNotFoundError(connectedFolderId
+        ? "That background job is not on record in this Connected Folder."
+        : "That background job is not one of the AmpleFile agent's.");
     }
     return job;
   };
@@ -11416,18 +11416,18 @@ function createBackgroundJobToolHost(state: LocalApiState, scopeId: string, conv
     input: async ({ taskId, jobId, text, eof }) => {
       owned(jobId);
       if (!state.requests.isAccepting(taskId)) throw new Error("Terminal input requires your own running turn.");
-      await state.requests.recordAction(taskId, { command: "jobs.input", at: new Date().toISOString(), ...(workFolderId ? { workFolderId } : {}), conversationId, taskId });
+      await state.requests.recordAction(taskId, { command: "jobs.input", at: new Date().toISOString(), ...(connectedFolderId ? { connectedFolderId } : {}), conversationId, taskId });
       return state.jobs.input(jobId, text, eof);
     },
     list: () => ({
-      here: state.jobs.list({ workFolderId: workFolderId ?? null, conversationId }),
-      elsewhere: state.jobs.list({ workFolderId: workFolderId ?? null, running: true }).filter((job) => job.conversationId !== conversationId),
+      here: state.jobs.list({ connectedFolderId: connectedFolderId ?? null, conversationId }),
+      elsewhere: state.jobs.list({ connectedFolderId: connectedFolderId ?? null, running: true }).filter((job) => job.conversationId !== conversationId),
     }),
     read: async ({ taskId, jobId, offset, limit }) => {
       owned(jobId);
       const result = await state.jobs.read(jobId, { ...(offset !== undefined ? { offset } : {}), ...(limit !== undefined ? { limit } : {}) });
       // Reading a finished job in its own Chat is its delivery; no follow-up repeats it.
-      if (result.job.conversationId === conversationId && isWorkFoldJobTerminalState(result.job.state) && result.job.settledAt) {
+      if (result.job.conversationId === conversationId && isAmpleFileJobTerminalState(result.job.state) && result.job.settledAt) {
         await deliverBackgroundJobs(state, [result.job], "read", taskId);
       }
       return result;
@@ -11449,18 +11449,18 @@ function clampUtf8(text: string, maxBytes: number): string {
   return `${Buffer.from(text, "utf8").subarray(0, Math.max(0, maxBytes - Buffer.byteLength("…"))).toString("utf8").replace(/�+$/u, "")}…`;
 }
 
-function conversationRuntimeState(state: LocalApiState, workFolderId: string, conversationId: string): WorkFoldActChatState {
-  const key = clientKey(workFolderId, conversationId);
+function conversationRuntimeState(state: LocalApiState, connectedFolderId: string, conversationId: string): AmpleFileActChatState {
+  const key = clientKey(connectedFolderId, conversationId);
   if (state.runningTurns.has(key)) return "running";
   if (state.compactingConversations.has(key)) return "compacting";
   return "idle";
 }
 
-function toActWorkFolderRef(workFolder: Pick<WorkFolderSummary, "id" | "name" | "workFolderRoot">): WorkFoldActWorkFolderRef {
-  return { id: workFolder.id, name: workFolder.name, workFolderRoot: workFolder.workFolderRoot };
+function toActConnectedFolderRef(connectedFolder: Pick<ConnectedFolderSummary, "id" | "name" | "connectedFolderRoot">): AmpleFileActConnectedFolderRef {
+  return { id: connectedFolder.id, name: connectedFolder.name, connectedFolderRoot: connectedFolder.connectedFolderRoot };
 }
 
-function toActConversationRef(conversation: ConversationSummary): WorkFoldActConversationRef {
+function toActConversationRef(conversation: ConversationSummary): AmpleFileActConversationRef {
   return {
     id: conversation.id,
     title: conversation.title,
@@ -11471,7 +11471,7 @@ function toActConversationRef(conversation: ConversationSummary): WorkFoldActCon
   };
 }
 
-function toActChatLifecycleState(conversation: ConversationSummary): WorkFoldActChatLifecycleState {
+function toActChatLifecycleState(conversation: ConversationSummary): AmpleFileActChatLifecycleState {
   return {
     archivedAt: conversation.archivedAt ?? null,
     snoozedUntil: conversation.snoozedUntil ?? null,
@@ -11479,7 +11479,7 @@ function toActChatLifecycleState(conversation: ConversationSummary): WorkFoldAct
 }
 
 /** Manifest-summary projection: counts and identifiers, never per-file listings. */
-function toActCheckpointSummary(checkpoint: WorkFolderCheckpoint): WorkFoldActCheckpointSummary {
+function toActCheckpointSummary(checkpoint: ConnectedFolderCheckpoint): AmpleFileActCheckpointSummary {
   return {
     checkpointId: checkpoint.checkpointId,
     createdAt: checkpoint.createdAt,
@@ -11492,7 +11492,7 @@ function toActCheckpointSummary(checkpoint: WorkFolderCheckpoint): WorkFoldActCh
   };
 }
 
-function toActFileVersionRef(version: WorkFolderFileVersion): WorkFoldActFileVersionRef {
+function toActFileVersionRef(version: ConnectedFolderFileVersion): AmpleFileActFileVersionRef {
   return {
     path: version.path,
     hashSha256: version.hashSha256,
@@ -11504,7 +11504,7 @@ function toActFileVersionRef(version: WorkFolderFileVersion): WorkFoldActFileVer
   };
 }
 
-function toActChatMessage(message: ChatMessage): WorkFoldActChatMessage {
+function toActChatMessage(message: ChatMessage): AmpleFileActChatMessage {
   return {
     id: message.id,
     role: message.role === "assistant" ? "assistant" : "user",
@@ -11521,31 +11521,31 @@ function pathContainsPath(parent: string, candidate: string): boolean {
 
 async function runAgentTurn(
   state: LocalApiState,
-  workFolderId: string,
-  workFolderRoot: string,
+  connectedFolderId: string,
+  connectedFolderRoot: string,
   conversationId: string,
   content: string,
   contextPaths: string[],
   taskId: string,
   options: {
-    workFoldAgentAttachments?: WorkFoldAgentAttachmentRef[];
-    /** The task that delegated this work-folder turn; decorates its context, never its acceptance. */
+    ampleFileAgentAttachments?: AmpleFileAgentAttachmentRef[];
+    /** The task that delegated this Connected Folder turn; decorates its context, never its acceptance. */
     parentTaskId?: string;
     /** The assignment when it differs from this turn's message. */
     assignment?: string;
     /** The question this turn's message answers, when it is a continuation (F27). */
     answeredQuestionId?: string;
-    /** work-folder Workers the person addressed with @ in this message (2026-10-01). */
-    addressedWorkFolderIds?: string[];
+    /** Connected Folder Workers the person addressed with @ in this message (2026-10-01). */
+    addressedConnectedFolderIds?: string[];
     /** The automation that sent this message; nobody is watching the turn. */
     automation?: { title: string };
   } = {},
 ): Promise<void> {
-  const { workFoldAgentAttachments, answeredQuestionId } = options;
+  const { ampleFileAgentAttachments, answeredQuestionId } = options;
   const request = state.requests.byTaskId(taskId);
   const parentTaskId = request?.parentTaskId ?? options.parentTaskId;
   const assignment = request?.assignment ?? options.assignment;
-  const key = clientKey(workFolderId, conversationId);
+  const key = clientKey(connectedFolderId, conversationId);
   let client: PiConversationClient | null = null;
   let promptStarted = false;
   let settledStatus: SettledTurnRecord["status"] = "succeeded";
@@ -11555,83 +11555,83 @@ async function runAgentTurn(
   let settledError: string | undefined;
   let capturedWorkTrail: ReturnType<PiConversationClient["getTurnWorkTrail"]> = [];
   let capturedPresentation: ReturnType<PiConversationClient["getTurnPresentation"]>;
-  let beforeCheckpoint: import("./history.js").WorkFolderCheckpoint | null = null;
-  let afterCheckpoint: import("./history.js").WorkFolderCheckpoint | null = null;
+  let beforeCheckpoint: import("./history.js").ConnectedFolderCheckpoint | null = null;
+  let afterCheckpoint: import("./history.js").ConnectedFolderCheckpoint | null = null;
   changeTurnCount(state, 1);
   try {
-    client = await getClient(state, workFolderId, workFolderRoot, conversationId);
-    const loadContextAttachments = (budgetTokens: number) => workFoldAgentAttachments
-      ? loadWorkFoldAgentAttachmentsForTurn(workFoldAgentAttachments, budgetTokens)
-      : loadConversationContextReferencesForTurn(workFolderRoot, contextPaths, budgetTokens);
-    const attachedLinks = workFoldAgentAttachments ? workFoldAgentAttachmentLinks(workFoldAgentAttachments) : [];
-    const workFoldAgentRegistry = workFolderId === workFoldAgentScopeId
-      ? (await state.kernel.getWorkFolders({ kind: "renderer" })).workFolders
+    client = await getClient(state, connectedFolderId, connectedFolderRoot, conversationId);
+    const loadContextAttachments = (budgetTokens: number) => ampleFileAgentAttachments
+      ? loadAmpleFileAgentAttachmentsForTurn(ampleFileAgentAttachments, budgetTokens)
+      : loadConversationContextReferencesForTurn(connectedFolderRoot, contextPaths, budgetTokens);
+    const attachedLinks = ampleFileAgentAttachments ? ampleFileAgentAttachmentLinks(ampleFileAgentAttachments) : [];
+    const ampleFileAgentRegistry = connectedFolderId === ampleFileAgentScopeId
+      ? (await state.kernel.getConnectedFolders({ kind: "renderer" })).connectedFolders
       : null;
-    // work-folder turns read nesting from the registry file only — never listWorkFolders(),
-    // which rewrites every work-folder's portable manifest — and a failed read just
+    // Connected Folder turns read nesting from the registry file only — never listConnectedFolders(),
+    // which rewrites every Connected Folder's portable manifest — and a failed read just
     // leaves the nesting context out instead of failing the turn.
-    const registeredWorkFolders: Array<{ id: string; name: string; workFolderRoot: string }> = workFoldAgentRegistry
-      ?? await registeredWorkFolderOutline().catch(() => []);
-    const workFoldAgentWorkFolders = workFoldAgentRegistry
-      ? workFoldAgentRegistry.map((workFolder) => ({
-          id: workFolder.id,
-          name: workFolder.name,
-          workFolderRoot: workFolder.workFolderRoot,
-          ...(workFolder.parentWorkFolderId ? { parentWorkFolderId: workFolder.parentWorkFolderId } : {}),
+    const registeredConnectedFolders: Array<{ id: string; name: string; connectedFolderRoot: string }> = ampleFileAgentRegistry
+      ?? await registeredConnectedFolderOutline().catch(() => []);
+    const ampleFileAgentConnectedFolders = ampleFileAgentRegistry
+      ? ampleFileAgentRegistry.map((connectedFolder) => ({
+          id: connectedFolder.id,
+          name: connectedFolder.name,
+          connectedFolderRoot: connectedFolder.connectedFolderRoot,
+          ...(connectedFolder.parentConnectedFolderId ? { parentConnectedFolderId: connectedFolder.parentConnectedFolderId } : {}),
         }))
       : undefined;
-    // work-folders inside work-folders (2026-10-01): the person's @ mentions resolve to
+    // Connected Folders inside Connected Folders (2026-10-01): the person's @ mentions resolve to
     // the ids handoff and send take, and a parent's Worker learns which of
     // its own subfolders belong to another Worker.
-    const addressedFolders = (options.addressedWorkFolderIds ?? []).flatMap((id) => {
-      const workFolder = registeredWorkFolders.find((item) => item.id === id);
-      return workFolder ? [{ workFolderId: workFolder.id, name: workFolder.name }] : [];
+    const addressedFolders = (options.addressedConnectedFolderIds ?? []).flatMap((id) => {
+      const connectedFolder = registeredConnectedFolders.find((item) => item.id === id);
+      return connectedFolder ? [{ connectedFolderId: connectedFolder.id, name: connectedFolder.name }] : [];
     });
-    // A work-folder turn's own identity (F26): its ids, and when delegated, an
-    // opaque handle for the request that asked. Never for the work-fold agent
+    // A Connected Folder turn's own identity (F26): its ids, and when delegated, an
+    // opaque handle for the request that asked. Never for the AmpleFile agent
     // scope, which carries the registry snapshot instead.
-    const workFolderTurn = workFolderId === workFoldAgentScopeId
+    const connectedFolderTurn = connectedFolderId === ampleFileAgentScopeId
       ? undefined
-      : buildWorkFolderTurnContext({
-        workFolderId,
+      : buildConnectedFolderTurnContext({
+        connectedFolderId,
         taskId,
         requestId: resolveTurnRequestId(state, taskId),
-        handleSalt: state.workFolderTurnHandleSalt,
+        handleSalt: state.connectedFolderTurnHandleSalt,
         ...(answeredQuestionId ? { answeredQuestionId } : {}),
         ...(parentTaskId ? { parentTaskId } : {}),
         ...(assignment !== undefined && assignment !== content ? { assignment } : {}),
         ...(parentTaskId && (assignment === undefined || assignment === content) ? { assignmentIsThisMessage: true } : {}),
       });
-    if (workFolderTurn && request) {
+    if (connectedFolderTurn && request) {
       const children = state.requests.children(request.requestId).filter((child) => {
         const latest = child.turns.at(-1)!;
         return latest.settledAt !== null && !request.deliveredChildTaskIds.includes(latest.taskId);
       });
       if (children.length) {
-        workFolderTurn.releasedChildResults = await composeContinuationMessage(state, request, children);
+        connectedFolderTurn.releasedChildResults = await composeContinuationMessage(state, request, children);
         await state.requests.noteChildDelivery(request.requestId, children.map((child) => child.turns.at(-1)!.taskId));
       }
     }
-    const backgroundJobs = await backgroundJobsForTurn(state, workFolderId, conversationId, taskId);
-    beforeCheckpoint = await captureTurnCheckpointSafe(state, workFolderId, workFolderRoot, conversationId, "pre_turn");
-    if (workFolderTurn) workFolderTurn.history = workFolderTurnHistory(beforeCheckpoint);
-    const ownWorkFolder = registeredWorkFolders.find((item) => item.id === workFolderId);
-    if (workFolderTurn && ownWorkFolder) {
-      const nested = [...childFolderPaths(ownWorkFolder, registeredWorkFolders)].map(([path, child]) => ({ workFolderId: child.id, name: child.name, path }));
-      if (nested.length) workFolderTurn.nestedFolders = nested;
+    const backgroundJobs = await backgroundJobsForTurn(state, connectedFolderId, conversationId, taskId);
+    beforeCheckpoint = await captureTurnCheckpointSafe(state, connectedFolderId, connectedFolderRoot, conversationId, "pre_turn");
+    if (connectedFolderTurn) connectedFolderTurn.history = connectedFolderTurnHistory(beforeCheckpoint);
+    const ownConnectedFolder = registeredConnectedFolders.find((item) => item.id === connectedFolderId);
+    if (connectedFolderTurn && ownConnectedFolder) {
+      const nested = [...childFolderPaths(ownConnectedFolder, registeredConnectedFolders)].map(([path, child]) => ({ connectedFolderId: child.id, name: child.name, path }));
+      if (nested.length) connectedFolderTurn.nestedFolders = nested;
     }
     await state.beforeAgentPrompt?.({
-      workFolderId, conversationId, taskId,
-      ...(workFolderTurn ? { workFolderTurn } : {}),
+      connectedFolderId, conversationId, taskId,
+      ...(connectedFolderTurn ? { connectedFolderTurn } : {}),
       ...(options.automation ? { automation: options.automation } : {}),
     });
     throwIfTurnCancelled(state, taskId);
     promptStarted = true;
     const finalText = await client.prompt(content, {
       loadContextAttachments,
-      ...(workFolderId === workFoldAgentScopeId ? { workFoldAgentTaskId: taskId } : {}),
-      ...(workFoldAgentWorkFolders ? { workFoldAgentWorkFolders } : {}),
-      ...(workFolderTurn ? { workFolderTurn } : {}),
+      ...(connectedFolderId === ampleFileAgentScopeId ? { ampleFileAgentTaskId: taskId } : {}),
+      ...(ampleFileAgentConnectedFolders ? { ampleFileAgentConnectedFolders } : {}),
+      ...(connectedFolderTurn ? { connectedFolderTurn } : {}),
       ...(attachedLinks.length ? { attachedLinks } : {}),
       ...(addressedFolders.length ? { addressedFolders } : {}),
       ...(options.automation ? { automation: options.automation } : {}),
@@ -11644,7 +11644,7 @@ async function runAgentTurn(
     capturedPresentation = parseAssistantPresentation(client.getTurnPresentation(), finalText);
     capturedWorkTrail = client.getTurnWorkTrail();
     promptStarted = false;
-    afterCheckpoint = await captureTurnCheckpointSafe(state, workFolderId, workFolderRoot, conversationId, "post_turn");
+    afterCheckpoint = await captureTurnCheckpointSafe(state, connectedFolderId, connectedFolderRoot, conversationId, "post_turn");
     await flushTurnCheckpoint(state, key, taskId);
     const durable = state.turnStore.get(taskId);
     const workTrail = capturedWorkTrail;
@@ -11658,15 +11658,15 @@ async function runAgentTurn(
       ...(durable?.requestId ? { requestId: durable.requestId } : {}),
       ...(workTrail.length ? { workTrail } : {}),
     };
-    await appendMessage(workFolderRoot, conversationId, assistantMessage);
+    await appendMessage(connectedFolderRoot, conversationId, assistantMessage);
     settledMessageId = assistantMessage.id;
     try {
-      const transcript = await readConversation(workFolderRoot, conversationId);
+      const transcript = await readConversation(connectedFolderRoot, conversationId);
       if (conversationNeedsGeneratedTitle(transcript)) {
         // Record the one naming attempt before the isolated request. A crash or
         // provider failure must not turn every later Chat turn into another
         // hidden title request.
-        await markConversationTitleAttempted(workFolderRoot, conversationId);
+        await markConversationTitleAttempted(connectedFolderRoot, conversationId);
         const firstUserMessage = transcript.find((message) => message.role === "user")?.content;
         const modelTitle = firstUserMessage
           ? normalizeGeneratedConversationTitle(
@@ -11674,7 +11674,7 @@ async function runAgentTurn(
           )
           : null;
         if (modelTitle) {
-          const titledConversation = await setGeneratedConversationTitle(workFolderRoot, conversationId, modelTitle);
+          const titledConversation = await setGeneratedConversationTitle(connectedFolderRoot, conversationId, modelTitle);
           client.setSessionName(titledConversation.title);
         }
       }
@@ -11694,13 +11694,13 @@ async function runAgentTurn(
     closedByApp = cancelled && !state.cancelledTurnTasks.has(taskId) && !state.acceptingTurns;
     if (promptStarted) {
       promptStarted = false;
-      afterCheckpoint = await captureTurnCheckpointSafe(state, workFolderId, workFolderRoot, conversationId, "post_turn");
+      afterCheckpoint = await captureTurnCheckpointSafe(state, connectedFolderId, connectedFolderRoot, conversationId, "post_turn");
     }
     await flushTurnCheckpoint(state, key, taskId);
     const durable = state.turnStore.get(taskId);
     let failureResultPreserved = false;
     if (!cancelled) {
-      console.warn(`Turn failed in ${workFolderId}/${conversationId}: ${providerCreditFailureDetail(error) ?? errorMessage(error)}`);
+      console.warn(`Turn failed in ${connectedFolderId}/${conversationId}: ${providerCreditFailureDetail(error) ?? errorMessage(error)}`);
     }
     const publicDetail = closedByApp
       ? appClosedTurnDetail
@@ -11731,7 +11731,7 @@ async function runAgentTurn(
       },
     };
     try {
-      await appendMessage(workFolderRoot, conversationId, interruptedMessage);
+      await appendMessage(connectedFolderRoot, conversationId, interruptedMessage);
       failureResultPreserved = true;
       settledMessageId = interruptedMessage.id;
     } catch (preservationError) {
@@ -11749,7 +11749,7 @@ async function runAgentTurn(
       state.clients.delete(key);
     }
   } finally {
-    if (promptStarted) afterCheckpoint = await captureTurnCheckpointSafe(state, workFolderId, workFolderRoot, conversationId, "post_turn");
+    if (promptStarted) afterCheckpoint = await captureTurnCheckpointSafe(state, connectedFolderId, connectedFolderRoot, conversationId, "post_turn");
     await flushTurnCheckpoint(state, key, taskId);
     const durableText = state.turnStore.get(taskId)?.assistantText ?? "";
     // Attribution, recorded with the outcome: the model that actually ran this
@@ -11785,12 +11785,12 @@ async function runAgentTurn(
     state.cancelledTurnTasks.delete(taskId);
     state.activeTurnIdsByKey.delete(key);
     state.kernel.finishTask(taskId);
-    // The work-folder's apps or Worker instructions changed during this turn
-    // (propose_work-folder_app, or Set up for me). Rebuild this Chat's client so
+    // The Connected Folder's apps or Worker instructions changed during this turn
+    // (propose_connected_folder_app, or Set up for me). Rebuild this Chat's client so
     // its next turn sees them.
     await refreshClientIfMarked(state, key);
     settleTurnTask(state, taskId, {
-      workFolderId,
+      connectedFolderId,
       conversationId,
       status: settledStatus,
       ...(settledMessageId ? { messageId: settledMessageId } : {}),
@@ -11807,12 +11807,12 @@ async function runAgentTurn(
     if (queued && settledStatus === "aborted") {
       if (!queued.held) {
         changeQueuedMessage(state, key, { ...queued, held: true });
-        broadcast(state, streamKey(workFolderId, conversationId), queuedMessageEvent(state, workFolderId, conversationId));
+        broadcast(state, streamKey(connectedFolderId, conversationId), queuedMessageEvent(state, connectedFolderId, conversationId));
       }
-    } else if (queued && !queued.held) void sendQueuedMessage(state, workFolderId, workFolderRoot, conversationId, queued);
-    else if (settledStatus === "succeeded") scheduleBackgroundCompaction(state, workFolderId, workFolderRoot, conversationId);
+    } else if (queued && !queued.held) void sendQueuedMessage(state, connectedFolderId, connectedFolderRoot, conversationId, queued);
+    else if (settledStatus === "succeeded") scheduleBackgroundCompaction(state, connectedFolderId, connectedFolderRoot, conversationId);
     // F28: once this turn's own settlement is fully visible, the request
-    // graph above it may owe the work-fold agent one continuation turn. Fire-and-forget
+    // graph above it may owe the AmpleFile agent one continuation turn. Fire-and-forget
     // with its own catch, the way activeTurnPromises are: a settle never
     // fails because a continuation could not start.
     queueRequestGraphSettle(state, taskId);
@@ -11822,9 +11822,9 @@ async function runAgentTurn(
 const maxSettledTurnRecords = 10_000;
 
 /**
- * The request id a work-folder turn names in its context: the durable request
+ * The request id a Connected Folder turn names in its context: the durable request
  * record's id when the store holds one, otherwise the turn journal's own
- * acceptance identity — for an undelegated work-folder turn that is its own root —
+ * acceptance identity — for an undelegated Connected Folder turn that is its own root —
  * and finally the task id for a turn accepted before either existed. Nothing
  * here invents a request id.
  */
@@ -11836,10 +11836,10 @@ function resolveTurnRequestId(state: LocalApiState, taskId: string): string {
 
 interface QueuedChatMessage {
   content: string;
-  /** Files attached in the composer, for a work-folder Chat. */
+  /** Files attached in the composer, for a Connected Folder Chat. */
   contextPaths: string[];
   /** Workers the message addresses with @. */
-  addressedWorkFolderIds: string[];
+  addressedConnectedFolderIds: string[];
   updatedAt: string;
   /** Set by a Stop: kept for the person to take back, never sent. A new queue write arms it again. */
   held?: true;
@@ -11854,8 +11854,8 @@ function changeQueuedMessage(state: LocalApiState, key: string, next: QueuedChat
   return state.lastQueueRevision;
 }
 
-function queuedMessageEvent(state: LocalApiState, workFolderId: string, conversationId: string, sent?: QueuedChatMessage) {
-  const key = clientKey(workFolderId, conversationId);
+function queuedMessageEvent(state: LocalApiState, connectedFolderId: string, conversationId: string, sent?: QueuedChatMessage) {
+  const key = clientKey(connectedFolderId, conversationId);
   const queued = state.queuedMessages.get(key);
   return {
     type: "queued_message" as const,
@@ -11873,25 +11873,25 @@ function queuedMessageEvent(state: LocalApiState, workFolderId: string, conversa
  */
 function queueChatMessage(
   state: LocalApiState,
-  workFolderId: string,
+  connectedFolderId: string,
   conversationId: string,
-  input: { content: string; contextPaths: string[]; addressedWorkFolderIds: string[] },
+  input: { content: string; contextPaths: string[]; addressedConnectedFolderIds: string[] },
 ): { queued: { content: string; updatedAt: string }; revision: number } {
-  const key = clientKey(workFolderId, conversationId);
+  const key = clientKey(connectedFolderId, conversationId);
   if (!state.runningTurns.has(key)) throw httpError(409, "No turn is running in this Chat; send the message now.");
   const queued: QueuedChatMessage = { ...input, updatedAt: new Date().toISOString() };
   const revision = changeQueuedMessage(state, key, queued);
-  broadcast(state, streamKey(workFolderId, conversationId), queuedMessageEvent(state, workFolderId, conversationId));
+  broadcast(state, streamKey(connectedFolderId, conversationId), queuedMessageEvent(state, connectedFolderId, conversationId));
   return { queued: { content: queued.content, updatedAt: queued.updatedAt }, revision };
 }
 
 /** Removes a Chat's queued message and returns it, so it can go back to a composer. */
-function cancelQueuedMessage(state: LocalApiState, workFolderId: string, conversationId: string): { queued: { content: string; updatedAt: string } | null; revision: number } {
-  const key = clientKey(workFolderId, conversationId);
+function cancelQueuedMessage(state: LocalApiState, connectedFolderId: string, conversationId: string): { queued: { content: string; updatedAt: string } | null; revision: number } {
+  const key = clientKey(connectedFolderId, conversationId);
   const queued = state.queuedMessages.get(key);
   if (!queued) return { queued: null, revision: state.queueRevisions.get(key) ?? 0 };
   const revision = changeQueuedMessage(state, key, null);
-  broadcast(state, streamKey(workFolderId, conversationId), queuedMessageEvent(state, workFolderId, conversationId));
+  broadcast(state, streamKey(connectedFolderId, conversationId), queuedMessageEvent(state, connectedFolderId, conversationId));
   return { queued: { content: queued.content, updatedAt: queued.updatedAt }, revision };
 }
 
@@ -11900,26 +11900,26 @@ function cancelQueuedMessage(state: LocalApiState, workFolderId: string, convers
  * waited on has ended. If the Chat cannot take it yet (another turn started
  * first), it stays queued for the next turn's end.
  */
-async function sendQueuedMessage(state: LocalApiState, workFolderId: string, workFolderRoot: string, conversationId: string, queued: QueuedChatMessage): Promise<void> {
-  const key = clientKey(workFolderId, conversationId);
+async function sendQueuedMessage(state: LocalApiState, connectedFolderId: string, connectedFolderRoot: string, conversationId: string, queued: QueuedChatMessage): Promise<void> {
+  const key = clientKey(connectedFolderId, conversationId);
   if (!state.acceptingTurns || state.queuedMessages.get(key) !== queued) return;
   // Leaves the queue as it becomes the Chat's message, so no window shows both.
   changeQueuedMessage(state, key, null);
-  broadcast(state, streamKey(workFolderId, conversationId), queuedMessageEvent(state, workFolderId, conversationId, queued));
+  broadcast(state, streamKey(connectedFolderId, conversationId), queuedMessageEvent(state, connectedFolderId, conversationId, queued));
   try {
-    const agentScope = workFolderId === workFoldAgentScopeId;
-    await acceptConversationTurn(state, { id: workFolderId, workFolderRoot }, conversationId, {
+    const agentScope = connectedFolderId === ampleFileAgentScopeId;
+    await acceptConversationTurn(state, { id: connectedFolderId, connectedFolderRoot }, conversationId, {
       content: queued.content,
       contextPaths: agentScope ? [] : queued.contextPaths,
       actorKind: agentScope ? "renderer" : "assistant",
-      ...(agentScope ? { workFoldAgentAttachments: [] } : {}),
-      ...(queued.addressedWorkFolderIds.length ? { addressedWorkFolderIds: queued.addressedWorkFolderIds } : {}),
+      ...(agentScope ? { ampleFileAgentAttachments: [] } : {}),
+      ...(queued.addressedConnectedFolderIds.length ? { addressedConnectedFolderIds: queued.addressedConnectedFolderIds } : {}),
     });
   } catch (error) {
     console.warn(`A queued message stays queued: ${errorMessage(error)}`);
     if (!state.queuedMessages.has(key)) {
       changeQueuedMessage(state, key, queued);
-      broadcast(state, streamKey(workFolderId, conversationId), queuedMessageEvent(state, workFolderId, conversationId));
+      broadcast(state, streamKey(connectedFolderId, conversationId), queuedMessageEvent(state, connectedFolderId, conversationId));
     }
   }
 }
@@ -11934,7 +11934,7 @@ interface BackgroundCompaction {
 
 /** How long a Chat stays idle after a reply before it is summarized ahead of time. */
 function backgroundCompactionIdleMs(env: NodeJS.ProcessEnv = process.env): number {
-  const parsed = Number(env.WORKFOLD_PI_BACKGROUND_COMPACTION_IDLE_MS);
+  const parsed = Number(env.AMPLEFILE_PI_BACKGROUND_COMPACTION_IDLE_MS);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 10_000;
 }
 
@@ -11947,8 +11947,8 @@ function backgroundCompactionIdleMs(env: NodeJS.ProcessEnv = process.env): numbe
  * yieldBackgroundCompaction. A failed or cancelled summary changes nothing:
  * Pi still compacts mid-turn when it must.
  */
-function scheduleBackgroundCompaction(state: LocalApiState, workFolderId: string, workFolderRoot: string, conversationId: string): void {
-  const key = clientKey(workFolderId, conversationId);
+function scheduleBackgroundCompaction(state: LocalApiState, connectedFolderId: string, connectedFolderRoot: string, conversationId: string): void {
+  const key = clientKey(connectedFolderId, conversationId);
   const pending = state.backgroundCompactions.get(key);
   if (pending?.run) return;
   if (pending?.timer) clearTimeout(pending.timer);
@@ -11963,9 +11963,9 @@ function scheduleBackgroundCompaction(state: LocalApiState, workFolderId: string
     }
     const task = state.kernel.startTask({
       kind: "compaction",
-      workFolderId,
+      connectedFolderId,
       conversationId,
-      actor: { kind: "system", cwd: workFolderRoot, workFolderId, conversationId },
+      actor: { kind: "system", cwd: connectedFolderRoot, connectedFolderId, conversationId },
     });
     const done = client.compact(undefined, { quiet: true })
       .catch((error: unknown) => {
@@ -11996,7 +11996,7 @@ async function yieldBackgroundCompaction(state: LocalApiState, key: string): Pro
   await entry.run.done;
 }
 
-const appClosedTurnDetail = "work-fold closed before this turn finished. It was not run again because completed tools may already have changed something.";
+const appClosedTurnDetail = "AmpleFile closed before this turn finished. It was not run again because completed tools may already have changed something.";
 
 async function recoverDurableTurnState(state: LocalApiState): Promise<void> {
   const records = state.turnStore.list().sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
@@ -12004,13 +12004,13 @@ async function recoverDurableTurnState(state: LocalApiState): Promise<void> {
     rememberDurableSettledTurn(state, record);
   }
   for (const record of records.filter((candidate) => candidate.status === "accepted" || candidate.status === "running")) {
-    const rootPath = record.workFolderId === workFoldAgentScopeId
-      ? workFoldAgentRoot()
-      : await getWorkFolder(record.workFolderId).then((workFolder) => workFolder.workFolderRoot).catch(() => null);
+    const rootPath = record.connectedFolderId === ampleFileAgentScopeId
+      ? ampleFileAgentRoot()
+      : await getConnectedFolder(record.connectedFolderId).then((connectedFolder) => connectedFolder.connectedFolderRoot).catch(() => null);
     if (!rootPath) {
       const settled = await state.turnStore.settle(record.turnId, {
         status: "interrupted",
-        error: "The app closed before this turn finished, and its work-folder is no longer registered.",
+        error: "The app closed before this turn finished, and its Connected Folder is no longer registered.",
       });
       if (settled) rememberDurableSettledTurn(state, settled);
       continue;
@@ -12071,13 +12071,13 @@ async function recoverDurableTurnState(state: LocalApiState): Promise<void> {
   }
 }
 
-function rememberDurableSettledTurn(state: LocalApiState, record: WorkFoldDurableTurnRecord): void {
+function rememberDurableSettledTurn(state: LocalApiState, record: AmpleFileDurableTurnRecord): void {
   const status: SettledTurnRecord["status"] = record.status === "succeeded"
     ? "succeeded"
     : record.status === "aborted" ? "aborted" : "failed";
   state.settledTurns.set(record.turnId, {
     taskId: record.turnId,
-    workFolderId: record.workFolderId,
+    connectedFolderId: record.connectedFolderId,
     conversationId: record.conversationId,
     status,
     endedAt: record.updatedAt,
@@ -12113,7 +12113,7 @@ function throwIfTurnCancelled(state: LocalApiState, taskId: string): void {
   // fresh provider request on its stopped client, and close() would wait on it.
   const reason = state.cancelledTurnTasks.has(taskId)
     ? "Agent turn cancelled by the user."
-    : state.acceptingTurns ? null : "The turn stopped because work-fold is closing.";
+    : state.acceptingTurns ? null : "The turn stopped because AmpleFile is closing.";
   if (!reason) return;
   const error = new Error(reason);
   error.name = "PiTurnCancelledError";
@@ -12125,14 +12125,14 @@ function assistantTurnFailureMessage(error: unknown, partialResponsePreserved: b
   if (!(error instanceof PiTurnFailure)) return assistantFailurePublicDetail(error);
   const creditFailure = providerCreditFailureDetail(error);
   if (creditFailure) return partialResponsePreserved
-    ? `${creditFailure} work-fold saved the partial response and completed activity below.`
-    : `${creditFailure} work-fold could not save the partial response.`;
+    ? `${creditFailure} AmpleFile saved the partial response and completed activity below.`
+    : `${creditFailure} AmpleFile could not save the partial response.`;
   const retrySummary = error.retryAttempts > 0
     ? ` after ${error.retryAttempts} automatic ${error.retryAttempts === 1 ? "retry" : "retries"}`
     : "";
   return partialResponsePreserved
-    ? `The model stopped responding${retrySummary}. work-fold saved the partial response and completed activity below.`
-    : `The model stopped responding${retrySummary}, and work-fold could not save the partial response.`;
+    ? `The model stopped responding${retrySummary}. AmpleFile saved the partial response and completed activity below.`
+    : `The model stopped responding${retrySummary}, and AmpleFile could not save the partial response.`;
 }
 
 function assistantFailureReason(error: unknown): "provider_error" | "setup_error" | "assistant_error" {
@@ -12187,32 +12187,32 @@ function isModelSetupError(error: unknown): boolean {
 }
 
 const managedWorktreeServices = new WeakMap<LocalApiState, ManagedWorktrees>();
-function createWorktreeToolHost(state: LocalApiState, workFolderId: string): import("./agent/worktree-tool.js").WorktreeToolHost {
+function createWorktreeToolHost(state: LocalApiState, connectedFolderId: string): import("./agent/worktree-tool.js").WorktreeToolHost {
   let service = managedWorktreeServices.get(state);
-  if (!service) { service = new ManagedWorktrees(join(workFoldStateRoot(), "worktrees"), `${workFoldStateRoot()}-working-copies`); managedWorktreeServices.set(state, service); }
-  const facade = createWorkFoldActFacade(state);
+  if (!service) { service = new ManagedWorktrees(join(ampleFileStateRoot(), "worktrees"), `${ampleFileStateRoot()}-working-copies`); managedWorktreeServices.set(state, service); }
+  const facade = createAmpleFileActFacade(state);
   return { async invoke(taskId, input) {
-    assertOwnTask(state, workFolderId, taskId);
+    assertOwnTask(state, connectedFolderId, taskId);
     const ports = {
-      register: async (path: string) => (await facade.registerWorkFolder({ workFolderRoot: path })).workFolder.id,
+      register: async (path: string) => (await facade.registerConnectedFolder({ connectedFolderRoot: path })).connectedFolder.id,
       unregister: async (id: string, path: string) => {
-        if (resolve((await getWorkFolder(id)).workFolderRoot) !== resolve(path)) throw new Error("The managed work-folder registration changed.");
-        await facade.workFoldersUnregister({ workFolder: id });
+        if (resolve((await getConnectedFolder(id)).connectedFolderRoot) !== resolve(path)) throw new Error("The managed Connected Folder registration changed.");
+        await facade.connectedFoldersUnregister({ connectedFolder: id });
       },
     };
-    if (input.action === "list") return service!.list(workFolderId);
-    await state.requests.recordAction(taskId, { command: `worktrees.${input.action}`, at: new Date().toISOString(), workFolderId, taskId });
-    if (input.action === "create") return service!.create(workFolderId, (await getWorkFolder(workFolderId)).workFolderRoot, input.ref ?? "HEAD", ports.register);
+    if (input.action === "list") return service!.list(connectedFolderId);
+    await state.requests.recordAction(taskId, { command: `worktrees.${input.action}`, at: new Date().toISOString(), connectedFolderId, taskId });
+    if (input.action === "create") return service!.create(connectedFolderId, (await getConnectedFolder(connectedFolderId)).connectedFolderRoot, input.ref ?? "HEAD", ports.register);
     if (!input.id) throw new Error("id is required for archive and restore.");
-    return service!.change(workFolderId, input.id, input.action, ports);
+    return service!.change(connectedFolderId, input.id, input.action, ports);
   } };
 }
 
-function createCollaborationToolHost(state: LocalApiState, workFolderId: string, conversationId: string): import("./agent/collaboration-tools.js").CollaborationToolHost {
-  const facade = createWorkFoldActFacade(state);
+function createCollaborationToolHost(state: LocalApiState, connectedFolderId: string, conversationId: string): import("./agent/collaboration-tools.js").CollaborationToolHost {
+  const facade = createAmpleFileActFacade(state);
   return { async invoke(operation, taskId, input, signal) {
-    assertOwnTask(state, workFolderId, taskId);
-    const target = typeof input.workFolder === "string" ? input.workFolder : workFolderId;
+    assertOwnTask(state, connectedFolderId, taskId);
+    const target = typeof input.connectedFolder === "string" ? input.connectedFolder : connectedFolderId;
     const required = (name: string): string => {
       const value = input[name];
       if (typeof value !== "string" || !value.trim()) throw new Error(`${name} is required.`);
@@ -12220,30 +12220,30 @@ function createCollaborationToolHost(state: LocalApiState, workFolderId: string,
     };
     const files = Array.isArray(input.files) ? input.files as string[] : [];
     switch (operation) {
-      case "children": return facade.chatChildren({ workFolder: workFolderId, taskId });
-      case "handoff": return facade.chatHandoff({ workFolder: workFolderId, taskId, toWorkFolder: target, message: required("message"), files, ...(typeof input.conversation === "string" ? { toConversationId: input.conversation } : {}) });
-      case "steer": return facade.chatSteer({ workFolder: target, taskId, conversationId: required("conversation"), message: required("message") });
-      case "copy": return facade.chatCopy({ workFolder: target, taskId, conversationId: typeof input.conversation === "string" ? input.conversation : conversationId, ...(typeof input.message === "string" ? { message: input.message } : {}), ...(typeof input.title === "string" ? { title: input.title } : {}) });
+      case "children": return facade.chatChildren({ connectedFolder: connectedFolderId, taskId });
+      case "handoff": return facade.chatHandoff({ connectedFolder: connectedFolderId, taskId, toConnectedFolder: target, message: required("message"), files, ...(typeof input.conversation === "string" ? { toConversationId: input.conversation } : {}) });
+      case "steer": return facade.chatSteer({ connectedFolder: target, taskId, conversationId: required("conversation"), message: required("message") });
+      case "copy": return facade.chatCopy({ connectedFolder: target, taskId, conversationId: typeof input.conversation === "string" ? input.conversation : conversationId, ...(typeof input.message === "string" ? { message: input.message } : {}), ...(typeof input.title === "string" ? { title: input.title } : {}) });
       case "stop": {
-        const destination = resolveWorkFoldCliWorkFolderSelector(await listWorkFolders(), target)!;
-        assertCallerHandedWorkTo(state, taskId, { workFolderId: destination.id, conversationId: required("conversation") });
-        return facade.abortTurn({ workFolder: destination.id, conversationId: required("conversation") });
+        const destination = resolveAmpleFileCliConnectedFolderSelector(await listConnectedFolders(), target)!;
+        assertCallerHandedWorkTo(state, taskId, { connectedFolderId: destination.id, conversationId: required("conversation") });
+        return facade.abortTurn({ connectedFolder: destination.id, conversationId: required("conversation") });
       }
-      case "report": return facade.chatReport({ workFolder: workFolderId, taskId, summary: required("summary"), files, outcome: input.outcome as "succeeded" | "partial" | "failed", ...(input.data !== undefined ? { data: input.data } : {}) });
-      case "ask": return facade.chatAsk({ workFolder: workFolderId, taskId, question: required("question"), respondent: input.to === "parent" ? "parent" : "person", ...(Array.isArray(input.options) ? { options: input.options as string[] } : {}), ...(input.asynchronous === true ? { asynchronous: true } : {}) });
-      case "answer": return facade.chatAnswer({ workFolder: target, questionId: required("question"), answer: required("answer") });
+      case "report": return facade.chatReport({ connectedFolder: connectedFolderId, taskId, summary: required("summary"), files, outcome: input.outcome as "succeeded" | "partial" | "failed", ...(input.data !== undefined ? { data: input.data } : {}) });
+      case "ask": return facade.chatAsk({ connectedFolder: connectedFolderId, taskId, question: required("question"), respondent: input.to === "parent" ? "parent" : "person", ...(Array.isArray(input.options) ? { options: input.options as string[] } : {}), ...(input.asynchronous === true ? { asynchronous: true } : {}) });
+      case "answer": return facade.chatAnswer({ connectedFolder: target, questionId: required("question"), answer: required("answer") });
       case "wait": {
         const followed = state.requests.byTaskId(required("task"));
-        if (!followed?.owner.workFolderId) throw new Error("That delegated task is not on record.");
-        assertCallerHandedWorkTo(state, taskId, { workFolderId: followed.owner.workFolderId, conversationId: followed.owner.conversationId });
+        if (!followed?.owner.connectedFolderId) throw new Error("That delegated task is not on record.");
+        assertCallerHandedWorkTo(state, taskId, { connectedFolderId: followed.owner.connectedFolderId, conversationId: followed.owner.conversationId });
         const seconds = input.seconds === undefined ? 30 : Number(input.seconds);
         if (!Number.isFinite(seconds) || seconds < 0 || seconds > 120) throw new Error("seconds must be between 0 and 120.");
         const deadline = Date.now() + seconds * 1000;
         for (;;) {
           signal?.throwIfAborted();
-          const status = await facade.turnStatus({ workFolder: followed.owner.workFolderId, taskId: required("task") });
+          const status = await facade.turnStatus({ connectedFolder: followed.owner.connectedFolderId, taskId: required("task") });
           if (status.waiting || status.task.state !== "running" || Date.now() >= deadline) {
-            return status.task.state === "succeeded" ? facade.turnResult({ workFolder: followed.owner.workFolderId, taskId: required("task") }) : status;
+            return status.task.state === "succeeded" ? facade.turnResult({ connectedFolder: followed.owner.connectedFolderId, taskId: required("task") }) : status;
           }
           await new Promise(done => setTimeout(done, 100));
         }
@@ -12254,71 +12254,71 @@ function createCollaborationToolHost(state: LocalApiState, workFolderId: string,
 
 async function getClient(
   state: LocalApiState,
-  workFolderId: string,
-  workFolderRoot: string,
+  connectedFolderId: string,
+  connectedFolderRoot: string,
   conversationId: string,
 ): Promise<PiConversationClient> {
-  if (workFolderId === workFoldAgentScopeId) assertWorkFoldAgentInstructionsReady(state);
-  const key = clientKey(workFolderId, conversationId);
-  rememberWorkFolderRoot(state, workFolderId, workFolderRoot);
+  if (connectedFolderId === ampleFileAgentScopeId) assertAmpleFileAgentInstructionsReady(state);
+  const key = clientKey(connectedFolderId, conversationId);
+  rememberConnectedFolderRoot(state, connectedFolderId, connectedFolderRoot);
   const existing = state.clients.get(key);
   if (existing) return existing;
-  // The work-fold agent scope loads personal Pi capabilities and its two app-owned
-  // project instructions. It belongs to no work-folder, so work-folder-bound restricted-
+  // The AmpleFile agent scope loads personal Pi capabilities and its two app-owned
+  // project instructions. It belongs to no Connected Folder, so Connected Folder–bound restricted-
   // app proposal and invocation bridges stay disconnected.
-  const hostCapabilities = workFolderId === workFoldAgentScopeId
+  const hostCapabilities = connectedFolderId === ampleFileAgentScopeId
     ? undefined
     : {
-        workFolderId,
+        connectedFolderId,
         restrictedAppProposals: state.restrictedAppProposals,
         restrictedApps: state.restrictedApps,
       };
-  // work-folder scopes carry the compact operations guide after their own work-folder
-  // instructions (F26); the work-fold agent scope has its own taught text.
-  const operationsGuide = workFolderOperationsGuideForScope(workFolderId);
-  const client = new PiConversationClient(conversationId, workFolderRoot, state.runtimeProvider, hostCapabilities, {
-    role: workFolderId === workFoldAgentScopeId ? "work-fold-agent" : "worker",
+  // Connected Folder scopes carry the compact operations guide after their own Connected Folder
+  // instructions (F26); the AmpleFile agent scope has its own taught text.
+  const operationsGuide = connectedFolderOperationsGuideForScope(connectedFolderId);
+  const client = new PiConversationClient(conversationId, connectedFolderRoot, state.runtimeProvider, hostCapabilities, {
+    role: connectedFolderId === ampleFileAgentScopeId ? "amplefile-agent" : "worker",
     async onContextCompacted() {
       const chatMessage: ChatMessage = {
         id: randomUUID(), role: "system", kind: "context_compaction",
         content: "Conversation context compacted. Earlier messages were summarized to make room; your chat history is still available.",
         createdAt: new Date().toISOString(),
       };
-      await appendMessage(workFolderRoot, conversationId, chatMessage);
-      broadcast(state, streamKey(workFolderId, conversationId), { type: "context_compacted", conversationId, chatMessage });
+      await appendMessage(connectedFolderRoot, conversationId, chatMessage);
+      broadcast(state, streamKey(connectedFolderId, conversationId), { type: "context_compacted", conversationId, chatMessage });
     },
     ...(operationsGuide ? { operationsGuide } : {}),
     imageModel: () => state.imageModelPreference.get(),
-    // A Worker Chat shows its pictures inline; the work-fold agent's panel does not yet.
-    ...(workFolderId === workFoldAgentScopeId ? {} : { imageStore: state.generatedImages }),
-    backgroundJobs: createBackgroundJobToolHost(state, workFolderId, conversationId),
-    ...(state.browser ? { browser: state.browser, browserOwner: `${workFolderId}/${conversationId}` } : {}),
-    ...(workFolderId === workFoldAgentScopeId ? {} : { collaboration: createCollaborationToolHost(state, workFolderId, conversationId) }),
-    helperTool: workFolderId !== workFoldAgentScopeId,
+    // A Worker Chat shows its pictures inline; the AmpleFile agent's panel does not yet.
+    ...(connectedFolderId === ampleFileAgentScopeId ? {} : { imageStore: state.generatedImages }),
+    backgroundJobs: createBackgroundJobToolHost(state, connectedFolderId, conversationId),
+    ...(state.browser ? { browser: state.browser, browserOwner: `${connectedFolderId}/${conversationId}` } : {}),
+    ...(connectedFolderId === ampleFileAgentScopeId ? {} : { collaboration: createCollaborationToolHost(state, connectedFolderId, conversationId) }),
+    helperTool: connectedFolderId !== ampleFileAgentScopeId,
     recoveryScope: taskId => {
       const request = state.requests.byTaskId(taskId);
       if (!request || request.owner.conversationId !== conversationId
-        || (request.owner.workFolderId ?? workFoldAgentScopeId) !== workFolderId
+        || (request.owner.connectedFolderId ?? ampleFileAgentScopeId) !== connectedFolderId
         || !request.turns.some(turn => turn.taskId === taskId && turn.state === "running")) return null;
       return { requestId: request.requestId, taskIds: request.turns.map(turn => turn.taskId) };
     },
-    ...(workFolderId === workFoldAgentScopeId ? {} : { worktrees: createWorktreeToolHost(state, workFolderId) }),
+    ...(connectedFolderId === ampleFileAgentScopeId ? {} : { worktrees: createWorktreeToolHost(state, connectedFolderId) }),
     checklist: {
       async set({ taskId, items }) {
         try {
           const saved = await state.requests.setChecklist(taskId, items);
           // The Chat's work view re-reads the request and shows the new list.
-          publishControlHint(state, "work-folders");
+          publishControlHint(state, "connected-folders");
           return saved;
         } catch (error) {
-          if (error instanceof WorkFoldRequestLimitError || error instanceof WorkFoldRequestLineageError) throw new Error(error.message);
+          if (error instanceof AmpleFileRequestLimitError || error instanceof AmpleFileRequestLineageError) throw new Error(error.message);
           throw error;
         }
       },
     },
   });
   client.on("event", (event: PiChatEvent) => {
-    broadcast(state, streamKey(workFolderId, conversationId), assistantEventForRenderer(event));
+    broadcast(state, streamKey(connectedFolderId, conversationId), assistantEventForRenderer(event));
   });
   state.clients.set(key, client);
   return client;
@@ -12336,9 +12336,9 @@ function assistantEventForRenderer(event: PiChatEvent): Omit<PiChatEvent, "raw">
   return safeEvent;
 }
 
-async function invalidateWorkFoldClients(state: LocalApiState, workFolderId: string): Promise<void> {
+async function invalidateAmpleFileClients(state: LocalApiState, connectedFolderId: string): Promise<void> {
   for (const [key, client] of [...state.clients]) {
-    if (!key.startsWith(`${workFolderId}:`)) continue;
+    if (!key.startsWith(`${connectedFolderId}:`)) continue;
     await client.stop().catch(() => undefined);
     state.clients.delete(key);
   }
@@ -12380,40 +12380,40 @@ function capabilityScope(value: unknown): CapabilityScope {
   throw badRequest("Capability scope must be global or project.");
 }
 
-async function runHistoryRestore<T>(state: LocalApiState, workFolderId: string, operation: () => Promise<T>): Promise<T> {
-  reserveCapabilityMutation(state, workFolderId, "project", workFolderId);
+async function runHistoryRestore<T>(state: LocalApiState, connectedFolderId: string, operation: () => Promise<T>): Promise<T> {
+  reserveCapabilityMutation(state, connectedFolderId, "project", connectedFolderId);
   try {
-    return await state.restrictedApps.withHistoryRestoreReservation(workFolderId, async () => {
-      const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(workFolderId);
+    return await state.restrictedApps.withHistoryRestoreReservation(connectedFolderId, async () => {
+      const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
       if (blockers.length) throw httpError(409, blockers[0]!);
-      await getWorkFolder(workFolderId);
+      await getConnectedFolder(connectedFolderId);
       return await operation();
     });
-  } finally { state.capabilityMutations.delete(workFolderId); }
+  } finally { state.capabilityMutations.delete(connectedFolderId); }
 }
 
 /** Stop is not settled until its accepted turns have actually drained. */
-function requestHasUnsettledWork(state: LocalApiState, request: WorkFoldRequestRecord): boolean {
+function requestHasUnsettledWork(state: LocalApiState, request: AmpleFileRequestRecord): boolean {
   return [request, ...state.requests.subtree(request.requestId)].some((record) =>
-    !isWorkFoldRequestTerminalState(record.state)
+    !isAmpleFileRequestTerminalState(record.state)
     || record.continuationState === "pending"
     || record.turns.some((turn) => turn.state === "accepted" || turn.state === "running")
     // A job a Stop is still ending keeps its request unsettled until it has.
     || (record.jobs ?? []).some((job) => job.state === "running"));
 }
 
-/** Called with the work-folder's mutation fence held; deletion refuses instead of interrupting work. */
-async function runSettledWorkFolderDeletion<T>(state: LocalApiState, workFolderId: string, operation: () => Promise<T>): Promise<T> {
+/** Called with the Connected Folder's mutation fence held; deletion refuses instead of interrupting work. */
+async function runSettledConnectedFolderDeletion<T>(state: LocalApiState, connectedFolderId: string, operation: () => Promise<T>): Promise<T> {
   const assertSettled = () => {
-    if (state.requests.list({ workFolderId }).some((request) => requestHasUnsettledWork(state, request))) {
-      throw httpError(409, "Finish or stop this work-folder's outstanding work before deleting.");
+    if (state.requests.list({ connectedFolderId }).some((request) => requestHasUnsettledWork(state, request))) {
+      throw httpError(409, "Finish or stop this Connected Folder's outstanding work before deleting.");
     }
   };
   assertSettled();
-  return state.restrictedApps.withHistoryRestoreReservation(workFolderId, async () => {
-    const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(workFolderId);
+  return state.restrictedApps.withHistoryRestoreReservation(connectedFolderId, async () => {
+    const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
     if (blockers.length) throw httpError(409, blockers[0]!);
-    await getWorkFolder(workFolderId);
+    await getConnectedFolder(connectedFolderId);
     assertSettled();
     return operation();
   });
@@ -12427,15 +12427,15 @@ async function runSettledWorkFolderDeletion<T>(state: LocalApiState, workFolderI
  */
 async function saveWorkerInstructions(
   state: LocalApiState,
-  workFolder: { id: string; workFolderRoot: string },
+  connectedFolder: { id: string; connectedFolderRoot: string },
   instructions: string,
 ): Promise<void> {
-  if (state.capabilityMutations.has(globalCapabilityMutationKey) || state.capabilityMutations.has(workFolder.id)) {
+  if (state.capabilityMutations.has(globalCapabilityMutationKey) || state.capabilityMutations.has(connectedFolder.id)) {
     throw httpError(409, "Wait for the current capability change to finish.");
   }
-  await setPiWorkerInstructions(workFolder.workFolderRoot, instructions, state.runtimeProvider);
+  await setPiWorkerInstructions(connectedFolder.connectedFolderRoot, instructions, state.runtimeProvider);
   for (const [key, client] of [...state.clients]) {
-    if (!key.startsWith(`${workFolder.id}:`)) continue;
+    if (!key.startsWith(`${connectedFolder.id}:`)) continue;
     if (state.runningTurns.has(key) || state.compactingConversations.has(key)) {
       state.clientsToRefresh.add(key);
       continue;
@@ -12447,7 +12447,7 @@ async function saveWorkerInstructions(
 }
 
 async function imageModelSettings(state: LocalApiState) {
-  const { models, automatic } = await listPiImageModels(workFoldAgentRoot(), state.runtimeProvider);
+  const { models, automatic } = await listPiImageModels(ampleFileAgentRoot(), state.runtimeProvider);
   const selected = await state.imageModelPreference.get();
   return {
     selected: selected ?? null,
@@ -12469,24 +12469,24 @@ async function refreshClientIfMarked(state: LocalApiState, key: string): Promise
 
 async function runCapabilityMutation<T>(
   state: LocalApiState,
-  workFolder: { id: string; workFolderRoot: string },
+  connectedFolder: { id: string; connectedFolderRoot: string },
   scope: CapabilityScope,
   operation: () => Promise<T>,
   options: { requireProjectTrust?: boolean } = {},
 ): Promise<T> {
-  const key = scope === "global" ? globalCapabilityMutationKey : workFolder.id;
-  reserveCapabilityMutation(state, workFolder.id, scope, key);
+  const key = scope === "global" ? globalCapabilityMutationKey : connectedFolder.id;
+  reserveCapabilityMutation(state, connectedFolder.id, scope, key);
   try {
     if (
       scope === "project"
       && options.requireProjectTrust !== false
-      && !await isPiProjectMutationTrusted(workFolder.workFolderRoot, state.runtimeProvider)
+      && !await isPiProjectMutationTrusted(connectedFolder.connectedFolderRoot, state.runtimeProvider)
     ) {
-      throw forbidden("Trust this work-folder before changing work-folder-scoped capabilities.");
+      throw forbidden("Trust this Connected Folder before changing Connected Folder–scoped capabilities.");
     }
     const result = await operation();
     if (scope === "global") await invalidateAllClients(state);
-    else await invalidateWorkFoldClients(state, workFolder.id);
+    else await invalidateAmpleFileClients(state, connectedFolder.id);
     publishControlHint(state, "models");
     return result;
   } finally {
@@ -12496,31 +12496,31 @@ async function runCapabilityMutation<T>(
 
 async function runRestrictedAppMutation<T>(
   state: LocalApiState,
-  workFolderId: string,
+  connectedFolderId: string,
   operation: () => Promise<T>,
 ): Promise<T> {
-  reserveCapabilityMutation(state, workFolderId, "project", workFolderId);
+  reserveCapabilityMutation(state, connectedFolderId, "project", connectedFolderId);
   try {
-    await revalidateRestrictedAppWorkFolder(state, workFolderId);
+    await revalidateRestrictedAppConnectedFolder(state, connectedFolderId);
     const result = await operation();
-    await invalidateWorkFoldClients(state, workFolderId);
+    await invalidateAmpleFileClients(state, connectedFolderId);
     return result;
   } finally {
-    state.capabilityMutations.delete(workFolderId);
+    state.capabilityMutations.delete(connectedFolderId);
   }
 }
 
 /**
- * Runs an app mutation from inside a work-folder turn's own tool call. Other
- * capability work in the work-folder is awaited rather than refused (a fence that
- * would refuse a short wait prefers queueing), the work-folder lane is held exactly
+ * Runs an app mutation from inside a Connected Folder turn's own tool call. Other
+ * capability work in the Connected Folder is awaited rather than refused (a fence that
+ * would refuse a short wait prefers queueing), the Connected Folder lane is held exactly
  * as runRestrictedAppMutation holds it, and the proposing turn's own Pi
  * client is never stopped mid-turn: it is marked for a rebuild when the turn
  * settles so the next turn sees the new app's tools.
  */
 async function runRestrictedAppMutationFromTurn<T>(
   state: LocalApiState,
-  workFolderId: string,
+  connectedFolderId: string,
   ownTurnKey: string,
   operation: () => Promise<T>,
   signal?: AbortSignal,
@@ -12528,170 +12528,170 @@ async function runRestrictedAppMutationFromTurn<T>(
   const deadline = Date.now() + 10 * 60_000;
   while (
     state.capabilityMutations.has(globalCapabilityMutationKey)
-    || state.capabilityMutations.has(workFolderId)
-    || hasActiveCapabilityWorkForWorkFolder(state, workFolderId, ownTurnKey)
+    || state.capabilityMutations.has(connectedFolderId)
+    || hasActiveCapabilityWorkForConnectedFolder(state, connectedFolderId, ownTurnKey)
   ) {
     if (signal?.aborted || !state.acceptingTurns) throw new Error("The turn stopped before the app could be added.");
-    if (Date.now() > deadline) throw new Error("Other work in this work-folder did not finish in time. Try again from Apps.");
+    if (Date.now() > deadline) throw new Error("Other work in this Connected Folder did not finish in time. Try again from Apps.");
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  state.capabilityMutations.add(workFolderId);
+  state.capabilityMutations.add(connectedFolderId);
   try {
-    await revalidateRestrictedAppWorkFolder(state, workFolderId);
+    await revalidateRestrictedAppConnectedFolder(state, connectedFolderId);
     const result = await operation();
     for (const [key, client] of [...state.clients]) {
-      if (!key.startsWith(`${workFolderId}:`)) continue;
+      if (!key.startsWith(`${connectedFolderId}:`)) continue;
       if (key === ownTurnKey && state.runningTurns.has(ownTurnKey)) { state.clientsToRefresh.add(key); continue; }
       await client.stop().catch(() => undefined);
       state.clients.delete(key);
     }
     return result;
   } finally {
-    state.capabilityMutations.delete(workFolderId);
+    state.capabilityMutations.delete(connectedFolderId);
   }
 }
 
-async function recoverPendingWorkFolderRemovals(
+async function recoverPendingConnectedFolderRemovals(
   restrictedApps: RestrictedAppService,
   restrictedAppProposals: RoutedRestrictedAppProposalHost,
-  io: Partial<WorkFolderRemovalIo>,
-  recentlyDeleted: WorkFoldRecentlyDeletedStore,
-): Promise<{ workFolderRoots: string[]; workFolderIds: string[] }> {
-  const pendingRemovals = await listPendingWorkFolderRemovals();
+  io: Partial<ConnectedFolderRemovalIo>,
+  recentlyDeleted: AmpleFileRecentlyDeletedStore,
+): Promise<{ connectedFolderRoots: string[]; connectedFolderIds: string[] }> {
+  const pendingRemovals = await listPendingConnectedFolderRemovals();
   for (const pending of pendingRemovals) {
     try {
       let intent = pending;
       // An interrupted managed deletion finishes into Recently deleted, not
       // into an erase: the folder this start finds claimed is still the
       // person's (docs/receipts-not-gates.md, F20).
-      const removalIo = managedWorkFolderRemovalIo(recentlyDeleted, io, {
-        workFolderId: intent.workFolderId,
-        workFolderRoot: intent.workFolderRoot,
+      const removalIo = managedConnectedFolderRemovalIo(recentlyDeleted, io, {
+        connectedFolderId: intent.connectedFolderId,
+        connectedFolderRoot: intent.connectedFolderRoot,
         receiptId: null,
         managedDeletion: intent.storage === "managed" && intent.folderDisposition !== "preserve",
       });
       if (intent.phase === "requested") {
         // The same copies the interrupted removal owed: each preview's data
-        // and the work-folder's App Studio history reach Recently deleted
+        // and the Connected Folder's App Studio history reach Recently deleted
         // before anything is cleared, or nothing is cleared and a later start
         // tries again (docs/receipts-not-gates.md, F20).
-        for (const app of await restrictedApps.list(intent.workFolderId)) {
-          await keepAppStorageInRecentlyDeleted(restrictedApps, recentlyDeleted, app, "apps.work-folder.removed", null, {
+        for (const app of await restrictedApps.list(intent.connectedFolderId)) {
+          await keepAppStorageInRecentlyDeleted(restrictedApps, recentlyDeleted, app, "apps.connected-folder.removed", null, {
             skipWhenStorageUnavailable: true,
           });
         }
-        await removeWorkFolderAppStudioIntoRecentlyDeleted(restrictedApps, recentlyDeleted, intent.workFolderId, { receiptId: null });
-        await restrictedAppProposals.removeWorkFolder(intent.workFolderId);
-        intent = await markWorkFolderRemovalAppStateRemoved(intent.workFolderId, removalIo.io);
+        await removeConnectedFolderAppStudioIntoRecentlyDeleted(restrictedApps, recentlyDeleted, intent.connectedFolderId, { receiptId: null });
+        await restrictedAppProposals.removeConnectedFolder(intent.connectedFolderId);
+        intent = await markConnectedFolderRemovalAppStateRemoved(intent.connectedFolderId, removalIo.io);
       }
       // The durable removal intent must remain until Check authority is gone.
       // This removal-only path never parses possibly damaged/future state.
-      await purgeWorkFoldCheckState(intent.workFolderId);
-      await finalizeWorkFolderRemoval(intent.workFolderId, removalIo.io);
+      await purgeAmpleFileCheckState(intent.connectedFolderId);
+      await finalizeConnectedFolderRemoval(intent.connectedFolderId, removalIo.io);
     } catch {
       // The durable intent keeps this work-folder hidden and untrusted. Recovery of
       // other work-folders and normal startup can proceed; a later startup retries it.
     }
   }
   return {
-    workFolderRoots: pendingRemovals.map((intent) => intent.workFolderRoot),
-    workFolderIds: pendingRemovals.map((intent) => intent.workFolderId),
+    connectedFolderRoots: pendingRemovals.map((intent) => intent.connectedFolderRoot),
+    connectedFolderIds: pendingRemovals.map((intent) => intent.connectedFolderId),
   };
 }
 
 async function runRestrictedAppMutations<T>(
   state: LocalApiState,
-  workFolderIds: readonly string[],
+  connectedFolderIds: readonly string[],
   operation: () => Promise<T>,
-  options: { requiredWorkFolderIds?: readonly string[] } = {},
+  options: { requiredConnectedFolderIds?: readonly string[] } = {},
 ): Promise<T> {
-  const ids = [...new Set(workFolderIds)].sort();
-  if (ids.length === 0) throw badRequest("A work-folder is required for this App change.");
-  const requiredWorkFolderIds = [...new Set(options.requiredWorkFolderIds ?? ids)].sort();
-  if (requiredWorkFolderIds.length === 0 || requiredWorkFolderIds.some((workFolderId) => !ids.includes(workFolderId))) {
-    throw new Error("Restricted App mutation validation must name one or more reserved work-folders.");
+  const ids = [...new Set(connectedFolderIds)].sort();
+  if (ids.length === 0) throw badRequest("A Connected Folder is required for this App change.");
+  const requiredConnectedFolderIds = [...new Set(options.requiredConnectedFolderIds ?? ids)].sort();
+  if (requiredConnectedFolderIds.length === 0 || requiredConnectedFolderIds.some((connectedFolderId) => !ids.includes(connectedFolderId))) {
+    throw new Error("Restricted App mutation validation must name one or more reserved Connected Folders.");
   }
   if (state.capabilityMutations.has(globalCapabilityMutationKey)
-    || ids.some((workFolderId) => state.capabilityMutations.has(workFolderId))) {
+    || ids.some((connectedFolderId) => state.capabilityMutations.has(connectedFolderId))) {
     throw httpError(409, "Wait for the current capability change to finish.");
   }
-  if (ids.some((workFolderId) => hasActiveCapabilityWorkForWorkFolder(state, workFolderId))) {
+  if (ids.some((connectedFolderId) => hasActiveCapabilityWorkForConnectedFolder(state, connectedFolderId))) {
     throw httpError(409, "Wait for affected work to finish before changing capabilities.");
   }
-  for (const workFolderId of ids) state.capabilityMutations.add(workFolderId);
+  for (const connectedFolderId of ids) state.capabilityMutations.add(connectedFolderId);
   try {
-    for (const workFolderId of requiredWorkFolderIds) {
-      await revalidateRestrictedAppWorkFolder(state, workFolderId);
+    for (const connectedFolderId of requiredConnectedFolderIds) {
+      await revalidateRestrictedAppConnectedFolder(state, connectedFolderId);
     }
     const result = await operation();
-    await Promise.all(ids.map((workFolderId) => invalidateWorkFoldClients(state, workFolderId)));
+    await Promise.all(ids.map((connectedFolderId) => invalidateAmpleFileClients(state, connectedFolderId)));
     return result;
   } finally {
-    for (const workFolderId of ids) state.capabilityMutations.delete(workFolderId);
+    for (const connectedFolderId of ids) state.capabilityMutations.delete(connectedFolderId);
   }
 }
 
-async function revalidateRestrictedAppWorkFolder(state: LocalApiState, workFolderId: string): Promise<void> {
-  await state.beforeRestrictedAppWorkFolderRevalidation?.(workFolderId);
-  await getWorkFolder(workFolderId);
+async function revalidateRestrictedAppConnectedFolder(state: LocalApiState, connectedFolderId: string): Promise<void> {
+  await state.beforeRestrictedAppConnectedFolderRevalidation?.(connectedFolderId);
+  await getConnectedFolder(connectedFolderId);
 }
 
 function reserveCapabilityMutation(
   state: LocalApiState,
-  workFolderId: string,
+  connectedFolderId: string,
   scope: CapabilityScope,
   key: string,
 ): void {
   const mutationConflict = scope === "global"
     ? state.capabilityMutations.size > 0
-    : state.capabilityMutations.has(globalCapabilityMutationKey) || state.capabilityMutations.has(workFolderId);
+    : state.capabilityMutations.has(globalCapabilityMutationKey) || state.capabilityMutations.has(connectedFolderId);
   if (mutationConflict) throw httpError(409, "Wait for the current capability change to finish.");
 
   const runningConflict = scope === "global"
     ? state.runningTurns.size > 0 || state.compactingConversations.size > 0 || state.checkRunReservations.size > 0 || state.checks.hasActiveRun()
-    : hasActiveCapabilityWorkForWorkFolder(state, workFolderId);
+    : hasActiveCapabilityWorkForConnectedFolder(state, connectedFolderId);
   if (runningConflict) {
     throw httpError(409, "Wait for affected agent work to finish before changing capabilities.");
   }
   state.capabilityMutations.add(key);
 }
 
-function assertNoCapabilityMutationForTurn(state: LocalApiState, workFolderId: string): void {
-  if (state.capabilityMutations.has(globalCapabilityMutationKey) || state.capabilityMutations.has(workFolderId)) {
+function assertNoCapabilityMutationForTurn(state: LocalApiState, connectedFolderId: string): void {
+  if (state.capabilityMutations.has(globalCapabilityMutationKey) || state.capabilityMutations.has(connectedFolderId)) {
     throw httpError(409, "Wait for the current capability change to finish before starting a turn.");
   }
 }
 
-function assertNoCapabilityMutationForCheck(state: LocalApiState, workFolderId: string): void {
-  if (state.capabilityMutations.has(globalCapabilityMutationKey) || state.capabilityMutations.has(workFolderId)) {
-    throw new WorkFoldCliError("conflict", "Wait for the current capability change to finish before running or changing Checks.");
+function assertNoCapabilityMutationForCheck(state: LocalApiState, connectedFolderId: string): void {
+  if (state.capabilityMutations.has(globalCapabilityMutationKey) || state.capabilityMutations.has(connectedFolderId)) {
+    throw new AmpleFileCliError("conflict", "Wait for the current capability change to finish before running or changing Checks.");
   }
 }
 
-function reserveCheckOperation(state: LocalApiState, workFolderId: string): void {
-  assertNoCapabilityMutationForCheck(state, workFolderId);
-  if (state.checkRunReservations.has(workFolderId)) {
-    throw new WorkFoldCliError("conflict", "Wait for the current Check operation to finish.");
+function reserveCheckOperation(state: LocalApiState, connectedFolderId: string): void {
+  assertNoCapabilityMutationForCheck(state, connectedFolderId);
+  if (state.checkRunReservations.has(connectedFolderId)) {
+    throw new AmpleFileCliError("conflict", "Wait for the current Check operation to finish.");
   }
-  state.checkRunReservations.add(workFolderId);
+  state.checkRunReservations.add(connectedFolderId);
 }
 
 async function runReservedCheckOperation<T>(
   state: LocalApiState,
-  workFolderId: string,
+  connectedFolderId: string,
   operation: () => Promise<T>,
 ): Promise<T> {
-  reserveCheckOperation(state, workFolderId);
+  reserveCheckOperation(state, connectedFolderId);
   try {
     return await operation();
   } finally {
-    state.checkRunReservations.delete(workFolderId);
+    state.checkRunReservations.delete(connectedFolderId);
   }
 }
 
-async function runCheckWorkFolderRegistryMutation<T>(state: LocalApiState, operation: () => Promise<T>): Promise<T> {
-  const release = state.checks.tryReserveWorkFolderRegistryMutation();
-  if (!release) throw httpError(409, "Wait for current Check work to finish before changing registered work-folders.");
+async function runCheckConnectedFolderRegistryMutation<T>(state: LocalApiState, operation: () => Promise<T>): Promise<T> {
+  const release = state.checks.tryReserveConnectedFolderRegistryMutation();
+  if (!release) throw httpError(409, "Wait for current Check work to finish before changing registered Connected Folders.");
   try {
     return await operation();
   } finally {
@@ -12699,11 +12699,11 @@ async function runCheckWorkFolderRegistryMutation<T>(state: LocalApiState, opera
   }
 }
 
-function hasActiveCapabilityWorkForWorkFolder(state: LocalApiState, workFolderId: string, exceptTurnKey?: string): boolean {
-  const prefix = `${workFolderId}:`;
+function hasActiveCapabilityWorkForConnectedFolder(state: LocalApiState, connectedFolderId: string, exceptTurnKey?: string): boolean {
+  const prefix = `${connectedFolderId}:`;
   return [...state.runningTurns, ...state.compactingConversations].some((key) => key.startsWith(prefix) && key !== exceptTurnKey)
-    || state.checkRunReservations.has(workFolderId)
-    || state.checks.hasActiveRun(workFolderId);
+    || state.checkRunReservations.has(connectedFolderId)
+    || state.checks.hasActiveRun(connectedFolderId);
 }
 
 // ---------------------------------------------------------------------------
@@ -12714,8 +12714,8 @@ function hasActiveCapabilityWorkForWorkFolder(state: LocalApiState, workFolderId
 // ---------------------------------------------------------------------------
 
 /** The neutral app-owned root global capability mutations resolve against. */
-function capabilityGlobalMutationScope(): { id: string; workFolderRoot: string } {
-  return { id: workFoldAgentScopeId, workFolderRoot: workFoldAgentRoot() };
+function capabilityGlobalMutationScope(): { id: string; connectedFolderRoot: string } {
+  return { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot() };
 }
 
 // ---------------------------------------------------------------------------
@@ -12728,27 +12728,27 @@ function capabilityGlobalMutationScope(): { id: string; workFolderRoot: string }
 // ---------------------------------------------------------------------------
 
 /** Attribution the prepared-act verbs thread into automation grants: the initiating surface (docs/receipts-not-gates.md, F19). */
-function preparedActAttribution(surface: WorkFoldCliActSurface): PreparedActAttribution {
+function preparedActAttribution(surface: AmpleFileCliActSurface): PreparedActAttribution {
   return { surface };
 }
 
 /** The act executor's lineage resolution: an explicitly named management parent is valid while its turn is active. */
-function resolveWorkFoldAgentLineageParent(
+function resolveAmpleFileAgentLineageParent(
   state: LocalApiState,
   taskId: string,
 ): { taskId: string } | null {
   return state.requests.isAccepting(taskId) ? { taskId } : null;
 }
 
-function mapPreparedActError(error: PreparedActError): WorkFoldCliError {
+function mapPreparedActError(error: PreparedActError): AmpleFileCliError {
   switch (error.code) {
     case "KIND_UNKNOWN":
     case "INPUT_INVALID":
-      return new WorkFoldCliError("usage", error.message, { cause: error });
+      return new AmpleFileCliError("usage", error.message, { cause: error });
     case "PIN_MISMATCH":
-      return new WorkFoldCliError("conflict", error.message, { cause: error });
+      return new AmpleFileCliError("conflict", error.message, { cause: error });
     default:
-      return new WorkFoldCliError("unavailable", error.message, { cause: error });
+      return new AmpleFileCliError("unavailable", error.message, { cause: error });
   }
 }
 
@@ -12765,17 +12765,17 @@ async function runPreparedActOperation<T>(operation: () => Promise<T>): Promise<
  * The shared automation enablement door for the act lane and trusted desktop
  * Settings (docs/automations.md): normalize the declaration, check the
  * one-time horizon, verify the pinned digest and that every referenced
- * work-folder is registered, then run the `automation.enable` prepared act with the
+ * Connected Folder is registered, then run the `automation.enable` prepared act with the
  * normalized declaration as execution context. Keeping this outside the
  * act-facade closure prevents Settings from growing a second, subtly
  * different enablement path.
  */
 async function enableStoredAutomationDeclaration(
   state: LocalApiState,
-  declaration: WorkFoldAutomationDeclaration,
+  declaration: AmpleFileAutomationDeclaration,
   digest: string,
   context: {
-    surface: WorkFoldCliActSurface;
+    surface: AmpleFileCliActSurface;
     parentTaskId?: string;
     requestId?: string;
   },
@@ -12783,7 +12783,7 @@ async function enableStoredAutomationDeclaration(
   automationId: string;
   declarationDigest: string;
   title: string;
-  referencedWorkFolderIds: string[];
+  referencedConnectedFolderIds: string[];
   health: "enabled";
   enabledAt: string;
   /** True when this exact declaration was already on, so nothing changed. */
@@ -12791,26 +12791,26 @@ async function enableStoredAutomationDeclaration(
   /** A run that was executing the previous declaration and was stopped. */
   stoppedRunId: string | null;
 }> {
-  const normalized = normalizeWorkFoldAutomationDeclaration(declaration);
+  const normalized = normalizeAmpleFileAutomationDeclaration(declaration);
   try {
-    assertWorkFoldAutomationAtAdmissionHorizon(normalized, new Date());
+    assertAmpleFileAutomationAtAdmissionHorizon(normalized, new Date());
   } catch (error) {
-    throw new WorkFoldCliError("conflict", errorMessage(error), { cause: error });
+    throw new AmpleFileCliError("conflict", errorMessage(error), { cause: error });
   }
-  const actualDigest = workFoldAutomationDigest(normalized);
+  const actualDigest = ampleFileAutomationDigest(normalized);
   if (actualDigest !== digest) {
-    throw new WorkFoldCliError(
+    throw new AmpleFileCliError(
       "conflict",
       "The automation declaration no longer matches its digest; nothing was enabled.",
     );
   }
-  const referencedWorkFolderIds = workFoldAutomationReferencedWorkFolderIds(normalized);
-  for (const workFolderId of referencedWorkFolderIds) {
-    const registered = await getWorkFolder(workFolderId).catch(() => null);
+  const referencedConnectedFolderIds = ampleFileAutomationReferencedConnectedFolderIds(normalized);
+  for (const connectedFolderId of referencedConnectedFolderIds) {
+    const registered = await getConnectedFolder(connectedFolderId).catch(() => null);
     if (!registered) {
-      throw new WorkFoldCliError(
+      throw new AmpleFileCliError(
         "conflict",
-        `The Automation references a work-folder that is not registered on this machine (${workFolderId}).`,
+        `The Automation references a Connected Folder that is not registered on this machine (${connectedFolderId}).`,
       );
     }
   }
@@ -12835,7 +12835,7 @@ async function enableStoredAutomationDeclaration(
     automationId: normalized.id,
     declarationDigest: digest,
     title: normalized.title,
-    referencedWorkFolderIds,
+    referencedConnectedFolderIds,
     health: "enabled",
     enabledAt: record?.grants[record.grants.length - 1]?.enabledAt ?? new Date().toISOString(),
     alreadyEnabled,
@@ -12854,32 +12854,32 @@ async function enableStoredAutomationDeclaration(
 async function readAutomationStagingFile(
   proposalPath: string,
   cwd: string,
-): Promise<{ declaration: WorkFoldAutomationDeclaration; digest: string }> {
+): Promise<{ declaration: AmpleFileAutomationDeclaration; digest: string }> {
   const path = isAbsolute(proposalPath) ? resolve(proposalPath) : resolve(cwd, proposalPath);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await readWorkFoldAutomationDocument(path));
+    parsed = JSON.parse(await readAmpleFileAutomationDocument(path));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT" || errorMessage(error).includes("ordinary file")) {
-      throw new WorkFoldCliError("notFound", "The automation proposal must be a regular file on this machine.", { cause: error });
+      throw new AmpleFileCliError("notFound", "The automation proposal must be a regular file on this machine.", { cause: error });
     }
-    throw new WorkFoldCliError("usage", `The automation proposal is not readable JSON: ${errorMessage(error)}`, { cause: error });
+    throw new AmpleFileCliError("usage", `The automation proposal is not readable JSON: ${errorMessage(error)}`, { cause: error });
   }
   const kind = (parsed as { kind?: unknown } | null)?.kind;
   try {
-    if (kind === workFoldAutomationProposalKind) {
-      return contentAddressedWorkFoldAutomationDeclaration(normalizeWorkFoldAutomationProposal(parsed));
+    if (kind === ampleFileAutomationProposalKind) {
+      return contentAddressedAmpleFileAutomationDeclaration(normalizeAmpleFileAutomationProposal(parsed));
     }
-    if (kind === workFoldAutomationDeclarationKind) {
-      const declaration = normalizeWorkFoldAutomationDeclaration(parsed);
-      return { declaration, digest: workFoldAutomationDigest(declaration) };
+    if (kind === ampleFileAutomationDeclarationKind) {
+      const declaration = normalizeAmpleFileAutomationDeclaration(parsed);
+      return { declaration, digest: ampleFileAutomationDigest(declaration) };
     }
   } catch (error) {
-    throw new WorkFoldCliError("usage", errorMessage(error), { cause: error });
+    throw new AmpleFileCliError("usage", errorMessage(error), { cause: error });
   }
-  throw new WorkFoldCliError(
+  throw new AmpleFileCliError(
     "usage",
-    `The file is not a typed automation proposal (${workFoldAutomationProposalKind}) or declaration (${workFoldAutomationDeclarationKind}); nothing else is accepted.`,
+    `The file is not a typed automation proposal (${ampleFileAutomationProposalKind}) or declaration (${ampleFileAutomationDeclarationKind}); nothing else is accepted.`,
   );
 }
 
@@ -12896,17 +12896,17 @@ async function enumerateSkillBundleNames(fileName: string, bytes: Uint8Array): P
     const frontmatter = /^---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(markdown)?.[1] ?? "";
     const rawName = /^name\s*:\s*(.+?)\s*$/im.exec(frontmatter)?.[1]?.trim();
     const unquoted = rawName?.replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, (_match, d, s) => (d ?? s ?? "")).trim();
-    if (!unquoted) throw new WorkFoldCliError("usage", "SKILL.md must declare a name in YAML frontmatter.");
+    if (!unquoted) throw new AmpleFileCliError("usage", "SKILL.md must declare a name in YAML frontmatter.");
     return [unquoted];
   }
   if (extension !== ".zip" && extension !== ".skill") {
-    throw new WorkFoldCliError("usage", "Skills must be a SKILL.md file or use a .zip or .skill bundle.");
+    throw new AmpleFileCliError("usage", "Skills must be a SKILL.md file or use a .zip or .skill bundle.");
   }
   let archive: JSZip;
   try {
     archive = await JSZip.loadAsync(bytes);
   } catch (error) {
-    throw new WorkFoldCliError("usage", `Could not read the skill bundle: ${errorMessage(error)}`, { cause: error });
+    throw new AmpleFileCliError("usage", `Could not read the skill bundle: ${errorMessage(error)}`, { cause: error });
   }
   const bundleStem = basename(fileName, extname(fileName));
   const names = Object.values(archive.files)
@@ -12917,7 +12917,7 @@ async function enumerateSkillBundleNames(fileName: string, bytes: Uint8Array): P
       return segments.length ? segments[segments.length - 1]! : bundleStem;
     })
     .slice(0, 256);
-  if (!names.length) throw new WorkFoldCliError("usage", "The bundle does not contain a SKILL.md file.");
+  if (!names.length) throw new AmpleFileCliError("usage", "The bundle does not contain a SKILL.md file.");
   return [...new Set(names)].sort();
 }
 
@@ -12959,33 +12959,33 @@ function capabilityResourceSummary(details: {
 }
 
 /**
- * The exact work-folder file an app's single-file permission binds to. The work-folder
+ * The exact Connected Folder file an app's single-file permission binds to. The Connected Folder
  * path policy already refuses an escape, a symlinked segment, and reserved
- * `.work-fold/`, `.pi/`, and `.workspace/` metadata; this adds the one thing
+ * `.amplefile/`, `.pi/`, and `.workspace/` metadata; this adds the one thing
  * a grant root needs on top: the file has to exist as an ordinary file right
  * now. The broker re-verifies the same facts at effect time and on every
  * read, so this is an honest early refusal, not the authority.
  */
-async function grantedWorkFolderFile(workFolderRoot: string, relativePath: string): Promise<string> {
+async function grantedConnectedFolderFile(connectedFolderRoot: string, relativePath: string): Promise<string> {
   let path: string;
   try {
-    path = resolveWorkFolderPath(workFolderRoot, relativePath);
+    path = resolveConnectedFolderPath(connectedFolderRoot, relativePath);
   } catch (error) {
-    throw new WorkFoldCliError("usage", errorMessage(error), { cause: error });
+    throw new AmpleFileCliError("usage", errorMessage(error), { cause: error });
   }
-  // Canonical work-folder-relative form, so "./notes.md" and "notes.md" bind one root.
-  const normalized = relative(resolve(workFolderRoot), path).split(sep).join("/");
-  if (!normalized) throw new WorkFoldCliError("usage", "Name the file inside the work-folder that this permission covers.");
+  // Canonical Connected Folder–relative form, so "./notes.md" and "notes.md" bind one root.
+  const normalized = relative(resolve(connectedFolderRoot), path).split(sep).join("/");
+  if (!normalized) throw new AmpleFileCliError("usage", "Name the file inside the Connected Folder that this permission covers.");
   const info = await lstat(path).catch(() => null);
   if (!info || !info.isFile() || info.isSymbolicLink()) {
-    throw new WorkFoldCliError("notFound", "That file does not exist in this work-folder as an ordinary file.");
+    throw new AmpleFileCliError("notFound", "That file does not exist in this Connected Folder as an ordinary file.");
   }
   return normalized;
 }
 
 /**
  * The prepared-act fence over the exact reservation state the desktop routes
- * use: a work-folder scope reserves with runRestrictedAppMutation semantics, the
+ * use: a Connected Folder scope reserves with runRestrictedAppMutation semantics, the
  * global scope with runCapabilityMutation's global branch. A busy scope
  * refuses with the routes' own conflict, which the act facade translates into
  * the CLI's typed vocabulary. Project trust checks stay with the calling
@@ -12994,8 +12994,8 @@ async function grantedWorkFolderFile(workFolderRoot: string, relativePath: strin
 function createPreparedActFence(state: LocalApiState): PreparedActFence {
   return {
     run(scope, operation) {
-      return scope.scope === "work-folder"
-        ? runRestrictedAppMutation(state, scope.workFolderId, operation)
+      return scope.scope === "connected-folder"
+        ? runRestrictedAppMutation(state, scope.connectedFolderId, operation)
         : runCapabilityMutation(state, capabilityGlobalMutationScope(), "global", operation);
     },
   };
@@ -13003,7 +13003,7 @@ function createPreparedActFence(state: LocalApiState): PreparedActFence {
 
 /** Attribution a prepared act threads into automation grants. */
 interface PreparedActAttribution {
-  surface: WorkFoldCliActSurface;
+  surface: AmpleFileCliActSurface;
 }
 
 /**
@@ -13023,8 +13023,8 @@ interface PreparedActOutcome<T> {
   requestId?: string;
 }
 
-interface AutomationEnableContext extends PreparedActOutcome<WorkFoldAutomationRecord> {
-  declaration: WorkFoldAutomationDeclaration;
+interface AutomationEnableContext extends PreparedActOutcome<AmpleFileAutomationRecord> {
+  declaration: AmpleFileAutomationDeclaration;
   requestId: string;
   attribution: PreparedActAttribution;
 }
@@ -13045,12 +13045,12 @@ function createPreparedActAdapters(state: LocalApiState): PreparedActAdapters {
     "capability.skills.import": createSkillImportAdapter(state),
     "capability.package.install": createCapabilityPackageAdapter(state, "install"),
     "capability.package.update": createCapabilityPackageAdapter(state, "update"),
-    "capability.resource.enabled": resourceEnableAdapter(async (act) => act.parameters.scope === "work-folder" ? (await getWorkFolder(String(act.parameters.workFolderId))).workFolderRoot : workFoldAgentRoot(), state.runtimeProvider),
+    "capability.resource.enabled": resourceEnableAdapter(async (act) => act.parameters.scope === "connected-folder" ? (await getConnectedFolder(String(act.parameters.connectedFolderId))).connectedFolderRoot : ampleFileAgentRoot(), state.runtimeProvider),
     "app.connection.save": createAppConnectionSaveAdapter(state),
     "app.data.purge": createAppDataPurgeAdapter(state),
     "app.storage.clear": createAppStorageClearAdapter(state),
     "automation.enable": createAutomationEnableAdapter(state),
-    "work-folder.delete-folder": createManagedWorkFolderDeletionAdapter(state),
+    "connected-folder.delete-folder": createManagedConnectedFolderDeletionAdapter(state),
   };
 }
 
@@ -13072,7 +13072,7 @@ function createAppReviewInstallAdapter(
   const recheck = async (act: PreparedAct): Promise<string | null> => {
     const proposal = await state.restrictedAppProposals.get(stringPinValue(act, "proposalId"));
     if (!proposal) return "The app review no longer exists; it was removed or superseded.";
-    if (proposal.workFolderId !== act.parameters.workFolderId) return "The app review belongs to a different work-folder.";
+    if (proposal.connectedFolderId !== act.parameters.connectedFolderId) return "The app review belongs to a different Connected Folder.";
     if (proposal.review.digest !== act.pins.reviewDigest) {
       return "The reviewed package no longer matches the pinned review; the source changed after review.";
     }
@@ -13097,15 +13097,15 @@ type AppGrantKind = "app.grant.network" | "app.grant.files" | "app.grant.notific
  * `app.grant.network|files|notifications` — the same grant path agent
  * tools uses, addressed by the pinned App Instance identity and re-verified
  * against the installed digest and the exact reviewed declaration. A file
- * grant binds to the whole work-folder (docs/receipts-not-gates.md, F21).
+ * grant binds to the whole Connected Folder (docs/receipts-not-gates.md, F21).
  */
 function createAppGrantAdapter(
   state: LocalApiState,
   kind: AppGrantKind,
 ): PreparedActAdapter<{ root?: string } | undefined> {
   const resolve = async (act: PreparedAct): Promise<{ app: RestrictedAppInstalled } | { issue: string }> => {
-    const app = await state.restrictedApps.findByFeatureInstallation(String(act.parameters.workFolderId), stringPinValue(act, "appInstanceId"));
-    if (!app) return { issue: "The App Instance is no longer installed in this work-folder." };
+    const app = await state.restrictedApps.findByFeatureInstallation(String(act.parameters.connectedFolderId), stringPinValue(act, "appInstanceId"));
+    if (!app) return { issue: "The App Instance is no longer installed in this Connected Folder." };
     if ((app.releaseDigest ?? app.digest) !== act.pins.releaseDigest) {
       return { issue: "The installed app no longer matches the pinned release; it changed after the request was prepared." };
     }
@@ -13129,7 +13129,7 @@ function createAppGrantAdapter(
       const { app } = resolved;
       const declarationId = stringPinValue(act, "declarationId");
       const base = {
-        workFolderId: app.workFolderId,
+        connectedFolderId: app.connectedFolderId,
         appId: app.manifest.id,
         featureInstallationId: app.featureInstallationId,
         expectedDigest: app.digest,
@@ -13149,10 +13149,10 @@ function createAppGrantAdapter(
         };
       }
       const root = context?.root ?? ".";
-      const workFolder = await getWorkFolder(app.workFolderId);
-      await state.restrictedApps.grantFiles({ ...base, workFolderRoot: workFolder.workFolderRoot, permissionId: declarationId, root });
+      const connectedFolder = await getConnectedFolder(app.connectedFolderId);
+      await state.restrictedApps.grantFiles({ ...base, connectedFolderRoot: connectedFolder.connectedFolderRoot, permissionId: declarationId, root });
       return {
-        detail: `Granted work-folder file access "${declarationId}" (root "${root}") to ${app.manifest.id}.`,
+        detail: `Granted Connected Folder file access "${declarationId}" (root "${root}") to ${app.manifest.id}.`,
         undoRef: { kind: "declaration", value: declarationId },
       };
     },
@@ -13168,8 +13168,8 @@ function createAppGrantAdapter(
  */
 function createAppAutomationEnableAdapter(state: LocalApiState): PreparedActAdapter {
   const resolve = async (act: PreparedAct): Promise<{ app: RestrictedAppInstalled } | { issue: string }> => {
-    const app = await state.restrictedApps.findByFeatureInstallation(String(act.parameters.workFolderId), stringPinValue(act, "appInstanceId"));
-    if (!app) return { issue: "The App Instance is no longer installed in this work-folder." };
+    const app = await state.restrictedApps.findByFeatureInstallation(String(act.parameters.connectedFolderId), stringPinValue(act, "appInstanceId"));
+    if (!app) return { issue: "The App Instance is no longer installed in this Connected Folder." };
     // Automations bind to the package digest they were reviewed under, the
     // same identity automation run receipts capture.
     if (app.digest !== act.pins.reviewedDigest) {
@@ -13194,7 +13194,7 @@ function createAppAutomationEnableAdapter(state: LocalApiState): PreparedActAdap
       const { app } = resolved;
       const appAutomationId = stringPinValue(act, "appAutomationId");
       await state.restrictedApps.setAppAutomationEnabled({
-        workFolderId: app.workFolderId,
+        connectedFolderId: app.connectedFolderId,
         appId: app.manifest.id,
         featureInstallationId: app.featureInstallationId,
         expectedDigest: app.digest,
@@ -13213,8 +13213,8 @@ function createAppAutomationEnableAdapter(state: LocalApiState): PreparedActAdap
  * `capability.skills.import` — the existing import path, digest-verified: the
  * pinned content digest names the exact inspected bytes, and the enumerated
  * skill names are derived from those bytes, so digest equality is the whole
- * identity recheck. work-folder scope resolves the work-folder's folder; Everywhere scope
- * has no work-folder, so it names the same app-owned neutral root the act facade's
+ * identity recheck. Connected Folder scope resolves the Connected Folder's folder; Everywhere scope
+ * has no Connected Folder, so it names the same app-owned neutral root the act facade's
  * Everywhere-scope tools verbs resolve against.
  */
 function createSkillImportAdapter(
@@ -13242,19 +13242,19 @@ function createSkillImportAdapter(
     async execute(act, context) {
       const loaded = await loadVerified(act);
       if ("issue" in loaded) throw new Error(loaded.issue);
-      const root = act.parameters.scope === "work-folder"
-        ? (await getWorkFolder(String(act.parameters.workFolderId))).workFolderRoot
-        : workFoldAgentRoot();
+      const root = act.parameters.scope === "connected-folder"
+        ? (await getConnectedFolder(String(act.parameters.connectedFolderId))).connectedFolderRoot
+        : ampleFileAgentRoot();
       const result = await importPiSkillBundleVerified(root, {
         fileName: loaded.bundle.fileName,
         bytes: loaded.bundle.bytes,
-        scope: act.parameters.scope === "work-folder" ? "project" : "user",
+        scope: act.parameters.scope === "connected-folder" ? "project" : "user",
         expectedContentDigest: String(act.pins.contentDigest),
       }, state.runtimeProvider);
       if (context) context.outcome = result;
       const names = result.skills.map((skill) => skill.name).join(", ");
       return {
-        detail: `Imported ${result.skills.length === 1 ? "skill" : "skills"} ${names} at ${result.scope === "user" ? "Everywhere" : "This work-folder"} scope.`,
+        detail: `Imported ${result.skills.length === 1 ? "skill" : "skills"} ${names} at ${result.scope === "user" ? "Everywhere" : "This Connected Folder"} scope.`,
         undoRef: { kind: "skill-bundle-path", value: result.bundlePath },
       };
     },
@@ -13289,41 +13289,41 @@ async function loadSkillBundleForAct(
 /**
  * `capability.package.install|update` — the same capability-mutation
  * internals as the desktop package routes, executed inside the fence's
- * reservation (work-folder scope for a work-folder-scoped package, global for Everywhere
+ * reservation (Connected Folder scope for a Connected Folder–scoped package, global for Everywhere
  * scope) instead of reserving twice. Project trust is rechecked at effect
- * time so an untrusted work-folder refuses instead of loading code.
+ * time so an untrusted Connected Folder refuses instead of loading code.
  */
 function createCapabilityPackageAdapter(
   state: LocalApiState,
   operation: "install" | "update",
 ): PreparedActAdapter {
-  const scopeOf = (act: PreparedAct): "everywhere" | "work-folder" =>
-    (act.pins.scope ?? act.parameters.scope) === "work-folder" ? "work-folder" : "everywhere";
-  const workFolderOf = async (act: PreparedAct): Promise<WorkFolderSummary | null> => {
-    const workFolderId = act.parameters.workFolderId;
-    if (typeof workFolderId !== "string") return null;
+  const scopeOf = (act: PreparedAct): "everywhere" | "connected-folder" =>
+    (act.pins.scope ?? act.parameters.scope) === "connected-folder" ? "connected-folder" : "everywhere";
+  const connectedFolderOf = async (act: PreparedAct): Promise<ConnectedFolderSummary | null> => {
+    const connectedFolderId = act.parameters.connectedFolderId;
+    if (typeof connectedFolderId !== "string") return null;
     try {
-      return await getWorkFolder(workFolderId);
+      return await getConnectedFolder(connectedFolderId);
     } catch {
       return null;
     }
   };
   return {
     async recheckPins(act) {
-      if (scopeOf(act) !== "work-folder") return null;
-      const workFolder = await workFolderOf(act);
-      if (!workFolder) return "The work-folder is no longer registered.";
-      return await isPiProjectMutationTrusted(workFolder.workFolderRoot, state.runtimeProvider)
+      if (scopeOf(act) !== "connected-folder") return null;
+      const connectedFolder = await connectedFolderOf(act);
+      if (!connectedFolder) return "The Connected Folder is no longer registered.";
+      return await isPiProjectMutationTrusted(connectedFolder.connectedFolderRoot, state.runtimeProvider)
         ? null
-        : "Trust this work-folder before changing work-folder-scoped capabilities.";
+        : "Trust this Connected Folder before changing Connected Folder–scoped capabilities.";
     },
     async execute(act) {
       const scope = scopeOf(act);
-      const workFolder = scope === "work-folder" ? await workFolderOf(act) : null;
-      if (scope === "work-folder" && !workFolder) throw new Error("The work-folder is no longer registered.");
-      const root = workFolder?.workFolderRoot ?? workFoldAgentRoot();
+      const connectedFolder = scope === "connected-folder" ? await connectedFolderOf(act) : null;
+      if (scope === "connected-folder" && !connectedFolder) throw new Error("The Connected Folder is no longer registered.");
+      const root = connectedFolder?.connectedFolderRoot ?? ampleFileAgentRoot();
       const source = String(act.pins.source);
-      const piScope = scope === "work-folder" ? "project" as const : "user" as const;
+      const piScope = scope === "connected-folder" ? "project" as const : "user" as const;
       if (operation === "install") {
         await installPiPackage(root, source, { scope: piScope, runtimeProvider: state.runtimeProvider });
       } else {
@@ -13331,7 +13331,7 @@ function createCapabilityPackageAdapter(
       }
       return {
         detail: `${operation === "install" ? "Installed" : "Updated"} ${String(act.pins.packageId)}@${String(act.pins.version)} `
-          + `from ${source} at ${piScope === "user" ? "Everywhere" : "This work-folder"} scope.`,
+          + `from ${source} at ${piScope === "user" ? "Everywhere" : "This Connected Folder"} scope.`,
         undoRef: { kind: "package-source", value: source },
       };
     },
@@ -13342,7 +13342,7 @@ function createCapabilityPackageAdapter(
  * `app.connection.save` — opens the existing host connection flow scoped to
  * the pinned declaration. Only the browser OAuth flow can run without a
  * person typing a secret, so form-credential shapes refuse: the secret is
- * entered in Settings → Apps, never through the work-fold agent, and the act carries only
+ * entered in Settings → Apps, never through the AmpleFile agent, and the act carries only
  * the connection's shape.
  */
 function createAppConnectionSaveAdapter(
@@ -13354,8 +13354,8 @@ function createAppConnectionSaveAdapter(
     | { issue: string }
     | { app: RestrictedAppInstalled; destination: RestrictedAppNetworkDeclaration }
   > => {
-    const app = await state.restrictedApps.findByFeatureInstallation(String(act.parameters.workFolderId), stringPinValue(act, "appInstanceId"));
-    if (!app) return { issue: "The App Instance is no longer installed in this work-folder." };
+    const app = await state.restrictedApps.findByFeatureInstallation(String(act.parameters.connectedFolderId), stringPinValue(act, "appInstanceId"));
+    if (!app) return { issue: "The App Instance is no longer installed in this Connected Folder." };
     const declarationId = String(act.pins.declarationId);
     const destination = app.manifest.permissions.network.find((item) => item.id === declarationId);
     if (!destination) return { issue: "The app no longer declares this connection destination." };
@@ -13379,7 +13379,7 @@ function createAppConnectionSaveAdapter(
       const resolved = await resolve(act);
       if ("issue" in resolved) throw new Error(resolved.issue);
       const connection = await state.restrictedApps.connectOAuth({
-        workFolderId: resolved.app.workFolderId,
+        connectedFolderId: resolved.app.connectedFolderId,
         appId: resolved.app.manifest.id,
         destinationId: resolved.destination.id,
         expectedDigest: resolved.app.digest,
@@ -13400,15 +13400,15 @@ function createAppStorageClearAdapter(
     | { issue: string }
     | { app: RestrictedAppInstalled; observedBytes: number }
   > => {
-    const workFolderId = String(act.parameters.workFolderId);
-    const app = await state.restrictedApps.findByFeatureInstallation(workFolderId, stringPinValue(act, "appInstanceId"));
-    if (!app) return { issue: "The App Instance is no longer installed in this work-folder." };
+    const connectedFolderId = String(act.parameters.connectedFolderId);
+    const app = await state.restrictedApps.findByFeatureInstallation(connectedFolderId, stringPinValue(act, "appInstanceId"));
+    if (!app) return { issue: "The App Instance is no longer installed in this Connected Folder." };
     const namespaces = act.pins.dataNamespaceIds;
     if (!Array.isArray(namespaces) || namespaces.length !== 1 || namespaces[0] !== app.dataNamespaceId) {
       return { issue: "The app's Data Namespace no longer matches the pinned storage identity." };
     }
     try {
-      const usage = await state.restrictedApps.storageUsage(workFolderId, app.manifest.id, app.digest, app.featureInstallationId);
+      const usage = await state.restrictedApps.storageUsage(connectedFolderId, app.manifest.id, app.digest, app.featureInstallationId);
       if (usage.usageBytes !== act.pins.observedBytes) {
         return { issue: `The app's live storage changed after the request was prepared (${String(act.pins.observedBytes)} → ${usage.usageBytes} bytes).` };
       }
@@ -13429,7 +13429,7 @@ function createAppStorageClearAdapter(
       // (docs/receipts-not-gates.md, F20).
       const entry = await moveAppStorageExportToRecentlyDeleted(state, resolved.app, "apps.storage.clear", context?.requestId ?? null);
       const cleared = await state.restrictedApps.clearStorage(
-        resolved.app.workFolderId,
+        resolved.app.connectedFolderId,
         resolved.app.manifest.id,
         resolved.app.digest,
         resolved.app.featureInstallationId,
@@ -13459,9 +13459,9 @@ function createAppDataPurgeAdapter(
     }
     const namespaceId = namespaceIds[0]!;
     if (target === "retained") {
-      const sourceWorkFolderId = String(act.pins.sourceWorkFolderId ?? act.parameters.workFolderId);
+      const sourceConnectedFolderId = String(act.pins.sourceConnectedFolderId ?? act.parameters.connectedFolderId);
       const retainedDataId = String(act.pins.retainedDataId ?? "");
-      const studio = await state.restrictedApps.localAppStudio(sourceWorkFolderId).catch(() => null);
+      const studio = await state.restrictedApps.localAppStudio(sourceConnectedFolderId).catch(() => null);
       const retained = studio?.retainedData.find((item) => item.retainedDataId === retainedDataId);
       if (!retained) return { issue: "The retained App data record no longer exists." };
       if (retained.featureInstallationId !== act.pins.appInstanceId || retained.dataNamespaceId !== namespaceId) {
@@ -13470,17 +13470,17 @@ function createAppDataPurgeAdapter(
       return { target, retainedDataId, namespaceId };
     }
     if (target === "runtime-instance") {
-      const workFolderId = String(act.parameters.workFolderId);
+      const connectedFolderId = String(act.parameters.connectedFolderId);
       const runtimeInstanceId = String(act.pins.runtimeInstanceId ?? "");
-      const installed = (await state.restrictedApps.list(workFolderId)).find((app) => (
+      const installed = (await state.restrictedApps.list(connectedFolderId)).find((app) => (
         app.runtimeInstanceKind === "app" && app.runtimeInstanceId === runtimeInstanceId
       ));
       if (!installed) return { issue: "The Local App Instance is no longer installed." };
       if (installed.featureInstallationId !== act.pins.appInstanceId || installed.dataNamespaceId !== namespaceId) {
         return { issue: "The Local App Instance data identity changed after the request was prepared." };
       }
-      if (act.pins.sourceWorkFolderId !== undefined && installed.sourceWorkFolderId !== act.pins.sourceWorkFolderId) {
-        return { issue: "The Local App Instance source work-folder changed after the request was prepared." };
+      if (act.pins.sourceConnectedFolderId !== undefined && installed.sourceConnectedFolderId !== act.pins.sourceConnectedFolderId) {
+        return { issue: "The Local App Instance source Connected Folder changed after the request was prepared." };
       }
       return { target, runtimeInstanceId, namespaceId };
     }
@@ -13499,11 +13499,11 @@ function createAppDataPurgeAdapter(
       if (resolved.target === "retained") {
         // A copy of the retained record lands in Recently deleted before the
         // namespace goes (docs/receipts-not-gates.md, F20).
-        const sourceWorkFolderId = String(act.pins.sourceWorkFolderId ?? act.parameters.workFolderId);
-        const studio = await state.restrictedApps.localAppStudio(sourceWorkFolderId);
+        const sourceConnectedFolderId = String(act.pins.sourceConnectedFolderId ?? act.parameters.connectedFolderId);
+        const studio = await state.restrictedApps.localAppStudio(sourceConnectedFolderId);
         const record = studio.retainedData.find((item) => item.retainedDataId === resolved.retainedDataId);
         if (!record) throw new Error("The retained App data record disappeared before execution.");
-        const entry = await moveRetainedExportToRecentlyDeleted(state, sourceWorkFolderId, record, "apps.retained.purge", receiptId);
+        const entry = await moveRetainedExportToRecentlyDeleted(state, sourceConnectedFolderId, record, "apps.retained.purge", receiptId);
         const result = await state.restrictedApps.purgeLocalAppRetainedData(resolved.retainedDataId);
         if (!result.purged) throw new Error("The retained App data record disappeared before execution.");
         if (context) context.outcome = { cleanupPending: result.cleanupPending, recentlyDeleted: [{ entryId: entry.id, restoreBy: entry.restoreBy }] };
@@ -13516,7 +13516,7 @@ function createAppDataPurgeAdapter(
       const entries = await moveUninstallPurgeExportsToRecentlyDeleted(
         state,
         resolved.runtimeInstanceId,
-        [String(act.parameters.workFolderId), String(act.pins.sourceWorkFolderId ?? act.parameters.workFolderId)],
+        [String(act.parameters.connectedFolderId), String(act.pins.sourceConnectedFolderId ?? act.parameters.connectedFolderId)],
         receiptId,
       );
       const result = await state.restrictedApps.uninstallLocalApp({
@@ -13544,7 +13544,7 @@ function createAppDataPurgeAdapter(
  * `automation.enable` — the enablement receipt of docs/automations.md. The
  * normalized declaration arrives as execution context from the calling verb,
  * is re-verified against the pinned digest and automation id, and every
- * referenced work-folder must still be registered. Execution commits the
+ * referenced Connected Folder must still be registered. Execution commits the
  * declaration and the exact-authority grant through the automation service with
  * the act's request id as the grant identity; the store itself re-refuses a
  * declaration that no longer hashes to the pinned digest, and enabling an
@@ -13554,13 +13554,13 @@ function createAutomationEnableAdapter(state: LocalApiState): PreparedActAdapter
   const verify = async (act: PreparedAct, context: AutomationEnableContext | undefined): Promise<string | null> => {
     const declaration = context?.declaration;
     if (!declaration) return "The automation declaration to enable was not supplied.";
-    if (workFoldAutomationDigest(declaration) !== act.pins.declarationDigest) {
+    if (ampleFileAutomationDigest(declaration) !== act.pins.declarationDigest) {
       return "The automation declaration no longer hashes to the digest this act pinned.";
     }
     if (declaration.id !== act.pins.automationId) return "The declaration names a different automation than this act pinned.";
-    for (const workFolderId of workFoldAutomationReferencedWorkFolderIds(declaration)) {
-      const registered = await getWorkFolder(workFolderId).catch(() => null);
-      if (!registered) return `The automation references a work-folder that is no longer registered (${workFolderId}).`;
+    for (const connectedFolderId of ampleFileAutomationReferencedConnectedFolderIds(declaration)) {
+      const registered = await getConnectedFolder(connectedFolderId).catch(() => null);
+      if (!registered) return `The automation references a Connected Folder that is no longer registered (${connectedFolderId}).`;
     }
     return null;
   };
@@ -13599,19 +13599,19 @@ function createAutomationEnableAdapter(state: LocalApiState): PreparedActAdapter
 }
 
 /**
- * `work-folder.delete-folder` — the managed removal path. Pin recheck re-verifies
+ * `connected-folder.delete-folder` — the managed removal path. Pin recheck re-verifies
  * the registered identity and canonical root; the `.workspace/` fail-closed
  * rule and managed-root identity claims are re-checked by the removal
  * machinery itself at execution. The complete desktop removal orchestration
  * — impact checks, Check, automation, and app-state revocation, claim-verified
- * managed deletion — is shared with DELETE /api/work-folders/:id and `work-folders
+ * managed deletion — is shared with DELETE /api/connected-folders/:id and `connected-folders
  * unregister`. It reserves its own capability fences across every affected
- * work-folder, so the adapter's null fenceScope keeps the executor from reserving
+ * Connected Folder, so the adapter's null fenceScope keeps the executor from reserving
  * twice.
  */
-function createManagedWorkFolderDeletionAdapter(
+function createManagedConnectedFolderDeletionAdapter(
   state: LocalApiState,
-): PreparedActAdapter<PreparedActOutcome<WorkFolderRemovalResult & {
+): PreparedActAdapter<PreparedActOutcome<ConnectedFolderRemovalResult & {
   recentlyDeleted: { entryId: string; restoreBy: string } | null;
   appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
   appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
@@ -13619,22 +13619,22 @@ function createManagedWorkFolderDeletionAdapter(
   return {
     fenceScope: () => null,
     recheckPins(act) {
-      return managedWorkFolderDeletionPinIssue({
-        workFolderId: stringPinValue(act, "workFolderId"),
-        workFolderRoot: stringPinValue(act, "workFolderRoot"),
+      return managedConnectedFolderDeletionPinIssue({
+        connectedFolderId: stringPinValue(act, "connectedFolderId"),
+        connectedFolderRoot: stringPinValue(act, "connectedFolderRoot"),
       });
     },
     async execute(act, context) {
-      const workFolder = await getWorkFolder(String(act.pins.workFolderId ?? act.parameters.workFolderId));
-      const result = await removeWorkFolderRegistrationInternal(state, workFolder, { receiptId: context?.requestId ?? null });
+      const connectedFolder = await getConnectedFolder(String(act.pins.connectedFolderId ?? act.parameters.connectedFolderId));
+      const result = await removeConnectedFolderRegistrationInternal(state, connectedFolder, { receiptId: context?.requestId ?? null });
       if (context) context.outcome = result;
       const trashed = (result.recentlyDeleted ? `; trash ${result.recentlyDeleted.entryId}` : "")
         + (result.appRecentlyDeletedEntries.length ? `; app data ${result.appRecentlyDeletedEntries.map((item) => item.entryId).join(", ")}` : "")
         + (result.appStudioRecentlyDeleted ? `; App Studio ${result.appStudioRecentlyDeleted.entryId}` : "");
       return {
         detail: result.cleanupPending
-          ? `Moved the managed work-folder's folder ${workFolder.workFolderRoot} to Recently deleted${trashed}; final cleanup completes at the next start.`
-          : `Moved the managed work-folder's folder ${workFolder.workFolderRoot} to Recently deleted${trashed}.`,
+          ? `Moved the managed Connected Folder's folder ${connectedFolder.connectedFolderRoot} to Recently deleted${trashed}; final cleanup completes at the next start.`
+          : `Moved the managed Connected Folder's folder ${connectedFolder.connectedFolderRoot} to Recently deleted${trashed}.`,
         ...(result.recentlyDeleted ? { undoRef: { kind: "recently-deleted-entry", value: result.recentlyDeleted.entryId } } : {}),
       };
     },
@@ -13644,35 +13644,35 @@ function createManagedWorkFolderDeletionAdapter(
 /**
  * The automation executor's hop ports: the same in-process internals the act
  * facade uses — turn acceptance in a fresh Chat, a new thread of the
- * work-fold agent, the files-add copy with its restore point,
+ * AmpleFile agent, the files-add copy with its restore point,
  * reserved Check runs — honoring aborts through each domain's own abort path,
  * and returning identifiers and counts only. The executor fills every
  * placeholder before it calls a message port, so `message` is exactly what
  * the hop sends.
  */
-function createAutomationHopPorts(state: LocalApiState): WorkFoldAutomationHopPorts {
+function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomationHopPorts {
   return {
     async chat(step, message, context) {
-      const workFolder = await getWorkFolder(step.workFolder);
-      const conversation = await createConversation(workFolder.workFolderRoot);
+      const connectedFolder = await getConnectedFolder(step.connectedFolder);
+      const conversation = await createConversation(connectedFolder.connectedFolderRoot);
       // A step's own model applies to this new Chat only: Pi records it in the
-      // session without touching the work-folder's or anyone's defaults.
-      if (step.model) await (await getClient(state, workFolder.id, workFolder.workFolderRoot, conversation.id)).setModel(step.model.provider, step.model.id);
+      // session without touching the Connected Folder's or anyone's defaults.
+      if (step.model) await (await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, conversation.id)).setModel(step.model.provider, step.model.id);
       const checkpoints: { pre?: string; post?: string } = {};
       const observer = (event: TurnCheckpointEvent): void => {
-        if (event.workFolderId !== workFolder.id || event.conversationId !== conversation.id) return;
+        if (event.connectedFolderId !== connectedFolder.id || event.conversationId !== conversation.id) return;
         if (event.reason === "pre_turn") checkpoints.pre ??= event.checkpointId;
         else checkpoints.post = event.checkpointId;
       };
       state.turnCheckpointListeners.add(observer);
       try {
-        const { taskId } = await acceptConversationTurn(state, workFolder, conversation.id, {
+        const { taskId } = await acceptConversationTurn(state, connectedFolder, conversation.id, {
           content: message,
           contextPaths: [],
           actorKind: "system",
           automationSource: { automationId: context.automationId, title: context.title },
         });
-        const settled = await waitForSettledRequest(state, workFolder.id, conversation.id, taskId, context.signal);
+        const settled = await waitForSettledRequest(state, connectedFolder.id, conversation.id, taskId, context.signal);
         const result = await completedRequestEnvelope(state, taskId);
         return {
           conversationId: conversation.id,
@@ -13692,18 +13692,18 @@ function createAutomationHopPorts(state: LocalApiState): WorkFoldAutomationHopPo
     // management thread: standing behavior must not entangle a conversation
     // someone is in the middle of, and turn-conflict rejection stays exact.
     // The acceptance shape is byte-for-byte the one `agent send` uses.
-    async workFoldAgent(step, message, context) {
-      if (state.workFoldAgentInstructionsError) {
-        throw new Error("The work-fold agent is unavailable because work-fold could not prepare its instructions.");
+    async ampleFileAgent(step, message, context) {
+      if (state.ampleFileAgentInstructionsError) {
+        throw new Error("The AmpleFile agent is unavailable because AmpleFile could not prepare its instructions.");
       }
-      const scope = workFoldAgentScopeForRoutes(state);
+      const scope = ampleFileAgentScopeForRoutes(state);
       const conversation = await createConversation(scope.rootPath);
       if (step.model) await (await getClient(state, scope.id, scope.rootPath, conversation.id)).setModel(step.model.provider, step.model.id);
-      const { taskId } = await acceptConversationTurn(state, { id: scope.id, workFolderRoot: scope.rootPath }, conversation.id, {
+      const { taskId } = await acceptConversationTurn(state, { id: scope.id, connectedFolderRoot: scope.rootPath }, conversation.id, {
         content: message,
         contextPaths: [],
         actorKind: "system",
-        workFoldAgentAttachments: [],
+        ampleFileAgentAttachments: [],
         automationSource: { automationId: context.automationId, title: context.title },
       });
       const settled = await waitForSettledRequest(state, scope.id, conversation.id, taskId, context.signal);
@@ -13716,18 +13716,18 @@ function createAutomationHopPorts(state: LocalApiState): WorkFoldAutomationHopPo
       };
     },
     async modelProblem(model, scope) {
-      const root = "workFolder" in scope ? (await getWorkFolder(scope.workFolder)).workFolderRoot : workFoldAgentScopeForRoutes(state).rootPath;
+      const root = "connectedFolder" in scope ? (await getConnectedFolder(scope.connectedFolder)).connectedFolderRoot : ampleFileAgentScopeForRoutes(state).rootPath;
       const known = (await listPiModels(root, state.runtimeProvider)).find((item) => item.provider === model.provider && item.id === model.id);
-      if (!known) return `work-fold does not know the model ${model.id} from ${model.provider}. Choose one Settings → AI Models lists.`;
+      if (!known) return `AmpleFile does not know the model ${model.id} from ${model.provider}. Choose one Settings → AI Models lists.`;
       if (!known.configured) return `${known.name} needs ${known.providerName} connected in Settings → AI Models first.`;
       return null;
     },
-    async checkRunFindings(workFolderId, taskId) {
-      const workFolder = await getWorkFolder(workFolderId).catch(() => null);
-      if (!workFolder) return null;
+    async checkRunFindings(connectedFolderId, taskId) {
+      const connectedFolder = await getConnectedFolder(connectedFolderId).catch(() => null);
+      if (!connectedFolder) return null;
       let run: Awaited<ReturnType<typeof state.checks.taskResult>>;
       try {
-        run = await state.checks.taskResult(workFolder.id, taskId);
+        run = await state.checks.taskResult(connectedFolder.id, taskId);
       } catch {
         return null;
       }
@@ -13745,7 +13745,7 @@ function createAutomationHopPorts(state: LocalApiState): WorkFoldAutomationHopPo
     async files(step, source, context) {
       const reserved: string[] = [];
       try {
-        for (const id of [...new Set([step.fromWorkFolder, step.toWorkFolder])].sort()) {
+        for (const id of [...new Set([step.fromConnectedFolder, step.toConnectedFolder])].sort()) {
           reserveCapabilityMutation(state, id, "project", id);
           reserved.push(id);
         }
@@ -13753,26 +13753,26 @@ function createAutomationHopPorts(state: LocalApiState): WorkFoldAutomationHopPo
         // with its restore point or fails as one unit, so the signal is only a
         // pre-flight refusal here.
         if (context.signal.aborted) throw new Error("The run was aborted before this hop copied anything.");
-        const from = await getWorkFolder(step.fromWorkFolder);
-        const to = await getWorkFolder(step.toWorkFolder);
-        const absoluteSources = await resolveAutomationFilesSources(from.workFolderRoot, source);
+        const from = await getConnectedFolder(step.fromConnectedFolder);
+        const to = await getConnectedFolder(step.toConnectedFolder);
+        const absoluteSources = await resolveAutomationFilesSources(from.connectedFolderRoot, source);
         const copied: string[] = [];
         try {
           for (const sourcePath of absoluteSources) {
-            copied.push(await copyPathIntoWorkFolder(sourcePath, to.workFolderRoot, step.to));
+            copied.push(await copyPathIntoConnectedFolder(sourcePath, to.connectedFolderRoot, step.to));
           }
         } catch (error) {
           // A mid-batch failure must not strand earlier copies without a
           // restore point: undo them best-effort, then surface the failure.
           await Promise.all(copied.map((path) =>
-            rm(resolveWorkFolderPath(to.workFolderRoot, path), { recursive: true, force: true }).catch(() => undefined)));
+            rm(resolveConnectedFolderPath(to.connectedFolderRoot, path), { recursive: true, force: true }).catch(() => undefined)));
           throw error;
         }
-        const safety = await checkpointAdditiveWritesOrUndo(to.workFolderRoot, copied, {
+        const safety = await checkpointAdditiveWritesOrUndo(to.connectedFolderRoot, copied, {
           reason: "pre_add",
           label: `Before automation hop ${step.id} added ${copied.length} item${copied.length === 1 ? "" : "s"}`,
         });
-        const measured = await measureWorkFolderEntries(to.workFolderRoot, copied);
+        const measured = await measureConnectedFolderEntries(to.connectedFolderRoot, copied);
         return {
           ...(safety ? { restorePointId: safety.checkpointId } : {}),
           copiedPaths: copied,
@@ -13782,28 +13782,28 @@ function createAutomationHopPorts(state: LocalApiState): WorkFoldAutomationHopPo
       } finally { for (const id of reserved) state.capabilityMutations.delete(id); }
     },
     async check(step, context) {
-      const workFolder = await getWorkFolder(step.workFolder);
-      const accepted = await runReservedCheckOperation(state, workFolder.id, () => state.checks.run({
-        workFolder,
+      const connectedFolder = await getConnectedFolder(step.connectedFolder);
+      const accepted = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.run({
+        connectedFolder,
         ...(step.check !== undefined ? { checkId: step.check } : {}),
-        actor: { kind: "system", workFolderId: workFolder.id },
+        actor: { kind: "system", connectedFolderId: connectedFolder.id },
         // Lineage stamps the settle record so automation-caused runs never fire
         // on-settled triggers — chains stay structurally impossible.
         lineage: context.lineage,
       }));
       const requestAbort = (): void => {
-        void state.checks.abort(workFolder.id, accepted.taskId).catch(() => undefined);
+        void state.checks.abort(connectedFolder.id, accepted.taskId).catch(() => undefined);
       };
       if (context.signal.aborted) requestAbort();
       context.signal.addEventListener("abort", requestAbort, { once: true });
       try {
         for (;;) {
-          const status = await state.checks.taskStatus(workFolder.id, accepted.taskId);
-          if (status.state === "unknown") throw new Error("work-fold lost track of this Check run.");
+          const status = await state.checks.taskStatus(connectedFolder.id, accepted.taskId);
+          if (status.state === "unknown") throw new Error("AmpleFile lost track of this Check run.");
           if (status.state !== "accepted" && status.state !== "running") break;
           await settleDelay(50);
         }
-        const run = await state.checks.taskResult(workFolder.id, accepted.taskId);
+        const run = await state.checks.taskResult(connectedFolder.id, accepted.taskId);
         if (run.state === "accepted" || run.state === "running") {
           throw new Error("The Check run has not settled.");
         }
@@ -13820,10 +13820,10 @@ function createAutomationHopPorts(state: LocalApiState): WorkFoldAutomationHopPo
         context.signal.removeEventListener("abort", requestAbort);
       }
     },
-    async checkpointManifest(workFolderId, checkpointId) {
-      const workFolder = await getWorkFolder(workFolderId).catch(() => null);
-      if (!workFolder) return null;
-      const checkpoint = await getWorkFolderCheckpoint(workFolder.workFolderRoot, checkpointId);
+    async checkpointManifest(connectedFolderId, checkpointId) {
+      const connectedFolder = await getConnectedFolder(connectedFolderId).catch(() => null);
+      if (!connectedFolder) return null;
+      const checkpoint = await getConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, checkpointId);
       if (!checkpoint) return null;
       return {
         files: checkpoint.files.map((file) => ({
@@ -13838,32 +13838,32 @@ function createAutomationHopPorts(state: LocalApiState): WorkFoldAutomationHopPo
 }
 
 /**
- * Resolves an automation files hop's source selection inside the source work-folder:
- * exact paths under the ordinary work-folder path policy (no symbolic links, no
+ * Resolves an automation files hop's source selection inside the source Connected Folder:
+ * exact paths under the ordinary Connected Folder path policy (no symbolic links, no
  * reserved segments), or the bounded tree selector through the Check target
  * resolver's discipline and the automation handoff bounds.
  */
 async function resolveAutomationFilesSources(
-  fromWorkFolderRoot: string,
-  source: Parameters<WorkFoldAutomationHopPorts["files"]>[1],
+  fromConnectedFolderRoot: string,
+  source: Parameters<AmpleFileAutomationHopPorts["files"]>[1],
 ): Promise<string[]> {
   if (source.kind === "paths") {
     if (source.paths.length === 0) throw new Error("The files hop resolved no source paths.");
-    if (source.paths.length > workFoldAutomationBounds.maxHandoffFiles) {
-      throw new Error(`The files hop names ${source.paths.length} paths, more than the ${workFoldAutomationBounds.maxHandoffFiles}-file bound.`);
+    if (source.paths.length > ampleFileAutomationBounds.maxHandoffFiles) {
+      throw new Error(`The files hop names ${source.paths.length} paths, more than the ${ampleFileAutomationBounds.maxHandoffFiles}-file bound.`);
     }
     const absolute: string[] = [];
     for (const raw of source.paths) {
-      const path = resolveWorkFolderPath(fromWorkFolderRoot, raw);
+      const path = resolveConnectedFolderPath(fromConnectedFolderRoot, raw);
       const info = await lstat(path).catch(() => null);
-      if (!info) throw new Error(`Source not found in the source work-folder: ${raw}.`);
+      if (!info) throw new Error(`Source not found in the source Connected Folder: ${raw}.`);
       if (info.isSymbolicLink()) throw new Error(`Symbolic-link sources cannot be copied: ${raw}.`);
       if (!info.isFile() && !info.isDirectory()) throw new Error(`Only files and folders can be copied: ${raw}.`);
       absolute.push(path);
     }
     return absolute;
   }
-  const resolution = await resolveWorkFoldCheckTargets(fromWorkFolderRoot, [{
+  const resolution = await resolveAmpleFileCheckTargets(fromConnectedFolderRoot, [{
     kind: "tree",
     role: "primary",
     path: source.path,
@@ -13871,8 +13871,8 @@ async function resolveAutomationFilesSources(
     extensions: [...source.extensions],
   }], {
     limits: {
-      maxFiles: workFoldAutomationBounds.maxHandoffFiles,
-      maxTotalBytes: workFoldAutomationBounds.maxHandoffTotalBytes,
+      maxFiles: ampleFileAutomationBounds.maxHandoffFiles,
+      maxTotalBytes: ampleFileAutomationBounds.maxHandoffTotalBytes,
     },
   });
   return resolution.files.map((file) => file.absolutePath);
@@ -13881,8 +13881,8 @@ async function resolveAutomationFilesSources(
 const maxAutomationMeasureEntries = 10_000;
 
 /** Bounded evidence measurement of copied destinations: files and bytes. */
-async function measureWorkFolderEntries(
-  workFolderRoot: string,
+async function measureConnectedFolderEntries(
+  connectedFolderRoot: string,
   relativePaths: string[],
 ): Promise<{ fileCount: number; totalBytes: number }> {
   let fileCount = 0;
@@ -13904,7 +13904,7 @@ async function measureWorkFolderEntries(
     }
   };
   for (const relativePath of relativePaths) {
-    await visit(resolveWorkFolderPath(workFolderRoot, relativePath));
+    await visit(resolveConnectedFolderPath(connectedFolderRoot, relativePath));
   }
   return { fileCount, totalBytes };
 }
@@ -13918,12 +13918,12 @@ async function measureWorkFolderEntries(
  */
 async function waitForSettledRequest(
   state: LocalApiState,
-  workFolderId: string,
+  connectedFolderId: string,
   conversationId: string,
   taskId: string,
   signal: AbortSignal,
 ): Promise<SettledTurnRecord> {
-  const requestAbort = (): void => { void stopWorkFoldAgentRequest(state, taskId).catch(() => undefined); };
+  const requestAbort = (): void => { void stopAmpleFileAgentRequest(state, taskId).catch(() => undefined); };
   if (signal.aborted) requestAbort();
   signal.addEventListener("abort", requestAbort, { once: true });
   try {
@@ -13935,16 +13935,16 @@ async function waitForSettledRequest(
       // A stop fences the graph before native abort cleanup finishes. A
       // automation's terminal receipt must wait for that cleanup, so its next
       // observer cannot see completed automation work with live kernel tasks.
-      if (request && request.state !== "waiting" && isWorkFoldRequestTerminalState(request.state)
+      if (request && request.state !== "waiting" && isAmpleFileRequestTerminalState(request.state)
         && [request, ...state.requests.subtree(request.requestId)].some((item) => item.turns.some((turn) => state.activeTurnTasks.has(turn.taskId)))) {
         await settleDelay(25);
         continue;
       }
-      if (request && (request.state === "waiting" || isWorkFoldRequestTerminalState(request.state))) {
+      if (request && (request.state === "waiting" || isAmpleFileRequestTerminalState(request.state))) {
         const latest = request.turns.at(-1)!;
         const settled = state.settledTurns.get(latest.taskId);
         return {
-          ...(settled ?? { taskId: latest.taskId, workFolderId, conversationId, endedAt: new Date().toISOString() }),
+          ...(settled ?? { taskId: latest.taskId, connectedFolderId, conversationId, endedAt: new Date().toISOString() }),
           status: request.state === "done" ? "succeeded" : request.state === "stopped" ? "aborted" : "failed",
           ...(request.state === "done" ? {} : { error: request.state === "waiting"
             ? "The Worker request needs an answer in its Chat. This automation ended here; answering does not replay later hops."
@@ -13952,7 +13952,7 @@ async function waitForSettledRequest(
         };
       }
       if (!request && !state.activeTurnTasks.has(taskId)) {
-        return { taskId, workFolderId, conversationId, status: "failed", endedAt: new Date().toISOString(), error: "work-fold lost track of this request." };
+        return { taskId, connectedFolderId, conversationId, status: "failed", endedAt: new Date().toISOString(), error: "AmpleFile lost track of this request." };
       }
       await settleDelay(25);
     }
@@ -13963,53 +13963,53 @@ function settleDelay(milliseconds: number): Promise<void> {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
-const maxOverviewConversationsPerWorkFolder = 2_048;
-const maxOverviewCheckpointsPerWorkFolder = 256;
+const maxOverviewConversationsPerConnectedFolder = 2_048;
+const maxOverviewCheckpointsPerConnectedFolder = 256;
 const maxOverviewActReceiptLines = 8_192;
 const maxOverviewAppAutomationReceipts = 2_048;
 
 /**
- * The overview's live-registry source readers (docs/work-fold-agent-overview.md): recorded
+ * The overview's live-registry source readers (docs/amplefile-agent-overview.md): recorded
  * state only — the settled-turn records, the durable request graph
  * (docs/collaboration-contract.md, F25), the
- * chat store and History per registered work-folder, the Check service's status and
+ * chat store and History per registered Connected Folder, the Check service's status and
  * content-free settled runs, the act-receipts ledger, the automation receipts
  * journal, and the restricted-app registry's machine-wide automation ledgers
  * (active accepted runs and settled receipts). The kernel's own task registry supplies running
  * tasks.
  */
-function createServerOverviewSources(state: LocalApiState): WorkFoldOverviewSourceReaders {
-  const automationRunReader = createWorkFoldOverviewAutomationRunReader();
+function createServerOverviewSources(state: LocalApiState): AmpleFileOverviewSourceReaders {
+  const automationRunReader = createAmpleFileOverviewAutomationRunReader();
   return {
-    settledTurns: async (): Promise<WorkFoldOverviewSettledTurnRecord[]> =>
+    settledTurns: async (): Promise<AmpleFileOverviewSettledTurnRecord[]> =>
       [...state.settledTurns.values()].map((turn) => ({
         taskId: turn.taskId,
-        // The work-fold agent scope is not a work-folder; its settled turns carry no
-        // work-folder id instead of rendering as a removed work-folder.
-        ...(turn.workFolderId === workFoldAgentScopeId ? {} : { workFolderId: turn.workFolderId }),
+        // The AmpleFile agent scope is not a Connected Folder; its settled turns carry no
+        // Connected Folder id instead of rendering as a removed Connected Folder.
+        ...(turn.connectedFolderId === ampleFileAgentScopeId ? {} : { connectedFolderId: turn.connectedFolderId }),
         conversationId: turn.conversationId,
         outcome: turn.status,
         endedAt: turn.endedAt,
       })),
-    workFoldAgentRequests: () => overviewWorkFoldAgentRequestRecords(state),
-    chats: async (workFolder) => {
-      const summaries = await listConversations(workFolder.workFolderRoot);
+    ampleFileAgentRequests: () => overviewAmpleFileAgentRequestRecords(state),
+    chats: async (connectedFolder) => {
+      const summaries = await listConversations(connectedFolder.connectedFolderRoot);
       const records = [];
-      for (const summary of summaries.slice(0, maxOverviewConversationsPerWorkFolder)) {
-        records.push(workFoldOverviewChatRecordFromMessages(summary, await readConversation(workFolder.workFolderRoot, summary.id)));
+      for (const summary of summaries.slice(0, maxOverviewConversationsPerConnectedFolder)) {
+        records.push(ampleFileOverviewChatRecordFromMessages(summary, await readConversation(connectedFolder.connectedFolderRoot, summary.id)));
       }
       return records;
     },
-    checkpoints: async (workFolder) =>
-      (await listWorkFolderCheckpoints(workFolder.workFolderRoot, maxOverviewCheckpointsPerWorkFolder)).map((checkpoint) => ({
+    checkpoints: async (connectedFolder) =>
+      (await listConnectedFolderCheckpoints(connectedFolder.connectedFolderRoot, maxOverviewCheckpointsPerConnectedFolder)).map((checkpoint) => ({
         checkpointId: checkpoint.checkpointId,
         createdAt: checkpoint.createdAt,
         ...(checkpoint.label !== undefined ? { label: checkpoint.label } : {}),
         reason: checkpoint.reason,
         scope: checkpoint.scope,
       })),
-    checks: async (workFolder): Promise<WorkFoldOverviewCheckSource | null> => {
-      const ref = { id: workFolder.id, workFolderRoot: workFolder.workFolderRoot };
+    checks: async (connectedFolder): Promise<AmpleFileOverviewCheckSource | null> => {
+      const ref = { id: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot };
       return {
         status: await state.checks.status(ref),
         settledRuns: (await state.checks.settledRuns(ref)).map((run) => ({
@@ -14027,23 +14027,23 @@ function createServerOverviewSources(state: LocalApiState): WorkFoldOverviewSour
     // settled runs render as running work, durable settled receipts as
     // what-changed items. Both are recorded state; no run is executed or
     // polled to compose the digest.
-    appAutomationRuns: async (): Promise<WorkFoldOverviewAppAutomationRunRecord[]> =>
+    appAutomationRuns: async (): Promise<AmpleFileOverviewAppAutomationRunRecord[]> =>
       (await state.restrictedApps.listActiveAppAutomationRuns()).map((run) => ({
         runId: run.runId,
         appAutomationId: run.appAutomationId,
         ...(run.appTitle ? { appTitle: run.appTitle } : {}),
         ...(run.automationTitle ? { automationTitle: run.automationTitle } : {}),
-        workFolderId: run.workFolderId,
+        connectedFolderId: run.connectedFolderId,
         startedAt: run.acceptedAt,
       })),
-    appAutomationRunReceipts: async (): Promise<WorkFoldOverviewAppAutomationReceiptRecord[]> =>
+    appAutomationRunReceipts: async (): Promise<AmpleFileOverviewAppAutomationReceiptRecord[]> =>
       (await state.restrictedApps.listAppAutomationRunHistory(maxOverviewAppAutomationReceipts)).map((receipt) => ({
         receiptId: receipt.receiptId,
         runId: receipt.runId,
         appAutomationId: receipt.appAutomationId,
         ...(receipt.appTitle ? { appTitle: receipt.appTitle } : {}),
         ...(receipt.automationTitle ? { automationTitle: receipt.automationTitle } : {}),
-        workFolderId: receipt.workFolderId,
+        connectedFolderId: receipt.connectedFolderId,
         outcome: receipt.outcome,
         finishedAt: receipt.finishedAt,
       })),
@@ -14060,11 +14060,11 @@ function createServerOverviewSources(state: LocalApiState): WorkFoldOverviewSour
  * from those records; rendering the overview never scans a transcript for a
  * question mark.
  */
-async function overviewWorkFoldAgentRequestRecords(state: LocalApiState): Promise<WorkFoldOverviewAgentRequestRecord[]> {
-  const records: WorkFoldOverviewAgentRequestRecord[] = [];
+async function overviewAmpleFileAgentRequestRecords(state: LocalApiState): Promise<AmpleFileOverviewAgentRequestRecord[]> {
+  const records: AmpleFileOverviewAgentRequestRecord[] = [];
   for (const record of state.requests.list({ limit: maxOverviewRequestRecords })) {
     const newestTurn = record.turns.at(-1)!;
-    const phase = workFoldRequestStateToAgentPhase(record.state);
+    const phase = ampleFileRequestStateToAgentPhase(record.state);
     const descendants = state.requests.subtree(record.requestId);
     const questions = state.requests.questions(record.requestId);
     records.push({
@@ -14073,7 +14073,7 @@ async function overviewWorkFoldAgentRequestRecords(state: LocalApiState): Promis
       state: record.state,
       taskId: newestTurn.taskId,
       conversationId: record.owner.conversationId,
-      ...(record.owner.workFolderId ? { workFolderId: record.owner.workFolderId } : {}),
+      ...(record.owner.connectedFolderId ? { connectedFolderId: record.owner.connectedFolderId } : {}),
       phase,
       startedAt: record.createdAt,
       endedAt: phase === "working" || phase === "handed_off" ? null : (record.settledAt ?? newestTurn.settledAt),
@@ -14095,15 +14095,15 @@ const maxOverviewRequestRecords = 16_384;
  * live and rotated files the executor appends. A damaged line is omitted —
  * the overview is a projection, never the journal's authority.
  */
-async function readActReceiptJournal(state: LocalApiState): Promise<WorkFoldCliActReceipt[]> {
-  const receipts: WorkFoldCliActReceipt[] = [];
+async function readActReceiptJournal(state: LocalApiState): Promise<AmpleFileCliActReceipt[]> {
+  const receipts: AmpleFileCliActReceipt[] = [];
   for (const path of [state.actReceipts.rotatedPath, state.actReceipts.path]) {
     const text = await readFile(path, "utf8").catch(() => null);
     if (text === null) continue;
     const lines = text.split("\n").filter((line) => line.trim());
     for (const line of lines.slice(-maxOverviewActReceiptLines)) {
       try {
-        const record = JSON.parse(line) as Partial<WorkFoldCliActReceipt>;
+        const record = JSON.parse(line) as Partial<AmpleFileCliActReceipt>;
         // Every journal version stays readable: older lines are history, and
         // the current version is the one every act writes now.
         if ((record.v !== 1 && record.v !== 2 && record.v !== 3)
@@ -14111,7 +14111,7 @@ async function readActReceiptJournal(state: LocalApiState): Promise<WorkFoldCliA
           || typeof record.requestId !== "string"
           || typeof record.command !== "string"
           || typeof record.outcome !== "string") continue;
-        receipts.push(record as WorkFoldCliActReceipt);
+        receipts.push(record as AmpleFileCliActReceipt);
       } catch {
         // Omitted, never fatal.
       }
@@ -14120,9 +14120,9 @@ async function readActReceiptJournal(state: LocalApiState): Promise<WorkFoldCliA
   return receipts.slice(-maxOverviewActReceiptLines);
 }
 
-function closeWorkFolderStreams(state: LocalApiState, workFolderId: string): void {
-  for (const [close, owner] of [...state.fileStreams]) if (owner === workFolderId) close();
-  const prefix = `${workFolderId}:`;
+function closeConnectedFolderStreams(state: LocalApiState, connectedFolderId: string): void {
+  for (const [close, owner] of [...state.fileStreams]) if (owner === connectedFolderId) close();
+  const prefix = `${connectedFolderId}:`;
   for (const [key, streams] of [...state.chatStreams]) {
     if (!key.startsWith(prefix)) continue;
     for (const response of streams) response.close();
@@ -14131,20 +14131,20 @@ function closeWorkFolderStreams(state: LocalApiState, workFolderId: string): voi
 }
 
 function extensionScopeId(state: LocalApiState, scope: PiExtensionUiScope): string | null {
-  return workFolderRootKey(scope.workFolderRoot) === workFolderRootKey(workFoldAgentRoot())
-    ? workFoldAgentScopeId : workFolderIdForRoot(state, scope.workFolderRoot);
+  return connectedFolderRootKey(scope.connectedFolderRoot) === connectedFolderRootKey(ampleFileAgentRoot())
+    ? ampleFileAgentScopeId : connectedFolderIdForRoot(state, scope.connectedFolderRoot);
 }
 
 function sameExtensionScope(left: PiExtensionUiScope, right: PiExtensionUiScope): boolean {
-  return workFolderRootKey(left.workFolderRoot) === workFolderRootKey(right.workFolderRoot) && left.conversationId === right.conversationId;
+  return connectedFolderRootKey(left.connectedFolderRoot) === connectedFolderRootKey(right.connectedFolderRoot) && left.conversationId === right.conversationId;
 }
 
-function remoteExtensionRequests(state: LocalApiState, record: WorkFoldRequestRecord): Array<Record<string, unknown>> {
+function remoteExtensionRequests(state: LocalApiState, record: AmpleFileRequestRecord): Array<Record<string, unknown>> {
   const taskId = record.turns.at(-1)?.taskId;
-  if (!taskId || record.owner.workFolderId || record.stopRequestedAt || record.state === "expired" || (record.deadline !== null && Date.now() >= Date.parse(record.deadline)) || state.cancelledTurnTasks.has(taskId)
-      || state.activeTurnIdsByKey.get(streamKey(workFoldAgentScopeId, record.owner.conversationId)) !== taskId) return [];
+  if (!taskId || record.owner.connectedFolderId || record.stopRequestedAt || record.state === "expired" || (record.deadline !== null && Date.now() >= Date.parse(record.deadline)) || state.cancelledTurnTasks.has(taskId)
+      || state.activeTurnIdsByKey.get(streamKey(ampleFileAgentScopeId, record.owner.conversationId)) !== taskId) return [];
   return [...state.extensionRequests.values()].filter((request) => request.taskId === taskId
-    && sameExtensionScope(request, { workFolderRoot: workFoldAgentRoot(), conversationId: record.owner.conversationId })
+    && sameExtensionScope(request, { connectedFolderRoot: ampleFileAgentRoot(), conversationId: record.owner.conversationId })
     && !(request.method === "input" && request.secret))
     .map((request) => ({ ...rendererExtensionRequest(request), taskId }));
 }
@@ -14209,7 +14209,7 @@ function answerExtensionRequest(state: LocalApiState, scope: PiExtensionUiScope,
 }
 
 function routeRestrictedAppProposal(state: LocalApiState, proposal: RestrictedAppProposalReceipt): void {
-  broadcast(state, streamKey(proposal.workFolderId, proposal.conversationId), {
+  broadcast(state, streamKey(proposal.connectedFolderId, proposal.conversationId), {
     type: "restricted_app_proposal",
     conversationId: proposal.conversationId,
     proposal: rendererRestrictedAppProposal(proposal),
@@ -14217,7 +14217,7 @@ function routeRestrictedAppProposal(state: LocalApiState, proposal: RestrictedAp
 }
 
 function routeRestrictedAppProposalSettled(state: LocalApiState, proposal: RestrictedAppProposalReceipt): void {
-  broadcast(state, streamKey(proposal.workFolderId, proposal.conversationId), {
+  broadcast(state, streamKey(proposal.connectedFolderId, proposal.conversationId), {
     type: "restricted_app_proposal_settled",
     conversationId: proposal.conversationId,
     proposal: rendererRestrictedAppProposal(proposal),
@@ -14227,7 +14227,7 @@ function routeRestrictedAppProposalSettled(state: LocalApiState, proposal: Restr
 function rendererRestrictedAppProposal(proposal: RestrictedAppProposalReceipt): Record<string, unknown> {
   return {
     id: proposal.id,
-    workFolderId: proposal.workFolderId,
+    connectedFolderId: proposal.connectedFolderId,
     conversationId: proposal.conversationId,
     sourcePath: proposal.sourcePath,
     review: proposal.review,
@@ -14241,14 +14241,14 @@ function rendererRestrictedAppProposal(proposal: RestrictedAppProposalReceipt): 
 }
 
 function routeExtensionEvent(state: LocalApiState, event: PiExtensionUiEvent): void {
-  const workFolderId = extensionScopeId(state, event);
-  if (!workFolderId) return;
+  const connectedFolderId = extensionScopeId(state, event);
+  if (!connectedFolderId) return;
   if (event.method === "oauthDeviceCode" || event.method === "openExternal") {
     publishTransientExtensionEvent(state, event, { type: "status", conversationId: event.conversationId, message: extensionEventMessage(event) });
     return;
   }
   if (event.method === "notify") {
-    broadcast(state, streamKey(workFolderId, event.conversationId), {
+    broadcast(state, streamKey(connectedFolderId, event.conversationId), {
       type: "extension_ui_request",
       conversationId: event.conversationId,
       request: { id: event.id, method: "notify", message: event.message },
@@ -14256,7 +14256,7 @@ function routeExtensionEvent(state: LocalApiState, event: PiExtensionUiEvent): v
     return;
   }
   if (event.method === "setEditorText" || event.method === "pasteToEditor") {
-    broadcast(state, streamKey(workFolderId, event.conversationId), {
+    broadcast(state, streamKey(connectedFolderId, event.conversationId), {
       type: "editor",
       conversationId: event.conversationId,
       editorMode: event.method === "setEditorText" ? "replace" : "append",
@@ -14265,7 +14265,7 @@ function routeExtensionEvent(state: LocalApiState, event: PiExtensionUiEvent): v
     return;
   }
   const message = extensionEventMessage(event);
-  if (message) broadcast(state, streamKey(workFolderId, event.conversationId), { type: "status", conversationId: event.conversationId, message });
+  if (message) broadcast(state, streamKey(connectedFolderId, event.conversationId), { type: "status", conversationId: event.conversationId, message });
 }
 
 function extensionEventMessage(event: PiExtensionUiEvent): string | null {
@@ -14304,34 +14304,34 @@ function emptyAgentStatus(): Record<string, unknown> {
   return { ready: true, configured: false, provider: null, model: null, piVersion: null, projectTrusted: false, error: null };
 }
 
-async function safeAgentStatus(workFolderRoot: string, provider: PiRuntimeProvider): Promise<Record<string, unknown>> {
+async function safeAgentStatus(connectedFolderRoot: string, provider: PiRuntimeProvider): Promise<Record<string, unknown>> {
   try {
-    return normalizeStatus(await getPiSetupStatus(workFolderRoot, provider));
+    return normalizeStatus(await getPiSetupStatus(connectedFolderRoot, provider));
   } catch (error) {
     return { ...emptyAgentStatus(), ready: false, error: errorMessage(error) };
   }
 }
 
-/** A work-folder when one is named; otherwise the work-fold agent's scope (first run, no work-folder yet). */
-async function includedToolScope(workFolderId: string | null | undefined): Promise<{ id: string; workFolderRoot: string }> {
-  if (workFolderId) return getWorkFolder(workFolderId);
-  return { id: workFoldAgentScopeId, workFolderRoot: workFoldAgentRoot() };
+/** A Connected Folder when one is named; otherwise the AmpleFile agent's scope (first run, no Connected Folder yet). */
+async function includedToolScope(connectedFolderId: string | null | undefined): Promise<{ id: string; connectedFolderRoot: string }> {
+  if (connectedFolderId) return getConnectedFolder(connectedFolderId);
+  return { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot() };
 }
 
 interface ModelScope {
   id: string;
-  workFolderRoot: string;
+  connectedFolderRoot: string;
   label: string;
 }
 
-async function modelScope(scope: string | null | undefined, workFolderId?: string | null): Promise<ModelScope> {
+async function modelScope(scope: string | null | undefined, connectedFolderId?: string | null): Promise<ModelScope> {
   if (scope === "agent") {
-    return { id: workFoldAgentScopeId, workFolderRoot: workFoldAgentRoot(), label: "the work-fold agent" };
+    return { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot(), label: "the AmpleFile agent" };
   }
-  if (scope && scope !== "work-folder") throw badRequest("agent scope must be work-folder or management.");
-  if (!workFolderId) throw badRequest("work-folder id is required.");
-  const workFolder = await getWorkFolder(workFolderId);
-  return { id: workFolder.id, workFolderRoot: workFolder.workFolderRoot, label: "this work-folder" };
+  if (scope && scope !== "connected-folder") throw badRequest("agent scope must be Connected Folder or management.");
+  if (!connectedFolderId) throw badRequest("Connected Folder id is required.");
+  const connectedFolder = await getConnectedFolder(connectedFolderId);
+  return { id: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot, label: "this Connected Folder" };
 }
 
 function openControlEventStream(state: LocalApiState, sink: LocalEventSink): void {
@@ -14346,12 +14346,12 @@ function openControlEventStream(state: LocalApiState, sink: LocalEventSink): voi
 function openChatStream(
   state: LocalApiState,
   res: LocalEventSink,
-  workFolderId: string,
+  connectedFolderId: string,
   conversationId: string,
   _lastEventId?: string | string[],
 ): void {
   if (res.closed) return;
-  const key = streamKey(workFolderId, conversationId);
+  const key = streamKey(connectedFolderId, conversationId);
   writeSseData(res, { type: "status", conversationId, message: "Connected." });
   const log = chatEventLog(state, key);
   // The conflict reservation precedes persistence. A new subscriber must not
@@ -14372,14 +14372,14 @@ function openChatStream(
   // Older consumers retain their original handshake alongside the richer view.
   writeSseData(res, turnStateEvent(conversationId, running, turnId ?? log.turnId ?? null), snapshotId > 0 ? snapshotId : undefined);
   // Current state, like turn_state: it carries the snapshot's cursor.
-  writeSseData(res, queuedMessageEvent(state, workFolderId, conversationId), snapshotId > 0 ? snapshotId : undefined);
+  writeSseData(res, queuedMessageEvent(state, connectedFolderId, conversationId), snapshotId > 0 ? snapshotId : undefined);
   const streams = state.chatStreams.get(key) ?? new Set<LocalEventSink>();
   streams.add(res);
   state.chatStreams.set(key, streams);
-  const extensionScope = { conversationId, workFolderRoot: workFolderId === workFoldAgentScopeId
-    ? workFoldAgentRoot() : [...state.workFolderIdsByRoot].find(([, id]) => id === workFolderId)?.[0] ?? "" };
+  const extensionScope = { conversationId, connectedFolderRoot: connectedFolderId === ampleFileAgentScopeId
+    ? ampleFileAgentRoot() : [...state.connectedFolderIdsByRoot].find(([, id]) => id === connectedFolderId)?.[0] ?? "" };
   writeSseData(res, { type: "extension_ui_snapshot", conversationId, requests: extensionSnapshot(state, extensionScope) });
-  void state.restrictedAppProposals.list({ workFolderId, conversationId }).then(async (proposals) => {
+  void state.restrictedAppProposals.list({ connectedFolderId, conversationId }).then(async (proposals) => {
     for (const proposal of proposals) {
       if (proposal.status !== "pending" || res.closed) continue;
       const current = await state.restrictedAppProposals.get(proposal.id);
@@ -14402,11 +14402,11 @@ function openChatStream(
 /** How long one file-event stream reuses its read of the ignore rules. */
 const fileEventIgnoreStateReuseMs = 1_000;
 
-async function openWorkFolderFileStream(
+async function openConnectedFolderFileStream(
   state: LocalApiState,
   res: LocalEventSink,
-  workFolderRoot: string,
-  workFolderId: string,
+  connectedFolderRoot: string,
+  connectedFolderId: string,
 ): Promise<void> {
   let recursive = true;
   let watcher: ReturnType<typeof watch>;
@@ -14416,11 +14416,11 @@ async function openWorkFolderFileStream(
   // A build or a Git command can report thousands of changes a second. They
   // share one read of the ignore rules for a moment instead of each reading
   // the rules file again; a failed read is not reused.
-  let ignoreRead: { at: number; state: ReturnType<typeof readWorkFolderIgnoreState> } | null = null;
+  let ignoreRead: { at: number; state: ReturnType<typeof readConnectedFolderIgnoreState> } | null = null;
   const currentIgnoreState = () => {
     const now = Date.now();
     if (!ignoreRead || now - ignoreRead.at > fileEventIgnoreStateReuseMs) {
-      const read = { at: now, state: readWorkFolderIgnoreState(workFolderRoot) };
+      const read = { at: now, state: readConnectedFolderIgnoreState(connectedFolderRoot) };
       read.state.catch(() => { if (ignoreRead === read) ignoreRead = null; });
       ignoreRead = read;
     }
@@ -14433,18 +14433,18 @@ async function openWorkFolderFileStream(
       return;
     }
     const path = rawName.replace(/\\/g, "/").replace(/^\/+/, "");
-    if (!path || isAlwaysHiddenWorkFolderEntry(basename(path))) return;
+    if (!path || isAlwaysHiddenConnectedFolderEntry(basename(path))) return;
     void currentIgnoreState().then((ignoreState) => {
       if (res.closed) return;
-      if (isWorkFolderIgnored(path, ignoreState.patterns)) return;
-      try { resolveWorkFolderPath(workFolderRoot, path); } catch { return; }
+      if (isConnectedFolderIgnored(path, ignoreState.patterns)) return;
+      try { resolveConnectedFolderPath(connectedFolderRoot, path); } catch { return; }
       sendEvent({ type: "file_event", eventType, path });
-    }).catch(() => { if (!res.closed) sendEvent({ type: "error", message: "File monitoring is unavailable. Refresh this work-folder to reconnect." }); });
+    }).catch(() => { if (!res.closed) sendEvent({ type: "error", message: "File monitoring is unavailable. Refresh this Connected Folder to reconnect." }); });
   };
-  const watchRoot = await canonicalWorkFolderWatchRoot(workFolderRoot);
+  const watchRoot = await canonicalConnectedFolderWatchRoot(connectedFolderRoot);
   if (res.closed) return;
-  const registered = await getWorkFolder(workFolderId);
-  if (registered.workFolderRoot !== workFolderRoot) throw notFound("work-folder changed while opening file monitoring.");
+  const registered = await getConnectedFolder(connectedFolderId);
+  if (registered.connectedFolderRoot !== connectedFolderRoot) throw notFound("Connected Folder changed while opening file monitoring.");
   if (res.closed) return;
   try {
     watcher = watch(watchRoot, { recursive: true }, onChange);
@@ -14465,7 +14465,7 @@ async function openWorkFolderFileStream(
     if (!res.closed) res.close();
     state.fileStreams.delete(close);
   };
-  state.fileStreams.set(close, workFolderId);
+  state.fileStreams.set(close, connectedFolderId);
   watcher.on("error", (error) => sendEvent({ type: "error", message: errorMessage(error) }));
   res.onClose(close);
 }
@@ -14502,8 +14502,8 @@ async function openStandardFolderFileStream(state: LocalApiState, res: LocalEven
   res.onClose(close);
 }
 
-async function sendWorkFolderRawFile(res: ServerResponse, workFolderRoot: string, relativePath: string): Promise<void> {
-  const path = resolveWorkFolderPath(workFolderRoot, relativePath);
+async function sendConnectedFolderRawFile(res: ServerResponse, connectedFolderRoot: string, relativePath: string): Promise<void> {
+  const path = resolveConnectedFolderPath(connectedFolderRoot, relativePath);
   const info = await stat(path).catch(() => null);
   if (!info?.isFile()) throw notFound("File not found.");
   res.writeHead(200, {
@@ -14522,58 +14522,58 @@ async function sendWorkFolderRawFile(res: ServerResponse, workFolderRoot: string
 }
 
 /**
- * The work-folder Workers a person addressed with @ (2026-10-01): at most eight
- * distinct registered work-folder ids in a stable order, never the sending scope's
+ * The Connected Folder Workers a person addressed with @ (2026-10-01): at most eight
+ * distinct registered Connected Folder ids in a stable order, never the sending scope's
  * own. An id that is no longer registered is dropped rather than refused, so a
- * retried send still replays after a work-folder was removed.
+ * retried send still replays after a Connected Folder was removed.
  */
-async function normalizeAddressedWorkFolderIds(value: unknown, ownScopeId: string): Promise<string[]> {
+async function normalizeAddressedConnectedFolderIds(value: unknown, ownScopeId: string): Promise<string[]> {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim() || item.length > 512)) {
-    throw badRequest("addressedWorkFolderIds must be a list of work-folder ids.");
+    throw badRequest("addressedConnectedFolderIds must be a list of Connected Folder ids.");
   }
   const ids = [...new Set((value as string[]).map((item) => item.trim()))].filter((id) => id !== ownScopeId);
   if (!ids.length) return [];
-  const registered = new Set((await registeredWorkFolderOutline()).map((workFolder) => workFolder.id));
+  const registered = new Set((await registeredConnectedFolderOutline()).map((connectedFolder) => connectedFolder.id));
   return ids.filter((id) => registered.has(id)).sort();
 }
 
-/** A work-folder Chat's attached files and folders, kept on its message so the Chat shows what was sent. */
-function contextPathAttachments(workFolderRoot: string, contextPaths: string[]): ChatMessageAttachmentRef[] {
+/** A Connected Folder Chat's attached files and folders, kept on its message so the Chat shows what was sent. */
+function contextPathAttachments(connectedFolderRoot: string, contextPaths: string[]): ChatMessageAttachmentRef[] {
   return contextPaths.slice(0, 32).map((path) => {
     let folder = false;
-    try { folder = statSync(resolveWorkFolderPath(workFolderRoot, path)).isDirectory(); } catch { /* a missing path stays a file reference */ }
+    try { folder = statSync(resolveConnectedFolderPath(connectedFolderRoot, path)).isDirectory(); } catch { /* a missing path stays a file reference */ }
     return { kind: folder ? "folder" : "file", target: path, name: path.slice(path.lastIndexOf("/") + 1) || path };
   });
 }
 
-function normalizeContextPaths(workFolderRoot: string, value: unknown): string[] {
+function normalizeContextPaths(connectedFolderRoot: string, value: unknown): string[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw badRequest("Chat context paths must be an array of strings.");
-  const paths = [...new Set(value.map((item) => normalizeWorkFolderRelativePath(item)).filter(Boolean))];
+  const paths = [...new Set(value.map((item) => normalizeConnectedFolderRelativePath(item)).filter(Boolean))];
   for (const path of paths) {
-    try { resolveWorkFolderPath(workFolderRoot, path); } catch (error) { throw badRequest(errorMessage(error)); }
+    try { resolveConnectedFolderPath(connectedFolderRoot, path); } catch (error) { throw badRequest(errorMessage(error)); }
   }
   return paths;
 }
 
 async function captureTurnCheckpointSafe(
   state: LocalApiState,
-  workFolderId: string,
-  workFolderRoot: string,
+  connectedFolderId: string,
+  connectedFolderRoot: string,
   conversationId: string,
   reason: "pre_turn" | "post_turn",
-): Promise<import("./history.js").WorkFolderCheckpoint | null> {
-  // History is a work-folder concept. The work-fold agent scope's root holds only
+): Promise<import("./history.js").ConnectedFolderCheckpoint | null> {
+  // History is a Connected Folder concept. The AmpleFile agent scope's root holds only
   // conversation records in app state, so turn checkpoints do not apply.
-  if (workFolderId === workFoldAgentScopeId) return null;
+  if (connectedFolderId === ampleFileAgentScopeId) return null;
   try {
-    const checkpoint = await createWorkFolderCheckpoint(workFolderRoot, {
+    const checkpoint = await createConnectedFolderCheckpoint(connectedFolderRoot, {
       reason,
       label: reason === "pre_turn" ? "Before turn" : "After turn",
     });
     state.onHistoryCheckpoint?.({
-      workFolderId,
+      connectedFolderId,
       conversationId,
       reason,
       checkpointId: checkpoint.checkpointId,
@@ -14581,13 +14581,13 @@ async function captureTurnCheckpointSafe(
     });
     for (const listener of [...state.turnCheckpointListeners]) {
       try {
-        listener({ workFolderId, conversationId, reason, checkpointId: checkpoint.checkpointId });
+        listener({ connectedFolderId, conversationId, reason, checkpointId: checkpoint.checkpointId });
       } catch {
         // Observers never affect the turn.
       }
     }
     if (checkpoint.skippedLargeFiles.length) {
-      broadcast(state, streamKey(workFolderId, conversationId), {
+      broadcast(state, streamKey(connectedFolderId, conversationId), {
         type: "status",
         conversationId,
         message: `History skipped ${checkpoint.skippedLargeFiles.length} oversized file${checkpoint.skippedLargeFiles.length === 1 ? "" : "s"}.`,
@@ -14595,7 +14595,7 @@ async function captureTurnCheckpointSafe(
     }
     return checkpoint;
   } catch (error) {
-    broadcast(state, streamKey(workFolderId, conversationId), {
+    broadcast(state, streamKey(connectedFolderId, conversationId), {
       type: "status",
       conversationId,
       message: `History checkpoint warning: ${errorMessage(error)}`,
@@ -14604,11 +14604,11 @@ async function captureTurnCheckpointSafe(
   }
 }
 
-async function runWithHistorySafety<T>(workFolderRoot: string, checkpointId: string, operation: () => Promise<T>): Promise<T> {
+async function runWithHistorySafety<T>(connectedFolderRoot: string, checkpointId: string, operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
   } catch (error) {
-    await discardWorkFolderCheckpoint(workFolderRoot, checkpointId).catch(() => undefined);
+    await discardConnectedFolderCheckpoint(connectedFolderRoot, checkpointId).catch(() => undefined);
     throw error;
   }
 }
@@ -14622,21 +14622,21 @@ async function runWithHistorySafety<T>(workFolderRoot: string, checkpointId: str
  * be recorded, the written paths are removed again and the operation fails.
  */
 async function checkpointAdditiveWritesOrUndo(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   writtenPaths: string[],
   options: { reason: string; label: string },
-): Promise<WorkFolderCheckpoint | null> {
+): Promise<ConnectedFolderCheckpoint | null> {
   if (!writtenPaths.length) return null;
   try {
-    return await createWorkFolderMutationCheckpoint(workFolderRoot, { deleteOnRestore: writtenPaths, ...options });
+    return await createConnectedFolderMutationCheckpoint(connectedFolderRoot, { deleteOnRestore: writtenPaths, ...options });
   } catch (error) {
     await Promise.all(writtenPaths.map((path) =>
-      rm(resolveWorkFolderPath(workFolderRoot, path), { recursive: true, force: true }).catch(() => undefined)));
-    throw httpError(500, `The added files were removed because work-folder could not record a restore point: ${errorMessage(error)}`);
+      rm(resolveConnectedFolderPath(connectedFolderRoot, path), { recursive: true, force: true }).catch(() => undefined)));
+    throw httpError(500, `The added files were removed because Connected Folder could not record a restore point: ${errorMessage(error)}`);
   }
 }
 
-function normalizeWorkFolderRelativePath(value: string): string {
+function normalizeConnectedFolderRelativePath(value: string): string {
   return value.trim().replace(/\\/g, "/").replace(/^(?:\.\/)+/, "").replace(/^\/+|\/+$/g, "");
 }
 
@@ -14819,7 +14819,7 @@ async function readMultipartBody(state: LocalApiState, req: IncomingMessage): Pr
 /**
  * A route's own bound applies under the general body cap, except where the
  * route names a larger contract of its own (`exceedDefaultLimit`), such as an
- * app-data restore that must accept every export work-fold produces.
+ * app-data restore that must accept every export AmpleFile produces.
  */
 async function readBody(
   state: LocalApiState,
@@ -14855,14 +14855,14 @@ function parseRelativePaths(value: string | undefined, fileCount: number): Array
 function authorize(state: LocalApiState, req: IncomingMessage): void {
   const origin = req.headers.origin;
   if (origin && !state.allowedOrigins.includes(origin)) throw forbidden("Origin is not allowed.");
-  if (state.sessionToken && req.headers["x-work-fold-session"] !== state.sessionToken) throw unauthorized("Unauthorized.");
+  if (state.sessionToken && req.headers["x-amplefile-session"] !== state.sessionToken) throw unauthorized("Unauthorized.");
 }
 
 function setCorsHeaders(state: LocalApiState, req: IncomingMessage, res: ServerResponse): void {
   const origin = req.headers.origin;
   if (origin && state.allowedOrigins.includes(origin)) res.setHeader("access-control-allow-origin", origin);
   res.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-  res.setHeader("access-control-allow-headers", "content-type,last-event-id,x-work-fold-session");
+  res.setHeader("access-control-allow-headers", "content-type,last-event-id,x-amplefile-session");
   res.setHeader("vary", "Origin");
   res.setHeader("x-content-type-options", "nosniff");
 }
@@ -14875,7 +14875,7 @@ function sendJson(res: ServerResponse, payload: unknown, status = 200): void {
 }
 
 /** Content-free hints only. Reconnect always sends reset; no events are replayed. */
-function publishControlHint(state: LocalApiState, type: "apps" | "work-folders" | "models" | "activity"): void {
+function publishControlHint(state: LocalApiState, type: "apps" | "connected-folders" | "models" | "activity"): void {
   for (const response of state.controlStreams) {
     if (response.closed) continue;
     // A slow renderer must reconnect and requery instead of accumulating a queue.
@@ -14888,21 +14888,21 @@ function sendError(res: ServerResponse, error: unknown): void {
   if (res.headersSent) { res.end(); return; }
   const explicit = typeof (error as { statusCode?: unknown })?.statusCode === "number" ? (error as { statusCode: number }).statusCode : null;
   const status = explicit
-    ?? workFoldCliErrorStatus(error)
-    ?? (error instanceof WorkFoldCheckOperationConflictError ? 409 : null)
+    ?? ampleFileCliErrorStatus(error)
+    ?? (error instanceof AmpleFileCheckOperationConflictError ? 409 : null)
     ?? (error instanceof RestrictedAppTaskError ? ({ TASK_DENIED: 403, TASK_INVALID: 400, TASK_CONFLICT: 409, TASK_UNAVAILABLE: 503 }[error.code]) : null)
     ?? automationErrorStatus(error)
     ?? restrictedAppErrorStatus(error)
     ?? 500;
   sendJson(res, {
     error: errorMessage(error),
-    ...((error instanceof WorkFoldAutomationServiceError || error instanceof WorkFoldAutomationStoreError) ? { code: error.code } : {}),
+    ...((error instanceof AmpleFileAutomationServiceError || error instanceof AmpleFileAutomationStoreError) ? { code: error.code } : {}),
     ...(error instanceof RestrictedAppError || error instanceof RestrictedAppStorageError || error instanceof RestrictedAppTaskError ? { code: error.code } : {}),
   }, status);
 }
 
-function workFoldCliErrorStatus(error: unknown): number | null {
-  if (!(error instanceof WorkFoldCliError)) return null;
+function ampleFileCliErrorStatus(error: unknown): number | null {
+  if (!(error instanceof AmpleFileCliError)) return null;
   switch (error.code) {
     case "usage":
     case "protocolError": return 400;
@@ -14916,7 +14916,7 @@ function workFoldCliErrorStatus(error: unknown): number | null {
 }
 
 function automationErrorStatus(error: unknown): number | null {
-  if (error instanceof WorkFoldAutomationServiceError) {
+  if (error instanceof AmpleFileAutomationServiceError) {
     switch (error.code) {
       case "INPUT_INVALID": return 400;
       case "NOT_FOUND": return 404;
@@ -14924,7 +14924,7 @@ function automationErrorStatus(error: unknown): number | null {
       case "SERVICE_DAMAGED": return 503;
     }
   }
-  if (error instanceof WorkFoldAutomationStoreError) {
+  if (error instanceof AmpleFileAutomationStoreError) {
     switch (error.code) {
       case "INPUT_INVALID": return 400;
       case "NOT_FOUND": return 404;
@@ -14994,7 +14994,7 @@ function tooLarge(message: string): Error { return httpError(413, message); }
 function unavailable(message: string): Error { return httpError(503, message); }
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
-function isWorkFoldCheckDecisionKind(value: unknown): value is WorkFoldCheckDecisionKind {
+function isAmpleFileCheckDecisionKind(value: unknown): value is AmpleFileCheckDecisionKind {
   return value === "accept" || value === "reject" || value === "resolve" || value === "defer";
 }
 
@@ -15003,18 +15003,18 @@ function match(path: string, pattern: RegExp): string[] | null {
   return result ? result.map((value) => value === undefined ? "" : decodeURIComponent(value)) : null;
 }
 
-function streamKey(workFolderId: string, conversationId: string): string { return `${workFolderId}:${conversationId}`; }
-function clientKey(workFolderId: string, conversationId: string): string { return streamKey(workFolderId, conversationId); }
+function streamKey(connectedFolderId: string, conversationId: string): string { return `${connectedFolderId}:${conversationId}`; }
+function clientKey(connectedFolderId: string, conversationId: string): string { return streamKey(connectedFolderId, conversationId); }
 
-function rememberWorkFolderRoot(state: LocalApiState, workFolderId: string, rootPath: string): void {
-  state.workFolderIdsByRoot.set(workFolderRootKey(rootPath), workFolderId);
+function rememberConnectedFolderRoot(state: LocalApiState, connectedFolderId: string, rootPath: string): void {
+  state.connectedFolderIdsByRoot.set(connectedFolderRootKey(rootPath), connectedFolderId);
 }
 
-function workFolderIdForRoot(state: LocalApiState, rootPath: string): string | null {
-  return state.workFolderIdsByRoot.get(workFolderRootKey(rootPath)) ?? null;
+function connectedFolderIdForRoot(state: LocalApiState, rootPath: string): string | null {
+  return state.connectedFolderIdsByRoot.get(connectedFolderRootKey(rootPath)) ?? null;
 }
 
-function workFolderRootKey(rootPath: string): string {
+function connectedFolderRootKey(rootPath: string): string {
   const normalized = resolve(rootPath);
   return process.platform === "win32" ? normalized.toLocaleLowerCase() : normalized;
 }
@@ -15053,38 +15053,38 @@ function closeServer(server: Server): Promise<void> {
 // The file manager's file operations, Recents, and folder suggestions
 // (docs/product-model.md, "2026-11-06 file manager layout").
 
-type TransferPlaceRef = { kind: "work-folder" | "standard"; id: string };
-type TransferRestorePoint = { workFolderId: string; checkpointId: string };
+type TransferPlaceRef = { kind: "connected-folder" | "standard"; id: string };
+type TransferRestorePoint = { connectedFolderId: string; checkpointId: string };
 
 interface ResolvedTransferItem {
   abs: string;
   place: TransferPlaceRef | null;
-  workFolder: WorkFolderSummary | null;
+  connectedFolder: ConnectedFolderSummary | null;
   relativePath: string;
 }
 
 function transferPlace(value: unknown): TransferPlaceRef {
   const record = value as { kind?: unknown; id?: unknown } | null;
-  if (!record || (record.kind !== "work-folder" && record.kind !== "standard") || typeof record.id !== "string" || !record.id) throw badRequest("Choose where the items are.");
+  if (!record || (record.kind !== "connected-folder" && record.kind !== "standard") || typeof record.id !== "string" || !record.id) throw badRequest("Choose where the items are.");
   return { kind: record.kind, id: record.id };
 }
 
 async function resolveTransferItem(place: TransferPlaceRef, path: string, purpose: "read" | "change" | "target"): Promise<ResolvedTransferItem> {
-  if (place.kind === "work-folder") {
-    const workFolder = await getWorkFolder(place.id);
-    return { abs: resolveWorkFolderPath(workFolder.workFolderRoot, path), place, workFolder, relativePath: normalizeWorkFolderRelativePath(path) };
+  if (place.kind === "connected-folder") {
+    const connectedFolder = await getConnectedFolder(place.id);
+    return { abs: resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, path), place, connectedFolder, relativePath: normalizeConnectedFolderRelativePath(path) };
   }
   if (!isStandardFolderId(place.id)) throw notFound("That folder isn’t in the sidebar anymore.");
   const abs = purpose === "read"
     ? resolveStandardFolderPath(place.id, path)
     : await assertStandardFolderPathUnowned(place.id, path, userHomedir(), { allowContaining: purpose === "target" });
-  return { abs, place, workFolder: null, relativePath: normalizeWorkFolderRelativePath(path) };
+  return { abs, place, connectedFolder: null, relativePath: normalizeConnectedFolderRelativePath(path) };
 }
 
 /**
  * Copy (and Duplicate) adds to the target and keeps a restore point there; a
- * move inside one work-folder is History's own move; a move between two
- * work-folders keeps a restore point on each side; a move inside one Standard
+ * move inside one Connected Folder is History's own move; a move between two
+ * Connected Folders keeps a restore point on each side; a move inside one Standard
  * Folder is a plain move, as Finder's. Any other move copies, leaving the
  * original where it is, and says so. Items from outside the places (a Finder
  * paste or drop) can only be copied in.
@@ -15105,7 +15105,7 @@ export async function transferFileEntries(body: { mode?: unknown; sources?: unkn
       if (mode === "move") throw badRequest("Items from Finder are copied in, not moved.");
       const abs = resolve(record.nativePath);
       if (!(await lstat(abs).catch(() => null))) throw badRequest(`“${basename(abs)}” isn’t there anymore.`);
-      sources.push({ abs, place: null, workFolder: null, relativePath: "" });
+      sources.push({ abs, place: null, connectedFolder: null, relativePath: "" });
       continue;
     }
     if (typeof record?.path !== "string" || !record.path.trim()) throw badRequest("Choose items to copy or move.");
@@ -15115,15 +15115,15 @@ export async function transferFileEntries(body: { mode?: unknown; sources?: unkn
     if (isInside(source.abs, target.abs)) throw badRequest(`“${basename(source.abs)}” can’t go inside itself.`);
   }
 
-  const sameWorkFolder = (item: ResolvedTransferItem) => Boolean(item.workFolder && target.workFolder && item.workFolder.id === target.workFolder.id);
+  const sameConnectedFolder = (item: ResolvedTransferItem) => Boolean(item.connectedFolder && target.connectedFolder && item.connectedFolder.id === target.connectedFolder.id);
   const placeKey = (item: ResolvedTransferItem) => item.place ? `${item.place.kind}:${item.place.id}` : "";
 
-  if (mode === "move" && sources.every(sameWorkFolder)) {
-    const moved = await moveWorkFolderEntriesWithHistory(target.workFolder!, sources.map((item) => item.relativePath), target.relativePath);
+  if (mode === "move" && sources.every(sameConnectedFolder)) {
+    const moved = await moveConnectedFolderEntriesWithHistory(target.connectedFolder!, sources.map((item) => item.relativePath), target.relativePath);
     return {
       mode,
       written: moved.moved.map((item) => item.path),
-      restorePoints: [{ workFolderId: target.workFolder!.id, checkpointId: moved.safetyCheckpointId }],
+      restorePoints: [{ connectedFolderId: target.connectedFolder!.id, checkpointId: moved.safetyCheckpointId }],
       ...(moved.failed ? { failed: moved.failed } : {}),
     };
   }
@@ -15135,18 +15135,18 @@ export async function transferFileEntries(body: { mode?: unknown; sources?: unkn
     }
     return { mode, written: moves.map((item) => item.to), moves, restorePoints: [] };
   }
-  const sourceWorkFolder = sources[0]?.workFolder ?? null;
-  const crossWorkFolderMove = mode === "move" && Boolean(target.workFolder) && Boolean(sourceWorkFolder)
-    && sources.every((item) => item.workFolder?.id === sourceWorkFolder!.id);
-  const copiedInstead = mode === "move" && !crossWorkFolderMove;
+  const sourceConnectedFolder = sources[0]?.connectedFolder ?? null;
+  const crossConnectedFolderMove = mode === "move" && Boolean(target.connectedFolder) && Boolean(sourceConnectedFolder)
+    && sources.every((item) => item.connectedFolder?.id === sourceConnectedFolder!.id);
+  const copiedInstead = mode === "move" && !crossConnectedFolderMove;
   const label = (verb: string) => `Before ${verb} ${sources.length === 1 ? basename(sources[0]!.abs) : `${sources.length} items`}`;
 
-  // A move between work-folders first records everything it will take from the source.
-  const sourceSafety = crossWorkFolderMove
-    ? await createWorkFolderMutationCheckpoint(sourceWorkFolder!.workFolderRoot, {
+  // A move between Connected Folders first records everything it will take from the source.
+  const sourceSafety = crossConnectedFolderMove
+    ? await createConnectedFolderMutationCheckpoint(sourceConnectedFolder!.connectedFolderRoot, {
       paths: sources.map((item) => item.relativePath),
       reason: "pre_move",
-      label: `${label("moving")} to ${target.workFolder!.name}`,
+      label: `${label("moving")} to ${target.connectedFolder!.name}`,
     })
     : null;
   const written: string[] = [];
@@ -15157,20 +15157,20 @@ export async function transferFileEntries(body: { mode?: unknown; sources?: unkn
     }
   } catch (error) {
     await Promise.all(written.map((path) => rm(path, { recursive: true, force: true }).catch(() => undefined)));
-    if (sourceSafety) await discardWorkFolderCheckpoint(sourceWorkFolder!.workFolderRoot, sourceSafety.checkpointId).catch(() => undefined);
+    if (sourceSafety) await discardConnectedFolderCheckpoint(sourceConnectedFolder!.connectedFolderRoot, sourceSafety.checkpointId).catch(() => undefined);
     throw error;
   }
-  const targetRoot = target.workFolder?.workFolderRoot ?? (target.place?.kind === "standard" ? standardFolderRoot(target.place.id as StandardFolderId) : target.abs);
+  const targetRoot = target.connectedFolder?.connectedFolderRoot ?? (target.place?.kind === "standard" ? standardFolderRoot(target.place.id as StandardFolderId) : target.abs);
   const writtenPaths = written.map((path) => relativeTo(targetRoot, path));
   const restorePoints: TransferRestorePoint[] = [];
-  if (target.workFolder) {
-    const verb = mode === "duplicate" ? "duplicating" : crossWorkFolderMove ? "moving" : "pasting";
-    const targetSafety = await checkpointAdditiveWritesOrUndo(target.workFolder.workFolderRoot, writtenPaths, { reason: crossWorkFolderMove ? "pre_move" : "pre_copy", label: label(verb) });
-    if (targetSafety) restorePoints.push({ workFolderId: target.workFolder.id, checkpointId: targetSafety.checkpointId });
+  if (target.connectedFolder) {
+    const verb = mode === "duplicate" ? "duplicating" : crossConnectedFolderMove ? "moving" : "pasting";
+    const targetSafety = await checkpointAdditiveWritesOrUndo(target.connectedFolder.connectedFolderRoot, writtenPaths, { reason: crossConnectedFolderMove ? "pre_move" : "pre_copy", label: label(verb) });
+    if (targetSafety) restorePoints.push({ connectedFolderId: target.connectedFolder.id, checkpointId: targetSafety.checkpointId });
   }
-  if (crossWorkFolderMove) {
+  if (crossConnectedFolderMove) {
     await Promise.all(sources.map((source) => rm(source.abs, { recursive: true, force: true })));
-    restorePoints.push({ workFolderId: sourceWorkFolder!.id, checkpointId: sourceSafety!.checkpointId });
+    restorePoints.push({ connectedFolderId: sourceConnectedFolder!.id, checkpointId: sourceSafety!.checkpointId });
   }
   return { mode: copiedInstead ? "copy" : mode, written: writtenPaths, restorePoints, ...(copiedInstead ? { copiedInstead: true } : {}) };
 }
@@ -15183,20 +15183,20 @@ async function compressEntries(body: { place?: unknown; paths?: unknown }) {
   const folderRelative = items[0]!.relativePath.includes("/") ? items[0]!.relativePath.slice(0, items[0]!.relativePath.lastIndexOf("/")) : "";
   const target = await resolveTransferItem(place, folderRelative, "target");
   const archive = await compressInto(items.map((item) => item.abs), folder);
-  const root = target.workFolder?.workFolderRoot ?? standardFolderRoot(place.id as StandardFolderId);
+  const root = target.connectedFolder?.connectedFolderRoot ?? standardFolderRoot(place.id as StandardFolderId);
   const path = relativeTo(root, archive);
-  const safety = target.workFolder
-    ? await checkpointAdditiveWritesOrUndo(target.workFolder.workFolderRoot, [path], { reason: "pre_compress", label: `Before compressing ${items.length === 1 ? basename(items[0]!.abs) : `${items.length} items`}` })
+  const safety = target.connectedFolder
+    ? await checkpointAdditiveWritesOrUndo(target.connectedFolder.connectedFolderRoot, [path], { reason: "pre_compress", label: `Before compressing ${items.length === 1 ? basename(items[0]!.abs) : `${items.length} items`}` })
     : null;
-  return { path, restorePoints: safety ? [{ workFolderId: target.workFolder!.id, checkpointId: safety.checkpointId }] : [] };
+  return { path, restorePoints: safety ? [{ connectedFolderId: target.connectedFolder!.id, checkpointId: safety.checkpointId }] : [] };
 }
 
 /**
  * Recents: files changed in the last 30 days, newest first: everything in the
- * work-folders (as their own rules show them) and the files at the top of
+ * Connected Folders (as their own rules show them) and the files at the top of
  * Desktop, Documents, and Downloads.
  */
-async function recentFiles(workFolders: readonly WorkFolderSummary[]) {
+async function recentFiles(connectedFolders: readonly ConnectedFolderSummary[]) {
   const since = Date.now() - 30 * 24 * 60 * 60 * 1_000;
   const found: Array<{ place: TransferPlaceRef; path: string; name: string; kind: "file"; sizeBytes?: number; updatedAt: string; where: string }> = [];
   const collect = (place: TransferPlaceRef, where: string, entries: readonly TreeEntry[]) => {
@@ -15207,13 +15207,13 @@ async function recentFiles(workFolders: readonly WorkFolderSummary[]) {
       found.push({ place, path: entry.path, name: entry.name, kind: "file", ...(typeof entry.sizeBytes === "number" ? { sizeBytes: entry.sizeBytes } : {}), updatedAt: entry.updatedAt, where });
     }
   };
-  for (const workFolder of workFolders) {
-    const scan = await scanWorkFolderTree(workFolder.workFolderRoot, 20, "", { includeIgnored: false, nestedFolderPaths: await nestedRegisteredWorkFolderPaths(workFolder.workFolderRoot) }).catch(() => null);
-    if (scan) collect({ kind: "work-folder", id: workFolder.id }, workFolder.name, scan.entries);
+  for (const connectedFolder of connectedFolders) {
+    const scan = await scanConnectedFolderTree(connectedFolder.connectedFolderRoot, 20, "", { includeIgnored: false, nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(connectedFolder.connectedFolderRoot) }).catch(() => null);
+    if (scan) collect({ kind: "connected-folder", id: connectedFolder.id }, connectedFolder.name, scan.entries);
   }
-  const standard = await listStandardFolders(workFolders).catch(() => []);
+  const standard = await listStandardFolders(connectedFolders).catch(() => []);
   for (const folder of standard) {
-    if (folder.workFolderId || !["desktop", "documents", "downloads"].includes(folder.id)) continue;
+    if (folder.connectedFolderId || !["desktop", "documents", "downloads"].includes(folder.id)) continue;
     const scan = await scanStandardFolder(folder.id, "").catch(() => null);
     if (scan) collect({ kind: "standard", id: folder.id }, folder.name, scan.tree);
   }
@@ -15225,28 +15225,28 @@ const folderSuggestionLifetimeMs = 30 * 60 * 1_000;
 
 /**
  * Up to four short messages a person might send next, written by the
- * work-folder's own model from the folder's names (and the folder shown inside
+ * Connected Folder's own model from the folder's names (and the folder shown inside
  * it) and its recent Chat titles. Kept while those stay the same; an empty
  * list means "use the plain ones" (no model, or the call failed).
  */
-async function folderSuggestions(state: LocalApiState, workFolder: WorkFolderSummary, path: string): Promise<string[]> {
-  const relativePath = normalizeWorkFolderRelativePath(path);
-  const scan = await scanWorkFolderTree(workFolder.workFolderRoot, 0, relativePath, { includeIgnored: false, nestedFolderPaths: await nestedRegisteredWorkFolderPaths(workFolder.workFolderRoot) }).catch(() => null);
+async function folderSuggestions(state: LocalApiState, connectedFolder: ConnectedFolderSummary, path: string): Promise<string[]> {
+  const relativePath = normalizeConnectedFolderRelativePath(path);
+  const scan = await scanConnectedFolderTree(connectedFolder.connectedFolderRoot, 0, relativePath, { includeIgnored: false, nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(connectedFolder.connectedFolderRoot) }).catch(() => null);
   const entries = (scan?.entries ?? []).slice(0, 80).map((entry) => `${entry.kind === "folder" ? "folder" : "file"}: ${entry.name}${entry.updatedAt ? ` (changed ${entry.updatedAt.slice(0, 10)})` : ""}`);
-  const chats = (await listConversations(workFolder.workFolderRoot).catch(() => [])).slice(0, 8).map((chat) => chat.title).filter(Boolean);
+  const chats = (await listConversations(connectedFolder.connectedFolderRoot).catch(() => [])).slice(0, 8).map((chat) => chat.title).filter(Boolean);
   const key = JSON.stringify([relativePath, entries, chats]);
-  const cacheKey = `${workFolder.id}\0${relativePath}`;
+  const cacheKey = `${connectedFolder.id}\0${relativePath}`;
   const cached = folderSuggestionCache.get(cacheKey);
   if (cached && cached.key === key && Date.now() - cached.at < folderSuggestionLifetimeMs) return cached.suggestions;
   try {
-    const client = await getClient(state, workFolder.id, workFolder.workFolderRoot, workFoldAppInferenceConversationId);
+    const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, ampleFileAppInferenceConversationId);
     const outcome = await client.infer({
       instructions: [
         "Suggest up to four short messages this person might send next to the assistant that works in this folder.",
         "Each is an instruction or question in their own words, 2 to 6 words, plain and specific to what is actually here (name real files or folders when it helps).",
         "No numbering, quotes, or emoji. Prefer useful work: tidy, summarize, find, compare, plan, draft. Don't suggest anything that deletes files.",
       ].join(" "),
-      input: JSON.stringify({ folder: relativePath ? `${workFolder.name}/${relativePath}` : workFolder.name, items: entries, recentChats: chats }),
+      input: JSON.stringify({ folder: relativePath ? `${connectedFolder.name}/${relativePath}` : connectedFolder.name, items: entries, recentChats: chats }),
       outputSchema: {
         type: "object",
         properties: { suggestions: { type: "array", items: { type: "string", maxLength: 48 }, maxItems: 4 } },

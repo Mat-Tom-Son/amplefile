@@ -7,17 +7,17 @@ import { JSDOM } from "jsdom";
 const root = process.cwd();
 const [app, tabBar, chatPanel, chatActions, messages, workTrail, activity, panes, settingsModal, chrome, styles, identity, modelDisplay, desktopMain, localServer, piClient, activityDot] = await Promise.all([
   read("web-local/src/App.tsx"),
-  read("web-local/src/components/chat/WorkFolderSurfaceTabBar.tsx"),
+  read("web-local/src/components/chat/ConnectedFolderSurfaceTabBar.tsx"),
   read("web-local/src/components/chat/ChatPanel.tsx"),
   read("web-local/src/components/chat/ChatActionsPopover.tsx"),
   read("web-local/src/components/chat/messages.tsx"),
   read("web-local/src/lib/chat-work-trail.ts"),
   read("web-local/src/components/chat/activity.tsx"),
-  Promise.all([read("web-local/src/components/panes/workFolderPanes.tsx"), read("web-local/src/components/panes/AiModelsPane.tsx")]).then((sources) => sources.join("\n")),
+  Promise.all([read("web-local/src/components/panes/connectedFolderPanes.tsx"), read("web-local/src/components/panes/AiModelsPane.tsx")]).then((sources) => sources.join("\n")),
   read("web-local/src/components/modals/DesktopSettingsModal.tsx"),
-  read("web-local/src/components/panes/workFolderChrome.tsx"),
+  read("web-local/src/components/panes/connectedFolderChrome.tsx"),
   Promise.all([read("web-local/src/styles.css"), read("web-local/src/components/chat/work-steps.css")]).then((sources) => sources.join("\n")),
-  read("web-local/src/lib/work-folder-identity.ts"),
+  read("web-local/src/lib/connected-folder-identity.ts"),
   read("web-local/src/lib/model-display.ts"),
   read("desktop/src/main.ts"),
   read("src/local/server.ts"),
@@ -49,7 +49,7 @@ test("mid-turn Enter steers the running turn; ⌘Enter queues one visible, cance
   // cannot re-queue a cancelled message, and its echo is ignored meanwhile.
   assert.match(chatPanel, /const cancel = queueWritesRef\.current\.catch\(\(\) => undefined\)\s*\.then\(\(\) => api<\{ revision: number \}>\(path, \{ method: "DELETE" \}\)\);/);
   assert.match(chatPanel, /const \{ content, needsDelete \} = queueSync\.cancel\(\);/);
-  assert.match(chatPanel, /addressedWorkFolderIds: addressedFolderIds\(next, mentionFolders\)/);
+  assert.match(chatPanel, /addressedConnectedFolderIds: addressedFolderIds\(next, mentionFolders\)/);
   assert.match(chatPanel, /if \(data\.type === "queued_message"\)/);
   // A window never sends the message itself while its own queue writes or Cancel are unanswered.
   assert.match(chatPanel, /if \(running \|\| workState\.work\?\.canStop \|\| !queuedSend \|\| queuedOnServer \|\| queueUnsettled \|\| lifecycleView !== "active"\) return;/);
@@ -62,16 +62,16 @@ test("mid-turn Enter steers the running turn; ⌘Enter queues one visible, cance
   assert.match(styles, /\.queued-send-bubble \{/);
 });
 
-test("the file tab previews bounded text, images, and PDFs inline through work-folder-policy routes", () => {
+test("the file tab previews bounded text, images, and PDFs inline through connected-folder-policy routes", () => {
   // The preview endpoint reads a bounded head under the same path policy as
   // every entry route, declines binary and oversized content with a reason,
   // and images ride the existing same-origin raw-file route.
   assert.match(localServer, /file-preview\$\//);
-  assert.match(localServer, /getWorkFolderFilePreview\(workFolder\.workFolderRoot, path\)/);
+  assert.match(localServer, /getConnectedFolderFilePreview\(connectedFolder\.connectedFolderRoot, path\)/);
   const pane = readFileSyncLike("web-local/src/components/panes/FileDetailsPane.tsx");
   return pane.then((source) => {
     assert.match(source, /file-preview\?path=/);
-    assert.match(source, /workFolderRawFileObjectUrl\(workFolder\.id, path, controller\.signal\)/);
+    assert.match(source, /connectedFolderRawFileObjectUrl\(connectedFolder\.id, path, controller\.signal\)/);
     assert.match(source, /<iframe title=\{fileName\} src=\{`\$\{objectUrl\}\$\{pdfViewerParameters\}`\} \/>/);
     assert.match(source, /const pdfViewerParameters = "#toolbar=0&navpanes=0&view=FitH";/);
     assert.match(source, /<MarkdownMessage content=\{preview\.content\} \/>/);
@@ -81,7 +81,7 @@ test("the file tab previews bounded text, images, and PDFs inline through work-f
   }).then(() => readFileSyncLike("web-local/src/lib/raw-file.ts")).then((source) => {
     // A blob URL carries the session header and stays inside the renderer's
     // img-src/frame-src policy, which a direct local API URL would not.
-    assert.match(source, /apiUrl\(`\/api\/work-folders\/\$\{workFolderId\}\/raw-file\?path=/);
+    assert.match(source, /apiUrl\(`\/api\/connected-folders\/\$\{connectedFolderId\}\/raw-file\?path=/);
     assert.match(source, /getSessionHeaders/);
     assert.match(source, /URL\.createObjectURL/);
   });
@@ -92,7 +92,7 @@ function readFileSyncLike(relativePath: string): Promise<string> {
 }
 
 test("Files exposes folder creation and naming uses in-app UI", () => {
-  // work-folder creation lives in the right-click menu (2026-10-01); Files has no toolbar buttons.
+  // Connected Folder creation lives in the right-click menu (2026-10-01); Files has no toolbar buttons.
   assert.doesNotMatch(app, /aria-label="New [Ff]older"/);
   assert.match(app, /onNewFolder=\{requestNewFolder\}/);
   assert.match(app, /else if \(command === "new-folder"\) requestNewFolder\(entry\.path\);/);
@@ -101,15 +101,15 @@ test("Files exposes folder creation and naming uses in-app UI", () => {
   assert.match(app, /<TextInputModal[^>]*title=\{`Rename/);
 });
 
-test("one work-folder menu trigger can create a Chat in every work-folder", () => {
+test("one Connected Folder menu trigger can create a Chat in every Connected Folder", () => {
   assert.equal((tabBar.match(/aria-label="Start a New Chat"/g) ?? []).length, 1);
-  assert.match(tabBar, /menuWorkFolders\.map/);
-  assert.match(tabBar, /onNewChatInWorkFolder\(targetWorkFolder\)/);
+  assert.match(tabBar, /menuConnectedFolders\.map/);
+  assert.match(tabBar, /onNewChatInConnectedFolder\(targetConnectedFolder\)/);
   assert.doesNotMatch(tabBar, /\bonNewChat:\s*\(\)\s*=>/);
-  const tabBarCall = app.match(/<WorkFolderSurfaceTabBar[\s\S]*?\/>/)?.[0] ?? "";
-  assert.doesNotMatch(tabBarCall, /newChatWorkFolderName=|onNewChat=\{/);
+  const tabBarCall = app.match(/<ConnectedFolderSurfaceTabBar[\s\S]*?\/>/)?.[0] ?? "";
+  assert.doesNotMatch(tabBarCall, /newChatConnectedFolderName=|onNewChat=\{/);
   assert.doesNotMatch(app, /fixtureConversations=\{[^}]*:\s*\[\]\s*\}/, "blank fixture tabs must not receive a fresh array on every render");
-  assert.doesNotMatch(tabBar, /Keep each work-folder together|Applies when multiple work-folders are open/);
+  assert.doesNotMatch(tabBar, /Keep each Connected Folder together|Applies when multiple Connected Folders are open/);
 });
 
 test("Chat work can be deferred, found again, and resumed without interrupting active turns", () => {
@@ -134,34 +134,34 @@ test("Chat work can be deferred, found again, and resumed without interrupting a
   assert.match(app, /<ChatPanel[\s\S]*?active=\{active\}/);
   assert.match(tabBar, /surface-tab-chat-status/);
   assert.match(panes, /status=\{status\} labeled/);
-  // One shared activity mark (2026-10-01) labels the Chats list, the work-folder switcher, and Files.
+  // One shared activity mark (2026-10-01) labels the Chats list, the Connected Folder switcher, and Files.
   assert.match(panes, /import \{ ActivityDot \} from "\.\.\/chrome\/ActivityDot"/);
   assert.match(activityDot, /status === "running" \? "Working" : "New Reply"/);
   assert.match(chatPanel, /onRunningChangeRef\.current/);
   assert.match(chatPanel, /reportChatSettled\(conversationId\)/);
 });
 
-test("Chats show the work-folders inside this one under its own Chats", () => {
-  assert.match(panes, /folderTreeRows\(descendantFolders\(workFolder, workFolders\)\)/);
-  assert.match(panes, /className="chat-nested-work-folder"/);
-  assert.match(panes, /\.filter\(\(item\) => item\.id !== workFolder\.id && !nestedIds\.has\(item\.id\)\)/, "nested work-folders are not repeated under Other work-folders");
+test("Chats show the Connected Folders inside this one under its own Chats", () => {
+  assert.match(panes, /folderTreeRows\(descendantFolders\(connectedFolder, connectedFolders\)\)/);
+  assert.match(panes, /className="chat-nested-connected-folder"/);
+  assert.match(panes, /\.filter\(\(item\) => item\.id !== connectedFolder\.id && !nestedIds\.has\(item\.id\)\)/, "nested Connected Folders are not repeated under Other Connected Folders");
 });
 
-test("Chats foreground the active work-folder and collapse other work-folders until requested", () => {
-  assert.match(panes, /const \[expandedOtherWorkFolderIds, setExpandedOtherWorkFolderIds\]/);
-  assert.match(panes, /aria-label="Chats in other work-folders"/);
+test("Chats foreground the active Connected Folder and collapse other Connected Folders until requested", () => {
+  assert.match(panes, /const \[expandedOtherConnectedFolderIds, setExpandedOtherConnectedFolderIds\]/);
+  assert.match(panes, /aria-label="Chats in other Connected Folders"/);
   assert.doesNotMatch(panes, /\.filter\(\(\{ list \}\) => list\.length > 0\)/);
   assert.match(panes, /aggregateChatActivityStatus\(item\.id, conversations\[item\.id\] \?\? \[\], activityStatuses\)/);
   assert.match(panes, /aria-label=\{`\$\{expanded \? "Hide" : "Show"\} chats in \$\{item\.name\}`\}/);
   assert.match(panes, /aria-expanded=\{expanded\}/);
-  assert.match(panes, /const expanded = Boolean\(normalized\) \|\| expandedOtherWorkFolderIds\.has/);
-  assert.match(panes, /onClick=\{\(\) => toggle\(setExpandedOtherWorkFolderIds, item\.id\)\}/);
+  assert.match(panes, /const expanded = Boolean\(normalized\) \|\| expandedOtherConnectedFolderIds\.has/);
+  assert.match(panes, /onClick=\{\(\) => toggle\(setExpandedOtherConnectedFolderIds, item\.id\)\}/);
   assert.match(panes, /aria-label=\{`New Chat in \$\{item\.name\}`\}/);
 });
 
-test("Other work-folder identity glyphs stay centered without decorative tiles", () => {
-  assert.match(panes, /className="work-folder-identity-icon chat-other-work-folder-icon"/);
-  const iconRule = styles.match(/\.chat-other-work-folder-icon\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+test("Other Connected Folder identity glyphs stay centered without decorative tiles", () => {
+  assert.match(panes, /className="connected-folder-identity-icon chat-other-connected-folder-icon"/);
+  const iconRule = styles.match(/\.chat-other-connected-folder-icon\s*\{([\s\S]*?)\}/)?.[1] ?? "";
   assert.match(iconRule, /width:\s*18px/);
   assert.match(iconRule, /height:\s*18px/);
   assert.match(iconRule, /display:\s*grid/);
@@ -169,7 +169,7 @@ test("Other work-folder identity glyphs stay centered without decorative tiles",
   assert.match(iconRule, /background:\s*transparent/);
   assert.match(iconRule, /border:\s*0/);
   assert.match(iconRule, /box-shadow:\s*none/);
-  assert.match(styles, /\.app-shell\[data-theme="dark"\] \.chat-other-work-folder-icon\s*\{[\s\S]*?background:\s*transparent/);
+  assert.match(styles, /\.app-shell\[data-theme="dark"\] \.chat-other-connected-folder-icon\s*\{[\s\S]*?background:\s*transparent/);
 });
 
 test("Chat titles flow from conversation metadata into tabs without tab labels mutating Chats", () => {
@@ -180,24 +180,24 @@ test("Chat titles flow from conversation metadata into tabs without tab labels m
 });
 
 test("Chat and File selection use an immediate whole-row state without a leading stripe", () => {
-  const chatShellRule = styles.match(/\.chat-work-folder-row-shell\s*\{([\s\S]*?)\}/)?.[1] ?? "";
-  const activeChatRule = styles.match(/\.chat-work-folder-row-shell\.active\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+  const chatShellRule = styles.match(/\.chat-connected-folder-row-shell\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+  const activeChatRule = styles.match(/\.chat-connected-folder-row-shell\.active\s*\{([\s\S]*?)\}/)?.[1] ?? "";
   const selectedFileRule = styles.match(/\.file-row\.selected\s*\{([\s\S]*?)\}/)?.[1] ?? "";
 
   assert.doesNotMatch(chatShellRule, /transition:/);
   for (const rule of [activeChatRule, selectedFileRule]) {
-    assert.match(styles, /\.chat-work-folder-row-shell\.active[\s\S]*?work-folder-accent-soft-fill/);
-    assert.match(styles, /\.file-row\.selected[\s\S]*?work-folder-accent-soft-fill/);
+    assert.match(styles, /\.chat-connected-folder-row-shell\.active[\s\S]*?connected-folder-accent-soft-fill/);
+    assert.match(styles, /\.file-row\.selected[\s\S]*?connected-folder-accent-soft-fill/);
     assert.doesNotMatch(rule, /inset\s+[23]px\s+0\s+0/);
   }
-  assert.match(styles, /\.chat-work-folder-row-shell:has\(> \.chat-work-folder-row:active\)/);
+  assert.match(styles, /\.chat-connected-folder-row-shell:has\(> \.chat-connected-folder-row:active\)/);
 });
 
 test("surface tab labels use crisp shell typography", () => {
   const tabMainRule = styles.match(/\.surface-tab-main\s*\{([\s\S]*?)\}/)?.[1] ?? "";
   const tabTitleRule = styles.match(/\.surface-tab-title\s*\{([\s\S]*?)\}/)?.[1] ?? "";
 
-  assert.match(styles, /\.surface-tab-main\s*\{[\s\S]*?font-size:\s*var\(--work-fold-type-xs\)/);
+  assert.match(styles, /\.surface-tab-main\s*\{[\s\S]*?font-size:\s*var\(--amplefile-type-xs\)/);
   assert.match(styles, /\.surface-tab-main\s*\{[\s\S]*?font-weight:\s*500/);
   assert.match(tabMainRule, /line-height:\s*16px/);
   assert.match(tabTitleRule, /font:\s*inherit/);
@@ -214,20 +214,20 @@ test("opening a past Chat never flashes the new-Chat greeting while its messages
   assert.match(chatPanel, /setOpeningConversationId\(selected\.id\);\s*let transcript: ChatMessage\[\];\s*try \{\s*transcript = await loadMessages\(selected\.id, true\);\s*\} finally \{\s*setOpeningConversationId\(\(current\) => current === selected\.id \? null : current\);/, "a failed load must not leave the Chat blank forever");
 });
 
-test("a tab group starts with just its work-folder's colored icon, and a line separates groups", () => {
-  assert.match(tabBar, /<span className="surface-tab-group" role="presentation" key=\{group\.workFolderId\} style=\{workFolderIdentityStyle\(identity\)\}>/, "the group carries its work-folder's colors");
-  assert.match(tabBar, /<span className="surface-tab-group-label" title=\{tabWorkFolder\.name\} aria-hidden="true">\s*<WorkFolderIconGlyph icon=\{identity\.Icon\} size=\{15\} \/>\s*<\/span>/, "icon only; the name is the hover title");
-  assert.doesNotMatch(tabBar, /<span>\{tabWorkFolder\.name\}<\/span>|<span>Browser<\/span>/);
-  assert.match(tabBar, /aria-label=\{`\$\{tab\.title\} in \$\{workFolderName\}/, "each tab still names its work-folder for assistive technology");
+test("a tab group starts with just its Connected Folder's colored icon, and a line separates groups", () => {
+  assert.match(tabBar, /<span className="surface-tab-group" role="presentation" key=\{group\.connectedFolderId\} style=\{connectedFolderIdentityStyle\(identity\)\}>/, "the group carries its Connected Folder's colors");
+  assert.match(tabBar, /<span className="surface-tab-group-label" title=\{tabConnectedFolder\.name\} aria-hidden="true">\s*<ConnectedFolderIconGlyph icon=\{identity\.Icon\} size=\{15\} \/>\s*<\/span>/, "icon only; the name is the hover title");
+  assert.doesNotMatch(tabBar, /<span>\{tabConnectedFolder\.name\}<\/span>|<span>Browser<\/span>/);
+  assert.match(tabBar, /aria-label=\{`\$\{tab\.title\} in \$\{connectedFolderName\}/, "each tab still names its Connected Folder for assistive technology");
   const iconRule = styles.match(/\n\.surface-tab-group-label \{([\s\S]*?)\}/)?.[1] ?? "";
-  assert.match(iconRule, /color: var\(--work-folder-accent-glyph/);
+  assert.match(iconRule, /color: var\(--connected-folder-accent-glyph/);
   assert.doesNotMatch(iconRule, /background/, "a bare icon, not a chip");
   assert.match(styles, /\n\.surface-tab-group \{[\s\S]*?border-left: 1px solid/, "a line between groups");
   assert.match(styles, /\.surface-tab-active-chrome \+ \.surface-tab-group \{\s*padding-left: 0;\s*border-left: 0;/, "no line before the first group");
 });
 
-test("assistant rendering has complete Markdown chrome and work-folder-aware accents", () => {
-  for (const contract of ["message-code-toolbar", "message-table-scroll", "message-image", "work-folder-file-link"]) {
+test("assistant rendering has complete Markdown chrome and Connected Folder–aware accents", () => {
+  for (const contract of ["message-code-toolbar", "message-table-scroll", "message-image", "connected-folder-file-link"]) {
     assert.match(messages, new RegExp(contract));
     assert.match(styles, new RegExp(`\\.${contract}`));
   }
@@ -238,10 +238,10 @@ test("assistant rendering has complete Markdown chrome and work-folder-aware acc
   for (const rule of [userSurfaceRule, darkUserSurfaceRule]) {
     assert.match(
       rule,
-      /background:\s*var\(--work-folder-accent-solid,\s*var\(--work-folder-custom-color,\s*var\(--work-fold-blue-600\)\)\)/,
+      /background:\s*var\(--connected-folder-accent-solid,\s*var\(--connected-folder-custom-color,\s*var\(--amplefile-blue-600\)\)\)/,
     );
-    assert.match(rule, /color:\s*var\(--work-folder-on-accent-solid,\s*var\(--work-folder-on-primary-accent/);
-    assert.doesNotMatch(rule, /linear-gradient|work-folder-selection-accent2/);
+    assert.match(rule, /color:\s*var\(--connected-folder-on-accent-solid,\s*var\(--connected-folder-on-primary-accent/);
+    assert.doesNotMatch(rule, /linear-gradient|connected-folder-selection-accent2/);
   }
   for (const rule of [userRule, darkUserRule]) {
     assert.match(rule, /background:\s*transparent/);
@@ -261,19 +261,19 @@ test("assistant rendering has complete Markdown chrome and work-folder-aware acc
   assert.match(chatPanel, /running \|\| requestBusy \? \(\s*<button className="send-button stop-send-button"/);
   assert.doesNotMatch(chatPanel, /chat-floating-actions|stop-chat-button/);
   assert.match(identity, /onPrimaryAccentColor:\s*readableTextColorOn\(colorOption\.color\)/);
-  assert.match(identity, /"--work-folder-on-primary-accent":\s*identity\.onPrimaryAccentColor/);
+  assert.match(identity, /"--connected-folder-on-primary-accent":\s*identity\.onPrimaryAccentColor/);
   assert.doesNotMatch(`${messages}\n${chatPanel}\n${styles}`, /message-avatar/);
   assert.doesNotMatch(activity, /Learned From/);
 });
 
 test("provider interruptions stay visible and the configured model is disclosed before first send", () => {
   assert.match(chatPanel, /ConfiguredModel/);
-  assert.match(chatPanel, /\/api\/agent\/status\?workFolderId=/);
-  assert.match(chatPanel, /\/api\/agent\/composer\?scope=work-folder&workFolderId=/);
+  assert.match(chatPanel, /\/api\/agent\/status\?connectedFolderId=/);
+  assert.match(chatPanel, /\/api\/agent\/composer\?scope=connected-folder&connectedFolderId=/);
   assert.match(chatPanel, /setComposerState\(composerResult\.status === "fulfilled"/);
   assert.match(chatPanel, /loadMessages\(conversationId, false, \{ settleStreamingTurn: true \}\)/);
   assert.match(messages, /Response Interrupted/);
-  assert.match(messages, /work-fold preserved/);
+  assert.match(messages, /AmpleFile preserved/);
   assert.match(messages, /Worker setup needed/);
   assert.match(messages, /Request Stopped/);
   assert.match(messages, /savedWorkTrailPreviews\(message\)/);
@@ -307,17 +307,17 @@ test("settlement prefers a persisted work trail over still-running live previews
 
 test("Chat composer model and reasoning controls are truthful, scoped, and functional", () => {
   // The control names the actual provider model, never the product. Its
-  // click opens an inline list of this work-folder's connected models that saves
+  // click opens an inline list of this Connected Folder's connected models that saves
   // through the same configure endpoint as Settings, and its last item opens
-  // the agent page already scoped to this work-folder's model.
+  // the agent page already scoped to this Connected Folder's model.
   assert.match(chatPanel, /runtime\.model\?\.name\s*\n\s*\?\? runtime\.model\?\.id/);
   assert.match(chatPanel, /displayModelLabel\(status\.provider \?\? "", status\.model \?\? ""\)/);
-  assert.doesNotMatch(modelDisplay, /work-fold agent/i);
+  assert.doesNotMatch(modelDisplay, /AmpleFile agent/i);
   assert.match(chatPanel, /`\/api\/agent\/models\?\$\{params\.toString\(\)\}`/);
   assert.match(chatPanel, /\.filter\(\(model\) => model\.authConfigured\)/);
-  assert.match(chatPanel, /"\/api\/agent\/configure", \{\s*method: "POST",\s*body: \{ scope: "work-folder", workFolderId, provider: model\.provider, model: model\.id \}/);
+  assert.match(chatPanel, /"\/api\/agent\/configure", \{\s*method: "POST",\s*body: \{ scope: "connected-folder", connectedFolderId, provider: model\.provider, model: model\.id \}/);
   assert.match(chatPanel, /onOpenModelSettings\?\.\(\);\s*\}\}\s*>\s*Model Settings/);
-  assert.match(app, /onOpenModelSettings=\{\(\) => onOpenSettings\("ai-models", "work-folder", true, targetWorkFolder\.id\)\}/);
+  assert.match(app, /onOpenModelSettings=\{\(\) => onOpenSettings\("ai-models", "connected-folder", true, targetConnectedFolder\.id\)\}/);
   assert.match(settingsModal, /initialScope=\{initialModelScope\} focusModelOnOpen=\{focusAiModel\}/);
   assert.match(panes, /<ModelCatalogList id="ai-model" labelledBy="ai-model-label"/);
 
@@ -335,10 +335,10 @@ test("Chat composer model and reasoning controls are truthful, scoped, and funct
   assert.doesNotMatch(chatPanel, /ThinkingLevelControl/);
   assert.match(chatPanel, /conversationRuntime \?\? composerState/);
   assert.match(chatPanel, /"\/api\/agent\/thinking"/);
-  assert.match(chatPanel, /body: \{ scope: "work-folder", workFolderId: workFolder\.id, level \}/);
+  assert.match(chatPanel, /body: \{ scope: "connected-folder", connectedFolderId: connectedFolder\.id, level \}/);
   assert.doesNotMatch(chatPanel, /No extended reasoning|A brief think before answering|Balanced reasoning|Deeper reasoning/);
   assert.match(styles, /\.composer-reasoning-levels button \{[\s\S]*?font: inherit;/);
-  assert.match(styles, /\.composer-model-chip \{[\s\S]*?font-family: inherit;[\s\S]*?font-size: var\(--work-fold-type-2xs\);[\s\S]*?font-weight: 700;/);
+  assert.match(styles, /\.composer-model-chip \{[\s\S]*?font-family: inherit;[\s\S]*?font-size: var\(--amplefile-type-2xs\);[\s\S]*?font-weight: 700;/);
   // The context ring is its own button with a popover that compacts (2026-11-05),
   // and the reasoning levels stay on one row.
   assert.match(chatPanel, /<ConversationContextControl runtime=\{conversationRuntime\}[^>]*onCompact=\{compactFromContextMenu\}/);
@@ -360,12 +360,12 @@ test("reasoning and real tool calls form one chronological steps strip", () => {
   assert.match(activity, /className=\{`work-step-thought\$\{live \? " live" : ""\}`\}[\s\S]*?<ReactMarkdown/);
   assert.match(activity, /repairReasoningMarkdownArtifacts/);
   assert.match(activity, /node\.type === "text"/);
-  assert.match(activity, /workFolderPathCandidate\(value\.slice\(root\.length \+ 1\)/);
+  assert.match(activity, /connectedFolderPathCandidate\(value\.slice\(root\.length \+ 1\)/);
   assert.match(chatPanel, /if \(data\.type === "tool"\)/);
   assert.match(chatPanel, /kind: "tool"/);
   assert.match(chatPanel, /replyStarted=\{liveTurnView\.hasFinal\}/);
   assert.match(chatPanel, /durationMs: Math\.max\(0, endedAt - entry\.startedAt\)/);
-  assert.match(messages, /workFolderRoot=\{workFolderRoot\}/);
+  assert.match(messages, /connectedFolderRoot=\{connectedFolderRoot\}/);
   assert.match(piClient, /event\.detail = previous\?\.detail \|\| event\.detail \|\| ""/);
   assert.match(piClient, /summarizeToolValue\(args\)/);
   assert.doesNotMatch(piClient, /summarizeToolValue\(args \?\? result\)/);
@@ -395,7 +395,7 @@ test("user actions retain semantic footer structure; the real cascade is exercis
 
 test("audited desktop and pane controls have working destinations", () => {
   assert.match(chrome, /switchable = true/);
-  assert.doesNotMatch(chrome, /workFolders\.length > 1/);
+  assert.doesNotMatch(chrome, /connectedFolders\.length > 1/);
   assert.match(desktopMain, /About \$\{productName\}[\s\S]*?sendRendererMenuCommand\("open-about"\)/);
   assert.doesNotMatch(desktopMain, /About \$\{productName\}[^\n]*enabled:\s*false/);
   assert.doesNotMatch(panes, /onDoubleClick=\{\(\) => onOpen\?\.\(item\)\}/);

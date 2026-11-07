@@ -15,7 +15,7 @@ export default async ({ libraries, resolve, readPdf, renderPdf, emitImage }) => 
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const page = pdf.addPage([612, 792]);
   page.drawRectangle({ x: 0, y: 0, width: 612, height: 792, color: rgb(0.98, 0.98, 0.96) });
-  page.drawText("WORK-FOLD / DOCUMENT RUNTIME", { x: 48, y: 736, size: 10, font: bold, color: rgb(0.1, 0.4, 0.4) });
+  page.drawText("AMPLEFILE / DOCUMENT RUNTIME", { x: 48, y: 736, size: 10, font: bold, color: rgb(0.1, 0.4, 0.4) });
   page.drawText("Launch plan", { x: 48, y: 676, size: 36, font: bold, color: rgb(0.1, 0.15, 0.2) });
   page.drawText("A portable document, created and checked locally.", { x: 48, y: 643, size: 14, font });
   page.drawLine({ start: { x: 48, y: 615 }, end: { x: 564, y: 615 }, thickness: 1, color: rgb(0.75, 0.8, 0.8) });

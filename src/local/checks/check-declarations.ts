@@ -4,32 +4,32 @@ import { link, lstat, mkdir, open, opendir, unlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
-  declarationFromWorkFoldCheckProposal,
-  normalizeWorkFoldCheckDeclaration,
-  normalizeWorkFoldCheckProposal,
-  type WorkFoldCheckDeclaration,
-  type WorkFoldCheckProposal,
+  declarationFromAmpleFileCheckProposal,
+  normalizeAmpleFileCheckDeclaration,
+  normalizeAmpleFileCheckProposal,
+  type AmpleFileCheckDeclaration,
+  type AmpleFileCheckProposal,
 } from "../../shared/checks.js";
-import { workFolderCheckDeclarationDir } from "../state-paths.js";
-import { workFoldCheckDigest } from "./check-integrity.js";
+import { connectedFolderCheckDeclarationDir } from "../state-paths.js";
+import { ampleFileCheckDigest } from "./check-integrity.js";
 
 const maximumDeclarationBytes = 4 * 1024 * 1024;
 const maximumDeclarations = 10_000;
 const maximumDirectoryEntries = 4_096;
 
-export interface WorkFoldCheckDeclarationRecord {
-  declaration: WorkFoldCheckDeclaration;
+export interface AmpleFileCheckDeclarationRecord {
+  declaration: AmpleFileCheckDeclaration;
   digest: string;
   path: string;
 }
 
-export interface WorkFoldCheckDeclarationDiscovery {
-  declarations: WorkFoldCheckDeclarationRecord[];
+export interface AmpleFileCheckDeclarationDiscovery {
+  declarations: AmpleFileCheckDeclarationRecord[];
   errors: Array<{ file: string; message: string }>;
 }
 
-export async function discoverWorkFoldCheckDeclarations(workFolderRoot: string): Promise<WorkFoldCheckDeclarationDiscovery> {
-  const directory = workFolderCheckDeclarationDir(workFolderRoot);
+export async function discoverAmpleFileCheckDeclarations(connectedFolderRoot: string): Promise<AmpleFileCheckDeclarationDiscovery> {
+  const directory = connectedFolderCheckDeclarationDir(connectedFolderRoot);
   const directoryInfo = await lstat(directory).catch((error: unknown) => {
     if (isMissingFile(error)) return null;
     throw error;
@@ -54,18 +54,18 @@ export async function discoverWorkFoldCheckDeclarations(workFolderRoot: string):
   }
   entries.sort((left, right) => left.name.localeCompare(right.name, "en-US"));
   if (entries.length > maximumDeclarations) {
-    return { declarations: [], errors: [{ file: "checks", message: `The work-folder has more than ${maximumDeclarations} Check declarations.` }] };
+    return { declarations: [], errors: [{ file: "checks", message: `The Connected Folder has more than ${maximumDeclarations} Check declarations.` }] };
   }
-  const declarations: WorkFoldCheckDeclarationRecord[] = [];
-  const errors: WorkFoldCheckDeclarationDiscovery["errors"] = [];
+  const declarations: AmpleFileCheckDeclarationRecord[] = [];
+  const errors: AmpleFileCheckDeclarationDiscovery["errors"] = [];
   for (const entry of entries) {
     try {
       if (entry.isSymbolicLink() || !entry.isFile()) throw new Error("Check declarations must be ordinary files, not links or special files.");
       const path = join(directory, entry.name);
       const source = await readBoundedOrdinaryFile(path);
-      const declaration = normalizeWorkFoldCheckDeclaration(JSON.parse(source));
+      const declaration = normalizeAmpleFileCheckDeclaration(JSON.parse(source));
       if (`${declaration.id}.json` !== entry.name) throw new Error("Check declaration filename must match its id.");
-      declarations.push({ declaration, digest: workFoldCheckDigest(declaration), path });
+      declarations.push({ declaration, digest: ampleFileCheckDigest(declaration), path });
     } catch (error) {
       errors.push({ file: entry.name, message: errorMessage(error) });
     }
@@ -73,21 +73,21 @@ export async function discoverWorkFoldCheckDeclarations(workFolderRoot: string):
   return { declarations, errors };
 }
 
-export async function readWorkFoldCheckProposal(path: string): Promise<WorkFoldCheckProposal> {
+export async function readAmpleFileCheckProposal(path: string): Promise<AmpleFileCheckProposal> {
   const resolved = resolve(path);
-  return normalizeWorkFoldCheckProposal(JSON.parse(await readBoundedOrdinaryFile(resolved)));
+  return normalizeAmpleFileCheckProposal(JSON.parse(await readBoundedOrdinaryFile(resolved)));
 }
 
-export async function writeWorkFoldCheckDeclaration(
-  workFolderRoot: string,
-  proposal: WorkFoldCheckProposal,
-): Promise<WorkFoldCheckDeclarationRecord> {
-  const declaration = declarationFromWorkFoldCheckProposal(proposal);
-  const directory = workFolderCheckDeclarationDir(workFolderRoot);
+export async function writeAmpleFileCheckDeclaration(
+  connectedFolderRoot: string,
+  proposal: AmpleFileCheckProposal,
+): Promise<AmpleFileCheckDeclarationRecord> {
+  const declaration = declarationFromAmpleFileCheckProposal(proposal);
+  const directory = connectedFolderCheckDeclarationDir(connectedFolderRoot);
   await ensureOrdinaryDirectory(directory);
   const path = join(directory, `${declaration.id}.json`);
   await writeNewAtomicJson(path, declaration);
-  return { declaration, digest: workFoldCheckDigest(declaration), path };
+  return { declaration, digest: ampleFileCheckDigest(declaration), path };
 }
 
 async function ensureOrdinaryDirectory(path: string): Promise<void> {
@@ -95,7 +95,7 @@ async function ensureOrdinaryDirectory(path: string): Promise<void> {
   const info = await lstat(path);
   if (info.isSymbolicLink() || !info.isDirectory()) throw new Error("Check declarations require a safe ordinary directory.");
   const parent = await lstat(dirname(path));
-  if (parent.isSymbolicLink() || !parent.isDirectory()) throw new Error("Check declarations require safe work-folder metadata.");
+  if (parent.isSymbolicLink() || !parent.isDirectory()) throw new Error("Check declarations require safe Connected Folder metadata.");
 }
 
 async function readBoundedOrdinaryFile(path: string): Promise<string> {

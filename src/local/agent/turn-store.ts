@@ -2,15 +2,15 @@ import { randomUUID } from "node:crypto";
 import { open } from "node:fs/promises";
 import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { parseTurnFileChanges, type WorkFoldTurnFileChanges } from "./turn-file-changes.js";
+import { parseTurnFileChanges, type AmpleFileTurnFileChanges } from "./turn-file-changes.js";
 
-export const workFoldTurnRecordSchema = "work-fold.turn.v1" as const;
+export const ampleFileTurnRecordSchema = "amplefile.turn.v1" as const;
 /** Recent terminal outcomes retained in addition to every unfinished turn. */
 export const maxDurableTurnRecords = 1_000;
 export const maxDurableTurnTextChars = 2_000_000;
 const turnJournalCompactBytes = 16 * 1024 * 1024;
 
-export type WorkFoldDurableTurnStatus =
+export type AmpleFileDurableTurnStatus =
   | "accepted"
   | "running"
   | "succeeded"
@@ -22,10 +22,10 @@ export type WorkFoldDurableTurnStatus =
  * What the turn actually spent: the provider and model id that ran it and the
  * usage Pi reported for it. `inputTokens` counts every prompt token the
  * provider processed, cache reads and writes included. `amountUsd` is present only when the effective
- * model carries pricing work-fold can apply — a model without published rates
+ * model carries pricing AmpleFile can apply — a model without published rates
  * leaves the cost unknown rather than zero.
  */
-export interface WorkFoldDurableTurnUsage {
+export interface AmpleFileDurableTurnUsage {
   provider: string;
   modelId: string;
   inputTokens: number;
@@ -33,30 +33,30 @@ export interface WorkFoldDurableTurnUsage {
   amountUsd?: number;
 }
 
-export interface WorkFoldDurableTurnRecord {
-  schema: typeof workFoldTurnRecordSchema;
+export interface AmpleFileDurableTurnRecord {
+  schema: typeof ampleFileTurnRecordSchema;
   turnId: string;
   requestId: string;
   requestDigest: string;
   userMessageId: string;
   userMessageCreatedAt: string;
-  workFolderId: string;
+  connectedFolderId: string;
   conversationId: string;
   actorKind: "assistant" | "cli" | "renderer" | "system";
-  status: WorkFoldDurableTurnStatus;
+  status: AmpleFileDurableTurnStatus;
   userMessagePersisted: boolean;
   acceptedAt: string;
   updatedAt: string;
   assistantText: string;
   messageId?: string;
   error?: string;
-  fileChanges?: WorkFoldTurnFileChanges;
-  usage?: WorkFoldDurableTurnUsage;
+  fileChanges?: AmpleFileTurnFileChanges;
+  usage?: AmpleFileDurableTurnUsage;
   /** Read-only helpers this turn ran (helper-tool.ts). Counts, ids and paths only. */
-  helpers?: WorkFoldTurnHelperRun[];
+  helpers?: AmpleFileTurnHelperRun[];
 }
 
-export interface WorkFoldTurnHelperRun {
+export interface AmpleFileTurnHelperRun {
   helperId: string;
   taskId?: string;
   startedAt: string;
@@ -68,7 +68,7 @@ export interface WorkFoldTurnHelperRun {
   activity: Array<{ tool: string; target?: string; refused?: boolean; error?: boolean }>;
 }
 
-export interface WorkFoldTurnStoreOptions {
+export interface AmpleFileTurnStoreOptions {
   stateRoot: string;
   now?: () => Date;
   /** Maximum terminal records; accepted and running turns are never evicted. */
@@ -81,50 +81,50 @@ export interface WorkFoldTurnStoreOptions {
  * remains the content authority; this store owns request deduplication, live
  * checkpoints, task-scoped outcomes, and honest restart recovery.
  */
-export class WorkFoldTurnStore {
+export class AmpleFileTurnStore {
   readonly path: string;
   readonly #now: () => Date;
   readonly #maxRecords: number;
   readonly #compactBytes: number;
-  readonly #records = new Map<string, WorkFoldDurableTurnRecord>();
+  readonly #records = new Map<string, AmpleFileDurableTurnRecord>();
   readonly #requests = new Map<string, string>();
   #queue: Promise<unknown> = Promise.resolve();
 
-  private constructor(options: WorkFoldTurnStoreOptions) {
+  private constructor(options: AmpleFileTurnStoreOptions) {
     this.path = join(options.stateRoot, "turns", "turns.jsonl");
     this.#now = options.now ?? (() => new Date());
     this.#maxRecords = options.maxRecords ?? maxDurableTurnRecords;
     this.#compactBytes = options.compactBytes ?? turnJournalCompactBytes;
   }
 
-  static async create(options: WorkFoldTurnStoreOptions): Promise<WorkFoldTurnStore> {
-    const store = new WorkFoldTurnStore(options);
+  static async create(options: AmpleFileTurnStoreOptions): Promise<AmpleFileTurnStore> {
+    const store = new AmpleFileTurnStore(options);
     await store.#load();
     return store;
   }
 
-  get(turnId: string): WorkFoldDurableTurnRecord | null {
+  get(turnId: string): AmpleFileDurableTurnRecord | null {
     const record = this.#records.get(turnId);
     return record ? copyRecord(record) : null;
   }
 
-  findRequest(workFolderId: string, conversationId: string, requestId: string): WorkFoldDurableTurnRecord | null {
-    const turnId = this.#requests.get(requestKey(workFolderId, conversationId, requestId));
+  findRequest(connectedFolderId: string, conversationId: string, requestId: string): AmpleFileDurableTurnRecord | null {
+    const turnId = this.#requests.get(requestKey(connectedFolderId, conversationId, requestId));
     return turnId ? this.get(turnId) : null;
   }
 
-  findScopeRequest(workFolderId: string, requestId: string): WorkFoldDurableTurnRecord | null {
+  findScopeRequest(connectedFolderId: string, requestId: string): AmpleFileDurableTurnRecord | null {
     for (const record of [...this.#records.values()].reverse()) {
-      if (record.workFolderId === workFolderId && record.requestId === requestId) return copyRecord(record);
+      if (record.connectedFolderId === connectedFolderId && record.requestId === requestId) return copyRecord(record);
     }
     return null;
   }
 
-  list(): WorkFoldDurableTurnRecord[] {
+  list(): AmpleFileDurableTurnRecord[] {
     return [...this.#records.values()].map(copyRecord);
   }
 
-  active(): WorkFoldDurableTurnRecord[] {
+  active(): AmpleFileDurableTurnRecord[] {
     return this.list().filter((record) => record.status === "accepted" || record.status === "running");
   }
 
@@ -134,33 +134,33 @@ export class WorkFoldTurnStore {
     requestDigest: string;
     userMessageId: string;
     userMessageCreatedAt: string;
-    workFolderId: string;
+    connectedFolderId: string;
     conversationId: string;
-    actorKind: WorkFoldDurableTurnRecord["actorKind"];
-  }): Promise<{ record: WorkFoldDurableTurnRecord; replayed: boolean }> {
+    actorKind: AmpleFileDurableTurnRecord["actorKind"];
+  }): Promise<{ record: AmpleFileDurableTurnRecord; replayed: boolean }> {
     return this.#run(async () => {
       validateStableId(input.requestId, "request id");
       validateStableId(input.userMessageId, "user message id");
-      validateStableId(input.workFolderId, "work-folder id");
+      validateStableId(input.connectedFolderId, "Connected Folder id");
       validateStableId(input.conversationId, "conversation id");
       if (!/^[a-f0-9]{64}$/.test(input.requestDigest)) throw new Error("Turn request digest is invalid.");
-      const existingId = this.#requests.get(requestKey(input.workFolderId, input.conversationId, input.requestId));
+      const existingId = this.#requests.get(requestKey(input.connectedFolderId, input.conversationId, input.requestId));
       if (existingId) {
         const existing = this.#records.get(existingId)!;
         if (existing.requestDigest !== input.requestDigest) {
-          throw new WorkFoldTurnReplayConflictError("This turn request id was already used for different input.");
+          throw new AmpleFileTurnReplayConflictError("This turn request id was already used for different input.");
         }
         return { record: copyRecord(existing), replayed: true };
       }
       const at = this.#now().toISOString();
-      const record: WorkFoldDurableTurnRecord = {
-        schema: workFoldTurnRecordSchema,
+      const record: AmpleFileDurableTurnRecord = {
+        schema: ampleFileTurnRecordSchema,
         turnId: input.turnId?.trim() || `turn-${randomUUID()}`,
         requestId: input.requestId,
         requestDigest: input.requestDigest,
         userMessageId: input.userMessageId,
         userMessageCreatedAt: input.userMessageCreatedAt,
-        workFolderId: input.workFolderId,
+        connectedFolderId: input.connectedFolderId,
         conversationId: input.conversationId,
         actorKind: input.actorKind,
         status: "accepted",
@@ -177,7 +177,7 @@ export class WorkFoldTurnStore {
     });
   }
 
-  markRunning(turnId: string): Promise<WorkFoldDurableTurnRecord | null> {
+  markRunning(turnId: string): Promise<AmpleFileDurableTurnRecord | null> {
     return this.#update(turnId, (record) => ({ ...record, status: "running", userMessagePersisted: true }), { activeOnly: true });
   }
 
@@ -186,7 +186,7 @@ export class WorkFoldTurnStore {
    * transcript. This is safe on an explicit retry because the Agent cannot
    * start until after that append succeeds.
    */
-  resumeUnpersisted(turnId: string): Promise<WorkFoldDurableTurnRecord | null> {
+  resumeUnpersisted(turnId: string): Promise<AmpleFileDurableTurnRecord | null> {
     return this.#update(turnId, (record) => {
       if (record.userMessagePersisted) return record;
       const { error: _error, messageId: _messageId, fileChanges: _fileChanges, ...rest } = record;
@@ -194,7 +194,7 @@ export class WorkFoldTurnStore {
     }, { unpersistedOnly: true });
   }
 
-  checkpoint(turnId: string, assistantText: string): Promise<WorkFoldDurableTurnRecord | null> {
+  checkpoint(turnId: string, assistantText: string): Promise<AmpleFileDurableTurnRecord | null> {
     return this.#update(turnId, (record) => ({
       ...record,
       assistantText: assistantText.slice(0, maxDurableTurnTextChars),
@@ -203,8 +203,8 @@ export class WorkFoldTurnStore {
 
   settle(
     turnId: string,
-    input: { status: Exclude<WorkFoldDurableTurnStatus, "accepted" | "running">; messageId?: string; error?: string; assistantText?: string; fileChanges?: WorkFoldTurnFileChanges; usage?: WorkFoldDurableTurnUsage; helpers?: WorkFoldTurnHelperRun[] },
-  ): Promise<WorkFoldDurableTurnRecord | null> {
+    input: { status: Exclude<AmpleFileDurableTurnStatus, "accepted" | "running">; messageId?: string; error?: string; assistantText?: string; fileChanges?: AmpleFileTurnFileChanges; usage?: AmpleFileDurableTurnUsage; helpers?: AmpleFileTurnHelperRun[] },
+  ): Promise<AmpleFileDurableTurnRecord | null> {
     return this.#update(turnId, (record) => ({
       ...record,
       status: input.status,
@@ -225,9 +225,9 @@ export class WorkFoldTurnStore {
 
   async #update(
     turnId: string,
-    mutate: (record: WorkFoldDurableTurnRecord) => WorkFoldDurableTurnRecord,
+    mutate: (record: AmpleFileDurableTurnRecord) => AmpleFileDurableTurnRecord,
     options: { activeOnly?: boolean; unpersistedOnly?: boolean; skipUnchangedText?: boolean } = {},
-  ): Promise<WorkFoldDurableTurnRecord | null> {
+  ): Promise<AmpleFileDurableTurnRecord | null> {
     return this.#run(async () => {
       const current = this.#records.get(turnId);
       if (!current) return null;
@@ -262,13 +262,13 @@ export class WorkFoldTurnStore {
       } catch (error) {
         const isLastNonEmpty = lines.slice(index + 1).every((candidate) => !candidate.trim());
         if (isLastNonEmpty) break;
-        throw new Error("work-fold could not read the durable turn journal.", { cause: error });
+        throw new Error("AmpleFile could not read the durable turn journal.", { cause: error });
       }
     }
     await this.#compactIfNeeded(true);
   }
 
-  async #append(record: WorkFoldDurableTurnRecord): Promise<void> {
+  async #append(record: AmpleFileDurableTurnRecord): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
     await appendFile(this.path, `${JSON.stringify(record)}\n`, { encoding: "utf8", mode: 0o600, flush: true });
   }
@@ -290,9 +290,9 @@ export class WorkFoldTurnStore {
     await syncDirectory(dirname(this.path));
   }
 
-  #remember(record: WorkFoldDurableTurnRecord): void {
+  #remember(record: AmpleFileDurableTurnRecord): void {
     this.#records.set(record.turnId, copyRecord(record));
-    this.#requests.set(requestKey(record.workFolderId, record.conversationId, record.requestId), record.turnId);
+    this.#requests.set(requestKey(record.connectedFolderId, record.conversationId, record.requestId), record.turnId);
   }
 
   #trimMemory(): void {
@@ -304,17 +304,17 @@ export class WorkFoldTurnStore {
       .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
     for (const record of records.slice(0, Math.max(0, records.length - this.#maxRecords))) {
       this.#records.delete(record.turnId);
-      const key = requestKey(record.workFolderId, record.conversationId, record.requestId);
+      const key = requestKey(record.connectedFolderId, record.conversationId, record.requestId);
       // An expired request may have a newer acceptance later in the journal.
       if (this.#requests.get(key) === record.turnId) this.#requests.delete(key);
     }
   }
 }
 
-export class WorkFoldTurnReplayConflictError extends Error {
+export class AmpleFileTurnReplayConflictError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "WorkFoldTurnReplayConflictError";
+    this.name = "AmpleFileTurnReplayConflictError";
   }
 }
 
@@ -360,13 +360,13 @@ export function directorySyncUnsupported(error: unknown, platform = process.plat
   return platform === "win32" && ["EPERM", "EACCES"].includes(code);
 }
 
-function parseRecord(value: unknown): WorkFoldDurableTurnRecord {
+function parseRecord(value: unknown): AmpleFileDurableTurnRecord {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Turn record must be an object.");
-  const record = value as Partial<WorkFoldDurableTurnRecord>;
-  if (record.schema !== workFoldTurnRecordSchema) throw new Error("Turn record schema is unsupported.");
+  const record = value as Partial<AmpleFileDurableTurnRecord>;
+  if (record.schema !== ampleFileTurnRecordSchema) throw new Error("Turn record schema is unsupported.");
   for (const [label, candidate] of [
     ["turn id", record.turnId], ["request id", record.requestId], ["user message id", record.userMessageId],
-    ["work-folder id", record.workFolderId], ["conversation id", record.conversationId],
+    ["Connected Folder id", record.connectedFolderId], ["conversation id", record.conversationId],
   ] as const) validateStableId(candidate, label);
   if (typeof record.requestDigest !== "string" || !/^[a-f0-9]{64}$/.test(record.requestDigest)) throw new Error("Turn request digest is invalid.");
   if (typeof record.userMessageCreatedAt !== "string" || !Number.isFinite(Date.parse(record.userMessageCreatedAt))) throw new Error("Turn message time is invalid.");
@@ -384,11 +384,11 @@ function parseRecord(value: unknown): WorkFoldDurableTurnRecord {
   if (record.error !== undefined && (typeof record.error !== "string" || record.error.length > 2_048)) throw new Error("Turn error is invalid.");
   if (record.usage !== undefined) record.usage = parseTurnUsage(record.usage);
   if (record.helpers !== undefined) record.helpers = parseTurnHelperRuns(record.helpers);
-  return record as WorkFoldDurableTurnRecord;
+  return record as AmpleFileDurableTurnRecord;
 }
 
 /** A helper record is attribution: ids, outcome, counts and the paths it touched, never file content. */
-export function parseTurnHelperRuns(value: unknown): WorkFoldTurnHelperRun[] {
+export function parseTurnHelperRuns(value: unknown): AmpleFileTurnHelperRun[] {
   if (!Array.isArray(value)) throw new Error("Turn helpers are invalid.");
   const count = (input: unknown, label: string) => {
     if (typeof input !== "number" || !Number.isFinite(input) || input < 0) throw new Error(`Turn helper ${label} is invalid.`);
@@ -433,7 +433,7 @@ export function parseTurnHelperRuns(value: unknown): WorkFoldTurnHelperRun[] {
 }
 
 /** A usage receipt records only counts and identifiers, never prompt or reply content. */
-export function parseTurnUsage(value: unknown): WorkFoldDurableTurnUsage {
+export function parseTurnUsage(value: unknown): AmpleFileDurableTurnUsage {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Turn usage is invalid.");
   const usage = value as Record<string, unknown>;
   const allowed = ["provider", "modelId", "inputTokens", "outputTokens", "amountUsd"];
@@ -465,15 +465,15 @@ function validateStableId(value: unknown, label: string): asserts value is strin
   }
 }
 
-function isStatus(value: unknown): value is WorkFoldDurableTurnStatus {
+function isStatus(value: unknown): value is AmpleFileDurableTurnStatus {
   return value === "accepted" || value === "running" || value === "succeeded" || value === "failed" || value === "aborted" || value === "interrupted";
 }
 
-function requestKey(workFolderId: string, conversationId: string, requestId: string): string {
-  return `${workFolderId}\u0000${conversationId}\u0000${requestId}`;
+function requestKey(connectedFolderId: string, conversationId: string, requestId: string): string {
+  return `${connectedFolderId}\u0000${conversationId}\u0000${requestId}`;
 }
 
-function copyRecord(record: WorkFoldDurableTurnRecord): WorkFoldDurableTurnRecord {
+function copyRecord(record: AmpleFileDurableTurnRecord): AmpleFileDurableTurnRecord {
   return {
     ...record,
     ...(record.fileChanges ? { fileChanges: structuredClone(record.fileChanges) } : {}),

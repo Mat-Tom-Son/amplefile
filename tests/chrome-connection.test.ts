@@ -7,12 +7,12 @@ import test, { type TestContext } from "node:test";
 import { IncludedChromeConnectionService, type ChromeDistribution } from "../src/local/agent/included-chrome-connection.js";
 import type { ChromeBootstrapRequest, ChromeHostFacilities } from "../src/shared/chrome-connection.js";
 
-const distribution: ChromeDistribution = { version: 1, storeId: "a".repeat(32), nativeHostName: "com.work_fold.chrome_test", bootstrapVersion: 1, extensionVersion: "1.0.0", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
+const distribution: ChromeDistribution = { version: 1, storeId: "a".repeat(32), nativeHostName: "com.amplefile.chrome_test", bootstrapVersion: 1, extensionVersion: "1.0.0", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
 const origin = `chrome-extension://${distribution.storeId}/`;
 const caller = () => ({ clientId: randomUUID(), clientProof: randomBytes(32).toString("hex") });
 const request = (client: ReturnType<typeof caller>, action: ChromeBootstrapRequest["action"] = "connect"): ChromeBootstrapRequest => ({ version: 1, action, requestId: randomUUID(), ...client, extensionVersion: "1.0.0", bridge: distribution.bridge });
 async function fixture(t: TestContext) {
-  const root = await mkdtemp(join(tmpdir(), "workfold-chrome-authority-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-chrome-authority-"));
   const stateRoot = join(root, "state");
   let registrations = 0, opened = 0, starts = 0, closes = 0;
   let activeFacilities: ChromeHostFacilities | undefined;
@@ -94,7 +94,7 @@ test("Chrome bootstrap checks exact origin, version/capabilities and its own lau
   const descriptor = JSON.parse(await readFile(join(stateRoot, "chrome/native-host/launch.json"), "utf8"));
   const body = { version: 1, launchId: descriptor.launchId, extensionOrigin: origin, request: request(caller()) };
   const headers = { "content-type": "application/json", authorization: `Bearer ${descriptor.bootstrapToken}` };
-  for (const badHeaders of [{ "x-work-fold-session": descriptor.bootstrapToken }, { ...headers, origin }, { ...headers, authorization: "Bearer forged" }]) {
+  for (const badHeaders of [{ "x-amplefile-session": descriptor.bootstrapToken }, { ...headers, origin }, { ...headers, authorization: "Bearer forged" }]) {
     assert.equal((await fetch(descriptor.endpoint, { method: "POST", headers: badHeaders, body: JSON.stringify(body) })).status, 403);
   }
   assert.equal((await fetch(descriptor.endpoint, { method: "POST", headers, body: JSON.stringify({ ...body, launchId: randomUUID() }) })).status, 403);

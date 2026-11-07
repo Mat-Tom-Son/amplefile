@@ -1,6 +1,6 @@
 /**
  * Additive schema updates (docs/pages.md, "Preview and test entries"). Each
- * declared table gets work-fold's own columns plus its declared columns; new
+ * declared table gets AmpleFile's own columns plus its declared columns; new
  * tables and columns are added; tables and columns that disappear from
  * `page.json` keep their data and are reported as retired. Nothing is ever
  * dropped. Unique is not a database constraint: the engine enforces it on
@@ -19,7 +19,7 @@ import type { PageSqlDatabase } from "./page-sql.js";
 import { pageMetaTable, pageSystemColumns, quotePageIdentifier, runInPageTransaction } from "./page-sql.js";
 
 /** Version of the storage layout this engine writes, kept in `_page_meta`. */
-export const pageStorageFormat = "work-fold.page-data/1";
+export const pageStorageFormat = "amplefile.page-data/1";
 
 export interface PageSchemaColumnStatus {
   name: string;
@@ -87,7 +87,7 @@ export function applyPageSchema(db: PageSqlDatabase, declaration: PageDeclaratio
       } else {
         const stored = new Set(storedColumnNames(db, table.name));
         for (const system of pageSystemColumns) {
-          // A table work-fold created always has these; one that lost them is
+          // A table AmpleFile created always has these; one that lost them is
           // repaired additively rather than refused.
           if (!stored.has(system)) db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${quotePageIdentifier(system)}`);
         }
@@ -176,7 +176,7 @@ export function describePageSchema(db: PageSqlDatabase, declaration: PageDeclara
   return result;
 }
 
-/** Page tables actually stored: names a declaration could have made, never work-fold's own. */
+/** Page tables actually stored: names a declaration could have made, never AmpleFile's own. */
 export function listStoredPageTables(db: PageSqlDatabase): string[] {
   return db.all(`SELECT "name" FROM "sqlite_master" WHERE "type" = 'table' ORDER BY "name"`)
     .map((row) => row.name)
@@ -189,7 +189,7 @@ export function storedColumnNames(db: PageSqlDatabase, table: string): string[] 
     .filter((name): name is string => typeof name === "string");
 }
 
-/** A stored column that holds page data: a name a declaration could use, never work-fold's own. */
+/** A stored column that holds page data: a name a declaration could use, never AmpleFile's own. */
 function isPageDataColumnName(name: string): boolean {
   return pageNamePattern.test(name) && !reservedPageColumnNames.has(name);
 }

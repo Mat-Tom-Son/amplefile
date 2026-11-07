@@ -6,13 +6,13 @@ import { join } from "node:path";
 import { setImmediate } from "node:timers/promises";
 import { test } from "node:test";
 import { startLocalApi } from "../src/local/server.js";
-import { WorkFoldRequestStore } from "../src/local/requests/request-store.js";
-import { WorkFoldRecentlyDeletedStore } from "../src/local/recently-deleted-store.js";
+import { AmpleFileRequestStore } from "../src/local/requests/request-store.js";
+import { AmpleFileRecentlyDeletedStore } from "../src/local/recently-deleted-store.js";
 
 test("API close drains the startup Recently deleted purge", { timeout: 15_000 }, async () => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-recently-deleted-close-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-recently-deleted-close-"));
   const stateBase = join(root, "state");
-  const recentlyDeleted = await WorkFoldRecentlyDeletedStore.open({ rootPath: join(stateBase, "recently-deleted") });
+  const recentlyDeleted = await AmpleFileRecentlyDeletedStore.open({ rootPath: join(stateBase, "recently-deleted") });
   const original = recentlyDeleted.purgeExpired.bind(recentlyDeleted);
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
@@ -28,7 +28,7 @@ test("API close drains the startup Recently deleted purge", { timeout: 15_000 },
   let api: Awaited<ReturnType<typeof startLocalApi>> | undefined;
   let closing: Promise<void> | undefined;
   try {
-    api = await startLocalApi({ port: 0, stateBase, workFolderBase: join(root, "content"), loadEnv: false,
+    api = await startLocalApi({ port: 0, stateBase, connectedFolderBase: join(root, "content"), loadEnv: false,
       recentlyDeletedStore: recentlyDeleted,
       piRuntimeProvider: { resolveRuntime: async () => ({ agentDir: join(root, "pi") }) },
     });
@@ -56,14 +56,14 @@ test("API close drains the startup Recently deleted purge", { timeout: 15_000 },
 });
 
 test("API close drains startup retention even when management cannot initialize", { timeout: 15_000 }, async () => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-retention-close-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-retention-close-"));
   const stateBase = join(root, "state");
   await mkdir(stateBase); await writeFile(join(stateBase, "management"), "not a directory");
-  const original = WorkFoldRequestStore.prototype.purgeExpiredIfDue;
+  const original = AmpleFileRequestStore.prototype.purgeExpiredIfDue;
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
   let started = false, purgeFinished = false;
-  WorkFoldRequestStore.prototype.purgeExpiredIfDue = async function (intervalMs) {
+  AmpleFileRequestStore.prototype.purgeExpiredIfDue = async function (intervalMs) {
     started = true;
     await held;
     const result = await original.call(this, intervalMs);
@@ -73,7 +73,7 @@ test("API close drains startup retention even when management cannot initialize"
   let api: Awaited<ReturnType<typeof startLocalApi>> | undefined;
   let closing: Promise<void> | undefined;
   try {
-    api = await startLocalApi({ port: 0, stateBase, workFolderBase: join(root, "content"), loadEnv: false,
+    api = await startLocalApi({ port: 0, stateBase, connectedFolderBase: join(root, "content"), loadEnv: false,
       piRuntimeProvider: { resolveRuntime: async () => ({ agentDir: join(root, "pi") }) },
     });
     assert.equal(started, true, "startup schedules retention without delaying API availability");
@@ -97,7 +97,7 @@ test("API close drains startup retention even when management cannot initialize"
     release();
     if (closing) await closing;
     else await api?.close();
-    WorkFoldRequestStore.prototype.purgeExpiredIfDue = original;
+    AmpleFileRequestStore.prototype.purgeExpiredIfDue = original;
     await rm(root, { recursive: true, force: true });
   }
 });

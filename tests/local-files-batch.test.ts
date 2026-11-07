@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 
-import { WorkFoldCliActReceipts } from "../src/local/cli/act-receipts.js";
+import { AmpleFileCliActReceipts } from "../src/local/cli/act-receipts.js";
 import { startLocalApi } from "../src/local/server.js";
 
 /**
@@ -22,22 +22,22 @@ const canLockFolders = process.platform !== "win32" && process.getuid?.() !== 0;
 // anything that must happen before the API closes (releasing a held turn,
 // unlocking a folder) before it calls setup.
 async function setup(t: TestContext, options: Partial<Parameters<typeof startLocalApi>[0]> = {}) {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-files-batch-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-files-batch-test-"));
   const stateBase = join(sandbox, "state");
-  const api = await startLocalApi({ port: 0, stateBase, workFolderBase: join(sandbox, "content"), loadEnv: false, ...options });
+  const api = await startLocalApi({ port: 0, stateBase, connectedFolderBase: join(sandbox, "content"), loadEnv: false, ...options });
   t.after(async () => {
     await api.close();
     await rm(sandbox, { recursive: true, force: true });
   });
-  const { workFolder } = await api.actFacade.createWorkFolder({ name: "Batch" });
-  const root = workFolder.workFolderRoot;
+  const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Batch" });
+  const root = connectedFolder.connectedFolderRoot;
   const file = (path: string) => join(root, ...path.split("/"));
   const write = async (path: string, text = path) => {
     await mkdir(dirname(file(path)), { recursive: true });
     await writeFile(file(path), text, "utf8");
   };
   const send = async (path: string, method: string, body: unknown) => {
-    const response = await fetch(new URL(`/api/work-folders/${workFolder.id}${path}`, api.origin), {
+    const response = await fetch(new URL(`/api/connected-folders/${connectedFolder.id}${path}`, api.origin), {
       method,
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -45,20 +45,20 @@ async function setup(t: TestContext, options: Partial<Parameters<typeof startLoc
     return { status: response.status, body: await response.json() as Record<string, unknown> };
   };
   const checkpoints = async () => {
-    const response = await fetch(new URL(`/api/work-folders/${workFolder.id}/history/checkpoints?limit=1000`, api.origin));
+    const response = await fetch(new URL(`/api/connected-folders/${connectedFolder.id}/history/checkpoints?limit=1000`, api.origin));
     return (await response.json() as { checkpoints: Array<{ checkpointId: string; label?: string }> }).checkpoints;
   };
   const restore = async (checkpointId: string) => {
-    const response = await fetch(new URL(`/api/work-folders/${workFolder.id}/history/checkpoints/${checkpointId}/restore`, api.origin), { method: "POST" });
+    const response = await fetch(new URL(`/api/connected-folders/${connectedFolder.id}/history/checkpoints/${checkpointId}/restore`, api.origin), { method: "POST" });
     assert.equal(response.status, 200, await response.text());
   };
   const deleteReceipts = async () => {
-    const probe = new WorkFoldCliActReceipts({ stateRoot: stateBase });
+    const probe = new AmpleFileCliActReceipts({ stateRoot: stateBase });
     const text = await readFile(probe.path, "utf8").catch(() => "");
     return text.split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line) as Record<string, unknown>)
       .filter((entry) => entry.command === "files.delete" && String(entry.requestId).startsWith("settings:"));
   };
-  return { api, workFolder, file, write, send, checkpoints, restore, deleteReceipts };
+  return { api, connectedFolder, file, write, send, checkpoints, restore, deleteReceipts };
 }
 
 test("several rows move into a folder under one restore point that puts them all back", async (t) => {
@@ -161,7 +161,7 @@ test("several rows delete under one restore point, each with its own receipt", a
   assert.deepEqual(receipts.map((entry) => entry.outcome), ["accepted", "ok", "accepted", "ok", "accepted", "ok"]);
   assert.deepEqual([...new Set(receipts.map((entry) => entry.requestId))], rows.map((row) => row.receiptId), "one receipt per row");
   for (const entry of receipts.filter((item) => item.outcome === "ok")) {
-    assert.equal(entry.detail, `work-folder ${batch.workFolder.id}; checkpoint ${deleted.body.safetyCheckpointId}`);
+    assert.equal(entry.detail, `Connected Folder ${batch.connectedFolder.id}; checkpoint ${deleted.body.safetyCheckpointId}`);
   }
 
   await batch.restore(String(deleted.body.safetyCheckpointId));
@@ -172,12 +172,12 @@ test("a row History cannot keep goes to Recently deleted while the others stay u
   const batch = await setup(t);
   await batch.write("bulk/big.bin", "0123456789");
   await batch.write("small.txt", "ok");
-  process.env.WORKFOLD_HISTORY_MAX_FILE_BYTES = "4";
+  process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES = "4";
   let deleted;
   try {
     deleted = await batch.send("/local-files", "DELETE", { paths: ["bulk", "small.txt"] });
   } finally {
-    delete process.env.WORKFOLD_HISTORY_MAX_FILE_BYTES;
+    delete process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES;
   }
   assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
   const rows = deleted.body.deleted as Array<{ path: string; receiptId: string; recentlyDeleted?: { entryId: string; uncoveredCount: number } }>;
@@ -193,7 +193,7 @@ test("a row History cannot keep goes to Recently deleted while the others stay u
   assert.equal(kept[0]?.originalPath, "bulk");
   const receipts = await batch.deleteReceipts();
   assert.equal(receipts.find((entry) => entry.requestId === rows[0]?.receiptId && entry.outcome === "ok")?.detail,
-    `work-folder ${batch.workFolder.id}; trash ${rows[0]?.recentlyDeleted?.entryId}`);
+    `Connected Folder ${batch.connectedFolder.id}; trash ${rows[0]?.recentlyDeleted?.entryId}`);
 });
 
 test("a several-row delete is checked whole first, and a row that fails partway leaves the rest alone", async (t) => {
@@ -232,8 +232,8 @@ test("a several-row delete is checked whole first, and a row that fails partway 
   assert.equal(await readFile(batch.file("a.txt"), "utf8"), "a.txt", "the one restore point brings back the row that was deleted");
 });
 
-test("a several-row delete refuses while the work-folder has work running", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-files-batch-agent-"));
+test("a several-row delete refuses while the Connected Folder has work running", async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-files-batch-agent-"));
   const agentDir = join(sandbox, "agent");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
   await writeFile(join(agentDir, "extensions", "hold.ts"), `export default function (pi) {
@@ -252,7 +252,7 @@ test("a several-row delete refuses while the work-folder has work running", asyn
   await batch.write("b.txt");
   const before = await batch.checkpoints();
 
-  const sent = await batch.api.actFacade.sendMessage({ workFolder: batch.workFolder.id, newConversation: true, content: "/hold" });
+  const sent = await batch.api.actFacade.sendMessage({ connectedFolder: batch.connectedFolder.id, newConversation: true, content: "/hold" });
   const deadline = Date.now() + 10_000;
   while (!held.some((turn) => turn.taskId === sent.taskId)) {
     if (Date.now() > deadline) throw new Error("The test turn never started.");

@@ -1,4 +1,4 @@
-# work-fold brand sources
+# AmpleFile brand sources
 
 The committed source-of-truth artwork for the folder-cube brand. Every icon,
 favicon, tray template, DMG background, and web-client icon derives from these
@@ -30,7 +30,7 @@ pack's rendering style for marketing surfaces.
 
 Application outputs are copy-and-verify pack exports. The menu-bar 1x/2x pair
 is deterministically rendered from its committed source; the same bytes are
-written to the pack and installed asset locations (`tests/work-fold-brand.test.ts`
+written to the pack and installed asset locations (`tests/amplefile-brand.test.ts`
 enforces both contracts):
 
 ```

@@ -3,23 +3,23 @@ import test from "node:test";
 
 import { createChecklistTool, describeChecklist } from "../src/local/agent/checklist-tool.js";
 import { buildTurnContextMessage } from "../src/local/agent/pi-client.js";
-import { parseWorkFoldChecklistItems } from "../src/local/requests/request-records.js";
-import { workFoldRequestLimits } from "../src/shared/work-fold-limits.js";
+import { parseAmpleFileChecklistItems } from "../src/local/requests/request-records.js";
+import { ampleFileRequestLimits } from "../src/shared/amplefile-limits.js";
 
 test("checklist items are one-line steps with a known status, within generous bounds", () => {
-  assert.deepEqual(parseWorkFoldChecklistItems([{ text: "  Read the\nquotes ", status: "doing" }]), [{ text: "Read the quotes", status: "doing" }]);
-  assert.deepEqual(parseWorkFoldChecklistItems([]), []);
-  assert.throws(() => parseWorkFoldChecklistItems([{ text: " ", status: "todo" }]), /cannot be empty/);
-  assert.throws(() => parseWorkFoldChecklistItems([{ text: "Step", status: "later" }]), /status is invalid/);
-  assert.throws(() => parseWorkFoldChecklistItems([{ text: "Step", status: "todo", extra: true }]), /unexpected field/);
-  assert.throws(() => parseWorkFoldChecklistItems(Array.from({ length: workFoldRequestLimits.maxChecklistItems + 1 }, (_, index) => ({ text: `Step ${index}`, status: "todo" }))), /at most 200 items/);
+  assert.deepEqual(parseAmpleFileChecklistItems([{ text: "  Read the\nquotes ", status: "doing" }]), [{ text: "Read the quotes", status: "doing" }]);
+  assert.deepEqual(parseAmpleFileChecklistItems([]), []);
+  assert.throws(() => parseAmpleFileChecklistItems([{ text: " ", status: "todo" }]), /cannot be empty/);
+  assert.throws(() => parseAmpleFileChecklistItems([{ text: "Step", status: "later" }]), /status is invalid/);
+  assert.throws(() => parseAmpleFileChecklistItems([{ text: "Step", status: "todo", extra: true }]), /unexpected field/);
+  assert.throws(() => parseAmpleFileChecklistItems(Array.from({ length: ampleFileRequestLimits.maxChecklistItems + 1 }, (_, index) => ({ text: `Step ${index}`, status: "todo" }))), /at most 200 items/);
 });
 
 test("the checklist tool saves the whole list for the running turn and reads it back", async () => {
   const saved: unknown[] = [];
   const tool = createChecklistTool({
     taskId: () => "task-running",
-    host: { async set({ taskId, items }) { saved.push({ taskId, items }); const parsed = parseWorkFoldChecklistItems(items); return parsed.length ? { items: parsed, updatedAt: "2026-10-18T00:00:00.000Z", taskId } : null; } },
+    host: { async set({ taskId, items }) { saved.push({ taskId, items }); const parsed = parseAmpleFileChecklistItems(items); return parsed.length ? { items: parsed, updatedAt: "2026-10-18T00:00:00.000Z", taskId } : null; } },
   });
   const result = await tool.execute("call-1", { items: [{ text: "Read the quotes", status: "done" }, { text: "Compare totals", status: "doing" }] }, undefined, undefined, undefined as never);
   assert.deepEqual(saved, [{ taskId: "task-running", items: [{ text: "Read the quotes", status: "done" }, { text: "Compare totals", status: "doing" }] }]);

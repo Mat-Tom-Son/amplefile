@@ -4,7 +4,7 @@ import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { types } from "node:util";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import { workFoldModelContextLimits } from "../../shared/work-fold-limits.js";
+import { ampleFileModelContextLimits } from "../../shared/amplefile-limits.js";
 import type {
   ModelContextFilter, ModelContextInspection, ModelContextInspectionLimits,
   ModelContextInspectionState, ModelContextInspectionSummary, ModelContextOwner,
@@ -30,7 +30,7 @@ export class ModelContextInspector {
   private expiryTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: { limits?: Partial<ModelContextInspectionLimits>; now?: () => number } = {}) {
-    this.limits = { ...workFoldModelContextLimits };
+    this.limits = { ...ampleFileModelContextLimits };
     for (const key of Object.keys(this.limits) as (keyof ModelContextInspectionLimits)[]) {
       const value = options.limits?.[key];
       if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) this.limits[key] = value;
@@ -283,7 +283,7 @@ function captureOptions<TModel>(options: ProviderRequestOptions<TModel> | undefi
 }
 
 function matches(record: ModelContextInspection, filter?: ModelContextFilter): boolean {
-  return (!filter?.workFolderRoot || record.owner.workFolderRoot === filter.workFolderRoot)
+  return (!filter?.connectedFolderRoot || record.owner.connectedFolderRoot === filter.connectedFolderRoot)
     && (!filter?.conversationId || record.owner.conversationId === filter.conversationId);
 }
 
@@ -301,7 +301,7 @@ function copyOwner(owner: ModelContextOwner): ModelContextOwner {
     if (typeof value !== "string" || !value || value.length > 4096) throw new Error("Invalid diagnostic owner identity.");
     return value;
   };
-  return Object.freeze({ workFolderRoot: identity("workFolderRoot"), conversationId: identity("conversationId"),
+  return Object.freeze({ connectedFolderRoot: identity("connectedFolderRoot"), conversationId: identity("conversationId"),
     sessionId: identity("sessionId"), purpose: label(own(owner, "purpose")),
     ...(taskId !== undefined ? { taskId: identity("taskId") } : {}) });
 }
@@ -329,7 +329,7 @@ export function describeModelContextDispatch(context: unknown): Record<string, M
   let native: { systemPrompt: string; tools: unknown } | undefined;
   if (!types.isProxy(nativeMessages) && Array.isArray(nativeMessages) && read(read(nativeMessages, "0"), "role") === "system") {
     native = safely(() => {
-      const snapshot = captureValue(nativeMessages, workFoldModelContextLimits, workFoldModelContextLimits.recordBytes, 0).value;
+      const snapshot = captureValue(nativeMessages, ampleFileModelContextLimits, ampleFileModelContextLimits.recordBytes, 0).value;
       if (!Array.isArray(snapshot)) throw new Error("Transcript inspection unavailable.");
       const messages = snapshot as unknown as Parameters<typeof getCurrentSystemPrompt>[0];
       return { systemPrompt: getCurrentSystemPrompt(messages), tools: getCurrentTools(messages) };
@@ -338,7 +338,7 @@ export function describeModelContextDispatch(context: unknown): Record<string, M
   const systemPrompt = native?.systemPrompt ?? read(context, "systemPrompt");
   let prompt: ModelContextValue = systemPrompt === undefined ? null : missing;
   if (typeof systemPrompt === "string") {
-    const limit = workFoldModelContextLimits.digestBytes;
+    const limit = ampleFileModelContextLimits.digestBytes;
     if (systemPrompt.length > limit) prompt = { digest: "omitted: size limit" };
     else {
       const bytes = Buffer.byteLength(systemPrompt);
@@ -350,7 +350,7 @@ export function describeModelContextDispatch(context: unknown): Record<string, M
   let tools: ModelContextValue = toolValue === undefined ? [] : missing;
   if (!types.isProxy(toolValue) && Array.isArray(toolValue)) {
     const length = read(toolValue, "length");
-    if (typeof length === "number" && length > workFoldModelContextLimits.nodes) tools = "Unavailable: tool count exceeds inspection limit.";
+    if (typeof length === "number" && length > ampleFileModelContextLimits.nodes) tools = "Unavailable: tool count exceeds inspection limit.";
     else if (typeof length === "number") {
       const names: string[] = [];
       for (let index = 0; index < length; index += 1) {

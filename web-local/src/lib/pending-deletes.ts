@@ -2,7 +2,7 @@ import { apiUrl } from "./api";
 
 /** A Files row removed from the tree while its Undo is offered; the host deletes it when that window closes. */
 export interface PendingDelete {
-  workFolderId: string;
+  connectedFolderId: string;
   path: string;
   name: string;
   selectedPath: string | null;
@@ -31,15 +31,15 @@ export interface DeleteLocalFilesResult {
   notDeleted?: string[];
 }
 
-export function pendingDeleteKey(pending: Pick<PendingDelete, "workFolderId" | "path">): string {
-  return `${pending.workFolderId}:${pending.path}`;
+export function pendingDeleteKey(pending: Pick<PendingDelete, "connectedFolderId" | "path">): string {
+  return `${pending.connectedFolderId}:${pending.path}`;
 }
 
 /** Waiting rows as the host should receive them: rows deleted together stay together, every other row on its own. */
 export function pendingDeleteGroups(pendings: Iterable<PendingDelete>): PendingDelete[][] {
   const groups = new Map<string, PendingDelete[]>();
   for (const pending of pendings) {
-    const group = pending.batchId === undefined ? `one:${pendingDeleteKey(pending)}` : `batch:${pending.workFolderId}:${pending.batchId}`;
+    const group = pending.batchId === undefined ? `one:${pendingDeleteKey(pending)}` : `batch:${pending.connectedFolderId}:${pending.batchId}`;
     const rows = groups.get(group);
     if (rows) rows.push(pending); else groups.set(group, [pending]);
   }
@@ -64,19 +64,19 @@ export function settledPendingDeletes(waiting: readonly PendingDelete[], result:
 export async function deleteLocalFileRequest(pending: PendingDelete, keepalive = false): Promise<DeleteLocalFileResult> {
   // A delete History could not fully keep a copy of still succeeds: the
   // entry is waiting in Recently Deleted instead (docs/receipts-not-gates.md).
-  return await sendDeleteRequest<DeleteLocalFileResult>(`/api/work-folders/${pending.workFolderId}/local-file`, { path: pending.path }, keepalive) ?? {};
+  return await sendDeleteRequest<DeleteLocalFileResult>(`/api/connected-folders/${pending.connectedFolderId}/local-file`, { path: pending.path }, keepalive) ?? {};
 }
 
 /** Several rows in one request: one History restore point, while each row keeps its own receipt and recovery. */
-export async function deleteLocalFilesRequest(workFolderId: string, paths: readonly string[], keepalive = false): Promise<DeleteLocalFilesResult> {
-  const result = await sendDeleteRequest<DeleteLocalFilesResult>(`/api/work-folders/${workFolderId}/local-files`, { paths }, keepalive);
+export async function deleteLocalFilesRequest(connectedFolderId: string, paths: readonly string[], keepalive = false): Promise<DeleteLocalFilesResult> {
+  const result = await sendDeleteRequest<DeleteLocalFilesResult>(`/api/connected-folders/${connectedFolderId}/local-files`, { paths }, keepalive);
   if (!result) throw new Error("The delete finished without an answer. Refresh Files to see what changed.");
   return result;
 }
 
 /** Deletes use fetch rather than `api()` so keepalive can carry them while the window closes. */
 async function sendDeleteRequest<T>(path: string, body: unknown, keepalive: boolean): Promise<T | null> {
-  const sessionHeaders = await window.workFoldDesktop?.api.getSessionHeaders?.();
+  const sessionHeaders = await window.ampleFileDesktop?.api.getSessionHeaders?.();
   const response = await fetch(apiUrl(path), {
     method: "DELETE",
     headers: { "content-type": "application/json", ...(sessionHeaders ?? {}) },

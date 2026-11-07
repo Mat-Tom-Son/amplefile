@@ -2,7 +2,7 @@
 
 Status: shared foundation and included integrations implemented in the development tree, 2026-09-11. This extends
 [Extensions and computer work](extension-foundation.md). It applies to every
-kind of work a Worker or the work-fold agent does, including text, calculations, service operations,
+kind of work a Worker or the AmpleFile agent does, including text, calculations, service operations,
 files, generated artifacts, browsers, and desktop applications. Exact-build
 release acceptance is separate from implementation and fixture evidence.
 
@@ -10,7 +10,7 @@ release acceptance is separate from implementation and fixture evidence.
 
 The primitive is an operation returning useful observations to the same Pi
 conversation. Pi already runs the model/tool loop and accepts text and images
-in native tool results. work-fold preserves that path. A tool may perform an
+in native tool results. AmpleFile preserves that path. A tool may perform an
 action and return its observed result, or the Worker may explicitly follow
 the action with an existing read, query, render, or inspection tool. Both are
 first-class compositions; ordinary tools need no additional manifest.
@@ -26,7 +26,7 @@ handling, and continuation remain authoritative.
 
 The installed Pi 1.1.0 provides these mechanisms:
 
-| Need | Existing mechanism | work-fold responsibility |
+| Need | Existing mechanism | AmpleFile responsibility |
 |---|---|---|
 | Receive an operation's outcome | Native tool result `content` with text and images | Preserve it in the Pi session; do not replace it with the UI's summary |
 | Inspect a generated image | Built-in `read`, including Pi's image processing | Package the actual renderer separately when the source is a PDF, document, or other non-image format |
@@ -78,7 +78,7 @@ revision as verification of the delivered file.
 
 ### Input contracts and failure correction
 
-Every work-fold Pi session carries the same correction guidance for failed
+Every AmpleFile Pi session carries the same correction guidance for failed
 tools: compare the submitted arguments with the current native schema and
 reported error, correct the inputs before another call, and inspect any
 possible effects before retrying. Native `tool_result` and finalized
@@ -104,7 +104,7 @@ Connections keeps the server's MCP declarations unchanged. There is no second
 tool registry or inferred contract for third-party tools.
 
 The Worker can repeat action, observation, and correction in its normal Pi
-turn. It can compose unrelated tools without work-fold inferring a workflow
+turn. It can compose unrelated tools without AmpleFile inferring a workflow
 from their names. It observes again where the result can change the next
 decision. Independent reads may run concurrently; dependent mutations use the
 domain's concurrency and stale-state rules.
@@ -112,7 +112,7 @@ domain's concurrency and stale-state rules.
 Browser scripting and DOM access have technical limits. The Worker may
 choose another available tool, such as native Computer Control, when it fits
 the person's authorized task and constraints. Actual permission and policy
-denials still apply. Tool selection stays with the model; work-fold does not
+denials still apply. Tool selection stays with the model; AmpleFile does not
 infer a fallback from a domain or error string.
 
 Verification must be useful and proportionate. Re-read a requested setting;
@@ -153,7 +153,7 @@ history. Neither is an ambient screenshot archive. Do not invent a
 universal retention mechanism or claim a file is temporary without a cleanup
 owner. Cleanup must never delete a delivered artifact or another Chat's evidence.
 
-Native Pi session evidence and work-fold's portable Chat are distinct. The
+Native Pi session evidence and AmpleFile's portable Chat are distinct. The
 existing compact tool trail is a presentation projection, not the source of
 the model's tool results. Future inline artifact previews require explicit
 owning Chat/task/version references and content-serving policy, rather than
@@ -176,17 +176,17 @@ view for developers. On an installed Mac build, open its separate developer
 window from Terminal:
 
 ```sh
-open -n -a /Applications/work-fold.app --args --work-fold-inspect-context
+open -n -a /Applications/AmpleFile.app --args --amplefile-inspect-context
 ```
 
-This works whether work-fold is closed or already running. `-n` forwards the
+This works whether AmpleFile is closed or already running. `-n` forwards the
 explicit launch request through the existing single-instance host; it does not
 start a second app runtime. Repeating it focuses the existing inspector. The
 window has a sandboxed, diagnostics-only preload: the local API credential
 stays in the host, and ordinary desktop/settings IPC is unavailable. Opening
 the inspector does not enable recording. **Close** or Escape closes only that
 window; it does not turn recording off. Disable recording before closing when
-capture is no longer needed. Normal Chats, the work-fold agent and Settings have no
+capture is no longer needed. Normal Chats, the AmpleFile agent and Settings have no
 inspector entry. Changing models remains a separate action.
 Recording is explicitly enabled for the current app run and starts with the
 next model call; inspection itself only reads retained records. It never
@@ -255,7 +255,7 @@ restricted-app observation authority is introduced.
 
 The shared foundation preserves native text/image results into the next Pi
 request, built-in image reads, provider conversion and `blockImages` behavior.
-A concise shared prompt appendix teaches useful verification across work-fold
+A concise shared prompt appendix teaches useful verification across AmpleFile
 agent and Worker sessions. A stopped tool may drain, but late UI events cannot revive its
 turn or permit overlapping reuse. The local inspector observes Chat-turn,
 title, Check, app inference and compaction calls without changing their hooks
@@ -284,7 +284,7 @@ Review separately for Pi compatibility; evidence freshness and misleading
 success; and ownership, cancellation, context and UX. Findings must name a
 concrete failure scenario, severity, and the smallest corrective change.
 
-Acceptance must cover native extensions with no work-fold metadata; direct
+Acceptance must cover native extensions with no AmpleFile metadata; direct
 image results and built-in image reads; text-only models; ordinary text/data
 results; partial and stale observations; output limits; simultaneous Chats;
 Stop during a render or tool; and reconnect without replay. Real renderer
@@ -304,7 +304,7 @@ attribution; bounded private recording; and honest capture-stage labels.
 Foundation verification on 2026-09-11: `npm run check`, `npm test` (1,354
 passed, one optional model-driven test skipped), the bridge's 55 tests, and
 `npm run desktop:prepare` passed. Browser checks covered the desktop inspector
-and the compact work-fold agent layout, keyboard navigation, closing and focus recovery.
+and the compact AmpleFile agent layout, keyboard navigation, closing and focus recovery.
 Provider fixtures use local synthetic responses; these checks establish native
 transport and lifecycle compatibility, not a model's judgment on real work.
 
@@ -325,7 +325,7 @@ regression and did not justify replacing Pi's native compaction behavior.
   result hooks, guidance, Skills integration and terminal rendering.
 - [Pi SDK](https://pi.dev/docs/latest/sdk): embedded sessions and native tools.
 - The installed Pi 1.1.0 `createReadTool`, `convertToLlm` and `ToolDefinition`
-  exports; work-fold's [Pi client](../src/local/agent/pi-client.ts) constructs
+  exports; AmpleFile's [Pi client](../src/local/agent/pi-client.ts) constructs
   native sessions and projects their events into bounded UI activity.
 
 ## Selected edit evidence and presentation
@@ -333,8 +333,8 @@ regression and did not justify replacing Pi's native compaction behavior.
 The host projects only a successful built-in Pi `edit` result's display diff,
 relative path, first changed line when available, and truncation flag into its
 existing tool event and portable Chat work trail. It checks the path at invocation
-and completion, excluding outside-work-folder, reserved metadata, symbolic links and
-nested work-folder identities. Replaced/unknown tools retain the generic activity
+and completion, excluding outside Connected Folder, reserved metadata, symbolic links and
+nested Connected Folder identities. Replaced/unknown tools retain the generic activity
 fallback. Evidence is limited to 16 KiB per edit and 64 KiB per turn; raw results and
 runnable patches are not copied. A display diff describes that tool's observation,
 not a live file preview or proof of the entire task's correctness.
@@ -359,14 +359,14 @@ durable content are unaffected. A host process crash remains an interrupted turn
 the durable journal preserves available partial text but does not reconstruct
 unfinished live steps. Reopening a view and resuming execution are different acts.
 
-Saved-file review uses [bounded History reads and differences](work-fold-agent-and-cli.md#bounded-history-review-and-durable-turn-evidence-2026-09-27).
+Saved-file review uses [bounded History reads and differences](amplefile-agent-and-cli.md#bounded-history-review-and-durable-turn-evidence-2026-09-27).
 That comparison describes an interval's bytes; native edit evidence describes a
 particular tool call. They must not be conflated when other people or programs can
 write the same file.
 
 Worker Chat file attachments are references to the originals, inspected with
 native file and document tools rather than eagerly extracted into the prompt.
-The bounded Office text reader used by work-fold agent attachments remains available:
+The bounded Office text reader used by AmpleFile agent attachments remains available:
 PowerPoint and spreadsheet extractions follow their package manifest relationship
 order. A reader that cannot resolve all declared parts returns the existing
 path-only reference with a reason, rather than claiming partial extraction is full.
@@ -404,7 +404,7 @@ changes live in the reviewed native patches, not a parallel tool implementation.
 
 Search streams ordinary text without a per-file size exclusion, exposes scope and
 coverage, and continues through page budgets. History lists and verified text ranges
-continue through the same CLI/HTTP domain services. See [the work-fold agent and CLI](work-fold-agent-and-cli.md) for
+continue through the same CLI/HTTP domain services. See [the AmpleFile agent and CLI](amplefile-agent-and-cli.md) for
 version, cursor, and consistency details.
 
 Attachment bodies are loaded after the live model is resolved. Admission accounts

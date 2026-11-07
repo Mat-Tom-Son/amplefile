@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chatDateGroups } from "../web-local/src/components/panes/workFolderPanes.js";
+import { chatDateGroups } from "../web-local/src/components/panes/connectedFolderPanes.js";
 import type { ConversationSummary } from "../web-local/src/types.js";
 
 const now = new Date(2026, 10, 4, 15, 0).getTime();

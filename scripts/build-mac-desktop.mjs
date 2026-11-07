@@ -55,12 +55,12 @@ if (!version) throw new Error("package.json does not declare a macOS release ver
 if (releaseBuild) assertReleaseCredentials();
 
 const envPatch = {
-  WORKFOLD_DESKTOP_RELEASE_PLATFORM: "darwin",
-  WORKFOLD_DESKTOP_RELEASE_ARCH: arch,
-  WORKFOLD_DESKTOP_OUTPUT_DIR: "out/builder",
+  AMPLEFILE_DESKTOP_RELEASE_PLATFORM: "darwin",
+  AMPLEFILE_DESKTOP_RELEASE_ARCH: arch,
+  AMPLEFILE_DESKTOP_OUTPUT_DIR: "out/builder",
   ...(releaseBuild
-    ? { WORKFOLD_MAC_RELEASE_BUILD: "1", WORKFOLD_ALLOW_UNSIGNED_MAC_BUILD: "0", WORKFOLD_REQUIRE_CODE_SIGNING: "1" }
-    : { WORKFOLD_MAC_RELEASE_BUILD: "0", WORKFOLD_ALLOW_UNSIGNED_MAC_BUILD: "1", WORKFOLD_REQUIRE_CODE_SIGNING: "0", CSC_IDENTITY_AUTO_DISCOVERY: "false" }),
+    ? { AMPLEFILE_MAC_RELEASE_BUILD: "1", AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD: "0", AMPLEFILE_REQUIRE_CODE_SIGNING: "1" }
+    : { AMPLEFILE_MAC_RELEASE_BUILD: "0", AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD: "1", AMPLEFILE_REQUIRE_CODE_SIGNING: "0", CSC_IDENTITY_AUTO_DISCOVERY: "false" }),
 };
 
 await withReleaseVerificationLock(rootDir, releaseBuild ? "distribution build" : "structural smoke build", async (lockToken) => {
@@ -77,10 +77,10 @@ async function buildResumableRelease(verification) {
     arch,
     mode: "release",
     nodeVersion: process.version,
-    signIdentity: value(process.env.WORKFOLD_MAC_SIGN_IDENTITY || process.env.CSC_NAME),
-    teamId: value(process.env.WORKFOLD_MAC_TEAM_ID || process.env.APPLE_TEAM_ID),
-    feedOwner: value(process.env.WORKFOLD_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner,
-    feedRepo: value(process.env.WORKFOLD_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName,
+    signIdentity: value(process.env.AMPLEFILE_MAC_SIGN_IDENTITY || process.env.CSC_NAME),
+    teamId: value(process.env.AMPLEFILE_MAC_TEAM_ID || process.env.APPLE_TEAM_ID),
+    feedOwner: value(process.env.AMPLEFILE_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner,
+    feedRepo: value(process.env.AMPLEFILE_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName,
   };
   const fingerprint = await computeReleaseFingerprint(rootDir, descriptor);
   const statePath = releaseStatePath(rootDir, identity.productName);
@@ -271,8 +271,8 @@ async function timedStage(label, action) {
 }
 
 function assertReleaseCredentials() {
-  if (!value(process.env.WORKFOLD_MAC_SIGN_IDENTITY) && !value(process.env.CSC_NAME)) {
-    throw new Error("Set WORKFOLD_MAC_SIGN_IDENTITY or CSC_NAME to a Developer ID Application identity.");
+  if (!value(process.env.AMPLEFILE_MAC_SIGN_IDENTITY) && !value(process.env.CSC_NAME)) {
+    throw new Error("Set AMPLEFILE_MAC_SIGN_IDENTITY or CSC_NAME to a Developer ID Application identity.");
   }
   const hasApiKey = every("APPLE_API_KEY", "APPLE_API_KEY_ID", "APPLE_API_ISSUER");
   const hasAppleId = every("APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID");

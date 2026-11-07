@@ -1,19 +1,22 @@
-# work-fold vocabulary migration (2026-10-10)
+# AmpleFile vocabulary
 
 The desktop interface is the source of truth for product names. Code,
 HTTP routes, CLI verbs and flags, JSON keys, storage paths, and schemas follow
-it. This file records each decision the codemod in this folder applies.
+it. Labels are Title Case, and **Connected Folder** is capitalized everywhere,
+in labels and in sentences, like **Worker**.
 
 | Interface | Code (camel / Pascal) | Kebab (routes, CLI, files, CSS) | Replaces |
 |---|---|---|---|
-| work-folder | `workFolder`, `WorkFolder` | `work-folder` | Space, `space` |
+| AmpleFile | `ampleFile`, `AmpleFile` | `amplefile` (one word; `AMPLEFILE_` in the environment) | work-fold |
+| Connected Folder | `connectedFolder`, `ConnectedFolder` | `connected-folder` | work-folder; before 2026-10-10, Space |
 | Worker | `worker`, `Worker` | `worker` | Space Assistant, product-sense `assistant` |
-| work-fold agent | `workFoldAgent`, `WorkFoldAgent` | `work-fold-agent` (CLI verb `agent`) | management conversation, the fold, `manage` |
+| AmpleFile agent | `ampleFileAgent`, `AmpleFileAgent` | `amplefile-agent` (CLI verb `agent`) | work-fold agent; management conversation, the fold |
 | Automation | `automation`, `Automation` | `automation` | routing |
 | app automation | `appAutomation`, `AppAutomation` | `app-automation` | an app's declared named automations |
 | Recently deleted | `recentlyDeleted`, `RecentlyDeleted` | `recently-deleted` | trash |
 | overview | `overview`, `Overview` | `overview` | glance |
 | Everywhere | `everywhere` | `everywhere` | the `personal` capability scope |
+| The app kit | — | `af-` classes, `--af-*` variables, `/__amplefile/kit.css` | `wf-`, `--wf-*` |
 
 Not renamed, because they are not product vocabulary:
 
@@ -21,33 +24,21 @@ Not renamed, because they are not product vocabulary:
   reply (`assistantText`, `assistant_delta`, `AssistantPresentation`,
   streaming-assistant state). These follow the model provider's protocol.
 - Pi's own scopes (`global`, `project`), Pi types, and Pi directories.
-- `work-fold` itself, and the plain word "folder" for an ordinary directory.
+- The plain word "folder" for an ordinary directory.
 - CSS values and keyboard names that merely contain "space"
   (`white-space`, `space-between`, `userSpaceOnUse`, the `Space` key).
-- Dated release notes and archived documents.
+- Dated quotations, and the work-fold repository that holds the archives.
 
-Rules for a case-preserving rename of one token:
-
-- camelCase / PascalCase tokens map word by word (`spaceRoot` → `workFolderRoot`,
-  `SpaceSummary` → `WorkFolderSummary`); UPPER_SNAKE maps to UPPER_SNAKE
-  (`SPACE_ID` → `WORK_FOLDER_ID`); kebab, dotted, and lowercase file/route
-  tokens map to kebab (`space-ignore.ts` → `work-folder-ignore.ts`,
-  `spaces.list` → `work-folders.list`).
-- `work-fold` + `management` → `work-fold` + `agent` (never `workFoldWorkFoldAgent`).
-- An override table (`overrides.json`) lists every ambiguous token by hand;
-  an entry mapping a token to itself means "keep".
-
-Opaque identifiers keep their established prefix: a work-folder id is
+Opaque identifiers keep their established prefix: a Connected Folder id is
 `space-<16 hex>` (and a removal transaction `space-removal_<uuid>`, whose
 claimed folder is `.space-removal-<uuid>`) because
 that identity is written into every registered folder's portable
-`.work-fold/` metadata, and a Recently deleted entry id stays
+`.amplefile/` metadata, and a Recently deleted entry id stays
 `trash-<timestamp>-<hex>` because entries name their own directories.
-Machine-local Automation ids follow the new words (`automation-…`) and are
-migrated in app state.
+Machine-local Automation ids follow the new words (`automation-…`).
 
-The folder that holds app-managed work-folders keeps its name (`spaces/` in
-app state), as does the work-fold agent's working folder (`management/`), and
+The folder that holds app-managed Connected Folders keeps its name (`spaces/` in
+app state), as does the AmpleFile agent's working folder (`management/`), and
 path-derived storage keys keep their old fallback segment: moving or
 re-keying them would move user content and detach History, per-folder state,
 and Pi chat sessions from existing folders. The restricted-app bridge API
@@ -62,11 +53,9 @@ The one-time migrations that carried a profile from before 2026-10-10
 forward stayed with the work-fold repository: AmpleFile starts with a new
 app id and an empty profile, so it has no such state.
 
-## Re-running the codemod
+## How the names were changed
 
-`node scripts/vocabulary/rename.mjs` (code pass) and `--prose` (comments,
-strings, and documents) are idempotent over already-migrated code. After a
-pass, review: Electron's `frame.routingId` (an Electron API, not ours),
-property names that became kebab strings in `Omit<>`/`in` checks, icon search
-keywords, CLI parser phrases, and English uses of "space", "routing", and
-"glance" that a word rule cannot tell apart.
+`scripts/rebrand/rename.mjs` made the 2026-11-07 rename and records its
+rules: each code token keeps its case style, and prose uses the display
+names. `node scripts/rebrand/inventory.mjs --check` fails while an old name
+remains outside the places that name it on purpose.

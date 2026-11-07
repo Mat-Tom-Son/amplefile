@@ -3,7 +3,7 @@ import test from "node:test";
 import { createRequire, registerHooks } from "node:module";
 import { createElement } from "react";
 
-import { buildFixtureFolderAutomations } from "../web-local/src/fixtures/work-folder-fixture.js";
+import { buildFixtureFolderAutomations } from "../web-local/src/fixtures/connected-folder-fixture.js";
 import type { FolderAutomationView } from "../src/shared/automation-presentation.js";
 import { createDomHarness } from "./support/dom.js";
 
@@ -19,15 +19,15 @@ registerHooks({
     return next(url, context);
   },
 });
-const { WorkFolderAutomationsNavigator } = await import("../web-local/src/components/panes/WorkFolderAutomationsNavigator.js");
+const { ConnectedFolderAutomationsNavigator } = await import("../web-local/src/components/panes/ConnectedFolderAutomationsNavigator.js");
 
-test("the left pane lists this work-folder's automations, and a click opens that one's tab", async (t) => {
+test("the left pane lists this Connected Folder's automations, and a click opens that one's tab", async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   const fixture = buildFixtureFolderAutomations()["fixture-home"]!;
   const opened: string[] = [];
   let all = 0;
-  await dom.render(createElement(WorkFolderAutomationsNavigator, {
+  await dom.render(createElement(ConnectedFolderAutomationsNavigator, {
     automations: fixture,
     activeAutomationId: fixture[1]!.automationId,
     onOpen: (automation: FolderAutomationView) => { opened.push(automation.automationId); },
@@ -45,7 +45,7 @@ test("the left pane lists this work-folder's automations, and a click opens that
   await dom.act(async () => { (dom.container.querySelector(".folder-automations-footer button") as HTMLButtonElement).click(); });
   assert.equal(all, 1);
 
-  await dom.render(createElement(WorkFolderAutomationsNavigator, { automations: [], activeAutomationId: null, onOpen: () => {}, onOpenAllAutomations: () => {} }));
-  assert.match(dom.container.textContent ?? "", /No automations touch this work-folder\./);
+  await dom.render(createElement(ConnectedFolderAutomationsNavigator, { automations: [], activeAutomationId: null, onOpen: () => {}, onOpenAllAutomations: () => {} }));
+  assert.match(dom.container.textContent ?? "", /No automations touch this Connected Folder\./);
 });
 

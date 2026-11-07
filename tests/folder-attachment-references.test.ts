@@ -7,7 +7,7 @@ import { loadConversationContextReferencesForTurn, previewConversationContextRef
 import { buildTurnContextMessage, turnImages } from "../src/local/agent/pi-client.js";
 
 test("Folder attachments reference original documents regardless of format or extraction size", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-file-references-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-file-references-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "notes.md"), "BODY_MUST_NOT_BE_INLINED");
   await writeFile(join(root, "document.docx"), "This is not an OOXML archive.");
@@ -35,7 +35,7 @@ test("Folder attachments reference original documents regardless of format or ex
 });
 
 test("staging rejects unavailable files and unsafe paths; a later deletion remains visible to the Worker", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-file-reference-errors-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-file-reference-errors-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "Notes"));
   await assert.rejects(previewConversationContextReference(root, { path: "missing.txt" }), /File not found/);
@@ -57,8 +57,8 @@ test("staging rejects unavailable files and unsafe paths; a later deletion remai
   assert.match(buildTurnContextMessage({ contextAttachments: loaded }), /Attachment note: File not found: notes.txt/);
 });
 
-test("referencing work-folder files preserves image vision and never inlines a renamed text file", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-image-references-"));
+test("referencing Connected Folder files preserves image vision and never inlines a renamed text file", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-image-references-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "screenshot.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64"));
   await writeFile(join(root, "fake.png"), "TEXT_MUST_NOT_BE_INLINED");

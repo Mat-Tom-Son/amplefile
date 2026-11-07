@@ -1,22 +1,22 @@
 import type { RestrictedAppCheckGrant, RestrictedAppCheckPermission } from "../../src/shared/restricted-app-checks";
-import type { AccentIdentity, WorkFolderAppearanceState } from "../../src/shared/work-folder-appearance";
+import type { AccentIdentity, ConnectedFolderAppearanceState } from "../../src/shared/connected-folder-appearance";
 import type {
-  WorkFoldCheckDecisionKind,
-  WorkFoldCheckFinding,
-  WorkFoldCheckRendererDecorations,
-  WorkFoldCheckRendererOverview,
-  WorkFoldCheckStatusSnapshot,
+  AmpleFileCheckDecisionKind,
+  AmpleFileCheckFinding,
+  AmpleFileCheckRendererDecorations,
+  AmpleFileCheckRendererOverview,
+  AmpleFileCheckStatusSnapshot,
 } from "../../src/local/checks/check-types";
-import type { WorkFoldCheckTaskStatus } from "../../src/local/checks/check-service";
+import type { AmpleFileCheckTaskStatus } from "../../src/local/checks/check-service";
 
-export type WorkFolderPane = "files" | "chats" | "history";
-export type WorkFolderExtensionRailMode = `app:${string}`;
+export type ConnectedFolderPane = "files" | "chats" | "history";
+export type ConnectedFolderExtensionRailMode = `app:${string}`;
 /**
- * `automations` is the work-folder-owned Automations rail entry. Like Files, it
+ * `automations` is the Connected Folder–owned Automations rail entry. Like Files, it
  * shows a list in the navigator pane, and clicking an automation there opens
  * that automation's own tab (2026-10-11).
  */
-export type WorkFolderRailMode = "work-folders" | WorkFolderPane | "automations" | WorkFolderExtensionRailMode;
+export type ConnectedFolderRailMode = "connected-folders" | ConnectedFolderPane | "automations" | ConnectedFolderExtensionRailMode;
 export type AppTheme = "light" | "dark";
 export type AppThemePreference = AppTheme | "system";
 export type AppTypographyFont = "default" | "stable" | "verdana" | "aptos";
@@ -27,10 +27,10 @@ export interface AppTypographyPreference {
   textSize: AppTextSize;
 }
 
-import type { WorkFolderSummary } from "../../src/shared/work-folder-summary";
-export type { WorkFolderLocation, WorkFolderSummary } from "../../src/shared/work-folder-summary";
+import type { ConnectedFolderSummary } from "../../src/shared/connected-folder-summary";
+export type { ConnectedFolderLocation, ConnectedFolderSummary } from "../../src/shared/connected-folder-summary";
 
-export interface WorkFolderCustomization {
+export interface ConnectedFolderCustomization {
   schema?: 1 | 2;
   color?: string;
   color2?: string;
@@ -39,20 +39,20 @@ export interface WorkFolderCustomization {
   iconName?: string;
   bannerName?: string;
   bannerImage?: string | null;
-  bannerImagePosition?: WorkFolderBannerImagePosition;
-  bannerPreset?: import("../../src/shared/work-folder-appearance").WorkFolderAppearanceBannerPresetId;
-  bannerFraming?: import("../../src/shared/work-folder-appearance").WorkFolderAppearanceBannerFraming;
-  bannerLayout?: import("../../src/shared/work-folder-appearance").WorkFolderAppearanceBannerLayout;
-  bannerIconStyle?: import("../../src/shared/work-folder-appearance").WorkFolderAppearanceBannerIconStyle;
-  bannerTitleFill?: import("../../src/shared/work-folder-appearance").WorkFolderAppearanceBannerTitleFill;
+  bannerImagePosition?: ConnectedFolderBannerImagePosition;
+  bannerPreset?: import("../../src/shared/connected-folder-appearance").ConnectedFolderAppearanceBannerPresetId;
+  bannerFraming?: import("../../src/shared/connected-folder-appearance").ConnectedFolderAppearanceBannerFraming;
+  bannerLayout?: import("../../src/shared/connected-folder-appearance").ConnectedFolderAppearanceBannerLayout;
+  bannerIconStyle?: import("../../src/shared/connected-folder-appearance").ConnectedFolderAppearanceBannerIconStyle;
+  bannerTitleFill?: import("../../src/shared/connected-folder-appearance").ConnectedFolderAppearanceBannerTitleFill;
 }
 
-export type WorkFolderCustomizationMap = Record<string, WorkFolderCustomization>;
-export type WorkFolderCustomizationPatch = WorkFolderCustomization;
-export interface WorkFolderColorOption { label: string; color: string; soft: string; border: string }
-export interface WorkFolderBannerOption { name: string; label: string }
-export type WorkFolderBannerImagePosition = "top" | "center" | "bottom";
-export interface WorkFolderPaneBounds { min: number; max: number; fallback: number }
+export type ConnectedFolderCustomizationMap = Record<string, ConnectedFolderCustomization>;
+export type ConnectedFolderCustomizationPatch = ConnectedFolderCustomization;
+export interface ConnectedFolderColorOption { label: string; color: string; soft: string; border: string }
+export interface ConnectedFolderBannerOption { name: string; label: string }
+export type ConnectedFolderBannerImagePosition = "top" | "center" | "bottom";
+export interface ConnectedFolderPaneBounds { min: number; max: number; fallback: number }
 
 export interface TreeEntry {
   name: string;
@@ -64,7 +64,7 @@ export interface TreeEntry {
   ignored?: boolean;
   descendantIgnoredCount?: number;
   children?: TreeEntry[];
-  /** Its own registered work-folder: Files shows it as a door, not a subtree. */
+  /** Its own registered Connected Folder: Files shows it as a door, not a subtree. */
   nestedFolder?: true;
 }
 
@@ -113,7 +113,7 @@ export interface ChatMessage {
   workTrail?: ChatMessageWorkTrailEntry[];
   assistantPresentation?: import("../../src/shared/chat-presentation").AssistantPresentation;
   interruption?: ChatMessageInterruption;
-  /** Files sent with a user message, as work-folder-relative paths. */
+  /** Files sent with a user message, as Connected Folder–relative paths. */
   attachments?: { kind: "file" | "folder" | "url"; target: string; name: string }[];
   turnId?: string;
   requestId?: string;
@@ -150,7 +150,7 @@ export interface RuntimePreviewEntry extends Omit<import("../../src/shared/chat-
 }
 
 export interface ChatActionsState {
-  workFolder: WorkFolderSummary;
+  connectedFolder: ConnectedFolderSummary;
   conversation: ConversationSummary;
   x: number;
   y: number;
@@ -184,11 +184,11 @@ export interface ChatContextPathRequest {
   id: number;
   /** One file, or several attached together from Files. */
   paths: readonly string[];
-  workFolderId: string;
+  connectedFolderId: string;
   surfaceTabId: string;
 }
 /**
- * Sends a message at once with these work-folder paths as references: the
+ * Sends a message at once with these Connected Folder paths as references: the
  * file manager's message box (2026-11-06) hands its words and selection to
  * the Chat it opens in the panel.
  */
@@ -201,7 +201,7 @@ export interface ChatSendRequest {
 export interface ChatDraftRequest {
   id: number;
   text: string;
-  workFolderId: string;
+  connectedFolderId: string;
   surfaceTabId: string;
 }
 export interface PendingChatSend {
@@ -213,10 +213,10 @@ export interface PendingChatSend {
   contextPaths: string[];
   transientConversation: boolean;
   draftStorageKey: string;
-  /** work-folder Workers the message @-mentions (2026-10-01). */
-  addressedWorkFolderIds?: string[];
+  /** Connected Folder Workers the message @-mentions (2026-10-01). */
+  addressedConnectedFolderIds?: string[];
 }
-export interface WorkFolderFixtureConversation extends ConversationSummary {
+export interface ConnectedFolderFixtureConversation extends ConversationSummary {
   messages: ChatMessage[];
   runtimePreviews?: RuntimePreviewEntry[];
   running?: boolean;
@@ -226,24 +226,24 @@ export interface WorkFolderFixtureConversation extends ConversationSummary {
 
 export type SkillsExtensionsView = "installed" | "discover";
 
-interface WorkFolderSurfaceTabBase {
+interface ConnectedFolderSurfaceTabBase {
   id: string;
-  workFolderId: string;
+  connectedFolderId: string;
   title: string;
 }
 
-export type WorkFolderSurfaceTab =
-  | (WorkFolderSurfaceTabBase & { kind: "chat"; conversationId: string | null })
-  | (WorkFolderSurfaceTabBase & { kind: "file"; path: string })
+export type ConnectedFolderSurfaceTab =
+  | (ConnectedFolderSurfaceTabBase & { kind: "chat"; conversationId: string | null })
+  | (ConnectedFolderSurfaceTabBase & { kind: "file"; path: string })
   /** A page folder (docs/pages.md): `path` is the folder, `view` the last shown. */
-  | (WorkFolderSurfaceTabBase & { kind: "page"; path: string; view?: "preview" | "data" })
-  | (WorkFolderSurfaceTabBase & { kind: "history"; checkpointId?: string })
-  | (WorkFolderSurfaceTabBase & { kind: "app-studio" })
-  | (WorkFolderSurfaceTabBase & { kind: "checks" })
-  | (WorkFolderSurfaceTabBase & { kind: "work-folder-automations" })
-  | (WorkFolderSurfaceTabBase & { kind: "work-folder-automation"; automationId: string })
-  | (WorkFolderSurfaceTabBase & { kind: "extension"; surfaceId: string; surfaceExecution: "full-trust-pi"; viewId: string })
-  | (WorkFolderSurfaceTabBase & {
+  | (ConnectedFolderSurfaceTabBase & { kind: "page"; path: string; view?: "preview" | "data" })
+  | (ConnectedFolderSurfaceTabBase & { kind: "history"; checkpointId?: string })
+  | (ConnectedFolderSurfaceTabBase & { kind: "app-studio" })
+  | (ConnectedFolderSurfaceTabBase & { kind: "checks" })
+  | (ConnectedFolderSurfaceTabBase & { kind: "connected-folder-automations" })
+  | (ConnectedFolderSurfaceTabBase & { kind: "connected-folder-automation"; automationId: string })
+  | (ConnectedFolderSurfaceTabBase & { kind: "extension"; surfaceId: string; surfaceExecution: "full-trust-pi"; viewId: string })
+  | (ConnectedFolderSurfaceTabBase & {
     kind: "restricted-app";
     appId: string;
     featureInstallationId: string;
@@ -256,13 +256,13 @@ export type WorkFolderSurfaceTab =
 
 /**
  * A built-in browser tab (docs/built-in-browser.md). It belongs to no
- * work-folder: every work-folder's tab strip shows it, and selecting it keeps
- * the work-folder that is open.
+ * Connected Folder: every Connected Folder's tab strip shows it, and selecting it keeps
+ * the Connected Folder that is open.
  */
 export interface BrowserSurfaceTab {
   id: string;
   kind: "browser";
-  workFolderId: null;
+  connectedFolderId: null;
   title: string;
   /** The desktop page behind the tab. */
   pageId: string;
@@ -270,12 +270,12 @@ export interface BrowserSurfaceTab {
   url: string;
 }
 
-export type ChecksStatus = WorkFoldCheckStatusSnapshot;
-export type ChecksOverview = WorkFoldCheckRendererOverview;
-export type ChecksDecorations = WorkFoldCheckRendererDecorations;
-export type ChecksFinding = WorkFoldCheckFinding;
-export type ChecksDecisionKind = WorkFoldCheckDecisionKind;
-export type ChecksTaskStatus = WorkFoldCheckTaskStatus;
+export type ChecksStatus = AmpleFileCheckStatusSnapshot;
+export type ChecksOverview = AmpleFileCheckRendererOverview;
+export type ChecksDecorations = AmpleFileCheckRendererDecorations;
+export type ChecksFinding = AmpleFileCheckFinding;
+export type ChecksDecisionKind = AmpleFileCheckDecisionKind;
+export type ChecksTaskStatus = AmpleFileCheckTaskStatus;
 
 export interface AgentStatus {
   ready: boolean;
@@ -603,8 +603,8 @@ export interface RestrictedAppReview {
 }
 
 export interface RestrictedAppInstalled extends RestrictedAppReview {
-  workFolderId: string;
-  sourceWorkFolderId: string;
+  connectedFolderId: string;
+  sourceConnectedFolderId: string;
   projectId: string;
   tenantId: string;
   principalId: string;
@@ -630,7 +630,7 @@ export interface LocalAppPresentation {
 }
 
 export interface LocalAppProject {
-  workFolderId: string;
+  connectedFolderId: string;
   projectId: string;
   presentation: LocalAppPresentation;
   createdAt: string;
@@ -639,7 +639,7 @@ export interface LocalAppProject {
 
 export interface LocalAppRelease {
   projectId: string;
-  sourceWorkFolderId: string;
+  sourceConnectedFolderId: string;
   releaseDigest: string;
   displayVersion: string;
   presentation: LocalAppPresentation;
@@ -659,7 +659,7 @@ export interface LocalAppReleaseDeletionResult {
 export interface LocalAppInstance {
   runtimeInstanceId: string;
   projectId: string;
-  workFolderId: string;
+  connectedFolderId: string;
   releaseDigest: string;
   displayVersion: string;
   presentation: LocalAppPresentation;
@@ -672,7 +672,7 @@ export interface LocalAppInstallOperation {
   operationId: string;
   kind: "install";
   projectId: string;
-  targetWorkFolderId: string;
+  targetConnectedFolderId: string;
   releaseDigest: string;
   runtimeInstanceId: string;
   features: Array<{ featureId: string; featureInstallationId: string; dataNamespaceId: string }>;
@@ -683,7 +683,7 @@ export interface LocalAppUpdateOperation {
   operationId: string;
   kind: "update";
   projectId: string;
-  targetWorkFolderId: string;
+  targetConnectedFolderId: string;
   releaseDigest: string;
   runtimeInstanceId: string;
   continuityPolicy: "eligible" | "reset";
@@ -727,7 +727,7 @@ export interface LocalAppStudioSnapshot {
   retainedData: LocalAppRetainedData[];
 }
 
-export interface LocalAppWorkFolderRemovalImpact {
+export interface LocalAppConnectedFolderRemovalImpact {
   activeSourceInstanceCount: number;
   activeTargetInstanceCount: number;
   retainedDataCount: number;
@@ -784,7 +784,7 @@ export interface AppPlatformAuthorityStamp {
 }
 
 export interface RestrictedAppViewRequest {
-  workFolderId: string;
+  connectedFolderId: string;
   appId: string;
   featureInstallationId: string;
   digest: string;
@@ -806,7 +806,7 @@ export interface RestrictedAppViewRequest {
 
 export interface RestrictedAppProposal {
   id: string;
-  workFolderId: string;
+  connectedFolderId: string;
   conversationId: string;
   sourcePath: string;
   review: RestrictedAppReview;
@@ -905,7 +905,7 @@ export interface CapabilityDiscoverDetailsResponse {
   item: CapabilityDiscoverDetailsItem;
 }
 
-export interface WorkFolderCheckpoint {
+export interface ConnectedFolderCheckpoint {
   checkpointId: string;
   createdAt: string;
   label?: string;
@@ -939,7 +939,7 @@ export interface LocalEventStream {
   close: () => void;
 }
 
-export type WorkFolderFileEvent =
+export type ConnectedFolderFileEvent =
   | { type: "ready"; recursive: boolean }
   | { type: "file_event"; eventType: string; path: string | null }
   | { type: "error"; message: string };
@@ -990,7 +990,7 @@ export interface ChatStreamEvent {
   sentContextPaths?: string[];
 }
 
-export interface BootstrapResponse { workFolders: WorkFolderSummary[]; agent: AgentStatus; appearance?: WorkFolderAppearanceState }
+export interface BootstrapResponse { connectedFolders: ConnectedFolderSummary[]; agent: AgentStatus; appearance?: ConnectedFolderAppearanceState }
 export interface DesktopUpdateStatus {
   supported: boolean;
   phase: "unsupported" | "idle" | "checking" | "available" | "not_available" | "downloading" | "ready" | "installing" | "error";
@@ -1001,6 +1001,6 @@ export interface DesktopUpdateStatus {
   message: string;
   error: string | null;
 }
-export type CommandPaletteGroupId = "go-to" | "switch-work-folder" | "chats" | "files" | "actions";
+export type CommandPaletteGroupId = "go-to" | "switch-connected-folder" | "chats" | "files" | "actions";
 export interface ShortcutRow { keys: string[]; action: string }
 export interface ShortcutGroup { title: string; rows: ShortcutRow[] }

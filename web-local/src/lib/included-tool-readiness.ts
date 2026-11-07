@@ -4,7 +4,7 @@ import type { ChromeConnectionState, ChromeConnectionSummary } from "../../../sr
 export function chromeConnectionReadiness(state: ChromeConnectionState | undefined, hasSelection = false, problem?: ChromeConnectionSummary["problem"]) {
   const labels: Record<ChromeConnectionState, string> = {
     not_connected: "Not Connected", connecting: "Connecting…", connected: "Connected",
-    app_not_running: "work-fold Is Closed", native_host_missing: "Setup Needed", update_app: "Update work-fold",
+    app_not_running: "AmpleFile Is Closed", native_host_missing: "Setup Needed", update_app: "Update AmpleFile",
     update_extension: "Update Chrome Extension", profile_conflict: "Another Profile Is Connected", busy: "Chrome Is in Use",
     store_unavailable: "Chrome Extension Unavailable", connection_error: "Not Connected",
   };

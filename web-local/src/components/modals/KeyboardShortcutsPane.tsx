@@ -5,7 +5,7 @@ import type { ShortcutGroup } from "../../types";
 /**
  * The file manager layout's keys (docs/product-model.md, 2026-11-06 file
  * manager layout): Finder's keys for the list and search, and the menu bar's
- * work-fold commands. It has no tabs, command palette, or agent panel, so
+ * AmpleFile commands. It has no tabs, command palette, or agent panel, so
  * their keys are not listed.
  */
 export function fileManagerShortcutGroups(modifier: string, macOS: boolean, desktop: boolean): ShortcutGroup[] {
@@ -46,14 +46,14 @@ export function fileManagerShortcutGroups(modifier: string, macOS: boolean, desk
     {
       title: "Chat",
       rows: [
-        ...(desktop ? [{ keys: [modifier, "Shift", "N"], action: "Start a new Chat in this work-folder." }] : []),
+        ...(desktop ? [{ keys: [modifier, "Shift", "N"], action: "Start a new Chat in this Connected Folder." }] : []),
         { keys: [modifier, "."], action: "Stop the Worker's reply." },
       ],
     },
     ...(desktop ? [{
-      title: "work-fold",
+      title: "AmpleFile",
       rows: [
-        { keys: [modifier, "N"], action: "Create a new work-folder." },
+        { keys: [modifier, "N"], action: "Create a new Connected Folder." },
         { keys: [modifier, "O"], action: "Use an existing folder." },
         { keys: [modifier, "R"], action: "Refresh the folder." },
         { keys: [modifier, "Shift", "S"], action: "Open Skills & Extensions." },
@@ -67,12 +67,12 @@ export function fileManagerShortcutGroups(modifier: string, macOS: boolean, desk
 export function KeyboardShortcutsPane({ layout = "classic" }: { layout?: "classic" | "file-manager" } = {}) {
   const modifier = desktopShortcutModifierKey();
   const macOS = isMacOS();
-  if (layout === "file-manager") return <ShortcutGroups groups={fileManagerShortcutGroups(modifier, macOS, Boolean(window.workFoldDesktop))} />;
+  if (layout === "file-manager") return <ShortcutGroups groups={fileManagerShortcutGroups(modifier, macOS, Boolean(window.ampleFileDesktop))} />;
   const shortcutGroups: ShortcutGroup[] = [
     {
       title: "Tabs",
       rows: [
-        { keys: [modifier, "T"], action: "Open a new Chat tab in the current work-folder." },
+        { keys: [modifier, "T"], action: "Open a new Chat tab in the current Connected Folder." },
         { keys: ["Ctrl", "Tab"], action: "Move to the next tab." },
         { keys: ["Ctrl", "Shift", "Tab"], action: "Move to the previous tab." },
         { keys: [modifier, "1–9"], action: "Jump to a tab by position; 9 is the last tab." },
@@ -80,8 +80,8 @@ export function KeyboardShortcutsPane({ layout = "classic" }: { layout?: "classi
         ...(macOS ? [{ keys: [modifier, "Shift", "W"], action: "Close the window." }] : []),
         { keys: ["Arrow left"], action: "Move to the previous tab when focus is on the tab list." },
         { keys: ["Arrow right"], action: "Move to the next tab when focus is on the tab list." },
-        { keys: ["Alt", "Shift", "Arrow left"], action: "Move the focused tab one position left; grouped tabs stay in their work-folder." },
-        { keys: ["Alt", "Shift", "Arrow right"], action: "Move the focused tab one position right; grouped tabs stay in their work-folder." },
+        { keys: ["Alt", "Shift", "Arrow left"], action: "Move the focused tab one position left; grouped tabs stay in their Connected Folder." },
+        { keys: ["Alt", "Shift", "Arrow right"], action: "Move the focused tab one position right; grouped tabs stay in their Connected Folder." },
         { keys: ["Home"], action: "Move to the first tab." },
         { keys: ["End"], action: "Move to the last tab." },
       ],
@@ -108,14 +108,14 @@ export function KeyboardShortcutsPane({ layout = "classic" }: { layout?: "classi
       title: "File Search",
       rows: [
         { keys: ["Esc"], action: "Clear the file search field when it has text." },
-        { keys: [macOS ? "Option" : "Alt", "Drag"], action: `Drag a file out to ${macOS ? "Finder" : "File Explorer"}. Drag normally to move it inside the work-folder.` },
+        { keys: [macOS ? "Option" : "Alt", "Drag"], action: `Drag a file out to ${macOS ? "Finder" : "File Explorer"}. Drag normally to move it inside the Connected Folder.` },
       ],
     },
     {
       title: "Layout",
       rows: [
         { keys: [modifier, "B"], action: "Show or hide the sidebar." },
-        { keys: [modifier, "J"], action: "Open or close the work-fold agent." },
+        { keys: [modifier, "J"], action: "Open or close the AmpleFile agent." },
       ],
     },
     {
@@ -126,14 +126,14 @@ export function KeyboardShortcutsPane({ layout = "classic" }: { layout?: "classi
       ],
     },
   ];
-  if (window.workFoldDesktop) {
+  if (window.ampleFileDesktop) {
     shortcutGroups.splice(4, 0, {
       title: "Desktop File Menu",
       rows: [
-        { keys: [modifier, "N"], action: "Create a new work-folder." },
+        { keys: [modifier, "N"], action: "Create a new Connected Folder." },
         { keys: [modifier, "O"], action: "Use an existing folder." },
-        { keys: [modifier, "Shift", "N"], action: "Start a new Chat in the current work-folder." },
-        { keys: [modifier, "R"], action: "Refresh the current work-folder." },
+        { keys: [modifier, "Shift", "N"], action: "Start a new Chat in the current Connected Folder." },
+        { keys: [modifier, "R"], action: "Refresh the current Connected Folder." },
         { keys: [modifier, ","], action: "Open Settings." },
         { keys: [modifier, "Shift", "S"], action: "Open Skills & Extensions." },
       ],

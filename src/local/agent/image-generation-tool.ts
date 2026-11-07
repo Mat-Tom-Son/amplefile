@@ -1,5 +1,5 @@
 /**
- * generate_image: a Worker or work-fold agent tool that makes a picture with a
+ * generate_image: a Worker or AmpleFile agent tool that makes a picture with a
  * connected image model through Pi's own image API (`ModelRuntime.generateImages`)
  * and saves it as an ordinary file in the folder the session works in, where
  * History captures it like any other change (docs/image-generation.md).
@@ -22,7 +22,7 @@ import {
 
 export type ImageShape = "wide" | "square" | "tall";
 
-/** Aspect ratios each shape asks for; a wide image suits a work-folder banner. */
+/** Aspect ratios each shape asks for; a wide image suits a Connected Folder banner. */
 export const imageShapeAspectRatios: Record<ImageShape, string> = { wide: "21:9", square: "1:1", tall: "2:3" };
 
 /**
@@ -40,11 +40,11 @@ export const preferredImageModelIds = [
 
 const imageTypes: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
 const typeExtensions: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" };
-const reservedFolders = new Set([".work-fold", ".pi", ".git", ".workspace"]);
+const reservedFolders = new Set([".amplefile", ".pi", ".git", ".workspace"]);
 const maxPromptCharacters = 32_000;
 
 export type ImageModelSource = Pick<ModelRuntime, "getAvailableOfType" | "generateImages" | "hasConfiguredAuth" | "getAuth" | "getModels">;
-/** A model from Pi's image catalog, or one work-fold reaches directly with the provider's own credential. */
+/** A model from Pi's image catalog, or one AmpleFile reaches directly with the provider's own credential. */
 export type ChosenImageModel = ImageModel<ImageApi> | DirectImageModel;
 
 /**
@@ -65,7 +65,7 @@ export interface GeneratedImageSink {
 }
 
 export interface GeneratedImage {
-  /** work-folder-relative path, present only when the picture was saved in the folder. */
+  /** Connected Folder–relative path, present only when the picture was saved in the folder. */
   path?: string;
   /** An absolute path to a copy on disk, for appearance apply --banner-image. */
   file: string;
@@ -118,7 +118,7 @@ export function resolveImagePath(root: string, requested: string, mimeType: stri
   if (!trimmed || isAbsolute(trimmed) || trimmed.split("/").some((segment) => !segment || segment === "." || segment === "..")) {
     throw new Error("Save the image to a relative path inside this folder, for example images/banner.png.");
   }
-  if (reservedFolders.has(trimmed.split("/")[0]!.toLowerCase())) throw new Error("Images cannot be saved in hidden work-fold, Pi, or Git folders.");
+  if (reservedFolders.has(trimmed.split("/")[0]!.toLowerCase())) throw new Error("Images cannot be saved in hidden AmpleFile, Pi, or Git folders.");
   const extension = extname(trimmed).toLowerCase();
   const actual = typeExtensions[mimeType] ?? ".png";
   // The model decides the format; the file name follows it rather than lying about it.
@@ -190,7 +190,7 @@ export async function generateImageFile(input: {
   const stored = input.store ? await input.store.save(bytes, image.mimeType, fileName).catch(() => null) : null;
   if (!file && stored) file = stored.file;
   if (!file) {
-    const temporaryRoot = join(tmpdir(), "work-fold-images", randomUUID());
+    const temporaryRoot = join(tmpdir(), "amplefile-images", randomUUID());
     file = join(temporaryRoot, fileName);
     await mkdir(temporaryRoot, { recursive: true });
     await writeFile(file, bytes);
@@ -264,9 +264,9 @@ export function createImageGenerationTool(input: {
       (inChat
         ? "generate_image shows the picture in the Chat for the person, who can copy it or add it to the folder from there, so leave out path unless the person asked you to save it in the folder (then path is relative to this folder; the extension follows the format the model returns)."
         : "generate_image returns the picture's file outside the folder; give a path relative to the folder only when it belongs there (the extension follows the format the model returns).")
-        + " Use shape \"wide\" for a work-folder banner, \"square\" for an icon-like picture, and \"tall\" for a poster. Describe the subject, style, mood, and colors. Say \"no text, no letters\" unless words are wanted, because image models misspell text.",
-      "With no model named it uses the image model chosen in Settings → AI Models, or a connected one work-fold prefers; name one as {provider, id} only when the person asks for it. If no image model is connected, tell the person to connect a provider with image models in Settings → AI Models.",
-      "To make a generated picture this work-folder's banner, make it without a path, then apply the file path the result gives with work-fold work-folders appearance apply --work-folder <id> --banner-image <file>; it can be undone with work-folders appearance undo.",
+        + " Use shape \"wide\" for a Connected Folder banner, \"square\" for an icon-like picture, and \"tall\" for a poster. Describe the subject, style, mood, and colors. Say \"no text, no letters\" unless words are wanted, because image models misspell text.",
+      "With no model named it uses the image model chosen in Settings → AI Models, or a connected one AmpleFile prefers; name one as {provider, id} only when the person asks for it. If no image model is connected, tell the person to connect a provider with image models in Settings → AI Models.",
+      "To make a generated picture this Connected Folder's banner, make it without a path, then apply the file path the result gives with amplefile connected-folders appearance apply --connected-folder <id> --banner-image <file>; it can be undone with connected-folders appearance undo.",
     ],
     parameters: {
       type: "object",
@@ -283,7 +283,7 @@ export function createImageGenerationTool(input: {
           properties: { provider: { type: "string", minLength: 1 }, id: { type: "string", minLength: 1 } },
           required: ["provider", "id"],
           additionalProperties: false,
-          description: "A specific connected image model; leave it out to let work-fold choose.",
+          description: "A specific connected image model; leave it out to let AmpleFile choose.",
         },
       },
       required: ["prompt"],

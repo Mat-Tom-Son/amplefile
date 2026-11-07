@@ -13,7 +13,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { FileCredentialStore, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 
-import { listWorkFolderCheckpoints } from "../src/local/history.js";
+import { listConnectedFolderCheckpoints } from "../src/local/history.js";
 import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
 
 /**
@@ -36,7 +36,7 @@ interface Journey {
 }
 
 async function startJourney(t: { after: (fn: () => unknown) => void }): Promise<Journey> {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-jobs-journey-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-jobs-journey-"));
   const faux = fauxProvider({ provider: "fixture-jobs", models: [{ id: "chat" }] });
   const requests: Message[][] = [];
   const runtime = await ModelRuntime.create({ credentials: FileCredentialStore.inMemory(), modelsPath: null });
@@ -47,7 +47,7 @@ async function startJourney(t: { after: (fn: () => unknown) => void }): Promise<
   const open = () => startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: {
       resolveRuntime: async () => ({
@@ -88,26 +88,26 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, label: strin
   }
 }
 
-async function transcript(api: LocalApiHandle, workFolderId: string, conversationId: string): Promise<Array<{ role: string; content: string; kind?: string }>> {
-  const response = await fetch(new URL(`/api/work-folders/${workFolderId}/conversations/${conversationId}`, api.origin));
+async function transcript(api: LocalApiHandle, connectedFolderId: string, conversationId: string): Promise<Array<{ role: string; content: string; kind?: string }>> {
+  const response = await fetch(new URL(`/api/connected-folders/${connectedFolderId}/conversations/${conversationId}`, api.origin));
   assert.equal(response.status, 200);
   return (await response.json() as { messages: Array<{ role: string; content: string; kind?: string }> }).messages;
 }
 
-async function work(api: LocalApiHandle, workFolderId: string, conversationId: string): Promise<{ state: string; label: string; detail: string | null; canStop: boolean; requestId: string } | null> {
-  const response = await fetch(new URL(`/api/work-folders/${workFolderId}/conversations/${conversationId}/work`, api.origin));
+async function work(api: LocalApiHandle, connectedFolderId: string, conversationId: string): Promise<{ state: string; label: string; detail: string | null; canStop: boolean; requestId: string } | null> {
+  const response = await fetch(new URL(`/api/connected-folders/${connectedFolderId}/conversations/${conversationId}/work`, api.origin));
   assert.equal(response.status, 200);
   return (await response.json() as { work: { state: string; label: string; detail: string | null; canStop: boolean; requestId: string } | null }).work;
 }
 
 async function startTurn(j: Journey, content: string) {
-  const { workFolder } = await j.api.actFacade.createWorkFolder({ name: `Site ${Math.random().toString(16).slice(2, 8)}` });
-  const sent = await j.api.actFacade.sendMessage({ workFolder: workFolder.id, newConversation: true, content });
-  return { workFolder, ...sent };
+  const { connectedFolder } = await j.api.actFacade.createConnectedFolder({ name: `Site ${Math.random().toString(16).slice(2, 8)}` });
+  const sent = await j.api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content });
+  return { connectedFolder, ...sent };
 }
 
-async function turnSettled(j: Journey, workFolderId: string, taskId: string): Promise<void> {
-  await waitFor(async () => (await j.api.actFacade.turnStatus({ workFolder: workFolderId, taskId })).task.state !== "running", `turn ${taskId} to settle`);
+async function turnSettled(j: Journey, connectedFolderId: string, taskId: string): Promise<void> {
+  await waitFor(async () => (await j.api.actFacade.turnStatus({ connectedFolder: connectedFolderId, taskId })).task.state !== "running", `turn ${taskId} to settle`);
 }
 
 function userTexts(messages: Message[]): string {
@@ -131,8 +131,8 @@ test("a job that outlives its turn wakes its Chat once with its exit, History, a
       return fauxAssistantMessage("The build finished: build ok.");
     },
   ]);
-  const { workFolder, conversationId, taskId } = await startTurn(j, "Build the site.");
-  await turnSettled(j, workFolder.id, taskId);
+  const { connectedFolder, conversationId, taskId } = await startTurn(j, "Build the site.");
+  await turnSettled(j, connectedFolder.id, taskId);
 
   // The turn ended; the job did not. The request is still working on it.
   const running = j.api.requests.byTaskId(taskId)!;
@@ -140,8 +140,8 @@ test("a job that outlives its turn wakes its Chat once with its exit, History, a
   assert.equal(running.jobs?.length, 1);
   const jobId = running.jobs![0]!.jobId;
   assert.equal(j.api.jobs.get(jobId)?.state, "running");
-  assert.equal(j.api.jobs.get(jobId)?.cwd, workFolder.workFolderRoot);
-  const line = await work(j.api, workFolder.id, conversationId);
+  assert.equal(j.api.jobs.get(jobId)?.cwd, connectedFolder.connectedFolderRoot);
+  const line = await work(j.api, connectedFolder.id, conversationId);
   assert.equal(line?.label, "Running in the background");
   assert.match(line?.detail ?? "", /Build the site/);
   assert.equal(line?.canStop, true);
@@ -167,15 +167,15 @@ test("a job that outlives its turn wakes its Chat once with its exit, History, a
   assert.match(wake, /Nobody typed this message/);
 
   // History covers what the job wrote after its turn's own checkpoint.
-  const checkpoints = await listWorkFolderCheckpoints(workFolder.workFolderRoot);
+  const checkpoints = await listConnectedFolderCheckpoints(connectedFolder.connectedFolderRoot);
   const after = checkpoints.find((checkpoint) => checkpoint.label === "After background job: Build the site");
   assert.ok(after, "a checkpoint after the job ended");
   assert.ok(after.files.some((file) => file.path === "out.txt"));
   assert.equal(job.history?.status === "captured" && job.history.checkpointId, after.checkpointId);
-  assert.equal(await readFile(join(workFolder.workFolderRoot, "out.txt"), "utf8"), "built\n");
+  assert.equal(await readFile(join(connectedFolder.connectedFolderRoot, "out.txt"), "utf8"), "built\n");
 
   // The Chat holds one quiet host continuation carrying what was released.
-  const continuations = (await transcript(j.api, workFolder.id, conversationId)).filter((message) => message.kind === "assistant_continuation");
+  const continuations = (await transcript(j.api, connectedFolder.id, conversationId)).filter((message) => message.kind === "assistant_continuation");
   assert.equal(continuations.length, 1);
   assert.match(continuations[0]!.content, /build ok/);
   await new Promise((resolve) => setTimeout(resolve, 300));
@@ -188,8 +188,8 @@ test("reading a finished job inside its turn delivers it, so no follow-up starts
     fauxAssistantMessage([fauxToolCall("job_start", { command: "echo quick", wait: 10 })], { stopReason: "toolUse" }),
     fauxAssistantMessage("It printed quick."),
   ]);
-  const { workFolder, taskId } = await startTurn(j, "Run the quick one.");
-  await turnSettled(j, workFolder.id, taskId);
+  const { connectedFolder, taskId } = await startTurn(j, "Run the quick one.");
+  await turnSettled(j, connectedFolder.id, taskId);
   const record = j.api.requests.byTaskId(taskId)!;
   const job = j.api.jobs.get(record.jobs![0]!.jobId)!;
   assert.equal(job.state, "exited");
@@ -207,16 +207,16 @@ test("a finished job reaches the next turn's context when follow-ups are off", a
     fauxAssistantMessage([fauxToolCall("job_start", { command: "sleep 0.3; echo exported", name: "Export", wait: 0 })], { stopReason: "toolUse" }),
     fauxAssistantMessage("Export started."),
   ]);
-  const { workFolder, conversationId, taskId } = await startTurn(j, "Export it.");
-  await turnSettled(j, workFolder.id, taskId);
+  const { connectedFolder, conversationId, taskId } = await startTurn(j, "Export it.");
+  await turnSettled(j, connectedFolder.id, taskId);
   const jobId = j.api.requests.byTaskId(taskId)!.jobs![0]!.jobId;
   await waitFor(() => Boolean(j.api.jobs.get(jobId)?.settledAt), "the job to settle");
   await new Promise((resolve) => setTimeout(resolve, 200));
   assert.equal(j.api.requests.byTaskId(taskId)!.turns.length, 1, "no follow-up while they are off");
 
   j.script([fauxAssistantMessage("The export finished.")]);
-  const next = await j.api.actFacade.sendMessage({ workFolder: workFolder.id, conversationId, content: "Is it done?" });
-  await turnSettled(j, workFolder.id, next.taskId);
+  const next = await j.api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId, content: "Is it done?" });
+  await turnSettled(j, connectedFolder.id, next.taskId);
   const context = userTexts(j.requests.at(-1)!);
   assert.match(context, /Background jobs in this Chat \(host-owned\)/);
   assert.match(context, new RegExp(`${jobId} \\\\"Export\\\\" — exited with code 0`));
@@ -231,13 +231,13 @@ test("Stop ends a running job and its request; deleting the Chat waits until it 
     fauxAssistantMessage([fauxToolCall("job_start", { command: "sleep 30", name: "Long server", wait: 0 })], { stopReason: "toolUse" }),
     fauxAssistantMessage("The server is running."),
   ]);
-  const { workFolder, conversationId, taskId } = await startTurn(j, "Start the server.");
-  await turnSettled(j, workFolder.id, taskId);
+  const { connectedFolder, conversationId, taskId } = await startTurn(j, "Start the server.");
+  await turnSettled(j, connectedFolder.id, taskId);
   const record = j.api.requests.byTaskId(taskId)!;
   const jobId = record.jobs![0]!.jobId;
   const pid = j.api.jobs.get(jobId)!.pid!;
 
-  const refused = await fetch(new URL(`/api/work-folders/${workFolder.id}/conversations/${conversationId}`, j.api.origin), { method: "DELETE" });
+  const refused = await fetch(new URL(`/api/connected-folders/${connectedFolder.id}/conversations/${conversationId}`, j.api.origin), { method: "DELETE" });
   assert.equal(refused.status, 409);
   assert.match(await refused.text(), /outstanding work/);
 
@@ -254,20 +254,20 @@ test("Stop ends a running job and its request; deleting the Chat waits until it 
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.equal(j.api.requests.byTaskId(taskId)!.turns.length, 1, "a stopped request never wakes");
 
-  const deleted = await fetch(new URL(`/api/work-folders/${workFolder.id}/conversations/${conversationId}`, j.api.origin), { method: "DELETE" });
+  const deleted = await fetch(new URL(`/api/connected-folders/${connectedFolder.id}/conversations/${conversationId}`, j.api.origin), { method: "DELETE" });
   assert.equal(deleted.status, 200);
 });
 
-test("a whole-work-folder restore waits for a running job", async (t) => {
+test("a whole-connected-folder restore waits for a running job", async (t) => {
   const j = await startJourney(t);
   j.script([
     fauxAssistantMessage([fauxToolCall("job_start", { command: "sleep 30", name: "Watcher", wait: 0 })], { stopReason: "toolUse" }),
     fauxAssistantMessage("Watching."),
   ]);
-  const { workFolder, taskId } = await startTurn(j, "Watch it.");
-  await turnSettled(j, workFolder.id, taskId);
-  const [checkpoint] = await listWorkFolderCheckpoints(workFolder.workFolderRoot);
-  await assert.rejects(j.api.actFacade.historyRestore({ workFolder: workFolder.id, checkpointId: checkpoint!.checkpointId }),
+  const { connectedFolder, taskId } = await startTurn(j, "Watch it.");
+  await turnSettled(j, connectedFolder.id, taskId);
+  const [checkpoint] = await listConnectedFolderCheckpoints(connectedFolder.connectedFolderRoot);
+  await assert.rejects(j.api.actFacade.historyRestore({ connectedFolder: connectedFolder.id, checkpointId: checkpoint!.checkpointId }),
     /Stop or wait for the background job "Watcher"/);
   await j.api.jobs.stop(j.api.requests.byTaskId(taskId)!.jobs![0]!.jobId, "cli");
 });
@@ -278,8 +278,8 @@ test("quitting interrupts a running job; after a restart it is recorded failed a
     fauxAssistantMessage([fauxToolCall("job_start", { command: "sleep 30", name: "Overnight export", wait: 0 })], { stopReason: "toolUse" }),
     fauxAssistantMessage("Exporting."),
   ]);
-  const { workFolder, conversationId, taskId } = await startTurn(j, "Export overnight.");
-  await turnSettled(j, workFolder.id, taskId);
+  const { connectedFolder, conversationId, taskId } = await startTurn(j, "Export overnight.");
+  await turnSettled(j, connectedFolder.id, taskId);
   const jobId = j.api.requests.byTaskId(taskId)!.jobs![0]!.jobId;
   const pid = j.api.jobs.get(jobId)!.pid!;
   await j.reopen();
@@ -290,13 +290,13 @@ test("quitting interrupts a running job; after a restart it is recorded failed a
   const record = j.api.requests.byTaskId(taskId)!;
   assert.equal(record.state, "failed");
   assert.equal(record.turns.length, 1);
-  const line = await work(j.api, workFolder.id, conversationId);
+  const line = await work(j.api, connectedFolder.id, conversationId);
   assert.match(line?.detail ?? "", /background job was interrupted/);
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.equal(j.api.requests.byTaskId(taskId)!.turns.length, 1, "a restart never replays");
 });
 
-test("the work-fold agent's own job wakes its own Chat, and its tools reach only its own jobs", async (t) => {
+test("the AmpleFile agent's own job wakes its own Chat, and its tools reach only its own jobs", async (t) => {
   const j = await startJourney(t);
   // A Worker job first, so the agent has something it must not reach.
   j.script([
@@ -305,7 +305,7 @@ test("the work-fold agent's own job wakes its own Chat, and its tools reach only
     fauxAssistantMessage("Worker title"),
   ]);
   const worker = await startTurn(j, "Start the server.");
-  await turnSettled(j, worker.workFolder.id, worker.taskId);
+  await turnSettled(j, worker.connectedFolder.id, worker.taskId);
   const workerJobId = j.api.requests.byTaskId(worker.taskId)!.jobs![0]!.jobId;
 
   let wake: Message[] | null = null;
@@ -324,18 +324,18 @@ test("the work-fold agent's own job wakes its own Chat, and its tools reach only
   const sent = await j.api.actFacade.agentSend({ newConversation: true, content: "Tidy my downloads." });
   await waitFor(async () => (await j.api.actFacade.agentTurnStatus({ taskId: sent.taskId })).task.state !== "running", "the agent turn to settle");
   const toolResults = JSON.stringify(j.requests.find((request) => JSON.stringify(request).includes("read-worker") && request.some((message) => message.role === "toolResult")));
-  assert.match(toolResults, /not one of the work-fold agent's/);
+  assert.match(toolResults, /not one of the AmpleFile agent's/);
 
   await waitFor(() => j.api.requests.byTaskId(sent.taskId)?.state === "done", "the agent's follow-up");
   const record = j.api.requests.byTaskId(sent.taskId)!;
-  assert.equal(record.owner.workFolderId, undefined);
+  assert.equal(record.owner.connectedFolderId, undefined);
   assert.equal(record.turns.length, 2);
   const job = j.api.jobs.get(record.jobs![0]!.jobId)!;
-  assert.equal(job.workFolderId, undefined);
+  assert.equal(job.connectedFolderId, undefined);
   assert.equal(job.history?.status, "not_applicable");
   assert.equal(job.delivery?.by, "follow_up");
   assert.match(userTexts(wake!), /tidied/);
-  assert.match(userTexts(wake!), /work-fold agent's working folder has no History/);
+  assert.match(userTexts(wake!), /AmpleFile agent's working folder has no History/);
   // The Worker's job is untouched by any of this.
   assert.equal(j.api.jobs.get(workerJobId)?.state, "running");
   await j.api.jobs.stop(workerJobId, "cli");

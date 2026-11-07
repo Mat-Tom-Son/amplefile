@@ -6,16 +6,16 @@ import { api, errorText } from "../../lib/api";
 import { chromeConnectionReadiness } from "../../lib/included-tool-readiness";
 import { includedToolsPath, includedToolSetupBody } from "../../lib/included-tool-scope";
 
-type Props = { workFolderId?: string; enabled: boolean; onStatusChange?: (status: IncludedToolStatus | null) => void };
+type Props = { connectedFolderId?: string; enabled: boolean; onStatusChange?: (status: IncludedToolStatus | null) => void };
 
 /** How long setup keeps watching for Connect in Chrome after it opens the Web Store. */
 const watchMs = 10 * 60_000;
 
 export function IncludedChromeSetup(props: Props) {
-  return <ChromeSetupSession key={props.workFolderId} {...props} />;
+  return <ChromeSetupSession key={props.connectedFolderId} {...props} />;
 }
 
-function ChromeSetupSession({ workFolderId, enabled, onStatusChange }: Props) {
+function ChromeSetupSession({ connectedFolderId, enabled, onStatusChange }: Props) {
   const [status, setStatus] = useState<IncludedToolStatus | null>(null);
   const [action, setAction] = useState<ChromeSetupAction | null>(null);
   const [error, setError] = useState<{ source: "read" | "action"; message: string } | null>(null);
@@ -40,7 +40,7 @@ function ChromeSetupSession({ workFolderId, enabled, onStatusChange }: Props) {
     readRequest.current = controller;
     const owner = ++revision.current;
     try {
-      const { tools } = await api<{ tools: IncludedToolStatus[] }>(includedToolsPath(workFolderId), { signal: controller.signal });
+      const { tools } = await api<{ tools: IncludedToolStatus[] }>(includedToolsPath(connectedFolderId), { signal: controller.signal });
       if (alive.current && !controller.signal.aborted && owner === revision.current) {
         publish(tools.find((tool) => tool.id === "chrome") ?? null);
         setError((current) => current?.source === "read" ? null : current);
@@ -64,7 +64,7 @@ function ChromeSetupSession({ workFolderId, enabled, onStatusChange }: Props) {
       window.removeEventListener("focus", returned);
       document.removeEventListener("visibilitychange", returned);
     };
-  }, [workFolderId]);
+  }, [connectedFolderId]);
 
   // Only an explicitly opened setup observes the handshake for a short time.
   // These reads do not launch Chrome, enroll a profile, or own its connection.
@@ -91,7 +91,7 @@ function ChromeSetupSession({ workFolderId, enabled, onStatusChange }: Props) {
     let accepted = false;
     try {
       const result = await api<{ status: IncludedToolStatus }>("/api/agent/included-tools/setup", {
-        method: "POST", signal: controller.signal, body: includedToolSetupBody(workFolderId, "chrome", nextAction),
+        method: "POST", signal: controller.signal, body: includedToolSetupBody(connectedFolderId, "chrome", nextAction),
       });
       if (!alive.current || controller.signal.aborted) return;
       accepted = true;
@@ -122,7 +122,7 @@ function ChromeSetupSession({ workFolderId, enabled, onStatusChange }: Props) {
   const connected = state === "connected";
   const needsChrome = setup?.browserInstalled === false && !connected && !hasSelection;
   // Two steps a person can see: add the extension, then choose Connect in it.
-  // Either order works; work-fold accepts Connect from a freshly added extension.
+  // Either order works; AmpleFile accepts Connect from a freshly added extension.
   const showSteps = enabled && !hasSelection && !needsChrome && canConnect && (state === "not_connected" || state === "native_host_missing");
   const extensionAdded = setup?.extensionSeen === true;
   return <section className="included-tool-setup" aria-label="Chrome setup" aria-busy={Boolean(action)}>
@@ -132,17 +132,17 @@ function ChromeSetupSession({ workFolderId, enabled, onStatusChange }: Props) {
     {error ? <p className="included-tool-error" role="alert">{error.message}</p> : null}
     {needsChrome ? <p>Your Worker browses with your own Google Chrome, signed in as you. <a href="https://www.google.com/chrome/" target="_blank" rel="noreferrer">Install Google Chrome</a>, then come back here.</p> : null}
     {showSteps ? <>
-      <p>Your Worker browses with your own Google Chrome, signed in as you, through the work-fold extension.</p>
+      <p>Your Worker browses with your own Google Chrome, signed in as you, through the AmpleFile extension.</p>
       <ol className="setup-steps">
         <li className={extensionAdded ? "done" : ""}>
           <span className="setup-step-mark" aria-hidden="true">{extensionAdded ? <Check size={14} /> : "1"}</span>
-          <div><strong>Add the work-fold Extension</strong><span>{extensionAdded ? "Added to Chrome." : "Opens the Chrome Web Store in Chrome. Choose Add to Chrome."}</span>
+          <div><strong>Add the AmpleFile Extension</strong><span>{extensionAdded ? "Added to Chrome." : "Opens the Chrome Web Store in Chrome. Choose Add to Chrome."}</span>
             {!extensionAdded ? <button type="button" className="ui-control ui-control--primary" disabled={!enabled || Boolean(action)} onClick={() => void act("connect-chrome")}>{action === "connect-chrome" ? "Opening Chrome…" : "Open Chrome Web Store"}</button> : null}
           </div>
         </li>
         <li>
           <span className="setup-step-mark" aria-hidden="true">2</span>
-          <div><strong>Choose Connect in the Extension</strong><span>In Chrome, click the puzzle-piece icon in the toolbar, choose work-fold, then Connect. This page updates by itself.</span></div>
+          <div><strong>Choose Connect in the Extension</strong><span>In Chrome, click the puzzle-piece icon in the toolbar, choose AmpleFile, then Connect. This page updates by itself.</span></div>
         </li>
       </ol>
     </> : null}

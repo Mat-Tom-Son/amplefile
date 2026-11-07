@@ -46,16 +46,16 @@ export interface RestrictedAppFileWatchTarget {
 }
 
 /**
- * Bounded metadata scan of one granted root. Symbolic links and work-fold, Pi,
+ * Bounded metadata scan of one granted root. Symbolic links and AmpleFile, Pi,
  * and legacy product metadata are invisible here exactly as they are to the
  * file broker, so an app can never learn about a path it could not read.
  */
 export async function observeRestrictedAppGrantRoot(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   target: RestrictedAppFileWatchTarget,
   limits: RestrictedAppFileWatchLimits = restrictedAppSubscriptionLimits,
 ): Promise<RestrictedAppFileSnapshot> {
-  const root = resolveGrantRoot(workFolderRoot, target.grant.root);
+  const root = resolveGrantRoot(connectedFolderRoot, target.grant.root);
   const before = await lstat(root, { bigint: true });
   if (before.isSymbolicLink()) throw new Error("A granted root cannot be a link.");
   const entries: Record<string, string> = Object.create(null);
@@ -179,16 +179,16 @@ async function walkDirectory(
   return { entries, truncated };
 }
 
-function resolveGrantRoot(workFolderRoot: string, root: string): string {
-  const absolute = resolve(workFolderRoot, root);
-  const inside = relative(resolve(workFolderRoot), absolute);
+function resolveGrantRoot(connectedFolderRoot: string, root: string): string {
+  const absolute = resolve(connectedFolderRoot, root);
+  const inside = relative(resolve(connectedFolderRoot), absolute);
   if (inside && (inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside))) {
-    throw new Error("A granted root must stay inside its work-folder.");
+    throw new Error("A granted root must stay inside its Connected Folder.");
   }
   return absolute;
 }
 
 function isReservedMetadataSegment(segment: string): boolean {
   const value = segment.toLocaleLowerCase("en-US");
-  return value === ".work-fold" || value === ".workspace" || value === ".pi";
+  return value === ".amplefile" || value === ".workspace" || value === ".pi";
 }

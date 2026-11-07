@@ -23,7 +23,7 @@ test("context inspector fixture makes no requests, distinguishes capture stages,
   globalThis.fetch = async () => { throw new Error("The inert fixture must never call an API."); };
   t.after(() => { globalThis.fetch = originalFetch; });
   let closed = false;
-  await dom.render(createElement(ModelContextInspector, { fixtureMode: true, workFolderId: "one", conversationId: "chat-one", onClose: () => { closed = true; } }));
+  await dom.render(createElement(ModelContextInspector, { fixtureMode: true, connectedFolderId: "one", conversationId: "chat-one", onClose: () => { closed = true; } }));
   assert.match(dom.container.textContent!, /including private message text/);
   assert.equal(dom.container.querySelector('[role="dialog"]')?.getAttribute("aria-modal"), "true");
   assert.equal(dom.container.querySelectorAll("img").length, 0);
@@ -64,9 +64,9 @@ test("opening the inspector is read-only, recording is explicit, and failed chan
     return Response.json(state);
   };
   t.after(() => { globalThis.fetch = originalFetch; });
-  await dom.render(createElement(ModelContextInspector, { workFolderId: "work-folder / one", conversationId: "chat?one", onClose() {} }));
+  await dom.render(createElement(ModelContextInspector, { connectedFolderId: "Connected Folder / one", conversationId: "chat?one", onClose() {} }));
   assert.deepEqual(calls.map(({ method }) => method), ["GET"]);
-  assert.match(calls[0].url, /workFolderId=work-folder\+%2F\+one&conversationId=chat%3Fone/);
+  assert.match(calls[0].url, /connectedFolderId=Connected\+Folder\+%2F\+one&conversationId=chat%3Fone/);
   assert.match(dom.container.textContent!, /Recording Is Off/);
   await dom.act(() => dom.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
   assert.deepEqual(calls.find(({ method }) => method === "POST")?.body, { enabled: true });
@@ -88,14 +88,14 @@ test("installed inspector uses only the diagnostic bridge and closes its own win
   const calls: Array<{ path: string; body?: unknown }> = [];
   let closed = 0;
   let navigated = 0;
-  window.workFoldDiagnostics = {
+  window.ampleFileDiagnostics = {
     request: async (input) => { calls.push(input); return state; },
     close: async () => { closed++; },
   };
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => { throw new Error("The installed inspector must not request an API credential or use fetch."); };
   const inspectorWindow = window;
-  t.after(() => { globalThis.fetch = originalFetch; delete inspectorWindow.workFoldDiagnostics; });
+  t.after(() => { globalThis.fetch = originalFetch; delete inspectorWindow.ampleFileDiagnostics; });
   await dom.render(createElement(ModelContextInspector, { onClose() { navigated++; } }));
   assert.deepEqual(calls, [{ path: "/api/model-context" }]);
   assert.match(dom.container.textContent!, /Recording Is Off/);
@@ -109,15 +109,15 @@ test("installed inspector uses only the diagnostic bridge and closes its own win
 test("context inspection isolates a late snapshot from the next Chat and renders untrusted content as text", async (t) => {
   const dom = await createDomHarness(); t.after(() => dom.cleanup());
   const { ModelContextInspector, createModelContextFixture } = await import("../web-local/src/components/chat/ModelContextInspector.js");
-  const first = createModelContextFixture("work-folder-a", "chat-a");
-  const second = createModelContextFixture("work-folder-b", "chat-b");
+  const first = createModelContextFixture("connected-folder-a", "chat-a");
+  const second = createModelContextFixture("connected-folder-b", "chat-b");
   for (const fixture of [first, second]) for (const item of [...fixture.records, ...fixture.state.records]) item.createdAt = Date.now();
   second.records[0].assembled = { ...second.records[0].assembled, truncated: true, omissions: ["Output limited to one page"], value: { content: "<script>steal()</script> Only Chat B", image: "[Omitted: image data]" } };
   let finishOld!: (response: Response) => void;
   let oldSignal: AbortSignal | null | undefined;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
-    const old = String(url).includes("workFolderId=work-folder-a");
+    const old = String(url).includes("connectedFolderId=connected-folder-a");
     if (String(url).includes("/fixture-context-one")) {
       if (old) { oldSignal = init?.signal; return await new Promise<Response>((resolve) => { finishOld = resolve; }); }
       return Response.json({ record: second.records[0] });
@@ -125,9 +125,9 @@ test("context inspection isolates a late snapshot from the next Chat and renders
     return Response.json(old ? first.state : second.state);
   };
   t.after(() => { globalThis.fetch = originalFetch; });
-  await dom.render(createElement(ModelContextInspector, { workFolderId: "work-folder-a", conversationId: "chat-a", onClose() {} }));
+  await dom.render(createElement(ModelContextInspector, { connectedFolderId: "connected-folder-a", conversationId: "chat-a", onClose() {} }));
   assert.equal(typeof finishOld, "function");
-  await dom.render(createElement(ModelContextInspector, { workFolderId: "work-folder-b", conversationId: "chat-b", onClose() {} }));
+  await dom.render(createElement(ModelContextInspector, { connectedFolderId: "connected-folder-b", conversationId: "chat-b", onClose() {} }));
   assert.equal(oldSignal?.aborted, true);
   assert.match(dom.container.querySelector("pre")!.textContent!, /Only Chat B/);
   assert.equal(dom.container.querySelector("script"), null);

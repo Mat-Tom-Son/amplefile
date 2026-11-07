@@ -4,41 +4,41 @@ import { isAbsolute, resolve } from "node:path";
 import type { HistoryFileComparison, HistoryFileRead } from "../../shared/history-review.js";
 
 import type {
-  WorkFoldActChatLifecycleState,
-  WorkFoldActChatMessage,
-  WorkFoldActCheckTaskStatus,
-  WorkFoldActCheckpointSummary,
-  WorkFoldActConversationRef,
-  WorkFoldActFacade,
-  WorkFoldActFileVersionRef,
+  AmpleFileActChatLifecycleState,
+  AmpleFileActChatMessage,
+  AmpleFileActCheckTaskStatus,
+  AmpleFileActCheckpointSummary,
+  AmpleFileActConversationRef,
+  AmpleFileActFacade,
+  AmpleFileActFileVersionRef,
 } from "./act-facade.js";
 import type {
-  WorkFoldCheckDecisionKind,
-  WorkFoldCheckEvidence,
-  WorkFoldCheckFinding,
+  AmpleFileCheckDecisionKind,
+  AmpleFileCheckEvidence,
+  AmpleFileCheckFinding,
 } from "../checks/check-types.js";
-import type { WorkFoldCliActRequest } from "./act-protocol.js";
-import type { WorkFoldCliActReceipts, WorkFoldCliActUndoRef } from "./act-receipts.js";
+import type { AmpleFileCliActRequest } from "./act-protocol.js";
+import type { AmpleFileCliActReceipts, AmpleFileCliActUndoRef } from "./act-receipts.js";
 import { maximumWorkerInstructionsLength } from "../agent/model-preferences.js";
 // The collaboration bounds and their person-facing refusal text live with the
 // request record that enforces them, so a parse-time refusal and a store-time
 // refusal say the same words (docs/collaboration-contract.md, F25/F29).
 import {
-  parseWorkFoldQuestionOptions,
-  workFoldRequestLimitMessage,
-  type WorkFoldResultOutcome,
+  parseAmpleFileQuestionOptions,
+  ampleFileRequestLimitMessage,
+  type AmpleFileResultOutcome,
 } from "../requests/request-records.js";
-import { workFoldBackgroundJobLimits, workFoldRequestLimits } from "../../shared/work-fold-limits.js";
+import { ampleFileBackgroundJobLimits, ampleFileRequestLimits } from "../../shared/amplefile-limits.js";
 import {
-  WorkFoldCliError,
-  WorkFoldCliExitCode,
-  createWorkFoldCliResponse,
-  type WorkFoldCliJson,
-  type WorkFoldCliOutputMode,
-  type WorkFoldCliResponseV1,
+  AmpleFileCliError,
+  AmpleFileCliExitCode,
+  createAmpleFileCliResponse,
+  type AmpleFileCliJson,
+  type AmpleFileCliOutputMode,
+  type AmpleFileCliResponseV1,
 } from "./protocol.js";
 
-export type WorkFoldCliActCommandName =
+export type AmpleFileCliActCommandName =
   | "chat.create"
   | "chat.send"
   | "chat.status"
@@ -86,17 +86,17 @@ export type WorkFoldCliActCommandName =
   | "history.diff"
   | "history.restore-file"
   | "search"
-  | "work-folders.create"
-  | "work-folders.register"
-  | "work-folders.rename"
-  | "work-folders.unregister"
-  | "work-folders.delete"
-  | "work-folders.appearance.apply"
-  | "work-folders.appearance.reset"
-  | "work-folders.appearance.undo"
-  | "work-folders.worker.show"
-  | "work-folders.worker.model"
-  | "work-folders.worker.instructions"
+  | "connected-folders.create"
+  | "connected-folders.register"
+  | "connected-folders.rename"
+  | "connected-folders.unregister"
+  | "connected-folders.delete"
+  | "connected-folders.appearance.apply"
+  | "connected-folders.appearance.reset"
+  | "connected-folders.appearance.undo"
+  | "connected-folders.worker.show"
+  | "connected-folders.worker.model"
+  | "connected-folders.worker.instructions"
   | "files.add"
   | "files.move"
   | "files.rename"
@@ -162,30 +162,30 @@ export type WorkFoldCliActCommandName =
   // Page folders (docs/pages.md): a read-only check of one page.
   | "pages.validate";
 
-export interface WorkFoldCliActParsedCommand {
-  name: WorkFoldCliActCommandName;
-  output: WorkFoldCliOutputMode;
-  workFolder?: string;
+export interface AmpleFileCliActParsedCommand {
+  name: AmpleFileCliActCommandName;
+  output: AmpleFileCliOutputMode;
+  connectedFolder?: string;
   conversation?: string;
   task?: string;
-  /** Explicit work-fold agent request lineage for downstream mutation commands. */
+  /** Explicit AmpleFile agent request lineage for downstream mutation commands. */
   parentTaskId?: string;
   newConversation?: boolean;
   message?: string;
   messageFromPayload?: boolean;
   messages?: number;
-  workFolderName?: string;
+  connectedFolderName?: string;
   registerPath?: string;
   fromPaths?: string[];
   /** Raw --attach values for agent send: paths or http(s) links. */
   attachments?: string[];
   toDir?: string;
   proposalPath?: string;
-  /** `work-folders appearance apply` without a proposal: just these parts change. */
+  /** `connected-folders appearance apply` without a proposal: just these parts change. */
   appearanceParts?: { bannerImagePath?: string; icon?: string; color?: string };
   check?: string;
   finding?: string;
-  decision?: WorkFoldCheckDecisionKind;
+  decision?: AmpleFileCheckDecisionKind;
   until?: string;
   /** New Chat title for chat.rename. */
   title?: string;
@@ -199,7 +199,7 @@ export interface WorkFoldCliActParsedCommand {
   fromCheckpoint?: string;
   toCheckpoint?: string;
   /**
-   * Single work-folder-relative entry path for file and History verbs, and the
+   * Single Connected Folder–relative entry path for file and History verbs, and the
    * exact file an `apps grant --kind files` single-file permission binds to.
    */
   path?: string;
@@ -210,13 +210,13 @@ export interface WorkFoldCliActParsedCommand {
   searchScope?: "files" | "chats" | "all";
   /** New entry name for files.rename. */
   entryName?: string;
-  toolsScope?: "everywhere" | "work-folder";
+  toolsScope?: "everywhere" | "connected-folder";
   resourceKind?: "extensions" | "skills" | "prompts" | "themes";
   catalogId?: string;
   source?: string;
   /** Restricted-app proposal id (apps.* commands; checks enable carries proposalPath instead). */
   proposal?: string;
-  /** work-folder-relative packaged-app path for apps.install-preview. */
+  /** Connected Folder–relative packaged-app path for apps.install-preview. */
   packagePath?: string;
   app?: string;
   digest?: string;
@@ -232,7 +232,7 @@ export interface WorkFoldCliActParsedCommand {
   /** Typed presentation file path for apps.project.declare, resolved host-side. */
   presentationPath?: string;
   release?: string;
-  targetWorkFolder?: string;
+  targetConnectedFolder?: string;
   instance?: string;
   operation?: string;
   retained?: string;
@@ -248,14 +248,14 @@ export interface WorkFoldCliActParsedCommand {
   resultData?: unknown;
   /** `--data @<path>`: a JSON file the host reads from the directory the command ran in. */
   resultDataPath?: string;
-  /** work-folder-relative deliverables for chat.report, and the copies chat.handoff carries. */
+  /** Connected Folder–relative deliverables for chat.report, and the copies chat.handoff carries. */
   files?: string[];
-  outcome?: WorkFoldResultOutcome;
+  outcome?: AmpleFileResultOutcome;
   /** chat.ask question text. */
   question?: string;
   /** Who chat.ask is asking; `parent` on a root request is delivered to the person. */
   respondent?: "person" | "parent";
-  /** work-folders.worker.instructions `--append`: add `instructions` as one more line. */
+  /** connected-folders.worker.instructions `--append`: add `instructions` as one more line. */
   appendInstructions?: boolean;
   /** chat.ask and agent.ask suggested answers (`--option`, repeatable), shown as choices. */
   options?: string[];
@@ -264,8 +264,8 @@ export interface WorkFoldCliActParsedCommand {
   questionId?: string;
   /** chat.answer answer text. */
   answer?: string;
-  /** chat.handoff destination work-folder selector. */
-  toWorkFolder?: string;
+  /** chat.handoff destination Connected Folder selector. */
+  toConnectedFolder?: string;
   /** chat.handoff `--to-conversation`: follow up in a Chat this Chat already handed work to. */
   toConversation?: string;
   /** requests.show target. */
@@ -290,7 +290,7 @@ export interface WorkFoldCliActParsedCommand {
   worktreeRef?: string;
   /** jobs.start: the label a person sees. */
   jobName?: string;
-  /** jobs.start: folder to run in, relative to the work-folder or absolute. */
+  /** jobs.start: folder to run in, relative to the Connected Folder or absolute. */
   jobCwd?: string;
   timeoutSeconds?: number;
   /** jobs.output: first line to read, and seconds to wait for the job to end or `until` to match. */
@@ -298,28 +298,28 @@ export interface WorkFoldCliActParsedCommand {
   waitSeconds?: number;
   /** jobs.list: only jobs still running. */
   running?: boolean;
-  /** pages.validate: the page folder's work-folder-relative path. */
+  /** pages.validate: the page folder's Connected Folder–relative path. */
   page?: string;
 }
 
 /** The running interactive app's act authority: the facade plus this run's token. */
-export interface WorkFoldCliActAuthority {
-  facade: WorkFoldActFacade;
+export interface AmpleFileCliActAuthority {
+  facade: AmpleFileActFacade;
   token: string;
 }
 
-export interface WorkFoldCliActExecutorOptions {
+export interface AmpleFileCliActExecutorOptions {
   version: string;
   productName?: string;
   now?: () => Date;
-  getActFacade: () => WorkFoldCliActAuthority | null;
-  receipts: Pick<WorkFoldCliActReceipts, "append" | "hasAccepted">;
-  /** Validates an explicitly named work-fold agent parent while its turn is active. */
+  getActFacade: () => AmpleFileCliActAuthority | null;
+  receipts: Pick<AmpleFileCliActReceipts, "append" | "hasAccepted">;
+  /** Validates an explicitly named AmpleFile agent parent while its turn is active. */
   resolveLineageParent?: (taskId: string) => { taskId: string } | null;
 }
 
-export const workFoldCliActUnavailableMessage =
-  "Open work-fold to run this command. Act commands need the work-fold app running.";
+export const ampleFileCliActUnavailableMessage =
+  "Open AmpleFile to run this command. Act commands need the AmpleFile app running.";
 
 const maxActResultMessages = 100_000;
 const maxActPathLength = 4_096;
@@ -340,7 +340,7 @@ const cliControlCharacters = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2
  * parse time — before any journal entry — so an act that would amount to one
  * can never even be shaped, and the act lane never grows a verb for them.
  */
-const workFoldCliActSetupOnlyFamilies = new Map<string, string>([
+const ampleFileCliActSetupOnlyFamilies = new Map<string, string>([
   ["token", "Act-token machinery"],
   ["tokens", "Act-token machinery"],
   ["provider", "Provider credentials"],
@@ -351,10 +351,10 @@ const workFoldCliActSetupOnlyFamilies = new Map<string, string>([
 
 /**
  * Parses act-lane argv. Every command requires explicit selection — there is
- * deliberately no current-directory work-folder resolution for writes.
+ * deliberately no current-directory Connected Folder resolution for writes.
  */
-export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliActParsedCommand {
-  let output: WorkFoldCliOutputMode = "human";
+export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliActParsedCommand {
+  let output: AmpleFileCliOutputMode = "human";
   const flags = new Map<string, string | true>();
   const fromPaths: string[] = [];
   const attachValues: string[] = [];
@@ -364,7 +364,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
   const positional: string[] = [];
 
   const valueFlags = new Set([
-    "--work-folder",
+    "--connected-folder",
     "--conversation",
     "--task",
     "--parent-task",
@@ -402,7 +402,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     "--package",
     "--presentation",
     "--release",
-    "--target-work-folder",
+    "--target-connected-folder",
     "--instance",
     "--operation",
     "--retained",
@@ -420,7 +420,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     "--outcome",
     "--question",
     "--answer",
-    "--to-work-folder",
+    "--to-connected-folder",
     "--to-conversation",
     "--file",
     "--request",
@@ -495,9 +495,9 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     if (!positional.length) {
       // Setup-only refusal happens here, at parse time: these families must
       // not even reach an unknown-command error, let alone a journal entry.
-      const setupOnlyCategory = workFoldCliActSetupOnlyFamilies.get(token);
+      const setupOnlyCategory = ampleFileCliActSetupOnlyFamilies.get(token);
       if (setupOnlyCategory !== undefined) {
-        throw new WorkFoldCliError(
+        throw new AmpleFileCliError(
           "permissionDenied",
           `${setupOnlyCategory} is local setup only. The act lane cannot perform it.`,
         );
@@ -516,7 +516,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
   }
   const pathCommands = new Set([
     "tools enable", "tools disable",
-    "work-folders register",
+    "connected-folders register",
     "files rename",
     "files delete",
     "files mkdir",
@@ -540,19 +540,19 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
   if (command !== "chat ask" && command !== "agent ask" && optionValues.length) {
     throw usageError(`--option cannot be used with '${command || "(none)"}'.`);
   }
-  // The request graph sits above work-folders (F25): every request names the work-folder
+  // The request graph sits above Connected Folders (F25): every request names the Connected Folder
   // it belongs to, so neither read takes one.
-  if (positional[0] === "requests" && flags.has("--work-folder")) {
-    throw usageError("The request graph sits above work-folders, so 'requests' takes no --work-folder.");
+  if (positional[0] === "requests" && flags.has("--connected-folder")) {
+    throw usageError("The request graph sits above Connected Folders, so 'requests' takes no --connected-folder.");
   }
   const stringFlag = (name: string): string | undefined => {
     const value = flags.get(name);
     return typeof value === "string" ? value : undefined;
   };
-  const requireWorkFolder = (): string => {
-    const workFolder = stringFlag("--work-folder")?.trim();
-    if (!workFolder) throw usageError("Act commands require an explicit --work-folder <id-or-name>.");
-    return workFolder;
+  const requireConnectedFolder = (): string => {
+    const connectedFolder = stringFlag("--connected-folder")?.trim();
+    if (!connectedFolder) throw usageError("Act commands require an explicit --connected-folder <id-or-name>.");
+    return connectedFolder;
   };
   const requireConversation = (): string => {
     const conversation = stringFlag("--conversation")?.trim();
@@ -607,7 +607,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
    * per-argument cap still bites first for very long text, which is what
    * `--message-file` and `--data @<path>` exist for.
    */
-  const textFiles: NonNullable<WorkFoldCliActParsedCommand["textFiles"]> = {};
+  const textFiles: NonNullable<AmpleFileCliActParsedCommand["textFiles"]> = {};
   /** `--<field>-file <path>` stands in for `--<field> <text>`; exactly one is allowed. */
   const textFileFlag = (name: string, field: keyof typeof textFiles): string | undefined => {
     const path = stringFlag(`${name}-file`);
@@ -628,19 +628,19 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     if (value === undefined || !value.trim()) throw usageError(`Provide ${name} <${label}> or ${name}-file <path>.`);
     if (value.includes("\u0000")) throw usageError(`${name} contains unsupported control characters.`);
     if (Buffer.byteLength(value, "utf8") > maximumBytes) {
-      throw usageError(workFoldRequestLimitMessage(limit, maximumBytes));
+      throw usageError(ampleFileRequestLimitMessage(limit, maximumBytes));
     }
     return value;
   };
   const questionOptions = (): string[] => {
     try {
-      return parseWorkFoldQuestionOptions(optionValues);
+      return parseAmpleFileQuestionOptions(optionValues);
     } catch (error) {
       throw usageError(`--option: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
   const collaborationFiles = (): string[] => {
-    const files = fileValues.map((value) => boundedActPath("--file", value, "work-folder-path"));
+    const files = fileValues.map((value) => boundedActPath("--file", value, "connected-folder-path"));
     if (new Set(files).size !== files.length) throw usageError("--file names the same path twice.");
     return files;
   };
@@ -657,8 +657,8 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     const value = raw.trim();
     if (!value) throw usageError("Provide --data <json> or --data @<path>.");
     if (value.startsWith("@")) return { resultDataPath: boundedActPath("--data", value.slice(1), "json-path") };
-    if (Buffer.byteLength(value, "utf8") > workFoldRequestLimits.maxResultDataBytes) {
-      throw usageError(workFoldRequestLimitMessage("resultData", workFoldRequestLimits.maxResultDataBytes));
+    if (Buffer.byteLength(value, "utf8") > ampleFileRequestLimits.maxResultDataBytes) {
+      throw usageError(ampleFileRequestLimitMessage("resultData", ampleFileRequestLimits.maxResultDataBytes));
     }
     // Deliberately not requireBoundedFlag: pretty-printed JSON carries the
     // newlines that rule refuses, and the host validates the parsed value
@@ -684,19 +684,19 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     return new Date(rawUntil).toISOString();
   };
   /**
-   * Scope is authority (docs/act-ledger.md): `work-folder` scope must name its
-   * work-folder explicitly, and `everywhere` scope must not carry one.
+   * Scope is authority (docs/act-ledger.md): `connected-folder` scope must name its
+   * Connected Folder explicitly, and `everywhere` scope must not carry one.
    */
-  const requireToolsScope = (): { toolsScope: "everywhere" | "work-folder"; workFolder?: string } => {
-    const rawScope = requireBoundedFlag("--scope", "everywhere|work-folder");
-    if (rawScope !== "everywhere" && rawScope !== "work-folder") throw usageError("--scope must be everywhere or work-folder.");
-    const workFolder = stringFlag("--work-folder")?.trim();
-    if (rawScope === "work-folder" && !workFolder) throw usageError("--scope work-folder requires an explicit --work-folder <id-or-name>.");
-    if (rawScope === "everywhere" && workFolder) throw usageError("--work-folder cannot be used with --scope everywhere.");
-    return { toolsScope: rawScope, ...(workFolder ? { workFolder } : {}) };
+  const requireToolsScope = (): { toolsScope: "everywhere" | "connected-folder"; connectedFolder?: string } => {
+    const rawScope = requireBoundedFlag("--scope", "everywhere|connected-folder");
+    if (rawScope !== "everywhere" && rawScope !== "connected-folder") throw usageError("--scope must be everywhere or Connected Folder.");
+    const connectedFolder = stringFlag("--connected-folder")?.trim();
+    if (rawScope === "connected-folder" && !connectedFolder) throw usageError("--scope connected-folder requires an explicit --connected-folder <id-or-name>.");
+    if (rawScope === "everywhere" && connectedFolder) throw usageError("--connected-folder cannot be used with --scope everywhere.");
+    return { toolsScope: rawScope, ...(connectedFolder ? { connectedFolder } : {}) };
   };
   const rawParentTaskId = stringFlag("--parent-task");
-  // Every mutation family accepts explicit work-fold agent lineage; content-bearing
+  // Every mutation family accepts explicit AmpleFile agent lineage; content-bearing
   // act reads (status, result, list, versions, search) deliberately do not.
   const lineageCommands = new Set([
     "chat send",
@@ -722,16 +722,16 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     "files delete",
     "files mkdir",
     "files create",
-    "work-folders create",
-    "work-folders register",
-    "work-folders rename",
-    "work-folders unregister",
-    "work-folders delete",
-    "work-folders appearance apply",
-    "work-folders appearance reset",
-    "work-folders appearance undo",
-    "work-folders worker model",
-    "work-folders worker instructions",
+    "connected-folders create",
+    "connected-folders register",
+    "connected-folders rename",
+    "connected-folders unregister",
+    "connected-folders delete",
+    "connected-folders appearance apply",
+    "connected-folders appearance reset",
+    "connected-folders appearance undo",
+    "connected-folders worker model",
+    "connected-folders worker instructions",
     "tools import-skill",
     "tools install",
     "tools update",
@@ -781,11 +781,11 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
 
   switch (command) {
     case "chat create":
-      allowOnlyFlags("--work-folder");
-      return { name: "chat.create", output, workFolder: requireWorkFolder() };
+      allowOnlyFlags("--connected-folder");
+      return { name: "chat.create", output, connectedFolder: requireConnectedFolder() };
     case "chat send": {
-      allowOnlyFlags("--work-folder", "--conversation", "--new", "--message", "--message-from-payload", "--parent-task");
-      const workFolder = requireWorkFolder();
+      allowOnlyFlags("--connected-folder", "--conversation", "--new", "--message", "--message-from-payload", "--parent-task");
+      const connectedFolder = requireConnectedFolder();
       const newConversation = flags.get("--new") === true;
       const conversation = stringFlag("--conversation")?.trim();
       if (newConversation && conversation) throw usageError("Use either --conversation <id> or --new, not both.");
@@ -801,7 +801,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       return {
         name: "chat.send",
         output,
-        workFolder,
+        connectedFolder,
         ...(conversation ? { conversation } : {}),
         ...(newConversation ? { newConversation } : {}),
         ...(message !== undefined ? { message } : {}),
@@ -810,12 +810,12 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       };
     }
     case "chat status": {
-      allowOnlyFlags("--work-folder", "--conversation", "--task");
+      allowOnlyFlags("--connected-folder", "--conversation", "--task");
       const selection = requireConversationOrTask();
-      return { name: "chat.status", output, workFolder: requireWorkFolder(), ...selection };
+      return { name: "chat.status", output, connectedFolder: requireConnectedFolder(), ...selection };
     }
     case "chat result": {
-      allowOnlyFlags("--work-folder", "--conversation", "--task", "--messages");
+      allowOnlyFlags("--connected-folder", "--conversation", "--task", "--messages");
       const selection = requireConversationOrTask();
       const rawMessages = stringFlag("--messages");
       if (rawMessages !== undefined && selection.task) {
@@ -831,67 +831,67 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       return {
         name: "chat.result",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         ...selection,
         ...(messages !== undefined ? { messages } : {}),
       };
     }
     case "chat abort":
-      allowOnlyFlags("--work-folder", "--conversation");
-      return { name: "chat.abort", output, workFolder: requireWorkFolder(), conversation: requireConversation() };
+      allowOnlyFlags("--connected-folder", "--conversation");
+      return { name: "chat.abort", output, connectedFolder: requireConnectedFolder(), conversation: requireConversation() };
     case "chat rename":
-      allowOnlyFlags("--work-folder", "--conversation", "--title", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--conversation", "--title", "--parent-task");
       return {
         name: "chat.rename",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         conversation: requireConversation(),
         title: requireBoundedFlag("--title", "title"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "chat snooze":
-      allowOnlyFlags("--work-folder", "--conversation", "--until", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--conversation", "--until", "--parent-task");
       return {
         name: "chat.snooze",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         conversation: requireConversation(),
         until: requireIsoUntil(),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "chat archive":
-      allowOnlyFlags("--work-folder", "--conversation", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--conversation", "--parent-task");
       return {
         name: "chat.archive",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         conversation: requireConversation(),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "chat resume":
-      allowOnlyFlags("--work-folder", "--conversation", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--conversation", "--parent-task");
       return {
         name: "chat.resume",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         conversation: requireConversation(),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "chat compact":
-      allowOnlyFlags("--work-folder", "--conversation", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--conversation", "--parent-task");
       return {
         name: "chat.compact",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         conversation: requireConversation(),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "chat report": {
       // F27/F29: one result envelope attached to a task the caller owns. Parse
       // bounds only what argv can carry; the host resolves each --file inside
-      // the work-folder, records its content hash and size, and applies the declared
+      // the Connected Folder, records its content hash and size, and applies the declared
       // schema to --data when the request declared one.
-      allowOnlyFlags("--work-folder", "--task", "--summary", "--summary-file", "--data", "--outcome", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--task", "--summary", "--summary-file", "--data", "--outcome", "--parent-task");
       const rawOutcome = stringFlag("--outcome")?.trim();
       if (rawOutcome !== undefined && rawOutcome !== "succeeded" && rawOutcome !== "partial" && rawOutcome !== "failed") {
         throw usageError("--outcome must be succeeded, partial, or failed.");
@@ -899,12 +899,12 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       return {
         name: "chat.report",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         task: requireBoundedFlag("--task", "task-id"),
-        summary: requireCollaborationText("--summary", "text", "resultSummary", workFoldRequestLimits.maxResultSummaryBytes),
+        summary: requireCollaborationText("--summary", "text", "resultSummary", ampleFileRequestLimits.maxResultSummaryBytes),
         ...(Object.keys(textFiles).length ? { textFiles } : {}),
         files: collaborationFiles(),
-        outcome: (rawOutcome ?? "succeeded") as WorkFoldResultOutcome,
+        outcome: (rawOutcome ?? "succeeded") as AmpleFileResultOutcome,
         ...resultDataFlag(),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
@@ -913,7 +913,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     case "chat ask": {
       // F27: recording a question never suspends the asking turn. The turn
       // ends; the task's request is what waits.
-      allowOnlyFlags(...(command === "agent ask" ? ["--task", "--question", "--question-file", "--parent-task", "--asynchronous"] : ["--work-folder", "--task", "--question", "--question-file", "--to", "--parent-task", "--asynchronous"]));
+      allowOnlyFlags(...(command === "agent ask" ? ["--task", "--question", "--question-file", "--parent-task", "--asynchronous"] : ["--connected-folder", "--task", "--question", "--question-file", "--to", "--parent-task", "--asynchronous"]));
       // --option is collected apart from flags and checked above.
       const rawRespondent = stringFlag("--to")?.trim();
       if (rawRespondent !== undefined && rawRespondent !== "person" && rawRespondent !== "parent") {
@@ -922,11 +922,11 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       return {
         name: command === "agent ask" ? "agent.ask" : "chat.ask",
         output,
-        ...(command === "chat ask" ? { workFolder: requireWorkFolder() } : {}),
+        ...(command === "chat ask" ? { connectedFolder: requireConnectedFolder() } : {}),
         task: requireBoundedFlag("--task", "task-id"),
         // Free text here; `chat answer --question` carries an id. That is the
         // contract's spelling, not an oversight.
-        question: requireCollaborationText("--question", "text", "questionText", workFoldRequestLimits.maxQuestionTextBytes),
+        question: requireCollaborationText("--question", "text", "questionText", ampleFileRequestLimits.maxQuestionTextBytes),
         ...(Object.keys(textFiles).length ? { textFiles } : {}),
         // A root request has no parent, so the host delivers `parent` to the
         // person and says it did.
@@ -938,26 +938,26 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     }
     case "agent answer":
     case "chat answer":
-      // --work-folder names the work-folder that owns the question and in which the one
+      // --connected-folder names the Connected Folder that owns the question and in which the one
       // linked continuation runs; an answer from anywhere else is refused.
-      allowOnlyFlags(...(command === "agent answer" ? ["--question", "--answer", "--answer-file", "--parent-task"] : ["--work-folder", "--question", "--answer", "--answer-file", "--parent-task"]));
+      allowOnlyFlags(...(command === "agent answer" ? ["--question", "--answer", "--answer-file", "--parent-task"] : ["--connected-folder", "--question", "--answer", "--answer-file", "--parent-task"]));
       return {
         name: command === "agent answer" ? "agent.answer" : "chat.answer",
         output,
-        ...(command === "chat answer" ? { workFolder: requireWorkFolder() } : {}),
+        ...(command === "chat answer" ? { connectedFolder: requireConnectedFolder() } : {}),
         questionId: requireBoundedFlag("--question", "question-id"),
-        answer: requireCollaborationText("--answer", "text", "answerText", workFoldRequestLimits.maxAnswerTextBytes),
+        answer: requireCollaborationText("--answer", "text", "answerText", ampleFileRequestLimits.maxAnswerTextBytes),
         ...(Object.keys(textFiles).length ? { textFiles } : {}),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "chat children":
-      allowOnlyFlags("--work-folder", "--task");
-      return { name: "chat.children", output, workFolder: requireWorkFolder(), task: requireBoundedFlag("--task", "task-id") };
+      allowOnlyFlags("--connected-folder", "--task");
+      return { name: "chat.children", output, connectedFolder: requireConnectedFolder(), task: requireBoundedFlag("--task", "task-id") };
     case "chat steer": {
       // One more message into a Chat's running turn, delivered after its
       // current step. --task names the caller's own running turn when a
       // Worker redirects work its Chat handed off (2026-10-18).
-      allowOnlyFlags("--work-folder", "--conversation", "--task", "--message", "--message-from-payload", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--conversation", "--task", "--message", "--message-from-payload", "--parent-task");
       const message = stringFlag("--message");
       const messageFromPayload = flags.get("--message-from-payload") === true;
       if (message !== undefined && messageFromPayload) throw usageError("Use either --message <text> or --message-file <path>, not both.");
@@ -966,7 +966,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       return {
         name: "chat.steer",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         conversation: requireConversation(),
         ...(task ? { task } : {}),
         ...(message !== undefined ? { message } : {}),
@@ -976,8 +976,8 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     }
     case "chat copy": {
       // A copy of a Chat as of its last finished turn, in the same
-      // work-folder; --message starts work in the copy at once.
-      allowOnlyFlags("--work-folder", "--conversation", "--task", "--title", "--message", "--message-from-payload", "--parent-task");
+      // Connected Folder; --message starts work in the copy at once.
+      allowOnlyFlags("--connected-folder", "--conversation", "--task", "--title", "--message", "--message-from-payload", "--parent-task");
       const message = stringFlag("--message");
       const messageFromPayload = flags.get("--message-from-payload") === true;
       if (message !== undefined && messageFromPayload) throw usageError("Use either --message <text> or --message-file <path>, not both.");
@@ -987,7 +987,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       return {
         name: "chat.copy",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         conversation: requireConversation(),
         ...(task ? { task } : {}),
         ...(title ? { title } : {}),
@@ -999,7 +999,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     case "chat handoff": {
       // The message either/or is exactly `chat send`'s, because a handoff
       // starts a Chat in the destination through that same acceptance path.
-      allowOnlyFlags("--work-folder", "--task", "--to-work-folder", "--to-conversation", "--message", "--message-from-payload", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--task", "--to-connected-folder", "--to-conversation", "--message", "--message-from-payload", "--parent-task");
       const toConversation = optionalBoundedFlag("--to-conversation", "conversation-id");
       const message = stringFlag("--message");
       const messageFromPayload = flags.get("--message-from-payload") === true;
@@ -1012,9 +1012,9 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       return {
         name: "chat.handoff",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         task: requireBoundedFlag("--task", "task-id"),
-        toWorkFolder: requireBoundedFlag("--to-work-folder", "id-or-name"),
+        toConnectedFolder: requireBoundedFlag("--to-connected-folder", "id-or-name"),
         ...(toConversation ? { toConversation } : {}),
         ...(message !== undefined ? { message } : {}),
         ...(messageFromPayload ? { messageFromPayload } : {}),
@@ -1030,81 +1030,81 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       // The wait is a shim-side poll on purpose: a host-side blocking wait
       // would hold the broker request open past its timeout. The current
       // shim also settles when the task is waiting on an answer (F28).
-      throw usageError(`${command} runs inside the work-fold shim; update the installed work-fold CLI (it now settles on a waiting task too).`);
+      throw usageError(`${command} runs inside the AmpleFile shim; update the installed AmpleFile CLI (it now settles on a waiting task too).`);
     case "checks propose-fix":
     case "checks propose":
     case "checks enable":
-      allowOnlyFlags("--work-folder", "--proposal");
+      allowOnlyFlags("--connected-folder", "--proposal");
       return {
         name: command === "checks propose-fix" ? "checks.propose-fix" : command === "checks propose" ? "checks.propose" : "checks.enable",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         proposalPath: requireBoundedFlag("--proposal", "proposal-path", maxChecksProposalPathLength),
       };
     case "checks disable":
-      allowOnlyFlags("--work-folder", "--check");
+      allowOnlyFlags("--connected-folder", "--check");
       return {
         name: "checks.disable",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         check: requireBoundedFlag("--check", "check-id"),
       };
     case "checks run": {
-      allowOnlyFlags("--work-folder", "--check");
+      allowOnlyFlags("--connected-folder", "--check");
       const check = stringFlag("--check") === undefined
         ? undefined
         : requireBoundedFlag("--check", "check-id");
       return {
         name: "checks.run",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         ...(check ? { check } : {}),
       };
     }
     case "checks task":
-      allowOnlyFlags("--work-folder", "--task");
+      allowOnlyFlags("--connected-folder", "--task");
       return {
         name: "checks.task",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         task: requireBoundedFlag("--task", "task-id"),
       };
     case "checks result":
-      allowOnlyFlags("--work-folder", "--task");
+      allowOnlyFlags("--connected-folder", "--task");
       return {
         name: "checks.result",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         task: requireBoundedFlag("--task", "task-id"),
       };
     case "checks abort":
-      allowOnlyFlags("--work-folder", "--task");
+      allowOnlyFlags("--connected-folder", "--task");
       return {
         name: "checks.abort",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         task: requireBoundedFlag("--task", "task-id"),
       };
     case "checks problems": {
-      allowOnlyFlags("--work-folder", "--check");
+      allowOnlyFlags("--connected-folder", "--check");
       const check = stringFlag("--check") === undefined
         ? undefined
         : requireBoundedFlag("--check", "check-id");
       return {
         name: "checks.problems",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         ...(check ? { check } : {}),
       };
     }
     case "checks decide": {
-      allowOnlyFlags("--work-folder", "--finding", "--decision", "--until");
+      allowOnlyFlags("--connected-folder", "--finding", "--decision", "--until");
       const finding = requireBoundedFlag("--finding", "finding-id");
       const rawDecision = requireBoundedFlag("--decision", "accept|reject|resolve|defer");
-      if (!(["accept", "reject", "resolve", "defer"] as const).includes(rawDecision as WorkFoldCheckDecisionKind)) {
+      if (!(["accept", "reject", "resolve", "defer"] as const).includes(rawDecision as AmpleFileCheckDecisionKind)) {
         throw usageError("--decision must be accept, reject, resolve, or defer.");
       }
-      const decision = rawDecision as WorkFoldCheckDecisionKind;
+      const decision = rawDecision as AmpleFileCheckDecisionKind;
       const rawUntil = stringFlag("--until")?.trim();
       if (decision !== "defer" && rawUntil !== undefined) {
         throw usageError("--until may be used only with --decision defer.");
@@ -1120,7 +1120,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       return {
         name: "checks.decide",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         finding,
         decision,
         ...(until ? { until } : {}),
@@ -1205,71 +1205,71 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       allowOnlyFlags();
       return { name: "agent.overview", output };
     case "chats list":
-      allowOnlyFlags("--work-folder");
-      return { name: "chats.list", output, workFolder: requireWorkFolder() };
+      allowOnlyFlags("--connected-folder");
+      return { name: "chats.list", output, connectedFolder: requireConnectedFolder() };
     case "history list":
-      allowOnlyFlags("--work-folder", "--cursor", "--limit");
-      return { name: "history.list", output, workFolder: requireWorkFolder(), ...pageOptions() };
+      allowOnlyFlags("--connected-folder", "--cursor", "--limit");
+      return { name: "history.list", output, connectedFolder: requireConnectedFolder(), ...pageOptions() };
     case "history save": {
-      allowOnlyFlags("--work-folder", "--label", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--label", "--parent-task");
       const label = optionalBoundedFlag("--label", "label");
       return {
         name: "history.save",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         ...(label !== undefined ? { label } : {}),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     }
     case "history restore":
-      allowOnlyFlags("--work-folder", "--checkpoint", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--checkpoint", "--parent-task");
       return {
         name: "history.restore",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         checkpoint: requireBoundedFlag("--checkpoint", "checkpoint-id"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "history versions":
-      allowOnlyFlags("--work-folder", "--cursor", "--limit");
+      allowOnlyFlags("--connected-folder", "--cursor", "--limit");
       return {
         name: "history.versions", ...pageOptions(),
         output,
-        workFolder: requireWorkFolder(),
-        path: requireSinglePath("work-folder-path"),
+        connectedFolder: requireConnectedFolder(),
+        path: requireSinglePath("connected-folder-path"),
       };
     case "history read":
-      allowOnlyFlags("--work-folder", "--checkpoint", "--offset-bytes", "--length-bytes", "--expected-sha256");
+      allowOnlyFlags("--connected-folder", "--checkpoint", "--offset-bytes", "--length-bytes", "--expected-sha256");
       return {
-        name: "history.read", output, workFolder: requireWorkFolder(),
+        name: "history.read", output, connectedFolder: requireConnectedFolder(),
         ...(stringFlag("--offset-bytes") !== undefined ? { offsetBytes: optionalInteger("--offset-bytes", 0, Number.MAX_SAFE_INTEGER) } : {}),
         ...(stringFlag("--length-bytes") !== undefined ? { lengthBytes: optionalInteger("--length-bytes", 4, 128 * 1024) } : {}),
         ...(stringFlag("--expected-sha256") !== undefined ? { expectedSha256: requireBoundedFlag("--expected-sha256", "sha256", 64) } : {}),
-        path: requireSinglePath("work-folder-path"),
+        path: requireSinglePath("connected-folder-path"),
         checkpoint: requireBoundedFlag("--checkpoint", "checkpoint-id"),
       };
     case "history diff": {
-      allowOnlyFlags("--work-folder", "--from-checkpoint", "--to-checkpoint");
+      allowOnlyFlags("--connected-folder", "--from-checkpoint", "--to-checkpoint");
       const toCheckpoint = optionalBoundedFlag("--to-checkpoint", "checkpoint-id");
       return {
-        name: "history.diff", output, workFolder: requireWorkFolder(),
-        path: requireSinglePath("work-folder-path"),
+        name: "history.diff", output, connectedFolder: requireConnectedFolder(),
+        path: requireSinglePath("connected-folder-path"),
         fromCheckpoint: requireBoundedFlag("--from-checkpoint", "checkpoint-id"),
         ...(toCheckpoint ? { toCheckpoint } : {}),
       };
     }
     case "history restore-file":
-      allowOnlyFlags("--work-folder", "--version", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--version", "--parent-task");
       return {
         name: "history.restore-file",
         output,
-        workFolder: requireWorkFolder(),
-        path: requireSinglePath("work-folder-path"),
+        connectedFolder: requireConnectedFolder(),
+        path: requireSinglePath("connected-folder-path"),
         version: requireBoundedFlag("--version", "sha256"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "search": {
-      allowOnlyFlags("--work-folder", "--query", "--scope", "--cursor", "--limit");
+      allowOnlyFlags("--connected-folder", "--query", "--scope", "--cursor", "--limit");
       const query = requireBoundedFlag("--query", "text", maxActSearchQueryLength);
       const rawScope = optionalBoundedFlag("--scope", "files|chats|all");
       if (rawScope !== undefined && rawScope !== "files" && rawScope !== "chats" && rawScope !== "all") {
@@ -1277,56 +1277,56 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       }
       return {
         name: "search", ...pageOptions(),
-        ...(pathValues.length ? { path: requireSinglePath("work-folder-path") } : {}),
+        ...(pathValues.length ? { path: requireSinglePath("connected-folder-path") } : {}),
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         query,
         ...(rawScope !== undefined ? { searchScope: rawScope } : {}),
       };
     }
-    case "work-folders create": {
+    case "connected-folders create": {
       allowOnlyFlags("--name", "--parent-task");
-      const workFolderName = stringFlag("--name")?.trim();
-      if (!workFolderName) throw usageError("Provide --name <work-folder-name>.");
-      return { name: "work-folders.create", output, workFolderName, ...(parentTaskId ? { parentTaskId } : {}) };
+      const connectedFolderName = stringFlag("--name")?.trim();
+      if (!connectedFolderName) throw usageError("Provide --name <connected-folder-name>.");
+      return { name: "connected-folders.create", output, connectedFolderName, ...(parentTaskId ? { parentTaskId } : {}) };
     }
-    case "work-folders register": {
+    case "connected-folders register": {
       allowOnlyFlags("--parent-task");
       if (pathValues.length > 1) throw usageError("--path may be provided only once.");
       const registerPath = pathValues[0]?.trim();
       if (!registerPath) throw usageError("Provide --path <absolute-folder-path>.");
-      return { name: "work-folders.register", output, registerPath, ...(parentTaskId ? { parentTaskId } : {}) };
+      return { name: "connected-folders.register", output, registerPath, ...(parentTaskId ? { parentTaskId } : {}) };
     }
-    case "work-folders rename":
-      allowOnlyFlags("--work-folder", "--name", "--parent-task");
+    case "connected-folders rename":
+      allowOnlyFlags("--connected-folder", "--name", "--parent-task");
       return {
-        name: "work-folders.rename",
+        name: "connected-folders.rename",
         output,
-        workFolder: requireWorkFolder(),
-        workFolderName: requireBoundedFlag("--name", "work-folder-name"),
+        connectedFolder: requireConnectedFolder(),
+        connectedFolderName: requireBoundedFlag("--name", "connected-folder-name"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
-    case "work-folders unregister":
-      allowOnlyFlags("--work-folder", "--parent-task");
+    case "connected-folders unregister":
+      allowOnlyFlags("--connected-folder", "--parent-task");
       return {
-        name: "work-folders.unregister",
+        name: "connected-folders.unregister",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
-    case "work-folders delete":
-      allowOnlyFlags("--work-folder", "--parent-task");
+    case "connected-folders delete":
+      allowOnlyFlags("--connected-folder", "--parent-task");
       return {
-        name: "work-folders.delete",
+        name: "connected-folders.delete",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
-    case "work-folders appearance apply": {
+    case "connected-folders appearance apply": {
       // File-borne input: the typed proposal passes as a path resolved
       // host-side, the same pattern as `checks enable --proposal`. Or name
       // just the parts to change; the image is read and encoded host-side.
-      allowOnlyFlags("--work-folder", "--proposal", "--banner-image", "--icon", "--color", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--proposal", "--banner-image", "--icon", "--color", "--parent-task");
       const proposalPath = optionalBoundedFlag("--proposal", "proposal-path", maxActPathLength);
       const bannerImagePath = optionalBoundedFlag("--banner-image", "image-path", maxActPathLength);
       const icon = optionalBoundedFlag("--icon", "icon-name", 64);
@@ -1337,44 +1337,44 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
         throw usageError("Provide --proposal <path>, or at least one of --banner-image <path>, --icon <name>, --color <#rrggbb>.");
       }
       return {
-        name: "work-folders.appearance.apply",
+        name: "connected-folders.appearance.apply",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         ...(proposalPath ? { proposalPath } : { appearanceParts: parts }),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     }
-    case "work-folders appearance reset":
-      allowOnlyFlags("--work-folder", "--parent-task");
+    case "connected-folders appearance reset":
+      allowOnlyFlags("--connected-folder", "--parent-task");
       return {
-        name: "work-folders.appearance.reset",
+        name: "connected-folders.appearance.reset",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
-    case "work-folders appearance undo":
-      allowOnlyFlags("--work-folder", "--parent-task");
+    case "connected-folders appearance undo":
+      allowOnlyFlags("--connected-folder", "--parent-task");
       return {
-        name: "work-folders.appearance.undo",
+        name: "connected-folders.appearance.undo",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
-    case "work-folders worker show":
-      allowOnlyFlags("--work-folder");
-      return { name: "work-folders.worker.show", output, workFolder: requireWorkFolder() };
-    case "work-folders worker model":
-      allowOnlyFlags("--work-folder", "--provider", "--model", "--parent-task");
+    case "connected-folders worker show":
+      allowOnlyFlags("--connected-folder");
+      return { name: "connected-folders.worker.show", output, connectedFolder: requireConnectedFolder() };
+    case "connected-folders worker model":
+      allowOnlyFlags("--connected-folder", "--provider", "--model", "--parent-task");
       return {
-        name: "work-folders.worker.model",
+        name: "connected-folders.worker.model",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         provider: requireBoundedFlag("--provider", "provider-id"),
         model: requireBoundedFlag("--model", "model-id"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
-    case "work-folders worker instructions": {
-      allowOnlyFlags("--work-folder", "--instructions", "--instructions-file", "--append", "--clear", "--parent-task");
+    case "connected-folders worker instructions": {
+      allowOnlyFlags("--connected-folder", "--instructions", "--instructions-file", "--append", "--clear", "--parent-task");
       const clear = flags.get("--clear") === true;
       const rawInstructions = textFileFlag("--instructions", "instructions") ?? stringFlag("--instructions");
       // --append adds one remembered line to the current instructions instead
@@ -1390,9 +1390,9 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
         throw usageError(`${append !== undefined ? "--append" : "--instructions"} must be at most ${maximumWorkerInstructionsLength} characters.`);
       }
       return {
-        name: "work-folders.worker.instructions",
+        name: "connected-folders.worker.instructions",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         instructions: clear ? "" : text!,
         ...(Object.keys(textFiles).length ? { textFiles } : {}),
         ...(clear ? { clear: true } : {}),
@@ -1401,67 +1401,67 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       };
     }
     case "files add": {
-      allowOnlyFlags("--work-folder", "--to", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--to", "--parent-task");
       if (!fromPaths.length) throw usageError("Provide at least one --from <path>.");
       const toDir = stringFlag("--to");
       return {
         name: "files.add",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         fromPaths: [...fromPaths],
         ...(toDir !== undefined ? { toDir } : {}),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     }
     case "files move":
-      allowOnlyFlags("--work-folder", "--to", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--to", "--parent-task");
       return {
         name: "files.move",
         output,
-        workFolder: requireWorkFolder(),
-        fromPaths: [requireSingleFrom("work-folder-path")],
-        toDir: requireBoundedFlag("--to", "folder-in-work-folder", maxActPathLength),
+        connectedFolder: requireConnectedFolder(),
+        fromPaths: [requireSingleFrom("connected-folder-path")],
+        toDir: requireBoundedFlag("--to", "folder-in-connected-folder", maxActPathLength),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "files rename":
-      allowOnlyFlags("--work-folder", "--name", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--name", "--parent-task");
       return {
         name: "files.rename",
         output,
-        workFolder: requireWorkFolder(),
-        path: requireSinglePath("work-folder-path"),
+        connectedFolder: requireConnectedFolder(),
+        path: requireSinglePath("connected-folder-path"),
         entryName: requireBoundedFlag("--name", "new-name"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "files delete":
-      allowOnlyFlags("--work-folder", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--parent-task");
       return {
         name: "files.delete",
         output,
-        workFolder: requireWorkFolder(),
-        path: requireSinglePath("work-folder-path"),
+        connectedFolder: requireConnectedFolder(),
+        path: requireSinglePath("connected-folder-path"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "files mkdir":
-      allowOnlyFlags("--work-folder", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--parent-task");
       return {
         name: "files.mkdir",
         output,
-        workFolder: requireWorkFolder(),
-        path: requireSinglePath("folder-in-work-folder"),
+        connectedFolder: requireConnectedFolder(),
+        path: requireSinglePath("folder-in-connected-folder"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "files create":
-      allowOnlyFlags("--work-folder", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--parent-task");
       return {
         name: "files.create",
         output,
-        workFolder: requireWorkFolder(),
-        path: requireSinglePath("work-folder-path"),
+        connectedFolder: requireConnectedFolder(),
+        path: requireSinglePath("connected-folder-path"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "tools import-skill":
-      allowOnlyFlags("--scope", "--work-folder", "--parent-task");
+      allowOnlyFlags("--scope", "--connected-folder", "--parent-task");
       return {
         name: "tools.import-skill",
         output,
@@ -1470,7 +1470,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "tools install": {
-      allowOnlyFlags("--id", "--source", "--scope", "--work-folder", "--parent-task");
+      allowOnlyFlags("--id", "--source", "--scope", "--connected-folder", "--parent-task");
       const catalogId = optionalBoundedFlag("--id", "catalog-id");
       const source = optionalBoundedFlag("--source", "package-source", maxActPathLength);
       if ((catalogId === undefined) === (source === undefined)) {
@@ -1487,13 +1487,13 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     }
     case "tools enable":
     case "tools disable": {
-      allowOnlyFlags("--path", "--kind", "--scope", "--work-folder", "--parent-task");
+      allowOnlyFlags("--path", "--kind", "--scope", "--connected-folder", "--parent-task");
       const kind = requireBoundedFlag("--kind", "resource-kind");
       if (!["extensions", "skills", "prompts", "themes"].includes(kind)) throw usageError("--kind must be extensions, skills, prompts, or themes.");
-      return { name: command === "tools enable" ? "tools.enable" : "tools.disable", output, ...requireToolsScope(), path: requireSinglePath("resource-path"), resourceKind: kind as WorkFoldCliActParsedCommand["resourceKind"], ...(parentTaskId ? { parentTaskId } : {}) };
+      return { name: command === "tools enable" ? "tools.enable" : "tools.disable", output, ...requireToolsScope(), path: requireSinglePath("resource-path"), resourceKind: kind as AmpleFileCliActParsedCommand["resourceKind"], ...(parentTaskId ? { parentTaskId } : {}) };
     }
     case "tools update":
-      allowOnlyFlags("--source", "--scope", "--work-folder", "--parent-task");
+      allowOnlyFlags("--source", "--scope", "--connected-folder", "--parent-task");
       return {
         name: "tools.update",
         output,
@@ -1502,7 +1502,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "tools remove":
-      allowOnlyFlags("--source", "--scope", "--work-folder", "--parent-task");
+      allowOnlyFlags("--source", "--scope", "--connected-folder", "--parent-task");
       return {
         name: "tools.remove",
         output,
@@ -1511,10 +1511,10 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps list":
-      allowOnlyFlags("--work-folder");
-      return { name: "apps.list", output, workFolder: requireWorkFolder() };
+      allowOnlyFlags("--connected-folder");
+      return { name: "apps.list", output, connectedFolder: requireConnectedFolder() };
     case "apps invoke": {
-      allowOnlyFlags("--work-folder", "--app", "--tool", "--input", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--app", "--tool", "--input", "--parent-task");
       const rawToolInput = stringFlag("--input");
       if (rawToolInput === undefined) throw usageError("Provide --input <json>.");
       if (Buffer.byteLength(rawToolInput, "utf8") > maxActToolInputBytes) {
@@ -1531,7 +1531,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       return {
         name: "apps.invoke",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         app: requireBoundedFlag("--app", "app-id"),
         tool: requireBoundedFlag("--tool", "tool-name"),
         toolInput,
@@ -1539,70 +1539,70 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       };
     }
     case "apps proposals list":
-      allowOnlyFlags("--work-folder", "--conversation");
+      allowOnlyFlags("--connected-folder", "--conversation");
       return {
         name: "apps.proposals.list",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         conversation: requireConversation(),
       };
     case "apps proposals dismiss":
-      allowOnlyFlags("--work-folder", "--conversation", "--proposal", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--conversation", "--proposal", "--parent-task");
       return {
         name: "apps.proposals.dismiss",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         conversation: requireConversation(),
         proposal: requireBoundedFlag("--proposal", "proposal-id"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps install-proposal":
-      allowOnlyFlags("--work-folder", "--conversation", "--proposal", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--conversation", "--proposal", "--parent-task");
       return {
         name: "apps.install-proposal",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         conversation: requireConversation(),
         proposal: requireBoundedFlag("--proposal", "proposal-id"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps install-preview":
-      allowOnlyFlags("--work-folder", "--package", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--package", "--parent-task");
       return {
         name: "apps.install-preview",
         output,
-        workFolder: requireWorkFolder(),
-        packagePath: requireBoundedFlag("--package", "work-folder-path", maxActPathLength),
+        connectedFolder: requireConnectedFolder(),
+        packagePath: requireBoundedFlag("--package", "connected-folder-path", maxActPathLength),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps remove":
-      allowOnlyFlags("--work-folder", "--app", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--app", "--parent-task");
       return {
         name: "apps.remove",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         app: requireBoundedFlag("--app", "app-id"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps grant":
     case "apps revoke": {
-      allowOnlyFlags("--work-folder", "--app", "--digest", "--kind", "--declaration", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--app", "--digest", "--kind", "--declaration", "--parent-task");
       const rawKind = requireBoundedFlag("--kind", "network|files|notifications");
       if (rawKind !== "network" && rawKind !== "files" && rawKind !== "notifications") {
         throw usageError("--kind must be network, files, or notifications.");
       }
       // A file permission that names one file is granted by naming that file
       // (docs/receipts-not-gates.md, F21). A folder permission keeps binding
-      // to the whole work-folder and takes no --path, and revoking takes none
+      // to the whole Connected Folder and takes no --path, and revoking takes none
       // either: it names the declaration, not a root.
       if (pathValues.length && !(command === "apps grant" && rawKind === "files")) {
         throw usageError("--path can be used only with 'apps grant --kind files'.");
       }
-      const filePath = pathValues.length ? requireSinglePath("work-folder-file-path") : undefined;
+      const filePath = pathValues.length ? requireSinglePath("connected-folder-file-path") : undefined;
       return {
         name: command === "apps grant" ? "apps.grant" : "apps.revoke",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         app: requireBoundedFlag("--app", "app-id"),
         digest: requireBoundedFlag("--digest", "sha256"),
         grantKind: rawKind,
@@ -1615,11 +1615,11 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     case "apps disconnect":
       // The act names app, destination, and adapter only; credentials never
       // ride argv, payloads, or the journal.
-      allowOnlyFlags("--work-folder", "--app", "--destination", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--app", "--destination", "--parent-task");
       return {
         name: command === "apps connect" ? "apps.connect" : "apps.disconnect",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         app: requireBoundedFlag("--app", "app-id"),
         destination: requireBoundedFlag("--destination", "destination-id"),
         ...(parentTaskId ? { parentTaskId } : {}),
@@ -1627,7 +1627,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
     case "apps automation enable":
     case "apps automation disable":
     case "apps automation run":
-      allowOnlyFlags("--work-folder", "--app", "--automation", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--app", "--automation", "--parent-task");
       return {
         name: command === "apps automation enable"
           ? "apps.automation.enable"
@@ -1635,91 +1635,91 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
             ? "apps.automation.disable"
             : "apps.automation.run",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         app: requireBoundedFlag("--app", "app-id"),
         automation: requireBoundedFlag("--automation", "automation-id"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps storage clear":
-      allowOnlyFlags("--work-folder", "--app", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--app", "--parent-task");
       return {
         name: "apps.storage.clear",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         app: requireBoundedFlag("--app", "app-id"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps retained purge":
-      allowOnlyFlags("--work-folder", "--retained", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--retained", "--parent-task");
       return {
         name: "apps.retained.purge",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         retained: requireBoundedFlag("--retained", "retained-data-id"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps project declare":
       // Same file-borne pattern as `checks enable --proposal`: the typed
       // presentation file passes as a path resolved host-side.
-      allowOnlyFlags("--work-folder", "--presentation", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--presentation", "--parent-task");
       return {
         name: "apps.project.declare",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         presentationPath: requireBoundedFlag("--presentation", "json-path", maxActPathLength),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps release prepare":
-      allowOnlyFlags("--work-folder", "--version", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--version", "--parent-task");
       return {
         name: "apps.release.prepare",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         version: requireBoundedFlag("--version", "display-version"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps release publish":
     case "apps release delete":
-      allowOnlyFlags("--work-folder", "--release", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--release", "--parent-task");
       return {
         name: command === "apps release publish" ? "apps.release.publish" : "apps.release.delete",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         release: requireBoundedFlag("--release", "release-digest"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps install prepare":
-      allowOnlyFlags("--work-folder", "--release", "--target-work-folder", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--release", "--target-connected-folder", "--parent-task");
       return {
         name: "apps.install.prepare",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         release: requireBoundedFlag("--release", "release-digest"),
-        targetWorkFolder: requireBoundedFlag("--target-work-folder", "work-folder-id-or-name"),
+        targetConnectedFolder: requireBoundedFlag("--target-connected-folder", "connected-folder-id-or-name"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps update prepare":
-      allowOnlyFlags("--work-folder", "--instance", "--release", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--instance", "--release", "--parent-task");
       return {
         name: "apps.update.prepare",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         instance: requireBoundedFlag("--instance", "instance-id"),
         release: requireBoundedFlag("--release", "release-digest"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps operation activate":
     case "apps operation cancel":
-      allowOnlyFlags("--work-folder", "--operation", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--operation", "--parent-task");
       return {
         name: command === "apps operation activate" ? "apps.operation.activate" : "apps.operation.cancel",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         operation: requireBoundedFlag("--operation", "operation-id"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps uninstall": {
-      allowOnlyFlags("--work-folder", "--instance", "--retain-data", "--purge-data", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--instance", "--retain-data", "--purge-data", "--parent-task");
       const retainData = flags.get("--retain-data") === true;
       const purgeData = flags.get("--purge-data") === true;
       if (retainData === purgeData) {
@@ -1728,15 +1728,15 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       return {
         name: "apps.uninstall",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         instance: requireBoundedFlag("--instance", "instance-id"),
         disposition: retainData ? "retain-data" : "purge-data",
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     }
     case "automations enable":
-      // Automations are above work-folders (docs/automations.md): no
-      // --work-folder, like the agent group. The inert typed proposal passes as
+      // Automations are above Connected Folders (docs/automations.md): no
+      // --connected-folder, like the agent group. The inert typed proposal passes as
       // a path resolved host-side, the same pattern as `checks enable --proposal`.
       allowOnlyFlags("--proposal", "--parent-task");
       return {
@@ -1745,9 +1745,9 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
         proposalPath: requireBoundedFlag("--proposal", "proposal-path", maxActPathLength),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
-    // Recently deleted sits above work-folders (docs/receipts-not-gates.md, F20):
-    // each item names the work-folder it came from, so neither verb takes
-    // --work-folder.
+    // Recently deleted sits above Connected Folders (docs/receipts-not-gates.md, F20):
+    // each item names the Connected Folder it came from, so neither verb takes
+    // --connected-folder.
     case "recently-deleted list":
       allowOnlyFlags();
       return { name: "recently-deleted.list", output };
@@ -1803,16 +1803,16 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       return { name: "automations.receipts", output, ...(automation ? { automation } : {}) };
     }
     // Background jobs (docs/background-jobs.md). start needs the caller's own
-    // running turn, as chat report does; every verb names the job's work-folder.
+    // running turn, as chat report does; every verb names the job's Connected Folder.
     case "jobs start": {
-      allowOnlyFlags("--work-folder", "--task", "--command", "--command-file", "--name", "--cwd", "--timeout", "--parent-task", "--interactive", "--service");
+      allowOnlyFlags("--connected-folder", "--task", "--command", "--command-file", "--name", "--cwd", "--timeout", "--parent-task", "--interactive", "--service");
       const jobCommand = (() => {
         if (textFileFlag("--command", "command") !== undefined) return "";
         const value = stringFlag("--command");
         if (value === undefined || !value.trim()) throw usageError("Provide --command <shell-command> or --command-file <path>.");
         if (value.includes("\u0000")) throw usageError("--command contains unsupported control characters.");
-        if (Buffer.byteLength(value, "utf8") > workFoldBackgroundJobLimits.maxCommandBytes) {
-          throw usageError(`--command can be at most ${workFoldBackgroundJobLimits.maxCommandBytes / 1024} KiB.`);
+        if (Buffer.byteLength(value, "utf8") > ampleFileBackgroundJobLimits.maxCommandBytes) {
+          throw usageError(`--command can be at most ${ampleFileBackgroundJobLimits.maxCommandBytes / 1024} KiB.`);
         }
         return value;
       })();
@@ -1826,7 +1826,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       return {
         name: "jobs.start",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         task: requireBoundedFlag("--task", "task-id"),
         jobCommand,
         ...(flags.has("--interactive") ? { interactive: true } : {}),
@@ -1839,21 +1839,21 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       };
     }
     case "jobs list": {
-      allowOnlyFlags("--work-folder", "--conversation", "--running");
+      allowOnlyFlags("--connected-folder", "--conversation", "--running");
       const conversation = optionalBoundedFlag("--conversation", "conversation-id");
       return {
         name: "jobs.list",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         ...(conversation ? { conversation } : {}),
         ...(flags.get("--running") === true ? { running: true } : {}),
       };
     }
     case "jobs show":
-      allowOnlyFlags("--work-folder", "--job");
-      return { name: "jobs.show", output, workFolder: requireWorkFolder(), job: requireBoundedFlag("--job", "job-id") };
+      allowOnlyFlags("--connected-folder", "--job");
+      return { name: "jobs.show", output, connectedFolder: requireConnectedFolder(), job: requireBoundedFlag("--job", "job-id") };
     case "jobs output": {
-      allowOnlyFlags("--work-folder", "--job", "--offset", "--limit", "--wait", "--until", "--task");
+      allowOnlyFlags("--connected-folder", "--job", "--offset", "--limit", "--wait", "--until", "--task");
       const rawWait = stringFlag("--wait");
       const waitSeconds = rawWait === undefined ? undefined : Number(rawWait);
       if (waitSeconds !== undefined && (!Number.isFinite(waitSeconds) || waitSeconds < 0)) {
@@ -1866,7 +1866,7 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       return {
         name: "jobs.output",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         job: requireBoundedFlag("--job", "job-id"),
         ...(offset !== undefined ? { offset } : {}),
         ...(limit !== undefined ? { limit } : {}),
@@ -1876,29 +1876,29 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
       };
     }
     case "worktrees manage": {
-      allowOnlyFlags("--work-folder", "--task", "--action", "--id", "--ref");
+      allowOnlyFlags("--connected-folder", "--task", "--action", "--id", "--ref");
       const action = stringFlag("--action");
       if (action !== "create" && action !== "list" && action !== "archive" && action !== "restore") throw usageError("--action must be create, list, archive, or restore.");
-      return { name: "worktrees.manage", output, workFolder: requireWorkFolder(), task: requireBoundedFlag("--task", "task-id"), worktreeAction: action, ...(stringFlag("--id") ? { worktreeId: stringFlag("--id")! } : {}), ...(stringFlag("--ref") ? { worktreeRef: stringFlag("--ref")! } : {}) };
+      return { name: "worktrees.manage", output, connectedFolder: requireConnectedFolder(), task: requireBoundedFlag("--task", "task-id"), worktreeAction: action, ...(stringFlag("--id") ? { worktreeId: stringFlag("--id")! } : {}), ...(stringFlag("--ref") ? { worktreeRef: stringFlag("--ref")! } : {}) };
     }
     case "jobs input":
-      allowOnlyFlags("--work-folder", "--task", "--job", "--text", "--eof");
+      allowOnlyFlags("--connected-folder", "--task", "--job", "--text", "--eof");
       if (stringFlag("--text") === undefined) throw usageError("--text is required (it may be empty).");
-      return { name: "jobs.input", output, workFolder: requireWorkFolder(), task: requireBoundedFlag("--task", "task-id"), job: requireBoundedFlag("--job", "job-id"), terminalText: stringFlag("--text")!, ...(flags.has("--eof") ? { eof: true } : {}) };
+      return { name: "jobs.input", output, connectedFolder: requireConnectedFolder(), task: requireBoundedFlag("--task", "task-id"), job: requireBoundedFlag("--job", "job-id"), terminalText: stringFlag("--text")!, ...(flags.has("--eof") ? { eof: true } : {}) };
     case "pages validate":
-      allowOnlyFlags("--work-folder", "--page");
+      allowOnlyFlags("--connected-folder", "--page");
       return {
         name: "pages.validate",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         page: boundedActPath("--page", stringFlag("--page") ?? "", "page-folder-path"),
       };
     case "jobs stop":
-      allowOnlyFlags("--work-folder", "--job", "--parent-task");
+      allowOnlyFlags("--connected-folder", "--job", "--parent-task");
       return {
         name: "jobs.stop",
         output,
-        workFolder: requireWorkFolder(),
+        connectedFolder: requireConnectedFolder(),
         job: requireBoundedFlag("--job", "job-id"),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
@@ -1907,17 +1907,17 @@ export function parseWorkFoldCliActArgv(argv: readonly string[]): WorkFoldCliAct
   }
 }
 
-export async function executeWorkFoldCliActRequest(
-  request: WorkFoldCliActRequest,
-  options: WorkFoldCliActExecutorOptions,
-): Promise<WorkFoldCliResponseV1> {
+export async function executeAmpleFileCliActRequest(
+  request: AmpleFileCliActRequest,
+  options: AmpleFileCliActExecutorOptions,
+): Promise<AmpleFileCliResponseV1> {
   const completedAt = () => (options.now?.() ?? new Date()).toISOString();
-  let command: WorkFoldCliActParsedCommand | undefined;
+  let command: AmpleFileCliActParsedCommand | undefined;
   let accepted = false;
   let receiptParentTaskId: string | undefined;
   let receiptLineage: { parentTaskId?: string } = {};
   try {
-    command = parseWorkFoldCliActArgv(request.argv);
+    command = parseAmpleFileCliActArgv(request.argv);
     const authority = options.getActFacade();
     if (!authority || !tokensMatch(authority.token, request.actToken)) {
       await options.receipts.append({
@@ -1927,7 +1927,7 @@ export async function executeWorkFoldCliActRequest(
         errorCode: "unavailable",
         surface: "cli",
       });
-      throw new WorkFoldCliError("unavailable", workFoldCliActUnavailableMessage);
+      throw new AmpleFileCliError("unavailable", ampleFileCliActUnavailableMessage);
     }
     command = await resolveActTextFiles(command, request.cwd);
     // The broker's response-file dedup only covers a pending request; the
@@ -1941,7 +1941,7 @@ export async function executeWorkFoldCliActRequest(
         surface: "cli",
         detail: "duplicate act request id",
       });
-      throw new WorkFoldCliError("conflict", "This act request id was already executed. Submit a new request instead of replaying it.");
+      throw new AmpleFileCliError("conflict", "This act request id was already executed. Submit a new request instead of replaying it.");
     }
     // The accepted record lands before the mutation so a crash can never
     // leave an applied action without a journal trace; an unwritable journal
@@ -1957,12 +1957,12 @@ export async function executeWorkFoldCliActRequest(
         errorCode: "conflict",
         surface: "cli",
         parentTaskId: command.parentTaskId,
-        detail: "inactive work-fold agent parent",
+        detail: "inactive AmpleFile agent parent",
       });
-      throw new WorkFoldCliError("conflict", "The work-fold agent request named by --parent-task is no longer active.");
+      throw new AmpleFileCliError("conflict", "The AmpleFile agent request named by --parent-task is no longer active.");
     }
     receiptParentTaskId = lineageParent?.taskId;
-    // Lineage on receipts: the work-fold agent parent.
+    // Lineage on receipts: the AmpleFile agent parent.
     const lineage = receiptParentTaskId ? { parentTaskId: receiptParentTaskId } : {};
     receiptLineage = lineage;
     const acceptedRecorded = await options.receipts.append({
@@ -1971,10 +1971,10 @@ export async function executeWorkFoldCliActRequest(
       outcome: "accepted",
       surface: "cli",
       ...lineage,
-      ...(command.workFolder ? { detail: `work-folder ${command.workFolder}` } : {}),
+      ...(command.connectedFolder ? { detail: `Connected Folder ${command.connectedFolder}` } : {}),
     });
     if (!acceptedRecorded) {
-      throw new WorkFoldCliError("failure", "work-fold could not record the act receipt, so the command was not run.");
+      throw new AmpleFileCliError("failure", "AmpleFile could not record the act receipt, so the command was not run.");
     }
     accepted = true;
     const data = await runActCommand(command, request, authority.facade);
@@ -1986,13 +1986,13 @@ export async function executeWorkFoldCliActRequest(
       ...lineage,
       ...receiptDetails(command.name, data),
     });
-    return createWorkFoldCliResponse({
+    return createAmpleFileCliResponse({
       id: request.id,
-      exitCode: WorkFoldCliExitCode.success,
+      exitCode: AmpleFileCliExitCode.success,
       stdout: command.output === "json"
         ? `${JSON.stringify({ ok: true, command: command.name, data }, null, 2)}\n`
         : humanActOutput(command.name, data),
-      stderr: outcomeRecorded ? "" : "work-fold: warning: the act outcome receipt could not be recorded.\n",
+      stderr: outcomeRecorded ? "" : "AmpleFile: warning: the act outcome receipt could not be recorded.\n",
       result: data,
       completedAt: completedAt(),
     });
@@ -2009,7 +2009,7 @@ export async function executeWorkFoldCliActRequest(
       });
     }
     const json = command?.output === "json" || request.argv.includes("--json");
-    return createWorkFoldCliResponse({
+    return createAmpleFileCliResponse({
       id: request.id,
       exitCode: normalized.exitCode,
       stdout: "",
@@ -2027,76 +2027,76 @@ export async function executeWorkFoldCliActRequest(
  * the command ran in, and applies the same bounds the inline flag would.
  */
 async function resolveActTextFiles(
-  command: WorkFoldCliActParsedCommand,
+  command: AmpleFileCliActParsedCommand,
   cwd: string,
-): Promise<WorkFoldCliActParsedCommand> {
+): Promise<AmpleFileCliActParsedCommand> {
   if (!command.textFiles) return command;
-  const resolved: WorkFoldCliActParsedCommand = { ...command };
+  const resolved: AmpleFileCliActParsedCommand = { ...command };
   delete resolved.textFiles;
-  for (const [field, path] of Object.entries(command.textFiles) as Array<[keyof NonNullable<WorkFoldCliActParsedCommand["textFiles"]>, string]>) {
+  for (const [field, path] of Object.entries(command.textFiles) as Array<[keyof NonNullable<AmpleFileCliActParsedCommand["textFiles"]>, string]>) {
     const flag = `--${field}-file`;
     let text: string;
     try {
       text = await readFile(isAbsolute(path) ? resolve(path) : resolve(cwd, path), "utf8");
     } catch (error) {
-      throw new WorkFoldCliError("notFound", `${flag} ${path}: the file could not be read.`, { cause: error });
+      throw new AmpleFileCliError("notFound", `${flag} ${path}: the file could not be read.`, { cause: error });
     }
-    if (text.includes("\u0000")) throw new WorkFoldCliError("usage", `${flag} ${path} contains unsupported control characters.`);
+    if (text.includes("\u0000")) throw new AmpleFileCliError("usage", `${flag} ${path} contains unsupported control characters.`);
     if (field === "instructions") {
       if (text.length > maximumWorkerInstructionsLength) {
-        throw new WorkFoldCliError("usage", `${flag} must be at most ${maximumWorkerInstructionsLength} characters.`);
+        throw new AmpleFileCliError("usage", `${flag} must be at most ${maximumWorkerInstructionsLength} characters.`);
       }
       resolved.instructions = text;
       continue;
     }
     if (field === "command") {
-      if (!text.trim()) throw new WorkFoldCliError("usage", `${flag} ${path} is empty.`);
-      if (Buffer.byteLength(text, "utf8") > workFoldBackgroundJobLimits.maxCommandBytes) {
-        throw new WorkFoldCliError("usage", `${flag} can be at most ${workFoldBackgroundJobLimits.maxCommandBytes / 1024} KiB.`);
+      if (!text.trim()) throw new AmpleFileCliError("usage", `${flag} ${path} is empty.`);
+      if (Buffer.byteLength(text, "utf8") > ampleFileBackgroundJobLimits.maxCommandBytes) {
+        throw new AmpleFileCliError("usage", `${flag} can be at most ${ampleFileBackgroundJobLimits.maxCommandBytes / 1024} KiB.`);
       }
       resolved.jobCommand = text;
       continue;
     }
-    if (!text.trim()) throw new WorkFoldCliError("usage", `${flag} ${path} is empty.`);
+    if (!text.trim()) throw new AmpleFileCliError("usage", `${flag} ${path} is empty.`);
     const [limit, maximumBytes] = field === "summary"
-      ? ["resultSummary", workFoldRequestLimits.maxResultSummaryBytes] as const
+      ? ["resultSummary", ampleFileRequestLimits.maxResultSummaryBytes] as const
       : field === "question"
-        ? ["questionText", workFoldRequestLimits.maxQuestionTextBytes] as const
-        : ["answerText", workFoldRequestLimits.maxAnswerTextBytes] as const;
-    if (Buffer.byteLength(text, "utf8") > maximumBytes) throw new WorkFoldCliError("usage", workFoldRequestLimitMessage(limit, maximumBytes));
+        ? ["questionText", ampleFileRequestLimits.maxQuestionTextBytes] as const
+        : ["answerText", ampleFileRequestLimits.maxAnswerTextBytes] as const;
+    if (Buffer.byteLength(text, "utf8") > maximumBytes) throw new AmpleFileCliError("usage", ampleFileRequestLimitMessage(limit, maximumBytes));
     resolved[field] = text;
   }
   return resolved;
 }
 
 async function runActCommand(
-  command: WorkFoldCliActParsedCommand,
-  request: WorkFoldCliActRequest,
-  facade: WorkFoldActFacade,
-): Promise<WorkFoldCliJson> {
+  command: AmpleFileCliActParsedCommand,
+  request: AmpleFileCliActRequest,
+  facade: AmpleFileActFacade,
+): Promise<AmpleFileCliJson> {
   switch (command.name) {
-    case "work-folders.worker.show":
-      return toJson(await facade.workerShow({ workFolder: command.workFolder! }));
-    case "work-folders.worker.model":
+    case "connected-folders.worker.show":
+      return toJson(await facade.workerShow({ connectedFolder: command.connectedFolder! }));
+    case "connected-folders.worker.model":
       return toJson(await facade.workerSetModel({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         provider: command.provider!,
         model: command.model!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
-    case "work-folders.worker.instructions":
+    case "connected-folders.worker.instructions":
       return toJson(await facade.workerSetInstructions({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         instructions: command.instructions ?? "",
         ...(command.appendInstructions ? { append: true } : {}),
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "chat.create":
-      return toJson(await facade.createConversation({ workFolder: command.workFolder! }));
+      return toJson(await facade.createConversation({ connectedFolder: command.connectedFolder! }));
     case "chat.send": {
       const content = command.messageFromPayload ? request.payload?.messageFile ?? "" : command.message ?? "";
       return toJson(await facade.sendMessage({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         ...(command.conversation ? { conversationId: command.conversation } : {}),
         ...(command.newConversation ? { newConversation: true } : {}),
         content,
@@ -2106,24 +2106,24 @@ async function runActCommand(
     }
     case "chat.status":
       return command.task
-        ? toJson(await facade.turnStatus({ workFolder: command.workFolder!, taskId: command.task }))
-        : toJson(await facade.conversationStatus({ workFolder: command.workFolder!, conversationId: command.conversation! }));
+        ? toJson(await facade.turnStatus({ connectedFolder: command.connectedFolder!, taskId: command.task }))
+        : toJson(await facade.conversationStatus({ connectedFolder: command.connectedFolder!, conversationId: command.conversation! }));
     case "chat.result":
       return command.task
-        ? toChecksJson(await facade.turnResult({ workFolder: command.workFolder!, taskId: command.task }))
+        ? toChecksJson(await facade.turnResult({ connectedFolder: command.connectedFolder!, taskId: command.task }))
         : toJson(await facade.conversationResult({
-            workFolder: command.workFolder!,
+            connectedFolder: command.connectedFolder!,
             conversationId: command.conversation!,
             ...(command.messages !== undefined ? { messages: command.messages } : {}),
           }));
     case "chat.abort":
-      return toJson(await facade.abortTurn({ workFolder: command.workFolder!, conversationId: command.conversation! }));
+      return toJson(await facade.abortTurn({ connectedFolder: command.connectedFolder!, conversationId: command.conversation! }));
     // The collaboration verbs (docs/collaboration-contract.md, F27/F28).
     // Their results carry person content — summaries, questions, answers —
     // so they pass through the same bounding sanitizer as the overview.
     case "chat.report":
       return toChecksJson(await facade.chatReport({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         taskId: command.task!,
         summary: command.summary!,
         ...(command.resultData !== undefined ? { data: command.resultData } : {}),
@@ -2150,10 +2150,10 @@ async function runActCommand(
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "chat.children":
-      return toChecksJson(await facade.chatChildren({ workFolder: command.workFolder!, taskId: command.task! }));
+      return toChecksJson(await facade.chatChildren({ connectedFolder: command.connectedFolder!, taskId: command.task! }));
     case "chat.ask":
       return toChecksJson(await facade.chatAsk({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         taskId: command.task!,
         question: command.question!,
         respondent: command.respondent ?? "person",
@@ -2164,7 +2164,7 @@ async function runActCommand(
       }));
     case "chat.answer":
       return toChecksJson(await facade.chatAnswer({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         questionId: command.questionId!,
         answer: command.answer!,
         requestId: request.id,
@@ -2173,9 +2173,9 @@ async function runActCommand(
     case "chat.handoff": {
       const content = command.messageFromPayload ? request.payload?.messageFile ?? "" : command.message ?? "";
       return toChecksJson(await facade.chatHandoff({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         taskId: command.task!,
-        toWorkFolder: command.toWorkFolder!,
+        toConnectedFolder: command.toConnectedFolder!,
         ...(command.toConversation ? { toConversationId: command.toConversation } : {}),
         message: content,
         files: command.files ?? [],
@@ -2186,7 +2186,7 @@ async function runActCommand(
     case "chat.steer": {
       const content = command.messageFromPayload ? request.payload?.messageFile ?? "" : command.message ?? "";
       return toChecksJson(await facade.chatSteer({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         conversationId: command.conversation!,
         message: content,
         ...(command.task ? { taskId: command.task } : {}),
@@ -2197,7 +2197,7 @@ async function runActCommand(
     case "chat.copy": {
       const content = command.messageFromPayload ? request.payload?.messageFile ?? "" : command.message;
       return toChecksJson(await facade.chatCopy({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         conversationId: command.conversation!,
         ...(content !== undefined ? { message: content } : {}),
         ...(command.title ? { title: command.title } : {}),
@@ -2213,7 +2213,7 @@ async function runActCommand(
     // Background jobs carry commands and output text: the content sanitizer applies.
     case "jobs.start":
       return toChecksJson(await facade.jobsStart({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         taskId: command.task!,
         command: command.jobCommand ?? "",
         ...(command.interactive ? { interactive: true } : {}),
@@ -2225,15 +2225,15 @@ async function runActCommand(
       }));
     case "jobs.list":
       return toChecksJson(await facade.jobsList({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         ...(command.conversation ? { conversationId: command.conversation } : {}),
         ...(command.running ? { running: true } : {}),
       }));
     case "jobs.show":
-      return toChecksJson(await facade.jobsShow({ workFolder: command.workFolder!, jobId: command.job! }));
+      return toChecksJson(await facade.jobsShow({ connectedFolder: command.connectedFolder!, jobId: command.job! }));
     case "jobs.output":
       return toChecksJson(await facade.jobsOutput({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         jobId: command.job!,
         ...(command.offset !== undefined ? { offset: command.offset } : {}),
         ...(command.limit !== undefined ? { limit: command.limit } : {}),
@@ -2242,18 +2242,18 @@ async function runActCommand(
         ...(command.task ? { taskId: command.task } : {}),
       }));
     case "worktrees.manage":
-      return toChecksJson(await facade.worktreesManage({ workFolder: command.workFolder!, taskId: command.task!, action: command.worktreeAction!, ...(command.worktreeId ? { id: command.worktreeId } : {}), ...(command.worktreeRef ? { ref: command.worktreeRef } : {}) }));
+      return toChecksJson(await facade.worktreesManage({ connectedFolder: command.connectedFolder!, taskId: command.task!, action: command.worktreeAction!, ...(command.worktreeId ? { id: command.worktreeId } : {}), ...(command.worktreeRef ? { ref: command.worktreeRef } : {}) }));
     case "jobs.input":
-      return toChecksJson(await facade.jobsInput({ workFolder: command.workFolder!, taskId: command.task!, jobId: command.job!, text: command.terminalText!, ...(command.eof ? { eof: true } : {}) }));
+      return toChecksJson(await facade.jobsInput({ connectedFolder: command.connectedFolder!, taskId: command.task!, jobId: command.job!, text: command.terminalText!, ...(command.eof ? { eof: true } : {}) }));
     case "jobs.stop":
       return toChecksJson(await facade.jobsStop({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         jobId: command.job!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
     case "chats.list":
-      return toJson(await facade.listConversations({ workFolder: command.workFolder! }));
+      return toJson(await facade.listConversations({ connectedFolder: command.connectedFolder! }));
     case "agent.send": {
       const content = command.messageFromPayload ? request.payload?.messageFile ?? "" : command.message ?? "";
       return toJson(await facade.agentSend({
@@ -2291,65 +2291,65 @@ async function runActCommand(
       // output before it reaches a terminal.
       return toChecksJson(await facade.agentOverview());
     case "checks.propose-fix":
-      return toChecksJson(await facade.checksProposeFix({ workFolder: command.workFolder!, proposalPath: command.proposalPath!, cwd: request.cwd }));
+      return toChecksJson(await facade.checksProposeFix({ connectedFolder: command.connectedFolder!, proposalPath: command.proposalPath!, cwd: request.cwd }));
     case "checks.propose":
     case "checks.enable":
       return toChecksJson(await facade.checksEnable({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         proposalPath: command.proposalPath!,
         cwd: request.cwd,
         ...(command.name === "checks.propose" ? { proposeOnly: true } : {}),
       }));
     case "checks.disable":
       return toChecksJson(await facade.checksDisable({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         checkId: command.check!,
       }));
     case "checks.run":
       return toChecksJson(await facade.checksRun({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         ...(command.check ? { checkId: command.check } : {}),
       }));
     case "checks.task":
       return toChecksJson(await facade.checksTask({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         taskId: command.task!,
       }));
     case "checks.result":
       return projectChecksResult(await facade.checksResult({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         taskId: command.task!,
       }));
     case "checks.abort":
       return toChecksJson(await facade.checksAbort({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         taskId: command.task!,
       }));
     case "checks.problems":
       return projectChecksProblems(await facade.checksProblems({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         ...(command.check ? { checkId: command.check } : {}),
       }));
     case "checks.decide":
       return toChecksJson(await facade.checksDecide({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         findingId: command.finding!,
         decision: command.decision!,
         ...(command.until ? { deferUntil: command.until } : {}),
       }));
-    case "work-folders.create":
-      return toJson(await facade.createWorkFolder({
-        name: command.workFolderName!,
+    case "connected-folders.create":
+      return toJson(await facade.createConnectedFolder({
+        name: command.connectedFolderName!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
-    case "work-folders.register":
-      return toJson(await facade.registerWorkFolder({
-        workFolderRoot: command.registerPath!,
+    case "connected-folders.register":
+      return toJson(await facade.registerConnectedFolder({
+        connectedFolderRoot: command.registerPath!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "files.add":
       return toJson(await facade.addFiles({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         fromPaths: command.fromPaths ?? [],
         ...(command.toDir !== undefined ? { toDir: command.toDir } : {}),
         cwd: request.cwd,
@@ -2357,148 +2357,148 @@ async function runActCommand(
       }));
     case "chat.rename":
       return toJson(await facade.chatRename({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         conversationId: command.conversation!,
         title: command.title!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "chat.snooze":
       return toJson(await facade.chatSnooze({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         conversationId: command.conversation!,
         until: command.until!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "chat.archive":
       return toJson(await facade.chatArchive({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         conversationId: command.conversation!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "chat.resume":
       return toJson(await facade.chatResume({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         conversationId: command.conversation!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "chat.compact":
       return toJson(await facade.chatCompact({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         conversationId: command.conversation!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "history.list":
-      return toJson(await facade.historyList({ workFolder: command.workFolder!, ...(command.cursor ? { cursor: command.cursor } : {}), ...(command.limit ? { limit: command.limit } : {}) }));
+      return toJson(await facade.historyList({ connectedFolder: command.connectedFolder!, ...(command.cursor ? { cursor: command.cursor } : {}), ...(command.limit ? { limit: command.limit } : {}) }));
     case "history.save":
       return toJson(await facade.historySave({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         ...(command.label !== undefined ? { label: command.label } : {}),
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "history.restore":
       return toJson(await facade.historyRestore({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         checkpointId: command.checkpoint!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "pages.validate":
-      return toJson(await facade.pagesValidate({ workFolder: command.workFolder!, page: command.page! }));
+      return toJson(await facade.pagesValidate({ connectedFolder: command.connectedFolder!, page: command.page! }));
     case "history.versions":
-      return toJson(await facade.historyVersions({ workFolder: command.workFolder!, path: command.path!, ...(command.cursor ? { cursor: command.cursor } : {}), ...(command.limit ? { limit: command.limit } : {}) }));
+      return toJson(await facade.historyVersions({ connectedFolder: command.connectedFolder!, path: command.path!, ...(command.cursor ? { cursor: command.cursor } : {}), ...(command.limit ? { limit: command.limit } : {}) }));
     case "history.read":
-      return toJson(await facade.historyRead({ workFolder: command.workFolder!, path: command.path!, checkpointId: command.checkpoint!, ...(command.offsetBytes !== undefined ? { offsetBytes: command.offsetBytes } : {}), ...(command.lengthBytes !== undefined ? { lengthBytes: command.lengthBytes } : {}), ...(command.expectedSha256 ? { expectedSha256: command.expectedSha256 } : {}) }));
+      return toJson(await facade.historyRead({ connectedFolder: command.connectedFolder!, path: command.path!, checkpointId: command.checkpoint!, ...(command.offsetBytes !== undefined ? { offsetBytes: command.offsetBytes } : {}), ...(command.lengthBytes !== undefined ? { lengthBytes: command.lengthBytes } : {}), ...(command.expectedSha256 ? { expectedSha256: command.expectedSha256 } : {}) }));
     case "history.diff":
       return toJson(await facade.historyDiff({
-        workFolder: command.workFolder!, path: command.path!, fromCheckpointId: command.fromCheckpoint!,
+        connectedFolder: command.connectedFolder!, path: command.path!, fromCheckpointId: command.fromCheckpoint!,
         ...(command.toCheckpoint ? { toCheckpointId: command.toCheckpoint } : {}),
       }));
     case "history.restore-file":
       return toJson(await facade.historyRestoreFile({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         path: command.path!,
         version: command.version!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "files.move":
       return toJson(await facade.filesMove({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         fromPath: command.fromPaths![0]!,
         toDir: command.toDir!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "files.rename":
       return toJson(await facade.filesRename({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         path: command.path!,
         newName: command.entryName!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "files.delete":
       return toJson(await facade.filesDelete({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         path: command.path!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "files.mkdir":
       return toJson(await facade.filesMkdir({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         path: command.path!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "files.create":
       return toJson(await facade.filesCreate({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         path: command.path!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "search":
       return toJson(await facade.search({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         query: command.query!,
         ...(command.path ? { path: command.path } : {}), ...(command.cursor ? { cursor: command.cursor } : {}), ...(command.limit ? { limit: command.limit } : {}),
         ...(command.searchScope ? { scope: command.searchScope } : {}),
       }));
-    case "work-folders.rename":
-      return toJson(await facade.workFoldersRename({
-        workFolder: command.workFolder!,
-        name: command.workFolderName!,
+    case "connected-folders.rename":
+      return toJson(await facade.connectedFoldersRename({
+        connectedFolder: command.connectedFolder!,
+        name: command.connectedFolderName!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
-    case "work-folders.unregister":
-      return toJson(await facade.workFoldersUnregister({
-        workFolder: command.workFolder!,
+    case "connected-folders.unregister":
+      return toJson(await facade.connectedFoldersUnregister({
+        connectedFolder: command.connectedFolder!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
-    case "work-folders.appearance.apply":
-      return toJson(await facade.workFoldersAppearanceApply({
-        workFolder: command.workFolder!,
+    case "connected-folders.appearance.apply":
+      return toJson(await facade.connectedFoldersAppearanceApply({
+        connectedFolder: command.connectedFolder!,
         ...(command.proposalPath ? { proposalPath: command.proposalPath } : { parts: command.appearanceParts! }),
         cwd: request.cwd,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
-    case "work-folders.appearance.reset":
-      return toJson(await facade.workFoldersAppearanceReset({
-        workFolder: command.workFolder!,
+    case "connected-folders.appearance.reset":
+      return toJson(await facade.connectedFoldersAppearanceReset({
+        connectedFolder: command.connectedFolder!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
-    case "work-folders.appearance.undo":
-      return toJson(await facade.workFoldersAppearanceUndo({
-        workFolder: command.workFolder!,
+    case "connected-folders.appearance.undo":
+      return toJson(await facade.connectedFoldersAppearanceUndo({
+        connectedFolder: command.connectedFolder!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "tools.remove":
       return toJson(await facade.toolsRemove({
         scope: command.toolsScope!,
-        ...(command.workFolder ? { workFolder: command.workFolder } : {}),
+        ...(command.connectedFolder ? { connectedFolder: command.connectedFolder } : {}),
         source: command.source!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "apps.list":
-      return toJson(await facade.appsList({ workFolder: command.workFolder! }));
+      return toJson(await facade.appsList({ connectedFolder: command.connectedFolder! }));
     case "apps.invoke":
       return toJson(await facade.appsInvoke({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         app: command.app!,
         tool: command.tool!,
         input: command.toolInput,
@@ -2506,26 +2506,26 @@ async function runActCommand(
       }));
     case "apps.proposals.list":
       return toJson(await facade.appsProposalsList({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         conversationId: command.conversation!,
       }));
     case "apps.proposals.dismiss":
       return toJson(await facade.appsProposalsDismiss({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         conversationId: command.conversation!,
         proposal: command.proposal!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "apps.remove":
       return toJson(await facade.appsRemove({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         app: command.app!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
     case "apps.revoke":
       return toJson(await facade.appsRevoke({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         app: command.app!,
         digest: command.digest!,
         kind: command.grantKind!,
@@ -2534,74 +2534,74 @@ async function runActCommand(
       }));
     case "apps.disconnect":
       return toJson(await facade.appsDisconnect({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         app: command.app!,
         destination: command.destination!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "apps.automation.disable":
       return toJson(await facade.appsAutomationDisable({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         app: command.app!,
         automation: command.automation!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "apps.automation.run":
       return toJson(await facade.appsAutomationRun({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         app: command.app!,
         automation: command.automation!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "apps.project.declare":
       return toJson(await facade.appsProjectDeclare({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         presentationPath: command.presentationPath!,
         cwd: request.cwd,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "apps.release.prepare":
       return toJson(await facade.appsReleasePrepare({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         version: command.version!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "apps.release.publish":
       return toJson(await facade.appsReleasePublish({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         release: command.release!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "apps.release.delete":
       return toJson(await facade.appsReleaseDelete({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         release: command.release!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
     case "apps.install.prepare":
       return toJson(await facade.appsInstallPrepare({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         release: command.release!,
-        targetWorkFolder: command.targetWorkFolder!,
+        targetConnectedFolder: command.targetConnectedFolder!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "apps.update.prepare":
       return toJson(await facade.appsUpdatePrepare({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         instance: command.instance!,
         release: command.release!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "apps.operation.activate":
       return toJson(await facade.appsOperationActivate({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         operation: command.operation!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "apps.operation.cancel":
       return toJson(await facade.appsOperationCancel({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         operation: command.operation!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
@@ -2611,14 +2611,14 @@ async function runActCommand(
       // retain-only uninstall method.
       if (command.disposition === "purge-data") {
         return toChecksJson(await facade.appsUninstallPurge({
-          workFolder: command.workFolder!,
+          connectedFolder: command.connectedFolder!,
           instance: command.instance!,
           ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
           requestId: request.id,
         }));
       }
       return toJson(await facade.appsUninstall({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         instance: command.instance!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
@@ -2628,16 +2628,16 @@ async function runActCommand(
     // pass the bounding sanitizer because they carry person content (paths,
     // titles, names). `request.id` is the journaled identity the act runs
     // under.
-    case "work-folders.delete":
-      return toChecksJson(await facade.workFoldersDelete({
-        workFolder: command.workFolder!,
+    case "connected-folders.delete":
+      return toChecksJson(await facade.connectedFoldersDelete({
+        connectedFolder: command.connectedFolder!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
     case "tools.import-skill":
       return toChecksJson(await facade.toolsImportSkill({
         scope: command.toolsScope!,
-        ...(command.workFolder ? { workFolder: command.workFolder } : {}),
+        ...(command.connectedFolder ? { connectedFolder: command.connectedFolder } : {}),
         from: command.fromPaths![0]!,
         cwd: request.cwd,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
@@ -2646,7 +2646,7 @@ async function runActCommand(
     case "tools.install":
       return toChecksJson(await facade.toolsInstall({
         scope: command.toolsScope!,
-        ...(command.workFolder ? { workFolder: command.workFolder } : {}),
+        ...(command.connectedFolder ? { connectedFolder: command.connectedFolder } : {}),
         ...(command.catalogId !== undefined ? { catalogId: command.catalogId } : {}),
         ...(command.source !== undefined ? { source: command.source } : {}),
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
@@ -2655,21 +2655,21 @@ async function runActCommand(
     case "tools.enable":
     case "tools.disable":
       return toChecksJson(await facade.toolsSetEnabled({
-        scope: command.toolsScope!, ...(command.workFolder ? { workFolder: command.workFolder } : {}),
+        scope: command.toolsScope!, ...(command.connectedFolder ? { connectedFolder: command.connectedFolder } : {}),
         path: command.path!, kind: command.resourceKind!, enabled: command.name === "tools.enable",
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}), requestId: request.id,
       }));
     case "tools.update":
       return toChecksJson(await facade.toolsUpdate({
         scope: command.toolsScope!,
-        ...(command.workFolder ? { workFolder: command.workFolder } : {}),
+        ...(command.connectedFolder ? { connectedFolder: command.connectedFolder } : {}),
         source: command.source!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
     case "apps.install-proposal":
       return toChecksJson(await facade.appsInstallProposal({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         conversationId: command.conversation!,
         proposal: command.proposal!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
@@ -2677,7 +2677,7 @@ async function runActCommand(
       }));
     case "apps.grant":
       return toChecksJson(await facade.appsGrant({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         app: command.app!,
         digest: command.digest!,
         kind: command.grantKind!,
@@ -2688,7 +2688,7 @@ async function runActCommand(
       }));
     case "apps.connect":
       return toChecksJson(await facade.appsConnect({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         app: command.app!,
         destination: command.destination!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
@@ -2696,7 +2696,7 @@ async function runActCommand(
       }));
     case "apps.automation.enable":
       return toChecksJson(await facade.appsAutomationEnable({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         app: command.app!,
         automation: command.automation!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
@@ -2704,14 +2704,14 @@ async function runActCommand(
       }));
     case "apps.storage.clear":
       return toChecksJson(await facade.appsStorageClear({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         app: command.app!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
     case "apps.retained.purge":
       return toChecksJson(await facade.appsRetainedPurge({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         retained: command.retained!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
@@ -2728,12 +2728,12 @@ async function runActCommand(
       // it through the same `app.review.install` kind a Chat proposal uses —
       // the closed act vocabulary gains nothing.
       return toChecksJson(await facade.appsInstallPreview({
-        workFolder: command.workFolder!,
+        connectedFolder: command.connectedFolder!,
         packagePath: command.packagePath!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
-    // Automation management verbs (docs/automations.md): above work-folders, all
+    // Automation management verbs (docs/automations.md): above Connected Folders, all
     // content-bearing results pass the bounding sanitizer. Run-now carries the
     // act request id into the run's own journal as its trigger cause.
     case "recently-deleted.list":
@@ -2780,12 +2780,12 @@ async function runActCommand(
 }
 
 function projectChecksResult(
-  value: Awaited<ReturnType<WorkFoldActFacade["checksResult"]>>,
-): WorkFoldCliJson {
+  value: Awaited<ReturnType<AmpleFileActFacade["checksResult"]>>,
+): AmpleFileCliJson {
   const { run } = value;
   const findings = run.findings.map(projectCheckFinding);
   return toChecksJson({
-    workFolder: value.workFolder,
+    connectedFolder: value.connectedFolder,
     run: {
       id: run.id,
       taskId: run.taskId,
@@ -2810,12 +2810,12 @@ function projectChecksResult(
 }
 
 function projectChecksProblems(
-  value: Awaited<ReturnType<WorkFoldActFacade["checksProblems"]>>,
-): WorkFoldCliJson {
+  value: Awaited<ReturnType<AmpleFileActFacade["checksProblems"]>>,
+): AmpleFileCliJson {
   const findings = value.findings.map(projectCheckFinding);
   const healthErrors = value.healthErrors;
   return toChecksJson({
-    workFolder: value.workFolder,
+    connectedFolder: value.connectedFolder,
     ...(value.checkId ? { checkId: value.checkId } : {}),
     findings,
     findingCount: value.findings.length,
@@ -2829,7 +2829,7 @@ function projectChecksProblems(
   });
 }
 
-function projectCheckFinding(finding: WorkFoldCheckFinding): Record<string, unknown> {
+function projectCheckFinding(finding: AmpleFileCheckFinding): Record<string, unknown> {
   return {
     id: finding.id,
     fingerprint: finding.fingerprint,
@@ -2850,11 +2850,11 @@ function projectCheckFinding(finding: WorkFoldCheckFinding): Record<string, unkn
   };
 }
 
-function projectCheckEvidence(evidence: WorkFoldCheckEvidence): WorkFoldCliJson {
+function projectCheckEvidence(evidence: AmpleFileCheckEvidence): AmpleFileCliJson {
   return sanitizeChecksJson(evidence);
 }
 
-function toChecksJson(value: unknown): WorkFoldCliJson {
+function toChecksJson(value: unknown): AmpleFileCliJson {
   return sanitizeChecksJson(value);
 }
 
@@ -2865,14 +2865,14 @@ function toChecksJson(value: unknown): WorkFoldCliJson {
  * agent reading a result gets all of it. The depth guard only stops a cyclic
  * or pathological structure from recursing without end.
  */
-function sanitizeChecksJson(value: unknown, depth = 0): WorkFoldCliJson {
+function sanitizeChecksJson(value: unknown, depth = 0): AmpleFileCliJson {
   if (value === null || typeof value === "boolean") return value;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value === "string") return terminalText(value);
   if (depth >= 256) return "[nested output omitted]";
   if (Array.isArray(value)) return value.map((item) => sanitizeChecksJson(item, depth + 1));
   if (typeof value === "object") {
-    const output: Record<string, WorkFoldCliJson> = {};
+    const output: Record<string, AmpleFileCliJson> = {};
     for (const [key, item] of Object.entries(value)) {
       if (item === undefined || typeof item === "function" || typeof item === "symbol") continue;
       output[terminalText(key)] = sanitizeChecksJson(item, depth + 1);
@@ -2882,7 +2882,7 @@ function sanitizeChecksJson(value: unknown, depth = 0): WorkFoldCliJson {
   return terminalText(value);
 }
 
-const agentRenderAliases: Partial<Record<WorkFoldCliActCommandName, WorkFoldCliActCommandName>> = {
+const agentRenderAliases: Partial<Record<AmpleFileCliActCommandName, AmpleFileCliActCommandName>> = {
   "agent.send": "chat.send",
   "agent.status": "chat.status",
   "agent.result": "chat.result",
@@ -2890,18 +2890,18 @@ const agentRenderAliases: Partial<Record<WorkFoldCliActCommandName, WorkFoldCliA
   "agent.list": "chats.list",
 };
 
-function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson): string {
-  const record = data as Record<string, WorkFoldCliJson> & {
-    workFolder?: { id?: string; name?: string; workFolderRoot?: string };
-    conversation?: WorkFoldActConversationRef;
-    conversations?: WorkFoldActConversationRef[];
-    messages?: WorkFoldActChatMessage[];
-    task?: WorkFoldActCheckTaskStatus;
+function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson): string {
+  const record = data as Record<string, AmpleFileCliJson> & {
+    connectedFolder?: { id?: string; name?: string; connectedFolderRoot?: string };
+    conversation?: AmpleFileActConversationRef;
+    conversations?: AmpleFileActConversationRef[];
+    messages?: AmpleFileActChatMessage[];
+    task?: AmpleFileActCheckTaskStatus;
   };
-  const workFolderLabel = record.workFolder ? `${terminalText(record.workFolder.name)} [${terminalText(record.workFolder.id)}]` : "";
+  const connectedFolderLabel = record.connectedFolder ? `${terminalText(record.connectedFolder.name)} [${terminalText(record.connectedFolder.id)}]` : "";
   switch (agentRenderAliases[name] ?? name) {
     case "chat.create":
-      return `Created Chat ${terminalText(record.conversation?.id)} in ${workFolderLabel}.\n`;
+      return `Created Chat ${terminalText(record.conversation?.id)} in ${connectedFolderLabel}.\n`;
     case "chat.send":
       return `Accepted. Conversation ${terminalText(record.conversationId)}, task ${terminalText(record.taskId)}.\n`;
     case "chat.status": {
@@ -2909,12 +2909,12 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
       if (task) {
         const error = typeof task.error === "string" && task.error ? `\n${terminalText(task.error)}` : "";
         const conversation = task.conversationId ? ` — Chat ${terminalText(task.conversationId)}` : "";
-        // `agent status --task` carries the work-fold agent projection (a phase
+        // `agent status --task` carries the AmpleFile agent projection (a phase
         // and delegated children); `chat status --task` carries the request
         // graph ref (a state and counts). Both render, each in its own shape.
         const request = record.request as {
           phase?: string;
-          children?: Array<{ taskId?: string; workFolderName?: string; state?: string }> | number;
+          children?: Array<{ taskId?: string; connectedFolderName?: string; state?: string }> | number;
           id?: string;
           state?: string;
           openQuestions?: number;
@@ -2923,7 +2923,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
           ? [
               `Request phase: ${terminalText(request.phase)}`,
               ...(Array.isArray(request.children) ? request.children : []).map((child) =>
-                `- delegated task ${terminalText(child.taskId)} in ${terminalText(child.workFolderName)} — ${terminalText(child.state)}`),
+                `- delegated task ${terminalText(child.taskId)} in ${terminalText(child.connectedFolderName)} — ${terminalText(child.state)}`),
             ].join("\n")
           : request && typeof request.state === "string"
             ? `Request ${terminalText(request.id)} — ${terminalText(request.state)}, ${terminalText(request.children ?? 0)} handed out, ${terminalText(request.openQuestions ?? 0)} waiting`
@@ -2937,9 +2937,9 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
           ? [
               `Task ${terminalText(task.taskId)} — waiting on ${waiting.respondent === "parent" ? "the request above it" : "you"} since ${terminalText(waiting.askedAt)}${waiting.expiresAt ? ` (until ${terminalText(waiting.expiresAt)})` : ""}`,
               `Question ${terminalText(waiting.questionId)}: ${clampLine(waiting.question)}`,
-              ...(record.workFolder && typeof record.workFolder.id === "string"
-                ? [`Answer it with: work-fold chat answer --work-folder ${terminalText(record.workFolder.id)} --question ${terminalText(waiting.questionId)} --answer "<text>" --json`]
-                : [`Answer it with: work-fold agent answer --question ${terminalText(waiting.questionId)} --answer "<text>" --json`]),
+              ...(record.connectedFolder && typeof record.connectedFolder.id === "string"
+                ? [`Answer it with: amplefile chat answer --connected-folder ${terminalText(record.connectedFolder.id)} --question ${terminalText(waiting.questionId)} --answer "<text>" --json`]
+                : [`Answer it with: amplefile agent answer --question ${terminalText(waiting.questionId)} --answer "<text>" --json`]),
               "",
             ].join("\n")
           : "";
@@ -2951,7 +2951,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
     }
     case "chat.result": {
       const task = record.task as { taskId?: string; state?: string } | undefined;
-      const message = record.message as unknown as WorkFoldActChatMessage | undefined;
+      const message = record.message as unknown as AmpleFileActChatMessage | undefined;
       if (task && message) {
         return `${terminalText(message.content)}\n\n[${terminalText(task.state)}] task ${terminalText(task.taskId)} in ${terminalText(record.conversationId)}\n`;
       }
@@ -2969,7 +2969,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
       const fileLine = files.length
         ? `\n${files.length} file${files.length === 1 ? "" : "s"}: ${files.map((file) => terminalText(file.path)).join(", ")}`
         : "";
-      return `Reported ${terminalText(result?.outcome)} on task ${terminalText(record.taskId)} in ${workFolderLabel}.${fileLine}\nRequest ${terminalText(request?.id)} — ${terminalText(request?.state)}.\n`;
+      return `Reported ${terminalText(result?.outcome)} on task ${terminalText(record.taskId)} in ${connectedFolderLabel}.${fileLine}\nRequest ${terminalText(request?.id)} — ${terminalText(request?.state)}.\n`;
     }
     case "agent.ask":
     case "chat.ask": {
@@ -2986,7 +2986,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
       return `Answer recorded for question ${terminalText(question?.questionId)}.\nContinuing in Chat ${terminalText(continuation?.conversationId)} as task ${terminalText(continuation?.taskId)}.\n`;
     }
     case "chat.handoff": {
-      const destination = record.toWorkFolder as { id?: string; name?: string } | undefined;
+      const destination = record.toConnectedFolder as { id?: string; name?: string } | undefined;
       const copied = (Array.isArray(record.copied) ? record.copied : []) as unknown[];
       const copiedLine = copied.length
         ? `\nCopied ${copied.length} item${copied.length === 1 ? "" : "s"}: ${copied.map(terminalText).join(", ")}${record.checkpointId ? ` (restore point ${terminalText(record.checkpointId)})` : ""}`
@@ -3003,30 +3003,30 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
     }
     case "requests.list": {
       const requests = (Array.isArray(record.requests) ? record.requests : []) as Array<{
-        id?: string; kind?: string; state?: string; workFolderName?: string | null; children?: number; openQuestions?: number; createdAt?: string;
+        id?: string; kind?: string; state?: string; connectedFolderName?: string | null; children?: number; openQuestions?: number; createdAt?: string;
       }>;
       if (!requests.length) return "No requests on record.\n";
       const lines = requests.map((request) =>
-        `${terminalText(request.id)}  ${terminalText(request.kind)}  ${terminalText(request.state)}  ${request.workFolderName ? `${terminalText(request.workFolderName)}  ` : ""}${terminalText(request.children ?? 0)} handed out, ${terminalText(request.openQuestions ?? 0)} waiting  (${terminalText(request.createdAt)})`);
+        `${terminalText(request.id)}  ${terminalText(request.kind)}  ${terminalText(request.state)}  ${request.connectedFolderName ? `${terminalText(request.connectedFolderName)}  ` : ""}${terminalText(request.children ?? 0)} handed out, ${terminalText(request.openQuestions ?? 0)} waiting  (${terminalText(request.createdAt)})`);
       return `${lines.join("\n")}${record.truncated ? "\n(more omitted)" : ""}\n`;
     }
     case "requests.show":
-      return `${renderRequestDetail(record.request as Record<string, WorkFoldCliJson>, 0).join("\n")}\n`;
+      return `${renderRequestDetail(record.request as Record<string, AmpleFileCliJson>, 0).join("\n")}\n`;
     case "jobs.start":
     case "jobs.show":
     case "jobs.stop": {
-      const job = (record.job ?? {}) as Record<string, WorkFoldCliJson>;
+      const job = (record.job ?? {}) as Record<string, AmpleFileCliJson>;
       const verb = name === "jobs.start" ? "Started" : name === "jobs.stop" ? "Stopped" : "Background job";
-      return `${verb} ${terminalText(job.jobId)} "${terminalText(job.name)}" in ${workFolderLabel}: ${terminalText(job.status)}.\n`;
+      return `${verb} ${terminalText(job.jobId)} "${terminalText(job.name)}" in ${connectedFolderLabel}: ${terminalText(job.status)}.\n`;
     }
     case "jobs.list": {
-      const jobs = Array.isArray(record.jobs) ? record.jobs as Array<Record<string, WorkFoldCliJson>> : [];
-      if (!jobs.length) return `No background jobs in ${workFolderLabel}.\n`;
+      const jobs = Array.isArray(record.jobs) ? record.jobs as Array<Record<string, AmpleFileCliJson>> : [];
+      if (!jobs.length) return `No background jobs in ${connectedFolderLabel}.\n`;
       return `${jobs.map((job) => `${terminalText(job.jobId)}  ${terminalText(job.name)} — ${terminalText(job.status)}`).join("\n")}\n`;
     }
     case "jobs.output": {
-      const job = (record.job ?? {}) as Record<string, WorkFoldCliJson>;
-      const output = (record.output ?? {}) as Record<string, WorkFoldCliJson>;
+      const job = (record.job ?? {}) as Record<string, AmpleFileCliJson>;
+      const output = (record.output ?? {}) as Record<string, AmpleFileCliJson>;
       const header = `${terminalText(job.jobId)} "${terminalText(job.name)}": ${terminalText(job.status)}. `
         + (output.totalLines ? `Lines ${terminalText(output.fromLine)}–${terminalText(output.toLine)} of ${terminalText(output.totalLines)}; next offset ${terminalText(output.nextOffset)}.` : "No output yet.");
       return `${header}\n${typeof output.text === "string" && output.text ? `${output.text}\n` : ""}`;
@@ -3034,16 +3034,16 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
     case "agent.overview": {
       const snapshot = data as {
         composedAt?: string;
-        running?: Array<{ headline?: string; workFolderName?: string }>;
-        needsYou?: Array<{ headline?: string; workFolderName?: string }>;
-        changes?: Array<{ headline?: string; workFolderName?: string }>;
-        checks?: Array<{ workFolderName?: string; state?: string; needsAttention?: number }>;
+        running?: Array<{ headline?: string; connectedFolderName?: string }>;
+        needsYou?: Array<{ headline?: string; connectedFolderName?: string }>;
+        changes?: Array<{ headline?: string; connectedFolderName?: string }>;
+        checks?: Array<{ connectedFolderName?: string; state?: string; needsAttention?: number }>;
         truncated?: { running?: boolean; needsYou?: boolean; changes?: boolean; checks?: boolean };
         unavailable?: string[];
       };
-      const item = (entry: { headline?: string; workFolderName?: string }): string =>
-        `- ${terminalText(entry.headline)}${entry.workFolderName ? ` (${terminalText(entry.workFolderName)})` : ""}`;
-      const section = (label: string, entries: Array<{ headline?: string; workFolderName?: string }> | undefined, truncated: boolean | undefined, quiet: string): string[] => {
+      const item = (entry: { headline?: string; connectedFolderName?: string }): string =>
+        `- ${terminalText(entry.headline)}${entry.connectedFolderName ? ` (${terminalText(entry.connectedFolderName)})` : ""}`;
+      const section = (label: string, entries: Array<{ headline?: string; connectedFolderName?: string }> | undefined, truncated: boolean | undefined, quiet: string): string[] => {
         const list = entries ?? [];
         if (!list.length) return [`${label}: ${quiet}`];
         return [
@@ -3064,7 +3064,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
           const attention = typeof row.needsAttention === "number" && row.needsAttention > 0
             ? ` — ${row.needsAttention} finding${row.needsAttention === 1 ? "" : "s"} need attention`
             : "";
-          lines.push(`- ${terminalText(row.workFolderName)}: ${terminalText(row.state)}${attention}`);
+          lines.push(`- ${terminalText(row.connectedFolderName)}: ${terminalText(row.state)}${attention}`);
         }
       }
       const unavailable = snapshot.unavailable ?? [];
@@ -3074,14 +3074,14 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
       return `${lines.join("\n")}\n`;
     }
     case "agent.stop": {
-      const children = (Array.isArray(record.children) ? record.children : []) as Array<{ taskId?: string; workFolderId?: string; aborted?: boolean }>;
-      const workFoldAgentLine = record.workFoldAgentAborted
-        ? "Stopped the work-fold agent turn."
-        : "The work-fold agent turn was not running.";
-      if (!children.length) return `${workFoldAgentLine}\nNo delegated work-folder turns were running.\n`;
+      const children = (Array.isArray(record.children) ? record.children : []) as Array<{ taskId?: string; connectedFolderId?: string; aborted?: boolean }>;
+      const ampleFileAgentLine = record.ampleFileAgentAborted
+        ? "Stopped the AmpleFile agent turn."
+        : "The AmpleFile agent turn was not running.";
+      if (!children.length) return `${ampleFileAgentLine}\nNo delegated Connected Folder turns were running.\n`;
       const childLines = children.map((child) =>
-        `- ${child.aborted ? "Stopped" : "Could not stop"} task ${terminalText(child.taskId)} in work-folder ${terminalText(child.workFolderId)}`);
-      return `${workFoldAgentLine}\n${childLines.join("\n")}\n`;
+        `- ${child.aborted ? "Stopped" : "Could not stop"} task ${terminalText(child.taskId)} in Connected Folder ${terminalText(child.connectedFolderId)}`);
+      return `${ampleFileAgentLine}\n${childLines.join("\n")}\n`;
     }
     case "chats.list": {
       const conversations = record.conversations ?? [];
@@ -3093,7 +3093,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
     }
     case "checks.propose":
     case "checks.enable": {
-      const check = record.check as { id?: string; title?: string; trigger?: string; targets?: Array<Record<string, WorkFoldCliJson>> } | undefined;
+      const check = record.check as { id?: string; title?: string; trigger?: string; targets?: Array<Record<string, AmpleFileCliJson>> } | undefined;
       const targets = check?.targets ?? [];
       const scope = targets.slice(0, 64).map((target) => {
         const membership = target.kind === "tree"
@@ -3101,15 +3101,15 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
           : "";
         return `- ${terminalText(target.role)} ${terminalText(target.kind)}: ${terminalText(target.path)}${membership}`;
       });
-      return `${name === "checks.propose" ? "Proposed" : "Enabled"} Check ${terminalText(check?.title)} [${terminalText(check?.id)}] in ${workFolderLabel}.\nTrigger: ${terminalText(check?.trigger)}\n${scope.join("\n")}\n`;
+      return `${name === "checks.propose" ? "Proposed" : "Enabled"} Check ${terminalText(check?.title)} [${terminalText(check?.id)}] in ${connectedFolderLabel}.\nTrigger: ${terminalText(check?.trigger)}\n${scope.join("\n")}\n`;
     }
     case "checks.disable":
       return record.disabled
-        ? `Disabled Check ${terminalText(record.checkId)} in ${workFolderLabel}.\n`
-        : `Check ${terminalText(record.checkId)} was not enabled in ${workFolderLabel}.\n`;
+        ? `Disabled Check ${terminalText(record.checkId)} in ${connectedFolderLabel}.\n`
+        : `Check ${terminalText(record.checkId)} was not enabled in ${connectedFolderLabel}.\n`;
     case "checks.run": {
       const checkIds = Array.isArray(record.checkIds) ? record.checkIds : [];
-      return `Accepted Check run ${terminalText(record.runId)}, task ${terminalText(record.taskId)} (${checkIds.length} Check${checkIds.length === 1 ? "" : "s"}) in ${workFolderLabel}.\n`;
+      return `Accepted Check run ${terminalText(record.runId)}, task ${terminalText(record.taskId)} (${checkIds.length} Check${checkIds.length === 1 ? "" : "s"}) in ${connectedFolderLabel}.\n`;
     }
     case "checks.task": {
       const task = record.task;
@@ -3136,14 +3136,14 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
     case "checks.abort":
       return record.aborted
         ? `Aborted Check task ${terminalText(record.taskId)}.\n`
-        : `Check task ${terminalText(record.taskId)} was not running in ${workFolderLabel}.\n`;
+        : `Check task ${terminalText(record.taskId)} was not running in ${connectedFolderLabel}.\n`;
     case "checks.problems": {
       const findings = (Array.isArray(record.findings) ? record.findings : []) as Array<{
         id?: string;
         severity?: string;
         title?: string;
         targetPath?: string;
-        evidence?: WorkFoldCliJson[];
+        evidence?: AmpleFileCliJson[];
       }>;
       const shown = findings.slice(0, 20);
       const total = typeof record.findingCount === "number" ? record.findingCount : findings.length;
@@ -3160,19 +3160,19 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
       const health = healthErrors.length
         ? `\nCheck health errors:\n${healthErrors.map((item) => `- ${terminalText(item)}`).join("\n")}`
         : "";
-      if (!lines.length && !sourceTruncated) return `No active Check problems in ${workFolderLabel}.${health}\n`;
+      if (!lines.length && !sourceTruncated) return `No active Check problems in ${connectedFolderLabel}.${health}\n`;
       const countLabel = sourceTruncated ? `At least ${total}` : String(total);
-      return `${countLabel} active Check problem${total === 1 && !sourceTruncated ? "" : "s"} in ${workFolderLabel}:\n${lines.join("\n")}${omitted}${health}\n`;
+      return `${countLabel} active Check problem${total === 1 && !sourceTruncated ? "" : "s"} in ${connectedFolderLabel}:\n${lines.join("\n")}${omitted}${health}\n`;
     }
     case "checks.decide": {
       const decision = record.decision as { decision?: string; deferUntil?: string } | undefined;
       const until = decision?.deferUntil ? ` until ${terminalText(decision.deferUntil)}` : "";
       return `Recorded ${terminalText(decision?.decision)}${until} for finding ${terminalText(record.findingId)}.\n`;
     }
-    case "work-folders.create":
-    case "work-folders.register":
-      return `work-folder ${workFolderLabel} — ${terminalText(record.workFolder?.workFolderRoot)}\n`;
-    case "work-folders.worker.show": {
+    case "connected-folders.create":
+    case "connected-folders.register":
+      return `Connected Folder ${connectedFolderLabel} — ${terminalText(record.connectedFolder?.connectedFolderRoot)}\n`;
+    case "connected-folders.worker.show": {
       const model = record.model as { provider?: unknown; id?: unknown } | null | undefined;
       const availableModels = Array.isArray(record.availableModels)
         ? record.availableModels as Array<{ provider?: unknown; id?: unknown; name?: unknown }>
@@ -3183,73 +3183,73 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
       const choices = availableModels.length
         ? availableModels.map((item) => `- ${terminalText(item.name)} (${terminalText(item.provider)}/${terminalText(item.id)})`).join("\n")
         : "(none connected)";
-      return `${workFolderLabel}\nDefault model for new Chats: ${model ? `${terminalText(model.provider)}/${terminalText(model.id)}` : "not selected"}\nAvailable connected models:\n${choices}\nWorker Instructions:\n${terminalText(instructions)}\n`;
+      return `${connectedFolderLabel}\nDefault model for new Chats: ${model ? `${terminalText(model.provider)}/${terminalText(model.id)}` : "not selected"}\nAvailable connected models:\n${choices}\nWorker Instructions:\n${terminalText(instructions)}\n`;
     }
-    case "work-folders.worker.model": {
+    case "connected-folders.worker.model": {
       const model = record.model as { provider?: unknown; id?: unknown } | null | undefined;
-      return `Saved ${terminalText(model?.provider)}/${terminalText(model?.id)} as the default for new Chats in ${workFolderLabel}.\n`;
+      return `Saved ${terminalText(model?.provider)}/${terminalText(model?.id)} as the default for new Chats in ${connectedFolderLabel}.\n`;
     }
-    case "work-folders.worker.instructions":
+    case "connected-folders.worker.instructions":
       return typeof record.instructions === "string" && record.instructions
-        ? `Saved Worker Instructions for ${workFolderLabel}.\n`
-        : `Cleared Worker Instructions for ${workFolderLabel}.\n`;
+        ? `Saved Worker Instructions for ${connectedFolderLabel}.\n`
+        : `Cleared Worker Instructions for ${connectedFolderLabel}.\n`;
     case "files.add": {
       const copied = Array.isArray(record.copied) ? record.copied : [];
       const lines = copied.map((path) => `- ${terminalText(path)}`);
       const checkpoint = record.checkpointId ? `Restore point: ${terminalText(record.checkpointId)}\n` : "";
-      return `Added ${copied.length} item${copied.length === 1 ? "" : "s"} to ${workFolderLabel}:\n${lines.join("\n")}\n${checkpoint}`;
+      return `Added ${copied.length} item${copied.length === 1 ? "" : "s"} to ${connectedFolderLabel}:\n${lines.join("\n")}\n${checkpoint}`;
     }
     case "chat.rename": {
       const conversation = record.conversation;
-      return `Renamed Chat [${terminalText(conversation?.id)}] to "${terminalText(conversation?.title)}" in ${workFolderLabel} (was "${terminalText(record.priorTitle)}").\n`;
+      return `Renamed Chat [${terminalText(conversation?.id)}] to "${terminalText(conversation?.title)}" in ${connectedFolderLabel} (was "${terminalText(record.priorTitle)}").\n`;
     }
     case "chat.snooze": {
       const conversation = record.conversation;
-      return `Snoozed Chat "${terminalText(conversation?.title)}" [${terminalText(conversation?.id)}] until ${terminalText(conversation?.snoozedUntil)} in ${workFolderLabel}. Resume it with 'chat resume'.\n`;
+      return `Snoozed Chat "${terminalText(conversation?.title)}" [${terminalText(conversation?.id)}] until ${terminalText(conversation?.snoozedUntil)} in ${connectedFolderLabel}. Resume it with 'chat resume'.\n`;
     }
     case "chat.archive": {
       const conversation = record.conversation;
-      return `Archived Chat "${terminalText(conversation?.title)}" [${terminalText(conversation?.id)}] in ${workFolderLabel}. Restore it with 'chat resume'.\n`;
+      return `Archived Chat "${terminalText(conversation?.title)}" [${terminalText(conversation?.id)}] in ${connectedFolderLabel}. Restore it with 'chat resume'.\n`;
     }
     case "chat.resume": {
       const conversation = record.conversation;
-      const prior = record.priorLifecycle as Partial<WorkFoldActChatLifecycleState> | undefined;
+      const prior = record.priorLifecycle as Partial<AmpleFileActChatLifecycleState> | undefined;
       const was = prior?.archivedAt
         ? " (was archived)"
         : prior?.snoozedUntil ? ` (was snoozed until ${terminalText(prior.snoozedUntil)})` : "";
-      return `Resumed Chat "${terminalText(conversation?.title)}" [${terminalText(conversation?.id)}] in ${workFolderLabel}${was}.\n`;
+      return `Resumed Chat "${terminalText(conversation?.title)}" [${terminalText(conversation?.id)}] in ${connectedFolderLabel}${was}.\n`;
     }
     case "chat.compact":
-      return `Compacted Chat [${terminalText(record.conversationId)}] in ${workFolderLabel} (task ${terminalText(record.taskId)}). `
+      return `Compacted Chat [${terminalText(record.conversationId)}] in ${connectedFolderLabel} (task ${terminalText(record.taskId)}). `
         + `Compaction is additive summarization; nothing was deleted.\n`;
     case "history.list": {
       const continuation = record.nextCursor ? `Continue with --cursor ${terminalText(record.nextCursor)}\n` : "";
-      const checkpoints = (Array.isArray(record.checkpoints) ? record.checkpoints : []) as Array<Partial<WorkFoldActCheckpointSummary>>;
-      if (!checkpoints.length) return `No restore points saved in ${workFolderLabel}.\n`;
+      const checkpoints = (Array.isArray(record.checkpoints) ? record.checkpoints : []) as Array<Partial<AmpleFileActCheckpointSummary>>;
+      if (!checkpoints.length) return `No restore points saved in ${connectedFolderLabel}.\n`;
       const lines = checkpoints.map((checkpoint) =>
         `- ${terminalText(checkpoint.checkpointId)} — ${terminalText(checkpoint.createdAt)} — ${terminalText(checkpoint.label ?? checkpoint.reason)} (${terminalText(checkpoint.fileCount)} file${checkpoint.fileCount === 1 ? "" : "s"})`);
-      return `${checkpoints.length} restore point${checkpoints.length === 1 ? "" : "s"} in ${workFolderLabel}${typeof record.total === "number" ? ` (${record.total} total)` : ""}:\n${lines.join("\n")}\n${continuation}`;
+      return `${checkpoints.length} restore point${checkpoints.length === 1 ? "" : "s"} in ${connectedFolderLabel}${typeof record.total === "number" ? ` (${record.total} total)` : ""}:\n${lines.join("\n")}\n${continuation}`;
     }
     case "history.save": {
-      const checkpoint = record.checkpoint as Partial<WorkFoldActCheckpointSummary> | undefined;
+      const checkpoint = record.checkpoint as Partial<AmpleFileActCheckpointSummary> | undefined;
       if (record.created === false) {
-        return `${workFolderLabel} already matches restore point ${terminalText(checkpoint?.checkpointId)}; no new restore point was created.\n`;
+        return `${connectedFolderLabel} already matches restore point ${terminalText(checkpoint?.checkpointId)}; no new restore point was created.\n`;
       }
-      return `Saved restore point ${terminalText(checkpoint?.checkpointId)} (${terminalText(checkpoint?.fileCount)} file${checkpoint?.fileCount === 1 ? "" : "s"}) in ${workFolderLabel}.\n`;
+      return `Saved restore point ${terminalText(checkpoint?.checkpointId)} (${terminalText(checkpoint?.fileCount)} file${checkpoint?.fileCount === 1 ? "" : "s"}) in ${connectedFolderLabel}.\n`;
     }
     case "history.restore": {
       const skipped = typeof record.skippedLargeFileCount === "number" && record.skippedLargeFileCount > 0
         ? `\nHistory skipped ${terminalText(record.skippedLargeFileCount)} oversized file${record.skippedLargeFileCount === 1 ? "" : "s"} recorded by that restore point.`
         : "";
-      return `Restored ${workFolderLabel} to restore point ${terminalText(record.checkpointId)}.\n${terminalText(record.restoredFileCount)} file(s) restored; ${terminalText(record.deletedFileCount)} deleted; ${terminalText(record.movedEntryCount)} moved back; ${terminalText(record.unchangedFileCount)} unchanged.${skipped}\nSafety restore point: ${terminalText(record.safetyCheckpointId)}\n`;
+      return `Restored ${connectedFolderLabel} to restore point ${terminalText(record.checkpointId)}.\n${terminalText(record.restoredFileCount)} file(s) restored; ${terminalText(record.deletedFileCount)} deleted; ${terminalText(record.movedEntryCount)} moved back; ${terminalText(record.unchangedFileCount)} unchanged.${skipped}\nSafety restore point: ${terminalText(record.safetyCheckpointId)}\n`;
     }
     case "history.versions": {
       const continuation = record.nextCursor ? `Continue with --cursor ${terminalText(record.nextCursor)}\n` : "";
-      const versions = (Array.isArray(record.versions) ? record.versions : []) as Array<Partial<WorkFoldActFileVersionRef>>;
-      if (!versions.length) return `No saved versions of ${terminalText(record.path)} in ${workFolderLabel}.\n`;
+      const versions = (Array.isArray(record.versions) ? record.versions : []) as Array<Partial<AmpleFileActFileVersionRef>>;
+      if (!versions.length) return `No saved versions of ${terminalText(record.path)} in ${connectedFolderLabel}.\n`;
       const lines = versions.map((version) =>
         `- ${terminalText(version.hashSha256)} — captured ${terminalText(version.capturedAt)} (${terminalText(version.sizeBytes)} bytes)`);
-      return `${versions.length} saved version${versions.length === 1 ? "" : "s"} of ${terminalText(record.path)} in ${workFolderLabel}${typeof record.total === "number" ? ` (${record.total} total)` : ""}:\n${lines.join("\n")}\n${continuation}`;
+      return `${versions.length} saved version${versions.length === 1 ? "" : "s"} of ${terminalText(record.path)} in ${connectedFolderLabel}${typeof record.total === "number" ? ` (${record.total} total)` : ""}:\n${lines.join("\n")}\n${continuation}`;
     }
     case "history.read": {
       const review = record.review as unknown as HistoryFileRead | undefined;
@@ -3275,11 +3275,11 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
         + (typeof diff?.text === "string" ? `${terminalText(diff.text)}\n` : `${terminalText(diff?.status)}\n`);
     }
     case "history.restore-file":
-      return `Restored ${terminalText(record.path)} to version ${terminalText(record.hashSha256)} in ${workFolderLabel}.\nSafety restore point: ${terminalText(record.safetyCheckpointId)}\n`;
+      return `Restored ${terminalText(record.path)} to version ${terminalText(record.hashSha256)} in ${connectedFolderLabel}.\nSafety restore point: ${terminalText(record.safetyCheckpointId)}\n`;
     case "files.move":
-      return `Moved ${terminalText(record.fromPath)} to ${terminalText(record.path)} in ${workFolderLabel}.\nSafety restore point: ${terminalText(record.safetyCheckpointId)}\n`;
+      return `Moved ${terminalText(record.fromPath)} to ${terminalText(record.path)} in ${connectedFolderLabel}.\nSafety restore point: ${terminalText(record.safetyCheckpointId)}\n`;
     case "files.rename":
-      return `Renamed ${terminalText(record.fromPath)} to ${terminalText(record.path)} in ${workFolderLabel}.\nSafety restore point: ${terminalText(record.safetyCheckpointId)}\n`;
+      return `Renamed ${terminalText(record.fromPath)} to ${terminalText(record.path)} in ${connectedFolderLabel}.\nSafety restore point: ${terminalText(record.safetyCheckpointId)}\n`;
     case "files.delete": {
       const kindLabel = record.kind === "folder" ? "folder" : "file";
       const recovery = (record.recovery ?? {}) as {
@@ -3289,7 +3289,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
         uncovered?: Array<{ path?: unknown; reason?: unknown }>;
       };
       if (recovery.kind !== "recently-deleted") {
-        return `Deleted ${kindLabel} ${terminalText(record.path)} in ${workFolderLabel}.\n`
+        return `Deleted ${kindLabel} ${terminalText(record.path)} in ${connectedFolderLabel}.\n`
           + `Safety restore point: ${terminalText(record.safetyCheckpointId)} — restore it with 'history restore' to undo this delete.\n`;
       }
       const uncovered = Array.isArray(recovery.uncovered) ? recovery.uncovered : [];
@@ -3297,15 +3297,15 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
         .map((file) => `${terminalText(file.path)} (${recentlyDeletedUncoveredReasonLabel(file.reason)})`)
         .join("; ");
       const more = uncovered.length > 5 ? `; and ${uncovered.length - 5} more` : "";
-      return `Deleted ${kindLabel} ${terminalText(record.path)} in ${workFolderLabel}.\n`
+      return `Deleted ${kindLabel} ${terminalText(record.path)} in ${connectedFolderLabel}.\n`
         + `It is in Recently deleted until ${terminalText(recovery.restoreBy)} because History could not keep a copy of `
         + `${uncovered.length} file${uncovered.length === 1 ? "" : "s"}: ${named}${more}.\n`
         + `Put it back with 'recently-deleted restore --entry ${terminalText(recovery.entryId)}', or in Settings → Recently deleted.\n`;
     }
     case "files.mkdir":
-      return `Created folder ${terminalText(record.path)} in ${workFolderLabel}.\n`;
+      return `Created folder ${terminalText(record.path)} in ${connectedFolderLabel}.\n`;
     case "files.create":
-      return `Created empty file ${terminalText(record.path)} in ${workFolderLabel}.\n`;
+      return `Created empty file ${terminalText(record.path)} in ${connectedFolderLabel}.\n`;
     case "search": {
       const files = (Array.isArray(record.files) ? record.files : []) as Array<{ path?: unknown; line?: unknown; preview?: unknown }>;
       const chats = (Array.isArray(record.chats) ? record.chats : []) as Array<{ conversationId?: unknown; title?: unknown; role?: unknown; preview?: unknown }>;
@@ -3315,7 +3315,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
       // never read as a complete one.
       const boundNote = (record.truncated === true ? "\nCoverage is incomplete; consult coverage in --json for skipped entries." : "")
         + (record.nextCursor ? `\nContinue with the same selection and --cursor ${terminalText(record.nextCursor)}` : "");
-      if (!total) return `No matches for "${terminalText(record.query)}" in ${workFolderLabel} (${scopeLabel}).${boundNote}\n`;
+      if (!total) return `No matches for "${terminalText(record.query)}" in ${connectedFolderLabel} (${scopeLabel}).${boundNote}\n`;
       const sections: string[] = [];
       if (files.length) {
         const shown = files.slice(0, 20);
@@ -3329,7 +3329,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
         sections.push(...shown.map((match) => `- ${terminalText(match.title)} [${terminalText(match.conversationId)}] (${terminalText(match.role)}) — ${terminalText(match.preview)}`));
         if (chats.length > shown.length) sections.push(`${chats.length - shown.length} more Chat match(es) in the --json result.`);
       }
-      return `${total} match${total === 1 ? "" : "es"} for "${terminalText(record.query)}" in ${workFolderLabel} (${scopeLabel}):\n${sections.join("\n")}${boundNote}\n`;
+      return `${total} match${total === 1 ? "" : "es"} for "${terminalText(record.query)}" in ${connectedFolderLabel} (${scopeLabel}):\n${sections.join("\n")}${boundNote}\n`;
     }
     case "apps.list": {
       const apps = (Array.isArray(record.apps) ? record.apps : []) as Array<{
@@ -3340,7 +3340,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
         tools?: Array<{ name?: unknown }>;
         automations?: Array<{ id?: unknown; enabled?: unknown }>;
       }>;
-      if (!apps.length) return `No apps are installed in ${workFolderLabel}.\n`;
+      if (!apps.length) return `No apps are installed in ${connectedFolderLabel}.\n`;
       const lines = apps.map((app) => {
         const tools = (app.tools ?? []).map((tool) => terminalText(tool.name)).join(", ") || "none";
         const automations = (app.automations ?? [])
@@ -3350,14 +3350,14 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
           + `\n    tools: ${tools}\n    automations: ${automations}`;
       });
       const more = record.truncated === true ? "\nMore apps are installed than this list shows.\n" : "";
-      return `${apps.length} app${apps.length === 1 ? "" : "s"} in ${workFolderLabel}:\n${lines.join("\n")}\n${more}`;
+      return `${apps.length} app${apps.length === 1 ? "" : "s"} in ${connectedFolderLabel}:\n${lines.join("\n")}\n${more}`;
     }
     case "apps.invoke": {
       const serialized = JSON.stringify(record.result ?? null, null, 2);
       const shown = serialized.length > maxHumanToolResultLength
         ? `${serialized.slice(0, maxHumanToolResultLength)}\n… (full result in --json)`
         : serialized;
-      return `Ran ${terminalText(record.tool)} of ${terminalText(record.appId)} in ${workFolderLabel}.\n${terminalText(shown)}\n`;
+      return `Ran ${terminalText(record.tool)} of ${terminalText(record.appId)} in ${connectedFolderLabel}.\n${terminalText(shown)}\n`;
     }
     case "apps.proposals.list": {
       const proposals = (Array.isArray(record.proposals) ? record.proposals : []) as Array<{
@@ -3367,71 +3367,71 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
         version?: unknown;
         digest?: unknown;
       }>;
-      if (!proposals.length) return `No app proposals in Chat [${terminalText(record.conversationId)}] of ${workFolderLabel}.\n`;
+      if (!proposals.length) return `No app proposals in Chat [${terminalText(record.conversationId)}] of ${connectedFolderLabel}.\n`;
       const lines = proposals.map((proposal) =>
         `- ${terminalText(proposal.title)} ${terminalText(proposal.version)} [${terminalText(proposal.id)}] — ${terminalText(proposal.status)} — digest ${terminalText(proposal.digest)}`);
-      return `${proposals.length} app proposal${proposals.length === 1 ? "" : "s"} in Chat [${terminalText(record.conversationId)}] of ${workFolderLabel}:\n${lines.join("\n")}\n`;
+      return `${proposals.length} app proposal${proposals.length === 1 ? "" : "s"} in Chat [${terminalText(record.conversationId)}] of ${connectedFolderLabel}:\n${lines.join("\n")}\n`;
     }
     case "apps.proposals.dismiss":
       return record.dismissed === true
-        ? `Dismissed app proposal ${terminalText(record.proposalId)} in ${workFolderLabel}. Nothing runnable existed; the Worker may propose again.\n`
-        : `App proposal ${terminalText(record.proposalId)} was no longer pending in ${workFolderLabel}; nothing was dismissed.\n`;
+        ? `Dismissed app proposal ${terminalText(record.proposalId)} in ${connectedFolderLabel}. Nothing runnable existed; the Worker may propose again.\n`
+        : `App proposal ${terminalText(record.proposalId)} was no longer pending in ${connectedFolderLabel}; nothing was dismissed.\n`;
     case "apps.remove": {
-      if (record.removed !== true) return `App ${terminalText(record.appId)} was not installed in ${workFolderLabel}; nothing was removed.\n`;
+      if (record.removed !== true) return `App ${terminalText(record.appId)} was not installed in ${connectedFolderLabel}; nothing was removed.\n`;
       const recentlyDeleted = (record.recentlyDeleted ?? null) as { entryId?: unknown; restoreBy?: unknown } | null;
-      return `Removed app ${terminalText(record.appId)} [digest ${terminalText(record.digest)}] from ${workFolderLabel}. Reinstalling it is a fresh receipted act.\n`
+      return `Removed app ${terminalText(record.appId)} [digest ${terminalText(record.digest)}] from ${connectedFolderLabel}. Reinstalling it is a fresh receipted act.\n`
         + (recentlyDeleted
           ? `Its data is in Recently deleted until ${terminalText(recentlyDeleted.restoreBy)} — save it with 'recently-deleted restore --entry ${terminalText(recentlyDeleted.entryId)} --to <path>'.\n`
           : "");
     }
     case "apps.revoke":
       return record.revoked === true
-        ? `Revoked the ${terminalText(record.grantKind)} grant ${terminalText(record.declaration)} from ${terminalText(record.appId)} in ${workFolderLabel}. Re-granting it is a fresh receipted act.\n`
-        : `The ${terminalText(record.grantKind)} declaration ${terminalText(record.declaration)} of ${terminalText(record.appId)} was not granted in ${workFolderLabel}; authority is unchanged.\n`;
+        ? `Revoked the ${terminalText(record.grantKind)} grant ${terminalText(record.declaration)} from ${terminalText(record.appId)} in ${connectedFolderLabel}. Re-granting it is a fresh receipted act.\n`
+        : `The ${terminalText(record.grantKind)} declaration ${terminalText(record.declaration)} of ${terminalText(record.appId)} was not granted in ${connectedFolderLabel}; authority is unchanged.\n`;
     case "apps.disconnect":
       return (record.disconnected === true
-        ? `Removed the saved connection to ${terminalText(record.destination)} from ${terminalText(record.appId)} in ${workFolderLabel}.`
-        : `No saved connection to ${terminalText(record.destination)} was found for ${terminalText(record.appId)} in ${workFolderLabel}.`)
+        ? `Removed the saved connection to ${terminalText(record.destination)} from ${terminalText(record.appId)} in ${connectedFolderLabel}.`
+        : `No saved connection to ${terminalText(record.destination)} was found for ${terminalText(record.appId)} in ${connectedFolderLabel}.`)
         + " Deleting the local record does not revoke the credential at its provider.\n";
     case "apps.automation.disable":
       return record.wasEnabled === true
-        ? `Disabled automation ${terminalText(record.appAutomationId)} of ${terminalText(record.appId)} in ${workFolderLabel}. Re-enabling it is a fresh receipted act.\n`
-        : `Automation ${terminalText(record.appAutomationId)} of ${terminalText(record.appId)} was already disabled in ${workFolderLabel}.\n`;
+        ? `Disabled automation ${terminalText(record.appAutomationId)} of ${terminalText(record.appId)} in ${connectedFolderLabel}. Re-enabling it is a fresh receipted act.\n`
+        : `Automation ${terminalText(record.appAutomationId)} of ${terminalText(record.appId)} was already disabled in ${connectedFolderLabel}.\n`;
     case "apps.automation.run": {
       const run = record.run as { runId?: unknown; outcome?: unknown; error?: unknown } | undefined;
       const error = typeof run?.error === "string" && run.error ? `\n${terminalText(run.error)}` : "";
       return `Automation ${terminalText(record.appAutomationId)} of ${terminalText(record.appId)} ran with outcome ${terminalText(run?.outcome)} (run ${terminalText(run?.runId)}).${error}\n`;
     }
-    case "work-folders.rename":
-      return `Renamed work-folder ${workFolderLabel} (was "${terminalText(record.priorName)}").\n`;
-    case "work-folders.unregister": {
+    case "connected-folders.rename":
+      return `Renamed Connected Folder ${connectedFolderLabel} (was "${terminalText(record.priorName)}").\n`;
+    case "connected-folders.unregister": {
       const cleanup = record.cleanupPending === true
-        ? "\nSome app-state cleanup is still pending; work-fold finishes it on the next start."
+        ? "\nSome app-state cleanup is still pending; AmpleFile finishes it on the next start."
         : "";
-      return `Unregistered ${terminalText(record.storage)} work-folder ${workFolderLabel}. `
-        + `The folder remains at ${terminalText(record.workFolder?.workFolderRoot)} with its portable .work-fold identity; `
+      return `Unregistered ${terminalText(record.storage)} Connected Folder ${connectedFolderLabel}. `
+        + `The folder remains at ${terminalText(record.connectedFolder?.connectedFolderRoot)} with its portable .amplefile identity; `
         + `register it again to restore it.${cleanup}\n${removedAppStateText(record)}`;
     }
-    case "work-folders.appearance.apply": {
+    case "connected-folders.appearance.apply": {
       const prior = typeof record.priorAppearanceRef === "string"
         ? ` (was ${terminalText(record.priorAppearanceRef)})`
         : " (was the default appearance)";
-      return `Applied appearance proposal "${terminalText(record.proposalName)}" to ${workFolderLabel}${prior}. `
-        + `Undo it with 'work-folders appearance undo'.\n`;
+      return `Applied appearance proposal "${terminalText(record.proposalName)}" to ${connectedFolderLabel}${prior}. `
+        + `Undo it with 'connected-folders appearance undo'.\n`;
     }
-    case "work-folders.appearance.reset":
+    case "connected-folders.appearance.reset":
       return record.changed === false
-        ? `${workFolderLabel} already uses the default appearance.\n`
-        : `Reset ${workFolderLabel} to the default appearance (was ${terminalText(record.priorAppearanceRef)}). `
-          + `Undo it with 'work-folders appearance undo'.\n`;
-    case "work-folders.appearance.undo": {
+        ? `${connectedFolderLabel} already uses the default appearance.\n`
+        : `Reset ${connectedFolderLabel} to the default appearance (was ${terminalText(record.priorAppearanceRef)}). `
+          + `Undo it with 'connected-folders appearance undo'.\n`;
+    case "connected-folders.appearance.undo": {
       const restored = typeof record.restoredAppearanceRef === "string"
         ? terminalText(record.restoredAppearanceRef)
         : "the default appearance";
-      return `Restored ${workFolderLabel} to ${restored}. Running 'work-folders appearance undo' again swaps back.\n`;
+      return `Restored ${connectedFolderLabel} to ${restored}. Running 'connected-folders appearance undo' again swaps back.\n`;
     }
     case "tools.remove": {
-      const where = record.scope === "work-folder" ? `work-folder scope in ${workFolderLabel}` : "everywhere scope";
+      const where = record.scope === "connected-folder" ? `Connected Folder scope in ${connectedFolderLabel}` : "everywhere scope";
       return record.removed === true
         ? `Removed package ${terminalText(record.source)} (${where}). Reinstalling it is a fresh receipted act.\n`
         : `Package ${terminalText(record.source)} is not installed (${where}); nothing was removed.\n`;
@@ -3441,31 +3441,31 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
       const prior = record.priorPresentation === null
         ? "This is the Project's first declared presentation."
         : "Re-declare with the prior values in the --json result to undo.";
-      return `Declared App Project presentation "${terminalText(project?.presentation?.title)}" [${terminalText(project?.projectId)}] in ${workFolderLabel}. ${prior}\n`;
+      return `Declared App Project presentation "${terminalText(project?.presentation?.title)}" [${terminalText(project?.projectId)}] in ${connectedFolderLabel}. ${prior}\n`;
     }
     case "apps.release.prepare": {
       const release = record.release as { releaseDigest?: unknown; displayVersion?: unknown; featureCount?: unknown } | undefined;
-      return `Prepared Release ${terminalText(release?.displayVersion)} [${terminalText(release?.releaseDigest)}] in ${workFolderLabel} `
+      return `Prepared Release ${terminalText(release?.displayVersion)} [${terminalText(release?.releaseDigest)}] in ${connectedFolderLabel} `
         + `(${terminalText(release?.featureCount)} Feature${release?.featureCount === 1 ? "" : "s"}). `
         + `Later source edits cannot alter its bytes; publish it with 'apps release publish'.\n`;
     }
     case "apps.release.publish": {
       const release = record.release as { releaseDigest?: unknown; displayVersion?: unknown } | undefined;
-      return `Published Release ${terminalText(release?.displayVersion)} [${terminalText(release?.releaseDigest)}] in ${workFolderLabel}. `
+      return `Published Release ${terminalText(release?.displayVersion)} [${terminalText(release?.releaseDigest)}] in ${connectedFolderLabel}. `
         + `This is a local state transition — nothing is uploaded, hosted, listed, or granted.\n`;
     }
     case "apps.release.delete": {
       const recentlyDeleted = (record.recentlyDeleted ?? null) as { entryId?: unknown; restoreBy?: unknown } | null;
       return record.deleted === true
-        ? `Deleted unused Release [${terminalText(record.releaseDigest)}] in ${workFolderLabel}.\n`
+        ? `Deleted unused Release [${terminalText(record.releaseDigest)}] in ${connectedFolderLabel}.\n`
           + (recentlyDeleted
             ? `It is in Recently deleted until ${terminalText(recentlyDeleted.restoreBy)} — put it back with 'recently-deleted restore --entry ${terminalText(recentlyDeleted.entryId)}'.\n`
             : "")
-        : `Release [${terminalText(record.releaseDigest)}] was not found in ${workFolderLabel}; nothing was deleted.\n`;
+        : `Release [${terminalText(record.releaseDigest)}] was not found in ${connectedFolderLabel}; nothing was deleted.\n`;
     }
     case "apps.install.prepare": {
       const operation = record.operation as { operationId?: unknown; releaseDigest?: unknown } | undefined;
-      const target = record.targetWorkFolder as { id?: unknown; name?: unknown } | undefined;
+      const target = record.targetConnectedFolder as { id?: unknown; name?: unknown } | undefined;
       return `Prepared install of Release [${terminalText(operation?.releaseDigest)}] into ${terminalText(target?.name)} [${terminalText(target?.id)}] `
         + `— operation ${terminalText(operation?.operationId)}. Activate it with 'apps operation activate'; every power starts off.\n`;
     }
@@ -3489,33 +3489,33 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
     case "apps.uninstall": {
       if (Array.isArray(record.purgedNamespaceIds)) {
         const cleanup = record.cleanupPending === true
-          ? "\nSome app cleanup is still pending; work-fold finishes it on the next start."
+          ? "\nSome app cleanup is still pending; AmpleFile finishes it on the next start."
           : "";
         const kept = (Array.isArray(record.recentlyDeleted) ? record.recentlyDeleted : []) as unknown[];
         const copies = kept.length
           ? ` ${kept.length} cop${kept.length === 1 ? "y is" : "ies are"} in Recently deleted; see 'recently-deleted list'.`
           : "";
-        return `Uninstalled instance ${terminalText(record.runtimeInstanceId)} from ${workFolderLabel} and purged its data.${copies}${cleanup}\n`;
+        return `Uninstalled instance ${terminalText(record.runtimeInstanceId)} from ${connectedFolderLabel} and purged its data.${copies}${cleanup}\n`;
       }
       const retained = (Array.isArray(record.retainedNamespaceIds) ? record.retainedNamespaceIds : []) as unknown[];
       const cleanup = record.cleanupPending === true
-        ? "\nSome app cleanup is still pending; work-fold finishes it on the next start."
+        ? "\nSome app cleanup is still pending; AmpleFile finishes it on the next start."
         : "";
       if (record.removed !== true) {
-        return `Instance ${terminalText(record.runtimeInstanceId)} was not installed in ${workFolderLabel}; nothing was uninstalled.${cleanup}\n`;
+        return `Instance ${terminalText(record.runtimeInstanceId)} was not installed in ${connectedFolderLabel}; nothing was uninstalled.${cleanup}\n`;
       }
-      return `Uninstalled instance ${terminalText(record.runtimeInstanceId)} from ${workFolderLabel}, retaining `
+      return `Uninstalled instance ${terminalText(record.runtimeInstanceId)} from ${connectedFolderLabel}, retaining `
         + `${retained.length} data namespace${retained.length === 1 ? "" : "s"}. Retained data does not remain runnable, `
         + `and reinstalling creates a new instance.${cleanup}\n`;
     }
-    case "work-folders.delete": {
+    case "connected-folders.delete": {
       const cleanup = record.cleanupPending === true ? " Final cleanup completes at the next start." : "";
       const recentlyDeleted = (record.recentlyDeleted ?? null) as { entryId?: unknown; restoreBy?: unknown } | null;
-      // The work-folder's preview apps go with it, so their data copies are named
+      // The Connected Folder's preview apps go with it, so their data copies are named
       // too: the folder coming back is not the whole recovery.
       const apps = removedAppStateText(record);
-      if (!recentlyDeleted) return `Deleted the managed folder of ${workFolderLabel}.${cleanup}\n${apps}`;
-      return `Deleted ${workFolderLabel}. Its folder is in Recently deleted until ${terminalText(recentlyDeleted.restoreBy)}; `
+      if (!recentlyDeleted) return `Deleted the managed folder of ${connectedFolderLabel}.${cleanup}\n${apps}`;
+      return `Deleted ${connectedFolderLabel}. Its folder is in Recently deleted until ${terminalText(recentlyDeleted.restoreBy)}; `
         + `put it back with 'recently-deleted restore --entry ${terminalText(recentlyDeleted.entryId)}'.${cleanup}\n${apps}`;
     }
     case "tools.import-skill":
@@ -3535,14 +3535,14 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
       const replaced = record.replacesInstalled === true ? " It replaced the previous installation." : "";
       // The same two halves the Chat path reports: what the install turned on,
       // and what deliberately still needs the person (F21). Without them the
-      // work-fold agent cannot say what is missing after it adds an app.
+      // AmpleFile agent cannot say what is missing after it adds an app.
       const granted = (record.granted ?? {}) as Record<string, unknown>;
       const count = (value: unknown, singular: string, plural = `${singular}s`): string =>
         `${terminalText(value)} ${value === 1 ? singular : plural}`;
       const on = typeof granted.destinations === "number"
         ? `On now: ${[
           count(granted.destinations, "destination"),
-          `${count(granted.wholeWorkFolderFolders, "folder permission")} over the whole work-folder`,
+          `${count(granted.wholeConnectedFolderFolders, "folder permission")} over the whole Connected Folder`,
           count(granted.notifications, "notification"),
           count(granted.checks, "Check slot"),
           count(granted.automations, "automation"),
@@ -3556,7 +3556,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
         ...(list(needs.checks).length ? [`choose a Check for ${list(needs.checks).join(", ")}`] : []),
       ];
       const remainder = still.length ? `Still needs the person, in Settings → Apps: ${still.join("; ")}.\n` : "";
-      return `Installed ${terminalText(app.title)} ${terminalText(app.version)} in ${workFolderLabel}.${replaced}\n${on}${remainder}`;
+      return `Installed ${terminalText(app.title)} ${terminalText(app.version)} in ${connectedFolderLabel}.${replaced}\n${on}${remainder}`;
     }
     case "apps.grant": {
       const root = typeof record.root === "string" ? record.root : undefined;
@@ -3564,16 +3564,16 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
         ? ""
         : root && root !== "."
           ? ` It covers ${terminalText(root)} and nothing else.`
-          : " It covers the whole work-folder.";
-      return `Granted ${terminalText(record.grantKind)} ${terminalText(record.declaration)} to ${terminalText(record.appId)} in ${workFolderLabel}.${covers}\n`;
+          : " It covers the whole Connected Folder.";
+      return `Granted ${terminalText(record.grantKind)} ${terminalText(record.declaration)} to ${terminalText(record.appId)} in ${connectedFolderLabel}.${covers}\n`;
     }
     case "apps.connect":
       return `Connected ${terminalText(record.appId)} to ${terminalText(record.destination)} (${terminalText(record.target)}) through the browser sign-in flow.\n`;
     case "apps.automation.enable":
-      return `Enabled automation ${terminalText(record.appAutomationId)} (${terminalText(record.scheduleSummary)}) of ${terminalText(record.appId)} in ${workFolderLabel}.\n`;
+      return `Enabled automation ${terminalText(record.appAutomationId)} (${terminalText(record.scheduleSummary)}) of ${terminalText(record.appId)} in ${connectedFolderLabel}.\n`;
     case "apps.storage.clear": {
       const recentlyDeleted = (record.recentlyDeleted ?? null) as { entryId?: unknown; restoreBy?: unknown } | null;
-      return `Cleared ${terminalText(record.clearedBytes)} bytes of live storage of ${terminalText(record.appId)} in ${workFolderLabel}; `
+      return `Cleared ${terminalText(record.clearedBytes)} bytes of live storage of ${terminalText(record.appId)} in ${connectedFolderLabel}; `
         + `${terminalText(record.remainingBytes)} bytes remain.\n`
         + (recentlyDeleted
           ? `A copy is in Recently deleted until ${terminalText(recentlyDeleted.restoreBy)} — put it back with 'recently-deleted restore --entry ${terminalText(recentlyDeleted.entryId)}'.\n`
@@ -3581,7 +3581,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
     }
     case "apps.retained.purge": {
       const entries = (Array.isArray(record.recentlyDeleted) ? record.recentlyDeleted : []) as Array<{ entryId?: unknown; restoreBy?: unknown }>;
-      return `Purged retained App data ${terminalText(record.retainedDataId)} in ${workFolderLabel}.\n`
+      return `Purged retained App data ${terminalText(record.retainedDataId)} in ${connectedFolderLabel}.\n`
         + (entries[0]
           ? `A copy is in Recently deleted until ${terminalText(entries[0].restoreBy)} — save it with 'recently-deleted restore --entry ${terminalText(entries[0].entryId)} --to <path>'.\n`
           : "");
@@ -3598,8 +3598,8 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
         id?: unknown;
         kind?: unknown;
         name?: unknown;
-        workFolderName?: unknown;
-        workFolderId?: unknown;
+        connectedFolderName?: unknown;
+        connectedFolderId?: unknown;
         scope?: unknown;
         sizeBytes?: unknown;
         deletedAt?: unknown;
@@ -3612,9 +3612,9 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
       const lines = entries.slice(0, 50).map((entry) => {
         const where = entry.kind === "skill" && entry.scope === "everywhere"
           ? "from Everywhere"
-          : typeof entry.workFolderName === "string" && entry.workFolderName
-            ? `from ${terminalText(entry.workFolderName)} [${terminalText(entry.workFolderId)}]`
-            : `from work-folder ${terminalText(entry.workFolderId)}`;
+          : typeof entry.connectedFolderName === "string" && entry.connectedFolderName
+            ? `from ${terminalText(entry.connectedFolderName)} [${terminalText(entry.connectedFolderId)}]`
+            : `from Connected Folder ${terminalText(entry.connectedFolderId)}`;
         const how = entry.restorable === "save-only" ? " — can only be saved as a copy" : "";
         const held = entry.held ? " — kept indefinitely; it holds records from the earlier Workspace product" : "";
         return `- ${terminalText(entry.id)} — ${recentlyDeletedKindLabel(entry.kind)} "${terminalText(entry.name)}" ${where}`
@@ -3632,7 +3632,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
         kind?: unknown;
         path?: unknown;
         renamed?: unknown;
-        workFolderRoot?: unknown;
+        connectedFolderRoot?: unknown;
         scope?: unknown;
         name?: unknown;
         appId?: unknown;
@@ -3645,14 +3645,14 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
         operationCount?: unknown;
         droppedOperationCount?: unknown;
         appDataEntryIds?: unknown;
-        workFolder?: { name?: unknown; id?: unknown };
+        connectedFolder?: { name?: unknown; id?: unknown };
       };
-      const where = typeof restored.workFolder?.name === "string"
-        ? `${terminalText(restored.workFolder.name)} [${terminalText(restored.workFolder.id)}]`
-        : "its work-folder";
+      const where = typeof restored.connectedFolder?.name === "string"
+        ? `${terminalText(restored.connectedFolder.name)} [${terminalText(restored.connectedFolder.id)}]`
+        : "its Connected Folder";
       if (restored.kind === "saved-copy") return `Saved a copy to ${terminalText(restored.path)}.\n`;
-      if (restored.kind === "work-folder") {
-        return `Restored work-folder ${where} to ${terminalText(restored.workFolderRoot)}`
+      if (restored.kind === "connected-folder") {
+        return `Restored Connected Folder ${where} to ${terminalText(restored.connectedFolderRoot)}`
           + `${restored.renamed === true ? " under a new folder name, because the old one was taken" : ""}.\n`;
       }
       if (restored.kind === "skill") {
@@ -3693,7 +3693,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
         trigger?: { kind?: unknown; intervalMinutes?: unknown; at?: unknown; ifMissed?: unknown };
         stepCount?: unknown;
         nextScheduledAt?: unknown;
-        suspension?: { missingWorkFolderIds?: unknown };
+        suspension?: { missingConnectedFolderIds?: unknown };
       }>;
       if (!automations.length) return "No automations on this machine.\n";
       const lines = automations.slice(0, 50).map((automation) => {
@@ -3703,8 +3703,8 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
             ? `once at ${terminalText(automation.trigger.at)}`
           : terminalText(automation.trigger?.kind ?? "manual");
         const next = typeof automation.nextScheduledAt === "string" ? `; next ${terminalText(automation.nextScheduledAt)}` : "";
-        const missing = Array.isArray(automation.suspension?.missingWorkFolderIds) && automation.suspension.missingWorkFolderIds.length
-          ? `; missing work-folder ${automation.suspension.missingWorkFolderIds.map(terminalText).join(", ")}`
+        const missing = Array.isArray(automation.suspension?.missingConnectedFolderIds) && automation.suspension.missingConnectedFolderIds.length
+          ? `; missing Connected Folder ${automation.suspension.missingConnectedFolderIds.map(terminalText).join(", ")}`
           : "";
         return `- ${terminalText(automation.title)} [${terminalText(automation.automationId)}] — ${terminalText(automation.health)} — ${trigger}, ${terminalText(automation.stepCount)} step(s)${next}${missing}`;
       });
@@ -3716,21 +3716,21 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
         title?: unknown;
         health?: unknown;
         digest?: unknown;
-        trigger?: { kind?: unknown; intervalMinutes?: unknown; at?: unknown; ifMissed?: unknown; source?: Record<string, unknown>; workFolderId?: unknown; watch?: Record<string, unknown>; debounceSeconds?: unknown; cooldownMinutes?: unknown };
+        trigger?: { kind?: unknown; intervalMinutes?: unknown; at?: unknown; ifMissed?: unknown; source?: Record<string, unknown>; connectedFolderId?: unknown; watch?: Record<string, unknown>; debounceSeconds?: unknown; cooldownMinutes?: unknown };
         steps?: unknown;
         grants?: unknown;
         enabledAt?: unknown;
         disabledAt?: unknown;
-        suspension?: { at?: unknown; missingWorkFolderIds?: unknown; reRegisteredWorkFolderIds?: unknown };
+        suspension?: { at?: unknown; missingConnectedFolderIds?: unknown; reRegisteredConnectedFolderIds?: unknown };
         lastScheduledAt?: unknown;
         nextScheduledAt?: unknown;
       };
-      const workFolderRef = (id: unknown, resolvedName: unknown): string =>
+      const connectedFolderRef = (id: unknown, resolvedName: unknown): string =>
         typeof resolvedName === "string" ? `${terminalText(resolvedName)} [${terminalText(id)}]` : `[${terminalText(id)}] (not registered)`;
       const steps = (Array.isArray(automation.steps) ? automation.steps : []) as Array<Record<string, unknown>>;
       const stepLines = steps.map((step) => {
         if (step.kind === "chat") {
-          return `- ${terminalText(step.id)}: chat in ${workFolderRef(step.workFolderId, step.workFolderName)}${stepModelText(step.model)} — message (verbatim, becomes portable transcript content): ${terminalText(step.message)}`;
+          return `- ${terminalText(step.id)}: chat in ${connectedFolderRef(step.connectedFolderId, step.connectedFolderName)}${stepModelText(step.model)} — message (verbatim, becomes portable transcript content): ${terminalText(step.message)}`;
         }
         if (step.kind === "files") {
           const source = (step.source ?? {}) as Record<string, unknown>;
@@ -3739,27 +3739,27 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
             : source.kind === "tree"
               ? `tree ${terminalText(source.path)} (${source.recursive === true ? "recursive" : "one level"}; ${(Array.isArray(source.extensions) ? source.extensions : []).map(terminalText).join(", ") || "all extensions"})`
               : `files created by step ${terminalText(source.step)} (max ${terminalText(source.maxFiles)} files, ${terminalText(source.maxTotalBytes)} bytes)`;
-          return `- ${terminalText(step.id)}: files from ${workFolderRef(step.fromWorkFolderId, step.fromWorkFolderName)} — ${sourceLabel} → ${workFolderRef(step.toWorkFolderId, step.toWorkFolderName)}:${terminalText(step.to)}`;
+          return `- ${terminalText(step.id)}: files from ${connectedFolderRef(step.fromConnectedFolderId, step.fromConnectedFolderName)} — ${sourceLabel} → ${connectedFolderRef(step.toConnectedFolderId, step.toConnectedFolderName)}:${terminalText(step.to)}`;
         }
         if (step.kind === "agent") {
-          return `- ${terminalText(step.id)}: message to the work-fold agent${stepModelText(step.model)} (verbatim, becomes work-fold agent transcript content): ${terminalText(step.message)}`;
+          return `- ${terminalText(step.id)}: message to the AmpleFile agent${stepModelText(step.model)} (verbatim, becomes AmpleFile agent transcript content): ${terminalText(step.message)}`;
         }
-        return `- ${terminalText(step.id)}: check in ${workFolderRef(step.workFolderId, step.workFolderName)} — ${typeof step.checkId === "string" ? terminalText(step.checkId) : "all enabled Checks"}`;
+        return `- ${terminalText(step.id)}: check in ${connectedFolderRef(step.connectedFolderId, step.connectedFolderName)} — ${typeof step.checkId === "string" ? terminalText(step.checkId) : "all enabled Checks"}`;
       });
       const trigger = automation.trigger?.kind === "interval"
         ? `interval, every ${terminalText(automation.trigger.intervalMinutes)} minutes`
         : automation.trigger?.kind === "at"
           ? `once at ${terminalText(automation.trigger.at)}; if missed: ${terminalText(automation.trigger.ifMissed)}`
         : automation.trigger?.kind === "files-changed"
-          ? `folder changes in work-folder ${terminalText(automation.trigger.workFolderId)}: ${terminalText(automation.trigger.watch?.path)}; debounce ${terminalText(automation.trigger.debounceSeconds)}s; cooldown ${terminalText(automation.trigger.cooldownMinutes)} minutes${automation.trigger.ifMissed === "run" ? "; catches up once on files added or changed while work-fold was closed, the computer was asleep, or this automation was off" : ""}`
+          ? `folder changes in Connected Folder ${terminalText(automation.trigger.connectedFolderId)}: ${terminalText(automation.trigger.watch?.path)}; debounce ${terminalText(automation.trigger.debounceSeconds)}s; cooldown ${terminalText(automation.trigger.cooldownMinutes)} minutes${automation.trigger.ifMissed === "run" ? "; catches up once on files added or changed while AmpleFile was closed, the computer was asleep, or this automation was off" : ""}`
         : automation.trigger?.kind === "on-settled"
-          ? `on-settled: ${terminalText(automation.trigger.source?.kind)} in work-folder ${terminalText(automation.trigger.source?.workFolderId)}`
+          ? `on-settled: ${terminalText(automation.trigger.source?.kind)} in Connected Folder ${terminalText(automation.trigger.source?.connectedFolderId)}`
           : "manual (run-now only)";
       const grants = (Array.isArray(automation.grants) ? automation.grants : []) as Array<Record<string, unknown>>;
       const grantLines = grants.map((grant) =>
         `- enabled ${terminalText(grant.enabledAt)} via ${terminalText(grant.surface)} (request ${terminalText(grant.requestId)}) — digest ${terminalText(grant.digest)}`);
       const health = automation.health === "suspended" && automation.suspension
-        ? `suspended since ${terminalText(automation.suspension.at)} (missing work-folder ${(Array.isArray(automation.suspension.missingWorkFolderIds) ? automation.suspension.missingWorkFolderIds : []).map(terminalText).join(", ")}${Array.isArray(automation.suspension.reRegisteredWorkFolderIds) && automation.suspension.reRegisteredWorkFolderIds.length ? "; re-registered with preserved identity — turn it on again after reading it through" : ""})`
+        ? `suspended since ${terminalText(automation.suspension.at)} (missing Connected Folder ${(Array.isArray(automation.suspension.missingConnectedFolderIds) ? automation.suspension.missingConnectedFolderIds : []).map(terminalText).join(", ")}${Array.isArray(automation.suspension.reRegisteredConnectedFolderIds) && automation.suspension.reRegisteredConnectedFolderIds.length ? "; re-registered with preserved identity — turn it on again after reading it through" : ""})`
         : automation.health === "disabled"
           ? `disabled${typeof automation.disabledAt === "string" ? ` since ${terminalText(automation.disabledAt)}` : ""}`
           : automation.health === "completed"
@@ -3768,18 +3768,18 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
       // What stays true for as long as the automation is on (docs/automations.md).
       // These are residuals, stated plainly here rather than policed with
       // re-review machinery: a created-files handoff is a standing,
-      // content-dependent channel between two work-folders, and a chat step runs
-      // with whatever authority its work-folder's Worker holds at run time.
+      // content-dependent channel between two Connected Folders, and a chat step runs
+      // with whatever authority its Connected Folder's Worker holds at run time.
       const handoffs = steps.filter((step) => step.kind === "files"
         && ((step.source ?? {}) as Record<string, unknown>).kind === "step-created-files");
       const residuals = [
         ...handoffs.map((step) => {
           const source = (step.source ?? {}) as Record<string, unknown>;
           return `- Standing channel: whatever step ${terminalText(source.step)}'s turn writes is copied into `
-            + `${workFolderRef(step.toWorkFolderId, step.toWorkFolderName)} on every run.`;
+            + `${connectedFolderRef(step.toConnectedFolderId, step.toConnectedFolderName)} on every run.`;
         }),
         ...(steps.some((step) => step.kind === "chat")
-          ? ["- Each chat step's turn runs with whatever authority its work-folder's Worker holds at that moment, not the authority it held when this automation was turned on."]
+          ? ["- Each chat step's turn runs with whatever authority its Connected Folder's Worker holds at that moment, not the authority it held when this automation was turned on."]
           : []),
       ];
       const lines = [
@@ -3814,7 +3814,7 @@ function humanActOutput(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
       const tableText = tables.length
         ? tables.map((table) => `${terminalText(table.name)} (${Array.isArray(table.columns) ? table.columns.map(terminalText).join(", ") : ""})`).join("; ")
         : "none";
-      return `${terminalText(summary.title)} [${terminalText(record.page)}] in ${workFolderLabel}: ${verdict}.\n`
+      return `${terminalText(summary.title)} [${terminalText(record.page)}] in ${connectedFolderLabel}: ${verdict}.\n`
         + (lines.length ? `${lines.join("\n")}\n` : "")
         + `Entry ${terminalText(summary.entry)}; ${terminalText(summary.files)} file${summary.files === 1 ? "" : "s"}, ${terminalText(summary.bytes)} bytes; tables: ${tableText}.\n`;
     }
@@ -3876,8 +3876,8 @@ function skillNameList(names: unknown): string {
   return Array.isArray(names) ? names.map((name) => terminalText(name)).join(", ") : terminalText(names);
 }
 
-function humanCheckEvidence(value: WorkFoldCliJson): string {
-  const evidence = value as Record<string, WorkFoldCliJson>;
+function humanCheckEvidence(value: AmpleFileCliJson): string {
+  const evidence = value as Record<string, AmpleFileCliJson>;
   switch (evidence.kind) {
     case "path-state":
       return `${terminalText(evidence.path)} expected ${terminalText(evidence.expected)}, observed ${terminalText(evidence.observed)}`;
@@ -3898,7 +3898,7 @@ function recentlyDeletedKindLabel(kind: unknown): string {
   switch (kind) {
     case "file": return "file";
     case "folder": return "folder";
-    case "work-folder": return "work-folder";
+    case "connected-folder": return "connected-folder";
     case "skill": return "Skill";
     case "app-storage":
     case "app-retained": return "app data";
@@ -3908,7 +3908,7 @@ function recentlyDeletedKindLabel(kind: unknown): string {
   }
 }
 
-/** The Recently deleted ids a work-folder removal's receipt names for its apps. */
+/** The Recently deleted ids a Connected Folder removal's receipt names for its apps. */
 function removedAppStateReceiptDetail(value: object): string {
   const record = value as { appRecentlyDeletedEntries?: unknown; appStudioRecentlyDeleted?: unknown };
   const appEntries = (Array.isArray(record.appRecentlyDeletedEntries) ? record.appRecentlyDeletedEntries : []) as Array<{ entryId?: unknown }>;
@@ -3920,8 +3920,8 @@ function removedAppStateReceiptDetail(value: object): string {
 }
 
 /**
- * What a work-folder removal kept of its apps: each preview's data and the
- * work-folder's App Studio history wait in Recently deleted too, because the
+ * What a Connected Folder removal kept of its apps: each preview's data and the
+ * Connected Folder's App Studio history wait in Recently deleted too, because the
  * folder coming back is not the whole recovery.
  */
 function removedAppStateText(value: object): string {
@@ -3933,7 +3933,7 @@ function removedAppStateText(value: object): string {
       + `[${appEntries.map((item) => terminalText(item.entryId)).join(", ")}].\n`
     : "";
   return apps + (studio
-    ? `Its App Studio history is in Recently deleted too [${terminalText(studio.entryId)}]; put it back once the work-folder is registered again.\n`
+    ? `Its App Studio history is in Recently deleted too [${terminalText(studio.entryId)}]; put it back once the Connected Folder is registered again.\n`
     : "");
 }
 
@@ -3955,7 +3955,7 @@ function recentlyDeletedUncoveredReasonLabel(reason: unknown): string {
  * nothing, so their receipts carry the created path instead of a restore-point
  * reference — the canonical inverse is `files delete`.
  */
-const actSafetyCheckpointCommands: ReadonlySet<WorkFoldCliActCommandName> = new Set([
+const actSafetyCheckpointCommands: ReadonlySet<AmpleFileCliActCommandName> = new Set([
   "history.restore-file",
   "files.move",
   "files.rename",
@@ -3965,16 +3965,16 @@ const actSafetyCheckpointCommands: ReadonlySet<WorkFoldCliActCommandName> = new 
   "recently-deleted.restore",
 ]);
 
-function receiptDetails(name: WorkFoldCliActCommandName, data: WorkFoldCliJson): {
-  workFolderId?: string;
+function receiptDetails(name: AmpleFileCliActCommandName, data: AmpleFileCliJson): {
+  connectedFolderId?: string;
   conversationId?: string;
   checkpointId?: string;
   taskId?: string;
-  undoRef?: WorkFoldCliActUndoRef;
+  undoRef?: AmpleFileCliActUndoRef;
   detail?: string;
 } {
   const record = data as {
-    workFolder?: { id?: unknown };
+    connectedFolder?: { id?: unknown };
     conversation?: { id?: unknown };
     conversationId?: unknown;
     checkpointId?: unknown;
@@ -3987,17 +3987,17 @@ function receiptDetails(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
     scope?: unknown;
     path?: unknown;
     copied?: unknown;
-    restored?: { workFolder?: { id?: unknown }; safetyCheckpointId?: unknown };
-    toWorkFolder?: { id?: unknown };
+    restored?: { connectedFolder?: { id?: unknown }; safetyCheckpointId?: unknown };
+    toConnectedFolder?: { id?: unknown };
     continuation?: { taskId?: unknown };
   };
   // A handoff's effects — the copies, their restore point, the new Chat —
-  // land in the destination, so its receipt names that work-folder.
-  const workFolderId = name === "chat.handoff" && typeof record.toWorkFolder?.id === "string"
-    ? record.toWorkFolder.id
-    : typeof record.workFolder?.id === "string"
-      ? record.workFolder.id
-      : typeof record.restored?.workFolder?.id === "string" ? record.restored.workFolder.id : undefined;
+  // land in the destination, so its receipt names that Connected Folder.
+  const connectedFolderId = name === "chat.handoff" && typeof record.toConnectedFolder?.id === "string"
+    ? record.toConnectedFolder.id
+    : typeof record.connectedFolder?.id === "string"
+      ? record.connectedFolder.id
+      : typeof record.restored?.connectedFolder?.id === "string" ? record.restored.connectedFolder.id : undefined;
   const conversationId = typeof record.conversationId === "string"
     ? record.conversationId
     : typeof record.conversation?.id === "string" ? record.conversation.id : undefined;
@@ -4018,7 +4018,7 @@ function receiptDetails(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
   const detail = actReceiptDetail(name, record);
   const undoRef = actUndoRef(name, data, safetyCheckpointId);
   return {
-    ...(workFolderId ? { workFolderId } : {}),
+    ...(connectedFolderId ? { connectedFolderId } : {}),
     ...(conversationId ? { conversationId } : {}),
     ...(checkpointId ? { checkpointId } : {}),
     ...(typeof record.taskId === "string"
@@ -4042,7 +4042,7 @@ function receiptDetails(name: WorkFoldCliActCommandName, data: WorkFoldCliJson):
  * never the customization or presentation payloads.
  */
 function actReceiptDetail(
-  name: WorkFoldCliActCommandName,
+  name: AmpleFileCliActCommandName,
   record: {
     enabled?: unknown;
     created?: unknown;
@@ -4105,11 +4105,11 @@ function actReceiptDetail(
     granted?: unknown;
     needs?: unknown;
     entry?: { id?: unknown; kind?: unknown };
-    restored?: { kind?: unknown; path?: unknown; workFolderRoot?: unknown; appId?: unknown; workFolder?: { id?: unknown } };
+    restored?: { kind?: unknown; path?: unknown; connectedFolderRoot?: unknown; appId?: unknown; connectedFolder?: { id?: unknown } };
     question?: { questionId?: unknown; respondent?: unknown };
     redirectedToPerson?: unknown;
     continuation?: { taskId?: unknown };
-    toWorkFolder?: { id?: unknown };
+    toConnectedFolder?: { id?: unknown };
     taskId?: unknown;
     job?: unknown;
   },
@@ -4135,7 +4135,7 @@ function actReceiptDetail(
         : undefined;
     case "chat.handoff": {
       const copied = countOf(record.copied);
-      return `${(record as { followUp?: unknown }).followUp === true ? "follow-up" : "handoff"} to ${typeof record.toWorkFolder?.id === "string" ? record.toWorkFolder.id : "unknown"}; ${copied} file${copied === 1 ? "" : "s"}`;
+      return `${(record as { followUp?: unknown }).followUp === true ? "follow-up" : "handoff"} to ${typeof record.toConnectedFolder?.id === "string" ? record.toConnectedFolder.id : "unknown"}; ${copied} file${copied === 1 ? "" : "s"}`;
     }
     case "chat.steer":
       return `steered running task ${typeof (record as { taskId?: unknown }).taskId === "string" ? (record as { taskId: string }).taskId : "unknown"}`;
@@ -4185,10 +4185,10 @@ function actReceiptDetail(
     case "recently-deleted.restore":
       return `entry ${String(record.entry?.id ?? "")}; kind ${String(record.restored?.kind ?? "")}; `
         + `restored ${boundedReceiptText(String(
-          record.restored?.path ?? record.restored?.workFolderRoot ?? record.restored?.appId ?? record.restored?.workFolder?.id ?? "",
+          record.restored?.path ?? record.restored?.connectedFolderRoot ?? record.restored?.appId ?? record.restored?.connectedFolder?.id ?? "",
         ))}`;
-    case "work-folders.delete":
-      return `work-folder.delete-folder${recentlyDeletedRef(record.recentlyDeleted) ? `; ${recentlyDeletedRef(record.recentlyDeleted)}` : ""}`
+    case "connected-folders.delete":
+      return `connected-folder.delete-folder${recentlyDeletedRef(record.recentlyDeleted) ? `; ${recentlyDeletedRef(record.recentlyDeleted)}` : ""}`
         + removedAppStateReceiptDetail(record);
     case "tools.import-skill":
       return `capability.skills.import; scope ${String(record.scope)}; source ${boundedReceiptText(String(record.source))}; digest ${String(record.contentDigest)}`;
@@ -4238,11 +4238,11 @@ function actReceiptDetail(
       break;
   }
   switch (name) {
-    case "work-folders.worker.model":
+    case "connected-folders.worker.model":
       return typeof record.model?.provider === "string" && typeof record.model?.id === "string"
         ? `provider ${record.model.provider}; model ${record.model.id}`
         : undefined;
-    case "work-folders.worker.instructions":
+    case "connected-folders.worker.instructions":
       return typeof record.instructions === "string"
         ? record.instructions ? `updated; ${record.instructions.length} character(s)` : "cleared"
         : undefined;
@@ -4287,13 +4287,13 @@ function actReceiptDetail(
       return typeof record.appId === "string" && typeof record.appAutomationId === "string" && typeof record.run?.runId === "string"
         ? `app ${record.appId}; automation ${record.appAutomationId}; run ${record.run.runId}; outcome ${String(record.run.outcome)}`
         : undefined;
-    case "work-folders.unregister":
+    case "connected-folders.unregister":
       return typeof record.storage === "string" ? `storage ${record.storage}${removedAppStateReceiptDetail(record)}` : undefined;
-    case "work-folders.appearance.apply":
+    case "connected-folders.appearance.apply":
       return typeof record.appearanceRef === "string" ? `applied ${record.appearanceRef}` : "applied default";
-    case "work-folders.appearance.reset":
+    case "connected-folders.appearance.reset":
       return record.changed === false ? "already default" : undefined;
-    case "work-folders.appearance.undo":
+    case "connected-folders.appearance.undo":
       return `restored ${typeof record.restoredAppearanceRef === "string" ? record.restoredAppearanceRef : "none"}`;
     case "tools.remove":
       return typeof record.scope === "string" && typeof record.source === "string"
@@ -4375,19 +4375,19 @@ function boundedReceiptText(value: string, maximumLength = 200): string {
  * ids only — enough for the inverse verb, never content.
  */
 function actUndoRef(
-  name: WorkFoldCliActCommandName,
-  data: WorkFoldCliJson,
+  name: AmpleFileCliActCommandName,
+  data: AmpleFileCliJson,
   safetyCheckpointId: string | undefined,
-): WorkFoldCliActUndoRef | undefined {
+): AmpleFileCliActUndoRef | undefined {
   const record = data as {
     priorTitle?: unknown;
     priorLifecycle?: { archivedAt?: unknown; snoozedUntil?: unknown };
     priorName?: unknown;
     path?: unknown;
-    workFolder?: { workFolderRoot?: unknown };
+    connectedFolder?: { connectedFolderRoot?: unknown };
     recovery?: { kind?: unknown; entryId?: unknown };
     recentlyDeleted?: unknown;
-    restored?: { kind?: unknown; workFolderRoot?: unknown };
+    restored?: { kind?: unknown; connectedFolderRoot?: unknown };
     priorAppearanceRef?: unknown;
     displacedAppearanceRef?: unknown;
     priorPresentationRef?: unknown;
@@ -4432,7 +4432,7 @@ function actUndoRef(
         return { kind: "recently-deleted-entry", value: record.recovery.entryId };
       }
       return safetyCheckpointId ? { kind: "safety-checkpoint", value: safetyCheckpointId } : undefined;
-    case "work-folders.delete":
+    case "connected-folders.delete":
     case "apps.storage.clear":
     case "apps.retained.purge":
     case "apps.release.delete":
@@ -4442,10 +4442,10 @@ function actUndoRef(
       return typeof entryId === "string" ? { kind: "recently-deleted-entry", value: entryId } : undefined;
     }
     case "recently-deleted.restore":
-      // A file or folder restore is undone by its own restore point; a work-folder
-      // restore's inverse is `work-folders delete` of the root it came back to.
-      if (record.restored?.kind === "work-folder" && typeof record.restored.workFolderRoot === "string") {
-        return { kind: "work-folder-root", value: record.restored.workFolderRoot };
+      // A file or folder restore is undone by its own restore point; a Connected Folder
+      // restore's inverse is `connected-folders delete` of the root it came back to.
+      if (record.restored?.kind === "connected-folder" && typeof record.restored.connectedFolderRoot === "string") {
+        return { kind: "connected-folder-root", value: record.restored.connectedFolderRoot };
       }
       return safetyCheckpointId ? { kind: "safety-checkpoint", value: safetyCheckpointId } : undefined;
     case "history.restore":
@@ -4459,21 +4459,21 @@ function actUndoRef(
       // Creation's inverse is `files delete` of the created path; there is
       // deliberately no restore-point reference (creation destroys nothing).
       return typeof record.path === "string" ? { kind: "created-path", value: record.path } : undefined;
-    case "work-folders.rename":
-      return typeof record.priorName === "string" ? { kind: "work-folder-name", value: record.priorName } : undefined;
-    case "work-folders.unregister":
-      // Re-registering the folder is the inverse; the portable `.work-fold/`
+    case "connected-folders.rename":
+      return typeof record.priorName === "string" ? { kind: "connected-folder-name", value: record.priorName } : undefined;
+    case "connected-folders.unregister":
+      // Re-registering the folder is the inverse; the portable `.amplefile/`
       // identity persists at this root.
-      return typeof record.workFolder?.workFolderRoot === "string"
-        ? { kind: "work-folder-root", value: record.workFolder.workFolderRoot }
+      return typeof record.connectedFolder?.connectedFolderRoot === "string"
+        ? { kind: "connected-folder-root", value: record.connectedFolder.connectedFolderRoot }
         : undefined;
-    case "work-folders.appearance.apply":
-    case "work-folders.appearance.reset":
+    case "connected-folders.appearance.apply":
+    case "connected-folders.appearance.reset":
       return {
         kind: "appearance-ref",
         value: typeof record.priorAppearanceRef === "string" ? record.priorAppearanceRef : "none",
       };
-    case "work-folders.appearance.undo":
+    case "connected-folders.appearance.undo":
       // Undo is its own inverse: the displaced ref is what a second undo
       // would restore.
       return {
@@ -4531,8 +4531,8 @@ function tokensMatch(expected: string, provided: string): boolean {
   return timingSafeEqual(expectedBytes, providedBytes);
 }
 
-function toJson(value: unknown): WorkFoldCliJson {
-  return JSON.parse(JSON.stringify(value)) as WorkFoldCliJson;
+function toJson(value: unknown): AmpleFileCliJson {
+  return JSON.parse(JSON.stringify(value)) as AmpleFileCliJson;
 }
 
 // Unlike the read lane's single-line values, act output legitimately spans
@@ -4552,7 +4552,7 @@ function clampLine(value: unknown, maximumLength = 200): string {
  * request indented beneath it. Summaries and question text are clamped here;
  * the JSON form carries them whole.
  */
-function renderRequestDetail(request: Record<string, WorkFoldCliJson> | null | undefined, depth: number): string[] {
+function renderRequestDetail(request: Record<string, AmpleFileCliJson> | null | undefined, depth: number): string[] {
   if (!request) return ["Request not found."];
   const pad = "  ".repeat(depth);
   const turns = (Array.isArray(request.turns) ? request.turns : []) as Array<{ taskId?: string; role?: string; state?: string }>;
@@ -4562,8 +4562,8 @@ function renderRequestDetail(request: Record<string, WorkFoldCliJson> | null | u
   const results = (Array.isArray(request.resultRecords) ? request.resultRecords : []) as Array<{
     resultId?: string; taskId?: string; outcome?: string; fileCount?: number; envelope?: { summary?: string } | null; damaged?: string;
   }>;
-  const children = (Array.isArray(request.childRequests) ? request.childRequests : []) as Array<Record<string, WorkFoldCliJson>>;
-  const where = request.workFolderName ? `${terminalText(request.workFolderName)} [${terminalText(request.workFolderId)}]` : "the work-fold agent";
+  const children = (Array.isArray(request.childRequests) ? request.childRequests : []) as Array<Record<string, AmpleFileCliJson>>;
+  const where = request.connectedFolderName ? `${terminalText(request.connectedFolderName)} [${terminalText(request.connectedFolderId)}]` : "the AmpleFile agent";
   const lines = [
     `${pad}Request ${terminalText(request.id)} — ${terminalText(request.kind)}, ${terminalText(request.state)} — ${where}, Chat ${terminalText(request.conversationId)}`,
     `${pad}  started ${terminalText(request.createdAt)}${request.deadline ? `, open until ${terminalText(request.deadline)}` : ""}${request.settledAt ? `, settled ${terminalText(request.settledAt)}` : ""}${request.stopRequestedAt ? `, stopped ${terminalText(request.stopRequestedAt)}` : ""}`,
@@ -4579,21 +4579,21 @@ function renderRequestDetail(request: Record<string, WorkFoldCliJson> | null | u
   return lines;
 }
 
-function humanActErrorMessage(error: WorkFoldCliError): string {
-  const usageHint = "\nRun 'work-fold help' for usage.";
+function humanActErrorMessage(error: AmpleFileCliError): string {
+  const usageHint = "\nRun 'amplefile help' for usage.";
   if (error.code === "usage" && error.message.endsWith(usageHint)) {
     return `${terminalText(error.message.slice(0, -usageHint.length))}${usageHint}`;
   }
   return terminalText(error.message);
 }
 
-function usageError(message: string): WorkFoldCliError {
-  return new WorkFoldCliError("usage", `${message}\nRun 'work-fold help' for usage.`);
+function usageError(message: string): AmpleFileCliError {
+  return new AmpleFileCliError("usage", `${message}\nRun 'amplefile help' for usage.`);
 }
 
-function normalizeActError(error: unknown): WorkFoldCliError {
-  if (error instanceof WorkFoldCliError) return error;
-  return new WorkFoldCliError("failure", error instanceof Error ? error.message : String(error ?? "work-fold act command failed."), { cause: error });
+function normalizeActError(error: unknown): AmpleFileCliError {
+  if (error instanceof AmpleFileCliError) return error;
+  return new AmpleFileCliError("failure", error instanceof Error ? error.message : String(error ?? "AmpleFile act command failed."), { cause: error });
 }
 
 /** " using <id> (<provider>)" when an automation step names its own model. */

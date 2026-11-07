@@ -6,9 +6,9 @@ import test from "node:test";
 import { ComputerHelperInstallation } from "../desktop/src/computer-helper-installation.js";
 
 test("Computer helper configuration is cold and explicit first use copies one exact standalone version", { skip: process.platform !== "darwin" }, async t => {
-  const root = await mkdtemp(join(tmpdir(), "workfold-computer-materialize-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-computer-materialize-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const sourceAppPath = join(root, "work-fold.app/Contents/Resources/work-fold Computer.app"), stateRoot = join(root, "private-state");
+  const sourceAppPath = join(root, "AmpleFile.app/Contents/Resources/amplefile Computer.app"), stateRoot = join(root, "private-state");
   await mkdir(join(sourceAppPath, "Contents/MacOS"), { recursive: true });
   await mkdir(join(sourceAppPath, "Contents/Resources"));
   await writeFile(join(sourceAppPath, "Contents/MacOS/bridge"), "synthetic executable", { mode: 0o755 });
@@ -18,7 +18,7 @@ test("Computer helper configuration is cold and explicit first use copies one ex
   const first = await ComputerHelperInstallation.create(options);
   await assert.rejects(access(stateRoot), { code: "ENOENT" });
   assert.ok(first.helperAppPath.startsWith(join(stateRoot, "native-helpers/computer")));
-  assert.ok(!first.helperAppPath.startsWith(join(root, "work-fold.app")));
+  assert.ok(!first.helperAppPath.startsWith(join(root, "AmpleFile.app")));
   await Promise.all([first.prepare(), first.prepare()]);
   assert.equal(await readFile(join(first.helperAppPath, "Contents/MacOS/bridge"), "utf8"), "synthetic executable");
   assert.equal(await readFile(join(first.helperAppPath, "Contents/Resources/icon.icns"), "utf8"), "synthetic icon");
@@ -45,7 +45,7 @@ test("Computer helper configuration is cold and explicit first use copies one ex
 });
 
 test("Computer helper materialization rejects symlinks before creating private output", async t => {
-  const root = await mkdtemp(join(tmpdir(), "workfold-computer-link-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-computer-link-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const sourceAppPath = join(root, "helper.app"), stateRoot = join(root, "state");
   await mkdir(sourceAppPath); await writeFile(join(root, "outside"), "unowned");

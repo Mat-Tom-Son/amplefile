@@ -16,7 +16,7 @@ import {
 } from "../scripts/local-release-verification.mjs";
 
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-local-verification-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-local-verification-"));
   for (const directory of ["node_modules"]) {
     await mkdir(join(root, directory), { recursive: true });
     await writeFile(join(root, directory, ".package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }));
@@ -189,15 +189,15 @@ test("release check environment cannot inherit test filters or a non-Mac Electro
     NPM_CONFIG_NODE_OPTIONS: "--test-shard=1/8", NPM_CONFIG_SCRIPT_SHELL: "/usr/bin/true",
     NPM_CONFIG_IGNORE_SCRIPTS: "true", NPM_CONFIG_DRY_RUN: "true", NODE_ENV: "production",
     NODE_TEST_CONTEXT: "child-v8", ELECTRON_RUN_AS_NODE: "1",
-    WORKFOLD_DESKTOP_RELEASE_PLATFORM: "win32", WORKFOLD_DESKTOP_RELEASE_ARCH: "x64",
+    AMPLEFILE_DESKTOP_RELEASE_PLATFORM: "win32", AMPLEFILE_DESKTOP_RELEASE_ARCH: "x64",
   };
   const clean = cleanVerificationEnvironment(supplied);
   assert.equal(clean.PATH, `${dirname(process.execPath)}:${supplied.PATH}`);
   for (const name of ["NODE_OPTIONS", "NPM_CONFIG_NODE_OPTIONS", "NODE_TEST_CONTEXT", "ELECTRON_RUN_AS_NODE", "NODE_ENV", "NPM_CONFIG_SCRIPT_SHELL", "NPM_CONFIG_IGNORE_SCRIPTS", "NPM_CONFIG_DRY_RUN"]) {
     assert.ok(!clean[name], `${name} cannot change verification behavior`);
   }
-  assert.equal(clean.WORKFOLD_DESKTOP_RELEASE_PLATFORM, "darwin");
-  assert.equal(clean.WORKFOLD_DESKTOP_RELEASE_ARCH, "arm64");
+  assert.equal(clean.AMPLEFILE_DESKTOP_RELEASE_PLATFORM, "darwin");
+  assert.equal(clean.AMPLEFILE_DESKTOP_RELEASE_ARCH, "arm64");
   assert.equal(clean.npm_config_node_options, "--enable-source-maps", "a nonempty harmless option overrides npm user config");
   assert.equal(clean.npm_config_script_shell, "/bin/sh");
   assert.equal(clean.npm_config_ignore_scripts, "false");

@@ -9,7 +9,7 @@ import test from "node:test";
 import { buildChromeNativeHost } from "../scripts/build-chrome-native-host.mjs";
 import { ChromeNativeHostRegistration } from "../desktop/src/chrome-native-host.js";
 
-const distribution = { version: 1, storeId: "a".repeat(32), nativeHostName: "com.work_fold.chrome_test", bootstrapVersion: 1, extensionVersion: "1.0.0", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
+const distribution = { version: 1, storeId: "a".repeat(32), nativeHostName: "com.amplefile.chrome_test", bootstrapVersion: 1, extensionVersion: "1.0.0", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
 const origin = `chrome-extension://${distribution.storeId}/`;
 function frame(value: unknown) {
   const bytes = Buffer.from(JSON.stringify(value)), header = Buffer.alloc(4); header.writeUInt32LE(bytes.length); return Buffer.concat([header, bytes]);
@@ -32,11 +32,11 @@ async function invoke(binary: string, bytes: Buffer, caller = origin) {
 }
 
 test("signed-lane Swift bootstrap rejects malformed input and forwards only its bounded private launch descriptor", { skip: process.platform !== "darwin", timeout: 30_000 }, async t => {
-  const root = await mkdtemp(join(tmpdir(), "workfold-native-chrome-frame-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-native-chrome-frame-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const destination = join(root, "native");
   await buildChromeNativeHost({ destination, distribution });
-  const binary = join(destination, "work-fold-chrome-host");
+  const binary = join(destination, "amplefile-chrome-host");
   const request = { version: 1, action: "status", clientId: "synthetic-client-id", requestId: "synthetic-request-id", extensionVersion: "1.0.0", bridge: distribution.bridge };
   assert.equal((await invoke(binary, frame(request))).status.state, "app_not_running");
   assert.equal((await invoke(binary, frame(request), "chrome-extension://" + "b".repeat(32) + "/")).status.state, "connection_error");
@@ -64,27 +64,27 @@ test("signed-lane Swift bootstrap rejects malformed input and forwards only its 
 });
 
 test("Chrome native registration preserves exact origin, stable copied binaries and ownership on repair", async t => {
-  const root = await mkdtemp(join(tmpdir(), "workfold-chrome-registration-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-chrome-registration-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const sourceDirectory = join(root, "app-resources"), stateRoot = join(root, "state"), chromeUserDataRoot = join(root, "isolated-chrome");
   await mkdir(sourceDirectory);
-  await writeFile(join(sourceDirectory, "work-fold-chrome-host"), "synthetic binary v1");
-  await writeFile(join(sourceDirectory, "source.json"), JSON.stringify({ schema: "work-fold.chrome-native-host-source.v1", origin, nativeHostName: distribution.nativeHostName, bootstrapVersion: 1 }));
+  await writeFile(join(sourceDirectory, "amplefile-chrome-host"), "synthetic binary v1");
+  await writeFile(join(sourceDirectory, "source.json"), JSON.stringify({ schema: "amplefile.chrome-native-host-source.v1", origin, nativeHostName: distribution.nativeHostName, bootstrapVersion: 1 }));
   const options = { sourceDirectory, stateRoot, chromeUserDataRoot, distribution, enabled: true, verifySignature: false };
   const registration = new ChromeNativeHostRegistration(options);
   const manifestPath = join(chromeUserDataRoot, "NativeMessagingHosts", `${distribution.nativeHostName}.json`);
-  await assert.rejects(() => new ChromeNativeHostRegistration({ ...options, enabled: false }).register(true), /installed work-fold/);
+  await assert.rejects(() => new ChromeNativeHostRegistration({ ...options, enabled: false }).register(true), /installed AmpleFile/);
   await assert.rejects(readFile(manifestPath), { code: "ENOENT" });
   await registration.register(true);
   const first = JSON.parse(await readFile(manifestPath, "utf8"));
   assert.deepEqual(first.allowed_origins, [origin]); assert.equal(first.type, "stdio");
-  assert.ok(first.path.startsWith(join(stateRoot, "chrome/native-host/work-fold-chrome-host-")));
-  await writeFile(join(sourceDirectory, "work-fold-chrome-host"), "synthetic binary v2");
+  assert.ok(first.path.startsWith(join(stateRoot, "chrome/native-host/amplefile-chrome-host-")));
+  await writeFile(join(sourceDirectory, "amplefile-chrome-host"), "synthetic binary v2");
   await registration.register(false);
   const second = JSON.parse(await readFile(manifestPath, "utf8"));
   assert.notEqual(second.path, first.path); assert.equal(await readFile(first.path, "utf8"), "synthetic binary v1");
   await writeFile(manifestPath, JSON.stringify({ ...second, path: "/another-installation/native-host" }));
-  await assert.rejects(() => registration.register(false), /Another work-fold installation/);
+  await assert.rejects(() => registration.register(false), /Another AmpleFile installation/);
   await registration.register(true);
   assert.equal(JSON.parse(await readFile(manifestPath, "utf8")).path, second.path);
   await writeFile(second.path, "altered copied bootstrap");

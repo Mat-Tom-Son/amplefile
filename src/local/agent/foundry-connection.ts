@@ -4,8 +4,8 @@ import { applyFoundryDeployments, foundryBaseModels, foundryDeploymentModels, st
 import { resolvePiRuntime, type PiRuntimeProvider } from "./pi-runtime-config.js";
 
 /** Only these non-secret fields may leave Pi's credential store. */
-export async function getFoundryConnection(workFolderRoot: string, provider?: PiRuntimeProvider, providerId = AZURE_OPENAI_PROVIDER): Promise<FoundryConnection> {
-  const runtime = await resolvePiRuntime(workFolderRoot, provider, { requestProjectTrust: false });
+export async function getFoundryConnection(connectedFolderRoot: string, provider?: PiRuntimeProvider, providerId = AZURE_OPENAI_PROVIDER): Promise<FoundryConnection> {
+  const runtime = await resolvePiRuntime(connectedFolderRoot, provider, { requestProjectTrust: false });
   return readConnection(runtime.credentials, providerId);
 }
 
@@ -32,7 +32,7 @@ async function readConnection(credentials: CredentialStore, providerId: string):
 }
 
 export async function saveFoundryConnection(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   value: unknown,
   apiKey: string | undefined,
   provider?: PiRuntimeProvider,
@@ -40,7 +40,7 @@ export async function saveFoundryConnection(
 ): Promise<void> {
   const spec = foundryProvider(providerId)!;
   const settings = normalizeFoundryConnection(value, providerId);
-  const runtime = await resolvePiRuntime(workFolderRoot, provider, { requestProjectTrust: false });
+  const runtime = await resolvePiRuntime(connectedFolderRoot, provider, { requestProjectTrust: false });
   // Validate explicit metadata before changing any persisted credential or catalog.
   await foundryDeploymentModels(settings, providerId, runtime.modelRuntime);
   const existing = await runtime.credentials.read(providerId);
@@ -57,7 +57,7 @@ export async function saveFoundryConnection(
       [spec.baseUrlEnv]: settings.baseUrl,
       ...(spec.catalogProvider === "azure" ? { AZURE_OPENAI_API_VERSION: "v1" } : {}),
       [AZURE_OPENAI_DEPLOYMENTS_ENV]: JSON.stringify(settings.deployments),
-      WORKFOLD_FOUNDRY_MODEL_IDS: JSON.stringify(settings.modelIds ?? {}),
+      AMPLEFILE_FOUNDRY_MODEL_IDS: JSON.stringify(settings.modelIds ?? {}),
       // Explicit identity mappings prevent ambient aliases from rerouting these names.
       ...(spec.catalogProvider === "azure" ? { AZURE_OPENAI_DEPLOYMENT_NAME_MAP: settings.deployments.map((name) => `${name}=${name}`).join(",") } : {}),
     },
@@ -66,8 +66,8 @@ export async function saveFoundryConnection(
   await applyFoundryDeployments(runtime.credentials, runtime.modelRuntime);
 }
 
-export async function getFoundrySettings(workFolderRoot: string, provider?: PiRuntimeProvider) {
-  const runtime = await resolvePiRuntime(workFolderRoot, provider, { requestProjectTrust: false });
+export async function getFoundrySettings(connectedFolderRoot: string, provider?: PiRuntimeProvider) {
+  const runtime = await resolvePiRuntime(connectedFolderRoot, provider, { requestProjectTrust: false });
   const connections: Record<string, FoundryConnection> = {};
   const foundryErrors: Record<string, string> = {};
   for (const spec of FOUNDRY_PROVIDERS) {

@@ -7,7 +7,7 @@ import { errorText } from "../../lib/api";
 import { copyToClipboard } from "../../lib/clipboard";
 import { showToast } from "../../ui/feedback";
 
-type CommandLineStatus = Awaited<ReturnType<NonNullable<NonNullable<Window["workFoldDesktop"]>["commandLine"]>["status"]>>;
+type CommandLineStatus = Awaited<ReturnType<NonNullable<NonNullable<Window["ampleFileDesktop"]>["commandLine"]>["status"]>>;
 type SkillTarget = "claude" | "codex";
 
 const product = productIdentity.productName;
@@ -37,7 +37,7 @@ function fixtureStatus(): CommandLineStatus {
  * Nothing changes until the person clicks.
  */
 export function CommandLinePane({ fixtureMode = false, compact = false }: { fixtureMode?: boolean; compact?: boolean }) {
-  const bridge = window.workFoldDesktop?.commandLine;
+  const bridge = window.ampleFileDesktop?.commandLine;
   const [status, setStatus] = useState<CommandLineStatus | null>(() => fixtureMode ? fixtureStatus() : null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

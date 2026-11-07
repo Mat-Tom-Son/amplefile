@@ -6,19 +6,19 @@ import { join } from "node:path";
 import test from "node:test";
 import { RestrictedAppTaskService, restrictedAppTaskChatTitle, restrictedAppTaskPrompt, restrictedAppTaskTurnRequestId, restrictedAppTaskAuthorityDigest, type RestrictedAppTaskPorts, type RestrictedAppTaskReceipt, type RestrictedAppTaskScope } from "../src/local/agent/restricted-app-tasks.js";
 import type { RestrictedAppAssistantAction } from "../src/local/agent/restricted-app-manifest.js";
-import type { WorkFoldDurableTurnRecord } from "../src/local/agent/turn-store.js";
+import type { AmpleFileDurableTurnRecord } from "../src/local/agent/turn-store.js";
 import { restrictedAppAssistantLimits } from "../src/shared/restricted-app-tasks.js";
 
 const action: RestrictedAppAssistantAction = { id: "compare", title: "Compare quotes", instructions: "Compare the submitted quotes and write comparison.md.",
   inputSchema: { type: "object", properties: { quote: { type: "string", maxLength: 70_000 } }, required: ["quote"], additionalProperties: false } };
-const scope: RestrictedAppTaskScope = { workFolderId: "work-folder-one", appId: "quotes", featureInstallationId: "feature-one", digest: "a".repeat(64), authorityDigest: restrictedAppTaskAuthorityDigest({ generation: 1 }) };
+const scope: RestrictedAppTaskScope = { connectedFolderId: "connected-folder-one", appId: "quotes", featureInstallationId: "feature-one", digest: "a".repeat(64), authorityDigest: restrictedAppTaskAuthorityDigest({ generation: 1 }) };
 
 async function fixture(t: test.TestContext) {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-app-tasks-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-app-tasks-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   let now = new Date("2026-09-07T12:00:00.000Z");
   let current = structuredClone(scope);
-  const turns = new Map<string, WorkFoldDurableTurnRecord>();
+  const turns = new Map<string, AmpleFileDurableTurnRecord>();
   const dispatched: RestrictedAppTaskReceipt[] = [];
   const dispatchedAppTitles: string[] = [];
   const cancelled: string[] = [];
@@ -33,9 +33,9 @@ async function fixture(t: test.TestContext) {
       const durable = JSON.parse(await readFile(join(root, "tasks.json"), "utf8"));
       assert.equal(durable.records.find((item: any) => item.id === record.id).status, "dispatching", "the receipt is durable before a Chat can be accepted");
       if (dispatchBehavior === "before-failure") throw new Error("private provider secret");
-      if (dispatchBehavior !== "missing") turns.set(record.id, { schema: "work-fold.turn.v1", turnId: `turn-${record.id}`,
+      if (dispatchBehavior !== "missing") turns.set(record.id, { schema: "amplefile.turn.v1", turnId: `turn-${record.id}`,
         requestId: restrictedAppTaskTurnRequestId(record), requestDigest: "d".repeat(64), userMessageId: `message-${record.id}`,
-        userMessageCreatedAt: now.toISOString(), workFolderId: record.scope.workFolderId, conversationId: record.conversationId,
+        userMessageCreatedAt: now.toISOString(), connectedFolderId: record.scope.connectedFolderId, conversationId: record.conversationId,
         actorKind: "system", status: "running", userMessagePersisted: true, acceptedAt: now.toISOString(), updatedAt: now.toISOString(), assistantText: "" });
       if (dispatchBehavior === "after-failure") throw new Error("uncertain transport failure");
     },
@@ -62,13 +62,13 @@ test("the dispatched Chat is told the app's name, not the action's label", async
   assert.equal(receipt.title, "Compare quotes", "the receipt title stays the per-request action label");
   const prompt = restrictedAppTaskPrompt(receipt, f.dispatchedAppTitles[0]);
   assert.match(prompt, /^App request: Compare quotes\n/);
-  assert.match(prompt, /This request came from the app “Quote board” installed in this work-folder\./);
+  assert.match(prompt, /This request came from the app “Quote board” installed in this Connected Folder\./);
   assert.doesNotMatch(prompt, /the app “Compare quotes”/, "the action label is never presented as the app's name");
 
   // Without a resolved app title the sentence says less rather than something false.
   assert.match(
     restrictedAppTaskPrompt(receipt),
-    /This request came from an app installed in this work-folder\./,
+    /This request came from an app installed in this Connected Folder\./,
   );
 });
 
@@ -116,11 +116,11 @@ test("app Worker requests are journaled then dispatched once into their own Chat
 test("app Worker requests deny malformed, oversized, undeclared, stale and foreign inputs before any journal entry", async (t) => {
   const f = await fixture(t);
   for (const bad of [null, {}, f.request({ requestId: "" }), f.request({ requestedAt: "yesterday" }), f.request({ actionId: "fold" }),
-    f.request({ workFolderId: "other" }), f.request({ input: { quote: "x", arbitrary: true } }),
+    f.request({ connectedFolderId: "other" }), f.request({ input: { quote: "x", arbitrary: true } }),
     f.request({ requestedAt: "2026-09-07T13:00:00.000Z" })]) await assert.rejects(f.service.request(scope, bad));
   const request = f.request();
   await f.service.request(scope, request);
-  for (const key of ["workFolderId", "appId", "featureInstallationId", "digest", "authorityDigest"] as const) {
+  for (const key of ["connectedFolderId", "appId", "featureInstallationId", "digest", "authorityDigest"] as const) {
     const foreign = { ...scope, [key]: `different-${key}` };
     f.changeScope(foreign);
     await assert.rejects(f.service.get(foreign, request.requestId), /unavailable to this app revision/);
@@ -255,12 +255,12 @@ test("a turn without pricing leaves the cost unknown, and a failed turn still re
 test("foreign turn responses fail closed; damaged journals disable only the task lane without overwriting evidence", async (t) => {
   const f = await fixture(t);
   const first = await f.service.request(scope, f.request());
-  f.turns.get(first.id)!.workFolderId = "foreign";
+  f.turns.get(first.id)!.connectedFolderId = "foreign";
   await assert.rejects(f.service.get(scope, first.requestId), /outcome is unavailable/);
-  f.turns.get(first.id)!.workFolderId = scope.workFolderId;
+  f.turns.get(first.id)!.connectedFolderId = scope.connectedFolderId;
   const file = join(f.root, "tasks.json");
   const good = JSON.parse(await readFile(file, "utf8"));
-  assert.equal(good.schema, "work-fold.app-assistant-tasks.v3");
+  assert.equal(good.schema, "amplefile.app-assistant-tasks.v3");
   for (const modify of [
     (data: any) => { data.schema = "legacy.tasks"; },
     (data: any) => { data.records.push(data.records[0]); },
@@ -313,7 +313,7 @@ test("a v1 journal loads with its inert and expired requests stopped and is rewr
     const requestId = randomUUID();
     return { ...rest, id, requestId, conversationId: `chat-app-${id}`, ...overrides };
   };
-  const v1 = { schema: "work-fold.app-assistant-tasks.v1", records: [
+  const v1 = { schema: "amplefile.app-assistant-tasks.v1", records: [
     { ...running, approvedAt: running.startedAt, startedAt: undefined },
     legacy({ status: "pending" }),
     legacy({ status: "expired" }),
@@ -326,7 +326,7 @@ test("a v1 journal loads with its inert and expired requests stopped and is rewr
   assert.ok(tasks.every((task) => typeof task.startedAt === "string"));
   assert.equal(f.dispatched.length, 1, "loading never dispatches a legacy inert request");
   await f.service.request(scope, f.request());
-  assert.equal(JSON.parse(await readFile(file, "utf8")).schema, "work-fold.app-assistant-tasks.v3");
+  assert.equal(JSON.parse(await readFile(file, "utf8")).schema, "amplefile.app-assistant-tasks.v3");
 });
 
 test("an app's input reaches the Worker fenced as untrusted data that cannot close its own fence", () => {

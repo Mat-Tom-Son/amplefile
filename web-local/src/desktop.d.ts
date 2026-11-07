@@ -10,7 +10,7 @@ import type {
 
 export {};
 
-interface WorkFoldDesktopUpdateStatus {
+interface AmpleFileDesktopUpdateStatus {
   supported: boolean;
   phase: "unsupported" | "idle" | "checking" | "available" | "not_available" | "downloading" | "ready" | "installing" | "error";
   currentVersion: string;
@@ -21,23 +21,23 @@ interface WorkFoldDesktopUpdateStatus {
   error: string | null;
 }
 
-interface WorkFoldCommandLineSkillStatus {
+interface AmpleFileCommandLineSkillStatus {
   available: boolean;
   installed: "none" | "current" | "outdated";
   path: string;
 }
 
-interface WorkFoldCommandLineStatus {
+interface AmpleFileCommandLineStatus {
   command: string;
   path: { supported: boolean; reason: string | null; state: "installed" | "missing" | "elsewhere"; binDirectory: string | null; entryFile: string };
-  skills: { claude: WorkFoldCommandLineSkillStatus; codex: WorkFoldCommandLineSkillStatus };
+  skills: { claude: AmpleFileCommandLineSkillStatus; codex: AmpleFileCommandLineSkillStatus };
 }
 
-type WorkFoldDesktopMenuCommand =
-  | "new-work-folder"
+type AmpleFileDesktopMenuCommand =
+  | "new-connected-folder"
   | "open-local-folder"
   | "new-chat"
-  | "reload-work-folder-state"
+  | "reload-connected-folder-state"
   | "check-for-updates"
   | "open-settings"
   | "open-about"
@@ -50,37 +50,37 @@ type WorkFoldDesktopMenuCommand =
   | "toggle-sidebar"
   | "toggle-agent-panel";
 
-type WorkFoldDesktopMenuId = "file" | "edit" | "view" | "help";
-type WorkFoldDesktopPathAction = "open" | "open-native" | "reveal";
-type WorkFoldDesktopFileMenuCommand = "open" | "open-with" | "reveal" | "copy-path" | "attach-chat" | "version-history" | "new-folder" | "upload-here" | "refresh" | "give-worker" | "rename" | "delete"
+type AmpleFileDesktopMenuId = "file" | "edit" | "view" | "help";
+type AmpleFileDesktopPathAction = "open" | "open-native" | "reveal";
+type AmpleFileDesktopFileMenuCommand = "open" | "open-with" | "reveal" | "copy-path" | "attach-chat" | "version-history" | "new-folder" | "upload-here" | "refresh" | "give-worker" | "rename" | "delete"
   | "copy" | "paste" | "duplicate" | "compress" | "new-folder-with-selection";
 
-type WorkFoldDesktopTabMenuCommand = "rename" | "copy" | "resume" | "archive" | "restore" | "delete" | "close" | "close-others" | "close-right" | "reopen" | `snooze:${string}`;
+type AmpleFileDesktopTabMenuCommand = "rename" | "copy" | "resume" | "archive" | "restore" | "delete" | "close" | "close-others" | "close-right" | "reopen" | `snooze:${string}`;
 
-type WorkFoldDesktopHeaderMenuCommand = "new-chat" | "customize" | "set-up" | "look" | "reveal" | "manage" | "skills" | "settings"
-  | "put-to-work" | "remove-from-sidebar" | "create-work-folder" | "use-existing-folder" | "remove-work-folder";
+type AmpleFileDesktopHeaderMenuCommand = "new-chat" | "customize" | "set-up" | "look" | "reveal" | "manage" | "skills" | "settings"
+  | "put-to-work" | "remove-from-sidebar" | "create-connected-folder" | "use-existing-folder" | "remove-connected-folder";
 
-interface WorkFoldDesktopHeaderMenuRequest {
+interface AmpleFileDesktopHeaderMenuRequest {
   /**
    * The file manager's Action menu adds Skills & Extensions and Settings and
    * leaves out Manage; its sidebar uses the Standard Folder and + commands.
    */
   actions: {
     newChat: boolean; customize: boolean; setUp: boolean; reveal: boolean; skills?: boolean; settings?: boolean; manage?: boolean;
-    putToWork?: boolean; removeFromSidebar?: boolean; createWorkFolder?: boolean; useExistingFolder?: boolean; remove?: boolean;
+    putToWork?: boolean; removeFromSidebar?: boolean; createConnectedFolder?: boolean; useExistingFolder?: boolean; remove?: boolean; removeDeletes?: boolean;
   };
   point: { x: number; y: number };
 }
 
-interface WorkFoldDesktopTabMenuRequest {
+interface AmpleFileDesktopTabMenuRequest {
   chat?: { lifecycle: "active" | "snoozed" | "archived"; snooze: Array<{ id: string; label: string; detail: string }> };
   tab?: { hasOthers: boolean; hasRight: boolean; canReopen: boolean };
   point: { x: number; y: number };
 }
 
-interface WorkFoldDesktopFileMenuRequest {
+interface AmpleFileDesktopFileMenuRequest {
   /** Empty for an entry in a standard folder. */
-  workFolderId: string;
+  connectedFolderId: string;
   /** Desktop, Documents, or Downloads in the file manager; Delete becomes Move to Trash. */
   standardFolderId?: string;
   path: string;
@@ -102,8 +102,8 @@ interface WorkFoldDesktopFileMenuRequest {
   point: { x: number; y: number };
 }
 
-interface WorkFoldRestrictedAppViewRequest {
-  workFolderId: string;
+interface AmpleFileRestrictedAppViewRequest {
+  connectedFolderId: string;
   appId: string;
   featureInstallationId: string;
   digest: string;
@@ -121,29 +121,29 @@ interface WorkFoldRestrictedAppViewRequest {
   openedFrom?: { kind: "notification"; permissionId: string };
 }
 
-interface WorkFoldBrowserHistoryEntry {
+interface AmpleFileBrowserHistoryEntry {
   url: string;
   title: string;
   visits: number;
   lastVisitedAt: string;
 }
 
-type WorkFoldBrowserCommand =
+type AmpleFileBrowserCommand =
   | { type: "back" | "forward" | "reload" | "stop" | "focus" | "stop-find" | "inspect" | "zoom-in" | "zoom-out" | "zoom-reset" | "dismiss-notice" | "print" | "save-pdf" | "open-blocked-popup" | "allow-popups" | "dismiss-blocked-popup" }
   | { type: "mute"; muted: boolean }
   | { type: "find"; text: string; forward: boolean; newSearch: boolean }
   | { type: "forget-permission" | "open-privacy-settings"; kind: import("../../src/shared/browser").BrowserSitePermission };
 
-interface WorkFoldRestrictedAppAttention {
-  workFolderId: string;
+interface AmpleFileRestrictedAppAttention {
+  connectedFolderId: string;
   appId: string;
   featureInstallationId: string;
   count: number;
 }
 
-interface WorkFoldRestrictedAppTabCommand {
+interface AmpleFileRestrictedAppTabCommand {
   type: "open" | "update" | "close";
-  workFolderId: string;
+  connectedFolderId: string;
   appId: string;
   featureInstallationId: string;
   digest: string;
@@ -153,14 +153,14 @@ interface WorkFoldRestrictedAppTabCommand {
   tab?: { appTabId: string; title: string; route: string; state?: unknown };
 }
 
-interface WorkFoldRestrictedAppViewState {
+interface AmpleFileRestrictedAppViewState {
   mountId: string;
   state: "loading" | "ready" | "crashed" | "stopped";
   message?: string;
 }
 
-interface WorkFoldRestrictedAppOwner {
-  workFolderId: string;
+interface AmpleFileRestrictedAppOwner {
+  connectedFolderId: string;
   appId: string;
   featureInstallationId: string;
   digest: string;
@@ -172,7 +172,7 @@ interface WorkFoldRestrictedAppOwner {
 
 declare global {
   interface Window {
-    workFoldDesktop?: {
+    ampleFileDesktop?: {
       desktop: true;
       clipboard?: import("../../src/shared/clipboard").ClipboardWriter;
       api: {
@@ -192,25 +192,25 @@ declare global {
         }>;
         onRendererRecovered: (listener: () => void) => () => void;
       };
-      workFolder: {
+      connectedFolder: {
         chooseFolder: () => Promise<{ path: string; folderGrantId: string } | null>;
-        revealFolder: (workFolderId: string) => Promise<void>;
-        openPath: (workFolderId: string, path: string, action?: WorkFoldDesktopPathAction) => Promise<void>;
-        openPathWith?: (workFolderId: string, path: string) => Promise<{ opened: boolean; canceled: boolean; appName: string | null }>;
-        startDrag: (workFolderId: string, path: string) => Promise<void>;
-        previewFile: (workFolderId: string, path: string) => Promise<boolean>;
-        popupFileMenu?: (request: WorkFoldDesktopFileMenuRequest) => Promise<WorkFoldDesktopFileMenuCommand | null>;
-        /** A work-folder tab's or a Chat's right-click menu (macOS). */
-        popupTabMenu?: (request: WorkFoldDesktopTabMenuRequest) => Promise<WorkFoldDesktopTabMenuCommand | null>;
-        /** The work-folder header's right-click menu (macOS). */
-        popupHeaderMenu?: (request: WorkFoldDesktopHeaderMenuRequest) => Promise<WorkFoldDesktopHeaderMenuCommand | null>;
-        setActiveWorkFolder: (workFolderId: string | null) => Promise<void>;
-        onOpenWorkFolder: (listener: (workFolderId: string, view?: "checks") => void) => () => void;
+        revealFolder: (connectedFolderId: string) => Promise<void>;
+        openPath: (connectedFolderId: string, path: string, action?: AmpleFileDesktopPathAction) => Promise<void>;
+        openPathWith?: (connectedFolderId: string, path: string) => Promise<{ opened: boolean; canceled: boolean; appName: string | null }>;
+        startDrag: (connectedFolderId: string, path: string) => Promise<void>;
+        previewFile: (connectedFolderId: string, path: string) => Promise<boolean>;
+        popupFileMenu?: (request: AmpleFileDesktopFileMenuRequest) => Promise<AmpleFileDesktopFileMenuCommand | null>;
+        /** A Connected Folder tab's or a Chat's right-click menu (macOS). */
+        popupTabMenu?: (request: AmpleFileDesktopTabMenuRequest) => Promise<AmpleFileDesktopTabMenuCommand | null>;
+        /** The Connected Folder header's right-click menu (macOS). */
+        popupHeaderMenu?: (request: AmpleFileDesktopHeaderMenuRequest) => Promise<AmpleFileDesktopHeaderMenuCommand | null>;
+        setActiveConnectedFolder: (connectedFolderId: string | null) => Promise<void>;
+        onOpenConnectedFolder: (listener: (connectedFolderId: string, view?: "checks") => void) => () => void;
         onOpenFolder: (listener: () => void) => () => void;
       };
       /** Standard Folders in the file manager (absent in older desktop builds). */
       standardFolder?: {
-        openPath: (standardFolderId: string, path: string, action?: WorkFoldDesktopPathAction) => Promise<void>;
+        openPath: (standardFolderId: string, path: string, action?: AmpleFileDesktopPathAction) => Promise<void>;
         openPathWith: (standardFolderId: string, path: string) => Promise<{ opened: boolean; canceled: boolean; appName: string | null }>;
         startDrag: (standardFolderId: string, path: string) => Promise<boolean>;
         previewFile: (standardFolderId: string, path: string) => Promise<boolean>;
@@ -226,38 +226,38 @@ declare global {
       fileClipboard?: {
         write: (paths: string[]) => Promise<boolean>;
         paste: (request: {
-          target: { place: { kind: "work-folder" | "standard"; id: string }; path: string };
+          target: { place: { kind: "connected-folder" | "standard"; id: string }; path: string };
           mode: "copy" | "move";
-          internal: { place: { kind: "work-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[] } | null;
-        }) => Promise<{ mode: string; written: string[]; restorePoints: Array<{ workFolderId: string; checkpointId: string }>; copiedInstead?: boolean; moves?: Array<{ from: string; to: string }>; nothing?: boolean; fromHere?: boolean; count?: number }>;
+          internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[] } | null;
+        }) => Promise<{ mode: string; written: string[]; restorePoints: Array<{ connectedFolderId: string; checkpointId: string }>; copiedInstead?: boolean; moves?: Array<{ from: string; to: string }>; nothing?: boolean; fromHere?: boolean; count?: number }>;
       };
       agent: {
-        /** The local path of a file dropped on the work-fold agent panel. */
+        /** The local path of a file dropped on the AmpleFile agent panel. */
         getPathForFile?: (file: File) => string;
-        openWorkFoldAgentDraft?: (text: string) => Promise<boolean>;
-        openChecks?: (workFolderId: string) => Promise<boolean>;
+        openAmpleFileAgentDraft?: (text: string) => Promise<boolean>;
+        openChecks?: (connectedFolderId: string) => Promise<boolean>;
         onOpenSettings: (listener: (scope?: "agent") => void) => () => void;
       };
       /** Main-window-only automation management; absent from the popover preload. */
       automations?: {
         list: () => Promise<AutomationsResponse>;
-        /** Pending `*.work-fold-automation.json` files in the work-fold agent's working folder. */
+        /** Pending `*.amplefile-automation.json` files in the AmpleFile agent's working folder. */
         proposals: () => Promise<AutomationProposalsResponse>;
         /** Turns on one pending file by absolute path, through the same enable path as the CLI. */
         enableProposal: (path: string) => Promise<AutomationEnableProposalResponse>;
         show: (automationId: string) => Promise<AutomationDetailResponse>;
         history: (automationId: string) => Promise<AutomationHistoryResponse>;
         enable: (automationId: string) => Promise<AutomationEnableResponse>;
-        /** Turns on a ready-made Automation for one work-folder (absent in older desktop builds). */
-        enableTemplate?: (workFolderId: string, templateId: string) => Promise<AutomationEnableResponse>;
+        /** Turns on a ready-made Automation for one Connected Folder (absent in older desktop builds). */
+        enableTemplate?: (connectedFolderId: string, templateId: string) => Promise<AutomationEnableResponse>;
         run: (automationId: string) => Promise<AutomationRunResponse>;
         stop: (automationId: string) => Promise<unknown>;
         disable: (automationId: string) => Promise<unknown>;
         delete: (automationId: string) => Promise<unknown>;
       };
-      workFoldAgent?: {
-        openChecks?: (workFolderId: string) => Promise<boolean>;
-        openResultFile?: (workFolderId: string, path: string) => Promise<void>;
+      ampleFileAgent?: {
+        openChecks?: (connectedFolderId: string) => Promise<boolean>;
+        openResultFile?: (connectedFolderId: string, path: string) => Promise<void>;
         getPathForFile: (file: File) => string;
         hide: () => void;
         openMainWindow: () => Promise<boolean>;
@@ -265,14 +265,14 @@ declare global {
         onStaged: (listener: (items: Array<{ kind: "path" | "text"; value: string }>) => void) => () => void;
       };
       restrictedApps: {
-        mountView: (request: WorkFoldRestrictedAppViewRequest) => Promise<{ mounted: true; digest: string }>;
-        layoutView: (request: WorkFoldRestrictedAppViewRequest) => void;
+        mountView: (request: AmpleFileRestrictedAppViewRequest) => Promise<{ mounted: true; digest: string }>;
+        layoutView: (request: AmpleFileRestrictedAppViewRequest) => void;
         unmountView: (mountId: string) => Promise<void>;
-        onTabCommand: (listener: (command: WorkFoldRestrictedAppTabCommand) => void) => () => void;
-        onViewState: (listener: (state: WorkFoldRestrictedAppViewState) => void) => () => void;
-        onOpenRequest: (listener: (owner: WorkFoldRestrictedAppOwner) => void) => () => void;
-        attentionStates?: () => Promise<WorkFoldRestrictedAppAttention[]>;
-        onAttention?: (listener: (state: WorkFoldRestrictedAppAttention) => void) => () => void;
+        onTabCommand: (listener: (command: AmpleFileRestrictedAppTabCommand) => void) => () => void;
+        onViewState: (listener: (state: AmpleFileRestrictedAppViewState) => void) => () => void;
+        onOpenRequest: (listener: (owner: AmpleFileRestrictedAppOwner) => void) => () => void;
+        attentionStates?: () => Promise<AmpleFileRestrictedAppAttention[]>;
+        onAttention?: (listener: (state: AmpleFileRestrictedAppAttention) => void) => () => void;
       };
       /** The built-in browser's tabs; main-window only (docs/built-in-browser.md). */
       browser?: {
@@ -280,7 +280,7 @@ declare global {
         layout: (request: import("../../src/shared/browser").BrowserViewRequest) => void;
         unmount: (pageId: string) => Promise<void>;
         navigate: (pageId: string, address: string) => Promise<import("../../src/shared/browser").BrowserPageState>;
-        command: (pageId: string, command: WorkFoldBrowserCommand) => Promise<void>;
+        command: (pageId: string, command: AmpleFileBrowserCommand) => Promise<void>;
         close: (pageId: string) => Promise<void>;
         respondPermission: (pageId: string, requestId: string, decision: "allow" | "block") => Promise<void>;
         sync: (tabs: import("../../src/shared/browser").BrowserTabsSync) => void;
@@ -290,9 +290,9 @@ declare global {
         /** A browser tab's right-click menu; resolves with what the tab strip should do, if anything. */
         popupTabMenu: (pageId: string, url: string, point: { x: number; y: number }, options: { canReopen: boolean; hasOthers: boolean }) => Promise<import("../../src/shared/browser").BrowserTabMenuCommand | null>;
         /** Pages from history matching what someone typed in the address bar. */
-        suggest: (text: string) => Promise<WorkFoldBrowserHistoryEntry[]>;
+        suggest: (text: string) => Promise<AmpleFileBrowserHistoryEntry[]>;
         /** The most recently visited pages, for a new tab. */
-        recent: () => Promise<WorkFoldBrowserHistoryEntry[]>;
+        recent: () => Promise<AmpleFileBrowserHistoryEntry[]>;
         clearHistory: () => Promise<void>;
         onState: (listener: (state: import("../../src/shared/browser").BrowserPageState) => void) => () => void;
         onOpenTab: (listener: (command: import("../../src/shared/browser").BrowserOpenTabCommand) => void) => () => void;
@@ -321,28 +321,28 @@ declare global {
         openExternal: (url: string) => Promise<void>;
       };
       updates: {
-        getStatus: () => Promise<WorkFoldDesktopUpdateStatus>;
-        check: () => Promise<WorkFoldDesktopUpdateStatus>;
-        install: () => Promise<WorkFoldDesktopUpdateStatus>;
-        updateNow: () => Promise<WorkFoldDesktopUpdateStatus>;
-        onStatusChanged: (listener: (status: WorkFoldDesktopUpdateStatus) => void) => () => void;
+        getStatus: () => Promise<AmpleFileDesktopUpdateStatus>;
+        check: () => Promise<AmpleFileDesktopUpdateStatus>;
+        install: () => Promise<AmpleFileDesktopUpdateStatus>;
+        updateNow: () => Promise<AmpleFileDesktopUpdateStatus>;
+        onStatusChanged: (listener: (status: AmpleFileDesktopUpdateStatus) => void) => () => void;
       };
       settings: {
         getStatus: () => Promise<{ encryptionAvailable: boolean; configuredProviders: string[] }>;
       };
       /** Other AI agents: the command on Terminal's PATH and the skill file (Settings → Command Line). */
       commandLine?: {
-        status: () => Promise<WorkFoldCommandLineStatus>;
-        installPath: () => Promise<WorkFoldCommandLineStatus>;
-        removePath: () => Promise<WorkFoldCommandLineStatus>;
-        installSkill: (target: "claude" | "codex") => Promise<WorkFoldCommandLineStatus>;
-        removeSkill: (target: "claude" | "codex") => Promise<WorkFoldCommandLineStatus>;
+        status: () => Promise<AmpleFileCommandLineStatus>;
+        installPath: () => Promise<AmpleFileCommandLineStatus>;
+        removePath: () => Promise<AmpleFileCommandLineStatus>;
+        installSkill: (target: "claude" | "codex") => Promise<AmpleFileCommandLineStatus>;
+        removeSkill: (target: "claude" | "codex") => Promise<AmpleFileCommandLineStatus>;
         skill: () => Promise<string>;
       };
       menu: {
-        setState: (state: { workFolderOpen: boolean }) => void;
-        popup: (menuId: WorkFoldDesktopMenuId, bounds: { x: number; y: number }) => Promise<void>;
-        onCommand: (listener: (command: WorkFoldDesktopMenuCommand) => void) => () => void;
+        setState: (state: { connectedFolderOpen: boolean }) => void;
+        popup: (menuId: AmpleFileDesktopMenuId, bounds: { x: number; y: number }) => Promise<void>;
+        onCommand: (listener: (command: AmpleFileDesktopMenuCommand) => void) => () => void;
       };
     };
   }

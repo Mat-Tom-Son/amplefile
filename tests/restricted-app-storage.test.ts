@@ -32,7 +32,7 @@ async function temporaryStore(t: test.TestContext): Promise<{
   root: string;
   store: FileRestrictedAppStorage;
 }> {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-restricted-storage-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-restricted-storage-"));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
   const root = join(sandbox, "restricted-app-data");
   return { root, store: new FileRestrictedAppStorage(root) };
@@ -253,12 +253,12 @@ test("restricted app storage reauthorizes immediately before an atomic commit", 
   });
 });
 
-test("restricted app storage ignores old work-folder/app stores", async (t) => {
+test("restricted app storage ignores old connected-folder/app stores", async (t) => {
   const { root, store } = await temporaryStore(t);
-  const legacyOwner = { workFolderId: "work-folder-one", appId: "mail-app" };
+  const legacyOwner = { connectedFolderId: "connected-folder-one", appId: "mail-app" };
   const legacyHash = createHash("sha256")
-    .update("work-fold-restricted-app-storage-v1\0")
-    .update(legacyOwner.workFolderId)
+    .update("amplefile-restricted-app-storage-v1\0")
+    .update(legacyOwner.connectedFolderId)
     .update("\0")
     .update(legacyOwner.appId)
     .digest("hex");

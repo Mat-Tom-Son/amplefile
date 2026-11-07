@@ -1,5 +1,5 @@
 import type React from "react";
-import { workFolderPathDragType, workFolderPathsDragType } from "../constants";
+import { connectedFolderPathDragType, connectedFolderPathsDragType } from "../constants";
 import { desktopPlatform, type DesktopPlatform } from "./platform";
 import { fileExtension } from "./tree";
 import type { ChangeEntry, TreeEntry } from "../types";
@@ -49,8 +49,8 @@ function hasNativeFiles(event: React.DragEvent<HTMLElement>): boolean {
   return Array.from(event.dataTransfer.types).includes("Files");
 }
 
-function hasWorkFolderPathDrag(event: React.DragEvent<HTMLElement>): boolean {
-  return Array.from(event.dataTransfer.types).includes(workFolderPathDragType);
+function hasConnectedFolderPathDrag(event: React.DragEvent<HTMLElement>): boolean {
+  return Array.from(event.dataTransfer.types).includes(connectedFolderPathDragType);
 }
 
 /**
@@ -58,27 +58,27 @@ function hasWorkFolderPathDrag(event: React.DragEvent<HTMLElement>): boolean {
  * together, else the one row. A single-row drag also sets the one-path type,
  * which older drop targets read.
  */
-function draggedWorkFolderPaths(dataTransfer: DataTransfer): string[] {
+function draggedConnectedFolderPaths(dataTransfer: DataTransfer): string[] {
   try {
-    const several: unknown = JSON.parse(dataTransfer.getData(workFolderPathsDragType) || "null");
+    const several: unknown = JSON.parse(dataTransfer.getData(connectedFolderPathsDragType) || "null");
     if (Array.isArray(several) && several.length && several.every((path) => typeof path === "string" && path)) return several;
   } catch { /* not a several-row drag */ }
-  const one = dataTransfer.getData(workFolderPathDragType) || dataTransfer.getData("text/plain");
+  const one = dataTransfer.getData(connectedFolderPathDragType) || dataTransfer.getData("text/plain");
   return one ? [one] : [];
 }
 
 function changeStatusText(change: ChangeEntry): string {
   if (change.kind === "created") return "New local file";
   if (change.kind === "modified") return "Modified locally";
-  if (change.kind === "remote_deleted") return "Deleted outside work-fold. Restore it from History or remove the local record.";
+  if (change.kind === "remote_deleted") return "Deleted outside AmpleFile. Restore it from History or remove the local record.";
   return "Deleted locally. You can restore it from History while a restore point is available.";
 }
 
 function treeChangeLabel(change: ChangeEntry): string {
   if (change.kind === "created") return "New local";
   if (change.kind === "modified") return "Edited local";
-  if (change.kind === "remote_deleted") return "Deleted outside work-fold";
+  if (change.kind === "remote_deleted") return "Deleted outside AmpleFile";
   return "Deleted local";
 }
 
-export { canOpenDirectly, changeStatusText, draggedWorkFolderPaths, hasNativeFiles, hasWorkFolderPathDrag, nativeOpenLabel, revealInFileManagerLabel, treeChangeLabel };
+export { canOpenDirectly, changeStatusText, draggedConnectedFolderPaths, hasNativeFiles, hasConnectedFolderPathDrag, nativeOpenLabel, revealInFileManagerLabel, treeChangeLabel };

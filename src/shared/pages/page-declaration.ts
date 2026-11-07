@@ -7,7 +7,7 @@
  */
 import { pageSha256Hex } from "./page-sha256.js";
 
-export const pageFormat = "work-fold.page/1";
+export const pageFormat = "amplefile.page/1";
 
 export const pageColumnTypes = ["text", "long-text", "number", "boolean", "date", "email", "url", "choice"] as const;
 export type PageColumnType = (typeof pageColumnTypes)[number];
@@ -33,7 +33,7 @@ export const pageDeclarationLimits = Object.freeze({
   maxChoiceOptionLength: 500,
 });
 
-/** Table and column names. Never starting with `_`: work-fold's own columns do. */
+/** Table and column names. Never starting with `_`: AmpleFile's own columns do. */
 export const pageNamePattern = /^[a-z][a-z0-9_]{0,40}$/;
 
 /**
@@ -255,7 +255,7 @@ function parseColumn(
     problem(path, "column names use lowercase letters, digits, and underscores, start with a letter, and are at most 41 characters.");
     ok = false;
   } else if (reservedPageColumnNames.has(name)) {
-    problem(path, `"${name}" is used by work-fold for every row; choose another column name.`);
+    problem(path, `"${name}" is used by AmpleFile for every row; choose another column name.`);
     ok = false;
   }
   if (!isPlainObject(value)) {

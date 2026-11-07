@@ -1,8 +1,8 @@
 import type {
-  WorkFoldSchedulerRunOutcome,
-  WorkFoldSchedulerRunReason,
-} from "../agent/work-fold-scheduler-service.js";
-import type { WorkFoldCheckRunState } from "../checks/check-types.js";
+  AmpleFileSchedulerRunOutcome,
+  AmpleFileSchedulerRunReason,
+} from "../agent/amplefile-scheduler-service.js";
+import type { AmpleFileCheckRunState } from "../checks/check-types.js";
 
 const defaultMaxListeners = 8;
 const defaultMaxListenerErrors = 500;
@@ -13,69 +13,69 @@ const maxListenerErrorLength = 300;
  * run. Trigger evaluation drops these records, which is what makes automation
  * chains structurally impossible rather than merely bounded.
  */
-export interface WorkFoldAutomationHopLineage {
+export interface AmpleFileAutomationHopLineage {
   kind: "automation-hop";
   automationId: string;
   automationRunId: string;
   hopId: string;
 }
 
-export type WorkFoldSettleLineage = WorkFoldAutomationHopLineage;
+export type AmpleFileSettleLineage = AmpleFileAutomationHopLineage;
 
 /** Terminal Check-run states; a settle record never carries pending work. */
-export type WorkFoldCheckRunSettleState = Exclude<WorkFoldCheckRunState, "accepted" | "running">;
+export type AmpleFileCheckRunSettleState = Exclude<AmpleFileCheckRunState, "accepted" | "running">;
 
 /**
- * A named work-folder's Check run reached a durable terminal state. Published by the
+ * A named Connected Folder's Check run reached a durable terminal state. Published by the
  * Check service's terminal-persistence funnel only after the exact terminal
  * run record is durable; startup `interrupted` reconciliation is recorded by
  * the store before any listener exists and is deliberately never published.
  */
-export interface WorkFoldCheckRunSettleRecord {
+export interface AmpleFileCheckRunSettleRecord {
   kind: "check-run";
-  workFolderId: string;
+  connectedFolderId: string;
   runId: string;
   taskId: string;
   checkIds: string[];
-  state: WorkFoldCheckRunSettleState;
+  state: AmpleFileCheckRunSettleState;
   startedAt: string;
   endedAt: string;
-  lineage?: WorkFoldSettleLineage;
+  lineage?: AmpleFileSettleLineage;
 }
 
 /**
- * A named work-folder's restricted-app named-automation run settled and its
+ * A named Connected Folder's restricted-app named-automation run settled and its
  * digest-scoped run receipt is durable. Results that produced no durable
  * receipt (for example an app uninstalled mid-run) are never published, and a
  * replayed result that deduplicated against the historical receipt ledger is
  * never published twice.
  */
-export interface WorkFoldAppAutomationRunSettleRecord {
+export interface AmpleFileAppAutomationRunSettleRecord {
   kind: "app-automation-run";
-  workFolderId: string;
+  connectedFolderId: string;
   appId: string;
   appAutomationId: string;
   runId: string;
-  outcome: WorkFoldSchedulerRunOutcome;
-  reason: WorkFoldSchedulerRunReason;
+  outcome: AmpleFileSchedulerRunOutcome;
+  reason: AmpleFileSchedulerRunReason;
   scheduledAt: string;
   startedAt: string;
   finishedAt: string;
-  lineage?: WorkFoldSettleLineage;
+  lineage?: AmpleFileSettleLineage;
 }
 
-export type WorkFoldSettleRecord = WorkFoldCheckRunSettleRecord | WorkFoldAppAutomationRunSettleRecord;
+export type AmpleFileSettleRecord = AmpleFileCheckRunSettleRecord | AmpleFileAppAutomationRunSettleRecord;
 
-export type WorkFoldSettleListener = (record: WorkFoldSettleRecord) => void | Promise<void>;
+export type AmpleFileSettleListener = (record: AmpleFileSettleRecord) => void | Promise<void>;
 
-export interface WorkFoldSettleListenerError {
-  recordKind: WorkFoldSettleRecord["kind"];
+export interface AmpleFileSettleListenerError {
+  recordKind: AmpleFileSettleRecord["kind"];
   runId: string;
   occurredAt: string;
   error: string;
 }
 
-export interface WorkFoldSettleSignalOptions {
+export interface AmpleFileSettleSignalOptions {
   now?: () => Date;
   maxListeners?: number;
   maxListenerErrors?: number;
@@ -96,14 +96,14 @@ export interface WorkFoldSettleSignalOptions {
  * nothing here is persisted, queued across restarts, or reachable from any
  * external channel.
  */
-export class WorkFoldSettleSignal {
+export class AmpleFileSettleSignal {
   readonly #now: () => Date;
   readonly #maxListeners: number;
   readonly #maxListenerErrors: number;
-  readonly #listeners = new Set<WorkFoldSettleListener>();
-  readonly #listenerErrors: WorkFoldSettleListenerError[] = [];
+  readonly #listeners = new Set<AmpleFileSettleListener>();
+  readonly #listenerErrors: AmpleFileSettleListenerError[] = [];
 
-  constructor(options: WorkFoldSettleSignalOptions = {}) {
+  constructor(options: AmpleFileSettleSignalOptions = {}) {
     this.#now = options.now ?? (() => new Date());
     this.#maxListeners = positiveInteger(options.maxListeners ?? defaultMaxListeners, "Settle listener capacity");
     this.#maxListenerErrors = positiveInteger(
@@ -117,7 +117,7 @@ export class WorkFoldSettleSignal {
   }
 
   /** Registers a listener and returns its idempotent unsubscribe. */
-  subscribe(listener: WorkFoldSettleListener): () => void {
+  subscribe(listener: AmpleFileSettleListener): () => void {
     if (this.#listeners.has(listener)) throw new Error("Settle listener is already subscribed.");
     if (this.#listeners.size >= this.#maxListeners) {
       throw new Error("Settle signal listener capacity exhausted; a listener is leaking subscriptions.");
@@ -132,7 +132,7 @@ export class WorkFoldSettleSignal {
   }
 
   /** Fire-and-forget delivery to every listener; never throws. */
-  publish(record: WorkFoldSettleRecord): void {
+  publish(record: AmpleFileSettleRecord): void {
     for (const listener of [...this.#listeners]) {
       try {
         void Promise.resolve(listener(structuredClone(record)))
@@ -143,11 +143,11 @@ export class WorkFoldSettleSignal {
     }
   }
 
-  listListenerErrors(): WorkFoldSettleListenerError[] {
+  listListenerErrors(): AmpleFileSettleListenerError[] {
     return this.#listenerErrors.map((error) => ({ ...error }));
   }
 
-  #recordListenerError(record: WorkFoldSettleRecord, error: unknown): void {
+  #recordListenerError(record: AmpleFileSettleRecord, error: unknown): void {
     this.#listenerErrors.push({
       recordKind: record.kind,
       runId: record.runId,

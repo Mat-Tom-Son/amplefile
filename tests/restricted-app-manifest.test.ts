@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 test("named Worker requests have reviewed static instructions and bounded typed input without changing old manifests", () => {
-  const action = { id: "compare", title: "Compare quotes", instructions: "Write a comparison in this work-folder.", inputSchema: {
+  const action = { id: "compare", title: "Compare quotes", instructions: "Write a comparison in this Connected Folder.", inputSchema: {
     type: "object", properties: { quote: { type: "string", maxLength: 1_000 } }, required: ["quote"], additionalProperties: false } };
   const base = manifest();
   assert.deepEqual(parseRestrictedAppManifest({ ...base, assistantActions: [] }), parseRestrictedAppManifest(base));
@@ -10,7 +10,7 @@ test("named Worker requests have reviewed static instructions and bounded typed 
   assert.equal(parseRestrictedAppManifest({ ...base, assistantActions: [{ ...action, instructions: "x".repeat(4_097) }] }).assistantActions?.[0]?.instructions.length, 4_097);
   assert.equal(parseRestrictedAppManifest({ ...base, assistantActions: Array.from({ length: 9 }, (_, index) => ({ ...action, id: `task-${index}` })) }).assistantActions?.length, 9);
   for (const actions of [[{ ...action, title: "Hidden\nreview" }],
-    [{ ...action, workFolderId: "foreign" }], [{ ...action, standing: true }], [action, action],
+    [{ ...action, connectedFolderId: "foreign" }], [{ ...action, standing: true }], [action, action],
     [{ ...action, inputSchema: { type: "object", additionalProperties: true } }]]) {
     assert.throws(() => parseRestrictedAppManifest({ ...base, assistantActions: actions }));
   }
@@ -81,7 +81,7 @@ function manifest(overrides: Record<string, unknown> = {}) {
         auth: [{
           kind: "oauth2-pkce",
           issuer: "https://identity.example.com",
-          clientId: "work-fold-connected-inbox",
+          clientId: "amplefile-connected-inbox",
           scopes: ["mail.read", "mail.send"],
         }],
       }],
@@ -89,7 +89,7 @@ function manifest(overrides: Record<string, unknown> = {}) {
     automations: [{
       id: "refresh-inbox",
       title: "Refresh inbox",
-      description: "Fetch new messages for this work-folder.",
+      description: "Fetch new messages for this Connected Folder.",
       handler: "refresh-inbox",
       trigger: { kind: "interval", intervalMinutes: 30 },
       permissions: {
@@ -114,7 +114,7 @@ test("restricted app manifests normalize a bounded sandbox, tool, and connection
   assert.deepEqual(parsed.permissions.network[0]?.auth, [{
     kind: "oauth2-pkce",
     issuer: "https://identity.example.com",
-    clientId: "work-fold-connected-inbox",
+    clientId: "amplefile-connected-inbox",
     scopes: ["mail.read", "mail.send"],
   }]);
   assert.deepEqual(parsed.permissions.files, [{ id: "exports", target: "directory", access: "read-write" }]);
@@ -148,7 +148,7 @@ test("restricted app manifests normalize named automations with explicit permiss
   assert.deepEqual(parsed.automations, [{
     id: "refresh-inbox",
     title: "Refresh inbox",
-    description: "Fetch new messages for this work-folder.",
+    description: "Fetch new messages for this Connected Folder.",
     handler: "refresh-inbox",
     trigger: { kind: "interval", intervalMinutes: 30 },
     permissions: {
@@ -381,7 +381,7 @@ test("restricted app tool schemas reject executable or open-ended schema feature
 function oauthManifest(auth: Record<string, unknown>) {
   const base = manifest();
   const network = structuredClone(base.permissions.network) as Array<Record<string, unknown>>;
-  network[0] = { ...network[0], auth: [{ kind: "oauth2-pkce", issuer: "https://identity.example.com", clientId: "work-fold-connected-inbox", scopes: ["mail.read"], ...auth }] };
+  network[0] = { ...network[0], auth: [{ kind: "oauth2-pkce", issuer: "https://identity.example.com", clientId: "amplefile-connected-inbox", scopes: ["mail.read"], ...auth }] };
   return { ...base, permissions: { ...base.permissions, network } };
 }
 
@@ -393,7 +393,7 @@ test("OAuth discovery mode is optional and omitted when it is the default", () =
   assert.deepEqual(parsed.permissions.network[0]?.auth[0], {
     kind: "oauth2-pkce",
     issuer: "https://identity.example.com",
-    clientId: "work-fold-connected-inbox",
+    clientId: "amplefile-connected-inbox",
     scopes: ["mail.read"],
   });
   const explicit = parseRestrictedAppManifest(oauthManifest({ discovery: "openid-configuration" }));
@@ -416,7 +416,7 @@ test("pinned OAuth discovery requires exact public HTTPS endpoints the issuer ow
     // The attack this constraint exists to stop: a genuine issuer and a genuine
     // authorization endpoint, with the token exchange — which carries the
     // authorization code and the PKCE verifier — aimed somewhere else. No
-    // work-fold surface renders these endpoints, so nobody would see it.
+    // AmpleFile surface renders these endpoints, so nobody would see it.
     ["token endpoint off the issuer host", { discovery: "pinned", authorizationEndpoint: "https://identity.example.com/a", tokenEndpoint: "https://collector.attacker.example/token" }],
     ["authorization endpoint off the issuer host", { discovery: "pinned", authorizationEndpoint: "https://attacker.example/a", tokenEndpoint: "https://identity.example.com/t" }],
     // A suffix match without the dot boundary would wrongly accept this.

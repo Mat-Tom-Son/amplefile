@@ -13,7 +13,7 @@ export class ComputerHelperInstallation {
   readonly helperAppPath: string;
   #pending?: Promise<void>;
   private constructor(private readonly options: Options, private readonly digest: string) {
-    this.helperAppPath = join(resolve(options.stateRoot), "native-helpers", "computer", digest, "work-fold Computer.app");
+    this.helperAppPath = join(resolve(options.stateRoot), "native-helpers", "computer", digest, "AmpleFile Computer.app");
   }
   static async create(options: Options): Promise<ComputerHelperInstallation> {
     return new ComputerHelperInstallation(options, await bundleDigest(options.sourceAppPath));
@@ -32,7 +32,7 @@ export class ComputerHelperInstallation {
     try { await pending; } finally { if (this.#pending === pending) this.#pending = undefined; }
   };
   async #verify(path: string) {
-    if (await bundleDigest(path) !== this.digest) throw new Error("The computer helper differs from the signed copy supplied by this work-fold build. Open Computer control in Skills & Extensions and choose Check setup to repair it.");
+    if (await bundleDigest(path) !== this.digest) throw new Error("The computer helper differs from the signed copy supplied by this AmpleFile build. Open Computer control in Skills & Extensions and choose Check setup to repair it.");
     if (this.options.verifySignature !== false) await run("/usr/bin/codesign", ["--verify", "--strict", path]);
   }
   async #prepare(beforeReplace?: () => Promise<void>) {
@@ -50,7 +50,7 @@ export class ComputerHelperInstallation {
     const root = join(resolve(this.options.stateRoot), "native-helpers", "computer");
     await mkdir(root, { recursive: true, mode: 0o700 }); await chmod(root, 0o700);
     const temporary = join(root, `.copy-${randomUUID()}`);
-    const copy = join(temporary, "work-fold Computer.app");
+    const copy = join(temporary, "AmpleFile Computer.app");
     await mkdir(temporary, { mode: 0o700 });
     try {
       // ditto preserves the sealed bundle, extended attributes and notarization data.

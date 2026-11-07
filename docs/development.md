@@ -14,7 +14,7 @@ model credentials and Apple signing credentials are separate.
 | Surface | Command | What to expect |
 |---|---|---|
 | Browser UI + local API | `npm run local:dev` | Vite at `http://localhost:5173`, local API at `http://127.0.0.1:4327`; live renderer updates |
-| Inert UI preview | `npm run local:dev`, then open `http://localhost:5173/?fixture=work-folder` | Sample work-folders drawn as the Mac app shows them; no API or model needed |
+| Inert UI preview | `npm run local:dev`, then open `http://localhost:5173/?fixture=connected-folder` | Sample Connected Folders drawn as the Mac app shows them; no API or model needed |
 | Native, unpackaged Electron | `npm run desktop:smoke` | Builds and verifies the desktop, then opens Electron; restart after native changes |
 | Packaged Mac candidate | See [Mac build lanes](macos-build.md) | Packaging, signing, and publication are separate from everyday development |
 
@@ -36,7 +36,7 @@ normal interactive app or create an installer.
 
 ## Development state and model access
 
-The browser/local API and unpackaged Electron default to **work-fold
+The browser/local API and unpackaged Electron default to **AmpleFile
 Development** application data, separate from the installed app. They can
 share that development profile. Run one development host at a time against a
 given profile, and use disposable folders for tests that change files.
@@ -47,10 +47,10 @@ configuration. To use separate app and Pi data, choose an explicit temporary
 profile in your shell before launching either development surface:
 
 ```sh
-workfold_dev_root=$(mktemp -d "${TMPDIR:-/tmp}/work-fold-dev.XXXXXX")
-export WORKFOLD_STATE_DIR="$workfold_dev_root/state"
-export WORKFOLD_DESKTOP_STATE_DIR="$workfold_dev_root/state"
-export WORKFOLD_AGENT_DIR="$workfold_dev_root/pi"
+amplefile_dev_root=$(mktemp -d "${TMPDIR:-/tmp}/amplefile-dev.XXXXXX")
+export AMPLEFILE_STATE_DIR="$amplefile_dev_root/state"
+export AMPLEFILE_DESKTOP_STATE_DIR="$amplefile_dev_root/state"
+export AMPLEFILE_AGENT_DIR="$amplefile_dev_root/pi"
 npm run local:dev
 ```
 
@@ -61,45 +61,45 @@ override does **not** isolate macOS Keychain. A signed Mac candidate uses the
 production identity by default—follow the [candidate guidance](macos-build.md#interactive-packaged-smoke)
 before launching one.
 
-Real Worker and work-fold agent turns need a model provider and may incur
+Real Worker and AmpleFile agent turns need a model provider and may incur
 charges. The browser development host and unpackaged desktop load the root
 `.env` when present; already-exported variables win. Copy [the optional template](../.env.example)
 only if you need it, and uncomment only the settings you intend to use.
-`WORKFOLD_AGENT_DIR` selects work-fold's Pi directory; the native Pi variable
+`AMPLEFILE_AGENT_DIR` selects AmpleFile's Pi directory; the native Pi variable
 `PI_CODING_AGENT_DIR` is also supported. `PI_AGENT_DIR` is not supported.
 
-The installed `work-fold ... --json` CLI addresses the running app.
-`npm run work-fold:drive` is a separate real-Pi-turn test driver and can use a
+The installed `amplefile ... --json` CLI addresses the running app.
+`npm run amplefile:drive` is a separate real-Pi-turn test driver and can use a
 chosen agent directory; it is not an offline unit test. `--follow-ups <n>` keeps
-its local API running for n more turns work-fold starts in the same Chat, such as
+its local API running for n more turns AmpleFile starts in the same Chat, such as
 a [background job](background-jobs.md)'s wake-up, and reports each with the
 message that started it. See
-[the work-fold agent and CLI](work-fold-agent-and-cli.md) before driving real work.
+[the AmpleFile agent and CLI](amplefile-agent-and-cli.md) before driving real work.
 
 ## Inspect a model request
 
 For an installed Mac build, run:
 
 ```sh
-open -n -a /Applications/work-fold.app --args --work-fold-inspect-context
+open -n -a /Applications/AmpleFile.app --args --amplefile-inspect-context
 ```
 
-The same command opens or focuses a separate inspector when work-fold is
+The same command opens or focuses a separate inspector when AmpleFile is
 already running. It uses the existing single-instance host and never enables
 recording automatically. Close or Escape closes just the inspector window;
-turn recording off explicitly when finished, or quit work-fold to discard it.
+turn recording off explicitly when finished, or quit AmpleFile to discard it.
 During browser development, open the local renderer with `?dev-context`
 (for example, `http://localhost:5173/?dev-context` at Vite's default port).
-This is a developer diagnostic route, with no normal Chat, work-fold agent or
+This is a developer diagnostic route, with no normal Chat, AmpleFile agent or
 Settings entry. Enable **Record model context**, reproduce the behavior in the
 app, then refresh and choose the request. The all-request view includes Worker
-and work-fold agent turns, titles, Checks, app inference and compaction. Search or copy assembled context, compare
+and AmpleFile agent turns, titles, Checks, app inference and compaction. Search or copy assembled context, compare
 provider payloads where the adapter exposes them, and inspect provenance from
 the loaded runtime: source paths, instruction digests, Skills, Extensions and
 tools. These facts are captured at dispatch, not reconstructed from later file
 contents. Inspection itself never starts a model request.
 
-Recording starts off, covers future calls through work-fold's native Pi
+Recording starts off, covers future calls through AmpleFile's native Pi
 transport, and keeps bounded snapshots in memory for up to 30 minutes. Images
 appear as metadata. Text may contain private content; review it before sharing
 a copied snapshot. **Clear all** discards captures while recording continues;
@@ -114,10 +114,10 @@ for capture stages, coverage and bounds.
 | `web-local/src/` | React UI, client state, styles, and inert UI fixtures |
 | `src/local/server.ts` | Local API routes and domain-service composition |
 | `src/local/agent/` | Pi integration, Chat turns, app services, and brokers |
-| `src/local/work-folder*.ts` | work-folder registration, path policy, ignore rules, watching, and appearance |
+| `src/local/connected-folder*.ts` | Connected Folder registration, path policy, ignore rules, watching, and appearance |
 | `src/local/checks/`, `src/local/automations/`, `src/local/requests/` | Checks, Automations, and durable request records |
-| `src/local/overview.ts`, `src/local/work-fold-agent-*.ts` | The work-fold agent's overview, attachments, and instructions |
-| [Kernel](../src/local/work-fold-kernel.ts), [CLI](../src/local/cli/), [adapter](../src/local/work-fold-cli-adapter.ts) | Shared context, tasks, and control-plane contracts |
+| `src/local/overview.ts`, `src/local/amplefile-agent-*.ts` | The AmpleFile agent's overview, attachments, and instructions |
+| [Kernel](../src/local/amplefile-kernel.ts), [CLI](../src/local/cli/), [adapter](../src/local/amplefile-cli-adapter.ts) | Shared context, tasks, and control-plane contracts |
 | `src/shared/` | Shared types and the product identity contract |
 | `desktop/src/` | Electron windows, lifecycle, preloads, native app hosts, and updater |
 | `tests/` | Application regression tests |
@@ -126,7 +126,7 @@ for capture stages, coverage and bounds.
 
 Use the [docs map](README.md) to distinguish current contracts from proposals
 and dated release evidence. Files in `docs/reference-skills/` are examples;
-app-generated work-fold agent instructions are runtime resources. Neither is an
+app-generated AmpleFile agent instructions are runtime resources. Neither is an
 extra repository instruction source.
 
 ## Verification
@@ -226,11 +226,11 @@ Repository behavior remains defined by `AGENTS.md`.
 ## Focused harness evaluation
 
 Before proposing a new runtime layer, exercise ordinary content work with the
-existing real-Pi driver in disposable work-folders. Keep app state, Pi resources and
+existing real-Pi driver in disposable Connected Folders. Keep app state, Pi resources and
 reference fixtures separate as above; an isolated profile is not an OS sandbox.
 The installed CLI addresses its running desktop host, so do not accidentally point
 a development Worker at production CLI commands. Tests needing that lane
-must supply a matching development broker/host. `work-fold:drive` alone does not
+must supply a matching development broker/host. `amplefile:drive` alone does not
 start the installed desktop's CLI broker.
 
 Useful repeatable cases are narrow edits across prose and a guide with unrelated
@@ -244,8 +244,8 @@ observations, not pass criteria. Keep live-provider results separate from determ
 regressions and do not report one run as a measured success rate.
 
 The deterministic harness coverage now includes `local-history-review`,
-`work-fold-history-review-adapters`, `conversation-context-office`, `chat-presentation`,
-`history-comparison-ui`, `history-comparison-keyboard`, and `work-fold-turn-store`
+`amplefile-history-review-adapters`, `conversation-context-office`, `chat-presentation`,
+`history-comparison-ui`, `history-comparison-keyboard`, and `amplefile-turn-store`
 test files. They cover scope, completeness, persistence and UI behavior without
 requiring a paid model or production user data.
 

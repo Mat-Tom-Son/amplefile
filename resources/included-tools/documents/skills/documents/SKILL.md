@@ -112,7 +112,7 @@ PDF capture defaults to 64 MiB per source; set `maxSourceBytes` deliberately whe
 ## Installed rendering, calculation and OCR engines
 
 `document_engine` uses optional programs installed on the person's computer.
-work-fold does not bundle or install them. With LibreOffice available, use
+AmpleFile does not bundle or install them. With LibreOffice available, use
 `{input:{operation:"render",source:"report.docx",output:".worker/task/review.pdf"}}` for Office-to-PDF,
 or `{input:{operation:"recalculate",source:"budget.xlsx",output:".worker/task/calculated.xlsx"}}`
 for a recalculated copy. Then use `document_run` to render/inspect the PDF or reopen

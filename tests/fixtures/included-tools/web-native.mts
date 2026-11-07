@@ -7,7 +7,7 @@ import { DefaultResourceLoader, createAgentSession, SessionManager, SettingsMana
 const nativeFetch=globalThis.fetch;
 const {createWebAccessExtension}=await import('pi-web-access/embedded.ts');
 assert.equal(globalThis.fetch,nativeFetch);
-const root=await mkdtemp(join(tmpdir(),'work-fold-web-native-'));
+const root=await mkdtemp(join(tmpdir(),'amplefile-web-native-'));
 const agentDir=join(root,'pi');await mkdir(agentDir);
 process.env.PI_CODING_AGENT_DIR=agentDir;
 const seen:Array<{url:string;key:unknown}>=[];
@@ -33,6 +33,6 @@ try{
  const page=await call(noSearch,'fetch_content',{url:base+'/page',limit:800});assert.match(JSON.stringify(page),/Workshop Planning|Registration costs twenty/);assert.equal(page.details.start,0);assert.equal(page.details.end,800);assert.ok(page.details.total>800);assert.match(page.details.digest,/^[a-f0-9]{64}$/);const next=await call(noSearch,'fetch_content',{url:base+'/page',offset:800,limit:800});assert.equal(next.details.digest,page.details.digest);console.log('PASS direct local Readability extraction, explicit ranges and matching content provenance');
  await assert.rejects(call(a,'fetch_content',{url:base+'/error'}),/HTTP 503/);await assert.rejects(call(a,'fetch_content',{url:base+'/binary'}),/file or document tool/);console.log('PASS HTTP failure and PDF return honest errors without hosted extraction');
  const abort=new AbortController();const pending=call(a,'fetch_content',{url:base+'/slow'},abort.signal);setTimeout(()=>abort.abort(),30);await assert.rejects(pending);const pendingA=call(a,'fetch_content',{url:base+'/slow'});await shutdown(a);await assert.rejects(pendingA);const survived=await call(b,'fetch_content',{url:base+'/page'});assert.match(JSON.stringify(survived),/Workshop Planning/);console.log('PASS tool cancellation and session shutdown do not cancel another Chat');
- if(process.env.WORKFOLD_LIVE_WEB_TEST==='1'){const duck=await session('default','default');const live=await call(duck,'web_search',{query:'Mozilla Readability repository',count:3});assert.equal(live.details.provider,'duckduckgo');assert.ok(live.details.resultCount>0);assert.match(JSON.stringify(live),/https:\/\/github.com\/mozilla\/readability/);console.log('PASS real default DuckDuckGo search succeeds without keys or another model');}
+ if(process.env.AMPLEFILE_LIVE_WEB_TEST==='1'){const duck=await session('default','default');const live=await call(duck,'web_search',{query:'Mozilla Readability repository',count:3});assert.equal(live.details.provider,'duckduckgo');assert.ok(live.details.resultCount>0);assert.match(JSON.stringify(live),/https:\/\/github.com\/mozilla\/readability/);console.log('PASS real default DuckDuckGo search succeeds without keys or another model');}
  assert.equal(globalThis.fetch,nativeFetch);console.log('ALL NATIVE WEB CHECKS PASSED');
 }finally{for(const s of sessions)await shutdown(s);for(const t of timers)clearTimeout(t);server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));await rm(root,{recursive:true,force:true});}

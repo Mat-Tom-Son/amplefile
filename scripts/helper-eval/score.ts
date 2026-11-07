@@ -174,7 +174,7 @@ const range = (values: number[], digits = 0) => values.length
 const rows: Array<Record<string, unknown>> = [];
 const order = ["a", "b", "c", "c0"];
 const modelOf = (result: Result) => result.model?.id ?? "openai/gpt-6-luna";
-// A refusal is a report command whose own output says ok:false (or never reached work-fold);
+// A refusal is a report command whose own output says ok:false (or never reached AmpleFile);
 // a bash call that chains handoff, wait and report prints several documents.
 const refused = (attempt: ReportAttempt) => /"ok":\s*false/.test(attempt.result ?? "") || !/"ok":\s*true/.test(attempt.result ?? "");
 const reportsText = (attempts: ReportAttempt[] | undefined, recorded: number) => {

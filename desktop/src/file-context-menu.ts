@@ -22,9 +22,9 @@ export type NativeFileMenuCommand =
 
 export interface NativeFileMenuRequest {
   /** Empty when the entry is in a standard folder instead. */
-  workFolderId: string;
+  connectedFolderId: string;
   /**
-   * Set instead of a work-folder id for an entry in Desktop, Documents, or
+   * Set instead of a Connected Folder id for an entry in Desktop, Documents, or
    * Downloads (the file manager's Standard Folders, optional; older renderers
    * omit it). Delete there is the system's Move to Trash.
    */
@@ -38,7 +38,7 @@ export interface NativeFileMenuRequest {
     upload: boolean;
     rename: boolean;
     delete: boolean;
-    /** A plain folder inside this work-folder that can become its own work-folder (optional; older renderers omit it). */
+    /** A plain folder inside this Connected Folder that can become its own Connected Folder (optional; older renderers omit it). */
     worker?: boolean;
     /**
      * The file manager's Finder actions (2026-11-07): Copy, Duplicate, Compress,
@@ -58,9 +58,9 @@ export interface NativeFileMenuRequest {
 
 export type NativeFileMenuItem =
   | { type: "separator" }
-  | { type: "item"; label: string; command: NativeFileMenuCommand; icon?: "work-fold" };
+  | { type: "item"; label: string; command: NativeFileMenuCommand; icon?: "amplefile" };
 
-const requestKeys = new Set(["workFolderId", "standardFolderId", "path", "kind", "capabilities", "selection", "point"]);
+const requestKeys = new Set(["connectedFolderId", "standardFolderId", "path", "kind", "capabilities", "selection", "point"]);
 const capabilityKeys = new Set(["open", "attach", "history", "upload", "rename", "delete", "worker", "organize", "paste"]);
 const optionalCapabilityKeys = new Set(["worker", "organize", "paste"]);
 const pointKeys = new Set(["x", "y"]);
@@ -69,21 +69,21 @@ const maxSelectionCount = 1_000_000;
 
 export function parseNativeFileMenuRequest(value: unknown): NativeFileMenuRequest {
   if (!isRecord(value) || !hasOnlyKeys(value, requestKeys)) throw new Error("The native file menu request is invalid.");
-  const workFolderId = typeof value.workFolderId === "string" ? value.workFolderId.trim() : "";
+  const connectedFolderId = typeof value.connectedFolderId === "string" ? value.connectedFolderId.trim() : "";
   const standardFolderId = typeof value.standardFolderId === "string" ? value.standardFolderId.trim() : "";
-  if (typeof value.path !== "string") throw new Error("A safe relative work-folder path is required.");
+  if (typeof value.path !== "string") throw new Error("A safe relative Connected Folder path is required.");
   const path = value.path;
   const kind = value.kind;
   const capabilities = value.capabilities;
   const point = value.point;
   if (value.standardFolderId !== undefined) {
-    if (workFolderId || !standardFolderId || standardFolderId.length > 64) throw new Error("A valid standard folder id is required.");
-  } else if (!workFolderId || workFolderId.length > 512) throw new Error("A valid work-folder id is required.");
+    if (connectedFolderId || !standardFolderId || standardFolderId.length > 64) throw new Error("A valid standard folder id is required.");
+  } else if (!connectedFolderId || connectedFolderId.length > 512) throw new Error("A valid Connected Folder id is required.");
   if (path.length > 4096 || path.includes("\0") || isAbsolute(path) || /(^|[\\/])\.\.([\\/]|$)/.test(path)) {
-    throw new Error("A safe relative work-folder path is required.");
+    throw new Error("A safe relative Connected Folder path is required.");
   }
-  if (kind !== "file" && kind !== "folder") throw new Error("A valid work-folder entry kind is required.");
-  if (!path && kind !== "folder") throw new Error("The work-folder root must be a folder.");
+  if (kind !== "file" && kind !== "folder") throw new Error("A valid Connected Folder entry kind is required.");
+  if (!path && kind !== "folder") throw new Error("The Connected Folder root must be a folder.");
   if (!isRecord(capabilities) || !hasOnlyKeys(capabilities, capabilityKeys)) throw new Error("Native file menu capabilities are invalid.");
   if (!isRecord(point) || !hasOnlyKeys(point, pointKeys)) throw new Error("The native file menu position is invalid.");
   for (const key of capabilityKeys) {
@@ -93,7 +93,7 @@ export function parseNativeFileMenuRequest(value: unknown): NativeFileMenuReques
   if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error("The native file menu position is invalid.");
   const selection = value.selection === undefined ? undefined : parseSelection(value.selection);
   return {
-    workFolderId,
+    connectedFolderId,
     ...(standardFolderId ? { standardFolderId } : {}),
     path,
     kind,
@@ -164,7 +164,7 @@ export function nativeFileMenuItems(request: NativeFileMenuRequest): NativeFileM
     // Files has no toolbar buttons (2026-10-01): refreshing lives here with the other folder actions.
     items.push({ type: "item", label: "Refresh", command: "refresh" });
     if (request.capabilities.worker) {
-      items.push({ type: "separator" }, { type: "item", label: "Make a work-folder", command: "give-worker", icon: "work-fold" });
+      items.push({ type: "separator" }, { type: "item", label: "Connect This Folder", command: "give-worker", icon: "amplefile" });
     }
   }
   if (request.path && (request.capabilities.rename || request.capabilities.delete)) {

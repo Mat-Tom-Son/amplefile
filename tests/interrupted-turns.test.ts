@@ -11,7 +11,7 @@ import { fillInterruptedToolResults, interruptedToolResultText } from "../src/lo
 import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
 
 /**
- * A turn cut off by work-fold closing (2026-10-27): it is recorded like a
+ * A turn cut off by AmpleFile closing (2026-10-27): it is recorded like a
  * crash, never as a Stop the person asked for; the person continues it with an
  * ordinary message; and a tool call that never recorded a result reaches the
  * model as possibly partly done, never as a bare "No result provided".
@@ -71,7 +71,7 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, label: strin
 }
 
 test("quitting mid-turn records an app interruption, and Continue starts an ordinary new turn", { timeout: 60_000 }, async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-interrupted-turn-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-interrupted-turn-"));
   const faux = fauxProvider({ provider: "fixture-interrupted", models: [{ id: "chat" }] });
   const requests: Message[][] = [];
   const runtime = await ModelRuntime.create({ credentials: FileCredentialStore.inMemory(), modelsPath: null });
@@ -82,7 +82,7 @@ test("quitting mid-turn records an app interruption, and Continue starts an ordi
   const open = () => startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: {
       resolveRuntime: async () => ({
@@ -103,8 +103,8 @@ test("quitting mid-turn records an app interruption, and Continue starts an ordi
     fauxAssistantMessage([fauxToolCall("bash", { command: "sleep 30" })], { stopReason: "toolUse" }),
     fauxAssistantMessage("Never reached."),
   ]);
-  const { workFolder } = await api.actFacade.createWorkFolder({ name: "Interrupted" });
-  const sent = await api.actFacade.sendMessage({ workFolder: workFolder.id, newConversation: true, content: "Run the long command." });
+  const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Interrupted" });
+  const sent = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "Run the long command." });
   await waitFor(() => requests.length === 1, "the turn's first model request");
   await new Promise((resolve) => setTimeout(resolve, 300));
 
@@ -112,22 +112,22 @@ test("quitting mid-turn records an app interruption, and Continue starts an ordi
   await api.close();
   api = await open();
 
-  const status = await api.actFacade.turnStatus({ workFolder: workFolder.id, taskId: sent.taskId });
+  const status = await api.actFacade.turnStatus({ connectedFolder: connectedFolder.id, taskId: sent.taskId });
   assert.equal(status.task.state, "failed", "a quit is reported like a crash, not as a person's Stop");
   const request = api.requests.byTaskId(sent.taskId)!;
   assert.equal(request.turns[0]!.state, "interrupted");
   assert.notEqual(request.state, "stopped");
-  const transcriptPath = `/api/work-folders/${workFolder.id}/conversations/${sent.conversationId}`;
+  const transcriptPath = `/api/connected-folders/${connectedFolder.id}/conversations/${sent.conversationId}`;
   const transcript = await (await fetch(new URL(transcriptPath, api.origin))).json() as { messages: Array<{ role: string; turnId?: string; interruption?: { reason: string; message: string } }> };
   const reply = transcript.messages.find((message) => message.role === "assistant" && message.turnId === sent.taskId)!;
   assert.equal(reply.interruption?.reason, "app_interrupted");
-  assert.match(reply.interruption!.message, /work-fold closed before this turn finished/);
+  assert.match(reply.interruption!.message, /AmpleFile closed before this turn finished/);
 
   // Continue is the person's ordinary message; the model sees no bare filler.
   faux.setResponses([fauxAssistantMessage("Picked up where I left off.")]);
-  const continued = await api.actFacade.sendMessage({ workFolder: workFolder.id, conversationId: sent.conversationId, content: "Continue where you left off." });
-  await waitFor(async () => (await api.actFacade.turnStatus({ workFolder: workFolder.id, taskId: continued.taskId })).task.state !== "running", "the continued turn");
-  assert.equal((await api.actFacade.turnStatus({ workFolder: workFolder.id, taskId: continued.taskId })).task.state, "succeeded");
+  const continued = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId: sent.conversationId, content: "Continue where you left off." });
+  await waitFor(async () => (await api.actFacade.turnStatus({ connectedFolder: connectedFolder.id, taskId: continued.taskId })).task.state !== "running", "the continued turn");
+  assert.equal((await api.actFacade.turnStatus({ connectedFolder: connectedFolder.id, taskId: continued.taskId })).task.state, "succeeded");
   // The Chat's title request may follow; the continued turn's own request is the one with its message.
   const turnRequest = requests.findLast((messages) => JSON.stringify(messages).includes("Continue where you left off."))!;
   assert.ok(turnRequest, "the continued turn reached the model");

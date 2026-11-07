@@ -44,10 +44,10 @@ with and without the optional engines, before and after the
 
 - **Model.** OpenRouter `openai/gpt-6-luna`, high thinking, which is Mat's
   default.
-- **Driver.** Each turn ran through `npm run work-fold:drive -- --attach`
+- **Driver.** Each turn ran through `npm run amplefile:drive -- --attach`
   against `scripts/document-eval/host.ts`. That host is the local API with
   the included tools, an isolated Pi folder, and disposable app state.
-- **Tasks.** Each task started in a fresh, disposable work-folder.
+- **Tasks.** Each task started in a fresh, disposable Connected Folder.
   - **Budget workbook:** 24 transactions, `SUMIF` actuals, Over/OK status
     formulas, and cross-sheet totals to a sheet named "By Category", with
     dollar and percent formats.

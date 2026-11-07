@@ -72,7 +72,7 @@ function officeFixture(kind: OfficeKind, count = 2): JSZip {
 }
 
 async function attachment(t: TestContext, kind: OfficeKind, archive: JSZip) {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-office-context-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-office-context-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const path = `attachment.${kind}`;
   await writeFile(join(root, path), await archive.generateAsync({ type: "nodebuffer" }));

@@ -36,7 +36,7 @@ import { openPageSqliteDatabase, type PageSqliteDatabase } from "../src/local/pa
  */
 
 function declare(tables: Record<string, unknown>, title = "Test page"): PageDeclaration {
-  const parsed = parsePageDeclaration({ format: "work-fold.page/1", title, tables });
+  const parsed = parsePageDeclaration({ format: "amplefile.page/1", title, tables });
   assert.equal(parsed.ok, true, JSON.stringify(parsed.problems));
   return (parsed as { declaration: PageDeclaration }).declaration;
 }

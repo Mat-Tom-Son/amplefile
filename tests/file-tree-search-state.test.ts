@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import test, { type TestContext } from "node:test";
-import { useWorkFolderTree } from "../web-local/src/hooks/useWorkFolderTree.js";
-import type { TreeEntry, WorkFolderSummary } from "../web-local/src/types.js";
+import { useConnectedFolderTree } from "../web-local/src/hooks/useConnectedFolderTree.js";
+import type { TreeEntry, ConnectedFolderSummary } from "../web-local/src/types.js";
 import { createDomHarness } from "./support/dom.js";
 
-const workFolder = { id: "files", name: "files", workFolderRoot: "/tmp/files", location: { storage: "linked" } } as WorkFolderSummary;
+const connectedFolder = { id: "files", name: "files", connectedFolderRoot: "/tmp/files", location: { storage: "linked" } } as ConnectedFolderSummary;
 const folder = (path: string, children?: TreeEntry[]): TreeEntry => ({ kind: "folder", path, name: path.split("/").pop()!, hasChildren: true, ...(children ? { children } : {}) });
 const file = (path: string): TreeEntry => ({ kind: "file", path, name: path.split("/").pop()! });
 
@@ -21,7 +21,7 @@ async function setup(t: TestContext) {
   const previousFetch = globalThis.fetch;
   t.after(async () => { await dom.cleanup(); globalThis.fetch = previousFetch; });
   globalThis.fetch = (async (input, init) => {
-    const url = new URL(String(input), "http://work-fold.test");
+    const url = new URL(String(input), "http://amplefile.test");
     if (url.pathname === "/api/events") {
       return new Response(new ReadableStream({ start(controller) { init?.signal?.addEventListener("abort", () => controller.close(), { once: true }); } }), { headers: { "content-type": "text/event-stream" } });
     }
@@ -30,8 +30,8 @@ async function setup(t: TestContext) {
     if (path === "Opened") return Response.json({ tree: [file("Opened/notes.txt")] });
     return Response.json({ tree: path ? [] : shallowRoot });
   }) as typeof fetch;
-  let state!: ReturnType<typeof useWorkFolderTree>;
-  function Tree() { state = useWorkFolderTree(workFolder, () => {}); return null; }
+  let state!: ReturnType<typeof useConnectedFolderTree>;
+  function Tree() { state = useConnectedFolderTree(connectedFolder, () => {}); return null; }
   await dom.render(createElement(Tree));
   await dom.waitFor(() => state.status === "ready" && state.tree.length === 2);
   await dom.act(() => state.toggleFolder("Opened"));

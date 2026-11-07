@@ -10,7 +10,7 @@ import { IncludedChromeConnectionService } from "../../../src/local/agent/includ
 
 // Real Pi, app-owned connection service and frozen Store worker; only Chrome's
 // native APIs are synthetic. Reuse one HTTP socket like a browser long poll.
-const root = await mkdtemp(join(tmpdir(), "workfold-chrome-reconnect-"));
+const root = await mkdtemp(join(tmpdir(), "amplefile-chrome-reconnect-"));
 const reservation = createServer();
 await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
 const port = (reservation.address() as { port: number }).port;
@@ -20,7 +20,7 @@ process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 const { FileCredentialStore, createAgentSession, createEventBus, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } = await import("@earendil-works/pi-coding-agent");
 const jiti = createJiti(import.meta.url, { moduleCache: true, fsCache: false });
 const chrome = await jiti.import<any>(new URL("../../../resources/included-tools/chrome/index.ts", import.meta.url).pathname);
-const distribution = { version: 1, storeId: "a".repeat(32), nativeHostName: "com.work_fold.chrome_test", bootstrapVersion: 1, extensionVersion: "1.0.0", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
+const distribution = { version: 1, storeId: "a".repeat(32), nativeHostName: "com.amplefile.chrome_test", bootstrapVersion: 1, extensionVersion: "1.0.0", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
 const origin = `chrome-extension://${distribution.storeId}/`;
 let observedPolls = 0;
 let service: IncludedChromeConnectionService;
@@ -32,9 +32,9 @@ service = await IncludedChromeConnectionService.create({ stateRoot: root, distri
   }),
   probe: async () => { await chrome.probeIncludedChromeConnection(service); },
 });
-const cwd = join(root, "work-folder"); await mkdir(cwd);
+const cwd = join(root, "connected-folder"); await mkdir(cwd);
 const eventBus = createEventBus();
-eventBus.on("work-fold:extension-host:v1", (event: any) => { event.context = {
+eventBus.on("amplefile:extension-host:v1", (event: any) => { event.context = {
   version: 1, mode: "session", cwd, agentDir: process.env.PI_CODING_AGENT_DIR, stateRoot: root,
   getChromeConnection: service.getChromeConnection, onChromeConnectionRevoked: service.onChromeConnectionRevoked,
   reportChromeConnectionObservation: service.reportChromeConnectionObservation, beginChromeWork: service.beginChromeWork,
@@ -62,7 +62,7 @@ const sandbox = {
   console, navigator: { userAgent: "Synthetic Chrome fixture" }, URL, URLSearchParams, Date, crypto: webcrypto, Uint8Array, Set, Map, Promise, AbortController,
   setTimeout(fn: (...args: any[]) => void, ms: number, ...args: any[]) { const timer = setTimeout(fn, ms, ...args); timeouts.add(timer); return timer; }, clearTimeout,
   setInterval(fn: () => void, ms: number) { const timer = setInterval(fn, ms); intervals.add(timer); return timer; }, clearInterval,
-  WORK_FOLD_CHROME_CONFIG: distribution, importScripts: () => {},
+  AMPLEFILE_CHROME_CONFIG: distribution, importScripts: () => {},
   fetch: async (url: string, options: any = {}) => {
     const target = String(url).replace("http://127.0.0.1:17318", `http://127.0.0.1:${port}`);
     const headers = { ...options.headers, origin: origin.slice(0, -1) };
@@ -94,7 +94,7 @@ const context = vm.createContext(sandbox);
 vm.runInContext(await readFile(new URL("../../../resources/included-tools/chrome/store/bootstrap.js", import.meta.url), "utf8"), context);
 vm.runInContext(await readFile(new URL("../../../node_modules/pi-chrome/extensions/chrome-profile-bridge/browser-extension/service_worker.js", import.meta.url), "utf8"), context);
 async function send(action: string) {
-  return new Promise<any>(resolve => listeners.message[0]({ type: "work-fold.connection", action }, { id: distribution.storeId, url: origin + "popup.html" }, resolve));
+  return new Promise<any>(resolve => listeners.message[0]({ type: "amplefile.connection", action }, { id: distribution.storeId, url: origin + "popup.html" }, resolve));
 }
 async function connected() {
   const deadline = Date.now() + 8_000;

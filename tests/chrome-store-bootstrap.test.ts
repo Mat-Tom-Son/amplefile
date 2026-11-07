@@ -6,7 +6,7 @@ import vm from "node:vm";
 
 const source = await readFile(new URL("../resources/included-tools/chrome/store/bootstrap.js", import.meta.url), "utf8");
 const id = "a".repeat(32), origin = `chrome-extension://${id}/`;
-const config = { nativeHostName: "com.work_fold.chrome", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
+const config = { nativeHostName: "com.amplefile.chrome", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
 const status = (state: string, hasSelection = false) => ({ version: 1, state: "status", status: { state, hasSelection, checkedAt: "2026-09-12T00:00:00Z" } });
 const connection = () => ({ connectionId: randomUUID(), leaseToken: "f".repeat(64), extensionOrigin: origin, bridge: config.bridge });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -17,7 +17,7 @@ function fixture(saved: Record<string, unknown> = {}) {
   const calls: any[] = [], tabs: any[] = [], access: string[] = [];
   let native: (request: any) => Promise<any> = async () => status("not_connected");
   const sandbox = { console, URL, Date, crypto: webcrypto, Uint8Array, Set, Promise,
-    WORK_FOLD_CHROME_CONFIG: config, importScripts: (file: string) => assert.equal(file, "connection-config.js"),
+    AMPLEFILE_CHROME_CONFIG: config, importScripts: (file: string) => assert.equal(file, "connection-config.js"),
     chrome: { storage: { local: {
       async setAccessLevel(value: { accessLevel: string }) { access.push(value.accessLevel); },
       async get(key: string) { return structuredClone({ [key]: saved[key] }); },
@@ -31,7 +31,7 @@ function fixture(saved: Record<string, unknown> = {}) {
   return { saved, calls, tabs, access, api: (sandbox as any).workFoldChrome,
     respondWith(fn: typeof native) { native = fn; }, installed: (reason: string) => onInstalled({ reason }),
     send(action: string, sender = { id, url: origin + "popup.html" }) {
-      return new Promise<any>(resolve => { const accepted = onMessage({ type: "work-fold.connection", action }, sender, resolve); if (!accepted) resolve(undefined); });
+      return new Promise<any>(resolve => { const accepted = onMessage({ type: "amplefile.connection", action }, sender, resolve); if (!accepted) resolve(undefined); });
     },
   };
 }
@@ -47,7 +47,7 @@ test("Store bootstrap is inert until explicit Connect, excludes secrets from pop
   assert.equal(JSON.stringify(publicState).includes(lease.leaseToken), false);
   assert.equal((await f.api.config()).token, lease.leaseToken);
   assert.deepEqual(f.access, ["TRUSTED_CONTEXTS"]);
-  const identity = f.saved["work-fold.connection.v1"] as any;
+  const identity = f.saved["amplefile.connection.v1"] as any;
   assert.match(identity.clientProof, /^[a-f0-9]{64}$/); assert.equal(identity.enabled, true);
   assert.equal(JSON.stringify(f.saved).includes(lease.leaseToken), false);
   const before = f.calls.length;

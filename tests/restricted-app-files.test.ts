@@ -10,7 +10,7 @@ import {
   type RestrictedAppFileContext,
 } from "../src/local/agent/restricted-app-files.js";
 
-function context(workFolderRoot: string, options: {
+function context(connectedFolderRoot: string, options: {
   declarationAccess?: "read" | "read-write";
   grantAccess?: "read" | "read-write";
   root?: string;
@@ -18,7 +18,7 @@ function context(workFolderRoot: string, options: {
   authorizeCommit?: () => void;
 } = {}): RestrictedAppFileContext {
   return {
-    workFolderRoot,
+    connectedFolderRoot,
     declarations: [{
       id: "project-files",
       target: options.target ?? "directory",
@@ -38,16 +38,16 @@ function fileError(code: RestrictedAppFileError["code"]): (error: unknown) => bo
   return (error) => error instanceof RestrictedAppFileError && error.code === code;
 }
 
-test("work-folder file broker lists and reads only bounded grant-relative data", async () => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-app-files-"));
+test("Connected Folder file broker lists and reads only bounded grant-relative data", async () => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-app-files-"));
   await mkdir(join(root, "docs"));
-  await mkdir(join(root, ".work-fold"));
+  await mkdir(join(root, ".amplefile"));
   await mkdir(join(root, ".workspace"));
   await mkdir(join(root, ".pi"));
-  await writeFile(join(root, "docs", "notes.txt"), "hello work-fold", "utf8");
+  await writeFile(join(root, "docs", "notes.txt"), "hello AmpleFile", "utf8");
   await writeFile(join(root, "binary.bin"), Buffer.from([0, 1, 2, 255]));
-  await writeFile(join(root, ".work-fold", "work-folder.json"), "current secret", "utf8");
-  await writeFile(join(root, ".workspace", "work-folder.json"), "secret", "utf8");
+  await writeFile(join(root, ".amplefile", "connected-folder.json"), "current secret", "utf8");
+  await writeFile(join(root, ".workspace", "connected-folder.json"), "secret", "utf8");
   await writeFile(join(root, ".pi", "extension.ts"), "secret", "utf8");
   const broker = new RestrictedAppFileBroker();
 
@@ -58,21 +58,21 @@ test("work-folder file broker lists and reads only bounded grant-relative data",
   ]);
   assert.equal(listed.truncated, false);
   assert.equal(JSON.stringify(listed).includes(root), false);
-  assert.equal(JSON.stringify(listed).includes("workFolderRoot"), false);
+  assert.equal(JSON.stringify(listed).includes("connectedFolderRoot"), false);
 
   const text = await broker.read(context(root), { grantId: "selected-project-files", path: "docs/notes.txt" });
   assert.deepEqual({ path: text.path, encoding: text.encoding, data: text.data, sizeBytes: text.sizeBytes }, {
     path: "docs/notes.txt",
     encoding: "utf8",
-    data: "hello work-fold",
+    data: "hello AmpleFile",
     sizeBytes: 15,
   });
   const binary = await broker.read(context(root), { grantId: "selected-project-files", path: "binary.bin", encoding: "base64" });
   assert.equal(binary.data, Buffer.from([0, 1, 2, 255]).toString("base64"));
 });
 
-test("work-folder file broker honors safe relative grant roots and file targets", async () => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-app-files-"));
+test("Connected Folder file broker honors safe relative grant roots and file targets", async () => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-app-files-"));
   await mkdir(join(root, "selected"));
   await mkdir(join(root, "outside"));
   await writeFile(join(root, "selected", "inside.txt"), "inside", "utf8");
@@ -102,13 +102,13 @@ test("work-folder file broker honors safe relative grant roots and file targets"
   );
 });
 
-test("work-folder file broker rejects hidden ownership, unsafe paths, and metadata roots", async () => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-app-files-"));
+test("Connected Folder file broker rejects hidden ownership, unsafe paths, and metadata roots", async () => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-app-files-"));
   await writeFile(join(root, "notes.txt"), "hello", "utf8");
-  await mkdir(join(root, ".work-fold"));
+  await mkdir(join(root, ".amplefile"));
   await mkdir(join(root, ".workspace"));
-  await writeFile(join(root, ".work-fold", "work-folder.json"), "current hidden", "utf8");
-  await writeFile(join(root, ".workspace", "work-folder.json"), "hidden", "utf8");
+  await writeFile(join(root, ".amplefile", "connected-folder.json"), "current hidden", "utf8");
+  await writeFile(join(root, ".workspace", "connected-folder.json"), "hidden", "utf8");
   const broker = new RestrictedAppFileBroker();
   const authority = context(root);
 
@@ -117,16 +117,16 @@ test("work-folder file broker rejects hidden ownership, unsafe paths, and metada
     { grantId: "selected-project-files", path: "/notes.txt" },
     { grantId: "selected-project-files", path: "C:/notes.txt" },
     { grantId: "selected-project-files", path: "folder\\notes.txt" },
-    { grantId: "selected-project-files", path: ".work-fold/work-folder.json" },
-    { grantId: "selected-project-files", path: ".WORK-FOLD/work-folder.json" },
-    { grantId: "selected-project-files", path: ".workspace/work-folder.json" },
+    { grantId: "selected-project-files", path: ".amplefile/connected-folder.json" },
+    { grantId: "selected-project-files", path: ".AMPLEFILE/connected-folder.json" },
+    { grantId: "selected-project-files", path: ".workspace/connected-folder.json" },
     { grantId: "selected-project-files", path: ".PI/extension.ts" },
-    { grantId: "selected-project-files", path: "notes.txt", workFolderRoot: root },
+    { grantId: "selected-project-files", path: "notes.txt", connectedFolderRoot: root },
     { grantId: "selected-project-files", path: "notes.txt", appId: "spoofed-app" },
   ];
   for (const request of requests) await assert.rejects(broker.read(authority, request), fileError("FILE_DENIED"));
   await assert.rejects(
-    broker.read({ ...authority, grants: [{ ...authority.grants[0]!, root: ".work-fold" }] }, { grantId: "selected-project-files", path: "." }),
+    broker.read({ ...authority, grants: [{ ...authority.grants[0]!, root: ".amplefile" }] }, { grantId: "selected-project-files", path: "." }),
     fileError("FILE_DENIED"),
   );
   await assert.rejects(
@@ -135,9 +135,9 @@ test("work-folder file broker rejects hidden ownership, unsafe paths, and metada
   );
 });
 
-test("work-folder file broker denies links and junction escapes", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-app-files-"));
-  const root = join(sandbox, "work-folder");
+test("Connected Folder file broker denies links and junction escapes", async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-app-files-"));
+  const root = join(sandbox, "connected-folder");
   const outside = join(sandbox, "outside");
   await mkdir(root);
   await mkdir(outside);
@@ -165,8 +165,8 @@ test("work-folder file broker denies links and junction escapes", async (t) => {
   assert.equal((await broker.list(context(root), { grantId: "selected-project-files", path: "." })).entries.some((entry) => entry.name === "linked"), false);
 });
 
-test("work-folder file broker requires reviewed and effective read-write authority", async () => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-app-files-"));
+test("Connected Folder file broker requires reviewed and effective read-write authority", async () => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-app-files-"));
   await writeFile(join(root, "notes.txt"), "before", "utf8");
   const broker = new RestrictedAppFileBroker();
   const request = { grantId: "selected-project-files", path: "notes.txt", data: "after", mode: "replace" };
@@ -177,8 +177,8 @@ test("work-folder file broker requires reviewed and effective read-write authori
   assert.equal(await readFile(join(root, "notes.txt"), "utf8"), "before");
 });
 
-test("work-folder file broker creates and replaces bounded files without leaving partials", async () => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-app-files-"));
+test("Connected Folder file broker creates and replaces bounded files without leaving partials", async () => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-app-files-"));
   await mkdir(join(root, "docs"));
   await writeFile(join(root, "docs", "notes.txt"), "before", "utf8");
   const broker = new RestrictedAppFileBroker({ maxWriteBytes: 32 });
@@ -205,11 +205,11 @@ test("work-folder file broker creates and replaces bounded files without leaving
     broker.write(authority, { grantId: "selected-project-files", path: "docs/new.bin", data: "duplicate", mode: "create" }),
     fileError("FILE_CONFLICT"),
   );
-  assert.deepEqual((await readdir(join(root, "docs"))).filter((name) => name.startsWith(".work-fold-app-write-")), []);
+  assert.deepEqual((await readdir(join(root, "docs"))).filter((name) => name.startsWith(".amplefile-app-write-")), []);
 });
 
-test("work-folder file broker reauthorizes immediately before an atomic write commit", async () => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-app-files-"));
+test("Connected Folder file broker reauthorizes immediately before an atomic write commit", async () => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-app-files-"));
   await writeFile(join(root, "notes.txt"), "before", "utf8");
   const broker = new RestrictedAppFileBroker();
   let checks = 0;
@@ -239,11 +239,11 @@ test("work-folder file broker reauthorizes immediately before an atomic write co
   await assert.rejects(mutation, /authority changed/);
   assert.equal(checks, 1);
   assert.equal(await readFile(join(root, "notes.txt"), "utf8"), "before");
-  assert.deepEqual((await readdir(root)).filter((name) => name.startsWith(".work-fold-app-write-")), []);
+  assert.deepEqual((await readdir(root)).filter((name) => name.startsWith(".amplefile-app-write-")), []);
 });
 
-test("work-folder file broker enforces read, write, and list output limits", async () => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-app-files-"));
+test("Connected Folder file broker enforces read, write, and list output limits", async () => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-app-files-"));
   await writeFile(join(root, "large.txt"), "12345", "utf8");
   await writeFile(join(root, "one.txt"), "1", "utf8");
   await writeFile(join(root, "two.txt"), "2", "utf8");
@@ -261,7 +261,7 @@ test("work-folder file broker enforces read, write, and list output limits", asy
 });
 
 test("file grants cannot exceed their reviewed declaration", async () => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-app-files-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-app-files-"));
   await writeFile(join(root, "notes.txt"), "hello", "utf8");
   const broker = new RestrictedAppFileBroker();
   await assert.rejects(

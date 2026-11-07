@@ -4,10 +4,10 @@
  * "Focused harness evaluation"). Each task is an ordinary folder of prose a
  * person might keep, with known facts planted among realistic filler and
  * near-miss distractors. Expected answers are written to a separate file that
- * is never copied into a work-folder, so they stay outside model context.
+ * is never copied into a Connected Folder, so they stay outside model context.
  *
  * Usage: tsx scripts/helper-eval/fixtures.ts <out-dir>
- *   <out-dir>/tasks/<task-id>/   folder to copy into a disposable work-folder
+ *   <out-dir>/tasks/<task-id>/   folder to copy into a disposable Connected Folder
  *   <out-dir>/expected.json      answers and scoring keys (never shown to a model)
  */
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -1020,14 +1020,14 @@ const tasks = {
   "export-bug-xl": {
     folder: "Customer research archive",
     build: interviewsAtScale,
-    question: "Which interviewees reported the bug where an exported or downloaded file is missing its last row or entry? People describe it in many different ways, so check the transcripts carefully rather than relying on one search term. For each, give their name, company, the app version they were on, and the transcript file. When you're done, record your answer with `work-fold chat report` for this turn's task: a short --summary, and the list as --data (an array of objects with name, company, version and file).",
+    question: "Which interviewees reported the bug where an exported or downloaded file is missing its last row or entry? People describe it in many different ways, so check the transcripts carefully rather than relying on one search term. For each, give their name, company, the app version they were on, and the transcript file. When you're done, record your answer with `amplefile chat report` for this turn's task: a short --summary, and the list as --data (an array of objects with name, company, version and file).",
   },
   // The same question as the second turn of a Chat that already holds a long pasted document.
   "export-bug-xl-long": {
     folder: "Customer research archive",
     build: interviewsAtScale,
     setup: true,
-    question: "Separate question, about the interviews in this folder: which interviewees reported the bug where an exported or downloaded file is missing its last row or entry? People describe it in many different ways, so check the transcripts carefully rather than relying on one search term. For each, give their name, company, the app version they were on, and the transcript file. When you're done, record your answer with `work-fold chat report` for this turn's task: a short --summary, and the list as --data (an array of objects with name, company, version and file).",
+    question: "Separate question, about the interviews in this folder: which interviewees reported the bug where an exported or downloaded file is missing its last row or entry? People describe it in many different ways, so check the transcripts carefully rather than relying on one search term. For each, give their name, company, the app version they were on, and the transcript file. When you're done, record your answer with `amplefile chat report` for this turn's task: a short --summary, and the list as --data (an array of objects with name, company, version and file).",
   },
 } as const;
 

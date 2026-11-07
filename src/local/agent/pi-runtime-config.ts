@@ -25,7 +25,7 @@ import { createPersistentPiAuthStorage } from "./auth-storage.js";
 type AuthStatus = ReturnType<ModelRuntime["getProviderAuthStatus"]>;
 
 import { applyFoundryDeployments } from "./foundry-models.js";
-import { defaultAgentSdkDir, workFolderSessionDir } from "./agent-data-dir.js";
+import { defaultAgentSdkDir, connectedFolderSessionDir } from "./agent-data-dir.js";
 import type { PiExtensionUiBridge } from "./extension-ui.js";
 import type { ModelContextInspector } from "./model-context-inspector.js";
 import { includedResourceOptions, type IncludedToolsConfiguration } from "./included-tools.js";
@@ -37,7 +37,7 @@ export interface PiPreferredModel {
 }
 
 export interface PiProjectTrustRequest {
-  workFolderRoot: string;
+  connectedFolderRoot: string;
   hasProjectResources: boolean;
   savedDecision: boolean | null;
   defaultDecision: "ask" | "always" | "never";
@@ -79,7 +79,7 @@ export interface PiRuntimeConfig {
   /** Host-fetched catalogs applied to each fresh cwd-specific registry. */
   modelCatalogs?: PiModelCatalog[];
   preferredModel?: PiPreferredModel;
-  /** Machine-local Worker instructions appended to this work-folder's Pi system prompt. */
+  /** Machine-local Worker instructions appended to this Connected Folder's Pi system prompt. */
   workerInstructions?: string;
   projectTrust?: PiProjectTrustPolicy;
   extensionUi?: PiExtensionUiBridge;
@@ -93,31 +93,31 @@ export interface PiRuntimeConfig {
 }
 
 export interface PiRuntimeProvider {
-  resolveRuntime(workFolderRoot: string): Promise<PiRuntimeConfig>;
-  setPreferredModel?(workFolderRoot: string, model: PiPreferredModel): Promise<void>;
-  getWorkerInstructions?(workFolderRoot: string): Promise<string>;
-  setWorkerInstructions?(workFolderRoot: string, instructions: string): Promise<void>;
+  resolveRuntime(connectedFolderRoot: string): Promise<PiRuntimeConfig>;
+  setPreferredModel?(connectedFolderRoot: string, model: PiPreferredModel): Promise<void>;
+  getWorkerInstructions?(connectedFolderRoot: string): Promise<string>;
+  setWorkerInstructions?(connectedFolderRoot: string, instructions: string): Promise<void>;
   refreshModelCatalog?(providerId: string): Promise<PiModelCatalogRefreshResult>;
   listModelCatalogs?(): Promise<PiModelCatalogStatus[]>;
 }
 
 export async function getPiWorkerInstructions(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   provider?: PiRuntimeProvider,
 ): Promise<string> {
-  if (provider?.getWorkerInstructions) return provider.getWorkerInstructions(workFolderRoot);
-  return (await provider?.resolveRuntime(workFolderRoot))?.workerInstructions ?? "";
+  if (provider?.getWorkerInstructions) return provider.getWorkerInstructions(connectedFolderRoot);
+  return (await provider?.resolveRuntime(connectedFolderRoot))?.workerInstructions ?? "";
 }
 
 export async function setPiWorkerInstructions(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   instructions: string,
   provider?: PiRuntimeProvider,
 ): Promise<void> {
   if (!provider?.setWorkerInstructions) {
     throw new Error("This runtime does not support Worker instructions.");
   }
-  await provider.setWorkerInstructions(workFolderRoot, instructions);
+  await provider.setWorkerInstructions(connectedFolderRoot, instructions);
 }
 
 export function appendWorkerInstructions(base: string[], instructions: string | undefined): string[] {
@@ -251,7 +251,7 @@ export interface PiConfiguredPackage {
 /**
  * Project capability writes require an explicit, persistent trust policy. Pi
  * treats a project with no trust-gated files as runtime-trusted, but that
- * implicit state must not authorize work-fold to create executable project
+ * implicit state must not authorize AmpleFile to create executable project
  * configuration on the user's behalf.
  */
 export function hasExplicitPiProjectMutationTrust(runtime: ResolvedPiRuntime): boolean {
@@ -263,27 +263,27 @@ export function hasExplicitPiProjectMutationTrust(runtime: ResolvedPiRuntime): b
 }
 
 export async function isPiProjectMutationTrusted(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   runtimeProvider?: PiRuntimeProvider,
 ): Promise<boolean> {
-  const runtime = await resolvePiRuntime(workFolderRoot, runtimeProvider, { requestProjectTrust: false });
+  const runtime = await resolvePiRuntime(connectedFolderRoot, runtimeProvider, { requestProjectTrust: false });
   return hasExplicitPiProjectMutationTrust(runtime);
 }
 
 export async function resolvePiRuntime(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   provider?: PiRuntimeProvider,
   options: { requestProjectTrust?: boolean } = {},
 ): Promise<ResolvedPiRuntime> {
-  const config = await provider?.resolveRuntime(workFolderRoot) ?? {};
+  const config = await provider?.resolveRuntime(connectedFolderRoot) ?? {};
   const agentDir = config.agentDir ?? defaultAgentSdkDir();
   await mkdir(agentDir, { recursive: true });
 
   const credentials = config.credentials ?? (await createPersistentPiAuthStorage({ agentDir })).credentials;
   const initialSettings = config.settingsManager
-    ?? SettingsManager.create(workFolderRoot, agentDir, { projectTrusted: false });
+    ?? SettingsManager.create(connectedFolderRoot, agentDir, { projectTrusted: false });
   const trust = await resolveProjectTrust(
-    workFolderRoot,
+    connectedFolderRoot,
     agentDir,
     initialSettings,
     config.projectTrust,
@@ -305,7 +305,7 @@ export async function resolvePiRuntime(
   return {
     config,
     agentDir,
-    sessionDir: config.sessionDir ?? workFolderSessionDir(workFolderRoot, agentDir),
+    sessionDir: config.sessionDir ?? connectedFolderSessionDir(connectedFolderRoot, agentDir),
     credentials,
     settingsManager: initialSettings,
     modelRuntime,
@@ -329,11 +329,11 @@ export function applyPiRuntimeDefaults(settings: SettingsManager): void {
 }
 
 export async function getPiSetupStatus(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   provider?: PiRuntimeProvider,
 ): Promise<PiSetupStatus> {
-  const runtime = await resolvePiRuntime(workFolderRoot, provider, { requestProjectTrust: false });
-  const providerDiagnostics = await loadRuntimeProviders(workFolderRoot, runtime);
+  const runtime = await resolvePiRuntime(connectedFolderRoot, provider, { requestProjectTrust: false });
+  const providerDiagnostics = await loadRuntimeProviders(connectedFolderRoot, runtime);
   const models = runtime.modelRuntime.getAllModels();
   const stored = new Map((await runtime.credentials.list()).map((item) => [item.providerId, item]));
   const providerIds = new Set(runtime.modelRuntime.getProviders().map((item) => item.id));
@@ -398,11 +398,11 @@ export interface PiImageModelSummary {
  * one Automatic would pick right now.
  */
 export async function listPiImageModels(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   provider?: PiRuntimeProvider,
 ): Promise<{ models: PiImageModelSummary[]; automatic: PiImageModelSummary | null }> {
-  const runtime = await resolvePiRuntime(workFolderRoot, provider, { requestProjectTrust: false });
-  await loadRuntimeProviders(workFolderRoot, runtime);
+  const runtime = await resolvePiRuntime(connectedFolderRoot, provider, { requestProjectTrust: false });
+  await loadRuntimeProviders(connectedFolderRoot, runtime);
   const summary = (model: { provider: string; id: string; name: string }): PiImageModelSummary => ({
     provider: model.provider,
     providerName: runtime.modelRuntime.getProvider(model.provider)?.name ?? model.provider,
@@ -416,11 +416,11 @@ export async function listPiImageModels(
 }
 
 export async function listPiModels(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   provider?: PiRuntimeProvider,
 ): Promise<PiModelSummary[]> {
-  const runtime = await resolvePiRuntime(workFolderRoot, provider, { requestProjectTrust: false });
-  await loadRuntimeProviders(workFolderRoot, runtime);
+  const runtime = await resolvePiRuntime(connectedFolderRoot, provider, { requestProjectTrust: false });
+  await loadRuntimeProviders(connectedFolderRoot, runtime);
   const oauthProviders = new Set(runtime.modelRuntime.getProviders().filter((item) => item.auth?.oauth).map((item) => item.id));
   const stored = new Map((await runtime.credentials.list()).map((item) => [item.providerId, item]));
   return runtime.modelRuntime.getModels().map((model) => {
@@ -453,11 +453,11 @@ export async function listPiModels(
  * composer can be truthful before a conversation session has been created.
  */
 export async function getPiComposerState(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   provider?: PiRuntimeProvider,
 ): Promise<PiComposerState> {
-  const runtime = await resolvePiRuntime(workFolderRoot, provider, { requestProjectTrust: false });
-  await loadRuntimeProviders(workFolderRoot, runtime);
+  const runtime = await resolvePiRuntime(connectedFolderRoot, provider, { requestProjectTrust: false });
+  await loadRuntimeProviders(connectedFolderRoot, runtime);
   const preferred = runtime.preferredModel
     ? runtime.modelRuntime.getModel(runtime.preferredModel.provider, runtime.preferredModel.id)
     : undefined;
@@ -480,12 +480,12 @@ export async function getPiComposerState(
  * that session as usual.
  */
 export async function setPiDefaultThinkingLevel(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   level: string,
   provider?: PiRuntimeProvider,
 ): Promise<PiComposerState> {
-  const runtime = await resolvePiRuntime(workFolderRoot, provider, { requestProjectTrust: false });
-  await loadRuntimeProviders(workFolderRoot, runtime);
+  const runtime = await resolvePiRuntime(connectedFolderRoot, provider, { requestProjectTrust: false });
+  await loadRuntimeProviders(connectedFolderRoot, runtime);
   const preferred = runtime.preferredModel
     ? runtime.modelRuntime.getModel(runtime.preferredModel.provider, runtime.preferredModel.id)
     : undefined;
@@ -507,7 +507,7 @@ export async function setPiDefaultThinkingLevel(
 }
 
 export async function savePiApiKey(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   providerId: string,
   apiKey: string,
   options: { env?: Record<string, string>; runtimeProvider?: PiRuntimeProvider } = {},
@@ -515,8 +515,8 @@ export async function savePiApiKey(
   const id = cleanProviderId(providerId);
   const key = apiKey.trim();
   if (!key) throw new Error("API key is required.");
-  const runtime = await resolvePiRuntime(workFolderRoot, options.runtimeProvider, { requestProjectTrust: false });
-  await loadRuntimeProviders(workFolderRoot, runtime);
+  const runtime = await resolvePiRuntime(connectedFolderRoot, options.runtimeProvider, { requestProjectTrust: false });
+  await loadRuntimeProviders(connectedFolderRoot, runtime);
   if (!runtime.modelRuntime.getProvider(id)?.auth?.apiKey?.login) throw new Error(`Provider ${id} does not offer API-key setup.`);
   await runtime.credentials.modify(id, async (current) => ({
     type: "api_key",
@@ -529,42 +529,42 @@ export async function savePiApiKey(
 }
 
 export async function removePiProviderAuth(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   providerId: string,
   runtimeProvider?: PiRuntimeProvider,
 ): Promise<void> {
   const id = cleanProviderId(providerId);
-  const runtime = await resolvePiRuntime(workFolderRoot, runtimeProvider, { requestProjectTrust: false });
+  const runtime = await resolvePiRuntime(connectedFolderRoot, runtimeProvider, { requestProjectTrust: false });
   await runtime.modelRuntime.logout(id);
   await runtime.flushCredentials();
   await runtime.modelRuntime.refresh({ allowNetwork: false, providers: [id] });
 }
 
 export async function loginPiOAuth(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   providerId: string,
   hooks: PiOAuthHooks,
   runtimeProvider?: PiRuntimeProvider,
 ): Promise<void> {
-  return loginPiProvider(workFolderRoot, providerId, "oauth", hooks, runtimeProvider);
+  return loginPiProvider(connectedFolderRoot, providerId, "oauth", hooks, runtimeProvider);
 }
 
 /** Pi owns the prompts and the complete credential, including provider-scoped configuration. */
 export async function loginPiProvider(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   providerId: string,
   method: AuthType,
   hooks: PiOAuthHooks,
   runtimeProvider?: PiRuntimeProvider,
 ): Promise<void> {
   const id = cleanProviderId(providerId);
-  const runtime = await resolvePiRuntime(workFolderRoot, runtimeProvider, { requestProjectTrust: false });
-  await loadRuntimeProviders(workFolderRoot, runtime);
+  const runtime = await resolvePiRuntime(connectedFolderRoot, runtimeProvider, { requestProjectTrust: false });
+  await loadRuntimeProviders(connectedFolderRoot, runtime);
   const auth = runtime.modelRuntime.getProvider(id)?.auth;
   if (method === "oauth" ? !auth?.oauth : !auth?.apiKey?.login) throw new Error(`Provider ${id} does not offer ${method} login.`);
   try {
     await runtime.modelRuntime.login(id, method, piAuthInteraction(hooks), {
-      agentName: "work-fold",
+      agentName: "AmpleFile",
       getDeviceId: () => runtime.settingsManager.getOrCreateDeviceId(),
     });
   } finally {
@@ -576,16 +576,16 @@ export async function loginPiProvider(
 }
 
 export async function setPiDefaultModel(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   model: PiPreferredModel,
   runtimeProvider?: PiRuntimeProvider,
 ): Promise<void> {
-  const runtime = await resolvePiRuntime(workFolderRoot, runtimeProvider, { requestProjectTrust: false });
-  await loadRuntimeProviders(workFolderRoot, runtime);
+  const runtime = await resolvePiRuntime(connectedFolderRoot, runtimeProvider, { requestProjectTrust: false });
+  await loadRuntimeProviders(connectedFolderRoot, runtime);
   const selected = runtime.modelRuntime.getModel(model.provider.trim(), model.id.trim());
   if (!selected) throw new Error(`Model not found: ${model.provider}/${model.id}`);
   if (runtimeProvider?.setPreferredModel) {
-    await runtimeProvider.setPreferredModel(workFolderRoot, { provider: selected.provider, id: selected.id });
+    await runtimeProvider.setPreferredModel(connectedFolderRoot, { provider: selected.provider, id: selected.id });
     return;
   }
   runtime.settingsManager.setDefaultModelAndProvider(selected.provider, selected.id);
@@ -613,12 +613,12 @@ const recommendedModels: Record<string, string[]> = {
  * default. Returns the model it saved, or undefined when it left the default.
  */
 export async function ensurePiDefaultModel(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   providerId: string,
   runtimeProvider?: PiRuntimeProvider,
 ): Promise<PiPreferredModel | undefined> {
-  const runtime = await resolvePiRuntime(workFolderRoot, runtimeProvider, { requestProjectTrust: false });
-  await loadRuntimeProviders(workFolderRoot, runtime);
+  const runtime = await resolvePiRuntime(connectedFolderRoot, runtimeProvider, { requestProjectTrust: false });
+  await loadRuntimeProviders(connectedFolderRoot, runtime);
   const saved = preferredModelFromSettings(runtime.settingsManager);
   const savedModel = saved ? runtime.modelRuntime.getModel(saved.provider, saved.id) : undefined;
   if (savedModel && runtime.modelRuntime.hasConfiguredAuth(savedModel.provider)) return undefined;
@@ -645,52 +645,52 @@ export async function refreshPiModelCatalog(
 }
 
 export async function setPiProjectTrust(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   decision: boolean | null,
   runtimeProvider?: PiRuntimeProvider,
 ): Promise<void> {
-  const config = await runtimeProvider?.resolveRuntime(workFolderRoot) ?? {};
+  const config = await runtimeProvider?.resolveRuntime(connectedFolderRoot) ?? {};
   const agentDir = config.agentDir ?? defaultAgentSdkDir();
   await mkdir(agentDir, { recursive: true });
-  new ProjectTrustStore(agentDir).set(workFolderRoot, decision);
+  new ProjectTrustStore(agentDir).set(connectedFolderRoot, decision);
 }
 
 export async function listPiPackages(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   runtimeProvider?: PiRuntimeProvider,
 ): Promise<PiConfiguredPackage[]> {
-  const runtime = await resolvePiRuntime(workFolderRoot, runtimeProvider, { requestProjectTrust: false });
-  return createPackageManager(workFolderRoot, runtime).listConfiguredPackages();
+  const runtime = await resolvePiRuntime(connectedFolderRoot, runtimeProvider, { requestProjectTrust: false });
+  return createPackageManager(connectedFolderRoot, runtime).listConfiguredPackages();
 }
 
 export async function installPiPackage(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   source: string,
   options: PiPackageMutationOptions = {},
 ): Promise<void> {
   const packageSource = source.trim();
   if (!packageSource) throw new Error("Package source is required.");
-  const runtime = await resolvePiRuntime(workFolderRoot, options.runtimeProvider, { requestProjectTrust: false });
+  const runtime = await resolvePiRuntime(connectedFolderRoot, options.runtimeProvider, { requestProjectTrust: false });
   assertPiProjectMutationTrusted(runtime, options.scope);
-  const manager = createPackageManager(workFolderRoot, runtime, options.onProgress);
+  const manager = createPackageManager(connectedFolderRoot, runtime, options.onProgress);
   await manager.installAndPersist(packageSource, { local: options.scope === "project" });
   await runtime.settingsManager.flush();
 }
 
 export async function removePiPackage(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   source: string,
   options: PiPackageMutationOptions = {},
 ): Promise<boolean> {
   const packageSource = source.trim();
   if (!packageSource) throw new Error("Package source is required.");
-  const runtime = await resolvePiRuntime(workFolderRoot, options.runtimeProvider, { requestProjectTrust: false });
+  const runtime = await resolvePiRuntime(connectedFolderRoot, options.runtimeProvider, { requestProjectTrust: false });
   assertPiProjectMutationTrusted(runtime, options.scope);
-  const manager = createPackageManager(workFolderRoot, runtime, options.onProgress);
+  const manager = createPackageManager(connectedFolderRoot, runtime, options.onProgress);
   const configured = manager.listConfiguredPackages().find((item) =>
     item.source === packageSource && item.scope === (options.scope ?? "user"));
   // Local project sources are persisted relative to `.pi/settings.json` while
-  // remove input is normally resolved from the work-folder root. Feed the resolved
+  // remove input is normally resolved from the Connected Folder root. Feed the resolved
   // path back to Pi so a source copied directly from listPiPackages matches.
   const removalSource = configured?.installedPath && !isManagedPackageSource(packageSource)
     ? configured.installedPath
@@ -701,13 +701,13 @@ export async function removePiPackage(
 }
 
 export async function updatePiPackages(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   source: string | undefined,
   options: PiPackageMutationOptions = {},
 ): Promise<void> {
-  const runtime = await resolvePiRuntime(workFolderRoot, options.runtimeProvider, { requestProjectTrust: false });
+  const runtime = await resolvePiRuntime(connectedFolderRoot, options.runtimeProvider, { requestProjectTrust: false });
   assertPiProjectMutationTrusted(runtime, options.scope);
-  const manager = createPackageManager(workFolderRoot, runtime, options.onProgress);
+  const manager = createPackageManager(connectedFolderRoot, runtime, options.onProgress);
   const packageSource = source?.trim() || undefined;
   if (!options.scope) {
     await manager.update(packageSource);
@@ -737,7 +737,7 @@ function assertPiProjectMutationTrusted(
   scope: PiPackageMutationOptions["scope"],
 ): void {
   if (scope === "project" && !hasExplicitPiProjectMutationTrust(runtime)) {
-    throw new Error("Trust this work-folder before changing its Skills & Extensions.");
+    throw new Error("Trust this Connected Folder before changing its Skills & Extensions.");
   }
 }
 
@@ -779,12 +779,12 @@ function applyModelCatalogs(registry: ModelRuntime, catalogs: PiModelCatalog[]):
 }
 
 async function loadRuntimeProviders(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   runtime: ResolvedPiRuntime,
 ): Promise<Array<{ type: "info" | "warning" | "error"; message: string }>> {
   await runtime.modelRuntime.refresh({ allowNetwork: false });
   const services = await createAgentSessionServices({
-    cwd: workFolderRoot,
+    cwd: connectedFolderRoot,
     agentDir: runtime.agentDir,
     settingsManager: runtime.settingsManager,
     modelRuntime: runtime.modelRuntime,
@@ -794,7 +794,7 @@ async function loadRuntimeProviders(
       additionalPromptTemplatePaths: runtime.config.additionalPromptTemplatePaths,
       additionalThemePaths: runtime.config.additionalThemePaths,
       appendSystemPromptOverride: (base) => appendWorkerInstructions(base, runtime.config.workerInstructions),
-      ...await includedResourceOptions(workFolderRoot, runtime, "catalog"),
+      ...await includedResourceOptions(connectedFolderRoot, runtime, "catalog"),
     },
   });
   applyPiRuntimeDefaults(runtime.settingsManager);
@@ -808,12 +808,12 @@ async function loadRuntimeProviders(
 }
 
 function createPackageManager(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   runtime: ResolvedPiRuntime,
   onProgress?: (event: ProgressEvent) => void,
 ): DefaultPackageManager {
   const manager = new DefaultPackageManager({
-    cwd: workFolderRoot,
+    cwd: connectedFolderRoot,
     agentDir: runtime.agentDir,
     settingsManager: runtime.settingsManager,
   });
@@ -822,15 +822,15 @@ function createPackageManager(
 }
 
 async function resolveProjectTrust(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   agentDir: string,
   settings: SettingsManager,
   policy: PiProjectTrustPolicy | undefined,
   allowRequest: boolean,
 ): Promise<ResolvedPiRuntime["projectTrust"]> {
-  const required = hasTrustRequiringProjectResources(workFolderRoot);
+  const required = hasTrustRequiringProjectResources(connectedFolderRoot);
   const store = new ProjectTrustStore(agentDir);
-  const savedDecision = store.get(workFolderRoot);
+  const savedDecision = store.get(connectedFolderRoot);
   if (!required) return { required: false, trusted: true, savedDecision };
   if (typeof policy?.override === "boolean") {
     return { required: true, trusted: policy.override, savedDecision };
@@ -845,13 +845,13 @@ async function resolveProjectTrust(
   if (!allowRequest || !policy?.request) return { required: true, trusted: false, savedDecision };
 
   const rawDecision = await policy.request({
-    workFolderRoot,
+    connectedFolderRoot,
     hasProjectResources: true,
     savedDecision,
     defaultDecision,
   });
   const decision = typeof rawDecision === "boolean" ? { trusted: rawDecision } : rawDecision;
-  if (decision.remember) store.set(workFolderRoot, decision.trusted);
+  if (decision.remember) store.set(connectedFolderRoot, decision.trusted);
   return {
     required: true,
     trusted: decision.trusted,

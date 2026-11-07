@@ -1,6 +1,6 @@
 # Third-party artwork notices
 
-work-fold's own code is licensed under the [MIT License](LICENSE). The artwork
+AmpleFile's own code is licensed under the [MIT License](LICENSE). The artwork
 identified below retains its separate license; the MIT license does not replace
 these terms. These notices ship with the application, and the same credits are
 available in Settings → About → Icon Credits.
@@ -25,10 +25,10 @@ The Chrome, Computer Control, and Documents originals are respectively
 `icons/white/google_chrome.svg`, `icons/white/emoji_desktop_computer.svg`, and
 `icons/white/documents.svg`.
 
-Changes in work-fold: SVG markup was converted to React; stroke colors use
+Changes in AmpleFile: SVG markup was converted to React; stroke colors use
 `currentColor`; stroke width was increased to 2.6; and paths were combined,
 rounded, or simplified. **The adapted Arcticons artwork remains licensed under
-CC BY-SA 4.0**, including work-fold's modifications to that artwork.
+CC BY-SA 4.0**, including AmpleFile's modifications to that artwork.
 
 ## Boxicons MCP icon
 
@@ -41,7 +41,7 @@ The Service Connections artwork in
 - [License and attribution terms](https://creativecommons.org/licenses/by/4.0/)
 - [Full legal code and warranty disclaimer](https://creativecommons.org/licenses/by/4.0/legalcode.en)
 
-Changes in work-fold: SVG markup was converted to React and fill colors use
+Changes in AmpleFile: SVG markup was converted to React and fill colors use
 `currentColor`. Boxicons licenses its icon artwork separately from its MIT
 software code; the icon remains under CC BY 4.0.
 
@@ -77,7 +77,7 @@ MIT License (vscode-icons):
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 
-Changes in work-fold: path coordinates are rounded, presentation `class` and
+Changes in AmpleFile: path coordinates are rounded, presentation `class` and
 `style` attributes are removed, internal ids are made unique per rendered icon,
 and a few heavy drawings are replaced by their family's icon. Package 1.2.83
 corresponds to vscode-icons 13.0.0.

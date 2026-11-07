@@ -15,7 +15,7 @@ export const restrictedAppNotificationLimits = {
 } as const;
 
 export interface RestrictedAppNotificationOwner {
-  workFolderId: string;
+  connectedFolderId: string;
   appId: string;
   featureInstallationId?: string;
   digest: string;
@@ -156,7 +156,7 @@ export class RestrictedAppNotificationBroker {
       const handle = this.#sink.show({
         ...owner,
         permissionId: declaration.id,
-        title: `work-fold · ${context.appTitle} — ${declaration.title}`,
+        title: `AmpleFile · ${context.appTitle} — ${declaration.title}`,
         body: declaration.description,
       }, {
         onClick: () => {
@@ -177,7 +177,7 @@ export class RestrictedAppNotificationBroker {
       outstanding = { key: categoryKey, appKey, owner, shownAt: now, handle };
       if (!closedBeforeAssignment) this.#outstanding.set(categoryKey, outstanding);
     } catch {
-      throw new RestrictedAppNotificationError("NOTIFICATION_FAILED", "work-fold could not show the app notification.");
+      throw new RestrictedAppNotificationError("NOTIFICATION_FAILED", "AmpleFile could not show the app notification.");
     }
 
     invocation.count += 1;
@@ -200,7 +200,7 @@ export class RestrictedAppNotificationBroker {
     if (record) {
       const outcome: RestrictedAppNotificationOutcome = {
         at: new Date(at).toISOString(),
-        workFolderId: context.workFolderId,
+        connectedFolderId: context.connectedFolderId,
         appId: context.appId,
         featureInstallationId: context.featureInstallationId ?? null,
         digest: context.digest,
@@ -213,9 +213,9 @@ export class RestrictedAppNotificationBroker {
     return { status };
   }
 
-  closeApp(owner: Pick<RestrictedAppNotificationOwner, "workFolderId" | "appId" | "featureInstallationId">, digest?: string): void {
+  closeApp(owner: Pick<RestrictedAppNotificationOwner, "connectedFolderId" | "appId" | "featureInstallationId">, digest?: string): void {
     for (const item of [...this.#outstanding.values()]) {
-      if (item.owner.workFolderId !== owner.workFolderId || item.owner.appId !== owner.appId || (digest && item.owner.digest !== digest)) continue;
+      if (item.owner.connectedFolderId !== owner.connectedFolderId || item.owner.appId !== owner.appId || (digest && item.owner.digest !== digest)) continue;
       if (owner.featureInstallationId && item.owner.featureInstallationId !== owner.featureInstallationId) continue;
       this.#closeOutstanding(item);
     }
@@ -319,7 +319,7 @@ function notificationRequest(value: unknown): { permissionId: string; route: str
 }
 
 function validateContext(context: RestrictedAppNotificationContext): void {
-  if (!context || typeof context !== "object" || !context.workFolderId || !context.appId || !/^[0-9a-f]{64}$/.test(context.digest)
+  if (!context || typeof context !== "object" || !context.connectedFolderId || !context.appId || !/^[0-9a-f]{64}$/.test(context.digest)
     || (context.featureInstallationId !== undefined && (typeof context.featureInstallationId !== "string" || !context.featureInstallationId.trim()))
     || !context.appTitle || !context.invocationId || !Array.isArray(context.declarations) || !Array.isArray(context.grants)) {
     throw new RestrictedAppNotificationError("NOTIFICATION_DENIED", "Notification host authority is invalid.");
@@ -327,7 +327,7 @@ function validateContext(context: RestrictedAppNotificationContext): void {
 }
 
 function ownerValue(context: RestrictedAppNotificationContext): RestrictedAppNotificationOwner {
-  return { workFolderId: context.workFolderId, appId: context.appId, digest: context.digest,
+  return { connectedFolderId: context.connectedFolderId, appId: context.appId, digest: context.digest,
     ...(context.featureInstallationId ? { featureInstallationId: context.featureInstallationId } : {}) };
 }
 
@@ -335,5 +335,5 @@ function ownerKey(owner: RestrictedAppNotificationOwner): string {
   // Rate history intentionally survives renderer restarts, permission churn,
   // background disable/enable, and reviewed digest updates. Lifecycle cleanup
   // closes handles but must not let an app regain its anti-spam budget.
-  return `${owner.workFolderId}:${owner.appId}`;
+  return `${owner.connectedFolderId}:${owner.appId}`;
 }

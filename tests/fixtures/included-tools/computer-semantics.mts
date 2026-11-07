@@ -7,7 +7,7 @@ import { currentPlatformBackend as backend } from "@injaneity/pi-computer-use/sr
 import { ResourceScheduler } from "@injaneity/pi-computer-use/src/runtime.ts";
 import { parseLookResponse } from "@injaneity/pi-computer-use/src/outline.ts";
 
-const root = await mkdtemp(join(tmpdir(), "workfold-computer-semantics-"));
+const root = await mkdtemp(join(tmpdir(), "amplefile-computer-semantics-"));
 const original = { ...backend }, scheduler = new ResourceScheduler();
 const runtime = createComputerUseRuntime({ scheduler, requireExplicitRoot: true, enableCdp: false, interactiveSetup: false });
 const context = { cwd: root, hasUI: false, sessionManager: { getBranch: () => [] } } as any;

@@ -44,17 +44,17 @@ import type {
   LocalAppStudioSnapshot,
   LocalAppUpdateOperation,
   RestrictedAppInstalled,
-  WorkFolderSummary,
+  ConnectedFolderSummary,
 } from "../../types";
 import { requestConfirm, showToast } from "../../ui/feedback";
-import { workFolderIconOptions } from "../../work-folder-icons";
-import { WorkFolderIconGlyph } from "../chrome/common";
+import { connectedFolderIconOptions } from "../../connected-folder-icons";
+import { ConnectedFolderIconGlyph } from "../chrome/common";
 
 type ContinuityPolicy = "eligible" | "reset";
 
 export function AppStudioPane({
-  workFolder,
-  workFolders,
+  connectedFolder,
+  connectedFolders,
   active,
   previewRevision,
   navigation = null,
@@ -62,18 +62,18 @@ export function AppStudioPane({
   onAppsChanged,
   onError,
 }: {
-  workFolder: WorkFolderSummary;
-  workFolders: WorkFolderSummary[];
+  connectedFolder: ConnectedFolderSummary;
+  connectedFolders: ConnectedFolderSummary[];
   active: boolean;
   previewRevision: string;
   navigation?: { id: string; runtimeInstanceId: string } | null;
   fixtureMode?: boolean;
-  onAppsChanged?: (workFolderId: string, runtimeInstanceId: string, apps: RestrictedAppInstalled[]) => void;
+  onAppsChanged?: (connectedFolderId: string, runtimeInstanceId: string, apps: RestrictedAppInstalled[]) => void;
   onError: (message: string) => void;
 }) {
   const ids = useId().replace(/:/g, "");
   const requestSequence = useRef(0);
-  const loadedSource = useRef<{ workFolderId: string; fixtureMode: boolean } | null>(null);
+  const loadedSource = useRef<{ connectedFolderId: string; fixtureMode: boolean } | null>(null);
   const operationToFocus = useRef<string | null>(null);
   const [studio, setStudio] = useState<LocalAppStudioSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,21 +83,21 @@ export function AppStudioPane({
   const [projectDescription, setProjectDescription] = useState("");
   const [projectIcon, setProjectIcon] = useState("");
   const [releaseVersion, setReleaseVersion] = useState("");
-  const [targetWorkFolderId, setTargetWorkFolderId] = useState("");
+  const [targetConnectedFolderId, setTargetConnectedFolderId] = useState("");
   const [continuityPolicy, setContinuityPolicy] = useState<ContinuityPolicy>("eligible");
   const [recentlyPublished, setRecentlyPublished] = useState<string | null>(null);
 
-  const workFolderById = useMemo(
-    () => new Map(workFolders.map((item) => [item.id, item])),
-    [workFolders],
+  const connectedFolderById = useMemo(
+    () => new Map(connectedFolders.map((item) => [item.id, item])),
+    [connectedFolders],
   );
-  const workFolderIdsKey = useMemo(
-    () => workFolders.map((item) => item.id).sort().join("\0"),
-    [workFolders],
+  const connectedFolderIdsKey = useMemo(
+    () => connectedFolders.map((item) => item.id).sort().join("\0"),
+    [connectedFolders],
   );
   const installTargets = useMemo(
-    () => workFolders,
-    [workFolders],
+    () => connectedFolders,
+    [connectedFolders],
   );
   const installTargetIds = useMemo(
     () => new Set(installTargets.map((item) => item.id)),
@@ -114,27 +114,27 @@ export function AppStudioPane({
     [studio?.releases],
   );
   const selectedInstance = useMemo(
-    () => studio?.instances.find((instance) => instance.workFolderId === targetWorkFolderId) ?? null,
-    [studio?.instances, targetWorkFolderId],
+    () => studio?.instances.find((instance) => instance.connectedFolderId === targetConnectedFolderId) ?? null,
+    [studio?.instances, targetConnectedFolderId],
   );
 
   useEffect(() => {
     if (!active) return;
     const sequence = ++requestSequence.current;
-    const sourceChanged = loadedSource.current?.workFolderId !== workFolder.id
+    const sourceChanged = loadedSource.current?.connectedFolderId !== connectedFolder.id
       || loadedSource.current?.fixtureMode !== fixtureMode;
-    loadedSource.current = { workFolderId: workFolder.id, fixtureMode };
+    loadedSource.current = { connectedFolderId: connectedFolder.id, fixtureMode };
     setLoading(true);
     if (sourceChanged) {
       setStudio(null);
       setEditingProject(false);
     }
     if (fixtureMode) {
-      if (sourceChanged) setStudio(fixtureStudio(workFolder, workFolders));
+      if (sourceChanged) setStudio(fixtureStudio(connectedFolder, connectedFolders));
       setLoading(false);
       return () => { requestSequence.current += 1; };
     }
-    void getLocalAppStudio(workFolder.id)
+    void getLocalAppStudio(connectedFolder.id)
       .then((next) => {
         if (requestSequence.current === sequence) setStudio(next);
       })
@@ -145,7 +145,7 @@ export function AppStudioPane({
         if (requestSequence.current === sequence) setLoading(false);
     });
     return () => { requestSequence.current += 1; };
-  }, [active, fixtureMode, previewRevision, workFolder.id, workFolderIdsKey]);
+  }, [active, fixtureMode, previewRevision, connectedFolder.id, connectedFolderIdsKey]);
 
   useEffect(() => {
     const project = studio?.project;
@@ -155,14 +155,14 @@ export function AppStudioPane({
   }, [studio?.project?.projectId, studio?.project?.updatedAt]);
 
   useEffect(() => {
-    if (targetWorkFolderId && installTargetIds.has(targetWorkFolderId)) return;
+    if (targetConnectedFolderId && installTargetIds.has(targetConnectedFolderId)) return;
     if (navigation) return;
-    const installedTarget = studio?.instances.find((instance) => installTargetIds.has(instance.workFolderId))?.workFolderId;
-    setTargetWorkFolderId(installedTarget ?? installTargets[0]?.id ?? "");
-  }, [installTargetIds, installTargets, studio?.instances, targetWorkFolderId, navigation]);
+    const installedTarget = studio?.instances.find((instance) => installTargetIds.has(instance.connectedFolderId))?.connectedFolderId;
+    setTargetConnectedFolderId(installedTarget ?? installTargets[0]?.id ?? "");
+  }, [installTargetIds, installTargets, studio?.instances, targetConnectedFolderId, navigation]);
 
-  useAppStudioNavigation({ active, loading, instances: studio?.instances, navigation, registeredWorkFolderIds: installTargetIds,
-    selectId: `${ids}-target-work-folder`, onSelect: setTargetWorkFolderId, onError });
+  useAppStudioNavigation({ active, loading, instances: studio?.instances, navigation, registeredConnectedFolderIds: installTargetIds,
+    selectId: `${ids}-target-connected-folder`, onSelect: setTargetConnectedFolderId, onError });
 
   useEffect(() => {
     if (!recentlyPublished) return;
@@ -183,15 +183,15 @@ export function AppStudioPane({
     function onRestored(event: Event): void {
       if ((event as CustomEvent<{ kind?: string }>).detail?.kind === "app-release") void refreshStudio();
     }
-    window.addEventListener("work-fold:recently-deleted-restored", onRestored);
-    return () => window.removeEventListener("work-fold:recently-deleted-restored", onRestored);
-  }, [fixtureMode, workFolder.id]);
+    window.addEventListener("amplefile:recently-deleted-restored", onRestored);
+    return () => window.removeEventListener("amplefile:recently-deleted-restored", onRestored);
+  }, [fixtureMode, connectedFolder.id]);
 
   async function refreshStudio(): Promise<LocalAppStudioSnapshot | null> {
     if (fixtureMode) return studio;
     const sequence = ++requestSequence.current;
     try {
-      const next = await getLocalAppStudio(workFolder.id);
+      const next = await getLocalAppStudio(connectedFolder.id);
       if (requestSequence.current === sequence) setStudio(next);
       return next;
     } catch (caught) {
@@ -230,7 +230,7 @@ export function AppStudioPane({
         updateFixture((current) => ({
           ...current,
           project: {
-            workFolderId: workFolder.id,
+            connectedFolderId: connectedFolder.id,
             projectId: current.project?.projectId ?? "project_fixture-connected-inbox",
             presentation,
             createdAt: current.project?.createdAt ?? timestamp,
@@ -238,7 +238,7 @@ export function AppStudioPane({
           },
         }));
       } else {
-        await declareLocalAppProject(workFolder.id, presentation);
+        await declareLocalAppProject(connectedFolder.id, presentation);
         await refreshStudio();
       }
       setEditingProject(false);
@@ -255,7 +255,7 @@ export function AppStudioPane({
         const timestamp = new Date().toISOString();
         const release: LocalAppRelease = {
           projectId: studio.project!.projectId,
-          sourceWorkFolderId: workFolder.id,
+          sourceConnectedFolderId: connectedFolder.id,
           releaseDigest: fixtureDigest(displayVersion),
           displayVersion,
           presentation: { ...studio.project!.presentation },
@@ -266,7 +266,7 @@ export function AppStudioPane({
         };
         updateFixture((current) => ({ ...current, releases: [release, ...current.releases] }));
       } else {
-        await prepareLocalAppRelease(workFolder.id, displayVersion);
+        await prepareLocalAppRelease(connectedFolder.id, displayVersion);
         await refreshStudio();
       }
       setReleaseVersion("");
@@ -285,7 +285,7 @@ export function AppStudioPane({
             : item),
         }));
       } else {
-        await publishLocalAppRelease(workFolder.id, release.releaseDigest);
+        await publishLocalAppRelease(connectedFolder.id, release.releaseDigest);
         await refreshStudio();
       }
       setRecentlyPublished(release.releaseDigest);
@@ -314,7 +314,7 @@ export function AppStudioPane({
           releases: current.releases.filter((item) => item.releaseDigest !== release.releaseDigest),
         }));
       } else {
-        result = await deleteLocalAppRelease(workFolder.id, release.releaseDigest);
+        result = await deleteLocalAppRelease(connectedFolder.id, release.releaseDigest);
         await refreshStudio();
       }
       showToast(releaseDeletionResultToast({
@@ -331,27 +331,27 @@ export function AppStudioPane({
     targetOverride?: string,
     policyOverride?: ContinuityPolicy,
   ): Promise<void> {
-    const resolvedTargetWorkFolderId = targetOverride ?? targetWorkFolderId;
-    if (!resolvedTargetWorkFolderId || !installTargetIds.has(resolvedTargetWorkFolderId)) return;
+    const resolvedTargetConnectedFolderId = targetOverride ?? targetConnectedFolderId;
+    if (!resolvedTargetConnectedFolderId || !installTargetIds.has(resolvedTargetConnectedFolderId)) return;
     const resolvedPolicy = policyOverride ?? continuityPolicy;
-    const targetInstance = studio?.instances.find((instance) => instance.workFolderId === resolvedTargetWorkFolderId) ?? null;
+    const targetInstance = studio?.instances.find((instance) => instance.connectedFolderId === resolvedTargetConnectedFolderId) ?? null;
     await runMutation(`operation:prepare:${release.releaseDigest}`, async () => {
       let operation: LocalAppOperation;
       if (fixtureMode) {
         operation = targetInstance
           ? fixtureUpdateOperation(studio!, targetInstance, release, resolvedPolicy)
-          : fixtureInstallOperation(studio!, resolvedTargetWorkFolderId, release);
+          : fixtureInstallOperation(studio!, resolvedTargetConnectedFolderId, release);
         updateFixture((current) => ({ ...current, operations: [...current.operations, operation] }));
       } else if (targetInstance) {
         operation = await prepareLocalAppUpdate(
-          workFolder.id,
+          connectedFolder.id,
           targetInstance.runtimeInstanceId,
           release.releaseDigest,
           resolvedPolicy,
         );
         await refreshStudio();
       } else {
-        operation = await prepareLocalAppInstall(workFolder.id, resolvedTargetWorkFolderId, release.releaseDigest);
+        operation = await prepareLocalAppInstall(connectedFolder.id, resolvedTargetConnectedFolderId, release.releaseDigest);
         await refreshStudio();
       }
       operationToFocus.current = operation.operationId;
@@ -373,7 +373,7 @@ export function AppStudioPane({
           const nextInstance: LocalAppInstance = {
             runtimeInstanceId: operation.runtimeInstanceId,
             projectId: operation.projectId,
-            workFolderId: operation.targetWorkFolderId,
+            connectedFolderId: operation.targetConnectedFolderId,
             releaseDigest: target.releaseDigest,
             displayVersion: target.displayVersion,
             presentation: { ...target.presentation },
@@ -388,13 +388,13 @@ export function AppStudioPane({
           };
         });
       } else {
-        const result = await activateLocalAppOperation(workFolder.id, operation.operationId);
-        onAppsChanged?.(operation.targetWorkFolderId, result.instance.runtimeInstanceId, result.apps);
+        const result = await activateLocalAppOperation(connectedFolder.id, operation.operationId);
+        onAppsChanged?.(operation.targetConnectedFolderId, result.instance.runtimeInstanceId, result.apps);
         await refreshStudio();
       }
       showToast({
         text: operation.kind === "install"
-          ? `Installed in ${workFolderName(operation.targetWorkFolderId, workFolderById)}`
+          ? `Installed in ${connectedFolderName(operation.targetConnectedFolderId, connectedFolderById)}`
           : rollback ? "Rollback activated" : "Update activated",
         tone: "success",
       });
@@ -409,7 +409,7 @@ export function AppStudioPane({
           operations: current.operations.filter((item) => item.operationId !== operation.operationId),
         }));
       } else {
-        await cancelLocalAppOperation(workFolder.id, operation.operationId);
+        await cancelLocalAppOperation(connectedFolder.id, operation.operationId);
         await refreshStudio();
       }
       showToast({ text: "Activation review cancelled" });
@@ -417,7 +417,7 @@ export function AppStudioPane({
   }
 
   async function uninstall(instance: LocalAppInstance, disposition: "retain" | "purge"): Promise<void> {
-    const targetName = workFolderName(instance.workFolderId, workFolderById);
+    const targetName = connectedFolderName(instance.connectedFolderId, connectedFolderById);
     const retained = disposition === "retain";
     const confirmed = await requestConfirm({
       title: `Uninstall ${instance.presentation.title} from ${targetName}?`,
@@ -451,8 +451,8 @@ export function AppStudioPane({
           retainedData: [...current.retainedData, ...added],
         }));
       } else {
-        result = await uninstallLocalApp(instance.workFolderId, instance.runtimeInstanceId, disposition);
-        onAppsChanged?.(instance.workFolderId, instance.runtimeInstanceId, []);
+        result = await uninstallLocalApp(instance.connectedFolderId, instance.runtimeInstanceId, disposition);
+        onAppsChanged?.(instance.connectedFolderId, instance.runtimeInstanceId, []);
         await refreshStudio();
       }
       showToast(uninstallResultToast({ ...result, disposition }));
@@ -475,7 +475,7 @@ export function AppStudioPane({
           retainedData: current.retainedData.filter((entry) => entry.retainedDataId !== item.retainedDataId),
         }));
       } else {
-        result = await purgeLocalAppRetainedData(workFolder.id, item.retainedDataId);
+        result = await purgeLocalAppRetainedData(connectedFolder.id, item.retainedDataId);
         await refreshStudio();
       }
       showToast(retainedDataPurgeResultToast(result));
@@ -484,7 +484,7 @@ export function AppStudioPane({
 
   async function exportRetainedData(item: LocalAppRetainedData): Promise<void> {
     await runMutation(`export:${item.retainedDataId}`, async () => {
-      downloadAppData(item.featureId, await exportRetainedAppData(workFolder.id, item.retainedDataId));
+      downloadAppData(item.featureId, await exportRetainedAppData(connectedFolder.id, item.retainedDataId));
     });
   }
 
@@ -497,21 +497,21 @@ export function AppStudioPane({
 
   if (loading && !studio) {
     return (
-      <div className="work-folder-pane-content professional-surface app-studio-pane">
+      <div className="connected-folder-pane-content professional-surface app-studio-pane">
         <div className="app-studio-loading" role="status"><ArrowSync16Regular className="spin" />Loading App Studio</div>
       </div>
     );
   }
 
   const project = studio?.project ?? null;
-  const hasInstallTarget = Boolean(targetWorkFolderId && installTargetIds.has(targetWorkFolderId));
-  const targetName = hasInstallTarget ? workFolderName(targetWorkFolderId, workFolderById) : "";
+  const hasInstallTarget = Boolean(targetConnectedFolderId && installTargetIds.has(targetConnectedFolderId));
+  const targetName = hasInstallTarget ? connectedFolderName(targetConnectedFolderId, connectedFolderById) : "";
   const pendingForTarget = hasInstallTarget
-    ? studio?.operations.find((operation) => operation.targetWorkFolderId === targetWorkFolderId) ?? null
+    ? studio?.operations.find((operation) => operation.targetConnectedFolderId === targetConnectedFolderId) ?? null
     : null;
 
   return (
-    <div className="work-folder-pane-content professional-surface app-studio-pane">
+    <div className="connected-folder-pane-content professional-surface app-studio-pane">
       <section className="app-studio-canvas" aria-labelledby={`${ids}-title`}>
         <header className="app-studio-header">
           <div className="app-studio-project-identity">
@@ -519,7 +519,7 @@ export function AppStudioPane({
               <span className="professional-kicker">App Studio</span>
               <h1 id={`${ids}-title`}>{project?.presentation.title ?? "Edit Your App"}</h1>
               {project?.presentation.description ? <p>{project.presentation.description}</p> : null}
-              {project ? <small>Built from {workFolder.name} · Releases stay on this device</small> : null}
+              {project ? <small>Built from {connectedFolder.name} · Releases stay on this device</small> : null}
             </div>
           </div>
           {project ? (
@@ -613,13 +613,13 @@ export function AppStudioPane({
                   status={`${studio?.releases.length ?? 0} total`}
                 />
                 <div className="app-studio-target-bar">
-                  <label htmlFor={`${ids}-target-work-folder`}>
-                    <span>Install in work-folder</span>
-                    <select id={`${ids}-target-work-folder`} value={targetWorkFolderId} onChange={(event) => setTargetWorkFolderId(event.target.value)} disabled={Boolean(busyKey) || !installTargets.length}>
-                      {installTargets.length ? <option value="" disabled>Choose a work-folder</option> : null}
+                  <label htmlFor={`${ids}-target-connected-folder`}>
+                    <span>Install in Connected Folder</span>
+                    <select id={`${ids}-target-connected-folder`} value={targetConnectedFolderId} onChange={(event) => setTargetConnectedFolderId(event.target.value)} disabled={Boolean(busyKey) || !installTargets.length}>
+                      {installTargets.length ? <option value="" disabled>Choose a Connected Folder</option> : null}
                       {installTargets.length
                         ? installTargets.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)
-                        : <option value="">No work-folders Registered</option>}
+                        : <option value="">No Connected Folders Registered</option>}
                     </select>
                   </label>
                   {selectedInstance ? (
@@ -632,7 +632,7 @@ export function AppStudioPane({
                     </label>
                   ) : null}
                   <p>{!hasInstallTarget
-                    ? "Choose a work-folder to install in."
+                    ? "Choose a Connected Folder to install in."
                     : selectedInstance
                       ? `${selectedInstance.presentation.title} ${selectedInstance.displayVersion} is active in ${targetName}.`
                       : `No app installed in ${targetName}.`}</p>
@@ -642,7 +642,7 @@ export function AppStudioPane({
                     {studio.releases.map((release) => {
                       const active = selectedInstance?.releaseDigest === release.releaseDigest;
                       const rollback = selectedInstance ? releaseIsOlder(release, releasesByDigest.get(selectedInstance.releaseDigest)) : false;
-                      const pending = studio.operations.find((operation) => operation.targetWorkFolderId === targetWorkFolderId && operation.releaseDigest === release.releaseDigest);
+                      const pending = studio.operations.find((operation) => operation.targetConnectedFolderId === targetConnectedFolderId && operation.releaseDigest === release.releaseDigest);
                       const blockedByOtherPending = pending ? null : pendingForTarget;
                       const deletionBlocker = releaseDeletionBlocker(studio, release);
                       return (
@@ -734,7 +734,7 @@ export function AppStudioPane({
                         operation={operation}
                         release={releasesByDigest.get(operation.releaseDigest)}
                         activeRelease={releasesByDigest.get(studio.instances.find((item) => item.runtimeInstanceId === operation.runtimeInstanceId)?.releaseDigest ?? "")}
-                        targetName={workFolderName(operation.targetWorkFolderId, workFolderById)}
+                        targetName={connectedFolderName(operation.targetConnectedFolderId, connectedFolderById)}
                         busyKey={busyKey}
                         onActivate={() => void activateOperation(operation)}
                         onCancel={() => void cancelOperation(operation)}
@@ -746,36 +746,36 @@ export function AppStudioPane({
                 {studio?.instances.length ? (
                   <div className="app-studio-installation-list" aria-label="Installed App Instances">
                     {studio.instances.map((instance) => {
-                      const instanceWorkFolderName = workFolderName(instance.workFolderId, workFolderById);
+                      const instanceConnectedFolderName = connectedFolderName(instance.connectedFolderId, connectedFolderById);
                       const latest = publishedReleases[0];
                       const updateAvailable = latest && latest.releaseDigest !== instance.releaseDigest
                         && !releaseIsOlder(latest, releasesByDigest.get(instance.releaseDigest));
                       const pending = studio.operations.find((operation) => operation.runtimeInstanceId === instance.runtimeInstanceId);
                       return (
-                        <article className={`app-studio-installation-row${instance.workFolderId === targetWorkFolderId ? " selected" : ""}`} key={instance.runtimeInstanceId}>
+                        <article className={`app-studio-installation-row${instance.connectedFolderId === targetConnectedFolderId ? " selected" : ""}`} key={instance.runtimeInstanceId}>
                           <div className="app-studio-installation-copy">
                             <div className="app-studio-row-title">
                               <strong>{instance.presentation.title}</strong>
                               <span className="professional-status-badge enabled">{instance.displayVersion}</span>
                               {updateAvailable ? <span className="professional-status-badge">Update Available</span> : null}
                             </div>
-                            <p>Installed in {instanceWorkFolderName} · Data on this device</p>
+                            <p>Installed in {instanceConnectedFolderName} · Data on this device</p>
                             <small>{formatCount(instance.featureIds.length, "Feature")} · Updated {formatTimestamp(instance.updatedAt)} · {shortDigest(instance.releaseDigest)}</small>
                           </div>
                           <div className="app-studio-installation-actions">
-                            {instance.workFolderId !== targetWorkFolderId && !updateAvailable ? (
-                              <button className="app-studio-text-button" type="button" disabled={Boolean(busyKey)} onClick={() => setTargetWorkFolderId(instance.workFolderId)}>Choose work-folder</button>
+                            {instance.connectedFolderId !== targetConnectedFolderId && !updateAvailable ? (
+                              <button className="app-studio-text-button" type="button" disabled={Boolean(busyKey)} onClick={() => setTargetConnectedFolderId(instance.connectedFolderId)}>Choose Connected Folder</button>
                             ) : null}
                             {updateAvailable && !pending ? (
                               <button className="ui-control" type="button" disabled={Boolean(busyKey)} onClick={() => {
-                                setTargetWorkFolderId(instance.workFolderId);
+                                setTargetConnectedFolderId(instance.connectedFolderId);
                                 window.requestAnimationFrame(() => document.getElementById(`${ids}-releases-title`)?.scrollIntoView({ block: "start" }));
                               }}>
                                 Review in Releases
                               </button>
                             ) : null}
                             <button className="ui-control" type="button" disabled={Boolean(busyKey)} onClick={() => void uninstall(instance, "retain")}>Uninstall · Retain Data</button>
-                            <button className="app-studio-icon-button danger" type="button" disabled={Boolean(busyKey)} onClick={() => void uninstall(instance, "purge")} aria-label={`Uninstall ${instance.presentation.title} from ${instanceWorkFolderName} and purge its data`} title="Uninstall and Purge Data">
+                            <button className="app-studio-icon-button danger" type="button" disabled={Boolean(busyKey)} onClick={() => void uninstall(instance, "purge")} aria-label={`Uninstall ${instance.presentation.title} from ${instanceConnectedFolderName} and purge its data`} title="Uninstall and Purge Data">
                               {busyKey === `uninstall:${instance.runtimeInstanceId}` ? <ArrowSync16Regular className="spin" /> : <Delete16Regular />}
                             </button>
                           </div>
@@ -869,18 +869,18 @@ function ProjectEditor({
   );
 }
 
-/** The whole Fluent icon catalog Customize work-folder uses, picking the app's icon id. */
+/** The whole Fluent icon catalog Customize Connected Folder uses, picking the app's icon id. */
 function AppIconPicker({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (value: string) => void }) {
   const selected = value.trim() || "apps";
   return (
-    <div className="work-folder-icon-picker app-studio-icon-picker">
-      <div className="work-folder-icon-grid" role="listbox" aria-label="App Icon">
-        {workFolderIconOptions.map((option) => {
+    <div className="connected-folder-icon-picker app-studio-icon-picker">
+      <div className="connected-folder-icon-grid" role="listbox" aria-label="App Icon">
+        {connectedFolderIconOptions.map((option) => {
           const Icon = option.Icon;
           const active = option.name === selected;
           return (
             <button
-              className={active ? "work-folder-icon-option active" : "work-folder-icon-option"}
+              className={active ? "connected-folder-icon-option active" : "connected-folder-icon-option"}
               key={option.name}
               type="button"
               role="option"
@@ -890,7 +890,7 @@ function AppIconPicker({ value, disabled, onChange }: { value: string; disabled:
               aria-label={`Use ${option.label} Icon`}
               title={option.label}
             >
-              <WorkFolderIconGlyph icon={Icon} size={18} filled={active} />
+              <ConnectedFolderIconGlyph icon={Icon} size={18} filled={active} />
             </button>
           );
         })}
@@ -953,13 +953,13 @@ function OperationReview({
         <span className={canActivate ? "professional-status-badge enabled" : "professional-status-badge error"}>{canActivate ? "Ready" : "Blocked"}</span>
       </header>
       <dl className="app-studio-facts compact">
-        <div><dt>Target work-folder</dt><dd>{targetName}</dd></div>
+        <div><dt>Target Connected Folder</dt><dd>{targetName}</dd></div>
         <div><dt>Release</dt><dd>{release?.displayVersion ?? shortDigest(operation.releaseDigest)}</dd></div>
         <div><dt>Local Data</dt><dd>{operation.kind === "install" ? "Fresh data" : "Per plan below"}</dd></div>
         <div><dt>Authority</dt><dd>{operation.kind === "install" ? "Declared access enabled" : operation.continuityPolicy === "eligible" ? "Keep current choices" : "Install defaults"}</dd></div>
       </dl>
       {operation.kind === "install" ? (
-        <p className="app-studio-authority-note"><ShieldCheckmark16Regular aria-hidden="true" />Enables declared network destinations, whole-work-folder directory access, notifications, and automations. Connections and individual files need setup.</p>
+        <p className="app-studio-authority-note"><ShieldCheckmark16Regular aria-hidden="true" />Enables declared network destinations, whole-connected-folder directory access, notifications, and automations. Connections and individual files need setup.</p>
       ) : (
         <UpdatePlan operation={operation} />
       )}
@@ -1033,8 +1033,8 @@ function releaseDeletionBlocker(studio: LocalAppStudioSnapshot, release: LocalAp
   return null;
 }
 
-function workFolderName(workFolderId: string, byId: ReadonlyMap<string, WorkFolderSummary>): string {
-  return byId.get(workFolderId)?.name ?? "Unavailable work-folder";
+function connectedFolderName(connectedFolderId: string, byId: ReadonlyMap<string, ConnectedFolderSummary>): string {
+  return byId.get(connectedFolderId)?.name ?? "Unavailable Connected Folder";
 }
 
 function formatCount(count: number, noun: string): string {
@@ -1052,9 +1052,9 @@ function shortDigest(value: string): string {
   return `${digest.slice(0, 10)}…`;
 }
 
-function fixtureStudio(workFolder: WorkFolderSummary, workFolders: WorkFolderSummary[]): LocalAppStudioSnapshot {
-  const sourceTimestamp = workFolder.updatedAt || "2026-07-16T14:00:00.000Z";
-  const target = workFolders.find((item) => item.id !== workFolder.id) ?? null;
+function fixtureStudio(connectedFolder: ConnectedFolderSummary, connectedFolders: ConnectedFolderSummary[]): LocalAppStudioSnapshot {
+  const sourceTimestamp = connectedFolder.updatedAt || "2026-07-16T14:00:00.000Z";
+  const target = connectedFolders.find((item) => item.id !== connectedFolder.id) ?? null;
   const projectId = "project_fixture-connected-inbox";
   const presentation: LocalAppPresentation = {
     title: "Connected Inbox",
@@ -1063,7 +1063,7 @@ function fixtureStudio(workFolder: WorkFolderSummary, workFolders: WorkFolderSum
   };
   const oldRelease: LocalAppRelease = {
     projectId,
-    sourceWorkFolderId: workFolder.id,
+    sourceConnectedFolderId: connectedFolder.id,
     releaseDigest: fixtureDigest("0.3.0"),
     displayVersion: "0.3.0",
     presentation,
@@ -1087,11 +1087,11 @@ function fixtureStudio(workFolder: WorkFolderSummary, workFolders: WorkFolderSum
     preparedAt: "2026-07-16T13:30:00.000Z",
     publishedAt: null,
   };
-  const preview = fixturePreview(workFolder.id, projectId, sourceTimestamp);
+  const preview = fixturePreview(connectedFolder.id, projectId, sourceTimestamp);
   const instance: LocalAppInstance | null = target ? {
     runtimeInstanceId: "runtime_fixture-connected-inbox",
     projectId,
-    workFolderId: target.id,
+    connectedFolderId: target.id,
     releaseDigest: oldRelease.releaseDigest,
     displayVersion: oldRelease.displayVersion,
     presentation,
@@ -1108,7 +1108,7 @@ function fixtureStudio(workFolder: WorkFolderSummary, workFolders: WorkFolderSum
     )
     : null;
   return {
-    project: { workFolderId: workFolder.id, projectId, presentation, createdAt: sourceTimestamp, updatedAt: sourceTimestamp },
+    project: { connectedFolderId: connectedFolder.id, projectId, presentation, createdAt: sourceTimestamp, updatedAt: sourceTimestamp },
     previews: [preview],
     releases: [preparedRelease, currentRelease, oldRelease],
     instances: instance ? [instance] : [],
@@ -1126,11 +1126,11 @@ function fixtureStudio(workFolder: WorkFolderSummary, workFolders: WorkFolderSum
   };
 }
 
-function fixturePreview(workFolderId: string, projectId: string, timestamp: string): RestrictedAppInstalled {
+function fixturePreview(connectedFolderId: string, projectId: string, timestamp: string): RestrictedAppInstalled {
   const generation = "00000000-0000-4000-8000-000000000001";
   return {
-    workFolderId: workFolderId,
-    sourceWorkFolderId: workFolderId,
+    connectedFolderId: connectedFolderId,
+    sourceConnectedFolderId: connectedFolderId,
     projectId,
     tenantId: "tenant_fixture",
     principalId: "principal_fixture",
@@ -1148,7 +1148,7 @@ function fixturePreview(workFolderId: string, projectId: string, timestamp: stri
       principalGeneration: generation,
       dataGeneration: generation,
     },
-    packageName: "@work-fold-examples/connected-inbox",
+    packageName: "@amplefile-examples/connected-inbox",
     version: "0.5.0-preview.2",
     digest: fixtureDigest("preview-package"),
     artifactDigest: fixtureDigest("preview-artifact"),
@@ -1183,12 +1183,12 @@ function fixturePreview(workFolderId: string, projectId: string, timestamp: stri
   };
 }
 
-function fixtureInstallOperation(studio: LocalAppStudioSnapshot, targetWorkFolderId: string, release: LocalAppRelease): LocalAppOperation {
+function fixtureInstallOperation(studio: LocalAppStudioSnapshot, targetConnectedFolderId: string, release: LocalAppRelease): LocalAppOperation {
   return {
     operationId: `operation_fixture_install_${Date.now()}`,
     kind: "install",
     projectId: studio.project!.projectId,
-    targetWorkFolderId: targetWorkFolderId,
+    targetConnectedFolderId: targetConnectedFolderId,
     releaseDigest: release.releaseDigest,
     runtimeInstanceId: `runtime_fixture_${Date.now()}`,
     features: release.featureIds.map((featureId, index) => ({
@@ -1213,7 +1213,7 @@ function fixtureUpdateOperation(
     operationId: `operation_fixture_update_${release.displayVersion.replace(/[^a-z0-9]/gi, "-")}`,
     kind: "update",
     projectId: studio.project?.projectId ?? instance.projectId,
-    targetWorkFolderId: instance.workFolderId,
+    targetConnectedFolderId: instance.connectedFolderId,
     releaseDigest: release.releaseDigest,
     runtimeInstanceId: instance.runtimeInstanceId,
     continuityPolicy,

@@ -25,12 +25,12 @@ const { IncludedComputerSetup } = await import("../web-local/src/components/pane
 const { OnboardingFlow } = await import("../web-local/src/components/onboarding/OnboardingFlow.js");
 assets.deregister();
 
-const distribution: ChromeDistribution = { version: 1, storeId: "a".repeat(32), nativeHostName: "com.work_fold.chrome_test", bootstrapVersion: 1, extensionVersion: "1.0.0", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
+const distribution: ChromeDistribution = { version: 1, storeId: "a".repeat(32), nativeHostName: "com.amplefile.chrome_test", bootstrapVersion: 1, extensionVersion: "1.0.0", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
 const origin = `chrome-extension://${distribution.storeId}/`;
 const connectRequest = (): ChromeBootstrapRequest => ({ version: 1, action: "connect", requestId: randomUUID(), clientId: randomUUID(), clientProof: randomBytes(32).toString("hex"), extensionVersion: "1.0.0", bridge: distribution.bridge });
 
 async function chromeService(t: TestContext, overrides: Partial<Parameters<typeof IncludedChromeConnectionService.create>[0]> = {}) {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-chrome-first-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-chrome-first-"));
   const registrations: Array<[boolean, boolean | undefined]> = [];
   let opened = 0;
   const service = await IncludedChromeConnectionService.create({
@@ -58,12 +58,12 @@ test("Chrome works when the extension is added first: launch registers quietly a
   const { root, service, registrations, opened } = await chromeService(t);
   assert.equal(service.environment().extensionSeen, false);
   await service.startIfEnabled();
-  assert.deepEqual(registrations, [[false, true]], "launch registers only when Chrome has no work-fold registration");
+  assert.deepEqual(registrations, [[false, true]], "launch registers only when Chrome has no AmpleFile registration");
   await access(join(root, "state", "chrome", "native-host", "launch.json"));
   assert.equal(service.status().state, "not_connected");
 
   const answer = await service.bootstrap(origin, connectRequest());
-  assert.equal(answer.state, "lease_ready", "Connect chosen in the extension needs no earlier Connect Chrome in work-fold");
+  assert.equal(answer.state, "lease_ready", "Connect chosen in the extension needs no earlier Connect Chrome in AmpleFile");
   assert.equal(service.status().hasSelection, true);
   assert.equal(service.environment().extensionSeen, true);
   assert.equal(opened(), 0, "nothing opened the Web Store");
@@ -71,7 +71,7 @@ test("Chrome works when the extension is added first: launch registers quietly a
   assert.equal(saved.enabled, true);
 
   // A quiet launch registration that fails reports nothing and starts nothing.
-  const quiet = await chromeService(t, { registerNativeHost: async () => { throw new Error("Chrome Store setup is available in the installed work-fold app."); } });
+  const quiet = await chromeService(t, { registerNativeHost: async () => { throw new Error("Chrome Store setup is available in the installed AmpleFile app."); } });
   await quiet.service.startIfEnabled();
   assert.equal(quiet.service.status().problem, undefined);
   await assert.rejects(access(join(quiet.root, "state", "chrome", "native-host", "launch.json")), { code: "ENOENT" });
@@ -81,12 +81,12 @@ test("Chrome works when the extension is added first: launch registers quietly a
 });
 
 test("launch registration claims only an absent registration, and only when Chrome is set up", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-chrome-if-absent-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-chrome-if-absent-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const sourceDirectory = join(root, "app-resources"), chromeUserDataRoot = join(root, "chrome");
   await mkdir(sourceDirectory);
-  await writeFile(join(sourceDirectory, "work-fold-chrome-host"), "synthetic binary");
-  await writeFile(join(sourceDirectory, "source.json"), JSON.stringify({ schema: "work-fold.chrome-native-host-source.v1", origin, nativeHostName: distribution.nativeHostName, bootstrapVersion: 1 }));
+  await writeFile(join(sourceDirectory, "amplefile-chrome-host"), "synthetic binary");
+  await writeFile(join(sourceDirectory, "source.json"), JSON.stringify({ schema: "amplefile.chrome-native-host-source.v1", origin, nativeHostName: distribution.nativeHostName, bootstrapVersion: 1 }));
   const options = { sourceDirectory, stateRoot: join(root, "state"), chromeUserDataRoot, distribution, enabled: true, verifySignature: false };
   const manifestPath = join(chromeUserDataRoot, "NativeMessagingHosts", `${distribution.nativeHostName}.json`);
 
@@ -97,7 +97,7 @@ test("launch registration claims only an absent registration, and only when Chro
   await new ChromeNativeHostRegistration(options).register(false, true);
   assert.deepEqual(JSON.parse(await readFile(manifestPath, "utf8")).allowed_origins, [origin]);
 
-  const other = { name: distribution.nativeHostName, description: "Another installation", path: "/Applications/Other work-fold.app/host", type: "stdio", allowed_origins: [origin] };
+  const other = { name: distribution.nativeHostName, description: "Another installation", path: "/Applications/Other AmpleFile.app/host", type: "stdio", allowed_origins: [origin] };
   await writeFile(manifestPath, JSON.stringify(other));
   await new ChromeNativeHostRegistration({ ...options, stateRoot: join(root, "second-state") }).register(false, true);
   assert.deepEqual(JSON.parse(await readFile(manifestPath, "utf8")), other, "another installation's registration stays as it is");
@@ -113,7 +113,7 @@ function stubSetup(t: TestContext, computer: (action: string) => IncludedToolSta
       posts.push(body);
       return Response.json({ status: computer(String(body.action)) });
     }
-    assert.doesNotMatch(String(input), /workFolderId/, "first run reads the tools without a work-folder");
+    assert.doesNotMatch(String(input), /connectedFolderId/, "first run reads the tools without a Connected Folder");
     return Response.json({ tools: tools() });
   }) as typeof fetch;
   t.after(() => { globalThis.fetch = original; });
@@ -136,7 +136,7 @@ test("Allow asks macOS, watches for the person's OK, and restarts the helper onc
   await dom.render(createElement(IncludedComputerSetup, { enabled: true }));
   const button = (label: string) => [...document.querySelectorAll("button")].find((item) => item.textContent === label);
   await dom.waitFor(() => Boolean(button("Allow Computer Control")));
-  assert.match(document.body.textContent!, /turn on work-fold Computer/);
+  assert.match(document.body.textContent!, /turn on AmpleFile Computer/);
 
   await dom.act(() => button("Allow Computer Control")!.click());
   await dom.waitFor(() => /Watching for your OK/.test(document.body.textContent!));
@@ -174,13 +174,13 @@ test("first run offers Chrome and Computer Control when the app includes them", 
     { id: "chrome", state: "setup_required", detail: "", checkedAt: "", chrome: { state: "not_connected", checkedAt: "", hasSelection: false }, chromeSetup: { browserInstalled: true, extensionSeen: false } },
     { id: "computer", state: "unknown", detail: "", checkedAt: "" },
   ]);
-  await dom.render(createElement(OnboardingFlow, { agentConfigured: true, onAiConnected: () => {}, onCreateWorkFolder: () => {}, onOpenFolder: () => {} }));
+  await dom.render(createElement(OnboardingFlow, { agentConfigured: true, onAiConnected: () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {} }));
   const button = (text: RegExp) => [...document.querySelectorAll("button")].find((item) => text.test(item.textContent ?? ""));
   await dom.act(() => button(/^Get Started$/)!.click());
   await dom.waitFor(() => document.querySelector("h1")?.textContent === "Let Your Worker Use Your Mac");
   assert.match(document.body.textContent!, /Step 2 of 3/);
   await dom.act(() => button(/^Chrome/)!.click());
-  await dom.waitFor(() => /Add the work-fold Extension/.test(document.body.textContent!));
+  await dom.waitFor(() => /Add the AmpleFile Extension/.test(document.body.textContent!));
   await dom.act(() => button(/^Computer Control/)!.click());
   await dom.waitFor(() => Boolean(button(/^Allow Computer Control$/)));
   await dom.act(() => button(/^Continue$/)!.click());

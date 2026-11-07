@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createRequire, registerHooks } from "node:module";
 import test from "node:test";
 import { createElement, useState } from "react";
-import type { AgentStatus, WorkFolderSummary } from "../web-local/src/types.js";
+import type { AgentStatus, ConnectedFolderSummary } from "../web-local/src/types.js";
 import { createDomHarness } from "./support/dom.js";
 
 // The real modal includes brand artwork. Node needs only the asset URL; the
@@ -24,7 +24,7 @@ function DesktopSettingsModal(props: Omit<Parameters<typeof SettingsModal>[0], "
 }
 
 const status: AgentStatus = { configured: true, ready: true, provider: "openrouter", model: "deepseek/deepseek-v4.1-flash", error: null, piVersion: "fixture" };
-const workFolder = { id: "settings-test", name: "Workshop", workFolderRoot: "/synthetic/workshop" } as WorkFolderSummary;
+const connectedFolder = { id: "settings-test", name: "Workshop", connectedFolderRoot: "/synthetic/workshop" } as ConnectedFolderSummary;
 
 test("Settings navigation preserves agent edits, isolates tab groups and restores focus on close", async (t) => {
   const dom = await createDomHarness();
@@ -36,7 +36,7 @@ test("Settings navigation preserves agent edits, isolates tab groups and restore
     return createElement("div", null,
       createElement("button", { id: "settings-opener", onClick: () => setOpen(true) }, "Settings"),
       open ? createElement(DesktopSettingsModal, {
-        workFolder, agentStatus: status, fixtureMode: true, updateStatus: null,
+        connectedFolder, agentStatus: status, fixtureMode: true, updateStatus: null,
         onAgentConfigured: () => {}, onClose: () => setOpen(false),
       }) : null);
   }
@@ -96,7 +96,7 @@ test("an accepted Settings save retains its owner across page navigation", async
     return Response.json({ status, models: [{ provider: "openrouter", providerName: "OpenRouter", id: status.model, name: "DeepSeek Flash", authConfigured: true }], catalogs: [], instructions: "Original" });
   }) as typeof fetch;
   await dom.render(createElement(DesktopSettingsModal, {
-    workFolder, agentStatus: status, initialPage: "ai-models", updateStatus: null,
+    connectedFolder, agentStatus: status, initialPage: "ai-models", updateStatus: null,
     onAgentConfigured: () => {}, onClose: () => {},
   }));
   await dom.waitFor(() => Boolean(document.querySelector("textarea")));
@@ -124,7 +124,7 @@ test("opening Settings from a model label focuses the loaded selector only once"
   HTMLElement.prototype.scrollIntoView = () => {};
   window.matchMedia = (() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
   await dom.render(createElement(DesktopSettingsModal, {
-    workFolder, agentStatus: status, fixtureMode: true, initialPage: "ai-models", focusAiModel: true,
+    connectedFolder, agentStatus: status, fixtureMode: true, initialPage: "ai-models", focusAiModel: true,
     updateStatus: null, onAgentConfigured: () => {}, onClose: () => {},
   }));
   await dom.waitFor(() => document.activeElement?.id === "ai-model");
@@ -134,21 +134,21 @@ test("opening Settings from a model label focuses the loaded selector only once"
 });
 
 
-test("Settings exposes Customize work-folder back navigation only for that entry path", async (t) => {
+test("Settings exposes Customize Connected Folder back navigation only for that entry path", async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   HTMLElement.prototype.scrollIntoView = () => {};
   window.matchMedia = (() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
   let returns = 0;
-  const props = { workFolder, agentStatus: status, fixtureMode: true, initialPage: "ai-models" as const,
+  const props = { connectedFolder, agentStatus: status, fixtureMode: true, initialPage: "ai-models" as const,
     updateStatus: null, onAgentConfigured: () => {}, onClose: () => {} };
   await dom.render(createElement(DesktopSettingsModal, props));
-  assert.equal(document.querySelector('[aria-label="Back to Customize work-folder"]'), null);
+  assert.equal(document.querySelector('[aria-label="Back to Customize Connected Folder"]'), null);
   await dom.render(createElement(DesktopSettingsModal, { ...props, onBackToCustomization: () => { returns += 1; } }));
-  const back = document.querySelector<HTMLButtonElement>('[aria-label="Back to Customize work-folder"]')!;
+  const back = document.querySelector<HTMLButtonElement>('[aria-label="Back to Customize Connected Folder"]')!;
   assert.equal(back.parentElement, document.getElementById('settings-title')!.parentElement!.parentElement, "the button sits beside the Settings title");
   await dom.act(() => back.click());
   assert.equal(returns, 1);
   await dom.render(createElement(DesktopSettingsModal, props));
-  assert.equal(document.querySelector('[aria-label="Back to Customize work-folder"]'), null, "a later ordinary Settings entry has no back button");
+  assert.equal(document.querySelector('[aria-label="Back to Customize Connected Folder"]'), null, "a later ordinary Settings entry has no back button");
 });

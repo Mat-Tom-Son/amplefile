@@ -9,11 +9,11 @@ import { setImmediate } from "node:timers/promises";
 
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
 
-import { workFoldBackgroundJobLimits } from "../src/shared/work-fold-limits.js";
-import { describeJobState, WorkFoldJobLimitError, type WorkFoldJobRecord } from "../src/local/jobs/job-records.js";
+import { ampleFileBackgroundJobLimits } from "../src/shared/amplefile-limits.js";
+import { describeJobState, AmpleFileJobLimitError, type AmpleFileJobRecord } from "../src/local/jobs/job-records.js";
 import { JobOutputWriter, readJobOutputPage, sanitizeJobOutput } from "../src/local/jobs/job-output.js";
-import { reapOrphanedJobProcesses, WorkFoldJobService, type WorkFoldJobServicePorts } from "../src/local/jobs/job-service.js";
-import { WorkFoldJobStore } from "../src/local/jobs/job-store.js";
+import { reapOrphanedJobProcesses, AmpleFileJobService, type AmpleFileJobServicePorts } from "../src/local/jobs/job-service.js";
+import { AmpleFileJobStore } from "../src/local/jobs/job-store.js";
 
 /**
  * The background job service on its own (docs/background-jobs.md, F31–F33):
@@ -24,22 +24,22 @@ import { WorkFoldJobStore } from "../src/local/jobs/job-store.js";
 interface Harness {
   root: string;
   folder: string;
-  store: WorkFoldJobStore;
-  service: WorkFoldJobService;
-  settled: WorkFoldJobRecord[];
+  store: AmpleFileJobStore;
+  service: AmpleFileJobService;
+  settled: AmpleFileJobRecord[];
   captured: string[];
 }
 
 async function harness(
   t: { after: (fn: () => unknown) => void },
-  options: { runningLimit?: number; segmentBytes?: number; stopGraceMs?: number; ports?: Partial<WorkFoldJobServicePorts> } = {},
+  options: { runningLimit?: number; segmentBytes?: number; stopGraceMs?: number; ports?: Partial<AmpleFileJobServicePorts> } = {},
 ): Promise<Harness> {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-jobs-"));
-  const folder = await realpath(await mkdtemp(join(tmpdir(), "work-fold-jobs-folder-")));
-  const store = await WorkFoldJobStore.open({ rootPath: join(root, "jobs") });
-  const settled: WorkFoldJobRecord[] = [];
+  const root = await mkdtemp(join(tmpdir(), "amplefile-jobs-"));
+  const folder = await realpath(await mkdtemp(join(tmpdir(), "amplefile-jobs-folder-")));
+  const store = await AmpleFileJobStore.open({ rootPath: join(root, "jobs") });
+  const settled: AmpleFileJobRecord[] = [];
   const captured: string[] = [];
-  const service = new WorkFoldJobService({
+  const service = new AmpleFileJobService({
     store,
     ...(options.runningLimit ? { runningLimit: options.runningLimit } : {}),
     ...(options.segmentBytes ? { segmentBytes: options.segmentBytes } : {}),
@@ -63,7 +63,7 @@ async function harness(
 
 function start(h: Harness, command: string, extra: { timeoutSeconds?: number; name?: string } = {}) {
   return h.service.start({
-    owner: { workFolderId: "wf-1", workFolderName: "Site", conversationId: "chat-1" },
+    owner: { connectedFolderId: "af-1", connectedFolderName: "Site", conversationId: "chat-1" },
     taskId: "turn-1",
     requestId: "req-20261018000000-aaaaaaaa",
     command,
@@ -83,13 +83,13 @@ function alive(pid: number): boolean {
 }
 
 test("the read bounds are Pi's own bash bounds", () => {
-  assert.equal(workFoldBackgroundJobLimits.readMaxLines, DEFAULT_MAX_LINES);
-  assert.equal(workFoldBackgroundJobLimits.readMaxBytes, DEFAULT_MAX_BYTES);
+  assert.equal(ampleFileBackgroundJobLimits.readMaxLines, DEFAULT_MAX_LINES);
+  assert.equal(ampleFileBackgroundJobLimits.readMaxBytes, DEFAULT_MAX_BYTES);
 });
 
 test("a job runs in its folder, records its exit, captures History, and settles once", async (t) => {
   const h = await harness(t);
-  const job = await start(h, "pwd; echo \"id=$WORKFOLD_JOB_ID\"; echo to-stderr >&2; exit 3", { name: "Quick one" });
+  const job = await start(h, "pwd; echo \"id=$AMPLEFILE_JOB_ID\"; echo to-stderr >&2; exit 3", { name: "Quick one" });
   assert.match(job.jobId, /^job-\d{14}-[0-9a-f]{8}$/);
   assert.equal(job.name, "Quick one");
   const waited = await h.service.wait(job.jobId, { seconds: 10 });
@@ -108,7 +108,7 @@ test("a job runs in its folder, records its exit, captures History, and settles 
   assert.equal(output.totalLines, 3);
   assert.match(describeJobState(ended, new Date()), /^exited with code 3 after/);
   // The journal is the record: a fresh store reads the same settled job.
-  const reopened = await WorkFoldJobStore.open({ rootPath: h.store.rootPath });
+  const reopened = await AmpleFileJobStore.open({ rootPath: h.store.rootPath });
   assert.equal(reopened.get(job.jobId)?.state, "exited");
 });
 
@@ -201,7 +201,7 @@ test("output past a segment drops the oldest segment and counts what it dropped"
 });
 
 test("a segment never ends inside a line, however the pipe splits the output", async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), "work-fold-job-output-"));
+  const directory = await mkdtemp(join(tmpdir(), "amplefile-job-output-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const writer = new JobOutputWriter(directory, { segmentBytes: 16 });
   for (const chunk of ["alpha 1\nalpha 2\nal", "pha 3\nalpha 4\nalpha 5", "\nalpha 6\nalpha 7\n"]) writer.write(Buffer.from(chunk));
@@ -222,7 +222,7 @@ test("the running bound refuses a start and names its number", async (t) => {
   const h = await harness(t, { runningLimit: 1 });
   await start(h, "sleep 30");
   await assert.rejects(start(h, "sleep 30"), (error: unknown) =>
-    error instanceof WorkFoldJobLimitError && /1 background jobs are already running/.test(error.message) && /Settings → Automations → Limits/.test(error.message));
+    error instanceof AmpleFileJobLimitError && /1 background jobs are already running/.test(error.message) && /Settings → Automations → Limits/.test(error.message));
 });
 
 test("interactive jobs receive terminal input and keep a real TTY", { skip: process.platform === "win32", timeout: 15_000 }, async (t) => {
@@ -283,7 +283,7 @@ test("concurrent starts reserve a running slot before their first asynchronous c
   const outcomes = await Promise.allSettled([start(h, "sleep 30"), start(h, "sleep 30")]);
   assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1);
   const refused = outcomes.find((outcome) => outcome.status === "rejected");
-  assert.ok(refused?.status === "rejected" && refused.reason instanceof WorkFoldJobLimitError);
+  assert.ok(refused?.status === "rejected" && refused.reason instanceof AmpleFileJobLimitError);
   assert.equal(h.service.runningCount(), 1);
 });
 
@@ -359,7 +359,7 @@ test("a missing folder is refused before anything is recorded; a shell that cann
 });
 
 test("a host refusal before spawn records the job failed and runs nothing", async (t) => {
-  const marker = join(tmpdir(), `work-fold-job-refused-${process.pid}-${Date.now()}`);
+  const marker = join(tmpdir(), `amplefile-job-refused-${process.pid}-${Date.now()}`);
   const h = await harness(t, { ports: { beforeSpawn: async () => { throw new Error("This request was stopped."); } } });
   const job = await start(h, `touch ${JSON.stringify(marker)}`);
   assert.equal(job.state, "failed");
@@ -439,7 +439,7 @@ test("a Stop that lands while a job is starting stops it as soon as it runs", as
   assert.equal(ended.stoppedBy, "request");
 });
 
-test("the work-fold agent's jobs say History does not apply to them", async (t) => {
+test("the AmpleFile agent's jobs say History does not apply to them", async (t) => {
   const h = await harness(t);
   const job = await h.service.start({
     owner: { conversationId: "agent-chat" }, taskId: "turn-a", requestId: "req-20261018000000-bbbbbbbb",
@@ -468,8 +468,8 @@ test("a restart records a running job interrupted and kills it only when it is p
   const running = h.store.get(job.jobId)!;
   assert.ok(running.pid && running.processStartedAt);
   // A second store over the same journal stands in for the next app run.
-  const next = await WorkFoldJobStore.open({ rootPath: h.store.rootPath });
-  const interrupted = await next.reconcile("work-fold closed before this job finished.");
+  const next = await AmpleFileJobStore.open({ rootPath: h.store.rootPath });
+  const interrupted = await next.reconcile("AmpleFile closed before this job finished.");
   assert.equal(interrupted.length, 1);
   assert.equal(interrupted[0]!.state, "interrupted");
   // A reused process id (different start time) is left alone.
@@ -479,7 +479,7 @@ test("a restart records a running job interrupted and kills it only when it is p
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(alive(running.pid!), false);
   // Reconciling again settles nothing: a job is never re-run.
-  const again = await WorkFoldJobStore.open({ rootPath: h.store.rootPath });
+  const again = await AmpleFileJobStore.open({ rootPath: h.store.rootPath });
   assert.equal((await again.reconcile("again")).filter((record) => record.jobId === job.jobId && record.state !== "interrupted").length, 0);
 });
 

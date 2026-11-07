@@ -11,47 +11,47 @@ import { OpenRouterModelCatalog, parseOpenRouterModels } from "../src/local/agen
 import { appendWorkerInstructions, type PiPreferredModel, type PiRuntimeProvider } from "../src/local/agent/pi-runtime-config.js";
 import { startLocalApi } from "../src/local/server.js";
 
-test("Model preferences follow portable work-folder ids and keep the work-fold agent separate", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-model-preferences-"));
+test("Model preferences follow portable Connected Folder ids and keep the AmpleFile agent separate", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-model-preferences-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const firstWorkFolderRoot = join(root, "first-location");
-  const movedWorkFolderRoot = join(root, "moved-location");
-  const workFoldAgentTestRoot = join(root, "management");
-  for (const workFolderRoot of [firstWorkFolderRoot, movedWorkFolderRoot]) {
-    await mkdir(join(workFolderRoot, ".work-fold"), { recursive: true });
-    await writeFile(join(workFolderRoot, ".work-fold", "work-folder.json"), JSON.stringify({ id: "portable-work-folder-id" }));
+  const firstConnectedFolderRoot = join(root, "first-location");
+  const movedConnectedFolderRoot = join(root, "moved-location");
+  const ampleFileAgentTestRoot = join(root, "management");
+  for (const connectedFolderRoot of [firstConnectedFolderRoot, movedConnectedFolderRoot]) {
+    await mkdir(join(connectedFolderRoot, ".amplefile"), { recursive: true });
+    await writeFile(join(connectedFolderRoot, ".amplefile", "connected-folder.json"), JSON.stringify({ id: "portable-connected-folder-id" }));
   }
-  await mkdir(workFoldAgentTestRoot, { recursive: true });
+  await mkdir(ampleFileAgentTestRoot, { recursive: true });
   const store = new ModelPreferenceStore({
     filePath: join(root, "model-preferences.json"),
-    workFoldAgentRootPath: workFoldAgentTestRoot,
+    ampleFileAgentRootPath: ampleFileAgentTestRoot,
   });
 
-  await store.set(firstWorkFolderRoot, { provider: "openrouter", id: "work-folder-model" });
-  await store.setInstructions(firstWorkFolderRoot, "Prefer focused tests.\r\nKeep the answer concise.");
-  await store.set(workFoldAgentTestRoot, { provider: "openai-codex", id: "agent-model" });
+  await store.set(firstConnectedFolderRoot, { provider: "openrouter", id: "connected-folder-model" });
+  await store.setInstructions(firstConnectedFolderRoot, "Prefer focused tests.\r\nKeep the answer concise.");
+  await store.set(ampleFileAgentTestRoot, { provider: "openai-codex", id: "agent-model" });
 
-  assert.deepEqual(await store.get(movedWorkFolderRoot), { provider: "openrouter", id: "work-folder-model" });
-  assert.equal(await store.getInstructions(movedWorkFolderRoot), "Prefer focused tests.\nKeep the answer concise.");
-  assert.deepEqual(await store.get(workFoldAgentTestRoot), { provider: "openai-codex", id: "agent-model" });
-  assert.equal(await store.getInstructions(workFoldAgentTestRoot), "");
+  assert.deepEqual(await store.get(movedConnectedFolderRoot), { provider: "openrouter", id: "connected-folder-model" });
+  assert.equal(await store.getInstructions(movedConnectedFolderRoot), "Prefer focused tests.\nKeep the answer concise.");
+  assert.deepEqual(await store.get(ampleFileAgentTestRoot), { provider: "openai-codex", id: "agent-model" });
+  assert.equal(await store.getInstructions(ampleFileAgentTestRoot), "");
 
-  await store.setInstructions(movedWorkFolderRoot, "");
-  assert.deepEqual(await store.get(firstWorkFolderRoot), { provider: "openrouter", id: "work-folder-model" });
-  assert.equal(await store.getInstructions(firstWorkFolderRoot), "");
+  await store.setInstructions(movedConnectedFolderRoot, "");
+  assert.deepEqual(await store.get(firstConnectedFolderRoot), { provider: "openrouter", id: "connected-folder-model" });
+  assert.equal(await store.getInstructions(firstConnectedFolderRoot), "");
 });
 
 test("agent preference v1 files migrate on the next write without losing the model", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-model-preferences-v1-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-model-preferences-v1-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const workFolderRoot = join(root, "work-folder");
+  const connectedFolderRoot = join(root, "connected-folder");
   const filePath = join(root, "model-preferences.json");
-  await mkdir(join(workFolderRoot, ".work-fold"), { recursive: true });
-  await writeFile(join(workFolderRoot, ".work-fold", "work-folder.json"), JSON.stringify({ id: "portable-work-folder-id" }));
+  await mkdir(join(connectedFolderRoot, ".amplefile"), { recursive: true });
+  await writeFile(join(connectedFolderRoot, ".amplefile", "connected-folder.json"), JSON.stringify({ id: "portable-connected-folder-id" }));
   await writeFile(filePath, JSON.stringify({
     version: 1,
     scopes: {
-      "work-folder:portable-work-folder-id": {
+      "connected-folder:portable-connected-folder-id": {
         provider: "openrouter",
         id: "legacy-model",
         updatedAt: "2026-08-31T12:00:00.000Z",
@@ -60,28 +60,28 @@ test("agent preference v1 files migrate on the next write without losing the mod
   }));
 
   const store = new ModelPreferenceStore({ filePath });
-  assert.deepEqual(await store.get(workFolderRoot), { provider: "openrouter", id: "legacy-model" });
-  await store.setInstructions(workFolderRoot, "Preserve the existing model.");
+  assert.deepEqual(await store.get(connectedFolderRoot), { provider: "openrouter", id: "legacy-model" });
+  await store.setInstructions(connectedFolderRoot, "Preserve the existing model.");
 
   const persisted = JSON.parse(await readFile(filePath, "utf8")) as {
     version: number;
     scopes: Record<string, { model?: PiPreferredModel; instructions?: string }>;
   };
   assert.equal(persisted.version, 2);
-  assert.deepEqual(persisted.scopes["work-folder:portable-work-folder-id"]?.model, { provider: "openrouter", id: "legacy-model" });
-  assert.equal(persisted.scopes["work-folder:portable-work-folder-id"]?.instructions, "Preserve the existing model.");
+  assert.deepEqual(persisted.scopes["connected-folder:portable-connected-folder-id"]?.model, { provider: "openrouter", id: "legacy-model" });
+  assert.equal(persisted.scopes["connected-folder:portable-connected-folder-id"]?.instructions, "Preserve the existing model.");
 });
 
-test("work-folder instructions append after the app-owned prompt and leave other scopes untouched", () => {
+test("Connected Folder instructions append after the app-owned prompt and leave other scopes untouched", () => {
   assert.deepEqual(appendWorkerInstructions(["Base prompt"], ""), ["Base prompt"]);
-  assert.deepEqual(appendWorkerInstructions(["Base prompt"], "Use the work-folder glossary."), [
+  assert.deepEqual(appendWorkerInstructions(["Base prompt"], "Use the Connected Folder glossary."), [
     "Base prompt",
-    "## Worker instructions\n\nUse the work-folder glossary.",
+    "## Worker instructions\n\nUse the Connected Folder glossary.",
   ]);
 });
 
 test("OpenRouter live catalog normalizes tool-capable text models and persists the last good refresh", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-openrouter-catalog-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-openrouter-catalog-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const payload = JSON.stringify({
     data: [{
@@ -128,8 +128,8 @@ test("OpenRouter live catalog normalizes tool-capable text models and persists t
   assert.equal(cached?.config.models?.[0]?.id, "example/reasoning-model");
 });
 
-test("agent API saves independent work-folder and fold models", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-scoped-model-api-"));
+test("agent API saves independent Connected Folder and fold models", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-scoped-model-api-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "agent");
   const authStorage = FileCredentialStore.inMemory({ scoped: { type: "api_key", key: "test-key" } });
@@ -138,10 +138,10 @@ test("agent API saves independent work-folder and fold models", async (t) => {
     name: "Scoped Provider",
     api: "openai-completions",
     baseUrl: "http://127.0.0.1:1/v1",
-    apiKey: "$WORKFOLD_SCOPED_TEST_KEY",
-    models: ["work-folder-model", "agent-model"].map((id) => ({
+    apiKey: "$AMPLEFILE_SCOPED_TEST_KEY",
+    models: ["connected-folder-model", "agent-model"].map((id) => ({
       id,
-      name: id === "work-folder-model" ? "work-folder Model" : "Fold Model",
+      name: id === "connected-folder-model" ? "Connected Folder Model" : "Fold Model",
       reasoning: false,
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -152,44 +152,44 @@ test("agent API saves independent work-folder and fold models", async (t) => {
   const preferences = new Map<string, PiPreferredModel>();
   const instructions = new Map<string, string>();
   const provider: PiRuntimeProvider = {
-    async resolveRuntime(workFolderRoot) {
+    async resolveRuntime(connectedFolderRoot) {
       return {
         agentDir,
         credentials: authStorage,
         modelRuntime,
         settingsManager: SettingsManager.inMemory(),
-        ...(preferences.get(workFolderRoot) ? { preferredModel: preferences.get(workFolderRoot) } : {}),
-        ...(instructions.get(workFolderRoot) ? { workerInstructions: instructions.get(workFolderRoot) } : {}),
+        ...(preferences.get(connectedFolderRoot) ? { preferredModel: preferences.get(connectedFolderRoot) } : {}),
+        ...(instructions.get(connectedFolderRoot) ? { workerInstructions: instructions.get(connectedFolderRoot) } : {}),
       };
     },
-    async setPreferredModel(workFolderRoot, model) {
-      preferences.set(workFolderRoot, model);
+    async setPreferredModel(connectedFolderRoot, model) {
+      preferences.set(connectedFolderRoot, model);
     },
-    async getWorkerInstructions(workFolderRoot) {
-      return instructions.get(workFolderRoot) ?? "";
+    async getWorkerInstructions(connectedFolderRoot) {
+      return instructions.get(connectedFolderRoot) ?? "";
     },
-    async setWorkerInstructions(workFolderRoot, value) {
-      instructions.set(workFolderRoot, value);
+    async setWorkerInstructions(connectedFolderRoot, value) {
+      instructions.set(connectedFolderRoot, value);
     },
   };
   const api = await startLocalApi({
     port: 0,
     stateBase: join(root, "state"),
-    workFolderBase: join(root, "content"),
+    connectedFolderBase: join(root, "content"),
     loadEnv: false,
     piRuntimeProvider: provider,
   });
   t.after(() => api.close());
-  const created = await requestJson(`${api.origin}/api/work-folders`, {
+  const created = await requestJson(`${api.origin}/api/connected-folders`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: "Scoped work-folder" }),
-  }) as { workFolder: { id: string } };
+    body: JSON.stringify({ name: "Scoped Connected Folder" }),
+  }) as { connectedFolder: { id: string } };
 
   await requestJson(`${api.origin}/api/agent/configure`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ scope: "work-folder", workFolderId: created.workFolder.id, provider: "scoped", model: "work-folder-model" }),
+    body: JSON.stringify({ scope: "connected-folder", connectedFolderId: created.connectedFolder.id, provider: "scoped", model: "connected-folder-model" }),
   });
   await requestJson(`${api.origin}/api/agent/configure`, {
     method: "POST",
@@ -200,30 +200,30 @@ test("agent API saves independent work-folder and fold models", async (t) => {
   const saved = await requestJson(`${api.origin}/api/agent/instructions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ scope: "work-folder", workFolderId: created.workFolder.id, instructions: "Use this work-folder's glossary." }),
+    body: JSON.stringify({ scope: "connected-folder", connectedFolderId: created.connectedFolder.id, instructions: "Use this Connected Folder's glossary." }),
   }) as { instructions: string };
-  assert.equal(saved.instructions, "Use this work-folder's glossary.");
+  assert.equal(saved.instructions, "Use this Connected Folder's glossary.");
 
-  const workFolderModels = await requestJson(`${api.origin}/api/agent/models?scope=work-folder&workFolderId=${created.workFolder.id}`) as { status: { model: string }; instructions: string };
-  const workFoldAgentModels = await requestJson(`${api.origin}/api/agent/models?scope=agent`) as { status: { model: string }; instructions: null };
-  assert.equal(workFolderModels.status.model, "work-folder-model");
-  assert.equal(workFolderModels.instructions, "Use this work-folder's glossary.");
-  assert.equal(workFoldAgentModels.status.model, "agent-model");
-  assert.equal(workFoldAgentModels.instructions, null);
+  const connectedFolderModels = await requestJson(`${api.origin}/api/agent/models?scope=connected-folder&connectedFolderId=${created.connectedFolder.id}`) as { status: { model: string }; instructions: string };
+  const ampleFileAgentModels = await requestJson(`${api.origin}/api/agent/models?scope=agent`) as { status: { model: string }; instructions: null };
+  assert.equal(connectedFolderModels.status.model, "connected-folder-model");
+  assert.equal(connectedFolderModels.instructions, "Use this Connected Folder's glossary.");
+  assert.equal(ampleFileAgentModels.status.model, "agent-model");
+  assert.equal(ampleFileAgentModels.instructions, null);
 
   const streamAbort = new AbortController();
   const streamTimeout = setTimeout(() => streamAbort.abort(), 10_000);
   try {
-    const stream = await fetch(`${api.origin}/api/work-fold-agent/control-events`, { signal: streamAbort.signal });
+    const stream = await fetch(`${api.origin}/api/amplefile-agent/control-events`, { signal: streamAbort.signal });
     const reader = stream.body!.getReader();
     assert.equal(new TextDecoder().decode((await reader.read()).value), 'data: {"type":"reset"}\n\n');
-    await api.actFacade.workerSetModel({ workFolder: created.workFolder.id, provider: "scoped", model: "agent-model" });
+    await api.actFacade.workerSetModel({ connectedFolder: created.connectedFolder.id, provider: "scoped", model: "agent-model" });
     assert.equal(new TextDecoder().decode((await reader.read()).value), 'data: {"type":"models"}\n\n');
-    const composer = await requestJson(`${api.origin}/api/agent/composer?scope=work-folder&workFolderId=${created.workFolder.id}`) as { composer: { model: { id: string } } };
+    const composer = await requestJson(`${api.origin}/api/agent/composer?scope=connected-folder&connectedFolderId=${created.connectedFolder.id}`) as { composer: { model: { id: string } } };
     assert.equal(composer.composer.model.id, "agent-model");
     await requestJson(`${api.origin}/api/agent/configure`, {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ scope: "work-folder", workFolderId: created.workFolder.id, provider: "scoped", model: "work-folder-model" }),
+      body: JSON.stringify({ scope: "connected-folder", connectedFolderId: created.connectedFolder.id, provider: "scoped", model: "connected-folder-model" }),
     });
     assert.equal(new TextDecoder().decode((await reader.read()).value), 'data: {"type":"models"}\n\n');
   } finally { clearTimeout(streamTimeout); streamAbort.abort(); }
@@ -231,7 +231,7 @@ test("agent API saves independent work-folder and fold models", async (t) => {
   const invalid = await fetch(`${api.origin}/api/agent/instructions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ scope: "work-folder", workFolderId: created.workFolder.id, instructions: "bad\u0001control" }),
+    body: JSON.stringify({ scope: "connected-folder", connectedFolderId: created.connectedFolder.id, instructions: "bad\u0001control" }),
   });
   assert.equal(invalid.status, 400);
 
@@ -265,7 +265,7 @@ test("OpenRouter's listed cache rates price cached prompt tokens", () => {
 });
 
 test("a model list saved before cache rates were read prices cached prompt tokens like the prompt", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-openrouter-v1-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-openrouter-v1-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const cachePath = join(root, "openrouter.json");
   await writeFile(cachePath, JSON.stringify({

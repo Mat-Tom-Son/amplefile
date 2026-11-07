@@ -15,7 +15,7 @@ export function checksToolbarPresentation(status: ChecksStatus | null, unavailab
     return {
       icon: "unhealthy",
       label: "Check Status Unavailable",
-      title: "work-fold could not refresh Checks; this does not label your files as clear or failed",
+      title: "AmpleFile could not refresh Checks; this does not label your files as clear or failed",
       tone: "unhealthy",
       count: null,
     };

@@ -1,23 +1,23 @@
 import { createHash } from "node:crypto";
 import { lstat, readdir } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve, sep } from "node:path";
-import { isAlwaysHiddenWorkFolderEntry } from "../work-folder-ignore.js";
+import { isAlwaysHiddenConnectedFolderEntry } from "../connected-folder-ignore.js";
 import type { AutomationCatchUpReason } from "../../shared/automation-presentation.js";
-import { listWorkFolders, resolveWorkFolderPath } from "../work-folder.js";
-import { resolveWorkFoldCheckTargets } from "../checks/target-resolver.js";
-import { workFoldAutomationBounds, type WorkFoldAutomationFilesChangedTrigger } from "./automation-declarations.js";
+import { listConnectedFolders, resolveConnectedFolderPath } from "../connected-folder.js";
+import { resolveAmpleFileCheckTargets } from "../checks/target-resolver.js";
+import { ampleFileAutomationBounds, type AmpleFileAutomationFilesChangedTrigger } from "./automation-declarations.js";
 
-export type { AutomationCatchUpReason as WorkFoldAutomationCatchUpReason } from "../../shared/automation-presentation.js";
+export type { AutomationCatchUpReason as AmpleFileAutomationCatchUpReason } from "../../shared/automation-presentation.js";
 
-export interface WorkFoldAutomationFileSnapshot { digest: string; entries: Record<string, string>; }
-export type WorkFoldAutomationFileObserver = (trigger: WorkFoldAutomationFilesChangedTrigger) => Promise<WorkFoldAutomationFileSnapshot>;
+export interface AmpleFileAutomationFileSnapshot { digest: string; entries: Record<string, string>; }
+export type AmpleFileAutomationFileObserver = (trigger: AmpleFileAutomationFilesChangedTrigger) => Promise<AmpleFileAutomationFileSnapshot>;
 
 /**
  * The observer's scan bounds. Metadata only, polled every few seconds:
  * generous counts, no byte ceiling. A saved folder snapshot never holds more
  * files than one scan can see.
  */
-export const workFoldAutomationFileObserverBounds = Object.freeze({
+export const ampleFileAutomationFileObserverBounds = Object.freeze({
   maxFiles: 50_000,
   maxVisitedEntries: 200_000,
   maxDepth: 256,
@@ -26,56 +26,56 @@ export const workFoldAutomationFileObserverBounds = Object.freeze({
 /** Metadata only: no file bytes become conversation or model context. A
  * bounded ordinary-folder scan works on synchronized drives as well as local
  * disks without relying on lossy OS watcher events. */
-export const observeWorkFoldAutomationFiles: WorkFoldAutomationFileObserver = async (trigger) => {
-  const workFolders = await listWorkFolders();
-  const workFolder = workFolders.find((item) => item.id === trigger.workFolder);
-  if (!workFolder) throw new Error("The watched work-folder is no longer registered.");
-  if (!trigger.watch.path) return observeTopLevel(workFolder.workFolderRoot, trigger.watch.extensions);
-  const watched = resolveWorkFolderPath(workFolder.workFolderRoot, trigger.watch.path);
-  for (const child of workFolders) {
-    if (child.id === workFolder.id) continue;
+export const observeAmpleFileAutomationFiles: AmpleFileAutomationFileObserver = async (trigger) => {
+  const connectedFolders = await listConnectedFolders();
+  const connectedFolder = connectedFolders.find((item) => item.id === trigger.connectedFolder);
+  if (!connectedFolder) throw new Error("The watched Connected Folder is no longer registered.");
+  if (!trigger.watch.path) return observeTopLevel(connectedFolder.connectedFolderRoot, trigger.watch.extensions);
+  const watched = resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, trigger.watch.path);
+  for (const child of connectedFolders) {
+    if (child.id === connectedFolder.id) continue;
     const contains = (parent: string, childPath: string) => {
       const path = relative(resolve(parent), resolve(childPath));
       return !path || path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path);
     };
-    if (!contains(workFolder.workFolderRoot, child.workFolderRoot)) continue;
-    if (contains(watched, child.workFolderRoot) || contains(child.workFolderRoot, watched)) throw new Error("A watched folder cannot overlap another registered work-folder.");
+    if (!contains(connectedFolder.connectedFolderRoot, child.connectedFolderRoot)) continue;
+    if (contains(watched, child.connectedFolderRoot) || contains(child.connectedFolderRoot, watched)) throw new Error("A watched folder cannot overlap another registered Connected Folder.");
   }
   const folderBefore = await lstat(watched);
   if (!folderBefore.isDirectory() || folderBefore.isSymbolicLink()) throw new Error("The watched folder must be an ordinary directory.");
-  const resolution = await resolveWorkFoldCheckTargets(workFolder.workFolderRoot, [{ ...trigger.watch, role: "primary" }], {
-    limits: { ...workFoldAutomationFileObserverBounds },
+  const resolution = await resolveAmpleFileCheckTargets(connectedFolder.connectedFolderRoot, [{ ...trigger.watch, role: "primary" }], {
+    limits: { ...ampleFileAutomationFileObserverBounds },
   });
   const entries: Record<string, string> = Object.create(null);
   for (const file of resolution.files) {
-    const info = await lstat(resolveWorkFolderPath(workFolder.workFolderRoot, file.path), { bigint: true });
+    const info = await lstat(resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, file.path), { bigint: true });
     if (!info.isFile() || info.isSymbolicLink()) throw new Error("A watched file changed type during observation.");
     entries[file.path] = [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs].join(":");
   }
-  const folderAfter = await lstat(resolveWorkFolderPath(workFolder.workFolderRoot, trigger.watch.path));
+  const folderAfter = await lstat(resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, trigger.watch.path));
   if (folderAfter.dev !== folderBefore.dev || folderAfter.ino !== folderBefore.ino) throw new Error("The watched folder moved during observation.");
   const digest = createHash("sha256").update(JSON.stringify({ folder: [folderAfter.dev, folderAfter.ino], entries: Object.entries(entries).sort(([a], [b]) => a.localeCompare(b)) })).digest("hex");
   return { digest, entries };
 };
 
 /**
- * A work-folder's own top level (declaration version 6): the ordinary files
+ * A Connected Folder's own top level (declaration version 6): the ordinary files
  * directly in it with a watched extension. Subfolders are never entered, so
- * a nested work-folder is never read, and hidden work-fold, Pi, and Office
+ * a nested Connected Folder is never read, and hidden AmpleFile, Pi, and Office
  * lock files are left out as everywhere else.
  */
-async function observeTopLevel(workFolderRoot: string, extensions: readonly string[]): Promise<WorkFoldAutomationFileSnapshot> {
-  const root = resolve(workFolderRoot);
+async function observeTopLevel(connectedFolderRoot: string, extensions: readonly string[]): Promise<AmpleFileAutomationFileSnapshot> {
+  const root = resolve(connectedFolderRoot);
   const folderBefore = await lstat(root);
   if (!folderBefore.isDirectory() || folderBefore.isSymbolicLink()) throw new Error("The watched folder must be an ordinary directory.");
   const wanted = new Set(extensions.map((extension) => extension.toLocaleLowerCase("en-US")));
   const entries: Record<string, string> = Object.create(null);
   let count = 0;
   for (const entry of await readdir(root, { withFileTypes: true })) {
-    if (!entry.isFile() || entry.name.startsWith(".") || isAlwaysHiddenWorkFolderEntry(entry.name)) continue;
+    if (!entry.isFile() || entry.name.startsWith(".") || isAlwaysHiddenConnectedFolderEntry(entry.name)) continue;
     if (!wanted.has(extname(entry.name).toLocaleLowerCase("en-US"))) continue;
-    if (++count > workFoldAutomationFileObserverBounds.maxFiles) throw new Error(`The watched folder holds more than ${workFoldAutomationFileObserverBounds.maxFiles} matching files.`);
-    const info = await lstat(resolveWorkFolderPath(root, entry.name), { bigint: true }).catch(() => null);
+    if (++count > ampleFileAutomationFileObserverBounds.maxFiles) throw new Error(`The watched folder holds more than ${ampleFileAutomationFileObserverBounds.maxFiles} matching files.`);
+    const info = await lstat(resolveConnectedFolderPath(root, entry.name), { bigint: true }).catch(() => null);
     if (!info?.isFile()) continue;
     entries[entry.name] = [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs].join(":");
   }
@@ -86,11 +86,11 @@ async function observeTopLevel(workFolderRoot: string, extensions: readonly stri
 }
 
 /**
- * Files a catch-up owes one run: added or changed while work-fold could not
+ * Files a catch-up owes one run: added or changed while AmpleFile could not
  * watch the folder. A set, never a queue: every later gap merges into it, and
  * the run it starts lists the paths that still exist.
  */
-export interface WorkFoldAutomationOwedCatchUp {
+export interface AmpleFileAutomationOwedCatchUp {
   reason: AutomationCatchUpReason;
   paths: string[];
   foundAt: string;
@@ -102,14 +102,14 @@ export interface WorkFoldAutomationOwedCatchUp {
  * observer has accounted for, when it last started a run (so cooldown
  * survives a restart), and any catch-up it still owes.
  */
-export interface WorkFoldAutomationSavedFileState {
-  snapshot: WorkFoldAutomationFileSnapshot;
+export interface AmpleFileAutomationSavedFileState {
+  snapshot: AmpleFileAutomationFileSnapshot;
   savedAt: string;
   lastTriggeredAt?: string;
-  owed?: WorkFoldAutomationOwedCatchUp;
+  owed?: AmpleFileAutomationOwedCatchUp;
 }
 
-export interface WorkFoldAutomationFileWatchStatus {
+export interface AmpleFileAutomationFileWatchStatus {
   state: "starting" | "watching" | "paused" | "error";
   detail?: string;
   lastObservedAt?: string;
@@ -122,16 +122,16 @@ export interface WorkFoldAutomationFileWatchStatus {
   notice?: string;
 }
 
-export interface WorkFoldAutomationFileWatchFiring {
+export interface AmpleFileAutomationFileWatchFiring {
   changedCount: number;
   changedPaths: string[];
-  /** Present when the run includes files that changed while work-fold could not watch. */
+  /** Present when the run includes files that changed while AmpleFile could not watch. */
   catchUp?: { reason: AutomationCatchUpReason; count: number };
 }
 
 /** Why a saved snapshot cannot be compared: it may already contain an automation run's own edits. */
-export const workFoldAutomationDirtySnapshotNotice =
-  "An automation was running when work-fold stopped watching, so it took a fresh look instead of catching up; files that changed in that gap were not caught up.";
+export const ampleFileAutomationDirtySnapshotNotice =
+  "An automation was running when AmpleFile stopped watching, so it took a fresh look instead of catching up; files that changed in that gap were not caught up.";
 
 /**
  * The comparison a catch-up makes: a path is owed when it is new, or when its
@@ -141,9 +141,9 @@ export const workFoldAutomationDirtySnapshotNotice =
  * file. Removed files are never owed. Entries that are not the observer's
  * `dev:ino:size:mtime:ctime` form compare whole.
  */
-export function workFoldAutomationCaughtUpPaths(
-  saved: WorkFoldAutomationFileSnapshot,
-  current: WorkFoldAutomationFileSnapshot,
+export function ampleFileAutomationCaughtUpPaths(
+  saved: AmpleFileAutomationFileSnapshot,
+  current: AmpleFileAutomationFileSnapshot,
 ): string[] {
   const contentIdentity = (value: string): string => {
     const parts = value.split(":");
@@ -158,7 +158,7 @@ export function workFoldAutomationCaughtUpPaths(
 }
 
 /** Live observation's diff: every path whose full identity differs, removals included. */
-function liveChangedPaths(baseline: WorkFoldAutomationFileSnapshot, snapshot: WorkFoldAutomationFileSnapshot): string[] {
+function liveChangedPaths(baseline: AmpleFileAutomationFileSnapshot, snapshot: AmpleFileAutomationFileSnapshot): string[] {
   const changed = new Set([...Object.keys(baseline.entries), ...Object.keys(snapshot.entries)]);
   return [...changed].filter((path) => baseline.entries[path] !== snapshot.entries[path]).sort();
 }
@@ -175,23 +175,23 @@ function comparePaths(left: string, right: string): number {
  * the saved snapshot and owes one coalesced run for what was added or
  * changed. Either way, changes made while an automation is running are
  * absorbed by the fresh baseline taken afterward, so a run's own edits never
- * start another run. Cross-work-folder handoffs belong in one declared
+ * start another run. Cross–Connected Folder handoffs belong in one declared
  * sequence.
  */
-export class WorkFoldAutomationFileWatch {
-  baseline?: WorkFoldAutomationFileSnapshot;
-  candidate?: { snapshot: WorkFoldAutomationFileSnapshot; since: number };
+export class AmpleFileAutomationFileWatch {
+  baseline?: AmpleFileAutomationFileSnapshot;
+  candidate?: { snapshot: AmpleFileAutomationFileSnapshot; since: number };
   lastFired = -Infinity;
-  status: WorkFoldAutomationFileWatchStatus = { state: "starting" };
+  status: AmpleFileAutomationFileWatchStatus = { state: "starting" };
   /** Declared `"ifMissed": "run"`: keeps a saved snapshot and catches up after a gap. */
   catchUp: boolean;
   /** The gap the next look should be compared across, when one is due. */
   pendingComparison?: AutomationCatchUpReason;
   /** The saved state: undefined until it has been read, null when there is nothing to compare with. */
-  saved?: WorkFoldAutomationSavedFileState | null;
+  saved?: AmpleFileAutomationSavedFileState | null;
   /** The saved snapshot may predate an automation run's own edits, so it is never compared. */
   dirty = false;
-  owed?: WorkFoldAutomationOwedCatchUp;
+  owed?: AmpleFileAutomationOwedCatchUp;
   lastTriggeredAt?: string;
   #baselineAt = 0;
 
@@ -213,7 +213,7 @@ export class WorkFoldAutomationFileWatch {
 
   /** Adopts what was saved before this watch existed; a no-op once loaded. */
   load(
-    read: { state: WorkFoldAutomationSavedFileState | null; dirty: boolean; problem?: string },
+    read: { state: AmpleFileAutomationSavedFileState | null; dirty: boolean; problem?: string },
     now: number,
   ): void {
     if (this.saved !== undefined) return;
@@ -233,10 +233,10 @@ export class WorkFoldAutomationFileWatch {
 
   /** The changed paths feed `{{trigger.changedFiles}}`; the count is always the true one. */
   observe(
-    snapshot: WorkFoldAutomationFileSnapshot,
+    snapshot: AmpleFileAutomationFileSnapshot,
     now: number,
-    trigger: WorkFoldAutomationFilesChangedTrigger,
-  ): WorkFoldAutomationFileWatchFiring | null {
+    trigger: AmpleFileAutomationFilesChangedTrigger,
+  ): AmpleFileAutomationFileWatchFiring | null {
     this.status = { ...this.status, state: "watching", detail: undefined, lastObservedAt: new Date(now).toISOString() };
     if (!this.baseline) {
       this.#compareWithSaved(snapshot, now);
@@ -260,12 +260,12 @@ export class WorkFoldAutomationFileWatch {
    * comparison: compare now, before the run can edit anything, and keep what
    * is owed for after the run. The caller saves `snapshot` with the result.
    */
-  compareBeforeRun(snapshot: WorkFoldAutomationFileSnapshot, now: number): void {
+  compareBeforeRun(snapshot: AmpleFileAutomationFileSnapshot, now: number): void {
     this.#compareWithSaved(snapshot, now);
   }
 
   /** What the saved state should hold for this snapshot. */
-  stateToSave(snapshot: WorkFoldAutomationFileSnapshot, now: number): WorkFoldAutomationSavedFileState {
+  stateToSave(snapshot: AmpleFileAutomationFileSnapshot, now: number): AmpleFileAutomationSavedFileState {
     return {
       snapshot,
       savedAt: new Date(now).toISOString(),
@@ -275,7 +275,7 @@ export class WorkFoldAutomationFileWatch {
   }
 
   /** The status a person sees, with any catch-up still waiting. */
-  view(): WorkFoldAutomationFileWatchStatus {
+  view(): AmpleFileAutomationFileWatchStatus {
     return {
       ...structuredClone(this.status),
       ...(this.owed ? { catchingUp: { reason: this.owed.reason, count: this.owed.paths.length } } : {}),
@@ -288,25 +288,25 @@ export class WorkFoldAutomationFileWatch {
     this.status = { ...this.status, state: "error", detail: error instanceof Error ? error.message : "Folder observation failed." };
   }
 
-  #ready(now: number, settledSince: number, trigger: WorkFoldAutomationFilesChangedTrigger): boolean {
+  #ready(now: number, settledSince: number, trigger: AmpleFileAutomationFilesChangedTrigger): boolean {
     return now - settledSince >= trigger.debounceSeconds * 1000 && now - this.lastFired >= trigger.cooldownMinutes * 60_000;
   }
 
-  #rebase(snapshot: WorkFoldAutomationFileSnapshot, now: number): void {
+  #rebase(snapshot: AmpleFileAutomationFileSnapshot, now: number): void {
     this.baseline = snapshot;
     this.#baselineAt = now;
     this.candidate = undefined;
   }
 
-  #compareWithSaved(snapshot: WorkFoldAutomationFileSnapshot, now: number): void {
+  #compareWithSaved(snapshot: AmpleFileAutomationFileSnapshot, now: number): void {
     const reason = this.pendingComparison;
     this.pendingComparison = undefined;
     if (reason === undefined || !this.catchUp || !this.saved) return;
     if (this.dirty) {
-      this.status = { ...this.status, notice: workFoldAutomationDirtySnapshotNotice };
+      this.status = { ...this.status, notice: ampleFileAutomationDirtySnapshotNotice };
       return;
     }
-    const found = workFoldAutomationCaughtUpPaths(this.saved.snapshot, snapshot);
+    const found = ampleFileAutomationCaughtUpPaths(this.saved.snapshot, snapshot);
     // What is still owed from an earlier gap stays owed while it exists.
     const stillOwed = (this.owed?.paths ?? []).filter((path) => path in snapshot.entries);
     const paths = [...new Set([...stillOwed, ...found])].sort(comparePaths);
@@ -317,9 +317,9 @@ export class WorkFoldAutomationFileWatch {
     this.status = status;
   }
 
-  #fire(changed: string[], snapshot: WorkFoldAutomationFileSnapshot, now: number): WorkFoldAutomationFileWatchFiring | null {
+  #fire(changed: string[], snapshot: AmpleFileAutomationFileSnapshot, now: number): AmpleFileAutomationFileWatchFiring | null {
     let paths = changed;
-    let catchUp: WorkFoldAutomationFileWatchFiring["catchUp"];
+    let catchUp: AmpleFileAutomationFileWatchFiring["catchUp"];
     if (this.owed) {
       const present = this.owed.paths.filter((path) => path in snapshot.entries);
       if (present.length) {
@@ -339,7 +339,7 @@ export class WorkFoldAutomationFileWatch {
     }
     return {
       changedCount: paths.length,
-      changedPaths: paths.slice(0, workFoldAutomationBounds.maxChangedPathsRecorded),
+      changedPaths: paths.slice(0, ampleFileAutomationBounds.maxChangedPathsRecorded),
       ...(catchUp ? { catchUp } : {}),
     };
   }

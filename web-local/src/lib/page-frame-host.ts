@@ -11,14 +11,14 @@ import { pageCallErrorOf, pageCallOps, type PageCall, type PageCallError } from 
  */
 
 export const pageFrameMessage = {
-  ready: "work-fold.page.ready",
-  init: "work-fold.page.init",
-  loaded: "work-fold.page.loaded",
-  call: "work-fold.page.call",
-  result: "work-fold.page.result",
-  link: "work-fold.page.link",
-  changed: "work-fold.page.changed",
-  navigated: "work-fold.page.navigated",
+  ready: "amplefile.page.ready",
+  init: "amplefile.page.init",
+  loaded: "amplefile.page.loaded",
+  call: "amplefile.page.call",
+  result: "amplefile.page.result",
+  link: "amplefile.page.link",
+  changed: "amplefile.page.changed",
+  navigated: "amplefile.page.navigated",
 } as const;
 
 export const pageFrameSandbox = "allow-scripts allow-forms";
@@ -171,7 +171,7 @@ export function externalPageLink(value: unknown): string | null {
 
 /** Opens a page's link the way the app opens other outside links. */
 export function openPageLink(href: string): void {
-  const shell = window.workFoldDesktop?.shell;
+  const shell = window.ampleFileDesktop?.shell;
   if (shell) void shell.openExternal(href).catch(() => undefined);
   else window.open(href, "_blank", "noopener,noreferrer");
 }

@@ -1,9 +1,9 @@
 /**
  * Seeded document tasks for the document-checking evaluation (2026-10-18).
  *
- * Each task seeds ordinary input files into a disposable work-folder and asks
+ * Each task seeds ordinary input files into a disposable Connected Folder and asks
  * for one deliverable. What a correct result looks like lives only in
- * check.ts, outside the work-folder and the Worker's context.
+ * check.ts, outside the Connected Folder and the Worker's context.
  */
 
 export interface DocumentTask {

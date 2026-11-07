@@ -4,13 +4,13 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { workFolderPagesGuide } from "../src/local/agent/work-folder-operations-guide.js";
+import { connectedFolderPagesGuide } from "../src/local/agent/connected-folder-operations-guide.js";
 
 /**
  * The example page built the way the Worker's guide teaches (docs/pages.md):
  * an RSVP form saved by the form helper, a live "N of 50 spots taken" count,
  * and the visitor's own RSVP. It has to stay a valid page folder — a
- * work-fold.page/1 page.json and an entry that reaches only files inside its
+ * amplefile.page/1 page.json and an entry that reaches only files inside its
  * own folder, with no network — and keep using only what the guide teaches.
  */
 const folder = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "pages", "garden-party-rsvp");
@@ -26,9 +26,9 @@ interface ExamplePage {
   }>;
 }
 
-test("the garden party example's page.json is valid JSON in the work-fold.page/1 format", async () => {
+test("the garden party example's page.json is valid JSON in the amplefile.page/1 format", async () => {
   const page = JSON.parse(await read("page.json")) as ExamplePage;
-  assert.equal(page.format, "work-fold.page/1");
+  assert.equal(page.format, "amplefile.page/1");
   assert.ok(page.title.length >= 1 && page.title.length <= 120);
   assert.deepEqual(Object.keys(page).sort(), ["description", "format", "tables", "title"], "no unknown top-level fields");
   const rsvps = page.tables.rsvps!;
@@ -67,7 +67,7 @@ test("the garden party example follows the guide: the form helper, no network, a
   const html = await read("index.html");
   const css = await read("style.css");
   const script = (await read("app.js")).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/\s\/\/ .*$/gm, "");
-  const guide = workFolderPagesGuide().join("\n");
+  const guide = connectedFolderPagesGuide().join("\n");
 
   // The form helper saves the form into a declared table, field by declared column.
   const form = html.match(/<form\b[^>]*data-page-table="([^"]+)"[^>]*>([\s\S]*?)<\/form>/);
@@ -101,7 +101,7 @@ test("the garden party example follows the guide: the form helper, no network, a
   assert.ok(table.visitors.includes("add"), "the form helper adds rows");
   assert.ok(table.visitors.includes("see-own"), "mine needs see-own");
   assert.ok(table.visitors.includes("delete-own"), "remove needs delete-own");
-  assert.match(script, /window\.workFoldPage/);
+  assert.match(script, /window\.ampleFilePage/);
   assert.match(script, /addEventListener\("page:sent"/);
   assert.match(script, /LIMIT_REACHED/);
 });

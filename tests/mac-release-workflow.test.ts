@@ -18,7 +18,7 @@ import {
 import { assertPublishableMacState } from "../scripts/mac-publication-state.mjs";
 
 const descriptor = {
-  productName: "work-fold",
+  productName: "AmpleFile",
   version: "0.1.1",
   arch: "arm64",
   mode: "release",
@@ -26,16 +26,16 @@ const descriptor = {
   signIdentity: "Developer ID Application: Example (TEAMID)",
   teamId: "TEAMID",
   feedOwner: "Example",
-  feedRepo: "work-fold-mac-releases",
+  feedRepo: "amplefile-mac-releases",
 };
 const fingerprint = "a".repeat(64);
 
 test("macOS release checkpoints are atomic, staged, and source-bound", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "work-fold-release-state-"));
+  const directory = await mkdtemp(join(tmpdir(), "amplefile-release-state-"));
   const path = join(directory, "state.json");
   try {
     const state = await writeReleaseState(path, {
-      productName: "work-fold",
+      productName: "AmpleFile",
       descriptor,
       fingerprint,
       startedAt: "2026-08-01T00:00:00.000Z",
@@ -66,7 +66,7 @@ test("macOS release checkpoints are atomic, staged, and source-bound", async () 
 });
 
 test("artifact receipts reject changed bytes instead of resuming unsafe output", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "work-fold-release-receipt-"));
+  const directory = await mkdtemp(join(tmpdir(), "amplefile-release-receipt-"));
   try {
     const artifact = join(directory, "candidate.zip");
     await writeFile(artifact, "accepted artifact", "utf8");
@@ -80,12 +80,12 @@ test("artifact receipts reject changed bytes instead of resuming unsafe output",
 });
 
 test("release state rejects out-of-order stages that could skip verification", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "work-fold-release-order-"));
+  const directory = await mkdtemp(join(tmpdir(), "amplefile-release-order-"));
   const path = join(directory, "state.json");
   try {
     await writeFile(path, `${JSON.stringify({
       schemaVersion: 1,
-      productName: "work-fold",
+      productName: "AmpleFile",
       descriptor,
       fingerprint,
       stages: {
@@ -119,12 +119,12 @@ test("macOS release commands expose separate RC, fresh, resume, status, and publ
   assert.match(builder, /assertCompatibleReleaseState/);
   assert.match(builder, /assertSignedAppCheckpoint/);
   assert.match(builder, /captureArtifactReceipt/);
-  assert.match(candidate, /WORKFOLD_DESKTOP_OUTPUT_DIR: outputDirectory/);
+  assert.match(candidate, /AMPLEFILE_DESKTOP_OUTPUT_DIR: outputDirectory/);
   assert.match(candidate, /--dir/);
 });
 
 test("direct publication requires a complete checkpoint bound to current source and every asset", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "work-fold-publication-state-"));
+  const directory = await mkdtemp(join(tmpdir(), "amplefile-publication-state-"));
   try {
     await mkdir(join(directory, "out", "builder"), { recursive: true });
     await writeFile(join(directory, "package.json"), JSON.stringify({ version: descriptor.version }));

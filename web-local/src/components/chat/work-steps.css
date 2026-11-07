@@ -1,11 +1,11 @@
-/* The steps a Worker or the work-fold agent takes in one turn (RuntimeContextPreview
+/* The steps a Worker or the AmpleFile agent takes in one turn (RuntimeContextPreview
    in components/chat/activity.tsx). Shared by the main window and the menu-bar popover. */
 
 .work-steps {
   min-width: 0;
   margin: 0 0 14px;
   color: #667386;
-  font-size: var(--work-fold-type-sm);
+  font-size: var(--amplefile-type-sm);
 }
 
 .work-steps-summary {
@@ -33,7 +33,7 @@
 .work-steps-summary:focus-visible,
 .work-step-toggle:focus-visible,
 .work-step-target.file:focus-visible {
-  outline: 2px solid var(--work-folder-custom-color, #356fa3);
+  outline: 2px solid var(--connected-folder-custom-color, #356fa3);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -54,7 +54,7 @@
 .work-steps-chevron {
   flex: 0 0 auto;
   color: #9aa4b2;
-  transition: transform 0.2s var(--work-fold-ease-smooth);
+  transition: transform 0.2s var(--amplefile-ease-smooth);
 }
 
 .work-steps.open .work-steps-chevron {
@@ -64,7 +64,7 @@
 .work-steps-rows {
   display: grid;
   grid-template-rows: 1fr;
-  transition: grid-template-rows 0.32s var(--work-fold-ease-smooth), opacity 0.25s ease;
+  transition: grid-template-rows 0.32s var(--amplefile-ease-smooth), opacity 0.25s ease;
 }
 
 .work-steps.settled .work-steps-rows {
@@ -89,7 +89,7 @@
   align-items: start;
   min-width: 0;
   padding: 4px 0;
-  animation: work-step-enter 0.18s var(--work-fold-ease-smooth) both;
+  animation: work-step-enter 0.18s var(--amplefile-ease-smooth) both;
 }
 
 :root[data-appearance-chat-steps="current"] .work-steps.running .work-step:not(:last-child) {
@@ -164,7 +164,7 @@
 
 .work-step-target.command {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: var(--work-fold-type-xs);
+  font-size: var(--amplefile-type-xs);
 }
 
 .work-step-timer {
@@ -176,7 +176,7 @@
 .work-step-status {
   flex: 0 0 auto;
   color: #a94444;
-  font-size: var(--work-fold-type-2xs);
+  font-size: var(--amplefile-type-2xs);
   font-weight: 600;
 }
 
@@ -188,7 +188,7 @@
   min-width: 0;
   margin: 5px 0 3px;
   color: #667386;
-  font-size: var(--work-fold-type-sm);
+  font-size: var(--amplefile-type-sm);
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
@@ -224,7 +224,7 @@
   padding: 8px 10px;
   border-radius: 6px;
   background: rgba(37, 48, 68, 0.06);
-  font-size: var(--work-fold-type-xs);
+  font-size: var(--amplefile-type-xs);
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -293,8 +293,8 @@ from {
   max-width: 100%;
   overflow: auto;
   white-space: pre;
-  font-family: var(--work-fold-monospace-font, ui-monospace, monospace);
-  font-size: var(--work-fold-type-xs);
+  font-family: var(--amplefile-monospace-font, ui-monospace, monospace);
+  font-size: var(--amplefile-type-xs);
   line-height: 1.5;
 }
 
@@ -308,19 +308,19 @@ from {
 }
 
 .work-step-edit summary:focus-visible {
-  outline: 2px solid var(--work-folder-custom-color, #356fa3);
+  outline: 2px solid var(--connected-folder-custom-color, #356fa3);
   outline-offset: 2px;
 }
 
 .work-step-evidence-note {
   margin: 6px 0;
-  font-size: var(--work-fold-type-xs);
+  font-size: var(--amplefile-type-xs);
   color: inherit;
 }
 
 .work-step-edit pre {
   padding: 8px;
-  border: 1px solid var(--work-fold-chat-border);
+  border: 1px solid var(--amplefile-chat-border);
   border-radius: 4px;
 }
 

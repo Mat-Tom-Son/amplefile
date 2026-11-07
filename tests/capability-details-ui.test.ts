@@ -30,7 +30,7 @@ type Item = Parameters<typeof CapabilityDetailsDialog>[0]["item"];
 function included(id: string): Item {
   const tool = includedToolDefinitions.find((entry) => entry.id === id)!;
   return { id, kind: "extension", name: tool.title, description: tool.description, included: tool,
-    path: `/Applications/work-fold.app/Contents/Resources/app.asar/node_modules/${tool.package}/resources/included-tools/extension-entry/index.ts`,
+    path: `/Applications/AmpleFile.app/Contents/Resources/app.asar/node_modules/${tool.package}/resources/included-tools/extension-entry/index.ts`,
     scope: "global", origin: "top-level", source: tool.package, enabled: true, loaded: true, status: "loaded", diagnostics: [],
     tools: ["chrome_tabs", "chrome_navigate", "chrome_read_page", "chrome_click", "chrome_type", "chrome_screenshot", "chrome_network_requests", "chrome_console_messages", "chrome_evaluate"], commands: [], flags: [] };
 }
@@ -47,7 +47,7 @@ test("installed details keep metadata collapsed while setup, failures and contro
     return Response.json({ tools: [{ id: "chrome", state: "unknown", detail: "An obsolete explanation must not appear." }] });
   }) as typeof fetch;
   let toggles = 0;
-  await dom.render(createElement(CapabilityDetailsDialog, { item: included("chrome"), workFolderId: "workshop", busy: false, onClose() {}, onToggle() { toggles++; } }));
+  await dom.render(createElement(CapabilityDetailsDialog, { item: included("chrome"), connectedFolderId: "workshop", busy: false, onClose() {}, onToggle() { toggles++; } }));
   await dom.waitFor(() => dom.container.textContent!.includes("Not Checked"));
   const technical = dom.container.querySelector("details")!;
   assert.equal(technical.open, false);
@@ -56,14 +56,14 @@ test("installed details keep metadata collapsed while setup, failures and contro
   assert.doesNotMatch(dom.container.textContent!, /None registered|Flags|Commands|Executable capability|obsolete explanation/);
   const button = (name: string) => [...dom.container.querySelectorAll("button")].find((item) => item.textContent === name)!;
   await dom.act(() => button("Connect Chrome").click());
-  assert.deepEqual(writes, [{ workFolderId: "workshop", id: "chrome", action: "connect-chrome" }], "before its status is known, Chrome keeps the plain Connect action");
+  assert.deepEqual(writes, [{ connectedFolderId: "workshop", id: "chrome", action: "connect-chrome" }], "before its status is known, Chrome keeps the plain Connect action");
   assert.match(dom.container.textContent!, /Connecting/);
   assert.doesNotMatch(dom.container.textContent!, /Load unpacked|Developer mode|Copy folder path/);
   await dom.act(() => technical.querySelector("summary")!.click());
   assert.equal(technical.open, true);
   await dom.act(() => button("Turn Off").click());
   assert.equal(toggles, 1);
-  await dom.render(createElement(CapabilityDetailsDialog, { item: { ...included("chrome"), diagnostics: [{ type: "error", message: "Companion version mismatch" }] }, workFolderId: "workshop", busy: false, onClose() {} }));
+  await dom.render(createElement(CapabilityDetailsDialog, { item: { ...included("chrome"), diagnostics: [{ type: "error", message: "Companion version mismatch" }] }, connectedFolderId: "workshop", busy: false, onClose() {} }));
   assert.match(dom.container.querySelector('.professional-diagnostics[role="status"]')!.textContent!, /Companion version mismatch/);
 });
 
@@ -79,11 +79,11 @@ test("ready included tools need no repeated setup copy and MCP keeps connection 
     return Response.json({ tools: includedToolDefinitions.map((tool) => ({ id: tool.id, state: "ready", detail: "A redundant success explanation.", ...(tool.id === "chrome" ? { chrome: { state: "connected", checkedAt: "2026-09-12T16:00:00.000Z", hasSelection: true } } : {}) })) });
   }) as typeof fetch;
   for (const id of ["chrome", "computer", "documents", "web"]) {
-    await dom.render(createElement(CapabilityDetailsDialog, { key: id, item: included(id), workFolderId: "workshop", busy: false, onClose() {} }));
+    await dom.render(createElement(CapabilityDetailsDialog, { key: id, item: included(id), connectedFolderId: "workshop", busy: false, onClose() {} }));
     await dom.waitFor(() => dom.container.textContent!.includes(id === "chrome" ? "Connected" : "Ready"));
     assert.doesNotMatch(dom.container.textContent!, /redundant success explanation|Set up Chrome|Set up permissions/);
   }
-  await dom.render(createElement(CapabilityDetailsDialog, { key: "mcp", item: included("mcp"), workFolderId: "workshop", busy: false, onClose() {} }));
+  await dom.render(createElement(CapabilityDetailsDialog, { key: "mcp", item: included("mcp"), connectedFolderId: "workshop", busy: false, onClose() {} }));
   await dom.waitFor(() => dom.container.textContent!.includes("No Sign-In Required"));
   const server = dom.container.querySelector(".included-mcp-list li")!;
   assert.equal(server.querySelector("details")!.open, false);
@@ -101,7 +101,7 @@ test("Documents setup guides the LibreOffice and Tesseract installs and ticks ea
   const dom = await createDomHarness(); t.after(() => dom.cleanup());
   const originalFetch = globalThis.fetch; t.after(() => { globalThis.fetch = originalFetch; });
   const opened: string[] = [], copied: unknown[] = [], posts: unknown[] = [];
-  Object.assign(window, { workFoldDesktop: { api: {}, shell: { openExternal: async (url: string) => { opened.push(url); } }, clipboard: { write: async (content: unknown) => { copied.push(content); } } } });
+  Object.assign(window, { ampleFileDesktop: { api: {}, shell: { openExternal: async (url: string) => { opened.push(url); } }, clipboard: { write: async (content: unknown) => { copied.push(content); } } } });
   let installed = false;
   const status = () => ({ id: "documents", checkedAt: "2026-10-18T12:00:00.000Z",
     state: installed ? "ready" : "setup_required",
@@ -113,7 +113,7 @@ test("Documents setup guides the LibreOffice and Tesseract installs and ticks ea
     if (init?.method === "POST") posts.push(JSON.parse(String(init.body)));
     return Response.json(init?.method === "POST" ? { status: status() } : { tools: [status()] });
   }) as typeof fetch;
-  await dom.render(createElement(CapabilityDetailsDialog, { item: included("documents"), workFolderId: "workshop", busy: false, onClose() {} }));
+  await dom.render(createElement(CapabilityDetailsDialog, { item: included("documents"), connectedFolderId: "workshop", busy: false, onClose() {} }));
   await dom.waitFor(() => dom.container.textContent!.includes("Setup Needed"));
   const text = () => dom.container.textContent!;
   assert.match(text(), /can't check how Word and PowerPoint files look/);
@@ -138,7 +138,7 @@ test("Documents setup guides the LibreOffice and Tesseract installs and ticks ea
   assert.doesNotMatch(rows()[0]!.textContent!, /brew install/);
   assert.doesNotMatch(text(), /approve it/);
   assert.equal(rows()[0]!.querySelector(".setup-checklist-state")!.getAttribute("title"), "/Applications/LibreOffice.app/Contents/MacOS/soffice · LibreOffice 26.8.1.1", "where it is and its version stay supporting detail");
-  Reflect.deleteProperty(window, "workFoldDesktop");
+  Reflect.deleteProperty(window, "ampleFileDesktop");
 });
 
 test("Installed separates cold readiness from native loading and keeps a newer setup result through late summary reads", async (t) => {
@@ -171,7 +171,7 @@ test("Installed separates cold readiness from native loading and keeps a newer s
     return Response.json(catalog);
   }) as typeof fetch;
   const props: Parameters<typeof CapabilitiesPane>[0] = {
-    workFolder: { id: "first", name: "Workshop" } as never, status: { configured: true } as never,
+    connectedFolder: { id: "first", name: "Workshop" } as never, status: { configured: true } as never,
     view: "installed", onError(message) { assert.fail(message ?? "Unexpected catalog error"); }, onViewChange() {},
   };
   await dom.render(createElement(CapabilitiesPane, props));
@@ -185,7 +185,7 @@ test("Installed separates cold readiness from native loading and keeps a newer s
   assert.equal(dom.container.querySelector(".capabilities-scope-heading .capabilities-hierarchy-glyph"), null);
   assert.equal(dom.container.querySelector(".scope-global .capabilities-resource-card"), null, "included tools are not repeated under Everywhere");
   const scopeGroups = [...dom.container.querySelectorAll(".capabilities-scope-group")];
-  assert.equal(scopeGroups.length, 2, "Everywhere and This work-folder only are both shown");
+  assert.equal(scopeGroups.length, 2, "Everywhere and This Connected Folder only are both shown");
   assert.doesNotMatch(scopeGroups.map((group) => group.textContent).join("\n"), /builtin:|0 tools/);
   assert.equal(dom.container.querySelectorAll(".capabilities-core-tool-row").length, 2, "native built-ins remain discoverable once in Core Tools");
   for (const name of ["Chrome", "Computer Control", "Documents"]) {
@@ -203,7 +203,7 @@ test("Installed separates cold readiness from native loading and keeps a newer s
   const check = [...dom.container.querySelectorAll<HTMLButtonElement>(".included-tool-setup button")].find((button) => button.textContent === "Check")!;
   await dom.act(() => { check.click(); check.click(); });
   await dom.waitFor(() => dom.container.querySelector('.included-tool-status [role="status"]')?.textContent === "Connected");
-  assert.deepEqual(writes, [{ workFolderId: "first", id: "chrome", action: "check" }]);
+  assert.deepEqual(writes, [{ connectedFolderId: "first", id: "chrome", action: "check" }]);
   await dom.act(() => {
     for (const complete of summaryReads) complete(Response.json({ tools: [{ id: "chrome", state: "unknown", checkedAt: "2026-09-12T15:02:00.000Z", detail: "A snapshot taken while the earlier-started explicit probe was running" }] }));
   });
@@ -242,7 +242,7 @@ test("an installed card offers Set up only for a known state that needs it", asy
     return Response.json(catalog);
   }) as typeof fetch;
   await dom.render(createElement(CapabilitiesPane, {
-    workFolder: { id: "first", name: "Workshop" } as never, status: { configured: true } as never,
+    connectedFolder: { id: "first", name: "Workshop" } as never, status: { configured: true } as never,
     view: "installed", onError(message) { assert.fail(message ?? "Unexpected catalog error"); }, onViewChange() {},
   }));
   const tile = (name: string) => [...dom.container.querySelectorAll<HTMLElement>(".capabilities-included-tile")].find((item) => item.querySelector("strong")?.textContent === name);
@@ -278,7 +278,7 @@ test("returning to Installed refreshes Chrome liveness without a manual check, a
     return Response.json({ tools: [{ id: "chrome", state: state === "connected" ? "ready" : "setup_required", checkedAt: new Date().toISOString(), chrome: { state, hasSelection: true, checkedAt: new Date().toISOString() } },
       { id: "computer", state: "ready", stale: true, checkedAt: "2026-10-01T12:00:00.000Z", detail: "Permissions verified earlier" }] });
   }) as typeof fetch;
-  await dom.render(createElement(CapabilitiesPane, { workFolder: { id: "first", name: "Workshop" } as never, status: { configured: true } as never, view: "installed", onError() {}, onViewChange() {} }));
+  await dom.render(createElement(CapabilitiesPane, { connectedFolder: { id: "first", name: "Workshop" } as never, status: { configured: true } as never, view: "installed", onError() {}, onViewChange() {} }));
   const tile = (name: string) => [...dom.container.querySelectorAll<HTMLElement>(".capabilities-included-tile")].find((item) => item.querySelector("strong")?.textContent === name)!;
   await dom.waitFor(() => tile("Chrome")?.textContent?.includes("Connecting") === true);
   assert.match(tile("Computer Control").textContent!, /Last Check Passed/);
@@ -298,7 +298,7 @@ test("returning to Installed refreshes Chrome liveness without a manual check, a
   assert.equal(reads, 4);
 });
 
-test("late readiness responses cannot cross work-folders or survive a closed setup owner", async (t) => {
+test("late readiness responses cannot cross Connected Folders or survive a closed setup owner", async (t) => {
   const dom = await createDomHarness(); t.after(() => dom.cleanup());
   const originalFetch = globalThis.fetch; t.after(() => { globalThis.fetch = originalFetch; });
   let completeOld: ((value: Response) => void) | undefined;
@@ -306,13 +306,13 @@ test("late readiness responses cannot cross work-folders or survive a closed set
   const delivered: string[] = [];
   globalThis.fetch = (async (input, init) => {
     if (init?.method === "POST") return new Promise<Response>((resolve) => { completeCheck = resolve; });
-    if (String(input).includes("workFolderId=first")) return new Promise<Response>((resolve) => { completeOld = resolve; });
+    if (String(input).includes("connectedFolderId=first")) return new Promise<Response>((resolve) => { completeOld = resolve; });
     return Response.json({ tools: [{ id: "chrome", state: "setup_required", checkedAt: "2026-09-12T15:02:00.000Z", chrome: { state: "not_connected", checkedAt: "2026-09-12T15:02:00.000Z", hasSelection: false } }] });
   }) as typeof fetch;
   const props = { item: included("chrome"), busy: false, onClose() {}, onReadinessChange: (status: { state: string } | null) => { if (status) delivered.push(status.state); } };
-  await dom.render(createElement(CapabilityDetailsDialog, { ...props, workFolderId: "first" }));
+  await dom.render(createElement(CapabilityDetailsDialog, { ...props, connectedFolderId: "first" }));
   await dom.act(() => [...dom.container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Check")!.click());
-  await dom.render(createElement(CapabilityDetailsDialog, { ...props, workFolderId: "second" }));
+  await dom.render(createElement(CapabilityDetailsDialog, { ...props, connectedFolderId: "second" }));
   await dom.waitFor(() => delivered.length === 1);
   await dom.act(() => {
     completeOld!(Response.json({ tools: [{ id: "chrome", state: "ready", checkedAt: "2026-09-12T15:03:00.000Z" }] }));
@@ -343,11 +343,11 @@ test("Chrome Store setup observes the authenticated handshake and a refused disc
     return Response.json({ tools: [snapshot()] });
   }) as typeof fetch;
   const button = (label: string) => [...dom.container.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent === label)!;
-  await dom.render(createElement(IncludedChromeSetup, { workFolderId: "first", enabled: true }));
+  await dom.render(createElement(IncludedChromeSetup, { connectedFolderId: "first", enabled: true }));
   await dom.waitFor(() => dom.container.textContent!.includes("Not Connected"));
   assert.deepEqual(posts, [], "opening setup reads status without registration or launch");
   // Two steps: add the extension, then choose Connect in it.
-  assert.match(dom.container.textContent!, /Add the work-fold Extension/);
+  assert.match(dom.container.textContent!, /Add the AmpleFile Extension/);
   assert.match(dom.container.textContent!, /Choose Connect in the Extension/);
   assert.equal(button("Check"), undefined, "nothing to check before a profile is selected");
   await dom.act(() => { button("Open Chrome Web Store").click(); button("Open Chrome Web Store")?.click(); });
@@ -390,7 +390,7 @@ test("missing Store identity has no invented install link and closing setup neve
     return Response.json({ tools: [snapshot()] });
   }) as typeof fetch;
   const props = { enabled: true, onStatusChange: (status: { chrome?: { state: string } } | null) => { if (status?.chrome) delivered.push(status.chrome.state); } };
-  await dom.render(createElement(IncludedChromeSetup, { ...props, workFolderId: "first" }));
+  await dom.render(createElement(IncludedChromeSetup, { ...props, connectedFolderId: "first" }));
   await dom.waitFor(() => dom.container.textContent!.includes("Chrome Extension Unavailable"));
   assert.equal(dom.container.querySelectorAll("a").length, 0);
   assert.equal([...dom.container.querySelectorAll("button")].some((button) => button.textContent === "Connect Chrome"), false);
@@ -404,21 +404,21 @@ test("missing Store identity has no invented install link and closing setup neve
   await dom.act(() => completeConnect!(Response.json({ status: snapshot() })));
   assert.equal(delivered.length, before, "a closed observer cannot publish a late result");
   assert.deepEqual(posts, ["connect-chrome"], "closing setup must never issue Disconnect or undo accepted enrollment");
-  await dom.render(createElement(IncludedChromeSetup, { ...props, workFolderId: "second" }));
+  await dom.render(createElement(IncludedChromeSetup, { ...props, connectedFolderId: "second" }));
   await dom.waitFor(() => dom.container.querySelector('[role="status"]')!.textContent === "Connected");
-  assert.deepEqual(posts, ["connect-chrome"], "the connection survives a work-folder switch without another enrollment");
+  assert.deepEqual(posts, ["connect-chrome"], "the connection survives a Connected Folder switch without another enrollment");
 });
 
 test("real detail CSS keeps long paths above tool lists and preserves scrolling at narrow and short sizes", { timeout: 60_000 }, async (t) => {
-  const candidates = [process.env.WORKFOLD_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[];
+  const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[];
   let browser: string | undefined;
   for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
   if (!browser) { t.skip("A Chromium binary is needed for actual layout verification."); return; }
   const dom = await createDomHarness(); t.after(() => dom.cleanup());
-  const scratch = await mkdtemp(join(tmpdir(), "work-fold-capability-css-"));
+  const scratch = await mkdtemp(join(tmpdir(), "amplefile-capability-css-"));
   try {
     const { renderToStaticMarkup } = await import("react-dom/server");
-    const markup = renderToStaticMarkup(createElement(CapabilityDetailsDialog, { item: included("chrome"), workFolderId: "workshop", busy: false, onClose() {}, onToggle() {} })).replace('<details class="capability-technical-details"', '<details open class="capability-technical-details"');
+    const markup = renderToStaticMarkup(createElement(CapabilityDetailsDialog, { item: included("chrome"), connectedFolderId: "workshop", busy: false, onClose() {}, onToggle() {} })).replace('<details class="capability-technical-details"', '<details open class="capability-technical-details"');
     const css = (await Promise.all(["brand.css", "styles.css", "application-appearance.css", "components/panes/included-tool-setup.css"].map((name) => readFile(resolve("web-local/src", name), "utf8")))).join("\n");
     const variables = applicationAppearanceVariables({ ...defaultApplicationAppearance, textSize: "large" }, "dark");
     const payload = JSON.stringify({ markup, css, variables }).replace(/</g, "\\u003c");
@@ -452,16 +452,16 @@ test("real detail CSS keeps long paths above tool lists and preserves scrolling 
 });
 
 test("actual catalog markup keeps text-only rows and aligned controls at desktop and narrow sizes", { timeout: 60_000 }, async (t) => {
-  const candidates = [process.env.WORKFOLD_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium"].filter(Boolean) as string[];
+  const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium"].filter(Boolean) as string[];
   let browser: string | undefined;
   for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
   if (!browser) { t.skip("Chromium is needed for actual catalog layout verification."); return; }
   const dom = await createDomHarness(); t.after(() => dom.cleanup());
-  await dom.render(createElement(CapabilitiesPane, { workFolder: { id: "catalog", name: "Workshop" } as never, status: { configured: true } as never, view: "discover", fixtureMode: true, onError() {}, onViewChange() {} }));
+  await dom.render(createElement(CapabilitiesPane, { connectedFolder: { id: "catalog", name: "Workshop" } as never, status: { configured: true } as never, view: "discover", fixtureMode: true, onError() {}, onViewChange() {} }));
   await dom.waitFor(() => dom.container.querySelectorAll(".capabilities-discover-card").length === 3);
   assert.equal(dom.container.querySelectorAll(".capabilities-discover-card :is(svg,img,.capabilities-kind-icon,.capabilities-monogram)").length, 0);
   assert.equal(dom.container.querySelector('input[type="search"]')?.getAttribute("aria-label"), "Search the catalog");
-  const scratch = await mkdtemp(join(tmpdir(), "work-fold-catalog-css-"));
+  const scratch = await mkdtemp(join(tmpdir(), "amplefile-catalog-css-"));
   try {
     const css = (await Promise.all(["brand.css", "styles.css", "application-appearance.css"].map((name) => readFile(resolve("web-local/src", name), "utf8")))).join("\n");
     const scenarios = (["light", "dark"] as const).map(mode => ({ mode, variables: applicationAppearanceVariables({ ...defaultApplicationAppearance, palette: "paper", textSize: "large", accent: "#397451" }, mode) }));

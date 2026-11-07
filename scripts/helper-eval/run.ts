@@ -2,8 +2,8 @@
 /**
  * One measured run of the helper-tool evaluation against a running
  * scripts/helper-eval/host.ts. Copies a seeded task folder into a fresh
- * disposable work-folder, drives one real Pi turn with the existing driver
- * (`scripts/work-fold-drive.ts --attach`), then measures what that turn cost:
+ * disposable Connected Folder, drives one real Pi turn with the existing driver
+ * (`scripts/amplefile-drive.ts --attach`), then measures what that turn cost:
  * every provider call the host tapped (agent loop, child Chats, titles,
  * helper), the parent session's context at its first and last model call, the
  * request graph's states, and latency. Expected answers are never read here.
@@ -20,7 +20,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { helperEvalTasks, longHistoryDocument, longHistorySetupPrompt, type HelperEvalTaskId } from "./fixtures.js";
-import { workFolderSessionDir } from "../../src/local/agent/agent-data-dir.js";
+import { connectedFolderSessionDir } from "../../src/local/agent/agent-data-dir.js";
 
 const repo = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
@@ -34,7 +34,7 @@ function argument(name: string, fallback?: string): string {
 
 export const armHints = {
   a: "",
-  b: "This needs a lot of reading. Keep your own context small: hand the reading to a fresh Chat in this same work-folder with `work-fold chat handoff` (to this work-folder, without --file), tell it exactly what to find and what to report back, then `work-fold chat wait` for its result and answer me from that result.",
+  b: "This needs a lot of reading. Keep your own context small: hand the reading to a fresh Chat in this same Connected Folder with `amplefile chat handoff` (to this Connected Folder, without --file), tell it exactly what to find and what to report back, then `amplefile chat wait` for its result and answer me from that result.",
   c: "This needs a lot of reading. Keep your own context small: give the reading to the `helper` tool, tell it exactly what to find and what to report back, and answer me from its result.",
   // Arm c without the hint: does the model reach for the tool by itself?
   c0: "",
@@ -69,7 +69,7 @@ interface SessionSummary {
   toolResultChars: number;
   /** Pi compaction entries written during this session. */
   compactions: number;
-  /** Every `work-fold chat report` the session ran, with whether work-fold accepted it. */
+  /** Every `amplefile chat report` the session ran, with whether AmpleFile accepted it. */
   reports: Array<{ afterCompaction: boolean; accepted: boolean; taskArg: string | null; result: string }>;
 }
 
@@ -90,9 +90,9 @@ const host = JSON.parse(await readFile(join(evalRoot, "host.json"), "utf8")) as 
 const runId = `${taskId}-${arm}-r${rep}${stopAfter !== null ? "-stop" : ""}`;
 const runDir = join(evalRoot, "runs", runId);
 await rm(runDir, { recursive: true, force: true });
-const workFolderRoot = join(runDir, task.folder);
+const connectedFolderRoot = join(runDir, task.folder);
 await mkdir(runDir, { recursive: true });
-await cp(join(fixtures, "tasks", taskId), workFolderRoot, { recursive: true });
+await cp(join(fixtures, "tasks", taskId), connectedFolderRoot, { recursive: true });
 const prompt = [task.question, armHints[arm]].filter(Boolean).join("\n\n");
 const promptFile = join(runDir, "prompt.txt");
 await writeFile(promptFile, `${prompt}\n`);
@@ -110,12 +110,12 @@ async function json<T>(method: string, url: string, body?: unknown): Promise<T> 
 const tap = () => json<{ calls: number; inflight: number; quietMs: number }>("GET", `${host.bridge}/tap`);
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
-interface DriverReport { outcome: string; durationMs: number; conversationId: string; workFolderId: string; assistantText: string; toolCalls: unknown[]; errors: string[] }
+interface DriverReport { outcome: string; durationMs: number; conversationId: string; connectedFolderId: string; assistantText: string; toolCalls: unknown[]; errors: string[] }
 async function drive(file: string, conversation?: string): Promise<DriverReport> {
   // The existing real-Pi driver, attached to the host.
   const child = spawn(process.execPath, [
-    join(repo, "node_modules", "tsx", "dist", "cli.mjs"), join(repo, "scripts", "work-fold-drive.ts"),
-    "--attach", host.origin, "--work-folder-root", workFolderRoot, "--prompt-file", file, "--json", "--quiet", "--timeout", "2400",
+    join(repo, "node_modules", "tsx", "dist", "cli.mjs"), join(repo, "scripts", "amplefile-drive.ts"),
+    "--attach", host.origin, "--connected-folder-root", connectedFolderRoot, "--prompt-file", file, "--json", "--quiet", "--timeout", "2400",
     ...(conversation ? ["--conversation", conversation] : []),
   ], { cwd: repo, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";
@@ -160,7 +160,7 @@ const wallMs = Date.now() - startedAt;
 // --- measurements -------------------------------------------------------------
 const tapRecords = (await readFile(host.tapLog, "utf8")).split("\n").filter(Boolean)
   .map((line) => JSON.parse(line) as TapRecord).filter((record) => record.call > tapBefore);
-const sessions = await readSessions(workFolderSessionDir(workFolderRoot, host.agentDir), startedAt);
+const sessions = await readSessions(connectedFolderSessionDir(connectedFolderRoot, host.agentDir), startedAt);
 const firstPrompt = setupPrompt ?? prompt;
 const parentSession = sessions.find((session) => session.firstUserText.trim() === firstPrompt.trim()) ?? null;
 const childSessions = sessions.filter((session) => session !== parentSession);
@@ -217,7 +217,7 @@ const parentCalls = (parentSession?.calls ?? []).filter((call) => (call.timestam
 const continuationCalls = (parentSession?.calls ?? []).filter((call) => (call.timestamp ?? 0) > originSettledAt);
 const result = {
   runId, taskId, arm, rep, model: host.model, helperTool: host.helperTool,
-  workFolderRoot, prompt,
+  connectedFolderRoot, prompt,
   outcome: driverReport?.outcome ?? "stopped-run",
   latencyMs: driverReport?.durationMs ?? null,
   setup: setupReport ? { outcome: setupReport.outcome, durationMs: setupReport.durationMs } : null,
@@ -301,7 +301,7 @@ async function readSessions(dir: string, since: number): Promise<SessionSummary[
           if (part.type !== "toolCall") continue;
           const args = JSON.stringify(part.arguments ?? {});
           summary.toolCalls.push({ name: part.name ?? "?", args: args.slice(0, 300) });
-          if (/work-fold chat report/.test(args)) pendingReports.set((part as { id?: string }).id ?? "", /--task\s+(\S+)/.exec(args)?.[1]?.replace(/[\\"]+$/, "") ?? null);
+          if (/amplefile chat report/.test(args)) pendingReports.set((part as { id?: string }).id ?? "", /--task\s+(\S+)/.exec(args)?.[1]?.replace(/[\\"]+$/, "") ?? null);
         }
       }
       if (message.role === "toolResult") {
@@ -365,11 +365,11 @@ async function readTurnRecords(stateBase: string): Promise<Array<{ turnId: strin
  * then time how long the parent, every child Chat, and the helper take to settle.
  */
 async function stopRun(afterSeconds: number): Promise<Record<string, unknown>> {
-  const { workFolder } = await json<{ workFolder: { id: string } }>("POST", `${host.origin}/api/work-folders/local-folder`, { workFolderRoot });
-  const { conversation } = await json<{ conversation: { id: string } }>("POST", `${host.origin}/api/work-folders/${workFolder.id}/conversations`, { title: "helper-eval stop" });
+  const { connectedFolder } = await json<{ connectedFolder: { id: string } }>("POST", `${host.origin}/api/connected-folders/local-folder`, { connectedFolderRoot });
+  const { conversation } = await json<{ conversation: { id: string } }>("POST", `${host.origin}/api/connected-folders/${connectedFolder.id}/conversations`, { title: "helper-eval stop" });
   const events: Array<{ at: number; type: string; message?: string; toolName?: string; phase?: string }> = [];
   const controller = new AbortController();
-  const stream = await fetch(`${host.origin}/api/work-folders/${workFolder.id}/conversations/${conversation.id}/events`, { signal: controller.signal });
+  const stream = await fetch(`${host.origin}/api/connected-folders/${connectedFolder.id}/conversations/${conversation.id}/events`, { signal: controller.signal });
   let doneAt: number | null = null;
   const reading = (async () => {
     const decoder = new TextDecoder();
@@ -394,7 +394,7 @@ async function stopRun(afterSeconds: number): Promise<Record<string, unknown>> {
     } catch { /* aborted */ }
   })();
   const sentAt = Date.now();
-  await json("POST", `${host.origin}/api/work-folders/${workFolder.id}/conversations/${conversation.id}/messages`, { content: prompt });
+  await json("POST", `${host.origin}/api/connected-folders/${connectedFolder.id}/conversations/${conversation.id}/messages`, { content: prompt });
   if (stopWhenChild) {
     for (let waited = 0; waited < 600_000; waited += 500) {
       const requests = await readRequests(host.stateBase);
@@ -408,7 +408,7 @@ async function stopRun(afterSeconds: number): Promise<Record<string, unknown>> {
   const childSeenAt = Date.now();
   await sleep(afterSeconds * 1000);
   const stopAt = Date.now();
-  const abort = await json<Record<string, unknown>>("POST", `${host.origin}/api/work-folders/${workFolder.id}/conversations/${conversation.id}/abort`, {});
+  const abort = await json<Record<string, unknown>>("POST", `${host.origin}/api/connected-folders/${connectedFolder.id}/conversations/${conversation.id}/abort`, {});
   const deadline = Date.now() + 120_000;
   while (doneAt === null && Date.now() < deadline) await sleep(100);
   // Then wait until every request in the tree has settled (or give up).
@@ -428,7 +428,7 @@ async function stopRun(afterSeconds: number): Promise<Record<string, unknown>> {
   await reading.catch(() => undefined);
   return {
     conversationId: conversation.id,
-    workFolderId: workFolder.id,
+    connectedFolderId: connectedFolder.id,
     stoppedAfterMs: stopAt - sentAt,
     stoppedAfterChildMs: stopWhenChild ? stopAt - childSeenAt : null,
     abortResponse: abort,

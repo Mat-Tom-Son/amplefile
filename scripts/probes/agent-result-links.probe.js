@@ -10,7 +10,7 @@ async (page) => {
   const preview = page.locator('.file-preview-dialog');
   await preview.getByText('Quarterly summary', { exact: true }).waitFor();
   const location = await preview.locator('.file-preview-location').textContent();
-  if (location !== 'Launch plan · reports/q3-summary.md') throw new Error('The deliverable opened under the wrong work-folder: ' + location);
+  if (location !== 'Launch plan · reports/q3-summary.md') throw new Error('The deliverable opened under the wrong Connected Folder: ' + location);
   await page.screenshot({ path: 'output/playwright/agent-deliverable-link-phone.png' });
   await preview.getByRole('button', { name: 'Close preview', exact: true }).click();
   const fileFocusRestored = await page.getByRole('button', { name: 'q3-summary.md', exact: true }).evaluate((button) => button === document.activeElement);
@@ -25,5 +25,5 @@ async (page) => {
   await dialog.getByRole('button', { name: 'Close app', exact: true }).click();
   const appFocusRestored = await page.getByRole('button', { name: 'Quote board', exact: true }).evaluate((button) => button === document.activeElement);
   if (!fits || !fileFocusRestored || !appFocusRestored) throw new Error(JSON.stringify({ fits, fileFocusRestored, appFocusRestored }));
-  return { deliverableWorkFolderNamed: true, appWorkFolderNamed: true, updatedInstallationDisclosed: true, appQuoteRead: true, fits, fileFocusRestored, appFocusRestored };
+  return { deliverableConnectedFolderNamed: true, appConnectedFolderNamed: true, updatedInstallationDisclosed: true, appQuoteRead: true, fits, fileFocusRestored, appFocusRestored };
 }

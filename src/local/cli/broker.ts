@@ -15,30 +15,30 @@ import {
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
-  WorkFoldCliError,
-  createWorkFoldCliResponse,
-  normalizeWorkFoldCliRequestId,
-  parseWorkFoldCliRequest,
-  parseWorkFoldCliResponse,
-  type WorkFoldCliRequestV1,
-  type WorkFoldCliResponseV1,
+  AmpleFileCliError,
+  createAmpleFileCliResponse,
+  normalizeAmpleFileCliRequestId,
+  parseAmpleFileCliRequest,
+  parseAmpleFileCliResponse,
+  type AmpleFileCliRequestV1,
+  type AmpleFileCliResponseV1,
 } from "./protocol.js";
 import {
-  WORKFOLD_CLI_MAX_ACT_REQUEST_BYTES,
-  isWorkFoldCliActRequest,
-  parseWorkFoldCliActRequest,
-  parseWorkFoldCliRequestEnvelope,
-  type WorkFoldCliActRequest,
-  type WorkFoldCliBrokeredRequest,
+  AMPLEFILE_CLI_MAX_ACT_REQUEST_BYTES,
+  isAmpleFileCliActRequest,
+  parseAmpleFileCliActRequest,
+  parseAmpleFileCliRequestEnvelope,
+  type AmpleFileCliActRequest,
+  type AmpleFileCliBrokeredRequest,
 } from "./act-protocol.js";
 
-export const WORKFOLD_CLI_MAX_REQUEST_BYTES = 64 * 1024 * 1024;
-export const WORKFOLD_CLI_MAX_RESPONSE_BYTES = 256 * 1024 * 1024;
-export const WORKFOLD_CLI_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
-export const WORKFOLD_CLI_REQUEST_FUTURE_SKEW_MS = 60 * 1000;
-export const WORKFOLD_CLI_DEFAULT_CLEANUP_AGE_MS = 24 * 60 * 60 * 1000;
+export const AMPLEFILE_CLI_MAX_REQUEST_BYTES = 64 * 1024 * 1024;
+export const AMPLEFILE_CLI_MAX_RESPONSE_BYTES = 256 * 1024 * 1024;
+export const AMPLEFILE_CLI_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
+export const AMPLEFILE_CLI_REQUEST_FUTURE_SKEW_MS = 60 * 1000;
+export const AMPLEFILE_CLI_DEFAULT_CLEANUP_AGE_MS = 24 * 60 * 60 * 1000;
 
-export interface WorkFoldCliBrokerOptions {
+export interface AmpleFileCliBrokerOptions {
   stateRoot: string;
   now?: () => Date;
   maxRequestBytes?: number;
@@ -48,29 +48,29 @@ export interface WorkFoldCliBrokerOptions {
   maxFutureSkewMs?: number;
 }
 
-export interface WorkFoldCliBrokerPaths {
+export interface AmpleFileCliBrokerPaths {
   root: string;
   requests: string;
   claims: string;
   responses: string;
 }
 
-export interface WorkFoldCliRequestPaths {
+export interface AmpleFileCliRequestPaths {
   request: string;
   claim: string;
   claimLock: string;
   response: string;
 }
 
-export interface WorkFoldCliCleanupResult {
+export interface AmpleFileCliCleanupResult {
   removed: string[];
   skippedUnsafe: string[];
 }
 
-export type WorkFoldCliRequestExecutor = (request: WorkFoldCliBrokeredRequest) => Promise<WorkFoldCliResponseV1>;
+export type AmpleFileCliRequestExecutor = (request: AmpleFileCliBrokeredRequest) => Promise<AmpleFileCliResponseV1>;
 
-export class WorkFoldCliFileBroker {
-  readonly paths: WorkFoldCliBrokerPaths;
+export class AmpleFileCliFileBroker {
+  readonly paths: AmpleFileCliBrokerPaths;
   private readonly stateRoot: string;
   private readonly now: () => Date;
   private readonly maxRequestBytes: number;
@@ -79,30 +79,30 @@ export class WorkFoldCliFileBroker {
   private readonly maxResponseBytes: number;
   private readonly maxRequestAgeMs: number;
   private readonly maxFutureSkewMs: number;
-  private readonly inFlight = new Map<string, Promise<WorkFoldCliResponseV1>>();
+  private readonly inFlight = new Map<string, Promise<AmpleFileCliResponseV1>>();
 
-  constructor(options: WorkFoldCliBrokerOptions) {
+  constructor(options: AmpleFileCliBrokerOptions) {
     if (!options.stateRoot.trim() || !isAbsolute(options.stateRoot)) {
-      throw new WorkFoldCliError("protocolError", "CLI broker state root must be an absolute path.");
+      throw new AmpleFileCliError("protocolError", "CLI broker state root must be an absolute path.");
     }
     this.stateRoot = resolve(options.stateRoot);
-    this.paths = workFoldCliBrokerPaths(this.stateRoot);
+    this.paths = ampleFileCliBrokerPaths(this.stateRoot);
     this.now = options.now ?? (() => new Date());
-    this.maxRequestBytes = positiveLimit(options.maxRequestBytes, WORKFOLD_CLI_MAX_REQUEST_BYTES, "maxRequestBytes");
-    this.maxActRequestBytes = positiveLimit(options.maxActRequestBytes, WORKFOLD_CLI_MAX_ACT_REQUEST_BYTES, "maxActRequestBytes");
+    this.maxRequestBytes = positiveLimit(options.maxRequestBytes, AMPLEFILE_CLI_MAX_REQUEST_BYTES, "maxRequestBytes");
+    this.maxActRequestBytes = positiveLimit(options.maxActRequestBytes, AMPLEFILE_CLI_MAX_ACT_REQUEST_BYTES, "maxActRequestBytes");
     // Claims are read under the larger lane bound; the exact per-lane cap is
     // re-enforced after the envelope identifies the request's protocol.
     this.claimReadBytes = Math.max(this.maxRequestBytes, this.maxActRequestBytes);
-    this.maxResponseBytes = positiveLimit(options.maxResponseBytes, WORKFOLD_CLI_MAX_RESPONSE_BYTES, "maxResponseBytes");
-    this.maxRequestAgeMs = positiveLimit(options.maxRequestAgeMs, WORKFOLD_CLI_REQUEST_MAX_AGE_MS, "maxRequestAgeMs");
-    this.maxFutureSkewMs = positiveLimit(options.maxFutureSkewMs, WORKFOLD_CLI_REQUEST_FUTURE_SKEW_MS, "maxFutureSkewMs");
+    this.maxResponseBytes = positiveLimit(options.maxResponseBytes, AMPLEFILE_CLI_MAX_RESPONSE_BYTES, "maxResponseBytes");
+    this.maxRequestAgeMs = positiveLimit(options.maxRequestAgeMs, AMPLEFILE_CLI_REQUEST_MAX_AGE_MS, "maxRequestAgeMs");
+    this.maxFutureSkewMs = positiveLimit(options.maxFutureSkewMs, AMPLEFILE_CLI_REQUEST_FUTURE_SKEW_MS, "maxFutureSkewMs");
   }
 
   async initialize(): Promise<void> {
     await mkdir(this.stateRoot, { recursive: true, mode: 0o700 });
     const stateInfo = await lstat(this.stateRoot);
     if (!stateInfo.isDirectory() || stateInfo.isSymbolicLink()) {
-      throw new WorkFoldCliError("permissionDenied", "CLI broker state root is not a safe directory.");
+      throw new AmpleFileCliError("permissionDenied", "CLI broker state root is not a safe directory.");
     }
     await mkdir(this.paths.root, { recursive: true, mode: 0o700 });
     await assertSafeDirectory(this.paths.root, this.paths.root, "CLI broker root");
@@ -113,8 +113,8 @@ export class WorkFoldCliFileBroker {
     }
   }
 
-  requestPaths(id: string): WorkFoldCliRequestPaths {
-    const normalized = normalizeWorkFoldCliRequestId(id);
+  requestPaths(id: string): AmpleFileCliRequestPaths {
+    const normalized = normalizeAmpleFileCliRequestId(id);
     return {
       request: safeChild(this.paths.requests, `${normalized}.json`),
       claim: safeChild(this.paths.claims, `${normalized}.json`),
@@ -123,33 +123,33 @@ export class WorkFoldCliFileBroker {
     };
   }
 
-  async writeRequest(request: WorkFoldCliRequestV1): Promise<string> {
+  async writeRequest(request: AmpleFileCliRequestV1): Promise<string> {
     await this.initialize();
-    const validated = parseWorkFoldCliRequest(request);
+    const validated = parseAmpleFileCliRequest(request);
     this.assertFresh(validated);
     const paths = this.requestPaths(validated.id);
     await assertAbsent(paths.claim, "CLI request is already claimed.");
     await assertAbsent(paths.response, "CLI request already has a response.");
     const bytes = Buffer.from(`${JSON.stringify(validated)}\n`, "utf8");
-    if (bytes.byteLength > this.maxRequestBytes) throw new WorkFoldCliError("protocolError", "CLI request exceeds the size limit.");
+    if (bytes.byteLength > this.maxRequestBytes) throw new AmpleFileCliError("protocolError", "CLI request exceeds the size limit.");
     await atomicCreate(paths.request, bytes);
     return paths.request;
   }
 
-  async writeActRequest(request: WorkFoldCliActRequest): Promise<string> {
+  async writeActRequest(request: AmpleFileCliActRequest): Promise<string> {
     await this.initialize();
-    const validated = parseWorkFoldCliActRequest(request);
+    const validated = parseAmpleFileCliActRequest(request);
     this.assertFresh(validated);
     const paths = this.requestPaths(validated.id);
     await assertAbsent(paths.claim, "CLI request is already claimed.");
     await assertAbsent(paths.response, "CLI request already has a response.");
     const bytes = Buffer.from(`${JSON.stringify(validated)}\n`, "utf8");
-    if (bytes.byteLength > this.maxActRequestBytes) throw new WorkFoldCliError("protocolError", "CLI act request exceeds the size limit.");
+    if (bytes.byteLength > this.maxActRequestBytes) throw new AmpleFileCliError("protocolError", "CLI act request exceeds the size limit.");
     await atomicCreate(paths.request, bytes);
     return paths.request;
   }
 
-  async claimRequest(id: string): Promise<WorkFoldCliBrokeredRequest> {
+  async claimRequest(id: string): Promise<AmpleFileCliBrokeredRequest> {
     await this.initialize();
     const paths = this.requestPaths(id);
     const lock = await acquireLock(paths.claimLock);
@@ -165,13 +165,13 @@ export class WorkFoldCliFileBroker {
       try {
         parsed = JSON.parse(bytes.toString("utf8"));
       } catch (error) {
-        throw new WorkFoldCliError("protocolError", "CLI request is not valid JSON.", { cause: error });
+        throw new AmpleFileCliError("protocolError", "CLI request is not valid JSON.", { cause: error });
       }
-      const request = parseWorkFoldCliRequestEnvelope(parsed);
-      const laneBound = isWorkFoldCliActRequest(request) ? this.maxActRequestBytes : this.maxRequestBytes;
-      if (bytes.byteLength > laneBound) throw new WorkFoldCliError("protocolError", "CLI request exceeds the size limit.");
-      if (request.id !== normalizeWorkFoldCliRequestId(id)) {
-        throw new WorkFoldCliError("protocolError", "CLI request id does not match its file name.");
+      const request = parseAmpleFileCliRequestEnvelope(parsed);
+      const laneBound = isAmpleFileCliActRequest(request) ? this.maxActRequestBytes : this.maxRequestBytes;
+      if (bytes.byteLength > laneBound) throw new AmpleFileCliError("protocolError", "CLI request exceeds the size limit.");
+      if (request.id !== normalizeAmpleFileCliRequestId(id)) {
+        throw new AmpleFileCliError("protocolError", "CLI request id does not match its file name.");
       }
       this.assertFresh(request);
       return request;
@@ -184,7 +184,7 @@ export class WorkFoldCliFileBroker {
     }
   }
 
-  async readResponse(id: string): Promise<WorkFoldCliResponseV1> {
+  async readResponse(id: string): Promise<AmpleFileCliResponseV1> {
     await this.initialize();
     const path = this.requestPaths(id).response;
     await assertSafeRegularFile(this.paths.root, path, "CLI response", this.maxResponseBytes);
@@ -193,27 +193,27 @@ export class WorkFoldCliFileBroker {
     try {
       parsed = JSON.parse(bytes.toString("utf8"));
     } catch (error) {
-      throw new WorkFoldCliError("protocolError", "CLI response is not valid JSON.", { cause: error });
+      throw new AmpleFileCliError("protocolError", "CLI response is not valid JSON.", { cause: error });
     }
-    const response = parseWorkFoldCliResponse(parsed);
-    if (response.id !== normalizeWorkFoldCliRequestId(id)) {
-      throw new WorkFoldCliError("protocolError", "CLI response id does not match its file name.");
+    const response = parseAmpleFileCliResponse(parsed);
+    if (response.id !== normalizeAmpleFileCliRequestId(id)) {
+      throw new AmpleFileCliError("protocolError", "CLI response id does not match its file name.");
     }
     return response;
   }
 
-  async writeResponse(response: WorkFoldCliResponseV1): Promise<string> {
+  async writeResponse(response: AmpleFileCliResponseV1): Promise<string> {
     await this.initialize();
-    const validated = parseWorkFoldCliResponse(response);
+    const validated = parseAmpleFileCliResponse(response);
     const path = this.requestPaths(validated.id).response;
     const bytes = Buffer.from(`${JSON.stringify(validated)}\n`, "utf8");
-    if (bytes.byteLength > this.maxResponseBytes) throw new WorkFoldCliError("protocolError", "CLI response exceeds the size limit.");
+    if (bytes.byteLength > this.maxResponseBytes) throw new AmpleFileCliError("protocolError", "CLI response exceeds the size limit.");
     await atomicCreate(path, bytes);
     return path;
   }
 
-  processRequest(id: string, executor: WorkFoldCliRequestExecutor): Promise<WorkFoldCliResponseV1> {
-    const normalized = normalizeWorkFoldCliRequestId(id);
+  processRequest(id: string, executor: AmpleFileCliRequestExecutor): Promise<AmpleFileCliResponseV1> {
+    const normalized = normalizeAmpleFileCliRequestId(id);
     const existing = this.inFlight.get(normalized);
     if (existing) return existing;
     const operation = this.processRequestOnce(normalized, executor).finally(() => {
@@ -223,9 +223,9 @@ export class WorkFoldCliFileBroker {
     return operation;
   }
 
-  async cleanup(options: { olderThanMs?: number } = {}): Promise<WorkFoldCliCleanupResult> {
+  async cleanup(options: { olderThanMs?: number } = {}): Promise<AmpleFileCliCleanupResult> {
     await this.initialize();
-    const olderThanMs = positiveLimit(options.olderThanMs, WORKFOLD_CLI_DEFAULT_CLEANUP_AGE_MS, "olderThanMs");
+    const olderThanMs = positiveLimit(options.olderThanMs, AMPLEFILE_CLI_DEFAULT_CLEANUP_AGE_MS, "olderThanMs");
     const threshold = this.now().getTime() - olderThanMs;
     const removed: string[] = [];
     const skippedUnsafe: string[] = [];
@@ -251,17 +251,17 @@ export class WorkFoldCliFileBroker {
     return { removed, skippedUnsafe };
   }
 
-  private async processRequestOnce(id: string, executor: WorkFoldCliRequestExecutor): Promise<WorkFoldCliResponseV1> {
+  private async processRequestOnce(id: string, executor: AmpleFileCliRequestExecutor): Promise<AmpleFileCliResponseV1> {
     await this.initialize();
     const paths = this.requestPaths(id);
     try {
       const existing = await fileExists(paths.response) ? await this.readResponse(id) : null;
       if (existing) return existing;
       const request = await this.claimRequest(id);
-      let response: WorkFoldCliResponseV1;
+      let response: AmpleFileCliResponseV1;
       try {
-        response = parseWorkFoldCliResponse(await executor(request));
-        if (response.id !== id) throw new WorkFoldCliError("protocolError", "CLI executor returned a response for a different request.");
+        response = parseAmpleFileCliResponse(await executor(request));
+        if (response.id !== id) throw new AmpleFileCliError("protocolError", "CLI executor returned a response for a different request.");
       } catch (error) {
         response = errorResponse(id, error, this.now());
       }
@@ -280,13 +280,13 @@ export class WorkFoldCliFileBroker {
   private assertFresh(request: { createdAt: string }): void {
     const now = this.now().getTime();
     const createdAt = Date.parse(request.createdAt);
-    if (now - createdAt > this.maxRequestAgeMs) throw new WorkFoldCliError("timeout", "CLI request expired before work-fold could process it.");
-    if (createdAt - now > this.maxFutureSkewMs) throw new WorkFoldCliError("protocolError", "CLI request timestamp is too far in the future.");
+    if (now - createdAt > this.maxRequestAgeMs) throw new AmpleFileCliError("timeout", "CLI request expired before AmpleFile could process it.");
+    if (createdAt - now > this.maxFutureSkewMs) throw new AmpleFileCliError("protocolError", "CLI request timestamp is too far in the future.");
   }
 }
 
-export function workFoldCliBrokerPaths(stateRoot: string): WorkFoldCliBrokerPaths {
-  if (!stateRoot.trim() || !isAbsolute(stateRoot)) throw new WorkFoldCliError("protocolError", "CLI broker state root must be an absolute path.");
+export function ampleFileCliBrokerPaths(stateRoot: string): AmpleFileCliBrokerPaths {
+  if (!stateRoot.trim() || !isAbsolute(stateRoot)) throw new AmpleFileCliError("protocolError", "CLI broker state root must be an absolute path.");
   const root = resolve(stateRoot, "cli");
   return {
     root,
@@ -296,11 +296,11 @@ export function workFoldCliBrokerPaths(stateRoot: string): WorkFoldCliBrokerPath
   };
 }
 
-function errorResponse(id: string, error: unknown, completedAt: Date): WorkFoldCliResponseV1 {
-  const normalized = error instanceof WorkFoldCliError
+function errorResponse(id: string, error: unknown, completedAt: Date): AmpleFileCliResponseV1 {
+  const normalized = error instanceof AmpleFileCliError
     ? error
-    : new WorkFoldCliError("failure", error instanceof Error ? error.message : String(error ?? "work-fold command failed."), { cause: error });
-  return createWorkFoldCliResponse({
+    : new AmpleFileCliError("failure", error instanceof Error ? error.message : String(error ?? "AmpleFile command failed."), { cause: error });
+  return createAmpleFileCliResponse({
     id,
     exitCode: normalized.exitCode,
     stdout: "",
@@ -326,7 +326,7 @@ async function atomicCreate(path: string, bytes: Buffer): Promise<void> {
   } catch (error) {
     await handle?.close().catch(() => undefined);
     await rm(temp, { force: true }).catch(() => undefined);
-    if (isAlreadyExists(error)) throw new WorkFoldCliError("conflict", "CLI file already exists.", { cause: error });
+    if (isAlreadyExists(error)) throw new AmpleFileCliError("conflict", "CLI file already exists.", { cause: error });
     throw error;
   }
 }
@@ -335,7 +335,7 @@ async function acquireLock(path: string): Promise<Awaited<ReturnType<typeof open
   try {
     return await open(path, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, 0o600);
   } catch (error) {
-    if (isAlreadyExists(error)) throw new WorkFoldCliError("conflict", "CLI request is already being processed.", { cause: error });
+    if (isAlreadyExists(error)) throw new AmpleFileCliError("conflict", "CLI request is already being processed.", { cause: error });
     throw error;
   }
 }
@@ -343,7 +343,7 @@ async function acquireLock(path: string): Promise<Awaited<ReturnType<typeof open
 async function assertSafeDirectory(root: string, path: string, label: string): Promise<void> {
   assertWithin(root, path);
   const info = await lstat(path).catch(() => null);
-  if (!info?.isDirectory() || info.isSymbolicLink()) throw new WorkFoldCliError("permissionDenied", `${label} is not a safe directory.`);
+  if (!info?.isDirectory() || info.isSymbolicLink()) throw new AmpleFileCliError("permissionDenied", `${label} is not a safe directory.`);
   const resolvedRoot = await realpath(root).catch(() => resolve(root));
   const resolvedPath = await realpath(path).catch(() => resolve(path));
   assertWithin(resolvedRoot, resolvedPath);
@@ -355,9 +355,9 @@ async function assertSafeRegularFile(root: string, path: string, label: string, 
     if (isMissing(error)) return null;
     throw error;
   });
-  if (!info) throw new WorkFoldCliError("notFound", `${label} was not found.`);
-  if (!info.isFile() || info.isSymbolicLink()) throw new WorkFoldCliError("permissionDenied", `${label} is not a safe regular file.`);
-  if (info.size > maxBytes) throw new WorkFoldCliError("protocolError", `${label} exceeds the size limit.`);
+  if (!info) throw new AmpleFileCliError("notFound", `${label} was not found.`);
+  if (!info.isFile() || info.isSymbolicLink()) throw new AmpleFileCliError("permissionDenied", `${label} is not a safe regular file.`);
+  if (info.size > maxBytes) throw new AmpleFileCliError("protocolError", `${label} exceeds the size limit.`);
   const resolvedRoot = await realpath(root);
   const resolvedPath = await realpath(path);
   assertWithin(resolvedRoot, resolvedPath);
@@ -365,16 +365,16 @@ async function assertSafeRegularFile(root: string, path: string, label: string, 
 
 async function readBoundedFile(path: string, maxBytes: number, label: string): Promise<Buffer> {
   const before = await stat(path);
-  if (!before.isFile() || before.size > maxBytes) throw new WorkFoldCliError("protocolError", `${label} exceeds the size limit.`);
+  if (!before.isFile() || before.size > maxBytes) throw new AmpleFileCliError("protocolError", `${label} exceeds the size limit.`);
   const bytes = await readFile(path);
-  if (bytes.byteLength > maxBytes) throw new WorkFoldCliError("protocolError", `${label} exceeds the size limit.`);
+  if (bytes.byteLength > maxBytes) throw new AmpleFileCliError("protocolError", `${label} exceeds the size limit.`);
   return bytes;
 }
 
 async function assertAbsent(path: string, message: string): Promise<void> {
   try {
     await lstat(path);
-    throw new WorkFoldCliError("conflict", message);
+    throw new AmpleFileCliError("conflict", message);
   } catch (error) {
     if (isMissing(error)) return;
     throw error;
@@ -392,7 +392,7 @@ function assertWithin(root: string, path: string): void {
   const candidate = resolve(path);
   const child = relative(base, candidate);
   if (child === "" || (!child.startsWith(`..${sep}`) && child !== ".." && !isAbsolute(child))) return;
-  throw new WorkFoldCliError("permissionDenied", "CLI broker path escapes its state root.");
+  throw new AmpleFileCliError("permissionDenied", "CLI broker path escapes its state root.");
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -407,7 +407,7 @@ async function fileExists(path: string): Promise<boolean> {
 
 function positiveLimit(value: number | undefined, fallback: number, label: string): number {
   const resolved = value ?? fallback;
-  if (!Number.isFinite(resolved) || resolved <= 0) throw new WorkFoldCliError("protocolError", `${label} must be a positive number.`);
+  if (!Number.isFinite(resolved) || resolved <= 0) throw new AmpleFileCliError("protocolError", `${label} must be a positive number.`);
   return Math.floor(resolved);
 }
 

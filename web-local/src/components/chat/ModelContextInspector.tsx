@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Braces, Check, Copy, RefreshCw, Search, X } from "../chrome/icons";
 import type { ModelContextInspection as ModelContextInspectionRecord, ModelContextInspectionState, ModelContextInspectionSummary, ModelContextSnapshot } from "../../../../src/shared/model-context-inspection";
-import { workFoldModelContextLimits } from "../../../../src/shared/work-fold-limits";
+import { ampleFileModelContextLimits } from "../../../../src/shared/amplefile-limits";
 import { useModalDialog } from "../../hooks/useModalDialog";
 import { api, errorText } from "../../lib/api";
 import { copyToClipboard } from "../../lib/clipboard";
 import { formatBytes } from "../../lib/format";
 
 interface InspectorProps {
-  workFolderId?: string;
+  connectedFolderId?: string;
   conversationId?: string;
   scopeLabel?: string;
   fixtureMode?: boolean;
@@ -18,12 +18,12 @@ interface InspectorProps {
 /** Scope changes remount the inspector: a late response can never enter another Chat. */
 export function ModelContextInspector(props: InspectorProps) {
   const onClose = useCallback(() => {
-    if (window.workFoldDiagnostics) void window.workFoldDiagnostics.close();
+    if (window.ampleFileDiagnostics) void window.ampleFileDiagnostics.close();
     else props.onClose();
   }, [props.onClose]);
-  return <ContextInspector key={JSON.stringify([props.workFolderId ?? null, props.conversationId ?? null, props.fixtureMode ?? false])} {...props} onClose={onClose} />;
+  return <ContextInspector key={JSON.stringify([props.connectedFolderId ?? null, props.conversationId ?? null, props.fixtureMode ?? false])} {...props} onClose={onClose} />;
 }
-function ContextInspector({ workFolderId, conversationId, scopeLabel = "All model requests on this desktop", fixtureMode = false, onClose }: InspectorProps) {
+function ContextInspector({ connectedFolderId, conversationId, scopeLabel = "All model requests on this desktop", fixtureMode = false, onClose }: InspectorProps) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useModalDialog({ onClose, initialFocusRef: closeRef });
@@ -47,9 +47,9 @@ function ContextInspector({ workFolderId, conversationId, scopeLabel = "All mode
   const generation = useRef(0);
   const detailGeneration = useRef(0);
   const controllers = useRef(new Set<AbortController>());
-  const fixture = useRef(createModelContextFixture(workFolderId, conversationId));
+  const fixture = useRef(createModelContextFixture(connectedFolderId, conversationId));
   const params = new URLSearchParams();
-  if (workFolderId) params.set("workFolderId", workFolderId);
+  if (connectedFolderId) params.set("connectedFolderId", connectedFolderId);
   if (conversationId) params.set("conversationId", conversationId);
   const filter = params.size ? `?${params}` : "";
 
@@ -68,8 +68,8 @@ function ContextInspector({ workFolderId, conversationId, scopeLabel = "All mode
     const controller = new AbortController();
     controllers.current.add(controller);
     try {
-      if (window.workFoldDiagnostics) {
-        const result = await window.workFoldDiagnostics.request({ path, ...(body === undefined ? {} : { body }) });
+      if (window.ampleFileDiagnostics) {
+        const result = await window.ampleFileDiagnostics.request({ path, ...(body === undefined ? {} : { body }) });
         controller.signal.throwIfAborted();
         return result as T;
       }
@@ -232,7 +232,7 @@ function ContextInspector({ workFolderId, conversationId, scopeLabel = "All mode
           </> : <div className="model-context-no-payload" role="status">{detailLoading ? "Loading snapshot…" : stage === "provenance" ? "No runtime provenance was captured for this request." : stage === "provider_payload" ? "No provider payload was observed for this request. The adapter may not expose it, or the request has not reached that stage. Assembled context is still available." : "This capture is no longer available. Refresh to see the remaining requests."}</div>}
         </div>
       </div>}
-      <footer className="model-context-coverage">Captures work-fold’s Pi requests. Extensions using their own model transport may be absent.</footer>
+      <footer className="model-context-coverage">Captures AmpleFile’s Pi requests. Extensions using their own model transport may be absent.</footer>
     </section>
   </div>;
 }
@@ -256,11 +256,11 @@ function statusLabel(status: ModelContextInspectionSummary["status"]): string { 
 function requestLabel(record: ModelContextInspectionSummary): string { return `${new Date(record.createdAt).toLocaleTimeString()} · ${purposeLabel(record.owner.purpose)} · ${record.model}`; }
 
 /** Inert fixture: no capture APIs, model requests, or recording changes on the host. */
-export function createModelContextFixture(_workFolderId?: string, conversationId = "fixture-chat") {
+export function createModelContextFixture(_connectedFolderId?: string, conversationId = "fixture-chat") {
   const now = new Date("2026-09-11T20:30:00Z").getTime();
   const snapshot = (value: ModelContextSnapshot["value"]): ModelContextSnapshot => ({ capturedAt: now, value, truncated: false, omissions: ["Image bytes omitted; image metadata retained."], bytes: 2400 });
   const record: ModelContextInspectionRecord = {
-    id: "fixture-context-one", owner: { workFolderRoot: "/example/work-folder", conversationId, sessionId: "fixture-session", purpose: "chat" },
+    id: "fixture-context-one", owner: { connectedFolderRoot: "/example/connected-folder", conversationId, sessionId: "fixture-session", purpose: "chat" },
     provider: "example", model: "Vision model", api: "example", createdAt: now, status: "response_received", stage: "provider_payload", payloadSamples: 1, truncated: false, bytes: 4800,
     assembled: snapshot({ systemPrompt: "Verify the requested result using the available tools.", messages: [{ role: "user", content: "Check the report’s layout." }, { role: "toolResult", toolName: "read", content: [{ type: "text", text: "Page 1 of 3, revision 7. Remaining pages have not been inspected." }, { type: "image", mimeType: "image/png", bytes: 18742, data: "[image bytes omitted]" }] }], tools: [{ name: "read", description: "Read text or images" }] }),
     payloads: [snapshot({ model: "Vision model", input: [{ role: "user", content: "Check the report’s layout." }, { role: "tool", content: [{ type: "text", text: "Page 1 of 3, revision 7." }, { type: "image", mimeType: "image/png", bytes: 18742, data: "[image bytes omitted]" }] }] })],
@@ -269,5 +269,5 @@ export function createModelContextFixture(_workFolderId?: string, conversationId
     assembled: { ...snapshot({ systemPrompt: "Write a short title for this Chat.", messages: [{ role: "user", content: "Check the report’s layout." }] }), omissions: [] },
   };
   const records = [record, second];
-  return { records, state: { enabled: true, records: records.map(({ assembled: _a, payloads: _p, ...summary }) => summary), limits: { ...workFoldModelContextLimits } } as ModelContextInspectionState };
+  return { records, state: { enabled: true, records: records.map(({ assembled: _a, payloads: _p, ...summary }) => summary), limits: { ...ampleFileModelContextLimits } } as ModelContextInspectionState };
 }

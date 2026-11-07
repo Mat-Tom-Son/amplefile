@@ -96,7 +96,7 @@ app.whenReady().then(run).then(() => {
 async function run() {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
-  const downloads = await mkdtemp(join(tmpdir(), "work-fold-browser-smoke-"));
+  const downloads = await mkdtemp(join(tmpdir(), "amplefile-browser-smoke-"));
   const events = [];
   let window = null;
   const browser = new BuiltInBrowser({
@@ -106,20 +106,20 @@ async function run() {
     downloadsPath: () => downloads,
     sitePermissionsPath: join(downloads, "site-permissions.json"),
     historyPath: join(downloads, "history.json"),
-    userAgentProduct: "work-fold/9.9.9",
+    userAgentProduct: "AmpleFile/9.9.9",
     partition: `browser-smoke-${randomUUID()}`,
   });
   const host = browser.toolHost;
   try {
     // Like Claude's browser: Chromium's agent with the app's own name, never Electron's.
     assert.doesNotMatch(browser.session.getUserAgent(), /Electron/);
-    assert.match(browser.session.getUserAgent(), /\(KHTML, like Gecko\) work-fold\/9\.9\.9 Chrome\/\d+\.\d+\.\d+\.\d+ Safari\/537\.36$/);
+    assert.match(browser.session.getUserAgent(), /\(KHTML, like Gecko\) AmpleFile\/9\.9\.9 Chrome\/\d+\.\d+\.\d+\.\d+ Safari\/537\.36$/);
 
     // A Worker opens a page with no window at all: it loads, reads, and takes input.
     const tab = await host.open({ url: `${base}/`, owner: "chat-a" });
     assert.equal(tab.title, "Smoke");
     assert.equal(tab.viewing, false);
-    const announced = events.find((event) => event.channel === "work-fold:browser:open-tab");
+    const announced = events.find((event) => event.channel === "amplefile:browser:open-tab");
     assert.equal(announced?.payload.pageId, tab.tab);
     assert.equal(announced?.payload.show, false, "a Worker's tab opens behind the person's work");
 
@@ -259,9 +259,9 @@ async function run() {
     assert.ok(Number((await host.evaluate({ tab: tab.tab, script: "scrollY" })).result) > 0, "scrolling moved the page");
 
     // A link that opens a new tab becomes a tab of its own.
-    const openCount = events.filter((event) => event.channel === "work-fold:browser:open-tab").length;
+    const openCount = events.filter((event) => event.channel === "amplefile:browser:open-tab").length;
     await host.click({ tab: tab.tab, ref: other });
-    await until(() => events.filter((event) => event.channel === "work-fold:browser:open-tab").length > openCount, "the new tab is announced");
+    await until(() => events.filter((event) => event.channel === "amplefile:browser:open-tab").length > openCount, "the new tab is announced");
     const listed = await host.tabs();
     assert.equal(listed.length, 2);
     const second = listed.find((item) => item.tab !== tab.tab);
@@ -269,8 +269,8 @@ async function run() {
 
     // Downloads land in the downloads folder, never over an existing file.
     await host.click({ tab: tab.tab, ref: file });
-    await until(() => events.some((event) => event.channel === "work-fold:browser:download"), "the download finishes");
-    const download = events.find((event) => event.channel === "work-fold:browser:download").payload;
+    await until(() => events.some((event) => event.channel === "amplefile:browser:download"), "the download finishes");
+    const download = events.find((event) => event.channel === "amplefile:browser:download").payload;
     assert.equal(download.state, "completed");
     assert.equal(download.path, join(downloads, "smoke file.txt"));
     assert.equal(await readFile(download.path, "utf8"), "downloaded bytes");
@@ -283,7 +283,7 @@ async function run() {
 
     // Two downloads with the same name, arriving at once, keep both files.
     await host.evaluate({ tab: tab.tab, script: "document.getElementById('slow-a').click(); document.getElementById('slow-b').click(); true" });
-    const same = () => events.filter((event) => event.channel === "work-fold:browser:download" && event.payload.filename === "same.txt");
+    const same = () => events.filter((event) => event.channel === "amplefile:browser:download" && event.payload.filename === "same.txt");
     await until(() => same().length === 2, "both downloads finish");
     const samePaths = same().map((event) => event.payload.path).sort();
     assert.deepEqual(samePaths, [join(downloads, "same (1).txt"), join(downloads, "same.txt")]);
@@ -522,13 +522,13 @@ async function run() {
     await assert.rejects(host.close({ tab: tab.tab, owner: "chat-b" }), /Another Chat opened that tab/);
     await assert.rejects(host.close({ tab: tab.tab }), /Another Chat opened that tab/);
     await host.close({ tab: tab.tab, owner: "chat-a" });
-    assert.ok(events.some((event) => event.channel === "work-fold:browser:close-tab" && event.payload.pageId === tab.tab));
+    assert.ok(events.some((event) => event.channel === "amplefile:browser:close-tab" && event.payload.pageId === tab.tab));
     assert.equal((await host.tabs()).some((item) => item.tab === tab.tab), false);
 
-    const closeEvents = events.filter((event) => event.channel === "work-fold:browser:close-tab").length;
+    const closeEvents = events.filter((event) => event.channel === "amplefile:browser:close-tab").length;
     browser.dispose();
     await new Promise((resolve) => setTimeout(resolve, 200));
-    assert.equal(events.filter((event) => event.channel === "work-fold:browser:close-tab").length, closeEvents, "quitting closes pages without closing their tabs");
+    assert.equal(events.filter((event) => event.channel === "amplefile:browser:close-tab").length, closeEvents, "quitting closes pages without closing their tabs");
   } finally {
     browser.dispose();
     window?.destroy();

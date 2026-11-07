@@ -42,8 +42,8 @@ import {
   type AppPlatformArtifactDigest,
 } from "./app-platform-artifact.js";
 
-const featureDeclarationMediaType = "application/vnd.work-fold.feature-declaration+json";
-const featureDeclarationFormat = "work-fold.feature-declaration";
+const featureDeclarationMediaType = "application/vnd.amplefile.feature-declaration+json";
+const featureDeclarationFormat = "amplefile.feature-declaration";
 const maximumSecretBytes = 64 * 1024;
 const maximumDurableStateBytes = 16 * 1024 * 1024;
 const maximumPendingMutationsPerPrincipal = 32;
@@ -649,7 +649,7 @@ export interface HostedInstanceView {
 }
 
 export interface HostedInstanceExport {
-  readonly format: "work-fold.hosted-instance-export";
+  readonly format: "amplefile.hosted-instance-export";
   readonly formatVersion: 1;
   readonly generatedAt: string;
   readonly instance: HostedInstanceView;
@@ -674,7 +674,7 @@ export interface HostedInstanceExport {
 }
 
 export interface HostedPrincipalDataExport {
-  readonly format: "work-fold.hosted-principal-data-export";
+  readonly format: "amplefile.hosted-principal-data-export";
   readonly formatVersion: 1;
   readonly generatedAt: string;
   readonly tenantId: TenantId;
@@ -1828,7 +1828,7 @@ export class PrivateHostedAppService {
     });
     this.#commitOrRestore(checkpoint);
     return deepFreeze({
-      format: "work-fold.hosted-principal-data-export",
+      format: "amplefile.hosted-principal-data-export",
       formatVersion: 1,
       generatedAt,
       tenantId: instance.tenantId,
@@ -1857,7 +1857,7 @@ export class PrivateHostedAppService {
     const receipts = this.#receiptsForInstance(instance.runtimeInstanceId);
     const data = exportHostedData(instance, principal.principalId);
     return deepFreeze({
-      format: "work-fold.hosted-instance-export",
+      format: "amplefile.hosted-instance-export",
       formatVersion: 1,
       generatedAt,
       instance: instanceView(instance),
@@ -3015,11 +3015,11 @@ export class PrivateHostedAppService {
 }
 
 function parseReleaseDeclarations(release: AppReleaseEnvelope): ReadonlyMap<string, HostedFeatureDeclaration> {
-  if (release.manifest.runtimeApi.name !== "work-fold.feature-broker"
+  if (release.manifest.runtimeApi.name !== "amplefile.feature-broker"
     || release.manifest.runtimeApi.compatibleRange !== "1.x") {
     throw new HostedAppPlatformError(
       "CAPABILITY_UNSUPPORTED",
-      "This private hosted runtime supports work-fold.feature-broker 1.x Releases only.",
+      "This private hosted runtime supports amplefile.feature-broker 1.x Releases only.",
     );
   }
   const records = new Map(release.closure.records.map((record) => [record.digest, record]));

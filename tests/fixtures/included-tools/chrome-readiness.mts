@@ -8,7 +8,7 @@ import { createJiti } from "jiti";
 import { IncludedChromeConnectionService } from "../../../src/local/agent/included-chrome-connection.ts";
 import type { ChromeHostFacilities } from "../../../src/shared/chrome-connection.ts";
 
-const root = await mkdtemp(join(tmpdir(), "workfold-chrome-readiness-"));
+const root = await mkdtemp(join(tmpdir(), "amplefile-chrome-readiness-"));
 const reservation = createServer();
 await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
 const port = (reservation.address() as { port: number }).port;
@@ -16,7 +16,7 @@ await new Promise<void>(resolve => reservation.close(() => resolve()));
 process.env.PI_CHROME_BRIDGE_PORT = String(port);
 const jiti = createJiti(import.meta.url, { moduleCache: true, fsCache: false });
 const chrome = await jiti.import<any>(new URL("../../../resources/included-tools/chrome/index.ts", import.meta.url).pathname);
-const distribution = { version: 1, storeId: "a".repeat(32), nativeHostName: "com.work_fold.readiness_test", bootstrapVersion: 1, extensionVersion: "1.0.0", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
+const distribution = { version: 1, storeId: "a".repeat(32), nativeHostName: "com.amplefile.readiness_test", bootstrapVersion: 1, extensionVersion: "1.0.0", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
 const origin = `chrome-extension://${distribution.storeId}/`;
 const client = { clientId: randomUUID(), clientProof: randomBytes(32).toString("hex") };
 const request = () => ({ version: 1 as const, action: "connect" as const, requestId: randomUUID(), ...client, extensionVersion: "1.0.0", bridge: distribution.bridge });

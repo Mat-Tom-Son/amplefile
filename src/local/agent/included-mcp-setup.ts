@@ -35,7 +35,7 @@ export interface IncludedMcpSetupOptions extends IncludedMcpPaths {
 }
 export function includedMcpConfigPath(paths: IncludedMcpPaths, scope: IncludedMcpScope): string {
   if (scope === "global") return join(resolve(paths.agentDir), "mcp.json");
-  if (scope !== "project" || !paths.cwd) throw new Error("Choose a registered work-folder for a folder-only connection.");
+  if (scope !== "project" || !paths.cwd) throw new Error("Choose a registered Connected Folder for a folder-only connection.");
   return join(resolve(paths.cwd), ".pi", "mcp.json");
 }
 export async function loadIncludedMcpConfig(paths: IncludedMcpPaths): Promise<LoadedMcpConfig> {
@@ -43,13 +43,13 @@ export async function loadIncludedMcpConfig(paths: IncludedMcpPaths): Promise<Lo
   return { ...config, errors: config.errors.map(() => "A service configuration could not be loaded. Check its JSON format and native Pi MCP options in Skills & Extensions.") };
 }
 function credentialId(path: string, name: string, config: McpServerConfig): string {
-  return "work-fold-" + createHash("sha256").update(JSON.stringify([resolve(path), name, "url" in config ? config.url : ""])).digest("hex").slice(0, 40);
+  return "amplefile-" + createHash("sha256").update(JSON.stringify([resolve(path), name, "url" in config ? config.url : ""])).digest("hex").slice(0, 40);
 }
 function revision(config: McpServerConfig): string { return createHash("sha256").update(JSON.stringify(config)).digest("hex"); }
 function nativeCredentials(paths: IncludedMcpPaths): McpOAuthCredentialStore {
   return new McpOAuthCredentialStore(paths.mcpCredentialBackend ?? new FileCredentialStoreBackend(join(paths.agentDir, "mcp-auth.json")), join(paths.agentDir, "mcp-auth-locks"));
 }
-/** Pi owns refresh locking and protocol auth; work-fold pins credentials to the defining scope. */
+/** Pi owns refresh locking and protocol auth; AmpleFile pins credentials to the defining scope. */
 class ScopedMcpCredentials extends McpOAuthCredentialStore {
   private closed = false;
   close(): void { this.closed = true; }

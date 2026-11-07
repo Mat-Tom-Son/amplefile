@@ -1,25 +1,25 @@
 # Changing an installed app
 
-Implemented in work-fold 0.4.23. An app's entry in Settings → Apps has
+Implemented in AmpleFile 0.4.23. An app's entry in Settings → Apps has
 **Change this app**, which creates a working copy and opens an unsent Chat draft
-in the App Project's source work-folder. The person adds the requested change and sends
+in the App Project's source Connected Folder. The person adds the requested change and sends
 it. This does not invoke a model, install code, or grant authority by itself.
 
 ## Exact source and provenance
 
 The host reads and verifies the installed package snapshot, including every
 file and the manifest, against its installed digest. It copies those bytes into
-a fresh visible `<app-id>-change-<request-id>` folder in the source work-folder and
+a fresh visible `<app-id>-change-<request-id>` folder in the source Connected Folder and
 records the addition in History. It never substitutes the original mutable
 source folder or executes build scripts. Runtime data, grants, credentials,
-target work-folder files, and conversations are not copied.
+target Connected Folder files, and conversations are not copied.
 
 The machine-local proposal registry retains a change receipt with the exact
 base revision, original installation/runtime/release identity, source working
 path, source preview predecessor, and original building Chat id when a retained
 installed proposal provides one. Subsequent working copies also retain the
 intended Release-backed update target without replacing their own exact base
-identity. Provenance is not stored in `.work-fold/` or
+identity. Provenance is not stored in `.amplefile/` or
 included in a portable Chat. The draft receives only the app name, version,
 and source working path. Missing original Chat history does not prevent
 reconstruction from the verified installed package; source toolchains not present
@@ -39,7 +39,7 @@ target retains the source working copy's predecessor guard and provenance.
 
 ## Preview and update
 
-The Worker edits the copy and submits its package using `propose_work-folder_app`,
+The Worker edits the copy and submits its package using `propose_connected_folder_app`,
 which installs it as the source's Local preview in the same call
 ([Receipts, not gates](receipts-not-gates.md), F21).
 The proposal host recognizes its source path and pins the source preview's
@@ -57,12 +57,12 @@ granted or revoked choices, automation states, run receipts, and connections
 whose destination declaration is byte-identical. A release-backed target
 continues using its existing Release until the person prepares, publishes
 locally, and activates an update through App Studio. The target's identity is
-retained only in machine-local provenance; the source work-folder's Worker never
-receives the target's private context or cross-work-folder control merely
+retained only in machine-local provenance; the source Connected Folder's Worker never
+receives the target's private context or cross–Connected Folder control merely
 because the person started an edit there.
 
 App details offers **Open build Chat** when retained provenance identifies one;
-opening it verifies that the Chat still exists in the source work-folder and sends
+opening it verifies that the Chat still exists in the source Connected Folder and sends
 nothing. The source folder is supporting detail under **Package & runtime**.
 **Review updates** opens the source Project's App Studio with the exact live
 installation selected. This link follows the intended target through subsequent
@@ -71,7 +71,7 @@ rechecks Project and installation identities and drops stale target links after
 uninstall. Opening App Studio never prepares, publishes, or activates a Release;
 subsequent manual target choices remain intact during refreshes.
 
-A Release can also be installed in its own source work-folder alongside that Project's
+A Release can also be installed in its own source Connected Folder alongside that Project's
 Local preview. **Change this app** still pins the installed Feature and the
 separate preview predecessor. Installing the changed preview leaves the
 installed Release in place until its App Studio update is activated. The two installations

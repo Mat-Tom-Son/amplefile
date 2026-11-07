@@ -5,10 +5,10 @@ import test, { type TestContext } from "node:test";
 import { createDomHarness } from "./support/dom.js";
 import { fileSelectionLabel } from "../src/shared/file-selection.js";
 import { nativeFileMenuItems, parseNativeFileMenuRequest } from "../desktop/src/file-context-menu.js";
-import { draggedWorkFolderPaths } from "../web-local/src/lib/file-actions.js";
+import { draggedConnectedFolderPaths } from "../web-local/src/lib/file-actions.js";
 import { isSelectionToggleKey, outermostTreePaths, selectableTreePaths, treeSelectionRange, visibleTreePaths } from "../web-local/src/lib/tree-selection.js";
-import { useWorkFolderTree } from "../web-local/src/hooks/useWorkFolderTree.js";
-import type { FileContextMenuState, TreeEntry, WorkFolderSummary } from "../web-local/src/types.js";
+import { useConnectedFolderTree } from "../web-local/src/hooks/useConnectedFolderTree.js";
+import type { FileContextMenuState, TreeEntry, ConnectedFolderSummary } from "../web-local/src/types.js";
 
 const assets = registerHooks({
   load(url, context, next) { return /\.svg(?:\?|$)/.test(url) ? { format: "module", source: `export default ${JSON.stringify(url)};`, shortCircuit: true } : next(url, context); },
@@ -26,9 +26,9 @@ const entries: TreeEntry[] = [
   file("readme.md"),
   file("todo.txt"),
 ];
-const workFolder = { id: "multi-select", name: "Multi", workFolderRoot: "/tmp/multi", location: { storage: "linked" } } as WorkFolderSummary;
+const connectedFolder = { id: "multi-select", name: "Multi", connectedFolderRoot: "/tmp/multi", location: { storage: "linked" } } as ConnectedFolderSummary;
 
-test("the shown order follows open folders, skips closed ones, and leaves nested work-folders out", () => {
+test("the shown order follows open folders, skips closed ones, and leaves nested Connected Folders out", () => {
   assert.deepEqual(visibleTreePaths(entries, new Set()), ["Notes", "Notes/a.md", "Notes/b.md", "Reports", "Reports/q3.xlsx", "readme.md", "todo.txt"]);
   assert.deepEqual(visibleTreePaths(entries, new Set(["Notes"])), ["Notes", "Reports", "Reports/q3.xlsx", "readme.md", "todo.txt"]);
   const order = visibleTreePaths(entries, new Set());
@@ -57,18 +57,18 @@ test("selection labels name the kinds selected", () => {
 
 test("a drag of several rows carries every path, and a one-row drag still reads as before", () => {
   const transfer = (data: Record<string, string>) => ({ getData: (type: string) => data[type] ?? "" }) as unknown as DataTransfer;
-  assert.deepEqual(draggedWorkFolderPaths(transfer({
-    "application/x-work-fold-work-folder-path": "Notes/a.md",
-    "application/x-work-fold-work-folder-paths": JSON.stringify(["Notes/a.md", "readme.md"]),
+  assert.deepEqual(draggedConnectedFolderPaths(transfer({
+    "application/x-amplefile-connected-folder-path": "Notes/a.md",
+    "application/x-amplefile-connected-folder-paths": JSON.stringify(["Notes/a.md", "readme.md"]),
   })), ["Notes/a.md", "readme.md"]);
-  assert.deepEqual(draggedWorkFolderPaths(transfer({ "application/x-work-fold-work-folder-path": "Notes/a.md" })), ["Notes/a.md"]);
-  assert.deepEqual(draggedWorkFolderPaths(transfer({ "application/x-work-fold-work-folder-paths": "not json", "text/plain": "readme.md" })), ["readme.md"]);
-  assert.deepEqual(draggedWorkFolderPaths(transfer({})), []);
+  assert.deepEqual(draggedConnectedFolderPaths(transfer({ "application/x-amplefile-connected-folder-path": "Notes/a.md" })), ["Notes/a.md"]);
+  assert.deepEqual(draggedConnectedFolderPaths(transfer({ "application/x-amplefile-connected-folder-paths": "not json", "text/plain": "readme.md" })), ["readme.md"]);
+  assert.deepEqual(draggedConnectedFolderPaths(transfer({})), []);
 });
 
 test("the native Mac menu for several rows offers only what applies to all of them", () => {
   const base = {
-    workFolderId: "work-folder-1",
+    connectedFolderId: "connected-folder-1",
     path: "Notes/a.md",
     kind: "file",
     capabilities: { open: false, attach: true, history: false, upload: false, rename: false, delete: true },
@@ -84,7 +84,7 @@ test("the native Mac menu for several rows offers only what applies to all of th
   const mixed = parseNativeFileMenuRequest({ ...base, selection: { files: 2, folders: 1 } });
   assert.deepEqual(nativeFileMenuItems(mixed).map((item) => item.type === "item" ? item.label : "—"), ["Copy Paths", "—", "Delete 3 Items"], "folders cannot be attached");
   const guarded = parseNativeFileMenuRequest({ ...base, capabilities: { ...base.capabilities, delete: false }, selection: { files: 0, folders: 2 } });
-  assert.deepEqual(nativeFileMenuItems(guarded).map((item) => item.type === "item" ? item.command : "—"), ["copy-path"], "a folder holding a nested work-folder keeps the selection undeletable");
+  assert.deepEqual(nativeFileMenuItems(guarded).map((item) => item.type === "item" ? item.command : "—"), ["copy-path"], "a folder holding a nested Connected Folder keeps the selection undeletable");
   assert.equal(parseNativeFileMenuRequest(base).selection, undefined, "older renderers omit the selection");
   for (const selection of [{ files: 1, folders: 0 }, { files: -1, folders: 3 }, { files: 1.5, folders: 1 }, { files: 2, folders: 0, label: "x" }, "2"]) {
     assert.throws(() => parseNativeFileMenuRequest({ ...base, selection }), /selection is invalid/);
@@ -98,10 +98,10 @@ async function renderFiles(t: TestContext) {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   const opened: string[] = [], renamed: string[] = [], deleted: string[] = [];
-  let state!: ReturnType<typeof useWorkFolderTree>;
+  let state!: ReturnType<typeof useConnectedFolderTree>;
   // Wired the way App wires Files.
   function Files() {
-    state = useWorkFolderTree(workFolder, () => {}, entries);
+    state = useConnectedFolderTree(connectedFolder, () => {}, entries);
     const searching = Boolean(state.query.trim());
     const order = visibleTreePaths(state.visibleEntries, searching ? new Set() : state.collapsedPaths);
     useEffect(() => state.keepSelectionWithin(selectableTreePaths(state.tree, order, searching)), [order.join("\n"), searching, state.tree]);
@@ -230,5 +230,5 @@ test("the Files menu for several rows offers attach, copy, and delete for all of
   assert.deepEqual(calls.at(-1), ["delete", ["Notes", "readme.md"]]);
 
   await render([entries[0]!, entries[1]!], false);
-  assert.deepEqual(labels(), ["Copy Paths"], "a folder holding a nested work-folder keeps the selection undeletable");
+  assert.deepEqual(labels(), ["Copy Paths"], "a folder holding a nested Connected Folder keeps the selection undeletable");
 });

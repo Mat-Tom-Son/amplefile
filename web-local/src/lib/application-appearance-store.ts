@@ -55,8 +55,8 @@ export class ApplicationAppearanceStore {
         preferences = parseApplicationAppearance(value);
       } else {
         let typography: unknown = null;
-        try { typography = JSON.parse(this.raw("work-fold.typography.v1") ?? "null"); } catch {}
-        preferences = migrateApplicationAppearance(this.raw("work-fold.theme"), typography);
+        try { typography = JSON.parse(this.raw("amplefile.typography.v1") ?? "null"); } catch {}
+        preferences = migrateApplicationAppearance(this.raw("amplefile.theme"), typography);
       }
     } catch {
       error = this.futureAppearance

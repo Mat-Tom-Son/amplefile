@@ -10,7 +10,7 @@ const readJson = async path => JSON.parse(await readFile(path, "utf8"));
 
 export function validateChromeDistribution(config, { draft = false } = {}) {
   if (!config || Object.keys(config).some(key => !["version", "storeId", "publicKey", "extensionVersion", "nativeHostName", "bootstrapVersion", "bridge"].includes(key))
-    || config.version !== 1 || config.bootstrapVersion !== 1 || config.nativeHostName !== "com.work_fold.chrome"
+    || config.version !== 1 || config.bootstrapVersion !== 1 || config.nativeHostName !== "com.amplefile.chrome"
     || !/^\d{1,5}(?:\.\d{1,5}){1,3}$/.test(config.extensionVersion) || config.extensionVersion.split(".").some(value => Number(value) > 65535)
     || config.bridge?.major !== 3 || Object.keys(config.bridge).some(key => !["major", "minor", "capabilities"].includes(key))
     || !Number.isSafeInteger(config.bridge.minor) || config.bridge.minor < 0
@@ -53,17 +53,17 @@ export async function buildChromeStore({ root = repository, output, distribution
   const files = new Map();
   const json = value => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
   files.set("manifest.json", json(manifest));
-  files.set("connection-config.js", Buffer.from(`globalThis.WORK_FOLD_CHROME_CONFIG = Object.freeze(${JSON.stringify(config)});\n`));
+  files.set("connection-config.js", Buffer.from(`globalThis.AMPLEFILE_CHROME_CONFIG = Object.freeze(${JSON.stringify(config)});\n`));
   files.set("service_worker.js", Buffer.concat([Buffer.from('importScripts("bootstrap.js");\n'), await readFile(join(source, "service_worker.js"))]));
   files.set("snapshot_injected.js", await readFile(join(source, "snapshot_injected.js")));
   for (const name of ["bootstrap.js", "popup.html", "popup.css", "popup.js"]) files.set(name, await readFile(join(owned, name)));
   files.set("welcome.html", files.get("popup.html"));
   files.set("LICENSE", await readFile(join(upstreamRoot, "LICENSE")));
-  for (const size of [16, 32, 48, 128]) files.set(`icons/${size}.png`, await readFile(join(root, `desktop/assets/brand/pack/png/transparent/work-fold-icon-${size}.png`)));
+  for (const size of [16, 32, 48, 128]) files.set(`icons/${size}.png`, await readFile(join(root, `desktop/assets/brand/pack/png/transparent/amplefile-icon-${size}.png`)));
   const zip = new JSZip();
   for (const [path, bytes] of [...files].sort(([a], [b]) => a.localeCompare(b, "en"))) zip.file(path, bytes, { date: new Date("1980-01-01T00:00:00Z"), createFolders: false, unixPermissions: 0o100644 });
   const bytes = await zip.generateAsync({ type: "nodebuffer", platform: "UNIX", compression: "DEFLATE", compressionOptions: { level: 9 } });
-  const target = resolve(output ?? join(root, "out/chrome-store", `work-fold-chrome-${config.extensionVersion}${draft ? "-draft" : ""}.zip`));
+  const target = resolve(output ?? join(root, "out/chrome-store", `amplefile-chrome-${config.extensionVersion}${draft ? "-draft" : ""}.zip`));
   const evidence = { version: 1, path: target, sha256: sha256(bytes), bytes: bytes.length, extensionVersion: config.extensionVersion, storeId: config.storeId,
     draft, upstream: { package: "pi-chrome", version: upstream.version, source: patch.source, license: patch.license, patchSha256: patch.sha256 },
     files: [...files].sort(([a], [b]) => a.localeCompare(b, "en")).map(([path, bytes]) => ({ path, sha256: sha256(bytes), bytes: bytes.length })) };

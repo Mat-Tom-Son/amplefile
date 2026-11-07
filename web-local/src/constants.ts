@@ -1,7 +1,7 @@
-import { maxWorkFolderAppearanceBannerImageDataUrlLength, workFolderAppearanceBannerNames } from "../../src/shared/work-folder-appearance";
-import type { AppTypographyFont, CommandPaletteGroupId, WorkFolderBannerOption } from "./types";
+import { maxConnectedFolderAppearanceBannerImageDataUrlLength, connectedFolderAppearanceBannerNames } from "../../src/shared/connected-folder-appearance";
+import type { AppTypographyFont, CommandPaletteGroupId, ConnectedFolderBannerOption } from "./types";
 
-export const productName = "work-fold";
+export const productName = "AmpleFile";
 
 export const desktopTitleBarMenus = [
   { id: "file", label: "File" },
@@ -10,23 +10,23 @@ export const desktopTitleBarMenus = [
   { id: "help", label: "Help" },
 ] as const;
 
-export const workFolderFileRefreshDelayMs = 160;
+export const connectedFolderFileRefreshDelayMs = 160;
 export const loadedTreeRefreshConcurrency = 4;
-export const workFolderPathDragType = "application/x-work-fold-work-folder-path";
-/** Several Files rows dragged together, as a JSON list of work-folder paths. */
-export const workFolderPathsDragType = "application/x-work-fold-work-folder-paths";
-export const workFolderSidebarWidthPreferenceKey = "work-fold.work-folder.sidebar-width";
+export const connectedFolderPathDragType = "application/x-amplefile-connected-folder-path";
+/** Several Files rows dragged together, as a JSON list of Connected Folder paths. */
+export const connectedFolderPathsDragType = "application/x-amplefile-connected-folder-paths";
+export const connectedFolderSidebarWidthPreferenceKey = "amplefile.connected-folder.sidebar-width";
 /** Whether the navigation pane (Files, Chats, History) is hidden; the rail stays. */
-export const sidebarCollapsedStorageKey = "work-fold.layout.sidebar-collapsed";
-/** The work-fold agent panel beside the work area: open state and width. */
-export const agentPanelStorageKey = "work-fold.layout.agent-panel.v1";
-export const workFolderSidebarPreferredMinWidth = 280;
-export const workFolderSidebarPreferredMaxWidth = 640;
-export const workFolderChatPreferredMinWidth = 430;
-export const workFolderPaneResizeHandleWidth = 16;
-export const workFolderPaneKeyboardStep = 24;
-export const workFolderPaneKeyboardLargeStep = 64;
-export const chatDraftKeyPrefix = "work-fold.work-folder.chat-draft";
+export const sidebarCollapsedStorageKey = "amplefile.layout.sidebar-collapsed";
+/** The AmpleFile agent panel beside the work area: open state and width. */
+export const agentPanelStorageKey = "amplefile.layout.agent-panel.v1";
+export const connectedFolderSidebarPreferredMinWidth = 280;
+export const connectedFolderSidebarPreferredMaxWidth = 640;
+export const connectedFolderChatPreferredMinWidth = 430;
+export const connectedFolderPaneResizeHandleWidth = 16;
+export const connectedFolderPaneKeyboardStep = 24;
+export const connectedFolderPaneKeyboardLargeStep = 64;
+export const chatDraftKeyPrefix = "amplefile.connected-folder.chat-draft";
 export const chatDraftNewConversationId = "new-chat";
 export const chatDraftDebounceMs = 300;
 /** Drafts live in browser storage, which has a few megabytes for everything. */
@@ -44,7 +44,7 @@ export function typographyFontOptionsForPlatform(platform: NodeJS.Platform | und
   return typographyFontOptions.filter((option) => option.value !== "stable");
 }
 export const untitledChatLabel = "Untitled chat";
-export const commandPaletteGroupOrder: CommandPaletteGroupId[] = ["go-to", "switch-work-folder", "chats", "files", "actions"];
+export const commandPaletteGroupOrder: CommandPaletteGroupId[] = ["go-to", "switch-connected-folder", "chats", "files", "actions"];
 export const commandPaletteGroupCap = 8;
 export const commandPaletteOverallCap = 24;
 export const genericChatEmptyGreetings = [
@@ -54,11 +54,11 @@ export const genericChatEmptyGreetings = [
   "New chat, clean slate.",
   "Let's make some progress.",
 ];
-export const workFolderCustomizationStorageKey = "work-fold.work-folder.appearance.v1";
-export const defaultWorkFolderBannerName = "classic";
-export const maxWorkFolderBannerImageDataUrlLength = maxWorkFolderAppearanceBannerImageDataUrlLength;
-export const maxWorkFolderBannerImageFileBytes = 12 * 1024 * 1024;
-export const workFolderBannerOptions: WorkFolderBannerOption[] = workFolderAppearanceBannerNames.map((name) => ({
+export const connectedFolderCustomizationStorageKey = "amplefile.connected-folder.appearance.v1";
+export const defaultConnectedFolderBannerName = "classic";
+export const maxConnectedFolderBannerImageDataUrlLength = maxConnectedFolderAppearanceBannerImageDataUrlLength;
+export const maxConnectedFolderBannerImageFileBytes = 12 * 1024 * 1024;
+export const connectedFolderBannerOptions: ConnectedFolderBannerOption[] = connectedFolderAppearanceBannerNames.map((name) => ({
   name,
   label: name[0]!.toUpperCase() + name.slice(1),
 }));

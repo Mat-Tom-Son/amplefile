@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 
-import { WorkFolderAutomationsPane, folderAutomationRoleSentence, lastRunText } from "../web-local/src/components/panes/WorkFolderAutomationsPane.js";
-import { buildFixtureFolderAutomations } from "../web-local/src/fixtures/work-folder-fixture.js";
+import { ConnectedFolderAutomationsPane, folderAutomationRoleSentence, lastRunText } from "../web-local/src/components/panes/ConnectedFolderAutomationsPane.js";
+import { buildFixtureFolderAutomations } from "../web-local/src/fixtures/connected-folder-fixture.js";
 import type { FolderAutomationView } from "../src/shared/automation-presentation.js";
 import { createDomHarness } from "./support/dom.js";
 
 const home = {
   id: "fixture-home",
   name: "Home projects",
-  workFolderRoot: "/tmp/Home projects",
+  connectedFolderRoot: "/tmp/Home projects",
   location: { kind: "local" as const, storage: "linked" as const },
   createdAt: "2026-07-10T18:30:00.000Z",
   updatedAt: "2026-07-10T18:30:00.000Z",
@@ -24,8 +24,8 @@ function buttonsIn(row: Element): string[] {
   return [...row.querySelectorAll("button")].map((button) => button.textContent?.trim() ?? "");
 }
 
-test("role sentences use the work-folder's own terms", () => {
-  assert.equal(folderAutomationRoleSentence(["watches", "copies-from"]), "Watches this work-folder · Copies files from here");
+test("role sentences use the Connected Folder's own terms", () => {
+  assert.equal(folderAutomationRoleSentence(["watches", "copies-from"]), "Watches this Connected Folder · Copies files from here");
   assert.equal(folderAutomationRoleSentence(["copies-to", "chats-here", "checks-here"]), "Copies files here · Starts a Chat here · Runs a Check here");
 });
 
@@ -41,8 +41,8 @@ test("the preview renders Home projects' two automations from fixture data with 
   assert.equal(fixture["fixture-trip"]?.length, 1, "Japan trip has one");
   assert.deepEqual(fixture["fixture-trip"]?.[0]?.roles, ["copies-to"]);
 
-  await dom.render(createElement(WorkFolderAutomationsPane, {
-    workFolder: home,
+  await dom.render(createElement(ConnectedFolderAutomationsPane, {
+    connectedFolder: home,
     automations: fixture["fixture-home"],
     active: true,
     fixtureMode: true,
@@ -56,7 +56,7 @@ test("the preview renders Home projects' two automations from fixture data with 
   const [on, off] = rowTexts(dom.container);
   assert.match(on!, /On/);
   assert.match(on!, /When Kitchen refresh changes/);
-  assert.match(on!, /Watches this work-folder · Copies files from here/);
+  assert.match(on!, /Watches this Connected Folder · Copies files from here/);
   assert.match(on!, /Last run /);
   assert.deepEqual(buttonsIn(rows[0]!), ["Run Now", "Turn Off"]);
   assert.match(off!, /Off/);
@@ -75,7 +75,7 @@ test("the preview renders Home projects' two automations from fixture data with 
   assert.doesNotMatch(dom.container.textContent ?? "", /Delete|Edit|…/);
 });
 
-test("Turn off posts the work-folder-scoped act and refreshes; an emptied list says so once", async (t) => {
+test("Turn off posts the Connected Folder–scoped act and refreshes; an emptied list says so once", async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   const originalFetch = globalThis.fetch;
@@ -96,35 +96,35 @@ test("Turn off posts the work-folder-scoped act and refreshes; an emptied list s
     roles: ["copies-from"],
   };
   const props = {
-    workFolder: home,
+    connectedFolder: home,
     active: false,
     onRefresh: async () => { refreshes += 1; },
     onOpenAllAutomations: () => {},
   };
-  await dom.render(createElement(WorkFolderAutomationsPane, { ...props, automations: [running] }));
+  await dom.render(createElement(ConnectedFolderAutomationsPane, { ...props, automations: [running] }));
   const row = dom.container.querySelector(".folder-automation-row")!;
   assert.deepEqual(buttonsIn(row), ["Turn Off"], "Run now shows only while On");
   assert.match(row.textContent ?? "", /Running/);
   assert.match(row.textContent ?? "", /· Failed/);
   await dom.act(async () => { (row.querySelector("button") as HTMLButtonElement).click(); });
   await dom.waitFor(() => refreshes > 0);
-  assert.deepEqual(calls, [{ url: "/api/work-folders/fixture-home/automations/automation-kitchen-to-trip/disable", method: "POST" }]);
+  assert.deepEqual(calls, [{ url: "/api/connected-folders/fixture-home/automations/automation-kitchen-to-trip/disable", method: "POST" }]);
 
-  await dom.render(createElement(WorkFolderAutomationsPane, { ...props, automations: [] }));
-  assert.equal(dom.container.querySelector(".folder-automations-empty")?.textContent, "No automations touch this work-folder.");
+  await dom.render(createElement(ConnectedFolderAutomationsPane, { ...props, automations: [] }));
+  assert.equal(dom.container.querySelector(".folder-automations-empty")?.textContent, "No automations touch this Connected Folder.");
   assert.equal(dom.container.querySelectorAll(".folder-automations-empty").length, 1);
 });
 
-test("an automation's own tab shows just that automation, and says so when it no longer touches the work-folder", async (t) => {
+test("an automation's own tab shows just that automation, and says so when it no longer touches the Connected Folder", async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   const fixture = buildFixtureFolderAutomations()["fixture-home"]!;
-  const props = { workFolder: home, automations: fixture, active: false, fixtureMode: true, onRefresh: async () => {}, onOpenAllAutomations: () => {} };
-  await dom.render(createElement(WorkFolderAutomationsPane, { ...props, automationId: fixture[0]!.automationId }));
+  const props = { connectedFolder: home, automations: fixture, active: false, fixtureMode: true, onRefresh: async () => {}, onOpenAllAutomations: () => {} };
+  await dom.render(createElement(ConnectedFolderAutomationsPane, { ...props, automationId: fixture[0]!.automationId }));
   assert.equal(dom.container.querySelector("h1")?.textContent, fixture[0]!.title);
   assert.equal(dom.container.querySelectorAll(".folder-automation-row").length, 1);
-  await dom.render(createElement(WorkFolderAutomationsPane, { ...props, automationId: "removed-automation" }));
-  assert.equal(dom.container.querySelector(".folder-automations-empty")?.textContent, "This automation no longer touches this work-folder.");
+  await dom.render(createElement(ConnectedFolderAutomationsPane, { ...props, automationId: "removed-automation" }));
+  assert.equal(dom.container.querySelector(".folder-automations-empty")?.textContent, "This automation no longer touches this Connected Folder.");
 });
 
 test("a last run its Worker reported as partly done says so", () => {

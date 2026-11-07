@@ -1,26 +1,26 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 import {
-  workFolderChatPreferredMinWidth,
-  workFolderPaneKeyboardLargeStep,
-  workFolderPaneKeyboardStep,
-  workFolderPaneResizeHandleWidth,
-  workFolderSidebarPreferredMaxWidth,
-  workFolderSidebarPreferredMinWidth,
-  workFolderSidebarWidthPreferenceKey,
+  connectedFolderChatPreferredMinWidth,
+  connectedFolderPaneKeyboardLargeStep,
+  connectedFolderPaneKeyboardStep,
+  connectedFolderPaneResizeHandleWidth,
+  connectedFolderSidebarPreferredMaxWidth,
+  connectedFolderSidebarPreferredMinWidth,
+  connectedFolderSidebarWidthPreferenceKey,
 } from "../constants";
 import { readStoredValue, writeStoredValue } from "../lib/storage";
-import type { WorkFolderPaneBounds } from "../types";
+import type { ConnectedFolderPaneBounds } from "../types";
 
-function readStoredWorkFolderSidebarWidth(): number | null {
-  const stored = readStoredValue(workFolderSidebarWidthPreferenceKey);
+function readStoredConnectedFolderSidebarWidth(): number | null {
+  const stored = readStoredValue(connectedFolderSidebarWidthPreferenceKey);
   if (!stored) return null;
   const width = Number.parseInt(stored, 10);
   return Number.isFinite(width) ? width : null;
 }
 
-function writeStoredWorkFolderSidebarWidth(width: number | null) {
-  writeStoredValue(workFolderSidebarWidthPreferenceKey, width === null ? null : String(Math.round(width)));
+function writeStoredConnectedFolderSidebarWidth(width: number | null) {
+  writeStoredValue(connectedFolderSidebarWidthPreferenceKey, width === null ? null : String(Math.round(width)));
 }
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -28,9 +28,9 @@ function clampNumber(value: number, min: number, max: number): number {
 }
 
 export function usePaneResize(deterministic = false) {
-  const [sidebarWidth, setSidebarWidth] = useState<number | null>(() => deterministic ? null : readStoredWorkFolderSidebarWidth());
+  const [sidebarWidth, setSidebarWidth] = useState<number | null>(() => deterministic ? null : readStoredConnectedFolderSidebarWidth());
   const [sidebarResizing, setSidebarResizing] = useState(false);
-  const workFolderLayoutRef = useRef<HTMLElement | null>(null);
+  const connectedFolderLayoutRef = useRef<HTMLElement | null>(null);
   const preferredSidebarWidthRef = useRef<number | null>(sidebarWidth);
   const renderedSidebarWidthRef = useRef<number | null>(sidebarWidth);
   const pendingSidebarWidthRef = useRef<number | null>(null);
@@ -38,89 +38,89 @@ export function usePaneResize(deterministic = false) {
   const sidebarResizeCleanupRef = useRef<(() => void) | null>(null);
   // Pane bounds are stable for the duration of a pointer drag; cache them so
   // per-frame renders skip getComputedStyle.
-  const dragBoundsRef = useRef<WorkFolderPaneBounds | null>(null);
+  const dragBoundsRef = useRef<ConnectedFolderPaneBounds | null>(null);
 
   useEffect(() => () => {
     sidebarResizeCleanupRef.current?.();
     sidebarResizeCleanupRef.current = null;
     if (sidebarResizeFrameRef.current !== null) window.cancelAnimationFrame(sidebarResizeFrameRef.current);
-    document.body.classList.remove("work-folder-pane-resizing");
+    document.body.classList.remove("connected-folder-pane-resizing");
   }, []);
 
   useEffect(() => {
-    const layout = workFolderLayoutRef.current;
+    const layout = connectedFolderLayoutRef.current;
     if (!layout) return;
-    const initialWidth = preferredSidebarWidthRef.current ?? defaultWorkFolderSidebarWidth(layout);
-    renderWorkFolderSidebarWidth(initialWidth);
+    const initialWidth = preferredSidebarWidthRef.current ?? defaultConnectedFolderSidebarWidth(layout);
+    renderConnectedFolderSidebarWidth(initialWidth);
   }, []);
 
   useEffect(() => {
-    const layout = workFolderLayoutRef.current;
+    const layout = connectedFolderLayoutRef.current;
     if (!layout || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      renderWorkFolderSidebarWidth(preferredSidebarWidthRef.current ?? defaultWorkFolderSidebarWidth(layout));
+      renderConnectedFolderSidebarWidth(preferredSidebarWidthRef.current ?? defaultConnectedFolderSidebarWidth(layout));
     });
     observer.observe(layout);
     return () => observer.disconnect();
   }, []);
 
-  function workFolderPaneBounds(layout = workFolderLayoutRef.current): WorkFolderPaneBounds {
+  function connectedFolderPaneBounds(layout = connectedFolderLayoutRef.current): ConnectedFolderPaneBounds {
     if (!layout) {
       return {
-        min: workFolderSidebarPreferredMinWidth,
-        max: workFolderSidebarPreferredMaxWidth,
+        min: connectedFolderSidebarPreferredMinWidth,
+        max: connectedFolderSidebarPreferredMaxWidth,
         fallback: 420,
       };
     }
     const styles = window.getComputedStyle(layout);
     const horizontalPadding = Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight);
     const availableWidth = Math.max(0, layout.clientWidth - horizontalPadding);
-    const minimumByChat = Math.max(220, availableWidth - workFolderPaneResizeHandleWidth - workFolderChatPreferredMinWidth);
-    const min = Math.min(workFolderSidebarPreferredMinWidth, minimumByChat);
-    const max = Math.max(min, Math.min(workFolderSidebarPreferredMaxWidth, availableWidth - workFolderPaneResizeHandleWidth - workFolderChatPreferredMinWidth));
+    const minimumByChat = Math.max(220, availableWidth - connectedFolderPaneResizeHandleWidth - connectedFolderChatPreferredMinWidth);
+    const min = Math.min(connectedFolderSidebarPreferredMinWidth, minimumByChat);
+    const max = Math.max(min, Math.min(connectedFolderSidebarPreferredMaxWidth, availableWidth - connectedFolderPaneResizeHandleWidth - connectedFolderChatPreferredMinWidth));
     const fallback = clampNumber(Math.round(availableWidth * 0.34), min, max);
     return { min, max, fallback };
   }
 
-  function defaultWorkFolderSidebarWidth(layout = workFolderLayoutRef.current): number {
-    return workFolderPaneBounds(layout).fallback;
+  function defaultConnectedFolderSidebarWidth(layout = connectedFolderLayoutRef.current): number {
+    return connectedFolderPaneBounds(layout).fallback;
   }
 
-  function renderWorkFolderSidebarWidth(width: number): number {
-    const bounds = dragBoundsRef.current ?? workFolderPaneBounds();
+  function renderConnectedFolderSidebarWidth(width: number): number {
+    const bounds = dragBoundsRef.current ?? connectedFolderPaneBounds();
     const nextWidth = Math.round(clampNumber(width, bounds.min, bounds.max));
     renderedSidebarWidthRef.current = nextWidth;
     setSidebarWidth(nextWidth);
-    workFolderLayoutRef.current?.style.setProperty("--work-folder-sidebar-width", `${nextWidth}px`);
+    connectedFolderLayoutRef.current?.style.setProperty("--connected-folder-sidebar-width", `${nextWidth}px`);
     return nextWidth;
   }
 
-  function queueWorkFolderSidebarWidth(width: number) {
+  function queueConnectedFolderSidebarWidth(width: number) {
     pendingSidebarWidthRef.current = width;
     if (sidebarResizeFrameRef.current !== null) return;
     sidebarResizeFrameRef.current = window.requestAnimationFrame(() => {
       sidebarResizeFrameRef.current = null;
       const pendingWidth = pendingSidebarWidthRef.current;
-      if (pendingWidth !== null) renderWorkFolderSidebarWidth(pendingWidth);
+      if (pendingWidth !== null) renderConnectedFolderSidebarWidth(pendingWidth);
     });
   }
 
-  function commitWorkFolderSidebarWidth(width: number | null = renderedSidebarWidthRef.current) {
+  function commitConnectedFolderSidebarWidth(width: number | null = renderedSidebarWidthRef.current) {
     if (width === null) return;
-    const nextWidth = renderWorkFolderSidebarWidth(width);
+    const nextWidth = renderConnectedFolderSidebarWidth(width);
     preferredSidebarWidthRef.current = nextWidth;
-    if (!deterministic) writeStoredWorkFolderSidebarWidth(nextWidth);
+    if (!deterministic) writeStoredConnectedFolderSidebarWidth(nextWidth);
   }
 
-  function resetWorkFolderSidebarWidth() {
+  function resetConnectedFolderSidebarWidth() {
     preferredSidebarWidthRef.current = null;
-    if (!deterministic) writeStoredWorkFolderSidebarWidth(null);
-    renderWorkFolderSidebarWidth(defaultWorkFolderSidebarWidth());
+    if (!deterministic) writeStoredConnectedFolderSidebarWidth(null);
+    renderConnectedFolderSidebarWidth(defaultConnectedFolderSidebarWidth());
   }
 
   function startSidebarResize(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
-    const layout = workFolderLayoutRef.current;
+    const layout = connectedFolderLayoutRef.current;
     if (!layout) return;
     event.preventDefault();
     const resizeHandle = event.currentTarget;
@@ -131,17 +131,17 @@ export function usePaneResize(deterministic = false) {
       // Pointer capture can fail for synthetic or already-cancelled events; window listeners still cover normal drags.
     }
     setSidebarResizing(true);
-    document.body.classList.add("work-folder-pane-resizing");
-    const pane = document.getElementById("work-folder-file-panel");
+    document.body.classList.add("connected-folder-pane-resizing");
+    const pane = document.getElementById("connected-folder-file-panel");
     const dragStartClientX = event.clientX;
-    dragBoundsRef.current = workFolderPaneBounds(layout);
-    const dragStartWidth = pane?.getBoundingClientRect().width ?? renderedSidebarWidthRef.current ?? defaultWorkFolderSidebarWidth(layout);
+    dragBoundsRef.current = connectedFolderPaneBounds(layout);
+    const dragStartWidth = pane?.getBoundingClientRect().width ?? renderedSidebarWidthRef.current ?? defaultConnectedFolderSidebarWidth(layout);
     const widthFromPointer = (clientX: number) => dragStartWidth + clientX - dragStartClientX;
     let stopped = false;
 
     const handlePointerMove = (pointerEvent: PointerEvent) => {
       pointerEvent.preventDefault();
-      queueWorkFolderSidebarWidth(widthFromPointer(pointerEvent.clientX));
+      queueConnectedFolderSidebarWidth(widthFromPointer(pointerEvent.clientX));
     };
     const stopResize = (pointerEvent?: PointerEvent | Event) => {
       if (stopped) return;
@@ -159,11 +159,11 @@ export function usePaneResize(deterministic = false) {
         window.cancelAnimationFrame(sidebarResizeFrameRef.current);
         sidebarResizeFrameRef.current = null;
       }
-      if (pendingSidebarWidthRef.current !== null) renderWorkFolderSidebarWidth(pendingSidebarWidthRef.current);
+      if (pendingSidebarWidthRef.current !== null) renderConnectedFolderSidebarWidth(pendingSidebarWidthRef.current);
       pendingSidebarWidthRef.current = null;
-      commitWorkFolderSidebarWidth();
+      commitConnectedFolderSidebarWidth();
       setSidebarResizing(false);
-      document.body.classList.remove("work-folder-pane-resizing");
+      document.body.classList.remove("connected-folder-pane-resizing");
     };
 
     window.addEventListener("pointermove", handlePointerMove, { passive: false });
@@ -181,9 +181,9 @@ export function usePaneResize(deterministic = false) {
   }
 
   function handleSidebarResizeKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
-    const bounds = workFolderPaneBounds();
+    const bounds = connectedFolderPaneBounds();
     const currentWidth = renderedSidebarWidthRef.current ?? bounds.fallback;
-    const step = event.shiftKey ? workFolderPaneKeyboardLargeStep : workFolderPaneKeyboardStep;
+    const step = event.shiftKey ? connectedFolderPaneKeyboardLargeStep : connectedFolderPaneKeyboardStep;
     let nextWidth: number | null = null;
     if (event.key === "ArrowLeft") nextWidth = currentWidth - step;
     else if (event.key === "ArrowRight") nextWidth = currentWidth + step;
@@ -191,22 +191,22 @@ export function usePaneResize(deterministic = false) {
     else if (event.key === "End") nextWidth = bounds.max;
     else if (event.key === "Enter") {
       event.preventDefault();
-      resetWorkFolderSidebarWidth();
+      resetConnectedFolderSidebarWidth();
       return;
     }
     if (nextWidth === null) return;
     event.preventDefault();
-    commitWorkFolderSidebarWidth(nextWidth);
+    commitConnectedFolderSidebarWidth(nextWidth);
   }
 
-  const sidebarResizeBounds = workFolderPaneBounds();
+  const sidebarResizeBounds = connectedFolderPaneBounds();
   const sidebarResizeValue = Math.round(clampNumber(sidebarWidth ?? sidebarResizeBounds.fallback, sidebarResizeBounds.min, sidebarResizeBounds.max));
 
   return {
     sidebarWidth,
     sidebarResizing,
-    workFolderLayoutRef,
-    resetWorkFolderSidebarWidth,
+    connectedFolderLayoutRef,
+    resetConnectedFolderSidebarWidth,
     startSidebarResize,
     handleSidebarResizeKeyDown,
     sidebarResizeBounds,

@@ -15,7 +15,7 @@ test("Electron Builder packages executable CLI shims outside ASAR and includes P
   assert.deepEqual(builder.extraFiles, [{
     from: "desktop/cli",
     to: "bin",
-    filter: ["work-fold", "work-fold.cmd", "work-fold-cli.ps1", "work-fold-cli.jxa.js"],
+    filter: ["amplefile", "amplefile.cmd", "amplefile-cli.ps1", "amplefile-cli.jxa.js"],
   }]);
   assert.equal(basename(builder.nsis.include), "cli-path.nsh");
   assert.equal(builder.asar, true);
@@ -42,10 +42,10 @@ test("retained Forge packaging mirrors the package-root CLI bin layout", async (
   const hooks = forge.packagerConfig.afterComplete;
   assert.equal(Array.isArray(hooks), true);
   assert.equal(hooks.length, 1);
-  const packageRoot = await mkdtemp(join(tmpdir(), "work-fold-forge-cli-"));
+  const packageRoot = await mkdtemp(join(tmpdir(), "amplefile-forge-cli-"));
   try {
     await hooks[0](packageRoot);
-    for (const name of ["work-fold", "work-fold.cmd", "work-fold-cli.ps1", "work-fold-cli.jxa.js"]) {
+    for (const name of ["amplefile", "amplefile.cmd", "amplefile-cli.ps1", "amplefile-cli.jxa.js"]) {
       assert.equal(
         await readFile(join(packageRoot, "bin", name), "utf8"),
         await readFile(join(rootDir, "desktop", "cli", name), "utf8"),
@@ -58,8 +58,8 @@ test("retained Forge packaging mirrors the package-root CLI bin layout", async (
 
 test("macOS CLI shim uses the same atomic bounded protocol-v1 handoff", async () => {
   const [shellShim, jxaHelper] = await Promise.all([
-    read("desktop/cli/work-fold"),
-    read("desktop/cli/work-fold-cli.jxa.js"),
+    read("desktop/cli/amplefile"),
+    read("desktop/cli/amplefile-cli.jxa.js"),
   ]);
   assert.match(shellShim, /uname -s/);
   assert.match(shellShim, /osascript -l JavaScript/);
@@ -67,12 +67,12 @@ test("macOS CLI shim uses the same atomic bounded protocol-v1 handoff", async ()
     assert.match(jxaHelper, new RegExp(`\\b${field}:`), `request must include ${field}`);
   }
   assert.match(jxaHelper, /Library\/Application Support\/\$\{defaultStateName\}/);
-  assert.match(jxaHelper, /WORKFOLD_CLI_STATE_DIR/);
-  assert.match(jxaHelper, /work-fold Local Smoke/);
-  assert.match(jxaHelper, /WORKFOLD_CLI_APP/);
-  assert.match(jxaHelper, /WORKFOLD_CLI_TIMEOUT_MS/);
+  assert.match(jxaHelper, /AMPLEFILE_CLI_STATE_DIR/);
+  assert.match(jxaHelper, /AmpleFile Local Smoke/);
+  assert.match(jxaHelper, /AMPLEFILE_CLI_APP/);
+  assert.match(jxaHelper, /AMPLEFILE_CLI_TIMEOUT_MS/);
   assert.match(jxaHelper, /moveItemAtPathToPathError/);
-  assert.match(jxaHelper, /--work-fold-cli-request/);
+  assert.match(jxaHelper, /--amplefile-cli-request/);
   assert.match(jxaHelper, /fileHandleWithStandardOutput/);
   assert.match(jxaHelper, /fileHandleWithStandardError/);
   assert.match(jxaHelper, /\$\.exit\(exitCode\)/);
@@ -82,20 +82,20 @@ test("macOS CLI shim uses the same atomic bounded protocol-v1 handoff", async ()
 
 test("Windows CLI shim uses an atomic bounded protocol-v1 handoff", async () => {
   const [shellShim, commandShim, powerShellShim] = await Promise.all([
-    read("desktop/cli/work-fold"),
-    read("desktop/cli/work-fold.cmd"),
-    read("desktop/cli/work-fold-cli.ps1"),
+    read("desktop/cli/amplefile"),
+    read("desktop/cli/amplefile.cmd"),
+    read("desktop/cli/amplefile-cli.ps1"),
   ]);
   assert.match(shellShim, /^#!\/usr\/bin\/env sh/);
-  assert.match(shellShim, /exec "\$script_dir\/work-fold\.cmd" "\$@"/);
+  assert.match(shellShim, /exec "\$script_dir\/amplefile\.cmd" "\$@"/);
   assert.match(commandShim, /-NoProfile\s+-NonInteractive/);
-  assert.match(commandShim, /work-fold-cli\.ps1"\s+%\*/);
+  assert.match(commandShim, /amplefile-cli\.ps1"\s+%\*/);
   assert.match(commandShim, /exit \/b %ERRORLEVEL%/);
 
   for (const field of ["protocolVersion", "id", "argv", "cwd", "createdAt"]) {
     assert.match(powerShellShim, new RegExp(`\\b${field}\\s*=`), `request must include ${field}`);
   }
-  assert.match(powerShellShim, /\$script:WorkFoldCliRoot\s*=\s*Join-Path\s+\$stateDirectory\s+'cli'/);
+  assert.match(powerShellShim, /\$script:AmpleFileCliRoot\s*=\s*Join-Path\s+\$stateDirectory\s+'cli'/);
   assert.match(powerShellShim, /'requests'/);
   assert.match(powerShellShim, /'responses'/);
   assert.match(powerShellShim, /CurrentFileSystemLocation\.ProviderPath/);
@@ -104,13 +104,13 @@ test("Windows CLI shim uses an atomic bounded protocol-v1 handoff", async () => 
   assert.match(powerShellShim, /\$requestStream\.Flush\(\$true\)/);
   assert.doesNotMatch(powerShellShim, /\$requestId\.\$PID\.tmp/);
   assert.match(powerShellShim, /\[IO\.File\]::Move\(\$temporaryRequestPath,\s*\$requestPath\)/);
-  assert.match(powerShellShim, /Start-Process[\s\S]*?'--work-fold-cli-request'[\s\S]*?-WindowStyle Hidden/);
-  assert.match(powerShellShim, /WORKFOLD_CLI_APP/);
-  assert.match(powerShellShim, /WORKFOLD_CLI_STATE_DIR/);
-  assert.match(powerShellShim, /Uninstall work-fold\.exe/);
-  assert.match(powerShellShim, /work-fold Development/);
-  assert.match(powerShellShim, /WORKFOLD_CLI_TIMEOUT_MS/);
-  assert.match(powerShellShim, /ElapsedMilliseconds\s+-ge\s+\$script:WorkFoldCliTimeoutMs/);
+  assert.match(powerShellShim, /Start-Process[\s\S]*?'--amplefile-cli-request'[\s\S]*?-WindowStyle Hidden/);
+  assert.match(powerShellShim, /AMPLEFILE_CLI_APP/);
+  assert.match(powerShellShim, /AMPLEFILE_CLI_STATE_DIR/);
+  assert.match(powerShellShim, /Uninstall AmpleFile\.exe/);
+  assert.match(powerShellShim, /AmpleFile Development/);
+  assert.match(powerShellShim, /AMPLEFILE_CLI_TIMEOUT_MS/);
+  assert.match(powerShellShim, /ElapsedMilliseconds\s+-ge\s+\$script:AmpleFileCliTimeoutMs/);
   assert.match(powerShellShim, /\[Console\]::Out\.Write\(\[string\]\$Outcome\.Stdout\)/);
   assert.match(powerShellShim, /\[Console\]::Error\.Write\(\[string\]\$Outcome\.Stderr\)/);
   assert.match(powerShellShim, /ExitCode\s*=\s*\[Convert\]::ToInt32\(\$response\.exitCode/);
@@ -122,14 +122,14 @@ test("Windows CLI shim uses an atomic bounded protocol-v1 handoff", async () => 
 test("NSIS manages only the current-user PATH and broadcasts changes", async () => {
   const [nsis, powerShellShim] = await Promise.all([
     read("desktop/nsis/cli-path.nsh"),
-    read("desktop/cli/work-fold-cli.ps1"),
+    read("desktop/cli/amplefile-cli.ps1"),
   ]);
   assert.match(nsis, /!macro customInstall/);
   assert.match(nsis, /!macro customUnInstall/);
   assert.match(nsis, /\$INSTDIR\\bin/);
   assert.match(nsis, /nsExec::ExecToStack/);
   assert.match(nsis, /-NoProfile\s+-NonInteractive/);
-  assert.match(nsis, /--work-fold-installer-manage-user-path \$\{ACTION\}/);
+  assert.match(nsis, /--amplefile-installer-manage-user-path \$\{ACTION\}/);
   assert.match(nsis, /\$\{HWND_BROADCAST\}\s+\$\{WM_SETTINGCHANGE\}/);
   assert.doesNotMatch(nsis, /HKLM|\$PROFILE|Documents\\PowerShell/i);
 
@@ -148,7 +148,7 @@ test("packaged asset verification requires external CLI shims", async () => {
 });
 
 test("management dogfood launches the dev app with the agent-facing CLI on PATH", async () => {
-  const script = await read("scripts/work-fold-agent-dogfood.sh");
+  const script = await read("scripts/amplefile-agent-dogfood.sh");
   assert.match(script, /PATH="\$BIN:\$PATH" "\$BIN\/app-wrapper\.sh"/);
   assert.match(script, /while \[ ! -f "\$DEVSTATE\/cli\/act-token\.json" \]/);
   assert.match(script, /out\/management-dogfood\/bin/);
@@ -162,27 +162,27 @@ test("desktop agent shells inherit the exact running profile in development and 
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
   const helper = main.slice(start, end);
-  assert.match(helper, /process\.env\.WORKFOLD_CLI_STATE_DIR = app\.getPath\("userData"\)/);
+  assert.match(helper, /process\.env\.AMPLEFILE_CLI_STATE_DIR = app\.getPath\("userData"\)/);
   assert.ok(
-    helper.indexOf("WORKFOLD_CLI_STATE_DIR") < helper.indexOf("if (!app.isPackaged"),
+    helper.indexOf("AMPLEFILE_CLI_STATE_DIR") < helper.indexOf("if (!app.isPackaged"),
     "state binding must happen before the packaged-only executable and PATH setup",
   );
   // The login-shell environment is adopted before the CLI PATH pin so the
-  // packaged `work-fold` executable stays first on PATH for agent shells.
-  assert.match(main, /configureWorkFoldStateRoot\(app\.getPath\("userData"\)\);\s+await ensureLoginShellEnvironment\(\);\s+configureCliEnvironment\(\);/);
+  // packaged `amplefile` executable stays first on PATH for agent shells.
+  assert.match(main, /configureAmpleFileStateRoot\(app\.getPath\("userData"\)\);\s+await ensureLoginShellEnvironment\(\);\s+configureCliEnvironment\(\);/);
   assert.match(main, /desktopHostPromise = \(async \(\) => \{\s+await ensureLoginShellEnvironment\(\);/);
 });
 
 /**
  * Shared act-lane contract both platform shims must keep: automation that never
  * lets a content-bearing act command fall through to protocol v1 — every
- * ledger family plus the two read-lane exceptions (`work-folders list`,
+ * ledger family plus the two read-lane exceptions (`connected-folders list`,
  * `checks status`) — the per-launch token file, the bounded message payload
  * rewrite, the shim-side wait loop, and the fail-fast unavailable path.
  */
 function assertActLaneShimContract(shim: string): void {
   const routedFamilies = [
-    "chat", "chats", "files", "agent", "checks", "work-folders", "history", "search",
+    "chat", "chats", "files", "agent", "checks", "connected-folders", "history", "search",
     "tools", "apps", "automations", "pages", "recently-deleted", "requests", "jobs",
   ];
   for (const routed of [...routedFamilies, "list", "status", "wait", "task", "result"]) {
@@ -202,8 +202,8 @@ function assertActLaneShimContract(shim: string): void {
   assert.match(shim, /messageFile/);
   assert.match(shim, /--message-file/);
   assert.match(shim, /--message-from-payload/);
-  assert.match(shim, /16777216/, "the --message-file payload bound matches WORKFOLD_CLI_ACT_MAX_PAYLOAD_BYTES");
-  assert.match(shim, /Open work-fold to run this command/);
+  assert.match(shim, /16777216/, "the --message-file payload bound matches AMPLEFILE_CLI_ACT_MAX_PAYLOAD_BYTES");
+  assert.match(shim, /Open AmpleFile to run this command/);
   assert.match(shim, /exit\s*\(?6\)?/);
   assert.match(shim, /--task/);
   assert.match(shim, /task\.state/);

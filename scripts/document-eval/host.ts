@@ -4,7 +4,7 @@
  *
  * Starts the local API in-process with the included tools (Documents and its
  * document-work Skill), an isolated Pi agent folder, and disposable app state,
- * so `npm run work-fold:drive -- --attach <origin>` drives real Worker turns
+ * so `npm run amplefile:drive -- --attach <origin>` drives real Worker turns
  * with the same tools a packaged app has. Computer Control and Chrome load but
  * cannot act: no helper is permitted and no browser is attached.
  *
@@ -49,11 +49,11 @@ await writeFile(join(agentDir, "settings.json"), `${JSON.stringify({
   defaultProvider: provider, defaultModel: modelId, defaultThinkingLevel: thinking, enableInstallTelemetry: false,
 }, null, 2)}\n`);
 // Pi's built-in catalog may not list the newest OpenRouter models; reuse the app's cached copy.
-const catalogSource = join(homedir(), "Library", "Application Support", "work-fold", "model-catalogs", "openrouter.json");
+const catalogSource = join(homedir(), "Library", "Application Support", "AmpleFile", "model-catalogs", "openrouter.json");
 const catalogPath = join(out, "openrouter-catalog.json");
 if (existsSync(catalogSource)) await copyFile(catalogSource, catalogPath);
 process.env.PI_CODING_AGENT_DIR = agentDir;
-delete process.env.WORKFOLD_AGENT_DIR;
+delete process.env.AMPLEFILE_AGENT_DIR;
 
 const { PackagedPiRuntimeProvider } = await import("../../desktop/src/pi-runtime.js");
 const { includedToolsRoot } = await import("../../src/local/agent/included-tools.js");
@@ -63,7 +63,7 @@ const runtime = new PackagedPiRuntimeProvider({
   agentDir,
   // The same configuration as the dev server. No helper is built or permitted here, so Computer Control stays unusable.
   includedTools: { rootPath: includedToolsRoot(), stateRoot: join(stateBase, "assistant-tools"),
-    helperAppPath: join(includedToolsRoot(), "..", "..", "out", "included-tools", "computer-helper", "work-fold Computer.app"),
+    helperAppPath: join(includedToolsRoot(), "..", "..", "out", "included-tools", "computer-helper", "AmpleFile Computer.app"),
     ...(hideEngines ? { documentEngineSearch: { candidates: { libreoffice: [], tesseract: [] } } } : {}) },
   ...(existsSync(catalogPath) ? { openRouterCatalogPath: catalogPath } : {}),
   modelPreferencesPath: join(out, "model-preferences.json"),

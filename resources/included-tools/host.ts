@@ -15,6 +15,6 @@ export function hostContext(pi: ExtensionAPI) {
     getMcpOptions(): McpExtensionOptions & { disposeCredentials?: () => void };
     getSearchConfig(): Promise<{ provider: "duckduckgo" } | { provider: "brave"; apiKey: string }>;
   } } = { version: 1 };
-  pi.events.emit("work-fold:extension-host:v1", query);
+  pi.events.emit("amplefile:extension-host:v1", query);
   return query.context;
 }

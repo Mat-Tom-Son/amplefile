@@ -75,8 +75,8 @@ function lineCount(count: number, word: string): string {
 }
 
 /** Read-only, explicitly selected evidence. Changing the target invalidates late responses. */
-export function HistoryFileComparison({ workFolderId, path, fromCheckpointId, toCheckpointId, refreshRequest = 0, fixtureComparison }: {
-  workFolderId: string; path: string; fromCheckpointId: string; toCheckpointId?: string; refreshRequest?: number;
+export function HistoryFileComparison({ connectedFolderId, path, fromCheckpointId, toCheckpointId, refreshRequest = 0, fixtureComparison }: {
+  connectedFolderId: string; path: string; fromCheckpointId: string; toCheckpointId?: string; refreshRequest?: number;
   /** The preview's comparison, shown instead of asking the host. */
   fixtureComparison?: Comparison;
 }) {
@@ -91,7 +91,7 @@ export function HistoryFileComparison({ workFolderId, path, fromCheckpointId, to
     // A comparison already sent is never aborted: the host keeps reading, and
     // holding its History lock, after the app stops listening. It finishes in
     // its turn and an obsolete result is dropped; one still waiting is skipped.
-    void queueHistoryRequest(workFolderId, async () => cancelled ? null : api<{ comparison: Comparison }>(`/api/work-folders/${workFolderId}/history/diff?${query}`)).then((body) => {
+    void queueHistoryRequest(connectedFolderId, async () => cancelled ? null : api<{ comparison: Comparison }>(`/api/connected-folders/${connectedFolderId}/history/diff?${query}`)).then((body) => {
       if (!body || cancelled) return;
       const { comparison } = body;
       if (comparison.path !== path || comparison.before.checkpointId !== fromCheckpointId ||
@@ -101,7 +101,7 @@ export function HistoryFileComparison({ workFolderId, path, fromCheckpointId, to
       setResult(comparison);
     }).catch((failure) => { if (!cancelled) setError(errorText(failure)); });
     return () => { cancelled = true; };
-  }, [workFolderId, path, fromCheckpointId, toCheckpointId, refreshRequest, revision, fixtureComparison]);
+  }, [connectedFolderId, path, fromCheckpointId, toCheckpointId, refreshRequest, revision, fixtureComparison]);
   const counts = result?.diff.text ? diffRows(result.diff.text) : null;
   const summary = result ? [
     result.before.capturedAt ? `Since ${formatDateTime(result.before.capturedAt)}` : null,

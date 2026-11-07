@@ -40,7 +40,7 @@ export interface RestrictedAppLimits {
     minimumIntervalMinutes: number;
     maximumIntervalMinutes: number;
   };
-  /** `assistant.infer`: one bounded model call on the work-folder's configured model. */
+  /** `assistant.infer`: one bounded model call on the Connected Folder's configured model. */
   inference: {
     instructionsBytes: number;
     inputBytes: number;
@@ -50,7 +50,7 @@ export interface RestrictedAppLimits {
     runningPerInstallation: number;
     timeoutMs: number | null;
   };
-  /** `assistant.request`: a full-tools Chat in the owning work-folder. */
+  /** `assistant.request`: a full-tools Chat in the owning Connected Folder. */
   assistant: {
     instructionsBytes: null;
     inputBytes: number;

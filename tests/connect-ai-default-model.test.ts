@@ -9,7 +9,7 @@ import { FileCredentialStore, ModelRuntime, SettingsManager } from "@earendil-wo
 import { ensurePiDefaultModel, getPiSetupStatus, type PiRuntimeProvider } from "../src/local/agent/pi-runtime-config.js";
 
 async function runtimeWith(connected: Record<string, string>) {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-default-model-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-default-model-"));
   const credentials = FileCredentialStore.inMemory(Object.fromEntries(Object.entries(connected).map(([provider, key]) => [provider, { type: "api_key" as const, key }])));
   const modelRuntime = await ModelRuntime.create({ credentials, modelsPath: null });
   modelRuntime.registerProvider("house", {

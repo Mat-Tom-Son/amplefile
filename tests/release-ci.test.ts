@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { MAIN_CI_JOBS, TAG_CI_JOBS, verifyReleaseCi } from "../scripts/release-ci.mjs";
 import { verifyReleaseMain, verifyReleaseSource } from "../scripts/release-source.mjs";
 
-const repo = "Mat-Tom-Son/work-fold";
+const repo = "Mat-Tom-Son/amplefile";
 const sha = "a".repeat(40);
 const tagObjectSha = "b".repeat(40);
 const tag = "v0.5.0";
@@ -287,20 +287,20 @@ test("empty, malformed, incomplete, or duplicate API evidence fails closed", asy
 test("CLI rejects noncanonical source repositories and contradictory workflow context before using GitHub", () => {
   const path = fileURLToPath(new URL("../scripts/verify-release-ci.mjs", import.meta.url));
   for (const overrides of [
-    { WORKFOLD_SOURCE_RELEASE_REPO: "someone/fork" },
+    { AMPLEFILE_SOURCE_RELEASE_REPO: "someone/fork" },
     { GITHUB_REPOSITORY: "someone/fork" },
     { GITHUB_SHA: "c".repeat(40) },
     { GITHUB_ACTIONS: "true", GITHUB_EVENT_NAME: "pull_request", GITHUB_REF: `refs/tags/${tag}` },
   ]) {
     assert.throws(() => execFileSync(process.execPath, [path, "--tag-check"], {
-      env: { ...process.env, WORKFOLD_SOURCE_RELEASE_REPO: "", GITHUB_REPOSITORY: "", GITHUB_SHA: "", GITHUB_ACTIONS: "", ...overrides },
+      env: { ...process.env, AMPLEFILE_SOURCE_RELEASE_REPO: "", GITHUB_REPOSITORY: "", GITHUB_SHA: "", GITHUB_ACTIONS: "", ...overrides },
       encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
     }), /canonical source repository|commit does not match|matching pushed source tag/);
   }
 });
 
 test("tag-check CLI succeeds while Actions is unavailable and verifies the package version's tag", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "work-fold-tag-source-"));
+  const directory = await mkdtemp(join(tmpdir(), "amplefile-tag-source-"));
   try {
     const root = fileURLToPath(new URL("..", import.meta.url));
     const command = fileURLToPath(new URL("../scripts/verify-release-ci.mjs", import.meta.url));
@@ -327,7 +327,7 @@ console.log(JSON.stringify(responses[endpoint]));
       encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env, PATH: `${directory}:${process.env.PATH ?? ""}`,
-        WORKFOLD_SOURCE_RELEASE_REPO: "", GITHUB_REPOSITORY: repo, GITHUB_SHA: head,
+        AMPLEFILE_SOURCE_RELEASE_REPO: "", GITHUB_REPOSITORY: repo, GITHUB_SHA: head,
         GITHUB_ACTIONS: "true", GITHUB_EVENT_NAME: "push", GITHUB_REF: `refs/tags/${packageTag}`,
         GITHUB_WORKFLOW_REF: `${repo}/.github/workflows/release-tag.yml@refs/tags/${packageTag}`,
       },

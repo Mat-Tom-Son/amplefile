@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 
 import { api } from "../../lib/api";
-import type { TreeEntry, WorkFolderSummary } from "../../types";
+import type { TreeEntry, ConnectedFolderSummary } from "../../types";
 
 export type FileManagerSearchScope = "here" | "all";
 
 /** One search result row: a name match first, then a line of text that matched. */
 export interface FileManagerSearchResult {
   key: string;
-  workFolderId: string;
+  connectedFolderId: string;
   path: string;
   name: string;
   kind: "file" | "folder";
@@ -18,30 +18,30 @@ export interface FileManagerSearchResult {
 }
 
 const debounceMs = 250;
-const maxContentMatchesPerWorkFolder = 60;
+const maxContentMatchesPerConnectedFolder = 60;
 
 /**
  * Search names and contents, as the design does: in the folder shown, or in
- * every work-folder. Names come from each folder's tree and contents from the
- * same search Files uses; both stay inside the work-folders' own rules
- * (ignored, hidden, and nested work-folder content is never searched).
+ * every Connected Folder. Names come from each folder's tree and contents from the
+ * same search Files uses; both stay inside the Connected Folders' own rules
+ * (ignored, hidden, and nested Connected Folder content is never searched).
  */
 export function useFileManagerSearch(input: {
   query: string;
   scope: FileManagerSearchScope;
-  here: { workFolder: WorkFolderSummary; path: string } | null;
-  workFolders: readonly WorkFolderSummary[];
+  here: { connectedFolder: ConnectedFolderSummary; path: string } | null;
+  connectedFolders: readonly ConnectedFolderSummary[];
   enabled: boolean;
   /** The browser preview's sample trees and file text, searched in place of the host. */
   fixture?: { trees: Record<string, TreeEntry[]>; fileContents: Record<string, Record<string, string>> } | null;
 }) {
-  const { query, scope, here, workFolders, enabled, fixture } = input;
+  const { query, scope, here, connectedFolders, enabled, fixture } = input;
   const [results, setResults] = useState<FileManagerSearchResult[]>([]);
   const [status, setStatus] = useState<"idle" | "searching" | "done">("idle");
   const treeCache = useRef(new Map<string, TreeEntry[]>());
   const needle = query.trim();
-  const targets = scope === "here" && here ? [here] : workFolders.map((workFolder) => ({ workFolder, path: "" }));
-  const targetKey = targets.map((target) => `${target.workFolder.id}\0${target.path}`).join("|");
+  const targets = scope === "here" && here ? [here] : connectedFolders.map((connectedFolder) => ({ connectedFolder, path: "" }));
+  const targetKey = targets.map((target) => `${target.connectedFolder.id}\0${target.path}`).join("|");
 
   // A finished search session forgets the trees it read.
   useEffect(() => { if (!needle) treeCache.current.clear(); }, [needle]);
@@ -51,12 +51,12 @@ export function useFileManagerSearch(input: {
     const controller = new AbortController();
     setStatus("searching");
     const timer = window.setTimeout(() => {
-      void Promise.all(targets.map(async ({ workFolder, path }) => {
-        const base = `/api/work-folders/${encodeURIComponent(workFolder.id)}`;
-        const treeKey = `${workFolder.id}\0${path}`;
+      void Promise.all(targets.map(async ({ connectedFolder, path }) => {
+        const base = `/api/connected-folders/${encodeURIComponent(connectedFolder.id)}`;
+        const treeKey = `${connectedFolder.id}\0${path}`;
         let tree = treeCache.current.get(treeKey);
         if (!tree && fixture) {
-          const all = fixture.trees[workFolder.id] ?? [];
+          const all = fixture.trees[connectedFolder.id] ?? [];
           tree = path ? flattenTree(all).find((entry) => entry.path === path)?.children ?? [] : all;
           treeCache.current.set(treeKey, tree);
         }
@@ -72,12 +72,12 @@ export function useFileManagerSearch(input: {
         for (const entry of flattenTree(tree)) {
           byPath.set(entry.path, entry);
           if (entry.nestedFolder || !entry.name.toLocaleLowerCase().includes(lower)) continue;
-          names.push(resultFor(workFolder.id, entry, { kind: "name" }));
+          names.push(resultFor(connectedFolder.id, entry, { kind: "name" }));
         }
-        const contentQuery = new URLSearchParams({ q: needle, scope: "files", limit: String(maxContentMatchesPerWorkFolder) });
+        const contentQuery = new URLSearchParams({ q: needle, scope: "files", limit: String(maxContentMatchesPerConnectedFolder) });
         if (path) contentQuery.set("path", path);
         const content = fixture
-          ? Object.entries(fixture.fileContents[workFolder.id] ?? {})
+          ? Object.entries(fixture.fileContents[connectedFolder.id] ?? {})
             .filter(([filePath]) => !path || filePath.startsWith(`${path}/`))
             .flatMap(([filePath, text]) => {
               const line = text.split("\n").find((item) => item.toLocaleLowerCase().includes(lower));
@@ -92,13 +92,13 @@ export function useFileManagerSearch(input: {
           if (named.has(match.path) || seen.has(match.path)) continue;
           seen.add(match.path);
           const entry = byPath.get(match.path) ?? { name: match.path.split("/").pop() ?? match.path, path: match.path, kind: "file" as const };
-          texts.push(resultFor(workFolder.id, entry, { kind: "content", ...snippet(match.preview, needle) }));
+          texts.push(resultFor(connectedFolder.id, entry, { kind: "content", ...snippet(match.preview, needle) }));
         }
         return { names, texts };
-      })).then((perWorkFolder) => {
+      })).then((perConnectedFolder) => {
         if (controller.signal.aborted) return;
         // Every name match first, then every text match, as the design lists them.
-        setResults([...perWorkFolder.flatMap((item) => item.names), ...perWorkFolder.flatMap((item) => item.texts)]);
+        setResults([...perConnectedFolder.flatMap((item) => item.names), ...perConnectedFolder.flatMap((item) => item.texts)]);
         setStatus("done");
       });
     }, debounceMs);
@@ -108,10 +108,10 @@ export function useFileManagerSearch(input: {
   return { results, status };
 }
 
-function resultFor(workFolderId: string, entry: TreeEntry, match: FileManagerSearchResult["match"]): FileManagerSearchResult {
+function resultFor(connectedFolderId: string, entry: TreeEntry, match: FileManagerSearchResult["match"]): FileManagerSearchResult {
   return {
-    key: `${workFolderId}\0${entry.path}`,
-    workFolderId,
+    key: `${connectedFolderId}\0${entry.path}`,
+    connectedFolderId,
     path: entry.path,
     name: entry.name,
     kind: entry.kind,

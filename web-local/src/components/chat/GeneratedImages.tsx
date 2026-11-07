@@ -4,7 +4,7 @@ import { Checkmark16Regular, Copy16Regular, FolderAdd16Regular, FolderOpen16Regu
 import type { ChatToolImage } from "../../../../src/shared/chat-presentation";
 import { api, errorText } from "../../lib/api";
 import { copyToClipboard } from "../../lib/clipboard";
-import { generatedImageBlob, workFolderRawFileBlob } from "../../lib/raw-file";
+import { generatedImageBlob, connectedFolderRawFileBlob } from "../../lib/raw-file";
 import { showToast } from "../../ui/feedback";
 
 /** The completed pictures in a turn's steps, once each, in the order they were made. */
@@ -24,23 +24,23 @@ export function turnGeneratedImages(entries: ReadonlyArray<{ kind: string; phase
  * whatever the Worker-steps setting is. Hovering one offers Copy and Add to
  * folder, or Show in Files once it is in the folder.
  */
-export function GeneratedImages({ images, workFolderId, onOpenWorkFolderFile }: {
+export function GeneratedImages({ images, connectedFolderId, onOpenConnectedFolderFile }: {
   images: ChatToolImage[];
-  workFolderId: string;
-  onOpenWorkFolderFile?: (path: string) => void;
+  connectedFolderId: string;
+  onOpenConnectedFolderFile?: (path: string) => void;
 }) {
   if (!images.length) return null;
   return (
     <div className="generated-images">
-      {images.map((image) => <GeneratedImage key={image.id} image={image} workFolderId={workFolderId} onOpenWorkFolderFile={onOpenWorkFolderFile} />)}
+      {images.map((image) => <GeneratedImage key={image.id} image={image} connectedFolderId={connectedFolderId} onOpenConnectedFolderFile={onOpenConnectedFolderFile} />)}
     </div>
   );
 }
 
-function GeneratedImage({ image, workFolderId, onOpenWorkFolderFile }: {
+function GeneratedImage({ image, connectedFolderId, onOpenConnectedFolderFile }: {
   image: ChatToolImage;
-  workFolderId: string;
-  onOpenWorkFolderFile?: (path: string) => void;
+  connectedFolderId: string;
+  onOpenConnectedFolderFile?: (path: string) => void;
 }) {
   const [picture, setPicture] = useState<{ blob: Blob; url: string } | null>(null);
   const [missing, setMissing] = useState(false);
@@ -55,7 +55,7 @@ function GeneratedImage({ image, workFolderId, onOpenWorkFolderFile }: {
     generatedImageBlob(image.id, controller.signal)
       .catch((error) => {
         if (controller.signal.aborted || !image.path) throw error;
-        return workFolderRawFileBlob(workFolderId, image.path, controller.signal);
+        return connectedFolderRawFileBlob(connectedFolderId, image.path, controller.signal);
       })
       .then((blob) => {
         if (controller.signal.aborted) return;
@@ -64,7 +64,7 @@ function GeneratedImage({ image, workFolderId, onOpenWorkFolderFile }: {
       })
       .catch(() => { if (!controller.signal.aborted) setMissing(true); });
     if (!image.path) {
-      api<{ addedPath?: string }>(`/api/work-folders/${encodeURIComponent(workFolderId)}/generated-images/${encodeURIComponent(image.id)}`, { signal: controller.signal })
+      api<{ addedPath?: string }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/generated-images/${encodeURIComponent(image.id)}`, { signal: controller.signal })
         .then((info) => { if (info.addedPath) setFolderPath(info.addedPath); })
         .catch(() => undefined);
     }
@@ -72,7 +72,7 @@ function GeneratedImage({ image, workFolderId, onOpenWorkFolderFile }: {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [image.id, image.path, workFolderId]);
+  }, [image.id, image.path, connectedFolderId]);
 
   async function copy() {
     if (!picture || busy) return;
@@ -92,7 +92,7 @@ function GeneratedImage({ image, workFolderId, onOpenWorkFolderFile }: {
     if (busy) return;
     setBusy(true);
     try {
-      const added = await api<{ path: string }>(`/api/work-folders/${encodeURIComponent(workFolderId)}/generated-images/${encodeURIComponent(image.id)}/add`, { method: "POST", body: {} });
+      const added = await api<{ path: string }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/generated-images/${encodeURIComponent(image.id)}/add`, { method: "POST", body: {} });
       setFolderPath(added.path);
       showToast({ text: `Added ${added.path} to the folder`, tone: "success" });
     } catch (error) {
@@ -112,7 +112,7 @@ function GeneratedImage({ image, workFolderId, onOpenWorkFolderFile }: {
           {copied ? <Checkmark16Regular aria-hidden="true" /> : <Copy16Regular aria-hidden="true" />}{copied ? "Copied" : "Copy"}
         </button>
         {folderPath ? (
-          onOpenWorkFolderFile ? <button type="button" onClick={() => onOpenWorkFolderFile(folderPath)}><FolderOpen16Regular aria-hidden="true" />Show in Files</button> : null
+          onOpenConnectedFolderFile ? <button type="button" onClick={() => onOpenConnectedFolderFile(folderPath)}><FolderOpen16Regular aria-hidden="true" />Show in Files</button> : null
         ) : (
           <button type="button" disabled={busy} onClick={() => void addToFolder()}><FolderAdd16Regular aria-hidden="true" />Add to Folder</button>
         )}

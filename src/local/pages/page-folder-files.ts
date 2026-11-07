@@ -1,15 +1,15 @@
 /**
- * Reading page folders inside a work-folder (docs/pages.md, "A page is a
- * folder"). Every read goes through the work-folder path policy
- * (`resolveWorkFolderPath`: no escapes, no reserved metadata, no link
+ * Reading page folders inside a Connected Folder (docs/pages.md, "A page is a
+ * folder"). Every read goes through the Connected Folder path policy
+ * (`resolveConnectedFolderPath`: no escapes, no reserved metadata, no link
  * segments), opens files no-follow, and rechecks the file's identity after
- * reading, the way other work-folder file reads do. Nothing here reads
- * outside the work-folder.
+ * reading, the way other Connected Folder file reads do. Nothing here reads
+ * outside the Connected Folder.
  */
 import { constants, type Dirent, type Stats } from "node:fs";
 import { lstat, open, readdir } from "node:fs/promises";
 
-import { nestedRegisteredWorkFolderPaths, resolveWorkFolderPath } from "../work-folder.js";
+import { nestedRegisteredConnectedFolderPaths, resolveConnectedFolderPath } from "../connected-folder.js";
 
 /** File limits for one page (docs/pages.md, "How a page runs"). */
 export const pageFolderLimits = Object.freeze({
@@ -21,7 +21,7 @@ export const pageFolderLimits = Object.freeze({
   maxPagePathLength: 1_024,
 });
 
-/** Bounds for finding page folders in a work-folder. */
+/** Bounds for finding page folders in a Connected Folder. */
 export const pageFinderLimits = Object.freeze({
   maxDepth: 8,
   maxPages: 200,
@@ -33,7 +33,7 @@ export const pageDeclarationFileName = "page.json";
 /** Real visitors' data and its SQLite side files, never part of the page (stage 2). */
 const pageDataFileNames = new Set(["data.sqlite", "data.sqlite-journal", "data.sqlite-wal", "data.sqlite-shm"]);
 
-/** Folder names the page finder never enters. Hidden names (`.work-fold`, `.pi`, `.git`) are skipped too. */
+/** Folder names the page finder never enters. Hidden names (`.amplefile`, `.pi`, `.git`) are skipped too. */
 const skippedFinderFolders = new Set(["node_modules"]);
 
 export class PageFolderError extends Error {
@@ -46,18 +46,18 @@ export class PageFolderError extends Error {
 }
 
 /**
- * Checks a page folder's work-folder-relative path as a person or agent gives
+ * Checks a page folder's Connected Folder–relative path as a person or agent gives
  * it: `/`-separated, no hidden, empty, `.`, or `..` segments. Returns it
  * without a trailing slash.
  */
 export function normalizePagePath(value: unknown): string {
-  if (typeof value !== "string" || !value.trim()) throw new PageFolderError(400, "Name the page folder with its path in the work-folder.");
+  if (typeof value !== "string" || !value.trim()) throw new PageFolderError(400, "Name the page folder with its path in the Connected Folder.");
   const trimmed = value.replace(/\/+$/u, "");
   if (trimmed.length > pageFolderLimits.maxPagePathLength) {
     throw new PageFolderError(400, `A page folder path can be at most ${pageFolderLimits.maxPagePathLength} characters.`);
   }
   if (/[\u0000-\u001f\u007f\\]/u.test(trimmed) || trimmed.startsWith("/")) {
-    throw new PageFolderError(400, "A page folder path is relative to the work-folder and uses / between folders.");
+    throw new PageFolderError(400, "A page folder path is relative to the Connected Folder and uses / between folders.");
   }
   const segments = trimmed.split("/");
   if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
@@ -69,21 +69,21 @@ export function normalizePagePath(value: unknown): string {
   return segments.join("/");
 }
 
-/** The page folder's absolute path, after the work-folder path policy, or a 404 when it isn't a page folder. */
-export async function resolvePageFolder(workFolderRoot: string, pagePath: string): Promise<string> {
+/** The page folder's absolute path, after the Connected Folder path policy, or a 404 when it isn't a page folder. */
+export async function resolvePageFolder(connectedFolderRoot: string, pagePath: string): Promise<string> {
   let absolute: string;
   try {
-    absolute = resolveWorkFolderPath(workFolderRoot, pagePath);
+    absolute = resolveConnectedFolderPath(connectedFolderRoot, pagePath);
   } catch (error) {
     throw new PageFolderError(400, error instanceof Error ? error.message : "That page folder path isn't allowed.");
   }
-  const nested = await nestedRegisteredWorkFolderPaths(workFolderRoot);
+  const nested = await nestedRegisteredConnectedFolderPaths(connectedFolderRoot);
   if (nested.some((boundary) => pathWithin(pagePath, boundary))) {
-    throw new PageFolderError(404, `${pagePath} belongs to another work-folder. Open that work-folder to see this page.`);
+    throw new PageFolderError(404, `${pagePath} belongs to another Connected Folder. Open that Connected Folder to see this page.`);
   }
   const info = await lstat(absolute).catch(() => null);
   if (!info?.isDirectory() || info.isSymbolicLink()) throw new PageFolderError(404, `There's no folder at ${pagePath}.`);
-  const declaration = await lstat(resolveWorkFolderPath(workFolderRoot, `${pagePath}/${pageDeclarationFileName}`)).catch(() => null);
+  const declaration = await lstat(resolveConnectedFolderPath(connectedFolderRoot, `${pagePath}/${pageDeclarationFileName}`)).catch(() => null);
   if (!declaration?.isFile() || declaration.isSymbolicLink()) {
     throw new PageFolderError(404, `${pagePath} isn't a page folder: it has no page.json.`);
   }
@@ -92,10 +92,10 @@ export async function resolvePageFolder(workFolderRoot: string, pagePath: string
 
 /**
  * Reads one file of a page folder, no-follow, and only when it is still the
- * same file after reading. `relativePath` is work-folder-relative.
+ * same file after reading. `relativePath` is Connected Folder–relative.
  */
-export async function readWorkFolderFileBytes(workFolderRoot: string, relativePath: string, maxBytes: number): Promise<Uint8Array> {
-  const path = resolveWorkFolderPath(workFolderRoot, relativePath);
+export async function readConnectedFolderFileBytes(connectedFolderRoot: string, relativePath: string, maxBytes: number): Promise<Uint8Array> {
+  const path = resolveConnectedFolderPath(connectedFolderRoot, relativePath);
   const before = await lstat(path);
   if (!before.isFile() || before.isSymbolicLink()) throw new Error(`${relativePath} isn't a regular file.`);
   if (before.size > maxBytes) throw new Error(`${relativePath} is larger than ${formatBytes(maxBytes)}.`);
@@ -112,7 +112,7 @@ export async function readWorkFolderFileBytes(workFolderRoot: string, relativePa
       offset += bytesRead;
     }
     const after = await handle.stat();
-    const named = await lstat(resolveWorkFolderPath(workFolderRoot, relativePath));
+    const named = await lstat(resolveConnectedFolderPath(connectedFolderRoot, relativePath));
     if (offset !== opened.size || !sameFile(opened, after) || !sameFile(opened, named)) {
       throw new Error(`${relativePath} changed while it was being read.`);
     }
@@ -123,8 +123,8 @@ export async function readWorkFolderFileBytes(workFolderRoot: string, relativePa
 }
 
 /** UTF-8 text of one page file, or an error naming the file. */
-export async function readWorkFolderTextFile(workFolderRoot: string, relativePath: string, maxBytes: number): Promise<string> {
-  const bytes = await readWorkFolderFileBytes(workFolderRoot, relativePath, maxBytes);
+export async function readConnectedFolderTextFile(connectedFolderRoot: string, relativePath: string, maxBytes: number): Promise<string> {
+  const bytes = await readConnectedFolderFileBytes(connectedFolderRoot, relativePath, maxBytes);
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
@@ -152,14 +152,14 @@ export interface PageFolderWalk {
 
 /**
  * Lists the files that make up a page: everything in the folder except
- * `data.sqlite` and its side files, hidden entries (`.work-fold/`, `.pi/`,
- * dotfiles). Links, nested page folders, nested work-folders, and the
+ * `data.sqlite` and its side files, hidden entries (`.amplefile/`, `.pi/`,
+ * dotfiles). Links, nested page folders, nested Connected Folders, and the
  * contract's limits are reported as errors.
  */
-export async function walkPageFolder(workFolderRoot: string, pagePath: string): Promise<PageFolderWalk> {
+export async function walkPageFolder(connectedFolderRoot: string, pagePath: string): Promise<PageFolderWalk> {
   const files = new Map<string, PageFolderFile>();
   const problems: PageFolderWalkProblem[] = [];
-  const nested = (await nestedRegisteredWorkFolderPaths(workFolderRoot))
+  const nested = (await nestedRegisteredConnectedFolderPaths(connectedFolderRoot))
     .filter((boundary) => pathWithin(boundary, pagePath) && boundary !== pagePath)
     .map((boundary) => boundary.slice(pagePath.length + 1));
   let bytes = 0;
@@ -172,7 +172,7 @@ export async function walkPageFolder(workFolderRoot: string, pagePath: string): 
       problems.push({ file: relativeDir, message: `Folders are nested more than ${pageFolderLimits.maxFolderDepth} levels deep.`, severity: "error" });
       return;
     }
-    const absoluteDir = resolveWorkFolderPath(workFolderRoot, relativeDir ? `${pagePath}/${relativeDir}` : pagePath);
+    const absoluteDir = resolveConnectedFolderPath(connectedFolderRoot, relativeDir ? `${pagePath}/${relativeDir}` : pagePath);
     let entries: Dirent[];
     try {
       entries = await readdir(absoluteDir, { withFileTypes: true });
@@ -193,10 +193,10 @@ export async function walkPageFolder(workFolderRoot: string, pagePath: string): 
       }
       if (entry.isDirectory()) {
         if (nested.some((boundary) => pathWithin(relative, boundary))) {
-          problems.push({ file: relative, message: "This folder is another work-folder; a page folder can't contain one.", severity: "error" });
+          problems.push({ file: relative, message: "This folder is another Connected Folder; a page folder can't contain one.", severity: "error" });
           continue;
         }
-        const childDeclaration = await lstat(resolveWorkFolderPath(workFolderRoot, `${pagePath}/${relative}/${pageDeclarationFileName}`)).catch(() => null);
+        const childDeclaration = await lstat(resolveConnectedFolderPath(connectedFolderRoot, `${pagePath}/${relative}/${pageDeclarationFileName}`)).catch(() => null);
         if (childDeclaration?.isFile()) {
           problems.push({ file: `${relative}/${pageDeclarationFileName}`, message: "A page folder can't contain another page folder. Move this page out, or remove its page.json.", severity: "error" });
         }
@@ -214,7 +214,7 @@ export async function walkPageFolder(workFolderRoot: string, pagePath: string): 
       }
       let info: Stats;
       try {
-        info = await lstat(resolveWorkFolderPath(workFolderRoot, `${pagePath}/${relative}`));
+        info = await lstat(resolveConnectedFolderPath(connectedFolderRoot, `${pagePath}/${relative}`));
       } catch {
         problems.push({ file: relative, message: "This file couldn't be read.", severity: "error" });
         continue;
@@ -234,24 +234,24 @@ export async function walkPageFolder(workFolderRoot: string, pagePath: string): 
   return { files, bytes, problems };
 }
 
-/** Whether an ancestor folder of `pagePath` inside the work-folder is itself a page folder. */
-export async function enclosingPageFolder(workFolderRoot: string, pagePath: string): Promise<string | null> {
+/** Whether an ancestor folder of `pagePath` inside the Connected Folder is itself a page folder. */
+export async function enclosingPageFolder(connectedFolderRoot: string, pagePath: string): Promise<string | null> {
   const segments = pagePath.split("/");
   for (let length = segments.length - 1; length >= 1; length -= 1) {
     const ancestor = segments.slice(0, length).join("/");
-    const declaration = await lstat(resolveWorkFolderPath(workFolderRoot, `${ancestor}/${pageDeclarationFileName}`)).catch(() => null);
+    const declaration = await lstat(resolveConnectedFolderPath(connectedFolderRoot, `${ancestor}/${pageDeclarationFileName}`)).catch(() => null);
     if (declaration?.isFile()) return ancestor;
   }
   return null;
 }
 
 /**
- * Every page folder in a work-folder: a folder that contains `page.json`.
- * Hidden folders, `node_modules`, links, and nested work-folders are skipped;
+ * Every page folder in a Connected Folder: a folder that contains `page.json`.
+ * Hidden folders, `node_modules`, links, and nested Connected Folders are skipped;
  * a page folder's own subfolders aren't searched. Bounded in depth and count.
  */
-export async function findPageFolders(workFolderRoot: string): Promise<{ pages: string[]; truncated: boolean }> {
-  const nested = await nestedRegisteredWorkFolderPaths(workFolderRoot);
+export async function findPageFolders(connectedFolderRoot: string): Promise<{ pages: string[]; truncated: boolean }> {
+  const nested = await nestedRegisteredConnectedFolderPaths(connectedFolderRoot);
   const pages: string[] = [];
   let truncated = false;
   let visited = 0;
@@ -264,7 +264,7 @@ export async function findPageFolders(workFolderRoot: string): Promise<{ pages: 
     }
     let entries: Dirent[];
     try {
-      entries = await readdir(path ? resolveWorkFolderPath(workFolderRoot, path) : resolveWorkFolderPath(workFolderRoot, "."), { withFileTypes: true });
+      entries = await readdir(path ? resolveConnectedFolderPath(connectedFolderRoot, path) : resolveConnectedFolderPath(connectedFolderRoot, "."), { withFileTypes: true });
     } catch {
       continue;
     }

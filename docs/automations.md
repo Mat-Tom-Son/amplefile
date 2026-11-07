@@ -1,4 +1,4 @@
-# Automations: declared cross-work-folder glue
+# Automations: declared cross–Connected Folder glue
 
 **Status: shipped contract reference.** An **Automation** is fixed,
 deterministic app work on a reviewed trigger; it is not an agent scheduler
@@ -7,13 +7,13 @@ storage say `automation`/`automations` too. Before the 2026-10-10 vocabulary
 migration they said `routing`/`routings`; that one-time migration moved the
 stored records to the new names.
 
-The automation feature shipped with the work-fold agent build
+The automation feature shipped with the AmpleFile agent build
 — `src/local/automations/` (declarations, store, settle signal, executor) and
 its suites are the implementation authority — and its decisions were
-promoted on 2026-08-11 into [the work-fold agent decision register](work-fold-agent-decisions.md) (F8, F9,
+promoted on 2026-08-11 into [the AmpleFile agent decision register](amplefile-agent-decisions.md) (F8, F9,
 F14), [Product model](product-model.md) (the Automation noun, the
-enable/run context rows, rail 11), `AGENTS.md` (the above-work-folder cadence
-rail), [the work-fold agent and CLI](work-fold-agent-and-cli.md) (the verification map),
+enable/run context rows, rail 11), `AGENTS.md` (the above–Connected Folder cadence
+rail), [the AmpleFile agent and CLI](amplefile-agent-and-cli.md) (the verification map),
 `README.md`, `SECURITY.md`, and `PRIVACY.md`. This document retains what
 canon does not carry: the trigger vocabulary and its exclusions, the
 declaration and step contracts, the executor's failure semantics, the
@@ -32,9 +32,9 @@ interval, one-time, folder-change, observer, and concurrency bounds to the
 values under [Bounds](#bounds).
 
 **Amended 2026-10-11 (owner decision):** a folder-change trigger may opt into
-catching up after work-fold was closed. Until now a fresh enable, restart,
+catching up after AmpleFile was closed. Until now a fresh enable, restart,
 wake, or recovered observer error always took a new baseline without firing,
-so files that landed while work-fold was closed or asleep were never
+so files that landed while AmpleFile was closed or asleep were never
 processed — which defeats "watch my Screenshots folder; when new screenshots
 land, have the Worker look at them, rename them, and file them." Version 5
 adds `"ifMissed": "run"` to the trigger: the automation keeps a machine-local
@@ -55,27 +55,27 @@ like any failed hop. A reported `partial` keeps the step and the run
 `succeeded` but marks both `partial`, shown as **Partly done**. The reported
 summary becomes the step receipt's detail. A turn that ends with only a reply
 keeps the turn's own outcome. An `agent` step gets the same unattended
-framing; the work-fold agent has no report verb, so its final reply is the
+framing; the AmpleFile agent has no report verb, so its final reply is the
 record. Live testing prompted this: a Worker told to "look at each
 screenshot" sometimes asked a person to describe the images, and the run
 still read Succeeded.
 
 **Amended 2026-11-07 (owner direction): ready-made Automations.** The file
 manager's Info panel lists a small fixed set a person can switch on for one
-work-folder: **Organize New Files**, **Give New Files Clear Names**, **Keep
+Connected Folder: **Organize New Files**, **Give New Files Clear Names**, **Keep
 Screenshots Together**, and **Weekly Tidy-Up**
 (`src/shared/automation-templates.ts`; the host builds their declarations in
 `src/local/automations/automation-templates.ts`). Each is one `chat` step to
-that work-folder's own Worker, in plain words that tell it never to delete
-anything, on a folder-change trigger over the work-folder's top level with
+that Connected Folder's own Worker, in plain words that tell it never to delete
+anything, on a folder-change trigger over the Connected Folder's top level with
 `"ifMissed": "run"` (or, for the tidy-up, a weekly interval). Switching one on
 is the same receipted `automations.enable` act as Settings' Turn on, with a
-stable id per work-folder (`automation-ready-<template>-<work-folder id>`), so
+stable id per Connected Folder (`automation-ready-<template>-<connected-folder id>`), so
 off and on again is the same Automation and Settings → Automations lists it
-like any other. To watch a work-folder's top level, declaration **version 6**
+like any other. To watch a Connected Folder's top level, declaration **version 6**
 admits `"watch": {"kind": "tree", "path": "", "recursive": false, …}`: the
-ordinary files directly in the work-folder with a watched extension, never a
-subfolder, so a nested work-folder is never read; a recursive top-level watch
+ordinary files directly in the Connected Folder with a watched extension, never a
+subfolder, so a nested Connected Folder is never read; a recursive top-level watch
 is refused. Versions 1–5 normalize exactly as before.
 
 The declaration contract accepts versions 1 through 6. Version 2 added a
@@ -83,7 +83,7 @@ bounded one-time `at` trigger on 2026-09-01; version 3 adds explicit folder
 observation, shipped in September 2026; version 4 adds the closed placeholder
 set and the `agent` step (then named `fold`), shipped with the
 receipts-not-gates build; version 5 adds the optional `ifMissed` field on a
-folder-change trigger (2026-10-11); version 6 adds the work-folder's top
+folder-change trigger (2026-10-11); version 6 adds the Connected Folder's top
 level as a watched folder (2026-11-07).
 **Settings → Automations** is the desktop management surface. The
 store schema is version 3; version-1 and version-2 records load and are
@@ -91,40 +91,40 @@ rewritten as version 3 on the next mutation, converting the grants an older
 build wrote, while newer schemas still fail closed.
 
 An **Automation** is a machine-local, inert-until-enabled declaration of
-deterministic steps that move work between work-folders: start a Worker Chat
-with a fixed message, copy files from one work-folder into another with a
-History restore point, run a Check, or message the work-fold agent. It is
+deterministic steps that move work between Connected Folders: start a Worker Chat
+with a fixed message, copy files from one Connected Folder into another with a
+History restore point, run a Check, or message the AmpleFile agent. It is
 executed by app code on the shared scheduler discipline, never by an
-open-ended Worker conversation, and it is the only thing above work-folders
+open-ended Worker conversation, and it is the only thing above Connected Folders
 that runs unattended. An
 Automation is not a workflow
 language: no conditions, no branching, no retries, no loops, no expression
 templating, and no model deciding which step runs next. Agentic work happens
-inside a Chat step, run by that work-folder's own Worker with that
-work-folder's own authority. A Check step may separately use the bounded text reviewer
+inside a Chat step, run by that Connected Folder's own Worker with that
+Connected Folder's own authority. A Check step may separately use the bounded text reviewer
 through the Check service; the executor itself remains deterministic.
 
 ## The rule this design enforces
 
-work-folder Chat transcripts are portable: `.work-fold/conversations/` travels
-with the folder. Cross-work-folder work run inside a work-folder Chat would write
-cross-work-folder context into a folder that travels — a leak no convenience
+Connected Folder Chat transcripts are portable: `.amplefile/conversations/` travels
+with the folder. Cross–Connected Folder work run inside a Connected Folder Chat would write
+cross–Connected Folder context into a folder that travels — a leak no convenience
 justifies (decision F9). Automations enforce the boundary structurally:
 
 - The declaration, enablement grant, cadence anchor, health state, and every
   run receipt are machine-local application state. Nothing automation-shaped is
-  ever written under any work-folder's `.work-fold/`.
+  ever written under any Connected Folder's `.amplefile/`.
 - A Chat step sends only the declared message text, with the closed
   placeholder set filled in host-side, into a new conversation in that one
-  work-folder. The executor appends no ambient context and no other work-folder's name.
+  Connected Folder. The executor appends no ambient context and no other Connected Folder's name.
   The declaration says exactly what becomes portable transcript content in
-  that work-folder, and the hop receipt records the text work-fold filled in.
-- The only cross-work-folder transfer is the files step: bytes copied through the
+  that Connected Folder, and the hop receipt records the text AmpleFile filled in.
+- The only cross–Connected Folder transfer is the files step: bytes copied through the
   same additive, restore-pointed path as `files add`. Transcript text is
-  never relayed between work-folders by the executor.
-- The portable traces an automation leaves are all single-work-folder ordinary
-  records: a new Chat in work-folder A, copied files and a History restore point
-  in work-folder B. Neither folder learns the other exists.
+  never relayed between Connected Folders by the executor.
+- The portable traces an automation leaves are all single Connected Folder ordinary
+  records: a new Chat in Connected Folder A, copied files and a History restore point
+  in Connected Folder B. Neither folder learns the other exists.
 
 Per decision F14, the message an automation's chat step sends is an **ordinary
 user-role message** — the portable transcript carries no automation marker,
@@ -142,40 +142,40 @@ recorded settle/schedule state, or explicitly granted bounded folder metadata ob
 **Manual only** is `{"kind":"manual"}` (any version): the automation never fires
 on its own and runs only through run-now below.
 
-**work-folder changes (version 3)** use `{"kind":"files-changed","workFolder":"<work-folder id>","watch":{"kind":"tree","path":"Incoming","recursive":true,"extensions":[".md",".txt"]},"debounceSeconds":5,"cooldownMinutes":1}`. The exact named folder must exist at enablement. The host observes matching ordinary files every two seconds, within 50,000 files, 200,000 visited entries, and depth 256; it reads metadata only, so no byte bound applies. Metadata identities include size, nanosecond modification/change times, and inode; file contents are not read or sent anywhere by the observer. Symlinks and overlap with separately registered work-folders fail closed. The extension list and recursion are explicit; reserved metadata stays excluded.
+**Connected Folder changes (version 3)** use `{"kind":"files-changed","connectedFolder":"<connected-folder id>","watch":{"kind":"tree","path":"Incoming","recursive":true,"extensions":[".md",".txt"]},"debounceSeconds":5,"cooldownMinutes":1}`. The exact named folder must exist at enablement. The host observes matching ordinary files every two seconds, within 50,000 files, 200,000 visited entries, and depth 256; it reads metadata only, so no byte bound applies. Metadata identities include size, nanosecond modification/change times, and inode; file contents are not read or sent anywhere by the observer. Symlinks and overlap with separately registered Connected Folders fail closed. The extension list and recursion are explicit; reserved metadata stays excluded.
 
-By default (no `ifMissed`, or `"ifMissed": "skip"`), a fresh enable, restart, wake, or recovered observer error first establishes a baseline without firing. Changes must settle for the declared 1–3600 seconds, with 0–10080 minutes between firings. Bursts coalesce into the latest snapshot, not a queue of events. An accepted run records its source work-folder, snapshot digest, and change count before any hop. Every launch rechecks the exact declaration grant; revocation invalidates in-flight scans. The observer reports starting/watching/paused/error state and errors in Settings → Automations.
+By default (no `ifMissed`, or `"ifMissed": "skip"`), a fresh enable, restart, wake, or recovered observer error first establishes a baseline without firing. Changes must settle for the declared 1–3600 seconds, with 0–10080 minutes between firings. Bursts coalesce into the latest snapshot, not a queue of events. An accepted run records its source Connected Folder, snapshot digest, and change count before any hop. Every launch rechecks the exact declaration grant; revocation invalidates in-flight scans. The observer reports starting/watching/paused/error state and errors in Settings → Automations.
 
-All folder observers pause while any automation executes and establish fresh baselines afterward. This deliberately absorbs automation-generated edits and prevents cross-automation file loops. Changes made during that pause are **never replayed**. Changes made while asleep or quit are not replayed either, unless the trigger opts into one catch-up (below). Either way this is an awake-app convenience trigger, not a durable filesystem event bus. Keep a complete cross-work-folder sequence in one automation: wait for A's Chat, copy its created files, then run B's Chat or Check. There is no transcript relay or ambient context injection. Stop, disable, removal, shutdown, journaling, non-overlap, and FIFO limits use the existing executor paths.
+All folder observers pause while any automation executes and establish fresh baselines afterward. This deliberately absorbs automation-generated edits and prevents cross-automation file loops. Changes made during that pause are **never replayed**. Changes made while asleep or quit are not replayed either, unless the trigger opts into one catch-up (below). Either way this is an awake-app convenience trigger, not a durable filesystem event bus. Keep a complete cross–Connected Folder sequence in one automation: wait for A's Chat, copy its created files, then run B's Chat or Check. There is no transcript relay or ambient context injection. Stop, disable, removal, shutdown, journaling, non-overlap, and FIFO limits use the existing executor paths.
 
 #### Catching up after a gap (version 5)
 
 `{"kind":"files-changed", …, "ifMissed":"run"}` (declaration version 5) asks
-for one catch-up after work-fold could not watch the folder. `ifMissed` is
+for one catch-up after AmpleFile could not watch the folder. `ifMissed` is
 optional; leaving it out, or `"skip"`, keeps the fresh-baseline behavior
 above. Declarations of versions 1–4 normalize exactly as before, so their
 digests do not change, and a version 3 or 4 declaration that names
 `ifMissed` is refused with a message naming version 5.
 
-- **What is kept.** For an opted-in automation only, work-fold saves the
+- **What is kept.** For an opted-in automation only, AmpleFile saves the
   snapshot its observer has accounted for — the same metadata it already
   reads (relative path → device, inode, size, and modification and change
   times), never file contents — plus the time it last started a run and any
   catch-up still owed. It lives at
   `automations/folder-snapshots/<automation id>.json` under the state root,
-  machine-local, never inside a work-folder, and bounded by the observer's
+  machine-local, never inside a Connected Folder, and bounded by the observer's
   50,000-file scan. The record is rewritten only when that accounted-for
   state changes: the first look, a firing, the look after an automation run,
   or a catch-up found or spent. Turning the automation off keeps it, so Turn
   on can catch up; deleting the automation, removing its watched
-  work-folder, or dropping `ifMissed` removes it, and a changed folder,
+  Connected Folder, or dropping `ifMissed` removes it, and a changed folder,
   recursion, or extension list is never compared with it.
-- **When work-fold compares.** At the first look after a gap: launch
-  ("while work-fold was closed"), wake ("while the computer was asleep"),
+- **When AmpleFile compares.** At the first look after a gap: launch
+  ("while AmpleFile was closed"), wake ("while the computer was asleep"),
   Turn on ("while this automation was off"), and recovery from an observer
   error ("while the folder could not be watched"). Replacing a declaration
   that is already on, over the same folder, is not a gap. If an automation
-  run is about to start before that first look, work-fold makes the
+  run is about to start before that first look, AmpleFile makes the
   comparison just before the run's first step, so the run's own edits are
   never part of it.
 - **What counts.** A file is caught up when it is new or its size or
@@ -196,7 +196,7 @@ digests do not change, and a version 3 or 4 declaration that names
   and saves the fresh look it takes afterward, which is what keeps a run's own
   edits from starting another run, across restarts too. While a run is in
   progress the saved snapshot carries a small `<automation id>.running`
-  marker; if work-fold quits, sleeps, or turns the automation off before the
+  marker; if AmpleFile quits, sleeps, or turns the automation off before the
   post-run look is saved, the next look cannot tell that run's edits apart
   from anyone else's, so it takes a fresh look instead of catching up, and
   Settings says so. A catch-up already found before that run still fires.
@@ -208,28 +208,28 @@ digests do not change, and a version 3 or 4 declaration that names
   `catchUp: {"reason": "closed"|"asleep"|"off"|"unavailable", "count": n}`,
   where `count` of `changedCount` paths changed during the gap.
   `{{trigger.summary}}` reads, for example, `Caught up on 3 files under
-  "Screenshots" in work-folder space-… that changed while work-fold was
+  "Screenshots" in Connected Folder space-… that changed while AmpleFile was
   closed.`
-- **Visible.** Settings → Automations and the work-folder's Automations view
-  add "catches up after work-fold was closed" to the trigger summary. The
+- **Visible.** Settings → Automations and the Connected Folder's Automations view
+  add "catches up after AmpleFile was closed" to the trigger summary. The
   watched-folder section says what catches up, shows a catch-up that is still
   waiting ("Catching up on 2 files that changed while the computer was
   asleep"), the last catch-up from the receipts, and any reason one could not
   happen. Run history labels the run "Caught up on 3 files that changed while
-  work-fold was closed". `automations show` states it on the trigger line.
+  AmpleFile was closed". `automations show` states it on the trigger line.
 
 Revocation, Stop, Turn off, the 50,000-file, 200,000-entry, and depth-256
-observer bounds, symlink refusal, and nested-work-folder refusal apply to a
+observer bounds, symlink refusal, and nested Connected Folder refusal apply to a
 catch-up exactly as to a live change: a catch-up is admitted through the same
 dispatch and launch-boundary recheck.
 
 **Admitted on-settled sources** (both durable and already receipted):
 
-- **`check-run`**: a named work-folder's Check run reached a terminal state —
+- **`check-run`**: a named Connected Folder's Check run reached a terminal state —
   optionally scoped to one Check id, filtered by outcome (default
   `succeeded`; `failed` and `aborted` may be named explicitly;
   `interrupted` is never admissible — it marks a crash, not a result).
-- **`app-automation-run`**: a named work-folder's restricted-app named automation
+- **`app-automation-run`**: a named Connected Folder's restricted-app named automation
   run settled — scoped to app id and automation id, filtered by outcome
   (default `success`; `failure` may be named explicitly; `skipped` and
   `cancelled` are never admissible — they are lifecycle artifacts, and
@@ -240,8 +240,8 @@ dispatch and launch-boundary recheck.
 their conversation activity, and the records are in-memory only — the real
 need, "after the Worker finishes, move its output," is served
 inside a run, where the Chat step waits for its own turn), compaction
-settles (no recorded outcome), and work-fold agent request settles (on the
-work-fold agent's side, in-memory, and glue firing from work-fold agent chat
+settles (no recorded outcome), and AmpleFile agent request settles (on the
+AmpleFile agent's side, in-memory, and glue firing from AmpleFile agent chat
 activity would blur interactive work with the agent into unattended behavior).
 
 **Automation-caused settles never fire triggers.** A Check run or automation
@@ -265,7 +265,7 @@ normalization stores one UTC instant. Enablement rechecks that the instant is
 in the future and no more than ten years ahead. `ifMissed` is `run` or
 `skip`: after launch or wake,
 `run` admits one bounded catch-up for the exact slot while `skip` records that
-the occurrence did not run. Nothing runs while work-fold is quit.
+the occurrence did not run. Nothing runs while AmpleFile is quit.
 
 Sleep does not spend work that never launched. If a due `run` occurrence is
 waiting for a scheduler slot when suspension cancels the admission, its
@@ -281,7 +281,7 @@ interruption do not re-arm it. Startup reconciles a crash between acceptance
 and claim by consuming the same deterministic occurrence and recording the
 run interrupted. Completed records remain visible until a person deletes them.
 
-**Manual run-now** (`work-fold automations run`) is a direct verb: available
+**Manual run-now** (`amplefile automations run`) is a direct verb: available
 for every *enabled* automation, receipted, never a schedule mutation. Run-now
 on a merely proposed automation is refused: enablement is what binds the
 person's review to the exact declaration digest, and the executor must never
@@ -295,13 +295,13 @@ proposal and enablement.
 
 ## The declaration
 
-Authoring follows the Check-proposal pattern: the work-fold agent writes an inert,
-typed, kind/version JSON file (`work-fold.automation-proposal`, version 1, 2, 3,
-or 4, `.work-fold-automation.json` suffix) at the top level of its own
+Authoring follows the Check-proposal pattern: the AmpleFile agent writes an inert,
+typed, kind/version JSON file (`amplefile.automation-proposal`, version 1, 2, 3,
+or 4, `.amplefile-automation.json` suffix) at the top level of its own
 working folder —
-never inside a work-folder, because the proposal names multiple work-folders and
+never inside a Connected Folder, because the proposal names multiple Connected Folders and
 their folders travel. `src/local/automations/automation-declarations.ts` is the
-schema authority. work-folders are pinned by stable work-folder id; duplicate names are
+schema authority. Connected Folders are pinned by stable Connected Folder id; duplicate names are
 rejected as ambiguous, and `automations show` resolves ids to current names and
 folders so the declaration reads as something a person can check.
 
@@ -310,61 +310,61 @@ declarations: no prompts beyond the literal Chat- and agent-step message plus
 the closed placeholder set below, no instructions, no source code, no shell
 commands, no model names, no credentials, no connection data, no expressions.
 The Chat- and agent-step `message` is bounded (4 MiB) and is data addressed to
-one work-folder's Worker or to the work-fold agent; in version 4 it may carry the closed
+one Connected Folder's Worker or to the AmpleFile agent; in version 4 it may carry the closed
 placeholder set.
 
 ### Steps
 
 Steps execute strictly in declaration order. Four kinds:
 
-- **`chat`** — start a **new** conversation in the named work-folder with the
+- **`chat`** — start a **new** conversation in the named Connected Folder with the
   fixed message, through the same acceptance path as
-  `work-fold chat send --new`: conflict checks, kernel `assistant_turn`
+  `amplefile chat send --new`: conflict checks, kernel `assistant_turn`
   task, pre/post-turn History checkpoints, portable transcript persistence.
   Always a new conversation — sending into an existing Chat can collide
   with a person's live turn, and standing behavior must not entangle itself
   with an interactive thread. The hop waits for exactly its own turn's
   task-scoped terminal outcome; `failed` or `aborted` fails the hop.
-- **`files`** — copy from one work-folder's folder into another's through the
+- **`files`** — copy from one Connected Folder's folder into another's through the
   same additive internals as `files add`: collision-rename on existing
   names, and a targeted restore point that succeeds or fails together with
   the placement. Copy only — an automation never moves, renames, or deletes
-  anything in the source work-folder. The source is an explicit list of exact
-  work-folder-relative paths, one bounded tree selector reusing the
+  anything in the source Connected Folder. The source is an explicit list of exact
+  Connected Folder–relative paths, one bounded tree selector reusing the
   Check target contract and resolver discipline (tighten-only hard limits;
-  symbolic links, `.work-fold/`, `.pi/`, preserved `.workspace/`, and
-  nested registered work-folders rejected), or the declared created-files handoff
+  symbolic links, `.amplefile/`, `.pi/`, preserved `.workspace/`, and
+  nested registered Connected Folders rejected), or the declared created-files handoff
   below. Free glob or regex patterns were rejected: the bounded tree
   selector is the already-hardened enumeration primitive with review
   semantics a person can actually read.
 - **`check`** — run one named Check (or all enabled Checks) in the named
-  work-folder through the same path as `work-fold checks run`. The hop succeeds
+  Connected Folder through the same path as `amplefile checks run`. The hop succeeds
   when the run settles `succeeded` — **including when it admits findings**:
   findings are content state for the person; glue is not a gate. `failed`,
   `aborted`, or `interrupted` fails the hop.
 - **`agent`** (version 4; named `fold` before 2026-10-10) — start a **new**
-  work-fold agent chat with the message, through the same acceptance path as
-  `work-fold agent send --new`. It names no work-folder: the work-fold agent sits above
+  AmpleFile agent chat with the message, through the same acceptance path as
+  `amplefile agent send --new`. It names no Connected Folder: the AmpleFile agent sits above
   them. Always a new chat, so standing behavior never entangles a live
-  work-fold agent chat and turn-conflict rejection stays exact. The hop waits
+  AmpleFile agent chat and turn-conflict rejection stays exact. The hop waits
   for its own turn's terminal outcome and `automations stop` aborts it like a
-  Chat hop. This is the one admitted way the work-fold agent runs unattended (F8,
+  Chat hop. This is the one admitted way the AmpleFile agent runs unattended (F8,
   narrowed by [Receipts, not gates](receipts-not-gates.md)), so a person
-  can put the work-fold agent on a cadence deliberately. An agent hop records no History
+  can put the AmpleFile agent on a cadence deliberately. An agent hop records no History
   checkpoints and is never a created-files source.
 
 *Amended 2026-10-11 (owner decision):* a `chat` or `agent` step may name its
 own model, `"model": {"provider": "<provider>", "id": "<model id>"}`, in any
 declaration version. It applies only to the new Chat that step starts: the
 host sets it on that session before the first turn, so the Chat's later
-answers and continuations keep it, and no work-folder's, the work-fold
+answers and continuations keep it, and no Connected Folder's, the AmpleFile
 agent's, or Pi's default model changes. A step without one uses the
-work-folder's (or the work-fold agent's) model as before. Enabling refuses a
-step whose model work-fold does not know or whose provider is not connected,
-naming the step, so an unattended run never meets that first. `work-fold
+Connected Folder's (or the AmpleFile agent's) model as before. Enabling refuses a
+step whose model AmpleFile does not know or whose provider is not connected,
+naming the step, so an unattended run never meets that first. `amplefile
 automations models` lists the connected models and whether each accepts
 images, so an automation that looks at screenshots, photos, or scans can name
-one that sees them. The work-fold agent is told to check this and to ask the
+one that sees them. The AmpleFile agent is told to check this and to ask the
 person when the choice matters. Settings → Automations and `automations show`
 say which model a step uses.
 
@@ -398,7 +398,7 @@ Bounds, each named in the text it produces: 1 MiB per filled-in placeholder,
 substitution (exceeding it fails the hop). The hop's terminal receipt records
 `placeholders[]` — each name, the bounded text, its byte length, and whether
 it was cut — plus `messageBytes`. That is the one place the receipts journal
-carries message text, and it carries only the part work-fold itself wrote.
+carries message text, and it carries only the part AmpleFile itself wrote.
 
 The other declared exception is the **declared created-files handoff**: a
 `files` step may name an earlier
@@ -414,31 +414,31 @@ silently delivered.
 
 Determinism covers **selection, not content**. The copied bytes are whatever
 the chat step's turn wrote — model output, steered by the fixed message and
-by whatever the source work-folder's folder contains at run time. An enabled
+by whatever the source Connected Folder's folder contains at run time. An enabled
 automation with this handoff is a standing, content-dependent channel from the
-source work-folder into the destination work-folder; `automations show` and the desktop
+source Connected Folder into the destination Connected Folder; `automations show` and the desktop
 Automations pane both state this under "While this automation is on". Every delivery is inspectable after the fact: the hop receipt
 lists the exact copied paths, and the overview's automation-run-settled item
-names the destination work-folder and the delivered file count.
+names the destination Connected Folder and the delivered file count.
 
 ### Storage split
 
 | Record | Location | Reason |
 |---|---|---|
-| Inert automation proposal | Ordinary file in the work-fold agent's working folder | Reviewable and revisable without authority; never placed in the folder of a work-folder it names |
-| Enabled declaration, exact-digest grant, cadence/occurrence claim, health state | work-fold application state (`automations/` under the state root) | References multiple work-folders; must never travel with any folder |
-| Automation-run and hop receipts | work-fold application state, append-only journal with rotation | Contains work-folder names, paths, and ids across work-folders |
-| Saved folder snapshot and running marker (`"ifMissed": "run"` only) | work-fold application state (`automations/folder-snapshots/`), one file per automation | File metadata from a work-folder, kept so a catch-up has something to compare with; never portable and never file contents |
-| Effects inside work-folders | Ordinary work-folder records: a new Chat transcript, copied files, a History restore point | The only portable traces are single-work-folder, ordinary, and restorable |
+| Inert automation proposal | Ordinary file in the AmpleFile agent's working folder | Reviewable and revisable without authority; never placed in the folder of a Connected Folder it names |
+| Enabled declaration, exact-digest grant, cadence/occurrence claim, health state | AmpleFile application state (`automations/` under the state root) | References multiple Connected Folders; must never travel with any folder |
+| Automation-run and hop receipts | AmpleFile application state, append-only journal with rotation | Contains Connected Folder names, paths, and ids across Connected Folders |
+| Saved folder snapshot and running marker (`"ifMissed": "run"` only) | AmpleFile application state (`automations/folder-snapshots/`), one file per automation | File metadata from a Connected Folder, kept so a catch-up has something to compare with; never portable and never file contents |
+| Effects inside Connected Folders | Ordinary Connected Folder records: a new Chat transcript, copied files, a History restore point | The only portable traces are single Connected Folder, ordinary, and restorable |
 
 ## The executor
 
 The automation service (`src/local/automations/automation-service.ts`) owns execution
 as app code. It creates its **own** instance of the existing
-`WorkFoldSchedulerService` — the same class, the same discipline, a
-separate 64-slot default budget with `ownerId: "work-fold.automation"`. Sharing the
-restricted-app service's instance was rejected: it would let one work-folder
-app's jobs starve cross-work-folder glue and couple two authority domains to one
+`AmpleFileSchedulerService` — the same class, the same discipline, a
+separate 64-slot default budget with `ownerId: "amplefile.automation"`. Sharing the
+restricted-app service's instance was rejected: it would let one Connected Folder
+app's jobs starve cross–Connected Folder glue and couple two authority domains to one
 lifecycle. That buys, verbatim from the proven scheduler: FIFO admission,
 per-automation non-overlap (an overlapping admission settles `skipped` and is
 receipted as such; a one-time slot overlapping its own run-now copy remains
@@ -452,7 +452,7 @@ record before hop 1 — an unwritable journal refuses the run — and a
 terminal record after; each hop writes its own accepted/terminal pair
 carrying the underlying domain evidence (chat hop: conversation id, turn
 task id, outcome, checkpoint ids, and the summary and `partial` mark its
-Worker reported; files hop: source and destination work-folder
+Worker reported; files hop: source and destination Connected Folder
 ids, resolved and copied paths with collision renames, counts, restore-point
 id; check hop: Check ids, run id, terminal state, finding counts). The run's
 terminal record names the trigger cause exactly — scheduled slot, run-now
@@ -477,13 +477,13 @@ persists the disabled state, cancels pending admissions, and stops the
 active run through the stop path — then reports what it stopped. Disable
 never destroys the declaration, grant history, or receipts.
 
-**Referenced work-folder removed.** Removing any work-folder a step or trigger names
+**Referenced Connected Folder removed.** Removing any Connected Folder a step or trigger names
 revokes the enablement grant and puts the automation in a durable `suspended`
-health state with the missing work-folder id recorded; the active run, if any, is
+health state with the missing Connected Folder id recorded; the active run, if any, is
 stopped. A suspended automation never runs, never retargets, and never resumes
-automatically — not even when a folder carrying the same portable work-folder
+automatically — not even when a folder carrying the same portable Connected Folder
 identity is re-registered, because registration must never silently re-arm
-standing behavior. Copy distinguishes "work-folder removed" from "re-registered
+standing behavior. Copy distinguishes "Connected Folder removed" from "re-registered
 with preserved identity"; the semantics are deliberately identical, and
 leaving suspension is a fresh enablement over the unchanged declaration.
 
@@ -517,14 +517,14 @@ are not queued. Automation runs register as the experimental kernel task kind
 
 ## Lifecycle and authority
 
-1. **Propose.** The work-fold agent (or a person, by hand) writes the inert typed
+1. **Propose.** The AmpleFile agent (or a person, by hand) writes the inert typed
    proposal. Nothing is registered, armed, or scheduled; proposals are
    ordinary files with no authority.
-2. **Enable.** `work-fold automations enable --proposal <path>` — or **Turn on**
+2. **Enable.** `amplefile automations enable --proposal <path>` — or **Turn on**
    beside a pending file in Settings → Automations — is a direct
    receipted verb (docs/receipts-not-gates.md, F23). It normalizes the
    declaration, rechecks the one-time horizon, requires every referenced
-   work-folder to be registered, and commits the enablement through the same
+   Connected Folder to be registered, and commits the enablement through the same
    prepare-pin-journal-execute path every act verb takes — immediately, on
    the first call. The receipt pins the declaration digest and records the
    surface and request id. Enabling a declaration that is already on at the
@@ -532,9 +532,9 @@ are not queued. Automation runs register as the experimental kernel task kind
    run is left alone. Enabling a *changed* declaration is a fresh receipt
    that first stops any run still executing the previous one, because
    revocation must stop stale work before the change reads as complete.
-   The digest pins the declaration, not the referenced work-folders'
+   The digest pins the declaration, not the referenced Connected Folders'
    capabilities: a chat step runs with whatever Worker authority its
-   work-folder holds at run time — the deliberate absence of re-review machinery
+   Connected Folder holds at run time — the deliberate absence of re-review machinery
    is recorded below. The declaration write and the enablement commit are
    one logical operation; a failure may leave an inert declaration, never
    undeclared or digest-mismatched authority.
@@ -554,7 +554,7 @@ The five questions, per mutation:
 
 | Mutation | Journaled by | Receipt contains | Revoked / undone by | Mid-act failure | Replay prevented by |
 |---|---|---|---|---|---|
-| Enable | Act-lane journal plus automation store commit (`automation/enabled` with digest, surface, request id) | Automation id, declaration digest, surface, timestamp (grants older builds wrote may also carry a `remote_web` browser identity) | Disable; work-folder removal (automatic revocation to `suspended`) | Declaration-then-receipt as one logical operation; failure leaves inert declaration, never digest-mismatched authority | Act request-id at-most-once; an identical already-enabled digest is a no-op |
+| Enable | Act-lane journal plus automation store commit (`automation/enabled` with digest, surface, request id) | Automation id, declaration digest, surface, timestamp (grants older builds wrote may also carry a `remote_web` browser identity) | Disable; Connected Folder removal (automatic revocation to `suspended`) | Declaration-then-receipt as one logical operation; failure leaves inert declaration, never digest-mismatched authority | Act request-id at-most-once; an identical already-enabled digest is a no-op |
 | Run (scheduled / on-settled) | Automation receipts journal, run `accepted` then durable schedule claim before hop 1, per-hop accepted/terminal pairs | Trigger cause, digest, occurrence id for one-time work, per-hop domain evidence (task ids, run ids, conversation id, restore-point id, counts) | Stop (active); files effects restorable via the hop's restore point; chat effects are an ordinary archivable Chat | Startup reconciles an accepted slot, records `interrupted`, and never replays it; completed hops keep receipts | Host-minted run ids; journal-first accepted gate; pre-hop interval/occurrence claim; serialized trigger funnel |
 | Run-now | Act-lane journal plus the same run journal | As above, plus the act request id | Same as a run | Same as a run | Act request-id at-most-once plus run-id gate |
 | Stop | Act-lane journal (or desktop action record) plus run terminal record | Run id, aborted hop task ids, skipped hops | Not applicable — stop is itself the revocation act | Abort signals are idempotent; a second stop finds a settled run | Act request-id at-most-once; a settled run refuses stop with its terminal state |
@@ -565,23 +565,23 @@ The five questions, per mutation:
 
 Automations are managed in **Settings → Automations** (decision F15) — the
 former Agent tools surface was rejected because an automation is not one
-work-folder's object, and a work-fold agent work tab was rejected because it
-would spend the work-folder-bound tab contract's own deliberate design. The
+Connected Folder's object, and an AmpleFile agent work tab was rejected because it
+would spend the Connected Folder–bound tab contract's own deliberate design. The
 Settings section carries the list, state, declaration, bounded run history,
 and valid actions; **Turn on** is one
 click that enables the automation and writes its receipt.
 
 Pending proposal files appear there too (2026-09-24). Settings scans the top
-level of the work-fold agent's working folder — no subfolders, at
-most 1,000 `*.work-fold-automation.json` files of at most 64 MiB each — validates
+level of the AmpleFile agent's working folder — no subfolders, at
+most 1,000 `*.amplefile-automation.json` files of at most 64 MiB each — validates
 each with the proposal schema, and lists the ones not already stored at the
 same digest under **Ready to turn on**, each with its title, trigger, and a
 **Turn on** button. A file that does not validate, names an unregistered
-work-folder, or has a one-time instant outside the enablement horizon shows only
+Connected Folder, or has a one-time instant outside the enablement horizon shows only
 its file name, with the problem as a tooltip and no button; when every file
 is invalid the section is titled **Automation files** so the repair reason
 remains visible. Turn on re-reads
-that exact file — the path must resolve directly inside the work-fold agent's
+that exact file — the path must resolve directly inside the AmpleFile agent's
 working folder. Reads reject symbolic links and files that change while
 being read, and never admit more than 64 MiB. The action takes the same
 enable path as `automations enable
@@ -592,50 +592,50 @@ file and tell the person it is there, and to enable it itself only when asked.
 The scan is a read of inert files, so the section is absent in the browser
 lane, where the desktop bridge is missing.
 
-When more than one automation names more than one work-folder, a compact **All** /
-per-work-folder chip row filters the list client-side by the work-folders each
+When more than one automation names more than one Connected Folder, a compact **All** /
+per–Connected Folder chip row filters the list client-side by the Connected Folders each
 automation's trigger and steps name. It is a view over the one list, not a
-per-work-folder place: automations stay above work-folders.
+per–Connected Folder place: automations stay above Connected Folders.
 
 *Amended 2026-09-24 (owner decision, revising F15):* Settings → Automations
-stays the management home, and a work-folder also gets a read-mostly window onto
+stays the management home, and a Connected Folder also gets a read-mostly window onto
 the automations that touch it. The rail shows an **Automations** entry
 (between History and the contributed apps) only while at least one
-automation's trigger or step names that work-folder; the renderer reads
-`GET /api/work-folders/:id/automations` when the work-folder changes and when the
-window regains focus, and caches the list per work-folder. Actions in Settings or
-a work-folder's Automations tab refresh the cached work-folder views immediately, so
+automation's trigger or step names that Connected Folder; the renderer reads
+`GET /api/connected-folders/:id/automations` when the Connected Folder changes and when the
+window regains focus, and caches the list per Connected Folder. Actions in Settings or
+a Connected Folder's Automations tab refresh the cached Connected Folder views immediately, so
 the rail does not wait for a window switch to show a newly enabled proposal
 or remove a deleted declaration. *Amended 2026-10-11 (owner decision):* like
 Files, the entry shows a list of those automations in the left pane (title,
 state, last run) and never opens a tab by itself; clicking an automation opens
-its own work-folder-owned tab (`work-folder-automation`, one per automation)
-under the work-folder-bound-tab rules. Earlier saved `work-folder-automations`
+its own Connected Folder–owned tab (`connected-folder-automation`, one per automation)
+under the connected-folder-bound-tab rules. Earlier saved `connected-folder-automations`
 tabs still restore. The pane falls back to Files once nothing in the
-work-folder is automated. Each tab carries the title, one state word (On, Off,
+Connected Folder is automated. Each tab carries the title, one state word (On, Off,
 Running, Suspended, or Done), the trigger summary Settings shows, what the
-automation does in this work-folder (Watches this work-folder, Copies files here,
+automation does in this Connected Folder (Watches this Connected Folder, Copies files here,
 Copies files from here, Starts a Chat here, Runs a Check here), and the last
 run time, with **Run now** (only while On), **Turn on**, and **Turn off**.
-Those three call `POST /api/work-folders/:id/automations/:automationId/(run|enable|disable)`,
+Those three call `POST /api/connected-folders/:id/automations/:automationId/(run|enable|disable)`,
 which runs the exact Settings facade methods — same prepared-act path, same
-`main-window` receipts — and refuses an automation that does not name the work-folder.
+`main-window` receipts — and refuses an automation that does not name the Connected Folder.
 Nothing is edited or deleted there, and **All automations** opens Settings →
 Automations. Unlike Settings, the view is not desktop-only: it is served by
 the session-authenticated local API, so it also works in the browser lane.
-Automations are still declared, stored, and receipted above work-folders; the
-work-folder view never becomes a second place to author one.
+Automations are still declared, stored, and receipted above Connected Folders; the
+Connected Folder view never becomes a second place to author one.
 
-The work-fold agent narrates run
+The AmpleFile agent narrates run
 history on demand, and only an automation's own `agent` step ever puts it on a
 cadence. An automation's effects remain visible where they land: the copied
-files and restore point in the destination work-folder's Files and History, the
-new conversation in the source work-folder's Chats.
+files and restore point in the destination Connected Folder's Files and History, the
+new conversation in the source Connected Folder's Chats.
 
-The CLI act-lane group is `work-fold automations enable|list|show|run|stop|
+The CLI act-lane group is `amplefile automations enable|list|show|run|stop|
 disable|delete|receipts` — per-launch token, journal-first, and like the
-`agent` group automations are above work-folders and take no `--work-folder`.
-`list`/`show`/`receipts` are content-bearing (work-folder names, paths, messages)
+`agent` group automations are above Connected Folders and take no `--connected-folder`.
+`list`/`show`/`receipts` are content-bearing (Connected Folder names, paths, messages)
 and therefore act-lane, matching the Checks rule that only aggregate status
 lives in the content-free read lane; a content-free automation status
 projection for read-lane protocol v1 remains a separate deliberate
@@ -651,56 +651,56 @@ machine-wide count, step-count, or exact-path-count quota.
 |---|---|---|
 | Triggers per automation | 1 (plus always-available run-now) | This design |
 | Interval | 1 minute to 366 days (1–527,040 minutes) | `restrictedAppAutomationIntervalMinutes` |
-| Catch-up | `latest` only (one make-up run) | `WorkFoldSchedulerService` |
-| One-time horizon | at least one second in the future, up to ten years ahead, at enablement | `minAtAdvanceMs`/`maxAtAdvanceMs` in `src/shared/work-fold-limits.ts` |
+| Catch-up | `latest` only (one make-up run) | `AmpleFileSchedulerService` |
+| One-time horizon | at least one second in the future, up to ten years ahead, at enablement | `minAtAdvanceMs`/`maxAtAdvanceMs` in `src/shared/amplefile-limits.ts` |
 | One-time missed policy | `run` or `skip` | One bounded catch-up or one recorded non-run |
 | One-time occurrence | One scheduled/resume claim ever; completed retained until Delete | Durable completed health and deterministic occurrence id |
-| work-folder-change debounce / cooldown | 1–3600 seconds / 0–10080 minutes | `src/local/automations/automation-declarations.ts` |
-| work-folder observer | Metadata only, no byte bound; 50,000 files, 200,000 visited entries, depth 256 | `workFoldAutomationFileObserverBounds` in `src/local/automations/automation-file-observer.ts` |
+| connected-folder-change debounce / cooldown | 1–3600 seconds / 0–10080 minutes | `src/local/automations/automation-declarations.ts` |
+| Connected Folder observer | Metadata only, no byte bound; 50,000 files, 200,000 visited entries, depth 256 | `ampleFileAutomationFileObserverBounds` in `src/local/automations/automation-file-observer.ts` |
 | Folder catch-up (`"ifMissed": "run"`) | One coalesced run per gap, never a backlog; the saved snapshot and owed set hold at most the observer's 50,000 files, and a read admits at most 256 MiB | `src/local/automations/automation-file-snapshots.ts` |
-| Changed paths recorded per run cause | 10,000 (the count stays exact) | `workFoldAutomationDeclarationBounds` |
-| Concurrent automation runs | 64, FIFO, machine-wide | `workFoldAutomationMaxConcurrentRuns`; a generous default, not a cap |
+| Changed paths recorded per run cause | 10,000 (the count stays exact) | `ampleFileAutomationDeclarationBounds` |
+| Concurrent automation runs | 64, FIFO, machine-wide | `ampleFileAutomationMaxConcurrentRuns`; a generous default, not a cap |
 | Tree selector resolution | The Check target resolver's hard limits; tighten-only | `src/local/checks/target-resolver.ts` |
-| Created-files handoff | `maxFiles` and `maxTotalBytes` mandatory in the declaration, at most 100,000 files and 64 GiB | `workFoldAutomationBounds` |
+| Created-files handoff | `maxFiles` and `maxTotalBytes` mandatory in the declaration, at most 100,000 files and 64 GiB | `ampleFileAutomationBounds` |
 | Chat and agent step message | 4 MiB | The model's context window is the practical bound |
 | One filled-in placeholder | 1 MiB | A resource guard; the cut names the limit |
 | Items in one filled-in list | 10,000 | Same |
 | Whole message after substitution | 8 MiB | Exceeding it fails the hop and names the limit |
-| Declaration or proposal file | 64 MiB; Settings scans at most 1,000 proposal files | `workFoldAutomationDocumentMaxBytes`, `workFoldAutomationProposalScanBounds` |
-| Run history / journal | 500 recent results; a 16 MiB receipts file rotated on the act-receipts pattern | Scheduler default; `WORKFOLD_AUTOMATION_RECEIPTS_MAX_BYTES`, `src/local/cli/act-receipts.ts` |
+| Declaration or proposal file | 64 MiB; Settings scans at most 1,000 proposal files | `ampleFileAutomationDocumentMaxBytes`, `ampleFileAutomationProposalScanBounds` |
+| Run history / journal | 500 recent results; a 16 MiB receipts file rotated on the act-receipts pattern | Scheduler default; `AMPLEFILE_AUTOMATION_RECEIPTS_MAX_BYTES`, `src/local/cli/act-receipts.ts` |
 
 ## Implementation record
 
 The plan items shipped as follows:
 
-1. Settle-signal seam — `src/local/automations/settle-signal.ts`; `tests/work-fold-automation-settle-signal.test.ts`.
-2. Declaration and proposal schema — `src/local/automations/automation-declarations.ts`; `tests/work-fold-automation-declarations.test.ts`.
-3. Automation store and receipts journal — `src/local/automations/automation-store.ts`; `tests/work-fold-automation-store.test.ts`.
-4. Executor service and the `automation_run` kernel kind — `src/local/automations/automation-service.ts`, `src/local/work-fold-kernel.ts`; `tests/work-fold-automation-service.test.ts`, `tests/work-fold-kernel.test.ts`.
-5. work-folder-removal revocation — `src/local/work-folder.ts`; `tests/local-work-folder.test.ts`.
-6. Act-lane verbs — `src/local/cli/act-commands.ts`, `src/local/cli/act-facade.ts`; `tests/work-fold-cli-act-protocol.test.ts`, `tests/work-fold-act-facade.test.ts`.
-7. Enablement wiring (superseded by 12) — the original gated enablement path; `tests/work-fold-automation-service.test.ts`.
-8. work-fold agent instruction teaching — `src/local/work-fold-agent-instructions.ts`; `tests/work-fold-agent-conversation.test.ts`.
+1. Settle-signal seam — `src/local/automations/settle-signal.ts`; `tests/amplefile-automation-settle-signal.test.ts`.
+2. Declaration and proposal schema — `src/local/automations/automation-declarations.ts`; `tests/amplefile-automation-declarations.test.ts`.
+3. Automation store and receipts journal — `src/local/automations/automation-store.ts`; `tests/amplefile-automation-store.test.ts`.
+4. Executor service and the `automation_run` kernel kind — `src/local/automations/automation-service.ts`, `src/local/amplefile-kernel.ts`; `tests/amplefile-automation-service.test.ts`, `tests/amplefile-kernel.test.ts`.
+5. connected-folder-removal revocation — `src/local/connected-folder.ts`; `tests/local-connected-folder.test.ts`.
+6. Act-lane verbs — `src/local/cli/act-commands.ts`, `src/local/cli/act-facade.ts`; `tests/amplefile-cli-act-protocol.test.ts`, `tests/amplefile-act-facade.test.ts`.
+7. Enablement wiring (superseded by 12) — the original gated enablement path; `tests/amplefile-automation-service.test.ts`.
+8. AmpleFile agent instruction teaching — `src/local/amplefile-agent-instructions.ts`; `tests/amplefile-agent-conversation.test.ts`.
 9. Settings surface and overview projection — `web-local/`; `tests/automations-settings-ui.test.ts`, `tests/automations-settings-api.test.ts`, `tests/web-ui-contract.test.ts`, `tests/frontend-interaction-contract.test.ts`.
 10. Docs promotion — recorded in Fold integration (archived in the work-fold repository).
-11. Version-2 one-time scheduling and schema migration — `src/local/agent/work-fold-scheduler-service.ts`, `src/local/automations/`; `tests/work-fold-scheduler-service.test.ts`, `tests/work-fold-automation-declarations.test.ts`, `tests/work-fold-automation-store.test.ts`, `tests/work-fold-automation-service.test.ts`.
-12. Receipts-not-gates: direct `automations enable`, version-4 placeholders and the `fold` step (now `agent`), raised defaults — `src/local/automations/`, `src/local/server.ts`; `tests/work-fold-automation-*.test.ts`, `tests/automations-settings-api.test.ts`, `tests/automations-settings-ui.test.ts`.
-13. Pending proposals in Settings and the work-folder filter (2026-09-24) — `src/local/automations/automation-proposal-scan.ts`, the `automationSettings` facade in `src/local/server.ts`, `work-fold:automations:proposals` and `work-fold:automations:enable-proposal` in `desktop/src/`, `web-local/src/components/modals/AutomationsPane.tsx`; `tests/work-fold-automation-proposal-scan.test.ts`, `tests/automations-settings-api.test.ts`, `tests/automations-settings-ui.test.ts`.
-14. work-folder-owned Automations view (2026-09-24, F15 amended) — `src/shared/automation-presentation.ts` (the one trigger summary Settings, the work-folder tab, and the route share), `workFoldAutomationWorkFolderRoles` in `src/local/automations/automation-declarations.ts`, `forWorkFolder`/`requireWorkFolderAutomation` on the `automationSettings` facade and the `/api/work-folders/:id/automations` routes in `src/local/server.ts`, `web-local/src/components/panes/WorkFolderAutomationsPane.tsx`, `web-local/src/hooks/useFolderAutomations.ts`; `tests/folder-automations.test.ts`, `tests/use-surface-tabs.test.ts`, `tests/frontend-interaction-contract.test.ts`.
-15. Folder catch-up, version 5 (2026-10-11) — `ifMissed` in `src/local/automations/automation-declarations.ts`, the catch-up comparison and owed set in `src/local/automations/automation-file-observer.ts`, saved snapshots and running markers in `src/local/automations/automation-file-snapshots.ts`, load/save and the pre-run comparison in `src/local/automations/automation-service.ts`, the catch-up cause and `lastCatchUp` in `src/local/server.ts`, the catch-up phrases in `src/shared/automation-presentation.ts`, and `web-local/src/components/modals/AutomationsPane.tsx`; `tests/work-fold-automation-folder-catch-up.test.ts`, `tests/work-fold-automation-declarations.test.ts`, `tests/automations-settings-api.test.ts`, `tests/automations-settings-ui.test.ts`, `tests/work-fold-cli-automations-show.test.ts`.
+11. Version-2 one-time scheduling and schema migration — `src/local/agent/amplefile-scheduler-service.ts`, `src/local/automations/`; `tests/amplefile-scheduler-service.test.ts`, `tests/amplefile-automation-declarations.test.ts`, `tests/amplefile-automation-store.test.ts`, `tests/amplefile-automation-service.test.ts`.
+12. Receipts-not-gates: direct `automations enable`, version-4 placeholders and the `fold` step (now `agent`), raised defaults — `src/local/automations/`, `src/local/server.ts`; `tests/amplefile-automation-*.test.ts`, `tests/automations-settings-api.test.ts`, `tests/automations-settings-ui.test.ts`.
+13. Pending proposals in Settings and the Connected Folder filter (2026-09-24) — `src/local/automations/automation-proposal-scan.ts`, the `automationSettings` facade in `src/local/server.ts`, `amplefile:automations:proposals` and `amplefile:automations:enable-proposal` in `desktop/src/`, `web-local/src/components/modals/AutomationsPane.tsx`; `tests/amplefile-automation-proposal-scan.test.ts`, `tests/automations-settings-api.test.ts`, `tests/automations-settings-ui.test.ts`.
+14. Connected Folder–owned Automations view (2026-09-24, F15 amended) — `src/shared/automation-presentation.ts` (the one trigger summary Settings, the Connected Folder tab, and the route share), `ampleFileAutomationConnectedFolderRoles` in `src/local/automations/automation-declarations.ts`, `forConnectedFolder`/`requireConnectedFolderAutomation` on the `automationSettings` facade and the `/api/connected-folders/:id/automations` routes in `src/local/server.ts`, `web-local/src/components/panes/ConnectedFolderAutomationsPane.tsx`, `web-local/src/hooks/useFolderAutomations.ts`; `tests/folder-automations.test.ts`, `tests/use-surface-tabs.test.ts`, `tests/frontend-interaction-contract.test.ts`.
+15. Folder catch-up, version 5 (2026-10-11) — `ifMissed` in `src/local/automations/automation-declarations.ts`, the catch-up comparison and owed set in `src/local/automations/automation-file-observer.ts`, saved snapshots and running markers in `src/local/automations/automation-file-snapshots.ts`, load/save and the pre-run comparison in `src/local/automations/automation-service.ts`, the catch-up cause and `lastCatchUp` in `src/local/server.ts`, the catch-up phrases in `src/shared/automation-presentation.ts`, and `web-local/src/components/modals/AutomationsPane.tsx`; `tests/amplefile-automation-folder-catch-up.test.ts`, `tests/amplefile-automation-declarations.test.ts`, `tests/automations-settings-api.test.ts`, `tests/automations-settings-ui.test.ts`, `tests/amplefile-cli-automations-show.test.ts`.
 
 ## Deliberately not in this design
 
 - **Automation chains.** Automation-caused settles never fire triggers; multi-hop
   behavior across automations is excluded structurally, not merely bounded.
-- **Worker-turn, compaction, and work-fold agent request triggers**, for the
+- **Worker-turn, compaction, and AmpleFile agent request triggers**, for the
   reasons recorded under Triggers.
-- **Ambient or durable file watching.** Version 3 admits only the explicitly reviewed bounded folder observation described above; it never watches an unselected work-folder or replays offline events. Version 5's opt-in catch-up compares one saved metadata snapshot with the folder and starts at most one coalesced run per gap; it is not an event log, never queues missed events, and never replays edits made while an automation was running.
+- **Ambient or durable file watching.** Version 3 admits only the explicitly reviewed bounded folder observation described above; it never watches an unselected Connected Folder or replays offline events. Version 5's opt-in catch-up compares one saved metadata snapshot with the folder and starts at most one coalesced run per gap; it is not an event log, never queues missed events, and never replays edits made while an automation was running.
 - **Expressions, conditions, branching, retries, or free templating.**
   Version 4 admits only the closed, host-filled placeholder set; nothing
   evaluates model output, and there is no step-output piping beyond it and
   the declared created-files handoff.
-- **Cross-work-folder moves or deletions.** The files step only copies additively
+- **Cross–Connected Folder moves or deletions.** The files step only copies additively
   with restore points; destructive operations stay with the person and are
   reversible through Recently deleted.
 - **Recurring time-of-day and calendar schedules.** One-time absolute
@@ -710,32 +710,32 @@ The plan items shipped as follows:
   unchanged selector matches is safe by construction (additive,
   collision-renamed, restore-pointed), just noisy; the filter is deferred
   until dogfooding shows the noise matters.
-- **Re-enablement when a referenced work-folder's capabilities change.** The
-  enablement digest pins the declaration; the work-folders it names govern their
+- **Re-enablement when a referenced Connected Folder's capabilities change.** The
+  enablement digest pins the declaration; the Connected Folders it names govern their
   own capabilities through their own grants. `automations show` and the desktop
   Automations pane state this as a residual rather than policing it with
   re-review machinery; if
   dogfooding shows it bites, that machinery is a register decision of its
   own.
-- **Portable or shared automations.** Declarations never enter `.work-fold/`,
+- **Portable or shared automations.** Declarations never enter `.amplefile/`,
   sync, export, or any distribution lane.
 - **A machine-wide automations rail destination, badge, or notification stream.**
-  Settings owns management; the conditional work-folder entry above is a view of
+  Settings owns management; the conditional Connected Folder entry above is a view of
   related automations, not a second management home.
 - **Read-lane automation status.** All automation commands remain act-lane.
 - **Hosted or remote execution.** Automations run only on this desktop while
   the app runs, and no automation step can publish anything.
 - **A general job system.** 64 run slots by default, generous bounds,
-  four step kinds. If a flow does not fit, it belongs to a work-folder app's named
+  four step kinds. If a flow does not fit, it belongs to a Connected Folder app's named
   automations, a Check, or a person.
 
 ## Authoring guidance
 
-`work-fold help automations` includes a complete version-5 folder-change proposal
+`amplefile help automations` includes a complete version-5 folder-change proposal
 that catches up (`"ifMissed": "run"`), with file-copy, Chat, Check, and agent
-steps and two placeholders. The work-fold agent is instructed to consult it
+steps and two placeholders. The AmpleFile agent is instructed to consult it
 before authoring, to offer the catch-up when a person wants files that arrive
-while work-fold is closed handled too, and to leave it out otherwise. The
+while AmpleFile is closed handled too, and to leave it out otherwise. The
 example is checked against the real proposal validator;
 it documents the nested `automation` envelope, additive copies, observer pauses,
 and the distinction between a completed Check run and clear findings.

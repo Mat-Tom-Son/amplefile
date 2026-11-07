@@ -1,14 +1,14 @@
 import { useEffect, useRef } from "react";
 
 /** Navigation is a one-time selection hint, not authority to prepare or activate an update. */
-export function useAppStudioNavigation({ active, loading, instances, navigation, registeredWorkFolderIds, selectId, onSelect, onError }: {
+export function useAppStudioNavigation({ active, loading, instances, navigation, registeredConnectedFolderIds, selectId, onSelect, onError }: {
   active: boolean;
   loading: boolean;
-  instances: readonly { runtimeInstanceId: string; workFolderId: string }[] | undefined;
+  instances: readonly { runtimeInstanceId: string; connectedFolderId: string }[] | undefined;
   navigation: { id: string; runtimeInstanceId: string } | null;
-  registeredWorkFolderIds: ReadonlySet<string>;
+  registeredConnectedFolderIds: ReadonlySet<string>;
   selectId: string;
-  onSelect: (workFolderId: string) => void;
+  onSelect: (connectedFolderId: string) => void;
   onError: (message: string) => void;
 }) {
   const applied = useRef<string | null>(null);
@@ -16,12 +16,12 @@ export function useAppStudioNavigation({ active, loading, instances, navigation,
     if (!active || loading || !instances || !navigation || applied.current === navigation.id) return;
     applied.current = navigation.id;
     const instance = instances.find((item) => item.runtimeInstanceId === navigation.runtimeInstanceId);
-    if (!instance || !registeredWorkFolderIds.has(instance.workFolderId)) {
+    if (!instance || !registeredConnectedFolderIds.has(instance.connectedFolderId)) {
       onSelect("");
       onError("That app installation is no longer available.");
       return;
     }
-    onSelect(instance.workFolderId);
+    onSelect(instance.connectedFolderId);
     document.getElementById(selectId)?.focus();
-  }, [active, loading, instances, navigation, registeredWorkFolderIds, selectId, onSelect, onError]);
+  }, [active, loading, instances, navigation, registeredConnectedFolderIds, selectId, onSelect, onError]);
 }

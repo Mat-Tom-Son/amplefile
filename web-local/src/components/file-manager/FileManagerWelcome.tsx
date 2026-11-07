@@ -4,7 +4,7 @@ import { Checkmark16Regular, ChevronRight16Regular, FolderAdd20Regular, FolderOp
 import "./file-manager.css";
 import "./file-manager-dialogs.css";
 import type { AgentStatus } from "../../types";
-import { WorkFoldLockup } from "../brand/WorkFoldBrand";
+import { AmpleFileLockup } from "../brand/AmpleFileBrand";
 import { ConnectAi, type ConnectedAi } from "../onboarding/ConnectAi";
 import { useMacTools, type MacTool } from "../onboarding/OnboardingFlow";
 import { IncludedChromeSetup } from "../panes/IncludedChromeSetup";
@@ -26,18 +26,18 @@ const standardFolderPitch: Record<string, string> = {
 
 /**
  * First run in the file manager (owner request, 2026-11-07): the same steps as
- * the classic first run (what work-fold is, connecting an AI, the Mac tools,
+ * the classic first run (what AmpleFile is, connecting an AI, the Mac tools,
  * the first folder), shown in a file manager window, as macOS's Setup
  * Assistant shows its steps in a window. The sidebar already lists the
  * Standard Folders, and the last step offers each one to put to work in one
- * click, beside Use Existing Folder and Create New work-folder.
+ * click, beside Connect Folder and New Connected Folder.
  */
-export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected, onPutToWork, onCreateWorkFolder, onOpenFolder, onOpenSettings }: {
+export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected, onPutToWork, onCreateConnectedFolder, onOpenFolder, onOpenSettings }: {
   agentConfigured: boolean;
   fixtureMode: boolean;
   onAiConnected: (status: AgentStatus) => void;
   onPutToWork: (standardFolderId: string) => Promise<void>;
-  onCreateWorkFolder: () => void;
+  onCreateConnectedFolder: () => void;
   onOpenFolder: () => void;
   onOpenSettings?: () => void;
 }) {
@@ -48,9 +48,9 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
   const macTools = useMacTools(fixtureMode);
   const standard = useStandardFolders(fixtureMode);
   const startable = ["downloads", "documents", "desktop", "pictures"]
-    .map((id) => standard.folders.find((folder) => folder.id === id && !folder.workFolderId))
+    .map((id) => standard.folders.find((folder) => folder.id === id && !folder.connectedFolderId))
     .filter((folder): folder is NonNullable<typeof folder> => Boolean(folder));
-  const steps: Step[] = ["welcome", ...(agentConfigured && !connected ? [] : ["connect" as const]), ...(macTools.length || fixtureMode || window.workFoldDesktop?.commandLine ? ["tools" as const] : []), "folder"];
+  const steps: Step[] = ["welcome", ...(agentConfigured && !connected ? [] : ["connect" as const]), ...(macTools.length || fixtureMode || window.ampleFileDesktop?.commandLine ? ["tools" as const] : []), "folder"];
   const index = steps.indexOf(step);
   // Each step slides in from the side you went: Continue from the right, Back from the left.
   // Kept until the step changes again, so an unrelated re-render never replays it.
@@ -71,14 +71,14 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
       <div className="fm-sidebar-scroll">
         <div className="fm-sidebar-heading"><span>Standard Folders</span></div>
         <ul className="fm-sidebar-list">
-          {standard.folders.filter((folder) => !folder.workFolderId).map((folder) => <li key={folder.id}>
+          {standard.folders.filter((folder) => !folder.connectedFolderId).map((folder) => <li key={folder.id}>
             <div className="fm-sidebar-item is-static">
               <span className="fm-sidebar-icon"><StandardFolderGlyph id={folder.id} /></span>
               <span className="fm-sidebar-name">{folder.name}</span>
             </div>
           </li>)}
         </ul>
-        <div className="fm-sidebar-heading"><span>work-folders</span></div>
+        <div className="fm-sidebar-heading"><span>Connected Folders</span></div>
         <p className="fm-welcome-none">None yet</p>
       </div>
     </nav>
@@ -96,9 +96,9 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
 
           <div key={step} className="fm-welcome-step" data-from={stepFrom}>
           {step === "welcome" ? <>
-            <WorkFoldLockup className="fm-welcome-lockup" />
+            <AmpleFileLockup className="fm-welcome-lockup" />
             <h2>Put your folders to work</h2>
-            <p>work-fold gives any folder on your Mac its own AI Worker. Ask it to sort, write, research, or build, right where your files live.</p>
+            <p>AmpleFile gives any folder on your Mac its own AI Worker. Ask it to sort, write, research, or build, right where your files live.</p>
           </> : null}
 
           {step === "connect" ? <>
@@ -149,12 +149,12 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
               </button>)}
               <button type="button" className="fm-welcome-row" disabled={busy !== null} onClick={onOpenFolder}>
                 <span className="fm-welcome-row-icon"><FolderOpen20Regular /></span>
-                <span className="fm-welcome-row-text"><strong>Use Existing Folder…</strong><span>A folder you already have, anywhere on your Mac</span></span>
+                <span className="fm-welcome-row-text"><strong>Connect Folder…</strong><span>A folder you already have, anywhere on your Mac</span></span>
                 <ChevronRight16Regular className="fm-welcome-chev" aria-hidden="true" />
               </button>
-              <button type="button" className="fm-welcome-row" disabled={busy !== null} onClick={onCreateWorkFolder}>
+              <button type="button" className="fm-welcome-row" disabled={busy !== null} onClick={onCreateConnectedFolder}>
                 <span className="fm-welcome-row-icon"><FolderAdd20Regular /></span>
-                <span className="fm-welcome-row-text"><strong>Create New work-folder…</strong><span>An empty folder work-fold keeps for you</span></span>
+                <span className="fm-welcome-row-text"><strong>New Connected Folder…</strong><span>An empty folder AmpleFile keeps for you</span></span>
                 <ChevronRight16Regular className="fm-welcome-chev" aria-hidden="true" />
               </button>
             </div>

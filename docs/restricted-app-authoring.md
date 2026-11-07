@@ -2,15 +2,15 @@
 
 > Request lifecycle consolidation: the [collaboration contract](collaboration-contract.md#completion-delivery-and-recovery)
 > governs completion across turns. Questions use `chat ask|answer` or `agent
-> ask|answer`; an accepted answer remains outstanding until linked. The work-fold agent,
-> work-folder and app owners receive bounded, recorded child-result deliveries.
+> ask|answer`; an accepted answer remains outstanding until linked. The AmpleFile agent,
+> Connected Folder and app owners receive bounded, recorded child-result deliveries.
 > App status/stop/usage follow the owned request, and task result reads expose
 > its selected envelope. Counts and transport sizes shown in Limits are fixed
 > in this build; the continuation switch is configurable.
 
 
-This is the canonical package and bridge reference for work-folder apps that run in
-work-fold's restricted web runtime. Read [Restricted app runtime](restricted-app-runtime.md)
+This is the canonical package and bridge reference for Connected Folder apps that run in
+AmpleFile's restricted web runtime. Read [Restricted app runtime](restricted-app-runtime.md)
 for the security architecture, lifecycle boundaries, and remaining host gaps.
 The App Studio and release-backed runtime behind this surface are documented in
 [App platform foundation](app-platform-foundation.md). A version-2 package is a
@@ -18,7 +18,7 @@ reviewed Feature in either a Development preview or an immutable Release; its
 authoring and bridge contract does not change between those placements.
 
 Restricted apps are not native Pi Extensions. They are prebuilt HTML, CSS, and
-JavaScript packages that work-fold inspects without evaluation, pins to an
+JavaScript packages that AmpleFile inspects without evaluation, pins to an
 exact content digest, and runs in separate sandboxed Chromium hosts. Never add
 `pi.extensions` or install one through Pi's package manager.
 
@@ -29,34 +29,34 @@ shows the native Pi Extension lane and is intentionally not a sandbox example.
 
 ## Normal creation and installation
 
-The normal product path begins in a Chat belonging to the target work-folder:
+The normal product path begins in a Chat belonging to the target Connected Folder:
 
 1. Ask a Worker to build the app. It writes a complete package into an
-   ordinary visible folder inside that work-folder, usually starting from the
-   `start_work-folder_app` tool, which writes a small working app that already
+   ordinary visible folder inside that Connected Folder, usually starting from the
+   `start_connected_folder_app` tool, which writes a small working app that already
    follows the rules below (2026-10-11).
-2. The agent calls the host-owned `propose_work-folder_app` tool with only the
-   work-folder-relative package folder.
-3. work-fold inspects the package without running JavaScript, computes its
-   digest, records a receipt bound to the work-folder, Chat, source folder, and
-   exact bytes, and adds that revision as a **Local preview** in the work-folder's
+2. The agent calls the host-owned `propose_connected_folder_app` tool with only the
+   Connected Folder–relative package folder.
+3. AmpleFile inspects the package without running JavaScript, computes its
+   digest, records a receipt bound to the Connected Folder, Chat, source folder, and
+   exact bytes, and adds that revision as a **Local preview** in the Connected Folder's
    Development Instance in the same call, with every declared destination,
-   directory permission (whole work-folder), notification category, and automation
+   directory permission (whole Connected Folder), notification category, and automation
    on. Nothing collects a credential.
 4. The Chat and the receipt say what still needs you: a secret to connect, a
-   file to choose, or a Check to choose when the work-folder has more than one.
-5. Narrow the preview in **Settings → Apps**, which lists apps by work-folder. Network destinations,
+   file to choose, or a Check to choose when the Connected Folder has more than one.
+5. Narrow the preview in **Settings → Apps**, which lists apps by Connected Folder. Network destinations,
    file targets, notification categories, connections, and each named
    automation are separate controls there.
 
 Settings → Apps deliberately shows no developer path. A completed package that is
-already inside the work-folder and was not proposed from a Chat is added with
-`work-fold apps install-preview --work-folder <id-or-name> --package <work-folder-path>`
+already inside the Connected Folder and was not proposed from a Chat is added with
+`amplefile apps install-preview --connected-folder <id-or-name> --package <connected-folder-path>`
 (a recovery and developer lane in the CLI's act family); it does not replace
 the Chat-bound proposal and review flow for agent-created apps.
 
 **Change this app** creates an exact installed-byte
-working copy and an unsent source-work-folder Chat draft. Edit that copy without changing
+working copy and an unsent source Connected Folder Chat draft. Edit that copy without changing
 its app/package identity and propose it normally. The host rejects an update if
 another edit changed the source preview in the meantime. See
 [Changing an installed app](app-changes.md) for provenance, recovery, and remaining
@@ -67,18 +67,18 @@ workflow limits.
 Use **Open App Studio** when the reviewed preview is ready to install as an App:
 
 1. Declare or edit the App Project title, description, and icon. These
-   fields and `projectId` are machine-local work-fold state; do not create or
-   depend on `.work-fold/app-project.json`.
-2. Prepare a Release with a display version. work-fold snapshots every reviewed
+   fields and `projectId` are machine-local AmpleFile state; do not create or
+   depend on `.amplefile/app-project.json`.
+2. Prepare a Release with a display version. AmpleFile snapshots every reviewed
    preview in that Development Instance, so use stable, unique Feature ids and
    finish each package review first.
 3. Review the immutable digest and publish it as a separate local action. If any
    preview changed since preparation, publishing fails and a new Release must be
    prepared.
-4. Choose a registered target work-folder, prepare the install, then activate it. The
+4. Choose a registered target Connected Folder, prepare the install, then activate it. The
    target may contain the same Project’s Development preview, with separate
    data and controls. A different Project cannot contribute the same Feature id,
-   and only one installed instance of this Project can be attached to that work-folder.
+   and only one installed instance of this Project can be attached to that Connected Folder.
 5. The Installed Release's declared destinations, file roots, notification
    categories, Check slots, and named automations are on from install; connect
    any secret-bearing destination and choose any exact file target in
@@ -88,8 +88,8 @@ The v2 Release is a closed local artifact: it contains the prebuilt package
 bytes and declarations rather than a source-folder pointer or ambient Pi
 dependency. “Publish” does not upload, host, sign, sync, or list it. Executable
 bytes, mutable data, grants, connections, schedules, operation journals, and
-receipts stay in work-fold application data even though the App is attached to
-the chosen work-folder for navigation and file-grant selection.
+receipts stay in AmpleFile application data even though the App is attached to
+the chosen Connected Folder for navigation and file-grant selection.
 
 App Studio can prepare an update or rollback to any other published Release from
 the same Project. Exact unchanged Features may keep eligible authority; a
@@ -106,7 +106,7 @@ can also be exported; see [App data recovery](app-data-recovery.md).
 A small package can remain dependency-free:
 
 ```text
-my-work-folder-app/
+my-connected-folder-app/
 ├── package.json
 ├── agent-app.json
 ├── index.html
@@ -119,7 +119,7 @@ my-work-folder-app/
 
 ```json
 {
-  "name": "my-work-folder-app",
+  "name": "my-connected-folder-app",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -127,10 +127,10 @@ my-work-folder-app/
 }
 ```
 
-work-fold requires `name`, `version`, `type: "module"`, and `agentApp`. It
+AmpleFile requires `name`, `version`, `type: "module"`, and `agentApp`. It
 rejects package `scripts`, `bin`, `workspaces`, `gypfile`, and `pi` fields.
 Dependency metadata may describe the toolchain that produced the assets, but
-work-fold never runs npm or installs those dependencies. Bundle every runtime
+AmpleFile never runs npm or installs those dependencies. Bundle every runtime
 asset into the reviewed directory before proposing it. Package roots and files
 must be ordinary files and directories, not links or junctions.
 
@@ -147,7 +147,7 @@ than those can be previewed and installed but not yet published as a Release.
 For named agent work an app can start, see
 [App-requested agent work](app-assistant-tasks.md). Its `assistantActions`
 declarations are separate from `tools`: tools let the agent call an app;
-requests let the app hand a task to its work-folder's agent. For a bounded model
+requests let the app hand a task to its Connected Folder's agent. For a bounded model
 call with no Chat, no tools, and no transcript, use `assistant.infer` from the
 same document. Neither needs a declaration beyond `assistantActions` for
 requests, and neither needs a grant beyond installation.
@@ -158,9 +158,9 @@ template exercises every current section:
 ```json
 {
   "version": 2,
-  "id": "my-work-folder-app",
-  "title": "My work-folder app",
-  "description": "A work-folder-bound app with a connected service.",
+  "id": "my-connected-folder-app",
+  "title": "My connected-folder app",
+  "description": "A connected-folder-bound app with a connected service.",
   "runtime": {
     "kind": "sandboxed-web",
     "entry": "index.html",
@@ -249,7 +249,7 @@ template exercises every current section:
       {
         "id": "refresh-finished",
         "title": "Refresh finished",
-        "description": "The records refresh automation finished. Open work-fold to review the result."
+        "description": "The records refresh automation finished. Open amplefile to review the result."
       }
     ]
   }
@@ -257,16 +257,16 @@ template exercises every current section:
 ```
 
 `ui.icon` is optional presentation metadata naming an icon from the
-work-folder icon catalog (the names Customize work-folder offers, such as
+Connected Folder icon catalog (the names Customize Connected Folder offers, such as
 `mail`, `calendar`, or `briefcase`). The app's rail button shows it; a name the
 catalog does not know, or no name, shows the generic Apps glyph.
 
-`ui.cornerRadius` is optional presentation metadata. work-fold uses a rounded
+`ui.cornerRadius` is optional presentation metadata. AmpleFile uses a rounded
 12px app canvas when it is omitted. Apps may request a whole-pixel radius from
 0 through 24; use `0` only when the app intentionally owns a square edge. The
 host applies the reviewed value to both the HTML placeholder and the native
 `WebContentsView`, so an app cannot accidentally paint square corners over a
-rounded shell. Omit the field when targeting older work-fold builds: older
+rounded shell. Omit the field when targeting older AmpleFile builds: older
 strict manifest parsers do not recognize presentation fields added later.
 
 Manifest ids use lowercase letters, numbers, and hyphens. `ui`, `tools`, and
@@ -330,12 +330,12 @@ inline `<script>` blocks, inline handlers such as `onclick=`, `eval`,
 `new Function`, and WebAssembly are blocked, and `fetch()` of a packaged file
 is blocked too, so ship data as a JavaScript module. Styles may be same-origin
 or inline; images may be same-origin or `data:`. Bundle browser libraries and assets into the package instead of using
-a CDN. Use the host bridge for network and work-folder files.
+a CDN. Use the host bridge for network and Connected Folder files.
 
 The preload exposes one frozen global:
 
 ```js
-const bridge = globalThis.workFoldRestrictedApp;
+const bridge = globalThis.ampleFileRestrictedApp;
 ```
 
 Bridge values and requests must be JSON-compatible and bounded. Do not pass
@@ -353,7 +353,7 @@ const unsubscribe = bridge.context.onChanged((next) => {
 });
 ```
 
-Context contains host-owned `workFolderId`, `appId`, `digest`, and `mountId`,
+Context contains host-owned `connectedFolderId`, `appId`, `digest`, and `mountId`,
 plus `placement` (`navigator` or `tab`), nullable `appTabId`, origin-relative
 `route`, JSON `state`, `theme` (`light` or `dark`), `active`, and nullable
 `openedFrom`. Treat identity
@@ -385,7 +385,7 @@ bridge.context.onChanged(render);
 `openedFrom` says how the view was opened, not who may do what: it grants
 nothing, and the app should treat it as a hint for what to show first.
 
-### work-folder-owned tabs
+### Connected Folder–owned tabs
 
 A tab opens only from the left-pane view, in response to the person's click or
 key press there, the way a file in Files opens its preview (2026-10-11). Call
@@ -408,38 +408,38 @@ await bridge.tabs.close();
 `tabId` is app-local and stable; it may use lowercase letters, numbers,
 periods, underscores, colons, and hyphens. Routes must begin with one `/` and
 remain origin-relative. State is JSON-compatible and limited to 64 KiB. The
-app never supplies a work-folder id, digest, or shell tab id. Opening an existing
-app-local id activates or retargets its work-folder-owned tab.
+app never supplies a Connected Folder id, digest, or shell tab id. Opening an existing
+app-local id activates or retargets its Connected Folder–owned tab.
 
-### Looking like work-fold
+### Looking like AmpleFile
 
-work-fold puts its own look into every app view as CSS custom properties
-(2026-10-11): `--wf-font`, `--wf-font-size`, `--wf-canvas`, `--wf-surface`,
-`--wf-surface-subtle`, `--wf-surface-hover`, `--wf-text`, `--wf-text-muted`,
-`--wf-text-subtle`, `--wf-border`, `--wf-border-strong`, `--wf-accent`,
-`--wf-on-accent`, `--wf-accent-soft`, `--wf-accent-text`, `--wf-focus`,
-`--wf-success`, `--wf-danger`, `--wf-attention`, `--wf-radius-sm`,
-`--wf-radius-md`, `--wf-radius-lg`, `--wf-shadow`, plus `--wf-theme` and
-`--wf-color-scheme`. The trusted renderer reads them from its own live styles,
-so they follow light and dark, the work-folder's accent, and the person's
+AmpleFile puts its own look into every app view as CSS custom properties
+(2026-10-11): `--af-font`, `--af-font-size`, `--af-canvas`, `--af-surface`,
+`--af-surface-subtle`, `--af-surface-hover`, `--af-text`, `--af-text-muted`,
+`--af-text-subtle`, `--af-border`, `--af-border-strong`, `--af-accent`,
+`--af-on-accent`, `--af-accent-soft`, `--af-accent-text`, `--af-focus`,
+`--af-success`, `--af-danger`, `--af-attention`, `--af-radius-sm`,
+`--af-radius-md`, `--af-radius-lg`, `--af-shadow`, plus `--af-theme` and
+`--af-color-scheme`. The trusted renderer reads them from its own live styles,
+so they follow light and dark, the Connected Folder's accent, and the person's
 appearance choices, and they change in place when any of those change. They
 are variables only: an app that never uses them looks exactly as before.
-`--wf-font` names Inter, which the view loads from its own origin.
+`--af-font` names Inter, which the view loads from its own origin.
 
 For ready-made controls, opt in to the kit:
 
 ```html
-<link rel="stylesheet" href="/__work-fold/kit.css">
-<body class="wf-app">
+<link rel="stylesheet" href="/__amplefile/kit.css">
+<body class="af-app">
 ```
 
-The kit styles `wf-button` (with `wf-button-primary`, `wf-button-quiet`, and
-`wf-button-danger`), `wf-input`, `wf-select`, `wf-textarea`, `wf-field`,
-`wf-toolbar`, `wf-list` with `wf-row`, `wf-row-title`, and `wf-row-meta`,
-`wf-card`, `wf-badge` (with `wf-badge-accent`, `-success`, `-danger`, and
-`-attention`), `wf-empty`, `wf-divider`, `wf-spinner`, `wf-title`,
-`wf-heading`, `wf-muted`, and `wf-small`. Every kit selector uses `:where()`, so
-it carries no specificity and the app's own rules always win. `/__work-fold/`
+The kit styles `af-button` (with `af-button-primary`, `af-button-quiet`, and
+`af-button-danger`), `af-input`, `af-select`, `af-textarea`, `af-field`,
+`af-toolbar`, `af-list` with `af-row`, `af-row-title`, and `af-row-meta`,
+`af-card`, `af-badge` (with `af-badge-accent`, `-success`, `-danger`, and
+`-attention`), `af-empty`, `af-divider`, `af-spinner`, `af-title`,
+`af-heading`, `af-muted`, and `af-small`. Every kit selector uses `:where()`, so
+it carries no specificity and the app's own rules always win. `/__amplefile/`
 is host-owned: package files under that path are never served.
 
 ### The rail dot
@@ -489,7 +489,7 @@ code never sets or reads an authorization secret.
 ### App storage
 
 Storage is machine-local and keyed by the host-owned Tenant and Data Namespace.
-A preview and installed Release have separate storage, even in the same work-folder:
+A preview and installed Release have separate storage, even in the same Connected Folder:
 
 ```js
 const usage = await bridge.storage.usage();
@@ -512,7 +512,7 @@ optimistic concurrency and may also set `clear: true`. Values must be ordinary
 JSON. Default limits are 256 MiB per app, 65,536 keys, 16 MiB per value, and
 4,096 operations or 64 MiB per transaction. Storage is one document read and
 rewritten whole on every operation, which is why it stops well short of
-V8's maximum string length; keep bulk data in granted work-folder files.
+V8's maximum string length; keep bulk data in granted Connected Folder files.
 
 Only active visible UI receives invalidation hints:
 
@@ -570,9 +570,9 @@ own declaration ids — exactly the `permissionId` and `grantId` values it
 already passes to `checks.read` and `files.list/read/write`.
 
 `revision` increases for as long as this view is mounted. Use it to order
-hints, not to compare against anything stored: it counts hints work-fold
+hints, not to compare against anything stored: it counts hints AmpleFile
 actually delivered to this installation, and it starts again when the app's
-bytes or grants change, when the app is stopped, and when work-fold restarts.
+bytes or grants change, when the app is stopped, and when AmpleFile restarts.
 
 `tasks.onChanged` carries at most 64 task ids and 64 receipt ids per hint, and
 `files.onChanged` sets `truncated` when its bounded observation of the root hit
@@ -589,10 +589,10 @@ People can export and restore app-owned data from the app's details in Settings 
 see [App data recovery](app-data-recovery.md). This management operation adds no
 runtime bridge power and never restores connections or grants.
 
-### Granted work-folder files
+### Granted Connected Folder files
 
 A manifest file declaration is only a maximum request. The person maps it to
-an ordinary relative file or directory in that app's work-folder before use:
+an ordinary relative file or directory in that app's Connected Folder before use:
 
 ```js
 const listing = await bridge.files.list({ grantId: "exports", path: "." });
@@ -613,13 +613,13 @@ modifiedAt }` and requires explicit `create` or `replace` mode. Data may be
 `utf8` or `base64`. Default read and write limits are 64 MiB per whole file and
 listings return up to 10,000 entries. Every write is atomic and creates a targeted History
 checkpoint. Grant-relative paths cannot traverse links, metadata roots, or the
-selected work-folder target.
+selected Connected Folder target.
 
 For a declaration whose target is one exact `file`, use `path: "."` to read or
 replace that selected file. Exact-file grants cannot list children or create a
 different filename; `mode: "replace"` is the only permitted write mode.
 
-While an eligible mount is open, work-fold observes each granted root on a
+While an eligible mount is open, AmpleFile observes each granted root on a
 bounded metadata-only poll and calls `files.onChanged` when it settles; see
 [Invalidation hints](#invalidation-hints).
 
@@ -631,11 +631,11 @@ An optional `permissions.checks` array declares up to 256 named choices:
 "checks": [{ "id": "quote-review", "title": "Quote review" }]
 ```
 
-The slot is granted on install. When the owning work-folder has exactly one Check,
+The slot is granted on install. When the owning Connected Folder has exactly one Check,
 that Check is bound automatically; otherwise the slot is reported as still
 needing the person, who picks an exact Check revision in **Settings → Apps →
 Review access → Check results**. A selection includes status, finding details,
-work-folder-relative paths and quoted evidence from that Check. It grants no run,
+Connected Folder–relative paths and quoted evidence from that Check. It grants no run,
 decision, correction, or general file authority, and does not enable or run
 the Check.
 
@@ -649,7 +649,7 @@ try {
 ```
 
 Only an active visible desktop app view can read results. Workers and
-automations cannot. The app cannot supply a work-folder or Check id. The host
+automations cannot. The app cannot supply a Connected Folder or Check id. The host
 re-verifies the selected Check's evidence locally, without a model request.
 States distinguish `never-run`, `running`, `stale`, `blocked`, `check-error`,
 `current-clear` and `needs-attention`; stale or unhealthy results carry no
@@ -672,9 +672,9 @@ See [Invalidation hints](#invalidation-hints).
 Installation is the grant for both AI lanes
 ([Receipts, not gates](receipts-not-gates.md), F22). `assistant.request`
 journals a declared `assistantActions` entry and starts a fresh ordinary Chat
-in the owning work-folder in the same call — titled with your app's title and the
+in the owning Connected Folder in the same call — titled with your app's title and the
 action's (`Inbox · Compare quotes`), its message labelled as coming from your
-app; `assistant.infer` asks the work-folder's
+app; `assistant.infer` asks the Connected Folder's
 configured model one bounded question with no tools, no files, and no
 transcript:
 
@@ -694,9 +694,9 @@ const { json } = await bridge.assistant.infer({
 data, so an app's own content cannot redirect the task. Without `outputSchema`
 the result is `{ text, truncated, receiptId }`; with one — the same closed JSON
 Schema subset tool declarations use — it is `{ json, receiptId }`, already
-validated. work-fold never cuts a reply: `truncated` means only that the model
+validated. AmpleFile never cuts a reply: `truncated` means only that the model
 itself stopped at its output-token limit, and a reply over `maxOutputBytes` is
-refused with `INFER_OUTPUT_TOO_LARGE`. The call uses the work-folder's configured
+refused with `INFER_OUTPUT_TOO_LARGE`. The call uses the Connected Folder's configured
 model and thinking level with the model's own output-token limit.
 `receiptId` matches the id a `tasks.onChanged` hint carries. Active
 views, workers holding a tool action, and named automation runs reach
@@ -723,7 +723,7 @@ A settled task carries one result shape
 ([Collaboration contract](collaboration-contract.md), F29): `summary` (at most
 32 KiB), `outcome` (`succeeded`, `partial`, or `failed`), `truncated`,
 optional `data` matching the declared `outputSchema`, and optional `files`
-naming work-folder-relative deliverables with their fingerprint and size. Details
+naming Connected Folder–relative deliverables with their fingerprint and size. Details
 that do not match the declared shape never reach the app: they are left out and
 the outcome says so. The full contract, bounds, and error codes are in
 [App-requested agent work](app-assistant-tasks.md).
@@ -738,7 +738,7 @@ It cannot manipulate visible tabs. Export `handleAction` for declared tools and
 ```js
 export async function handleAction(action, input) {
   if (action !== "search") throw new Error("Unknown action.");
-  const response = await globalThis.workFoldRestrictedApp.request({
+  const response = await globalThis.ampleFileRestrictedApp.request({
     destinationId: "records-api",
     method: "GET",
     path: `/v1/records?query=${encodeURIComponent(input.query)}`,
@@ -754,7 +754,7 @@ export async function handleAutomation(event) {
   }
   let network;
   try {
-    const response = await globalThis.workFoldRestrictedApp.request({
+    const response = await globalThis.ampleFileRestrictedApp.request({
       destinationId: "records-api",
       method: "GET",
       path: "/v1/records?limit=20",
@@ -767,7 +767,7 @@ export async function handleAutomation(event) {
 
   let notification;
   try {
-    notification = await globalThis.workFoldRestrictedApp.notifications.show({
+    notification = await globalThis.ampleFileRestrictedApp.notifications.show({
       permissionId: "refresh-finished",
       // Where a click opens the app's left pane; optional.
       route: "/records?filter=new",
@@ -777,7 +777,7 @@ export async function handleAutomation(event) {
     notification = { status: "not-shown", code: error?.code || "NOTIFICATION_FAILED" };
   }
 
-  await globalThis.workFoldRestrictedApp.storage.set("last-refresh", {
+  await globalThis.ampleFileRestrictedApp.storage.set("last-refresh", {
     reason: event.reason,
     scheduledAt: event.scheduledAt,
     completedAt: new Date().toISOString(),
@@ -800,8 +800,8 @@ events contain `runId`, `appAutomationId`, `handler`, `reason` (`scheduled`,
 
 Every automation is on when the app is added, anchored at that moment so its
 first run is one interval later; the person can turn any off in Settings → Apps. A job
-runs only while work-fold is running. One scheduler is shared across all
-work-folders and apps, with 32 concurrent runs by default, FIFO admission, same-job
+runs only while AmpleFile is running. One scheduler is shared across all
+Connected Folders and apps, with 32 concurrent runs by default, FIFO admission, same-job
 non-overlap, and at most one staggered latest catch-up when requested. **Run
 now** is a one-off execution: it works while the schedule is off and does not
 move the recurring cadence. Every attempt receives a durable receipt visible in
@@ -836,12 +836,12 @@ accepts. It never contains a credential:
 | API key | `{ "kind": "api-key", "header": "x-api-key" }` | Settings → Apps collects the value and the broker injects it through the reviewed non-sensitive header name. |
 | Bearer | `{ "kind": "bearer" }` | Settings → Apps stores the token and the broker writes `Authorization: Bearer …`. |
 | Basic | `{ "kind": "basic" }` | Settings → Apps stores username/password and the broker creates the Basic authorization header. |
-| OAuth PKCE | `{ "kind": "oauth2-pkce", "issuer": "https://identity.example.com", "clientId": "public-native-client", "scopes": ["records.read"] }` | work-fold performs public-issuer discovery, S256, system-browser authorization, one-shot loopback callback, encrypted storage, and refresh. |
+| OAuth PKCE | `{ "kind": "oauth2-pkce", "issuer": "https://identity.example.com", "clientId": "public-native-client", "scopes": ["records.read"] }` | AmpleFile performs public-issuer discovery, S256, system-browser authorization, one-shot loopback callback, encrypted storage, and refresh. |
 
 A public destination may accept multiple credential kinds, but `none` cannot
 be combined with another kind. OAuth requires a client id registered with a
 public HTTPS issuer that supports public clients without a client secret, plus
-scopes that exclude `openid`. work-fold cannot verify who owns that client
+scopes that exclude `openid`. AmpleFile cannot verify who owns that client
 registration. Client secrets and device-code flow are rejected. Connections are configured per
 exact Feature revision and reviewed destination in Settings → Apps. The host also
 binds each secret to its Tenant, Runtime Instance, Feature Installation,
@@ -872,9 +872,9 @@ well-known path, which a package author cannot forge — which is why a
 Google's does. Pinning has no such document, so it establishes the same thing
 structurally instead. Without the rule, a package could declare a genuine issuer
 and authorization endpoint alongside an attacker-controlled token endpoint: the
-person would see a real provider consent screen, and work-fold would then post
+person would see a real provider consent screen, and AmpleFile would then post
 the authorization code and PKCE verifier to the attacker. PKCE cannot help once
-the verifier is handed over. work-fold renders the endpoints for transparency,
+the verifier is handed over. AmpleFile renders the endpoints for transparency,
 but review is not treated as a substitute for enforcing their authority.
 
 Subdomains are deliberately refused as well, not only unrelated domains.
@@ -892,14 +892,14 @@ vouches for another host. Refusing a valid provider is recoverable; accepting an
 attacker's token endpoint is not. Supporting split-host providers would require
 a separately reviewed authority expansion beyond today's exact-host rule.
 Pinned mode is also weaker in one further respect: with no metadata
-document, work-fold cannot tell whether the provider supports RFC 9207, so the
+document, AmpleFile cannot tell whether the provider supports RFC 9207, so the
 authorization-response `iss` check is not required in this mode.
 
-work-fold hard-fails only on assertions it cannot supply itself: the metadata
+AmpleFile hard-fails only on assertions it cannot supply itself: the metadata
 `issuer` must equal the declared issuer, both endpoints must be public HTTPS, and
 an advertised `grant_types_supported` must include `authorization_code`.
 Under-declared *capabilities* are reported as durable connection diagnostics
-rather than refused, because work-fold always sends PKCE S256 and never holds a
+rather than refused, because AmpleFile always sends PKCE S256 and never holds a
 client secret. The connection management surface keeps those notes visible.
 This matters in practice: neither Google nor Microsoft advertises `none`
 in `token_endpoint_auth_methods_supported`, and Microsoft omits
@@ -936,12 +936,12 @@ overwrites every reviewed extra again when it builds the request.
 
 ## Runtime limits
 
-`workFoldRestrictedApp.limits.get()` returns the host's effective bounds
+`ampleFileRestrictedApp.limits.get()` returns the host's effective bounds
 synchronously. The values are constant for the mount, arrive as a launch
 argument rather than an IPC call, and are available to the worker as well:
 
 ```js
-const limits = globalThis.workFoldRestrictedApp.limits.get();
+const limits = globalThis.ampleFileRestrictedApp.limits.get();
 const pageSize = Math.floor(limits.network.maxResponseBytes / 2_048);
 ```
 
@@ -964,7 +964,7 @@ keep one operation's memory finite rather than ration what an app may do, but
 app storage is still the wrong home for bulk data — it is one document read and
 rewritten whole on every operation: request a
 read-write directory permission and write large or long-lived records as
-ordinary work-folder files, which the person and the agent can also read with
+ordinary Connected Folder files, which the person and the agent can also read with
 normal tools. Overruns report their own bound —
 `NETWORK_RESPONSE_TOO_LARGE`, `NETWORK_REQUEST_TOO_LARGE`, `FILE_TOO_LARGE`,
 `STORAGE_QUOTA`, `INFER_INPUT_TOO_LARGE`, `INFER_OUTPUT_TOO_LARGE`, and
@@ -976,8 +976,8 @@ hit.
 
 Adding a digest as a Development preview, or installing a published Release
 Feature, makes its UI available with every declared destination, directory
-permission (whole work-folder), notification category, and automation on, and with a
-Check slot bound when the work-folder has exactly one Check. No connection is stored:
+permission (whole Connected Folder), notification category, and automation on, and with a
+Check slot bound when the Connected Folder has exactly one Check. No connection is stored:
 a secret is entered by the person once per destination, and a file-target
 permission waits for a chosen file. Storage is available without any grant.
 The person narrows any of this in Settings → Apps. A direct preview update preserves the
@@ -997,7 +997,7 @@ release-backed App Instance removes its connections and makes its data
 unreachable in the same registry transition, then either retains the detached
 namespace or — after the same recovery copy — queues its physical purge as
 explicitly chosen ([App data export and recovery](app-data-recovery.md)). Cleanup is idempotent after interruption and never deletes
-work-folder files. Source edits do not change preview or Release bytes; propose and
+Connected Folder files. Source edits do not change preview or Release bytes; propose and
 review a new digest.
 
 Bridge promises reject an `Error`; host failures expose a stable enumerable
@@ -1036,11 +1036,11 @@ when the external system is optional.
 
 The Connected inbox package includes a project-service panel. To test it:
 
-1. Register this repository as a work-folder, or copy
+1. Register this repository as a Connected Folder, or copy
    `examples/packages/restricted-connected-inbox` into an ordinary folder in a
-   registered work-folder.
-2. Add that work-folder-relative package as a Local preview with
-   `work-fold apps install-preview --work-folder <id-or-name> --package examples/packages/restricted-connected-inbox`
+   registered Connected Folder.
+2. Add that Connected Folder–relative package as a Local preview with
+   `amplefile apps install-preview --connected-folder <id-or-name> --package examples/packages/restricted-connected-inbox`
    (adjust the path if copied). It is added at once; Settings → Apps shows what
    it can reach.
 3. From the repository root, start the companion process:
@@ -1054,7 +1054,7 @@ The Connected inbox package includes a project-service panel. To test it:
    can use **Check health** or **Run refresh job** right away.
 
 The helper is an ordinary dependency-free developer process that binds only
-`127.0.0.1:4317`. work-fold and the sandboxed app do not execute, install,
+`127.0.0.1:4317`. AmpleFile and the sandboxed app do not execute, install,
 stop, or trust it. The loopback broker verifies the reviewed address and port,
 not which process owns the listener. See the
 [example README](../examples/packages/restricted-connected-inbox/README.md)

@@ -1,4 +1,4 @@
-import { workFoldRequestLimits } from "./work-fold-limits.js";
+import { ampleFileRequestLimits } from "./amplefile-limits.js";
 import type { RestrictedAppInferenceModelRef, RestrictedAppInferenceUsage } from "./restricted-app-inference.js";
 
 /**
@@ -9,7 +9,7 @@ import type { RestrictedAppInferenceModelRef, RestrictedAppInferenceUsage } from
 export type RestrictedAppAssistantModelRef = RestrictedAppInferenceModelRef;
 
 /**
- * `amountUsd` is present only when the effective model carries pricing work-fold
+ * `amountUsd` is present only when the effective model carries pricing AmpleFile
  * can apply. A model without published rates leaves the cost unknown; it is
  * never reported as zero.
  */
@@ -18,7 +18,7 @@ export type RestrictedAppAssistantUsage = RestrictedAppInferenceUsage & { amount
 /** How the agent itself described the outcome of the work it reported. */
 export type RestrictedAppResultOutcome = "succeeded" | "partial" | "failed";
 
-/** One deliverable the agent chose to hand back, named relative to the work-folder. */
+/** One deliverable the agent chose to hand back, named relative to the Connected Folder. */
 export interface RestrictedAppResultFile {
   path: string;
   /** Lowercase hex SHA-256 of the file's bytes when the result was recorded. */
@@ -33,8 +33,8 @@ export interface RestrictedAppResultFile {
  * back. `truncated` is the app-side addition: it says the envelope did not fit
  * the published bound and what the app holds is the trimmed version.
  *
- * Field names match `WorkFoldResultEnvelope`
- * (src/local/requests/request-records.ts) exactly, so a report filed by a work-folder
+ * Field names match `AmpleFileResultEnvelope`
+ * (src/local/requests/request-records.ts) exactly, so a report filed by a Connected Folder
  * Agent projects onto an app task without translation. Turn `fileChanges`
  * evidence never becomes `files`: those are the deliverables the agent
  * named, not everything the turn happened to touch.
@@ -92,9 +92,9 @@ export const restrictedAppAssistantLimits = Object.freeze({
    */
   resultBytes: 32 * 1024 * 1024,
   /** F29's summary bound, shared with the report verb so both lanes trim alike. */
-  summaryBytes: workFoldRequestLimits.maxResultSummaryBytes,
+  summaryBytes: ampleFileRequestLimits.maxResultSummaryBytes,
   /** F29's `data` bound; only an action that declared an output shape can reach it. */
-  dataBytes: workFoldRequestLimits.maxResultDataBytes,
+  dataBytes: ampleFileRequestLimits.maxResultDataBytes,
   listItems: 1_000,
   /** Counts dispatching, running and waiting tasks for one installation. */
   runningPerInstallation: 32,

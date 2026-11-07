@@ -7,7 +7,7 @@ import { createPackageWithOptions, getRawHeader } from "@electron/asar";
 import { verifyAsarFileIntegrity } from "../scripts/asar-integrity.mjs";
 
 async function fixture(t: any) {
-  const root = await mkdtemp(join(tmpdir(), "workfold-asar-integrity-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-asar-integrity-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const source = join(root, "source"), archive = join(root, "app.asar");
   await mkdir(source);

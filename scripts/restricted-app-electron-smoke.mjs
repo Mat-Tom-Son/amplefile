@@ -40,7 +40,7 @@ protocol.registerSchemesAsPrivileged([{
 app.on("window-all-closed", () => {});
 
 // Keep only lifecycle metadata for this synthetic sandbox. Capture it before
-// cleanup destroys the evidence; never collect a normal work-fold profile.
+// cleanup destroys the evidence; never collect a normal AmpleFile profile.
 const lifecycle = [];
 app.on("web-contents-created", (_event, contents) => {
   const record = (event, detail = {}) => {
@@ -69,7 +69,7 @@ void mark("loaded")
 
 async function runSmoke() {
   await mark("smoke-start");
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-restricted-electron-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-restricted-electron-"));
   const listener = createServer((_request, response) => {
     hits += 1;
     response.writeHead(200, { "content-type": "text/plain" });
@@ -90,12 +90,12 @@ async function runSmoke() {
   const escapeUrl = `http://127.0.0.1:${address.port}/escape`;
   let host;
   try {
-    process.env.WORKFOLD_STATE_DIR = join(sandbox, "state");
-    const workFolderRoot = join(sandbox, "work-folder");
-    const sourceRoot = join(workFolderRoot, "apps", "source");
+    process.env.AMPLEFILE_STATE_DIR = join(sandbox, "state");
+    const connectedFolderRoot = join(sandbox, "connected-folder");
+    const sourceRoot = join(connectedFolderRoot, "apps", "source");
     const stagingRoot = join(sandbox, "staged");
     await writeSmokePackage(sourceRoot, address.port);
-    await mkdir(join(workFolderRoot, "exports"), { recursive: true });
+    await mkdir(join(connectedFolderRoot, "exports"), { recursive: true });
     const receipt = await stageRestrictedAppPackage(sourceRoot, stagingRoot);
     await mark("package-staged");
     const connections = new EmptyConnections();
@@ -142,8 +142,8 @@ async function runSmoke() {
       },
     });
     host = new RestrictedAppHost({
-      readCheckResult: async (workFolderId, checkId, declarationDigest) => {
-        assert.equal(workFolderId, "ws-electron-smoke");
+      readCheckResult: async (connectedFolderId, checkId, declarationDigest) => {
+        assert.equal(connectedFolderId, "ws-electron-smoke");
         assert.equal(checkId, "smoke-check");
         assert.equal(declarationDigest, "c".repeat(64));
         return { checkId, declarationDigest, title: "Smoke Check", state: "never-run", lastRunAt: null, findings: [], truncated: false };
@@ -151,7 +151,7 @@ async function runSmoke() {
       assistantTasks: async () => ({
         async request(scope, request, assertCurrent) {
           assertCurrent();
-          assert.equal(scope.workFolderId, "ws-electron-smoke");
+          assert.equal(scope.connectedFolderId, "ws-electron-smoke");
           assert.equal(scope.appId, "restricted-electron-smoke");
           assert.equal(typeof scope.featureInstallationId, "string");
           assert.match(scope.authorityDigest, /^[a-f0-9]{64}$/);
@@ -168,7 +168,7 @@ async function runSmoke() {
           // an app meets in the running product.
           const parsed = parseRestrictedAppInferenceRequest(request);
           options.assertCurrent();
-          assert.equal(scope.workFolderId, "ws-electron-smoke");
+          assert.equal(scope.connectedFolderId, "ws-electron-smoke");
           assert.equal(scope.appId, "restricted-electron-smoke");
           assert.match(scope.authorityDigest, /^[a-f0-9]{64}$/);
           const model = { provider: "smoke", id: "smoke-model" };
@@ -187,7 +187,7 @@ async function runSmoke() {
       connections,
       networkBroker,
       storage,
-      resolveWorkFolderRoot: async (workFolderId) => workFolderId === "ws-electron-smoke" ? workFolderRoot : null,
+      resolveConnectedFolderRoot: async (connectedFolderId) => connectedFolderId === "ws-electron-smoke" ? connectedFolderRoot : null,
       preloadPath: join(rootDir, "dist", "desktop", "desktop", "src", "restricted-app-preload.cjs"),
       kitRoot: join(rootDir, "dist", "desktop", "restricted-app-kit"),
       notifications: notificationBroker,
@@ -199,7 +199,7 @@ async function runSmoke() {
       invocationTimeoutMs: 5_000,
     });
     const descriptor = {
-      workFolderId: "ws-electron-smoke",
+      connectedFolderId: "ws-electron-smoke",
       projectId: createProjectId(),
       tenantId: createTenantId(),
       principalId: createPrincipalId(),
@@ -232,7 +232,7 @@ async function runSmoke() {
       dataNamespaceId: descriptor.dataNamespaceId,
     };
     host.syncAuthority([{
-      workFolderId: descriptor.workFolderId,
+      connectedFolderId: descriptor.connectedFolderId,
       appId: descriptor.manifest.id,
       digest: descriptor.digest,
       runtimeInstanceId: descriptor.runtimeInstanceId,
@@ -258,7 +258,7 @@ async function runSmoke() {
 
     const peer = { ...descriptor, runtimeInstanceId: createRuntimeInstanceId(), featureInstallationId: createFeatureInstallationId(),
       dataNamespaceId: createDataNamespaceId(), authority: createAuthorityStamp(), networkGrants: [], fileGrants: [], notificationGrants: [], automations: [] };
-    const authorityOf = (item) => ({ workFolderId: item.workFolderId, appId: item.manifest.id, digest: item.digest,
+    const authorityOf = (item) => ({ connectedFolderId: item.connectedFolderId, appId: item.manifest.id, digest: item.digest,
       runtimeInstanceId: item.runtimeInstanceId, featureInstallationId: item.featureInstallationId, authority: item.authority });
     const peerOwner = { ...storageOwner, runtimeInstanceId: peer.runtimeInstanceId, featureInstallationId: peer.featureInstallationId, dataNamespaceId: peer.dataNamespaceId };
     await storage.set(storageOwner, "instance-value", "source");
@@ -301,9 +301,9 @@ async function runSmoke() {
     assert.deepEqual(await host.invoke(descriptor, "instance", {}), afterFencedAction, "revoking a sibling must not invalidate the original worker");
     host.syncAuthority([authorityOf(descriptor), authorityOf(peer)]);
     const peerAfterRevocation = await host.invoke(peer, "instance", {});
-    await host.stop(descriptor.workFolderId, descriptor.manifest.id, descriptor.digest, descriptor.featureInstallationId);
+    await host.stop(descriptor.connectedFolderId, descriptor.manifest.id, descriptor.digest, descriptor.featureInstallationId);
     assert.deepEqual(await host.invoke(peer, "instance", {}), peerAfterRevocation, "an exact installation stop leaves its sibling running");
-    await host.stop(peer.workFolderId, peer.manifest.id, peer.digest, peer.featureInstallationId);
+    await host.stop(peer.connectedFolderId, peer.manifest.id, peer.digest, peer.featureInstallationId);
     const pendingPeer = host.invoke(peer, "instance", {});
     const pendingRejection = assert.rejects(pendingPeer, (error) => error?.code === "APP_UNAVAILABLE");
     host.syncAuthority([authorityOf(descriptor)]);
@@ -391,12 +391,12 @@ async function runSmoke() {
       scheduledAt: "2026-07-13T00:00:00.000Z",
     });
     assert.deepEqual(shownNotifications.map((item) => item.notification), [{
-      workFolderId: descriptor.workFolderId,
+      connectedFolderId: descriptor.connectedFolderId,
       appId: descriptor.manifest.id,
       featureInstallationId: descriptor.featureInstallationId,
       digest: descriptor.digest,
       permissionId: "automation-update",
-      title: "work-fold · Restricted Electron smoke — Automation update",
+      title: "AmpleFile · Restricted Electron smoke — Automation update",
       body: "New sandboxed app data is ready.",
     }]);
     // The app names where a click opens its left pane; the copy stays the
@@ -404,7 +404,7 @@ async function runSmoke() {
     assert.equal(await storage.get(storageOwner, "notification-route-denied"), true, "a notification route outside the app is refused");
     shownNotifications[0].callbacks.onClick();
     assert.deepEqual(notificationOpens, [{
-      workFolderId: descriptor.workFolderId,
+      connectedFolderId: descriptor.connectedFolderId,
       appId: descriptor.manifest.id,
       featureInstallationId: descriptor.featureInstallationId,
       digest: descriptor.digest,
@@ -442,7 +442,7 @@ async function runSmoke() {
     await mark("app-automation-complete");
 
     const parent = new BrowserWindow({ show: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
-    await parent.loadURL("data:text/html,<main>work-fold owner</main>");
+    await parent.loadURL("data:text/html,<main>AmpleFile owner</main>");
     const staleMount = host.mountUi(descriptor, parent.webContents, parent, {
       mountId: "00000000-0000-4000-8000-000000000000",
       placement: "navigator",
@@ -458,7 +458,7 @@ async function runSmoke() {
       (error) => error?.code === "APP_UNAVAILABLE",
       "stop invalidates an in-flight stale UI mount",
     );
-    await host.stop(descriptor.workFolderId, descriptor.manifest.id, descriptor.digest);
+    await host.stop(descriptor.connectedFolderId, descriptor.manifest.id, descriptor.digest);
     await staleMountRejection;
     const mountId = "11111111-1111-4111-8111-111111111111";
     await host.mountUi(descriptor, parent.webContents, parent, {
@@ -471,7 +471,7 @@ async function runSmoke() {
       active: true,
       occluded: false,
       theme: "dark",
-      appearance: { "--wf-accent": "#123456", "--wf-font": "\"Inter Variable\", system-ui", "--wf-text": "url(https://example.invalid/x)", "--wf-radius-sm": "5px}body{color:red" },
+      appearance: { "--af-accent": "#123456", "--af-font": "\"Inter Variable\", system-ui", "--af-text": "url(https://example.invalid/x)", "--af-radius-sm": "5px}body{color:red" },
     });
     await waitFor(
       async () => Boolean(await storage.get(storageOwner, "ui-ready")),
@@ -500,16 +500,16 @@ async function runSmoke() {
     const readLook = () => appContents.executeJavaScript(`(async () => {
       const root = getComputedStyle(document.documentElement);
       const probe = document.createElement("button");
-      probe.className = "wf-button";
+      probe.className = "af-button";
       document.body.append(probe);
       const button = getComputedStyle(probe);
       const look = {
-        accent: root.getPropertyValue("--wf-accent").trim(),
-        theme: root.getPropertyValue("--wf-theme").trim(),
-        text: root.getPropertyValue("--wf-text").trim(),
-        radius: root.getPropertyValue("--wf-radius-sm").trim(),
+        accent: root.getPropertyValue("--af-accent").trim(),
+        theme: root.getPropertyValue("--af-theme").trim(),
+        text: root.getPropertyValue("--af-text").trim(),
+        radius: root.getPropertyValue("--af-radius-sm").trim(),
         kitButtonHeight: button.minHeight,
-        fontLoaded: (await document.fonts.load('16px "work-fold Inter"')).length > 0,
+        fontLoaded: (await document.fonts.load('16px "AmpleFile Inter"')).length > 0,
       };
       probe.remove();
       return look;
@@ -520,7 +520,7 @@ async function runSmoke() {
     host.layoutUi(parent.webContents.id, {
       mountId, placement: "navigator", route: "/", state: { escapeUrl }, sequence: 1,
       bounds: { x: 0, y: 0, width: 320, height: 500 }, active: true, occluded: false, theme: "light",
-      appearance: { "--wf-accent": "#654321" },
+      appearance: { "--af-accent": "#654321" },
     });
     await waitFor(async () => { const look = await readLook(); return look.accent === "#654321" && look.theme === "light"; }, "a theme change did not reach the app view");
     // A notification click while the left pane is open moves it in place:
@@ -545,9 +545,9 @@ async function runSmoke() {
       [{ appId: descriptor.manifest.id, featureInstallationId: descriptor.featureInstallationId, count: 3 }], "the app's rail dot reaches the shell once; an invalid count is refused");
     assert.deepEqual(host.attentionStates().map((state) => state.count), [3]);
     assert.equal(hits, 0, "the visible restricted app must not reach loopback directly");
-    assert.deepEqual(tabCommands.map((command) => ({ type: command.type, workFolderId: command.workFolderId, appId: command.appId, digest: command.digest, featureInstallationId: command.featureInstallationId, tab: command.tab })), [{
+    assert.deepEqual(tabCommands.map((command) => ({ type: command.type, connectedFolderId: command.connectedFolderId, appId: command.appId, digest: command.digest, featureInstallationId: command.featureInstallationId, tab: command.tab })), [{
       type: "open",
-      workFolderId: descriptor.workFolderId,
+      connectedFolderId: descriptor.connectedFolderId,
       appId: descriptor.manifest.id,
       digest: descriptor.digest,
       featureInstallationId: descriptor.featureInstallationId,
@@ -629,7 +629,7 @@ async function runSmoke() {
     // the host, delivered to the mounts each read lane admits, carrying ids and
     // a revision and never content.
     host.publishAssistantActivity({
-      workFolderId: descriptor.workFolderId,
+      connectedFolderId: descriptor.connectedFolderId,
       appId: descriptor.manifest.id,
       featureInstallationId: descriptor.featureInstallationId,
       taskIds: ["smoke-task"],
@@ -643,22 +643,22 @@ async function runSmoke() {
     assert.equal(firstTasksHint.revision, 1, "a revision orders hints inside one mount's lifetime");
     assert.equal(firstTasksHint.active, true);
 
-    host.publishCheckResultsChanged({ workFolderId: descriptor.workFolderId, checkIds: ["smoke-check", "not-selected"] });
+    host.publishCheckResultsChanged({ connectedFolderId: descriptor.connectedFolderId, checkIds: ["smoke-check", "not-selected"] });
     await waitFor(async () => (await storage.get(storageOwner, "ui-checks-hint"))?.count === 1,
       "the active app view never received its Check result hint", 15_000);
     assert.deepEqual((await storage.get(storageOwner, "ui-checks-hint")).permissionIds, ["review"],
       "a Check hint names this app's own slot, never the Check id");
-    host.publishCheckResultsChanged({ workFolderId: descriptor.workFolderId, checkIds: ["not-selected"] });
-    host.publishCheckResultsChanged({ workFolderId: "another-work-folder", checkIds: ["smoke-check"] });
+    host.publishCheckResultsChanged({ connectedFolderId: descriptor.connectedFolderId, checkIds: ["not-selected"] });
+    host.publishCheckResultsChanged({ connectedFolderId: "another-connected-folder", checkIds: ["smoke-check"] });
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 400));
     assert.equal((await storage.get(storageOwner, "ui-checks-hint")).count, 1,
-      "a Check this app did not select, or another work-folder's, produces nothing");
+      "a Check this app did not select, or another Connected Folder's, produces nothing");
 
     // A granted-root watch starts without a baseline and its first observation
     // is silent, so the view's startup write of smoke.txt is never news. Change
     // the granted folder here instead, spaced wider than one poll plus the
     // debounce so a changed snapshot can hold still and fire.
-    const observedPath = join(workFolderRoot, "exports", "observed.txt");
+    const observedPath = join(connectedFolderRoot, "exports", "observed.txt");
     let observedWrites = 0;
     let lastObservedWriteAt = Number.NEGATIVE_INFINITY;
     await waitFor(async () => {
@@ -687,13 +687,13 @@ async function runSmoke() {
     // window and must reach it never.
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 200));
     host.publishAssistantActivity({
-      workFolderId: descriptor.workFolderId,
+      connectedFolderId: descriptor.connectedFolderId,
       appId: descriptor.manifest.id,
       featureInstallationId: descriptor.featureInstallationId,
       taskIds: ["worker-task"],
       receiptIds: [],
     });
-    host.publishCheckResultsChanged({ workFolderId: descriptor.workFolderId, checkIds: ["smoke-check"] });
+    host.publishCheckResultsChanged({ connectedFolderId: descriptor.connectedFolderId, checkIds: ["smoke-check"] });
     const workerHints = await workerProbe;
     assert.equal(workerHints.workerTasksHints, 1, "a worker holding an operation receives its own Worker task hint");
     assert.equal(workerHints.workerChecksHints, 0, "Check results stay view-only, even for a worker holding an operation");
@@ -740,14 +740,14 @@ async function runSmoke() {
       files: (await storage.get(storageOwner, "ui-files-hint"))?.count,
     };
     host.publishAssistantActivity({
-      workFolderId: descriptor.workFolderId,
+      connectedFolderId: descriptor.connectedFolderId,
       appId: descriptor.manifest.id,
       featureInstallationId: descriptor.featureInstallationId,
       taskIds: ["while-inactive"],
       receiptIds: [],
     });
-    host.publishCheckResultsChanged({ workFolderId: descriptor.workFolderId, checkIds: ["smoke-check"] });
-    await writeFile(join(workFolderRoot, "exports", "while-inactive.txt"), "changed while inactive", "utf8");
+    host.publishCheckResultsChanged({ connectedFolderId: descriptor.connectedFolderId, checkIds: ["smoke-check"] });
+    await writeFile(join(connectedFolderRoot, "exports", "while-inactive.txt"), "changed while inactive", "utf8");
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 4_000));
     assert.deepEqual({
       tasks: (await storage.get(storageOwner, "ui-tasks-hint"))?.count,
@@ -765,7 +765,7 @@ async function runSmoke() {
     assert.equal(await storage.get(storageOwner, "inactive-storage-event"), undefined, "inactive app views receive no storage event or replay");
     tooltipOverlay.close();
     // Reusing a renderer mount id must never reuse another installation's view.
-    await mkdir(join(workFolderRoot, "peer-exports"));
+    await mkdir(join(connectedFolderRoot, "peer-exports"));
     const peerUi = { ...peer, fileGrants: descriptor.fileGrants.map((grant) => ({ ...grant, root: "peer-exports" })), networkGrants: descriptor.networkGrants };
     host.syncAuthority([authorityOf(descriptor), authorityOf(peerUi)]);
     await host.mountUi(peerUi, parent.webContents, parent, {
@@ -785,7 +785,7 @@ async function runSmoke() {
     assert.equal(tabCommands[1].featureInstallationId, peer.featureInstallationId);
     assert.equal(await storage.get(peerOwner, "visible"), "visible-ui");
     const peerView = parent.contentView.children[0];
-    await host.stop(descriptor.workFolderId, descriptor.manifest.id, descriptor.digest, descriptor.featureInstallationId);
+    await host.stop(descriptor.connectedFolderId, descriptor.manifest.id, descriptor.digest, descriptor.featureInstallationId);
     assert.equal(peerView.webContents.isDestroyed(), false, "stopping the original must preserve its sibling view");
     await host.unmountUi(parent.webContents.id, mountId);
     parent.destroy();
@@ -809,7 +809,7 @@ async function runSmoke() {
 
 async function mark(message) {
   console.log(`[restricted-app smoke] ${message}`);
-  const path = process.env.WORKFOLD_RESTRICTED_SMOKE_LOG;
+  const path = process.env.AMPLEFILE_RESTRICTED_SMOKE_LOG;
   if (path) {
     await mkdir(dirname(path), { recursive: true });
     await appendFile(path, `${new Date().toISOString()} ${message}\n`, "utf8");
@@ -866,9 +866,9 @@ async function writeSmokePackage(root, loopbackPort) {
       agentApp: "agent-app.json",
     }), "utf8"),
     writeFile(join(root, "agent-app.json"), JSON.stringify(smokeManifest(loopbackPort)), "utf8"),
-    writeFile(join(root, "index.html"), "<!doctype html><link rel=stylesheet href=/__work-fold/kit.css><body class=wf-app><main id=app></main><script type=module src=ui.js></script>", "utf8"),
+    writeFile(join(root, "index.html"), "<!doctype html><link rel=stylesheet href=/__amplefile/kit.css><body class=af-app><main id=app></main><script type=module src=ui.js></script>", "utf8"),
     writeFile(join(root, "ui.js"), `
-const bridge = globalThis.workFoldRestrictedApp;
+const bridge = globalThis.ampleFileRestrictedApp;
 const context = bridge.context.get();
 let currentActive = context.active;
 await bridge.storage.set("initial-navigation", { route: context.route, openedFrom: context.openedFrom, batch: context.state?.batch ?? null });
@@ -983,31 +983,31 @@ await bridge.storage.set("ui-ready", { unpromptedTabDenied, attentionInvalid });
 `, "utf8"),
     writeFile(join(root, "worker.js"), `
 let workerTopLevelStorageDenied = false;
-try { await globalThis.workFoldRestrictedApp.storage.set("worker-top-level", true); }
+try { await globalThis.ampleFileRestrictedApp.storage.set("worker-top-level", true); }
 catch { workerTopLevelStorageDenied = true; }
 let workerTopLevelNotificationDenied = false;
-try { await globalThis.workFoldRestrictedApp.notifications.show({ permissionId: "automation-update" }); }
+try { await globalThis.ampleFileRestrictedApp.notifications.show({ permissionId: "automation-update" }); }
 catch { workerTopLevelNotificationDenied = true; }
 // Outside an operation a worker holds no lease, so neither agent lane answers.
 let workerTopLevelInferDenied = false;
-try { await globalThis.workFoldRestrictedApp.assistant.infer({ instructions: "Echo.", input: "top" }); }
+try { await globalThis.ampleFileRestrictedApp.assistant.infer({ instructions: "Echo.", input: "top" }); }
 catch (error) { workerTopLevelInferDenied = error instanceof Error && error.code === "INFER_UNAVAILABLE"; }
 let workerStorageEvents = 0;
 const workerInstanceToken = crypto.randomUUID();
-globalThis.workFoldRestrictedApp.storage.onChanged(() => { workerStorageEvents += 1; });
+globalThis.ampleFileRestrictedApp.storage.onChanged(() => { workerStorageEvents += 1; });
 // A worker subscribes at top level but is only eligible while it holds an
 // operation, and it is never eligible for Check results at all.
 let workerTasksHints = 0;
 let workerChecksHints = 0;
 let workerFilesHints = 0;
-globalThis.workFoldRestrictedApp.tasks.onChanged(() => { workerTasksHints += 1; });
-globalThis.workFoldRestrictedApp.checks.onChanged(() => { workerChecksHints += 1; });
-globalThis.workFoldRestrictedApp.files.onChanged(() => { workerFilesHints += 1; });
+globalThis.ampleFileRestrictedApp.tasks.onChanged(() => { workerTasksHints += 1; });
+globalThis.ampleFileRestrictedApp.checks.onChanged(() => { workerChecksHints += 1; });
+globalThis.ampleFileRestrictedApp.files.onChanged(() => { workerFilesHints += 1; });
 
 export async function handleAction(action, input) {
   if (action === "revocation-fence") {
-    await globalThis.workFoldRestrictedApp.request({ destinationId: "late-effect", method: "POST", path: "/commit" });
-    await globalThis.workFoldRestrictedApp.storage.set("revocation-fence", true);
+    await globalThis.ampleFileRestrictedApp.request({ destinationId: "late-effect", method: "POST", path: "/commit" });
+    await globalThis.ampleFileRestrictedApp.storage.set("revocation-fence", true);
     return true;
   }
   if (action === "hint-probe") {
@@ -1021,26 +1021,26 @@ export async function handleAction(action, input) {
     }
     return { workerTasksHints, workerFilesHints, workerChecksHints };
   }
-  if (action === "instance") return { token: workerInstanceToken, value: await globalThis.workFoldRestrictedApp.storage.get("instance-value") };
+  if (action === "instance") return { token: workerInstanceToken, value: await globalThis.ampleFileRestrictedApp.storage.get("instance-value") };
   if (action === "grants-probe") {
-    try { await globalThis.workFoldRestrictedApp.request({ destinationId: "principal-probe", method: "GET", path: "/probe" }); }
+    try { await globalThis.ampleFileRestrictedApp.request({ destinationId: "principal-probe", method: "GET", path: "/probe" }); }
     catch {}
     return { token: workerInstanceToken };
   }
-  if (action === "signal") { await globalThis.workFoldRestrictedApp.storage.set("automation", { peerSignal: true }); return true; }
+  if (action === "signal") { await globalThis.ampleFileRestrictedApp.storage.set("automation", { peerSignal: true }); return true; }
   if (action === "notification") {
     let checkDenied = false;
-    try { await globalThis.workFoldRestrictedApp.checks.read({ permissionId: "review" }); }
+    try { await globalThis.ampleFileRestrictedApp.checks.read({ permissionId: "review" }); }
     catch (error) { checkDenied = error instanceof Error && error.code === "CHECK_DENIED"; }
     if (!checkDenied) throw new Error("A worker must not read Check results.");
     // A worker holding an operation may reach both agent lanes
     // (docs/receipts-not-gates.md, F22).
-    const workerTasks = await globalThis.workFoldRestrictedApp.assistant.list();
+    const workerTasks = await globalThis.ampleFileRestrictedApp.assistant.list();
     if (!Array.isArray(workerTasks)) throw new Error("A worker action must reach Worker requests.");
-    const workerInference = await globalThis.workFoldRestrictedApp.assistant.infer({ instructions: "Echo.", input: "worker" });
+    const workerInference = await globalThis.ampleFileRestrictedApp.assistant.infer({ instructions: "Echo.", input: "worker" });
     if (workerInference.text !== "echo:worker") throw new Error("A worker action must reach bounded inference.");
     let actionNotificationDenied = false;
-    try { await globalThis.workFoldRestrictedApp.notifications.show({ permissionId: "automation-update" }); }
+    try { await globalThis.ampleFileRestrictedApp.notifications.show({ permissionId: "automation-update" }); }
     catch { actionNotificationDenied = true; }
     return { workerTopLevelNotificationDenied, actionNotificationDenied, workerInferText: workerInference.text, workerTopLevelInferDenied, workerChecksHints };
   }
@@ -1074,7 +1074,7 @@ export async function handleAction(action, input) {
   const popupBlocked = window.open(input.escapeUrl) === null;
   let brokerDenied = false;
   try {
-    await globalThis.workFoldRestrictedApp.request({ destinationId: "mail-api", method: "GET", path: "/messages" });
+    await globalThis.ampleFileRestrictedApp.request({ destinationId: "mail-api", method: "GET", path: "/messages" });
   } catch (error) { brokerDenied = error instanceof Error && error.code === "NETWORK_DENIED"; }
   return {
     echoed: input.text,
@@ -1092,38 +1092,38 @@ export async function handleAction(action, input) {
 export async function handleAutomation(event) {
   if (event.appAutomationId !== "smoke-automation" || event.handler !== "smoke") throw new Error("Unknown automation.");
   if (event.scheduledAt === "2026-07-13T00:00:15.000Z") {
-    void globalThis.workFoldRestrictedApp.request({ destinationId: "late-effect", method: "POST", path: "/commit" }).catch(() => {});
+    void globalThis.ampleFileRestrictedApp.request({ destinationId: "late-effect", method: "POST", path: "/commit" }).catch(() => {});
     return;
   }
-  try { await globalThis.workFoldRestrictedApp.request({ destinationId: "principal-probe", method: "GET", path: "/probe" }); }
+  try { await globalThis.ampleFileRestrictedApp.request({ destinationId: "principal-probe", method: "GET", path: "/probe" }); }
   catch {}
   if (event.scheduledAt === "2026-07-13T00:00:45.000Z") return;
   if (event.scheduledAt === "2026-07-13T00:00:30.000Z") {
     await new Promise((resolve) => setTimeout(resolve, 200));
-    await globalThis.workFoldRestrictedApp.notifications.show({ permissionId: "suspend-probe" });
+    await globalThis.ampleFileRestrictedApp.notifications.show({ permissionId: "suspend-probe" });
     return;
   }
   if (event.scheduledAt === "2026-07-13T00:01:00.000Z") {
-    await globalThis.workFoldRestrictedApp.storage.transaction({
+    await globalThis.ampleFileRestrictedApp.storage.transaction({
       clear: true,
       set: [{ key: "automation", value: event }],
     });
   } else {
-    await globalThis.workFoldRestrictedApp.storage.set("automation", event);
+    await globalThis.ampleFileRestrictedApp.storage.set("automation", event);
   }
   if (event.scheduledAt === "2026-07-13T00:00:00.000Z") {
     let notificationRouteDenied = false;
-    try { await globalThis.workFoldRestrictedApp.notifications.show({ permissionId: "automation-update", route: "//elsewhere.example/escape" }); }
+    try { await globalThis.ampleFileRestrictedApp.notifications.show({ permissionId: "automation-update", route: "//elsewhere.example/escape" }); }
     catch (error) { notificationRouteDenied = error?.code === "NOTIFICATION_DENIED"; }
-    await globalThis.workFoldRestrictedApp.storage.set("notification-route-denied", notificationRouteDenied);
+    await globalThis.ampleFileRestrictedApp.storage.set("notification-route-denied", notificationRouteDenied);
   }
-  await globalThis.workFoldRestrictedApp.notifications.show({ permissionId: "automation-update", route: "/updates/7?from=smoke", state: { batch: 7 } });
+  await globalThis.ampleFileRestrictedApp.notifications.show({ permissionId: "automation-update", route: "/updates/7?from=smoke", state: { batch: 7 } });
   await new Promise((resolve) => setTimeout(resolve, 120));
-  await globalThis.workFoldRestrictedApp.storage.set("worker-storage-events", workerStorageEvents);
-  await globalThis.workFoldRestrictedApp.storage.set("worker-checks-hints", workerChecksHints);
-  await globalThis.workFoldRestrictedApp.storage.set("worker-tasks-hints", workerTasksHints);
+  await globalThis.ampleFileRestrictedApp.storage.set("worker-storage-events", workerStorageEvents);
+  await globalThis.ampleFileRestrictedApp.storage.set("worker-checks-hints", workerChecksHints);
+  await globalThis.ampleFileRestrictedApp.storage.set("worker-tasks-hints", workerTasksHints);
   setTimeout(async () => {
-    try { await globalThis.workFoldRestrictedApp.notifications.show({ permissionId: "post-return" }); }
+    try { await globalThis.ampleFileRestrictedApp.notifications.show({ permissionId: "post-return" }); }
     catch {}
   }, 200);
 }

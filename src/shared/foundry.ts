@@ -1,5 +1,5 @@
 export const AZURE_OPENAI_PROVIDER = "azure";
-export const AZURE_OPENAI_DEPLOYMENTS_ENV = "WORKFOLD_AZURE_OPENAI_DEPLOYMENTS";
+export const AZURE_OPENAI_DEPLOYMENTS_ENV = "AMPLEFILE_AZURE_OPENAI_DEPLOYMENTS";
 
 /** Separate Pi providers let all three formats coexist, including different resources/keys. */
 export const FOUNDRY_PROVIDERS = [

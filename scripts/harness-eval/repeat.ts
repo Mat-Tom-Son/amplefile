@@ -11,7 +11,7 @@ import { aggregateFrozenTrials, frozenCases, frozenContexts, frozenModels, froze
 
 const exec = promisify(execFile);
 const arg = (key: string, fallback?: string): string => { const i = process.argv.indexOf(key); const value = i < 0 ? fallback : process.argv[i + 1]; if (!value) throw new Error(`${key} is required`); return value; };
-const evaluationFiles = ["scripts/harness-eval/fixtures.ts", "scripts/harness-eval/assertions.ts", "scripts/harness-eval/autonomous.ts", "scripts/harness-eval/frozen.ts", "scripts/harness-eval/repeat.ts", "scripts/helper-eval/host.ts", "scripts/work-fold-drive.ts"];
+const evaluationFiles = ["scripts/harness-eval/fixtures.ts", "scripts/harness-eval/assertions.ts", "scripts/harness-eval/autonomous.ts", "scripts/harness-eval/frozen.ts", "scripts/harness-eval/repeat.ts", "scripts/helper-eval/host.ts", "scripts/amplefile-drive.ts"];
 async function source() { return { sha: (await exec("git", ["rev-parse", "HEAD"])).stdout.trim(), tree: (await exec("git", ["rev-parse", "HEAD^{tree}"])).stdout.trim(), dirty: (await exec("git", ["status", "--porcelain"])).stdout.trim() }; }
 async function hashes(paths: string[]) { return Object.fromEntries(await Promise.all(paths.map(async path => [path, sha256(await readFile(path))]))); }
 async function fixtureHashes(folder: string, prefix = ""): Promise<Record<string, string>> {
@@ -29,11 +29,11 @@ if (process.argv.includes("--create-plan")) {
   const revision = await source(); assert.equal(revision.dirty, "", "Commit the evaluator before freezing it");
   await mkdir(dirname(path), { recursive: true });
   const catalogPath = join(dirname(path), "model-catalog.json"); assert.ok(!existsSync(catalogPath), "Choose a fresh plan directory");
-  await copyFile(join(homedir(), "Library", "Application Support", "work-fold", "model-catalogs", "openrouter.json"), catalogPath);
+  await copyFile(join(homedir(), "Library", "Application Support", "AmpleFile", "model-catalogs", "openrouter.json"), catalogPath);
   const catalog = JSON.parse(await readFile(catalogPath, "utf8"));
   const cases: Record<string, unknown> = {};
   for (const scenario of frozenCases) {
-    const folder = await mkdtemp(join(tmpdir(), "work-fold-freeze-fixture-"));
+    const folder = await mkdtemp(join(tmpdir(), "amplefile-freeze-fixture-"));
     try { const spec = await seedAutonomousCase(scenario, folder); const sourceHashes = await fixtureHashes(folder); cases[scenario] = { ...spec, sourceHashes, digest: sha256(stableJson({ ...spec, sourceHashes })) }; }
     finally { await rm(folder, { recursive: true, force: true }); }
   }

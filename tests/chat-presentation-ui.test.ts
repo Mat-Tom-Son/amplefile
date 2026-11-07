@@ -30,7 +30,7 @@ const tool: RuntimePreviewEntry = { id: "tool:edit", kind: "tool", toolName: "ed
 test("Chat Copy keeps the full Markdown and safe rich formatting on the native clipboard route", async (t) => {
   const dom = await createDomHarness(); t.after(dom.cleanup);
   const copies: Array<{ text: string; html?: string }> = [];
-  window.workFoldDesktop = { clipboard: { write: async (content) => { copies.push(content); } } } as NonNullable<Window["workFoldDesktop"]>;
+  window.ampleFileDesktop = { clipboard: { write: async (content) => { copies.push(content); } } } as NonNullable<Window["ampleFileDesktop"]>;
   const input = "Checking the notes.\n\n## Final answer\n\n**Ready** <script>bad()</script> 🌍";
   await copyMarkdownToClipboard(input);
   assert.equal(copies.length, 1);
@@ -85,8 +85,8 @@ test("saved rows expose captured edit text safely, and Copy retains progress plu
   const copies: string[] = [];
   const opened: string[] = [];
   await dom.render(createElement(ChatMessageRow, { message, copied: false, showLanding: true, suppressEnterAnimation: true,
-    showRuntimePreview: false, runtimePreviews: [], workFolderId: "folder", workFolderRoot: "/folder", onCopyMessage: (_id, value) => { copies.push(value); },
-    onOpenWorkFolderFile: (path) => { opened.push(path); }, resolveWorkFolderPathLinks: async () => new Map([["notes.txt", "notes.txt"]]) }));
+    showRuntimePreview: false, runtimePreviews: [], connectedFolderId: "folder", connectedFolderRoot: "/folder", onCopyMessage: (_id, value) => { copies.push(value); },
+    onOpenConnectedFolderFile: (path) => { opened.push(path); }, resolveConnectedFolderPathLinks: async () => new Map([["notes.txt", "notes.txt"]]) }));
   assert.equal(dom.container.querySelector(".message-surface > .message-body")?.textContent, "The notes are ready.");
   const summary = dom.container.querySelector<HTMLButtonElement>(".work-steps-summary")!;
   await dom.act(() => summary.click()); assert.equal(summary.getAttribute("aria-expanded"), "true");
@@ -95,15 +95,15 @@ test("saved rows expose captured edit text safely, and Copy retains progress plu
   assert.match(details.textContent!, /preview is incomplete/);
   assert.match(details.querySelector("pre")!.textContent!, /<script>old\(\)<\/script>/);
   assert.equal(dom.container.querySelector("script"), null);
-  await dom.act(() => dom.container.querySelector<HTMLButtonElement>(".work-step-progress .work-folder-file-link")!.click());
-  assert.deepEqual(opened, ["notes.txt"], "progress keeps ordinary work-folder file links");
+  await dom.act(() => dom.container.querySelector<HTMLButtonElement>(".work-step-progress .connected-folder-file-link")!.click());
+  assert.deepEqual(opened, ["notes.txt"], "progress keeps ordinary Connected Folder file links");
   await dom.act(() => dom.container.querySelector<HTMLButtonElement>('[aria-label="Copy Message"]')!.click());
   assert.deepEqual(copies, [input.content]);
 });
 
 test("a request an app made says which app asked instead of looking like the person's message", () => {
   const row = (message: ChatMessage) => renderToStaticMarkup(createElement(ChatMessageRow, { message, copied: false, showLanding: false,
-    suppressEnterAnimation: true, showRuntimePreview: false, runtimePreviews: [], workFolderId: "folder", workFolderRoot: "/folder",
+    suppressEnterAnimation: true, showRuntimePreview: false, runtimePreviews: [], connectedFolderId: "folder", connectedFolderRoot: "/folder",
     onCopyMessage: () => undefined }));
   const base: ChatMessage = { id: "m", role: "user", createdAt: "2026-10-11T12:00:00Z", content: "App request: Compare quotes" };
   const fromApp = row({ ...base, source: "app", appId: "quote-board", appTitle: "Quote board" });

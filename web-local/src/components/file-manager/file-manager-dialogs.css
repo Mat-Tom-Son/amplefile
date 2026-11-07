@@ -41,8 +41,8 @@
   --ui-radius-xl: 12px;
   --ui-shadow-menu: 0 12px 34px rgba(0, 0, 0, 0.22), 0 0 0 0.5px rgba(0, 0, 0, 0.12);
   --ui-shadow-lg: 0 24px 70px rgba(0, 0, 0, 0.26), 0 0 0 0.5px rgba(0, 0, 0, 0.14);
-  --work-folder-accent-solid: var(--fm-accent);
-  --work-folder-selection-accent: var(--fm-accent);
+  --connected-folder-accent-solid: var(--fm-accent);
+  --connected-folder-selection-accent: var(--fm-accent);
   --surface-tab-accent: var(--fm-accent);
   --fmd-side: var(--fm-side-solid);
   --fmd-card: var(--fm-card);
@@ -515,7 +515,7 @@
 }
 
 /* Segmented controls, as the panel's Info and History. */
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .ai-models-scope-control, .capabilities-type-chips, .work-folder-segmented) {
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .ai-models-scope-control, .capabilities-type-chips, .connected-folder-segmented) {
   display: flex;
   gap: 0;
   width: fit-content;
@@ -529,7 +529,7 @@
   box-shadow: none;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .capabilities-type-chips, .work-folder-segmented) > button,
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .capabilities-type-chips, .connected-folder-segmented) > button,
 :root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > label {
   display: inline-flex;
   flex: 1 1 auto;
@@ -551,13 +551,13 @@
   white-space: nowrap;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .capabilities-type-chips, .work-folder-segmented) > button:is(.active, [aria-checked="true"], [aria-pressed="true"]),
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .capabilities-type-chips, .connected-folder-segmented) > button:is(.active, [aria-checked="true"], [aria-pressed="true"]),
 :root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel .ai-models-scope-control > label.active {
   background: var(--fm-btn);
   box-shadow: var(--fm-btn-shadow);
 }
 
-:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .capabilities-type-chips, .work-folder-segmented) > button svg {
+:root[data-theme] .app-shell.layout-file-manager .settings-window .settings-tab-panel :is(.theme-segmented-control, .capabilities-type-chips, .connected-folder-segmented) > button svg {
   width: 14px;
   height: 14px;
 }
@@ -1023,7 +1023,7 @@
 }
 
 /* About: the mark centered over the facts, as a Mac app's About window shows it. */
-:root[data-theme] .app-shell.layout-file-manager .settings-modal.settings-window .settings-tab-panel .about-work-fold-brand {
+:root[data-theme] .app-shell.layout-file-manager .settings-modal.settings-window .settings-tab-panel .about-amplefile-brand {
   display: flex;
   justify-content: center;
   padding: 10px 0 14px;
@@ -1259,7 +1259,7 @@
   padding: 8px;
   border-left: 0.5px solid var(--fm-line);
   background: var(--fm-panel);
-  font-family: var(--work-fold-reading-font, var(--fm-font));
+  font-family: var(--amplefile-reading-font, var(--fm-font));
 }
 
 .fmp-panel p {
@@ -1300,12 +1300,12 @@
 }
 
 /*
- * The small dialogs (Create work-folder, Rename, New Folder, and every
+ * The small dialogs (Create Connected Folder, Rename, New Folder, and every
  * confirmation) as Mac sheets: a white card, a semibold title with a round
  * close button, a quiet field label, and buttons sized to their words at the
  * bottom right, the default one in the accent.
  */
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) {
   width: min(420px, calc(100vw - 48px));
   max-width: none;
   margin: 0;
@@ -1318,7 +1318,7 @@
   font-size: calc(13px * var(--fm-scale));
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(form, .text-input-modal-form, .create-work-folder-form) {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(form, .text-input-modal-form, .create-connected-folder-form) {
   display: block;
   margin: 0;
   padding: 0;
@@ -1326,7 +1326,7 @@
   background: transparent;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .modal-title {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .modal-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1336,7 +1336,7 @@
   border: 0;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .modal-title :is(h2, h3) {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .modal-title :is(h2, h3) {
   margin: 0;
   color: var(--fm-text);
   font-size: calc(13px * var(--fm-scale));
@@ -1344,7 +1344,7 @@
   letter-spacing: 0;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .modal-title .ui-control--icon {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .modal-title .ui-control--icon {
   display: grid;
   flex: none;
   place-items: center;
@@ -1357,19 +1357,19 @@
   color: var(--fm-text2);
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .modal-title .ui-control--icon svg {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .modal-title .ui-control--icon svg {
   width: 12px;
   height: 12px;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(p, .confirm-dialog-body) {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(p, .confirm-dialog-body) {
   margin: 0 0 4px;
   color: var(--fm-text2);
   font-size: calc(13px * var(--fm-scale));
   line-height: 1.45;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .settings-field {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .settings-field {
   display: grid;
   gap: 6px;
   margin: 0;
@@ -1378,7 +1378,7 @@
   font-weight: 500;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .settings-field :is(input, textarea) {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .settings-field :is(input, textarea) {
   height: 30px;
   min-height: 30px;
   padding: 0 10px;
@@ -1391,13 +1391,13 @@
   font-weight: 400;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .settings-field :is(input, textarea):focus-visible {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) .settings-field :is(input, textarea):focus-visible {
   border-color: var(--fm-accent);
   outline: none;
   box-shadow: 0 0 0 3px var(--fm-accent-soft);
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(.create-work-folder-footer, .text-input-modal-footer, .confirm-dialog-footer) {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(.create-connected-folder-footer, .text-input-modal-footer, .confirm-dialog-footer) {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -1407,14 +1407,14 @@
   background: transparent;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(.create-work-folder-footer, .text-input-modal-footer, .confirm-dialog-footer) > .ui-control {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(.create-connected-folder-footer, .text-input-modal-footer, .confirm-dialog-footer) > .ui-control {
   flex: 0 0 auto;
   width: auto;
   min-width: 84px;
   height: 28px;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(.create-work-folder-footer, .text-input-modal-footer, .confirm-dialog-footer) > .ui-control.danger {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(.create-connected-folder-footer, .text-input-modal-footer, .confirm-dialog-footer) > .ui-control.danger {
   background: var(--ui-danger);
   box-shadow: none;
   color: #ffffff;
@@ -1514,7 +1514,7 @@
   color: var(--fm-text);
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(.create-work-folder-content, .text-input-modal-content) {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(.create-connected-folder-content, .text-input-modal-content) {
   display: grid;
   gap: 10px;
   margin: 0;
@@ -1522,7 +1522,7 @@
 }
 
 /* Dialog buttons carry their words only, as the Mac's do; a busy one keeps its spinner. */
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-work-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(.create-work-folder-footer, .text-input-modal-footer, .confirm-dialog-footer) > .ui-control svg:not(.spin) {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop :is(.create-connected-folder-modal, .text-input-modal, .confirm-dialog, .connect-ai-dialog) :is(.create-connected-folder-footer, .text-input-modal-footer, .confirm-dialog-footer) > .ui-control svg:not(.spin) {
   display: none;
 }
 

@@ -1,20 +1,20 @@
 param(
-  [string]$Publisher = "Mat-Tom-Son work-fold",
-  [string]$OutputDirectory = (Join-Path $HOME ".work-fold-signing"),
+  [string]$Publisher = "Mat-Tom-Son AmpleFile",
+  [string]$OutputDirectory = (Join-Path $HOME ".amplefile-signing"),
   [ValidateRange(1, 10)][int]$ValidYears = 3
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$pfxPath = Join-Path $OutputDirectory "work-fold-Personal-Code-Signing.pfx"
-$publicPath = Join-Path $OutputDirectory "work-fold-Personal-Code-Signing.cer"
-$passwordPath = Join-Path $OutputDirectory "work-fold-Personal-Code-Signing.password.dpapi"
-$metadataPath = Join-Path $OutputDirectory "work-fold-Personal-Code-Signing.json"
+$pfxPath = Join-Path $OutputDirectory "amplefile-Personal-Code-Signing.pfx"
+$publicPath = Join-Path $OutputDirectory "amplefile-Personal-Code-Signing.cer"
+$passwordPath = Join-Path $OutputDirectory "amplefile-Personal-Code-Signing.password.dpapi"
+$metadataPath = Join-Path $OutputDirectory "amplefile-Personal-Code-Signing.json"
 
 $existing = @(@($pfxPath, $publicPath, $passwordPath, $metadataPath) | Where-Object { Test-Path -LiteralPath $_ })
 if ($existing.Count -eq 4) {
-  Write-Host "work-fold everywhere signing certificate already exists at $OutputDirectory."
+  Write-Host "AmpleFile everywhere signing certificate already exists at $OutputDirectory."
   Get-Content -Raw -LiteralPath $metadataPath
   exit 0
 }
@@ -32,7 +32,7 @@ $securePassword = ConvertTo-SecureString -String $plainPassword -AsPlainText -Fo
 $certificate = New-SelfSignedCertificate `
   -Type CodeSigningCert `
   -Subject "CN=$Publisher" `
-  -FriendlyName "work-fold everywhere code signing" `
+  -FriendlyName "AmpleFile everywhere code signing" `
   -CertStoreLocation "Cert:\CurrentUser\My" `
   -KeyAlgorithm RSA `
   -KeyLength 3072 `
@@ -70,5 +70,5 @@ Set-Acl -LiteralPath $OutputDirectory -AclObject $acl
 $plainPassword = $null
 $securePassword.Dispose()
 
-Write-Host "Created work-fold everywhere code-signing certificate."
+Write-Host "Created AmpleFile everywhere code-signing certificate."
 $metadata | ConvertTo-Json

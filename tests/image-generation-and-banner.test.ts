@@ -9,8 +9,8 @@ import { deflateSync } from "node:zlib";
 
 import { chooseImageModel, createImageGenerationTool, generateImageFile, listImageModels, resolveImagePath, type ImageModelSource } from "../src/local/agent/image-generation-tool.js";
 import { openAIImageSize } from "../src/local/agent/direct-image-models.js";
-import { parseWorkFoldCliActArgv } from "../src/local/cli/act-commands.js";
-import { WorkFoldCliError } from "../src/local/cli/protocol.js";
+import { parseAmpleFileCliActArgv } from "../src/local/cli/act-commands.js";
+import { AmpleFileCliError } from "../src/local/cli/protocol.js";
 import { startLocalApi } from "../src/local/server.js";
 
 /** A tiny, real PNG (solid color) so Pi's resizer can decode it. */
@@ -63,7 +63,7 @@ function fakeSource(
   } as never;
 }
 
-test("work-fold picks a preferred connected image model, never a router, and names what is missing", async () => {
+test("AmpleFile picks a preferred connected image model, never a router, and names what is missing", async () => {
   const connected = [model("openrouter", "openrouter/auto"), model("openrouter", "recraft/recraft-v4"), model("openrouter", "openai/gpt-image-2"), model("openrouter", "google/gemini-3.1-flash-image")];
   assert.equal((await chooseImageModel(fakeSource(connected, () => null))).id, "google/gemini-3.1-flash-image");
   assert.equal((await chooseImageModel(fakeSource(connected.slice(0, 3), () => null))).id, "openai/gpt-image-2");
@@ -75,18 +75,18 @@ test("work-fold picks a preferred connected image model, never a router, and nam
 });
 
 test("image paths stay inside the folder, avoid hidden folders, and follow the format the model returned", () => {
-  const root = "/tmp/work-folder";
+  const root = "/tmp/connected-folder";
   assert.equal(resolveImagePath(root, "images/banner.png", "image/png"), "images/banner.png");
   assert.equal(resolveImagePath(root, "images/banner.png", "image/jpeg"), "images/banner.jpg");
   assert.equal(resolveImagePath(root, "images/banner", "image/webp"), "images/banner.webp");
   assert.equal(resolveImagePath(root, "notes.v2", "image/png"), "notes.v2.png");
-  for (const bad of ["/etc/banner.png", "../banner.png", "images/../../x.png", ".work-fold/banner.png", ".git/x.png", ""]) {
+  for (const bad of ["/etc/banner.png", "../banner.png", "images/../../x.png", ".amplefile/banner.png", ".git/x.png", ""]) {
     assert.throws(() => resolveImagePath(root, bad, "image/png"), /relative path inside this folder|hidden/, bad);
   }
 });
 
 test("generate_image saves the model's picture, asks OpenRouter for the shape, and reports plainly", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-image-tool-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-image-tool-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const picture = png(42, 18);
   const source = fakeSource([model("openrouter", "google/gemini-3.1-flash-image")], () => ({
@@ -116,7 +116,7 @@ test("generate_image saves the model's picture, asks OpenRouter for the shape, a
   // A temporary picture (a banner about to be applied) never lands in the folder.
   const temporary = await generateImageFile({ root, source, prompt: "A banner", path: "nested/banner.png", shape: "wide", temporary: true });
   assert.equal(temporary.path, undefined);
-  assert.ok(temporary.file.startsWith(join(tmpdir(), "work-fold-images")), temporary.file);
+  assert.ok(temporary.file.startsWith(join(tmpdir(), "amplefile-images")), temporary.file);
   assert.ok(temporary.file.endsWith("/banner.png"), "only the file name is kept");
   assert.deepEqual(await readFile(temporary.file), picture);
   await assert.rejects(() => readFile(join(root, "nested", "banner.png")), /ENOENT/);
@@ -130,29 +130,29 @@ test("generate_image saves the model's picture, asks OpenRouter for the shape, a
 });
 
 test("appearance apply changes just the named banner image, icon, or color, and undo steps back", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-appearance-parts-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-appearance-parts-"));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: { async resolveRuntime() { return {}; } },
   });
   try {
     const facade = api.actFacade;
-    const { workFolder } = await facade.createWorkFolder({ name: "Receipts" });
-    await mkdir(join(workFolder.workFolderRoot, "images"), { recursive: true });
-    await writeFile(join(workFolder.workFolderRoot, "images", "banner.png"), png(2400, 1000));
+    const { connectedFolder } = await facade.createConnectedFolder({ name: "Receipts" });
+    await mkdir(join(connectedFolder.connectedFolderRoot, "images"), { recursive: true });
+    await writeFile(join(connectedFolder.connectedFolderRoot, "images", "banner.png"), png(2400, 1000));
     const current = async () => {
       const body = await (await fetch(`${api.origin}/api/appearance`)).json() as { appearance: { customizations: Record<string, any> } };
-      return body.appearance.customizations[workFolder.id] ?? null;
+      return body.appearance.customizations[connectedFolder.id] ?? null;
     };
 
-    const applied = await facade.workFoldersAppearanceApply({
-      workFolder: workFolder.id,
+    const applied = await facade.connectedFoldersAppearanceApply({
+      connectedFolder: connectedFolder.id,
       parts: { bannerImagePath: "images/banner.png", icon: "Receipt", color: "#2F7D6D" },
-      cwd: workFolder.workFolderRoot,
+      cwd: connectedFolder.connectedFolderRoot,
     });
     assert.equal(applied.proposalName, "banner image, icon, and color");
     let look = await current();
@@ -163,12 +163,12 @@ test("appearance apply changes just the named banner image, icon, or color, and 
 
     // Only the color changes; the banner and icon stay.
     const banner = look?.bannerImage;
-    await facade.workFoldersAppearanceApply({ workFolder: workFolder.id, parts: { color: "#7a4cc2" }, cwd: workFolder.workFolderRoot });
+    await facade.connectedFoldersAppearanceApply({ connectedFolder: connectedFolder.id, parts: { color: "#7a4cc2" }, cwd: connectedFolder.connectedFolderRoot });
     look = await current();
     assert.equal(look?.bannerImage, banner);
     assert.equal(look?.iconName, "receipt");
     assert.equal(look?.primary?.referenceHex, "#7a4cc2");
-    const undone = await facade.workFoldersAppearanceUndo({ workFolder: workFolder.id });
+    const undone = await facade.connectedFoldersAppearanceUndo({ connectedFolder: connectedFolder.id });
     assert.ok(undone.restoredAppearanceRef);
     assert.equal((await current())?.primary?.referenceHex, "#2f7d6d", "undo is one step back");
 
@@ -180,8 +180,8 @@ test("appearance apply changes just the named banner image, icon, or color, and 
       [{}, "usage", /banner image, icon, or color/],
     ] as const) {
       await assert.rejects(
-        () => facade.workFoldersAppearanceApply({ workFolder: workFolder.id, parts, cwd: workFolder.workFolderRoot }),
-        (error: unknown) => error instanceof WorkFoldCliError && error.code === code && pattern.test(error.message),
+        () => facade.connectedFoldersAppearanceApply({ connectedFolder: connectedFolder.id, parts, cwd: connectedFolder.connectedFolderRoot }),
+        (error: unknown) => error instanceof AmpleFileCliError && error.code === code && pattern.test(error.message),
         JSON.stringify(parts),
       );
     }
@@ -192,12 +192,12 @@ test("appearance apply changes just the named banner image, icon, or color, and 
 });
 
 test("the CLI takes a proposal or named parts, never both", () => {
-  const parsed = parseWorkFoldCliActArgv(["work-folders", "appearance", "apply", "--work-folder", "Receipts", "--banner-image", "images/banner.png", "--icon", "receipt"]);
+  const parsed = parseAmpleFileCliActArgv(["connected-folders", "appearance", "apply", "--connected-folder", "Receipts", "--banner-image", "images/banner.png", "--icon", "receipt"]);
   assert.deepEqual(parsed.appearanceParts, { bannerImagePath: "images/banner.png", icon: "receipt" });
   assert.equal(parsed.proposalPath, undefined);
-  assert.equal(parseWorkFoldCliActArgv(["work-folders", "appearance", "apply", "--work-folder", "Receipts", "--proposal", "look.json"]).proposalPath, "look.json");
-  assert.throws(() => parseWorkFoldCliActArgv(["work-folders", "appearance", "apply", "--work-folder", "Receipts", "--proposal", "look.json", "--color", "#112233"]), /not both/);
-  assert.throws(() => parseWorkFoldCliActArgv(["work-folders", "appearance", "apply", "--work-folder", "Receipts"]), /--proposal <path>, or at least one of/);
+  assert.equal(parseAmpleFileCliActArgv(["connected-folders", "appearance", "apply", "--connected-folder", "Receipts", "--proposal", "look.json"]).proposalPath, "look.json");
+  assert.throws(() => parseAmpleFileCliActArgv(["connected-folders", "appearance", "apply", "--connected-folder", "Receipts", "--proposal", "look.json", "--color", "#112233"]), /not both/);
+  assert.throws(() => parseAmpleFileCliActArgv(["connected-folders", "appearance", "apply", "--connected-folder", "Receipts"]), /--proposal <path>, or at least one of/);
 });
 
 async function body(request: IncomingMessage): Promise<Record<string, unknown>> {
@@ -207,7 +207,7 @@ async function body(request: IncomingMessage): Promise<Record<string, unknown>> 
 }
 
 test("OpenAI and Google image models work straight from their own APIs with the key Pi already holds", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-direct-images-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-direct-images-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const picture = png(64, 27).toString("base64");
   const seen: Array<{ path: string; auth: string | undefined; body: Record<string, unknown> }> = [];

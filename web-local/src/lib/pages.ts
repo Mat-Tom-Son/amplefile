@@ -3,8 +3,8 @@ import { createFixturePagesClient } from "../fixtures/pages-fixture";
 
 /**
  * Pages (docs/pages.md): what the page tab and Files read from the local API.
- * Every route is scoped to `/api/work-folders/:id/pages` and names the page
- * by its work-folder-relative folder path.
+ * Every route is scoped to `/api/connected-folders/:id/pages` and names the page
+ * by its Connected Folder–relative folder path.
  */
 
 export interface PageSummary {
@@ -143,25 +143,25 @@ export function pageCallErrorOf(error: unknown): PageCallError {
 
 /** What the Data view reads and changes: a page's entries from Preview (`…/pages/preview/data…`). */
 export interface PageEntriesClient {
-  tables(workFolderId: string, page: string): Promise<PageTableSummary[]>;
-  data(workFolderId: string, page: string, table: string, deleted: boolean): Promise<PageTableData>;
-  update(workFolderId: string, page: string, table: string, id: string, values: Record<string, unknown>): Promise<PageRow>;
-  remove(workFolderId: string, page: string, table: string, ids: string[]): Promise<number>;
-  restore(workFolderId: string, page: string, table: string, ids: string[]): Promise<number>;
-  seen(workFolderId: string, page: string, table: string): Promise<string | null>;
-  exportCsv(workFolderId: string, page: string, table: string): Promise<Blob>;
+  tables(connectedFolderId: string, page: string): Promise<PageTableSummary[]>;
+  data(connectedFolderId: string, page: string, table: string, deleted: boolean): Promise<PageTableData>;
+  update(connectedFolderId: string, page: string, table: string, id: string, values: Record<string, unknown>): Promise<PageRow>;
+  remove(connectedFolderId: string, page: string, table: string, ids: string[]): Promise<number>;
+  restore(connectedFolderId: string, page: string, table: string, ids: string[]): Promise<number>;
+  seen(connectedFolderId: string, page: string, table: string): Promise<string | null>;
+  exportCsv(connectedFolderId: string, page: string, table: string): Promise<Blob>;
 }
 
 export interface PagesClient extends PageEntriesClient {
-  list(workFolderId: string): Promise<PageSummary[]>;
-  inspect(workFolderId: string, page: string): Promise<PageInspection>;
-  document(workFolderId: string, page: string): Promise<PageDocument>;
-  visitor(workFolderId: string, page: string, fresh: boolean): Promise<string>;
-  call(workFolderId: string, page: string, viewer: PageViewer, call: PageCall): Promise<unknown>;
+  list(connectedFolderId: string): Promise<PageSummary[]>;
+  inspect(connectedFolderId: string, page: string): Promise<PageInspection>;
+  document(connectedFolderId: string, page: string): Promise<PageDocument>;
+  visitor(connectedFolderId: string, page: string, fresh: boolean): Promise<string>;
+  call(connectedFolderId: string, page: string, viewer: PageViewer, call: PageCall): Promise<unknown>;
 }
 
-export function pagesPath(workFolderId: string): string {
-  return `/api/work-folders/${encodeURIComponent(workFolderId)}/pages`;
+export function pagesPath(connectedFolderId: string): string {
+  return `/api/connected-folders/${encodeURIComponent(connectedFolderId)}/pages`;
 }
 
 function pageQuery(page: string, extra: Record<string, string> = {}): string {
@@ -169,34 +169,34 @@ function pageQuery(page: string, extra: Record<string, string> = {}): string {
 }
 
 function liveEntriesClient(): PageEntriesClient {
-  const dataPath = (workFolderId: string) => `${pagesPath(workFolderId)}/preview/data`;
+  const dataPath = (connectedFolderId: string) => `${pagesPath(connectedFolderId)}/preview/data`;
   return {
-    async tables(workFolderId, page) {
-      const result = await api<{ tables?: unknown }>(`${dataPath(workFolderId)}?${pageQuery(page)}`);
+    async tables(connectedFolderId, page) {
+      const result = await api<{ tables?: unknown }>(`${dataPath(connectedFolderId)}?${pageQuery(page)}`);
       return Array.isArray(result.tables) ? result.tables.flatMap((value) => normalizeTableSummary(value) ?? []) : [];
     },
-    async data(workFolderId, page, table, deleted) {
-      const result = await api<Partial<PageTableData>>(`${dataPath(workFolderId)}?${pageQuery(page, { table, ...(deleted ? { deleted: "1" } : {}) })}`);
+    async data(connectedFolderId, page, table, deleted) {
+      const result = await api<Partial<PageTableData>>(`${dataPath(connectedFolderId)}?${pageQuery(page, { table, ...(deleted ? { deleted: "1" } : {}) })}`);
       return normalizeTableData(table, result);
     },
-    async update(workFolderId, page, table, id, values) {
-      const result = await api<{ row: PageRow }>(`${dataPath(workFolderId)}/update`, { method: "POST", body: { page, table, id, values } });
+    async update(connectedFolderId, page, table, id, values) {
+      const result = await api<{ row: PageRow }>(`${dataPath(connectedFolderId)}/update`, { method: "POST", body: { page, table, id, values } });
       return result.row;
     },
-    async remove(workFolderId, page, table, ids) {
-      const result = await api<{ deleted?: number }>(`${dataPath(workFolderId)}/delete`, { method: "POST", body: { page, table, ids } });
+    async remove(connectedFolderId, page, table, ids) {
+      const result = await api<{ deleted?: number }>(`${dataPath(connectedFolderId)}/delete`, { method: "POST", body: { page, table, ids } });
       return typeof result.deleted === "number" ? result.deleted : ids.length;
     },
-    async restore(workFolderId, page, table, ids) {
-      const result = await api<{ restored?: number }>(`${dataPath(workFolderId)}/restore`, { method: "POST", body: { page, table, ids } });
+    async restore(connectedFolderId, page, table, ids) {
+      const result = await api<{ restored?: number }>(`${dataPath(connectedFolderId)}/restore`, { method: "POST", body: { page, table, ids } });
       return typeof result.restored === "number" ? result.restored : ids.length;
     },
-    async seen(workFolderId, page, table) {
-      const result = await api<{ lastSeen?: string | null }>(`${dataPath(workFolderId)}/seen`, { method: "POST", body: { page, table } });
+    async seen(connectedFolderId, page, table) {
+      const result = await api<{ lastSeen?: string | null }>(`${dataPath(connectedFolderId)}/seen`, { method: "POST", body: { page, table } });
       return result.lastSeen ?? null;
     },
-    async exportCsv(workFolderId, page, table) {
-      const response = await fetchApiWithRetry(`${dataPath(workFolderId)}/export?${pageQuery(page, { table })}`, async () => ({
+    async exportCsv(connectedFolderId, page, table) {
+      const response = await fetchApiWithRetry(`${dataPath(connectedFolderId)}/export?${pageQuery(page, { table })}`, async () => ({
         method: "GET",
         headers: await pageApiHeaders(),
       }), [250, 750]);
@@ -211,31 +211,31 @@ function liveEntriesClient(): PageEntriesClient {
 }
 
 export const livePagesClient: PagesClient = {
-  async list(workFolderId) {
-    const result = await api<{ pages?: PageSummary[] }>(pagesPath(workFolderId));
+  async list(connectedFolderId) {
+    const result = await api<{ pages?: PageSummary[] }>(pagesPath(connectedFolderId));
     return (result.pages ?? []).filter((page) => page && typeof page.path === "string");
   },
-  async inspect(workFolderId, page) {
-    const result = await api<Partial<PageInspection>>(`${pagesPath(workFolderId)}/inspect?${pageQuery(page)}`);
+  async inspect(connectedFolderId, page) {
+    const result = await api<Partial<PageInspection>>(`${pagesPath(connectedFolderId)}/inspect?${pageQuery(page)}`);
     return { page: result.page ?? null, problems: result.problems ?? [], ...(result.summary ? { summary: result.summary } : {}) };
   },
-  async document(workFolderId, page) {
-    const result = await api<Partial<PageDocument>>(`${pagesPath(workFolderId)}/document?${pageQuery(page)}`);
+  async document(connectedFolderId, page) {
+    const result = await api<Partial<PageDocument>>(`${pagesPath(connectedFolderId)}/document?${pageQuery(page)}`);
     return { html: typeof result.html === "string" ? result.html : null, problems: result.problems ?? [] };
   },
-  async visitor(workFolderId, page, fresh) {
-    const result = await api<{ visitor: string }>(`${pagesPath(workFolderId)}/preview/visitor`, { method: "POST", body: { page, fresh } });
+  async visitor(connectedFolderId, page, fresh) {
+    const result = await api<{ visitor: string }>(`${pagesPath(connectedFolderId)}/preview/visitor`, { method: "POST", body: { page, fresh } });
     return result.visitor;
   },
-  async call(workFolderId, page, viewer, call) {
+  async call(connectedFolderId, page, viewer, call) {
     // Never retried here: `add` carries its own request id, and page code
     // decides whether to try again.
-    const response = await fetchApiWithRetry(`${pagesPath(workFolderId)}/preview/call`, async () => ({
+    const response = await fetchApiWithRetry(`${pagesPath(connectedFolderId)}/preview/call`, async () => ({
       method: "POST",
       headers: await pageApiHeaders(),
       body: JSON.stringify({ page, viewer, call }),
     }), []).catch((error: unknown) => {
-      throw new PageCallFailure({ code: "UNAVAILABLE", message: error instanceof Error ? error.message : "work-fold couldn't be reached. Try again." });
+      throw new PageCallFailure({ code: "UNAVAILABLE", message: error instanceof Error ? error.message : "AmpleFile couldn't be reached. Try again." });
     });
     const body = await response.json().catch(() => null) as unknown;
     if (!response.ok) throw new PageCallFailure(pageCallErrorFrom(body, response.status));
@@ -253,7 +253,7 @@ export function pagesClient(fixtureMode: boolean): PagesClient {
 }
 
 async function pageApiHeaders(): Promise<HeadersInit> {
-  const session = await window.workFoldDesktop?.api.getSessionHeaders?.();
+  const session = await window.ampleFileDesktop?.api.getSessionHeaders?.();
   return { "content-type": "application/json", ...(session ?? {}) };
 }
 
@@ -355,7 +355,7 @@ export function pageProblemsBySeverity(problems: readonly PageProblem[]): { erro
 // Preview hears about edits made in the Data view through onChange.
 
 export interface PageDataChange {
-  workFolderId: string;
+  connectedFolderId: string;
   page: string;
   table: string | null;
   /** The view that made the change, so it doesn't hear its own echo. */

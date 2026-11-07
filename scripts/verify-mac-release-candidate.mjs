@@ -10,10 +10,10 @@ const identity = JSON.parse(readFileSync(join(rootDir, "src", "shared", "product
 const packageJson = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8"));
 const appPath = resolve(rootDir, readOption("--app") || `out/mac-rc/mac-${process.arch}/${identity.productName}.app`);
 const arch = readOption("--arch") || (process.arch === "x64" ? "x64" : "arm64");
-const expectedIdentity = String(process.env.WORKFOLD_MAC_SIGN_IDENTITY || process.env.CSC_NAME || "")
+const expectedIdentity = String(process.env.AMPLEFILE_MAC_SIGN_IDENTITY || process.env.CSC_NAME || "")
   .trim()
   .replace(/^Developer ID Application:\s*/i, "");
-const expectedTeamId = String(process.env.WORKFOLD_MAC_TEAM_ID || process.env.APPLE_TEAM_ID || "").trim();
+const expectedTeamId = String(process.env.AMPLEFILE_MAC_TEAM_ID || process.env.APPLE_TEAM_ID || "").trim();
 const failures = [];
 
 if (process.platform !== "darwin") throw new Error(`${identity.productName} macOS candidates must be verified on a Mac host.`);

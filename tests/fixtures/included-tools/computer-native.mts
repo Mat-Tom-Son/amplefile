@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { release, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJiti } from "jiti";
-const root = await mkdtemp(join(tmpdir(), "workfold-computer-native-"));
+const root = await mkdtemp(join(tmpdir(), "amplefile-computer-native-"));
 const jiti = createJiti(import.meta.url, { moduleCache: true, fsCache: false });
 const computer = await jiti.import<any>(new URL("../../../resources/included-tools/computer/index.ts", import.meta.url).pathname);
 let prepared = 0, reservations = 0, repairs = 0;
@@ -35,7 +35,7 @@ try {
   assert.equal(observations.length, 0, "catalog and startup cannot claim readiness");
   assert.ok(["not_running", "unavailable"].includes(result.status), JSON.stringify(result));
   assert.equal(result.helper?.appPath ?? config.helperAppPath, config.helperAppPath);
-  await assert.rejects(() => computer.probeIncludedComputer({ ...config, stateRoot: join(root, "other") }, { launch: false }), /another work-fold profile/);
+  await assert.rejects(() => computer.probeIncludedComputer({ ...config, stateRoot: join(root, "other") }, { launch: false }), /another AmpleFile profile/);
   if (process.platform === "darwin" && Number.parseInt(release(), 10) >= 23) {
     await assert.rejects(() => computer.probeIncludedComputer(config, { launch: true }), /Synthetic preparation boundary/);
     assert.equal(prepared, 1);

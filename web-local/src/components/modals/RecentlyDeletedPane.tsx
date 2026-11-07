@@ -9,16 +9,16 @@ import { recentlyDeletedSettings } from "../../ui-contract";
 
 /**
  * Settings → Recently deleted (docs/receipts-not-gates.md, F20).
- * Nothing work-fold destroys is gone at the moment it happens: History covers
+ * Nothing AmpleFile destroys is gone at the moment it happens: History covers
  * ordinary deletion, and whatever it could not keep a copy of waits here until
  * its time runs out. This pane lists what is waiting, puts an item back, saves
  * app data whose app is gone as a plain file, removes one item early, and sets
  * how long items are kept. Nothing here empties the whole store.
- * The browser preview (`?fixture=work-folder`) lists sample items and changes
+ * The browser preview (`?fixture=connected-folder`) lists sample items and changes
  * nothing.
  */
 
-export type RecentlyDeletedKind = "file" | "folder" | "work-folder" | "skill" | "app-storage" | "app-retained" | "app-release" | "app-studio";
+export type RecentlyDeletedKind = "file" | "folder" | "connected-folder" | "skill" | "app-storage" | "app-retained" | "app-release" | "app-studio";
 
 export interface RecentlyDeletedEntry {
   id: string;
@@ -27,18 +27,18 @@ export interface RecentlyDeletedEntry {
     | "files.delete"
     | "agent.chat.delete"
     | "chats.delete"
-    | "work-folders.delete"
+    | "connected-folders.delete"
     | "skills.remove"
     | "apps.remove"
-    | "apps.work-folder.removed"
+    | "apps.connected-folder.removed"
     | "apps.storage.clear"
     | "apps.retained.purge"
     | "apps.uninstall.purge"
     | "apps.release.delete";
-  workFolderId: string;
-  workFolderName?: string;
+  connectedFolderId: string;
+  connectedFolderName?: string;
   /** skill only: the scope it goes back into. */
-  scope?: "everywhere" | "work-folder";
+  scope?: "everywhere" | "connected-folder";
   originalPath: string;
   name: string;
   sizeBytes: number;
@@ -61,7 +61,7 @@ export interface RecentlyDeletedResponse {
 const kindLabels: Record<RecentlyDeletedKind, string> = {
   file: "File",
   folder: "Folder",
-  "work-folder": "work-folder",
+  "connected-folder": "Connected Folder",
   skill: "Skill",
   "app-storage": "App Data",
   "app-retained": "App Data",
@@ -77,7 +77,7 @@ const uncoveredLabels: Record<"too_large" | "unreadable" | "symbolic_link" | "ex
 };
 
 export function formatDeletedSize(bytes: number, approximate?: boolean): string {
-  // A deleted work-folder can pass a gigabyte, which the shared formatter does not show.
+  // A deleted Connected Folder can pass a gigabyte, which the shared formatter does not show.
   const size = bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : formatBytes(Math.round(bytes));
   return `${approximate ? "at least " : ""}${size}`;
 }
@@ -86,7 +86,7 @@ export function formatDeletedSize(bytes: number, approximate?: boolean): string 
 export function describeOrigin(entry: RecentlyDeletedEntry): string {
   if (entry.kind === "skill" && entry.scope === "everywhere") return "Everywhere Skill";
   const label = entry.reason === "agent.chat.delete" || entry.reason === "chats.delete" ? "Chat" : kindLabels[entry.kind];
-  return `${label} from ${entry.workFolderName ?? entry.workFolderId}`;
+  return `${label} from ${entry.connectedFolderName ?? entry.connectedFolderId}`;
 }
 
 export function describeUncovered(entry: RecentlyDeletedEntry): string | null {
@@ -145,7 +145,7 @@ export function RecentlyDeletedPane({ fixtureMode = false }: { fixtureMode?: boo
   async function restore(entry: RecentlyDeletedEntry): Promise<void> {
     await run(`restore-${entry.id}`, async () => {
       await api(`/api/settings/recently-deleted/${entry.id}/restore`, { method: "POST", body: {} });
-      window.dispatchEvent(new CustomEvent("work-fold:recently-deleted-restored", { detail: { entryId: entry.id, kind: entry.kind } }));
+      window.dispatchEvent(new CustomEvent("amplefile:recently-deleted-restored", { detail: { entryId: entry.id, kind: entry.kind } }));
       return `${entry.name} is back`;
     });
   }

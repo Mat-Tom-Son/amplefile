@@ -13,7 +13,7 @@ import { probeIncludedDocuments, runDocumentScript } from "../resources/included
 
 const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 async function fixture(t: { after(fn: () => Promise<void>): void }, source: string, extension = "mjs") {
-  const cwd = await mkdtemp(join(tmpdir(), "workfold-documents-"));
+  const cwd = await mkdtemp(join(tmpdir(), "amplefile-documents-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   const script = join(cwd, `script.${extension}`);
   await writeFile(script, source);
@@ -196,11 +196,11 @@ test("changed render cannot retain PDF provenance and collisions do not overwrit
   assert.equal(result.original.source.sha256, result.smaller.source.sha256);
 });
 
-test("default PDF reviews leave no work-folder PNGs and retain native image bytes after cleanup", async (t) => {
+test("default PDF reviews leave no Connected Folder PNGs and retain native image bytes after cleanup", async (t) => {
   const setup = await fixture(t, `import{writeFile}from'node:fs/promises';export default async({libraries,resolve,renderPdf,emitImage})=>{
     const pdf=await libraries.pdfLib.PDFDocument.create();pdf.addPage([200,200]);await writeFile(resolve('test.pdf'),await pdf.save());
     const render=await renderPdf('test.pdf');await emitImage(render.pages[0].path);return render;};`);
-  const stateRoot = await mkdtemp(join(tmpdir(), "workfold-document-state-"));
+  const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-document-state-"));
   t.after(() => rm(stateRoot, { recursive: true, force: true }));
   const result = await runDocumentScript({ ...setup, stateRoot });
   const rendered = JSON.parse(result.value);
@@ -217,7 +217,7 @@ test("Stop removes only host-owned temporary PDF reviews", async (t) => {
   const setup = await fixture(t, `import{writeFile}from'node:fs/promises';export default async({libraries,resolve,renderPdf})=>{
     const pdf=await libraries.pdfLib.PDFDocument.create();pdf.addPage([200,200]);await writeFile(resolve('test.pdf'),await pdf.save());
     const render=await renderPdf('test.pdf');await writeFile(resolve('render-ready'),render.pages[0].path);while(true){};};`);
-  const stateRoot = await mkdtemp(join(tmpdir(), "workfold-document-state-"));
+  const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-document-state-"));
   t.after(() => rm(stateRoot, { recursive: true, force: true }));
   const controller = new AbortController(); t.after(async () => controller.abort());
   const stopped = assert.rejects(runDocumentScript({ ...setup, stateRoot, signal: controller.signal }), /stopped/);
@@ -235,7 +235,7 @@ test("native session shutdown waits for document worker termination and temporar
   const setup = await fixture(t, `import{writeFile}from'node:fs/promises';export default async({libraries,resolve,renderPdf})=>{
     const pdf=await libraries.pdfLib.PDFDocument.create();pdf.addPage([200,200]);await writeFile(resolve('test.pdf'),await pdf.save());
     const render=await renderPdf('test.pdf');await writeFile(resolve('render-ready'),render.pages[0].path);while(true){};};`);
-  const stateRoot = await mkdtemp(join(tmpdir(), "workfold-document-shutdown-"));
+  const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-document-shutdown-"));
   t.after(() => rm(stateRoot, { recursive: true, force: true }));
   const extension = await createJiti(import.meta.url).import<{ default: (pi: unknown) => void }>("../resources/included-tools/documents/index.ts");
   let shutdown!: () => Promise<void>;

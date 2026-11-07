@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { maxTurnFileChanges, parseTurnFileChanges, turnFileChanges } from "../src/local/agent/turn-file-changes.js";
-import { WorkFoldTurnStore } from "../src/local/agent/turn-store.js";
-import type { WorkFolderCheckpoint } from "../src/local/history.js";
+import { AmpleFileTurnStore } from "../src/local/agent/turn-store.js";
+import type { ConnectedFolderCheckpoint } from "../src/local/history.js";
 
 const file = (path: string, hash = "a") => ({ path, hashSha256: hash.repeat(64), sizeBytes: 8, modifiedAt: "2026-09-07T12:00:00.000Z" });
-const checkpoint = (id: string, files: ReturnType<typeof file>[]): WorkFolderCheckpoint => ({ schemaVersion: "0.2.0", checkpointId: id,
+const checkpoint = (id: string, files: ReturnType<typeof file>[]): ConnectedFolderCheckpoint => ({ schemaVersion: "0.2.0", checkpointId: id,
   createdAt: "2026-09-07T12:00:00.000Z", reason: "post_turn", scope: "full", manifestHash: "a".repeat(64), fileCount: files.length, totalBytes: files.length * 8,
   skippedLargeFiles: [], skippedFiles: [], captureRoots: [""], deleteOnRestore: [], movesOnRestore: [], directories: [], files });
 
@@ -28,17 +28,17 @@ test("turn file references reject malformed metadata, unsafe paths, duplicates a
   assert.deepEqual(parseTurnFileChanges(valid), valid);
   for (const value of [null, { ...valid, owner: "injected" }, { ...valid, beforeCheckpointId: "../../other" },
     { ...valid, files: [valid.files[0], valid.files[0]] }, { ...valid, files: Array(maxTurnFileChanges + 1).fill(valid.files[0]) },
-    ...["/outside", "../outside", ".work-fold/secret", ".workspace/old", "nested/.pi/auth", "file\\name", "a\0b"].map((path) => ({ ...valid, files: [{ ...valid.files[0], path }] })),
+    ...["/outside", "../outside", ".amplefile/secret", ".workspace/old", "nested/.pi/auth", "file\\name", "a\0b"].map((path) => ({ ...valid, files: [{ ...valid.files[0], path }] })),
     { ...valid, files: [{ ...valid.files[0], hashSha256: "invalid" }] }, { ...valid, files: [{ ...valid.files[0], sizeBytes: -1 }] }]) {
     assert.throws(() => parseTurnFileChanges(value));
   }
 });
 
 test("turn file evidence survives restart and callers cannot mutate the durable references", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-turn-files-")); t.after(() => rm(root, { recursive: true, force: true }));
-  const store = await WorkFoldTurnStore.create({ stateRoot: root });
+  const root = await mkdtemp(join(tmpdir(), "amplefile-turn-files-")); t.after(() => rm(root, { recursive: true, force: true }));
+  const store = await AmpleFileTurnStore.create({ stateRoot: root });
   const accepted = await store.accept({ requestId: "request-one", requestDigest: "a".repeat(64), userMessageId: "user-one",
-    userMessageCreatedAt: "2026-09-07T12:00:00.000Z", workFolderId: "work-folder-one", conversationId: "chat-one", actorKind: "renderer" });
+    userMessageCreatedAt: "2026-09-07T12:00:00.000Z", connectedFolderId: "connected-folder-one", conversationId: "chat-one", actorKind: "renderer" });
   const changes = turnFileChanges(checkpoint("before", []), checkpoint("after", [file("brief.md")]))!;
   await store.settle(accepted.record.turnId, { status: "succeeded", fileChanges: changes });
   assert.equal((await store.markRunning(accepted.record.turnId))!.status, "succeeded", "a completed result cannot be reopened by a late running marker");
@@ -46,7 +46,7 @@ test("turn file evidence survives restart and callers cannot mutate the durable 
   store.get(accepted.record.turnId)!.fileChanges!.files[0]!.path = "another-mutation.md";
   assert.equal(store.get(accepted.record.turnId)!.fileChanges!.files[0]!.path, "brief.md");
   await store.flush();
-  const reopened = await WorkFoldTurnStore.create({ stateRoot: root });
+  const reopened = await AmpleFileTurnStore.create({ stateRoot: root });
   assert.deepEqual(reopened.get(accepted.record.turnId)!.fileChanges, store.get(accepted.record.turnId)!.fileChanges);
   await assert.rejects(reopened.settle(accepted.record.turnId, { status: "succeeded", fileChanges: { ...changes, files: [{ ...changes.files[0]!, path: "../unsafe" }] } }));
 });

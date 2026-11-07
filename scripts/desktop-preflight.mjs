@@ -27,7 +27,7 @@ assertPath("resources/included-tools/readiness.ts");
 assertPath("dist/desktop/desktop/src/preload.cjs");
 assertPath("dist/desktop/desktop/src/model-context-preload.cjs");
 assertPath("dist/desktop/desktop/src/model-context-window.js");
-assertPath("dist/desktop/desktop/src/work-fold-agent-popover-preload.cjs");
+assertPath("dist/desktop/desktop/src/amplefile-agent-popover-preload.cjs");
 assertPath("dist/desktop/desktop/src/restricted-app-host.js");
 assertPath("dist/desktop/desktop/src/restricted-app-preload.cjs");
 assertPath("desktop/assets/icon.ico");
@@ -37,21 +37,21 @@ assertPath("desktop/assets/iconTemplate@2x.png");
 if (desktopReleasePlatform() === "darwin") {
   assertPath("desktop/assets/icon.icns");
   assertPath("out/generated-assets/dmg-background.png");
-  assertPath("desktop/cli/work-fold-cli.jxa.js");
-  assertPath("out/included-tools/computer-helper/work-fold Computer.app/Contents/MacOS/bridge");
-  assertPath("out/included-tools/computer-helper/work-fold Computer.app/Contents/Resources/source.json");
+  assertPath("desktop/cli/amplefile-cli.jxa.js");
+  assertPath("out/included-tools/computer-helper/amplefile Computer.app/Contents/MacOS/bridge");
+  assertPath("out/included-tools/computer-helper/amplefile Computer.app/Contents/Resources/source.json");
 }
 
 verifyPiDependencyNormalization();
 await verifyNativePiResources();
 
 if (failures.length) {
-  console.error("work-fold desktop preflight failed:\n");
+  console.error("AmpleFile desktop preflight failed:\n");
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
 
-console.log("work-fold desktop preflight passed.");
+console.log("AmpleFile desktop preflight passed.");
 
 function assertSupportedNode() {
   const [major = 0, minor = 0] = process.versions.node.split(".").map(Number);
@@ -65,7 +65,7 @@ function assertPath(relativePath) {
 }
 
 function desktopReleasePlatform() {
-  const configured = process.env.WORKFOLD_DESKTOP_RELEASE_PLATFORM?.trim();
+  const configured = process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM?.trim();
   return configured || process.platform;
 }
 

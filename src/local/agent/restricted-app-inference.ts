@@ -1,11 +1,11 @@
 /**
- * The bounded-inference lane for work-folder apps (docs/receipts-not-gates.md, F22):
+ * The bounded-inference lane for Connected Folder apps (docs/receipts-not-gates.md, F22):
  * an installed app's view or worker calls `assistant.infer`, the host parses
  * and bounds the request, pins the exact installation before and after the
  * model call, and appends a receipt line carrying the effective model and its
  * usage. Nothing here waits on a person; the receipt is the disclosure.
  *
- * The transport itself is `bounded-inference.ts` running on the owning work-folder's
+ * The transport itself is `bounded-inference.ts` running on the owning Connected Folder's
  * configured session. This module owns everything around it: request shape,
  * byte bounds, the concurrency limiter, identity pins, and the journal.
  *
@@ -52,8 +52,8 @@ export interface RestrictedAppInferencePorts {
    * never across the model call, so inference cannot block a grant change.
    */
   pin(scope: RestrictedAppInferenceScope): Promise<void>;
-  /** The owning work-folder's bounded transport; the server hands over its per-work-folder client. */
-  infer(workFolderId: string, request: BoundedInferenceRequest): Promise<BoundedInferenceOutcome>;
+  /** The owning Connected Folder's bounded transport; the server hands over its per–Connected Folder client. */
+  infer(connectedFolderId: string, request: BoundedInferenceRequest): Promise<BoundedInferenceOutcome>;
 }
 
 export interface RestrictedAppInferenceParsedRequest {
@@ -230,7 +230,7 @@ export function parseRestrictedAppInferenceRequest(value: unknown): RestrictedAp
     throw new RestrictedAppInferenceError(
       "INFER_INPUT_TOO_LARGE",
       `Inference input exceeds the ${limits.inputBytes}-byte limit in ${limitsSection}. `
-      + "Send less, or write the data as work-folder files and summarize.",
+      + "Send less, or write the data as Connected Folder files and summarize.",
     );
   }
   let outputSchema: RestrictedAppJsonSchema | undefined;
@@ -268,7 +268,7 @@ export interface RestrictedAppInferenceServiceOptions {
  * journal (docs/collaboration-contract.md, F30).
  */
 export interface RestrictedAppInferenceActivity {
-  receipt: { id: string; workFolderId: string; appId: string; featureInstallationId: string };
+  receipt: { id: string; connectedFolderId: string; appId: string; featureInstallationId: string };
   terminal: boolean;
 }
 
@@ -329,7 +329,7 @@ export class RestrictedAppInferenceService extends EventEmitter {
     let activeKey: string | undefined;
     try {
       release = await this.#limiter.acquire(scope.featureInstallationId, controller.signal);
-      // Journal first, like every other effect: a call work-fold cannot record
+      // Journal first, like every other effect: a call AmpleFile cannot record
       // does not run, and `id` means an accepted line landed.
       const receiptId = randomUUID();
       activeKey = inferenceReceiptKey({ ...scope, id: receiptId });
@@ -339,7 +339,7 @@ export class RestrictedAppInferenceService extends EventEmitter {
           v: 1,
           id: receiptId,
           at: this.#now().toISOString(),
-          workFolderId: scope.workFolderId,
+          connectedFolderId: scope.connectedFolderId,
           appId: scope.appId,
           featureInstallationId: scope.featureInstallationId,
           digest: scope.digest,
@@ -349,10 +349,10 @@ export class RestrictedAppInferenceService extends EventEmitter {
           schema: Boolean(request.outputSchema),
         });
       } catch {
-        throw new RestrictedAppInferenceError("INFER_UNAVAILABLE", "work-fold could not record this inference call, so it did not run.");
+        throw new RestrictedAppInferenceError("INFER_UNAVAILABLE", "AmpleFile could not record this inference call, so it did not run.");
       }
       id = receiptId;
-      const outcome = await this.#ports.infer(scope.workFolderId, {
+      const outcome = await this.#ports.infer(scope.connectedFolderId, {
         instructions: request.instructions,
         input: request.input,
         ...(request.outputSchema ? { outputSchema: request.outputSchema } : {}),
@@ -370,7 +370,7 @@ export class RestrictedAppInferenceService extends EventEmitter {
         v: 1,
         id,
         at: this.#now().toISOString(),
-        workFolderId: scope.workFolderId,
+        connectedFolderId: scope.connectedFolderId,
         appId: scope.appId,
         featureInstallationId: scope.featureInstallationId,
         digest: scope.digest,
@@ -391,7 +391,7 @@ export class RestrictedAppInferenceService extends EventEmitter {
           v: 1,
           id,
           at: this.#now().toISOString(),
-          workFolderId: scope.workFolderId,
+          connectedFolderId: scope.connectedFolderId,
           appId: scope.appId,
           featureInstallationId: scope.featureInstallationId,
           digest: scope.digest,
@@ -420,7 +420,7 @@ export class RestrictedAppInferenceService extends EventEmitter {
     const ownership = options.ownership ?? "revision";
     const limit = Math.min(options.limit ?? this.#limits.listItems, this.#limits.listItems);
     return latestInferenceReceipts(this.#receipts
-      .filter((receipt) => receipt.workFolderId === scope.workFolderId
+      .filter((receipt) => receipt.connectedFolderId === scope.connectedFolderId
         && receipt.appId === scope.appId
         && receipt.featureInstallationId === scope.featureInstallationId
         && (ownership === "installation" || receipt.digest === scope.digest)))
@@ -489,7 +489,7 @@ export class RestrictedAppInferenceService extends EventEmitter {
     const moved = `${this.#path}.damaged-${this.#now().toISOString().replace(/[:.]/g, "-")}`;
     try {
       await rename(this.#path, moved);
-      console.warn(`work-fold could not read the app inference receipts; the file was kept at ${moved}.`);
+      console.warn(`AmpleFile could not read the app inference receipts; the file was kept at ${moved}.`);
     } catch {
       await rm(this.#path, { force: true }).catch(() => undefined);
     }
@@ -515,7 +515,7 @@ export class RestrictedAppInferenceService extends EventEmitter {
     this.emit("changed", {
       receipt: {
         id: receipt.id,
-        workFolderId: receipt.workFolderId,
+        connectedFolderId: receipt.connectedFolderId,
         appId: receipt.appId,
         featureInstallationId: receipt.featureInstallationId,
       },
@@ -559,8 +559,8 @@ function latestInferenceReceipts(receipts: RestrictedAppInferenceReceipt[]): Res
   return current;
 }
 
-function inferenceReceiptKey(receipt: Pick<RestrictedAppInferenceReceipt, "workFolderId" | "appId" | "featureInstallationId" | "digest" | "id">): string {
-  return JSON.stringify([receipt.workFolderId, receipt.appId, receipt.featureInstallationId, receipt.digest, receipt.id]);
+function inferenceReceiptKey(receipt: Pick<RestrictedAppInferenceReceipt, "connectedFolderId" | "appId" | "featureInstallationId" | "digest" | "id">): string {
+  return JSON.stringify([receipt.connectedFolderId, receipt.appId, receipt.featureInstallationId, receipt.digest, receipt.id]);
 }
 
 function toInferenceError(error: unknown): RestrictedAppInferenceError {
@@ -572,7 +572,7 @@ function toInferenceError(error: unknown): RestrictedAppInferenceError {
   // Never let provider or transport text reach an app.
   return new RestrictedAppInferenceError(
     "INFER_FAILED",
-    "The model call did not complete. Check the work-folder's provider connection in Settings → AI Models, then try again.",
+    "The model call did not complete. Check the Connected Folder's provider connection in Settings → AI Models, then try again.",
   );
 }
 
@@ -587,7 +587,7 @@ function invalid(message: string): never {
 function parseInferenceReceipt(value: unknown): RestrictedAppInferenceReceipt {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("An inference receipt is invalid.");
   const receipt = value as Record<string, unknown>;
-  const required = ["v", "id", "at", "workFolderId", "appId", "featureInstallationId", "digest", "surface", "outcome", "inputBytes", "schema"];
+  const required = ["v", "id", "at", "connectedFolderId", "appId", "featureInstallationId", "digest", "surface", "outcome", "inputBytes", "schema"];
   const optional = ["errorCode", "outputBytes", "model", "usage", "durationMs"];
   if (required.some((key) => !Object.hasOwn(receipt, key))
     || Object.keys(receipt).some((key) => !required.includes(key) && !optional.includes(key))) {
@@ -596,7 +596,7 @@ function parseInferenceReceipt(value: unknown): RestrictedAppInferenceReceipt {
   if (receipt.v !== 1
     || typeof receipt.id !== "string" || !uuid.test(receipt.id)
     || typeof receipt.at !== "string" || new Date(receipt.at).toISOString() !== receipt.at
-    || typeof receipt.workFolderId !== "string" || !receipt.workFolderId
+    || typeof receipt.connectedFolderId !== "string" || !receipt.connectedFolderId
     || typeof receipt.appId !== "string" || !receipt.appId
     || typeof receipt.featureInstallationId !== "string" || !receipt.featureInstallationId
     || typeof receipt.digest !== "string" || !/^[a-f0-9]{64}$/.test(receipt.digest)

@@ -25,10 +25,10 @@ if (!packageDir) {
 if (!existsSync(packageDir)) failures.push(`Packaged app directory does not exist: ${packageDir}.`);
 
 const packagedPlatform = readArgument("--platform") ?? inferPackagedPlatform(packageDir);
-const macAppBundleName = process.env.WORKFOLD_ALLOW_UNSIGNED_MAC_BUILD === "1"
+const macAppBundleName = process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD === "1"
   ? `${identity.macSmokeProductName}.app`
   : `${identity.productName}.app`;
-const macExecutableName = process.env.WORKFOLD_ALLOW_UNSIGNED_MAC_BUILD === "1"
+const macExecutableName = process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD === "1"
   ? identity.macSmokeProductName
   : identity.productName;
 const appDir = packagedPlatform === "darwin" && !packageDir.endsWith(".app")
@@ -48,7 +48,7 @@ const executablePath = packagedPlatform === "win32"
 assertPath(executablePath, `${identity.productName} executable`);
 assertPath(asarPath, "app.asar");
 assertPath(join(resourcesDir, "web-local", "index.html"), "renderer index");
-assertPath(join(resourcesDir, "web-local", "popover.html"), "work-fold agent popover renderer");
+assertPath(join(resourcesDir, "web-local", "popover.html"), "AmpleFile agent popover renderer");
 assertPath(join(resourcesDir, "assets", "icon.png"), "desktop icon");
 assertPath(join(resourcesDir, "assets", "iconTemplate.png"), "menu-bar template icon");
 assertPath(join(resourcesDir, "assets", "iconTemplate@2x.png"), "menu-bar template icon (2x)");
@@ -59,7 +59,7 @@ if (packagedPlatform === "win32") {
 } else if (packagedPlatform === "darwin") {
   assertPath(join(binDir, `${identity.cliCommand}-cli.jxa.js`), `${identity.productName} CLI macOS helper`);
   assertPath(join(resourcesDir, "icon.icns"), "macOS application icon");
-  const computerHelper = join(resourcesDir, "computer-helper", "work-fold Computer.app", "Contents");
+  const computerHelper = join(resourcesDir, "computer-helper", "AmpleFile Computer.app", "Contents");
   assertPath(join(computerHelper, "MacOS", "bridge"), "included computer helper");
   assertPath(join(computerHelper, "Info.plist"), "computer helper identity");
   assertPath(join(computerHelper, "Resources", "icon.icns"), "computer helper icon");
@@ -69,7 +69,7 @@ if (packagedPlatform === "win32") {
     const expected = JSON.parse(readFileSync(join(rootDir, "patches", "included-tools", "manifest.json"), "utf8"))
       .find((entry) => entry.package === "@injaneity/pi-computer-use");
     const source = JSON.parse(readFileSync(join(computerHelper, "Resources", "source.json"), "utf8"));
-    if (source.schema !== "work-fold.computer-helper-source.v1" || source.package !== expected.package
+    if (source.schema !== "amplefile.computer-helper-source.v1" || source.package !== expected.package
       || source.version !== expected.version || source.integrationPatchSha256 !== expected.sha256
       || source.source !== (expected.sourceURL || expected.source) || source.license !== expected.license
       || source.protocolVersion !== 7 || source.target !== "arm64-apple-macosx14.0") {
@@ -87,21 +87,21 @@ if (packagedPlatform === "win32") {
       }
     }
     const plist = readFileSync(join(computerHelper, "Info.plist"), "utf8");
-    for (const [key, value] of [["CFBundleIdentifier", "com.work-fold.desktop.computer"], ["CFBundleExecutable", "bridge"], ["CFBundleDisplayName", "work-fold Computer"], ["CFBundleIconFile", "icon.icns"]]) {
+    for (const [key, value] of [["CFBundleIdentifier", "com.amplefile.desktop.computer"], ["CFBundleExecutable", "bridge"], ["CFBundleDisplayName", "AmpleFile Computer"], ["CFBundleIconFile", "icon.icns"]]) {
       if (!plist.includes(`<key>${key}</key><string>${value}</string>`)) failures.push(`Computer helper has an unexpected ${key}.`);
     }
     if (!readFileSync(join(computerHelper, "Resources", "icon.icns")).equals(readFileSync(join(rootDir, "desktop", "assets", "icon.icns")))) {
-      failures.push("Computer helper icon does not match the work-fold application icon.");
+      failures.push("Computer helper icon does not match the AmpleFile application icon.");
     }
   } catch (error) { failures.push(`Could not verify computer helper provenance: ${formatError(error)}`); }
   const chromeHost = join(resourcesDir, "chrome-native-host");
-  assertPath(join(chromeHost, "work-fold-chrome-host"), "Chrome native bootstrap");
+  assertPath(join(chromeHost, "amplefile-chrome-host"), "Chrome native bootstrap");
   assertPath(join(chromeHost, "source.json"), "Chrome native bootstrap provenance");
   try {
     const distribution = JSON.parse(readFileSync(join(rootDir, "src/shared/chrome-distribution.json"), "utf8"));
     const provenance = JSON.parse(readFileSync(join(chromeHost, "source.json"), "utf8"));
     const expectedOrigin = distribution.storeId ? `chrome-extension://${distribution.storeId}/` : "";
-    if (provenance.schema !== "work-fold.chrome-native-host-source.v1" || provenance.origin !== expectedOrigin
+    if (provenance.schema !== "amplefile.chrome-native-host-source.v1" || provenance.origin !== expectedOrigin
       || provenance.nativeHostName !== distribution.nativeHostName || provenance.bootstrapVersion !== distribution.bootstrapVersion
       || provenance.target !== "arm64-apple-macosx12.0"
       || provenance.sourceSha256 !== createHash("sha256").update(readFileSync(join(rootDir, "desktop/native/chrome-bootstrap.swift"))).digest("hex")
@@ -155,7 +155,7 @@ if (existsSync(asarPath)) {
     "/dist/desktop/desktop/src/preload.cjs",
     "/dist/desktop/desktop/src/model-context-preload.cjs",
     "/dist/desktop/desktop/src/model-context-window.js",
-    "/dist/desktop/desktop/src/work-fold-agent-popover-preload.cjs",
+    "/dist/desktop/desktop/src/amplefile-agent-popover-preload.cjs",
     "/dist/desktop/desktop/src/restricted-app-host.js",
     "/dist/desktop/desktop/src/restricted-app-preload.cjs",
     "/dist/desktop/restricted-app-kit/kit.css",
@@ -171,7 +171,7 @@ if (existsSync(asarPath)) {
     "/resources/included-tools/documents/runtime.mjs",
     "/resources/included-tools/documents/worker.mjs",
     "/resources/included-tools/documents/skills/documents/SKILL.md",
-    "/resources/included-tools/skills/set-up-work-folder/SKILL.md",
+    "/resources/included-tools/skills/set-up-connected-folder/SKILL.md",
     ...["@injaneity/pi-computer-use", "pi-chrome", "pi-web-access", "@earendil-works/pi-mcp", "jiti", "typebox", "docx", "exceljs", "pptxgenjs", "pdf-lib", "pdfjs-dist", "@napi-rs/canvas"].map((name) => `/node_modules/${name}/package.json`),
     "/node_modules/pi-chrome/extensions/chrome-profile-bridge/browser-extension/service_worker.js",
     "/node_modules/pi-chrome/extensions/chrome-profile-bridge/browser-extension/host-config.json",
@@ -196,9 +196,9 @@ if (existsSync(asarPath)) {
     const packaged = JSON.parse(extractFile(asarPath, "package.json").toString("utf8"));
     if (packaged.name !== identity.packageName) failures.push(`Packaged npm name is ${packaged.name ?? "missing"}.`);
     if (packaged.productName !== identity.productName) failures.push(`Packaged product name is ${packaged.productName ?? "missing"}.`);
-    const expectedBuildChannel = process.env.WORKFOLD_ALLOW_UNSIGNED_MAC_BUILD === "1" ? "mac-local-smoke" : "production";
-    if (packaged.workFoldBuildChannel !== expectedBuildChannel) {
-      failures.push(`Packaged build channel is ${packaged.workFoldBuildChannel ?? "missing"}; expected ${expectedBuildChannel}.`);
+    const expectedBuildChannel = process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD === "1" ? "mac-local-smoke" : "production";
+    if (packaged.ampleFileBuildChannel !== expectedBuildChannel) {
+      failures.push(`Packaged build channel is ${packaged.ampleFileBuildChannel ?? "missing"}; expected ${expectedBuildChannel}.`);
     }
   } catch (error) {
     failures.push(`Could not inspect packaged package.json: ${formatError(error)}`);

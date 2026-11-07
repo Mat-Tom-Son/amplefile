@@ -84,12 +84,12 @@ test("the suite runs with a temporary Pi folder, never the developer's real one"
   assert.equal(isolated === realPi || isolated.startsWith(`${realPi}${sep}`), false);
   assert.equal(getAgentDir(), isolated);
   assert.equal(defaultAgentSdkDir(), isolated);
-  assert.equal(process.env.WORKFOLD_AGENT_DIR, undefined, "a developer's own work-fold agent override cannot reach tests");
-  assert.ok(process.env.WORKFOLD_TEST_REAL_PI_DIRS?.split(delimiter).includes(realPi));
+  assert.equal(process.env.AMPLEFILE_AGENT_DIR, undefined, "a developer's own AmpleFile agent override cannot reach tests");
+  assert.ok(process.env.AMPLEFILE_TEST_REAL_PI_DIRS?.split(delimiter).includes(realPi));
 });
 
 test("the real-Pi guard records changes beneath protected folders and nothing else", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-real-pi-guard-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-real-pi-guard-"));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
   const realPi = join(sandbox, "real-pi");
   const log = join(sandbox, "writes.jsonl");
@@ -100,7 +100,7 @@ test("the real-Pi guard records changes beneath protected folders and nothing el
     import { join } from "node:path";
     const [realPi, elsewhere] = process.argv.slice(1);
     fs.mkdirSync(elsewhere, { recursive: true });
-    fs.mkdirSync(join(realPi, "agent", "sessions", "work-fold", "space-1"), { recursive: true });
+    fs.mkdirSync(join(realPi, "agent", "sessions", "amplefile", "space-1"), { recursive: true });
     await writeFile(join(realPi, "agent", "settings.json"), "{}");
     await mkdir(join(realPi, "agent", "auth.json.lock"));
     fs.closeSync(fs.openSync(join(realPi, "agent", "settings.json"), "r"));
@@ -111,12 +111,12 @@ test("the real-Pi guard records changes beneath protected folders and nothing el
   const result = spawnSync(process.execPath, ["--import", guard, "--input-type=module", "--eval", script, realPi, join(sandbox, "elsewhere")], {
     encoding: "utf8",
     timeout: 10_000,
-    env: { ...process.env, WORKFOLD_TEST_REAL_PI_DIRS: realPi, WORKFOLD_TEST_REAL_PI_WRITE_LOG: log },
+    env: { ...process.env, AMPLEFILE_TEST_REAL_PI_DIRS: realPi, AMPLEFILE_TEST_REAL_PI_WRITE_LOG: log },
   });
   assert.equal(result.status, 0, result.stderr);
   const writes = (await readFile(log, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { operation: string; path: string });
   assert.deepEqual(writes.map(({ operation, path }) => [operation, relative(sandbox, path)]), [
-    ["mkdirSync", join("real-pi", "agent", "sessions", "work-fold", "space-1")],
+    ["mkdirSync", join("real-pi", "agent", "sessions", "amplefile", "space-1")],
     ["writeFile", join("real-pi", "agent", "settings.json")],
     ["mkdir", join("real-pi", "agent", "auth.json.lock")],
     ["renameSync", join("real-pi", "agent", "settings.json")],

@@ -28,7 +28,7 @@ test("included computer: native peer closure and human takeover guard", { skip: 
   const { execFile } = await import("node:child_process");
   const { promisify } = await import("node:util");
   const exec = promisify(execFile);
-  const scratch = await mkdtemp(join(tmpdir(), "workfold-computer-lifecycle-"));
+  const scratch = await mkdtemp(join(tmpdir(), "amplefile-computer-lifecycle-"));
   try {
     const source = fileURLToPath(new URL("../node_modules/@injaneity/pi-computer-use/native/macos/", import.meta.url));
     const executable = join(scratch, "request-lifecycle-tests");

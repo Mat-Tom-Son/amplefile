@@ -10,7 +10,7 @@ loadLocalReleaseEnvironment();
 const packageJson = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8"));
 const productIdentity = JSON.parse(readFileSync(join(rootDir, "src", "shared", "product-identity.json"), "utf8"));
 const version = String(packageJson.version ?? "").trim();
-const arch = stringValue(process.env.WORKFOLD_DESKTOP_RELEASE_ARCH) || (process.arch === "x64" ? "x64" : "arm64");
+const arch = stringValue(process.env.AMPLEFILE_DESKTOP_RELEASE_ARCH) || (process.arch === "x64" ? "x64" : "arm64");
 const builderDir = join(rootDir, "out", "builder");
 const dmgPath = join(builderDir, `${productIdentity.productName}-${version}-mac-${arch}.dmg`);
 const blockmapPath = `${dmgPath}.blockmap`;
@@ -33,8 +33,8 @@ await refreshUpdateMetadata();
 console.log(`Finalized signed and notarized ${productIdentity.productName} ${version} macOS ${arch} installer metadata.`);
 
 function signDmg() {
-  const identity = stringValue(process.env.WORKFOLD_MAC_SIGN_IDENTITY || process.env.CSC_NAME);
-  if (!identity) throw new Error("WORKFOLD_MAC_SIGN_IDENTITY is required to sign the release DMG.");
+  const identity = stringValue(process.env.AMPLEFILE_MAC_SIGN_IDENTITY || process.env.CSC_NAME);
+  if (!identity) throw new Error("AMPLEFILE_MAC_SIGN_IDENTITY is required to sign the release DMG.");
   run("codesign", ["--force", "--timestamp", "--sign", identity, dmgPath], `Could not Developer ID-sign the ${productIdentity.productName} DMG`);
 }
 

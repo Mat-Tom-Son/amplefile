@@ -4,26 +4,26 @@
 > release-backed App Instances implemented, private hosted semantic core proven
 >
 > **Scope:** This document is the normative foundation for evolving restricted
-> work-folder apps into a local-first App platform. It fixes the product objects,
+> Connected Folder apps into a local-first App platform. It fixes the product objects,
 > ownership boundaries, authority invariants, and implementation order. It does
 > not claim that cloud publication, a hosted product, or every candidate wire
 > record is shipped.
 
-work-fold is both a local studio and a runtime surface. A person and the
-Worker work in a work-folder backed by an ordinary folder, may explicitly declare an App
+AmpleFile is both a local studio and a runtime surface. A person and the
+Worker work in a Connected Folder backed by an ordinary folder, may explicitly declare an App
 Project there, and may build reviewed Features that contribute pages, actions,
 data, connections, and named automations. Publication closes selected reviewed
 material into an immutable App Release. The current local product ships that lifecycle
-locally: prepare, separately publish, install in a chosen work-folder, update or roll
+locally: prepare, separately publish, install in a chosen Connected Folder, update or roll
 back, and uninstall with an explicit data choice. It does not ship upload,
 hosted deployment, sync, accounts, discovery, or an App Store.
 
-This direction resolves the original “should work-folders be Apps?” question by
+This direction resolves the original “should Connected Folders be Apps?” question by
 keeping the useful distinction:
 
-- a **work-folder** is the general local working context and may never become an App;
+- a **Connected Folder** is the general local working context and may never become an App;
 - an **App Project** is an optional source-and-publication role declared by one
-  work-folder;
+  Connected Folder;
 - a **Feature** is one stable contribution to that Project, such as the current
   reviewed sidebar app;
 - an **App Release** is immutable reviewed distribution content; and
@@ -34,7 +34,7 @@ keeping the useful distinction:
 
 An installed Feature may submit a [named Worker request](app-assistant-tasks.md)
 bound to its exact incarnation and authority. An accepted task enters the
-owning work-folder's normal full-trust Chat runtime immediately and leaves a receipt
+owning Connected Folder's normal full-trust Chat runtime immediately and leaves a receipt
 ([Receipts, not gates](receipts-not-gates.md), F22). Direct app broker grants do
 not restrict that Worker's native tools. The app observes its owned request's
 status (including `waiting` while a question is open) and its result through the
@@ -42,7 +42,7 @@ task bridge; the question itself is answered in the Chat or Settings → Apps.
 
 ```mermaid
 flowchart TB
-    WorkFolder["work-folder (ordinary folder context)"]
+    ConnectedFolder["connected-folder (ordinary folder context)"]
     Project["App Project (projectId and App lineage)"]
     Feature["Feature"]
     Revision["Feature Revision (immutable bytes)"]
@@ -55,7 +55,7 @@ flowchart TB
     Tenant["Tenant (runtime data and policy)"]
     Principal["Principal (effective actor)"]
 
-    WorkFolder -->|"may declare zero or one"| Project
+    ConnectedFolder -->|"may declare zero or one"| Project
     Project -->|"defines"| Feature
     Feature -->|"has reviewed"| Revision
     Project -->|"publishes"| Release
@@ -74,7 +74,7 @@ flowchart TB
 `Runtime Instance` is internal contract language, not a third product object. It
 is a discriminated union with one opaque `runtimeInstanceId` namespace:
 
-- `kind: development` is local, bound to one work-folder and App Project, and has no
+- `kind: development` is local, bound to one Connected Folder and App Project, and has no
   App Release;
 - `kind: app` has one App Release and a separate `host: local | hosted`
   placement; and
@@ -87,7 +87,7 @@ The complete definitions and journey tests live in
 ## Fixed product and security decisions
 
 1. **Ordinary folders remain the source of truth.** Declaring an App Project
-   does not convert, move, upload, or make a work-folder proprietary. A local App
+   does not convert, move, upload, or make a Connected Folder proprietary. A local App
    Instance does not need to own or live inside a project folder. The
    Project identity and presentation are machine-local application state; no
    portable App Project file is introduced.
@@ -95,13 +95,13 @@ The complete definitions and journey tests live in
    lineage across Releases. An optional `cloudProjectId` is an authenticated
    registry binding. A Principal or optional Organization owns the project-role
    realm. A Tenant owns runtime policy and data, never project source.
-3. **Identity never authorizes by possession.** The trusted host derives work-folder,
+3. **Identity never authorizes by possession.** The trusted host derives Connected Folder,
    Project, Tenant, Runtime Instance, Feature Installation, Data Namespace, and
    effective Principal context. A renderer, worker, client, or copied manifest
    cannot choose its authority scope.
 4. **Review, publication, installation, and authority remain separate acts.** A
    declaration requests a maximum. Local installation enables declared network
-   destinations, whole-work-folder directory access, notifications, and automations
+   destinations, whole–Connected Folder directory access, notifications, and automations
    ([Receipts, not gates](receipts-not-gates.md), F21). Connections require setup;
    individual-file access requires a chosen file. The person can revoke or
    narrow these defaults in Settings → Apps.
@@ -137,7 +137,7 @@ The complete definitions and journey tests live in
     partitions.
 11. **Publish is not sync.** Publication, project collaboration, instance-data
     replication, secrets, operational control, and Chat sharing are separate
-    protocols. work-fold-owned streams exclude `.pi/`, Chats, raw portable
+    protocols. AmpleFile-owned streams exclude `.pi/`, Chats, raw portable
     identity, History internals, credentials, and machine state. Third-party
     folder tools may still copy ordinary hidden content under their own
     settings.
@@ -158,11 +158,11 @@ The complete definitions and journey tests live in
     app views and browser-requested app actions, was removed from the desktop
     on 2026-11-07 (the contract is archived in the work-fold repository); no browser
     surface reaches installed apps.
-15. **Legacy product state is outside the platform.** work-fold does not import,
+15. **Legacy product state is outside the platform.** AmpleFile does not import,
     migrate, parse, mutate, or delete the legacy Workspace profile, portable
     metadata, registries, app storage, connections, receipts, or artifacts.
-    Those records remain preserved and inert; all work-fold platform authority
-    begins in the new profile and exact work-fold formats.
+    Those records remain preserved and inert; all AmpleFile platform authority
+    begins in the new profile and exact AmpleFile formats.
 
 The detailed publication/data rules and candidate records live in
 [App platform publication and data contracts](app-platform-publication-data.md).
@@ -173,18 +173,18 @@ The portable broker semantics live in
 
 The desktop implements the first complete local Project-to-Instance journey:
 
-1. One registered source work-folder owns one machine-local App Project and its
+1. One registered source Connected Folder owns one machine-local App Project and its
    Development Instance. App Studio explicitly records the App title,
    description, and icon; the first direct preview can seed those values from
    its Feature declaration during project initialization.
 2. The existing Chat-bound proposal/install path and the CLI's `apps install-preview`
-   create reviewed **Local previews**. They remain source-work-folder-bound,
+   create reviewed **Local previews**. They remain source-connected-folder-bound,
    release-less Development Features and never convert in place.
 3. **Prepare Release** snapshots every current reviewed preview into a verified
-   `work-fold.app-release` format-version-2 envelope. Presentation, exact
+   `amplefile.app-release` format-version-2 envelope. Presentation, exact
    Feature artifacts and declarations, dependency inventory, build provenance,
    and inspection evidence are digest-covered and stored durably by
-   `releaseDigest` in work-fold application data. The local store enforces a
+   `releaseDigest` in AmpleFile application data. The local store enforces a
    four-GiB aggregate byte quota before accepting a new object; an idempotent
    write of an already verified digest remains safe when the quota is full.
 4. A prepared Release is not installable. **Publish** is a separate local
@@ -193,10 +193,10 @@ The desktop implements the first complete local Project-to-Instance journey:
 5. Installation preparation durably reserves the operation, Runtime Instance,
    Feature Installation, and Data Namespace identities. Activation re-verifies
    and stages the exact published closure before one registry commit makes the
-   new App Instance live in the chosen registered work-folder. Declared powers use
-   the install defaults above; a Check slot binds when the work-folder has exactly
+   new App Instance live in the chosen registered Connected Folder. Declared powers use
+   the install defaults above; a Check slot binds when the Connected Folder has exactly
    one Check. No Development grant, connection, job, or data transfers.
-   The target may be the source work-folder: one installed App may coexist with that
+   The target may be the source Connected Folder: one installed App may coexist with that
    same Project's Development preview, with separate installation/data identities
    and exact management selectors. Another Project cannot contribute the same
    Feature id there. Reviewing a preview does not update the installed Release.
@@ -215,7 +215,7 @@ The desktop implements the first complete local Project-to-Instance journey:
    its local data. Retained namespaces have no live installation authority and
    can be purged later. Both uninstall-with-purge and retained-data purge save
    recoverable exports in Recently deleted before removing live data. Source
-   files and separately granted ordinary work-folder files are never removed.
+   files and separately granted ordinary Connected Folder files are never removed.
 
 The app supports complete active/retained namespace export and
 same-installation, exact-revision recovery through Settings → Apps. It retains
@@ -223,20 +223,20 @@ one bounded undo snapshot and advances data authority without restoring any
 other authority. See [App data recovery](app-data-recovery.md).
 
 The app supports the [Change this app](app-changes.md) journey:
-verified installed bytes become a new ordinary source-work-folder working copy with
+verified installed bytes become a new ordinary source Connected Folder working copy with
 History, machine-local provenance, and a draft Chat. Preview proposals carry an
 exact predecessor guard. Release installation/update remains the existing
 separately reviewed lifecycle. Build-Chat and exact installed-target navigation
-are available in app details; a source-work-folder preview and installed Release remain independent.
+are available in app details; a source Connected Folder preview and installed Release remain independent.
 
 The first placement rule is intentionally small: at most one local App Instance
-exists for a `(projectId, target work-folder)` pair. Its same-Project Development
+exists for a `(projectId, target connected-folder)` pair. Its same-Project Development
 preview may coexist there; a different Project cannot contribute the same
-`featureId` in that work-folder.
-The App Instance is attached to the target work-folder for navigation and file-grant
+`featureId` in that Connected Folder.
+The App Instance is attached to the target Connected Folder for navigation and file-grant
 eligibility, while its Release bytes, mutable data, grants, connections,
-schedules, operation journals, and receipts stay in work-fold application data.
-Removing either the Project's source work-folder or an active Instance's target work-folder
+schedules, operation journals, and receipts stay in AmpleFile application data.
+Removing either the Project's source Connected Folder or an active Instance's target Connected Folder
 is blocked until the release-backed Instance is uninstalled. Retaining data
 keeps the source registered until that data is explicitly purged; it does not
 keep the former target registered. Once nothing remains live or retained,
@@ -244,12 +244,12 @@ removing the source also removes its machine-local Project, Development
 Instance, and Release lineage, then safely reconciles unreferenced Release-store
 objects. That lineage is kept in Recently deleted first, with its previews'
 packages and verified Release envelopes, and comes back re-verified once the
-work-folder is registered again (2026-10-11; see
+Connected Folder is registered again (2026-10-11; see
 [Restricted app runtime](restricted-app-runtime.md#review-and-lifecycle)). A transient reconciliation failure is retried before later App
 mutations and at startup. Startup still fails closed when a referenced object or
 security invariant cannot be validated, but a validated orphan that is merely
-locked remains inert and pending without preventing work-fold from opening.
-Removing a target cancels prepared operations aimed at that work-folder; they
+locked remains inert and pending without preventing AmpleFile from opening.
+Removing a target cancels prepared operations aimed at that Connected Folder; they
 wait in Recently deleted too and return only while they still fit.
 
 App Studio may also explicitly delete an individual prepared or published
@@ -266,7 +266,7 @@ again.
 
 ## Product language
 
-The friendly surface uses **work-folder** while a person works locally and the App's
+The friendly surface uses **Connected Folder** while a person works locally and the App's
 own name while they use an installed or hosted experience. **App Project**,
 **Release**, and **Instance** appear only where build, publish, update,
 environment, ownership, or recovery decisions require precision. **Feature** is
@@ -278,7 +278,7 @@ internal or advanced diagnostic language.
 The version-2 `agent-app.json` UI and package contract remains the Feature
 authoring format. Its direct-preview surface is called **Local preview**;
 App Studio owns Project, Release, installation, update/rollback, uninstall, and
-retained-data decisions. This does not rename work-folders or merge restricted Apps
+retained-data decisions. This does not rename Connected Folders or merge restricted Apps
 into native Pi Extensions.
 
 ## Implementation order
@@ -319,7 +319,7 @@ jobs.
 ### Implemented local product boundary
 
 The local milestone above is exposed through Settings → Apps, which lists apps by
-work-folder, and the work-folder-bound App Studio tab. It includes
+Connected Folder, and the Connected Folder–bound App Studio tab. It includes
 language-neutral declaration and artifact vectors checked by two
 code-independent executables, strict opaque identities and
 seven-domain authority, an explicit registry of
@@ -332,8 +332,8 @@ Release and durable plan before making authority live.
 
 This boundary is local only. Project presentation is machine-local, Releases
 are stored on this device, “published” means eligible for local installation,
-and the installed App Instance is attached to one registered work-folder. There is no
-work-fold account, upload, cloud registry, hosted runtime, public listing, App
+and the installed App Instance is attached to one registered Connected Folder. There is no
+AmpleFile account, upload, cloud registry, hosted runtime, public listing, App
 Store, folder sync, or cross-device App synchronization in the current local milestone.
 
 The private hosted journey is implemented as an executable semantic core with
@@ -343,7 +343,7 @@ review and publication, deployment, default-off grants, an exact instance-owned
 connection, a named job and receipt, compatible update, effect-time revocation,
 role/principal/instance data, export, delete, purge, restart, and cleanup
 recovery using Connected inbox and community-garden fixtures. It is not a
-deployed work-fold service. Production database, scheduler worker, secret
+deployed AmpleFile service. Production database, scheduler worker, secret
 vault, egress, authenticated transport, deployment, operations, and UI adapters
 remain future work; this first slice also rejects Feature-set, schema, or data
 policy migrations instead of pretending to support them.
@@ -379,8 +379,8 @@ criteria.
 
 ## Compatibility posture
 
-work-fold remains an early App-platform product and the checked-in example is
-the only first-party work-folder app, so preserving an accidental internal schema is
+AmpleFile remains an early App-platform product and the checked-in example is
+the only first-party Connected Folder app, so preserving an accidental internal schema is
 not a product goal. We may replace registry and manifest internals when that
 materially improves the model. We still require explicit migration and
 fail-closed handling because installed local data already matters and those are

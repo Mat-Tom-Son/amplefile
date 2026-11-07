@@ -45,10 +45,10 @@ if (existsSync(appUpdatePath)) {
   expectYamlScalar(appUpdate, "owner", "Mat-Tom-Son", "embedded update owner");
   expectYamlScalar(appUpdate, "repo", identity.sourceRepositoryName, "embedded update repository");
   const publisherName = readYamlScalar(appUpdate, "publisherName");
-  if (process.env.WORKFOLD_TRUSTED_CODE_SIGNING === "1" && !publisherName) {
+  if (process.env.AMPLEFILE_TRUSTED_CODE_SIGNING === "1" && !publisherName) {
     failures.push("Trusted code signing was enabled, but app-update.yml has no publisher name.");
   }
-  if (process.env.WORKFOLD_TRUSTED_CODE_SIGNING !== "1" && publisherName) {
+  if (process.env.AMPLEFILE_TRUSTED_CODE_SIGNING !== "1" && publisherName) {
     failures.push("app-update.yml enables publisher verification without a publicly trusted signing identity.");
   }
 }
@@ -67,7 +67,7 @@ if (existsSync(latestPath) && existsSync(installerPath)) {
 const signature = process.platform === "win32" && existsSync(installerPath)
   ? readAuthenticodeSignature(installerPath)
   : { status: "Unavailable", subject: "" };
-if (process.env.WORKFOLD_REQUIRE_CODE_SIGNING === "1" && !signature.subject) {
+if (process.env.AMPLEFILE_REQUIRE_CODE_SIGNING === "1" && !signature.subject) {
   failures.push(`Code signing was required, but the installer has no signer certificate (status: ${signature.status}).`);
 }
 

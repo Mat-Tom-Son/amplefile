@@ -9,8 +9,8 @@ const builderDir = join(rootDir, "out", "builder");
 const packageJson = JSON.parse(await readFile(join(rootDir, "package.json"), "utf8"));
 const identity = JSON.parse(await readFile(join(rootDir, "src", "shared", "product-identity.json"), "utf8"));
 const version = String(packageJson.version ?? "").trim();
-const arch = stringValue(process.env.WORKFOLD_DESKTOP_RELEASE_ARCH) || (process.arch === "x64" ? "x64" : "arm64");
-const unsignedSmokeBuild = process.env.WORKFOLD_ALLOW_UNSIGNED_MAC_BUILD === "1";
+const arch = stringValue(process.env.AMPLEFILE_DESKTOP_RELEASE_ARCH) || (process.arch === "x64" ? "x64" : "arm64");
+const unsignedSmokeBuild = process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD === "1";
 
 if (!existsSync(builderDir)) throw new Error(`${identity.productName} macOS builder output was not found.`);
 if (!version) throw new Error(`package.json does not declare a ${identity.productName} release version.`);
@@ -47,8 +47,8 @@ const manifest = {
   unsignedSmokeBuild,
   buildNodeVersion: process.version,
   feed: {
-    owner: stringValue(process.env.WORKFOLD_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner,
-    repo: stringValue(process.env.WORKFOLD_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName,
+    owner: stringValue(process.env.AMPLEFILE_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner,
+    repo: stringValue(process.env.AMPLEFILE_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName,
   },
   artifacts,
 };

@@ -37,7 +37,7 @@ async function main() {
   const path = resolve(process.argv[at + 1]); const phase = JSON.parse(await readFile(path, "utf8"));
   const rows = [];
   for (const row of phase.rows) {
-    const files = await sessions(join(row.directory, "host", "pi-agent", "sessions", "work-fold"));
+    const files = await sessions(join(row.directory, "host", "pi-agent", "sessions", "amplefile"));
     if (!files.length) throw new Error(`No native sessions found for ${row.id}`);
     const journals = await Promise.all(files.map(async file => ({ file, activity: recoveryActivity((await readFile(file, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line))) })));
     rows.push({ id: row.id, journals });

@@ -68,17 +68,17 @@ export function chatSnoozeTimeLabel(value: string, now = new Date()): string {
   return `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
 }
 
-export function chatActivityKey(workFolderId: string, conversationId: string): string {
-  return `${workFolderId}:${conversationId}`;
+export function chatActivityKey(connectedFolderId: string, conversationId: string): string {
+  return `${connectedFolderId}:${conversationId}`;
 }
 
 export function aggregateChatActivityStatus(
-  workFolderId: string,
+  connectedFolderId: string,
   conversations: readonly ConversationSummary[],
   statuses: Readonly<Record<string, ChatActivityStatus>>,
 ): ChatActivityStatus | null {
-  if (conversations.some((chat) => statuses[chatActivityKey(workFolderId, chat.id)] === "running")) return "running";
-  if (conversations.some((chat) => statuses[chatActivityKey(workFolderId, chat.id)] === "attention")) return "attention";
+  if (conversations.some((chat) => statuses[chatActivityKey(connectedFolderId, chat.id)] === "running")) return "running";
+  if (conversations.some((chat) => statuses[chatActivityKey(connectedFolderId, chat.id)] === "attention")) return "attention";
   return null;
 }
 

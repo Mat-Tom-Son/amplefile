@@ -44,7 +44,7 @@ test("Foundry normalizes both endpoint families and refuses mismatched protocols
 // Provider registration refreshes Pi's catalog in the background. Keep that
 // cache in memory while still reading the real models.json in these fixtures.
 test("existing Azure deployments retain Pi's Chat Completions routing and model overrides", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-foundry-upgrade-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-foundry-upgrade-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const credentials = FileCredentialStore.inMemory({ azure: { type: "api_key", key: "synthetic-key", env: {
     AZURE_OPENAI_BASE_URL: "https://example.openai.azure.com/openai/v1",
@@ -61,18 +61,18 @@ test("existing Azure deployments retain Pi's Chat Completions routing and model 
 });
 
 test("desktop credentials use native Pi environment-key resolution without changing stored references", async () => {
-  const previous = process.env.WORKFOLD_TEST_FOUNDRY_KEY;
-  process.env.WORKFOLD_TEST_FOUNDRY_KEY = "synthetic-first";
+  const previous = process.env.AMPLEFILE_TEST_FOUNDRY_KEY;
+  process.env.AMPLEFILE_TEST_FOUNDRY_KEY = "synthetic-first";
   try {
-    let persisted: PiAuthStorageData = { azure: { type: "api_key", key: "$WORKFOLD_TEST_FOUNDRY_KEY" } };
+    let persisted: PiAuthStorageData = { azure: { type: "api_key", key: "$AMPLEFILE_TEST_FOUNDRY_KEY" } };
     const store = await HostCredentialStore.create({ load: async () => persisted, save: async (data) => { persisted = data; } });
     assert.equal((await store.read("azure"))?.type === "api_key" && (await store.read("azure") as any).key, "synthetic-first");
-    process.env.WORKFOLD_TEST_FOUNDRY_KEY = "synthetic-rotated";
+    process.env.AMPLEFILE_TEST_FOUNDRY_KEY = "synthetic-rotated";
     assert.equal((await store.read("azure") as any).key, "synthetic-rotated");
-    assert.equal((persisted.azure as any).key, "$WORKFOLD_TEST_FOUNDRY_KEY");
+    assert.equal((persisted.azure as any).key, "$AMPLEFILE_TEST_FOUNDRY_KEY");
   } finally {
-    if (previous === undefined) delete process.env.WORKFOLD_TEST_FOUNDRY_KEY;
-    else process.env.WORKFOLD_TEST_FOUNDRY_KEY = previous;
+    if (previous === undefined) delete process.env.AMPLEFILE_TEST_FOUNDRY_KEY;
+    else process.env.AMPLEFILE_TEST_FOUNDRY_KEY = previous;
   }
 });
 
@@ -84,7 +84,7 @@ test("API-key text in desktop storage cannot become a shell command", async () =
 });
 
 test("Foundry can save a first deployment using Pi's ambient key and preserve it on later edits", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-foundry-env-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-foundry-env-"));
   let api: Awaited<ReturnType<typeof startLocalApi>> | undefined;
   t.after(async () => {
     await api?.close();
@@ -110,7 +110,7 @@ test("Foundry can save a first deployment using Pi's ambient key and preserve it
 });
 
 test("a stale saved base model cannot block Settings, other providers, or credential removal", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-foundry-stale-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-foundry-stale-"));
   let api: Awaited<ReturnType<typeof startLocalApi>> | undefined;
   t.after(async () => {
     await api?.close();
@@ -119,7 +119,7 @@ test("a stale saved base model cannot block Settings, other providers, or creden
   const credentials = FileCredentialStore.inMemory({
     "azure-anthropic": { type: "api_key", key: "synthetic-key", env: {
       ANTHROPIC_FOUNDRY_BASE_URL: "https://example.services.ai.azure.com/anthropic",
-      [AZURE_OPENAI_DEPLOYMENTS_ENV]: JSON.stringify(["team"]), WORKFOLD_FOUNDRY_MODEL_IDS: JSON.stringify({ team: "removed-model" }),
+      [AZURE_OPENAI_DEPLOYMENTS_ENV]: JSON.stringify(["team"]), AMPLEFILE_FOUNDRY_MODEL_IDS: JSON.stringify({ team: "removed-model" }),
     } },
     azure: { type: "api_key", key: "synthetic-other-key" },
   });
@@ -136,7 +136,7 @@ test("a stale saved base model cannot block Settings, other providers, or creden
 });
 
 test("unknown deployment names use conservative metadata until a base model is selected", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-foundry-generic-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-foundry-generic-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const credentials = FileCredentialStore.inMemory();
   const modelRuntime = await ModelRuntime.create({ modelsStore: new InMemoryModelsStore(), credentials, modelsPath: join(root, "models.json") });
@@ -154,7 +154,7 @@ test("unknown deployment names use conservative metadata until a base model is s
 });
 
 test("Foundry registration preserves the person's native models.json declarations", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-foundry-custom-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-foundry-custom-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const modelsPath = join(root, "models.json");
   await writeFile(modelsPath, JSON.stringify({ providers: Object.fromEntries(FOUNDRY_PROVIDERS.map((spec) => [spec.id, {
@@ -190,7 +190,7 @@ test("Foundry registration preserves the person's native models.json declaration
 });
 
 test("Foundry Anthropic models omit the unsupported server-side fallback parameter and beta", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-foundry-features-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-foundry-features-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const credentials = FileCredentialStore.inMemory();
   const modelRuntime = await ModelRuntime.create({ modelsStore: new InMemoryModelsStore(), credentials, modelsPath: join(root, "models.json") });
@@ -215,7 +215,7 @@ test("Foundry Anthropic models omit the unsupported server-side fallback paramet
 });
 
 test("malformed saved Foundry metadata is isolated, redacted, and repairable through Settings", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-foundry-invalid-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-foundry-invalid-"));
   let api: Awaited<ReturnType<typeof startLocalApi>> | undefined;
   t.after(async () => {
     await api?.close();
@@ -251,7 +251,7 @@ test("malformed saved Foundry metadata is isolated, redacted, and repairable thr
 });
 
 test("malformed connection settings cannot release their stored key to a models.json endpoint", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-foundry-invalid-binding-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-foundry-invalid-binding-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const modelsPath = join(root, "models.json");
   await writeFile(modelsPath, JSON.stringify({ providers: { "azure-anthropic": {
@@ -314,7 +314,7 @@ function foundryStream(api: string, tool: boolean): Response {
 }
 
 test("all Foundry formats coexist, survive restart, and stream text and tool calls through native Pi", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-foundry-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-foundry-"));
   let api: Awaited<ReturnType<typeof startLocalApi>> | undefined;
   t.after(async () => {
     await api?.close();
@@ -386,7 +386,7 @@ test("all Foundry formats coexist, survive restart, and stream text and tool cal
 });
 
 test("Azure settings persist through the API, preserve the key, and reach Pi's actual request transport", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-azure-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-azure-"));
   let api: Awaited<ReturnType<typeof startLocalApi>> | undefined;
   t.after(async () => {
     await api?.close();
@@ -399,7 +399,7 @@ test("Azure settings persist through the API, preserve the key, and reach Pi's a
   const modelRuntime = await ModelRuntime.create({ modelsStore: new InMemoryModelsStore(), credentials: authStorage, modelsPath: join(agentDir, "models.json") });
   const settingsManager = SettingsManager.inMemory();
   const provider: PiRuntimeProvider = { async resolveRuntime() { return { agentDir, credentials: authStorage, modelRuntime, settingsManager }; } };
-  api = await startLocalApi({ port: 0, stateBase: join(root, "state"), workFolderBase: join(root, "content"), loadEnv: false, piRuntimeProvider: provider });
+  api = await startLocalApi({ port: 0, stateBase: join(root, "state"), connectedFolderBase: join(root, "content"), loadEnv: false, piRuntimeProvider: provider });
   const configure = (azure: unknown, apiKey?: string, providerId = AZURE_OPENAI_PROVIDER) => fetch(`${api.origin}/api/agent/configure`, {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ scope: "agent", provider: providerId, model: "team", azure, ...(apiKey ? { apiKey } : {}) }),
@@ -492,10 +492,10 @@ test("Azure settings persist through the API, preserve the key, and reach Pi's a
 });
 
 test("Chat titles use the active Azure deployment and its stored connection without unsupported minimal reasoning", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-azure-title-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-azure-title-"));
   const agentDir = join(root, "agent");
-  const workFolderRoot = join(root, "work-folder");
-  await mkdir(workFolderRoot, { recursive: true });
+  const connectedFolderRoot = join(root, "connected-folder");
+  await mkdir(connectedFolderRoot, { recursive: true });
   const authStorage = FileCredentialStore.inMemory();
   const modelRuntime = await ModelRuntime.create({ modelsStore: new InMemoryModelsStore(), credentials: authStorage, modelsPath: null });
   const provider: PiRuntimeProvider = { async resolveRuntime() {
@@ -504,10 +504,10 @@ test("Chat titles use the active Azure deployment and its stored connection with
       settingsManager: SettingsManager.inMemory({ defaultThinkingLevel: "medium", retry: { enabled: false } }),
     };
   } };
-  await saveFoundryConnection(workFolderRoot, {
+  await saveFoundryConnection(connectedFolderRoot, {
     baseUrl: "https://title-fixture.openai.azure.com", deployments: ["gpt-4.1", "gpt-5.2", "gpt-5.5-pro", "gpt-5.6-sol", "gpt-6-astra", "gpt-6.1-sol", "team-review"],
   }, "synthetic-title-key", provider);
-  const client = new PiConversationClient("azure-title-chat", workFolderRoot, provider);
+  const client = new PiConversationClient("azure-title-chat", connectedFolderRoot, provider);
   const originalFetch = globalThis.fetch;
   const requests: Array<{ url: string; key: string | null; body: any }> = [];
   let incompleteTitle = false;

@@ -53,8 +53,8 @@ const exitSelectors: ReadonlyArray<readonly [ExitKind, string]> = [
   ["dialog", ".modal-backdrop, .publish-review-backdrop"],
   ["menu", [
     ".context-menu", ".composer-command-menu", ".chat-rename-popover",
-    ".surface-tab-work-folder-menu", ".model-catalog-popover", ".work-folder-pane-breadcrumb-menu",
-    ".browser-tab-site-menu", ".work-folder-header-switcher",
+    ".surface-tab-connected-folder-menu", ".model-catalog-popover", ".connected-folder-pane-breadcrumb-menu",
+    ".browser-tab-site-menu", ".connected-folder-header-switcher",
   ].join(", ")],
   ["toast", ".toast"],
 ];
@@ -222,7 +222,7 @@ export function glideFrom(element: HTMLElement | null, from: DOMRect | null, dur
   animate(element, [{ translate: `${dx}px ${dy}px` }, { translate: "0 0" }], { duration, easing: ease });
 }
 
-/** A content swap in place (another work-folder) settles in rather than cutting. */
+/** A content swap in place (another Connected Folder) settles in rather than cutting. */
 export function settleIn(elements: Iterable<Element | null | undefined>, duration = 220): void {
   for (const element of elements) {
     if (!element || typeof element.animate !== "function" || motionReduced(element.ownerDocument)) continue;

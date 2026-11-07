@@ -1,0 +1,1051 @@
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import {
+  computeAmpleFileRequestState,
+  AmpleFileRequestLimitError,
+  ampleFileRequestLimitMessage,
+  AmpleFileRequestLineageError,
+  ampleFileRequestStateToAgentPhase,
+  type AmpleFileRequestLimitName,
+  type AmpleFileRequestStateInput,
+} from "../src/local/requests/request-records.js";
+import { AmpleFileRequestStore } from "../src/local/requests/request-store.js";
+import { ampleFileRequestLimits } from "../src/shared/amplefile-limits.js";
+import type { AmpleFileDurableTurnRecord } from "../src/local/agent/turn-store.js";
+
+/**
+ * The durable request graph (docs/collaboration-contract.md, F25).
+ *
+ * Every accepted turn belongs to one record; the records survive restart, are
+ * reconciled against the turn journal, and are never replayed. Payload and
+ * provider-spending protections remain bounded; request graph work does not.
+ */
+
+const limitsSection = "Settings → Automations → Limits";
+
+function clockFrom(start: string) {
+  let current = Date.parse(start);
+  return {
+    now: () => new Date(current),
+    advance(ms: number) {
+      current += ms;
+    },
+  };
+}
+
+async function temporaryRoot(t: { after: (fn: () => unknown) => void }): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-request-store-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  return root;
+}
+
+const ampleFileAgentOwner = { conversationId: "chat-agent" };
+const connectedFolderOwner = { connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits", conversationId: "chat-audits" };
+
+function stateInput(overrides: Partial<AmpleFileRequestStateInput> = {}): AmpleFileRequestStateInput {
+  return {
+    stopRequestedAt: null,
+    deadline: "2026-09-12T09:00:00.000Z",
+    now: new Date("2026-09-11T09:00:00.000Z"),
+    turnStates: ["succeeded"],
+    openQuestions: 0,
+    openDescendantQuestions: 0,
+    childStates: [],
+    resultOutcomes: [],
+    limitHit: null,
+    ...overrides,
+  };
+}
+
+test("asynchronous questions and queued answers survive reopening without dispatching a turn", async t => {
+  const root = await temporaryRoot(t);
+  const store = await AmpleFileRequestStore.open({ rootPath: root });
+  const request = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "task-async" });
+  const question = await store.ask({ requestId: request.requestId, taskId: "task-async", respondent: "person", text: "Format?", asynchronous: true });
+  assert.equal(store.get(request.requestId)!.state, "working");
+  await store.answer({ questionId: question.questionId, answer: "PDF", answeredByConnectedFolderId: connectedFolderOwner.connectedFolderId });
+  await store.flush();
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root });
+  assert.equal(reopened.question(question.questionId)!.asynchronous, true);
+  assert.equal(reopened.question(question.questionId)!.answer, "PDF");
+  assert.equal(reopened.question(question.questionId)!.continuationTaskId, null);
+  assert.equal(reopened.get(request.requestId)!.turns.length, 1);
+  await reopened.settleTurn("task-async", { status: "succeeded" });
+  assert.equal(reopened.get(request.requestId)!.state, "waiting", "the saved answer stays outstanding until delivery is explicitly linked");
+});
+
+test("an independently running service retains attribution through cache pressure and retention", async t => {
+  const root = await temporaryRoot(t); const clock = clockFrom("2026-10-18T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now, maxRecords: 1 });
+  const request = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "task-service" });
+  const jobId = "job-20261018090000-aaaaaaaa";
+  await store.noteJobStarted({ taskId: "task-service", jobId, name: "Server", service: true });
+  await store.settleTurn("task-service", { status: "succeeded" });
+  assert.equal(store.get(request.requestId)!.state, "done");
+  const other = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "cli", taskId: "task-other" });
+  await store.settleTurn("task-other", { status: "succeeded" });
+  assert.ok(store.get(request.requestId), "an active service cannot lose its request from the read cache");
+  clock.advance((ampleFileRequestLimits.retentionDays + 1) * 86400000);
+  await store.purgeExpired(); assert.ok(store.get(request.requestId));
+  await store.flush(); const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  assert.equal(reopened.get(request.requestId)!.jobs![0]!.service, true);
+  await reopened.settleJob(jobId, { state: "stopped", exitCode: null });
+  await reopened.purgeExpired(); assert.ok(reopened.get(request.requestId), "retain the ended service's receipt for its whole window");
+  clock.advance((ampleFileRequestLimits.retentionDays + 1) * 86400000);
+  await reopened.purgeExpired(); assert.equal(reopened.get(request.requestId), null);
+  assert.ok(other.requestId);
+});
+
+test("a root, a child, and the graph between them", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+
+  const request = await store.beginRoot({
+    kind: "agent",
+    owner: ampleFileAgentOwner,
+    surface: "popover",
+    taskId: "task-1",
+    content: "Check the quarter's audits.",
+  });
+  assert.equal(request.rootId, request.requestId);
+  assert.equal(request.depth, 0);
+  assert.equal(request.parentRequestId, null);
+  assert.equal(request.parentTaskId, null);
+  assert.equal(request.state, "working");
+  assert.equal(request.deadline, null);
+
+  clock.advance(1_000);
+  const child = await store.beginChild({
+    parentTaskId: "task-1",
+    kind: "connected-folder",
+    owner: connectedFolderOwner,
+    surface: "cli",
+    taskId: "task-2",
+    content: "Review the ledger.",
+  });
+  assert.equal(child.rootId, request.requestId);
+  assert.equal(child.parentRequestId, request.requestId);
+  assert.equal(child.parentTaskId, "task-1");
+  assert.equal(child.depth, 1);
+  assert.deepEqual(store.get(request.requestId)?.childRequestIds, [child.requestId]);
+  assert.equal(store.byTaskId("task-2")?.requestId, child.requestId);
+  assert.equal(store.byTaskId("task-1")?.requestId, request.requestId);
+  assert.deepEqual(store.rootDescendants(request.requestId).map((item) => item.requestId), [child.requestId]);
+  assert.equal(store.children(request.requestId).length, 1);
+  assert.equal(store.latestForConversation("chat-audits", { connectedFolderId: "connected-folder-audits" })?.requestId, child.requestId);
+  assert.equal(store.isAccepting("task-1"), true);
+
+  // A stop, and the overview's rolled-up child turns, ask about the graph below
+  // an arbitrary request; `rootDescendants` answers only for a root id.
+  clock.advance(1_000);
+  const grandchild = await store.beginChild({
+    parentTaskId: "task-2",
+    kind: "connected-folder",
+    owner: { connectedFolderId: "connected-folder-ledger", connectedFolderName: "Ledger", conversationId: "chat-ledger" },
+    surface: "cli",
+    taskId: "task-3",
+  });
+  // Oldest first by creation: the clock advanced between them, so this pins
+  // the order rather than whichever id the tie-break happened to prefer.
+  assert.deepEqual(store.subtree(request.requestId).map((item) => item.requestId), [child.requestId, grandchild.requestId]);
+  assert.deepEqual(store.subtree(child.requestId).map((item) => item.requestId), [grandchild.requestId]);
+  assert.deepEqual(store.rootDescendants(child.requestId), [], "a mid-graph id is not a root");
+  assert.deepEqual(store.subtree(grandchild.requestId), []);
+
+  await store.flush();
+});
+
+test("a conversation id is not identity: the newest request on a Chat is scoped to its owner", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+
+  // Two registered Connected Folders can hold the same conversation id: a Chat log
+  // travels with its folder, so a duplicated folder brings its ids along.
+  const first = await store.beginRoot({
+    kind: "connected-folder",
+    owner: { connectedFolderId: "connected-folder-one", connectedFolderName: "One", conversationId: "chat-shared" },
+    surface: "renderer",
+    taskId: "task-one",
+  });
+  clock.advance(1_000);
+  const second = await store.beginRoot({
+    kind: "connected-folder",
+    owner: { connectedFolderId: "connected-folder-two", connectedFolderName: "Two", conversationId: "chat-shared" },
+    surface: "renderer",
+    taskId: "task-two",
+  });
+  clock.advance(1_000);
+  const management = await store.beginRoot({
+    kind: "agent",
+    owner: { conversationId: "chat-shared" },
+    surface: "popover",
+    taskId: "task-agent",
+  });
+
+  assert.equal(store.latestForConversation("chat-shared", { connectedFolderId: "connected-folder-one" })?.requestId, first.requestId);
+  assert.equal(store.latestForConversation("chat-shared", { connectedFolderId: "connected-folder-two" })?.requestId, second.requestId);
+  assert.equal(store.latestForConversation("chat-shared")?.requestId, management.requestId);
+
+  await store.flush();
+});
+
+test("the newest request on a Chat stays the newest across a compaction and a restart", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now, compactBytes: 1 });
+
+  const older = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-older" });
+  clock.advance(1_000);
+  const newer = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-newer" });
+  // The older request is touched last, so a journal sorted by update time
+  // rebuilds the map in the opposite order to creation.
+  clock.advance(1_000);
+  await store.settleTurn("task-newer", { status: "succeeded" });
+  clock.advance(1_000);
+  await store.settleTurn("task-older", { status: "succeeded" });
+  await store.flush();
+  assert.equal(store.latestForConversation("chat-agent")?.requestId, newer.requestId);
+
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now, compactBytes: 1 });
+  assert.equal(reopened.latestForConversation("chat-agent")?.requestId, newer.requestId, "creation order, not journal order");
+  assert.equal(reopened.latest()?.requestId, newer.requestId);
+  assert.deepEqual(reopened.list({ kind: "agent" }).map((item) => item.requestId), [older.requestId, newer.requestId]);
+  await reopened.flush();
+});
+
+test("a compaction keeps every record the journal holds, not only the ones in memory", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  // A tiny read cache plus an eager compaction: the combination that used to
+  // erase settled requests long before their retention window.
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now, maxRecords: 2, compactBytes: 1 });
+
+  const ids: string[] = [];
+  for (let index = 0; index < 6; index += 1) {
+    const record = await store.beginRoot({
+      kind: "agent",
+      owner: ampleFileAgentOwner,
+      surface: "popover",
+      taskId: `task-${index}`,
+    });
+    ids.push(record.requestId);
+    await store.settleTurn(`task-${index}`, { status: "succeeded" });
+    clock.advance(1_000);
+  }
+  await store.flush();
+
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  for (const id of ids) {
+    assert.ok(reopened.get(id), `${id} is still on record after compaction`);
+  }
+  await reopened.flush();
+
+  // Retention, and only retention, takes them away — including the ones the
+  // read cache had dropped.
+  clock.advance((ampleFileRequestLimits.retentionDays + 1) * 24 * 60 * 60 * 1000);
+  const purged = await store.purgeExpired();
+  assert.equal(purged.purged, ids.length);
+  await store.flush();
+  const afterPurge = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  for (const id of ids) assert.equal(afterPurge.get(id), null, `${id} left on its own window`);
+  await afterPurge.flush();
+});
+
+test("a request can grow past the former child and depth quotas", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+
+  const breadth = await AmpleFileRequestStore.open({ rootPath: join(root, "breadth"), now: clock.now });
+  await breadth.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1" });
+  // 33 was previously refused as the 33rd child. The graph records every
+  // accepted child; execution capacity is scheduled elsewhere.
+  for (let index = 0; index <= 32; index += 1) {
+    await breadth.beginChild({
+      parentTaskId: "task-1",
+      kind: "connected-folder",
+      owner: connectedFolderOwner,
+      surface: "cli",
+      taskId: `child-${index}`,
+    });
+  }
+  assert.equal(breadth.children(breadth.byTaskId("task-1")!.requestId).length, 33);
+
+  const deep = await AmpleFileRequestStore.open({ rootPath: join(root, "deep"), now: clock.now });
+  await deep.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "deep-0" });
+  // Five levels was previously refused after level four.
+  for (let level = 1; level <= 5; level += 1) {
+    const record = await deep.beginChild({
+      parentTaskId: `deep-${level - 1}`,
+      kind: "connected-folder",
+      owner: connectedFolderOwner,
+      surface: "cli",
+      taskId: `deep-${level}`,
+    });
+    assert.equal(record.depth, level);
+  }
+  assert.equal(deep.byTaskId("deep-5")?.depth, 5);
+
+  await Promise.all([breadth.flush(), deep.flush()]);
+});
+
+test("the state ladder decides the same facts the same way every time", () => {
+  assert.equal(computeAmpleFileRequestState(stateInput({ stopRequestedAt: "2026-09-11T09:30:00.000Z" })), "stopped");
+  assert.equal(computeAmpleFileRequestState(stateInput({ turnStates: ["aborted"] })), "stopped");
+  assert.equal(
+    computeAmpleFileRequestState(stateInput({ limitHit: { limit: "providerBudget", at: "2026-09-11T09:30:00.000Z" } })),
+    "failed",
+  );
+  assert.equal(
+    computeAmpleFileRequestState(stateInput({ turnStates: ["running"], now: new Date("2026-09-13T09:00:00.000Z") })),
+    "expired",
+  );
+  // A request that finished before its window closed stays finished.
+  assert.equal(computeAmpleFileRequestState(stateInput({ now: new Date("2026-09-13T09:00:00.000Z") })), "done");
+  // An open question this request asked outranks its own running turn: asking
+  // puts the asking task in waiting, and Needs you means questions.
+  assert.equal(computeAmpleFileRequestState(stateInput({ turnStates: ["running"], openQuestions: 1 })), "waiting");
+  assert.equal(computeAmpleFileRequestState(stateInput({ turnStates: ["running"] })), "working");
+  // A child's open question waits behind this request's own running turn.
+  assert.equal(computeAmpleFileRequestState(stateInput({ turnStates: ["running"], openDescendantQuestions: 1 })), "working");
+  assert.equal(computeAmpleFileRequestState(stateInput({ openDescendantQuestions: 1, childStates: ["waiting"] })), "waiting");
+  assert.equal(computeAmpleFileRequestState(stateInput({ childStates: ["handed_off"] })), "handed_off");
+  assert.equal(computeAmpleFileRequestState(stateInput({ turnStates: ["interrupted"] })), "failed");
+  assert.equal(computeAmpleFileRequestState(stateInput({ childStates: [null] })), "failed");
+  assert.equal(computeAmpleFileRequestState(stateInput({ childStates: ["expired"] })), "stopped");
+  assert.equal(computeAmpleFileRequestState(stateInput({ resultOutcomes: ["partial"] })), "partial");
+  assert.equal(computeAmpleFileRequestState(stateInput({ resultOutcomes: ["succeeded"] })), "done");
+
+  // The older phase vocabulary keeps its meaning, and the closing-question
+  // heuristic still upgrades a finished request but never a failed one.
+  assert.equal(ampleFileRequestStateToAgentPhase("waiting"), "needs_you");
+  assert.equal(ampleFileRequestStateToAgentPhase("partial"), "done");
+  assert.equal(ampleFileRequestStateToAgentPhase("expired"), "stopped");
+  assert.equal(ampleFileRequestStateToAgentPhase("done", true), "done");
+  assert.equal(ampleFileRequestStateToAgentPhase("failed", true), "failed");
+});
+
+test("a request never claims done while work it started is still running", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+
+  const request = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1" });
+  await store.beginChild({ parentTaskId: "task-1", kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "task-2" });
+  await store.markTurnRunning("task-1");
+  assert.equal(store.get(request.requestId)?.state, "working");
+
+  await store.settleTurn("task-1", { status: "succeeded", messageId: "reply-1" });
+  assert.equal(store.get(request.requestId)?.state, "handed_off");
+  assert.equal(store.get(request.requestId)?.settledAt, null);
+
+  await store.settleTurn("task-2", { status: "succeeded", messageId: "reply-2" });
+  const done = store.get(request.requestId);
+  assert.equal(done?.state, "done");
+  assert.ok(done?.settledAt);
+
+  // A settled turn keeps its first outcome, exactly as the turn journal does.
+  await store.settleTurn("task-1", { status: "failed", error: "second thoughts" });
+  assert.equal(store.get(request.requestId)?.turns[0]?.state, "succeeded");
+  assert.equal(store.get(request.requestId)?.state, "done");
+
+  await store.flush();
+});
+
+test("a failed child fails its root and a stopped request says so", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+
+  const failing = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "fail-1" });
+  await store.beginChild({ parentTaskId: "fail-1", kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "fail-2" });
+  await store.settleTurn("fail-1", { status: "succeeded", messageId: "reply-1" });
+  await store.settleTurn("fail-2", { status: "failed", error: "The ledger could not be read." });
+  assert.equal(store.get(failing.requestId)?.state, "failed");
+
+  const stopping = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "stop-1" });
+  await store.markStopRequested(stopping.requestId);
+  assert.equal(store.get(stopping.requestId)?.state, "stopped");
+  assert.equal(store.isAccepting("stop-1"), false);
+
+  await store.flush();
+});
+
+test("questions take exactly one answer, from the Connected Folder that was asked, inside the window", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+
+  const request = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "renderer", taskId: "task-1" });
+  const question = await store.ask({
+    requestId: request.requestId,
+    taskId: "task-1",
+    respondent: "person",
+    text: "a".repeat(ampleFileRequestLimits.maxQuestionTextBytes),
+  });
+  assert.equal(question.state, "open");
+  assert.equal(question.expiresAt, request.deadline);
+  assert.equal(store.get(request.requestId)?.state, "waiting");
+  assert.equal(store.openQuestions(request.rootId).length, 1);
+
+  const oversized = await store.ask({
+    requestId: request.requestId,
+    taskId: "task-1",
+    respondent: "person",
+    text: "a".repeat(ampleFileRequestLimits.maxQuestionTextBytes + 1),
+  }).then(() => null, (error: unknown) => error);
+  assert.ok(oversized instanceof AmpleFileRequestLimitError);
+  assert.equal(oversized.limit, "questionText");
+  assert.ok(oversized.message.includes(limitsSection));
+
+  const wrongConnectedFolder = await store.answer({ questionId: question.questionId, answer: "Yes", answeredByConnectedFolderId: "connected-folder-other" })
+    .then(() => null, (error: unknown) => error);
+  assert.ok(wrongConnectedFolder instanceof AmpleFileRequestLineageError);
+
+  const answered = await store.answer({ questionId: question.questionId, answer: "Use the 2026 ledger.", answeredByConnectedFolderId: "connected-folder-audits" });
+  assert.equal(answered.state, "answered");
+  assert.equal(answered.answer, "Use the 2026 ledger.");
+  assert.equal(store.get(request.requestId)?.state, "waiting");
+
+  const second = await store.answer({ questionId: question.questionId, answer: "Actually the 2025 one." })
+    .then(() => null, (error: unknown) => error);
+  assert.ok(second instanceof AmpleFileRequestLineageError);
+
+  await store.joinTurn({ requestId: request.requestId, taskId: "task-2" });
+  const linked = await store.linkContinuation(question.questionId, "task-2");
+  assert.equal(linked.continuationTaskId, "task-2");
+  const relinked = await store.linkContinuation(question.questionId, "task-3").then(() => null, (error: unknown) => error);
+  assert.ok(relinked instanceof AmpleFileRequestLineageError);
+
+  await store.flush();
+});
+
+test("new requests stay answerable without a timer, while legacy deadlines remain readable", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+
+  const request = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "renderer", taskId: "task-1" });
+  const question = await store.ask({ requestId: request.requestId, taskId: "task-1", respondent: "person", text: "Which ledger?" });
+  await store.settleTurn("task-1", { status: "succeeded", messageId: "reply-1" });
+  assert.equal(store.get(request.requestId)?.state, "waiting");
+
+  clock.advance(31 * 24 * 60 * 60 * 1_000);
+  assert.deepEqual(await store.expireDue(), { requests: 0, questions: 0 });
+  const answered = await store.answer({ questionId: question.questionId, answer: "The 2026 one." });
+  assert.equal(answered.state, "answered");
+  await store.joinTurn({ requestId: request.requestId, taskId: "answer-turn" });
+  assert.equal(store.byTaskId("answer-turn")?.requestId, request.requestId);
+
+  // Older journal records can still carry a deadline. Preserve that format
+  // and its expiration behavior without assigning one to new work.
+  await store.flush();
+  const path = join(root, "requests.jsonl");
+  const legacy = (await readFile(path, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .findLast((record) => record.requestId === request.requestId)!;
+  legacy.deadline = new Date(clock.now().getTime() - 1_000).toISOString();
+  await writeFile(path, `${JSON.stringify(legacy)}\n`, "utf8");
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  assert.equal(reopened.get(request.requestId)?.deadline, legacy.deadline);
+  const due = await reopened.expireDue();
+  assert.equal(due.requests, 1);
+  assert.equal(reopened.get(request.requestId)?.state, "expired");
+
+  await reopened.flush();
+});
+
+test("a stopped request keeps the lineage sentence rather than naming a bound", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+
+  const request = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "renderer", taskId: "task-1" });
+  await store.markStopRequested(request.requestId);
+  const refused = await store.ask({ requestId: request.requestId, taskId: "task-1", respondent: "person", text: "Which ledger?" })
+    .then(() => null, (error: unknown) => error);
+  assert.ok(refused instanceof AmpleFileRequestLineageError);
+  assert.ok(!refused.message.includes(limitsSection));
+
+  await store.flush();
+});
+
+test("the result envelope keeps its shape, its sizes, and its Connected Folder–relative files", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  const request = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "renderer", taskId: "task-1" });
+  const digest = "a".repeat(64);
+
+  const recorded = await store.recordResult({
+    requestId: request.requestId,
+    taskId: "task-1",
+    receiptId: "receipt-1",
+    envelope: {
+      summary: "s".repeat(ampleFileRequestLimits.maxResultSummaryBytes),
+      data: { rows: 12 },
+      files: [{ path: "reports/audit.md", sha256: digest, sizeBytes: 2_048 }],
+      outcome: "succeeded",
+    },
+  });
+  assert.match(recorded.resultId, /^res-\d{14}-[0-9a-f]{8}$/);
+  assert.equal(store.get(request.requestId)?.results[0]?.fileCount, 1);
+  assert.equal(store.get(request.requestId)?.results[0]?.outcome, "succeeded");
+
+  const read = await store.result(recorded.resultId);
+  assert.equal(read?.state, "ok");
+  assert.deepEqual(read?.state === "ok" ? read.record.envelope.data : null, { rows: 12 });
+
+  const refusals: Array<[unknown, string]> = [
+    [{ summary: "s".repeat(ampleFileRequestLimits.maxResultSummaryBytes + 1), outcome: "succeeded" }, "resultSummary"],
+    [{ summary: "ok", data: { blob: "d".repeat(ampleFileRequestLimits.maxResultDataBytes) }, outcome: "succeeded" }, "resultData"],
+  ];
+  for (const [envelope, limit] of refusals) {
+    const error = await store.recordResult({ requestId: request.requestId, taskId: "task-1", receiptId: "receipt-2", envelope })
+      .then(() => null, (thrown: unknown) => thrown);
+    assert.ok(error instanceof AmpleFileRequestLimitError, `${limit} refuses with a named bound`);
+    assert.equal(error.limit, limit);
+    assert.ok(error.message.includes(limitsSection));
+  }
+
+  const manyFiles = await store.recordResult({
+    requestId: request.requestId,
+    taskId: "task-1",
+    receiptId: "receipt-many-files",
+    envelope: {
+      summary: "Every deliverable is recorded.",
+      outcome: "succeeded",
+      files: Array.from({ length: 65 }, (_item, index) => ({
+        path: `reports/${index}.md`, sha256: digest, sizeBytes: 1,
+      })),
+    },
+  });
+  assert.equal(store.get(request.requestId)?.results.find((item) => item.resultId === manyFiles.resultId)?.fileCount, 65);
+
+  for (const path of ["../escape.md", "/etc/hosts", ".amplefile/connected-folder.json", ".pi/config.json", ".workspace/state.json"]) {
+    await assert.rejects(
+      store.recordResult({
+        requestId: request.requestId,
+        taskId: "task-1",
+        receiptId: "receipt-3",
+        envelope: { summary: "ok", outcome: "succeeded", files: [{ path, sha256: digest, sizeBytes: 1 }] },
+      }),
+      (error: unknown) => error instanceof Error && !(error instanceof AmpleFileRequestLimitError),
+      `${path} is not a deliverable a Connected Folder can name`,
+    );
+  }
+
+  // A declared schema validates the details; an undeclared property is refused.
+  await assert.rejects(store.recordResult({
+    requestId: request.requestId,
+    taskId: "task-1",
+    receiptId: "receipt-4",
+    envelope: { summary: "ok", data: { rows: "twelve" }, outcome: "succeeded" },
+    schema: { type: "object", properties: { rows: { type: "integer" } }, required: ["rows"], additionalProperties: false },
+  }));
+
+  // A task from another request cannot report into this one.
+  await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "renderer", taskId: "task-elsewhere" });
+  await assert.rejects(
+    store.recordResult({ requestId: request.requestId, taskId: "task-elsewhere", receiptId: "receipt-5", envelope: { summary: "ok", outcome: "succeeded" } }),
+    (error: unknown) => error instanceof AmpleFileRequestLineageError,
+  );
+
+  // A partial result is reported as partial, never as success.
+  await store.recordResult({
+    requestId: request.requestId,
+    taskId: "task-1",
+    receiptId: "receipt-6",
+    envelope: { summary: "Half the ledger was unreadable.", outcome: "partial" },
+  });
+  await store.settleTurn("task-1", { status: "succeeded", messageId: "reply-1" });
+  assert.equal(store.get(request.requestId)?.state, "partial");
+
+  await store.flush();
+});
+
+test("requests, questions, results, and the action trail survive a restart", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+
+  const request = await store.beginRoot({
+    kind: "agent",
+    owner: ampleFileAgentOwner,
+    surface: "popover",
+    taskId: "task-1",
+    content: "Place the contract.",
+    attachments: [{ kind: "file", target: "/tmp/contract.pdf", name: "contract.pdf" }],
+  });
+  const child = await store.beginChild({ parentTaskId: "task-1", kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "task-2" });
+  const question = await store.ask({ requestId: child.requestId, taskId: "task-2", respondent: "parent", text: "Which folder?" });
+  await store.recordAction("task-1", { command: "files.add", at: clock.now().toISOString(), connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits", sources: ["/tmp/contract.pdf"], copied: ["contract.pdf"], checkpointId: "checkpoint-1" });
+  await store.recordResult({ requestId: child.requestId, taskId: "task-2", receiptId: "receipt-1", envelope: { summary: "Placed.", outcome: "succeeded" } });
+  await store.flush();
+
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  const recovered = reopened.get(request.requestId);
+  assert.equal(recovered?.content, "Place the contract.");
+  assert.deepEqual(recovered?.attachments, [{ kind: "file", target: "/tmp/contract.pdf", name: "contract.pdf" }]);
+  // New records carry no paired-browser provenance (Web Access was removed 2026-11-07).
+  assert.equal(recovered?.remote, null);
+  assert.equal(recovered?.actions.length, 1);
+  assert.equal(recovered?.actions[0]?.command, "files.add");
+  assert.deepEqual(recovered?.childRequestIds, [child.requestId]);
+  assert.equal(reopened.byTaskId("task-2")?.requestId, child.requestId);
+  assert.equal(reopened.question(question.questionId)?.text, "Which folder?");
+  assert.equal(reopened.get(child.requestId)?.results.length, 1);
+  const results = await reopened.results(child.requestId);
+  assert.equal(results[0]?.state, "ok");
+  assert.equal(reopened.damagedRecordCount(), 0);
+  // The child asked, so the child waits; the root is still working its own
+  // turn and only reports waiting once that turn ends.
+  assert.equal(reopened.get(child.requestId)?.state, "waiting");
+  assert.equal(recovered?.state, "working");
+  await reopened.settleTurn("task-1", { status: "succeeded", messageId: "reply-1" });
+  assert.equal(reopened.get(request.requestId)?.state, "waiting");
+
+  await reopened.flush();
+});
+
+test("restart reconciliation settles from the turn journal and never re-dispatches", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+
+  const finished = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1" });
+  const lost = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "renderer", taskId: "task-2" });
+  await store.markTurnRunning("task-1");
+  await store.markTurnRunning("task-2");
+  await store.flush();
+
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  const journal: AmpleFileDurableTurnRecord[] = [{
+    schema: "amplefile.turn.v1",
+    turnId: "task-1",
+    requestId: "turn-request-1",
+    requestDigest: "b".repeat(64),
+    userMessageId: "message-1",
+    userMessageCreatedAt: "2026-09-11T09:00:00.000Z",
+    connectedFolderId: "amplefile-agent",
+    conversationId: "chat-agent",
+    actorKind: "renderer",
+    status: "succeeded",
+    userMessagePersisted: true,
+    acceptedAt: "2026-09-11T09:00:00.000Z",
+    updatedAt: "2026-09-11T09:05:00.000Z",
+    assistantText: "Done.",
+    messageId: "reply-1",
+    usage: { provider: "anthropic", modelId: "test-model", inputTokens: 100, outputTokens: 20, amountUsd: 0.5 },
+  }];
+  const snapshot = JSON.stringify(journal);
+
+  const before = reopened.list().flatMap((record) => record.turns.map((turn) => turn.taskId)).sort();
+  const outcome = await reopened.reconcile({ turns: journal });
+  assert.equal(outcome.settled, 2);
+
+  const settledRoot = reopened.get(finished.requestId);
+  assert.equal(settledRoot?.state, "done");
+  assert.equal(settledRoot?.turns[0]?.state, "succeeded");
+  assert.equal(settledRoot?.turns[0]?.messageId, "reply-1");
+  assert.ok(settledRoot?.reconciledAt);
+  assert.deepEqual(settledRoot?.usage, { turns: 1, inputTokens: 100, outputTokens: 20, amountUsdComplete: true, amountUsd: 0.5 });
+
+  const lostRoot = reopened.get(lost.requestId);
+  assert.equal(lostRoot?.state, "failed");
+  assert.equal(lostRoot?.turns[0]?.state, "interrupted");
+  assert.equal(lostRoot?.turns[0]?.error, "AmpleFile closed before this turn finished.");
+  assert.ok(lostRoot?.reconciledAt);
+
+  // Reconciliation settles; it can never start a turn. The task ids it knows
+  // do not change, and the journal it was handed is left exactly as it was.
+  assert.deepEqual(reopened.list().flatMap((record) => record.turns.map((turn) => turn.taskId)).sort(), before);
+  assert.equal(JSON.stringify(journal), snapshot);
+  assert.equal(Object.keys(reopened).some((key) => key.toLowerCase().includes("dispatch")), false);
+
+  await reopened.flush();
+});
+
+test("a damaged journal line degrades the view instead of keeping the app from starting", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1" });
+  await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "renderer", taskId: "task-2" });
+  await store.flush();
+
+  const journalPath = join(root, "requests.jsonl");
+  const lines = (await readFile(journalPath, "utf8")).trim().split("\n");
+  assert.equal(lines.length, 2);
+  await writeFile(journalPath, `${lines[0]}\n{ this line is not readable\n${lines[1]}\n{"schema":"amplefile.req\n`, "utf8");
+
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  assert.equal(reopened.list().length, 2);
+  assert.equal(reopened.damagedRecordCount(), 1);
+  assert.equal(reopened.byTaskId("task-1")?.kind, "agent");
+  assert.equal(reopened.byTaskId("task-2")?.kind, "connected-folder");
+
+  await reopened.flush();
+});
+
+test("a record written while page sharing existed still loads, without its retired sharing actions", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  const request = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1" });
+  await store.recordAction("task-1", { command: "files.add", at: clock.now().toISOString(), connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits", copied: ["report.md"] });
+  await store.flush();
+
+  // An older build recorded `pages share` and `pages share-app` in the same
+  // action trail; those verbs no longer exist.
+  const journalPath = join(root, "requests.jsonl");
+  const lines = (await readFile(journalPath, "utf8")).trim().split("\n").map((line) => {
+    const record = JSON.parse(line) as { actions: Array<Record<string, unknown>> };
+    record.actions.push(
+      { command: "pages.share", at: "2026-09-11T09:01:00.000Z", connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" },
+      { command: "pages.share-app", at: "2026-09-11T09:02:00.000Z", connectedFolderId: "connected-folder-audits" },
+    );
+    return JSON.stringify(record);
+  });
+  await writeFile(journalPath, `${lines.join("\n")}\n`, "utf8");
+
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  assert.equal(reopened.damagedRecordCount(), 0, "a retired action never makes the record read as damaged");
+  const recovered = reopened.get(request.requestId);
+  assert.deepEqual(recovered?.actions.map((action) => action.command), ["files.add"]);
+  assert.equal(reopened.byTaskId("task-1")?.requestId, request.requestId);
+
+  await reopened.flush();
+});
+
+test("only a torn final line, however many blank lines follow it, reads as an interrupted append", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  for (let index = 1; index <= 200; index += 1) {
+    await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: `task-${index}` });
+  }
+  await store.flush();
+
+  const journalPath = join(root, "requests.jsonl");
+  const lines = (await readFile(journalPath, "utf8")).trim().split("\n");
+  await writeFile(journalPath, `${lines.slice(0, 100).join("\n")}\n{ damaged\n${lines.slice(100).join("\n")}\n{"schema":"amplefile.req\n\n\n`, "utf8");
+
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  assert.equal(reopened.list().length, 200);
+  assert.equal(reopened.damagedRecordCount(), 1, "the damaged middle line counts; the torn tail does not");
+  await reopened.flush();
+});
+
+test("an outgrown journal compacts into one line per record and keeps the generation it replaced", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now, compactBytes: 512 });
+
+  await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1" });
+  await store.settleTurn("task-1", { status: "succeeded", messageId: "reply-1" });
+  await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "renderer", taskId: "task-2" });
+  await store.settleTurn("task-2", { status: "succeeded", messageId: "reply-2" });
+  await store.flush();
+
+  assert.ok(existsSync(join(root, "requests.1.jsonl")), "the replaced generation is kept for a tolerant reader");
+  const live = (await readFile(join(root, "requests.jsonl"), "utf8")).trim().split("\n");
+  assert.equal(live.length, 2, "compaction collapses repeated appends to one line per record");
+
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now, compactBytes: 512 });
+  assert.equal(reopened.list().length, 2);
+  assert.equal(reopened.byTaskId("task-1")?.state, "done");
+  assert.equal(reopened.byTaskId("task-2")?.state, "done");
+  assert.equal(reopened.damagedRecordCount(), 0);
+
+  await reopened.flush();
+});
+
+test("retention removes a settled graph whole and leaves one with work outstanding alone", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+
+  const old = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "old-1" });
+  const oldChild = await store.beginChild({ parentTaskId: "old-1", kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "old-2" });
+  const oldQuestion = await store.ask({ requestId: oldChild.requestId, taskId: "old-2", respondent: "person", text: "Which folder?" });
+  await store.answer({ questionId: oldQuestion.questionId, answer: "Audits." });
+  await store.recordResult({ requestId: oldChild.requestId, taskId: "old-2", receiptId: "receipt-1", envelope: { summary: "Placed.", outcome: "succeeded" } });
+  await store.settleTurn("old-2", { status: "succeeded", messageId: "reply-2" });
+  await store.joinTurn({ requestId: oldChild.requestId, taskId: "old-answer" });
+  await store.linkContinuation(oldQuestion.questionId, "old-answer");
+  await store.settleTurn("old-answer", { status: "succeeded" });
+  await store.settleTurn("old-1", { status: "succeeded", messageId: "reply-1" });
+  assert.equal(store.get(old.requestId)?.state, "done");
+
+  const busy = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "busy-1" });
+  await store.beginChild({ parentTaskId: "busy-1", kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "busy-2" });
+  await store.settleTurn("busy-1", { status: "succeeded", messageId: "reply-3" });
+
+  clock.advance((ampleFileRequestLimits.retentionDays + 1) * 24 * 60 * 60 * 1000);
+  const purge = await store.purgeExpired();
+  assert.equal(purge.purged, 2);
+  assert.equal(store.get(old.requestId), null);
+  assert.equal(store.get(oldChild.requestId), null);
+  assert.equal(store.question(oldQuestion.questionId), null);
+  assert.equal(existsSync(join(root, "results", oldChild.requestId)), false);
+  assert.ok(store.get(busy.requestId), "a root with work still outstanding below it is kept");
+  assert.ok(store.lastPurgeAt());
+
+  // Purged text does not survive in the rotated generation either.
+  const remaining = await readFile(join(root, "requests.jsonl"), "utf8");
+  assert.equal(remaining.includes(old.requestId), false);
+  assert.equal(existsSync(join(root, "requests.1.jsonl")), false);
+
+  // The daily wrapper does not purge twice in the same window.
+  assert.equal(await store.purgeExpiredIfDue(), null);
+
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  assert.equal(reopened.get(old.requestId), null);
+  assert.ok(reopened.get(busy.requestId));
+
+  await Promise.all([store.flush(), reopened.flush()]);
+});
+
+test("one task id belongs to one request, and a joined turn keeps one story", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+
+  const first = await store.beginRoot({
+    kind: "agent",
+    owner: ampleFileAgentOwner,
+    surface: "popover",
+    taskId: "task-1",
+    content: "Use Audits",
+    attachments: [{ kind: "file", target: "/tmp/a.pdf", name: "a.pdf" }],
+  });
+  const again = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1", content: "different" });
+  assert.equal(again.requestId, first.requestId);
+  assert.equal(again.content, "Use Audits", "a replayed acceptance never rewrites the record");
+  await store.flush();
+  assert.equal((await readFile(join(root, "requests.jsonl"), "utf8")).trim().split("\n").length, 1);
+
+  await store.recordAction("task-1", { command: "files.add", at: clock.now().toISOString(), connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" });
+  await store.settleTurn("task-1", { status: "succeeded", messageId: "reply-1" });
+
+  const joined = await store.joinTurn({
+    requestId: first.requestId,
+    taskId: "task-2",
+    content: "Use Audits",
+    attachments: [{ kind: "url", target: "https://example.com/ledger", name: "example.com/ledger" }],
+  });
+  assert.equal(joined.requestId, first.requestId);
+  assert.equal(joined.continuedFromTaskId, "task-1");
+  assert.deepEqual(joined.attachments.map((attachment) => attachment.kind), ["file", "url"]);
+  assert.equal(joined.actions.length, 1);
+  assert.equal(joined.content, "Use Audits");
+  assert.equal(joined.turns.length, 2);
+  assert.equal(joined.turns[1]?.role, "continuation");
+  assert.equal(joined.state, "working");
+  assert.equal(store.byTaskId("task-1")?.requestId, store.byTaskId("task-2")?.requestId);
+
+  await store.flush();
+});
+
+test("a model spending cap stops a runaway graph and names the cap", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now, providerBudgetUsd: 1 });
+
+  const request = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1" });
+  await store.beginChild({ parentTaskId: "task-1", kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "task-2" });
+  await store.settleTurn("task-2", {
+    status: "succeeded",
+    messageId: "reply-2",
+    usage: { provider: "anthropic", modelId: "test-model", inputTokens: 10, outputTokens: 5, amountUsd: 1.5 },
+  });
+
+  const stopped = store.get(request.requestId);
+  assert.equal(stopped?.state, "failed");
+  assert.equal(stopped?.limitHit?.limit, "providerBudget");
+
+  await store.flush();
+});
+
+test("usage stays honest when a model carries no published rates", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  const request = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "renderer", taskId: "task-1" });
+  await store.settleTurn("task-1", {
+    status: "succeeded",
+    messageId: "reply-1",
+    usage: { provider: "local", modelId: "unpriced", inputTokens: 7, outputTokens: 3 },
+  });
+  const usage = store.get(request.requestId)?.usage;
+  assert.equal(usage?.turns, 1);
+  assert.equal(usage?.inputTokens, 7);
+  assert.equal(usage?.amountUsdComplete, false);
+  assert.equal(usage?.amountUsd, undefined);
+
+  await store.flush();
+});
+
+test("follow-up deliveries are recorded without a per-request quota", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  const request = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1" });
+
+  // The fifth delivery used to be refused after four.
+  for (let index = 1; index <= 5; index += 1) {
+    assert.deepEqual(await store.noteContinuation(request.requestId), { allowed: true, count: index });
+  }
+  assert.equal(store.continuationsEnabled(), true);
+  await store.setContinuationsEnabled(false);
+  assert.equal(store.continuationsEnabled(), false);
+  await store.flush();
+
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  assert.equal(reopened.continuationsEnabled(), false);
+  assert.equal(reopened.get(request.requestId)?.continuationCount, 5);
+  await reopened.flush();
+});
+
+test("the action trail keeps attribution past the former cutoff and only credits a named request", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  const request = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1" });
+
+  assert.equal(await store.recordAction(undefined, { command: "files.add", at: clock.now().toISOString() }), null);
+  assert.equal(await store.recordAction("task-unknown", { command: "files.add", at: clock.now().toISOString() }), null);
+
+  // The 201st action was previously dropped from attribution.
+  for (let index = 1; index <= 200; index += 1) {
+    await store.recordAction("task-1", { command: "files.move", at: clock.now().toISOString(), connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" });
+  }
+  assert.equal(store.get(request.requestId)?.actions.length, 200);
+  assert.equal(await store.recordAction("task-1", { command: "files.move", at: clock.now().toISOString() }), request.requestId);
+  assert.equal(store.get(request.requestId)?.actions.length, 201);
+
+  // Recording an act never creates a child request; only `beginChild` does.
+  assert.deepEqual(store.get(request.requestId)?.childRequestIds, []);
+
+  await store.flush();
+});
+
+test("remaining bounded payload and provider protections name their number", () => {
+  const caps: Array<[AmpleFileRequestLimitName, number]> = [
+    ["providerBudget", 25],
+    ["questionText", ampleFileRequestLimits.maxQuestionTextBytes],
+    ["answerText", ampleFileRequestLimits.maxAnswerTextBytes],
+    ["resultSummary", ampleFileRequestLimits.maxResultSummaryBytes],
+    ["resultData", ampleFileRequestLimits.maxResultDataBytes],
+  ];
+  for (const [limit, cap] of caps) {
+    const message = ampleFileRequestLimitMessage(limit, cap);
+    const shown = cap >= 1024 && limit.startsWith("result") || limit.endsWith("Text")
+        ? String(Math.round(cap / 1024))
+        : String(cap);
+    assert.ok(message.includes(shown), `${limit} names its number`);
+    assert.ok(message.includes(limitsSection), `${limit} names the Settings section`);
+    // A bound is a bound, never a gate: nothing here asks a person to allow anything.
+    assert.doesNotMatch(message, /staged|approv|polic|Reviewed|Unrestricted|\bcard\b|\bmode\b|sandbox|digest/i);
+  }
+});
+
+
+test("an accepted answer stays outstanding through restart until its continuation is linked", async (t) => {
+  const rootPath = await temporaryRoot(t);
+  let store = await AmpleFileRequestStore.open({ rootPath });
+  const root = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "cli", taskId: "parent" });
+  const child = await store.beginChild({ parentTaskId: "parent", kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "child", content: "Compare the annual quotes." });
+  const question = await store.ask({ requestId: child.requestId, taskId: "child", respondent: "person", text: "Which quarter?" });
+  await store.settleTurn("parent", { status: "succeeded" });
+  await store.settleTurn("child", { status: "succeeded" });
+  await store.answer({ questionId: question.questionId, answer: "Q3" });
+  assert.equal(store.get(root.requestId)?.state, "waiting");
+  store = await AmpleFileRequestStore.open({ rootPath });
+  assert.equal(store.get(root.requestId)?.state, "waiting");
+  assert.equal(store.question(question.questionId)?.continuationTaskId, null);
+  await store.joinTurn({ requestId: child.requestId, taskId: "answer-turn", content: "Q3" });
+  await store.linkContinuation(question.questionId, "answer-turn");
+  assert.equal(store.get(root.requestId)?.state, "handed_off");
+  assert.equal(store.get(child.requestId)?.assignment, "Compare the annual quotes.");
+  assert.equal(store.get(child.requestId)?.content, "Q3");
+  await store.settleTurn("answer-turn", { status: "succeeded" });
+  assert.equal(store.get(root.requestId)?.state, "done");
+  await store.joinTurn({ requestId: child.requestId, taskId: "follow-up" });
+  assert.equal(store.get(root.requestId)?.state, "handed_off");
+  await store.markStopRequested(root.requestId);
+  await assert.rejects(store.joinTurn({ requestId: child.requestId, taskId: "too-late" }), /stopp/i);
+  await store.settleTurn("follow-up", { status: "succeeded" });
+  assert.equal(store.get(root.requestId)?.state, "stopped");
+});
+
+test("a new request can continue after a formerly-expiring interval", async (t) => {
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: await temporaryRoot(t), now: clock.now });
+  const request = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "asker" });
+  const question = await store.ask({ requestId: request.requestId, taskId: "asker", respondent: "person", text: "Which date?" });
+  await store.settleTurn("asker", { status: "succeeded" });
+  await store.answer({ questionId: question.questionId, answer: "Tomorrow" });
+  clock.advance(31 * 24 * 60 * 60 * 1_000);
+  await store.expireDue();
+  assert.notEqual(store.get(request.requestId)?.state, "expired");
+  await store.joinTurn({ requestId: request.requestId, taskId: "late" });
+  assert.equal(store.byTaskId("late")?.requestId, request.requestId);
+});
+
+
+test("a reserved child delivery survives restart without starting or repeating a turn", async (t) => {
+  const rootPath = await temporaryRoot(t);
+  let store = await AmpleFileRequestStore.open({ rootPath });
+  const root = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "parent" });
+  await store.beginChild({ parentTaskId: "parent", kind: "connected-folder", owner: { connectedFolderId: "child-connected-folder", conversationId: "child-chat" }, surface: "cli", taskId: "child" });
+  await store.settleTurn("child", { status: "succeeded" });
+  await store.settleTurn("parent", { status: "succeeded" });
+  assert.deepEqual(await store.noteContinuation(root.requestId, ["child"]), { allowed: true, count: 1 });
+  assert.equal(store.get(root.requestId)?.state, "working");
+  store = await AmpleFileRequestStore.open({ rootPath });
+  await store.reconcile({ turns: [] });
+  assert.equal(store.get(root.requestId)?.state, "failed");
+  assert.equal(store.get(root.requestId)?.continuationState, "failed");
+  assert.equal(store.get(root.requestId)?.turns.length, 1);
+  assert.deepEqual(await store.noteContinuation(root.requestId, ["child"]), { allowed: false, count: 1 });
+});
+
+test("a question record keeps its choices, and records written before choices existed still read", async () => {
+  const { parseAmpleFileQuestionRecord, ampleFileQuestionRecordSchema } = await import("../src/local/requests/request-records.js");
+  const base = {
+    schema: ampleFileQuestionRecordSchema, questionId: "q-20261018000000-abcdef01", requestId: "req-20261018000000-abcdef01",
+    rootId: "req-20261018000000-abcdef01", taskId: "task-1", respondent: "person", text: "Which quarter?",
+    askedAt: "2026-10-18T00:00:00.000Z", updatedAt: "2026-10-18T00:00:00.000Z", expiresAt: null, state: "open",
+    answer: null, answeredAt: null, continuationTaskId: null, answeredByConnectedFolderId: null,
+  };
+  const older = parseAmpleFileQuestionRecord(base);
+  assert.equal("options" in older, false);
+  assert.deepEqual(parseAmpleFileQuestionRecord({ ...base, options: ["Q3", "Q4"] }).options, ["Q3", "Q4"]);
+  assert.throws(() => parseAmpleFileQuestionRecord({ ...base, options: ["Q3", "Q3"] }), /same choice twice/);
+  assert.throws(() => parseAmpleFileQuestionRecord({ ...base, options: ["Line one\nline two"] }), /one line/);
+  assert.throws(() => parseAmpleFileQuestionRecord({ ...base, options: Array.from({ length: ampleFileRequestLimits.maxQuestionOptions + 1 }, (_, index) => `Choice ${index}`) }), /at most 64 choices/);
+});
+
+test("only the running turn changes its request's checklist, an empty list clears it, and it survives a restart", async (t) => {
+  const root = await temporaryRoot(t);
+  const store = await AmpleFileRequestStore.open({ rootPath: root });
+  await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-checklist", content: "Plan the budget." });
+  await store.markTurnRunning("task-checklist");
+  await assert.rejects(store.setChecklist("task-other", [{ text: "Read the quotes", status: "doing" }]));
+  const saved = await store.setChecklist("task-checklist", [{ text: "Read the quotes", status: "doing" }]);
+  assert.deepEqual(saved?.items, [{ text: "Read the quotes", status: "doing" }]);
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root });
+  assert.deepEqual(reopened.byTaskId("task-checklist")?.checklist?.items, [{ text: "Read the quotes", status: "doing" }]);
+  assert.equal(await store.setChecklist("task-checklist", []), null);
+  assert.equal(store.byTaskId("task-checklist")?.checklist, undefined);
+});

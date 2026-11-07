@@ -21,7 +21,7 @@ import {
  */
 
 const rsvp = {
-  format: "work-fold.page/1",
+  format: "amplefile.page/1",
   title: "Garden Party RSVP",
   tables: {
     rsvps: {
@@ -50,7 +50,7 @@ function problemsOf(value: unknown): Array<{ path: string; message: string }> {
 }
 
 function withTable(table: unknown): unknown {
-  return { format: "work-fold.page/1", title: "T", tables: { things: table } };
+  return { format: "amplefile.page/1", title: "T", tables: { things: table } };
 }
 
 test("the contract's RSVP example parses with defaults filled in", () => {
@@ -70,7 +70,7 @@ test("the contract's RSVP example parses with defaults filled in", () => {
 });
 
 test("a page without tables saves nothing and defaults apply", () => {
-  const declaration = parsed({ format: "work-fold.page/1", title: "  Announcement  ", description: "Hi", entry: "pages/home.html" });
+  const declaration = parsed({ format: "amplefile.page/1", title: "  Announcement  ", description: "Hi", entry: "pages/home.html" });
   assert.deepEqual(declaration.tables, []);
   assert.equal(declaration.title, "Announcement");
   assert.equal(declaration.entry, "pages/home.html");
@@ -102,16 +102,16 @@ test("unknown fields anywhere are errors that name the field path", () => {
 
 test("required top-level fields, formats, and bounds are checked", () => {
   assert.deepEqual(problemsOf({}).map((problem) => problem.path).sort(), ["format", "title"]);
-  assert.match(problemsOf({ format: "work-fold.page/2", title: "x" })[0]!.message, /exactly "work-fold.page\/1"/);
-  assert.equal(problemsOf({ format: "work-fold.page/1", title: "   " })[0]!.path, "title");
-  assert.equal(problemsOf({ format: "work-fold.page/1", title: "x".repeat(121) })[0]!.path, "title");
-  assert.ok(parsePageDeclaration({ format: "work-fold.page/1", title: "x".repeat(120) }).ok);
-  assert.equal(problemsOf({ format: "work-fold.page/1", title: "x", description: "d".repeat(501) })[0]!.path, "description");
+  assert.match(problemsOf({ format: "amplefile.page/2", title: "x" })[0]!.message, /exactly "amplefile.page\/1"/);
+  assert.equal(problemsOf({ format: "amplefile.page/1", title: "   " })[0]!.path, "title");
+  assert.equal(problemsOf({ format: "amplefile.page/1", title: "x".repeat(121) })[0]!.path, "title");
+  assert.ok(parsePageDeclaration({ format: "amplefile.page/1", title: "x".repeat(120) }).ok);
+  assert.equal(problemsOf({ format: "amplefile.page/1", title: "x", description: "d".repeat(501) })[0]!.path, "description");
   for (const entry of ["/index.html", "../index.html", "a/../index.html", "index.htm", ".hidden/index.html", "https://example.com/x.html", "", 5]) {
-    assert.equal(problemsOf({ format: "work-fold.page/1", title: "x", entry })[0]!.path, "entry", String(entry));
+    assert.equal(problemsOf({ format: "amplefile.page/1", title: "x", entry })[0]!.path, "entry", String(entry));
   }
   const many = Object.fromEntries(Array.from({ length: 17 }, (_, index) => [`t${index}`, { columns: { a: { type: "text" } } }]));
-  assert.ok(problemsOf({ format: "work-fold.page/1", title: "x", tables: many }).some((problem) => problem.path === "tables"));
+  assert.ok(problemsOf({ format: "amplefile.page/1", title: "x", tables: many }).some((problem) => problem.path === "tables"));
   assert.equal(problemsOf(["not", "an", "object"])[0]!.path, "");
   assert.equal(parsePageDeclarationText("{ nope").ok, false);
   assert.match((parsePageDeclarationText("{ nope") as { problems: Array<{ message: string }> }).problems[0]!.message, /isn't valid JSON/);
@@ -119,12 +119,12 @@ test("required top-level fields, formats, and bounds are checked", () => {
 });
 
 test("table and column names, visitors, limits, and type extras are checked", () => {
-  assert.ok(problemsOf({ format: "work-fold.page/1", title: "x", tables: { "Bad-Name": { columns: { a: { type: "text" } } } } })
+  assert.ok(problemsOf({ format: "amplefile.page/1", title: "x", tables: { "Bad-Name": { columns: { a: { type: "text" } } } } })
     .some((problem) => problem.path === "tables.Bad-Name"));
-  assert.match(problemsOf({ format: "work-fold.page/1", title: "x", tables: { sqlite_stuff: { columns: { a: { type: "text" } } } } })[0]!.message, /sqlite_/);
+  assert.match(problemsOf({ format: "amplefile.page/1", title: "x", tables: { sqlite_stuff: { columns: { a: { type: "text" } } } } })[0]!.message, /sqlite_/);
   assert.ok(problemsOf(withTable({ columns: { _id: { type: "text" } } })).some((problem) => problem.path === "tables.things.columns._id"));
-  assert.match(problemsOf(withTable({ columns: { id: { type: "text" } } }))[0]!.message, /used by work-fold/);
-  assert.match(problemsOf(withTable({ columns: { visitor: { type: "text" } } }))[0]!.message, /used by work-fold/);
+  assert.match(problemsOf(withTable({ columns: { id: { type: "text" } } }))[0]!.message, /used by AmpleFile/);
+  assert.match(problemsOf(withTable({ columns: { visitor: { type: "text" } } }))[0]!.message, /used by AmpleFile/);
   assert.ok(problemsOf(withTable({ columns: {} })).some((problem) => problem.path === "tables.things.columns"));
   assert.ok(problemsOf(withTable({})).some((problem) => problem.path === "tables.things.columns"));
   const tooMany = Object.fromEntries(Array.from({ length: 65 }, (_, index) => [`c${index}`, { type: "text" }]));

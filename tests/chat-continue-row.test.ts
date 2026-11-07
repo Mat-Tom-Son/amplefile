@@ -32,11 +32,11 @@ test("an interrupted reply's row shows Continue as soon as it is offered, and ca
     role: "assistant",
     content: "Moving the older notes.",
     createdAt: "2026-10-27T12:00:00.000Z",
-    interruption: { reason: "app_interrupted", message: "work-fold closed before this turn finished.", retryAttempts: 0, provider: null, model: null, activities: [] },
+    interruption: { reason: "app_interrupted", message: "AmpleFile closed before this turn finished.", retryAttempts: 0, provider: null, model: null, activities: [] },
   } as ChatMessage;
   const props = {
     message, copied: false, showLanding: false, suppressEnterAnimation: true, showRuntimePreview: false, runtimePreviews: [],
-    workFolderId: "space-0123456789abcdef", workFolderRoot: "/tmp/work-folder", onCopyMessage: () => {},
+    connectedFolderId: "space-0123456789abcdef", connectedFolderRoot: "/tmp/connected-folder", onCopyMessage: () => {},
   };
   const continueButton = () => [...dom.container.querySelectorAll("button")].find((button) => button.textContent === "Continue");
 

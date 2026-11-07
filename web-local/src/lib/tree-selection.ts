@@ -5,7 +5,7 @@ import type { TreeEntry } from "../types";
  * Files selects several rows the way Finder's list view does (2026-11-05): a
  * plain click selects one row, ⌘-click (Ctrl-click off the Mac) adds or
  * removes one, and Shift-click selects the run of shown rows from the last
- * clicked row. Rows for nested work-folders open that work-folder and are
+ * clicked row. Rows for nested Connected Folders open that Connected Folder and are
  * never part of a selection.
  */
 

@@ -6,12 +6,12 @@ import { maximumAppearanceImportBytes } from "../../lib/application-appearance-s
 import { useAppLayout, writeAppLayout, type AppLayout } from "../../lib/app-layout";
 import { typographyFontOptionsForPlatform } from "../../constants";
 import { desktopPlatform } from "../../lib/platform";
-import type { WorkFolderSummary } from "../../types";
+import type { ConnectedFolderSummary } from "../../types";
 
-export function AppearanceSettingsPane({ appearance, workFolder, onCustomizeWorkFolder, interfaceExtra }: {
+export function AppearanceSettingsPane({ appearance, connectedFolder, onCustomizeConnectedFolder, interfaceExtra }: {
   appearance: ApplicationAppearanceController;
-  workFolder: WorkFolderSummary | null;
-  onCustomizeWorkFolder?: (workFolderId: string) => void;
+  connectedFolder: ConnectedFolderSummary | null;
+  onCustomizeConnectedFolder?: (connectedFolderId: string) => void;
   /** Extra rows at the end of the Interface section, such as the desktop close-button choice. */
   interfaceExtra?: ReactNode;
 }) {
@@ -50,7 +50,7 @@ export function AppearanceSettingsPane({ appearance, workFolder, onCustomizeWork
   function exportPreset(preset: AppearancePreset) {
     const url = URL.createObjectURL(new Blob([`${JSON.stringify(preset, null, 2)}\n`], { type: "application/json" }));
     const link = document.createElement("a");
-    link.href = url; link.download = `${preset.name.replace(/[^\p{L}\p{N}_-]+/gu, "-") || "appearance"}.work-fold-appearance.json`;
+    link.href = url; link.download = `${preset.name.replace(/[^\p{L}\p{N}_-]+/gu, "-") || "appearance"}.amplefile-appearance.json`;
     link.click(); setTimeout(() => URL.revokeObjectURL(url), 1_000);
   }
   return <div className="appearance-settings">
@@ -118,7 +118,7 @@ export function AppearanceSettingsPane({ appearance, workFolder, onCustomizeWork
       {appearance.presets.map((preset) => <div className="appearance-settings-saved" key={preset.name}><span>{preset.name}</span><div className="appearance-settings-actions"><button type="button" aria-label={`Apply ${preset.name}`} onClick={() => store.applyPreset(preset.preferences)}>Apply</button><button type="button" aria-label={`Export ${preset.name}`} onClick={() => runPreset(() => exportPreset(preset))}>Export</button><button type="button" aria-label={`Remove ${preset.name}`} onClick={() => runPreset(() => store.removePreset(preset.name))}>Remove</button></div></div>)}
       {presetError || appearance.presetsError ? <p className="appearance-settings-error" role="alert">{presetError ?? appearance.presetsError}</p> : null}
     </section>
-    {workFolder && onCustomizeWorkFolder ? <section className="appearance-settings-work-folder"><div><h3>{workFolder.name}</h3></div><button type="button" onClick={() => onCustomizeWorkFolder(workFolder.id)}>Customize This work-folder</button></section> : null}
+    {connectedFolder && onCustomizeConnectedFolder ? <section className="appearance-settings-connected-folder"><div><h3>{connectedFolder.name}</h3></div><button type="button" onClick={() => onCustomizeConnectedFolder(connectedFolder.id)}>Customize This Connected Folder</button></section> : null}
   </div>;
 }
 
@@ -141,7 +141,7 @@ const fileManagerBlue = "#0a64d6";
 function FileManagerPreview() {
   return <div className="appearance-settings-preview fmp" aria-label="Appearance preview">
     <div className="fmp-side">
-      <span className="fmp-head">work-folders</span>
+      <span className="fmp-head">Connected Folders</span>
       <div className="fmp-item is-current"><span className="fm-ic fm-ic-folder is-tinted" style={{ "--fold-base": "#8e5bd8" } as CSSProperties} aria-hidden="true" /><span>Workshop</span></div>
       <div className="fmp-item"><span className="fm-ic fm-ic-folder is-tinted" style={{ "--fold-base": "#30a46c" } as CSSProperties} aria-hidden="true" /><span>Garden</span></div>
     </div>

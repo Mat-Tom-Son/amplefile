@@ -1,8 +1,8 @@
-import type { WorkFoldCliActUndoRef } from "./cli/act-receipts.js";
+import type { AmpleFileCliActUndoRef } from "./cli/act-receipts.js";
 import type {
-  WorkFoldExperimentalPreparedActTask,
-  WorkFoldExperimentalPreparedActTaskInput,
-} from "./work-fold-kernel.js";
+  AmpleFileExperimentalPreparedActTask,
+  AmpleFileExperimentalPreparedActTaskInput,
+} from "./amplefile-kernel.js";
 
 /**
  * Prepared acts (docs/receipts-not-gates.md, F19): the closed kind vocabulary
@@ -42,7 +42,7 @@ export interface PreparedActKindDescriptor {
   pins: Readonly<Record<string, PreparedActFieldSpec>>;
 }
 
-const CAPABILITY_SCOPES = ["everywhere", "work-folder"] as const;
+const CAPABILITY_SCOPES = ["everywhere", "connected-folder"] as const;
 
 function req(type: PreparedActFieldType, values?: readonly string[]): PreparedActFieldSpec {
   return values ? { type, required: true, values } : { type, required: true };
@@ -59,11 +59,11 @@ function opt(type: PreparedActFieldType, values?: readonly string[]): PreparedAc
  */
 const KIND_DESCRIPTORS = {
   "capability.resource.enabled": {
-    parameters: { path: req("string"), kind: req("string", ["extensions", "skills", "prompts", "themes"]), enabled: req("boolean"), scope: req("string", CAPABILITY_SCOPES), workFolderId: opt("string") },
+    parameters: { path: req("string"), kind: req("string", ["extensions", "skills", "prompts", "themes"]), enabled: req("boolean"), scope: req("string", CAPABILITY_SCOPES), connectedFolderId: opt("string") },
     pins: { path: req("string"), digest: req("string"), scope: req("string", CAPABILITY_SCOPES) },
   },
   "app.review.install": {
-    parameters: { workFolderId: req("string"), proposalId: req("string") },
+    parameters: { connectedFolderId: req("string"), proposalId: req("string") },
     pins: { proposalId: req("string"), reviewDigest: req("string") },
   },
   "capability.package.install": {
@@ -71,7 +71,7 @@ const KIND_DESCRIPTORS = {
       source: opt("string"),
       catalogId: opt("string"),
       scope: req("string", CAPABILITY_SCOPES),
-      workFolderId: opt("string"),
+      connectedFolderId: opt("string"),
     },
     pins: {
       packageId: req("string"),
@@ -86,7 +86,7 @@ const KIND_DESCRIPTORS = {
       source: opt("string"),
       catalogId: opt("string"),
       scope: req("string", CAPABILITY_SCOPES),
-      workFolderId: opt("string"),
+      connectedFolderId: opt("string"),
     },
     pins: {
       packageId: req("string"),
@@ -100,7 +100,7 @@ const KIND_DESCRIPTORS = {
     parameters: {
       source: req("string"),
       scope: req("string", CAPABILITY_SCOPES),
-      workFolderId: opt("string"),
+      connectedFolderId: opt("string"),
     },
     pins: {
       source: req("string"),
@@ -109,19 +109,19 @@ const KIND_DESCRIPTORS = {
     },
   },
   "app.grant.network": {
-    parameters: { workFolderId: req("string"), appInstanceId: req("string"), declarationId: req("string") },
+    parameters: { connectedFolderId: req("string"), appInstanceId: req("string"), declarationId: req("string") },
     pins: { appInstanceId: req("string"), declarationId: req("string"), releaseDigest: req("string") },
   },
   "app.grant.files": {
-    parameters: { workFolderId: req("string"), appInstanceId: req("string"), declarationId: req("string") },
+    parameters: { connectedFolderId: req("string"), appInstanceId: req("string"), declarationId: req("string") },
     pins: { appInstanceId: req("string"), declarationId: req("string"), releaseDigest: req("string") },
   },
   "app.grant.notifications": {
-    parameters: { workFolderId: req("string"), appInstanceId: req("string"), declarationId: req("string") },
+    parameters: { connectedFolderId: req("string"), appInstanceId: req("string"), declarationId: req("string") },
     pins: { appInstanceId: req("string"), declarationId: req("string"), releaseDigest: req("string") },
   },
   "app.connection.save": {
-    parameters: { workFolderId: req("string"), appInstanceId: req("string"), destinationId: req("string") },
+    parameters: { connectedFolderId: req("string"), appInstanceId: req("string"), destinationId: req("string") },
     pins: {
       appInstanceId: req("string"),
       declarationId: req("string"),
@@ -130,7 +130,7 @@ const KIND_DESCRIPTORS = {
     },
   },
   "app.automation.enable": {
-    parameters: { workFolderId: req("string"), appInstanceId: req("string"), appAutomationId: req("string") },
+    parameters: { connectedFolderId: req("string"), appInstanceId: req("string"), appAutomationId: req("string") },
     pins: {
       appInstanceId: req("string"),
       appAutomationId: req("string"),
@@ -142,13 +142,13 @@ const KIND_DESCRIPTORS = {
     parameters: { automationId: req("string") },
     pins: { automationId: req("string"), declarationDigest: req("string") },
   },
-  "work-folder.delete-folder": {
-    parameters: { workFolderId: req("string") },
-    pins: { workFolderId: req("string"), workFolderRoot: req("string") },
+  "connected-folder.delete-folder": {
+    parameters: { connectedFolderId: req("string") },
+    pins: { connectedFolderId: req("string"), connectedFolderRoot: req("string") },
   },
   "app.data.purge": {
     parameters: {
-      workFolderId: req("string"),
+      connectedFolderId: req("string"),
       appInstanceId: req("string"),
       purgeTarget: opt("string", ["retained", "runtime-instance"]),
     },
@@ -157,11 +157,11 @@ const KIND_DESCRIPTORS = {
       dataNamespaceIds: req("string-list"),
       retainedDataId: opt("string"),
       runtimeInstanceId: opt("string"),
-      sourceWorkFolderId: opt("string"),
+      sourceConnectedFolderId: opt("string"),
     },
   },
   "app.storage.clear": {
-    parameters: { workFolderId: req("string"), appInstanceId: req("string") },
+    parameters: { connectedFolderId: req("string"), appInstanceId: req("string") },
     pins: {
       appInstanceId: req("string"),
       dataNamespaceIds: req("string-list"),
@@ -215,29 +215,29 @@ export function prepareAct(input: PreparedActInput): PreparedAct {
   if (!descriptor) {
     throw new PreparedActError(
       "KIND_UNKNOWN",
-      `work-fold does not know the act kind "${String(input.kind)}"; the kind vocabulary is closed and unknown kinds fail closed.`,
+      `AmpleFile does not know the act kind "${String(input.kind)}"; the kind vocabulary is closed and unknown kinds fail closed.`,
     );
   }
   const inputIssue = fieldsIssue(input.kind, "parameters", input.parameters)
     ?? fieldsIssue(input.kind, "pins", input.pins);
-  if (inputIssue) throw new PreparedActError("INPUT_INVALID", `work-fold refused this act: ${inputIssue}`);
+  if (inputIssue) throw new PreparedActError("INPUT_INVALID", `AmpleFile refused this act: ${inputIssue}`);
   const parameters = cloneFields(input.parameters);
   const pins = cloneFields(input.pins);
   const sharedIssue = sharedFieldIssue(parameters, pins);
-  if (sharedIssue) throw new PreparedActError("INPUT_INVALID", `work-fold refused this act: ${sharedIssue}`);
+  if (sharedIssue) throw new PreparedActError("INPUT_INVALID", `AmpleFile refused this act: ${sharedIssue}`);
   return Object.freeze({ kind: input.kind, parameters: Object.freeze(parameters), pins: Object.freeze(pins) });
 }
 
-/** The work-folder a prepared act mutates, when it names one. */
-export function preparedActWorkFolderId(act: PreparedAct): string | undefined {
-  const value = act.parameters.workFolderId ?? act.pins.workFolderId;
+/** The Connected Folder a prepared act mutates, when it names one. */
+export function preparedActConnectedFolderId(act: PreparedAct): string | undefined {
+  const value = act.parameters.connectedFolderId ?? act.pins.connectedFolderId;
   return typeof value === "string" ? value : undefined;
 }
 
 /** The capability-mutation scope an execution reserves. */
 export type PreparedActFenceScope =
   | { scope: "global" }
-  | { scope: "work-folder"; workFolderId: string };
+  | { scope: "connected-folder"; connectedFolderId: string };
 
 /**
  * Injectable seam over the local API's capability-mutation reservation
@@ -252,7 +252,7 @@ export interface PreparedActFence {
 
 /** The kernel surface the executor needs: one internal task per execution. */
 export interface PreparedActKernelSeam {
-  startExperimentalPreparedActTask(input: WorkFoldExperimentalPreparedActTaskInput): WorkFoldExperimentalPreparedActTask;
+  startExperimentalPreparedActTask(input: AmpleFileExperimentalPreparedActTaskInput): AmpleFileExperimentalPreparedActTask;
   finishTask(taskId: string): boolean;
 }
 
@@ -265,7 +265,7 @@ export interface PreparedActEffect {
   detail?: string;
   checkpointId?: string;
   taskId?: string;
-  undoRef?: WorkFoldCliActUndoRef;
+  undoRef?: AmpleFileCliActUndoRef;
 }
 
 /**
@@ -286,19 +286,19 @@ export interface PreparedActAdapter<Context = unknown> {
   execute(act: PreparedAct, context: Context): Promise<PreparedActEffect | void>;
   /**
    * The capability-fence scope the execution reserves. Omit for the default
-   * (the act's work-folder, or global when the act names none). Return null when
+   * (the act's Connected Folder, or global when the act names none). Return null when
    * the bound execution path performs its own reservation — reserving twice
-   * for the same work-folder would deadlock against the server's mutation state.
+   * for the same Connected Folder would deadlock against the server's mutation state.
    */
   fenceScope?(act: PreparedAct): PreparedActFenceScope | null;
 }
 
 export type PreparedActAdapters = Partial<Record<PreparedActKind, PreparedActAdapter>>;
 
-/** Default fence scope: the act's work-folder when it names one, otherwise global. */
+/** Default fence scope: the act's Connected Folder when it names one, otherwise global. */
 export function preparedActFenceScope(act: PreparedAct): PreparedActFenceScope {
-  const workFolderId = preparedActWorkFolderId(act);
-  return workFolderId ? { scope: "work-folder", workFolderId } : { scope: "global" };
+  const connectedFolderId = preparedActConnectedFolderId(act);
+  return connectedFolderId ? { scope: "connected-folder", connectedFolderId } : { scope: "global" };
 }
 
 export interface PreparedActExecutorOptions {
@@ -337,12 +337,12 @@ export class PreparedActExecutor {
   async run(input: PreparedActRunInput): Promise<PreparedActEffect> {
     const { act } = input;
     const requestId = input.requestId.trim();
-    if (!requestId) throw new PreparedActError("INPUT_INVALID", "work-fold refused this act: a request id is required.");
+    if (!requestId) throw new PreparedActError("INPUT_INVALID", "AmpleFile refused this act: a request id is required.");
     const adapter = this.#adapters[act.kind] as PreparedActAdapter | undefined;
     if (!adapter) {
       throw new PreparedActError(
         "EXECUTION_UNAVAILABLE",
-        `work-fold cannot perform "${act.kind}" acts in this build; nothing was changed.`,
+        `AmpleFile cannot perform "${act.kind}" acts in this build; nothing was changed.`,
       );
     }
     const scope = adapter.fenceScope ? adapter.fenceScope(act) : preparedActFenceScope(act);
@@ -351,9 +351,9 @@ export class PreparedActExecutor {
       if (pinIssue) {
         throw new PreparedActError("PIN_MISMATCH", `This act no longer matches live state, so nothing was changed: ${pinIssue}`);
       }
-      const workFolderId = preparedActWorkFolderId(act);
+      const connectedFolderId = preparedActConnectedFolderId(act);
       const task = this.#kernel.startExperimentalPreparedActTask({
-        ...(workFolderId ? { workFolderId } : {}),
+        ...(connectedFolderId ? { connectedFolderId } : {}),
         requestId,
         kind: act.kind,
         actor: { kind: "system" },
@@ -453,20 +453,20 @@ function crossFieldIssue(
     if ((fields.source === undefined) === (fields.catalogId === undefined)) {
       return `${section} must name exactly one of source or catalogId.`;
     }
-    return scopedWorkFolderIssue(section, fields);
+    return scopedConnectedFolderIssue(section, fields);
   }
   if ((kind === "capability.skills.import" || kind === "capability.resource.enabled") && section === "parameters") {
-    return scopedWorkFolderIssue(section, fields);
+    return scopedConnectedFolderIssue(section, fields);
   }
   return null;
 }
 
-function scopedWorkFolderIssue(section: FieldSection, fields: Record<string, PreparedActFieldValue>): string | null {
-  if (fields.scope === "work-folder" && fields.workFolderId === undefined) {
-    return `${section}.workFolderId is required at work-folder scope.`;
+function scopedConnectedFolderIssue(section: FieldSection, fields: Record<string, PreparedActFieldValue>): string | null {
+  if (fields.scope === "connected-folder" && fields.connectedFolderId === undefined) {
+    return `${section}.connectedFolderId is required at Connected Folder scope.`;
   }
-  if (fields.scope === "everywhere" && fields.workFolderId !== undefined) {
-    return `${section}.workFolderId must be absent at Everywhere scope.`;
+  if (fields.scope === "everywhere" && fields.connectedFolderId !== undefined) {
+    return `${section}.connectedFolderId must be absent at Everywhere scope.`;
   }
   return null;
 }

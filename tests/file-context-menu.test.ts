@@ -4,7 +4,7 @@ import test from "node:test";
 import { nativeFileMenuItems, parseNativeFileMenuRequest } from "../desktop/src/file-context-menu.js";
 
 const fileRequest = {
-  workFolderId: "work-folder-1",
+  connectedFolderId: "connected-folder-1",
   path: "Reports/Q3.xlsx",
   kind: "file",
   capabilities: { open: true, attach: true, history: true, upload: false, rename: true, delete: true },
@@ -38,7 +38,7 @@ test("native folder menus expose only applicable fixed actions", () => {
     "open", "reveal", "copy-path", "separator", "new-folder", "upload-here", "refresh",
   ]);
   const promotable = parseNativeFileMenuRequest({ ...request, capabilities: { ...request.capabilities, worker: true } });
-  assert.deepEqual(nativeFileMenuItems(promotable).slice(-2).map((item) => item.type === "separator" ? "separator" : item.label), ["separator", "Make a work-folder"]);
+  assert.deepEqual(nativeFileMenuItems(promotable).slice(-2).map((item) => item.type === "separator" ? "separator" : item.label), ["separator", "Connect This Folder"]);
   assert.throws(() => parseNativeFileMenuRequest({ ...request, capabilities: { ...request.capabilities, worker: "yes" } }), /capabilities are invalid/);
   const root = parseNativeFileMenuRequest({ ...request, path: "", capabilities: { ...request.capabilities, upload: false } });
   assert.ok(nativeFileMenuItems(root).some((item) => item.type === "item" && item.command === "new-folder"));

@@ -21,20 +21,20 @@ import {
 } from "../../lib/pages";
 import { mountPageFrame, openPageLink, type PageFrameFailure } from "../../lib/page-frame-host";
 import { readStoredJsonValue, writeStoredJsonValue } from "../../lib/storage";
-import { changeTouchesFolder, subscribeWorkFolderFileChanges, type WorkFolderFileChange } from "../../lib/work-folder-file-events";
+import { changeTouchesFolder, subscribeConnectedFolderFileChanges, type ConnectedFolderFileChange } from "../../lib/connected-folder-file-events";
 import { usePageTables } from "../../hooks/usePageTables";
 import { PageDataView } from "./PageDataView";
-import type { WorkFolderSummary } from "../../types";
+import type { ConnectedFolderSummary } from "../../types";
 
 export type PageTabView = "preview" | "data";
 
 /**
  * A page tab (docs/pages.md, "Preview and test entries"): the page running in
- * its sandbox and the entries it saved in Preview. Bound to its work-folder
- * like every other tab; `path` is the page folder's work-folder-relative path.
+ * its sandbox and the entries it saved in Preview. Bound to its Connected Folder
+ * like every other tab; `path` is the page folder's Connected Folder–relative path.
  */
 export function PageTab({
-  workFolder,
+  connectedFolder,
   path,
   title,
   view,
@@ -44,7 +44,7 @@ export function PageTab({
   onViewChange,
   onTitleChange,
 }: {
-  workFolder: WorkFolderSummary;
+  connectedFolder: ConnectedFolderSummary;
   path: string;
   title: string;
   view: PageTabView;
@@ -72,7 +72,7 @@ export function PageTab({
 
   useEffect(() => {
     let cancelled = false;
-    client.inspect(workFolder.id, path).then((result) => {
+    client.inspect(connectedFolder.id, path).then((result) => {
       if (cancelled) return;
       setInspection(result);
       setStatus("ready");
@@ -85,13 +85,13 @@ export function PageTab({
       else { setStatus("error"); setLoadError(errorText(error)); }
     });
     return () => { cancelled = true; };
-  }, [client, path, revision, workFolder.id]);
+  }, [client, path, revision, connectedFolder.id]);
 
   // Edits to the page's files show up on reload: a hidden tab reloads when shown.
   useEffect(() => {
     if (fixtureMode) return;
     let timer: number | null = null;
-    const unsubscribe = subscribeWorkFolderFileChanges(workFolder.id, (change) => {
+    const unsubscribe = subscribeConnectedFolderFileChanges(connectedFolder.id, (change) => {
       if (!pageFileChange(change, path)) return;
       if (timer !== null) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
@@ -104,7 +104,7 @@ export function PageTab({
       if (timer !== null) window.clearTimeout(timer);
       unsubscribe();
     };
-  }, [fixtureMode, path, workFolder.id]);
+  }, [fixtureMode, path, connectedFolder.id]);
   useEffect(() => {
     if (!active || !staleRef.current) return;
     staleRef.current = false;
@@ -115,7 +115,7 @@ export function PageTab({
 
   const tables = useMemo(() => declaredTables(inspection), [inspection]);
   const ready = active && status === "ready";
-  const data = usePageTables({ client, workFolderId: workFolder.id, path, enabled: ready, revision, viewId: dataViewId });
+  const data = usePageTables({ client, connectedFolderId: connectedFolder.id, path, enabled: ready, revision, viewId: dataViewId });
   const newCount = countNew(data.summaries);
   // A page that saves nothing has no Data view. Tables that were removed from
   // page.json but still hold entries keep it.
@@ -169,7 +169,7 @@ export function PageTab({
         <>
           <div id={`${ids}-preview-panel`} className="page-tab-panel" role={hasData ? "tabpanel" : undefined} aria-labelledby={hasData ? `${ids}-preview-tab` : undefined} hidden={hasData && view !== "preview"}>
             <PagePreview
-              workFolderId={workFolder.id}
+              connectedFolderId={connectedFolder.id}
               path={path}
               title={shownTitle}
               client={client}
@@ -181,7 +181,7 @@ export function PageTab({
           <div id={`${ids}-data-panel`} className="page-tab-panel" role="tabpanel" aria-labelledby={`${ids}-data-tab`} hidden={!hasData || view !== "data"}>
             {dataOpened ? (
               <PageDataView
-                workFolderId={workFolder.id}
+                connectedFolderId={connectedFolder.id}
                 path={path}
                 title={shownTitle}
                 client={client}
@@ -205,7 +205,7 @@ function countNew(summaries: readonly PageTableSummary[] | null): number {
 }
 
 /** Changes that can alter what the page shows: its own files, not hidden ones or a data.sqlite beside them. */
-export function pageFileChange(change: WorkFolderFileChange, path: string): boolean {
+export function pageFileChange(change: ConnectedFolderFileChange, path: string): boolean {
   if (!changeTouchesFolder(change, path)) return false;
   if (change.path === null || !change.path.startsWith(`${path}/`)) return true;
   const inside = change.path.slice(path.length + 1).split("/");
@@ -216,7 +216,7 @@ export function pageFileChange(change: WorkFolderFileChange, path: string): bool
 type FrameState = "starting" | "running" | PageFrameFailure;
 
 function PagePreview({
-  workFolderId,
+  connectedFolderId,
   path,
   title,
   client,
@@ -224,7 +224,7 @@ function PagePreview({
   viewId,
   onReload,
 }: {
-  workFolderId: string;
+  connectedFolderId: string;
   path: string;
   title: string;
   client: PagesClient;
@@ -233,7 +233,7 @@ function PagePreview({
   viewId: string;
   onReload: () => void;
 }) {
-  const roleKey = `work-fold.page.viewing-as:${workFolderId}:${path}`;
+  const roleKey = `amplefile.page.viewing-as:${connectedFolderId}:${path}`;
   const [role, setRole] = useState<PageViewerRole>(() => readStoredJsonValue<PageViewerRole>(roleKey, (value) => value === "owner" ? "owner" : "visitor", "visitor"));
   const [visitor, setVisitor] = useState<string | null>(null);
   const [documentState, setDocumentState] = useState<{ document: PageDocument; viewer: PageViewer; key: number } | null>(null);
@@ -255,8 +255,8 @@ function PagePreview({
     setLoading(true);
     setFailure(null);
     void Promise.all([
-      client.document(workFolderId, path),
-      role === "visitor" && !visitorRef.current ? client.visitor(workFolderId, path, false) : Promise.resolve(visitorRef.current),
+      client.document(connectedFolderId, path),
+      role === "visitor" && !visitorRef.current ? client.visitor(connectedFolderId, path, false) : Promise.resolve(visitorRef.current),
     ]).then(([document, currentVisitor]) => {
       if (cancelled || key !== loadKeyRef.current) return;
       if (role === "visitor" && !currentVisitor) throw new Error("The preview visitor couldn't be set up. Reload to try again.");
@@ -272,7 +272,7 @@ function PagePreview({
     return () => { cancelled = true; };
     // The page is read with page.json, so a page and its tables always match.
     // `visitor` itself is read through its ref: a new visitor reloads through `reloads`.
-  }, [client, inspection, path, reloads, role, workFolderId]);
+  }, [client, inspection, path, reloads, role, connectedFolderId]);
 
   function chooseRole(next: PageViewerRole) {
     if (next === role) return;
@@ -284,7 +284,7 @@ function PagePreview({
     if (changingVisitor) return;
     setChangingVisitor(true);
     try {
-      const fresh = await client.visitor(workFolderId, path, true);
+      const fresh = await client.visitor(connectedFolderId, path, true);
       visitorRef.current = fresh;
       setVisitor(fresh);
       if (role !== "visitor") { setRole("visitor"); writeStoredJsonValue(roleKey, "visitor"); }
@@ -339,7 +339,7 @@ function PagePreview({
           <>
             <PageFrame
               key={documentState.key}
-              workFolderId={workFolderId}
+              connectedFolderId={connectedFolderId}
               path={path}
               title={title}
               html={documentState.document.html}
@@ -382,7 +382,7 @@ function PageProblemList({ problems, className }: { problems: readonly PageProbl
 }
 
 function PageFrame({
-  workFolderId,
+  connectedFolderId,
   path,
   title,
   html,
@@ -392,7 +392,7 @@ function PageFrame({
   viewId,
   onState,
 }: {
-  workFolderId: string;
+  connectedFolderId: string;
   path: string;
   title: string;
   html: string;
@@ -416,14 +416,14 @@ function PageFrame({
       html,
       owner: viewer.role === "owner",
       tables,
-      call: (call) => client.call(workFolderId, path, viewer, call),
+      call: (call) => client.call(connectedFolderId, path, viewer, call),
       openLink: openPageLink,
       onLoaded: () => onStateRef.current("running"),
       onFailed: (reason) => onStateRef.current(reason),
-      onMutated: (table) => announcePageDataChange({ workFolderId, page: path, table, source: viewId }),
+      onMutated: (table) => announcePageDataChange({ connectedFolderId, page: path, table, source: viewId }),
     });
     const unsubscribe = subscribePageDataChanges((change) => {
-      if (change.workFolderId === workFolderId && change.page === path && change.source !== viewId) handle.notifyChanged(change.table);
+      if (change.connectedFolderId === connectedFolderId && change.page === path && change.source !== viewId) handle.notifyChanged(change.table);
     });
     return () => { unsubscribe(); handle.destroy(); };
   }, []);

@@ -28,7 +28,7 @@ void app.whenReady()
 
 async function runSmoke() {
   await verifyPreload("preload.cjs", false);
-  await verifyPreload("work-fold-agent-popover-preload.cjs", true);
+  await verifyPreload("amplefile-agent-popover-preload.cjs", true);
   await verifyDiagnosticPreload();
 }
 
@@ -43,42 +43,42 @@ async function verifyDiagnosticPreload() {
       contextIsolation: true, nodeIntegration: false, sandbox: true,
     },
   });
-  ipcMain.handle("work-fold:diagnostics:request", (event, input) => {
+  ipcMain.handle("amplefile:diagnostics:request", (event, input) => {
     assert.equal(event.sender, window.webContents);
     requests.push(input);
     return { enabled: false, records: [] };
   });
-  ipcMain.handle("work-fold:diagnostics:close", () => { closed = true; });
+  ipcMain.handle("amplefile:diagnostics:close", () => { closed = true; });
   window.webContents.on("console-message", (details) => {
     if (details.level === "warning" || details.level === "error") errors.push(details.message);
   });
   try {
     await window.loadURL(`data:text/html,${encodeURIComponent('<meta http-equiv="Content-Security-Policy" content="default-src \'none\'">')}`);
     assert.deepEqual(await window.webContents.executeJavaScript(`({
-      keys: Object.keys(window.workFoldDiagnostics).sort(),
-      desktop: typeof window.workFoldDesktop,
+      keys: Object.keys(window.ampleFileDiagnostics).sort(),
+      desktop: typeof window.ampleFileDesktop,
       node: typeof window.require,
       process: typeof window.process,
     })`), { keys: ["clipboard", "close", "request"], desktop: "undefined", node: "undefined", process: "undefined" });
-    await verifyClipboardBridge(window, "workFoldDiagnostics");
+    await verifyClipboardBridge(window, "ampleFileDiagnostics");
     assert.deepEqual(requests, [], "loading the developer preload must not enable recording");
-    assert.deepEqual(await window.webContents.executeJavaScript('window.workFoldDiagnostics.request({path:"/api/model-context"})'), { enabled: false, records: [] });
+    assert.deepEqual(await window.webContents.executeJavaScript('window.ampleFileDiagnostics.request({path:"/api/model-context"})'), { enabled: false, records: [] });
     assert.deepEqual(requests, [{ path: "/api/model-context" }]);
-    await window.webContents.executeJavaScript("window.workFoldDiagnostics.close()");
+    await window.webContents.executeJavaScript("window.ampleFileDiagnostics.close()");
     assert.equal(closed, true);
     assert.deepEqual(errors, []);
   } finally {
-    ipcMain.removeHandler("work-fold:diagnostics:request");
-    ipcMain.removeHandler("work-fold:diagnostics:close");
+    ipcMain.removeHandler("amplefile:diagnostics:request");
+    ipcMain.removeHandler("amplefile:diagnostics:close");
     window.destroy();
   }
 }
 
-async function verifyPreload(filename, workFoldAgentOnly) {
+async function verifyPreload(filename, ampleFileAgentOnly) {
   const errors = [];
   const openWithRequests = [];
   const automationRequests = [];
-  const proposalPath = "/temporary work-fold agent/hourly.work-fold-automation.json";
+  const proposalPath = "/temporary AmpleFile agent/hourly.amplefile-automation.json";
   const pendingProposals = { proposals: [{ valid: true, path: proposalPath, title: "Hourly hello" }], truncated: false };
   const window = new BrowserWindow({
     show: false,
@@ -99,18 +99,18 @@ async function verifyPreload(filename, workFoldAgentOnly) {
   window.webContents.on("console-message", (details) => {
     if (details.level === "warning" || details.level === "error") errors.push(details.message);
   });
-  if (!workFoldAgentOnly) {
-    ipcMain.handle("work-fold:work-folder:open-path-with", (event, request) => {
+  if (!ampleFileAgentOnly) {
+    ipcMain.handle("amplefile:connected-folder:open-path-with", (event, request) => {
       assert.equal(event.sender, window.webContents);
       openWithRequests.push(request);
       return { opened: false, canceled: true, appName: null };
     });
-    ipcMain.handle("work-fold:automations:proposals", (event, ...args) => {
+    ipcMain.handle("amplefile:automations:proposals", (event, ...args) => {
       assert.equal(event.sender, window.webContents);
       automationRequests.push({ command: "proposals", args });
       return pendingProposals;
     });
-    ipcMain.handle("work-fold:automations:enable-proposal", (event, path) => {
+    ipcMain.handle("amplefile:automations:enable-proposal", (event, path) => {
       assert.equal(event.sender, window.webContents);
       automationRequests.push({ command: "enable-proposal", path });
       return { automationId: "automation-smoke-test", enabled: true, alreadyEnabled: false };
@@ -121,7 +121,7 @@ async function verifyPreload(filename, workFoldAgentOnly) {
       + "<title>preload smoke</title>";
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(document)}`);
     const bridge = await window.webContents.executeJavaScript(`(() => {
-      const value = window.workFoldDesktop;
+      const value = window.ampleFileDesktop;
       return {
         desktop: value?.desktop,
         apiBaseUrl: value?.api?.baseUrl,
@@ -131,9 +131,9 @@ async function verifyPreload(filename, workFoldAgentOnly) {
         platform: value?.app?.platform,
         iconUrl: value?.app?.iconUrl,
         material: value?.window?.material,
-        hasWorkFoldAgent: Boolean(value?.workFoldAgent),
-        hasWorkFolder: Boolean(value?.workFolder),
-        hasOpenWith: typeof value?.workFolder?.openPathWith === "function",
+        hasAmpleFileAgent: Boolean(value?.ampleFileAgent),
+        hasConnectedFolder: Boolean(value?.connectedFolder),
+        hasOpenWith: typeof value?.connectedFolder?.openPathWith === "function",
         hasAutomations: Boolean(value?.automations),
         hasAutomationProposals: typeof value?.automations?.proposals === "function",
         hasAutomationEnableProposal: typeof value?.automations?.enableProposal === "function",
@@ -152,34 +152,34 @@ async function verifyPreload(filename, workFoldAgentOnly) {
       platform: process.platform,
       iconUrl: `${expected.internalProtocol}://app/_desktop-assets/icon-32.png`,
       material: "vibrancy",
-      hasWorkFoldAgent: workFoldAgentOnly,
-      hasWorkFolder: !workFoldAgentOnly,
-      hasOpenWith: !workFoldAgentOnly,
-      hasAutomations: !workFoldAgentOnly,
-      hasAutomationProposals: !workFoldAgentOnly,
-      hasAutomationEnableProposal: !workFoldAgentOnly,
-      hasShell: !workFoldAgentOnly,
+      hasAmpleFileAgent: ampleFileAgentOnly,
+      hasConnectedFolder: !ampleFileAgentOnly,
+      hasOpenWith: !ampleFileAgentOnly,
+      hasAutomations: !ampleFileAgentOnly,
+      hasAutomationProposals: !ampleFileAgentOnly,
+      hasAutomationEnableProposal: !ampleFileAgentOnly,
+      hasShell: !ampleFileAgentOnly,
       // The built-in browser's tabs belong to the main window only.
-      hasBrowser: !workFoldAgentOnly,
+      hasBrowser: !ampleFileAgentOnly,
     });
-    await verifyClipboardBridge(window, "workFoldDesktop");
-    if (!workFoldAgentOnly) {
+    await verifyClipboardBridge(window, "ampleFileDesktop");
+    if (!ampleFileAgentOnly) {
       assert.deepEqual(automationRequests, [], "loading the preload must not read or enable a proposal");
-      assert.deepEqual(await window.webContents.executeJavaScript("window.workFoldDesktop.automations.proposals()"), pendingProposals);
-      assert.deepEqual(await window.webContents.executeJavaScript(`window.workFoldDesktop.automations.enableProposal(${JSON.stringify(proposalPath)})`), {
+      assert.deepEqual(await window.webContents.executeJavaScript("window.ampleFileDesktop.automations.proposals()"), pendingProposals);
+      assert.deepEqual(await window.webContents.executeJavaScript(`window.ampleFileDesktop.automations.enableProposal(${JSON.stringify(proposalPath)})`), {
         automationId: "automation-smoke-test", enabled: true, alreadyEnabled: false,
       });
       assert.deepEqual(automationRequests, [{ command: "proposals", args: [] }, { command: "enable-proposal", path: proposalPath }]);
-      assert.deepEqual(await window.webContents.executeJavaScript('window.workFoldDesktop.workFolder.openPathWith("work-folder-fixture", "files/a b.pdf")'), {
+      assert.deepEqual(await window.webContents.executeJavaScript('window.ampleFileDesktop.connectedFolder.openPathWith("connected-folder-fixture", "files/a b.pdf")'), {
         opened: false, canceled: true, appName: null,
       });
-      assert.deepEqual(openWithRequests, [{ workFolderId: "work-folder-fixture", path: "files/a b.pdf" }]);
+      assert.deepEqual(openWithRequests, [{ connectedFolderId: "connected-folder-fixture", path: "files/a b.pdf" }]);
     }
   } finally {
-    if (!workFoldAgentOnly) {
-      ipcMain.removeHandler("work-fold:work-folder:open-path-with");
-      ipcMain.removeHandler("work-fold:automations:proposals");
-      ipcMain.removeHandler("work-fold:automations:enable-proposal");
+    if (!ampleFileAgentOnly) {
+      ipcMain.removeHandler("amplefile:connected-folder:open-path-with");
+      ipcMain.removeHandler("amplefile:automations:proposals");
+      ipcMain.removeHandler("amplefile:automations:enable-proposal");
     }
     window.destroy();
   }
@@ -187,7 +187,7 @@ async function verifyPreload(filename, workFoldAgentOnly) {
 
 async function verifyClipboardBridge(window, namespace) {
   const writes = [];
-  ipcMain.handle("work-fold:clipboard:write", (event, content) => {
+  ipcMain.handle("amplefile:clipboard:write", (event, content) => {
     assert.equal(event.sender, window.webContents);
     assert.equal(event.senderFrame.routingId, window.webContents.mainFrame.routingId);
     writeDesktopClipboard(content, (value) => writes.push(value));
@@ -204,10 +204,10 @@ async function verifyClipboardBridge(window, namespace) {
     await assert.rejects(window.webContents.executeJavaScript(`window.${namespace}.clipboard.write({text:42})`), /Invalid clipboard content/);
     assert.equal(writes.length, 2, "invalid data must not touch the clipboard");
   } finally {
-    ipcMain.removeHandler("work-fold:clipboard:write");
+    ipcMain.removeHandler("amplefile:clipboard:write");
   }
 }
 
 function rendererArgument(name, value) {
-  return `--work-fold-${name}=${encodeURIComponent(value)}`;
+  return `--amplefile-${name}=${encodeURIComponent(value)}`;
 }

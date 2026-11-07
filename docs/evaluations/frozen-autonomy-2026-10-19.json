@@ -16,7 +16,7 @@
     "scripts/harness-eval/frozen.ts": "e6d05bb28459b3892a745a10d3be42329e92f5bf1493f33f18c173be40cea568",
     "scripts/harness-eval/repeat.ts": "009c41e5f059829bbdae04f906345c0f9db14c8c9f6bb03e65666044cf7b5df1",
     "scripts/helper-eval/host.ts": "b6e28880467255a31e6e04350134543275b67fec82ca2a18398a4d5ef7b94505",
-    "scripts/work-fold-drive.ts": "dfcf7c004ebf4945a6fef2f8ecd25aca499d4c156e3f4578cd0cf2ed60b798ab"
+    "scripts/amplefile-drive.ts": "dfcf7c004ebf4945a6fef2f8ecd25aca499d4c156e3f4578cd0cf2ed60b798ab"
   },
   "precisionManifestSha256": "53fe687ef8f1a9c60f2308da2d9f6e75d4a6f52994e1fdaefa0e1607e976679f",
   "precisionCheckerFiles": {

@@ -23,7 +23,7 @@ export interface PageProblem {
 /** What `GET …/pages/inspect` and `pages validate` report about one page folder. */
 export interface PageInspection {
   page: {
-    /** The page folder's work-folder-relative path. */
+    /** The page folder's Connected Folder–relative path. */
     path: string;
     title: string;
     description: string | null;

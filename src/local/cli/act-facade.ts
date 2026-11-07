@@ -4,60 +4,60 @@ import type { CheckCorrectionRecord } from "../checks/check-corrections.js";
  * interactive local API implements this interface inside `startLocalApi`
  * (where the chat runtime state lives) and exposes it on `LocalApiHandle`;
  * the desktop CLI host receives it through a getter that answers null while
- * the interactive app is not running. Methods throw `WorkFoldCliError` so
+ * the interactive app is not running. Methods throw `AmpleFileCliError` so
  * exit codes map without translation.
  */
 
 import type {
-  WorkFoldCheckDecision,
-  WorkFoldCheckDecisionKind,
-  WorkFoldCheckFinding,
-  WorkFoldCheckRunRecord,
+  AmpleFileCheckDecision,
+  AmpleFileCheckDecisionKind,
+  AmpleFileCheckFinding,
+  AmpleFileCheckRunRecord,
 } from "../checks/check-types.js";
-import type { WorkFoldCliActLegacySurface, WorkFoldCliActSurface } from "./act-receipts.js";
-import type { WorkFoldOverviewSnapshot } from "../overview.js";
-import type { WorkFoldAgentAttachmentDisposition, WorkFoldAgentAttachmentRef } from "../work-fold-agent-attachments.js";
+import type { AmpleFileCliActLegacySurface, AmpleFileCliActSurface } from "./act-receipts.js";
+import type { AmpleFileOverviewSnapshot } from "../overview.js";
+import type { AmpleFileAgentAttachmentDisposition, AmpleFileAgentAttachmentRef } from "../amplefile-agent-attachments.js";
 import type {
-  WorkFoldRequestAction,
-  WorkFoldRequestKind,
-  WorkFoldRequestLimitHit,
-  WorkFoldRequestState,
-  WorkFoldRequestSurface,
-  WorkFoldRequestTurnState,
-  WorkFoldRequestUsage,
-  WorkFoldResultEnvelope,
-  WorkFoldResultOutcome,
+  AmpleFileRequestAction,
+  AmpleFileRequestKind,
+  AmpleFileRequestLimitHit,
+  AmpleFileRequestState,
+  AmpleFileRequestSurface,
+  AmpleFileRequestTurnState,
+  AmpleFileRequestUsage,
+  AmpleFileResultEnvelope,
+  AmpleFileResultOutcome,
 } from "../requests/request-records.js";
-import type { WorkFolderChatMatch, WorkFolderFileMatch, WorkFolderSearchCoverage } from "../search.js";
+import type { ConnectedFolderChatMatch, ConnectedFolderFileMatch, ConnectedFolderSearchCoverage } from "../search.js";
 import type { HistoryFileComparison, HistoryFileRead, HistoryFileReadOptions, HistoryPageOptions } from "../../shared/history-review.js";
 
-export interface WorkFoldActWorkFolderRef {
+export interface AmpleFileActConnectedFolderRef {
   id: string;
   name: string;
-  workFolderRoot: string;
+  connectedFolderRoot: string;
 }
 
 /** One Recently deleted item, as the act lane reports it: identifiers and paths only. */
-export interface WorkFoldActRecentlyDeletedEntry {
+export interface AmpleFileActRecentlyDeletedEntry {
   id: string;
-  kind: "file" | "folder" | "work-folder" | "skill" | "app-storage" | "app-retained" | "app-release" | "app-studio";
+  kind: "file" | "folder" | "connected-folder" | "skill" | "app-storage" | "app-retained" | "app-release" | "app-studio";
   reason:
     | "files.delete"
     | "agent.chat.delete"
     | "chats.delete"
-    | "work-folders.delete"
+    | "connected-folders.delete"
     | "skills.remove"
     | "apps.remove"
-    | "apps.work-folder.removed"
+    | "apps.connected-folder.removed"
     | "apps.storage.clear"
     | "apps.retained.purge"
     | "apps.uninstall.purge"
     | "apps.release.delete";
-  workFolderId: string;
-  workFolderName?: string;
-  /** skill only: the scope it goes back into. An Everywhere Skill names the work-fold agent's scope as its work-folder. */
-  scope?: "everywhere" | "work-folder";
-  /** work-folder-relative path, a deleted work-folder's original folder path, a Skill's path inside its scope's skills folder, `<appId>/<namespace>`, `<projectId>/<releaseDigest>`, or an App Project id (App Studio history). */
+  connectedFolderId: string;
+  connectedFolderName?: string;
+  /** skill only: the scope it goes back into. An Everywhere Skill names the AmpleFile agent's scope as its Connected Folder. */
+  scope?: "everywhere" | "connected-folder";
+  /** Connected Folder–relative path, a deleted Connected Folder's original folder path, a Skill's path inside its scope's skills folder, `<appId>/<namespace>`, `<projectId>/<releaseDigest>`, or an App Project id (App Studio history). */
   originalPath: string;
   name: string;
   sizeBytes: number;
@@ -66,7 +66,7 @@ export interface WorkFoldActRecentlyDeletedEntry {
   restoreBy: string;
   receiptId: string | null;
   uncovered?: Array<{ path: string; reason: "too_large" | "unreadable" | "symbolic_link" | "excluded" }>;
-  /** A tree holding records from the earlier Workspace product; work-fold never erases those. */
+  /** A tree holding records from the earlier Workspace product; AmpleFile never erases those. */
   held?: { reason: "legacy-metadata" | "unreadable"; noticedAt: string };
   /**
    * `in-place` goes back where it came from; `save-only` can only be written
@@ -78,12 +78,12 @@ export interface WorkFoldActRecentlyDeletedEntry {
 }
 
 /** The Recently deleted item a destroying verb produced. */
-export interface WorkFoldActRecentlyDeletedRef {
+export interface AmpleFileActRecentlyDeletedRef {
   entryId: string;
   restoreBy: string;
 }
 
-export interface WorkFoldActConversationRef {
+export interface AmpleFileActConversationRef {
   id: string;
   title: string;
   createdAt: string;
@@ -92,25 +92,25 @@ export interface WorkFoldActConversationRef {
   snoozedUntil: string | null;
 }
 
-export type WorkFoldActChatState = "idle" | "running" | "compacting";
+export type AmpleFileActChatState = "idle" | "running" | "compacting";
 
 /**
  * Task-scoped view of one accepted agent turn. `unknown` means the id was
  * never accepted here or has aged out of the bounded durable turn journal;
  * transcripts remain the long-lived content authority.
  */
-export type WorkFoldActTurnState = "running" | "succeeded" | "failed" | "aborted" | "unknown";
+export type AmpleFileActTurnState = "running" | "succeeded" | "failed" | "aborted" | "unknown";
 
-export interface WorkFoldActTurnStatus {
+export interface AmpleFileActTurnStatus {
   taskId: string;
-  state: WorkFoldActTurnState;
+  state: AmpleFileActTurnState;
   conversationId: string | null;
   messageId: string | null;
   error: string | null;
   endedAt: string | null;
 }
 
-export interface WorkFoldActChatMessage {
+export interface AmpleFileActChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
@@ -123,7 +123,7 @@ export interface WorkFoldActChatMessage {
  * as the act's undo reference so the inverse verb (re-archive, re-snooze,
  * resume) can be chosen from the receipt alone.
  */
-export interface WorkFoldActChatLifecycleState {
+export interface AmpleFileActChatLifecycleState {
   archivedAt: string | null;
   snoozedUntil: string | null;
 }
@@ -133,7 +133,7 @@ export interface WorkFoldActChatLifecycleState {
  * returns manifest summaries here; explicit history read/diff commands select
  * bounded file content separately.
  */
-export interface WorkFoldActCheckpointSummary {
+export interface AmpleFileActCheckpointSummary {
   checkpointId: string;
   createdAt: string;
   label?: string;
@@ -144,8 +144,8 @@ export interface WorkFoldActCheckpointSummary {
   skippedFileCount: number;
 }
 
-/** One captured version of a work-folder file, addressable by content hash. */
-export interface WorkFoldActFileVersionRef {
+/** One captured version of a Connected Folder file, addressable by content hash. */
+export interface AmpleFileActFileVersionRef {
   path: string;
   hashSha256: string;
   sizeBytes: number;
@@ -165,7 +165,7 @@ export interface WorkFoldActFileVersionRef {
  * travels beside it as `state`: `partial` reads here as `done` and `expired`
  * as `stopped`.
  */
-export type WorkFoldActAgentRequestPhase =
+export type AmpleFileActAgentRequestPhase =
   | "working"
   | "needs_you"
   | "handed_off"
@@ -173,48 +173,48 @@ export type WorkFoldActAgentRequestPhase =
   | "failed"
   | "stopped";
 
-export interface WorkFoldActAgentChildStatus {
+export interface AmpleFileActAgentChildStatus {
   taskId: string;
-  workFolderId: string;
-  workFolderName: string;
+  connectedFolderId: string;
+  connectedFolderName: string;
   conversationId: string;
-  state: WorkFoldActTurnState;
+  state: AmpleFileActTurnState;
   error: string | null;
   /** Visible files observed changing between this turn's History captures. */
   files?: string[];
 }
 
 /** One attachment's accounted outcome in a request view: `placed`, `registered`, or `unrecorded`. */
-export interface WorkFoldActAttachmentDisposition {
-  attachment: WorkFoldAgentAttachmentRef;
-  status: WorkFoldAgentAttachmentDisposition["status"];
-  workFolderId?: string;
-  workFolderName?: string;
+export interface AmpleFileActAttachmentDisposition {
+  attachment: AmpleFileAgentAttachmentRef;
+  status: AmpleFileAgentAttachmentDisposition["status"];
+  connectedFolderId?: string;
+  connectedFolderName?: string;
   copied?: string[];
   checkpointId?: string | null;
 }
 
-export interface WorkFoldActAgentRequest {
+export interface AmpleFileActAgentRequest {
   /** The request's newest turn; a continued request names its latest turn here. */
   taskId: string;
   conversationId: string;
-  phase: WorkFoldActAgentRequestPhase;
+  phase: AmpleFileActAgentRequestPhase;
   startedAt: string;
   endedAt: string | null;
   error: string | null;
   content: string;
-  attachments: WorkFoldAgentAttachmentRef[];
-  dispositions: WorkFoldActAttachmentDisposition[];
-  actions: WorkFoldRequestAction[];
-  children: WorkFoldActAgentChildStatus[];
+  attachments: AmpleFileAgentAttachmentRef[];
+  dispositions: AmpleFileActAttachmentDisposition[];
+  actions: AmpleFileRequestAction[];
+  children: AmpleFileActAgentChildStatus[];
   reply: { messageId: string; content: string } | null;
   // --- the durable request record beneath the phase (F25), additive.
   requestId: string;
-  kind: WorkFoldRequestKind;
+  kind: AmpleFileRequestKind;
   rootId: string;
-  state: WorkFoldRequestState;
+  state: AmpleFileRequestState;
   deadline: string | null;
-  limitHit: WorkFoldRequestLimitHit | null;
+  limitHit: AmpleFileRequestLimitHit | null;
   /** Bounded: ids and states, never the question text. */
   questions: Array<{
     questionId: string;
@@ -228,16 +228,16 @@ export interface WorkFoldActAgentRequest {
   results: Array<{
     resultId: string;
     taskId: string;
-    outcome: WorkFoldResultOutcome;
+    outcome: AmpleFileResultOutcome;
     recordedAt: string;
     fileCount: number;
   }>;
 }
 
-export interface WorkFoldActCheckTaskStatus {
+export interface AmpleFileActCheckTaskStatus {
   taskId: string;
   runId: string | null;
-  state: WorkFoldCheckRunRecord["state"] | "unknown";
+  state: AmpleFileCheckRunRecord["state"] | "unknown";
   startedAt: string | null;
   endedAt: string | null;
   error: string | null;
@@ -248,18 +248,18 @@ export interface WorkFoldActCheckTaskStatus {
  * shows it. A request ref is the compact form every collaboration verb returns
  * beside its own result; the summary and detail forms are what `requests
  * list|show` read. `--json` carries a result's summary and data whole; the
- * human renderer clamps them. Nothing here reaches a work-folder transcript.
+ * human renderer clamps them. Nothing here reaches a Connected Folder transcript.
  */
-export interface WorkFoldActRequestRef {
+export interface AmpleFileActRequestRef {
   id: string;
   rootId: string;
-  kind: WorkFoldRequestKind;
-  state: WorkFoldRequestState;
+  kind: AmpleFileRequestKind;
+  state: AmpleFileRequestState;
   /** 0 for a root. */
   depth: number;
-  /** Null exactly for the work-fold agent scope. */
-  workFolderId: string | null;
-  workFolderName: string | null;
+  /** Null exactly for the AmpleFile agent scope. */
+  connectedFolderId: string | null;
+  connectedFolderName: string | null;
   conversationId: string;
   deadline: string | null;
   openQuestions: number;
@@ -267,7 +267,7 @@ export interface WorkFoldActRequestRef {
   results: number;
 }
 
-export interface WorkFoldActQuestionRef {
+export interface AmpleFileActQuestionRef {
   asynchronous?: boolean;
   questionId: string;
   requestId: string;
@@ -291,7 +291,7 @@ export interface WorkFoldActQuestionRef {
  * owed. This is a fact about the task's request, never a turn state — the
  * turn may still be running or may already have ended.
  */
-export interface WorkFoldActWaitingRef {
+export interface AmpleFileActWaitingRef {
   questionId: string;
   requestId: string;
   respondent: "person" | "parent";
@@ -300,44 +300,44 @@ export interface WorkFoldActWaitingRef {
   expiresAt: string | null;
 }
 
-export interface WorkFoldActRequestSummary extends WorkFoldActRequestRef {
-  surface: WorkFoldRequestSurface;
+export interface AmpleFileActRequestSummary extends AmpleFileActRequestRef {
+  surface: AmpleFileRequestSurface;
   createdAt: string;
   updatedAt: string;
   settledAt: string | null;
   /** The request's newest turn. */
   taskId: string;
   continuationCount: number;
-  limitHit: WorkFoldRequestLimitHit | null;
+  limitHit: AmpleFileRequestLimitHit | null;
 }
 
-export interface WorkFoldActRequestResult {
+export interface AmpleFileActRequestResult {
   resultId: string;
   taskId: string;
   recordedAt: string;
   receiptId: string;
-  outcome: WorkFoldResultOutcome;
+  outcome: AmpleFileResultOutcome;
   fileCount: number;
   /** The whole envelope; null when its file could not be read back, with `damaged` saying why. */
-  envelope: WorkFoldResultEnvelope | null;
+  envelope: AmpleFileResultEnvelope | null;
   damaged?: string;
 }
 
-export interface WorkFoldActRequestDetail extends WorkFoldActRequestSummary {
+export interface AmpleFileActRequestDetail extends AmpleFileActRequestSummary {
   parentRequestId: string | null;
   parentTaskId: string | null;
   content: string;
   turns: Array<{
     taskId: string;
     role: "origin" | "continuation";
-    state: WorkFoldRequestTurnState;
+    state: AmpleFileRequestTurnState;
     acceptedAt: string;
     settledAt: string | null;
     error: string | null;
   }>;
-  questions: WorkFoldActQuestionRef[];
-  resultRecords: WorkFoldActRequestResult[];
-  usage: WorkFoldRequestUsage;
+  questions: AmpleFileActQuestionRef[];
+  resultRecords: AmpleFileActRequestResult[];
+  usage: AmpleFileRequestUsage;
   stopRequestedAt: string | null;
   reconciledAt: string | null;
   /** Background jobs this request's turns started (docs/background-jobs.md). */
@@ -351,14 +351,14 @@ export interface WorkFoldActRequestDetail extends WorkFoldActRequestSummary {
     exitCode: number | null;
   }>;
   /** Every request directly below this one, each with its own subtree. */
-  childRequests: WorkFoldActRequestDetail[];
+  childRequests: AmpleFileActRequestDetail[];
 }
 
 /**
  * One background job (docs/background-jobs.md, F31). The command and its
  * folder are the caller's own; output text arrives only from `jobs output`.
  */
-export interface WorkFoldActJobRef {
+export interface AmpleFileActJobRef {
   interactive?: boolean;
   service?: boolean;
   jobId: string;
@@ -388,7 +388,7 @@ export interface WorkFoldActJobRef {
   delivery: { at: string; by: "read" | "turn_context" | "follow_up"; taskId: string | null } | null;
 }
 
-export interface WorkFoldActJobOutput {
+export interface AmpleFileActJobOutput {
   text: string;
   fromLine: number;
   toLine: number;
@@ -399,22 +399,22 @@ export interface WorkFoldActJobOutput {
   nextOffset: number;
 }
 
-/** Registered-work-folder storage kind, mirrored from the work-folder registry. */
-export type WorkFoldActWorkFolderStorage = "managed" | "linked";
+/** Registered Connected Folder storage kind, mirrored from the Connected Folder registry. */
+export type AmpleFileActConnectedFolderStorage = "managed" | "linked";
 
 /**
  * App Studio presentation values, exactly the pane's typed form: a title plus
  * optional description and icon id. The act verb reads them from a typed JSON
  * file resolved host-side, never from free-form argv.
  */
-export interface WorkFoldActAppPresentation {
+export interface AmpleFileActAppPresentation {
   title: string;
   description: string | null;
   icon: string | null;
 }
 
 /** Bounded projection of one immutable content-addressed App Release record. */
-export interface WorkFoldActAppReleaseRef {
+export interface AmpleFileActAppReleaseRef {
   releaseDigest: string;
   displayVersion: string;
   state: "prepared" | "published";
@@ -429,21 +429,21 @@ export interface WorkFoldActAppReleaseRef {
  * content identity instead of inferring an update-versus-rollback label the
  * service does not record.
  */
-export interface WorkFoldActAppOperationRef {
+export interface AmpleFileActAppOperationRef {
   operationId: string;
   kind: "install" | "update";
   releaseDigest: string;
   runtimeInstanceId: string;
-  targetWorkFolderId: string;
+  targetConnectedFolderId: string;
   preparedAt: string;
   fromReleaseDigest?: string;
   continuityPolicy?: "eligible" | "reset";
 }
 
 /** Bounded projection of one release-backed App Instance. */
-export interface WorkFoldActAppInstanceRef {
+export interface AmpleFileActAppInstanceRef {
   runtimeInstanceId: string;
-  workFolderId: string;
+  connectedFolderId: string;
   releaseDigest: string;
   displayVersion: string;
 }
@@ -454,7 +454,7 @@ export interface WorkFoldActAppInstanceRef {
  * needs; the full review (manifest, permissions, file counts) stays on the
  * desktop review dialog.
  */
-export interface WorkFoldActAppProposalRef {
+export interface AmpleFileActAppProposalRef {
   id: string;
   status: "pending" | "installed" | "failed" | "dismissed" | "revision-changed";
   sourcePath: string;
@@ -467,7 +467,7 @@ export interface WorkFoldActAppProposalRef {
 }
 
 /** One declared tool of an installed app, with the schemas a caller needs to invoke it. */
-export interface WorkFoldActAppToolRef {
+export interface AmpleFileActAppToolRef {
   name: string;
   description: string;
   action: string;
@@ -476,11 +476,11 @@ export interface WorkFoldActAppToolRef {
 }
 
 /**
- * What one installed app can do, as the work-fold agent sees it before acting: its
+ * What one installed app can do, as the AmpleFile agent sees it before acting: its
  * declared tools and Worker actions, the powers it holds, which
  * destinations have a saved connection, and its named automations.
  */
-export interface WorkFoldActAppListing {
+export interface AmpleFileActAppListing {
   appId: string;
   featureInstallationId: string;
   digest: string;
@@ -488,7 +488,7 @@ export interface WorkFoldActAppListing {
   description: string | null;
   version: string;
   kind: "preview" | "installed";
-  tools: WorkFoldActAppToolRef[];
+  tools: AmpleFileActAppToolRef[];
   assistantActions: Array<{ id: string; title: string }>;
   grants: {
     network: string[];
@@ -504,14 +504,14 @@ export interface WorkFoldActAppListing {
  * What an install turned on, and what still needs the person. F21 grants every
  * declared destination, folder permission, notification category, and
  * automation at install; a permission that names a single file, a Check slot
- * in a work-folder with several Checks, and a destination whose secret the person
+ * in a Connected Folder with several Checks, and a destination whose secret the person
  * types are the deliberate remainder. Both halves ride the result so the
- * work-fold agent can say them the way a Worker Chat does.
+ * AmpleFile agent can say them the way a Worker Chat does.
  */
-export interface WorkFoldActAppInstallOutcome {
+export interface AmpleFileActAppInstallOutcome {
   granted: {
     destinations: number;
-    wholeWorkFolderFolders: number;
+    wholeConnectedFolderFolders: number;
     notifications: number;
     checks: number;
     automations: number;
@@ -527,7 +527,7 @@ export interface WorkFoldActAppInstallOutcome {
 }
 
 /** Bounded projection of one named-automation run receipt. */
-export interface WorkFoldActAppAutomationRunRef {
+export interface AmpleFileActAppAutomationRunRef {
   runId: string;
   outcome: "success" | "failure" | "skipped" | "cancelled" | "interrupted";
   startedAt: string;
@@ -536,9 +536,9 @@ export interface WorkFoldActAppAutomationRunRef {
 }
 
 /** Bounded projection of an automation's reviewed trigger (docs/automations.md). */
-export interface WorkFoldActAutomationTriggerRef {
+export interface AmpleFileActAutomationTriggerRef {
   kind: "manual" | "interval" | "at" | "on-settled" | "files-changed";
-  workFolderId?: string;
+  connectedFolderId?: string;
   watch?: { kind: "tree"; path: string; recursive: boolean; extensions: string[] };
   debounceSeconds?: number;
   cooldownMinutes?: number;
@@ -547,7 +547,7 @@ export interface WorkFoldActAutomationTriggerRef {
   ifMissed?: "run" | "skip";
   source?: {
     kind: "check-run" | "app-automation-run";
-    workFolderId: string;
+    connectedFolderId: string;
     checkId?: string;
     appId?: string;
     appAutomationId?: string;
@@ -560,61 +560,61 @@ export interface WorkFoldActAutomationTriggerRef {
  * act's request id. A legacy surface appears only on grants an older build
  * recorded.
  */
-export interface WorkFoldActAutomationGrantRef {
+export interface AmpleFileActAutomationGrantRef {
   digest: string;
   requestId: string;
   enabledAt: string;
-  surface: WorkFoldCliActSurface | WorkFoldCliActLegacySurface;
+  surface: AmpleFileCliActSurface | AmpleFileCliActLegacySurface;
   browserId?: string;
 }
 
 /**
  * One-line projection of an automation for `automations list`. Content-bearing by
- * design (titles, work-folder ids) and therefore act-lane only, per the Checks rule
+ * design (titles, Connected Folder ids) and therefore act-lane only, per the Checks rule
  * that keeps the content-free read lane aggregate.
  */
-export interface WorkFoldActAutomationSummary {
+export interface AmpleFileActAutomationSummary {
   automationId: string;
   title: string;
   health: "enabled" | "disabled" | "suspended" | "completed";
   digest: string;
-  trigger: WorkFoldActAutomationTriggerRef;
+  trigger: AmpleFileActAutomationTriggerRef;
   stepCount: number;
-  referencedWorkFolderIds: string[];
+  referencedConnectedFolderIds: string[];
   /** When the live enablement receipt was written; absent unless enabled. */
   enabledAt?: string;
   disabledAt?: string;
-  suspension?: { at: string; missingWorkFolderIds: string[]; reRegisteredWorkFolderIds: string[] };
+  suspension?: { at: string; missingConnectedFolderIds: string[]; reRegisteredConnectedFolderIds: string[] };
   lastScheduledAt?: string;
   nextScheduledAt?: string;
   completedAt?: string;
 }
 
 /**
- * An automation step as declared: ids resolved to current work-folder names
- * where the work-folder is still registered, the chat- and agent-step message verbatim (with
- * its placeholders unfilled — work-fold fills them when a run starts), and
+ * An automation step as declared: ids resolved to current Connected Folder names
+ * where the Connected Folder is still registered, the chat- and agent-step message verbatim (with
+ * its placeholders unfilled — AmpleFile fills them when a run starts), and
  * the files source exactly as declared.
  */
-export type WorkFoldActAutomationStepView =
-  | { id: string; kind: "chat"; workFolderId: string; workFolderName?: string; message: string; model?: { provider: string; id: string } }
+export type AmpleFileActAutomationStepView =
+  | { id: string; kind: "chat"; connectedFolderId: string; connectedFolderName?: string; message: string; model?: { provider: string; id: string } }
   | {
     id: string;
     kind: "files";
-    fromWorkFolderId: string;
-    fromWorkFolderName?: string;
+    fromConnectedFolderId: string;
+    fromConnectedFolderName?: string;
     source:
       | { kind: "paths"; paths: string[] }
       | { kind: "tree"; path: string; recursive: boolean; extensions: string[] }
       | { kind: "step-created-files"; step: string; extensions?: string[]; maxFiles: number; maxTotalBytes: number };
-    toWorkFolderId: string;
-    toWorkFolderName?: string;
+    toConnectedFolderId: string;
+    toConnectedFolderName?: string;
     to: string;
   }
-  | { id: string; kind: "check"; workFolderId: string; workFolderName?: string; checkId?: string }
+  | { id: string; kind: "check"; connectedFolderId: string; connectedFolderName?: string; checkId?: string }
   | { id: string; kind: "agent"; message: string; model?: { provider: string; id: string } };
 
-export interface WorkFoldActAutomationModel {
+export interface AmpleFileActAutomationModel {
   provider: string;
   providerName: string;
   id: string;
@@ -623,18 +623,18 @@ export interface WorkFoldActAutomationModel {
 }
 
 /** The full review projection for `automations show`. */
-export interface WorkFoldActAutomationDetail extends WorkFoldActAutomationSummary {
-  steps: WorkFoldActAutomationStepView[];
-  grants: WorkFoldActAutomationGrantRef[];
+export interface AmpleFileActAutomationDetail extends AmpleFileActAutomationSummary {
+  steps: AmpleFileActAutomationStepView[];
+  grants: AmpleFileActAutomationGrantRef[];
 }
 
 /**
  * Bounded projection of one automation receipts-journal line. Identifiers,
- * digests, paths, and counts, plus the bounded text work-fold itself filled
+ * digests, paths, and counts, plus the bounded text AmpleFile itself filled
  * into a chat- or agent-step message — never file contents, and this
  * projection adds nothing to the journal.
  */
-export interface WorkFoldActAutomationReceipt {
+export interface AmpleFileActAutomationReceipt {
   at: string;
   scope: "automation" | "run" | "hop";
   outcome: string;
@@ -648,9 +648,9 @@ export interface WorkFoldActAutomationReceipt {
   /** A succeeded hop or run whose Worker reported finishing only partly. */
   partial?: true;
   cause?: unknown;
-  workFolderId?: string;
-  fromWorkFolderId?: string;
-  toWorkFolderId?: string;
+  connectedFolderId?: string;
+  fromConnectedFolderId?: string;
+  toConnectedFolderId?: string;
   conversationId?: string;
   taskId?: string;
   checkpointIds?: string[];
@@ -665,13 +665,13 @@ export interface WorkFoldActAutomationReceipt {
   admittedCount?: number;
   failedHopId?: string;
   stoppedHopTaskIds?: string[];
-  /** What work-fold filled into this hop's message. */
+  /** What AmpleFile filled into this hop's message. */
   placeholders?: Array<{ name: string; text: string; bytes: number; truncated: boolean }>;
   messageBytes?: number;
   surface?: string;
   /** Legacy field on receipts an older build wrote; never written now. */
   decisionId?: string;
-  missingWorkFolderIds?: string[];
+  missingConnectedFolderIds?: string[];
   requestId?: string;
   occurrenceId?: string;
   scheduledRunId?: string;
@@ -682,9 +682,9 @@ export interface WorkFoldActAutomationReceipt {
  * problems and a summary. A stable `--json` shape; problem files are
  * relative to the page folder, and "" means the page folder itself.
  */
-export interface WorkFoldActPageValidation {
-  workFolder: WorkFoldActWorkFolderRef;
-  /** The page folder's work-folder-relative path. */
+export interface AmpleFileActPageValidation {
+  connectedFolder: AmpleFileActConnectedFolderRef;
+  /** The page folder's Connected Folder–relative path. */
   page: string;
   /** True when no problem is an error. Warnings (such as unused .html files) don't make a page invalid. */
   valid: boolean;
@@ -699,8 +699,8 @@ export interface WorkFoldActPageValidation {
 }
 
 /** The exact installation an install verb produced. Never resolved by display name. */
-export interface WorkFoldActInstalledAppRef {
-  workFolderId: string;
+export interface AmpleFileActInstalledAppRef {
+  connectedFolderId: string;
   appId: string;
   featureInstallationId: string;
   digest: string;
@@ -708,84 +708,84 @@ export interface WorkFoldActInstalledAppRef {
   version: string;
 }
 
-export interface WorkFoldActFacade {
-  workerShow(input: { workFolder: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+export interface AmpleFileActFacade {
+  workerShow(input: { connectedFolder: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     model: { provider: string; id: string } | null;
     availableModels: Array<{ provider: string; id: string; name: string; reasoning: boolean }>;
     instructions: string;
   }>;
-  workerSetModel(input: { workFolder: string; provider: string; model: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  workerSetModel(input: { connectedFolder: string; provider: string; model: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     model: { provider: string; id: string };
   }>;
   workerSetInstructions(input: {
-    workFolder: string;
+    connectedFolder: string;
     instructions: string;
     /** Add `instructions` as one more line after the current ones instead of replacing them. */
     append?: boolean;
     parentTaskId?: string;
   }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+    connectedFolder: AmpleFileActConnectedFolderRef;
     instructions: string;
     /** With `append`: false when that exact line was already there, so nothing changed. */
     appended?: boolean;
   }>;
-  createConversation(input: { workFolder: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef; conversation: WorkFoldActConversationRef }>;
-  listConversations(input: { workFolder: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef; conversations: WorkFoldActConversationRef[] }>;
+  createConversation(input: { connectedFolder: string }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef; conversation: AmpleFileActConversationRef }>;
+  listConversations(input: { connectedFolder: string }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef; conversations: AmpleFileActConversationRef[] }>;
   sendMessage(input: {
-    workFolder: string;
+    connectedFolder: string;
     conversationId?: string;
     newConversation?: boolean;
     content: string;
     /** Act-envelope request id reused as the durable turn identity. */
     requestId?: string;
-    /** Explicit active work-fold agent request that initiated this action. */
+    /** Explicit active AmpleFile agent request that initiated this action. */
     parentTaskId?: string;
-  }): Promise<{ workFolder: WorkFoldActWorkFolderRef; conversationId: string; messageId: string; taskId: string }>;
-  conversationStatus(input: { workFolder: string; conversationId: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    conversation: WorkFoldActConversationRef;
-    state: WorkFoldActChatState;
+  }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef; conversationId: string; messageId: string; taskId: string }>;
+  conversationStatus(input: { connectedFolder: string; conversationId: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    conversation: AmpleFileActConversationRef;
+    state: AmpleFileActChatState;
   }>;
-  conversationResult(input: { workFolder: string; conversationId: string; messages?: number }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  conversationResult(input: { connectedFolder: string; conversationId: string; messages?: number }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     conversationId: string;
-    state: WorkFoldActChatState;
+    state: AmpleFileActChatState;
     total: number;
     lastAssistant: string | null;
-    messages: WorkFoldActChatMessage[];
+    messages: AmpleFileActChatMessage[];
   }>;
-  abortTurn(input: { workFolder: string; conversationId: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  abortTurn(input: { connectedFolder: string; conversationId: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     conversationId: string;
     aborted: boolean;
   }>;
-  turnStatus(input: { workFolder: string; taskId: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    task: WorkFoldActTurnStatus;
+  turnStatus(input: { connectedFolder: string; taskId: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    task: AmpleFileActTurnStatus;
     /** F28: set while this task's request waits on an answer to a question this task asked. */
-    waiting: WorkFoldActWaitingRef | null;
-    request: WorkFoldActRequestRef | null;
+    waiting: AmpleFileActWaitingRef | null;
+    request: AmpleFileActRequestRef | null;
   }>;
-  turnResult(input: { workFolder: string; taskId: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  turnResult(input: { connectedFolder: string; taskId: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     conversationId: string;
     task: { taskId: string; state: "succeeded"; endedAt: string };
-    message: WorkFoldActChatMessage;
-    request: WorkFoldActRequestRef | null;
-    result: WorkFoldResultEnvelope | null;
+    message: AmpleFileActChatMessage;
+    request: AmpleFileActRequestRef | null;
+    result: AmpleFileResultEnvelope | null;
   }>;
 
   /**
    * The collaboration verbs (docs/collaboration-contract.md, F27). Each is
    * journal-first and receipted; delivery is host-side, so none of them
-   * needs a work-fold agent turn. `--task` must name the caller's own turn —
-   * the newest, still-running turn of a request the named work-folder owns — checked
+   * needs an AmpleFile agent turn. `--task` must name the caller's own turn —
+   * the newest, still-running turn of a request the named Connected Folder owns — checked
    * the way `--parent-task` is checked.
    */
   chatReport(input: {
-    workFolder: string;
+    connectedFolder: string;
     taskId: string;
     summary: string;
     /** Inline JSON already parsed by the CLI. */
@@ -793,22 +793,22 @@ export interface WorkFoldActFacade {
     /** `--data @<path>`: resolved host-side against `cwd`, bounded, parsed here. */
     dataPath?: string;
     cwd?: string;
-    /** work-folder-relative deliverables; each is fingerprinted and measured inside the work-folder. */
+    /** Connected Folder–relative deliverables; each is fingerprinted and measured inside the Connected Folder. */
     files: string[];
-    outcome: WorkFoldResultOutcome;
+    outcome: AmpleFileResultOutcome;
     /** Act-envelope request id, recorded as the result's receipt id. */
     requestId?: string;
     parentTaskId?: string;
   }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+    connectedFolder: AmpleFileActConnectedFolderRef;
     taskId: string;
     resultId: string;
-    result: WorkFoldResultEnvelope;
-    request: WorkFoldActRequestRef;
+    result: AmpleFileResultEnvelope;
+    request: AmpleFileActRequestRef;
   }>;
-  chatChildren(input: { workFolder: string; taskId: string }): Promise<{ children: Array<{ taskId: string; conversationId: string; workFolderId?: string; state: string; resultAvailable: boolean }> }>;
+  chatChildren(input: { connectedFolder: string; taskId: string }): Promise<{ children: Array<{ taskId: string; conversationId: string; connectedFolderId?: string; state: string; resultAvailable: boolean }> }>;
   chatAsk(input: {
-    workFolder: string;
+    connectedFolder: string;
     taskId: string;
     question: string;
     respondent: "person" | "parent";
@@ -818,32 +818,32 @@ export interface WorkFoldActFacade {
     requestId?: string;
     parentTaskId?: string;
   }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+    connectedFolder: AmpleFileActConnectedFolderRef;
     taskId: string;
-    question: WorkFoldActQuestionRef;
-    request: WorkFoldActRequestRef;
+    question: AmpleFileActQuestionRef;
+    request: AmpleFileActRequestRef;
     /** True when --to parent named a root with no parent, so the question went to the person. */
     redirectedToPerson: boolean;
   }>;
   /**
    * Exactly one answer, exactly one linked continuation turn in the same
    * Chat. Refuses a second answer, an answer past the request's window, an
-   * answer from a work-folder that does not own the question, and an answer while
+   * answer from a Connected Folder that does not own the question, and an answer while
    * that Chat's turn or compaction is still running (the question stays open
    * and can be answered once the Chat is idle).
    */
   chatAnswer(input: {
-    workFolder: string;
+    connectedFolder: string;
     questionId: string;
     answer: string;
     requestId?: string;
     parentTaskId?: string;
   }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    question: WorkFoldActQuestionRef;
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    question: AmpleFileActQuestionRef;
     continuation: { taskId: string; messageId: string; conversationId: string } | null;
     queued?: boolean;
-    request: WorkFoldActRequestRef;
+    request: AmpleFileActRequestRef;
   }>;
   /**
    * Copies the named files into the destination through the same additive,
@@ -852,9 +852,9 @@ export interface WorkFoldActFacade {
    * first so a refused copy never leaves a started Chat behind.
    */
   chatHandoff(input: {
-    workFolder: string;
+    connectedFolder: string;
     taskId: string;
-    toWorkFolder: string;
+    toConnectedFolder: string;
     /**
      * Follow up in a Chat this Chat already handed work to, instead of
      * starting a new one (2026-10-18). That Chat keeps its context.
@@ -865,14 +865,14 @@ export interface WorkFoldActFacade {
     requestId?: string;
     parentTaskId?: string;
   }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    toWorkFolder: WorkFoldActWorkFolderRef;
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    toConnectedFolder: AmpleFileActConnectedFolderRef;
     conversationId: string;
     messageId: string;
     taskId: string;
     copied: string[];
     checkpointId: string | null;
-    request: WorkFoldActRequestRef;
+    request: AmpleFileActRequestRef;
     /** True when the message went into an existing Chat rather than a new one. */
     followUp?: boolean;
   }>;
@@ -883,14 +883,14 @@ export interface WorkFoldActFacade {
    * a Chat its own Chat handed work to.
    */
   chatSteer(input: {
-    workFolder: string;
+    connectedFolder: string;
     conversationId: string;
     message: string;
     taskId?: string;
     requestId?: string;
     parentTaskId?: string;
   }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+    connectedFolder: AmpleFileActConnectedFolderRef;
     conversationId: string;
     /** The running turn the message joined. */
     taskId: string;
@@ -899,13 +899,13 @@ export interface WorkFoldActFacade {
   }>;
   /**
    * Copies a Chat as of its last finished turn into a new Chat in the same
-   * work-folder, so a different direction can start with the same context.
+   * Connected Folder, so a different direction can start with the same context.
    * With `message`, the copy starts that work at once; with `taskId` (a
    * Worker's own running turn) it becomes a child of that request and its
    * result comes back like a handoff's.
    */
   chatCopy(input: {
-    workFolder: string;
+    connectedFolder: string;
     conversationId: string;
     message?: string;
     title?: string;
@@ -913,48 +913,48 @@ export interface WorkFoldActFacade {
     requestId?: string;
     parentTaskId?: string;
   }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    conversation: WorkFoldActConversationRef;
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    conversation: AmpleFileActConversationRef;
     copiedFromConversationId: string;
     /** Visible messages carried into the copy. */
     copiedMessages: number;
     /** The copy's first turn, when `message` started one. */
     taskId?: string;
-    request?: WorkFoldActRequestRef;
+    request?: AmpleFileActRequestRef;
   }>;
   /**
-   * Reads of the request graph above all work-folders: recent roots, newest first.
+   * Reads of the request graph above all Connected Folders: recent roots, newest first.
    * `cwd` is the caller's directory, which resolves its scope the way
-   * `context` does; a caller inside a registered work-folder is refused by name,
-   * because the graph carries other work-folders' results and the work-fold agent's own
+   * `context` does; a caller inside a registered Connected Folder is refused by name,
+   * because the graph carries other Connected Folders' results and the AmpleFile agent's own
    * assignment text (docs/collaboration-contract.md, F26).
    */
-  requestsList(input?: { cwd?: string }): Promise<{ requests: WorkFoldActRequestSummary[]; truncated: boolean }>;
-  requestsShow(input: { request: string; cwd?: string }): Promise<{ request: WorkFoldActRequestDetail }>;
+  requestsList(input?: { cwd?: string }): Promise<{ requests: AmpleFileActRequestSummary[]; truncated: boolean }>;
+  requestsShow(input: { request: string; cwd?: string }): Promise<{ request: AmpleFileActRequestDetail }>;
 
   /**
    * Background jobs (docs/background-jobs.md). `jobsStart` runs a command
    * for the caller's own running turn (`--task`, checked like `chat report`)
    * and returns once it is running; its end wakes that turn's Chat once.
-   * Reads and stop name the job's work-folder. A read with `taskId` naming a
+   * Reads and stop name the job's Connected Folder. A read with `taskId` naming a
    * running turn in the job's own Chat counts as its delivery.
    */
   jobsStart(input: {
     interactive?: boolean;
     service?: boolean;
-    workFolder: string;
+    connectedFolder: string;
     taskId: string;
     command: string;
     name?: string;
-    /** Relative to the work-folder, or absolute; the work-folder by default. Never the caller's directory. */
+    /** Relative to the Connected Folder, or absolute; the Connected Folder by default. Never the caller's directory. */
     cwd?: string;
     timeoutSeconds?: number;
     requestId?: string;
-  }): Promise<{ workFolder: WorkFoldActWorkFolderRef; job: WorkFoldActJobRef }>;
-  jobsList(input: { workFolder: string; conversationId?: string; running?: boolean }): Promise<{ workFolder: WorkFoldActWorkFolderRef; jobs: WorkFoldActJobRef[] }>;
-  jobsShow(input: { workFolder: string; jobId: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef; job: WorkFoldActJobRef }>;
+  }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef; job: AmpleFileActJobRef }>;
+  jobsList(input: { connectedFolder: string; conversationId?: string; running?: boolean }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef; jobs: AmpleFileActJobRef[] }>;
+  jobsShow(input: { connectedFolder: string; jobId: string }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef; job: AmpleFileActJobRef }>;
   jobsOutput(input: {
-    workFolder: string;
+    connectedFolder: string;
     jobId: string;
     offset?: number;
     limit?: number;
@@ -962,14 +962,14 @@ export interface WorkFoldActFacade {
     until?: string;
     taskId?: string;
   }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    job: WorkFoldActJobRef;
-    output: WorkFoldActJobOutput;
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    job: AmpleFileActJobRef;
+    output: AmpleFileActJobOutput;
     wait: { outcome: "ended" | "matched" | "timed_out" | "aborted"; line?: number; text?: string } | null;
   }>;
-  jobsStop(input: { workFolder: string; jobId: string; parentTaskId?: string; requestId?: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef; job: WorkFoldActJobRef }>;
-  jobsInput(input: { workFolder: string; taskId: string; jobId: string; text: string; eof?: boolean }): Promise<{ workFolder: WorkFoldActWorkFolderRef; job: WorkFoldActJobRef }>;
-  worktreesManage(input: { workFolder: string; taskId: string; action: "create" | "list" | "archive" | "restore"; id?: string; ref?: string }): Promise<unknown>;
+  jobsStop(input: { connectedFolder: string; jobId: string; parentTaskId?: string; requestId?: string }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef; job: AmpleFileActJobRef }>;
+  jobsInput(input: { connectedFolder: string; taskId: string; jobId: string; text: string; eof?: boolean }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef; job: AmpleFileActJobRef }>;
+  worktreesManage(input: { connectedFolder: string; taskId: string; action: "create" | "list" | "archive" | "restore"; id?: string; ref?: string }): Promise<unknown>;
 
   /**
    * Chat lifecycle verbs (docs/act-ledger.md). Each performs exactly one
@@ -978,25 +978,25 @@ export interface WorkFoldActFacade {
    * refused while that Chat's turn or compaction runs — and returns
    * the prior state so the act receipt can carry a typed undo reference.
    */
-  chatRename(input: { workFolder: string; conversationId: string; title: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    conversation: WorkFoldActConversationRef;
+  chatRename(input: { connectedFolder: string; conversationId: string; title: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    conversation: AmpleFileActConversationRef;
     priorTitle: string;
   }>;
-  chatSnooze(input: { workFolder: string; conversationId: string; until: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    conversation: WorkFoldActConversationRef;
-    priorLifecycle: WorkFoldActChatLifecycleState;
+  chatSnooze(input: { connectedFolder: string; conversationId: string; until: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    conversation: AmpleFileActConversationRef;
+    priorLifecycle: AmpleFileActChatLifecycleState;
   }>;
-  chatArchive(input: { workFolder: string; conversationId: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    conversation: WorkFoldActConversationRef;
-    priorLifecycle: WorkFoldActChatLifecycleState;
+  chatArchive(input: { connectedFolder: string; conversationId: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    conversation: AmpleFileActConversationRef;
+    priorLifecycle: AmpleFileActChatLifecycleState;
   }>;
-  chatResume(input: { workFolder: string; conversationId: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    conversation: WorkFoldActConversationRef;
-    priorLifecycle: WorkFoldActChatLifecycleState;
+  chatResume(input: { connectedFolder: string; conversationId: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    conversation: AmpleFileActConversationRef;
+    priorLifecycle: AmpleFileActChatLifecycleState;
   }>;
   /**
    * Compacts one Chat through the same internals as the composer's `/compact`:
@@ -1006,8 +1006,8 @@ export interface WorkFoldActFacade {
    * before the compaction and finished on every outcome — whose id is the
    * receipt's task reference.
    */
-  chatCompact(input: { workFolder: string; conversationId: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  chatCompact(input: { connectedFolder: string; conversationId: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     conversationId: string;
     compacted: true;
     taskId: string;
@@ -1015,27 +1015,27 @@ export interface WorkFoldActFacade {
 
   /**
    * History verbs (docs/act-ledger.md). Saving is additive and honestly
-   * reports when the work-folder already matches its latest restore point; both
+   * reports when the Connected Folder already matches its latest restore point; both
    * restore verbs record the safety restore point History itself created, so
-   * every History act is recoverable through History. Whole-work-folder restore is
+   * every History act is recoverable through History. Whole–Connected Folder restore is
    * refused while Worker, compaction, or Check work is active in the
-   * work-folder, while a restricted-app automation run whose app holds a file
-   * grant into the work-folder is active, and while an automation run with a files hop
-   * targeting the work-folder is active (the kernel-checked rule) — a deliberate
+   * Connected Folder, while a restricted-app automation run whose app holds a file
+   * grant into the Connected Folder is active, and while an automation run with a files hop
+   * targeting the Connected Folder is active (the kernel-checked rule) — a deliberate
    * strengthening over the desktop's confirm dialog.
    */
-  historyList(input: { workFolder: string } & HistoryPageOptions): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    checkpoints: WorkFoldActCheckpointSummary[];
+  historyList(input: { connectedFolder: string } & HistoryPageOptions): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    checkpoints: AmpleFileActCheckpointSummary[];
     total?: number; nextCursor?: string | null; sourceVersion?: string;
   }>;
-  historySave(input: { workFolder: string; label?: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    checkpoint: WorkFoldActCheckpointSummary;
+  historySave(input: { connectedFolder: string; label?: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    checkpoint: AmpleFileActCheckpointSummary;
     created: boolean;
   }>;
-  historyRestore(input: { workFolder: string; checkpointId: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  historyRestore(input: { connectedFolder: string; checkpointId: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     restored: true;
     checkpointId: string;
     safetyCheckpointId: string;
@@ -1050,24 +1050,24 @@ export interface WorkFoldActFacade {
    * reference, sizes, and nested pages. Read-only; the page tab shows the
    * same problems.
    */
-  pagesValidate(input: { workFolder: string; page: string }): Promise<WorkFoldActPageValidation>;
-  historyVersions(input: { workFolder: string; path: string } & HistoryPageOptions): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  pagesValidate(input: { connectedFolder: string; page: string }): Promise<AmpleFileActPageValidation>;
+  historyVersions(input: { connectedFolder: string; path: string } & HistoryPageOptions): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     path: string;
-    versions: WorkFoldActFileVersionRef[];
+    versions: AmpleFileActFileVersionRef[];
     total?: number; nextCursor?: string | null; sourceVersion?: string;
   }>;
   /** Content-bearing, read-only review through the authenticated act lane. */
-  historyRead(input: { workFolder: string } & HistoryFileReadOptions): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  historyRead(input: { connectedFolder: string } & HistoryFileReadOptions): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     review: HistoryFileRead;
   }>;
-  historyDiff(input: { workFolder: string; path: string; fromCheckpointId: string; toCheckpointId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  historyDiff(input: { connectedFolder: string; path: string; fromCheckpointId: string; toCheckpointId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     comparison: HistoryFileComparison;
   }>;
-  historyRestoreFile(input: { workFolder: string; path: string; version: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  historyRestoreFile(input: { connectedFolder: string; path: string; version: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     restored: true;
     path: string;
     hashSha256: string;
@@ -1076,8 +1076,8 @@ export interface WorkFoldActFacade {
   }>;
 
   /**
-   * In-work-folder file verbs (docs/act-ledger.md): the same local-entry
-   * mutations as the desktop routes — same path policy (`.work-fold/`,
+   * In–Connected Folder file verbs (docs/act-ledger.md): the same local-entry
+   * mutations as the desktop routes — same path policy (`.amplefile/`,
    * `.pi/`, and `.workspace/` are never valid endpoints), same safety restore
    * points. `filesDelete` never refuses for lack of coverage
    * (docs/receipts-not-gates.md, F20): when the restore point could not keep
@@ -1088,23 +1088,23 @@ export interface WorkFoldActFacade {
    * receipts carry the created path as the undo reference — the canonical
    * inverse of creating is `files delete`, and creation destroys nothing.
    */
-  filesMove(input: { workFolder: string; fromPath: string; toDir: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  filesMove(input: { connectedFolder: string; fromPath: string; toDir: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     fromPath: string;
     path: string;
     kind: "file" | "folder";
     safetyCheckpointId: string;
   }>;
-  filesRename(input: { workFolder: string; path: string; newName: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  filesRename(input: { connectedFolder: string; path: string; newName: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     fromPath: string;
     path: string;
     priorName: string;
     kind: "file" | "folder";
     safetyCheckpointId: string;
   }>;
-  filesDelete(input: { workFolder: string; path: string; parentTaskId?: string; requestId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  filesDelete(input: { connectedFolder: string; path: string; parentTaskId?: string; requestId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     deleted: true;
     path: string;
     kind: "file" | "folder";
@@ -1123,15 +1123,15 @@ export interface WorkFoldActFacade {
         uncovered: Array<{ path: string; reason: "too_large" | "unreadable" | "symbolic_link" | "excluded" }>;
       };
   }>;
-  filesMkdir(input: { workFolder: string; path: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  filesMkdir(input: { connectedFolder: string; path: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     created: true;
     path: string;
     kind: "folder";
     safetyCheckpointId: string;
   }>;
-  filesCreate(input: { workFolder: string; path: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  filesCreate(input: { connectedFolder: string; path: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     created: true;
     path: string;
     kind: "file";
@@ -1139,72 +1139,72 @@ export interface WorkFoldActFacade {
   }>;
 
   /**
-   * Content search over one work-folder's files and Chats — the same service as
-   * `/api/work-folders/:id/search`. It honours the person's ignore rules, skips
+   * Content search over one Connected Folder's files and Chats — the same service as
+   * `/api/connected-folders/:id/search`. It honours the person's ignore rules, skips
    * binary files, and reports when a bound stopped the search
    * rather than implying completeness. The act receipt records the scope
    * only, never the query text.
    */
-  search(input: { workFolder: string; query: string; scope?: "files" | "chats" | "all"; path?: string; cursor?: string; limit?: number }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  search(input: { connectedFolder: string; query: string; scope?: "files" | "chats" | "all"; path?: string; cursor?: string; limit?: number }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     scope: "files" | "chats" | "all";
     query: string;
-    files: WorkFolderFileMatch[];
-    chats: WorkFolderChatMatch[];
+    files: ConnectedFolderFileMatch[];
+    chats: ConnectedFolderChatMatch[];
     truncated: boolean;
     scannedFiles: number;
-    nextCursor?: string | null; coverage?: WorkFolderSearchCoverage;
+    nextCursor?: string | null; coverage?: ConnectedFolderSearchCoverage;
   }>;
 
-  createWorkFolder(input: { name: string; parentTaskId?: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef }>;
-  registerWorkFolder(input: { workFolderRoot: string; parentTaskId?: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef }>;
-  addFiles(input: { workFolder: string; fromPaths: string[]; toDir?: string; cwd: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  createConnectedFolder(input: { name: string; parentTaskId?: string }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef }>;
+  registerConnectedFolder(input: { connectedFolderRoot: string; parentTaskId?: string }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef }>;
+  addFiles(input: { connectedFolder: string; fromPaths: string[]; toDir?: string; cwd: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     copied: string[];
     checkpointId: string | null;
   }>;
 
   /**
-   * work-folder lifecycle verbs (docs/act-ledger.md). Renaming refuses a name
-   * another registered work-folder already uses under the CLI selector's
-   * case-insensitive match — a duplicate exact name would make `--work-folder`
+   * Connected Folder lifecycle verbs (docs/act-ledger.md). Renaming refuses a name
+   * another registered Connected Folder already uses under the CLI selector's
+   * case-insensitive match — a duplicate exact name would make `--connected-folder`
    * selection ambiguous. Unregistering removes the registration and revokes
-   * work-fold's project-runtime authorization while the folder and its
-   * portable `.work-fold/` identity remain — for both storage kinds: a
-   * managed work-folder's registration removal records a preserve-disposition
+   * AmpleFile's project-runtime authorization while the folder and its
+   * portable `.amplefile/` identity remain — for both storage kinds: a
+   * managed Connected Folder's registration removal records a preserve-disposition
    * intent that provably holds no deletion authority. It runs the same App
    * Studio impact checks and automation revocation cascades as the desktop
    * removal path. Deleting a managed folder is
-   * `workFoldersDelete`, a direct receipted verb on the prepared-act path.
+   * `connectedFoldersDelete`, a direct receipted verb on the prepared-act path.
    */
-  workFoldersRename(input: { workFolder: string; name: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  connectedFoldersRename(input: { connectedFolder: string; name: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     priorName: string;
   }>;
-  workFoldersUnregister(input: { workFolder: string; parentTaskId?: string; requestId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    storage: WorkFoldActWorkFolderStorage;
+  connectedFoldersUnregister(input: { connectedFolder: string; parentTaskId?: string; requestId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    storage: AmpleFileActConnectedFolderStorage;
     removed: true;
     cleanupPending: boolean;
-    /** One recoverable copy per preview app in the work-folder that held local data. */
+    /** One recoverable copy per preview app in the Connected Folder that held local data. */
     appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
-    /** The work-folder's App Studio history, kept in Recently deleted; null when it had none. */
+    /** The Connected Folder's App Studio history, kept in Recently deleted; null when it had none. */
     appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
   }>;
 
   /**
-   * work-folder appearance verbs. Apply accepts only the typed `work-folder-appearance`
-   * proposal file (the same validation as Customize work-folder; nothing else is
+   * Connected Folder appearance verbs. Apply accepts only the typed `connected-folder-appearance`
+   * proposal file (the same validation as Customize Connected Folder; nothing else is
    * accepted), and every mutation records the displaced customization so undo
    * is one act. Refs are short content digests — identifiers for receipts,
    * never the customization payload. Undo is refused with a typed error when
-   * no receipted appearance act recorded a prior customization for the work-folder
+   * no receipted appearance act recorded a prior customization for the Connected Folder
    * in this app run, or when the current appearance was last changed outside
    * the act lane (for example on the desktop), because the recorded prior
    * state then no longer describes what would be displaced.
    */
-  workFoldersAppearanceApply(input: {
-    workFolder: string;
+  connectedFoldersAppearanceApply(input: {
+    connectedFolder: string;
     /** A typed proposal that replaces the whole appearance… */
     proposalPath?: string;
     /** …or just these parts, keeping the rest. The image path resolves against `cwd`. */
@@ -1212,20 +1212,20 @@ export interface WorkFoldActFacade {
     cwd: string;
     parentTaskId?: string;
   }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+    connectedFolder: AmpleFileActConnectedFolderRef;
     applied: true;
     proposalName: string;
     appearanceRef: string | null;
     priorAppearanceRef: string | null;
   }>;
-  workFoldersAppearanceReset(input: { workFolder: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  connectedFoldersAppearanceReset(input: { connectedFolder: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     reset: true;
     changed: boolean;
     priorAppearanceRef: string | null;
   }>;
-  workFoldersAppearanceUndo(input: { workFolder: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  connectedFoldersAppearanceUndo(input: { connectedFolder: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     restored: true;
     restoredAppearanceRef: string | null;
     displacedAppearanceRef: string | null;
@@ -1235,22 +1235,22 @@ export interface WorkFoldActFacade {
    * Skills & Extensions removal. Installs, updates, and skill imports make
    * bytes runnable and run through the prepared-act path (`toolsInstall`,
    * `toolsUpdate`, `toolsImportSkill`). Everywhere scope mutates the same
-   * personal Pi settings every work-folder runtime loads (resolved through the
-   * app-owned work-fold agent root, exactly like the work-fold agent's own
-   * runtime) and is fenced against all running work; work-folder scope
-   * requires the explicit work-folder and its project trust. Both reuse the desktop's capability-mutation
+   * personal Pi settings every Connected Folder runtime loads (resolved through the
+   * app-owned AmpleFile agent root, exactly like the AmpleFile agent's own
+   * runtime) and is fenced against all running work; Connected Folder scope
+   * requires the explicit Connected Folder and its project trust. Both reuse the desktop's capability-mutation
    * fencing unchanged. A source that is not installed reports `removed:
    * false` honestly.
    */
-  toolsRemove(input: { scope: "everywhere" | "work-folder"; workFolder?: string; source: string; parentTaskId?: string }): Promise<{
-    scope: "everywhere" | "work-folder";
-    workFolder?: WorkFoldActWorkFolderRef;
+  toolsRemove(input: { scope: "everywhere" | "connected-folder"; connectedFolder?: string; source: string; parentTaskId?: string }): Promise<{
+    scope: "everywhere" | "connected-folder";
+    connectedFolder?: AmpleFileActConnectedFolderRef;
     source: string;
     removed: boolean;
   }>;
 
   /**
-   * work-folder-app authority direct verbs (docs/act-ledger.md): the
+   * connected-folder-app authority direct verbs (docs/act-ledger.md): the
    * narrowing and neutral side of restricted-app authority, reusing the
    * exact desktop route internals with their capability fencing. Widening —
    * installs, grants, connections, automation enablement — runs through the
@@ -1260,14 +1260,14 @@ export interface WorkFoldActFacade {
    * of acting on different bytes.
    */
   /**
-   * Act read: what is installed in one work-folder and what each app can do —
+   * Act read: what is installed in one Connected Folder and what each app can do —
    * tools with their schemas, named Worker actions, grants, connection
-   * state, and automations (docs/receipts-not-gates.md, work-folder apps). Reads
+   * state, and automations (docs/receipts-not-gates.md, Connected Folder apps). Reads
    * carry no lineage and write no action record.
    */
-  appsList(input: { workFolder: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    apps: WorkFoldActAppListing[];
+  appsList(input: { connectedFolder: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    apps: AmpleFileActAppListing[];
     truncated: boolean;
   }>;
   /**
@@ -1276,8 +1276,8 @@ export interface WorkFoldActFacade {
    * instead of running different bytes. The tool's own effects are the app's,
    * bounded by the powers it holds; the receipt names the app and the tool.
    */
-  appsInvoke(input: { workFolder: string; app: string; tool: string; input: unknown; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsInvoke(input: { connectedFolder: string; app: string; tool: string; input: unknown; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     appId: string;
     featureInstallationId: string;
     digest: string;
@@ -1285,25 +1285,25 @@ export interface WorkFoldActFacade {
     action: string;
     result: unknown;
   }>;
-  appsProposalsList(input: { workFolder: string; conversationId: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsProposalsList(input: { connectedFolder: string; conversationId: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     conversationId: string;
-    proposals: WorkFoldActAppProposalRef[];
+    proposals: AmpleFileActAppProposalRef[];
   }>;
   /** Dismissal is not denial-of-review: nothing runnable existed, and the Worker may propose again. */
-  appsProposalsDismiss(input: { workFolder: string; conversationId: string; proposal: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsProposalsDismiss(input: { connectedFolder: string; conversationId: string; proposal: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     proposalId: string;
     dismissed: boolean;
   }>;
   /** Removes a reviewed development app; release-backed Instances take `appsUninstall`. Reinstalling is a fresh receipted act. */
-  appsRemove(input: { workFolder: string; app: string; parentTaskId?: string; requestId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsRemove(input: { connectedFolder: string; app: string; parentTaskId?: string; requestId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     appId: string;
     digest: string;
     removed: boolean;
     /** A removed preview takes its data with it, so a copy lands in Recently deleted first. */
-    recentlyDeleted: WorkFoldActRecentlyDeletedRef | null;
+    recentlyDeleted: AmpleFileActRecentlyDeletedRef | null;
   }>;
   /**
    * Revokes one granted declaration on the exact reviewed digest. Revocation
@@ -1312,14 +1312,14 @@ export interface WorkFoldActFacade {
    * was not granted. Re-granting is a fresh receipted act.
    */
   appsRevoke(input: {
-    workFolder: string;
+    connectedFolder: string;
     app: string;
     digest: string;
     kind: "network" | "files" | "notifications";
     declaration: string;
     parentTaskId?: string;
   }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+    connectedFolder: AmpleFileActConnectedFolderRef;
     appId: string;
     grantKind: "network" | "files" | "notifications";
     declaration: string;
@@ -1329,14 +1329,14 @@ export interface WorkFoldActFacade {
    * Removes one saved connection's local record. Deleting the local record
    * does not revoke the credential at its provider — the receipt says so.
    */
-  appsDisconnect(input: { workFolder: string; app: string; destination: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsDisconnect(input: { connectedFolder: string; app: string; destination: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     appId: string;
     destination: string;
     disconnected: boolean;
   }>;
-  appsAutomationDisable(input: { workFolder: string; app: string; automation: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsAutomationDisable(input: { connectedFolder: string; app: string; automation: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     appId: string;
     appAutomationId: string;
     disabled: true;
@@ -1348,11 +1348,11 @@ export interface WorkFoldActFacade {
    * durable, authority-captured receipt is the result; a run the scheduler
    * skipped reports its skipped outcome honestly.
    */
-  appsAutomationRun(input: { workFolder: string; app: string; automation: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsAutomationRun(input: { connectedFolder: string; app: string; automation: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     appId: string;
     appAutomationId: string;
-    run: WorkFoldActAppAutomationRunRef;
+    run: AmpleFileActAppAutomationRunRef;
   }>;
 
   /**
@@ -1364,51 +1364,51 @@ export interface WorkFoldActFacade {
    * recheck at activation, digest identity beats display versions, and
    * install activation turns on every declared power (docs/receipts-not-gates.md, F21).
    */
-  appsProjectDeclare(input: { workFolder: string; presentationPath: string; cwd: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    project: { projectId: string; presentation: WorkFoldActAppPresentation };
-    priorPresentation: WorkFoldActAppPresentation | null;
+  appsProjectDeclare(input: { connectedFolder: string; presentationPath: string; cwd: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    project: { projectId: string; presentation: AmpleFileActAppPresentation };
+    priorPresentation: AmpleFileActAppPresentation | null;
     priorPresentationRef: string | null;
   }>;
-  appsReleasePrepare(input: { workFolder: string; version: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    release: WorkFoldActAppReleaseRef;
+  appsReleasePrepare(input: { connectedFolder: string; version: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    release: AmpleFileActAppReleaseRef;
   }>;
-  appsReleasePublish(input: { workFolder: string; release: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    release: WorkFoldActAppReleaseRef;
+  appsReleasePublish(input: { connectedFolder: string; release: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    release: AmpleFileActAppReleaseRef;
   }>;
   /**
    * Deletes one unused Release. Its record and verified envelope go to
    * Recently deleted first (docs/receipts-not-gates.md, F20), so
    * `recently-deleted restore` puts it back in the state it was deleted in.
    */
-  appsReleaseDelete(input: { workFolder: string; release: string; parentTaskId?: string; requestId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsReleaseDelete(input: { connectedFolder: string; release: string; parentTaskId?: string; requestId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     releaseDigest: string;
     deleted: boolean;
     cleanupPending: boolean;
     /** The Recently deleted item holding the Release; null when nothing was deleted. */
-    recentlyDeleted: WorkFoldActRecentlyDeletedRef | null;
+    recentlyDeleted: AmpleFileActRecentlyDeletedRef | null;
   }>;
-  appsInstallPrepare(input: { workFolder: string; release: string; targetWorkFolder: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    targetWorkFolder: WorkFoldActWorkFolderRef;
-    operation: WorkFoldActAppOperationRef;
+  appsInstallPrepare(input: { connectedFolder: string; release: string; targetConnectedFolder: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    targetConnectedFolder: AmpleFileActConnectedFolderRef;
+    operation: AmpleFileActAppOperationRef;
   }>;
-  appsUpdatePrepare(input: { workFolder: string; instance: string; release: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    targetWorkFolder: WorkFoldActWorkFolderRef;
-    operation: WorkFoldActAppOperationRef;
+  appsUpdatePrepare(input: { connectedFolder: string; instance: string; release: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    targetConnectedFolder: AmpleFileActConnectedFolderRef;
+    operation: AmpleFileActAppOperationRef;
   }>;
-  appsOperationActivate(input: { workFolder: string; operation: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsOperationActivate(input: { connectedFolder: string; operation: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     operationId: string;
     operationKind: "install" | "update";
-    instance: WorkFoldActAppInstanceRef;
+    instance: AmpleFileActAppInstanceRef;
   }>;
-  appsOperationCancel(input: { workFolder: string; operation: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsOperationCancel(input: { connectedFolder: string; operation: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     operationId: string;
     cancelled: boolean;
   }>;
@@ -1418,8 +1418,8 @@ export interface WorkFoldActFacade {
    * namespaces do not remain runnable, and reinstalling creates a new
    * Instance.
    */
-  appsUninstall(input: { workFolder: string; instance: string; parentTaskId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsUninstall(input: { connectedFolder: string; instance: string; parentTaskId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     runtimeInstanceId: string;
     removed: boolean;
     retainedNamespaceIds: string[];
@@ -1437,32 +1437,32 @@ export interface WorkFoldActFacade {
    * act request's journal id. Nothing waits on a person.
    */
   /**
-   * Moves a managed work-folder's folder into Recently deleted and unregisters it,
+   * Moves a managed Connected Folder's folder into Recently deleted and unregisters it,
    * after the same impact checks as unregister. `recentlyDeleted` names the entry that
-   * puts the folder — and the work-folder's Chats and History — back.
+   * puts the folder — and the Connected Folder's Chats and History — back.
    */
-  workFoldersDelete(input: { workFolder: string; parentTaskId?: string; requestId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  connectedFoldersDelete(input: { connectedFolder: string; parentTaskId?: string; requestId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     storage: "managed";
     removed: true;
     cleanupPending: boolean;
     recentlyDeleted: { entryId: string; restoreBy: string } | null;
-    /** One recoverable copy per preview app in the work-folder that held local data. */
+    /** One recoverable copy per preview app in the Connected Folder that held local data. */
     appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
-    /** The work-folder's App Studio history, kept in Recently deleted; null when it had none. */
+    /** The Connected Folder's App Studio history, kept in Recently deleted; null when it had none. */
     appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
   }>;
   /** Imports one skill bundle, pinning the exact inspected bytes. */
   toolsImportSkill(input: {
-    scope: "everywhere" | "work-folder";
-    workFolder?: string;
+    scope: "everywhere" | "connected-folder";
+    connectedFolder?: string;
     from: string;
     cwd: string;
     parentTaskId?: string;
     requestId?: string;
   }): Promise<{
-    scope: "everywhere" | "work-folder";
-    workFolder?: WorkFoldActWorkFolderRef;
+    scope: "everywhere" | "connected-folder";
+    connectedFolder?: AmpleFileActConnectedFolderRef;
     source: string;
     contentDigest: string;
     skillNames: string[];
@@ -1475,15 +1475,15 @@ export interface WorkFoldActFacade {
    * exact version cannot be pinned is refused honestly.
    */
   toolsInstall(input: {
-    scope: "everywhere" | "work-folder";
-    workFolder?: string;
+    scope: "everywhere" | "connected-folder";
+    connectedFolder?: string;
     catalogId?: string;
     source?: string;
     parentTaskId?: string;
     requestId?: string;
   }): Promise<{
-    scope: "everywhere" | "work-folder";
-    workFolder?: WorkFoldActWorkFolderRef;
+    scope: "everywhere" | "connected-folder";
+    connectedFolder?: AmpleFileActConnectedFolderRef;
     source: string;
     packageId?: string;
     version?: string;
@@ -1494,20 +1494,20 @@ export interface WorkFoldActFacade {
     bundlePath?: string;
   }>;
   toolsSetEnabled(input: {
-    scope: "everywhere" | "work-folder"; workFolder?: string; path: string;
+    scope: "everywhere" | "connected-folder"; connectedFolder?: string; path: string;
     kind: "extensions" | "skills" | "prompts" | "themes"; enabled: boolean;
     parentTaskId?: string; requestId?: string;
-  }): Promise<{ scope: "everywhere" | "work-folder"; workFolder?: WorkFoldActWorkFolderRef; path: string; enabled: boolean }>;
+  }): Promise<{ scope: "everywhere" | "connected-folder"; connectedFolder?: AmpleFileActConnectedFolderRef; path: string; enabled: boolean }>;
   /** Updates a Pi package to the exact inspected next version. */
   toolsUpdate(input: {
-    scope: "everywhere" | "work-folder";
-    workFolder?: string;
+    scope: "everywhere" | "connected-folder";
+    connectedFolder?: string;
     source: string;
     parentTaskId?: string;
     requestId?: string;
   }): Promise<{
-    scope: "everywhere" | "work-folder";
-    workFolder?: WorkFoldActWorkFolderRef;
+    scope: "everywhere" | "connected-folder";
+    connectedFolder?: AmpleFileActConnectedFolderRef;
     source: string;
     packageId: string;
     version: string;
@@ -1516,30 +1516,30 @@ export interface WorkFoldActFacade {
   }>;
   /** Installs one pending Chat app review at its reviewed digest. */
   appsInstallProposal(input: {
-    workFolder: string;
+    connectedFolder: string;
     conversationId: string;
     proposal: string;
     parentTaskId?: string;
     requestId?: string;
-  }): Promise<WorkFoldActAppInstallOutcome & {
-    workFolder: WorkFoldActWorkFolderRef;
+  }): Promise<AmpleFileActAppInstallOutcome & {
+    connectedFolder: AmpleFileActConnectedFolderRef;
     proposalId: string;
     digest: string;
-    app: WorkFoldActInstalledAppRef;
+    app: AmpleFileActInstalledAppRef;
   }>;
   /**
    * The ledger's "Add / update local preview" row: the host inspects the
-   * named work-folder-relative package folder, records the same host-owned review
-   * the Chat proposal path produces — work-fold owning every review field
+   * named Connected Folder–relative package folder, records the same host-owned review
+   * the Chat proposal path produces — AmpleFile owning every review field
    * and the digest — and installs it through the same digest-checked path.
    */
   appsInstallPreview(input: {
-    workFolder: string;
+    connectedFolder: string;
     packagePath: string;
     parentTaskId?: string;
     requestId?: string;
-  }): Promise<WorkFoldActAppInstallOutcome & {
-    workFolder: WorkFoldActWorkFolderRef;
+  }): Promise<AmpleFileActAppInstallOutcome & {
+    connectedFolder: AmpleFileActConnectedFolderRef;
     proposalId: string;
     digest: string;
     title: string;
@@ -1547,22 +1547,22 @@ export interface WorkFoldActFacade {
     version: string;
     /**
      * True when a Local preview of the same app id at a different revision was
-     * already in the work-folder: the install replaced it, carrying forward
+     * already in the Connected Folder: the install replaced it, carrying forward
      * grants and automation states by declaration id, run receipts, and
      * connections whose destination declaration is byte-identical
      * (`carryForwardInstallation`). Re-adding the installed revision is false.
      */
     replacesInstalled: boolean;
-    app: WorkFoldActInstalledAppRef;
+    app: AmpleFileActInstalledAppRef;
   }>;
   /**
    * Grants one exact reviewed declaration on the exact installed digest. A
-   * folder permission covers the whole work-folder; a permission that names a
-   * single file binds to the work-folder-relative file given as `path`, which must
-   * already exist inside the work-folder and outside its reserved metadata.
+   * folder permission covers the whole Connected Folder; a permission that names a
+   * single file binds to the Connected Folder–relative file given as `path`, which must
+   * already exist inside the Connected Folder and outside its reserved metadata.
    */
   appsGrant(input: {
-    workFolder: string;
+    connectedFolder: string;
     app: string;
     digest: string;
     kind: "network" | "files" | "notifications";
@@ -1571,7 +1571,7 @@ export interface WorkFoldActFacade {
     parentTaskId?: string;
     requestId?: string;
   }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+    connectedFolder: AmpleFileActConnectedFolderRef;
     appId: string;
     grantKind: "network" | "files" | "notifications";
     declaration: string;
@@ -1579,8 +1579,8 @@ export interface WorkFoldActFacade {
     root?: string;
   }>;
   /** Connects through the browser sign-in flow; a destination that takes a typed secret is refused and connected from Settings → Apps. */
-  appsConnect(input: { workFolder: string; app: string; destination: string; parentTaskId?: string; requestId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsConnect(input: { connectedFolder: string; app: string; destination: string; parentTaskId?: string; requestId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     appId: string;
     destination: string;
     target: string;
@@ -1588,8 +1588,8 @@ export interface WorkFoldActFacade {
     connection: { destinationId: string; kind: string | null; configured: boolean };
   }>;
   /** Enables one reviewed named job, pinning its digest and schedule summary. */
-  appsAutomationEnable(input: { workFolder: string; app: string; automation: string; parentTaskId?: string; requestId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsAutomationEnable(input: { connectedFolder: string; app: string; automation: string; parentTaskId?: string; requestId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     appId: string;
     appAutomationId: string;
     scheduleSummary: string;
@@ -1601,68 +1601,68 @@ export interface WorkFoldActFacade {
    * the data lands in Recently deleted first, unless the app held nothing
    * (docs/receipts-not-gates.md, F20).
    */
-  appsStorageClear(input: { workFolder: string; app: string; parentTaskId?: string; requestId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsStorageClear(input: { connectedFolder: string; app: string; parentTaskId?: string; requestId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     appId: string;
     clearedBytes: number;
     remainingBytes: number;
-    recentlyDeleted: WorkFoldActRecentlyDeletedRef | null;
+    recentlyDeleted: AmpleFileActRecentlyDeletedRef | null;
   }>;
   /** Purges one retained App data record, after a copy of it lands in Recently deleted. */
-  appsRetainedPurge(input: { workFolder: string; retained: string; parentTaskId?: string; requestId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsRetainedPurge(input: { connectedFolder: string; retained: string; parentTaskId?: string; requestId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     retainedDataId: string;
     dataNamespaceIds: string[];
     purged: true;
     cleanupPending: boolean;
-    recentlyDeleted: WorkFoldActRecentlyDeletedRef[];
+    recentlyDeleted: AmpleFileActRecentlyDeletedRef[];
   }>;
   /** The purge disposition of `apps uninstall --purge-data`; every affected namespace is copied into Recently deleted first. */
-  appsUninstallPurge(input: { workFolder: string; instance: string; parentTaskId?: string; requestId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  appsUninstallPurge(input: { connectedFolder: string; instance: string; parentTaskId?: string; requestId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     runtimeInstanceId: string;
     purgedNamespaceIds: string[];
     removed: true;
     cleanupPending: boolean;
-    recentlyDeleted: WorkFoldActRecentlyDeletedRef[];
+    recentlyDeleted: AmpleFileActRecentlyDeletedRef[];
   }>;
   /**
    * Recently deleted (docs/receipts-not-gates.md, F20). It sits above
-   * work-folders, like automations, so neither verb takes
-   * `--work-folder`; each entry names the work-folder it came from. Listing is content-free: ids, kinds,
+   * Connected Folders, like automations, so neither verb takes
+   * `--connected-folder`; each entry names the Connected Folder it came from. Listing is content-free: ids, kinds,
    * paths, sizes, and dates, never file contents. Nothing empties the store —
    * only its retention window does, and that lives in Settings.
    */
   recentlyDeletedList(): Promise<{
-    entries: WorkFoldActRecentlyDeletedEntry[];
+    entries: AmpleFileActRecentlyDeletedEntry[];
     retentionDays: number;
     damagedCount: number;
   }>;
   /**
-   * Puts one item back. A file or folder returns to its work-folder at its original
-   * path, renamed when something else took the name; a deleted work-folder's
+   * Puts one item back. A file or folder returns to its Connected Folder at its original
+   * path, renamed when something else took the name; a deleted Connected Folder's
    * folder returns and is re-registered with its portable identity; a removed
    * Skill returns to the same scope and path and loads with the next turn,
    * unless a Skill of the same name is installed there now; app data goes back into
    * the same installation at the same revision; a Release goes back into the
-   * App Project it came from; a removed work-folder's App Studio history goes
-   * back once that work-folder is registered again, bringing its previews'
+   * App Project it came from; a removed Connected Folder's App Studio history goes
+   * back once that Connected Folder is registered again, bringing its previews'
    * data along. App data whose app is gone can only be saved as a file, which
    * is what `--to` does.
    */
   recentlyDeletedRestore(input: { entry: string; toPath?: string; parentTaskId?: string; requestId?: string }): Promise<{
-    entry: WorkFoldActRecentlyDeletedEntry | null;
+    entry: AmpleFileActRecentlyDeletedEntry | null;
     restored:
       /** `safetyCheckpointId` is null when the restore succeeded but History could not record an undo point for it. */
-      | { kind: "file" | "folder"; workFolder: WorkFoldActWorkFolderRef; path: string; renamed: boolean; safetyCheckpointId: string | null }
-      | { kind: "work-folder"; workFolder: WorkFoldActWorkFolderRef; workFolderRoot: string; renamed: boolean }
+      | { kind: "file" | "folder"; connectedFolder: AmpleFileActConnectedFolderRef; path: string; renamed: boolean; safetyCheckpointId: string | null }
+      | { kind: "connected-folder"; connectedFolder: AmpleFileActConnectedFolderRef; connectedFolderRoot: string; renamed: boolean }
       /** `workFolder` only for the work-folder scope; `path` is the restored Skill folder. */
-      | { kind: "skill"; scope: "everywhere" | "work-folder"; workFolder?: WorkFoldActWorkFolderRef; name: string; path: string }
-      | { kind: "app-storage"; workFolder: WorkFoldActWorkFolderRef; appId: string; usage: { revision: number; usageBytes: number } }
-      | { kind: "app-release"; workFolder: WorkFoldActWorkFolderRef; releaseDigest: string; displayVersion: string }
+      | { kind: "skill"; scope: "everywhere" | "connected-folder"; connectedFolder?: AmpleFileActConnectedFolderRef; name: string; path: string }
+      | { kind: "app-storage"; connectedFolder: AmpleFileActConnectedFolderRef; appId: string; usage: { revision: number; usageBytes: number } }
+      | { kind: "app-release"; connectedFolder: AmpleFileActConnectedFolderRef; releaseDigest: string; displayVersion: string }
       | {
         kind: "app-studio";
-        workFolder: WorkFoldActWorkFolderRef;
+        connectedFolder: AmpleFileActConnectedFolderRef;
         projectTitle: string | null;
         previewCount: number;
         releaseCount: number;
@@ -1677,16 +1677,16 @@ export interface WorkFoldActFacade {
   /**
    * Enables one declared automation from its inert typed proposal file, or a
    * full declaration (docs/automations.md): direct, receipted, and
-   * digest-pinned. Every referenced work-folder must be registered, a one-time
+   * digest-pinned. Every referenced Connected Folder must be registered, a one-time
    * trigger must be in the future (at most ten years ahead), and enabling an identical
    * already-enabled declaration is a no-op that leaves any active run alone.
-   * Automations are above work-folders: no `--work-folder` exists on this verb.
+   * Automations are above Connected Folders: no `--connected-folder` exists on this verb.
    */
   automationsEnable(input: { proposalPath: string; cwd: string; parentTaskId?: string; requestId?: string }): Promise<{
     automationId: string;
     declarationDigest: string;
     title: string;
-    referencedWorkFolderIds: string[];
+    referencedConnectedFolderIds: string[];
     health: "enabled";
     enabledAt: string;
     alreadyEnabled: boolean;
@@ -1695,22 +1695,22 @@ export interface WorkFoldActFacade {
 
   /**
    * Automation management verbs (docs/automations.md). Automations are above
-   * work-folders: none of these takes a work-folder, like the agent group. Listing,
-   * showing, and receipts are content-bearing act reads (titles, work-folder names,
+   * Connected Folders: none of these takes a Connected Folder, like the agent group. Listing,
+   * showing, and receipts are content-bearing act reads (titles, Connected Folder names,
    * the chat message a person reviewed); run-now is a direct verb on an
    * enabled automation only; stop and disable are narrowing and never need a
    * click; delete removes a disabled, suspended, or completed declaration while the
    * receipts journal is retained — audit records survive the object.
    * Enabling is `automationsEnable`, a direct receipted verb.
    */
-  automationsList(): Promise<{ automations: WorkFoldActAutomationSummary[] }>;
+  automationsList(): Promise<{ automations: AmpleFileActAutomationSummary[] }>;
   /**
    * The models a chat or agent step may name in its `model` field: only
    * models whose provider is connected, each with whether it accepts images,
    * so an automation that looks at pictures can pick one that sees them.
    */
-  automationsModels(): Promise<{ models: WorkFoldActAutomationModel[] }>;
-  automationsShow(input: { automation: string }): Promise<{ automation: WorkFoldActAutomationDetail }>;
+  automationsModels(): Promise<{ models: AmpleFileActAutomationModel[] }>;
+  automationsShow(input: { automation: string }): Promise<{ automation: AmpleFileActAutomationDetail }>;
   /**
    * Manual run-now for an enabled automation: receipted, never a schedule
    * mutation, refused for proposed/disabled/suspended health. The result is
@@ -1720,7 +1720,7 @@ export interface WorkFoldActFacade {
   automationsRun(input: { automation: string; parentTaskId?: string; requestId?: string }): Promise<{
     automationId: string;
     title: string;
-    run: WorkFoldActAppAutomationRunRef;
+    run: AmpleFileActAppAutomationRunRef;
   }>;
   /** Stops this automation's active run; an automation with no active run refuses with its settled truth. */
   automationsStop(input: { automation: string; parentTaskId?: string }): Promise<{
@@ -1749,23 +1749,23 @@ export interface WorkFoldActFacade {
   }>;
   /** Bounded read of the automation receipts journal, optionally scoped to one automation id. */
   automationsReceipts(input: { automation?: string }): Promise<{
-    receipts: WorkFoldActAutomationReceipt[];
+    receipts: AmpleFileActAutomationReceipt[];
     truncated: boolean;
     damagedLineCount: number;
   }>;
 
   /**
-   * Experimental Checks act surface. All methods resolve an explicit work-folder;
+   * Experimental Checks act surface. All methods resolve an explicit Connected Folder;
    * declarations remain inert until `checksEnable` imports one proposal, and
    * runs remain task-scoped so polling and abort never depend on ambient UI
    * state.
    */
-  checksEnable(input: { workFolder: string; proposalPath: string; cwd: string; proposeOnly?: boolean }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  checksEnable(input: { connectedFolder: string; proposalPath: string; cwd: string; proposeOnly?: boolean }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     check: {
       id: string;
       title: string;
-      severity: WorkFoldCheckFinding["severity"];
+      severity: AmpleFileCheckFinding["severity"];
       sensorId: string;
       sensorRevision: number;
       targetCount: number;
@@ -1780,62 +1780,62 @@ export interface WorkFoldActFacade {
     };
     declarationDigest: string;
   }>;
-  checksProposeFix(input: { workFolder: string; proposalPath: string; cwd: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef; correction: CheckCorrectionRecord }>;
-  checksDisable(input: { workFolder: string; checkId: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  checksProposeFix(input: { connectedFolder: string; proposalPath: string; cwd: string }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef; correction: CheckCorrectionRecord }>;
+  checksDisable(input: { connectedFolder: string; checkId: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     checkId: string;
     disabled: boolean;
   }>;
-  checksRun(input: { workFolder: string; checkId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  checksRun(input: { connectedFolder: string; checkId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     taskId: string;
     runId: string;
     checkIds: string[];
   }>;
-  checksTask(input: { workFolder: string; taskId: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    task: WorkFoldActCheckTaskStatus;
+  checksTask(input: { connectedFolder: string; taskId: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    task: AmpleFileActCheckTaskStatus;
   }>;
-  checksResult(input: { workFolder: string; taskId: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
-    run: WorkFoldCheckRunRecord;
+  checksResult(input: { connectedFolder: string; taskId: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
+    run: AmpleFileCheckRunRecord;
   }>;
-  checksAbort(input: { workFolder: string; taskId: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  checksAbort(input: { connectedFolder: string; taskId: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     taskId: string;
     aborted: boolean;
   }>;
-  checksProblems(input: { workFolder: string; checkId?: string }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+  checksProblems(input: { connectedFolder: string; checkId?: string }): Promise<{
+    connectedFolder: AmpleFileActConnectedFolderRef;
     checkId?: string;
-    findings: WorkFoldCheckFinding[];
+    findings: AmpleFileCheckFinding[];
     invalidated: number;
     healthErrors: string[];
     truncated: boolean;
   }>;
   checksDecide(input: {
-    workFolder: string;
+    connectedFolder: string;
     findingId: string;
-    decision: WorkFoldCheckDecisionKind;
+    decision: AmpleFileCheckDecisionKind;
     deferUntil?: string;
   }): Promise<{
-    workFolder: WorkFoldActWorkFolderRef;
+    connectedFolder: AmpleFileActConnectedFolderRef;
     findingId: string;
-    decision: WorkFoldCheckDecision;
+    decision: AmpleFileCheckDecision;
   }>;
 
   /**
-   * The work-fold agent: the conversation above all work-folders. It reuses
+   * The AmpleFile agent: the conversation above all Connected Folders. It reuses
    * the same turn orchestration and Pi runtime as Worker Chats, but its
    * transcript is machine-local application state, it carries no user
-   * work-folder's project configuration (only work-fold's two app-owned
-   * work-fold agent resources), and its cross-work-folder hands are these same
+   * Connected Folder's project configuration (only AmpleFile's two app-owned
+   * AmpleFile agent resources), and its cross–Connected Folder hands are these same
    * act commands. Omitting conversationId targets the default (most recent
-   * active) work-fold agent chat, creating it on first send.
+   * active) AmpleFile agent chat, creating it on first send.
    */
-  agentList(): Promise<{ conversations: WorkFoldActConversationRef[] }>;
-  agentAsk(input: Omit<Parameters<WorkFoldActFacade["chatAsk"]>[0], "workFolder" | "respondent">): Promise<Omit<Awaited<ReturnType<WorkFoldActFacade["chatAsk"]>>, "workFolder">>;
-  agentAnswer(input: Omit<Parameters<WorkFoldActFacade["chatAnswer"]>[0], "workFolder">): Promise<Omit<Awaited<ReturnType<WorkFoldActFacade["chatAnswer"]>>, "workFolder">>;
+  agentList(): Promise<{ conversations: AmpleFileActConversationRef[] }>;
+  agentAsk(input: Omit<Parameters<AmpleFileActFacade["chatAsk"]>[0], "connectedFolder" | "respondent">): Promise<Omit<Awaited<ReturnType<AmpleFileActFacade["chatAsk"]>>, "connectedFolder">>;
+  agentAnswer(input: Omit<Parameters<AmpleFileActFacade["chatAnswer"]>[0], "connectedFolder">): Promise<Omit<Awaited<ReturnType<AmpleFileActFacade["chatAnswer"]>>, "connectedFolder">>;
   agentSend(input: {
     conversationId?: string;
     newConversation?: boolean;
@@ -1849,53 +1849,53 @@ export interface WorkFoldActFacade {
     conversationId: string;
     messageId: string;
     taskId: string;
-    attachments: WorkFoldAgentAttachmentRef[];
+    attachments: AmpleFileAgentAttachmentRef[];
   }>;
   agentConversationStatus(input: { conversationId?: string }): Promise<{
-    conversation: WorkFoldActConversationRef;
-    state: WorkFoldActChatState;
+    conversation: AmpleFileActConversationRef;
+    state: AmpleFileActChatState;
   }>;
   agentTurnStatus(input: { taskId: string }): Promise<{
-    task: WorkFoldActTurnStatus;
+    task: AmpleFileActTurnStatus;
     /** The shipped attachment-and-actions projection (`agent status` keeps it, F25). */
-    request: WorkFoldActAgentRequest | null;
+    request: AmpleFileActAgentRequest | null;
     /** F28: set while this task's request waits on an answer to a question this task asked. */
-    waiting: WorkFoldActWaitingRef | null;
+    waiting: AmpleFileActWaitingRef | null;
     /**
      * The F25 graph ref, named apart from `request` so the shipped field keeps
      * its shape for the popover and the human renderer.
      */
-    requestGraph: WorkFoldActRequestRef | null;
+    requestGraph: AmpleFileActRequestRef | null;
   }>;
-  /** Request-level stop: aborts the work-fold agent turn and every recorded child turn still running. */
+  /** Request-level stop: aborts the AmpleFile agent turn and every recorded child turn still running. */
   agentStop(input: { taskId: string }): Promise<{
     taskId: string;
-    workFoldAgentAborted: boolean;
-    children: Array<{ taskId: string; conversationId: string; workFolderId: string; aborted: boolean }>;
+    ampleFileAgentAborted: boolean;
+    children: Array<{ taskId: string; conversationId: string; connectedFolderId: string; aborted: boolean }>;
   }>;
   agentConversationResult(input: { conversationId?: string; messages?: number }): Promise<{
     conversationId: string;
-    state: WorkFoldActChatState;
+    state: AmpleFileActChatState;
     total: number;
     lastAssistant: string | null;
-    messages: WorkFoldActChatMessage[];
+    messages: AmpleFileActChatMessage[];
   }>;
   agentTurnResult(input: { taskId: string }): Promise<{
     conversationId: string;
     task: { taskId: string; state: "succeeded"; endedAt: string };
-    message: WorkFoldActChatMessage;
-    request: WorkFoldActRequestRef | null;
-    result: WorkFoldResultEnvelope | null;
+    message: AmpleFileActChatMessage;
+    request: AmpleFileActRequestRef | null;
+    result: AmpleFileResultEnvelope | null;
   }>;
   agentAbort(input: { conversationId?: string }): Promise<{ conversationId: string; aborted: boolean }>;
   /**
-   * The overview (docs/work-fold-agent-overview.md): the kernel's
-   * deterministic digest of recorded state above all work-folders — running
-   * work, needs-you items, changes, and per-work-folder Check rows, with the
+   * The overview (docs/amplefile-agent-overview.md): the kernel's
+   * deterministic digest of recorded state above all Connected Folders — running
+   * work, needs-you items, changes, and per–Connected Folder Check rows, with the
    * per-surface seen markers included as data. Read-only: the act lane renders
    * markers, it never advances one, and this method deliberately does not
-   * require the work-fold agent to be ready — the digest reads recorded
+   * require the AmpleFile agent to be ready — the digest reads recorded
    * state, not the model.
    */
-  agentOverview(): Promise<WorkFoldOverviewSnapshot>;
+  agentOverview(): Promise<AmpleFileOverviewSnapshot>;
 }

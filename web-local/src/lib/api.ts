@@ -68,7 +68,7 @@ const localEventMultiplexer = createLocalEventMultiplexer((subscriptions, receiv
 });
 
 export function createEventSource(path: string): LocalEventStream {
-  if (/^\/api\/(?:work-fold-agent\/control-events|work-fold-agent\/conversations\/[^/]+\/events|work-folders\/[^/]+\/(?:file-events|conversations\/[^/]+\/events))$/.test(path)) {
+  if (/^\/api\/(?:amplefile-agent\/control-events|amplefile-agent\/conversations\/[^/]+\/events|connected-folders\/[^/]+\/(?:file-events|conversations\/[^/]+\/events))$/.test(path)) {
     return localEventMultiplexer.subscribe(path);
   }
   return createDirectEventSource(path).source;
@@ -232,12 +232,12 @@ export function dispatchSseFrame(frame: string, source: LocalEventStream): void 
 }
 
 export function apiUrl(path: string): string {
-  const baseUrl = window.workFoldDesktop?.api.baseUrl;
+  const baseUrl = window.ampleFileDesktop?.api.baseUrl;
   return baseUrl ? new URL(path, baseUrl).toString() : path;
 }
 
 async function apiHeaders(extra: HeadersInit = {}): Promise<HeadersInit> {
-  const sessionHeaders = await window.workFoldDesktop?.api.getSessionHeaders?.();
+  const sessionHeaders = await window.ampleFileDesktop?.api.getSessionHeaders?.();
   return { ...extra, ...(sessionHeaders ?? {}) };
 }
 
@@ -262,7 +262,7 @@ export function rawErrorMessage(error: unknown): string {
 
 export function userFriendlyErrorText(message: string): string {
   return isTransientNetworkError(message)
-    ? "work-fold is still reconnecting. Wait a moment and try again; your local files remain available."
+    ? "AmpleFile is still reconnecting. Wait a moment and try again; your local files remain available."
     : message;
 }
 

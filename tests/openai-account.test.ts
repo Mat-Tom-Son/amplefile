@@ -236,11 +236,11 @@ test("API-key connections do not send account-profile requests", async t => {
 
 test("account details are available through Settings only and stay out of model/status projections", async t => {
   const host = await runtime(t);
-  const root = await mkdtemp(join(tmpdir(), "work-fold-account-api-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-account-api-"));
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => String(input) === userInfo
     ? Response.json({ sub: "person", email: "settings-only@example.test" }) : previousFetch(input, init);
-  const api = await startLocalApi({ port: 0, stateBase: join(root, "state"), workFolderBase: join(root, "content"), loadEnv: false,
+  const api = await startLocalApi({ port: 0, stateBase: join(root, "state"), connectedFolderBase: join(root, "content"), loadEnv: false,
     piRuntimeProvider: { resolveRuntime: async () => ({ agentDir: join(root, "pi"), ...host }) } });
   t.after(async () => { await api.close(); await rm(root, { recursive: true, force: true }); });
   const response = await fetch(`${api.origin}/api/agent/provider-account?scope=agent&provider=openai`);

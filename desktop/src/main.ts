@@ -36,38 +36,38 @@ import { parseFeatureInstallationId } from "../../src/local/agent/app-platform-c
 import { RoutedPiExtensionUiBridge, type PiExtensionUiEvent } from "../../src/local/agent/extension-ui.js";
 import { defaultAgentSdkDir } from "../../src/local/agent/agent-data-dir.js";
 import {
-  RegisteredWorkFolderRuntimeProvider,
-  RegisteredWorkFolderTrustAuthority,
-} from "../../src/local/agent/registered-work-folder-runtime.js";
+  RegisteredConnectedFolderRuntimeProvider,
+  RegisteredConnectedFolderTrustAuthority,
+} from "../../src/local/agent/registered-connected-folder-runtime.js";
 import type { PiRuntimeProvider } from "../../src/local/agent/pi-runtime-config.js";
 import { startLocalApi, transferFileEntries } from "../../src/local/server.js";
 import { addSidebarFolder, assertStandardFolderPathUnowned, isStandardFolderId, resolveStandardFolderPath, standardFolderRoot } from "../../src/local/standard-folders.js";
 import { loadLocalEnvironmentFile } from "../../src/local/server-dev-options.js";
-import type { WorkFoldActFacade } from "../../src/local/cli/act-facade.js";
+import type { AmpleFileActFacade } from "../../src/local/cli/act-facade.js";
 import {
-  removeWorkFoldCliActTokenFile,
-  writeWorkFoldCliActTokenFile,
+  removeAmpleFileCliActTokenFile,
+  writeAmpleFileCliActTokenFile,
 } from "../../src/local/cli/act-token.js";
-import { configureWorkFoldStateRoot, managedWorkFolderRoot, workFoldAgentRoot } from "../../src/local/state-paths.js";
-import { getWorkFolder, listWorkFolders } from "../../src/local/work-folder.js";
-import { WorkFoldCliKernelAdapter } from "../../src/local/work-fold-cli-adapter.js";
-import { WorkFoldKernel } from "../../src/local/work-fold-kernel.js";
-import { WorkFoldCheckService } from "../../src/local/checks/check-service.js";
+import { configureAmpleFileStateRoot, managedConnectedFolderRoot, ampleFileAgentRoot } from "../../src/local/state-paths.js";
+import { getConnectedFolder, listConnectedFolders } from "../../src/local/connected-folder.js";
+import { AmpleFileCliKernelAdapter } from "../../src/local/amplefile-cli-adapter.js";
+import { AmpleFileKernel } from "../../src/local/amplefile-kernel.js";
+import { AmpleFileCheckService } from "../../src/local/checks/check-service.js";
 import { createDesktopCheckService } from "./desktop-checks.js";
-import { WorkFoldSettleSignal } from "../../src/local/automations/settle-signal.js";
+import { AmpleFileSettleSignal } from "../../src/local/automations/settle-signal.js";
 import { RestrictedAppService } from "../../src/local/agent/restricted-app-service.js";
 import { FileRestrictedAppStorage } from "../../src/local/agent/restricted-app-storage.js";
 import { RestrictedAppNotificationBroker } from "../../src/local/agent/restricted-app-notifications.js";
 import { RestrictedAppNotificationRecord } from "../../src/local/agent/restricted-app-notification-record.js";
 import { restrictedAppRoot } from "../../src/local/state-paths.js";
 import {
-  WorkFoldDesktopCliHost,
-  workFoldCliInstanceData,
-  workFoldCliRequestIdFromArgv,
-  workFoldInspectContextFromArgv,
-  workFoldSecondInstanceIntent,
-} from "./work-fold-cli-host.js";
-import { WorkFoldAgentPopover, type WorkFoldAgentPopoverStagedItem } from "./work-fold-agent-popover.js";
+  AmpleFileDesktopCliHost,
+  ampleFileCliInstanceData,
+  ampleFileCliRequestIdFromArgv,
+  ampleFileInspectContextFromArgv,
+  ampleFileSecondInstanceIntent,
+} from "./amplefile-cli-host.js";
+import { AmpleFileAgentPopover, type AmpleFileAgentPopoverStagedItem } from "./amplefile-agent-popover.js";
 import { ModelContextWindow } from "./model-context-window.js";
 import { writeDesktopClipboard } from "./clipboard.js";
 import { PackagedPiRuntimeProvider } from "./pi-runtime.js";
@@ -85,15 +85,15 @@ import { RestrictedAppHost, restrictedAppProtocol } from "./restricted-app-host.
 import { SecureSettingsStore } from "./settings.js";
 import { DesktopUpdater, type DesktopUpdateStatus } from "./updater.js";
 import {
-  workFoldDesktopUserDataPath,
-  workFoldDesktopStateOverride,
-  workFoldDesktopUsesInstalledProductData,
+  ampleFileDesktopUserDataPath,
+  ampleFileDesktopStateOverride,
+  ampleFileDesktopUsesInstalledProductData,
 } from "./user-data-path.js";
 import {
-  latestWorkFoldReleaseUrl,
-  runWorkFoldStartupRecovery,
-  workFoldStartupRecoveryPlan,
-  type WorkFoldStartupRecoveryPlan,
+  latestAmpleFileReleaseUrl,
+  runAmpleFileStartupRecovery,
+  ampleFileStartupRecoveryPlan,
+  type AmpleFileStartupRecoveryPlan,
 } from "./startup-recovery.js";
 import { createDesktopPiOAuthHooks } from "./pi-oauth.js";
 import { AppLifetimeResource } from "./app-lifetime-resource.js";
@@ -110,10 +110,10 @@ import {
   type NativeTabMenuRequest,
 } from "./tab-context-menu.js";
 import {
-  nativeWorkFolderMenuItems,
-  parseNativeWorkFolderMenuRequest,
-  type NativeWorkFolderMenuCommand,
-} from "./work-folder-context-menu.js";
+  nativeConnectedFolderMenuItems,
+  parseNativeConnectedFolderMenuRequest,
+  type NativeConnectedFolderMenuCommand,
+} from "./connected-folder-context-menu.js";
 import { openFileWithPickedApp, openWithDialogOptions, type OpenWithLaunchPlan } from "./open-with.js";
 import { desktopWindowMaterial, shouldUseMacVibrancy, shouldUseWindowsMica } from "./window-material.js";
 import { GracefulQuitCoordinator, type QuitPreparationOutcome } from "./quit-coordinator.js";
@@ -153,7 +153,7 @@ const micaSupported = shouldUseWindowsMica(
   process.getSystemVersion(),
   nativeTheme.prefersReducedTransparency,
 );
-const macVibrancyEnabled = process.env.WORKFOLD_MAC_NATIVE_MATERIAL?.trim() !== "0";
+const macVibrancyEnabled = process.env.AMPLEFILE_MAC_NATIVE_MATERIAL?.trim() !== "0";
 const macVibrancySupported = shouldUseMacVibrancy(
   process.platform,
   nativeTheme.prefersReducedTransparency,
@@ -178,7 +178,7 @@ const currentFile = fileURLToPath(import.meta.url);
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 // Development builds may override public service origins through the
 // repository's ignored local configuration. Packaged builds use the public
-// work-fold bridge and never depend on release-workstation credentials.
+// AmpleFile bridge and never depend on release-workstation credentials.
 if (!app.isPackaged) loadLocalEnvironmentFile(join(repoRoot, ".env"));
 const applicationVersion = resolveDesktopApplicationVersion({
   isPackaged: app.isPackaged,
@@ -196,21 +196,21 @@ const resumeUpdateCheckDelayMs = 20_000;
 const headlessCliIdleGraceMs = 500;
 const defaultWindowState = { width: 1440, height: 960 };
 const minimumWindowState = { width: 1100, height: 760 };
-const folderGrants = new Map<string, { workFolderRoot: string; expiresAt: number }>();
+const folderGrants = new Map<string, { connectedFolderRoot: string; expiresAt: number }>();
 
 let mainWindow: BrowserWindow | null = null;
 let railTooltipOverlay: RailTooltipOverlay | null = null;
 let builtInBrowser: BuiltInBrowser | null = null;
 let tray: Tray | null = null;
-let workFoldAgentPopover: WorkFoldAgentPopover | null = null;
+let ampleFileAgentPopover: AmpleFileAgentPopover | null = null;
 let modelContextWindow: ModelContextWindow | null = null;
 const localApiLifetime = new AppLifetimeResource<Awaited<ReturnType<typeof startLocalApi>>>();
 let piRuntime: PackagedPiRuntimeProvider | null = null;
 let secureSettings: SecureSettingsStore | null = null;
 let apiSessionToken = "";
-let actFacade: WorkFoldActFacade | null = null;
+let actFacade: AmpleFileActFacade | null = null;
 let actToken = "";
-let resolveWorkFoldAgentLineageParent: ((taskId: string) => { taskId: string } | null) | null = null;
+let resolveAmpleFileAgentLineageParent: ((taskId: string) => { taskId: string } | null) | null = null;
 /**
  * The automation executor's sleep/wake lifecycle handle (docs/automations.md:
  * suspension aborts the active run, which settles `interrupted`; resume
@@ -234,15 +234,15 @@ let rendererRecoveryInFlight = false;
 let rendererRecoveryAttempts = 0;
 let rendererRecoveryFailurePromptShown = false;
 let createWindowPromise: Promise<void> | null = null;
-let rendererMenuState: RendererMenuState = { workFolderOpen: false };
+let rendererMenuState: RendererMenuState = { connectedFolderOpen: false };
 let desktopHostPromise: Promise<DesktopHost> | null = null;
 let interactiveStartupPromise: Promise<void> | null = null;
 let activateRegistered = false;
 let interactiveRequested = false;
 let cliRequestGeneration = 0;
-let activeNativeWorkFolder: { id: string; name: string; workFolderRoot: string } | null = null;
-let activeNativeWorkFolderGeneration = 0;
-let pendingOpenWorkFolderRequest: { token: string; workFolderId: string; view?: "checks" } | null = null;
+let activeNativeConnectedFolder: { id: string; name: string; connectedFolderRoot: string } | null = null;
+let activeNativeConnectedFolderGeneration = 0;
+let pendingOpenConnectedFolderRequest: { token: string; connectedFolderId: string; view?: "checks" } | null = null;
 const pendingMacOpenPaths: string[] = [];
 let macOpenPathDrainPromise: Promise<void> | null = null;
 const quitCoordinator = new GracefulQuitCoordinator({
@@ -275,8 +275,8 @@ protocol.registerSchemesAsPrivileged([
 
 function packagedBuildChannel(): string {
   try {
-    const metadata = JSON.parse(readFileSync(join(app.getAppPath(), "package.json"), "utf8")) as { workFoldBuildChannel?: unknown };
-    return typeof metadata.workFoldBuildChannel === "string" ? metadata.workFoldBuildChannel : "production";
+    const metadata = JSON.parse(readFileSync(join(app.getAppPath(), "package.json"), "utf8")) as { ampleFileBuildChannel?: unknown };
+    return typeof metadata.ampleFileBuildChannel === "string" ? metadata.ampleFileBuildChannel : "production";
   } catch {
     // Historical production packages predate the explicit channel marker.
     return "production";
@@ -300,18 +300,18 @@ configureStableUserDataPath();
 let initialCliRequestId: string | null = null;
 let initialCliArgumentError: unknown = null;
 try {
-  initialCliRequestId = workFoldCliRequestIdFromArgv(process.argv);
+  initialCliRequestId = ampleFileCliRequestIdFromArgv(process.argv);
 } catch (error) {
   initialCliArgumentError = error;
 }
 interactiveRequested = initialCliRequestId === null && initialCliArgumentError === null;
-const initialInspectContext = interactiveRequested && workFoldInspectContextFromArgv(process.argv);
-const ownsInstance = app.requestSingleInstanceLock(workFoldCliInstanceData(initialCliRequestId, initialInspectContext));
+const initialInspectContext = interactiveRequested && ampleFileInspectContextFromArgv(process.argv);
+const ownsInstance = app.requestSingleInstanceLock(ampleFileCliInstanceData(initialCliRequestId, initialInspectContext));
 if (!ownsInstance) app.quit();
 
 if (ownsInstance && process.platform === "darwin") {
   // macOS can deliver this before `ready`. Queue the path so Finder and Dock
-  // launches can be resolved against the registered work-folder catalog once the
+  // launches can be resolved against the registered Connected Folder catalog once the
   // app host is available. Unknown folders are never registered implicitly.
   app.on("open-file", (event, path) => {
     event.preventDefault();
@@ -330,14 +330,14 @@ if (ownsInstance) {
     // Route by cause: the shim relaunches this executable for every CLI
     // request, so anything CLI-shaped stays headless — even when the request
     // id was lost in transit — and only a genuine interactive relaunch (the
-    // person opened work-fold again) may front the window.
-    const intent = workFoldSecondInstanceIntent(argv, additionalData);
+    // person opened AmpleFile again) may front the window.
+    const intent = ampleFileSecondInstanceIntent(argv, additionalData);
     if (intent.kind === "cli-invalid") {
       console.warn(`${productName} rejected an invalid CLI launch: ${intent.reason}`);
       return;
     }
     if (intent.kind === "cli") {
-      void processWorkFoldCliRequest(intent.requestId).catch((error) => {
+      void processAmpleFileCliRequest(intent.requestId).catch((error) => {
         console.warn(`${productName} could not process CLI request ${intent.requestId}: ${errorMessage(error)}`);
       });
       return;
@@ -351,12 +351,12 @@ if (ownsInstance) {
   });
   app.whenReady().then(async () => {
     configureStableUserDataPath();
-    configureWorkFoldStateRoot(app.getPath("userData"));
+    configureAmpleFileStateRoot(app.getPath("userData"));
     await ensureLoginShellEnvironment();
     configureCliEnvironment();
     if (initialCliArgumentError) throw initialCliArgumentError;
     if (initialCliRequestId) {
-      await processWorkFoldCliRequest(initialCliRequestId);
+      await processAmpleFileCliRequest(initialCliRequestId);
       if (!interactiveRequested) {
         await quitAfterCliRequest();
         return;
@@ -405,10 +405,10 @@ interface DesktopHost {
   extensionUi: RoutedPiExtensionUiBridge;
   runtime: PackagedPiRuntimeProvider;
   runtimeProvider: PiRuntimeProvider;
-  workFolderTrustAuthority: RegisteredWorkFolderTrustAuthority;
-  kernel: WorkFoldKernel;
-  checks: WorkFoldCheckService;
-  cli: WorkFoldDesktopCliHost;
+  connectedFolderTrustAuthority: RegisteredConnectedFolderTrustAuthority;
+  kernel: AmpleFileKernel;
+  checks: AmpleFileCheckService;
+  cli: AmpleFileDesktopCliHost;
   restrictedApps: RestrictedAppService;
   restrictedAppHost: RestrictedAppHost;
   /** What each app's notifications did, read by Settings → Apps through the local API. */
@@ -420,7 +420,7 @@ interface DesktopHost {
    * interactive local API consumes it for automation triggers — one signal for
    * the whole desktop, or settles silently never reach enabled automations.
    */
-  settleSignal: WorkFoldSettleSignal;
+  settleSignal: AmpleFileSettleSignal;
 }
 
 let loginShellEnvironmentPromise: Promise<LoginShellEnvironmentResult> | null = null;
@@ -446,7 +446,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
   desktopHostPromise = (async () => {
     await ensureLoginShellEnvironment();
     const userData = app.getPath("userData");
-    configureWorkFoldStateRoot(userData);
+    configureAmpleFileStateRoot(userData);
     const settings = new SecureSettingsStore(join(userData, "secure-settings.bin"));
     const restrictedConnections = createRestrictedAppConnectionStore(join(userData, "restricted-app-connections.bin"));
     const restrictedOAuth = createRestrictedAppOAuthClient(restrictedConnections, (url) => shell.openExternal(url));
@@ -470,19 +470,19 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
     // One settle signal for the whole desktop host: the Check service and the
     // restricted-app service publish durable settles into it, and the local
     // API's automation executor subscribes to the same instance.
-    const settleSignal = new WorkFoldSettleSignal();
+    const settleSignal = new AmpleFileSettleSignal();
     let restrictedApps!: RestrictedAppService;
-    let checks!: WorkFoldCheckService;
-    const readCheckResult = async (workFolderId: string, checkId: string, declarationDigest: string) => {
-      const workFolder = (await listWorkFolders()).find((item) => item.id === workFolderId);
-      if (!workFolder || !checks) throw new Error("The Check's work-folder is unavailable.");
-      return checks.selectedResult(workFolder, checkId, declarationDigest);
+    let checks!: AmpleFileCheckService;
+    const readCheckResult = async (connectedFolderId: string, checkId: string, declarationDigest: string) => {
+      const connectedFolder = (await listConnectedFolders()).find((item) => item.id === connectedFolderId);
+      if (!connectedFolder || !checks) throw new Error("The Check's Connected Folder is unavailable.");
+      return checks.selectedResult(connectedFolder, checkId, declarationDigest);
     };
-    // An install binds a declared Check slot only when the work-folder has exactly one Check.
-    const listChecks = async (workFolderId: string) => {
-      const workFolder = (await listWorkFolders()).find((item) => item.id === workFolderId);
-      if (!workFolder || !checks) throw new Error("The Check's work-folder is unavailable.");
-      return (await checks.overview(workFolder)).checks
+    // An install binds a declared Check slot only when the Connected Folder has exactly one Check.
+    const listChecks = async (connectedFolderId: string) => {
+      const connectedFolder = (await listConnectedFolders()).find((item) => item.id === connectedFolderId);
+      if (!connectedFolder || !checks) throw new Error("The Check's Connected Folder is unavailable.");
+      return (await checks.overview(connectedFolder)).checks
         .filter((item): item is typeof item & { digest: string } => typeof item.digest === "string")
         .map((item) => ({ checkId: item.id, declarationDigest: item.digest, title: item.title }));
     };
@@ -494,24 +494,24 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
       oauth: restrictedOAuth,
       storage: restrictedStorage,
       notifications: restrictedNotifications,
-      resolveWorkFolderRoot: async (workFolderId) => (await listWorkFolders()).find((workFolder) => workFolder.id === workFolderId)?.workFolderRoot ?? null,
+      resolveConnectedFolderRoot: async (connectedFolderId) => (await listConnectedFolders()).find((connectedFolder) => connectedFolder.id === connectedFolderId)?.connectedFolderRoot ?? null,
       preloadPath: resolveRestrictedAppPreloadPath(),
       kitRoot: join(dirnameFromFile(currentFile), "..", "..", "restricted-app-kit"),
       onTabCommand: (command) => {
         if (!mainWindow || mainWindow.isDestroyed()) return;
-        mainWindow.webContents.send("work-fold:restricted-app-view:tab-command", command);
+        mainWindow.webContents.send("amplefile:restricted-app-view:tab-command", command);
       },
       onUiState: (state) => {
         if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.id !== state.ownerWebContentsId) return;
-        mainWindow.webContents.send("work-fold:restricted-app-view:state", state);
+        mainWindow.webContents.send("amplefile:restricted-app-view:state", state);
       },
       onAttention: (state) => {
         if (!mainWindow || mainWindow.isDestroyed()) return;
-        mainWindow.webContents.send("work-fold:restricted-app-view:attention", state);
+        mainWindow.webContents.send("amplefile:restricted-app-view:attention", state);
       },
       onNotificationOpen: (request) => {
         if (!request.featureInstallationId) return;
-        const resolveOwner = restrictedApps.findByFeatureInstallation(request.workFolderId, request.featureInstallationId);
+        const resolveOwner = restrictedApps.findByFeatureInstallation(request.connectedFolderId, request.featureInstallationId);
         void resolveOwner.then((current) => {
           if (!current || current.manifest.id !== request.appId || current.digest !== request.digest) return;
           const enabledForNotification = current.automations.some((state) => state.enabled
@@ -521,7 +521,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
             || !current.manifest.permissions.notifications.some((item) => item.id === request.permissionId)) return;
           showWindow();
           if (!mainWindow || mainWindow.isDestroyed()) return;
-          mainWindow.webContents.send("work-fold:restricted-app-view:open-request", request);
+          mainWindow.webContents.send("amplefile:restricted-app-view:open-request", request);
         }).catch(() => undefined);
       },
     });
@@ -547,7 +547,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
       if (event.method === "openExternal") void openExternal(event.url).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
       else if (event.method === "oauthDeviceCode") void openExternal(event.verificationUri).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
       else if (event.method === "copyText") clipboard.writeText(event.text);
-      else if (event.method === "openSettings") mainWindow?.webContents.send("work-fold:agent:open-settings");
+      else if (event.method === "openSettings") mainWindow?.webContents.send("amplefile:agent:open-settings");
       else if (event.method === "quit") app.quit();
       });
       const nativeJiti = createJiti(import.meta.url, { moduleCache: true });
@@ -559,7 +559,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
         stateRoot: join(userData, "assistant-tools"), distribution: chromeDistribution,
         sourceDirectory: app.isPackaged ? join(process.resourcesPath, "chrome-native-host") : join(app.getAppPath(), "out/included-tools/chrome-native-host"),
         // An isolated/dev host must not replace the normal Chrome registration.
-        enabled: process.platform === "darwin" && app.isPackaged && !localMacSmokeBuild && !workFoldDesktopStateOverride(process.env),
+        enabled: process.platform === "darwin" && app.isPackaged && !localMacSmokeBuild && !ampleFileDesktopStateOverride(process.env),
       });
       const chromeConnection = await IncludedChromeConnectionService.create({
         stateRoot: join(userData, "assistant-tools"), distribution: chromeDistribution,
@@ -568,14 +568,14 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
         browserInstalled: () => ["/Applications/Google Chrome.app", join(homedir(), "Applications/Google Chrome.app")].some((path) => existsSync(path)),
         openStore: async () => {
           if (!chromeDistribution.storeId || !/^[a-p]{32}$/.test(chromeDistribution.storeId)) throw new Error("Chrome connection is not available yet.");
-          await new Promise<void>((resolveOpen, rejectOpen) => execFile("/usr/bin/open", ["-a", "Google Chrome", `https://chromewebstore.google.com/detail/${chromeDistribution.storeId}`], error => error ? rejectOpen(new Error("Google Chrome could not open the work-fold listing.")) : resolveOpen()));
+          await new Promise<void>((resolveOpen, rejectOpen) => execFile("/usr/bin/open", ["-a", "Google Chrome", `https://chromewebstore.google.com/detail/${chromeDistribution.storeId}`], error => error ? rejectOpen(new Error("Google Chrome could not open the AmpleFile listing.")) : resolveOpen()));
         },
         startTransport: async (facilities) => (await loadChromeConnection()).startIncludedChromeConnection(facilities),
         probe: async () => { await (await loadChromeConnection()).probeIncludedChromeConnection(chromeConnection); },
       });
       const bundledComputerHelper = app.isPackaged
-        ? join(process.resourcesPath, "computer-helper", "work-fold Computer.app")
-        : join(app.getAppPath(), "out", "included-tools", "computer-helper", "work-fold Computer.app");
+        ? join(process.resourcesPath, "computer-helper", "AmpleFile Computer.app")
+        : join(app.getAppPath(), "out", "included-tools", "computer-helper", "AmpleFile Computer.app");
       const computerHelper = process.platform === "darwin" && app.isPackaged
         ? await ComputerHelperInstallation.create({ sourceAppPath: bundledComputerHelper, stateRoot: join(userData, "assistant-tools") })
         : undefined;
@@ -592,12 +592,12 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
         mcpCredentialBackend: createEncryptedMcpCredentialBackend(join(userData, "pi-mcp-credentials.bin"), safeStorage),
         modelPreferencesPath: join(userData, "model-preferences.json"),
         openRouterCatalogPath: join(userData, "model-catalogs", "openrouter.json"),
-        workFoldAgentRootPath: workFoldAgentRoot(),
+        ampleFileAgentRootPath: ampleFileAgentRoot(),
         extensionUi,
       });
-      const workFolderTrustAuthority = new RegisteredWorkFolderTrustAuthority((await listWorkFolders()).map((workFolder) => workFolder.workFolderRoot));
-      const runtimeProvider = new RegisteredWorkFolderRuntimeProvider(runtime, workFolderTrustAuthority);
-      const kernel = new WorkFoldKernel({ runtimeProvider });
+      const connectedFolderTrustAuthority = new RegisteredConnectedFolderTrustAuthority((await listConnectedFolders()).map((connectedFolder) => connectedFolder.connectedFolderRoot));
+      const runtimeProvider = new RegisteredConnectedFolderRuntimeProvider(runtime, connectedFolderTrustAuthority);
+      const kernel = new AmpleFileKernel({ runtimeProvider });
       checks = createDesktopCheckService({
         kernel,
         settleSignal,
@@ -606,21 +606,21 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
         // failure here never fails the Check operation.
         onResultChanged: (event) => restrictedRuntime.publishCheckResultsChanged(event),
       });
-      const cli = new WorkFoldDesktopCliHost({
+      const cli = new AmpleFileDesktopCliHost({
       stateRoot: userData,
-      kernel: new WorkFoldCliKernelAdapter(kernel, {
-        checksStatusProvider: ({ workFolderId, workFolderRoot }) => checks.status({ id: workFolderId, workFolderRoot: workFolderRoot }),
+      kernel: new AmpleFileCliKernelAdapter(kernel, {
+        checksStatusProvider: ({ connectedFolderId, connectedFolderRoot }) => checks.status({ id: connectedFolderId, connectedFolderRoot: connectedFolderRoot }),
       }),
       version: applicationVersion,
       productName,
       getActFacade: () => (actFacade && actToken ? { facade: actFacade, token: actToken } : null),
-      resolveLineageParent: (taskId) => resolveWorkFoldAgentLineageParent?.(taskId) ?? null,
+      resolveLineageParent: (taskId) => resolveAmpleFileAgentLineageParent?.(taskId) ?? null,
       });
       await cli.initialize();
       secureSettings = settings;
       piRuntime = runtime;
       return {
-        settings, extensionUi, runtime, runtimeProvider, workFolderTrustAuthority, kernel, checks, cli, restrictedApps,
+        settings, extensionUi, runtime, runtimeProvider, connectedFolderTrustAuthority, kernel, checks, cli, restrictedApps,
         restrictedAppHost: restrictedRuntime, restrictedAppNotificationRecord: restrictedNotificationRecord, settleSignal, chromeConnection,
       };
     } catch (error) {
@@ -631,7 +631,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
   return desktopHostPromise;
 }
 
-async function processWorkFoldCliRequest(requestId: string): Promise<void> {
+async function processAmpleFileCliRequest(requestId: string): Promise<void> {
   cliRequestGeneration += 1;
   const host = await ensureDesktopHost();
   await host.cli.processRequest(requestId);
@@ -681,7 +681,7 @@ async function quitAfterCliRequest(): Promise<void> {
   // A headless boot proves no interactive app holds the single-instance lock,
   // so any act-token file on disk is stale crash residue; removing it lets
   // shims fail fast instead of booting another headless host per attempt.
-  await removeWorkFoldCliActTokenFile(app.getPath("userData")).catch(() => undefined);
+  await removeAmpleFileCliActTokenFile(app.getPath("userData")).catch(() => undefined);
   quitting = true;
   // Exit synchronously after the queue and host-backed auth storage are both
   // drained so a new process cannot hand work to a half-shutdown primary.
@@ -691,13 +691,13 @@ async function quitAfterCliRequest(): Promise<void> {
 
 function reportStartupError(error: unknown): void {
   console.error(`${productName} could not start: ${errorMessage(error)}`);
-  const recovery = workFoldStartupRecoveryPlan(error);
+  const recovery = ampleFileStartupRecoveryPlan(error);
   if (interactiveRequested && recovery) {
     startupRecoveryPromise ??= recoverFromNewerLocalState(recovery).catch((recoveryError) => {
       console.error(`${productName} update recovery failed: ${errorMessage(recoveryError)}`);
       dialog.showErrorBox(
         `${productName} update recovery failed`,
-        "work-fold could not complete update recovery. Your work-folders and app data are still safe.",
+        "AmpleFile could not complete update recovery. Your Connected Folders and app data are still safe.",
       );
       quitting = true;
       app.quit();
@@ -709,8 +709,8 @@ function reportStartupError(error: unknown): void {
   app.quit();
 }
 
-async function recoverFromNewerLocalState(plan: WorkFoldStartupRecoveryPlan): Promise<void> {
-  await runWorkFoldStartupRecovery(plan, {
+async function recoverFromNewerLocalState(plan: AmpleFileStartupRecoveryPlan): Promise<void> {
+  await runAmpleFileStartupRecovery(plan, {
     showDialog: async (prompt) => (await dialog.showMessageBox({
       type: prompt.type,
       title: prompt.title,
@@ -733,7 +733,7 @@ async function recoverFromNewerLocalState(plan: WorkFoldStartupRecoveryPlan): Pr
       if (status.phase === "ready") status = await desktopUpdater.install();
       return status.phase === "installing";
     },
-    openReleases: () => openExternal(latestWorkFoldReleaseUrl),
+    openReleases: () => openExternal(latestAmpleFileReleaseUrl),
     quit: () => {
       quitting = true;
       app.quit();
@@ -749,7 +749,7 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
     const api = await startLocalApi({
       appMode: "desktop",
       port: 0,
-      workFolderBase: managedWorkFolderRoot(),
+      connectedFolderBase: managedConnectedFolderRoot(),
       stateBase: userData,
       sessionToken: apiSessionToken,
       allowedOrigins: [`${appProtocol}://app`],
@@ -764,7 +764,7 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
         },
         onError: (error) => console.warn(`${productName} provider sign-in UI failed: ${errorMessage(error)}`),
       }),
-      workFolderTrustAuthority: host.workFolderTrustAuthority,
+      connectedFolderTrustAuthority: host.connectedFolderTrustAuthority,
       extensionUiBridge: host.extensionUi,
       kernel: host.kernel,
       checkService: host.checks,
@@ -775,7 +775,7 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
       settleSignal: host.settleSignal,
       actReceipts: host.cli.receipts,
       localFolderGrantProvider: { consumeLocalFolderGrant },
-      // Every Worker and the work-fold agent can use the browser tabs the person sees.
+      // Every Worker and the AmpleFile agent can use the browser tabs the person sees.
       browser: ensureBuiltInBrowser().toolHost,
       restrictedAppService: host.restrictedApps,
       appNotificationRecord: host.restrictedAppNotificationRecord,
@@ -789,10 +789,10 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
     // unavailable rather than half-working.
     actToken = randomBytes(32).toString("hex");
     actFacade = api.actFacade;
-    resolveWorkFoldAgentLineageParent = api.resolveWorkFoldAgentLineageParent;
+    resolveAmpleFileAgentLineageParent = api.resolveAmpleFileAgentLineageParent;
     automationPowerLifecycle = api.automations;
     try {
-      await writeWorkFoldCliActTokenFile(userData, actToken, productName);
+      await writeAmpleFileCliActTokenFile(userData, actToken, productName);
     } catch (error) {
       actFacade = null;
       actToken = "";
@@ -859,7 +859,7 @@ async function createMainWindow(): Promise<void> {
   });
   railTooltipOverlay = new RailTooltipOverlay(mainWindow);
 
-  applyNativeActiveWorkFolderToWindow(mainWindow);
+  applyNativeActiveConnectedFolderToWindow(mainWindow);
 
   if (process.platform === "win32") {
     try {
@@ -872,9 +872,9 @@ async function createMainWindow(): Promise<void> {
   mainWindow.webContents.on("did-start-navigation", () => railTooltipOverlay?.hide());
   mainWindow.webContents.on("render-process-gone", () => railTooltipOverlay?.hide());
   mainWindow.webContents.on("page-title-updated", (event) => {
-    if (process.platform !== "darwin" || !activeNativeWorkFolder) return;
+    if (process.platform !== "darwin" || !activeNativeConnectedFolder) return;
     event.preventDefault();
-    applyNativeActiveWorkFolderToWindow(mainWindow);
+    applyNativeActiveConnectedFolderToWindow(mainWindow);
   });
   mainWindow.webContents.once("destroyed", () => {
     void desktopHostPromise?.then((host) => host.restrictedAppHost.unmountUiOwner(rendererWebContentsId));
@@ -966,7 +966,7 @@ async function openModelContextWindow(): Promise<void> {
       request: async ({ path, method, body }) => {
         const response = await fetch(`${api.origin}${path}`, {
           method,
-          headers: { "x-work-fold-session": apiSessionToken, ...(body ? { "content-type": "application/json" } : {}) },
+          headers: { "x-amplefile-session": apiSessionToken, ...(body ? { "content-type": "application/json" } : {}) },
           ...(body ? { body: JSON.stringify(body) } : {}),
           signal: AbortSignal.timeout(10_000),
           redirect: "error",
@@ -983,7 +983,7 @@ async function openModelContextWindow(): Promise<void> {
 function registerIpc(): void {
   if (ipcRegistered) return;
   ipcRegistered = true;
-  ipcMain.handle("work-fold:clipboard:write", (event, value: unknown) => {
+  ipcMain.handle("amplefile:clipboard:write", (event, value: unknown) => {
     if (modelContextWindow?.owns(event.sender)) modelContextWindow.assertSender(event);
     else {
       assertTrustedRenderer(event);
@@ -998,33 +998,33 @@ function registerIpc(): void {
       ? { image: nativeImage.createFromDataURL(content.image) }
       : { text: content.text, ...(content.html !== undefined ? { html: content.html } : {}) }));
   });
-  ipcMain.handle("work-fold:diagnostics:request", (event, input: unknown) => {
+  ipcMain.handle("amplefile:diagnostics:request", (event, input: unknown) => {
     if (!modelContextWindow) throw new Error("The developer inspector is not open.");
     return modelContextWindow.request(event, input);
   });
-  ipcMain.handle("work-fold:diagnostics:close", (event) => {
+  ipcMain.handle("amplefile:diagnostics:close", (event) => {
     if (!modelContextWindow) throw new Error("The developer inspector is not open.");
     modelContextWindow.closeFrom(event);
   });
-  ipcMain.handle("work-fold:api:session-headers", (event) => {
+  ipcMain.handle("amplefile:api:session-headers", (event) => {
     assertTrustedRenderer(event);
-    return { "x-work-fold-session": apiSessionToken };
+    return { "x-amplefile-session": apiSessionToken };
   });
-  ipcMain.handle("work-fold:runtime:health", async (event) => {
+  ipcMain.handle("amplefile:runtime:health", async (event) => {
     assertTrustedRenderer(event);
     return {
       pi: piRuntime ? await piRuntime.health() : { ok: false, configured: false, version: "", message: "Pi is still starting." },
       settings: secureSettings ? await secureSettings.status() : { encryptionAvailable: false, configuredProviders: [] },
     };
   });
-  ipcMain.handle("work-fold:work-folder:choose-folder", async (event) => {
+  ipcMain.handle("amplefile:connected-folder:choose-folder", async (event) => {
     assertTrustedRenderer(event);
     const result = mainWindow
       ? await dialog.showOpenDialog(mainWindow, { title: "Choose a Folder", properties: ["openDirectory", "createDirectory"] })
       : await dialog.showOpenDialog({ title: "Choose a Folder", properties: ["openDirectory", "createDirectory"] });
-    const workFolderRoot = result.filePaths[0];
-    if (result.canceled || !workFolderRoot) return null;
-    return { path: workFolderRoot, folderGrantId: createFolderGrant(workFolderRoot) };
+    const connectedFolderRoot = result.filePaths[0];
+    if (result.canceled || !connectedFolderRoot) return null;
+    return { path: connectedFolderRoot, folderGrantId: createFolderGrant(connectedFolderRoot) };
   });
   const automationSettings = async (event: IpcMainInvokeEvent, value?: unknown) => {
     assertTrustedMainRenderer(event);
@@ -1033,65 +1033,65 @@ function registerIpc(): void {
       ...(value !== undefined ? { automationId: automationSettingsId(value) } : {}),
     };
   };
-  ipcMain.handle("work-fold:automations:list", async (event) => {
+  ipcMain.handle("amplefile:automations:list", async (event) => {
     const { facade } = await automationSettings(event);
     return facade.list();
   });
-  ipcMain.handle("work-fold:automations:proposals", async (event) => {
+  ipcMain.handle("amplefile:automations:proposals", async (event) => {
     const { facade } = await automationSettings(event);
     return facade.proposals();
   });
-  ipcMain.handle("work-fold:automations:enable-proposal", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:automations:enable-proposal", async (event, value: unknown) => {
     const { facade } = await automationSettings(event);
     return facade.enableProposal(automationProposalPath(value));
   });
-  ipcMain.handle("work-fold:automations:show", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:automations:show", async (event, value: unknown) => {
     const { facade, automationId } = await automationSettings(event, value);
     return facade.show(automationId!);
   });
-  ipcMain.handle("work-fold:automations:history", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:automations:history", async (event, value: unknown) => {
     const { facade, automationId } = await automationSettings(event, value);
     return facade.history(automationId!);
   });
-  ipcMain.handle("work-fold:automations:enable", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:automations:enable", async (event, value: unknown) => {
     const { facade, automationId } = await automationSettings(event, value);
     return facade.enable(automationId!);
   });
-  // A ready-made Automation from the file manager's Info panel: the host builds it for this work-folder.
-  ipcMain.handle("work-fold:automations:enable-template", async (event, value: unknown) => {
+  // A ready-made Automation from the file manager's Info panel: the host builds it for this Connected Folder.
+  ipcMain.handle("amplefile:automations:enable-template", async (event, value: unknown) => {
     const { facade } = await automationSettings(event);
-    if (!isRecord(value) || typeof value.workFolderId !== "string" || typeof value.templateId !== "string") {
-      throw new Error("A work-folder and a ready-made Automation are required.");
+    if (!isRecord(value) || typeof value.connectedFolderId !== "string" || typeof value.templateId !== "string") {
+      throw new Error("A Connected Folder and a ready-made Automation are required.");
     }
-    return facade.enableTemplate(value.workFolderId, value.templateId);
+    return facade.enableTemplate(value.connectedFolderId, value.templateId);
   });
-  ipcMain.handle("work-fold:automations:run", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:automations:run", async (event, value: unknown) => {
     const { facade, automationId } = await automationSettings(event, value);
     return facade.run(automationId!);
   });
-  ipcMain.handle("work-fold:automations:stop", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:automations:stop", async (event, value: unknown) => {
     const { facade, automationId } = await automationSettings(event, value);
     return facade.stop(automationId!);
   });
-  ipcMain.handle("work-fold:automations:disable", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:automations:disable", async (event, value: unknown) => {
     const { facade, automationId } = await automationSettings(event, value);
     return facade.disable(automationId!);
   });
-  ipcMain.handle("work-fold:automations:delete", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:automations:delete", async (event, value: unknown) => {
     const { facade, automationId } = await automationSettings(event, value);
     return facade.delete(automationId!);
   });
-  ipcMain.handle("work-fold:work-folder:reveal-folder", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:connected-folder:reveal-folder", async (event, value: unknown) => {
     assertTrustedRenderer(event);
-    if (typeof value !== "string") throw new Error("A work-folder id is required.");
-    const workFolder = await getWorkFolder(value);
-    const error = await shell.openPath(workFolder.workFolderRoot);
-    if (error) throw new Error(`work-fold could not show this folder. ${error}`);
+    if (typeof value !== "string") throw new Error("A Connected Folder id is required.");
+    const connectedFolder = await getConnectedFolder(value);
+    const error = await shell.openPath(connectedFolder.connectedFolderRoot);
+    if (error) throw new Error(`AmpleFile could not show this folder. ${error}`);
   });
-  ipcMain.handle("work-fold:work-folder:open-path", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:connected-folder:open-path", async (event, value: unknown) => {
     assertTrustedRenderer(event);
-    const request = workFolderPathRequest(value);
-    const filePath = await resolveWorkFolderItem(request.workFolderId, request.path);
+    const request = connectedFolderPathRequest(value);
+    const filePath = await resolveConnectedFolderItem(request.connectedFolderId, request.path);
     if (request.action === "reveal") {
       shell.showItemInFolder(filePath);
       return;
@@ -1099,12 +1099,12 @@ function registerIpc(): void {
     const result = await shell.openPath(filePath);
     if (result) throw new Error(`${productName} could not open this item. ${result}`);
   });
-  ipcMain.handle("work-fold:work-folder:open-path-with", async (event, value: unknown): Promise<{ opened: boolean; canceled: boolean; appName: string | null }> => {
+  ipcMain.handle("amplefile:connected-folder:open-path-with", async (event, value: unknown): Promise<{ opened: boolean; canceled: boolean; appName: string | null }> => {
     assertTrustedRenderer(event);
-    const request = workFolderPathRequest(value, false);
+    const request = connectedFolderPathRequest(value, false);
     return openFileWithPickedApp(process.platform, {
       resolveFile: async () => {
-        const filePath = await resolveWorkFolderItem(request.workFolderId, request.path);
+        const filePath = await resolveConnectedFolderItem(request.connectedFolderId, request.path);
         if (!(await stat(filePath)).isFile()) throw new Error("Only files can be opened with another app.");
         return filePath;
       },
@@ -1118,33 +1118,33 @@ function registerIpc(): void {
       launch: launchOpenWith,
     });
   });
-  ipcMain.handle("work-fold:work-folder:start-drag", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:connected-folder:start-drag", async (event, value: unknown) => {
     assertTrustedRenderer(event);
-    const request = workFolderPathRequest(value, false);
-    const filePath = await resolveWorkFolderItem(request.workFolderId, request.path);
+    const request = connectedFolderPathRequest(value, false);
+    const filePath = await resolveConnectedFolderItem(request.connectedFolderId, request.path);
     const info = await stat(filePath);
-    if (!info.isFile()) throw new Error("Only files can be dragged out of a work-folder.");
+    if (!info.isFile()) throw new Error("Only files can be dragged out of a Connected Folder.");
     const icon = nativeImage.createFromPath(join(resolveDesktopAssetsDir(), "icon-32.png"));
     if (icon.isEmpty()) return false;
     event.sender.startDrag({ file: filePath, icon });
     return true;
   });
-  ipcMain.handle("work-fold:work-folder:preview-file", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:connected-folder:preview-file", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     if (process.platform !== "darwin") return false;
-    const request = workFolderPathRequest(value, false);
-    const filePath = await resolveWorkFolderItem(request.workFolderId, request.path);
+    const request = connectedFolderPathRequest(value, false);
+    const filePath = await resolveConnectedFolderItem(request.connectedFolderId, request.path);
     const info = await stat(filePath);
     if (!info.isFile()) throw new Error("Only files can be previewed with Quick Look.");
     const window = mainWindow;
-    if (!window || window.isDestroyed()) throw new Error("The work-fold window is not available.");
+    if (!window || window.isDestroyed()) throw new Error("The AmpleFile window is not available.");
     window.previewFile(filePath, basename(filePath));
     return true;
   });
   // Standard Folders (the file manager's Desktop, Documents, and Downloads):
-  // the same open, Quick Look, and drag paths as a work-folder's files, and
-  // Move to Trash where a work-folder would use Recently deleted.
-  ipcMain.handle("work-fold:standard-folder:open-path", async (event, value: unknown) => {
+  // the same open, Quick Look, and drag paths as a Connected Folder's files, and
+  // Move to Trash where a Connected Folder would use Recently deleted.
+  ipcMain.handle("amplefile:standard-folder:open-path", async (event, value: unknown) => {
     assertTrustedRenderer(event);
     const request = standardFolderPathRequest(value, true);
     const filePath = await resolveStandardFolderItem(request.standardFolderId, request.path);
@@ -1155,7 +1155,7 @@ function registerIpc(): void {
     const result = await shell.openPath(filePath);
     if (result) throw new Error(`${productName} could not open this item. ${result}`);
   });
-  ipcMain.handle("work-fold:standard-folder:open-path-with", async (event, value: unknown): Promise<{ opened: boolean; canceled: boolean; appName: string | null }> => {
+  ipcMain.handle("amplefile:standard-folder:open-path-with", async (event, value: unknown): Promise<{ opened: boolean; canceled: boolean; appName: string | null }> => {
     assertTrustedRenderer(event);
     const request = standardFolderPathRequest(value);
     return openFileWithPickedApp(process.platform, {
@@ -1173,7 +1173,7 @@ function registerIpc(): void {
       launch: launchOpenWith,
     });
   });
-  ipcMain.handle("work-fold:standard-folder:start-drag", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:standard-folder:start-drag", async (event, value: unknown) => {
     assertTrustedRenderer(event);
     const request = standardFolderPathRequest(value);
     const filePath = await resolveStandardFolderItem(request.standardFolderId, request.path);
@@ -1183,14 +1183,14 @@ function registerIpc(): void {
     event.sender.startDrag({ file: filePath, icon });
     return true;
   });
-  ipcMain.handle("work-fold:standard-folder:preview-file", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:standard-folder:preview-file", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     if (process.platform !== "darwin") return false;
     const request = standardFolderPathRequest(value);
     const filePath = await resolveStandardFolderItem(request.standardFolderId, request.path);
     if (!(await stat(filePath)).isFile()) throw new Error("Only files can be previewed with Quick Look.");
     const window = mainWindow;
-    if (!window || window.isDestroyed()) throw new Error("The work-fold window is not available.");
+    if (!window || window.isDestroyed()) throw new Error("The AmpleFile window is not available.");
     window.previewFile(filePath, basename(filePath));
     return true;
   });
@@ -1198,7 +1198,7 @@ function registerIpc(): void {
   // files copied here paste into Finder, through the system's file pasteboard.
   // Paste reads the pasteboard here, never in the window (the window can't read the clipboard): what was
   // copied in this window pastes by place (so ⌥⌘V can move it); anything else Finder copied is copied in.
-  ipcMain.handle("work-fold:file-clipboard:paste", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:file-clipboard:paste", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isRecord(value) || !isRecord(value.target)) throw new Error("Choose where to paste.");
     const mode = value.mode === "move" ? "move" : "copy";
@@ -1213,7 +1213,7 @@ function registerIpc(): void {
     const result = await transferFileEntries({ mode: fromHere ? mode : "copy", sources, target: value.target });
     return { ...result, fromHere, count: sources.length };
   });
-  ipcMain.handle("work-fold:file-clipboard:write", (event, value: unknown): boolean => {
+  ipcMain.handle("amplefile:file-clipboard:write", (event, value: unknown): boolean => {
     assertTrustedMainRenderer(event);
     if (!Array.isArray(value) || !value.length || value.length > 5_000) throw new Error("Choose items to copy.");
     const paths = value.map((item) => {
@@ -1225,7 +1225,7 @@ function registerIpc(): void {
     return true;
   });
   // The file manager's + beside Standard Folders: the person chooses a folder in the picker, and only that adds it.
-  ipcMain.handle("work-fold:standard-folder:add", async (event): Promise<{ id: string; name: string } | null> => {
+  ipcMain.handle("amplefile:standard-folder:add", async (event): Promise<{ id: string; name: string } | null> => {
     assertTrustedMainRenderer(event);
     const window = BrowserWindow.fromWebContents(event.sender);
     const options = { title: "Add a Folder to the Sidebar", buttonLabel: "Add", properties: ["openDirectory", "createDirectory"] as Array<"openDirectory" | "createDirectory"> };
@@ -1234,7 +1234,7 @@ function registerIpc(): void {
     if (choice.canceled || !folderPath) return null;
     return addSidebarFolder(folderPath);
   });
-  ipcMain.handle("work-fold:standard-folder:trash", async (event, value: unknown): Promise<{ trashed: string[]; failed: { path: string; error: string } | null }> => {
+  ipcMain.handle("amplefile:standard-folder:trash", async (event, value: unknown): Promise<{ trashed: string[]; failed: { path: string; error: string } | null }> => {
     assertTrustedMainRenderer(event);
     if (!isRecord(value) || !Array.isArray(value.paths) || !value.paths.length || value.paths.length > 10_000) throw new Error("Choose items to move to the Trash.");
     const standardFolderId = typeof value.standardFolderId === "string" ? value.standardFolderId : "";
@@ -1243,7 +1243,7 @@ function registerIpc(): void {
     for (const path of value.paths) {
       try {
         const request = standardFolderPathRequest({ standardFolderId, path });
-        // Anything a work-folder owns is changed through that work-folder, where History keeps it.
+        // Anything a Connected Folder owns is changed through that Connected Folder, where History keeps it.
         await assertStandardFolderPathUnowned(standardFolderId, request.path);
         await shell.trashItem(await resolveStandardFolderItem(standardFolderId, request.path));
         trashed.push(request.path);
@@ -1253,96 +1253,96 @@ function registerIpc(): void {
     }
     return { trashed, failed: null };
   });
-  ipcMain.handle("work-fold:work-folder:popup-file-menu", async (event, value: unknown): Promise<NativeFileMenuCommand | null> => {
+  ipcMain.handle("amplefile:connected-folder:popup-file-menu", async (event, value: unknown): Promise<NativeFileMenuCommand | null> => {
     assertTrustedMainRenderer(event);
     if (process.platform !== "darwin") return null;
     const request = parseNativeFileMenuRequest(value);
     await validateNativeFileMenuEntry(request);
     return popupNativeFileMenu(request);
   });
-  ipcMain.handle("work-fold:work-folder:popup-tab-menu", (event, value: unknown): Promise<NativeTabMenuCommand | null> => {
+  ipcMain.handle("amplefile:connected-folder:popup-tab-menu", (event, value: unknown): Promise<NativeTabMenuCommand | null> => {
     assertTrustedMainRenderer(event);
     if (process.platform !== "darwin") return Promise.resolve(null);
     return popupNativeTabMenu(parseNativeTabMenuRequest(value));
   });
-  ipcMain.handle("work-fold:work-folder:popup-header-menu", (event, value: unknown): Promise<NativeWorkFolderMenuCommand | null> => {
+  ipcMain.handle("amplefile:connected-folder:popup-header-menu", (event, value: unknown): Promise<NativeConnectedFolderMenuCommand | null> => {
     assertTrustedMainRenderer(event);
     if (process.platform !== "darwin") return Promise.resolve(null);
-    const request = parseNativeWorkFolderMenuRequest(value);
-    return popupNativeCommandMenu(nativeWorkFolderMenuItems(request), request.point);
+    const request = parseNativeConnectedFolderMenuRequest(value);
+    return popupNativeCommandMenu(nativeConnectedFolderMenuItems(request), request.point);
   });
-  ipcMain.handle("work-fold:work-folder:set-active-work-folder", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:connected-folder:set-active-connected-folder", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     if (value !== null && (typeof value !== "string" || !value.trim() || value.length > 512)) {
-      throw new Error("A valid work-folder id is required.");
+      throw new Error("A valid Connected Folder id is required.");
     }
-    await setActiveNativeWorkFolder(value === null ? null : value.trim());
+    await setActiveNativeConnectedFolder(value === null ? null : value.trim());
   });
-  ipcMain.handle("work-fold:work-folder:take-open-work-folder", (event) => {
+  ipcMain.handle("amplefile:connected-folder:take-open-connected-folder", (event) => {
     assertTrustedMainRenderer(event);
-    const request = pendingOpenWorkFolderRequest;
-    pendingOpenWorkFolderRequest = null;
+    const request = pendingOpenConnectedFolderRequest;
+    pendingOpenConnectedFolderRequest = null;
     return request;
   });
-  ipcMain.on("work-fold:work-folder:ack-open-work-folder", (event, value: unknown) => {
+  ipcMain.on("amplefile:connected-folder:ack-open-connected-folder", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    if (typeof value === "string" && pendingOpenWorkFolderRequest?.token === value) pendingOpenWorkFolderRequest = null;
+    if (typeof value === "string" && pendingOpenConnectedFolderRequest?.token === value) pendingOpenConnectedFolderRequest = null;
   });
-  ipcMain.handle("work-fold:shell:open-external", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:shell:open-external", async (event, value: unknown) => {
     assertTrustedRenderer(event);
     if (typeof value !== "string") throw new Error("A URL is required.");
     await openExternal(value);
   });
-  ipcMain.handle("work-fold:window:accent-color", (event) => {
+  ipcMain.handle("amplefile:window:accent-color", (event) => {
     assertTrustedRenderer(event);
     return getSystemAccentColor();
   });
-  ipcMain.handle("work-fold:agent:open-agent-draft", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:agent:open-agent-draft", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    if (typeof value !== "string" || !value.trim() || value.length > 4096) throw new Error("A bounded work-fold agent draft is required.");
-    await openWorkFoldAgentPopoverWithItems([{ kind: "text", value }]);
+    if (typeof value !== "string" || !value.trim() || value.length > 4096) throw new Error("A bounded AmpleFile agent draft is required.");
+    await openAmpleFileAgentPopoverWithItems([{ kind: "text", value }]);
     return true;
   });
-  ipcMain.handle("work-fold:agent:open-checks", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:agent:open-checks", async (event, value: unknown) => {
     assertTrustedRenderer(event);
-    if (typeof value !== "string" || !(await listWorkFolders()).some((workFolder) => workFolder.id === value)) throw new Error("A registered work-folder is required.");
-    const request = { token: randomUUID(), workFolderId: value, view: "checks" as const };
-    pendingOpenWorkFolderRequest = request;
-    workFoldAgentPopover?.hide();
+    if (typeof value !== "string" || !(await listConnectedFolders()).some((connectedFolder) => connectedFolder.id === value)) throw new Error("A registered Connected Folder is required.");
+    const request = { token: randomUUID(), connectedFolderId: value, view: "checks" as const };
+    pendingOpenConnectedFolderRequest = request;
+    ampleFileAgentPopover?.hide();
     await ensureMainWindow();
     showWindow();
-    mainWindow?.webContents.send("work-fold:work-folder:open-work-folder", request);
+    mainWindow?.webContents.send("amplefile:connected-folder:open-connected-folder", request);
     return true;
   });
-  ipcMain.on("work-fold:agent:hide", (event) => {
+  ipcMain.on("amplefile:agent:hide", (event) => {
     assertTrustedRenderer(event);
-    workFoldAgentPopover?.hide();
+    ampleFileAgentPopover?.hide();
   });
-  ipcMain.handle("work-fold:agent:open-main", (event) => {
+  ipcMain.handle("amplefile:agent:open-main", (event) => {
     assertTrustedRenderer(event);
-    workFoldAgentPopover?.hide();
+    ampleFileAgentPopover?.hide();
     showWindow();
     return true;
   });
-  ipcMain.handle("work-fold:agent:open-ai-models-settings", async (event) => {
+  ipcMain.handle("amplefile:agent:open-ai-models-settings", async (event) => {
     assertTrustedRenderer(event);
-    workFoldAgentPopover?.hide();
+    ampleFileAgentPopover?.hide();
     await ensureMainWindow();
     showWindow();
-    mainWindow?.webContents.send("work-fold:agent:open-settings", "agent");
+    mainWindow?.webContents.send("amplefile:agent:open-settings", "agent");
     return true;
   });
-  ipcMain.handle("work-fold:window:get-close-to-tray", (event) => {
+  ipcMain.handle("amplefile:window:get-close-to-tray", (event) => {
     assertTrustedRenderer(event);
     return closeToTrayStatus();
   });
-  ipcMain.handle("work-fold:window:set-close-to-tray", (event, value: unknown) => {
+  ipcMain.handle("amplefile:window:set-close-to-tray", (event, value: unknown) => {
     assertTrustedRenderer(event);
     if (typeof value !== "boolean") throw new Error("Close-to-background preference must be a boolean.");
     updateDesktopPreferences({ closeToTray: value });
     return closeToTrayStatus();
   });
-  ipcMain.on("work-fold:window:set-theme", (event, value: unknown, source: unknown) => {
+  ipcMain.on("amplefile:window:set-theme", (event, value: unknown, source: unknown) => {
     assertTrustedRenderer(event);
     if (value !== "light" && value !== "dark") return;
     // Keep the OS-drawn chrome (Mica backdrop, frame, menus) on the app theme.
@@ -1356,48 +1356,48 @@ function registerIpc(): void {
       mainWindow.setBackgroundColor(windowBackgroundColors[value]);
     }
   });
-  ipcMain.on("work-fold:menu:set-state", (event, value: unknown) => {
+  ipcMain.on("amplefile:menu:set-state", (event, value: unknown) => {
     assertTrustedRenderer(event);
     updateApplicationMenuState(value);
   });
-  ipcMain.handle("work-fold:menu:popup", (event, menuId: unknown, bounds: unknown) => {
+  ipcMain.handle("amplefile:menu:popup", (event, menuId: unknown, bounds: unknown) => {
     assertTrustedRenderer(event);
     popupApplicationSubmenu(menuId, bounds);
   });
   // Other AI agents (Settings → Command Line): the command on Terminal's PATH
   // and the skill in Claude Code's and Codex's skills folders, each on a click.
   const commandLineEnvironment = () => defaultCommandLineEnvironment({ isPackaged: app.isPackaged });
-  ipcMain.handle("work-fold:command-line:status", (event) => {
+  ipcMain.handle("amplefile:command-line:status", (event) => {
     assertTrustedMainRenderer(event);
     return commandLineStatus(commandLineEnvironment());
   });
-  ipcMain.handle("work-fold:command-line:install-path", (event) => {
+  ipcMain.handle("amplefile:command-line:install-path", (event) => {
     assertTrustedMainRenderer(event);
     return installCommandOnPath(commandLineEnvironment());
   });
-  ipcMain.handle("work-fold:command-line:remove-path", (event) => {
+  ipcMain.handle("amplefile:command-line:remove-path", (event) => {
     assertTrustedMainRenderer(event);
     return removeCommandFromPath(commandLineEnvironment());
   });
-  ipcMain.handle("work-fold:command-line:install-skill", (event, target: unknown) => {
+  ipcMain.handle("amplefile:command-line:install-skill", (event, target: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isCommandLineSkillTarget(target)) throw new Error("Choose Claude Code or Codex.");
     return installSkill(commandLineEnvironment(), target);
   });
-  ipcMain.handle("work-fold:command-line:remove-skill", (event, target: unknown) => {
+  ipcMain.handle("amplefile:command-line:remove-skill", (event, target: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isCommandLineSkillTarget(target)) throw new Error("Choose Claude Code or Codex.");
     return removeSkill(commandLineEnvironment(), target);
   });
-  ipcMain.handle("work-fold:command-line:skill", (event) => {
+  ipcMain.handle("amplefile:command-line:skill", (event) => {
     assertTrustedMainRenderer(event);
     return outsideAgentSkill();
   });
-  ipcMain.handle("work-fold:settings:status", (event) => {
+  ipcMain.handle("amplefile:settings:status", (event) => {
     assertTrustedRenderer(event);
     return secureSettings?.status() ?? { encryptionAvailable: false, configuredProviders: [] };
   });
-  ipcMain.on("work-fold:window:rail-tooltip-show", (event, value: unknown) => {
+  ipcMain.on("amplefile:window:rail-tooltip-show", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     try {
       railTooltipOverlay?.show(value);
@@ -1405,15 +1405,15 @@ function registerIpc(): void {
       console.warn(`${productName} could not show a rail tooltip: ${errorMessage(error)}`);
     }
   });
-  ipcMain.on("work-fold:window:rail-tooltip-hide", (event) => {
+  ipcMain.on("amplefile:window:rail-tooltip-hide", (event) => {
     assertTrustedMainRenderer(event);
     railTooltipOverlay?.hide();
   });
-  ipcMain.handle("work-fold:browser:mount", (event, value: unknown) => {
+  ipcMain.handle("amplefile:browser:mount", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     return ensureBuiltInBrowser().mount(parseBrowserViewRequest(value));
   });
-  ipcMain.on("work-fold:browser:layout", (event, value: unknown) => {
+  ipcMain.on("amplefile:browser:layout", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     try {
       ensureBuiltInBrowser().layout(parseBrowserViewRequest(value));
@@ -1421,34 +1421,34 @@ function registerIpc(): void {
       console.warn(`${productName} could not lay out a browser tab: ${errorMessage(error)}`);
     }
   });
-  ipcMain.handle("work-fold:browser:unmount", (event, pageId: unknown) => {
+  ipcMain.handle("amplefile:browser:unmount", (event, pageId: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId)) throw new Error("The browser tab id is invalid.");
     ensureBuiltInBrowser().detach(pageId);
   });
-  ipcMain.handle("work-fold:browser:navigate", (event, pageId: unknown, address: unknown) => {
+  ipcMain.handle("amplefile:browser:navigate", (event, pageId: unknown, address: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId)) throw new Error("The browser tab id is invalid.");
     if (typeof address !== "string" || address.length > 32_768) throw new Error("The browser address is invalid.");
     return ensureBuiltInBrowser().navigate(pageId, address);
   });
-  ipcMain.handle("work-fold:browser:command", (event, pageId: unknown, command: unknown) => {
+  ipcMain.handle("amplefile:browser:command", (event, pageId: unknown, command: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId)) throw new Error("The browser tab id is invalid.");
     ensureBuiltInBrowser().command(pageId, parseBrowserCommand(command));
   });
-  ipcMain.handle("work-fold:browser:respond-permission", (event, pageId: unknown, requestId: unknown, decision: unknown) => {
+  ipcMain.handle("amplefile:browser:respond-permission", (event, pageId: unknown, requestId: unknown, decision: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId) || typeof requestId !== "string" || !/^[a-f0-9]{16}$/.test(requestId)) throw new Error("The site's request is invalid.");
     if (decision !== "allow" && decision !== "block") throw new Error("Choose Allow or Block.");
     ensureBuiltInBrowser().respondPermission(pageId, requestId, decision);
   });
-  ipcMain.handle("work-fold:browser:close", (event, pageId: unknown) => {
+  ipcMain.handle("amplefile:browser:close", (event, pageId: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId)) throw new Error("The browser tab id is invalid.");
     ensureBuiltInBrowser().close(pageId);
   });
-  ipcMain.on("work-fold:browser:sync", (event, value: unknown) => {
+  ipcMain.on("amplefile:browser:sync", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     try {
       ensureBuiltInBrowser().sync(parseBrowserTabsSync(value));
@@ -1456,11 +1456,11 @@ function registerIpc(): void {
       console.warn(`${productName} could not read the browser tab list: ${errorMessage(error)}`);
     }
   });
-  ipcMain.handle("work-fold:browser:states", (event) => {
+  ipcMain.handle("amplefile:browser:states", (event) => {
     assertTrustedMainRenderer(event);
     return ensureBuiltInBrowser().states();
   });
-  ipcMain.handle("work-fold:browser:popup-tab-menu", (event, pageId: unknown, url: unknown, point: unknown, options: unknown) => {
+  ipcMain.handle("amplefile:browser:popup-tab-menu", (event, pageId: unknown, url: unknown, point: unknown, options: unknown) => {
     assertTrustedMainRenderer(event);
     if (!isBrowserPageId(pageId) || typeof url !== "string" || url.length > 32_768) throw new Error("The browser tab is invalid.");
     const at = point as { x?: unknown; y?: unknown } | null;
@@ -1468,36 +1468,36 @@ function registerIpc(): void {
     if (!at || typeof at.x !== "number" || typeof at.y !== "number" || !Number.isFinite(at.x) || !Number.isFinite(at.y)) throw new Error("The menu position is invalid.");
     return ensureBuiltInBrowser().popupTabMenu(pageId, url, { x: at.x, y: at.y }, { canReopen: flags?.canReopen === true, hasOthers: flags?.hasOthers === true });
   });
-  ipcMain.handle("work-fold:browser:suggest", (event, text: unknown) => {
+  ipcMain.handle("amplefile:browser:suggest", (event, text: unknown) => {
     assertTrustedMainRenderer(event);
     if (typeof text !== "string" || text.length > 2_048) throw new Error("The address is invalid.");
     return ensureBuiltInBrowser().suggest(text);
   });
-  ipcMain.handle("work-fold:browser:recent", (event) => {
+  ipcMain.handle("amplefile:browser:recent", (event) => {
     assertTrustedMainRenderer(event);
     return ensureBuiltInBrowser().recentHistory();
   });
-  ipcMain.handle("work-fold:browser:clear-history", (event) => {
+  ipcMain.handle("amplefile:browser:clear-history", (event) => {
     assertTrustedMainRenderer(event);
     return ensureBuiltInBrowser().clearHistory();
   });
-  ipcMain.handle("work-fold:browser:show-download", (event, path: unknown) => {
+  ipcMain.handle("amplefile:browser:show-download", (event, path: unknown) => {
     assertTrustedMainRenderer(event);
     if (typeof path !== "string") throw new Error("The download is invalid.");
     ensureBuiltInBrowser().showDownload(path);
   });
-  ipcMain.handle("work-fold:restricted-app-view:mount", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:restricted-app-view:mount", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     const window = mainWindow;
-    if (!window || window.isDestroyed()) throw new Error("The work-fold window is not available.");
+    if (!window || window.isDestroyed()) throw new Error("The AmpleFile window is not available.");
     const identity = restrictedAppViewIdentity(value);
     const host = await ensureDesktopHost();
-    const descriptor = await host.restrictedApps.runtimeDescriptor(identity.workFolderId, identity.appId, identity.digest, identity.featureInstallationId);
+    const descriptor = await host.restrictedApps.runtimeDescriptor(identity.connectedFolderId, identity.appId, identity.digest, identity.featureInstallationId);
     const mounted = await host.restrictedAppHost.mountUi(descriptor, event.sender, window, restrictedAppViewPayload(value));
     railTooltipOverlay?.raise();
     return mounted;
   });
-  ipcMain.on("work-fold:restricted-app-view:layout", (event, value: unknown) => {
+  ipcMain.on("amplefile:restricted-app-view:layout", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     void ensureDesktopHost()
       .then((host) => {
@@ -1506,41 +1506,41 @@ function registerIpc(): void {
       })
       .catch((error) => console.warn(`${productName} could not lay out a restricted app view: ${errorMessage(error)}`));
   });
-  ipcMain.handle("work-fold:restricted-app-view:attention-states", async (event) => {
+  ipcMain.handle("amplefile:restricted-app-view:attention-states", async (event) => {
     assertTrustedMainRenderer(event);
     const host = await ensureDesktopHost();
     return host.restrictedAppHost.attentionStates();
   });
-  ipcMain.handle("work-fold:restricted-app-view:unmount", async (event, value: unknown) => {
+  ipcMain.handle("amplefile:restricted-app-view:unmount", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
     if (typeof value !== "string") throw new Error("A restricted app mount id is required.");
     const host = await ensureDesktopHost();
     await host.restrictedAppHost.unmountUi(event.sender.id, value);
   });
-  ipcMain.handle("work-fold:updates:status", (event): DesktopUpdateStatus => {
+  ipcMain.handle("amplefile:updates:status", (event): DesktopUpdateStatus => {
     assertTrustedRenderer(event);
     return getUpdateStatus();
   });
-  ipcMain.handle("work-fold:updates:check", async (event): Promise<DesktopUpdateStatus> => {
+  ipcMain.handle("amplefile:updates:check", async (event): Promise<DesktopUpdateStatus> => {
     assertTrustedRenderer(event);
     return checkForUpdates();
   });
-  ipcMain.handle("work-fold:updates:install", async (event): Promise<DesktopUpdateStatus> => {
+  ipcMain.handle("amplefile:updates:install", async (event): Promise<DesktopUpdateStatus> => {
     assertTrustedRenderer(event);
     return desktopUpdater?.install() ?? getUpdateStatus();
   });
-  ipcMain.handle("work-fold:updates:update-now", async (event): Promise<DesktopUpdateStatus> => {
+  ipcMain.handle("amplefile:updates:update-now", async (event): Promise<DesktopUpdateStatus> => {
     assertTrustedRenderer(event);
     return desktopUpdater?.updateNow() ?? getUpdateStatus();
   });
 }
 
 type RendererMenuCommand =
-  | "new-work-folder"
+  | "new-connected-folder"
   | "open-local-folder"
   | "new-chat"
   | "close-tab"
-  | "reload-work-folder-state"
+  | "reload-connected-folder-state"
   | "check-for-updates"
   | "open-settings"
   | "open-about"
@@ -1555,7 +1555,7 @@ type RendererMenuCommand =
 type ApplicationMenuId = "file" | "edit" | "view" | "help";
 
 interface RendererMenuState {
-  workFolderOpen: boolean;
+  connectedFolderOpen: boolean;
 }
 
 function configureMenu(): void {
@@ -1588,16 +1588,16 @@ function buildApplicationMenuTemplate(): MenuItemConstructorOptions[] {
 function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemConstructorOptions[] {
   if (menuId === "file") {
     const items: MenuItemConstructorOptions[] = [
-      { label: "Create New work-folder", accelerator: "CommandOrControl+N", click: () => sendRendererMenuCommand("new-work-folder") },
-      { label: "Use Existing Folder...", accelerator: "CommandOrControl+O", click: () => sendRendererMenuCommand("open-local-folder") },
+      { label: "New Connected Folder", accelerator: "CommandOrControl+N", click: () => sendRendererMenuCommand("new-connected-folder") },
+      { label: "Connect Folder...", accelerator: "CommandOrControl+O", click: () => sendRendererMenuCommand("open-local-folder") },
       ...(process.platform === "darwin" ? [{
         label: "Open Recent",
         role: "recentDocuments" as const,
         submenu: [{ role: "clearRecentDocuments" as const }],
       }] : []),
       { type: "separator" },
-      { id: "new-chat", label: "New Chat", accelerator: "CommandOrControl+Shift+N", enabled: rendererMenuState.workFolderOpen, click: () => sendRendererMenuCommand("new-chat") },
-      { id: "refresh-work-folder", label: "Refresh work-folder", accelerator: "CommandOrControl+R", enabled: rendererMenuState.workFolderOpen, click: () => sendRendererMenuCommand("reload-work-folder-state") },
+      { id: "new-chat", label: "New Chat", accelerator: "CommandOrControl+Shift+N", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("new-chat") },
+      { id: "refresh-connected-folder", label: "Refresh Connected Folder", accelerator: "CommandOrControl+R", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("reload-connected-folder-state") },
     ];
     if (process.platform !== "darwin") {
       items.push(
@@ -1610,7 +1610,7 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
       // tab; the window keeps the conventional Shift+Cmd+W.
       items.push(
         { type: "separator" },
-        { id: "close-tab", label: "Close Tab", accelerator: "CommandOrControl+W", enabled: rendererMenuState.workFolderOpen, click: () => sendRendererMenuCommand("close-tab") },
+        { id: "close-tab", label: "Close Tab", accelerator: "CommandOrControl+W", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("close-tab") },
         { role: "close", accelerator: "Shift+CommandOrControl+W" },
       );
     } else {
@@ -1637,8 +1637,8 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
     return [
       { label: "Command Palette...", accelerator: "CommandOrControl+K", click: () => sendRendererMenuCommand("open-command-palette") },
       { type: "separator" },
-      { id: "toggle-sidebar", label: "Toggle Sidebar", accelerator: "CommandOrControl+B", enabled: rendererMenuState.workFolderOpen, click: () => sendRendererMenuCommand("toggle-sidebar") },
-      { id: "toggle-agent-panel", label: "Toggle work-fold agent", accelerator: "CommandOrControl+J", enabled: rendererMenuState.workFolderOpen, click: () => sendRendererMenuCommand("toggle-agent-panel") },
+      { id: "toggle-sidebar", label: "Toggle Sidebar", accelerator: "CommandOrControl+B", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-sidebar") },
+      { id: "toggle-agent-panel", label: "Toggle AmpleFile agent", accelerator: "CommandOrControl+J", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-agent-panel") },
       { type: "separator" },
       { role: "resetZoom" },
       { role: "zoomIn" },
@@ -1649,7 +1649,7 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
     ];
   }
   const items: MenuItemConstructorOptions[] = [
-    { id: "open-capabilities", label: "Skills && Extensions", accelerator: "CommandOrControl+Shift+S", enabled: rendererMenuState.workFolderOpen, click: () => sendRendererMenuCommand("open-capabilities") },
+    { id: "open-capabilities", label: "Skills && Extensions", accelerator: "CommandOrControl+Shift+S", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("open-capabilities") },
     { label: "Shortcut Keys", accelerator: "CommandOrControl+/", click: () => sendRendererMenuCommand("open-keyboard-shortcuts") },
   ];
   if (process.platform !== "darwin") {
@@ -1686,7 +1686,7 @@ function macApplicationMenu(): MenuItemConstructorOptions[] {
       { role: "hideOthers" },
       { role: "unhide" },
       { type: "separator" },
-      { id: "quit-work-folder", label: `Quit ${productName}`, accelerator: "Command+Q", click: requestApplicationQuit },
+      { id: "quit-connected-folder", label: `Quit ${productName}`, accelerator: "Command+Q", click: requestApplicationQuit },
     ],
   }];
 }
@@ -1751,21 +1751,21 @@ function sendRendererMenuCommand(command: RendererMenuCommand): void {
     return;
   }
   showWindow();
-  window.webContents.send("work-fold:menu-command", command);
+  window.webContents.send("amplefile:menu-command", command);
 }
 
 function updateApplicationMenuState(value: unknown): void {
   rendererMenuState = {
-    workFolderOpen: isRecord(value)
-      ? value.workFolderOpen === true
-      : rendererMenuState.workFolderOpen,
+    connectedFolderOpen: isRecord(value)
+      ? value.connectedFolderOpen === true
+      : rendererMenuState.connectedFolderOpen,
   };
   const menu = Menu.getApplicationMenu();
-  setMenuItemEnabled(menu, "new-chat", rendererMenuState.workFolderOpen);
-  setMenuItemEnabled(menu, "refresh-work-folder", rendererMenuState.workFolderOpen);
-  setMenuItemEnabled(menu, "open-capabilities", rendererMenuState.workFolderOpen);
-  setMenuItemEnabled(menu, "toggle-sidebar", rendererMenuState.workFolderOpen);
-  setMenuItemEnabled(menu, "toggle-agent-panel", rendererMenuState.workFolderOpen);
+  setMenuItemEnabled(menu, "new-chat", rendererMenuState.connectedFolderOpen);
+  setMenuItemEnabled(menu, "refresh-connected-folder", rendererMenuState.connectedFolderOpen);
+  setMenuItemEnabled(menu, "open-capabilities", rendererMenuState.connectedFolderOpen);
+  setMenuItemEnabled(menu, "toggle-sidebar", rendererMenuState.connectedFolderOpen);
+  setMenuItemEnabled(menu, "toggle-agent-panel", rendererMenuState.connectedFolderOpen);
 }
 
 function setMenuItemEnabled(menu: Menu | null, id: string, enabled: boolean): void {
@@ -1775,7 +1775,7 @@ function setMenuItemEnabled(menu: Menu | null, id: string, enabled: boolean): vo
 
 function configureUpdater(): void {
   // Ad hoc verification builds use a separate identity and must never touch
-  // the production update feed or production work-fold Safe Storage key.
+  // the production update feed or production AmpleFile Safe Storage key.
   if (desktopUpdater || localMacSmokeBuild) return;
   desktopUpdater = new DesktopUpdater({
     getWindow: () => mainWindow,
@@ -1809,7 +1809,7 @@ async function checkForUpdatesFromMenu(): Promise<void> {
       ? await dialog.showMessageBox(window, {
         type: "info",
         message: status.message,
-        detail: "work-fold can download the update now and restart when it is ready.",
+        detail: "AmpleFile can download the update now and restart when it is ready.",
         buttons: ["Download and Install", "Later"],
         defaultId: 0,
         cancelId: 1,
@@ -1818,7 +1818,7 @@ async function checkForUpdatesFromMenu(): Promise<void> {
       : await dialog.showMessageBox({
         type: "info",
         message: status.message,
-        detail: "work-fold can download the update now and restart when it is ready.",
+        detail: "AmpleFile can download the update now and restart when it is ready.",
         buttons: ["Download and Install", "Later"],
         defaultId: 0,
         cancelId: 1,
@@ -1860,28 +1860,28 @@ async function checkForUpdatesFromMenu(): Promise<void> {
 }
 
 function configureStableUserDataPath(): void {
-  const useInstalledProductData = workFoldDesktopUsesInstalledProductData({
+  const useInstalledProductData = ampleFileDesktopUsesInstalledProductData({
     executablePath: process.execPath,
     productName,
     isPackaged: app.isPackaged,
     fileExists: existsSync,
   });
-  const target = workFoldDesktopUserDataPath({
+  const target = ampleFileDesktopUserDataPath({
     appDataPath: app.getPath("appData"),
     productName,
     useInstalledProductData,
-    override: workFoldDesktopStateOverride(process.env),
+    override: ampleFileDesktopStateOverride(process.env),
   });
   if (app.getPath("userData") !== target) app.setPath("userData", target);
 }
 
 function configureCliEnvironment(): void {
-  // Every shell a Worker or the work-fold agent opens must address the same
+  // Every shell a Worker or the AmpleFile agent opens must address the same
   // profile as the desktop process that launched it. Development and
   // installed builds intentionally use different userData roots, so leaving
-  // this unset can expose a different work-folder registry through an
-  // installed work-fold CLI on PATH.
-  process.env.WORKFOLD_CLI_STATE_DIR = app.getPath("userData");
+  // this unset can expose a different Connected Folder registry through an
+  // installed AmpleFile CLI on PATH.
+  process.env.AMPLEFILE_CLI_STATE_DIR = app.getPath("userData");
   if (!app.isPackaged || (process.platform !== "win32" && process.platform !== "darwin")) return;
   const executableDirectory = dirnameFromFile(process.execPath);
   const binDirectory = process.platform === "darwin"
@@ -1896,22 +1896,22 @@ function configureCliEnvironment(): void {
     .some((entry) => samePath(entry, binDirectory));
   if (!alreadyPresent) process.env[pathKey] = currentPath ? `${binDirectory}${delimiter}${currentPath}` : binDirectory;
   // Agent shell tools inherit this process environment. Pinning the executable
-  // makes their CLI calls address this exact installed work-fold build.
-  process.env.WORKFOLD_CLI_APP = process.execPath;
+  // makes their CLI calls address this exact installed AmpleFile build.
+  process.env.AMPLEFILE_CLI_APP = process.execPath;
 }
 
-function createFolderGrant(workFolderRoot: string): string {
+function createFolderGrant(connectedFolderRoot: string): string {
   cleanupFolderGrants();
   const id = randomUUID();
-  folderGrants.set(id, { workFolderRoot: resolve(workFolderRoot), expiresAt: Date.now() + folderGrantTtlMs });
+  folderGrants.set(id, { connectedFolderRoot: resolve(connectedFolderRoot), expiresAt: Date.now() + folderGrantTtlMs });
   return id;
 }
 
-function consumeLocalFolderGrant(input: { workFolderRoot: string; grantId: string }): boolean {
+function consumeLocalFolderGrant(input: { connectedFolderRoot: string; grantId: string }): boolean {
   cleanupFolderGrants();
   const grant = folderGrants.get(input.grantId);
   folderGrants.delete(input.grantId);
-  return Boolean(grant && grant.expiresAt >= Date.now() && samePath(grant.workFolderRoot, input.workFolderRoot));
+  return Boolean(grant && grant.expiresAt >= Date.now() && samePath(grant.connectedFolderRoot, input.connectedFolderRoot));
 }
 
 function cleanupFolderGrants(): void {
@@ -1921,21 +1921,21 @@ function cleanupFolderGrants(): void {
   }
 }
 
-type WorkFolderPathAction = "open" | "open-native" | "reveal";
+type ConnectedFolderPathAction = "open" | "open-native" | "reveal";
 
-function workFolderPathRequest(value: unknown, requireAction = true): { workFolderId: string; path: string; action: WorkFolderPathAction } {
-  if (!isRecord(value)) throw new Error("A work-folder file request is required.");
-  const workFolderId = typeof value.workFolderId === "string" ? value.workFolderId.trim() : "";
+function connectedFolderPathRequest(value: unknown, requireAction = true): { connectedFolderId: string; path: string; action: ConnectedFolderPathAction } {
+  if (!isRecord(value)) throw new Error("A Connected Folder file request is required.");
+  const connectedFolderId = typeof value.connectedFolderId === "string" ? value.connectedFolderId.trim() : "";
   const path = typeof value.path === "string" ? value.path : "";
   const action = value.action === "reveal" || value.action === "open-native" || value.action === "open"
     ? value.action
     : "open";
-  if (!workFolderId) throw new Error("A work-folder id is required.");
-  if (!path || path.includes("\0") || isAbsolute(path)) throw new Error("A relative work-folder file path is required.");
+  if (!connectedFolderId) throw new Error("A Connected Folder id is required.");
+  if (!path || path.includes("\0") || isAbsolute(path)) throw new Error("A relative Connected Folder file path is required.");
   if (requireAction && value.action !== undefined && value.action !== "reveal" && value.action !== "open-native" && value.action !== "open") {
-    throw new Error("Unsupported work-folder file action.");
+    throw new Error("Unsupported Connected Folder file action.");
   }
-  return { workFolderId, path, action };
+  return { connectedFolderId, path, action };
 }
 
 function launchOpenWith(plan: OpenWithLaunchPlan): Promise<void> {
@@ -1958,7 +1958,7 @@ function launchOpenWith(plan: OpenWithLaunchPlan): Promise<void> {
  * An item in Desktop, Documents, or Downloads (the file manager's Standard
  * Folders). The host resolves the folder from the home folder; the renderer
  * supplies only its id and a relative path, held to the same path policy and
- * real-path containment as a work-folder item.
+ * real-path containment as a Connected Folder item.
  */
 async function resolveStandardFolderItem(standardFolderId: string, itemPath: string): Promise<string> {
   if (!isStandardFolderId(standardFolderId)) throw new Error("That standard folder isn’t on this computer.");
@@ -1969,7 +1969,7 @@ async function resolveStandardFolderItem(standardFolderId: string, itemPath: str
   return resolvedCandidate;
 }
 
-function standardFolderPathRequest(value: unknown, allowRoot = false): { standardFolderId: string; path: string; action: WorkFolderPathAction } {
+function standardFolderPathRequest(value: unknown, allowRoot = false): { standardFolderId: string; path: string; action: ConnectedFolderPathAction } {
   if (!isRecord(value)) throw new Error("A standard folder file request is required.");
   const standardFolderId = typeof value.standardFolderId === "string" ? value.standardFolderId : "";
   const path = typeof value.path === "string" ? value.path : "";
@@ -1979,31 +1979,31 @@ function standardFolderPathRequest(value: unknown, allowRoot = false): { standar
   return { standardFolderId, path, action };
 }
 
-async function resolveWorkFolderItem(workFolderId: string, itemPath: string): Promise<string> {
-  const workFolder = await getWorkFolder(workFolderId);
-  const workFolderRoot = await realpath(workFolder.workFolderRoot);
-  const candidate = resolve(workFolderRoot, itemPath);
-  assertPathInsideRoot(workFolderRoot, candidate);
+async function resolveConnectedFolderItem(connectedFolderId: string, itemPath: string): Promise<string> {
+  const connectedFolder = await getConnectedFolder(connectedFolderId);
+  const connectedFolderRoot = await realpath(connectedFolder.connectedFolderRoot);
+  const candidate = resolve(connectedFolderRoot, itemPath);
+  assertPathInsideRoot(connectedFolderRoot, candidate);
   const resolvedCandidate = await realpath(candidate);
-  assertPathInsideRoot(workFolderRoot, resolvedCandidate);
+  assertPathInsideRoot(connectedFolderRoot, resolvedCandidate);
   return resolvedCandidate;
 }
 
-async function setActiveNativeWorkFolder(workFolderId: string | null): Promise<void> {
-  const generation = ++activeNativeWorkFolderGeneration;
-  if (workFolderId === null) {
-    activeNativeWorkFolder = null;
-    applyNativeActiveWorkFolderToWindow(mainWindow);
+async function setActiveNativeConnectedFolder(connectedFolderId: string | null): Promise<void> {
+  const generation = ++activeNativeConnectedFolderGeneration;
+  if (connectedFolderId === null) {
+    activeNativeConnectedFolder = null;
+    applyNativeActiveConnectedFolderToWindow(mainWindow);
     return;
   }
 
   // The renderer supplies identity only. Name and root are always loaded from
   // the host-owned registry before they reach native window or OS APIs.
-  const workFolder = await getWorkFolder(workFolderId);
-  if (generation !== activeNativeWorkFolderGeneration) return;
-  activeNativeWorkFolder = { id: workFolder.id, name: workFolder.name, workFolderRoot: workFolder.workFolderRoot };
-  applyNativeActiveWorkFolderToWindow(mainWindow);
-  if (process.platform === "darwin") app.addRecentDocument(workFolder.workFolderRoot);
+  const connectedFolder = await getConnectedFolder(connectedFolderId);
+  if (generation !== activeNativeConnectedFolderGeneration) return;
+  activeNativeConnectedFolder = { id: connectedFolder.id, name: connectedFolder.name, connectedFolderRoot: connectedFolder.connectedFolderRoot };
+  applyNativeActiveConnectedFolderToWindow(mainWindow);
+  if (process.platform === "darwin") app.addRecentDocument(connectedFolder.connectedFolderRoot);
 }
 
 async function validateNativeFileMenuEntry(request: NativeFileMenuRequest): Promise<void> {
@@ -2011,20 +2011,20 @@ async function validateNativeFileMenuEntry(request: NativeFileMenuRequest): Prom
   if (request.standardFolderId) {
     info = await stat(await resolveStandardFolderItem(request.standardFolderId, request.path));
   } else if (request.path) {
-    info = await stat(await resolveWorkFolderItem(request.workFolderId, request.path));
+    info = await stat(await resolveConnectedFolderItem(request.connectedFolderId, request.path));
   } else {
-    const workFolder = await getWorkFolder(request.workFolderId);
-    info = await stat(await realpath(workFolder.workFolderRoot));
+    const connectedFolder = await getConnectedFolder(request.connectedFolderId);
+    info = await stat(await realpath(connectedFolder.connectedFolderRoot));
   }
   if ((request.kind === "file" && !info.isFile()) || (request.kind === "folder" && !info.isDirectory())) {
-    throw new Error("The native file menu entry no longer matches this work-folder.");
+    throw new Error("The native file menu entry no longer matches this Connected Folder.");
   }
 }
 
 function popupNativeFileMenu(request: NativeFileMenuRequest): Promise<NativeFileMenuCommand | null> {
   const window = mainWindow;
   if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
-    return Promise.reject(new Error("The work-fold window is not available."));
+    return Promise.reject(new Error("The AmpleFile window is not available."));
   }
   return new Promise((resolveCommand) => {
     let settled = false;
@@ -2035,7 +2035,7 @@ function popupNativeFileMenu(request: NativeFileMenuRequest): Promise<NativeFile
     };
     const template = nativeFileMenuItems(request).map<MenuItemConstructorOptions>((item) => item.type === "separator"
       ? { type: "separator" }
-      : { label: nativeMenuLabel(item.label), click: () => finish(item.command), ...(item.icon === "work-fold" ? workFoldMenuIcon() : {}) });
+      : { label: nativeMenuLabel(item.label), click: () => finish(item.command), ...(item.icon === "amplefile" ? ampleFileMenuIcon() : {}) });
     Menu.buildFromTemplate(template).popup({
       window,
       x: request.point.x,
@@ -2095,7 +2095,7 @@ function nativeMenuLabel(label: string): string {
 function popupNativeCommandMenu<Command extends string>(items: NativeCommandMenuItem<Command>[], point: { x: number; y: number }): Promise<Command | null> {
   const window = mainWindow;
   if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
-    return Promise.reject(new Error("The work-fold window is not available."));
+    return Promise.reject(new Error("The AmpleFile window is not available."));
   }
   return new Promise((resolveCommand) => {
     let settled = false;
@@ -2121,10 +2121,10 @@ function popupNativeCommandMenu<Command extends string>(items: NativeCommandMenu
   });
 }
 
-function applyNativeActiveWorkFolderToWindow(window: BrowserWindow | null): void {
+function applyNativeActiveConnectedFolderToWindow(window: BrowserWindow | null): void {
   if (process.platform !== "darwin" || !window || window.isDestroyed()) return;
-  window.setRepresentedFilename(activeNativeWorkFolder?.workFolderRoot ?? "");
-  window.setTitle(activeNativeWorkFolder?.name ?? productName);
+  window.setRepresentedFilename(activeNativeConnectedFolder?.connectedFolderRoot ?? "");
+  window.setTitle(activeNativeConnectedFolder?.name ?? productName);
 }
 
 async function drainPendingMacOpenPaths(): Promise<void> {
@@ -2141,17 +2141,17 @@ async function drainPendingMacOpenPaths(): Promise<void> {
       if (!path) continue;
       await ensureMainWindow();
       showWindow();
-      const workFolderId = await registeredWorkFolderIdForOpenPath(path);
-      if (!workFolderId) {
+      const connectedFolderId = await registeredConnectedFolderIdForOpenPath(path);
+      if (!connectedFolderId) {
         console.warn(`${productName} ignored an unregistered Finder folder: ${path}`);
         continue;
       }
-      await setActiveNativeWorkFolder(workFolderId);
-      const request = { token: randomUUID(), workFolderId };
-      pendingOpenWorkFolderRequest = request;
+      await setActiveNativeConnectedFolder(connectedFolderId);
+      const request = { token: randomUUID(), connectedFolderId };
+      pendingOpenConnectedFolderRequest = request;
       const window = mainWindow;
       if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-        window.webContents.send("work-fold:work-folder:open-work-folder", request);
+        window.webContents.send("amplefile:connected-folder:open-connected-folder", request);
       }
     }
   })().finally(() => {
@@ -2162,15 +2162,15 @@ async function drainPendingMacOpenPaths(): Promise<void> {
   if (pendingMacOpenPaths.length) await drainPendingMacOpenPaths();
 }
 
-async function registeredWorkFolderIdForOpenPath(path: string): Promise<string | null> {
+async function registeredConnectedFolderIdForOpenPath(path: string): Promise<string | null> {
   try {
     const info = await stat(path);
     if (!info.isDirectory()) return null;
     const openedRoot = await realpath(path);
-    for (const workFolder of await listWorkFolders()) {
+    for (const connectedFolder of await listConnectedFolders()) {
       try {
-        const registeredRoot = await realpath(workFolder.workFolderRoot);
-        if (samePath(openedRoot, registeredRoot)) return workFolder.id;
+        const registeredRoot = await realpath(connectedFolder.connectedFolderRoot);
+        if (samePath(openedRoot, registeredRoot)) return connectedFolder.id;
       } catch {
         // Missing registered folders are already excluded from normal bootstrap;
         // one stale registration must not block another exact match.
@@ -2182,9 +2182,9 @@ async function registeredWorkFolderIdForOpenPath(path: string): Promise<string |
   return null;
 }
 
-function assertPathInsideRoot(workFolderRoot: string, candidate: string): void {
-  const child = relative(workFolderRoot, candidate);
-  if (!child || /^\.\.(?:[\\/]|$)/.test(child) || isAbsolute(child)) throw new Error("The requested item is outside this work-folder.");
+function assertPathInsideRoot(connectedFolderRoot: string, candidate: string): void {
+  const child = relative(connectedFolderRoot, candidate);
+  if (!child || /^\.\.(?:[\\/]|$)/.test(child) || isAbsolute(child)) throw new Error("The requested item is outside this Connected Folder.");
 }
 
 function updateAgentPowerState(activeTurns: number): void {
@@ -2218,7 +2218,7 @@ function ensureBuiltInBrowser(): BuiltInBrowser {
 
 async function openExternal(value: string): Promise<void> {
   const url = new URL(value);
-  if (!new Set(["https:", "http:", "mailto:"]).has(url.protocol)) throw new Error(`work-fold cannot open ${url.protocol} links.`);
+  if (!new Set(["https:", "http:", "mailto:"]).has(url.protocol)) throw new Error(`AmpleFile cannot open ${url.protocol} links.`);
   await shell.openExternal(url.toString());
 }
 
@@ -2233,7 +2233,7 @@ async function shutdown(): Promise<void> {
   // Pi runtime, so the act authority is revoked before anything else stops.
   actFacade = null;
   actToken = "";
-  resolveWorkFoldAgentLineageParent = null;
+  resolveAmpleFileAgentLineageParent = null;
   updateAgentPowerState(0);
   const runtime = piRuntime;
   piRuntime = null;
@@ -2247,7 +2247,7 @@ async function shutdown(): Promise<void> {
       withShutdownTimeout(restrictedApps, "restricted apps"),
       withShutdownTimeout(checks, "Checks"),
       withShutdownTimeout(chrome, "Chrome connection"),
-      withShutdownTimeout(removeWorkFoldCliActTokenFile(app.getPath("userData")), "CLI act token"),
+      withShutdownTimeout(removeAmpleFileCliActTokenFile(app.getPath("userData")), "CLI act token"),
     ]);
     for (const outcome of outcomes) {
       if (outcome.status === "rejected") console.warn(`${productName} shutdown cleanup failed: ${errorMessage(outcome.reason)}`);
@@ -2341,7 +2341,7 @@ function createTrayIfSupported(): void {
   }
   tray = new Tray(icon);
   const menu = Menu.buildFromTemplate([
-    { label: "work-fold agent", click: () => { void toggleWorkFoldAgentPopover(); } },
+    { label: "AmpleFile agent", click: () => { void toggleAmpleFileAgentPopover(); } },
     { label: `Open ${productName}`, click: showWindow },
     { type: "separator" },
     { label: "Check for Updates...", click: () => sendRendererMenuCommand("check-for-updates") },
@@ -2350,15 +2350,15 @@ function createTrayIfSupported(): void {
   ]);
   if (process.platform === "darwin") {
     // No persistent context menu on macOS: setContextMenu would swallow the
-    // left click. Click opens the work-fold agent popover, right-click the menu,
+    // left click. Click opens the AmpleFile agent popover, right-click the menu,
     // and material dropped on the icon lands in the popover as staged context.
-    tray.on("click", () => { void toggleWorkFoldAgentPopover(); });
+    tray.on("click", () => { void toggleAmpleFileAgentPopover(); });
     tray.on("right-click", () => tray?.popUpContextMenu(menu));
     tray.on("drop-files", (_event, files) => {
-      void openWorkFoldAgentPopoverWithItems(files.map((file) => ({ kind: "path" as const, value: file })));
+      void openAmpleFileAgentPopoverWithItems(files.map((file) => ({ kind: "path" as const, value: file })));
     });
     tray.on("drop-text", (_event, text) => {
-      void openWorkFoldAgentPopoverWithItems([{ kind: "text" as const, value: text }]);
+      void openAmpleFileAgentPopoverWithItems([{ kind: "text" as const, value: text }]);
     });
   } else {
     tray.setContextMenu(menu);
@@ -2367,14 +2367,14 @@ function createTrayIfSupported(): void {
   }
   updateTrayTooltip();
   // Warm the hidden popover renderer off the startup critical path so the
-  // first work-fold agent summon paints the ready surface immediately.
+  // first AmpleFile agent summon paints the ready surface immediately.
   setTimeout(() => {
-    void ensureWorkFoldAgentPopover().then((popover) => popover.warm()).catch(() => {});
+    void ensureAmpleFileAgentPopover().then((popover) => popover.warm()).catch(() => {});
   }, 2_500);
 }
 
-/** The menu-bar mark as a 16pt template image for "Make a work-folder" (macOS recolors it). */
-function workFoldMenuIcon(): { icon?: Electron.NativeImage } {
+/** The menu-bar mark as a 16pt template image for "Connect This Folder" (macOS recolors it). */
+function ampleFileMenuIcon(): { icon?: Electron.NativeImage } {
   if (process.platform !== "darwin") return {};
   const path = join(resolveDesktopAssetsDir(), "iconTemplate.png");
   if (!existsSync(path)) return {};
@@ -2403,16 +2403,16 @@ function resolveTrayIcon(): Electron.NativeImage | string | null {
 function destroyTray(): void {
   tray?.destroy();
   tray = null;
-  workFoldAgentPopover?.destroy();
-  workFoldAgentPopover = null;
+  ampleFileAgentPopover?.destroy();
+  ampleFileAgentPopover = null;
 }
 
-async function ensureWorkFoldAgentPopover(): Promise<WorkFoldAgentPopover> {
-  if (workFoldAgentPopover) return workFoldAgentPopover;
+async function ensureAmpleFileAgentPopover(): Promise<AmpleFileAgentPopover> {
+  if (ampleFileAgentPopover) return ampleFileAgentPopover;
   const api = await ensureInteractiveLocalApi();
-  workFoldAgentPopover = new WorkFoldAgentPopover({
+  ampleFileAgentPopover = new AmpleFileAgentPopover({
     appProtocol,
-    preloadPath: resolveWorkFoldAgentPopoverPreloadPath(),
+    preloadPath: resolveAmpleFileAgentPopoverPreloadPath(),
     additionalArguments: [
       ...productRendererArguments(),
       rendererArgument("api-base-url", api.origin),
@@ -2423,23 +2423,23 @@ async function ensureWorkFoldAgentPopover(): Promise<WorkFoldAgentPopover> {
     vibrancy: process.platform === "darwin" && macVibrancySupported,
     devTools: !app.isPackaged,
     configureNavigation: configureWindowNavigation,
-    onError: (message) => console.warn(`${productName} work-fold agent popover failed to load: ${message}`),
+    onError: (message) => console.warn(`${productName} AmpleFile agent popover failed to load: ${message}`),
   });
-  return workFoldAgentPopover;
+  return ampleFileAgentPopover;
 }
 
-async function toggleWorkFoldAgentPopover(): Promise<void> {
+async function toggleAmpleFileAgentPopover(): Promise<void> {
   try {
-    const popover = await ensureWorkFoldAgentPopover();
+    const popover = await ensureAmpleFileAgentPopover();
     await popover.toggle(tray?.getBounds() ?? null);
   } catch (error) {
-    console.warn(`${productName} could not open the work-fold agent popover: ${errorMessage(error)}`);
+    console.warn(`${productName} could not open the AmpleFile agent popover: ${errorMessage(error)}`);
   }
 }
 
-async function openWorkFoldAgentPopoverWithItems(items: WorkFoldAgentPopoverStagedItem[]): Promise<void> {
+async function openAmpleFileAgentPopoverWithItems(items: AmpleFileAgentPopoverStagedItem[]): Promise<void> {
   try {
-    const popover = await ensureWorkFoldAgentPopover();
+    const popover = await ensureAmpleFileAgentPopover();
     await popover.stage(items, tray?.getBounds() ?? null);
   } catch (error) {
     console.warn(`${productName} could not stage dropped material: ${errorMessage(error)}`);
@@ -2459,12 +2459,12 @@ function maybeShowTrayNotice(): void {
   if (!Notification.isSupported()) return;
   new Notification({
     title: `${productName} is still running`,
-    body: "Your Workers and the work-fold agent can keep working in the background. Use the tray icon to reopen or quit work-fold, or change this in Settings.",
+    body: "Your Workers and the AmpleFile agent can keep working in the background. Use the tray icon to reopen or quit AmpleFile, or change this in Settings.",
   }).show();
 }
 
 function closeToTrayStatus(): { supported: boolean; enabled: boolean } {
-  // A macOS menu-bar item opens the work-fold agent, not close-to-tray support:
+  // A macOS menu-bar item opens the AmpleFile agent, not close-to-tray support:
   // closing the last macOS window already keeps the app alive via the Dock.
   return { supported: process.platform === "win32" && tray !== null, enabled: desktopPreferences.closeToTray };
 }
@@ -2497,10 +2497,10 @@ function configureAccentColorMonitor(): void {
     const accent = getSystemAccentColor();
     const window = mainWindow;
     if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-      window.webContents.send("work-fold:window:accent-color-changed", accent);
+      window.webContents.send("amplefile:window:accent-color-changed", accent);
     }
     // The menu-bar popover subscribes too, and may be open with no main window.
-    workFoldAgentPopover?.send("work-fold:window:accent-color-changed", accent);
+    ampleFileAgentPopover?.send("amplefile:window:accent-color-changed", accent);
   };
   if (process.platform === "darwin") {
     systemPreferences.subscribeNotification("AppleColorPreferencesChangedNotification", sendAccentColor);
@@ -2585,7 +2585,7 @@ async function recoverRenderer(reason: string): Promise<void> {
   else {
     rendererRecoveryAttempts = 0;
     rendererRecoveryFailurePromptShown = false;
-    window.webContents.send("work-fold:runtime:renderer-recovered");
+    window.webContents.send("amplefile:runtime:renderer-recovered");
   }
 }
 
@@ -2686,7 +2686,7 @@ function assertTrustedMainRenderer(event: IpcMainInvokeEvent | IpcMainEvent): vo
   const mainFrame = event.sender.mainFrame;
   const mainFrameMatches = Boolean(frame && frame.processId === mainFrame.processId && frame.routingId === mainFrame.routingId);
   if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents || !mainFrameMatches) {
-    throw new Error("Restricted app view requests require the main work-fold renderer.");
+    throw new Error("Restricted app view requests require the main AmpleFile renderer.");
   }
 }
 
@@ -2709,22 +2709,22 @@ function automationSettingsId(value: unknown): string {
   return automationId;
 }
 
-function restrictedAppViewIdentity(value: unknown): { workFolderId: string; appId: string; digest: string; featureInstallationId: string } {
+function restrictedAppViewIdentity(value: unknown): { connectedFolderId: string; appId: string; digest: string; featureInstallationId: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Restricted app view identity is invalid.");
   const record = value as Record<string, unknown>;
-  const workFolderId = typeof record.workFolderId === "string" ? record.workFolderId : "";
+  const connectedFolderId = typeof record.connectedFolderId === "string" ? record.connectedFolderId : "";
   const appId = typeof record.appId === "string" ? record.appId : "";
   const digest = typeof record.digest === "string" ? record.digest.toLowerCase() : "";
   const featureInstallationId = parseFeatureInstallationId(record.featureInstallationId);
-  if (!workFolderId || workFolderId.length > 256 || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(appId) || !/^[a-f0-9]{64}$/.test(digest)) {
+  if (!connectedFolderId || connectedFolderId.length > 256 || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(appId) || !/^[a-f0-9]{64}$/.test(digest)) {
     throw new Error("Restricted app view identity is invalid.");
   }
-  return { workFolderId, appId, digest, featureInstallationId };
+  return { connectedFolderId, appId, digest, featureInstallationId };
 }
 
 function restrictedAppViewPayload(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Restricted app view request is invalid.");
-  const { workFolderId: _workFolderId, appId: _appId, digest: _digest, featureInstallationId: _featureInstallationId, ...payload } = value as Record<string, unknown>;
+  const { connectedFolderId: _connectedFolderId, appId: _appId, digest: _digest, featureInstallationId: _featureInstallationId, ...payload } = value as Record<string, unknown>;
   return payload;
 }
 
@@ -2738,7 +2738,7 @@ function isTrustedRendererUrl(value: string): boolean {
 }
 
 function rendererArgument(name: string, value: string): string {
-  return `--work-fold-${name}=${encodeURIComponent(value)}`;
+  return `--amplefile-${name}=${encodeURIComponent(value)}`;
 }
 
 function productRendererArguments(): string[] {
@@ -2758,8 +2758,8 @@ function resolvePreloadPath(): string {
   return join(dirnameFromFile(currentFile), "preload.cjs");
 }
 
-function resolveWorkFoldAgentPopoverPreloadPath(): string {
-  return join(dirnameFromFile(currentFile), "work-fold-agent-popover-preload.cjs");
+function resolveAmpleFileAgentPopoverPreloadPath(): string {
+  return join(dirnameFromFile(currentFile), "amplefile-agent-popover-preload.cjs");
 }
 
 function resolveRestrictedAppPreloadPath(): string {

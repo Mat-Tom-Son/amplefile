@@ -1,8 +1,8 @@
-// Garden Party RSVP. The form saves itself through work-fold's form helper
+// Garden Party RSVP. The form saves itself through AmpleFile's form helper
 // (data-page-table="rsvps"); this script shows the live spot count and the
-// visitor's own RSVP. It talks only to window.workFoldPage: a page has no
+// visitor's own RSVP. It talks only to window.ampleFilePage: a page has no
 // network and cannot fetch its own files, so the spot count lives here too.
-const page = window.workFoldPage;
+const page = window.ampleFilePage;
 const TABLE = "rsvps";
 const SPOTS = 50; // the table's "limit" in page.json
 

@@ -507,15 +507,15 @@ function fixture(marker: string, displayVersion: string, createdAt: string): App
       icon: "sprout",
     },
     displayVersion,
-    runtimeApi: { name: "work-fold.feature-broker", compatibleRange: "1.x" },
+    runtimeApi: { name: "amplefile.feature-broker", compatibleRange: "1.x" },
     features: [{
       featureId: "desk",
       featureRevision: {
-        mediaType: "application/vnd.work-fold.feature+bundle",
+        mediaType: "application/vnd.amplefile.feature+bundle",
         entries: [{ path: "worker.js", bytes: encoder.encode(`export const marker = ${JSON.stringify(marker)};\n`) }],
       },
       declaration: {
-        mediaType: "application/vnd.work-fold.feature-declaration+json",
+        mediaType: "application/vnd.amplefile.feature-declaration+json",
         value: { featureId: "desk", marker, actions: [] },
       },
       dataSchema: null,
@@ -526,11 +526,11 @@ function fixture(marker: string, displayVersion: string, createdAt: string): App
       value: { bomFormat: "CycloneDX", components: [] },
     },
     buildProvenance: {
-      mediaType: "application/vnd.work-fold.build-provenance+json",
+      mediaType: "application/vnd.amplefile.build-provenance+json",
       value: { builder: "release-store-test", marker },
     },
     inspectionEvidence: {
-      mediaType: "application/vnd.work-fold.inspection-evidence+json",
+      mediaType: "application/vnd.amplefile.inspection-evidence+json",
       value: { policy: "test", findings: [] },
     },
     createdAt,
@@ -538,7 +538,7 @@ function fixture(marker: string, displayVersion: string, createdAt: string): App
 }
 
 async function temporaryStore(t: test.TestContext): Promise<string> {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-release-store-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-release-store-"));
   t.after(async () => {
     await rm(sandbox, { recursive: true, force: true });
   });

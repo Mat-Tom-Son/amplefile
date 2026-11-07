@@ -22,7 +22,7 @@ export function IconCredits() {
         Adapted for inline rendering with simplified paths. Brand names and marks belong to their respective owners;
         their use does not imply endorsement.
       </p>
-      <p>These artwork licenses are separate from the MIT license for work-fold’s own code. The icons are provided without warranties under their respective licenses.</p>
+      <p>These artwork licenses are separate from the MIT license for AmpleFile’s own code. The icons are provided without warranties under their respective licenses.</p>
     </details>
   );
 }

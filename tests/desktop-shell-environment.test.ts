@@ -22,8 +22,8 @@ test("GUI launches resolve the login shell; terminal launches, Windows, probes, 
   assert.equal(shouldResolveLoginShellEnvironment({ PATH: launchdPath }, "linux").resolve, true);
   assert.equal(shouldResolveLoginShellEnvironment({ PATH: launchdPath, TERM: "xterm-256color" }, "darwin").resolve, false);
   assert.equal(shouldResolveLoginShellEnvironment({ PATH: launchdPath }, "win32").resolve, false);
-  assert.equal(shouldResolveLoginShellEnvironment({ PATH: launchdPath, WORKFOLD_DISABLE_LOGIN_SHELL_ENV: "1" }, "darwin").resolve, false);
-  assert.equal(shouldResolveLoginShellEnvironment({ PATH: launchdPath, WORKFOLD_RESOLVING_LOGIN_SHELL: "1" }, "darwin").resolve, false);
+  assert.equal(shouldResolveLoginShellEnvironment({ PATH: launchdPath, AMPLEFILE_DISABLE_LOGIN_SHELL_ENV: "1" }, "darwin").resolve, false);
+  assert.equal(shouldResolveLoginShellEnvironment({ PATH: launchdPath, AMPLEFILE_RESOLVING_LOGIN_SHELL: "1" }, "darwin").resolve, false);
 });
 
 test("the probe command and arguments match each shell family", () => {
@@ -49,11 +49,11 @@ test("parsing keeps only the NUL-separated block between the markers", () => {
 
 test("merging prefers the shell PATH order, keeps process-only entries, and protects explicit configuration", () => {
   const processEnv: NodeJS.ProcessEnv = {
-    PATH: `${launchdPath}${delimiter}/Applications/work-fold.app/Contents/bin`,
+    PATH: `${launchdPath}${delimiter}/Applications/AmpleFile.app/Contents/bin`,
     HOME: "/Users/mat",
     SHLVL: "0",
     TMPDIR: "/var/folders/launchd",
-    WORKFOLD_AGENT_DIR: "/explicit/agent",
+    AMPLEFILE_AGENT_DIR: "/explicit/agent",
     ELECTRON_RUN_AS_NODE: "1",
     XPC_FLAGS: "0x0",
     LANG: "en_US.UTF-8",
@@ -66,8 +66,8 @@ test("merging prefers the shell PATH order, keeps process-only entries, and prot
     PWD: "/Users/mat",
     _: "/usr/bin/env",
     NODE_OPTIONS: "--require evil",
-    WORKFOLD_AGENT_DIR: "/profile/agent",
-    WORKFOLD_CHAT_CONTEXT_BUDGET_TOKENS: "120000",
+    AMPLEFILE_AGENT_DIR: "/profile/agent",
+    AMPLEFILE_CHAT_CONTEXT_BUDGET_TOKENS: "120000",
     ELECTRON_RUN_AS_NODE: "0",
     XPC_FLAGS: "0x1",
     LANG: "en_US.UTF-8",
@@ -77,20 +77,20 @@ test("merging prefers the shell PATH order, keeps process-only entries, and prot
   const merged = mergeLoginShellEnvironment(processEnv, shellEnv);
   assert.equal(
     merged.env.PATH,
-    ["/opt/homebrew/bin", "/Users/mat/.local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin", "/Applications/work-fold.app/Contents/bin"].join(delimiter),
+    ["/opt/homebrew/bin", "/Users/mat/.local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin", "/Applications/AmpleFile.app/Contents/bin"].join(delimiter),
   );
   assert.equal(merged.pathEntriesAdded, 2);
   assert.equal(merged.env.EDITOR, "vim");
   assert.equal(merged.env.NVM_DIR, "/Users/mat/.nvm");
-  assert.equal(merged.env.WORKFOLD_CHAT_CONTEXT_BUDGET_TOKENS, "120000", "unset product variables may come from the profile");
-  for (const key of ["HOME", "SHLVL", "TMPDIR", "PWD", "_", "NODE_OPTIONS", "WORKFOLD_AGENT_DIR", "ELECTRON_RUN_AS_NODE", "XPC_FLAGS", "LANG"]) {
+  assert.equal(merged.env.AMPLEFILE_CHAT_CONTEXT_BUDGET_TOKENS, "120000", "unset product variables may come from the profile");
+  for (const key of ["HOME", "SHLVL", "TMPDIR", "PWD", "_", "NODE_OPTIONS", "AMPLEFILE_AGENT_DIR", "ELECTRON_RUN_AS_NODE", "XPC_FLAGS", "LANG"]) {
     assert.equal(key in merged.env, false, `${key} must not be imported`);
   }
-  assert.deepEqual(merged.importedKeys, ["EDITOR", "NVM_DIR", "PATH", "WORKFOLD_CHAT_CONTEXT_BUDGET_TOKENS"]);
+  assert.deepEqual(merged.importedKeys, ["AMPLEFILE_CHAT_CONTEXT_BUDGET_TOKENS", "EDITOR", "NVM_DIR", "PATH"]);
 });
 
 test("a login shell that prints profile noise still yields its environment end to end", async () => {
-  const sandbox = mkdtempSync(join(tmpdir(), "work-fold-shell-env-"));
+  const sandbox = mkdtempSync(join(tmpdir(), "amplefile-shell-env-"));
   try {
     const fakeShell = join(sandbox, "fake-shell");
     writeFileSync(fakeShell, [
@@ -111,14 +111,14 @@ test("a login shell that prints profile noise still yields its environment end t
     assert.equal(target.EDITOR, "nano");
     assert.equal(result.pathEntriesAdded, 2);
     assert.ok(result.importedKeys.includes("PATH"));
-    assert.equal("WORKFOLD_RESOLVING_LOGIN_SHELL" in target, false, "the probe marker never leaks into the live environment");
+    assert.equal("AMPLEFILE_RESOLVING_LOGIN_SHELL" in target, false, "the probe marker never leaks into the live environment");
   } finally {
     rmSync(sandbox, { recursive: true, force: true });
   }
 });
 
 test("a hanging or missing login shell leaves the launch environment untouched", async () => {
-  const sandbox = mkdtempSync(join(tmpdir(), "work-fold-shell-env-"));
+  const sandbox = mkdtempSync(join(tmpdir(), "amplefile-shell-env-"));
   try {
     const hangingShell = join(sandbox, "hanging-shell");
     writeFileSync(hangingShell, "#!/bin/sh\nsleep 30\n");

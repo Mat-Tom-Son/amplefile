@@ -25,12 +25,12 @@ export class ChromeNativeHostRegistration {
    * `explicit` claims Chrome's registration for this installation; a startup
    * refresh only renews one this installation already owns. `ifAbsent`
    * (2026-10-11) registers at launch only when Chrome is set up on this Mac and
-   * no work-fold registration exists yet, so adding the extension first works;
+   * no AmpleFile registration exists yet, so adding the extension first works;
    * it never replaces another installation's registration.
    */
   async register(explicit: boolean, ifAbsent = false): Promise<void> {
     const { distribution } = this.options;
-    if (!this.options.enabled) throw new Error("Chrome Store setup is available in the installed work-fold app.");
+    if (!this.options.enabled) throw new Error("Chrome Store setup is available in the installed AmpleFile app.");
     if (ifAbsent && !explicit) {
       const chromeRoot = this.options.chromeUserDataRoot ?? join(homedir(), "Library/Application Support/Google/Chrome");
       if (!await stat(chromeRoot).then((info) => info.isDirectory(), () => false)) return;
@@ -42,25 +42,25 @@ export class ChromeNativeHostRegistration {
     }
     if (!distribution.storeId || !/^[a-p]{32}$/.test(distribution.storeId) || !/^[a-z0-9_]+(?:\.[a-z0-9_]+)*$/.test(distribution.nativeHostName)) throw new Error("The Chrome Store connection identity is not available.");
     const origin = `chrome-extension://${distribution.storeId}/`;
-    const source = await realpath(join(this.options.sourceDirectory, "work-fold-chrome-host"));
+    const source = await realpath(join(this.options.sourceDirectory, "amplefile-chrome-host"));
     const provenance = JSON.parse(await readFile(join(this.options.sourceDirectory, "source.json"), "utf8"));
-    if (provenance.schema !== "work-fold.chrome-native-host-source.v1" || provenance.origin !== origin || provenance.nativeHostName !== distribution.nativeHostName || provenance.bootstrapVersion !== distribution.bootstrapVersion) throw new Error("The signed Chrome bootstrap does not match this app's Store identity.");
+    if (provenance.schema !== "amplefile.chrome-native-host-source.v1" || provenance.origin !== origin || provenance.nativeHostName !== distribution.nativeHostName || provenance.bootstrapVersion !== distribution.bootstrapVersion) throw new Error("The signed Chrome bootstrap does not match this app's Store identity.");
     if (this.options.verifySignature !== false) await run("/usr/bin/codesign", ["--verify", "--strict", source]);
     const bytes = await readFile(source), sha256 = digest(bytes);
     const root = resolve(this.options.stateRoot, "chrome", "native-host");
     await mkdir(root, { recursive: true, mode: 0o700 }); await chmod(root, 0o700);
-    const binary = join(root, `work-fold-chrome-host-${sha256.slice(0, 24)}`);
+    const binary = join(root, `amplefile-chrome-host-${sha256.slice(0, 24)}`);
     const manifestPath = join(this.options.chromeUserDataRoot ?? join(homedir(), "Library/Application Support/Google/Chrome"), "NativeMessagingHosts", `${distribution.nativeHostName}.json`);
     const receiptPath = join(root, "registration.json");
-    const manifest = { name: distribution.nativeHostName, description: "Connect Chrome to work-fold", path: binary, type: "stdio", allowed_origins: [origin] };
+    const manifest = { name: distribution.nativeHostName, description: "Connect Chrome to AmpleFile", path: binary, type: "stdio", allowed_origins: [origin] };
     let current: { path?: string; allowed_origins?: string[]; name?: string; type?: string } | undefined;
     try { current = JSON.parse(await readFile(manifestPath, "utf8")); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !explicit) throw new Error("Chrome's existing work-fold registration could not be read. Connect Chrome again to repair it."); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !explicit) throw new Error("Chrome's existing AmpleFile registration could not be read. Connect Chrome again to repair it."); }
     if (!current && !explicit) throw new Error("Chrome's registration was removed. Connect Chrome again to restore it.");
     if (current && !explicit) {
       let receipt: { manifestPath?: string; binary?: string } | undefined;
       try { receipt = JSON.parse(await readFile(receiptPath, "utf8")); } catch { /* No owned receipt means no automatic replacement. */ }
-      if (receipt?.manifestPath !== manifestPath || receipt.binary !== current.path || current.name !== distribution.nativeHostName || current.type !== "stdio" || JSON.stringify(current.allowed_origins) !== JSON.stringify([origin])) throw new Error("Another work-fold installation owns Chrome's registration. Connect Chrome explicitly to choose this installation.");
+      if (receipt?.manifestPath !== manifestPath || receipt.binary !== current.path || current.name !== distribution.nativeHostName || current.type !== "stdio" || JSON.stringify(current.allowed_origins) !== JSON.stringify([origin])) throw new Error("Another AmpleFile installation owns Chrome's registration. Connect Chrome explicitly to choose this installation.");
     }
     let needsCopy = false;
     try { needsCopy = digest(await readFile(binary)) !== sha256; }

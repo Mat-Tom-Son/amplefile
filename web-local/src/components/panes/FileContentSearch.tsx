@@ -18,11 +18,11 @@ const visibleMatchLimit = 50;
 
 /**
  * Matches inside file contents, alongside the tree's filename matching. The
- * request is debounced and abandoned when the query or work-folder changes, so
+ * request is debounced and abandoned when the query or Connected Folder changes, so
  * typing never leaves a stale result on screen.
  */
-export function FileContentSearch({ workFolderId, query, onOpenFile }: {
-  workFolderId: string;
+export function FileContentSearch({ connectedFolderId, query, onOpenFile }: {
+  connectedFolderId: string;
   query: string;
   onOpenFile: (path: string) => void;
 }) {
@@ -41,7 +41,7 @@ export function FileContentSearch({ workFolderId, query, onOpenFile }: {
     setState({ status: "searching", result: null });
     const timer = window.setTimeout(() => {
       void api<SearchResponse>(
-        `/api/work-folders/${workFolderId}/search?scope=files&q=${encodeURIComponent(trimmed)}`,
+        `/api/connected-folders/${connectedFolderId}/search?scope=files&q=${encodeURIComponent(trimmed)}`,
         { signal: controller.signal },
       )
         .then((result) => { if (!controller.signal.aborted) setState({ status: "ready", result }); })
@@ -51,7 +51,7 @@ export function FileContentSearch({ workFolderId, query, onOpenFile }: {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [query, workFolderId]);
+  }, [query, connectedFolderId]);
 
   if (state.status === "idle") return null;
   const matches = state.result?.files ?? [];
@@ -68,7 +68,7 @@ export function FileContentSearch({ workFolderId, query, onOpenFile }: {
         </span>
       </h3>
       {state.status === "error"
-        ? <p className="file-content-search-note">Couldn&rsquo;t search this work-folder.</p>
+        ? <p className="file-content-search-note">Couldn&rsquo;t search this Connected Folder.</p>
         : visible.length === 0 && state.status === "ready"
           ? <p className="file-content-search-note">No file contents match.</p>
           : (

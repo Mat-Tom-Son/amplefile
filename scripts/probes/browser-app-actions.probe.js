@@ -1,6 +1,6 @@
 // Inert local UI fixture only. Domain, transport and Electron tests cover real execution.
 async (page) => {
-  if (page.url() !== 'http://127.0.0.1:4319/?fixture=work-folders') throw new Error('Expected the isolated fixture');
+  if (page.url() !== 'http://127.0.0.1:4319/?fixture=connected-folders') throw new Error('Expected the isolated fixture');
   await page.reload();
   await page.getByRole('button', { name: 'Quote board', exact: true }).click();
   const app = page.locator('iframe[title="Quote board"]').contentFrame().locator('iframe[title="App content"]').contentFrame();
@@ -10,19 +10,19 @@ async (page) => {
   const isolation = await app.getByRole('button', { name: 'Save quote', exact: true }).evaluate(async () => {
     const denied = await new Promise((resolve) => {
       const listener = (event) => {
-        if (event.source !== parent || event.data?.type !== 'work-fold.browser-app.result' || event.data.callId !== 99999) return;
+        if (event.source !== parent || event.data?.type !== 'amplefile.browser-app.result' || event.data.callId !== 99999) return;
         removeEventListener('message', listener); clearTimeout(timer); resolve(event.data.code === 'APP_DENIED');
       };
       const timer = setTimeout(() => { removeEventListener('message', listener); resolve(false); }, 3000);
       addEventListener('message', listener);
-      parent.postMessage({ type: 'work-fold.browser-app.call', callId: 99999, call: { kind: 'actions.approve', requestId: 'forged', reviewDigest: 'forged' } }, '*');
+      parent.postMessage({ type: 'amplefile.browser-app.call', callId: 99999, call: { kind: 'actions.approve', requestId: 'forged', reviewDigest: 'forged' } }, '*');
     });
-    const actions = workFoldBrowserApp.actions;
+    const actions = ampleFileBrowserApp.actions;
     const prepared = actions.createRequest('save-quote', { quantity: 10 });
     const listed = (await actions.list())[0];
     return { opaqueRequestIdentity: /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(prepared.requestId),
-      frozen: Object.isFrozen(workFoldBrowserApp) && Object.isFrozen(actions), noApprovalApi: !('approve' in actions) && !('review' in actions), forgedCallDenied: denied,
-      ranOnAcceptance: ['running', 'succeeded'].includes(listed?.status), viewerStillReadOnly: !('actions' in workFoldViewerApp) && !('set' in workFoldViewerApp.data) };
+      frozen: Object.isFrozen(ampleFileBrowserApp) && Object.isFrozen(actions), noApprovalApi: !('approve' in actions) && !('review' in actions), forgedCallDenied: denied,
+      ranOnAcceptance: ['running', 'succeeded'].includes(listed?.status), viewerStillReadOnly: !('actions' in ampleFileViewerApp) && !('set' in ampleFileViewerApp.data) };
   });
   if (Object.values(isolation).some(value => value !== true)) throw new Error(JSON.stringify(isolation));
   const controls = page.getByRole('region', { name: 'App requests', exact: true });

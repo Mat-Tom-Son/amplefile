@@ -3,7 +3,7 @@ import { productIdentity } from "../../src/shared/product-identity.js";
 
 const developmentUserDataName = productIdentity.developmentProductName;
 
-export interface WorkFoldDesktopUserDataPathOptions {
+export interface AmpleFileDesktopUserDataPathOptions {
   appDataPath: string;
   productName: string;
   useInstalledProductData: boolean;
@@ -12,7 +12,7 @@ export interface WorkFoldDesktopUserDataPathOptions {
   currentDirectory?: string;
 }
 
-export interface WorkFoldDesktopInstalledDataOptions {
+export interface AmpleFileDesktopInstalledDataOptions {
   executablePath: string;
   productName: string;
   isPackaged: boolean;
@@ -20,13 +20,13 @@ export interface WorkFoldDesktopInstalledDataOptions {
   platform?: NodeJS.Platform;
 }
 
-export function workFoldDesktopStateOverride(
+export function ampleFileDesktopStateOverride(
   environment: Readonly<Record<string, string | undefined>>,
 ): string | undefined {
-  return environment.WORKFOLD_DESKTOP_STATE_DIR;
+  return environment.AMPLEFILE_DESKTOP_STATE_DIR;
 }
 
-export function workFoldDesktopUsesInstalledProductData(options: WorkFoldDesktopInstalledDataOptions): boolean {
+export function ampleFileDesktopUsesInstalledProductData(options: AmpleFileDesktopInstalledDataOptions): boolean {
   if (!options.isPackaged) return false;
   const platform = options.platform ?? process.platform;
   if (platform !== "win32") return true;
@@ -40,7 +40,7 @@ export function workFoldDesktopUsesInstalledProductData(options: WorkFoldDesktop
   return options.fileExists(win32.join(executableDirectory, `Uninstall ${options.productName}.exe`));
 }
 
-export function workFoldDesktopUserDataPath(options: WorkFoldDesktopUserDataPathOptions): string {
+export function ampleFileDesktopUserDataPath(options: AmpleFileDesktopUserDataPathOptions): string {
   const platform = options.platform ?? process.platform;
   const paths = platform === "win32" ? win32 : posix;
   const override = options.override?.trim();

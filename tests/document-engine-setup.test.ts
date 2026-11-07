@@ -58,7 +58,7 @@ test("a start problem belongs to the exact engine Check ran, and a reinstall cle
 });
 
 test("discovery looks on PATH and in the usual install folders without starting anything", posixOnly, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-engine-discovery-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-engine-discovery-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const started = join(root, "started");
   const bin = join(root, "bin"), app = join(root, "Applications", "LibreOffice.app", "Contents", "MacOS");
@@ -86,7 +86,7 @@ test("discovery looks on PATH and in the usual install folders without starting 
 });
 
 test("an explicit Check starts each engine once and reports a version, a failure, or a hang", posixOnly, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-engine-verify-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-engine-verify-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const good = join(root, "good"), failing = join(root, "failing"), hanging = join(root, "hanging");
   await writeFile(good, "#!/bin/sh\necho\necho 'tesseract 5.5.1'\necho ' leptonica-1.85.0'\n", { mode: 0o700 });
@@ -109,7 +109,7 @@ test("an explicit Check starts each engine once and reports a version, a failure
 });
 
 test("Set up rechecks by itself: installing and removing LibreOffice changes the word on the next read", posixOnly, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-engine-setup-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-engine-setup-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const included = join(root, "included"), engines = join(root, "engines");
   await mkdir(join(included, "documents"), { recursive: true });
@@ -138,7 +138,7 @@ test("Set up rechecks by itself: installing and removing LibreOffice changes the
   const removed = await documents();
   assert.equal(removed.state, "setup_required");
   assert.match(removed.detail, /Install LibreOffice/);
-  await assert.rejects(setupIncludedTool(root, "documents", "install" as never, {}, provider), /Unknown document setup action/, "work-fold never installs an engine itself");
+  await assert.rejects(setupIncludedTool(root, "documents", "install" as never, {}, provider), /Unknown document setup action/, "AmpleFile never installs an engine itself");
 });
 
 test("Set up shows only commands a person runs themselves, matched to their computer", () => {

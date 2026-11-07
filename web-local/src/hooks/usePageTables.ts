@@ -33,14 +33,14 @@ const emptyTable: PageTableState = { live: null, deleted: null, loading: false, 
  */
 export function usePageTables({
   client,
-  workFolderId,
+  connectedFolderId,
   path,
   enabled,
   revision,
   viewId,
 }: {
   client: PageEntriesClient;
-  workFolderId: string;
+  connectedFolderId: string;
   path: string;
   enabled: boolean;
   revision: number;
@@ -59,14 +59,14 @@ export function usePageTables({
 
   const loadSummaries = useCallback(() => {
     const generation = ++summaryGenerationRef.current;
-    void client.tables(workFolderId, path).then((next) => {
+    void client.tables(connectedFolderId, path).then((next) => {
       if (generation === summaryGenerationRef.current) setSummaries(next);
     }, () => {
       // An older local API without the table list: the Data view falls back
       // to the tables page.json declares.
       if (generation === summaryGenerationRef.current) setSummaries((current) => current ?? []);
     });
-  }, [client, path, workFolderId]);
+  }, [client, path, connectedFolderId]);
 
   const loadTable = useCallback((table: string) => {
     const wanted = openedRef.current.get(table);
@@ -75,8 +75,8 @@ export function usePageTables({
     tableGenerationRef.current.set(table, generation);
     setTables((current) => ({ ...current, [table]: { ...(current[table] ?? emptyTable), loading: true } }));
     void Promise.all([
-      client.data(workFolderId, path, table, false),
-      wanted.deleted ? client.data(workFolderId, path, table, true) : Promise.resolve(null),
+      client.data(connectedFolderId, path, table, false),
+      wanted.deleted ? client.data(connectedFolderId, path, table, true) : Promise.resolve(null),
     ]).then(([live, deleted]) => {
       if (tableGenerationRef.current.get(table) !== generation) return;
       setTables((current) => ({ ...current, [table]: { live, deleted: deleted ?? current[table]?.deleted ?? null, loading: false, error: null } }));
@@ -84,7 +84,7 @@ export function usePageTables({
       if (tableGenerationRef.current.get(table) !== generation) return;
       setTables((current) => ({ ...current, [table]: { ...(current[table] ?? emptyTable), loading: false, error: errorText(error) } }));
     });
-  }, [client, path, workFolderId]);
+  }, [client, path, connectedFolderId]);
 
   const refreshAll = useCallback(() => {
     loadSummaries();
@@ -93,18 +93,18 @@ export function usePageTables({
 
   // First showing, and again after the page's files changed.
   useEffect(() => {
-    const key = `${workFolderId}\n${path}\n${revision}`;
+    const key = `${connectedFolderId}\n${path}\n${revision}`;
     if (loadedKeyRef.current !== key) { loadedKeyRef.current = key; staleRef.current = true; }
     if (!enabled || !staleRef.current) return;
     staleRef.current = false;
     refreshAll();
-  }, [enabled, path, refreshAll, revision, workFolderId]);
+  }, [enabled, path, refreshAll, revision, connectedFolderId]);
 
   const pendingRef = useRef(new Set<string | null>());
   useEffect(() => {
     let timer: number | null = null;
     const unsubscribe = subscribePageDataChanges((change) => {
-      if (change.workFolderId !== workFolderId || change.page !== path || change.source === viewId) return;
+      if (change.connectedFolderId !== connectedFolderId || change.page !== path || change.source === viewId) return;
       pendingRef.current.add(change.table);
       if (timer !== null) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
@@ -118,7 +118,7 @@ export function usePageTables({
       }, 150);
     });
     return () => { if (timer !== null) window.clearTimeout(timer); unsubscribe(); };
-  }, [loadSummaries, loadTable, path, viewId, workFolderId]);
+  }, [loadSummaries, loadTable, path, viewId, connectedFolderId]);
 
   const open = useCallback((table: string, options: { deleted?: boolean } = {}) => {
     const current = openedRef.current.get(table);

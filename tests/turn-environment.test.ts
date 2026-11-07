@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildTurnContextMessage } from "../src/local/agent/pi-client.js";
-import { buildWorkFolderTurnContext } from "../src/local/agent/work-folder-turn-context.js";
+import { buildConnectedFolderTurnContext } from "../src/local/agent/connected-folder-turn-context.js";
 import { currentTurnEnvironment, describeTurnEnvironment } from "../src/local/agent/turn-environment.js";
 
 /**
  * Every turn context names the host's local time with its UTC offset, its
- * IANA time zone, and its platform, so a Worker or the work-fold agent can
+ * IANA time zone, and its platform, so a Worker or the AmpleFile agent can
  * resolve "tomorrow at 9" into the absolute time `chat snooze --until` and
  * `at` Automations take.
  */
@@ -39,17 +39,17 @@ test("the host reads its own clock, zone, and platform", () => {
   assert.equal(environment.platform, process.platform);
 });
 
-test("Worker and work-fold agent turn contexts lead with the environment line", () => {
+test("Worker and AmpleFile agent turn contexts lead with the environment line", () => {
   const environment = { now, timeZone: "America/Los_Angeles", platform: "darwin" as const };
   const line = describeTurnEnvironment(environment);
   const worker = buildTurnContextMessage({
     environment,
-    workFolderTurn: buildWorkFolderTurnContext({ workFolderId: "work-folder-1", taskId: "task-1", requestId: "req-1", handleSalt: "salt" }),
+    connectedFolderTurn: buildConnectedFolderTurnContext({ connectedFolderId: "connected-folder-1", taskId: "task-1", requestId: "req-1", handleSalt: "salt" }),
   });
-  assert.ok(worker.startsWith(`${line}\nThis turn's work-fold identity`));
-  const agent = buildTurnContextMessage({ environment, workFoldAgentTaskId: "agent-task-1", workFoldAgentWorkFolders: [] });
-  assert.ok(agent.startsWith(`${line}\nCurrent work-fold profile snapshot`));
+  assert.ok(worker.startsWith(`${line}\nThis turn's AmpleFile identity`));
+  const agent = buildTurnContextMessage({ environment, ampleFileAgentTaskId: "agent-task-1", ampleFileAgentConnectedFolders: [] });
+  assert.ok(agent.startsWith(`${line}\nCurrent AmpleFile profile snapshot`));
   assert.equal(buildTurnContextMessage({ environment }), line, "even a turn with nothing else to say carries it");
-  assert.doesNotMatch(buildTurnContextMessage({ workFoldAgentTaskId: "agent-task-1" }), /Host environment/,
+  assert.doesNotMatch(buildTurnContextMessage({ ampleFileAgentTaskId: "agent-task-1" }), /Host environment/,
     "only the turn being started supplies it; per-attachment measurements stay unchanged");
 });

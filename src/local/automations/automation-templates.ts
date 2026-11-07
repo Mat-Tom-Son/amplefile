@@ -4,15 +4,15 @@ import {
   type AutomationTemplateId,
 } from "../../shared/automation-templates.js";
 import {
-  normalizeWorkFoldAutomationDeclaration,
-  workFoldAutomationDigest,
-  type WorkFoldAutomationDeclaration,
+  normalizeAmpleFileAutomationDeclaration,
+  ampleFileAutomationDigest,
+  type AmpleFileAutomationDeclaration,
 } from "./automation-declarations.js";
 
 /**
  * The declarations behind the ready-made Automations
  * (src/shared/automation-templates.ts). Each is one Chat step to the
- * work-folder's own Worker on a fixed trigger, written in plain words and
+ * Connected Folder's own Worker on a fixed trigger, written in plain words and
  * telling the Worker never to delete anything; every change it makes is under
  * the Chat's own History restore points.
  */
@@ -25,13 +25,13 @@ const documentAndMediaExtensions = [
 ];
 const pictureExtensions = [".png", ".jpg", ".jpeg", ".heic", ".gif", ".webp", ".tiff"];
 
-const topLevelArrivals = (workFolder: string, extensions: readonly string[], debounceSeconds: number, cooldownMinutes: number) => ({
+const topLevelArrivals = (connectedFolder: string, extensions: readonly string[], debounceSeconds: number, cooldownMinutes: number) => ({
   kind: "files-changed",
-  workFolder,
+  connectedFolder,
   watch: { kind: "tree", path: "", recursive: false, extensions: [...extensions] },
   debounceSeconds,
   cooldownMinutes,
-  // Files that land while work-fold is closed are handled once it is back.
+  // Files that land while AmpleFile is closed are handled once it is back.
   ifMissed: "run",
 });
 
@@ -57,29 +57,29 @@ const messages: Record<AutomationTemplateId, string> = {
   "weekly-tidy": "Tidy up this folder. Move loose files at the top into the subfolders where they belong, using the folders that are already here. If two files are exact duplicates, move the extra copy into a folder named Duplicates. Tell me about empty folders but leave them. Don't rename, change, or delete any file. When you're done, report what you moved.",
 };
 
-function trigger(templateId: AutomationTemplateId, workFolderId: string): unknown {
-  if (templateId === "organize-new-files" || templateId === "name-new-files") return topLevelArrivals(workFolderId, documentAndMediaExtensions, 30, 5);
-  if (templateId === "screenshots") return topLevelArrivals(workFolderId, pictureExtensions, 10, 1);
+function trigger(templateId: AutomationTemplateId, connectedFolderId: string): unknown {
+  if (templateId === "organize-new-files" || templateId === "name-new-files") return topLevelArrivals(connectedFolderId, documentAndMediaExtensions, 30, 5);
+  if (templateId === "screenshots") return topLevelArrivals(connectedFolderId, pictureExtensions, 10, 1);
   return { kind: "interval", intervalMinutes: 7 * 24 * 60 };
 }
 
-/** The declaration a ready-made Automation turns on as in one work-folder, and the digest enabling pins. */
+/** The declaration a ready-made Automation turns on as in one Connected Folder, and the digest enabling pins. */
 export function automationTemplateDeclaration(
   templateId: AutomationTemplateId,
-  workFolderId: string,
+  connectedFolderId: string,
   now = new Date(),
-): { declaration: WorkFoldAutomationDeclaration; digest: string } {
+): { declaration: AmpleFileAutomationDeclaration; digest: string } {
   const template = automationTemplates.find((item) => item.id === templateId);
   if (!template) throw new Error("That ready-made Automation doesn't exist.");
-  const declaration = normalizeWorkFoldAutomationDeclaration({
-    kind: "work-fold.automation",
+  const declaration = normalizeAmpleFileAutomationDeclaration({
+    kind: "amplefile.automation",
     version: 6,
-    id: automationTemplateAutomationId(templateId, workFolderId),
+    id: automationTemplateAutomationId(templateId, connectedFolderId),
     title: template.title,
-    trigger: trigger(templateId, workFolderId),
-    steps: [{ id: "worker", kind: "chat", workFolder: workFolderId, message: messages[templateId] }],
+    trigger: trigger(templateId, connectedFolderId),
+    steps: [{ id: "worker", kind: "chat", connectedFolder: connectedFolderId, message: messages[templateId] }],
     createdBy: "human",
     createdAt: now.toISOString(),
   });
-  return { declaration, digest: workFoldAutomationDigest(declaration) };
+  return { declaration, digest: ampleFileAutomationDigest(declaration) };
 }

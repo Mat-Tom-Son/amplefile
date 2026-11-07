@@ -6,10 +6,10 @@ import { syncBuiltinESMExports } from "node:module";
 import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-const root = await mkdtemp(join(tmpdir(), "workfold-included-catalog-"));
+const root = await mkdtemp(join(tmpdir(), "amplefile-included-catalog-"));
 const agentDir = join(root, "agent"), stateRoot = join(root, "state");
 process.env.PI_CODING_AGENT_DIR = agentDir;
-await Promise.all([agentDir, stateRoot, join(root, "work-folder-a"), join(root, "work-folder-b")].map(path => mkdir(path)));
+await Promise.all([agentDir, stateRoot, join(root, "connected-folder-a"), join(root, "connected-folder-b")].map(path => mkdir(path)));
 await writeFile(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: { eager: { command: process.execPath, args: ["-e", "throw new Error('catalog started an MCP server')"], lifecycle: "eager" } } }));
 async function snapshot(path: string): Promise<unknown> {
   return Promise.all((await readdir(path, { withFileTypes: true })).sort((a,b) => a.name.localeCompare(b.name)).map(async entry => [entry.name, entry.isDirectory() ? await snapshot(join(path, entry.name)) : (await readFile(join(path, entry.name))).toString("base64")]));
@@ -29,21 +29,21 @@ try {
   forbid(workerThreads, "Worker", "worker thread");
   forbid(net.Server.prototype, "listen", "listener"); forbid(net.Socket.prototype, "connect", "socket connection"); forbid(globalThis, "fetch", "network fetch");
   syncBuiltinESMExports();
-  for (const workFolder of ["work-folder-a", "work-folder-b", "work-folder-a"]) {
-    const catalog = await loadAgentSkillCatalog(join(root, workFolder), provider);
+  for (const connectedFolder of ["connected-folder-a", "connected-folder-b", "connected-folder-a"]) {
+    const catalog = await loadAgentSkillCatalog(join(root, connectedFolder), provider);
     assert.deepEqual(catalog.diagnostics.filter(item => item.type === "error" || item.type === "collision"), []);
-    const included = catalog.extensions.filter(item => item.source.source === "Included with work-fold");
+    const included = catalog.extensions.filter(item => item.source.source === "Included with AmpleFile");
     assert.equal(included.length, 5, JSON.stringify(catalog.extensions));
     for (const name of ["find_roots", "chrome_tab", "web_search", "codemode", "tool_search", "document_run"]) assert.ok(catalog.tools.some(tool => tool.name === name), `Missing native tool ${name}`);
     assert.ok(catalog.skills.some(skill => skill.name === "document-work"), "Ordinary document Skill is present");
-    const setUp = catalog.skills.find(skill => skill.name === "set-up-work-folder");
-    assert.ok(setUp, "The Set up for me Skill ships with work-fold");
-    assert.equal(setUp.source.source, "Included with work-fold");
+    const setUp = catalog.skills.find(skill => skill.name === "set-up-connected-folder");
+    assert.ok(setUp, "The Set up for me Skill ships with AmpleFile");
+    assert.equal(setUp.source.source, "Included with AmpleFile");
     assert.equal(setUp.source.scope, "user", "it is listed under Everywhere");
   }
   assert.deepEqual(events, [], "Catalog/session_start never starts a helper, bridge, MCP process, or network request");
   assert.deepEqual(await snapshot(root), before, "Catalog never writes credentials, capture files, or app-owned state");
-  console.log("PASS included catalog: five native Extensions, the document and set-up Skills, two work-folders and repeat catalog, no process/listener/network or filesystem effects");
+  console.log("PASS included catalog: five native Extensions, the document and set-up Skills, two Connected Folders and repeat catalog, no process/listener/network or filesystem effects");
 } finally {
   for (const action of restore.reverse()) action(); syncBuiltinESMExports();
   await rm(root, { recursive: true, force: true });

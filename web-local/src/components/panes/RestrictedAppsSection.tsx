@@ -53,13 +53,13 @@ import type {
   RestrictedAppNotificationPermission,
   RestrictedAppStorageUsage,
   RestrictedAppDataRecovery,
-  WorkFolderSummary,
+  ConnectedFolderSummary,
 } from "../../types";
 import { requestConfirm, showToast } from "../../ui/feedback";
 import { restrictedAppDataRestoreBytes } from "../../../../src/shared/restricted-app-storage-limits";
 
 export function RestrictedAppsSection({
-  workFolder,
+  connectedFolder,
   apps,
   loading,
   fixtureMode = false,
@@ -71,50 +71,50 @@ export function RestrictedAppsSection({
   onRemoveApp,
   onError,
 }: {
-  workFolder: WorkFolderSummary;
+  connectedFolder: ConnectedFolderSummary;
   apps: RestrictedAppInstalled[];
   loading: boolean;
   fixtureMode?: boolean;
   onChangeApp?: (app: RestrictedAppInstalled) => Promise<void>;
-  onOpenBuildChat?: (workFolderId: string, conversationId: string) => Promise<void>;
-  onOpenResultFile?: (workFolderId: string, path: string) => Promise<void>;
-  onOpenAppStudio: (workFolderId?: string, runtimeInstanceId?: string) => void;
+  onOpenBuildChat?: (connectedFolderId: string, conversationId: string) => Promise<void>;
+  onOpenResultFile?: (connectedFolderId: string, path: string) => Promise<void>;
+  onOpenAppStudio: (connectedFolderId?: string, runtimeInstanceId?: string) => void;
   onUpsertApp: (app: RestrictedAppInstalled) => void;
   onRemoveApp: (featureInstallationId: string) => void;
   onError: (message: string | null) => void;
 }) {
   const [selectedInstallationId, setSelectedInstallationId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const workFolderIdRef = useRef(workFolder.id);
-  workFolderIdRef.current = workFolder.id;
+  const connectedFolderIdRef = useRef(connectedFolder.id);
+  connectedFolderIdRef.current = connectedFolder.id;
   const selectedApp = selectedInstallationId ? apps.find((app) => app.featureInstallationId === selectedInstallationId) ?? null : null;
 
   useEffect(() => {
     setSelectedInstallationId(null);
     setBusy(false);
-  }, [workFolder.id]);
+  }, [connectedFolder.id]);
 
   async function changeApp(app: RestrictedAppInstalled) {
     if (!onChangeApp || busy) return;
     setBusy(true);
-    const workFolderId = workFolder.id;
+    const connectedFolderId = connectedFolder.id;
     try { await onChangeApp(app); }
-    catch (caught) { if (workFolderIdRef.current === workFolderId) onError(errorText(caught)); }
-    finally { if (workFolderIdRef.current === workFolderId) setBusy(false); }
+    catch (caught) { if (connectedFolderIdRef.current === connectedFolderId) onError(errorText(caught)); }
+    finally { if (connectedFolderIdRef.current === connectedFolderId) setBusy(false); }
   }
 
   async function remove(app: RestrictedAppInstalled) {
     const confirmed = await requestConfirm({
       title: `Remove ${app.manifest.title} preview?`,
-      body: "Removes the preview, access, and connections; moves app data to Recently Deleted. work-folder files remain.",
+      body: "Removes the preview, access, and connections; moves app data to Recently Deleted. Connected Folder files remain.",
       confirmLabel: "Remove Preview",
       tone: "danger",
     });
-    if (!confirmed || workFolderIdRef.current !== app.workFolderId) return;
+    if (!confirmed || connectedFolderIdRef.current !== app.connectedFolderId) return;
     setBusy(true);
     try {
       const outcome = fixtureMode ? { removed: true, recentlyDeleted: null } : await removeRestrictedApp(app);
-      if (workFolderIdRef.current !== app.workFolderId) return;
+      if (connectedFolderIdRef.current !== app.connectedFolderId) return;
       onRemoveApp(app.featureInstallationId);
       setSelectedInstallationId(null);
       showToast({
@@ -124,9 +124,9 @@ export function RestrictedAppsSection({
         tone: "success",
       });
     } catch (caught) {
-      if (workFolderIdRef.current === app.workFolderId) onError(errorText(caught));
+      if (connectedFolderIdRef.current === app.connectedFolderId) onError(errorText(caught));
     } finally {
-      if (workFolderIdRef.current === app.workFolderId) setBusy(false);
+      if (connectedFolderIdRef.current === app.connectedFolderId) setBusy(false);
     }
   }
 
@@ -141,7 +141,7 @@ export function RestrictedAppsSection({
               <div className="restricted-app-card-copy">
                 <div className="restricted-app-card-title"><strong>{app.manifest.title}</strong><span>{app.runtimeInstanceKind === "development" ? "Local Preview" : "Installed App Feature"}</span></div>
                 {app.manifest.description ? <p>{app.manifest.description}</p> : null}
-                <div className="restricted-app-card-meta"><span>{app.runtimeInstanceKind === "development" ? "Previewing in this work-folder" : "Installed in this work-folder · Data on this device"}</span><span>{app.packageName} {app.version}</span></div>
+                <div className="restricted-app-card-meta"><span>{app.runtimeInstanceKind === "development" ? "Previewing in this Connected Folder" : "Installed in this Connected Folder · Data on this device"}</span><span>{app.packageName} {app.version}</span></div>
                 <small>{app.manifest.tools.length} {app.manifest.tools.length === 1 ? "action" : "actions"} · {app.networkGrants.length}/{app.manifest.permissions.network.length} network · {app.fileGrants.length}/{app.manifest.permissions.files.length} files · {app.notificationGrants.length}/{app.manifest.permissions.notifications.length} notifications{app.manifest.automations.length ? ` · ${app.automations.filter((automation) => automation.enabled).length}/${app.manifest.automations.length} automations on` : ""}</small>
               </div>
               <div className="restricted-app-card-actions"><span className={access.enabled ? "professional-status-badge enabled" : "professional-status-badge"}>{access.label}</span>{onChangeApp ? <button className="ui-control ui-control--quiet" type="button" disabled={busy || fixtureMode} onClick={() => void changeApp(app)}>Change This App</button> : null}<button className="ui-control" type="button" disabled={busy} onClick={() => setSelectedInstallationId(app.featureInstallationId)}>{access.total ? "Review Access" : "Details"}</button></div>
@@ -149,7 +149,7 @@ export function RestrictedAppsSection({
           })}
         </div>
       ) : null}
-      {selectedApp ? <RestrictedAppDetailsDialog app={selectedApp} busy={busy} fixtureMode={fixtureMode} onAppChanged={onUpsertApp} onRemove={() => void remove(selectedApp)} onOpenBuildChat={onOpenBuildChat} onOpenResultFile={onOpenResultFile} onOpenAppStudio={(runtimeInstanceId) => { setSelectedInstallationId(null); onOpenAppStudio(selectedApp.sourceWorkFolderId, runtimeInstanceId); }} onError={onError} onClose={() => { if (!busy) setSelectedInstallationId(null); }} /> : null}
+      {selectedApp ? <RestrictedAppDetailsDialog app={selectedApp} busy={busy} fixtureMode={fixtureMode} onAppChanged={onUpsertApp} onRemove={() => void remove(selectedApp)} onOpenBuildChat={onOpenBuildChat} onOpenResultFile={onOpenResultFile} onOpenAppStudio={(runtimeInstanceId) => { setSelectedInstallationId(null); onOpenAppStudio(selectedApp.sourceConnectedFolderId, runtimeInstanceId); }} onError={onError} onClose={() => { if (!busy) setSelectedInstallationId(null); }} /> : null}
     </section>
   );
 }
@@ -176,8 +176,8 @@ function RestrictedAppDetailsDialog({ app, busy, fixtureMode, onAppChanged, onRe
   fixtureMode: boolean;
   onAppChanged: (app: RestrictedAppInstalled) => void;
   onRemove: () => void;
-  onOpenBuildChat?: (workFolderId: string, conversationId: string) => Promise<void>;
-  onOpenResultFile?: (workFolderId: string, path: string) => Promise<void>;
+  onOpenBuildChat?: (connectedFolderId: string, conversationId: string) => Promise<void>;
+  onOpenResultFile?: (connectedFolderId: string, path: string) => Promise<void>;
   onOpenAppStudio: (runtimeInstanceId?: string) => void;
   onError: (message: string | null) => void;
   onClose: () => void;
@@ -212,13 +212,13 @@ function RestrictedAppDetailsDialog({ app, busy, fixtureMode, onAppChanged, onRe
     if (!fixtureMode) void getRestrictedAppBuildContext(app).then((value) => { if (!cancelled) setBuildContext(value); }).catch((caught) => { if (!cancelled) onError(errorText(caught)); });
     if (!fixtureMode) void getRestrictedAppDataRecovery(app).then((value) => { if (!cancelled) setDataRecovery(value); }).catch((caught) => { if (!cancelled) onError(errorText(caught)); });
     return () => { cancelled = true; };
-  }, [app.digest, app.manifest.id, app.workFolderId, fixtureMode, onError]);
+  }, [app.digest, app.manifest.id, app.connectedFolderId, fixtureMode, onError]);
 
   async function openBuildChat() {
     if (!buildContext?.buildConversationId || !onOpenBuildChat) return;
     setActionBusy("build-chat");
     try {
-      await onOpenBuildChat(buildContext.sourceWorkFolderId, buildContext.buildConversationId);
+      await onOpenBuildChat(buildContext.sourceConnectedFolderId, buildContext.buildConversationId);
       onClose();
     } catch (caught) { onError(errorText(caught)); }
     finally { setActionBusy(null); }
@@ -229,15 +229,15 @@ function RestrictedAppDetailsDialog({ app, busy, fixtureMode, onAppChanged, onRe
     setAppAutomationRuns({});
     setAppAutomationRunLoading({});
     setAppAutomationRunErrors({});
-  }, [app.digest, app.manifest.id, app.workFolderId]);
+  }, [app.digest, app.manifest.id, app.connectedFolderId]);
 
   async function changeGrant(destination: RestrictedAppNetworkDestination, granted: boolean) {
     if (granted) {
       const confirmed = await requestConfirm({
         title: `Allow network access to ${destinationLabel(destination)}?`,
         body: destination.target.kind === "loopback-http"
-          ? `${app.manifest.title} will be able to use ${destination.methods.join(", ")} requests to this exact loopback address. work-fold verifies the address, but does not yet verify which local process owns the port.`
-          : `${app.manifest.title} will be able to use ${destination.methods.join(", ")} requests to this exact origin through work-fold's network broker.`,
+          ? `${app.manifest.title} will be able to use ${destination.methods.join(", ")} requests to this exact loopback address. AmpleFile verifies the address, but does not yet verify which local process owns the port.`
+          : `${app.manifest.title} will be able to use ${destination.methods.join(", ")} requests to this exact origin through AmpleFile's network broker.`,
         confirmLabel: "Allow Access",
       });
       if (!confirmed) return;
@@ -264,7 +264,7 @@ function RestrictedAppDetailsDialog({ app, busy, fixtureMode, onAppChanged, onRe
   }
 
   async function disconnect(destination: RestrictedAppNetworkDestination) {
-    const confirmed = await requestConfirm({ title: `Disconnect ${destinationLabel(destination)}?`, body: "work-fold will remove the saved sign-in. The separate access permission will not change.", confirmLabel: "Disconnect", tone: "danger" });
+    const confirmed = await requestConfirm({ title: `Disconnect ${destinationLabel(destination)}?`, body: "AmpleFile will remove the saved sign-in. The separate access permission will not change.", confirmLabel: "Disconnect", tone: "danger" });
     if (!confirmed) return;
     const key = `credential:${destination.id}`;
     setActionBusy(key);
@@ -289,7 +289,7 @@ function RestrictedAppDetailsDialog({ app, busy, fixtureMode, onAppChanged, onRe
             diagnostics: [{
               code: "METADATA_PKCE_UNDECLARED",
               issuer: "https://identity.example.com",
-              message: "The provider metadata did not advertise PKCE; work-fold still enforced S256 for this connection.",
+              message: "The provider metadata did not advertise PKCE; AmpleFile still enforced S256 for this connection.",
             }],
           }
         : await connectRestrictedAppOAuth(app, destination.id);
@@ -308,7 +308,7 @@ function RestrictedAppDetailsDialog({ app, busy, fixtureMode, onAppChanged, onRe
     if (granted) {
       const confirmed = await requestConfirm({
         title: `Allow ${permission.access === "read-write" ? "changes to" : "reading"} ${root}?`,
-        body: `${app.manifest.title} will be limited to this ${permission.target} inside the work-folder. work-fold metadata, Pi configuration, links, and paths outside the work-folder remain blocked.`,
+        body: `${app.manifest.title} will be limited to this ${permission.target} inside the Connected Folder. AmpleFile metadata, Pi configuration, links, and paths outside the Connected Folder remain blocked.`,
         confirmLabel: "Allow File Access",
       });
       if (!confirmed) return;
@@ -328,7 +328,7 @@ function RestrictedAppDetailsDialog({ app, busy, fixtureMode, onAppChanged, onRe
     if (granted) {
       const confirmed = await requestConfirm({
         title: `Allow “${permission.title}” notifications?`,
-        body: `${app.manifest.title} may show this exact notification only during an enabled automation while work-fold is running.\n\nTitle: work-fold · ${app.manifest.title} — ${permission.title}\nBody: ${permission.description}`,
+        body: `${app.manifest.title} may show this exact notification only during an enabled automation while AmpleFile is running.\n\nTitle: AmpleFile · ${app.manifest.title} — ${permission.title}\nBody: ${permission.description}`,
         confirmLabel: "Allow Notifications",
       });
       if (!confirmed) return;
@@ -418,8 +418,8 @@ function RestrictedAppDetailsDialog({ app, busy, fixtureMode, onAppChanged, onRe
     const recoveryId = dataRecovery?.id;
     setActionBusy("restore-data");
     try {
-      // The host's own bound: every export work-fold makes fits.
-      if (file && file.size > restrictedAppDataRestoreBytes) throw new Error("This file is larger than any app data export work-fold makes.");
+      // The host's own bound: every export AmpleFile makes fits.
+      if (file && file.size > restrictedAppDataRestoreBytes) throw new Error("This file is larger than any app data export AmpleFile makes.");
       const backup: unknown = file ? JSON.parse(await file.text()) : undefined;
       const confirmed = await requestConfirm({
         title: file ? `Restore ${app.manifest.title} data?` : "Undo the last data change?",
@@ -438,7 +438,7 @@ function RestrictedAppDetailsDialog({ app, busy, fixtureMode, onAppChanged, onRe
   const access = restrictedAppAccessState(app);
   const accessSummary = [
     { label: "Network", enabled: app.networkGrants.length, total: app.manifest.permissions.network.length },
-    { label: "work-folder Files", enabled: app.fileGrants.length, total: app.manifest.permissions.files.length },
+    { label: "Connected Folder Files", enabled: app.fileGrants.length, total: app.manifest.permissions.files.length },
     ...(app.manifest.permissions.checks?.length ? [{ label: "Check Results", enabled: app.checkGrants?.length ?? 0, total: app.manifest.permissions.checks.length }] : []),
     { label: "Notifications", enabled: app.notificationGrants.length, total: app.manifest.permissions.notifications.length },
     { label: "Automations", enabled: app.automations.filter((automation) => automation.enabled).length, total: app.manifest.automations.length },
@@ -446,10 +446,10 @@ function RestrictedAppDetailsDialog({ app, busy, fixtureMode, onAppChanged, onRe
 
   return <div className="modal-backdrop capability-dialog-backdrop" role="presentation" onMouseDown={onClose}>
     <section ref={dialogRef} tabIndex={-1} className="capability-dialog restricted-app-details-dialog" role="dialog" aria-modal="true" aria-labelledby="restricted-app-details-title" onMouseDown={(event) => event.stopPropagation()}>
-      <div className="modal-title"><div><h2 id="restricted-app-details-title">{app.manifest.title}</h2><p>{app.runtimeInstanceKind === "development" ? "Local Preview" : "Feature in installed App"} · This work-folder · Restricted runtime</p></div><button className="ui-control ui-control--icon" type="button" disabled={busy || Boolean(actionBusy)} onClick={onClose} aria-label="Close App Details"><Dismiss20Regular /></button></div>
+      <div className="modal-title"><div><h2 id="restricted-app-details-title">{app.manifest.title}</h2><p>{app.runtimeInstanceKind === "development" ? "Local Preview" : "Feature in installed App"} · This Connected Folder · Restricted runtime</p></div><button className="ui-control ui-control--icon" type="button" disabled={busy || Boolean(actionBusy)} onClick={onClose} aria-label="Close App Details"><Dismiss20Regular /></button></div>
       <div className="capability-dialog-body">
         <p className="capability-details-summary">{app.manifest.description}</p>
-        {app.manifest.assistantActions?.length ? <RestrictedAppAssistantTasks key={`${app.featureInstallationId}:${app.digest}`} app={app} disabled={busy || Boolean(actionBusy) || fixtureMode} onOpenFile={async (workFolderId, path) => { await onOpenResultFile(workFolderId, path); onClose(); }} onOpenChat={onOpenBuildChat ? async (workFolderId, conversationId) => { await onOpenBuildChat(workFolderId, conversationId); onClose(); } : undefined} /> : null}
+        {app.manifest.assistantActions?.length ? <RestrictedAppAssistantTasks key={`${app.featureInstallationId}:${app.digest}`} app={app} disabled={busy || Boolean(actionBusy) || fixtureMode} onOpenFile={async (connectedFolderId, path) => { await onOpenResultFile(connectedFolderId, path); onClose(); }} onOpenChat={onOpenBuildChat ? async (connectedFolderId, conversationId) => { await onOpenBuildChat(connectedFolderId, conversationId); onClose(); } : undefined} /> : null}
         {/* `assistant.infer` needs no grant beyond installation, so its
             disclosure is after the fact and belongs here, under the app
             (docs/receipts-not-gates.md, F22). */}
@@ -484,7 +484,7 @@ function RestrictedAppDetailsDialog({ app, busy, fixtureMode, onAppChanged, onRe
           })}
         </section> : null}
         {app.manifest.permissions.files.length ? <section className="restricted-app-connections" aria-labelledby="restricted-app-files-title">
-          <div className="restricted-app-connections-heading"><div><ShieldCheckmark20Regular aria-hidden="true" /><h3 id="restricted-app-files-title">work-folder Files</h3></div></div>
+          <div className="restricted-app-connections-heading"><div><ShieldCheckmark20Regular aria-hidden="true" /><h3 id="restricted-app-files-title">Connected Folder Files</h3></div></div>
           {app.manifest.permissions.files.map((permission) => <FilePermissionCard
             key={permission.id}
             permission={permission}
@@ -500,7 +500,7 @@ function RestrictedAppDetailsDialog({ app, busy, fixtureMode, onAppChanged, onRe
           {app.manifest.permissions.notifications.map((permission) => {
             const granted = app.notificationGrants.includes(permission.id);
             return <article className="restricted-app-destination-card" key={permission.id}>
-              <div className="restricted-app-destination-heading"><div><strong>work-fold · {app.manifest.title} — {permission.title}</strong><span>{permission.description}</span></div><code>{permission.id}</code></div>
+              <div className="restricted-app-destination-heading"><div><strong>AmpleFile · {app.manifest.title} — {permission.title}</strong><span>{permission.description}</span></div><code>{permission.id}</code></div>
               <div className="restricted-app-destination-states"><span className={granted ? "enabled" : ""}>Access: <strong>{granted ? "Allowed" : "Off"}</strong></span><span>Copy: <strong>Fixed to this version</strong></span></div>
               <div className="restricted-app-destination-actions"><button className={granted ? "ui-control" : "ui-control ui-control--primary"} type="button" disabled={Boolean(actionBusy)} onClick={() => void changeNotificationGrant(permission, !granted)}>{actionBusy === `notification:${permission.id}` ? <ArrowSync16Regular className="spin" /> : null}{granted ? "Revoke Notifications" : "Allow Notifications"}</button></div>
             </article>;
@@ -619,17 +619,17 @@ function FilePermissionCard({ permission, grant, busy, active, onChange }: {
 }) {
   const [root, setRoot] = useState(grant?.root ?? "");
   useEffect(() => setRoot(grant?.root ?? ""), [grant?.root, permission.target]);
-  const wholeWorkFolder = grant?.root === ".";
+  const wholeConnectedFolder = grant?.root === ".";
   const rootChanged = Boolean(grant) && root.trim() !== "" && root.trim() !== grant?.root;
   return <article className="restricted-app-destination-card">
-    <div className="restricted-app-destination-heading"><div><strong>{permission.access === "read-write" ? "Read and Write" : "Read"} One {permission.target === "directory" ? "Directory" : "File"}</strong><span>{grant ? wholeWorkFolder ? "Whole work-folder" : `Granted: ${grant.root}` : "Choose a path inside this work-folder"}</span></div><code>{permission.id}</code></div>
-    <div className="restricted-app-credential-fields"><label><span>work-folder-relative path</span><input value={root} disabled={busy} onChange={(event) => setRoot(event.target.value)} placeholder={permission.target === "directory" ? "data (or . for the whole work-folder)" : "data/report.json"} /></label></div>
+    <div className="restricted-app-destination-heading"><div><strong>{permission.access === "read-write" ? "Read and Write" : "Read"} One {permission.target === "directory" ? "Directory" : "File"}</strong><span>{grant ? wholeConnectedFolder ? "Whole Connected Folder" : `Granted: ${grant.root}` : "Choose a path inside this Connected Folder"}</span></div><code>{permission.id}</code></div>
+    <div className="restricted-app-credential-fields"><label><span>Connected Folder–relative path</span><input value={root} disabled={busy} onChange={(event) => setRoot(event.target.value)} placeholder={permission.target === "directory" ? "data (or . for the whole Connected Folder)" : "data/report.json"} /></label></div>
     <div className="restricted-app-destination-actions">
       {/* An editable path needs a way to apply it: a granted folder can be
           narrowed or moved, and a granted single file can be pointed at a
           different file. Without this the field would accept an edit the
           neighbouring Revoke button silently discards. */}
-      {grant && rootChanged ? <button className="ui-control" type="button" disabled={busy} onClick={() => onChange(root.trim(), true)}>{active ? <ArrowSync16Regular className="spin" /> : null}{permission.target === "directory" ? wholeWorkFolder ? "Limit to Folder" : "Change Folder" : "Change File"}</button> : null}
+      {grant && rootChanged ? <button className="ui-control" type="button" disabled={busy} onClick={() => onChange(root.trim(), true)}>{active ? <ArrowSync16Regular className="spin" /> : null}{permission.target === "directory" ? wholeConnectedFolder ? "Limit to Folder" : "Change Folder" : "Change File"}</button> : null}
       <button className={grant ? "ui-control" : "ui-control ui-control--primary"} type="button" disabled={busy || (!grant && !root.trim())} onClick={() => onChange(grant?.root ?? root.trim(), !grant)}>{active && !rootChanged ? <ArrowSync16Regular className="spin" /> : null}{grant ? "Revoke Access" : "Allow Access"}</button>
     </div>
   </article>;
@@ -661,7 +661,7 @@ function DestinationCard({ destination, granted, status, loading, busy, activeBu
     </aside> : null}
     <div className="restricted-app-destination-actions"><button className={granted ? "ui-control" : "ui-control ui-control--primary"} type="button" disabled={busy || loading} onClick={() => onGrantChange(!granted)}>{activeBusyKey === `grant:${destination.id}` ? <ArrowSync16Regular className="spin" /> : null}{granted ? "Revoke Access" : "Allow Access"}</button>{!loading && oauth ? <button className="ui-control" type="button" disabled={busy} onClick={onOAuth}>{activeBusyKey === `oauth:${destination.id}` ? <ArrowSync16Regular className="spin" /> : null}{status?.kind === "oauth2-pkce" ? "Reconnect in Browser" : "Connect in Browser"}</button> : null}{!loading && status?.configured && status.kind !== "none" ? <button className="ui-control" type="button" disabled={busy} onClick={onDisconnect}>{activeBusyKey === `credential:${destination.id}` || activeBusyKey === `oauth:${destination.id}` ? <ArrowSync16Regular className="spin" /> : null}Disconnect</button> : null}</div>
     {!loading && supportedAuth.length ? <details className="restricted-app-connect-details"><summary>{status?.configured ? "Replace Connection" : "Connect"}</summary><CredentialForm destination={destination} supportedAuth={supportedAuth} configuredKind={status?.kind} busy={busy} onSave={onSave} /></details> : null}
-    {unsupportedOnly ? <p className="restricted-app-oauth-note">{destination.auth.map(authLabel).join(" or ")} is not supported by this work-fold version.</p> : null}
+    {unsupportedOnly ? <p className="restricted-app-oauth-note">{destination.auth.map(authLabel).join(" or ")} is not supported by this AmpleFile version.</p> : null}
     {destination.target.kind === "loopback-http" ? <p className="restricted-app-oauth-note">Local process ownership is not verified. Allow this only while you recognize the service listening on this port.</p> : null}
   </article>;
 }

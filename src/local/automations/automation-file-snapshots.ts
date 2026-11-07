@@ -3,12 +3,12 @@ import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path";
 
 import { automationCatchUpReasons } from "../../shared/automation-presentation.js";
-import { workFoldStateRoot } from "../state-paths.js";
-import type { WorkFoldAutomationFilesChangedTrigger } from "./automation-declarations.js";
+import { ampleFileStateRoot } from "../state-paths.js";
+import type { AmpleFileAutomationFilesChangedTrigger } from "./automation-declarations.js";
 import {
-  workFoldAutomationFileObserverBounds,
-  type WorkFoldAutomationOwedCatchUp,
-  type WorkFoldAutomationSavedFileState,
+  ampleFileAutomationFileObserverBounds,
+  type AmpleFileAutomationOwedCatchUp,
+  type AmpleFileAutomationSavedFileState,
 } from "./automation-file-observer.js";
 
 /**
@@ -16,7 +16,7 @@ import {
  * `"ifMissed": "run"` (docs/automations.md, 2026-10-11 amendment).
  *
  * Machine-local application state beside the automation store, never inside a
- * work-folder: one file per automation holding the metadata the observer
+ * Connected Folder: one file per automation holding the metadata the observer
  * already reads (relative path → device, inode, size, and modification and
  * change times), the time it last started a run, and any catch-up it still
  * owes. No file contents. A record is bounded by the observer's own scan
@@ -30,36 +30,36 @@ import {
  * is what keeps a run that was interrupted by quit, sleep, or Turn off from
  * catching up on its own output.
  */
-export const workFoldAutomationFileSnapshotKind = "work-fold.automation-folder-snapshot" as const;
+export const ampleFileAutomationFileSnapshotKind = "amplefile.automation-folder-snapshot" as const;
 
 /** The largest record a read admits; 50,000 entries of long paths fit with room to spare. */
-export const workFoldAutomationFileSnapshotMaxBytes = 256 * 1024 * 1024;
+export const ampleFileAutomationFileSnapshotMaxBytes = 256 * 1024 * 1024;
 
 const maxPathLength = 4_096;
 const maxIdentityLength = 256;
 const automationIdPattern = /^automation-[a-z0-9][a-z0-9-]{7,154}$/;
 const forbiddenPathCharacters = /[\u0000-\u001f\u007f]/;
 
-export function workFoldAutomationFileSnapshotsDirectory(stateRoot?: string): string {
-  return join(stateRoot ? resolve(stateRoot) : workFoldStateRoot(), "automations", "folder-snapshots");
+export function ampleFileAutomationFileSnapshotsDirectory(stateRoot?: string): string {
+  return join(stateRoot ? resolve(stateRoot) : ampleFileStateRoot(), "automations", "folder-snapshots");
 }
 
 /**
- * The scope a saved snapshot describes: the watched work-folder and selector.
+ * The scope a saved snapshot describes: the watched Connected Folder and selector.
  * A record saved for a different folder, path, recursion, or extension list
  * is never compared — every file would read as new.
  */
-export function workFoldAutomationFileWatchKey(trigger: WorkFoldAutomationFilesChangedTrigger): string {
+export function ampleFileAutomationFileWatchKey(trigger: AmpleFileAutomationFilesChangedTrigger): string {
   return createHash("sha256").update(JSON.stringify([
-    trigger.workFolder,
+    trigger.connectedFolder,
     trigger.watch.path,
     trigger.watch.recursive,
     [...trigger.watch.extensions].sort(),
   ])).digest("hex");
 }
 
-export interface WorkFoldAutomationFileSnapshotRead {
-  state: WorkFoldAutomationSavedFileState | null;
+export interface AmpleFileAutomationFileSnapshotRead {
+  state: AmpleFileAutomationSavedFileState | null;
   /** An automation run started after this record was saved. */
   dirty: boolean;
   /** Why an existing record could not be used, in a sentence a person can read. */
@@ -67,35 +67,35 @@ export interface WorkFoldAutomationFileSnapshotRead {
 }
 
 interface SnapshotFileShape {
-  kind: typeof workFoldAutomationFileSnapshotKind;
+  kind: typeof ampleFileAutomationFileSnapshotKind;
   v: 1;
   automationId: string;
   watchKey: string;
   savedAt: string;
   snapshot: { digest: string; entries: Record<string, string> };
   lastTriggeredAt?: string;
-  owed?: WorkFoldAutomationOwedCatchUp;
+  owed?: AmpleFileAutomationOwedCatchUp;
 }
 
 const unreadableProblem =
-  "work-fold could not read this automation's saved folder snapshot, so it took a fresh look instead of catching up.";
+  "AmpleFile could not read this automation's saved folder snapshot, so it took a fresh look instead of catching up.";
 
-export class WorkFoldAutomationFileSnapshots {
+export class AmpleFileAutomationFileSnapshots {
   readonly directory: string;
   #queue: Promise<unknown> = Promise.resolve();
 
   constructor(options: { directory?: string } = {}) {
-    this.directory = resolve(options.directory ?? workFoldAutomationFileSnapshotsDirectory());
+    this.directory = resolve(options.directory ?? ampleFileAutomationFileSnapshotsDirectory());
   }
 
-  read(automationId: string, watchKey: string): Promise<WorkFoldAutomationFileSnapshotRead> {
+  read(automationId: string, watchKey: string): Promise<AmpleFileAutomationFileSnapshotRead> {
     return this.#serial(async () => {
       const path = this.#recordPath(automationId);
       const dirty = await exists(this.#markerPath(automationId));
       let text: string;
       try {
         const info = await lstat(path);
-        if (!info.isFile() || info.isSymbolicLink() || info.size > workFoldAutomationFileSnapshotMaxBytes) {
+        if (!info.isFile() || info.isSymbolicLink() || info.size > ampleFileAutomationFileSnapshotMaxBytes) {
           return { state: null, dirty, problem: unreadableProblem };
         }
         text = await readFile(path, "utf8");
@@ -126,10 +126,10 @@ export class WorkFoldAutomationFileSnapshots {
   }
 
   /** Atomically replaces the record, then clears the running marker it supersedes. */
-  save(automationId: string, watchKey: string, state: WorkFoldAutomationSavedFileState): Promise<void> {
+  save(automationId: string, watchKey: string, state: AmpleFileAutomationSavedFileState): Promise<void> {
     return this.#serial(async () => {
       const record: SnapshotFileShape = {
-        kind: workFoldAutomationFileSnapshotKind,
+        kind: ampleFileAutomationFileSnapshotKind,
         v: 1,
         automationId: requireAutomationId(automationId),
         watchKey,
@@ -222,7 +222,7 @@ function snapshotRecord(value: unknown, automationId: string): SnapshotFileShape
   const record = value as Record<string, unknown>;
   const allowed = new Set(["kind", "v", "automationId", "watchKey", "savedAt", "snapshot", "lastTriggeredAt", "owed"]);
   if (Object.keys(record).some((key) => !allowed.has(key))) return null;
-  if (record.kind !== workFoldAutomationFileSnapshotKind || record.v !== 1 || record.automationId !== automationId) return null;
+  if (record.kind !== ampleFileAutomationFileSnapshotKind || record.v !== 1 || record.automationId !== automationId) return null;
   if (typeof record.watchKey !== "string" || !/^[a-f0-9]{64}$/.test(record.watchKey)) return null;
   if (!isTimestamp(record.savedAt)) return null;
   if (record.lastTriggeredAt !== undefined && !isTimestamp(record.lastTriggeredAt)) return null;
@@ -233,7 +233,7 @@ function snapshotRecord(value: unknown, automationId: string): SnapshotFileShape
   if (typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) return null;
   if (!entries || typeof entries !== "object" || Array.isArray(entries)) return null;
   const paths = Object.keys(entries);
-  if (paths.length > workFoldAutomationFileObserverBounds.maxFiles) return null;
+  if (paths.length > ampleFileAutomationFileObserverBounds.maxFiles) return null;
   const normalizedEntries: Record<string, string> = Object.create(null);
   for (const path of paths) {
     const identity = (entries as Record<string, unknown>)[path];
@@ -246,7 +246,7 @@ function snapshotRecord(value: unknown, automationId: string): SnapshotFileShape
     ) return null;
     normalizedEntries[path] = identity;
   }
-  let owed: WorkFoldAutomationOwedCatchUp | undefined;
+  let owed: AmpleFileAutomationOwedCatchUp | undefined;
   if (record.owed !== undefined) {
     const candidate = record.owed;
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
@@ -254,12 +254,12 @@ function snapshotRecord(value: unknown, automationId: string): SnapshotFileShape
     if (Object.keys(candidate).some((key) => key !== "reason" && key !== "paths" && key !== "foundAt")) return null;
     if (typeof reason !== "string" || !(automationCatchUpReasons as readonly string[]).includes(reason)) return null;
     if (!isTimestamp(foundAt)) return null;
-    if (!Array.isArray(owedPaths) || owedPaths.length < 1 || owedPaths.length > workFoldAutomationFileObserverBounds.maxFiles) return null;
+    if (!Array.isArray(owedPaths) || owedPaths.length < 1 || owedPaths.length > ampleFileAutomationFileObserverBounds.maxFiles) return null;
     if (!owedPaths.every(isRelativePath)) return null;
-    owed = { reason: reason as WorkFoldAutomationOwedCatchUp["reason"], paths: [...owedPaths], foundAt };
+    owed = { reason: reason as AmpleFileAutomationOwedCatchUp["reason"], paths: [...owedPaths], foundAt };
   }
   return {
-    kind: workFoldAutomationFileSnapshotKind,
+    kind: ampleFileAutomationFileSnapshotKind,
     v: 1,
     automationId,
     watchKey: record.watchKey,

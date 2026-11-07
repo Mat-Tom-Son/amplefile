@@ -10,15 +10,15 @@ import "./included-tool-setup.css";
 
 type Result = { status: IncludedToolStatus };
 
-type SetupProps = { workFolderId: string; tool: IncludedToolDefinition; enabled: boolean; onStatusChange?: (status: IncludedToolStatus | null) => void };
+type SetupProps = { connectedFolderId: string; tool: IncludedToolDefinition; enabled: boolean; onStatusChange?: (status: IncludedToolStatus | null) => void };
 
 export function IncludedToolSetup(props: SetupProps) {
-  if (props.tool.id === "chrome") return <IncludedChromeSetup workFolderId={props.workFolderId} enabled={props.enabled} onStatusChange={props.onStatusChange} />;
-  if (props.tool.id === "computer") return <IncludedComputerSetup key={props.workFolderId} workFolderId={props.workFolderId} enabled={props.enabled} onStatusChange={props.onStatusChange} />;
-  return <IncludedToolSetupSession key={`${props.workFolderId}:${props.tool.id}`} {...props} />;
+  if (props.tool.id === "chrome") return <IncludedChromeSetup connectedFolderId={props.connectedFolderId} enabled={props.enabled} onStatusChange={props.onStatusChange} />;
+  if (props.tool.id === "computer") return <IncludedComputerSetup key={props.connectedFolderId} connectedFolderId={props.connectedFolderId} enabled={props.enabled} onStatusChange={props.onStatusChange} />;
+  return <IncludedToolSetupSession key={`${props.connectedFolderId}:${props.tool.id}`} {...props} />;
 }
 
-function IncludedToolSetupSession({ workFolderId, tool, enabled, onStatusChange }: SetupProps) {
+function IncludedToolSetupSession({ connectedFolderId, tool, enabled, onStatusChange }: SetupProps) {
   const [status, setStatus] = useState<IncludedToolStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ source: "read" | "action"; message: string } | null>(null);
@@ -37,7 +37,7 @@ function IncludedToolSetupSession({ workFolderId, tool, enabled, onStatusChange 
       if (cancelled || request.current || document.visibilityState === "hidden") return;
       const revision = statusRevision.current;
       const read = ++readRevision;
-      void api<{ tools: IncludedToolStatus[] }>(`/api/agent/included-tools?workFolderId=${encodeURIComponent(workFolderId)}`, { signal: controller.signal })
+      void api<{ tools: IncludedToolStatus[] }>(`/api/agent/included-tools?connectedFolderId=${encodeURIComponent(connectedFolderId)}`, { signal: controller.signal })
       .then(({ tools }) => {
         if (cancelled || read !== readRevision || statusRevision.current !== revision) return;
         const next = tools.find((item) => item.id === tool.id) ?? null;
@@ -52,7 +52,7 @@ function IncludedToolSetupSession({ workFolderId, tool, enabled, onStatusChange 
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => { cancelled = true; alive.current = false; controller.abort(); request.current?.abort(); window.clearInterval(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
-  }, [workFolderId, tool.id]);
+  }, [connectedFolderId, tool.id]);
 
   async function act(action: string) {
     if (request.current) return;
@@ -62,7 +62,7 @@ function IncludedToolSetupSession({ workFolderId, tool, enabled, onStatusChange 
     setStatus(null); statusListener.current?.(null);
     setBusy(true); setError(null);
     try {
-      const result = await api<Result>("/api/agent/included-tools/setup", { method: "POST", signal: controller.signal, body: { workFolderId, id: tool.id, action, ...(action === "connect-brave" ? { secret } : {}) } });
+      const result = await api<Result>("/api/agent/included-tools/setup", { method: "POST", signal: controller.signal, body: { connectedFolderId, id: tool.id, action, ...(action === "connect-brave" ? { secret } : {}) } });
       if (alive.current && !controller.signal.aborted) { setStatus(result.status); statusListener.current?.(result.status); setSecret(""); }
     } catch (caught) {
       if (alive.current && !controller.signal.aborted) {
@@ -70,7 +70,7 @@ function IncludedToolSetupSession({ workFolderId, tool, enabled, onStatusChange 
         // A failed check must not keep a previously successful badge. Read the
         // host's remaining evidence; transport errors alone prove no readiness.
         try {
-          const { tools } = await api<{ tools: IncludedToolStatus[] }>(`/api/agent/included-tools?workFolderId=${encodeURIComponent(workFolderId)}`, { signal: controller.signal });
+          const { tools } = await api<{ tools: IncludedToolStatus[] }>(`/api/agent/included-tools?connectedFolderId=${encodeURIComponent(connectedFolderId)}`, { signal: controller.signal });
           if (alive.current && !controller.signal.aborted) {
             const next = tools.find((item) => item.id === tool.id) ?? null;
             setStatus(next); statusListener.current?.(next);
@@ -89,6 +89,6 @@ function IncludedToolSetupSession({ workFolderId, tool, enabled, onStatusChange 
     {error ? <p className="included-tool-error" role="alert">{error.message}</p> : null}
     {tool.id === "web" ? <details className="included-tool-optional"><summary>Brave Search</summary><form onSubmit={(event) => { event.preventDefault(); void act("connect-brave"); }}><label>API Key<input type="password" autoComplete="off" value={secret} onChange={(event) => setSecret(event.target.value)} disabled={busy} /></label><div className="included-tool-actions"><button type="submit" className="ui-control ui-control--primary" disabled={busy || !enabled || !secret.trim()}>Connect</button><button type="button" className="ui-control" disabled={busy} onClick={() => void act("disconnect-brave")}>Use DuckDuckGo</button></div></form></details> : null}
     {tool.id === "documents" ? <DocumentsEngineSetup status={status} enabled={enabled} /> : null}
-    {tool.id === "mcp" ? <IncludedMcpSetup workFolderId={workFolderId} enabled={enabled} /> : null}
+    {tool.id === "mcp" ? <IncludedMcpSetup connectedFolderId={connectedFolderId} enabled={enabled} /> : null}
   </section>;
 }

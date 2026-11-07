@@ -17,7 +17,7 @@ export interface AssistantPresentationSegment {
 
 /** Selected native edit evidence, not a raw tool result or a currently live file preview. */
 export interface ChatToolEdit {
-  /** A validated work-folder-relative path, with portable forward slashes. */
+  /** A validated Connected Folder–relative path, with portable forward slashes. */
   path: string;
   /** Pi's display diff at the time of the successful edit; never a runnable patch. */
   diff: string;
@@ -32,7 +32,7 @@ export const maxChatToolEditDiffBytes = 16 * 1024;
 
 /**
  * A picture generate_image made (2026-10-11), shown under the reply. The bytes
- * stay in work-fold's machine-local app state; the Chat log carries only this.
+ * stay in AmpleFile's machine-local app state; the Chat log carries only this.
  */
 export interface ChatToolImage {
   /** Machine-local generated-picture id: 32 lowercase hex characters. */
@@ -42,7 +42,7 @@ export interface ChatToolImage {
   mimeType: string;
   width?: number;
   height?: number;
-  /** work-folder-relative path when the Worker saved it in the folder itself. */
+  /** Connected Folder–relative path when the Worker saved it in the folder itself. */
   path?: string;
 }
 export const maxTurnToolEditDiffBytes = 64 * 1024;

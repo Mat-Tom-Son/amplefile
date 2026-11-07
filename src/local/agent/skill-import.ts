@@ -33,7 +33,7 @@ export function piSkillBundleContentDigest(bytes: Uint8Array): string {
  * bytes the receipt names.
  */
 export async function importPiSkillBundleVerified(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   input: {
     fileName: string;
     bytes: Uint8Array;
@@ -47,7 +47,7 @@ export async function importPiSkillBundleVerified(
     throw new Error("The skill bundle changed after it was reviewed. Restage the import from the current content.");
   }
   const { expectedContentDigest: _expected, ...importInput } = input;
-  return importPiSkillBundle(workFolderRoot, importInput, runtimeProvider);
+  return importPiSkillBundle(connectedFolderRoot, importInput, runtimeProvider);
 }
 
 /**
@@ -56,7 +56,7 @@ export async function importPiSkillBundleVerified(
  * are preserved so scripts, references, assets, and templates keep working.
  */
 export async function importPiSkillBundle(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   input: {
     fileName: string;
     bytes: Uint8Array;
@@ -71,16 +71,16 @@ export async function importPiSkillBundle(
     if (basename(input.fileName).toLowerCase() !== "skill.md") {
       throw new Error("A standalone Markdown skill must be named SKILL.md.");
     }
-    return importStandaloneSkill(workFolderRoot, input, runtimeProvider);
+    return importStandaloneSkill(connectedFolderRoot, input, runtimeProvider);
   }
   if (extension !== ".zip" && extension !== ".skill") {
     throw new Error("Skills must be a SKILL.md file or use a .zip or .skill bundle.");
   }
 
-  const runtime = await resolvePiRuntime(workFolderRoot, runtimeProvider, { requestProjectTrust: false });
+  const runtime = await resolvePiRuntime(connectedFolderRoot, runtimeProvider, { requestProjectTrust: false });
   const scope = input.scope ?? "user";
   if (scope === "project" && !hasExplicitPiProjectMutationTrust(runtime)) {
-    throw new Error("Trust this work-folder before importing work-folder-scoped Skills.");
+    throw new Error("Trust this Connected Folder before importing Connected Folder–scoped Skills.");
   }
 
   let archive: JSZip;
@@ -101,7 +101,7 @@ export async function importPiSkillBundle(
   const skillEntries = normalized.filter(({ path }) => skillRoots.some((root) => belongsToSkillRoot(path, root)));
 
   const destinationRoot = scope === "project"
-    ? join(workFolderRoot, ".pi", "skills")
+    ? join(connectedFolderRoot, ".pi", "skills")
     : join(runtime.agentDir, "skills");
   await mkdir(destinationRoot, { recursive: true });
   const bundleName = safeBundleName(input.fileName);
@@ -156,7 +156,7 @@ export async function importPiSkillBundle(
 }
 
 async function importStandaloneSkill(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   input: { fileName: string; bytes: Uint8Array; scope?: "user" | "project" },
   runtimeProvider?: PiRuntimeProvider,
 ): Promise<PiSkillBundleImportResult> {
@@ -172,13 +172,13 @@ async function importStandaloneSkill(
   const declaredName = skillFrontmatterName(markdown);
   if (!declaredName) throw new Error("SKILL.md must declare a name in YAML frontmatter.");
 
-  const runtime = await resolvePiRuntime(workFolderRoot, runtimeProvider, { requestProjectTrust: false });
+  const runtime = await resolvePiRuntime(connectedFolderRoot, runtimeProvider, { requestProjectTrust: false });
   const scope = input.scope ?? "user";
   if (scope === "project" && !hasExplicitPiProjectMutationTrust(runtime)) {
-    throw new Error("Trust this work-folder before importing work-folder-scoped Skills.");
+    throw new Error("Trust this Connected Folder before importing Connected Folder–scoped Skills.");
   }
   const destinationRoot = scope === "project"
-    ? join(workFolderRoot, ".pi", "skills")
+    ? join(connectedFolderRoot, ".pi", "skills")
     : join(runtime.agentDir, "skills");
   await mkdir(destinationRoot, { recursive: true });
   const bundleName = safeBundleName(`${declaredName}.skill`);
@@ -280,7 +280,7 @@ export interface PiSkillRemovalCandidate {
   scope: "user" | "project";
   /** The Skill directory, an ordinary directory inside `skillsRoot`. */
   skillDir: string;
-  /** The scope's import root: `<agentDir>/skills` or the work-folder's `.pi/skills`. */
+  /** The scope's import root: `<agentDir>/skills` or the Connected Folder's `.pi/skills`. */
   skillsRoot: string;
   /** `skillDir` inside `skillsRoot`, `/`-separated; what `restorePiSkill` takes back. */
   relativePath: string;
@@ -299,9 +299,9 @@ export interface PiSkillRemovalResult<K> {
 
 /**
  * Removes one imported Skill: the directory holding its `SKILL.md`, plus any
- * bundle folders above it that became empty. Only Skills inside work-fold's
+ * bundle folders above it that became empty. Only Skills inside AmpleFile's
  * own import roots (`<agentDir>/skills` for Everywhere, `.pi/skills` in the
- * work-folder) are eligible; Skills that arrived through a Pi package, a settings
+ * Connected Folder) are eligible; Skills that arrived through a Pi package, a settings
  * path, or another location are managed where they were installed.
  *
  * Removal never erases the Skill. `.pi/` and Pi's own folder are outside
@@ -310,24 +310,24 @@ export interface PiSkillRemovalResult<K> {
  * nothing else is touched.
  */
 export async function removePiSkill<K>(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   input: { skillPath: string; scope?: "user" | "project"; keep: (skill: PiSkillRemovalCandidate) => Promise<K> },
   runtimeProvider?: PiRuntimeProvider,
 ): Promise<PiSkillRemovalResult<K>> {
-  const runtime = await resolvePiRuntime(workFolderRoot, runtimeProvider, { requestProjectTrust: false });
+  const runtime = await resolvePiRuntime(connectedFolderRoot, runtimeProvider, { requestProjectTrust: false });
   const scope = input.scope ?? "user";
   if (scope === "project" && !hasExplicitPiProjectMutationTrust(runtime)) {
-    throw new Error("Trust this work-folder before removing work-folder-scoped Skills.");
+    throw new Error("Trust this Connected Folder before removing Connected Folder–scoped Skills.");
   }
-  const root = piSkillsRoot(workFolderRoot, runtime.agentDir, scope);
+  const root = piSkillsRoot(connectedFolderRoot, runtime.agentDir, scope);
   const skillFile = resolve(input.skillPath);
   if (basename(skillFile).toLowerCase() !== "skill.md") throw new Error("Only a Skill's SKILL.md identifies it for removal.");
   const skillDir = dirname(skillFile);
   const relativeDir = relative(root, skillDir);
   if (!relativeDir || relativeDir === "." || relativeDir.startsWith("..") || isAbsolute(relativeDir)) {
     throw new Error(scope === "project"
-      ? "This Skill is not stored in this work-folder's .pi/skills folder, so work-fold cannot remove it from here."
-      : "This Skill is not stored in your Pi skills folder, so work-fold cannot remove it from here.");
+      ? "This Skill is not stored in this Connected Folder's .pi/skills folder, so AmpleFile cannot remove it from here."
+      : "This Skill is not stored in your Pi skills folder, so AmpleFile cannot remove it from here.");
   }
   for (const segment of relativeDir.split(sep)) {
     if (!segment || segment === "." || segment === "..") throw new Error("The Skill path is invalid.");
@@ -343,7 +343,7 @@ export async function removePiSkill<K>(
   const [realRoot, realSkillDir] = await Promise.all([realpath(root), realpath(skillDir)]);
   const realRelativeDir = relative(realRoot, realSkillDir);
   if (!realRelativeDir || realRelativeDir === "." || realRelativeDir.startsWith("..") || isAbsolute(realRelativeDir)) {
-    throw new Error("The Skill folder resolves outside work-fold's import root and cannot be removed.");
+    throw new Error("The Skill folder resolves outside AmpleFile's import root and cannot be removed.");
   }
   const skillName = await piSkillName(skillFile);
   const kept = await input.keep({ scope, skillDir, skillsRoot: root, relativePath: relativeDir.split(sep).join("/"), skillName });
@@ -384,7 +384,7 @@ export class PiSkillRestoreConflictError extends Error {
  * folder is refused the same way; nothing is merged or replaced.
  */
 export async function restorePiSkill<R>(
-  workFolderRoot: string,
+  connectedFolderRoot: string,
   input: {
     scope: "user" | "project";
     relativePath: string;
@@ -393,9 +393,9 @@ export async function restorePiSkill<R>(
   },
   runtimeProvider?: PiRuntimeProvider,
 ): Promise<{ scope: "user" | "project"; restoredPath: string; restored: R }> {
-  const runtime = await resolvePiRuntime(workFolderRoot, runtimeProvider, { requestProjectTrust: false });
+  const runtime = await resolvePiRuntime(connectedFolderRoot, runtimeProvider, { requestProjectTrust: false });
   if (input.scope === "project" && !hasExplicitPiProjectMutationTrust(runtime)) {
-    throw new Error("Trust this work-folder before restoring work-folder-scoped Skills.");
+    throw new Error("Trust this Connected Folder before restoring Connected Folder–scoped Skills.");
   }
   const segments = input.relativePath.split("/");
   if (!segments.length || segments.some((segment) => (
@@ -403,11 +403,11 @@ export async function restorePiSkill<R>(
   ))) {
     throw new Error("The kept Skill's path is invalid.");
   }
-  const root = piSkillsRoot(workFolderRoot, runtime.agentDir, input.scope);
+  const root = piSkillsRoot(connectedFolderRoot, runtime.agentDir, input.scope);
   await mkdir(root, { recursive: true });
   const realRoot = await realpath(root);
   const destination = join(root, ...segments);
-  const where = input.scope === "project" ? "in this work-folder" : "Everywhere";
+  const where = input.scope === "project" ? "in this Connected Folder" : "Everywhere";
   let ancestor = root;
   for (const segment of segments.slice(0, -1)) {
     ancestor = join(ancestor, segment);
@@ -418,7 +418,7 @@ export async function restorePiSkill<R>(
     }
     const realRelative = relative(realRoot, await realpath(ancestor));
     if (!realRelative || realRelative.startsWith("..") || isAbsolute(realRelative)) {
-      throw new Error("The Skill's folder resolves outside work-fold's import root, so it cannot go back there.");
+      throw new Error("The Skill's folder resolves outside AmpleFile's import root, so it cannot go back there.");
     }
   }
   const sameName = await findPiSkillNamed(root, input.skillName);
@@ -437,8 +437,8 @@ export async function restorePiSkill<R>(
   return { scope: input.scope, restoredPath: destination, restored };
 }
 
-function piSkillsRoot(workFolderRoot: string, agentDir: string, scope: "user" | "project"): string {
-  return resolve(scope === "project" ? join(workFolderRoot, ".pi", "skills") : join(agentDir, "skills"));
+function piSkillsRoot(connectedFolderRoot: string, agentDir: string, scope: "user" | "project"): string {
+  return resolve(scope === "project" ? join(connectedFolderRoot, ".pi", "skills") : join(agentDir, "skills"));
 }
 
 /** Pi's rule for a SKILL.md's name: the frontmatter `name`, else the folder that holds it. */

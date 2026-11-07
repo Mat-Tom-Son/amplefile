@@ -9,7 +9,7 @@ import type { DocumentEngineSetup, DocumentsSetup, IncludedToolStatus } from "..
 export function includedComputerStatus(result: Record<string, any>): IncludedToolStatus {
   return { id: "computer", checkedAt: new Date().toISOString(),
     state: result.status === "ready" ? "ready" : result.status === "not_running" ? "unknown" : result.status === "unavailable" || result.status === "error" ? "unavailable" : "setup_required",
-    detail: result.status === "not_running" ? "The computer helper is idle. It starts when you use Computer Control; an idle helper is not a lost connection." : result.reason ?? (result.status === "ready" ? "Computer control is ready." : "Allow work-fold Computer in Accessibility and Screen Recording."),
+    detail: result.status === "not_running" ? "The computer helper is idle. It starts when you use Computer Control; an idle helper is not a lost connection." : result.reason ?? (result.status === "ready" ? "Computer control is ready." : "Allow AmpleFile Computer in Accessibility and Screen Recording."),
     // screenRecordingAllowed is macOS's answer; screenRecording is whether the running helper can capture,
     // which needs a helper restart after the person allows it.
     facts: { accessibility: result.accessibility === true, screenRecording: result.screenRecording === true,

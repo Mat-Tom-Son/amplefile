@@ -30,7 +30,7 @@ export function openPageSqliteDatabase(path: string): PageSqliteDatabase {
 /**
  * Opens a finished database file for reading only, as an immutable file: no
  * locks, no `-journal`, `-wal`, or `-shm` side files beside it, and every
- * write refused. This is how work-fold reads a page folder's `data.sqlite`
+ * write refused. This is how AmpleFile reads a page folder's `data.sqlite`
  * (docs/pages.md, "Publishing (stage 2)"), which only a check-in replaces,
  * and always by renaming a new file over it.
  */

@@ -5,13 +5,13 @@ export const primaryNavigation = [
 ] as const;
 
 export const welcomeActions = {
-  create: "Create New work-folder",
-  linkFolder: "Use Existing Folder",
+  create: "New Connected Folder",
+  linkFolder: "Connect Folder",
 } as const;
 
 /**
  * Settings → Recently Deleted (docs/receipts-not-gates.md, F20).
- * Nothing work-fold deletes is gone at the moment it happens: History covers
+ * Nothing AmpleFile deletes is gone at the moment it happens: History covers
  * what it can, and this is where the rest waits.
  */
 export const recentlyDeletedSettings = {
@@ -58,7 +58,7 @@ export const deleteSelectionConfirm = {
  * so every number an app or an automation can hit has a row here. The numbers are
  * read from the same frozen contracts the host enforces, never retyped.
  */
-export const workFoldLimitsSettings = {
+export const ampleFileLimitsSettings = {
   heading: "Limits",
   appRequestsHeading: "Worker Requests",
   requestsHeading: "Requests",
@@ -66,7 +66,7 @@ export const workFoldLimitsSettings = {
   continuationsLabel: "Continue requests when handed-out work or background jobs finish",
   jobsHeading: "Background Jobs",
   continuationsSaved: "Saved",
-  continuationsUnavailable: "This setting needs the work-fold app running.",
+  continuationsUnavailable: "This setting needs the AmpleFile app running.",
   previewDisabled: "Changing limits is disabled in the preview",
   automationsHeading: "Automations",
   appAutomationsHeading: "App Automations",
@@ -76,11 +76,11 @@ export const workFoldLimitsSettings = {
 } as const;
 
 /**
- * A work-folder's own Automations tab (docs/automations.md, F15 as amended
+ * A Connected Folder's own Automations tab (docs/automations.md, F15 as amended
  * 2026-09-24): a read-mostly window onto the automations whose trigger or
- * steps name this work-folder. Settings → Automations stays the place to manage
+ * steps name this Connected Folder. Settings → Automations stays the place to manage
  * them; the rail entry exists only while at least one automation touches the
- * work-folder.
+ * Connected Folder.
  */
 export const folderAutomations = {
   rail: "Automations",
@@ -94,7 +94,7 @@ export const folderAutomations = {
     completed: "Done",
   },
   roles: {
-    watches: "Watches this work-folder",
+    watches: "Watches this Connected Folder",
     "copies-to": "Copies files here",
     "copies-from": "Copies files from here",
     "chats-here": "Starts a Chat here",
@@ -108,8 +108,8 @@ export const folderAutomations = {
   failed: "Failed",
   partlyDone: "Partly Done",
   allAutomations: "All Automations",
-  noneLeft: "No automations touch this work-folder.",
-  goneHere: "This automation no longer touches this work-folder.",
+  noneLeft: "No automations touch this Connected Folder.",
+  goneHere: "This automation no longer touches this Connected Folder.",
   count: (count: number) => count === 1 ? "1 automation" : `${count} automations`,
   open: (title: string) => `Open ${title}`,
   runRequested: "Run Requested",

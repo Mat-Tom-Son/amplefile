@@ -42,7 +42,7 @@ async function standIn(root: string, behaviour: "copy" | "hang" | "nothing") {
 const searchFor = (root: string, quicklook: string) => ({ path: "", home: root, platform: "darwin", candidates: { libreoffice: [], tesseract: [], homebrew: [], quicklook: [quicklook] } });
 
 test("preview draws page 1 of a Word file and any slide of a deck from a private copy", posixOnly, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-preview-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-preview-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const search = searchFor(root, await standIn(root, "copy"));
   const report = join(root, "report.docx");
@@ -78,7 +78,7 @@ test("preview draws page 1 of a Word file and any slide of a deck from a private
 });
 
 test("a file Quick Look cannot draw fails plainly instead of hanging", { ...posixOnly, timeout: 15_000 }, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-preview-failure-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-preview-failure-"));
   let hungPid = 0;
   t.after(async () => { if (hungPid) { try { process.kill(hungPid, "SIGKILL"); } catch {} } await rm(root, { recursive: true, force: true }); });
   await writeFile(join(root, "damaged.docx"), "not a document");
@@ -100,7 +100,7 @@ test("a file Quick Look cannot draw fails plainly instead of hanging", { ...posi
 });
 
 test("the tool looks for engines where the host's Documents status looks", posixOnly, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-preview-host-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-preview-host-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const quicklook = await standIn(root, "copy");
   const tools = new Map<string, any>();
@@ -127,7 +127,7 @@ test("Quick Look is found only on macOS, at its system path", async () => {
 });
 
 test("real Quick Look draws a Word page and a chosen slide as PNG images", { skip: process.platform !== "darwin" || !existsSync("/usr/bin/qlmanage"), timeout: 60_000 }, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-quick-look-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-quick-look-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "report.docx"), await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph("Quick Look fixture")] }] })));
   await deck(join(root, "deck.pptx"), ["One", "Two", "Three"]);

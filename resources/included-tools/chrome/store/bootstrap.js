@@ -1,8 +1,8 @@
-/* work-fold Store bootstrap. All browser operations remain in pi-chrome. */
+/* AmpleFile Store bootstrap. All browser operations remain in pi-chrome. */
 importScripts("connection-config.js");
 (() => {
-  const config = globalThis.WORK_FOLD_CHROME_CONFIG;
-  const identityKey = "work-fold.connection.v1";
+  const config = globalThis.AMPLEFILE_CHROME_CONFIG;
+  const identityKey = "amplefile.connection.v1";
   let lease;
   let pendingResume;
   let identityPromise;
@@ -78,6 +78,8 @@ importScripts("connection-config.js");
     if (!lease) throw new Error("Chrome is not connected.");
     return lease;
   }
+  // The reviewed pi-chrome patch reads this global by its old name until
+  // that patch is regenerated (docs/rebrand-plan.md).
   globalThis.workFoldChrome = {
     protocol: config.bridge,
     async config() {
@@ -101,7 +103,7 @@ importScripts("connection-config.js");
     const ownOrigin = `chrome-extension://${chrome.runtime.id}/`;
     if (sender.id !== chrome.runtime.id || ![`${ownOrigin}popup.html`, `${ownOrigin}welcome.html`].includes(sender.url ?? "")) return false;
     const action = message?.action;
-    if (!new Set(["status", "connect", "disconnect", "open-app"]).has(action) || message?.type !== "work-fold.connection") return false;
+    if (!new Set(["status", "connect", "disconnect", "open-app"]).has(action) || message?.type !== "amplefile.connection") return false;
     if (pendingAction && action !== "status") { respond(status("connecting")); return false; }
     const operation = async () => {
       if (action === "status") return pendingAction ? await pendingAction : native("status");

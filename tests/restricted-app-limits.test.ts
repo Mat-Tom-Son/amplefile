@@ -11,7 +11,7 @@ import {
 } from "../src/local/agent/restricted-app-limits.js";
 import { restrictedAppInferenceLimits } from "../src/shared/restricted-app-inference.js";
 import { restrictedAppAssistantLimits, restrictedAppSubscriptionLimits } from "../src/shared/restricted-app-tasks.js";
-import { workFoldRequestLimits } from "../src/shared/work-fold-limits.js";
+import { ampleFileRequestLimits } from "../src/shared/amplefile-limits.js";
 import { RestrictedAppNetworkBroker, restrictedAppNetworkDefaultLimits } from "../src/local/agent/restricted-app-connections.js";
 import { RestrictedAppFileBroker, restrictedAppFileDefaultLimits } from "../src/local/agent/restricted-app-files.js";
 import { restrictedAppStorageLimits } from "../src/local/agent/restricted-app-storage.js";
@@ -85,8 +85,8 @@ test("published limits are composed from the live brokers rather than restated",
     fileMaxFiles: restrictedAppSubscriptionLimits.fileMaxFiles,
   });
   // F29's envelope numbers are the report verb's numbers, not a second set.
-  assert.equal(limits.assistant.summaryBytes, workFoldRequestLimits.maxResultSummaryBytes);
-  assert.equal(limits.assistant.dataBytes, workFoldRequestLimits.maxResultDataBytes);
+  assert.equal(limits.assistant.summaryBytes, ampleFileRequestLimits.maxResultSummaryBytes);
+  assert.equal(limits.assistant.dataBytes, ampleFileRequestLimits.maxResultDataBytes);
 });
 
 test("the AI lanes' bounds keep memory finite rather than ration the app", () => {
@@ -150,9 +150,9 @@ test("limits survive the launch-argument round trip the preload actually perform
     files: { maxReadBytes: 512 * 1024, maxWriteBytes: 512 * 1024 },
   });
 
-  const argument = `--work-fold-restricted-limits=${encodeURIComponent(JSON.stringify(limits))}`;
+  const argument = `--amplefile-restricted-limits=${encodeURIComponent(JSON.stringify(limits))}`;
 
-  const prefix = "--work-fold-restricted-limits=";
+  const prefix = "--amplefile-restricted-limits=";
   const found = [argument].find((value) => value.startsWith(prefix));
   assert.ok(found);
   const recovered = JSON.parse(decodeURIComponent(found.slice(prefix.length)));

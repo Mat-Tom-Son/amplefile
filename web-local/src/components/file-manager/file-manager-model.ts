@@ -275,30 +275,30 @@ export function fileManagerSuggestions(input: { selection: ReadonlyArray<{ kind:
   return suggestions.slice(0, !selection.length && input.automationsOn ? 2 : 4);
 }
 
-/** One work-folder row in the sidebar's tree. */
-export interface SidebarWorkFolderRow<T extends NestableFolder> {
-  workFolder: T;
+/** One Connected Folder row in the sidebar's tree. */
+export interface SidebarConnectedFolderRow<T extends NestableFolder> {
+  connectedFolder: T;
   depth: number;
-  /** Every work-folder inside it, at any depth: a caret shows when there is one. */
+  /** Every Connected Folder inside it, at any depth: a caret shows when there is one. */
   inside: T[];
   open: boolean;
 }
 
 /**
- * The sidebar's work-folders (owner request, 2026-11-07): each sub
- * work-folder under its parent, A–Z at every level, shown only while every
- * work-folder around it is open.
+ * The sidebar's Connected Folders (owner request, 2026-11-07): each sub
+ * Connected Folder under its parent, A–Z at every level, shown only while every
+ * Connected Folder around it is open.
  */
-export function sidebarWorkFolderRows<T extends NestableFolder>(workFolders: readonly T[], open: readonly string[]): SidebarWorkFolderRow<T>[] {
+export function sidebarConnectedFolderRows<T extends NestableFolder>(connectedFolders: readonly T[], open: readonly string[]): SidebarConnectedFolderRow<T>[] {
   const openIds = new Set(open);
-  return folderTreeRows(workFolders)
-    .filter((row) => folderAncestors(row.workFolder, workFolders).every((ancestor) => openIds.has(ancestor.id)))
-    .map((row) => ({ workFolder: row.workFolder, depth: row.depth, inside: descendantFolders(row.workFolder, workFolders), open: openIds.has(row.workFolder.id) }));
+  return folderTreeRows(connectedFolders)
+    .filter((row) => folderAncestors(row.connectedFolder, connectedFolders).every((ancestor) => openIds.has(ancestor.id)))
+    .map((row) => ({ connectedFolder: row.connectedFolder, depth: row.depth, inside: descendantFolders(row.connectedFolder, connectedFolders), open: openIds.has(row.connectedFolder.id) }));
 }
 
-/** The closed work-folders around one, outermost first: opening them brings it into view. */
-export function closedSidebarParents(workFolder: NestableFolder, workFolders: readonly NestableFolder[], open: readonly string[]): string[] {
-  return folderAncestors(workFolder, workFolders).map((item) => item.id).filter((id) => !open.includes(id));
+/** The closed Connected Folders around one, outermost first: opening them brings it into view. */
+export function closedSidebarParents(connectedFolder: NestableFolder, connectedFolders: readonly NestableFolder[], open: readonly string[]): string[] {
+  return folderAncestors(connectedFolder, connectedFolders).map((item) => item.id).filter((id) => !open.includes(id));
 }
 
 /** Where a navigation starts or ends: a place (by its key) and a folder path inside it. */

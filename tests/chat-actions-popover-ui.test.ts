@@ -5,7 +5,7 @@ import { createDomHarness } from "./support/dom.js";
 
 const { ChatActionsPopover } = await import("../web-local/src/components/chat/ChatActionsPopover.js");
 
-const workFolder = { id: "disposable", name: "Test folder" } as never;
+const connectedFolder = { id: "disposable", name: "Test folder" } as never;
 const conversation = { id: "chat-one", title: "Trip plan", updatedAt: "2026-10-30T12:00:00Z" };
 
 test("the native menu's Rename… opens the popover straight to the name, and Cancel closes it", async (t) => {
@@ -14,8 +14,8 @@ test("the native menu's Rename… opens the popover straight to the name, and Ca
   let closed = 0;
   const renamed: string[] = [];
   await dom.render(createElement(ChatActionsPopover, {
-    state: { workFolder, conversation, x: 40, y: 40, view: "rename" },
-    onRename: async (_workFolder, _conversation, title) => { renamed.push(title); },
+    state: { connectedFolder, conversation, x: 40, y: 40, view: "rename" },
+    onRename: async (_connectedFolder, _conversation, title) => { renamed.push(title); },
     onLifecycle: async () => {},
     onDelete: async () => {},
     onClose: () => { closed++; },
@@ -34,7 +34,7 @@ test("the popover opened from a right-click still starts at its menu", async (t)
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   await dom.render(createElement(ChatActionsPopover, {
-    state: { workFolder, conversation, x: 40, y: 40 },
+    state: { connectedFolder, conversation, x: 40, y: 40 },
     onRename: async () => {},
     onLifecycle: async () => {},
     onDelete: async () => {},

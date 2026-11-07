@@ -25,14 +25,14 @@ import { desktopPlatform, previewPlatform } from "./lib/platform";
 const platform = desktopPlatform();
 if (platform) document.documentElement.dataset.platform = platform;
 else delete document.documentElement.dataset.platform;
-if (window.workFoldDesktop) document.documentElement.dataset.desktop = "true";
+if (window.ampleFileDesktop) document.documentElement.dataset.desktop = "true";
 else delete document.documentElement.dataset.desktop;
 // The inert previews imitate the Mac window; panels.css draws its material and buttons.
 const previewWindow = previewPlatform() === "darwin";
 if (previewWindow) document.documentElement.dataset.previewWindow = "mac";
 else delete document.documentElement.dataset.previewWindow;
 
-const windowMaterial = window.workFoldDesktop?.window.material ?? (previewWindow ? "vibrancy" : undefined);
+const windowMaterial = window.ampleFileDesktop?.window.material ?? (previewWindow ? "vibrancy" : undefined);
 if (windowMaterial === "mica" || windowMaterial === "vibrancy") {
   document.documentElement.dataset.windowMaterial = windowMaterial;
 } else {

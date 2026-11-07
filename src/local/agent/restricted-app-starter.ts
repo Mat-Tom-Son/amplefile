@@ -10,7 +10,7 @@ export interface RestrictedAppStarterInput {
 
 const appIdPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const iconPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const reservedFolders = new Set([".work-fold", ".pi", ".workspace"]);
+const reservedFolders = new Set([".amplefile", ".pi", ".workspace"]);
 
 /**
  * A small, working app that already follows the platform's rules: the left
@@ -26,7 +26,7 @@ export function restrictedAppStarterFiles(input: RestrictedAppStarterInput): Rec
   if (!appIdPattern.test(id)) throw new Error("The app id must be lowercase letters, numbers, and hyphens, starting with a letter or number (at most 64).");
   if (!title || title.length > 80 || /[\r\n]/.test(title)) throw new Error("The app title must be one line of at most 80 characters.");
   if (!description || description.length > 280 || /[\r\n]/.test(description)) throw new Error("The app description must be one line of at most 280 characters.");
-  if (!iconPattern.test(icon)) throw new Error("The icon must be a name from work-fold's icon catalog, such as apps or checklist.");
+  if (!iconPattern.test(icon)) throw new Error("The icon must be a name from AmpleFile's icon catalog, such as apps or checklist.");
   const manifest = {
     version: 2,
     id,
@@ -48,11 +48,11 @@ export function restrictedAppStarterFiles(input: RestrictedAppStarterInput): Rec
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>
-  <!-- work-fold's own look: fonts, colors, and controls that follow the theme and the work-folder's accent. -->
-  <link rel="stylesheet" href="/__work-fold/kit.css">
+  <!-- AmpleFile's own look: fonts, colors, and controls that follow the theme and the Connected Folder's accent. -->
+  <link rel="stylesheet" href="/__amplefile/kit.css">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body class="wf-app">
+<body class="af-app">
   <main id="app"></main>
   <!-- Scripts must be files: inline scripts and inline event handlers are blocked. -->
   <script type="module" src="app.js"></script>
@@ -65,10 +65,10 @@ export function restrictedAppStarterFiles(input: RestrictedAppStarterInput): Rec
   gap: 8px;
 }
 `,
-    "app.js": `// ${title.replace(/\*\//g, "* /")}: a work-fold app.
+    "app.js": `// ${title.replace(/\*\//g, "* /")}: an AmpleFile app.
 // The left pane (placement "navigator") is the app's home and must work on its
 // own. A tab opens only from the person's click in the left pane, one per click.
-const bridge = globalThis.workFoldRestrictedApp;
+const bridge = globalThis.ampleFileRestrictedApp;
 const root = document.querySelector("#app");
 const appTitle = ${JSON.stringify(title)};
 let context = bridge.context.get();
@@ -102,9 +102,9 @@ async function addItem(itemTitle) {
 }
 
 function renderHome() {
-  const input = element("input", { className: "wf-input", placeholder: "Add an item", "aria-label": "New item" });
+  const input = element("input", { className: "af-input", placeholder: "Add an item", "aria-label": "New item" });
   const form = element("form", {
-    className: "wf-toolbar",
+    className: "af-toolbar",
     onSubmit: (event) => {
       event.preventDefault();
       const itemTitle = input.value.trim();
@@ -112,29 +112,29 @@ function renderHome() {
       input.value = "";
       void addItem(itemTitle);
     },
-  }, input, element("button", { className: "wf-button wf-button-primary", type: "submit" }, "Add"));
+  }, input, element("button", { className: "af-button af-button-primary", type: "submit" }, "Add"));
   const list = items.length
-    ? element("ul", { className: "wf-list" }, ...items.map((item) => element("li", {},
+    ? element("ul", { className: "af-list" }, ...items.map((item) => element("li", {},
       element("button", {
-        className: "wf-row",
+        className: "af-row",
         type: "button",
         // Call tabs.open inside the click handler; anywhere else it is refused.
         onClick: () => void bridge.tabs.open({ tabId: \`item:\${item.id}\`, title: item.title, route: \`/items/\${item.id}\`, state: { id: item.id } }),
       },
-      element("span", { className: "wf-row-title" }, item.title),
-      element("span", { className: "wf-row-meta" }, new Date(item.createdAt).toLocaleString())))))
-    : element("div", { className: "wf-empty" },
+      element("span", { className: "af-row-title" }, item.title),
+      element("span", { className: "af-row-meta" }, new Date(item.createdAt).toLocaleString())))))
+    : element("div", { className: "af-empty" },
       element("strong", {}, "Nothing here yet"),
-      element("span", { className: "wf-small" }, "Add the first item above."));
-  return [element("h1", { className: "wf-title" }, appTitle), form, list];
+      element("span", { className: "af-small" }, "Add the first item above."));
+  return [element("h1", { className: "af-title" }, appTitle), form, list];
 }
 
 function renderTab() {
   const item = items.find((entry) => entry.id === context.state?.id);
-  if (!item) return [element("div", { className: "wf-empty" }, "This item no longer exists.")];
+  if (!item) return [element("div", { className: "af-empty" }, "This item no longer exists.")];
   return [
-    element("h1", { className: "wf-title" }, item.title),
-    element("p", { className: "wf-muted" }, \`Added \${new Date(item.createdAt).toLocaleString()}\`),
+    element("h1", { className: "af-title" }, item.title),
+    element("p", { className: "af-muted" }, \`Added \${new Date(item.createdAt).toLocaleString()}\`),
   ];
 }
 
@@ -154,17 +154,17 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** Writes the starter into a new or empty folder inside the work-folder, never over existing files. */
-export async function writeRestrictedAppStarter(workFolderRoot: string, folder: string, files: Record<string, string>): Promise<string> {
+/** Writes the starter into a new or empty folder inside the Connected Folder, never over existing files. */
+export async function writeRestrictedAppStarter(connectedFolderRoot: string, folder: string, files: Record<string, string>): Promise<string> {
   const trimmed = folder.trim().replace(/\\/g, "/").replace(/\/+$/, "");
   if (!trimmed || isAbsolute(trimmed) || trimmed.split("/").some((segment) => !segment || segment === "." || segment === "..")) {
-    throw new Error("The app folder must be a relative folder inside this work-folder.");
+    throw new Error("The app folder must be a relative folder inside this Connected Folder.");
   }
-  if (reservedFolders.has(trimmed.split("/")[0]!.toLowerCase())) throw new Error("Apps cannot live in work-fold's own hidden folders.");
-  const target = join(workFolderRoot, normalize(trimmed));
-  const inside = relative(workFolderRoot, target);
+  if (reservedFolders.has(trimmed.split("/")[0]!.toLowerCase())) throw new Error("Apps cannot live in AmpleFile's own hidden folders.");
+  const target = join(connectedFolderRoot, normalize(trimmed));
+  const inside = relative(connectedFolderRoot, target);
   if (!inside || inside.startsWith("..") || isAbsolute(inside) || inside.split(sep).includes("..")) {
-    throw new Error("The app folder must be inside this work-folder.");
+    throw new Error("The app folder must be inside this Connected Folder.");
   }
   const existing = await readdir(target).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return [];

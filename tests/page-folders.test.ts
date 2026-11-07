@@ -10,7 +10,7 @@ import { classifyPageReference } from "../src/local/pages/page-document.js";
 import { findPageFolders, normalizePagePath, pageFolderLimits } from "../src/local/pages/page-folder-files.js";
 import { analyzePageFolder, assemblePageFolder, inspectPageFolder } from "../src/local/pages/page-inspection.js";
 import { scanCss, scanHtml } from "../src/local/pages/page-markup.js";
-import { configureWorkFoldStateRoot } from "../src/local/state-paths.js";
+import { configureAmpleFileStateRoot } from "../src/local/state-paths.js";
 
 /**
  * Page folders (docs/pages.md, "A page is a folder", "How a page runs"):
@@ -20,14 +20,14 @@ import { configureWorkFoldStateRoot } from "../src/local/state-paths.js";
 
 const fixture = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "pages", "sign-up-sheet");
 
-async function workFolder(t: TestContext): Promise<{ root: string; write(path: string, text: string): Promise<void>; page(name?: string): Promise<string> }> {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-page-folders-"));
-  configureWorkFoldStateRoot(join(sandbox, "state"));
+async function connectedFolder(t: TestContext): Promise<{ root: string; write(path: string, text: string): Promise<void>; page(name?: string): Promise<string> }> {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-page-folders-"));
+  configureAmpleFileStateRoot(join(sandbox, "state"));
   t.after(async () => {
-    configureWorkFoldStateRoot(undefined);
+    configureAmpleFileStateRoot(undefined);
     await rm(sandbox, { recursive: true, force: true });
   });
-  const root = join(sandbox, "work-folder");
+  const root = join(sandbox, "connected-folder");
   await mkdir(root, { recursive: true });
   const write = async (path: string, text: string) => {
     await mkdir(dirname(join(root, path)), { recursive: true });
@@ -46,7 +46,7 @@ async function workFolder(t: TestContext): Promise<{ root: string; write(path: s
 const errors = (problems: PageProblem[]) => problems.filter((problem) => problem.severity === "error");
 
 test("the fixture page validates, with its unused extra page reported as a warning", async (t) => {
-  const folder = await workFolder(t);
+  const folder = await connectedFolder(t);
   const path = await folder.page("Events/Sign up");
   const inspection = await inspectPageFolder(folder.root, path);
   assert.equal(inspection.page.path, "Events/Sign up");
@@ -64,7 +64,7 @@ test("the fixture page validates, with its unused extra page reported as a warni
 });
 
 test("assembly inlines every local file into one document and leaves links and the policy to the host", async (t) => {
-  const folder = await workFolder(t);
+  const folder = await connectedFolder(t);
   const path = await folder.page();
   const { html, problems } = await assemblePageFolder(folder.root, path);
   assert.equal(errors(problems).length, 0);
@@ -87,13 +87,13 @@ test("assembly inlines every local file into one document and leaves links and t
   assert.ok(deferred < html.indexOf("</body>"));
   assert.match(html, /const marker = "<\\\/script>";/u);
   assert.doesNotMatch(html, /\bdefer\b/u);
-  assert.doesNotMatch(html, /workFoldPage = |page-frame/u, "the page runtime and policy are the frame host's job");
+  assert.doesNotMatch(html, /ampleFilePage = |page-frame/u, "the page runtime and policy are the frame host's job");
   // The comment's url() is left alone.
   assert.match(html, /\/\* url\(images\/ignored-in-a-comment\.png\) \*\//u);
 });
 
 test("references to the internet, outside the folder, or missing files are errors naming the file", async (t) => {
-  const folder = await workFolder(t);
+  const folder = await connectedFolder(t);
   const path = await folder.page();
   await folder.write("secret.png", "not part of the page");
   await folder.write(`${path}/.hidden/thing.png`, "hidden");
@@ -139,9 +139,9 @@ test("references to the internet, outside the folder, or missing files are error
 });
 
 test("page.json problems, a missing entry, and an alternate entry are reported", async (t) => {
-  const folder = await workFolder(t);
+  const folder = await connectedFolder(t);
   const path = await folder.page();
-  await folder.write(`${path}/page.json`, JSON.stringify({ format: "work-fold.page/1", title: "Broken", colour: "red", tables: { rsvps: { columns: { name: { type: "words" } } } } }));
+  await folder.write(`${path}/page.json`, JSON.stringify({ format: "amplefile.page/1", title: "Broken", colour: "red", tables: { rsvps: { columns: { name: { type: "words" } } } } }));
   const broken = await inspectPageFolder(folder.root, path);
   assert.equal(broken.page.title, "Broken", "the title still shows");
   assert.deepEqual(errors(broken.problems).map((problem) => [problem.file, problem.message]), [
@@ -150,7 +150,7 @@ test("page.json problems, a missing entry, and an alternate entry are reported",
   ]);
   assert.deepEqual(broken.page.tables, []);
 
-  await folder.write(`${path}/page.json`, JSON.stringify({ format: "work-fold.page/1", title: "Moved", entry: "site/home.html" }));
+  await folder.write(`${path}/page.json`, JSON.stringify({ format: "amplefile.page/1", title: "Moved", entry: "site/home.html" }));
   const missing = await inspectPageFolder(folder.root, path);
   assert.deepEqual(errors(missing.problems), [{ file: "site/home.html", message: "The page's entry file site/home.html isn't in the page folder.", severity: "error" }]);
 
@@ -168,17 +168,17 @@ test("page.json problems, a missing entry, and an alternate entry are reported",
 });
 
 test("nested pages, links, and the file limits are errors; data.sqlite and hidden files aren't part of the page", async (t) => {
-  const folder = await workFolder(t);
+  const folder = await connectedFolder(t);
   const path = await folder.page();
   await folder.write(`${path}/data.sqlite`, "real visitors' data");
   await folder.write(`${path}/data.sqlite-wal`, "wal");
   await folder.write(`${path}/.DS_Store`, "finder");
-  await folder.write(`${path}/.work-fold/work-folder.json`, "{}");
+  await folder.write(`${path}/.amplefile/connected-folder.json`, "{}");
   const clean = await inspectPageFolder(folder.root, path);
   assert.equal(clean.summary.files, 9, "data.sqlite, its side files, and hidden files are left out");
   assert.equal(errors(clean.problems).length, 0);
 
-  await folder.write(`${path}/extras/page.json`, JSON.stringify({ format: "work-fold.page/1", title: "Inner" }));
+  await folder.write(`${path}/extras/page.json`, JSON.stringify({ format: "amplefile.page/1", title: "Inner" }));
   await folder.write(`${path}/extras/index.html`, "<p>inner</p>");
   await symlink(join(folder.root, "outside.txt"), join(folder.root, path, "linked.txt")).catch(() => undefined);
   const nested = await inspectPageFolder(folder.root, path);
@@ -189,7 +189,7 @@ test("nested pages, links, and the file limits are errors; data.sqlite and hidde
   const inner = await inspectPageFolder(folder.root, `${path}/extras`);
   assert.ok(errors(inner.problems).some((problem) => problem.file === "" && /inside another page folder \(Sign up\)/.test(problem.message)));
 
-  const big = await workFolder(t);
+  const big = await connectedFolder(t);
   const bigPath = await big.page("Big");
   await writeFile(join(big.root, bigPath, "huge.bin"), "");
   await truncate(join(big.root, bigPath, "huge.bin"), pageFolderLimits.maxFileBytes + 1);
@@ -201,7 +201,7 @@ test("nested pages, links, and the file limits are errors; data.sqlite and hidde
   assert.ok(errors(heavy.problems).some((problem) => problem.file === "huge.bin" && /at most 10 MiB/.test(problem.message)));
   assert.ok(errors(heavy.problems).some((problem) => problem.file === "" && /at most 25 MiB in all/.test(problem.message)));
 
-  const many = await workFolder(t);
+  const many = await connectedFolder(t);
   const manyPath = await many.page("Many");
   await mkdir(join(many.root, manyPath, "files"), { recursive: true });
   await Promise.all(Array.from({ length: pageFolderLimits.maxFiles }, (_, index) => writeFile(join(many.root, manyPath, "files", `${index}.txt`), "x")));
@@ -209,8 +209,8 @@ test("nested pages, links, and the file limits are errors; data.sqlite and hidde
   assert.ok(errors(crowded.problems).some((problem) => /at most 500 files/.test(problem.message)));
 });
 
-test("page folders are found inside a work-folder; hidden, node_modules, and nested pages are skipped", async (t) => {
-  const folder = await workFolder(t);
+test("page folders are found inside a Connected Folder; hidden, node_modules, and nested pages are skipped", async (t) => {
+  const folder = await connectedFolder(t);
   await folder.page("Sign up");
   await folder.page("Events/2026/RSVP");
   await folder.write("Events/notes.md", "# notes");
@@ -223,10 +223,10 @@ test("page folders are found inside a work-folder; hidden, node_modules, and nes
   assert.deepEqual(found, { pages: ["Events/2026/RSVP", "Sign up"], truncated: false });
 });
 
-test("page paths stay inside the work-folder and never name hidden or reserved folders", async (t) => {
-  const folder = await workFolder(t);
+test("page paths stay inside the Connected Folder and never name hidden or reserved folders", async (t) => {
+  const folder = await connectedFolder(t);
   await folder.page();
-  for (const bad of ["", "/Sign up", "../Sign up", "Sign up/../..", ".work-fold", "a\\b", ".pi/x"]) {
+  for (const bad of ["", "/Sign up", "../Sign up", "Sign up/../..", ".amplefile", "a\\b", ".pi/x"]) {
     assert.throws(() => normalizePagePath(bad), (error: unknown) => (error as { statusCode?: number }).statusCode === 400, bad);
   }
   assert.equal(normalizePagePath("Sign up/"), "Sign up");

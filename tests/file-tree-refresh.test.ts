@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import test from "node:test";
-import { useWorkFolderTree } from "../web-local/src/hooks/useWorkFolderTree.js";
+import { useConnectedFolderTree } from "../web-local/src/hooks/useConnectedFolderTree.js";
 import { keepLoadedChildren } from "../web-local/src/lib/tree.js";
-import type { TreeEntry, WorkFolderSummary } from "../web-local/src/types.js";
+import type { TreeEntry, ConnectedFolderSummary } from "../web-local/src/types.js";
 import { createDomHarness } from "./support/dom.js";
 
-const workFolder = { id: "files", name: "files", workFolderRoot: "/tmp/files", location: { storage: "linked" } } as WorkFolderSummary;
+const connectedFolder = { id: "files", name: "files", connectedFolderRoot: "/tmp/files", location: { storage: "linked" } } as ConnectedFolderSummary;
 const folder = (path: string, children?: TreeEntry[]): TreeEntry => ({ kind: "folder", path, name: path.split("/").pop()!, hasChildren: true, ...(children ? { children } : {}) });
 const file = (path: string): TreeEntry => ({ kind: "file", path, name: path.split("/").pop()! });
 
@@ -23,7 +23,7 @@ test("an event-scoped refresh keeps every open folder open with its rows", async
   const previousFetch = globalThis.fetch;
   t.after(async () => { await dom.cleanup(); globalThis.fetch = previousFetch; });
   globalThis.fetch = (async (input, init) => {
-    const url = new URL(String(input), "http://work-fold.test");
+    const url = new URL(String(input), "http://amplefile.test");
     if (url.pathname === "/api/events") {
       return new Response(new ReadableStream({ start(controller) { init?.signal?.addEventListener("abort", () => controller.close(), { once: true }); } }), { headers: { "content-type": "text/event-stream" } });
     }
@@ -31,8 +31,8 @@ test("an event-scoped refresh keeps every open folder open with its rows", async
     reads.push(path);
     return Response.json({ tree: listings[path] ?? [] });
   }) as typeof fetch;
-  let state!: ReturnType<typeof useWorkFolderTree>;
-  function Tree() { state = useWorkFolderTree(workFolder, () => {}); return null; }
+  let state!: ReturnType<typeof useConnectedFolderTree>;
+  function Tree() { state = useConnectedFolderTree(connectedFolder, () => {}); return null; }
   await dom.render(createElement(Tree));
   await dom.waitFor(() => state.status === "ready" && state.tree.length === 3);
   const children = (path: string) => {

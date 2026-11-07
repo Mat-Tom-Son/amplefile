@@ -2,14 +2,14 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { ChatMessage, ConversationSummary } from "./agent/chat-store.js";
-import type { WorkFoldActAgentRequestPhase } from "./cli/act-facade.js";
-import type { WorkFoldRequestKind, WorkFoldRequestState } from "./requests/request-records.js";
-import type { WorkFoldCliActReceipt } from "./cli/act-receipts.js";
+import type { AmpleFileActAgentRequestPhase } from "./cli/act-facade.js";
+import type { AmpleFileRequestKind, AmpleFileRequestState } from "./requests/request-records.js";
+import type { AmpleFileCliActReceipt } from "./cli/act-receipts.js";
 import type {
-  WorkFoldCheckAggregateState,
-  WorkFoldCheckStatusSnapshot,
+  AmpleFileCheckAggregateState,
+  AmpleFileCheckStatusSnapshot,
 } from "./checks/check-types.js";
-import { workFoldStateRoot } from "./state-paths.js";
+import { ampleFileStateRoot } from "./state-paths.js";
 
 /**
  * The overview: a deterministic digest composed by app code from state the
@@ -21,16 +21,16 @@ import { workFoldStateRoot } from "./state-paths.js";
  * aggregate status, never those file bytes.
  *
  * The source inventory is closed: one typed reader per row of the inventory
- * table in docs/work-fold-agent-overview.md. An absent reader renders its
+ * table in docs/amplefile-agent-overview.md. An absent reader renders its
  * kinds as absent, never as empty-and-clear; a reader that fails is reported
  * in `unavailable`, never rendered as quiet. Composition is deterministic —
  * the same recorded state and the same clock reading produce a
  * byte-identical digest.
  */
 
-export const workFoldOverviewExperimentalSnapshotVersion = 0 as const;
+export const ampleFileOverviewExperimentalSnapshotVersion = 0 as const;
 
-export const WORKFOLD_OVERVIEW_SOURCES = [
+export const AMPLEFILE_OVERVIEW_SOURCES = [
   "kernel-tasks",
   "settled-turns",
   "agent-requests",
@@ -43,9 +43,9 @@ export const WORKFOLD_OVERVIEW_SOURCES = [
   "automation-runs",
 ] as const;
 
-export type WorkFoldOverviewSource = (typeof WORKFOLD_OVERVIEW_SOURCES)[number];
+export type AmpleFileOverviewSource = (typeof AMPLEFILE_OVERVIEW_SOURCES)[number];
 
-export type WorkFoldOverviewItemKind =
+export type AmpleFileOverviewItemKind =
   // Running now
   | "assistant-turn"
   | "compaction"
@@ -69,7 +69,7 @@ export type WorkFoldOverviewItemKind =
   | "app-automation-run-settled"
   | "automation-run-settled";
 
-export interface WorkFoldOverviewItemRef {
+export interface AmpleFileOverviewItemRef {
   taskId?: string;
   conversationId?: string;
   checkpointId?: string;
@@ -81,24 +81,24 @@ export interface WorkFoldOverviewItemRef {
   runId?: string;
 }
 
-export interface WorkFoldOverviewItem {
+export interface AmpleFileOverviewItem {
   /** Stable `<source>:<recordId>` dedupe identity. */
   id: string;
   /** ISO time of the underlying record. */
   at: string;
-  kind: WorkFoldOverviewItemKind;
-  workFolderId?: string;
-  /** Resolved at composition; an unregistered work-folder renders the id plus "(removed)". */
-  workFolderName?: string;
+  kind: AmpleFileOverviewItemKind;
+  connectedFolderId?: string;
+  /** Resolved at composition; an unregistered Connected Folder renders the id plus "(removed)". */
+  connectedFolderName?: string;
   /** Deterministic template over typed record fields, never model output. */
   headline: string;
-  ref?: WorkFoldOverviewItemRef;
+  ref?: AmpleFileOverviewItemRef;
 }
 
-export interface WorkFoldOverviewCheckRow {
-  workFolderId: string;
-  workFolderName: string;
-  state: WorkFoldCheckAggregateState;
+export interface AmpleFileOverviewCheckRow {
+  connectedFolderId: string;
+  connectedFolderName: string;
+  state: AmpleFileCheckAggregateState;
   needsAttention: number;
   neverRun: number;
   stale: number;
@@ -107,17 +107,17 @@ export interface WorkFoldOverviewCheckRow {
   lastRunAt: string | null;
 }
 
-export interface WorkFoldOverviewSnapshot {
-  kind: "work-fold.overview.experimental";
-  version: typeof workFoldOverviewExperimentalSnapshotVersion;
+export interface AmpleFileOverviewSnapshot {
+  kind: "amplefile.overview.experimental";
+  version: typeof ampleFileOverviewExperimentalSnapshotVersion;
   /** The single clock reading used for every due-snooze and expiry comparison. */
   composedAt: string;
   /** `"<at>/<id>"` of the newest change item; empty while nothing has changed. */
   cursor: string;
-  running: WorkFoldOverviewItem[];
-  needsYou: WorkFoldOverviewItem[];
-  changes: WorkFoldOverviewItem[];
-  checks: WorkFoldOverviewCheckRow[];
+  running: AmpleFileOverviewItem[];
+  needsYou: AmpleFileOverviewItem[];
+  changes: AmpleFileOverviewItem[];
+  checks: AmpleFileOverviewCheckRow[];
   /** surfaceId -> acknowledged cursor, from the seen-marker store. */
   seen: Record<string, string>;
   truncated: { running: boolean; needsYou: boolean; changes: boolean; checks: boolean };
@@ -125,16 +125,16 @@ export interface WorkFoldOverviewSnapshot {
    * Sources that exist but could not be read this composition. Their kinds are
    * omitted, and the omission is disclosed instead of rendered as quiet.
    */
-  unavailable: WorkFoldOverviewSource[];
+  unavailable: AmpleFileOverviewSource[];
 }
 
 // Section bounds. Bounds are disclosure, not curation: overflow sets the
 // section's truncated flag instead of pretending completeness.
-export const workFoldOverviewRunningCap = 256;
-export const workFoldOverviewNeedsYouCap = 256;
-export const workFoldOverviewChangesPerKindCap = 128;
-export const workFoldOverviewChangesTotalCap = 512;
-export const workFoldOverviewChecksCap = 512;
+export const ampleFileOverviewRunningCap = 256;
+export const ampleFileOverviewNeedsYouCap = 256;
+export const ampleFileOverviewChangesPerKindCap = 128;
+export const ampleFileOverviewChangesTotalCap = 512;
+export const ampleFileOverviewChecksCap = 512;
 
 const maxHeadlineLength = 200;
 const maxTitleInHeadline = 80;
@@ -143,26 +143,26 @@ const maxStoreBytes = 4 * 1024 * 1024;
 const maxStoreRecords = 512;
 const maxRecordIdLength = 200;
 
-/** Registered work-folder identity handed to the per-work-folder source readers. */
-export interface WorkFoldOverviewWorkFolderRef {
+/** Registered Connected Folder identity handed to the per–Connected Folder source readers. */
+export interface AmpleFileOverviewConnectedFolderRef {
   id: string;
   name: string;
-  workFolderRoot: string;
+  connectedFolderRoot: string;
 }
 
 // --- Source record shapes (one row of the inventory table each) ---
 
-export interface WorkFoldOverviewTaskRecord {
+export interface AmpleFileOverviewTaskRecord {
   id: string;
   kind: "assistant_turn" | "compaction" | "check_run";
-  workFolderId: string;
+  connectedFolderId: string;
   conversationId?: string;
   startedAt: string;
 }
 
-export interface WorkFoldOverviewSettledTurnRecord {
+export interface AmpleFileOverviewSettledTurnRecord {
   taskId: string;
-  workFolderId?: string;
+  connectedFolderId?: string;
   conversationId?: string;
   outcome: "succeeded" | "failed" | "aborted";
   endedAt: string;
@@ -172,19 +172,19 @@ export interface WorkFoldOverviewSettledTurnRecord {
  * One durable request (docs/collaboration-contract.md, F25) as the overview
  * reads it: its state, the vocabulary `agent status` speaks beside it, the
  * turns it started, and its open questions by id — never a question's text,
- * a result's summary, or any work-folder content.
+ * a result's summary, or any Connected Folder content.
  */
-export interface WorkFoldOverviewAgentRequestRecord {
+export interface AmpleFileOverviewAgentRequestRecord {
   /** Stable across continuations, unlike the task id; item ids key on it. */
   requestId: string;
-  kind: WorkFoldRequestKind;
-  state: WorkFoldRequestState;
+  kind: AmpleFileRequestKind;
+  state: AmpleFileRequestState;
   /** The request's newest turn. */
   taskId: string;
   conversationId: string;
-  /** Absent exactly for the work-fold agent scope. */
-  workFolderId?: string;
-  phase: WorkFoldActAgentRequestPhase;
+  /** Absent exactly for the AmpleFile agent scope. */
+  connectedFolderId?: string;
+  phase: AmpleFileActAgentRequestPhase;
   startedAt: string;
   endedAt: string | null;
   /** Every turn under this request's descendants, for running-item folding. */
@@ -196,19 +196,19 @@ export interface WorkFoldOverviewAgentRequestRecord {
 }
 
 /**
- * Work above a single turn: the work-fold agent's own requests, and any
+ * Work above a single turn: the AmpleFile agent's own requests, and any
  * request that delegated, asked, or reported. A plain Worker turn is one
  * kernel task and one settled turn already; rendering its root request as
  * well would list the same work twice.
  */
-function requestIsAboveSingleTurn(request: WorkFoldOverviewAgentRequestRecord): boolean {
+function requestIsAboveSingleTurn(request: AmpleFileOverviewAgentRequestRecord): boolean {
   return request.kind === "agent"
     || request.childTaskIds.length > 0
     || request.questionCount > 0
     || request.resultCount > 0;
 }
 
-const requestSettledHeadlines: Record<WorkFoldRequestState, string | null> = {
+const requestSettledHeadlines: Record<AmpleFileRequestState, string | null> = {
   working: null,
   waiting: null,
   handed_off: null,
@@ -219,32 +219,32 @@ const requestSettledHeadlines: Record<WorkFoldRequestState, string | null> = {
   expired: "Request ran out of time",
 };
 
-export interface WorkFoldOverviewChatLifecycleEvent {
+export interface AmpleFileOverviewChatLifecycleEvent {
   messageId: string;
   createdAt: string;
   change: "archived" | "restored" | "snoozed" | "snooze-cleared";
   snoozedUntil?: string;
 }
 
-export interface WorkFoldOverviewChatTitleEvent {
+export interface AmpleFileOverviewChatTitleEvent {
   messageId: string;
   createdAt: string;
   title: string;
   source: "manual" | "generated";
 }
 
-export interface WorkFoldOverviewChatRecord {
+export interface AmpleFileOverviewChatRecord {
   conversationId: string;
   title: string;
   archivedAt: string | null;
   snoozedUntil: string | null;
   /** Newest user/assistant message; lifecycle and title bookkeeping is skipped. */
   newestMessage: { role: "user" | "assistant"; createdAt: string; followUpPrompt: string | null } | null;
-  lifecycleEvents: WorkFoldOverviewChatLifecycleEvent[];
-  titleEvents: WorkFoldOverviewChatTitleEvent[];
+  lifecycleEvents: AmpleFileOverviewChatLifecycleEvent[];
+  titleEvents: AmpleFileOverviewChatTitleEvent[];
 }
 
-export interface WorkFoldOverviewCheckpointRecord {
+export interface AmpleFileOverviewCheckpointRecord {
   checkpointId: string;
   createdAt: string;
   label?: string;
@@ -252,7 +252,7 @@ export interface WorkFoldOverviewCheckpointRecord {
   scope: "full" | "targeted";
 }
 
-export interface WorkFoldOverviewCheckRunRecord {
+export interface AmpleFileOverviewCheckRunRecord {
   runId: string;
   taskId?: string;
   state: "succeeded" | "failed" | "aborted" | "interrupted";
@@ -261,40 +261,40 @@ export interface WorkFoldOverviewCheckRunRecord {
   admittedCount: number;
 }
 
-export interface WorkFoldOverviewCheckSource {
-  status: WorkFoldCheckStatusSnapshot;
-  settledRuns: WorkFoldOverviewCheckRunRecord[];
+export interface AmpleFileOverviewCheckSource {
+  status: AmpleFileCheckStatusSnapshot;
+  settledRuns: AmpleFileOverviewCheckRunRecord[];
 }
 
-export interface WorkFoldOverviewAppAutomationRunRecord {
+export interface AmpleFileOverviewAppAutomationRunRecord {
   runId: string;
   appAutomationId: string;
   /** The app's and the automation's titles, when the installation still declares them. */
   appTitle?: string;
   automationTitle?: string;
-  workFolderId?: string;
+  connectedFolderId?: string;
   startedAt: string;
 }
 
-export type WorkFoldOverviewAppAutomationOutcome =
+export type AmpleFileOverviewAppAutomationOutcome =
   | "success"
   | "failure"
   | "skipped"
   | "cancelled"
   | "interrupted";
 
-export interface WorkFoldOverviewAppAutomationReceiptRecord {
+export interface AmpleFileOverviewAppAutomationReceiptRecord {
   receiptId: string;
   runId: string;
   appAutomationId: string;
   appTitle?: string;
   automationTitle?: string;
-  workFolderId?: string;
-  outcome: WorkFoldOverviewAppAutomationOutcome;
+  connectedFolderId?: string;
+  outcome: AmpleFileOverviewAppAutomationOutcome;
   finishedAt: string;
 }
 
-export type WorkFoldOverviewAutomationRunState =
+export type AmpleFileOverviewAutomationRunState =
   | "running"
   | "succeeded"
   | "failed"
@@ -302,11 +302,11 @@ export type WorkFoldOverviewAutomationRunState =
   | "interrupted"
   | "skipped";
 
-export interface WorkFoldOverviewAutomationRunRecord {
+export interface AmpleFileOverviewAutomationRunRecord {
   runId: string;
   automationId: string;
   title?: string;
-  state: WorkFoldOverviewAutomationRunState;
+  state: AmpleFileOverviewAutomationRunState;
   startedAt: string;
   endedAt?: string;
   hops: Array<{ id: string; state: string }>;
@@ -317,36 +317,36 @@ export interface WorkFoldOverviewAutomationRunRecord {
  * reader renders its item kinds as absent. A reader that throws marks its
  * source unavailable for this composition; its kinds are omitted and the
  * omission is disclosed. Readers read recorded state only — composing the
- * digest must never execute a sensor, run a model, or open work-folder content.
+ * digest must never execute a sensor, run a model, or open Connected Folder content.
  */
-export interface WorkFoldOverviewSourceReaders {
-  runningTasks?(): Promise<WorkFoldOverviewTaskRecord[]>;
-  settledTurns?(): Promise<WorkFoldOverviewSettledTurnRecord[]>;
-  workFoldAgentRequests?(): Promise<WorkFoldOverviewAgentRequestRecord[]>;
-  chats?(workFolder: WorkFoldOverviewWorkFolderRef): Promise<WorkFoldOverviewChatRecord[]>;
-  checkpoints?(workFolder: WorkFoldOverviewWorkFolderRef): Promise<WorkFoldOverviewCheckpointRecord[]>;
-  checks?(workFolder: WorkFoldOverviewWorkFolderRef): Promise<WorkFoldOverviewCheckSource | null>;
-  actReceipts?(): Promise<WorkFoldCliActReceipt[]>;
-  appAutomationRunReceipts?(): Promise<WorkFoldOverviewAppAutomationReceiptRecord[]>;
-  appAutomationRuns?(): Promise<WorkFoldOverviewAppAutomationRunRecord[]>;
-  automationRuns?(): Promise<WorkFoldOverviewAutomationRunRecord[]>;
+export interface AmpleFileOverviewSourceReaders {
+  runningTasks?(): Promise<AmpleFileOverviewTaskRecord[]>;
+  settledTurns?(): Promise<AmpleFileOverviewSettledTurnRecord[]>;
+  ampleFileAgentRequests?(): Promise<AmpleFileOverviewAgentRequestRecord[]>;
+  chats?(connectedFolder: AmpleFileOverviewConnectedFolderRef): Promise<AmpleFileOverviewChatRecord[]>;
+  checkpoints?(connectedFolder: AmpleFileOverviewConnectedFolderRef): Promise<AmpleFileOverviewCheckpointRecord[]>;
+  checks?(connectedFolder: AmpleFileOverviewConnectedFolderRef): Promise<AmpleFileOverviewCheckSource | null>;
+  actReceipts?(): Promise<AmpleFileCliActReceipt[]>;
+  appAutomationRunReceipts?(): Promise<AmpleFileOverviewAppAutomationReceiptRecord[]>;
+  appAutomationRuns?(): Promise<AmpleFileOverviewAppAutomationRunRecord[]>;
+  automationRuns?(): Promise<AmpleFileOverviewAutomationRunRecord[]>;
 }
 
-export interface WorkFoldOverviewComposeInput {
+export interface AmpleFileOverviewComposeInput {
   /** One clock reading, used for every timestamp comparison in this digest. */
   now: Date;
-  workFolders: WorkFoldOverviewWorkFolderRef[];
-  sources: WorkFoldOverviewSourceReaders;
+  connectedFolders: AmpleFileOverviewConnectedFolderRef[];
+  sources: AmpleFileOverviewSourceReaders;
   seen?: Record<string, string>;
 }
 
 // --- Cursor helpers ---
 
-export function workFoldOverviewCursor(at: string, id: string): string {
+export function ampleFileOverviewCursor(at: string, id: string): string {
   return `${at}/${id}`;
 }
 
-export function parseWorkFoldOverviewCursor(cursor: unknown): { at: string; id: string } | null {
+export function parseAmpleFileOverviewCursor(cursor: unknown): { at: string; id: string } | null {
   if (typeof cursor !== "string" || !cursor || cursor.length > 720) return null;
   if (/[\u0000-\u001f\u007f]/.test(cursor)) return null;
   const separator = cursor.indexOf("/");
@@ -355,29 +355,29 @@ export function parseWorkFoldOverviewCursor(cursor: unknown): { at: string; id: 
 }
 
 /** Total order over cursors: timestamp first, then item id. */
-export function compareWorkFoldOverviewCursors(left: string, right: string): number {
-  const parsedLeft = parseWorkFoldOverviewCursor(left);
-  const parsedRight = parseWorkFoldOverviewCursor(right);
+export function compareAmpleFileOverviewCursors(left: string, right: string): number {
+  const parsedLeft = parseAmpleFileOverviewCursor(left);
+  const parsedRight = parseAmpleFileOverviewCursor(right);
   if (!parsedLeft || !parsedRight) return compareStrings(left, right);
   return compareTimestamps(parsedLeft.at, parsedRight.at) || compareStrings(parsedLeft.id, parsedRight.id);
 }
 
 // --- Composition ---
 
-export async function composeWorkFoldOverview(input: WorkFoldOverviewComposeInput): Promise<WorkFoldOverviewSnapshot> {
+export async function composeAmpleFileOverview(input: AmpleFileOverviewComposeInput): Promise<AmpleFileOverviewSnapshot> {
   const composedAt = input.now.toISOString();
   const composedAtMs = input.now.getTime();
-  const workFolders = [...input.workFolders].sort((left, right) => compareStrings(left.id, right.id));
-  const workFolderNames = new Map(workFolders.map((workFolder) => [workFolder.id, workFolder.name]));
-  const unavailable = new Set<WorkFoldOverviewSource>();
+  const connectedFolders = [...input.connectedFolders].sort((left, right) => compareStrings(left.id, right.id));
+  const connectedFolderNames = new Map(connectedFolders.map((connectedFolder) => [connectedFolder.id, connectedFolder.name]));
+  const unavailable = new Set<AmpleFileOverviewSource>();
   const sources = input.sources;
 
   const tasks = await readSource("kernel-tasks", sources.runningTasks, unavailable);
   const settledTurns = await readSource("settled-turns", sources.settledTurns, unavailable);
-  const requests = await readSource("agent-requests", sources.workFoldAgentRequests, unavailable);
-  const chats = await readWorkFolderSource("chats", workFolders, sources.chats, unavailable);
-  const checkpoints = await readWorkFolderSource("history-checkpoints", workFolders, sources.checkpoints, unavailable);
-  const checks = await readWorkFolderSource("checks", workFolders, sources.checks, unavailable);
+  const requests = await readSource("agent-requests", sources.ampleFileAgentRequests, unavailable);
+  const chats = await readConnectedFolderSource("chats", connectedFolders, sources.chats, unavailable);
+  const checkpoints = await readConnectedFolderSource("history-checkpoints", connectedFolders, sources.checkpoints, unavailable);
+  const checks = await readConnectedFolderSource("checks", connectedFolders, sources.checks, unavailable);
   const actReceipts = await readSource("act-receipts", sources.actReceipts, unavailable);
   const appAutomationReceipts = await readSource("app-automation-receipts", sources.appAutomationRunReceipts, unavailable);
   const appAutomationRuns = await readSource("app-automation-schedule", sources.appAutomationRuns, unavailable);
@@ -406,14 +406,14 @@ export async function composeWorkFoldOverview(input: WorkFoldOverviewComposeInpu
     runningTaskIds,
     appAutomationRuns: appAutomationRuns ?? [],
     automationRuns: automationRuns ?? [],
-    workFolderNames,
+    connectedFolderNames,
   });
   const needsYou = composeNeedsYou({
     composedAtMs,
     requests: requests ?? [],
     chats,
     runningConversationIds,
-    workFolderNames,
+    connectedFolderNames,
   });
   const changes = composeChanges({
     composedAtMs,
@@ -425,7 +425,7 @@ export async function composeWorkFoldOverview(input: WorkFoldOverviewComposeInpu
     actReceipts: actReceipts ?? [],
     appAutomationReceipts: appAutomationReceipts ?? [],
     automationRuns: automationRuns ?? [],
-    workFolderNames,
+    connectedFolderNames,
   });
   const checkRows = composeCheckRows(checks);
 
@@ -435,10 +435,10 @@ export async function composeWorkFoldOverview(input: WorkFoldOverviewComposeInpu
 
   const newestChange = changes.items[0];
   return {
-    kind: "work-fold.overview.experimental",
-    version: workFoldOverviewExperimentalSnapshotVersion,
+    kind: "amplefile.overview.experimental",
+    version: ampleFileOverviewExperimentalSnapshotVersion,
     composedAt,
-    cursor: newestChange ? workFoldOverviewCursor(newestChange.at, newestChange.id) : "",
+    cursor: newestChange ? ampleFileOverviewCursor(newestChange.at, newestChange.id) : "",
     running: running.items,
     needsYou: needsYou.items,
     changes: changes.items,
@@ -455,15 +455,15 @@ export async function composeWorkFoldOverview(input: WorkFoldOverviewComposeInpu
 }
 
 function composeRunning(input: {
-  tasks: WorkFoldOverviewTaskRecord[];
-  runningRequests: WorkFoldOverviewAgentRequestRecord[];
+  tasks: AmpleFileOverviewTaskRecord[];
+  runningRequests: AmpleFileOverviewAgentRequestRecord[];
   foldedTaskIds: Set<string>;
   runningTaskIds: Set<string>;
-  appAutomationRuns: WorkFoldOverviewAppAutomationRunRecord[];
-  automationRuns: WorkFoldOverviewAutomationRunRecord[];
-  workFolderNames: Map<string, string>;
-}): { items: WorkFoldOverviewItem[]; truncated: boolean } {
-  const items: WorkFoldOverviewItem[] = [];
+  appAutomationRuns: AmpleFileOverviewAppAutomationRunRecord[];
+  automationRuns: AmpleFileOverviewAutomationRunRecord[];
+  connectedFolderNames: Map<string, string>;
+}): { items: AmpleFileOverviewItem[]; truncated: boolean } {
+  const items: AmpleFileOverviewItem[] = [];
   for (const request of input.runningRequests.slice(0, maxSourceRecords)) {
     const runningChildren = request.childTaskIds.filter((taskId) => input.runningTaskIds.has(taskId)).length;
     const base = request.state === "handed_off" ? "Handed off" : "Handling your request";
@@ -474,7 +474,7 @@ function composeRunning(input: {
       id: `agent-requests:${request.requestId}`,
       at: request.startedAt,
       kind: "agent-request",
-      ...(request.workFolderId ? { workFolderId: request.workFolderId, workFolderNames: input.workFolderNames } : {}),
+      ...(request.connectedFolderId ? { connectedFolderId: request.connectedFolderId, connectedFolderNames: input.connectedFolderNames } : {}),
       headline: `${base}${suffix}`,
       ref: { taskId: request.taskId, conversationId: request.conversationId, requestId: request.requestId },
     }));
@@ -498,8 +498,8 @@ function composeRunning(input: {
       id: `kernel-tasks:${task.id}`,
       at: task.startedAt,
       kind,
-      workFolderId: task.workFolderId,
-      workFolderNames: input.workFolderNames,
+      connectedFolderId: task.connectedFolderId,
+      connectedFolderNames: input.connectedFolderNames,
       headline,
       ref: { taskId: task.id, ...(task.conversationId ? { conversationId: task.conversationId } : {}) },
     }));
@@ -509,7 +509,7 @@ function composeRunning(input: {
       id: `app-automation-schedule:${run.runId}`,
       at: run.startedAt,
       kind: "app-automation-run",
-      ...(run.workFolderId ? { workFolderId: run.workFolderId, workFolderNames: input.workFolderNames } : {}),
+      ...(run.connectedFolderId ? { connectedFolderId: run.connectedFolderId, connectedFolderNames: input.connectedFolderNames } : {}),
       headline: `${appAutomationSubject(run)} running`,
       ref: { runId: run.runId },
     }));
@@ -530,13 +530,13 @@ function composeRunning(input: {
   // long-running turn must not be hidden by churn.
   items.sort((left, right) => compareTimestamps(left.at, right.at) || compareStrings(left.id, right.id));
   return {
-    items: items.slice(0, workFoldOverviewRunningCap),
-    truncated: items.length > workFoldOverviewRunningCap,
+    items: items.slice(0, ampleFileOverviewRunningCap),
+    truncated: items.length > ampleFileOverviewRunningCap,
   };
 }
 
 /**
- * Needs you means questions (docs/receipts-not-gates.md, F24): a work-fold
+ * Needs you means questions (docs/receipts-not-gates.md, F24): an AmpleFile
  * agent request waiting on the person's answer, a Worker Chat whose newest
  * message is a question from the Worker, and a due snooze. Newest first;
  * overflow keeps the newest and states truncation. Nothing here is an
@@ -544,39 +544,39 @@ function composeRunning(input: {
  */
 function composeNeedsYou(input: {
   composedAtMs: number;
-  requests: WorkFoldOverviewAgentRequestRecord[];
-  chats: Array<{ workFolder: WorkFoldOverviewWorkFolderRef; records: WorkFoldOverviewChatRecord[] }>;
+  requests: AmpleFileOverviewAgentRequestRecord[];
+  chats: Array<{ connectedFolder: AmpleFileOverviewConnectedFolderRef; records: AmpleFileOverviewChatRecord[] }>;
   runningConversationIds: Set<string>;
-  workFolderNames: Map<string, string>;
-}): { items: WorkFoldOverviewItem[]; truncated: boolean } {
-  const others: WorkFoldOverviewItem[] = [];
+  connectedFolderNames: Map<string, string>;
+}): { items: AmpleFileOverviewItem[]; truncated: boolean } {
+  const others: AmpleFileOverviewItem[] = [];
   for (const request of input.requests.slice(0, maxSourceRecords)) {
     // One item per open question addressed to the person
-    // (docs/work-fold-agent-overview.md). A question addressed to the parent
+    // (docs/amplefile-agent-overview.md). A question addressed to the parent
     // request belongs to that request's agent, never to the person. The
     // question's text is model output and stays out of the digest; the ref
     // carries the ids a surface reads by.
     const personQuestions = request.openQuestions.filter((question) => question.respondent === "person");
-    const workFolderName = request.workFolderId ? input.workFolderNames.get(request.workFolderId) ?? `${request.workFolderId} (removed)` : null;
-    const headline = workFolderName
-      ? `"${clampText(workFolderName, maxTitleInHeadline)}" is waiting on your answer`
+    const connectedFolderName = request.connectedFolderId ? input.connectedFolderNames.get(request.connectedFolderId) ?? `${request.connectedFolderId} (removed)` : null;
+    const headline = connectedFolderName
+      ? `"${clampText(connectedFolderName, maxTitleInHeadline)}" is waiting on your answer`
       : "Your request is waiting on your answer";
     for (const question of personQuestions.slice(0, maxSourceRecords)) {
       others.push(overviewItem({
         id: `agent-requests:${request.requestId}:question:${question.questionId}`,
         at: question.askedAt,
         kind: "request-question",
-        ...(request.workFolderId ? { workFolderId: request.workFolderId, workFolderNames: input.workFolderNames } : {}),
+        ...(request.connectedFolderId ? { connectedFolderId: request.connectedFolderId, connectedFolderNames: input.connectedFolderNames } : {}),
         headline,
         ref: { taskId: request.taskId, conversationId: request.conversationId, requestId: request.requestId, questionId: question.questionId },
       }));
     }
-    // The closing-question heuristic on a FINISHED work-fold agent reply, and
-    // nothing else. Only a work-fold agent request's phase comes from that
+    // The closing-question heuristic on a FINISHED AmpleFile agent reply, and
+    // nothing else. Only an AmpleFile agent request's phase comes from that
     // heuristic; every other kind derives `needs_you` straight from state
     // `waiting`, which a request also reaches on a question addressed to its
     // parent agent — a question that belongs to that parent and never to the
-    // person (docs/work-fold-agent-overview.md, F24/F27). A request that is
+    // person (docs/amplefile-agent-overview.md, F24/F27). A request that is
     // still waiting has a recorded question somewhere, and that question's own
     // record carries the item with its question id, so the generic form would
     // only double-list it.
@@ -588,12 +588,12 @@ function composeNeedsYou(input: {
       id: `agent-requests:${request.requestId}`,
       at: request.endedAt ?? request.startedAt,
       kind: "request-question",
-      ...(request.workFolderId ? { workFolderId: request.workFolderId, workFolderNames: input.workFolderNames } : {}),
+      ...(request.connectedFolderId ? { connectedFolderId: request.connectedFolderId, connectedFolderNames: input.connectedFolderNames } : {}),
       headline,
       ref: { taskId: request.taskId, conversationId: request.conversationId, requestId: request.requestId },
     }));
   }
-  for (const { workFolder, records } of input.chats) {
+  for (const { connectedFolder, records } of input.chats) {
     for (const chat of records.slice(0, maxSourceRecords)) {
       if (chat.archivedAt !== null) continue;
       if (chat.snoozedUntil !== null) {
@@ -602,8 +602,8 @@ function composeNeedsYou(input: {
             id: `chats:${chat.conversationId}:due-snooze:${chat.snoozedUntil}`,
             at: chat.snoozedUntil,
             kind: "due-snooze",
-            workFolderId: workFolder.id,
-            workFolderNames: input.workFolderNames,
+            connectedFolderId: connectedFolder.id,
+            connectedFolderNames: input.connectedFolderNames,
             headline: `"${clampText(chat.title, maxTitleInHeadline)}" snooze is due`,
             ref: { conversationId: chat.conversationId },
           }));
@@ -617,8 +617,8 @@ function composeNeedsYou(input: {
         id: `chats:${chat.conversationId}:question`,
         at: newest.createdAt,
         kind: "chat-question",
-        workFolderId: workFolder.id,
-        workFolderNames: input.workFolderNames,
+        connectedFolderId: connectedFolder.id,
+        connectedFolderNames: input.connectedFolderNames,
         headline: `"${clampText(chat.title, maxTitleInHeadline)}" is waiting on your reply`,
         ref: { conversationId: chat.conversationId },
       }));
@@ -626,38 +626,38 @@ function composeNeedsYou(input: {
   }
   others.sort(newestFirst);
   return {
-    items: others.slice(0, workFoldOverviewNeedsYouCap),
-    truncated: others.length > workFoldOverviewNeedsYouCap,
+    items: others.slice(0, ampleFileOverviewNeedsYouCap),
+    truncated: others.length > ampleFileOverviewNeedsYouCap,
   };
 }
 
 function composeChanges(input: {
   composedAtMs: number;
-  settledTurns: WorkFoldOverviewSettledTurnRecord[];
-  requests: WorkFoldOverviewAgentRequestRecord[];
-  chats: Array<{ workFolder: WorkFoldOverviewWorkFolderRef; records: WorkFoldOverviewChatRecord[] }>;
-  checkpoints: Array<{ workFolder: WorkFoldOverviewWorkFolderRef; records: WorkFoldOverviewCheckpointRecord[] }>;
-  checks: Array<{ workFolder: WorkFoldOverviewWorkFolderRef; records: WorkFoldOverviewCheckSource | null }>;
-  actReceipts: WorkFoldCliActReceipt[];
-  appAutomationReceipts: WorkFoldOverviewAppAutomationReceiptRecord[];
-  automationRuns: WorkFoldOverviewAutomationRunRecord[];
-  workFolderNames: Map<string, string>;
-}): { items: WorkFoldOverviewItem[]; truncated: boolean } {
-  const byKind = new Map<WorkFoldOverviewItemKind, WorkFoldOverviewItem[]>();
-  const add = (item: WorkFoldOverviewItem): void => {
+  settledTurns: AmpleFileOverviewSettledTurnRecord[];
+  requests: AmpleFileOverviewAgentRequestRecord[];
+  chats: Array<{ connectedFolder: AmpleFileOverviewConnectedFolderRef; records: AmpleFileOverviewChatRecord[] }>;
+  checkpoints: Array<{ connectedFolder: AmpleFileOverviewConnectedFolderRef; records: AmpleFileOverviewCheckpointRecord[] }>;
+  checks: Array<{ connectedFolder: AmpleFileOverviewConnectedFolderRef; records: AmpleFileOverviewCheckSource | null }>;
+  actReceipts: AmpleFileCliActReceipt[];
+  appAutomationReceipts: AmpleFileOverviewAppAutomationReceiptRecord[];
+  automationRuns: AmpleFileOverviewAutomationRunRecord[];
+  connectedFolderNames: Map<string, string>;
+}): { items: AmpleFileOverviewItem[]; truncated: boolean } {
+  const byKind = new Map<AmpleFileOverviewItemKind, AmpleFileOverviewItem[]>();
+  const add = (item: AmpleFileOverviewItem): void => {
     const list = byKind.get(item.kind) ?? [];
     list.push(item);
     byKind.set(item.kind, list);
   };
 
-  for (const { workFolder, records } of input.checkpoints) {
+  for (const { connectedFolder, records } of input.checkpoints) {
     for (const checkpoint of records.slice(0, maxSourceRecords)) {
       add(overviewItem({
-        id: `history-checkpoints:${workFolder.id}:${checkpoint.checkpointId}`,
+        id: `history-checkpoints:${connectedFolder.id}:${checkpoint.checkpointId}`,
         at: checkpoint.createdAt,
         kind: "checkpoint-saved",
-        workFolderId: workFolder.id,
-        workFolderNames: input.workFolderNames,
+        connectedFolderId: connectedFolder.id,
+        connectedFolderNames: input.connectedFolderNames,
         headline: `Restore point saved — ${clampText(checkpoint.label ?? checkpoint.reason, maxTitleInHeadline)}`,
         ref: { checkpointId: checkpoint.checkpointId },
       }));
@@ -668,7 +668,7 @@ function composeChanges(input: {
       id: `settled-turns:${turn.taskId}`,
       at: turn.endedAt,
       kind: "turn-settled",
-      ...(turn.workFolderId ? { workFolderId: turn.workFolderId, workFolderNames: input.workFolderNames } : {}),
+      ...(turn.connectedFolderId ? { connectedFolderId: turn.connectedFolderId, connectedFolderNames: input.connectedFolderNames } : {}),
       headline: `Worker turn ${turn.outcome}`,
       ref: { taskId: turn.taskId, ...(turn.conversationId ? { conversationId: turn.conversationId } : {}) },
     }));
@@ -684,12 +684,12 @@ function composeChanges(input: {
       id: `agent-requests:${request.requestId}`,
       at: request.endedAt ?? request.startedAt,
       kind: "request-settled",
-      ...(request.workFolderId ? { workFolderId: request.workFolderId, workFolderNames: input.workFolderNames } : {}),
+      ...(request.connectedFolderId ? { connectedFolderId: request.connectedFolderId, connectedFolderNames: input.connectedFolderNames } : {}),
       headline,
       ref: { taskId: request.taskId, conversationId: request.conversationId, requestId: request.requestId },
     }));
   }
-  for (const { workFolder, records } of input.chats) {
+  for (const { connectedFolder, records } of input.chats) {
     for (const chat of records.slice(0, maxSourceRecords)) {
       const title = clampText(chat.title, maxTitleInHeadline);
       for (const event of chat.lifecycleEvents.slice(0, maxSourceRecords)) {
@@ -697,8 +697,8 @@ function composeChanges(input: {
           id: `chats:${chat.conversationId}:${event.messageId}`,
           at: event.createdAt,
           kind: "chat-lifecycle",
-          workFolderId: workFolder.id,
-          workFolderNames: input.workFolderNames,
+          connectedFolderId: connectedFolder.id,
+          connectedFolderNames: input.connectedFolderNames,
           headline: chatLifecycleHeadline(title, event),
           ref: { conversationId: chat.conversationId },
         }));
@@ -708,23 +708,23 @@ function composeChanges(input: {
           id: `chats:${chat.conversationId}:${event.messageId}`,
           at: event.createdAt,
           kind: "chat-renamed",
-          workFolderId: workFolder.id,
-          workFolderNames: input.workFolderNames,
+          connectedFolderId: connectedFolder.id,
+          connectedFolderNames: input.connectedFolderNames,
           headline: `Chat renamed to "${clampText(event.title, maxTitleInHeadline)}"`,
           ref: { conversationId: chat.conversationId },
         }));
       }
     }
   }
-  for (const { workFolder, records } of input.checks) {
+  for (const { connectedFolder, records } of input.checks) {
     if (!records) continue;
     for (const run of records.settledRuns.slice(0, maxSourceRecords)) {
       add(overviewItem({
-        id: `checks:${workFolder.id}:${run.runId}`,
+        id: `checks:${connectedFolder.id}:${run.runId}`,
         at: run.endedAt ?? run.startedAt,
         kind: "check-run-settled",
-        workFolderId: workFolder.id,
-        workFolderNames: input.workFolderNames,
+        connectedFolderId: connectedFolder.id,
+        connectedFolderNames: input.connectedFolderNames,
         headline: `Check run ${run.state} — ${run.admittedCount} finding${run.admittedCount === 1 ? "" : "s"} admitted`,
         ref: { ...(run.taskId ? { taskId: run.taskId } : {}), runId: run.runId },
       }));
@@ -741,7 +741,7 @@ function composeChanges(input: {
       id: `act-receipts:${receipt.requestId}`,
       at: receipt.at,
       kind: "act-performed",
-      ...(receipt.workFolderId ? { workFolderId: receipt.workFolderId, workFolderNames: input.workFolderNames } : {}),
+      ...(receipt.connectedFolderId ? { connectedFolderId: receipt.connectedFolderId, connectedFolderNames: input.connectedFolderNames } : {}),
       headline,
       ref: {
         ...(receipt.taskId ? { taskId: receipt.taskId } : {}),
@@ -756,7 +756,7 @@ function composeChanges(input: {
       id: `app-automation-receipts:${receipt.receiptId}`,
       at: receipt.finishedAt,
       kind: "app-automation-run-settled",
-      ...(receipt.workFolderId ? { workFolderId: receipt.workFolderId, workFolderNames: input.workFolderNames } : {}),
+      ...(receipt.connectedFolderId ? { connectedFolderId: receipt.connectedFolderId, connectedFolderNames: input.connectedFolderNames } : {}),
       headline: `${appAutomationSubject(receipt)} ${appAutomationOutcomeLabel(receipt.outcome)}`,
       ref: { runId: receipt.runId },
     }));
@@ -778,30 +778,30 @@ function composeChanges(input: {
   // Bounded twice: per kind first so one chatty source cannot evict every
   // other kind, then in total, newest first.
   let truncated = false;
-  const merged: WorkFoldOverviewItem[] = [];
+  const merged: AmpleFileOverviewItem[] = [];
   for (const list of byKind.values()) {
     list.sort(newestFirst);
-    if (list.length > workFoldOverviewChangesPerKindCap) truncated = true;
-    merged.push(...list.slice(0, workFoldOverviewChangesPerKindCap));
+    if (list.length > ampleFileOverviewChangesPerKindCap) truncated = true;
+    merged.push(...list.slice(0, ampleFileOverviewChangesPerKindCap));
   }
   merged.sort(newestFirst);
-  if (merged.length > workFoldOverviewChangesTotalCap) truncated = true;
-  return { items: merged.slice(0, workFoldOverviewChangesTotalCap), truncated };
+  if (merged.length > ampleFileOverviewChangesTotalCap) truncated = true;
+  return { items: merged.slice(0, ampleFileOverviewChangesTotalCap), truncated };
 }
 
 function composeCheckRows(
-  checks: Array<{ workFolder: WorkFoldOverviewWorkFolderRef; records: WorkFoldOverviewCheckSource | null }>,
-): { rows: WorkFoldOverviewCheckRow[]; truncated: boolean } {
-  const rows: WorkFoldOverviewCheckRow[] = [];
-  for (const { workFolder, records } of checks) {
+  checks: Array<{ connectedFolder: AmpleFileOverviewConnectedFolderRef; records: AmpleFileOverviewCheckSource | null }>,
+): { rows: AmpleFileOverviewCheckRow[]; truncated: boolean } {
+  const rows: AmpleFileOverviewCheckRow[] = [];
+  for (const { connectedFolder, records } of checks) {
     if (!records) continue;
     const status = records.status;
-    // Unconfigured means unknown: a work-folder with no configured Checks is absent,
+    // Unconfigured means unknown: a Connected Folder with no configured Checks is absent,
     // never implied healthy.
     if (status.state === "not-configured") continue;
     rows.push({
-      workFolderId: workFolder.id,
-      workFolderName: workFolder.name,
+      connectedFolderId: connectedFolder.id,
+      connectedFolderName: connectedFolder.name,
       state: status.state,
       needsAttention: status.needsAttention,
       neverRun: status.neverRun,
@@ -813,11 +813,11 @@ function composeCheckRows(
   }
   rows.sort((left, right) =>
     checkStatePriority(left.state) - checkStatePriority(right.state)
-    || compareStrings(left.workFolderName, right.workFolderName)
-    || compareStrings(left.workFolderId, right.workFolderId));
+    || compareStrings(left.connectedFolderName, right.connectedFolderName)
+    || compareStrings(left.connectedFolderId, right.connectedFolderId));
   return {
-    rows: rows.slice(0, workFoldOverviewChecksCap),
-    truncated: rows.length > workFoldOverviewChecksCap,
+    rows: rows.slice(0, ampleFileOverviewChecksCap),
+    truncated: rows.length > ampleFileOverviewChecksCap,
   };
 }
 
@@ -830,11 +830,11 @@ function composeCheckRows(
  * changes and renames, and which message is "newest" for the question rule
  * (bookkeeping system messages never answer a question, so they are skipped).
  */
-export function workFoldOverviewChatRecordFromMessages(
+export function ampleFileOverviewChatRecordFromMessages(
   summary: ConversationSummary,
   messages: ChatMessage[],
-): WorkFoldOverviewChatRecord {
-  let newestMessage: WorkFoldOverviewChatRecord["newestMessage"] = null;
+): AmpleFileOverviewChatRecord {
+  let newestMessage: AmpleFileOverviewChatRecord["newestMessage"] = null;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message.role !== "user" && message.role !== "assistant") continue;
@@ -845,8 +845,8 @@ export function workFoldOverviewChatRecordFromMessages(
     };
     break;
   }
-  const lifecycleEvents: WorkFoldOverviewChatLifecycleEvent[] = [];
-  const titleEvents: WorkFoldOverviewChatTitleEvent[] = [];
+  const lifecycleEvents: AmpleFileOverviewChatLifecycleEvent[] = [];
+  const titleEvents: AmpleFileOverviewChatTitleEvent[] = [];
   for (const [index, message] of messages.entries()) {
     if (message.kind === "conversation_lifecycle" && message.lifecycle) {
       const patch = message.lifecycle;
@@ -896,25 +896,25 @@ export function workFoldOverviewChatRecordFromMessages(
 // its kinds are simply absent from the digest. The
 // local-API wiring may replace a file reader with a service-backed one.
 
-export interface WorkFoldOverviewStoreReaderOptions {
+export interface AmpleFileOverviewStoreReaderOptions {
   stateRoot?: string;
 }
 
-export function workFoldOverviewAutomationReceiptsFile(stateRoot = workFoldStateRoot()): string {
+export function ampleFileOverviewAutomationReceiptsFile(stateRoot = ampleFileStateRoot()): string {
   return join(stateRoot, "automations", "receipts.jsonl");
 }
 
-export function workFoldOverviewAutomationReceiptsRotatedFile(stateRoot = workFoldStateRoot()): string {
+export function ampleFileOverviewAutomationReceiptsRotatedFile(stateRoot = ampleFileStateRoot()): string {
   return join(stateRoot, "automations", "receipts.1.jsonl");
 }
 
-export function createWorkFoldOverviewAutomationRunReader(
-  options: WorkFoldOverviewStoreReaderOptions = {},
-): () => Promise<WorkFoldOverviewAutomationRunRecord[]> {
-  const rotatedPath = workFoldOverviewAutomationReceiptsRotatedFile(options.stateRoot);
-  const livePath = workFoldOverviewAutomationReceiptsFile(options.stateRoot);
+export function createAmpleFileOverviewAutomationRunReader(
+  options: AmpleFileOverviewStoreReaderOptions = {},
+): () => Promise<AmpleFileOverviewAutomationRunRecord[]> {
+  const rotatedPath = ampleFileOverviewAutomationReceiptsRotatedFile(options.stateRoot);
+  const livePath = ampleFileOverviewAutomationReceiptsFile(options.stateRoot);
   return async () => {
-    const runs = new Map<string, WorkFoldOverviewAutomationRunRecord>();
+    const runs = new Map<string, AmpleFileOverviewAutomationRunRecord>();
     for (const path of [rotatedPath, livePath]) {
       const text = await readStoreText(path);
       if (text === null) continue;
@@ -936,9 +936,9 @@ export function createWorkFoldOverviewAutomationRunReader(
 // --- Internal helpers ---
 
 async function readSource<T>(
-  source: WorkFoldOverviewSource,
+  source: AmpleFileOverviewSource,
   reader: (() => Promise<T[]>) | undefined,
-  unavailable: Set<WorkFoldOverviewSource>,
+  unavailable: Set<AmpleFileOverviewSource>,
 ): Promise<T[] | null> {
   if (!reader) return null;
   try {
@@ -949,19 +949,19 @@ async function readSource<T>(
   }
 }
 
-async function readWorkFolderSource<T>(
-  source: WorkFoldOverviewSource,
-  workFolders: WorkFoldOverviewWorkFolderRef[],
-  reader: ((workFolder: WorkFoldOverviewWorkFolderRef) => Promise<T>) | undefined,
-  unavailable: Set<WorkFoldOverviewSource>,
-): Promise<Array<{ workFolder: WorkFoldOverviewWorkFolderRef; records: T }>> {
+async function readConnectedFolderSource<T>(
+  source: AmpleFileOverviewSource,
+  connectedFolders: AmpleFileOverviewConnectedFolderRef[],
+  reader: ((connectedFolder: AmpleFileOverviewConnectedFolderRef) => Promise<T>) | undefined,
+  unavailable: Set<AmpleFileOverviewSource>,
+): Promise<Array<{ connectedFolder: AmpleFileOverviewConnectedFolderRef; records: T }>> {
   if (!reader) return [];
-  const results: Array<{ workFolder: WorkFoldOverviewWorkFolderRef; records: T }> = [];
-  for (const workFolder of workFolders) {
+  const results: Array<{ connectedFolder: AmpleFileOverviewConnectedFolderRef; records: T }> = [];
+  for (const connectedFolder of connectedFolders) {
     try {
-      results.push({ workFolder, records: await reader(workFolder) });
+      results.push({ connectedFolder, records: await reader(connectedFolder) });
     } catch {
-      // Keep the work-folders that could be read and disclose the failure instead
+      // Keep the Connected Folders that could be read and disclose the failure instead
       // of rendering the whole source as quiet.
       unavailable.add(source);
     }
@@ -972,21 +972,21 @@ async function readWorkFolderSource<T>(
 function overviewItem(input: {
   id: string;
   at: string;
-  kind: WorkFoldOverviewItemKind;
-  workFolderId?: string;
-  workFolderNames?: Map<string, string>;
+  kind: AmpleFileOverviewItemKind;
+  connectedFolderId?: string;
+  connectedFolderNames?: Map<string, string>;
   headline: string;
-  ref?: WorkFoldOverviewItemRef;
-}): WorkFoldOverviewItem {
+  ref?: AmpleFileOverviewItemRef;
+}): AmpleFileOverviewItem {
   const ref = input.ref ? pruneRef(input.ref) : undefined;
   return {
     id: input.id,
     at: input.at,
     kind: input.kind,
-    ...(input.workFolderId
+    ...(input.connectedFolderId
       ? {
-        workFolderId: input.workFolderId,
-        workFolderName: input.workFolderNames?.get(input.workFolderId) ?? `${input.workFolderId} (removed)`,
+        connectedFolderId: input.connectedFolderId,
+        connectedFolderName: input.connectedFolderNames?.get(input.connectedFolderId) ?? `${input.connectedFolderId} (removed)`,
       }
       : {}),
     headline: clampText(input.headline, maxHeadlineLength),
@@ -994,8 +994,8 @@ function overviewItem(input: {
   };
 }
 
-function pruneRef(ref: WorkFoldOverviewItemRef): WorkFoldOverviewItemRef | undefined {
-  const pruned: WorkFoldOverviewItemRef = {
+function pruneRef(ref: AmpleFileOverviewItemRef): AmpleFileOverviewItemRef | undefined {
+  const pruned: AmpleFileOverviewItemRef = {
     ...(ref.taskId ? { taskId: ref.taskId } : {}),
     ...(ref.conversationId ? { conversationId: ref.conversationId } : {}),
     ...(ref.checkpointId ? { checkpointId: ref.checkpointId } : {}),
@@ -1007,11 +1007,11 @@ function pruneRef(ref: WorkFoldOverviewItemRef): WorkFoldOverviewItemRef | undef
   return Object.keys(pruned).length ? pruned : undefined;
 }
 
-function newestFirst(left: WorkFoldOverviewItem, right: WorkFoldOverviewItem): number {
+function newestFirst(left: AmpleFileOverviewItem, right: AmpleFileOverviewItem): number {
   return compareTimestamps(right.at, left.at) || compareStrings(left.id, right.id);
 }
 
-function chatLifecycleHeadline(title: string, event: WorkFoldOverviewChatLifecycleEvent): string {
+function chatLifecycleHeadline(title: string, event: AmpleFileOverviewChatLifecycleEvent): string {
   if (event.change === "archived") return `"${title}" archived`;
   if (event.change === "restored") return `"${title}" restored`;
   if (event.change === "snoozed") return `"${title}" snoozed${event.snoozedUntil ? ` until ${event.snoozedUntil}` : ""}`;
@@ -1020,7 +1020,7 @@ function chatLifecycleHeadline(title: string, event: WorkFoldOverviewChatLifecyc
 
 /**
  * An app's named automation by the app's and the automation's titles
- * (`Inbox automation "Refresh inbox"`), so it reads apart from work-fold's
+ * (`Inbox automation "Refresh inbox"`), so it reads apart from AmpleFile's
  * own Automations. A run whose app is gone keeps its declared id.
  */
 function appAutomationSubject(record: { appAutomationId: string; appTitle?: string; automationTitle?: string }): string {
@@ -1029,13 +1029,13 @@ function appAutomationSubject(record: { appAutomationId: string; appTitle?: stri
   return app ? `${clampText(app, maxTitleInHeadline)} automation "${automation}"` : `App automation "${automation}"`;
 }
 
-function appAutomationOutcomeLabel(outcome: WorkFoldOverviewAppAutomationOutcome): string {
+function appAutomationOutcomeLabel(outcome: AmpleFileOverviewAppAutomationOutcome): string {
   if (outcome === "success") return "succeeded";
   if (outcome === "failure") return "failed";
   return outcome;
 }
 
-function checkStatePriority(state: WorkFoldCheckAggregateState): number {
+function checkStatePriority(state: AmpleFileCheckAggregateState): number {
   if (state === "needs-attention") return 0;
   if (state === "check-error") return 1;
   if (state === "blocked") return 2;
@@ -1075,7 +1075,7 @@ async function readStoreText(path: string): Promise<string | null> {
   }
 }
 
-const automationRunTerminalOutcomes = new Map<string, WorkFoldOverviewAutomationRunState>([
+const automationRunTerminalOutcomes = new Map<string, AmpleFileOverviewAutomationRunState>([
   ["ok", "succeeded"],
   ["succeeded", "succeeded"],
   ["error", "failed"],
@@ -1085,7 +1085,7 @@ const automationRunTerminalOutcomes = new Map<string, WorkFoldOverviewAutomation
   ["skipped", "skipped"],
 ]);
 
-function applyAutomationReceiptLine(runs: Map<string, WorkFoldOverviewAutomationRunRecord>, line: string): void {
+function applyAutomationReceiptLine(runs: Map<string, AmpleFileOverviewAutomationRunRecord>, line: string): void {
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);

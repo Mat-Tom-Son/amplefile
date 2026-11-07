@@ -1,61 +1,61 @@
-import type { WorkFoldResultEnvelope } from "../requests/request-records.js";
+import type { AmpleFileResultEnvelope } from "../requests/request-records.js";
 import {
-  WorkFoldAutomationFileWatch,
-  type WorkFoldAutomationCatchUpReason,
-  type WorkFoldAutomationFileObserver,
-  type WorkFoldAutomationFileSnapshot,
-  type WorkFoldAutomationFileWatchStatus,
+  AmpleFileAutomationFileWatch,
+  type AmpleFileAutomationCatchUpReason,
+  type AmpleFileAutomationFileObserver,
+  type AmpleFileAutomationFileSnapshot,
+  type AmpleFileAutomationFileWatchStatus,
 } from "./automation-file-observer.js";
-import { WorkFoldAutomationFileSnapshots, workFoldAutomationFileWatchKey } from "./automation-file-snapshots.js";
+import { AmpleFileAutomationFileSnapshots, ampleFileAutomationFileWatchKey } from "./automation-file-snapshots.js";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 
 import { automationCatchUpGap } from "../../shared/automation-presentation.js";
 
-import { workFoldAutomationMaxConcurrentRuns } from "../../shared/work-fold-limits.js";
+import { ampleFileAutomationMaxConcurrentRuns } from "../../shared/amplefile-limits.js";
 import {
-  WorkFoldSchedulerService,
-  type WorkFoldSchedulerClock,
-  type WorkFoldSchedulerJobKey,
-  type WorkFoldSchedulerRunAdmission,
-  type WorkFoldSchedulerRunContext,
-  type WorkFoldSchedulerRunResult,
-} from "../agent/work-fold-scheduler-service.js";
+  AmpleFileSchedulerService,
+  type AmpleFileSchedulerClock,
+  type AmpleFileSchedulerJobKey,
+  type AmpleFileSchedulerRunAdmission,
+  type AmpleFileSchedulerRunContext,
+  type AmpleFileSchedulerRunResult,
+} from "../agent/amplefile-scheduler-service.js";
 import {
-  workFoldAutomationBounds,
-  normalizeWorkFoldAutomationDeclaration,
-  scrubWorkFoldAutomationMessageText,
-  workFoldAutomationDigest,
-  workFoldAutomationMessagePlaceholders,
-  workFoldAutomationTriggerCatchesUp,
-  type WorkFoldAutomationChatStep,
-  type WorkFoldAutomationCheckStep,
-  type WorkFoldAutomationDeclaration,
-  type WorkFoldAutomationFilesChangedTrigger,
-  type WorkFoldAutomationFilesStep,
-  type WorkFoldAutomationAgentStep,
-  type WorkFoldAutomationPlaceholder,
-  type WorkFoldAutomationSettleSource,
-  type WorkFoldAutomationStep,
-  type WorkFoldAutomationStepCreatedFilesSource,
-  type WorkFoldAutomationTrigger,
+  ampleFileAutomationBounds,
+  normalizeAmpleFileAutomationDeclaration,
+  scrubAmpleFileAutomationMessageText,
+  ampleFileAutomationDigest,
+  ampleFileAutomationMessagePlaceholders,
+  ampleFileAutomationTriggerCatchesUp,
+  type AmpleFileAutomationChatStep,
+  type AmpleFileAutomationCheckStep,
+  type AmpleFileAutomationDeclaration,
+  type AmpleFileAutomationFilesChangedTrigger,
+  type AmpleFileAutomationFilesStep,
+  type AmpleFileAutomationAgentStep,
+  type AmpleFileAutomationPlaceholder,
+  type AmpleFileAutomationSettleSource,
+  type AmpleFileAutomationStep,
+  type AmpleFileAutomationStepCreatedFilesSource,
+  type AmpleFileAutomationTrigger,
 } from "./automation-declarations.js";
 import {
-  type WorkFoldAutomationEnableInput,
-  type WorkFoldAutomationActionReceiptContext,
-  type WorkFoldAutomationHealth,
-  type WorkFoldAutomationReceipts,
-  type WorkFoldAutomationReceiptPlaceholder,
-  type WorkFoldAutomationReceiptV1,
-  type WorkFoldAutomationRecord,
-  type WorkFoldAutomationRunCause,
-  type WorkFoldAutomationStore,
-  workFoldAutomationAtOccurrenceId,
+  type AmpleFileAutomationEnableInput,
+  type AmpleFileAutomationActionReceiptContext,
+  type AmpleFileAutomationHealth,
+  type AmpleFileAutomationReceipts,
+  type AmpleFileAutomationReceiptPlaceholder,
+  type AmpleFileAutomationReceiptV1,
+  type AmpleFileAutomationRecord,
+  type AmpleFileAutomationRunCause,
+  type AmpleFileAutomationStore,
+  ampleFileAutomationAtOccurrenceId,
 } from "./automation-store.js";
 import type {
-  WorkFoldAutomationHopLineage,
-  WorkFoldSettleRecord,
-  WorkFoldSettleSignal,
+  AmpleFileAutomationHopLineage,
+  AmpleFileSettleRecord,
+  AmpleFileSettleSignal,
 } from "./settle-signal.js";
 
 /**
@@ -65,66 +65,66 @@ import type {
  * declared hops by default strictly in order, and writes journal-first
  * receipts for every run and hop. There is no model call anywhere in this
  * module: agentic work happens only inside a chat hop or an agent hop, run
- * by that work-folder's own Worker or by the work-fold agent through the
+ * by that Connected Folder's own Worker or by the AmpleFile agent through the
  * injected ports. The executor appends no ambient context to anything it
  * dispatches — the only text it adds is the closed placeholder set, filled in
  * host-side from the run's own cause and its earlier hops' host records.
  *
- * The service owns its own `WorkFoldSchedulerService` instance — the same
+ * The service owns its own `AmpleFileSchedulerService` instance — the same
  * proven class the restricted-app scheduler uses, deliberately a separate
- * budget so one work-folder app's jobs can never starve cross-work-folder
+ * budget so one Connected Folder app's jobs can never starve cross–Connected Folder
  * glue (and vice versa), and a separate suspend/resume/close lifecycle so the
  * two authority domains stay uncoupled.
  */
-export const workFoldAutomationSchedulerOwnerId = "work-fold.automation";
+export const ampleFileAutomationSchedulerOwnerId = "amplefile.automation";
 
 /**
  * Machine-wide concurrent automation runs by default; FIFO beyond it. A generous
  * default, not a cap. The number lives in the shared limits contract so
  * Settings → Automations → Limits shows exactly what this executor enforces.
  */
-export { workFoldAutomationMaxConcurrentRuns };
+export { ampleFileAutomationMaxConcurrentRuns };
 
-export interface WorkFoldAutomationHopContext {
+export interface AmpleFileAutomationHopContext {
   automationId: string;
-  /** The automation's title, so the Chat or work-fold agent turn it starts knows who sent it. */
+  /** The automation's title, so the Chat or AmpleFile agent turn it starts knows who sent it. */
   title: string;
   runId: string;
   hopId: string;
   /** Stamped onto every domain run a hop causes, so its settles never fire triggers. */
-  lineage: WorkFoldAutomationHopLineage;
+  lineage: AmpleFileAutomationHopLineage;
   signal: AbortSignal;
 }
 
-export interface WorkFoldAutomationChatHopResult {
+export interface AmpleFileAutomationChatHopResult {
   conversationId: string;
   turnTaskId: string;
   outcome: "succeeded" | "failed" | "aborted";
   /** Selected request result, never turn file-change evidence. Null while waiting. */
-  result?: WorkFoldResultEnvelope | null;
+  result?: AmpleFileResultEnvelope | null;
   /**
    * The same result, present only when the turn filed it itself with
    * `chat report` rather than ending with just a reply. Its outcome decides
    * the step's (docs/automations.md, 2026-10-11).
    */
-  reported?: WorkFoldResultEnvelope;
+  reported?: AmpleFileResultEnvelope;
   error?: string;
   preCheckpointId?: string;
   postCheckpointId?: string;
 }
 
-/** An agent hop's own work-fold agent turn; it records no checkpoints and names no work-folder. */
-export type WorkFoldAutomationAgentHopResult = Pick<
-  WorkFoldAutomationChatHopResult,
+/** An agent hop's own AmpleFile agent turn; it records no checkpoints and names no Connected Folder. */
+export type AmpleFileAutomationAgentHopResult = Pick<
+  AmpleFileAutomationChatHopResult,
   "conversationId" | "turnTaskId" | "outcome" | "error" | "result" | "reported"
 >;
 
 /** The active findings of a settled Check run, for `{{trigger.findings}}`. */
-export interface WorkFoldAutomationCheckRunFindings {
+export interface AmpleFileAutomationCheckRunFindings {
   findings: Array<{ checkId: string; title: string; targetPath: string; severity: string }>;
 }
 
-export interface WorkFoldAutomationFilesHopResult {
+export interface AmpleFileAutomationFilesHopResult {
   restorePointId?: string;
   /** Destination-relative placed paths, including collision renames. */
   copiedPaths: string[];
@@ -132,7 +132,7 @@ export interface WorkFoldAutomationFilesHopResult {
   totalBytes: number;
 }
 
-export interface WorkFoldAutomationCheckHopResult {
+export interface AmpleFileAutomationCheckHopResult {
   runId: string;
   taskId: string;
   state: "succeeded" | "failed" | "aborted" | "interrupted";
@@ -142,15 +142,15 @@ export interface WorkFoldAutomationCheckHopResult {
   error?: string;
 }
 
-export interface WorkFoldAutomationCheckpointManifestEntry {
+export interface AmpleFileAutomationCheckpointManifestEntry {
   path: string;
   hashSha256: string;
   sizeBytes: number;
 }
 
 /** The slice of a History checkpoint the created-files handoff diffs. */
-export interface WorkFoldAutomationCheckpointManifest {
-  files: WorkFoldAutomationCheckpointManifestEntry[];
+export interface AmpleFileAutomationCheckpointManifest {
+  files: AmpleFileAutomationCheckpointManifestEntry[];
   /** Paths the capture skipped (oversized, unreadable, links, excluded). */
   skippedFilePaths: string[];
 }
@@ -160,7 +160,7 @@ export interface WorkFoldAutomationCheckpointManifest {
  * verbatim, or — for the created-files handoff — the exact path list the
  * executor resolved host-side from the chat hop's own checkpoint pair.
  */
-export type WorkFoldAutomationResolvedFilesSource =
+export type AmpleFileAutomationResolvedFilesSource =
   | { kind: "paths"; paths: string[] }
   | { kind: "tree"; path: string; recursive: boolean; extensions: string[] };
 
@@ -177,28 +177,28 @@ export type WorkFoldAutomationResolvedFilesSource =
  * executor, never the port, fills placeholders, so every port sees exactly
  * what was sent.
  */
-export interface WorkFoldAutomationHopPorts {
+export interface AmpleFileAutomationHopPorts {
   chat(
-    step: WorkFoldAutomationChatStep,
+    step: AmpleFileAutomationChatStep,
     message: string,
-    context: WorkFoldAutomationHopContext,
-  ): Promise<WorkFoldAutomationChatHopResult>;
-  /** Starts a new work-fold agent chat and waits for its turn. */
-  workFoldAgent(
-    step: WorkFoldAutomationAgentStep,
+    context: AmpleFileAutomationHopContext,
+  ): Promise<AmpleFileAutomationChatHopResult>;
+  /** Starts a new AmpleFile agent chat and waits for its turn. */
+  ampleFileAgent(
+    step: AmpleFileAutomationAgentStep,
     message: string,
-    context: WorkFoldAutomationHopContext,
-  ): Promise<WorkFoldAutomationAgentHopResult>;
+    context: AmpleFileAutomationHopContext,
+  ): Promise<AmpleFileAutomationAgentHopResult>;
   /** The settled Check run's active findings; null when the run cannot be read. */
-  checkRunFindings(workFolderId: string, taskId: string): Promise<WorkFoldAutomationCheckRunFindings | null>;
+  checkRunFindings(connectedFolderId: string, taskId: string): Promise<AmpleFileAutomationCheckRunFindings | null>;
   files(
-    step: WorkFoldAutomationFilesStep,
-    source: WorkFoldAutomationResolvedFilesSource,
-    context: WorkFoldAutomationHopContext,
-  ): Promise<WorkFoldAutomationFilesHopResult>;
-  check(step: WorkFoldAutomationCheckStep, context: WorkFoldAutomationHopContext): Promise<WorkFoldAutomationCheckHopResult>;
-  /** Reads one checkpoint's manifest from the named work-folder's History; null when missing. */
-  checkpointManifest(workFolderId: string, checkpointId: string): Promise<WorkFoldAutomationCheckpointManifest | null>;
+    step: AmpleFileAutomationFilesStep,
+    source: AmpleFileAutomationResolvedFilesSource,
+    context: AmpleFileAutomationHopContext,
+  ): Promise<AmpleFileAutomationFilesHopResult>;
+  check(step: AmpleFileAutomationCheckStep, context: AmpleFileAutomationHopContext): Promise<AmpleFileAutomationCheckHopResult>;
+  /** Reads one checkpoint's manifest from the named Connected Folder's History; null when missing. */
+  checkpointManifest(connectedFolderId: string, checkpointId: string): Promise<AmpleFileAutomationCheckpointManifest | null>;
   /**
    * Why a step's named model cannot run, in plain words, or null when it can:
    * it must exist and its provider must be connected. Checked when an
@@ -206,7 +206,7 @@ export interface WorkFoldAutomationHopPorts {
    */
   modelProblem?(
     model: { provider: string; id: string },
-    scope: { workFolder: string } | { workFoldAgent: true },
+    scope: { connectedFolder: string } | { ampleFileAgent: true },
   ): Promise<string | null>;
 }
 
@@ -215,34 +215,34 @@ export interface WorkFoldAutomationHopPorts {
  * `check_run` precedent): observability only, deliberately excluded from
  * stable task projections, and a port failure never affects the run.
  */
-export interface WorkFoldAutomationRunTaskPort {
+export interface AmpleFileAutomationRunTaskPort {
   start(input: { automationId: string; runId: string }): { id: string };
   finish(taskId: string): void;
 }
 
-export type WorkFoldAutomationServiceErrorCode =
+export type AmpleFileAutomationServiceErrorCode =
   | "SERVICE_DAMAGED"
   | "NOT_FOUND"
   | "HEALTH_INVALID"
   | "INPUT_INVALID";
 
-export class WorkFoldAutomationServiceError extends Error {
-  readonly code: WorkFoldAutomationServiceErrorCode;
-  readonly health?: WorkFoldAutomationHealth;
+export class AmpleFileAutomationServiceError extends Error {
+  readonly code: AmpleFileAutomationServiceErrorCode;
+  readonly health?: AmpleFileAutomationHealth;
 
   constructor(
-    code: WorkFoldAutomationServiceErrorCode,
+    code: AmpleFileAutomationServiceErrorCode,
     message: string,
-    options: { health?: WorkFoldAutomationHealth; cause?: unknown } = {},
+    options: { health?: AmpleFileAutomationHealth; cause?: unknown } = {},
   ) {
     super(message, options.cause !== undefined ? { cause: options.cause } : undefined);
-    this.name = "WorkFoldAutomationServiceError";
+    this.name = "AmpleFileAutomationServiceError";
     this.code = code;
     if (options.health !== undefined) this.health = options.health;
   }
 }
 
-export interface WorkFoldAutomationServiceStatus {
+export interface AmpleFileAutomationServiceStatus {
   storeDamaged: boolean;
   storeDamageReason?: string;
   journalDamaged: boolean;
@@ -253,38 +253,38 @@ export interface WorkFoldAutomationServiceStatus {
   recoveredInterruptedRunIds: string[];
 }
 
-export interface WorkFoldAutomationServiceOptions {
-  store: WorkFoldAutomationStore;
-  ports: WorkFoldAutomationHopPorts;
-  settleSignal?: WorkFoldSettleSignal;
-  tasks?: WorkFoldAutomationRunTaskPort;
-  clock?: WorkFoldSchedulerClock;
+export interface AmpleFileAutomationServiceOptions {
+  store: AmpleFileAutomationStore;
+  ports: AmpleFileAutomationHopPorts;
+  settleSignal?: AmpleFileSettleSignal;
+  tasks?: AmpleFileAutomationRunTaskPort;
+  clock?: AmpleFileSchedulerClock;
   createRunId?: () => string;
-  catchUpStagger?: (key: WorkFoldSchedulerJobKey) => number;
+  catchUpStagger?: (key: AmpleFileSchedulerJobKey) => number;
   maxConcurrency?: number;
-  observeFiles?: WorkFoldAutomationFileObserver;
+  observeFiles?: AmpleFileAutomationFileObserver;
   /** Tests can drive observation explicitly. Production scans every two seconds. */
   filePollIntervalMs?: number;
   /**
    * Saved snapshots for folder-change triggers that declare `"ifMissed":
    * "run"`. Defaults to `folder-snapshots/` beside the automation store.
    */
-  fileSnapshots?: WorkFoldAutomationFileSnapshots;
+  fileSnapshots?: AmpleFileAutomationFileSnapshots;
 }
 
-export interface WorkFoldAutomationProjection extends WorkFoldAutomationRecord {
-  fileWatch?: WorkFoldAutomationFileWatchStatus;
+export interface AmpleFileAutomationProjection extends AmpleFileAutomationRecord {
+  fileWatch?: AmpleFileAutomationFileWatchStatus;
   nextScheduledAt?: string;
   /** Present only while a hop-bearing run is genuinely active. */
   activeRunId?: string;
 }
 
-export interface WorkFoldAutomationRunAdmission extends WorkFoldSchedulerRunAdmission {}
+export interface AmpleFileAutomationRunAdmission extends AmpleFileSchedulerRunAdmission {}
 
 interface ArmedAutomation {
   digest: string;
   title: string;
-  trigger: WorkFoldAutomationTrigger;
+  trigger: AmpleFileAutomationTrigger;
 }
 
 interface ActiveRunState {
@@ -293,7 +293,7 @@ interface ActiveRunState {
   controller: AbortController;
   stopRequested: boolean;
   stoppedHopTaskIds: string[];
-  stopReceipt?: WorkFoldAutomationActionReceiptContext;
+  stopReceipt?: AmpleFileAutomationActionReceiptContext;
 }
 
 type RunSummary =
@@ -307,45 +307,45 @@ class PreHopClaimRefusal extends Error {}
 
 const causeMapGuard = 256;
 
-export class WorkFoldAutomationService {
-  readonly #fileWatches = new Map<string, WorkFoldAutomationFileWatch>();
-  readonly #observeFiles?: WorkFoldAutomationFileObserver;
-  readonly #fileSnapshots: WorkFoldAutomationFileSnapshots;
+export class AmpleFileAutomationService {
+  readonly #fileWatches = new Map<string, AmpleFileAutomationFileWatch>();
+  readonly #observeFiles?: AmpleFileAutomationFileObserver;
+  readonly #fileSnapshots: AmpleFileAutomationFileSnapshots;
   #filePollTimer?: ReturnType<typeof setInterval>;
   #filePollBusy = false;
   #fileEpoch = 0;
   #fileHoldChain: Promise<void> = Promise.resolve();
-  readonly #fileLoads = new WeakMap<WorkFoldAutomationFileWatch, Promise<void>>();
-  readonly #store: WorkFoldAutomationStore;
-  readonly #receipts: WorkFoldAutomationReceipts;
-  readonly #ports: WorkFoldAutomationHopPorts;
-  readonly #tasks: WorkFoldAutomationRunTaskPort | null;
-  readonly #automation: WorkFoldSchedulerService;
+  readonly #fileLoads = new WeakMap<AmpleFileAutomationFileWatch, Promise<void>>();
+  readonly #store: AmpleFileAutomationStore;
+  readonly #receipts: AmpleFileAutomationReceipts;
+  readonly #ports: AmpleFileAutomationHopPorts;
+  readonly #tasks: AmpleFileAutomationRunTaskPort | null;
+  readonly #automation: AmpleFileSchedulerService;
   readonly #now: () => Date;
   readonly #armed = new Map<string, ArmedAutomation>();
-  readonly #causeByRunId = new Map<string, WorkFoldAutomationRunCause>();
+  readonly #causeByRunId = new Map<string, AmpleFileAutomationRunCause>();
   readonly #launchedRunIds = new Set<string>();
   readonly #activeRuns = new Map<string, ActiveRunState>();
   readonly #recoveredRunIds: string[] = [];
-  #pendingCause: WorkFoldAutomationRunCause | null = null;
+  #pendingCause: AmpleFileAutomationRunCause | null = null;
   #unsubscribeSettle: (() => void) | null = null;
   #journalDamageReason: string | null = null;
   #suspensionGeneration = 0;
   #suspensionDesired = false;
   #closed = false;
 
-  private constructor(options: WorkFoldAutomationServiceOptions) {
+  private constructor(options: AmpleFileAutomationServiceOptions) {
     this.#observeFiles = options.observeFiles;
     this.#fileSnapshots = options.fileSnapshots
-      ?? new WorkFoldAutomationFileSnapshots({ directory: join(dirname(options.store.path), "folder-snapshots") });
+      ?? new AmpleFileAutomationFileSnapshots({ directory: join(dirname(options.store.path), "folder-snapshots") });
     this.#store = options.store;
     this.#receipts = options.store.receipts;
     this.#ports = options.ports;
     this.#tasks = options.tasks ?? null;
     this.#now = options.clock ? () => options.clock!.now() : () => new Date();
     const createRunId = options.createRunId ?? randomUUID;
-    this.#automation = new WorkFoldSchedulerService({
-      maxConcurrency: options.maxConcurrency ?? workFoldAutomationMaxConcurrentRuns,
+    this.#automation = new AmpleFileSchedulerService({
+      maxConcurrency: options.maxConcurrency ?? ampleFileAutomationMaxConcurrentRuns,
       ...(options.clock ? { clock: options.clock } : {}),
       ...(options.catchUpStagger ? { catchUpStagger: options.catchUpStagger } : {}),
       // The scheduler mints exactly one run id per admission, synchronously
@@ -369,8 +369,8 @@ export class WorkFoldAutomationService {
     });
   }
 
-  static async create(options: WorkFoldAutomationServiceOptions): Promise<WorkFoldAutomationService> {
-    const service = new WorkFoldAutomationService(options);
+  static async create(options: AmpleFileAutomationServiceOptions): Promise<AmpleFileAutomationService> {
+    const service = new AmpleFileAutomationService(options);
     await service.#initialize(options.settleSignal);
     if (options.observeFiles && options.filePollIntervalMs !== 0) {
       service.#filePollTimer = setInterval(() => { void service.pollFileChanges(); }, Math.max(2000, options.filePollIntervalMs ?? 2000));
@@ -379,7 +379,7 @@ export class WorkFoldAutomationService {
     return service;
   }
 
-  status(): WorkFoldAutomationServiceStatus {
+  status(): AmpleFileAutomationServiceStatus {
     const store = this.#store.status();
     return {
       storeDamaged: store.damaged,
@@ -392,11 +392,11 @@ export class WorkFoldAutomationService {
     };
   }
 
-  async listAutomations(): Promise<WorkFoldAutomationProjection[]> {
+  async listAutomations(): Promise<AmpleFileAutomationProjection[]> {
     return (await this.#store.list()).map((record) => this.#project(record));
   }
 
-  async getAutomation(automationId: string): Promise<WorkFoldAutomationProjection | undefined> {
+  async getAutomation(automationId: string): Promise<AmpleFileAutomationProjection | undefined> {
     const record = await this.#store.get(automationId);
     return record ? this.#project(record) : undefined;
   }
@@ -410,10 +410,10 @@ export class WorkFoldAutomationService {
    * executing under the prior digest: revocation stops stale work before the
    * authority change reads as complete.
    */
-  async enable(input: WorkFoldAutomationEnableInput): Promise<WorkFoldAutomationRecord> {
+  async enable(input: AmpleFileAutomationEnableInput): Promise<AmpleFileAutomationRecord> {
     this.#assertOperational();
-    const declaration = normalizeWorkFoldAutomationDeclaration(input.declaration);
-    const digest = workFoldAutomationDigest(declaration);
+    const declaration = normalizeAmpleFileAutomationDeclaration(input.declaration);
+    const digest = ampleFileAutomationDigest(declaration);
     const current = await this.#store.get(declaration.id);
     if (current?.health === "enabled" && current.digest === digest && input.expectedDigest === digest) {
       return current;
@@ -424,7 +424,7 @@ export class WorkFoldAutomationService {
     }
     for (const step of declaration.steps) {
       if ((step.kind !== "chat" && step.kind !== "agent") || !step.model || !this.#ports.modelProblem) continue;
-      const problem = await this.#ports.modelProblem(step.model, step.kind === "chat" ? { workFolder: step.workFolder } : { workFoldAgent: true });
+      const problem = await this.#ports.modelProblem(step.model, step.kind === "chat" ? { connectedFolder: step.connectedFolder } : { ampleFileAgent: true });
       if (problem) throw new Error(`Step "${step.id}": ${problem}`);
     }
     const record = await this.#store.enable(input);
@@ -433,7 +433,7 @@ export class WorkFoldAutomationService {
     const previous = current?.declaration.trigger;
     // A declaration that no longer catches up stops keeping its folder
     // snapshot; a changed selector simply never matches the saved one.
-    if (previous && workFoldAutomationTriggerCatchesUp(previous) && !workFoldAutomationTriggerCatchesUp(trigger)) {
+    if (previous && ampleFileAutomationTriggerCatchesUp(previous) && !ampleFileAutomationTriggerCatchesUp(trigger)) {
       await this.#fileSnapshots.remove(automationId).catch(() => undefined);
     }
     // Replacing a declaration that is already on, over the same folder, keeps
@@ -442,7 +442,7 @@ export class WorkFoldAutomationService {
     const inherited = current?.health === "enabled"
       && previous?.kind === "files-changed"
       && trigger.kind === "files-changed"
-      && workFoldAutomationFileWatchKey(previous) === workFoldAutomationFileWatchKey(trigger)
+      && ampleFileAutomationFileWatchKey(previous) === ampleFileAutomationFileWatchKey(trigger)
       ? this.#fileWatches.get(automationId)
       : undefined;
     this.stopRun(automationId);
@@ -463,8 +463,8 @@ export class WorkFoldAutomationService {
    */
   async disable(
     automationId: string,
-    receiptContext: WorkFoldAutomationActionReceiptContext = {},
-  ): Promise<{ record: WorkFoldAutomationRecord; stoppedRunId: string | null }> {
+    receiptContext: AmpleFileAutomationActionReceiptContext = {},
+  ): Promise<{ record: AmpleFileAutomationRecord; stoppedRunId: string | null }> {
     const record = await this.#store.disable(automationId, receiptContext);
     const stopped = this.stopRun(automationId, receiptContext);
     this.#disarm(automationId);
@@ -474,15 +474,15 @@ export class WorkFoldAutomationService {
   /** Deletes an inert automation; receipts are retained by the store. */
   async deleteAutomation(
     automationId: string,
-    receiptContext: WorkFoldAutomationActionReceiptContext = {},
-  ): Promise<WorkFoldAutomationRecord> {
+    receiptContext: AmpleFileAutomationActionReceiptContext = {},
+  ): Promise<AmpleFileAutomationRecord> {
     const current = await this.#store.get(automationId);
     const active = [...this.#activeRuns.values()].some((run) => run.automationId === automationId);
     const claimedButUnfinished = current?.health === "completed"
       && current.atOccurrence !== undefined
       && current.atOccurrence.finishedAt === undefined;
     if (active || claimedButUnfinished) {
-      throw new WorkFoldAutomationServiceError(
+      throw new AmpleFileAutomationServiceError(
         "HEALTH_INVALID",
         "Stop this automation's active run before deleting it.",
         { ...(current ? { health: current.health } : {}) },
@@ -490,7 +490,7 @@ export class WorkFoldAutomationService {
     }
     const record = await this.#store.delete(automationId, receiptContext);
     this.#disarm(automationId);
-    if (workFoldAutomationTriggerCatchesUp(record.declaration.trigger)) {
+    if (ampleFileAutomationTriggerCatchesUp(record.declaration.trigger)) {
       await this.#fileSnapshots.remove(automationId).catch(() => undefined);
     }
     return record;
@@ -503,36 +503,36 @@ export class WorkFoldAutomationService {
    */
   async runNow(
     automationId: string,
-    options: WorkFoldAutomationActionReceiptContext = {},
-  ): Promise<WorkFoldSchedulerRunResult> {
+    options: AmpleFileAutomationActionReceiptContext = {},
+  ): Promise<AmpleFileSchedulerRunResult> {
     return (await this.runNowAdmission(automationId, options)).result;
   }
 
   /** Validates authority and returns the scheduler admission before the run settles. */
   async runNowAdmission(
     automationId: string,
-    options: WorkFoldAutomationActionReceiptContext = {},
-  ): Promise<WorkFoldAutomationRunAdmission> {
+    options: AmpleFileAutomationActionReceiptContext = {},
+  ): Promise<AmpleFileAutomationRunAdmission> {
     this.#assertOperational();
     const record = await this.#store.get(automationId);
     if (!record) {
-      throw new WorkFoldAutomationServiceError(
+      throw new AmpleFileAutomationServiceError(
         "NOT_FOUND",
         "No automation has this id. A proposal holds no authority; enabling pins the exact declaration before anything runs.",
       );
     }
     if (record.health !== "enabled") {
-      throw new WorkFoldAutomationServiceError(
+      throw new AmpleFileAutomationServiceError(
         "HEALTH_INVALID",
         record.health === "suspended"
-          ? "This automation is suspended because a referenced work-folder was removed; enable it again to resume."
+          ? "This automation is suspended because a referenced Connected Folder was removed; enable it again to resume."
           : record.health === "completed"
             ? "This one-time automation is completed; its scheduled occurrence has already been consumed."
             : "This automation is off; enable it again to run it.",
         { health: record.health },
       );
     }
-    const cause: WorkFoldAutomationRunCause = {
+    const cause: AmpleFileAutomationRunCause = {
       kind: "run-now",
       ...(options.requestId !== undefined ? { requestId: options.requestId } : {}),
       ...(options.surface !== undefined ? { surface: options.surface } : {}),
@@ -549,7 +549,7 @@ export class WorkFoldAutomationService {
    */
   stopRun(
     automationId: string,
-    receiptContext: WorkFoldAutomationActionReceiptContext = {},
+    receiptContext: AmpleFileAutomationActionReceiptContext = {},
   ): { runId: string } | null {
     const active = [...this.#activeRuns.values()].find((run) => run.automationId === automationId);
     if (!active) return null;
@@ -560,17 +560,17 @@ export class WorkFoldAutomationService {
   }
 
   /**
-   * work-folder-removal revocation: every enabled automation referencing the removed
-   * work-folder is suspended with the missing work-folder id recorded (durable, in the
+   * connected-folder-removal revocation: every enabled automation referencing the removed
+   * Connected Folder is suspended with the missing Connected Folder id recorded (durable, in the
    * store), its active run is stopped, and its schedule is disarmed. A
    * suspended automation never runs, never retargets, and never resumes
    * automatically; turning it on again is a fresh enablement. With a damaged
    * store this returns empty: damage already fails closed, because nothing
    * is armed and nothing can run.
    */
-  async handleWorkFolderRemoved(workFolderId: string): Promise<{ suspendedAutomationIds: string[]; stoppedRunIds: string[] }> {
+  async handleConnectedFolderRemoved(connectedFolderId: string): Promise<{ suspendedAutomationIds: string[]; stoppedRunIds: string[] }> {
     if (this.#store.status().damaged) return { suspendedAutomationIds: [], stoppedRunIds: [] };
-    const { suspended } = await this.#store.suspendForWorkFolderRemoval(workFolderId);
+    const { suspended } = await this.#store.suspendForConnectedFolderRemoval(connectedFolderId);
     const stoppedRunIds: string[] = [];
     for (const record of suspended) {
       const automationId = record.declaration.id;
@@ -580,7 +580,7 @@ export class WorkFoldAutomationService {
       // The saved snapshot describes a folder that is no longer registered;
       // leaving suspension starts from a fresh look.
       const trigger = record.declaration.trigger;
-      if (workFoldAutomationTriggerCatchesUp(trigger) && trigger.workFolder === workFolderId) {
+      if (ampleFileAutomationTriggerCatchesUp(trigger) && trigger.connectedFolder === connectedFolderId) {
         await this.#fileSnapshots.remove(automationId).catch(() => undefined);
       }
     }
@@ -588,18 +588,18 @@ export class WorkFoldAutomationService {
   }
 
   /**
-   * Records that a missing work-folder's portable identity was re-registered. The
+   * Records that a missing Connected Folder's portable identity was re-registered. The
    * copy changes; the semantics deliberately do not: registration must never
    * silently re-arm standing behavior.
    */
-  async handleWorkFolderReRegistered(workFolderId: string): Promise<string[]> {
+  async handleConnectedFolderReRegistered(connectedFolderId: string): Promise<string[]> {
     if (this.#store.status().damaged) return [];
-    const affected = await this.#store.noteWorkFolderReRegistered(workFolderId);
+    const affected = await this.#store.noteConnectedFolderReRegistered(connectedFolderId);
     return affected.map((record) => record.declaration.id);
   }
 
   /** Diagnostic passthrough to the scheduler's bounded in-memory run history. */
-  listAutomationResults(automationId?: string): WorkFoldSchedulerRunResult[] {
+  listAutomationResults(automationId?: string): AmpleFileSchedulerRunResult[] {
     return this.#automation.listRunResults(automationId ? this.#jobKey(automationId) : undefined);
   }
 
@@ -632,7 +632,7 @@ export class WorkFoldAutomationService {
     this.#automation.close();
   }
 
-  async #initialize(settleSignal?: WorkFoldSettleSignal): Promise<void> {
+  async #initialize(settleSignal?: AmpleFileSettleSignal): Promise<void> {
     if (!this.#store.status().damaged) {
       await this.#recoverInterruptedRuns();
       if (this.#journalDamageReason === null) {
@@ -688,7 +688,7 @@ export class WorkFoldAutomationService {
             }
           }
         } catch (error) {
-          this.#journalDamageReason = `work-fold could not reconcile the durable schedule claim for interrupted run ${run.runId}: ${
+          this.#journalDamageReason = `AmpleFile could not reconcile the durable schedule claim for interrupted run ${run.runId}: ${
             error instanceof Error ? error.message : String(error)
           }`;
           return;
@@ -701,7 +701,7 @@ export class WorkFoldAutomationService {
           automationId: run.automationId,
           runId: run.runId,
           hopId,
-          detail: "work-fold stopped while this hop was in flight; its effects resolve by that domain's own crash rule.",
+          detail: "AmpleFile stopped while this hop was in flight; its effects resolve by that domain's own crash rule.",
         });
       }
       const recorded = await this.#receipts.append({
@@ -710,7 +710,7 @@ export class WorkFoldAutomationService {
         automationId: run.automationId,
         runId: run.runId,
         ...(run.title !== undefined ? { title: run.title } : {}),
-        detail: "work-fold stopped before this automation run recorded a terminal outcome. It was not replayed.",
+        detail: "AmpleFile stopped before this automation run recorded a terminal outcome. It was not replayed.",
       });
       if (!recorded) {
         this.#journalDamageReason =
@@ -724,7 +724,7 @@ export class WorkFoldAutomationService {
     }
   }
 
-  #project(record: WorkFoldAutomationRecord): WorkFoldAutomationProjection {
+  #project(record: AmpleFileAutomationRecord): AmpleFileAutomationProjection {
     const next = this.#automation.nextScheduledAt(this.#jobKey(record.declaration.id));
     const active = [...this.#activeRuns.values()].find((run) => run.automationId === record.declaration.id);
     return {
@@ -735,25 +735,25 @@ export class WorkFoldAutomationService {
     };
   }
 
-  #jobKey(automationId: string): WorkFoldSchedulerJobKey {
-    return { ownerId: workFoldAutomationSchedulerOwnerId, jobId: automationId };
+  #jobKey(automationId: string): AmpleFileSchedulerJobKey {
+    return { ownerId: ampleFileAutomationSchedulerOwnerId, jobId: automationId };
   }
 
   /**
    * `gap` names why a catch-up comparison is due for a folder-change trigger
-   * that declares `"ifMissed": "run"`: work-fold was closed (startup) or the
+   * that declares `"ifMissed": "run"`: AmpleFile was closed (startup) or the
    * automation was off (enable). An inherited watch carries on without one.
    */
   #arm(
-    record: WorkFoldAutomationRecord,
-    gap: WorkFoldAutomationCatchUpReason = "closed",
-    inherited?: WorkFoldAutomationFileWatch,
+    record: AmpleFileAutomationRecord,
+    gap: AmpleFileAutomationCatchUpReason = "closed",
+    inherited?: AmpleFileAutomationFileWatch,
   ): void {
     const automationId = record.declaration.id;
     const trigger = record.declaration.trigger;
     if (trigger.kind === "files-changed") {
-      const catchUp = workFoldAutomationTriggerCatchesUp(trigger);
-      const watch = inherited ?? new WorkFoldAutomationFileWatch(catchUp ? { catchUp: gap } : {});
+      const catchUp = ampleFileAutomationTriggerCatchesUp(trigger);
+      const watch = inherited ?? new AmpleFileAutomationFileWatch(catchUp ? { catchUp: gap } : {});
       watch.catchUp = catchUp;
       if (!catchUp) watch.pendingComparison = undefined;
       this.#fileWatches.set(automationId, watch);
@@ -776,7 +776,7 @@ export class WorkFoldAutomationService {
             kind: "interval",
             intervalMinutes: scheduled?.kind === "interval"
               ? scheduled.intervalMinutes
-              : workFoldAutomationBounds.minIntervalMinutes,
+              : ampleFileAutomationBounds.minIntervalMinutes,
             catchUp: scheduled?.kind === "interval" ? "latest" : "none",
           },
       enabled: scheduled !== null,
@@ -787,7 +787,7 @@ export class WorkFoldAutomationService {
     });
   }
 
-  async #finishRecoveredAtOccurrences(records: WorkFoldAutomationRecord[]): Promise<void> {
+  async #finishRecoveredAtOccurrences(records: AmpleFileAutomationRecord[]): Promise<void> {
     const finishedAt = this.#now().toISOString();
     for (const record of records) {
       if (record.health !== "completed" || !record.atOccurrence || record.atOccurrence.finishedAt !== undefined) continue;
@@ -795,7 +795,7 @@ export class WorkFoldAutomationService {
     }
   }
 
-  async #completeMissedSkips(records: WorkFoldAutomationRecord[]): Promise<void> {
+  async #completeMissedSkips(records: AmpleFileAutomationRecord[]): Promise<void> {
     const now = this.#now();
     for (const record of records) {
       const trigger = record.declaration.trigger;
@@ -817,7 +817,7 @@ export class WorkFoldAutomationService {
         digest: record.digest,
         cause: { kind: "resume", slotAt: trigger.at },
         occurrenceId: claimed.atOccurrence.occurrenceId,
-        detail: "The one-time occurrence passed while work-fold was unavailable, and this automation is declared to skip a missed slot.",
+        detail: "The one-time occurrence passed while AmpleFile was unavailable, and this automation is declared to skip a missed slot.",
       });
       await this.#store.finishAtOccurrence(record.declaration.id, runId, now.toISOString());
       this.#disarm(record.declaration.id);
@@ -832,7 +832,7 @@ export class WorkFoldAutomationService {
     if (this.#automation.has(key)) this.#automation.unregister(key);
   }
 
-  #resetFileWatches(paused = false, gap?: WorkFoldAutomationCatchUpReason): void {
+  #resetFileWatches(paused = false, gap?: AmpleFileAutomationCatchUpReason): void {
     this.#fileEpoch += 1;
     for (const watch of this.#fileWatches.values()) {
       watch.reset(paused);
@@ -863,7 +863,7 @@ export class WorkFoldAutomationService {
           if (observed !== null) {
             const admission = this.#dispatchAdmission(automationId, {
               kind: "files-changed",
-              workFolderId: armed.trigger.workFolder,
+              connectedFolderId: armed.trigger.connectedFolder,
               snapshotDigest: snapshot.digest,
               changedCount: observed.changedCount,
               changedPaths: observed.changedPaths,
@@ -883,13 +883,13 @@ export class WorkFoldAutomationService {
   /** Reads the saved state once per watch; concurrent callers share the read. */
   async #loadFileWatch(
     automationId: string,
-    watch: WorkFoldAutomationFileWatch,
-    trigger: WorkFoldAutomationFilesChangedTrigger,
+    watch: AmpleFileAutomationFileWatch,
+    trigger: AmpleFileAutomationFilesChangedTrigger,
   ): Promise<void> {
     if (watch.saved !== undefined) return;
     let loading = this.#fileLoads.get(watch);
     if (!loading) {
-      loading = this.#fileSnapshots.read(automationId, workFoldAutomationFileWatchKey(trigger))
+      loading = this.#fileSnapshots.read(automationId, ampleFileAutomationFileWatchKey(trigger))
         .then((read) => { watch.load(read, this.#now().getTime()); })
         .finally(() => { this.#fileLoads.delete(watch); });
       this.#fileLoads.set(watch, loading);
@@ -907,9 +907,9 @@ export class WorkFoldAutomationService {
    */
   #saveFileWatch(
     automationId: string,
-    watch: WorkFoldAutomationFileWatch,
-    trigger: WorkFoldAutomationFilesChangedTrigger,
-    snapshot: WorkFoldAutomationFileSnapshot | undefined,
+    watch: AmpleFileAutomationFileWatch,
+    trigger: AmpleFileAutomationFilesChangedTrigger,
+    snapshot: AmpleFileAutomationFileSnapshot | undefined,
   ): Promise<void> {
     if (!watch.catchUp || !snapshot || this.#fileWatches.get(automationId) !== watch) return Promise.resolve();
     const desired = watch.stateToSave(snapshot, this.#now().getTime());
@@ -918,13 +918,13 @@ export class WorkFoldAutomationService {
     if (unchanged && !watch.dirty) return Promise.resolve();
     const operation = unchanged
       ? this.#fileSnapshots.clearRunning(automationId)
-      : this.#fileSnapshots.save(automationId, workFoldAutomationFileWatchKey(trigger), desired);
+      : this.#fileSnapshots.save(automationId, ampleFileAutomationFileWatchKey(trigger), desired);
     if (!unchanged) watch.saved = desired;
     watch.dirty = false;
     return operation.catch((error: unknown) => {
       watch.status = {
         ...watch.status,
-        notice: `work-fold could not save this folder's snapshot, so it may not catch up after work-fold is closed: ${
+        notice: `AmpleFile could not save this folder's snapshot, so it may not catch up after AmpleFile is closed: ${
           error instanceof Error ? error.message : String(error)
         }`,
       };
@@ -969,7 +969,7 @@ export class WorkFoldAutomationService {
     await hold;
   }
 
-  #onSettle(record: WorkFoldSettleRecord): void {
+  #onSettle(record: AmpleFileSettleRecord): void {
     if (this.#closed) return;
     // Automation-caused settles never fire triggers: dropping lineage here is
     // what makes automation chains structurally impossible.
@@ -981,11 +981,11 @@ export class WorkFoldAutomationService {
     }
   }
 
-  #dispatch(automationId: string, cause: WorkFoldAutomationRunCause): Promise<WorkFoldSchedulerRunResult> {
+  #dispatch(automationId: string, cause: AmpleFileAutomationRunCause): Promise<AmpleFileSchedulerRunResult> {
     return this.#dispatchAdmission(automationId, cause).result;
   }
 
-  #dispatchAdmission(automationId: string, cause: WorkFoldAutomationRunCause): WorkFoldSchedulerRunAdmission {
+  #dispatchAdmission(automationId: string, cause: AmpleFileAutomationRunCause): AmpleFileSchedulerRunAdmission {
     this.#pendingCause = cause;
     try {
       return this.#automation.runNowAdmission(this.#jobKey(automationId));
@@ -994,7 +994,7 @@ export class WorkFoldAutomationService {
     }
   }
 
-  #takeCause(context: WorkFoldSchedulerRunContext): WorkFoldAutomationRunCause {
+  #takeCause(context: AmpleFileSchedulerRunContext): AmpleFileAutomationRunCause {
     const registered = this.#causeByRunId.get(context.runId);
     if (registered) {
       this.#causeByRunId.delete(context.runId);
@@ -1006,7 +1006,7 @@ export class WorkFoldAutomationService {
     return { kind: "run-now" };
   }
 
-  async #executeRun(context: WorkFoldSchedulerRunContext): Promise<void> {
+  async #executeRun(context: AmpleFileSchedulerRunContext): Promise<void> {
     const automationId = context.key.jobId;
     const runId = context.runId;
     this.#launchedRunIds.add(runId);
@@ -1016,7 +1016,7 @@ export class WorkFoldAutomationService {
     // admission: an automation disabled, suspended, or re-enabled at a different
     // digest while this admission waited in the queue must not run under
     // stale authority.
-    let record: WorkFoldAutomationRecord | undefined;
+    let record: AmpleFileAutomationRecord | undefined;
     let refusal: string | null = null;
     try {
       record = await this.#store.get(automationId);
@@ -1054,7 +1054,7 @@ export class WorkFoldAutomationService {
       ...runReceiptFields(cause, record),
     });
     if (!accepted) {
-      throw new Error("work-fold could not journal this automation run, so it was refused before any hop executed.");
+      throw new Error("AmpleFile could not journal this automation run, so it was refused before any hop executed.");
     }
 
     // The accepted receipt is the recoverable intent. Persist the exact
@@ -1183,12 +1183,12 @@ export class WorkFoldAutomationService {
   }
 
   async #executeHops(
-    declaration: WorkFoldAutomationDeclaration,
+    declaration: AmpleFileAutomationDeclaration,
     active: ActiveRunState,
-    cause: WorkFoldAutomationRunCause,
+    cause: AmpleFileAutomationRunCause,
   ): Promise<RunSummary> {
     const { automationId, runId, controller } = active;
-    const chatResults = new Map<string, WorkFoldAutomationChatHopResult>();
+    const chatResults = new Map<string, AmpleFileAutomationChatHopResult>();
     let failure: { hopId: string; error: string } | null = null;
     let halted: { kind: "stopped" } | { kind: "interrupted"; detail: string } | null = null;
     let partial = false;
@@ -1227,7 +1227,7 @@ export class WorkFoldAutomationService {
         continue;
       }
 
-      const hopContext: WorkFoldAutomationHopContext = {
+      const hopContext: AmpleFileAutomationHopContext = {
         automationId,
         title: declaration.title,
         runId,
@@ -1242,10 +1242,10 @@ export class WorkFoldAutomationService {
         runId,
         hopId: step.id,
         hopKind: step.kind,
-        ...hopWorkFolderFields(step),
+        ...hopConnectedFolderFields(step),
       });
       if (!acceptedHop) {
-        failure = { hopId: step.id, error: "work-fold could not journal this hop, so it was refused before its mutation." };
+        failure = { hopId: step.id, error: "AmpleFile could not journal this hop, so it was refused before its mutation." };
         continue;
       }
 
@@ -1256,17 +1256,17 @@ export class WorkFoldAutomationService {
           // and its earlier hops' host records. A resolution that cannot be
           // proven throws here and fails the hop closed.
           const resolved = await this.#resolveMessage(step, declaration, cause, chatResults);
-          const filled: Partial<WorkFoldAutomationReceiptV1> = resolved.placeholders.length
+          const filled: Partial<AmpleFileAutomationReceiptV1> = resolved.placeholders.length
             ? { placeholders: resolved.placeholders, messageBytes: resolved.bytes }
             : {};
-          let result: WorkFoldAutomationChatHopResult | WorkFoldAutomationAgentHopResult;
-          let evidence: Partial<WorkFoldAutomationReceiptV1>;
+          let result: AmpleFileAutomationChatHopResult | AmpleFileAutomationAgentHopResult;
+          let evidence: Partial<AmpleFileAutomationReceiptV1>;
           if (step.kind === "chat") {
             const chat = await this.#ports.chat(step, resolved.message, hopContext);
             chatResults.set(step.id, chat);
             result = chat;
             evidence = {
-              workFolderId: step.workFolder,
+              connectedFolderId: step.connectedFolder,
               conversationId: chat.conversationId,
               taskId: chat.turnTaskId,
               ...(chat.preCheckpointId !== undefined && chat.postCheckpointId !== undefined
@@ -1274,7 +1274,7 @@ export class WorkFoldAutomationService {
                 : {}),
             };
           } else {
-            const agentTurn = await this.#ports.workFoldAgent(step, resolved.message, hopContext);
+            const agentTurn = await this.#ports.ampleFileAgent(step, resolved.message, hopContext);
             result = agentTurn;
             evidence = { conversationId: agentTurn.conversationId, taskId: agentTurn.turnTaskId };
           }
@@ -1286,7 +1286,7 @@ export class WorkFoldAutomationService {
           if (reported?.outcome === "failed") {
             const error = reported.summary.trim() || (step.kind === "chat"
               ? "The Worker reported that it could not do this step."
-              : "The work-fold agent reported that it could not do this step.");
+              : "The AmpleFile agent reported that it could not do this step.");
             await this.#receipts.append({
               scope: "hop", outcome: "failed", automationId, runId, hopId: step.id, hopKind: step.kind, ...evidence, ...filled, detail: error,
             });
@@ -1312,7 +1312,7 @@ export class WorkFoldAutomationService {
           } else {
             const error = result.error ?? (step.kind === "chat"
               ? `The Worker turn settled ${result.outcome}.`
-              : `The work-fold agent's turn settled ${result.outcome}.`);
+              : `The AmpleFile agent's turn settled ${result.outcome}.`);
             await this.#receipts.append({
               scope: "hop", outcome: "failed", automationId, runId, hopId: step.id, hopKind: step.kind, ...evidence, ...filled, detail: error,
             });
@@ -1328,8 +1328,8 @@ export class WorkFoldAutomationService {
               runId,
               hopId: step.id,
               hopKind: step.kind,
-              fromWorkFolderId: step.fromWorkFolder,
-              toWorkFolderId: step.toWorkFolder,
+              fromConnectedFolderId: step.fromConnectedFolder,
+              toConnectedFolderId: step.toConnectedFolder,
               fileCount: 0,
               totalBytes: 0,
               copiedPaths: [],
@@ -1344,8 +1344,8 @@ export class WorkFoldAutomationService {
               runId,
               hopId: step.id,
               hopKind: step.kind,
-              fromWorkFolderId: step.fromWorkFolder,
-              toWorkFolderId: step.toWorkFolder,
+              fromConnectedFolderId: step.fromConnectedFolder,
+              toConnectedFolderId: step.toConnectedFolder,
               ...(resolved.source.kind === "paths" ? { sourcePaths: [...resolved.source.paths] } : {}),
               copiedPaths: [...result.copiedPaths],
               fileCount: result.fileCount,
@@ -1356,7 +1356,7 @@ export class WorkFoldAutomationService {
         } else {
           const result = await this.#ports.check(step, hopContext);
           const evidence = {
-            workFolderId: step.workFolder,
+            connectedFolderId: step.connectedFolder,
             checkRunId: result.runId,
             taskId: result.taskId,
             checkIds: [...result.checkIds],
@@ -1386,12 +1386,12 @@ export class WorkFoldAutomationService {
         const message = error instanceof Error ? error.message : String(error);
         if (controller.signal.aborted && active.stopRequested) {
           await this.#receipts.append({
-            scope: "hop", outcome: "stopped", automationId, runId, hopId: step.id, hopKind: step.kind, ...hopWorkFolderFields(step), detail: message,
+            scope: "hop", outcome: "stopped", automationId, runId, hopId: step.id, hopKind: step.kind, ...hopConnectedFolderFields(step), detail: message,
           });
           halted = { kind: "stopped" };
         } else if (controller.signal.aborted) {
           await this.#receipts.append({
-            scope: "hop", outcome: "interrupted", automationId, runId, hopId: step.id, hopKind: step.kind, ...hopWorkFolderFields(step), detail: message,
+            scope: "hop", outcome: "interrupted", automationId, runId, hopId: step.id, hopKind: step.kind, ...hopConnectedFolderFields(step), detail: message,
           });
           halted = { kind: "interrupted", detail: message };
         } else {
@@ -1399,7 +1399,7 @@ export class WorkFoldAutomationService {
           // fence, a Check reservation conflict — fail the hop with the
           // typed reason; they are glue health, never silently skipped work.
           await this.#receipts.append({
-            scope: "hop", outcome: "failed", automationId, runId, hopId: step.id, hopKind: step.kind, ...hopWorkFolderFields(step), detail: message,
+            scope: "hop", outcome: "failed", automationId, runId, hopId: step.id, hopKind: step.kind, ...hopConnectedFolderFields(step), detail: message,
           });
           failure = { hopId: step.id, error: message };
         }
@@ -1419,18 +1419,18 @@ export class WorkFoldAutomationService {
    * messages are literal text, braces included.
    */
   async #resolveMessage(
-    step: WorkFoldAutomationChatStep | WorkFoldAutomationAgentStep,
-    declaration: WorkFoldAutomationDeclaration,
-    cause: WorkFoldAutomationRunCause,
-    chatResults: Map<string, WorkFoldAutomationChatHopResult>,
-  ): Promise<{ message: string; bytes: number; placeholders: WorkFoldAutomationReceiptPlaceholder[] }> {
+    step: AmpleFileAutomationChatStep | AmpleFileAutomationAgentStep,
+    declaration: AmpleFileAutomationDeclaration,
+    cause: AmpleFileAutomationRunCause,
+    chatResults: Map<string, AmpleFileAutomationChatHopResult>,
+  ): Promise<{ message: string; bytes: number; placeholders: AmpleFileAutomationReceiptPlaceholder[] }> {
     const literal = () => ({
       message: step.message,
       bytes: Buffer.byteLength(step.message, "utf8"),
-      placeholders: [] as WorkFoldAutomationReceiptPlaceholder[],
+      placeholders: [] as AmpleFileAutomationReceiptPlaceholder[],
     });
     if (declaration.version < 4) return literal();
-    const occurrences = workFoldAutomationMessagePlaceholders(step.message, `Automation step "${step.id}"`);
+    const occurrences = ampleFileAutomationMessagePlaceholders(step.message, `Automation step "${step.id}"`);
     if (!occurrences.length) return literal();
     const texts = new Map<string, { text: string; truncated: boolean }>();
     for (const placeholder of occurrences) {
@@ -1442,9 +1442,9 @@ export class WorkFoldAutomationService {
       (match, inner: string) => texts.get(inner.trim())?.text ?? match,
     );
     const bytes = Buffer.byteLength(message, "utf8");
-    if (bytes > workFoldAutomationBounds.maxResolvedMessageBytes) {
+    if (bytes > ampleFileAutomationBounds.maxResolvedMessageBytes) {
       throw new Error(
-        `The filled-in message would exceed the ${workFoldAutomationBounds.maxResolvedMessageBytes / 1024} KiB limit for one step.`,
+        `The filled-in message would exceed the ${ampleFileAutomationBounds.maxResolvedMessageBytes / 1024} KiB limit for one step.`,
       );
     }
     return {
@@ -1466,10 +1466,10 @@ export class WorkFoldAutomationService {
    * source chat hop's History checkpoint pair.
    */
   async #placeholderText(
-    placeholder: WorkFoldAutomationPlaceholder,
-    declaration: WorkFoldAutomationDeclaration,
-    cause: WorkFoldAutomationRunCause,
-    chatResults: Map<string, WorkFoldAutomationChatHopResult>,
+    placeholder: AmpleFileAutomationPlaceholder,
+    declaration: AmpleFileAutomationDeclaration,
+    cause: AmpleFileAutomationRunCause,
+    chatResults: Map<string, AmpleFileAutomationChatHopResult>,
   ): Promise<{ text: string; truncated: boolean }> {
     if (placeholder.name === "trigger.summary") {
       return { text: causeSummary(cause, declaration), truncated: false };
@@ -1488,9 +1488,9 @@ export class WorkFoldAutomationService {
       const unreadable = "The Check run's findings could not be read, so {{trigger.findings}} cannot be filled in.";
       const taskId = cause.source.taskId;
       if (taskId === undefined) throw new Error(unreadable);
-      let read: WorkFoldAutomationCheckRunFindings | null;
+      let read: AmpleFileAutomationCheckRunFindings | null;
       try {
-        read = await this.#ports.checkRunFindings(cause.source.workFolderId, taskId);
+        read = await this.#ports.checkRunFindings(cause.source.connectedFolderId, taskId);
       } catch (error) {
         throw new Error(unreadable, { cause: error });
       }
@@ -1505,16 +1505,16 @@ export class WorkFoldAutomationService {
     if (source?.kind !== "chat") {
       throw new Error(`Automation step "${sourceStepId}" is not a chat step, so its created files cannot be filled in.`);
     }
-    const created = await this.#createdFiles(sourceStepId, source.workFolder, chatResults);
+    const created = await this.#createdFiles(sourceStepId, source.connectedFolder, chatResults);
     return created.length
       ? boundedPlaceholderList(created.map((file) => file.path))
       : { text: "(no files created)", truncated: false };
   }
 
   async #resolveFilesSource(
-    step: WorkFoldAutomationFilesStep,
-    chatResults: Map<string, WorkFoldAutomationChatHopResult>,
-  ): Promise<{ kind: "source"; source: WorkFoldAutomationResolvedFilesSource } | { kind: "empty"; detail: string }> {
+    step: AmpleFileAutomationFilesStep,
+    chatResults: Map<string, AmpleFileAutomationChatHopResult>,
+  ): Promise<{ kind: "source"; source: AmpleFileAutomationResolvedFilesSource } | { kind: "empty"; detail: string }> {
     if (step.from.kind === "paths") {
       return { kind: "source", source: { kind: "paths", paths: [...step.from.paths] } };
     }
@@ -1540,11 +1540,11 @@ export class WorkFoldAutomationService {
    * partial handoff is never silently delivered.
    */
   async #resolveCreatedFiles(
-    step: WorkFoldAutomationFilesStep,
-    source: WorkFoldAutomationStepCreatedFilesSource,
-    chatResults: Map<string, WorkFoldAutomationChatHopResult>,
+    step: AmpleFileAutomationFilesStep,
+    source: AmpleFileAutomationStepCreatedFilesSource,
+    chatResults: Map<string, AmpleFileAutomationChatHopResult>,
   ): Promise<string[]> {
-    const created = await this.#createdFiles(source.step, step.fromWorkFolder, chatResults, source.extensions);
+    const created = await this.#createdFiles(source.step, step.fromConnectedFolder, chatResults, source.extensions);
     if (created.length > source.maxFiles) {
       throw new Error(
         `The turn created or changed ${created.length} matching files, more than this handoff's bound of ${source.maxFiles}.`,
@@ -1566,10 +1566,10 @@ export class WorkFoldAutomationService {
    */
   async #createdFiles(
     sourceStepId: string,
-    workFolderId: string,
-    chatResults: Map<string, WorkFoldAutomationChatHopResult>,
+    connectedFolderId: string,
+    chatResults: Map<string, AmpleFileAutomationChatHopResult>,
     extensions?: string[],
-  ): Promise<WorkFoldAutomationCheckpointManifestEntry[]> {
+  ): Promise<AmpleFileAutomationCheckpointManifestEntry[]> {
     const chat = chatResults.get(sourceStepId);
     if (!chat || chat.outcome !== "succeeded") {
       throw new Error(`The created-files handoff needs chat hop "${sourceStepId}" to have succeeded in this run.`);
@@ -1579,11 +1579,11 @@ export class WorkFoldAutomationService {
         `Chat hop "${sourceStepId}" did not record its pre/post-turn checkpoint pair, so the created files cannot be resolved.`,
       );
     }
-    const pre = await this.#ports.checkpointManifest(workFolderId, chat.preCheckpointId);
-    const post = await this.#ports.checkpointManifest(workFolderId, chat.postCheckpointId);
+    const pre = await this.#ports.checkpointManifest(connectedFolderId, chat.preCheckpointId);
+    const post = await this.#ports.checkpointManifest(connectedFolderId, chat.postCheckpointId);
     if (!pre || !post) {
       const missing = !pre ? chat.preCheckpointId : chat.postCheckpointId;
-      throw new Error(`Checkpoint ${missing} is missing from the source work-folder's History, so the created files cannot be resolved.`);
+      throw new Error(`Checkpoint ${missing} is missing from the source Connected Folder's History, so the created files cannot be resolved.`);
     }
     const matches = (path: string): boolean => {
       if (!extensions || extensions.length === 0) return true;
@@ -1606,7 +1606,7 @@ export class WorkFoldAutomationService {
       .sort((left, right) => compareAutomationStrings(left.path, right.path));
   }
 
-  async #onAutomationResult(result: WorkFoldSchedulerRunResult): Promise<void> {
+  async #onAutomationResult(result: AmpleFileSchedulerRunResult): Promise<void> {
     const automationId = result.key.jobId;
     const registeredCause = this.#causeByRunId.get(result.runId);
     this.#causeByRunId.delete(result.runId);
@@ -1615,7 +1615,7 @@ export class WorkFoldAutomationService {
       // Admissions that never launched — per-automation non-overlap, suspension,
       // disable, unregistration, close — settle skipped and are receipted as
       // such, naming the cause that admitted them.
-      const cause: WorkFoldAutomationRunCause = registeredCause
+      const cause: AmpleFileAutomationRunCause = registeredCause
         ?? (result.reason === "scheduled" || result.reason === "resume"
           ? { kind: result.reason, slotAt: result.scheduledAt }
           : { kind: "run-now" });
@@ -1694,46 +1694,46 @@ export class WorkFoldAutomationService {
 
   #assertOperational(): void {
     if (this.#closed) {
-      throw new WorkFoldAutomationServiceError("SERVICE_DAMAGED", "The automation executor is closed.");
+      throw new AmpleFileAutomationServiceError("SERVICE_DAMAGED", "The automation executor is closed.");
     }
     if (this.#journalDamageReason !== null) {
-      throw new WorkFoldAutomationServiceError(
+      throw new AmpleFileAutomationServiceError(
         "SERVICE_DAMAGED",
-        `work-fold cannot arm or run automations: ${this.#journalDamageReason} Disable, suspension, and deletion remain available.`,
+        `AmpleFile cannot arm or run automations: ${this.#journalDamageReason} Disable, suspension, and deletion remain available.`,
       );
     }
   }
 }
 
-function hopWorkFolderFields(
-  step: WorkFoldAutomationStep,
-): { workFolderId: string } | { fromWorkFolderId: string; toWorkFolderId: string } | Record<string, never> {
-  if (step.kind === "files") return { fromWorkFolderId: step.fromWorkFolder, toWorkFolderId: step.toWorkFolder };
-  // An agent hop names no work-folder: the work-fold agent sits above them.
-  return step.kind === "agent" ? {} : { workFolderId: step.workFolder };
+function hopConnectedFolderFields(
+  step: AmpleFileAutomationStep,
+): { connectedFolderId: string } | { fromConnectedFolderId: string; toConnectedFolderId: string } | Record<string, never> {
+  if (step.kind === "files") return { fromConnectedFolderId: step.fromConnectedFolder, toConnectedFolderId: step.toConnectedFolder };
+  // An agent hop names no Connected Folder: the AmpleFile agent sits above them.
+  return step.kind === "agent" ? {} : { connectedFolderId: step.connectedFolder };
 }
 
-function settleMatchesSource(source: WorkFoldAutomationSettleSource, record: WorkFoldSettleRecord): boolean {
+function settleMatchesSource(source: AmpleFileAutomationSettleSource, record: AmpleFileSettleRecord): boolean {
   if (source.kind === "check-run") {
     return record.kind === "check-run"
-      && record.workFolderId === source.workFolder
+      && record.connectedFolderId === source.connectedFolder
       && (source.check === undefined || record.checkIds.includes(source.check))
       && (source.outcomes as readonly string[]).includes(record.state);
   }
   return record.kind === "app-automation-run"
-    && record.workFolderId === source.workFolder
+    && record.connectedFolderId === source.connectedFolder
     && record.appId === source.appId
     && record.appAutomationId === source.appAutomationId
     && (source.outcomes as readonly string[]).includes(record.outcome);
 }
 
-function settleCause(record: WorkFoldSettleRecord): WorkFoldAutomationRunCause {
+function settleCause(record: AmpleFileSettleRecord): AmpleFileAutomationRunCause {
   if (record.kind === "check-run") {
     return {
       kind: "on-settled",
       source: {
         kind: "check-run",
-        workFolderId: record.workFolderId,
+        connectedFolderId: record.connectedFolderId,
         runId: record.runId,
         state: record.state,
         checkIds: [...record.checkIds],
@@ -1747,7 +1747,7 @@ function settleCause(record: WorkFoldSettleRecord): WorkFoldAutomationRunCause {
     kind: "on-settled",
     source: {
       kind: "app-automation-run",
-      workFolderId: record.workFolderId,
+      connectedFolderId: record.connectedFolderId,
       appId: record.appId,
       appAutomationId: record.appAutomationId,
       runId: record.runId,
@@ -1777,17 +1777,17 @@ const placeholderMarkerAllowanceBytes = 96;
 /**
  * One filled-in list placeholder, cut at a line boundary. Every cut names the
  * limit that actually bit, so a person reading the message knows the list is
- * short because work-fold stopped, not because the work did.
+ * short because AmpleFile stopped, not because the work did.
  */
 function boundedPlaceholderList(rawLines: string[]): { text: string; truncated: boolean } {
-  const maxItems = workFoldAutomationBounds.maxPlaceholderListItems;
-  const maxBytes = workFoldAutomationBounds.maxPlaceholderTextBytes;
+  const maxItems = ampleFileAutomationBounds.maxPlaceholderListItems;
+  const maxBytes = ampleFileAutomationBounds.maxPlaceholderTextBytes;
   // Placeholder text is host-supplied, not declared: a pre-existing file named
   // with a direction override would otherwise carry a character the
   // declaration contract forbids into the message the destination receives —
   // and the hop receipt, which replaces the same class, would then disagree
   // with what was actually sent. Filtering here keeps the two identical.
-  const lines = rawLines.map((line) => scrubWorkFoldAutomationMessageText(line));
+  const lines = rawLines.map((line) => scrubAmpleFileAutomationMessageText(line));
   const kept: string[] = [];
   let bytes = 0;
   let byteLimited = false;
@@ -1810,7 +1810,7 @@ function boundedPlaceholderList(rawLines: string[]): { text: string; truncated: 
 }
 
 /** `{{trigger.summary}}`: what actually started this run, in one sentence. */
-function causeSummary(cause: WorkFoldAutomationRunCause, declaration: WorkFoldAutomationDeclaration): string {
+function causeSummary(cause: AmpleFileAutomationRunCause, declaration: AmpleFileAutomationDeclaration): string {
   switch (cause.kind) {
     case "run-now":
       return "Started by hand.";
@@ -1823,23 +1823,23 @@ function causeSummary(cause: WorkFoldAutomationRunCause, declaration: WorkFoldAu
       if (cause.catchUp) {
         const { count, reason } = cause.catchUp;
         const more = cause.changedCount - count;
-        return `Caught up on ${count} ${count === 1 ? "file" : "files"} ${watched ? `under "${watched}"` : "at the top level"} in work-folder ${cause.workFolderId}`
+        return `Caught up on ${count} ${count === 1 ? "file" : "files"} ${watched ? `under "${watched}"` : "at the top level"} in Connected Folder ${cause.connectedFolderId}`
           + ` that changed ${automationCatchUpGap(reason)}.`
           + (more > 0 ? ` ${more} more ${more === 1 ? "file" : "files"} changed after that.` : "");
       }
-      return `${cause.changedCount} file(s) changed ${watched ? `under "${watched}"` : "at the top level"} in work-folder ${cause.workFolderId}.`;
+      return `${cause.changedCount} file(s) changed ${watched ? `under "${watched}"` : "at the top level"} in Connected Folder ${cause.connectedFolderId}.`;
     }
     default:
       return cause.source.kind === "check-run"
-        ? `Check run ${cause.source.runId} in work-folder ${cause.source.workFolderId} settled ${cause.source.state}`
+        ? `Check run ${cause.source.runId} in Connected Folder ${cause.source.connectedFolderId} settled ${cause.source.state}`
           + ` (Checks: ${cause.source.checkIds.join(", ")}).`
-        : `App automation ${cause.source.appId}/${cause.source.appAutomationId} in work-folder ${cause.source.workFolderId}`
+        : `App automation ${cause.source.appId}/${cause.source.appAutomationId} in Connected Folder ${cause.source.connectedFolderId}`
           + ` settled ${cause.source.outcome}.`;
   }
 }
 
 /** Why a placeholder has nothing to fill in for this run, in the same sentence. */
-function causeClause(cause: WorkFoldAutomationRunCause): string {
+function causeClause(cause: AmpleFileAutomationRunCause): string {
   switch (cause.kind) {
     case "run-now":
       return "this run was started by hand";
@@ -1861,9 +1861,9 @@ function abortReasonText(reason: unknown): string {
 }
 
 function runReceiptFields(
-  cause: WorkFoldAutomationRunCause,
-  record: WorkFoldAutomationRecord,
-): Pick<WorkFoldAutomationActionReceiptContext, "requestId" | "surface"> & { occurrenceId?: string } {
+  cause: AmpleFileAutomationRunCause,
+  record: AmpleFileAutomationRecord,
+): Pick<AmpleFileAutomationActionReceiptContext, "requestId" | "surface"> & { occurrenceId?: string } {
   return {
     ...(cause.kind === "run-now" && cause.requestId !== undefined ? { requestId: cause.requestId } : {}),
     ...(cause.kind === "run-now" && cause.surface !== undefined ? { surface: cause.surface } : {}),
@@ -1871,7 +1871,7 @@ function runReceiptFields(
       ? { occurrenceId: record.atOccurrence.occurrenceId }
       : record.declaration.trigger.kind === "at" && (cause.kind === "scheduled" || cause.kind === "resume")
         ? {
-          occurrenceId: workFoldAutomationAtOccurrenceId(
+          occurrenceId: ampleFileAutomationAtOccurrenceId(
             record.declaration.id,
             record.digest,
             cause.slotAt,

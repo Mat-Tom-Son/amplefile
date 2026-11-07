@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
-import { normalizeWorkFoldCheckTargetPath } from "../../shared/checks.js";
-import { resolveWorkFolderPath } from "../work-folder.js";
+import { normalizeAmpleFileCheckTargetPath } from "../../shared/checks.js";
+import { resolveConnectedFolderPath } from "../connected-folder.js";
 
 /** One whole-file replacement; matches the largest file a text review reads. */
 const maximumCorrectionBytes = 16 * 1024 * 1024;
 
 export interface CheckCorrectionProposal {
-  kind: "work-fold.check-correction";
+  kind: "amplefile.check-correction";
   version: 1;
   findingId: string;
   fingerprint: string;
@@ -27,11 +27,11 @@ export interface CheckCorrectionRecord {
 export function normalizeCheckCorrection(value: unknown): CheckCorrectionProposal {
   const record = object(value);
   exactKeys(record, ["kind", "version", "findingId", "fingerprint", "path", "beforeHash", "replacement"]);
-  if (record.kind !== "work-fold.check-correction" || record.version !== 1) throw new Error("Unsupported Check correction proposal.");
+  if (record.kind !== "amplefile.check-correction" || record.version !== 1) throw new Error("Unsupported Check correction proposal.");
   if (typeof record.replacement !== "string" || Buffer.byteLength(record.replacement, "utf8") > maximumCorrectionBytes || record.replacement.includes("\0") || Buffer.from(record.replacement, "utf8").toString("utf8") !== record.replacement) throw new Error("A correction must contain at most 16 MiB of valid UTF-8 text.");
-  return { kind: "work-fold.check-correction", version: 1,
+  return { kind: "amplefile.check-correction", version: 1,
     findingId: text(record.findingId, 160), fingerprint: fingerprint(record.fingerprint),
-    path: normalizeWorkFoldCheckTargetPath(record.path), beforeHash: hash(record.beforeHash), replacement: record.replacement };
+    path: normalizeAmpleFileCheckTargetPath(record.path), beforeHash: hash(record.beforeHash), replacement: record.replacement };
 }
 export function normalizeCheckCorrectionRecord(value: unknown): CheckCorrectionRecord {
   const record = object(value);
@@ -67,9 +67,9 @@ export async function readCheckCorrectionProposal(path: string): Promise<CheckCo
 }
 
 /** Writes only through the handle whose exact bytes were reviewed. The caller
- * holds the work-folder History/ownership lease and has journaled a safety checkpoint. */
+ * holds the Connected Folder History/ownership lease and has journaled a safety checkpoint. */
 export async function writeCheckCorrection(root: string, proposal: CheckCorrectionProposal): Promise<void> {
-  const absolute = resolveWorkFolderPath(root, proposal.path);
+  const absolute = resolveConnectedFolderPath(root, proposal.path);
   const handle = await open(absolute, constants.O_RDWR | (constants.O_NOFOLLOW ?? 0));
   try {
     const before = await handle.stat();
@@ -81,7 +81,7 @@ export async function writeCheckCorrection(root: string, proposal: CheckCorrecti
       if (!bytesRead) break;
       length += bytesRead;
     }
-    const named = await lstat(resolveWorkFolderPath(root, proposal.path));
+    const named = await lstat(resolveConnectedFolderPath(root, proposal.path));
     const current = await handle.stat();
     if (length !== before.size || [named, current].some((info) => !info.isFile() || info.dev !== before.dev || info.ino !== before.ino || info.mtimeMs !== before.mtimeMs || info.ctimeMs !== before.ctimeMs)
       || createHash("sha256").update(buffer.subarray(0, length)).digest("hex") !== proposal.beforeHash) throw new Error("The file changed since this correction was prepared. Ask for a fresh correction.");

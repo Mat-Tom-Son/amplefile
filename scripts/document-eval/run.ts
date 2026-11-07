@@ -2,8 +2,8 @@
 /**
  * Runs the document-checking evaluation (2026-10-18) for one condition.
  *
- * For each seeded task it makes a disposable work-folder, drives one real
- * Worker turn with `npm run work-fold:drive -- --attach`, then scores the
+ * For each seeded task it makes a disposable Connected Folder, drives one real
+ * Worker turn with `npm run amplefile:drive -- --attach`, then scores the
  * deliverable with check.ts and records which checks the Worker ran.
  *
  * Conditions:
@@ -117,8 +117,8 @@ async function sessionBehavior(since: number, folder: string) {
 /** Registration changes are serialized by the host, so folders are registered one at a time before turns run together. */
 async function register(folder: string): Promise<string> {
   for (let attempt = 0; ; attempt++) {
-    const response = await fetch(`${origin}/api/work-folders/local-folder`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workFolderRoot: folder }) });
-    if (response.ok) return ((await response.json()) as { workFolder: { id: string } }).workFolder.id;
+    const response = await fetch(`${origin}/api/connected-folders/local-folder`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ connectedFolderRoot: folder }) });
+    if (response.ok) return ((await response.json()) as { connectedFolder: { id: string } }).connectedFolder.id;
     if (response.status !== 409 || attempt > 120) throw new Error(`Registering ${folder} failed (${response.status}): ${await response.text()}`);
     await new Promise((done) => setTimeout(done, 1000));
   }
@@ -130,14 +130,14 @@ async function prepare(taskId: string, attempt: number) {
   const folder = join(base, "folder");
   await mkdir(folder, { recursive: true });
   for (const [name, content] of Object.entries(task.files)) await writeFile(join(folder, name), content);
-  return { task, attempt, base, folder, workFolderId: await register(folder) };
+  return { task, attempt, base, folder, connectedFolderId: await register(folder) };
 }
 
-async function runTask({ task, attempt, base, folder, workFolderId }: Awaited<ReturnType<typeof prepare>>) {
+async function runTask({ task, attempt, base, folder, connectedFolderId }: Awaited<ReturnType<typeof prepare>>) {
   const promptFile = join(base, "prompt.md");
   await writeFile(promptFile, task.prompt);
   const started = Date.now();
-  const drive = spawn("npm", ["run", "--silent", "work-fold:drive", "--", "--attach", origin!, "--work-folder-id", workFolderId, "--prompt-file", promptFile, "--json", "--quiet", "--timeout", "2400"], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
+  const drive = spawn("npm", ["run", "--silent", "amplefile:drive", "--", "--attach", origin!, "--connected-folder-id", connectedFolderId, "--prompt-file", promptFile, "--json", "--quiet", "--timeout", "2400"], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
   const result = await collect(drive);
   let report: any = {};
   try { report = JSON.parse(result.stdout); } catch { report = { outcome: "unparsed", stdout: result.stdout.slice(-2000), stderr: result.stderr.slice(-2000) }; }

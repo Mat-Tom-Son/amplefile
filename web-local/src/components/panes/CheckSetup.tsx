@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { api, errorText } from "../../lib/api";
 
-/** Manual authoring is secondary to the work-fold agent. Saving creates an inert proposal. */
-export function CheckSetup({ workFolderId, onSaved, onCancel }: { workFolderId: string; onSaved: () => Promise<void>; onCancel: () => void }) {
+/** Manual authoring is secondary to the AmpleFile agent. Saving creates an inert proposal. */
+export function CheckSetup({ connectedFolderId, onSaved, onCancel }: { connectedFolderId: string; onSaved: () => Promise<void>; onCancel: () => void }) {
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState("text-review");
   const [criteria, setCriteria] = useState("");
@@ -19,11 +19,11 @@ export function CheckSetup({ workFolderId, onSaved, onCancel }: { workFolderId: 
         ...lines(paths).map((path) => ({ kind: "file", role: "primary", path })),
         ...(kind === "text-review" ? lines(references).map((path) => ({ kind: "file", role: "reference", path })) : []),
       ];
-      await api(`/api/work-folders/${encodeURIComponent(workFolderId)}/checks/configure`, { method: "POST", body: { proposal: {
-        kind: "work-fold.check-proposal", version: 1, name: title, createdBy: "human", createdAt: new Date().toISOString(),
+      await api(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/checks/configure`, { method: "POST", body: { proposal: {
+        kind: "amplefile.check-proposal", version: 1, name: title, createdBy: "human", createdAt: new Date().toISOString(),
         check: { title, severity: "warning", trigger: "manual", targets,
-          sensor: kind === "text-review" ? { id: "work-fold.text-review", revision: 1, parameters: { criteria } }
-            : { id: "work-fold.file-presence", revision: 1, parameters: { expect: "present" } },
+          sensor: kind === "text-review" ? { id: "amplefile.text-review", revision: 1, parameters: { criteria } }
+            : { id: "amplefile.file-presence", revision: 1, parameters: { expect: "present" } },
         },
       } } });
       await onSaved();
@@ -37,8 +37,8 @@ export function CheckSetup({ workFolderId, onSaved, onCancel }: { workFolderId: 
     {kind === "text-review" ? <label>What should it look for?<textarea required maxLength={65536} rows={4} value={criteria} onChange={(event) => setCriteria(event.target.value)} placeholder="Flag unsupported claims, inconsistent terms, and unclear steps. Use the reference for terminology." /></label> : null}
     <label>Files to Check · one path per line<textarea required rows={3} value={paths} onChange={(event) => setPaths(event.target.value)} placeholder={"Drafts/proposal.md\nNotes/summary.txt"} /></label>
     {kind === "text-review" ? <label>Reference Files · optional<textarea rows={2} value={references} onChange={(event) => setReferences(event.target.value)} placeholder="Reference/style-guide.md" /></label> : null}
-    <p>work-folder-relative paths only.</p>
-    {kind === "text-review" ? <p>Sends the listed files and criteria to the work-fold agent’s model. Provider charges may apply. Up to 16 files, 128 KiB each, 256 KiB total.</p> : null}
+    <p>Connected Folder–relative paths only.</p>
+    {kind === "text-review" ? <p>Sends the listed files and criteria to the AmpleFile agent’s model. Provider charges may apply. Up to 16 files, 128 KiB each, 256 KiB total.</p> : null}
     {error ? <p role="alert" className="settings-inline-error">{error}</p> : null}
     <div className="checks-header-actions"><button className="ui-control ui-control--primary" disabled={busy} type="submit">{busy ? "Saving…" : "Save Proposal"}</button><button className="ui-control" type="button" disabled={busy} onClick={onCancel}>Cancel</button></div>
   </form>;

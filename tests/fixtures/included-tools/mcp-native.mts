@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { DefaultResourceLoader, createAgentSession, SessionManager, SettingsManager, FileCredentialStore, ModelRuntime, createMcpExtension, createCodemodeExtension, createToolSearchExtension } from '@earendil-works/pi-coding-agent';
 import { includedNativeMcpOptions } from '../../../src/local/agent/included-mcp-setup.js';
-const root=await mkdtemp(join(tmpdir(),'work-fold-mcp-native-'));
+const root=await mkdtemp(join(tmpdir(),'amplefile-mcp-native-'));
 const nativeAgentDir=join(root,'pi');
 process.env.PI_CODING_AGENT_DIR=join(root,'ambient-pi');
 await mkdir(nativeAgentDir,{recursive:true});

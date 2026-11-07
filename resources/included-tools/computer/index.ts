@@ -15,7 +15,7 @@ type NativeModules = {
   scheduler: InstanceType<typeof import("@injaneity/pi-computer-use/src/runtime.ts").ResourceScheduler>;
 };
 type HostRuntime = { config: IncludedComputerConfig; socketPath: string; native: Promise<NativeModules>; readinessAt?: number; readinessPending?: Promise<void> };
-const runtimeKey = Symbol.for("work-fold:included-computer-host:v1");
+const runtimeKey = Symbol.for("amplefile:included-computer-host:v1");
 const globals = globalThis as typeof globalThis & { [runtimeKey]?: HostRuntime };
 
 /** One immutable helper identity per host process; no Chat state or credentials live here. */
@@ -24,7 +24,7 @@ function runtime(config: IncludedComputerConfig): HostRuntime {
   const existing = globals[runtimeKey];
   if (existing) {
     if (existing.config.helperAppPath !== normalized.helperAppPath || existing.config.stateRoot !== normalized.stateRoot) {
-      throw new Error("The computer helper is already configured for another work-fold profile in this process.");
+      throw new Error("The computer helper is already configured for another AmpleFile profile in this process.");
     }
     return existing;
   }
@@ -32,7 +32,7 @@ function runtime(config: IncludedComputerConfig): HostRuntime {
   // Unix sockets have a short path limit. The profile digest isolates development,
   // smoke and production without depending on the length of their state roots.
   const profile = createHash("sha256").update(normalized.stateRoot).digest("hex").slice(0, 20);
-  const socketPath = join(homedir(), "Library", "Caches", "work-fold", `computer-${profile}.sock`);
+  const socketPath = join(homedir(), "Library", "Caches", "amplefile", `computer-${profile}.sock`);
   if (Buffer.byteLength(socketPath) >= 104) throw new Error("The computer helper socket path exceeds macOS's supported length.");
   for (const [key, value] of Object.entries({
     PI_COMPUTER_USE_HELPER_APP_PATH: normalized.helperAppPath,
@@ -55,7 +55,7 @@ function runtime(config: IncludedComputerConfig): HostRuntime {
     const helper = await import("@injaneity/pi-computer-use/src/platform/macos/helper.ts");
     const scheduling = await import("@injaneity/pi-computer-use/src/runtime.ts");
     if (helper.HELPER_APP_PATH !== normalized.helperAppPath || helper.HELPER_SOCKET_PATH !== socketPath) {
-      throw new Error("The computer runtime was loaded before its included helper configuration. Restart work-fold to use the configured helper.");
+      throw new Error("The computer runtime was loaded before its included helper configuration. Restart AmpleFile to use the configured helper.");
     }
     return { factory: factory.default, permissions, helper, scheduler: new scheduling.ResourceScheduler() };
   })();
@@ -93,7 +93,7 @@ async function prepareForSetup(config: IncludedComputerConfig, signal?: AbortSig
       // The native shutdown acknowledgement precedes its scheduled exit by 200ms.
       await new Promise(resolve => setTimeout(resolve, 300));
     } catch (error) {
-      if (!/ENOENT|ECONNREFUSED/.test(String((error as Error).message))) throw new Error("Quit work-fold and reopen it before repairing the computer helper.");
+      if (!/ENOENT|ECONNREFUSED/.test(String((error as Error).message))) throw new Error("Quit AmpleFile and reopen it before repairing the computer helper.");
     }
     signal?.throwIfAborted();
   });

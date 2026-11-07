@@ -43,7 +43,7 @@ test("native validation enforces each document operation before engine execution
 });
 
 test("Chrome element, pointer, drag and upload requirements are declared without removing valid defaults", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-tool-contracts-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-tool-contracts-"));
   const agentDir = join(root, "pi"), cwd = join(root, "folder");
   await mkdir(agentDir); await mkdir(cwd);
   const client = new PiConversationClient("contract-audit", cwd, { resolveRuntime: async () => ({ agentDir, credentials: FileCredentialStore.inMemory(), settingsManager: SettingsManager.inMemory(), projectTrust: { override: true }, includedTools: { rootPath: resolve("resources/included-tools"), stateRoot: join(root, "state"), helperAppPath: join(root, "Missing Computer.app") } }) });

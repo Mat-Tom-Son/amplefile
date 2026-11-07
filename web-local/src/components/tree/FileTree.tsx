@@ -2,24 +2,24 @@ import React, { useEffect, useRef } from "react";
 import { ArrowRight, ChevronRight, Loader2, PageIcon } from "../chrome/icons";
 import { fileTreeFileIcon, fileTreeFolderIcon, type FileTreeIconSpec } from "../../file-tree-icons";
 import { FileIconFrame } from "./FileIconFrame";
-import { hasNativeFiles, hasWorkFolderPathDrag } from "../../lib/file-actions";
+import { hasNativeFiles, hasConnectedFolderPathDrag } from "../../lib/file-actions";
 import { desktopFileDragHint, isMacOS } from "../../lib/platform";
 import { isInsideFolder, parentFolderPath, treeEntryNeedsLazyChildren } from "../../lib/tree";
 import { isSelectionToggleKey } from "../../lib/tree-selection";
-import { workFolderIdentityStyle, type WorkFolderIdentity } from "../../lib/work-folder-identity";
-import type { ChatActivityStatus, WorkFolderSummary, TreeEntry } from "../../types";
+import { connectedFolderIdentityStyle, type ConnectedFolderIdentity } from "../../lib/connected-folder-identity";
+import type { ChatActivityStatus, ConnectedFolderSummary, TreeEntry } from "../../types";
 import { ActivityDot } from "../chrome/ActivityDot";
-import { EmptyInline, WorkFolderIconGlyph } from "../chrome/common";
+import { EmptyInline, ConnectedFolderIconGlyph } from "../chrome/common";
 
 /** A page folder (docs/pages.md): it shows a page icon and opens its page tab. */
 export interface PageFolderView {
   title: string;
 }
 
-/** A work-folder registered inside this one, as Files shows it (2026-10-01). */
+/** A Connected Folder registered inside this one, as Files shows it (2026-10-01). */
 export interface NestedFolderView {
-  workFolder: WorkFolderSummary;
-  identity: WorkFolderIdentity;
+  connectedFolder: ConnectedFolderSummary;
+  identity: ConnectedFolderIdentity;
   status?: ChatActivityStatus | null;
 }
 
@@ -61,9 +61,9 @@ export function FileTree({
   /** Page folders keyed by their path; a plain click or Enter opens the page, the arrow opens the folder. */
   pageFolders?: ReadonlyMap<string, PageFolderView>;
   onOpenPage?: (path: string) => void;
-  /** Child work-folders keyed by their path here; each row opens that work-folder instead of expanding. */
+  /** Child Connected Folders keyed by their path here; each row opens that Connected Folder instead of expanding. */
   nestedFolders?: ReadonlyMap<string, NestedFolderView>;
-  onOpenNestedFolder?: (workFolder: WorkFolderSummary) => void;
+  onOpenNestedFolder?: (connectedFolder: ConnectedFolderSummary) => void;
   collapsedPaths: Set<string>;
   loadingFolderPaths: Set<string>;
   selectedPath?: string | null;
@@ -169,7 +169,7 @@ export function FileTree({
     if (entry.nestedFolder && (event.key === "Enter" || event.key === " " || event.key === "ArrowRight")) {
       event.preventDefault();
       const nested = nestedFolders?.get(entry.path);
-      if (nested) onOpenNestedFolder?.(nested.workFolder);
+      if (nested) onOpenNestedFolder?.(nested.connectedFolder);
       return;
     }
     if (entry.nestedFolder && event.key === "ArrowLeft") {
@@ -246,7 +246,7 @@ export function FileTree({
         if (entry.nestedFolder) {
           const nested = nestedFolders?.get(entry.path);
           const statusLabel = nested?.status === "running" ? ", Worker is working" : nested?.status === "attention" ? ", new reply" : "";
-          const label = nested ? `Open ${nested.workFolder.name}${statusLabel}` : `${entry.name}, another work-folder`;
+          const label = nested ? `Open ${nested.connectedFolder.name}${statusLabel}` : `${entry.name}, another Connected Folder`;
           return (
             <div className="file-tree-item" key={entry.path}>
               <button
@@ -258,12 +258,12 @@ export function FileTree({
                 title={label}
                 data-tree-row="true"
                 data-tree-path={entry.path}
-                style={nested ? workFolderIdentityStyle(nested.identity) : undefined}
-                onClick={() => nested && onOpenNestedFolder?.(nested.workFolder)}
+                style={nested ? connectedFolderIdentityStyle(nested.identity) : undefined}
+                onClick={() => nested && onOpenNestedFolder?.(nested.connectedFolder)}
                 onKeyDown={(event) => handleTreeRowKeyDown(event, entry)}
                 onContextMenu={(event) => event.preventDefault()}
                 onDragOver={(event) => {
-                  if (!hasNativeFiles(event) && !hasWorkFolderPathDrag(event)) return;
+                  if (!hasNativeFiles(event) && !hasConnectedFolderPathDrag(event)) return;
                   event.stopPropagation();
                   onUpdateDropTarget(event, parentFolderPath(entry.path));
                 }}
@@ -274,7 +274,7 @@ export function FileTree({
               >
                 <span className="folder-chevron nested-folder-spacer" aria-hidden="true" />
                 <span className="nested-folder-icon" aria-hidden="true">
-                  {nested ? <WorkFolderIconGlyph icon={nested.identity.Icon} size={12} filled /> : null}
+                  {nested ? <ConnectedFolderIconGlyph icon={nested.identity.Icon} size={12} filled /> : null}
                 </span>
                 <HighlightedFileName name={entry.name} query={searchQuery} />
                 {nested?.status ? <ActivityDot status={nested.status} /> : null}
@@ -330,12 +330,12 @@ export function FileTree({
               }}
               onDragEnd={onDragEndEntry}
               onDragEnter={(event) => {
-                if (!hasNativeFiles(event) && !hasWorkFolderPathDrag(event)) return;
+                if (!hasNativeFiles(event) && !hasConnectedFolderPathDrag(event)) return;
                 event.stopPropagation();
                 onUpdateDropTarget(event, parentDropTarget);
               }}
               onDragOver={(event) => {
-                if (!hasNativeFiles(event) && !hasWorkFolderPathDrag(event)) return;
+                if (!hasNativeFiles(event) && !hasConnectedFolderPathDrag(event)) return;
                 event.stopPropagation();
                 onUpdateDropTarget(event, parentDropTarget);
               }}

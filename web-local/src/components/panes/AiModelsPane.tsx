@@ -8,15 +8,15 @@ import { Eye20Regular, EyeOff20Regular } from "@fluentui/react-icons";
 import { api, errorText } from "../../lib/api";
 import { subscribeControlEvents } from "../../lib/control-events";
 import { resolveModelSelection } from "../../lib/model-selection";
-import type { AgentModel, AgentModelCatalog, AgentProvider, AgentStatus, WorkFolderSummary } from "../../types";
+import type { AgentModel, AgentModelCatalog, AgentProvider, AgentStatus, ConnectedFolderSummary } from "../../types";
 import { AZURE_OPENAI_PROVIDER, foundryProvider, normalizeFoundryConnection, parseAzureDeploymentNames, type FoundryConnection } from "../../../../src/shared/foundry";
 
 const emptyAzureConnection: FoundryConnection = { baseUrl: "", deployments: [] };
 
-export type ModelScope = "work-folder" | "agent";
+export type ModelScope = "connected-folder" | "agent";
 
 type AiModelsProps = {
-  workFolder: WorkFolderSummary | null;
+  connectedFolder: ConnectedFolderSummary | null;
   status: AgentStatus;
   fixtureMode?: boolean;
   embedded?: boolean;
@@ -56,20 +56,20 @@ export function AiModelsPane(props: AiModelsProps & {
   /** Unsaved edits per scope; a host that outlives this pane passes one so closing it keeps them. */
   drafts?: Map<string, AiModelsDraft>;
 }) {
-  const { workFolder, embedded = false, initialScope, active = true, focusModelOnOpen = false, focusInstructionsOnOpen = false } = props;
-  const identity = JSON.stringify([workFolder?.id ?? null, initialScope ?? null]);
-  const defaultScope = initialScope === "agent" || !workFolder ? "agent" : "work-folder";
+  const { connectedFolder, embedded = false, initialScope, active = true, focusModelOnOpen = false, focusInstructionsOnOpen = false } = props;
+  const identity = JSON.stringify([connectedFolder?.id ?? null, initialScope ?? null]);
+  const defaultScope = initialScope === "agent" || !connectedFolder ? "agent" : "connected-folder";
   const [selection, setSelection] = useState<{ identity: string; scope: ModelScope }>({ identity, scope: defaultScope });
-  // Resolve before effects so removing the last work-folder cannot issue an invalid
-  // scope=work-folder request while waiting for state to catch up.
+  // Resolve before effects so removing the last Connected Folder cannot issue an invalid
+  // scope=connected-folder request while waiting for state to catch up.
   const scope = selection.identity === identity ? selection.scope : defaultScope;
   useEffect(() => { setSelection({ identity, scope: defaultScope }); }, [identity]);
-  const currentWorkFolderTarget = useRef<string | null>(null);
-  currentWorkFolderTarget.current = workFolder ? `work-folder:${workFolder.id}` : null;
+  const currentConnectedFolderTarget = useRef<string | null>(null);
+  currentConnectedFolderTarget.current = connectedFolder ? `connected-folder:${connectedFolder.id}` : null;
   const ownDrafts = useRef(new Map<string, AiModelsDraft>());
   const drafts = props.drafts ?? ownDrafts.current;
   for (const key of drafts.keys()) {
-    if (key !== "agent" && key !== currentWorkFolderTarget.current) drafts.delete(key);
+    if (key !== "agent" && key !== currentConnectedFolderTarget.current) drafts.delete(key);
   }
   const mutationBusy = useSyncExternalStore(subscribeMutation, () => aiModelsMutation !== null, () => false);
   const initialIdentity = useRef(identity);
@@ -100,46 +100,46 @@ export function AiModelsPane(props: AiModelsProps & {
     setSelection({ identity, scope: next });
   }
   function editDraftFor(draftTarget: string, edit: (draft: AiModelsDraft) => AiModelsDraft) {
-    if (draftTarget !== "agent" && draftTarget !== currentWorkFolderTarget.current) return;
+    if (draftTarget !== "agent" && draftTarget !== currentConnectedFolderTarget.current) return;
     drafts.set(draftTarget, edit(drafts.get(draftTarget) ?? {}));
   }
-  const target = scope === "work-folder" ? `work-folder:${workFolder!.id}` : "agent";
+  const target = scope === "connected-folder" ? `connected-folder:${connectedFolder!.id}` : "agent";
   // What each scope last showed. Switching scopes mounts from here at once and
   // refreshes quietly, instead of clearing the form behind a spinner; the
   // other scope is read ahead as soon as the visible one has loaded.
   const loaded = useRef(new Map<string, AiModelsSettingsResponse>());
   const [prefetchTick, setPrefetchTick] = useState(0);
   useEffect(() => {
-    if (!workFolder || props.fixtureMode || prefetchTick === 0) return;
-    const other: ModelScope = scope === "work-folder" ? "agent" : "work-folder";
-    const otherTarget = other === "work-folder" ? `work-folder:${workFolder.id}` : "agent";
+    if (!connectedFolder || props.fixtureMode || prefetchTick === 0) return;
+    const other: ModelScope = scope === "connected-folder" ? "agent" : "connected-folder";
+    const otherTarget = other === "connected-folder" ? `connected-folder:${connectedFolder.id}` : "agent";
     if (loaded.current.has(otherTarget)) return;
     const controller = new AbortController();
     void (async () => {
       await (aiModelsMutation?.done ?? Promise.resolve());
       if (controller.signal.aborted) return;
-      const result = await api<AiModelsSettingsResponse>(`/api/agent/models?${modelScopeParams(other, workFolder)}`, { signal: controller.signal });
+      const result = await api<AiModelsSettingsResponse>(`/api/agent/models?${modelScopeParams(other, connectedFolder)}`, { signal: controller.signal });
       if (!controller.signal.aborted && !loaded.current.has(otherTarget)) loaded.current.set(otherTarget, result);
     })().catch(() => { /* the switch loads normally */ });
     return () => controller.abort();
-  }, [prefetchTick, scope, workFolder?.id, props.fixtureMode]);
+  }, [prefetchTick, scope, connectedFolder?.id, props.fixtureMode]);
 
   return (
-    <div className={embedded ? "assistant-settings-panel professional-setup" : "work-folder-pane-content ai-models-pane professional-surface professional-setup"}>
-      {workFolder ? <fieldset className="ai-models-scope-control">
+    <div className={embedded ? "assistant-settings-panel professional-setup" : "connected-folder-pane-content ai-models-pane professional-surface professional-setup"}>
+      {connectedFolder ? <fieldset className="ai-models-scope-control">
         <legend>Model Defaults</legend>
-        <label className={scope === "work-folder" ? "active" : ""}>
-          <input type="radio" name="ai-model-scope" value="work-folder" checked={scope === "work-folder"} onChange={() => changeScope("work-folder")} />
-          <span>This Worker<small>{workFolder.name}</small></span>
+        <label className={scope === "connected-folder" ? "active" : ""}>
+          <input type="radio" name="ai-model-scope" value="connected-folder" checked={scope === "connected-folder"} onChange={() => changeScope("connected-folder")} />
+          <span>This Worker<small>{connectedFolder.name}</small></span>
         </label>
         <label className={scope === "agent" ? "active" : ""}>
           <input type="radio" name="ai-model-scope" value="agent" checked={scope === "agent"} onChange={() => changeScope("agent")} />
-          <span>work-fold agent</span>
+          <span>AmpleFile agent</span>
         </label>
-      </fieldset> : <div className="ai-models-singleton-scope">work-fold agent</div>}
+      </fieldset> : <div className="ai-models-singleton-scope">AmpleFile agent</div>}
       <AiModelsScopeSettings
         {...props}
-        key={JSON.stringify([scope, scope === "work-folder" ? workFolder?.id : null])}
+        key={JSON.stringify([scope, scope === "connected-folder" ? connectedFolder?.id : null])}
         scope={scope}
         mutationBusy={mutationBusy}
         beginMutation={beginAiModelsMutation}
@@ -156,7 +156,7 @@ export function AiModelsPane(props: AiModelsProps & {
   );
 }
 
-function AiModelsScopeSettings({ workFolder, status, scope, fixtureMode = false, active = true, onConfigured, onModelChanged, mutationBusy, beginMutation, waitForMutation, isMutating, readDraft, editDraft, focusModelWhenReady, focusInstructionsOnOpen, initialResult, onSnapshot, onLoaded }: AiModelsProps & {
+function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = false, active = true, onConfigured, onModelChanged, mutationBusy, beginMutation, waitForMutation, isMutating, readDraft, editDraft, focusModelWhenReady, focusInstructionsOnOpen, initialResult, onSnapshot, onLoaded }: AiModelsProps & {
   scope: ModelScope;
   mutationBusy: boolean;
   beginMutation: () => (() => void) | null;
@@ -259,8 +259,8 @@ function AiModelsScopeSettings({ workFolder, status, scope, fixtureMode = false,
         ],
         catalogs: [{ provider: "openrouter", refreshable: true, source: "live" as const, refreshedAt: new Date().toISOString(), modelCount: 11 }],
         status: { ...status, configured: true, provider: "openrouter", model: "deepseek/deepseek-v4.1-flash" },
-        instructions: scope === "work-folder" ? "Keep answers concise and test changes in this work-folder." : null,
-      } : await api<AiModelsSettingsResponse>(`/api/agent/models?${modelScopeParams(scope, workFolder)}`, { signal: controller.signal });
+        instructions: scope === "connected-folder" ? "Keep answers concise and test changes in this Connected Folder." : null,
+      } : await api<AiModelsSettingsResponse>(`/api/agent/models?${modelScopeParams(scope, connectedFolder)}`, { signal: controller.signal });
       // Cached forms stay editable during this read. A save or a newer
       // accepted refresh owns the displayed settings once it has completed.
       if (controller.signal.aborted || revision !== localRevision.current || isMutating()) return;
@@ -367,7 +367,7 @@ function AiModelsScopeSettings({ workFolder, status, scope, fixtureMode = false,
       const read = new AbortController();
       controller = read;
       const revision = localRevision.current;
-      void api<AiModelsSettingsResponse>(`/api/agent/models?${modelScopeParams(scope, workFolder)}`, { signal: read.signal })
+      void api<AiModelsSettingsResponse>(`/api/agent/models?${modelScopeParams(scope, connectedFolder)}`, { signal: read.signal })
         .then((result) => {
           if (disposed || read.signal.aborted || revision !== localRevision.current || isMutating()) return;
           if (settingsSnapshot(result) === currentForm.current.snapshot) return;
@@ -395,7 +395,7 @@ function AiModelsScopeSettings({ workFolder, status, scope, fixtureMode = false,
   }
   function reportConfigured(next: AgentStatus) {
     setScopeStatus(next);
-    if (scope === "work-folder") onConfigured(next);
+    if (scope === "connected-folder") onConfigured(next);
     onModelChanged?.(scope, next);
   }
 
@@ -439,7 +439,7 @@ function AiModelsScopeSettings({ workFolder, status, scope, fixtureMode = false,
       const result = fixtureMode ? { status: kind === "model" ? { ...scopeStatus, configured: true, provider: modelProvider, model } : scopeStatus, foundry: submittedAzure ? { ...savedFoundry, [provider]: submittedAzure } : undefined, models: undefined }
         : await api<FoundrySettings & { status: AgentStatus; azure?: FoundryConnection; models?: AgentModel[]; providers?: AgentProvider[] }>(kind === "setup" ? "/api/agent/login" : kind === "oauth" ? "/api/agent/oauth" : "/api/agent/configure", {
           method: "POST",
-          body: { ...modelScopeBody(scope, workFolder), provider: kind === "model" ? modelProvider : provider, ...(kind === "model" ? { model } : {}), ...(kind === "setup" ? { method: "api_key" } : {}), ...(submittedApiKey ? { apiKey: submittedApiKey } : {}), ...(submittedAzure ? { [provider === AZURE_OPENAI_PROVIDER ? "azure" : "foundry"]: submittedAzure } : {}) },
+          body: { ...modelScopeBody(scope, connectedFolder), provider: kind === "model" ? modelProvider : provider, ...(kind === "model" ? { model } : {}), ...(kind === "setup" ? { method: "api_key" } : {}), ...(submittedApiKey ? { apiKey: submittedApiKey } : {}), ...(submittedAzure ? { [provider === AZURE_OPENAI_PROVIDER ? "azure" : "foundry"]: submittedAzure } : {}) },
         });
       editDraft((draft) => ({ ...draft, model: kind === "model" && draft.model?.provider === modelProvider && draft.model?.model === model ? undefined : draft.model,
         ...(submittedAzure ? { azure: undefined, foundry: Object.fromEntries(Object.entries(draft.foundry ?? {}).filter(([id]) => id !== provider)) } : {}) }));
@@ -479,7 +479,7 @@ function AiModelsScopeSettings({ workFolder, status, scope, fixtureMode = false,
         status: { ...scopeStatus, configured: false },
         foundry: isAzure ? { ...savedFoundry, [provider]: emptyAzureConnection } : undefined,
       } : await api<FoundrySettings & { models: AgentModel[]; status: AgentStatus; azure?: FoundryConnection; providers?: AgentProvider[] }>("/api/agent/auth", {
-        method: "DELETE", body: { ...modelScopeBody(scope, workFolder), provider },
+        method: "DELETE", body: { ...modelScopeBody(scope, connectedFolder), provider },
       });
       if (!live.current) return;
       setModels(result.models);
@@ -514,7 +514,7 @@ function AiModelsScopeSettings({ workFolder, status, scope, fixtureMode = false,
     try {
       const result = fixtureMode ? { models, catalogs, refresh: { modelCount: models.length } }
         : await api<{ models: AgentModel[]; catalogs: AgentModelCatalog[]; refresh: { modelCount: number } }>("/api/agent/models/refresh", {
-          method: "POST", body: { ...modelScopeBody(scope, workFolder), provider }, signal: controller.signal,
+          method: "POST", body: { ...modelScopeBody(scope, connectedFolder), provider }, signal: controller.signal,
         });
       if (!live.current || controller.signal.aborted || revision !== providerRevision.current) return;
       setModels(result.models);
@@ -532,7 +532,7 @@ function AiModelsScopeSettings({ workFolder, status, scope, fixtureMode = false,
 
   async function saveInstructions(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (scope !== "work-folder" || !workFolder || !instructionsChanged || loading) return;
+    if (scope !== "connected-folder" || !connectedFolder || !instructionsChanged || loading) return;
     const release = beginMutation();
     if (!release) return;
     localRevision.current += 1;
@@ -542,7 +542,7 @@ function AiModelsScopeSettings({ workFolder, status, scope, fixtureMode = false,
     try {
       const result = fixtureMode ? { instructions: submitted.trim() }
         : await api<{ instructions: string }>("/api/agent/instructions", {
-          method: "POST", body: { scope: "work-folder", workFolderId: workFolder.id, instructions: submitted },
+          method: "POST", body: { scope: "connected-folder", connectedFolderId: connectedFolder.id, instructions: submitted },
         });
       editDraft((draft) => ({ ...draft, instructions: draft.instructions?.trim() === result.instructions ? undefined : draft.instructions }));
       if (!live.current) return;
@@ -601,7 +601,7 @@ function AiModelsScopeSettings({ workFolder, status, scope, fixtureMode = false,
           </div>
         </div>
         {authConfigured && providerAuth?.authType === "oauth" && (provider === "openai" || provider === "openai-codex") ? <ProviderAccountDetails
-          key={provider} provider={provider} scope={scope} workFolderId={workFolder?.id} revision={providerCatalog} active={active} fixtureMode={fixtureMode}
+          key={provider} provider={provider} scope={scope} connectedFolderId={connectedFolder?.id} revision={providerCatalog} active={active} fixtureMode={fixtureMode}
           busy={operationBusy} onReconnect={oauthSupported ? () => void configure("oauth") : undefined}
           onSelectCodex={providerCatalog.some(item => item.id === "openai-codex" && item.oauth) ? () => changeProvider("openai-codex") : undefined}
         /> : null}
@@ -638,12 +638,12 @@ function AiModelsScopeSettings({ workFolder, status, scope, fixtureMode = false,
           {selectedProvider?.guidedSetup ? <button className="ui-control" type="button" disabled={operationBusy} onClick={() => void configure("setup")}>Guided Setup</button> : null}
         </div> : null}
         {accountOnly && !oauthSupported ? <p className="professional-field-hint">Account sign-in is available in the desktop app.</p> : null}
-        {!apiKeySupported && !selectedProvider?.oauth ? <p className="professional-field-hint">Uses credentials configured outside work-fold.</p> : null}
+        {!apiKeySupported && !selectedProvider?.oauth ? <p className="professional-field-hint">Uses credentials configured outside AmpleFile.</p> : null}
         {connectionFeedback ? <AiModelsOperationStatus feedback={connectionFeedback} /> : null}
         <p className="ai-models-connection-shared">Connections are shared by all Workers.</p>
       </div>
     </section>
-    {scope === "work-folder" ? <section className="ai-models-settings-section" aria-labelledby="worker-instructions-heading">
+    {scope === "connected-folder" ? <section className="ai-models-settings-section" aria-labelledby="worker-instructions-heading">
       <div className="ai-models-section-heading"><h3 id="worker-instructions-heading">Worker Instructions</h3></div>
       <form onSubmit={(event) => void saveInstructions(event)}>
         <label className="professional-field worker-instructions-field"><span className="sr-only">Worker Instructions</span><textarea ref={instructionsField} value={instructions} rows={5} onChange={(event) => { setInstructions(event.target.value); editDraft((draft) => ({ ...draft, instructions: event.target.value.trim() === savedInstructions ? undefined : event.target.value })); setInstructionsFeedback(null); }}  /></label>
@@ -697,15 +697,15 @@ function providerCredentialStatus(model: Pick<AgentModel, "authConfigured" | "au
   if (model.authSource === "stored") return model.authType === "oauth" ? "Provider account connected on this computer" : "API key saved on this computer";
   if (model.authSource === "environment") return `API key supplied by ${model.authLabel || "the app environment"}`;
   if (model.authSource === "models_json_key" || model.authSource === "models_json_command") return "Credential configured in Pi models settings";
-  return "Credential supplied outside work-fold";
+  return "Credential supplied outside AmpleFile";
 }
-function modelScopeParams(scope: ModelScope, workFolder: WorkFolderSummary | null) {
+function modelScopeParams(scope: ModelScope, connectedFolder: ConnectedFolderSummary | null) {
   const params = new URLSearchParams({ scope });
-  if (scope === "work-folder" && workFolder) params.set("workFolderId", workFolder.id);
+  if (scope === "connected-folder" && connectedFolder) params.set("connectedFolderId", connectedFolder.id);
   return params.toString();
 }
-function modelScopeBody(scope: ModelScope, workFolder: WorkFolderSummary | null) {
-  return scope === "agent" ? { scope } : { scope, workFolderId: workFolder?.id };
+function modelScopeBody(scope: ModelScope, connectedFolder: ConnectedFolderSummary | null) {
+  return scope === "agent" ? { scope } : { scope, connectedFolderId: connectedFolder?.id };
 }
 function formatCatalogDate(value: string) {
   return new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });

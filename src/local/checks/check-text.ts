@@ -1,26 +1,26 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open } from "node:fs/promises";
-import type { WorkFoldCheckTargetRole } from "../../shared/checks.js";
-import { resolveWorkFolderPath } from "../work-folder.js";
-import type { WorkFoldCheckTargetResolution } from "./target-resolver.js";
+import type { AmpleFileCheckTargetRole } from "../../shared/checks.js";
+import { resolveConnectedFolderPath } from "../connected-folder.js";
+import type { AmpleFileCheckTargetResolution } from "./target-resolver.js";
 
 /** Read budgets only; whether the inputs fit is decided against the selected model's real context window. */
 export const modelCheckLimits = Object.freeze({ maximumFiles: 1_000, maximumFileBytes: 16 * 1024 * 1024, maximumTotalBytes: 64 * 1024 * 1024, maximumFindings: 1_000, timeoutMs: 30 * 60_000 });
 const mebibytes = (bytes: number) => `${bytes / (1024 * 1024)} MiB`;
-export interface WorkFoldCheckTextSnapshot {
+export interface AmpleFileCheckTextSnapshot {
   path: string;
   text: string;
   sha256: string;
   sizeBytes: number;
-  roles: WorkFoldCheckTargetRole[];
+  roles: AmpleFileCheckTargetRole[];
 }
 
 /** Read from one no-follow handle, then rebind it to the named file. Never
  * return partially decoded, truncated, linked, or concurrently changed input. */
-export async function readCheckTextSnapshot(root: string, path: string, roles: WorkFoldCheckTargetRole[], signal?: AbortSignal): Promise<WorkFoldCheckTextSnapshot> {
+export async function readCheckTextSnapshot(root: string, path: string, roles: AmpleFileCheckTargetRole[], signal?: AbortSignal): Promise<AmpleFileCheckTextSnapshot> {
   signal?.throwIfAborted();
-  const absolutePath = resolveWorkFolderPath(root, path);
+  const absolutePath = resolveConnectedFolderPath(root, path);
   const handle = await open(absolutePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
     const before = await handle.stat();
@@ -34,7 +34,7 @@ export async function readCheckTextSnapshot(root: string, path: string, roles: W
       length += bytesRead;
     }
     const after = await handle.stat();
-    const named = await lstat(resolveWorkFolderPath(root, path));
+    const named = await lstat(resolveConnectedFolderPath(root, path));
     if (length > modelCheckLimits.maximumFileBytes || length !== before.size || !named.isFile()
       || [after, named].some((info) => info.dev !== before.dev || info.ino !== before.ino || info.size !== before.size || info.mtimeMs !== before.mtimeMs || info.ctimeMs !== before.ctimeMs)) {
       throw new Error(`Check input changed while being read: ${path}`);
@@ -49,10 +49,10 @@ export async function readCheckTextSnapshot(root: string, path: string, roles: W
   } finally { await handle.close(); }
 }
 
-export async function loadCheckTextSnapshots(root: string, resolution: WorkFoldCheckTargetResolution, signal?: AbortSignal): Promise<WorkFoldCheckTextSnapshot[]> {
+export async function loadCheckTextSnapshots(root: string, resolution: AmpleFileCheckTargetResolution, signal?: AbortSignal): Promise<AmpleFileCheckTextSnapshot[]> {
   if (resolution.missingExactTargets.length) throw new Error("A model review cannot run while a designated file is missing.");
   if (!resolution.files.length || resolution.files.length > modelCheckLimits.maximumFiles) throw new Error(`A model review requires 1–${modelCheckLimits.maximumFiles.toLocaleString("en-US")} designated text files.`);
-  const snapshots: WorkFoldCheckTextSnapshot[] = [];
+  const snapshots: AmpleFileCheckTextSnapshot[] = [];
   let total = 0;
   for (const file of resolution.files) {
     const snapshot = await readCheckTextSnapshot(root, file.path, file.roles, signal);

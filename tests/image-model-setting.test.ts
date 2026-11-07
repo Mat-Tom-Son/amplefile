@@ -21,7 +21,7 @@ test("the saved image model is used while connected, and Automatic otherwise", a
 });
 
 test("Settings saves one image model for every Worker, refuses one that isn't connected, and returns to Automatic", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-image-model-setting-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-image-model-setting-"));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
   const credentials = FileCredentialStore.inMemory();
   const modelRuntime = await ModelRuntime.create({ credentials, modelsPath: null });
@@ -29,7 +29,7 @@ test("Settings saves one image model for every Worker, refuses one that isn't co
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: { async resolveRuntime() { return { agentDir: join(sandbox, "agent"), credentials, modelRuntime }; } },
   });

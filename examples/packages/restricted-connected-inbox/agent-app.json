@@ -2,7 +2,7 @@
   "version": 2,
   "id": "restricted-connected-inbox",
   "title": "Connected inbox",
-  "description": "An interactive work-folder-bound inbox and local service console.",
+  "description": "An interactive Connected Folder–bound inbox and local service console.",
   "runtime": {
     "kind": "sandboxed-web",
     "entry": "index.html",
@@ -79,7 +79,7 @@
       {
         "id": "inbox-refresh-finished",
         "title": "Inbox refresh finished",
-        "description": "The inbox refresh automation finished. Open work-fold to review the connection result."
+        "description": "The inbox refresh automation finished. Open AmpleFile to review the connection result."
       }
     ]
   }

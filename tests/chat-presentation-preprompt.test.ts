@@ -9,10 +9,10 @@ import { FileCredentialStore, ModelRuntime, SettingsManager } from "@earendil-wo
 
 import { markConversationTitleAttempted, readConversation } from "../src/local/agent/chat-store.js";
 import { startLocalApi } from "../src/local/server.js";
-import { configureWorkFoldStateRoot } from "../src/local/state-paths.js";
+import { configureAmpleFileStateRoot } from "../src/local/state-paths.js";
 
 test("a reused Chat stopped before prompting cannot inherit the prior turn's final segment or edit evidence", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-preprompt-presentation-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-preprompt-presentation-"));
   // Matching lengths deliberately defeat range-only validation. The previous
   // answer is unrelated content, despite occupying the same UTF-16 interval.
   const stoppedText = "The agent was stopped before it completed a response.";
@@ -49,7 +49,7 @@ test("a reused Chat stopped before prompting cannot inherit the prior turn's fin
   const settingsManager = SettingsManager.inMemory({ defaultProvider: "fixture", defaultModel: "fixture", defaultThinkingLevel: "off" });
   let prompted = 0;
   const api = await startLocalApi({
-    port: 0, stateBase: join(root, "state"), workFolderBase: join(root, "content"), loadEnv: false,
+    port: 0, stateBase: join(root, "state"), connectedFolderBase: join(root, "content"), loadEnv: false,
     piRuntimeProvider: { async resolveRuntime() { return { agentDir, credentials: authStorage, modelRuntime, settingsManager }; } },
     beforeAgentPrompt() {
       if (++prompted === 2) throw Object.assign(new Error("Stopped before prompt"), { name: "PiTurnCancelledError" });
@@ -59,18 +59,18 @@ test("a reused Chat stopped before prompting cannot inherit the prior turn's fin
     await api.close();
     provider.closeAllConnections();
     await new Promise<void>((resolve) => provider.close(() => resolve()));
-    configureWorkFoldStateRoot(undefined);
+    configureAmpleFileStateRoot(undefined);
     await rm(root, { recursive: true, force: true });
   });
-  const { workFolder } = await api.actFacade.createWorkFolder({ name: "Presentation fixture" });
-  const { conversation } = await api.actFacade.createConversation({ workFolder: workFolder.id });
-  await markConversationTitleAttempted(workFolder.workFolderRoot, conversation.id);
-  await writeFile(join(workFolder.workFolderRoot, "note.txt"), "before\n");
+  const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Presentation fixture" });
+  const { conversation } = await api.actFacade.createConversation({ connectedFolder: connectedFolder.id });
+  await markConversationTitleAttempted(connectedFolder.connectedFolderRoot, conversation.id);
+  await writeFile(join(connectedFolder.connectedFolderRoot, "note.txt"), "before\n");
   for (const expected of ["succeeded", "aborted"]) {
-    const sent = await api.actFacade.sendMessage({ workFolder: workFolder.id, conversationId: conversation.id, content: "Update the file." });
+    const sent = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId: conversation.id, content: "Update the file." });
     let settled = false;
     for (let attempt = 0; attempt < 1_000; attempt += 1) {
-      const { task } = await api.actFacade.turnStatus({ workFolder: workFolder.id, taskId: sent.taskId });
+      const { task } = await api.actFacade.turnStatus({ connectedFolder: connectedFolder.id, taskId: sent.taskId });
       if (task.state !== "running" && task.state !== "accepted") {
         assert.equal(task.state, expected);
         settled = true;
@@ -80,7 +80,7 @@ test("a reused Chat stopped before prompting cannot inherit the prior turn's fin
     }
     assert.equal(settled, true, "the admitted turn must settle");
   }
-  const replies = (await readConversation(workFolder.workFolderRoot, conversation.id)).filter((message) => message.role === "assistant");
+  const replies = (await readConversation(connectedFolder.connectedFolderRoot, conversation.id)).filter((message) => message.role === "assistant");
   assert.equal(replies.length, 2);
   assert.equal(replies[0]!.content, previousText);
   assert.deepEqual(replies[0]!.assistantPresentation?.segments.map((segment) => segment.kind), ["final"]);

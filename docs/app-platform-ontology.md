@@ -13,11 +13,11 @@
 
 ## Gate 1 conclusion
 
-The ontology can preserve **work-folder** as the general local-first object while
+The ontology can preserve **Connected Folder** as the general local-first object while
 adding a precise App lifecycle only when a person chooses to build or publish
 one. The leading model is:
 
-> A work-folder may declare one App Project whose identity is the friendly App
+> A Connected Folder may declare one App Project whose identity is the friendly App
 > lineage. The project defines Features and reviewed Feature Revisions. An
 > internal Runtime Instance is either a release-less, source-bound Development
 > Instance or a release-backed local/hosted App Instance. Each Runtime Instance
@@ -28,7 +28,7 @@ one. The leading model is:
 
 This gives the friendly word **App** a coherent surface meaning without making
 one identifier stand for source, immutable code, a running copy, a data owner,
-and an actor. It also leaves ordinary, non-App work-folders completely valid.
+and an actor. It also leaves ordinary, non-App Connected Folders completely valid.
 
 Gate 1 originally resolved the ontology before implementation. The normative
 foundation now authorizes only its explicitly scoped local records and semantic
@@ -38,7 +38,7 @@ evidence; it still does not authorize a broad rename or imply a server product.
 
 ```mermaid
 flowchart TB
-    WorkFolder["work-folder (ordinary folder context)"]
+    ConnectedFolder["connected-folder (ordinary folder context)"]
     Project["App Project and App lineage (projectId)"]
     Registry["Registry binding (cloudProjectId)"]
     Feature["Feature (stable logical contribution)"]
@@ -53,7 +53,7 @@ flowchart TB
     Principal["Principal (attributed actor)"]
     Org["Organization (optional membership boundary)"]
 
-    WorkFolder -->|"may declare zero or one"| Project
+    ConnectedFolder -->|"may declare zero or one"| Project
     Project -->|"may bind through authenticated record"| Registry
     Project -->|"defines"| Feature
     Feature -->|"has immutable"| Revision
@@ -74,24 +74,24 @@ flowchart TB
 
 The map separates the source path, immutable distribution path, runtime path,
 project-ownership realm, and Tenant runtime boundary. The current restricted
-work-folder app fits as a Feature Revision installed in a Development Instance;
+Connected Folder app fits as a Feature Revision installed in a Development Instance;
 it is not forced to define the whole App.
 
 ## Definitions
 
-### work-folder
+### Connected Folder
 
-A **work-folder** is the existing human-friendly context backed by one ordinary
+A **Connected Folder** is the existing human-friendly context backed by one ordinary
 folder. Registration adds narrow portable identity and Chat records without
-moving, converting, or making the folder cloud-owned. A work-folder may remain
+moving, converting, or making the folder cloud-owned. A Connected Folder may remain
 useful forever without an account, App Project, release, or instance.
 
-- **Identity:** its portable work-folder id identifies the folder-backed context.
+- **Identity:** its portable Connected Folder id identifies the folder-backed context.
   It is not a credential, cloud project id, or ownership proof.
 - **Control:** the person controls the ordinary folder through the filesystem;
-  the local work-fold profile controls whether it is registered and authorized
+  the local AmpleFile profile controls whether it is registered and authorized
   to load its project Pi configuration.
-- **Authority:** registration authorizes local Pi configuration for work-fold.
+- **Authority:** registration authorizes local Pi configuration for AmpleFile.
   It does not publish, share, install a Feature, grant a connection, or attach
   all files to a Chat.
 - **Copy behavior:** moving the folder may preserve identity. Copying it creates
@@ -101,19 +101,19 @@ useful forever without an account, App Project, release, or instance.
 
 ### App Project
 
-An **App Project** is an explicit, additive role declared by a work-folder: this
-work-folder is intended to define and publish one App lineage. It is not a new
+An **App Project** is an explicit, additive role declared by a Connected Folder: this
+Connected Folder is intended to define and publish one App lineage. It is not a new
 container, an irreversible conversion, or permission to upload the folder. Gate 1
-limits the first contract to zero or one App Project per work-folder; a future
-need for several independent Apps should use separate work-folders unless
+limits the first contract to zero or one App Project per Connected Folder; a future
+need for several independent Apps should use separate Connected Folders unless
 evidence justifies more complexity.
 
 - **Identity:** `projectId` is the stable identity of both the App Project and the
-  friendly App lineage across its Releases. It is distinct from the work-folder
+  friendly App lineage across its Releases. It is distinct from the Connected Folder
   id. There is no second release-lineage identity. A remote registry creates its
   own `cloudProjectId` and an authenticated binding to `projectId`; that registry
   id never replaces the project identity.
-- **Control:** local source remains controlled through the work-folder's folder.
+- **Control:** local source remains controlled through the Connected Folder's folder.
   Remote collaboration and publication use a separate project-role realm owned
   by a Principal or optional Organization. A Tenant never owns an App Project.
 - **Authority:** project edit, review, and publish are different verbs. Project
@@ -122,7 +122,7 @@ evidence justifies more complexity.
 - **Copy behavior:** copying source may create a new local project lineage, but
   cannot copy cloud ownership or publication authority.
 - **Visibility:** contextual in builder and publishing flows. A person using a
-  normal work-folder should not need to learn it.
+  normal Connected Folder should not need to learn it.
 
 The user-facing **App** identity is `projectId` carried through the project's
 Releases. A running copy is still a distinct App Instance. Contracts and
@@ -214,12 +214,12 @@ is not user-facing language.
 ### Development Instance
 
 A **Development Instance** is a local runtime instance explicitly bound to one
-source App Project and its owning work-folder. Unlike an App Instance, it runs
+source App Project and its owning Connected Folder. Unlike an App Instance, it runs
 reviewed project revisions without first requiring a published App Release. It
 is the only sanctioned overlap between editable project source and runtime state.
 
 - **Identity:** its `runtimeInstanceId` has kind `development` and is distinct
-  from the work-folder and project ids. It belongs to the degenerate local
+  from the Connected Folder and project ids. It belongs to the degenerate local
   Tenant.
 - **Code:** only inspected, reviewed, digest-pinned Feature Revisions execute.
   Source edits do not alter running bytes; they require another review/update.
@@ -231,7 +231,7 @@ is the only sanctioned overlap between editable project source and runtime state
 - **Visibility:** builder-facing. The UI may say **Local preview** or **Run
   locally**, while technical review and diagnostics name the Development
   Instance precisely.
-- **Placement:** the source work-folder may also contain an installed App
+- **Placement:** the source Connected Folder may also contain an installed App
   Instance from the same Project. Its released Features and their Local
   previews retain separate installation, data, authority, job and tab
   identities. The rail marks the preview where needed; publication and reviewed
@@ -308,7 +308,7 @@ permission; current role and policy evaluation authorize each action.
 - **Attribution:** sensitive actions and effects record the effective Principal,
   role or grant used, Tenant, object, and authority generation.
 - **Visibility:** translated to **you**, a person's name, a **Worker**, the
-  **work-fold agent**, a service, or a system label. The generic noun is
+  **AmpleFile agent**, a service, or a system label. The generic noun is
   primarily internal and appears in audit/security details.
 
 Feature code is not a Principal. Its executable identity and granted-power
@@ -323,7 +323,7 @@ boundary for one or more Runtime Instances. It answers whose runtime rules and
 data boundary apply; it is not necessarily a company, billing account, or human.
 
 - **Identity:** a Tenant id is separate from Principal, Organization, project,
-  work-folder, and instance ids.
+  Connected Folder, and instance ids.
 - **Ownership:** a Tenant owns Runtime Instance policy and shared runtime state.
   Principals act through Tenant-scoped roles.
 - **Authority:** Tenant administration does not bypass Feature review,
@@ -336,7 +336,7 @@ data boundary apply; it is not necessarily a company, billing account, or human.
 
 An **Organization** is an optional cloud collaboration object that groups
 members, roles, policy, and project ownership. It is not required for a local
-work-folder, App Project, private individual deployment, or first account.
+Connected Folder, App Project, private individual deployment, or first account.
 
 - **Identity:** it has an identity distinct from its members and any Tenant.
 - **Authority:** it cannot sign in or perform an action by itself. Authorized
@@ -357,21 +357,21 @@ cloud account exists.
 
 ### Degenerate local Tenant
 
-One machine-local work-fold application profile under one operating-system user
+One machine-local AmpleFile application profile under one operating-system user
 is the **degenerate local Tenant**. It is a conceptual runtime-policy boundary,
 not a cloud record or portable credential.
 
-The boundary begins empty for work-fold. A legacy Workspace profile, portable
+The boundary begins empty for AmpleFile. A legacy Workspace profile, portable
 `.workspace/` record, registry, connection, artifact, receipt, or data store is
 not another local Tenant and is never imported, adopted, or upgraded into this
-one. Preserved legacy bytes carry no work-fold identity or authority.
+one. Preserved legacy bytes carry no AmpleFile identity or authority.
 
 - It owns local Runtime Instance policy, storage, grants, connection records,
   schedules, quotas, and receipts. It does not own App Project source or
   publication authority.
-- Its protection is limited to the current OS-user and trusted work-fold host
+- Its protection is limited to the current OS-user and trusted AmpleFile host
   boundary; it does not make read-only CLI protocol v1 an authenticated API.
-- It is not stored in a work-folder as proof of ownership and does not travel
+- It is not stored in a Connected Folder as proof of ownership and does not travel
   when a folder is copied.
 - Creating or linking a cloud Runtime Instance creates a separate cloud Tenant
   and runtime binding. Binding an App Project to a registry instead creates a
@@ -382,13 +382,13 @@ one. Preserved legacy bytes carry no work-fold identity or authority.
 ### Degenerate local Principals
 
 The trusted local host resolves the narrow actor for each operation. Candidate
-forms include the current-user action, a specific Worker or work-fold agent
+forms include the current-user action, a specific Worker or AmpleFile agent
 turn, a named automation service attempt, and a host system action.
 
 - The local Principal is sender- or task-bound and short-lived where possible.
 - Its descriptive id may appear in receipts, but it is not a reusable bearer
   credential or accepted from renderer input.
-- Every broker separately derives and checks work-folder, Runtime Instance,
+- Every broker separately derives and checks Connected Folder, Runtime Instance,
   Feature Installation, revision, declaration, current grants, and authority
   generation. A Feature sandbox sender is bound to its Feature Installation, not
   represented as another Principal.
@@ -398,7 +398,7 @@ This is enough for honest local receipts while keeping accounts optional.
 
 ## Identity and binding rules
 
-1. **Every identifier has one namespace and purpose.** work-folder id,
+1. **Every identifier has one namespace and purpose.** Connected Folder id,
    `projectId`, `cloudProjectId`, Feature id, Feature Revision digest, App
    Release digest, `runtimeInstanceId`, `featureInstallationId`,
    `dataNamespaceId`, Tenant id, Principal id, and Organization id are not
@@ -412,7 +412,7 @@ This is enough for honest local receipts while keeping accounts optional.
    ownership never arrives through the Tenant binding.
 4. **The host derives effective identity.** Restricted renderers, workers,
    automations, and remote clients cannot assert their own effective
-   work-folder, Runtime Instance, Feature Installation, Tenant, or Principal
+   Connected Folder, Runtime Instance, Feature Installation, Tenant, or Principal
    scope. Feature execution is bound to an installation; the effective actor is
    bound to a separate Principal.
 5. **Digests name exact bytes.** A stable display id, route, version string, or
@@ -421,7 +421,7 @@ This is enough for honest local receipts while keeping accounts optional.
    `projectId` or an explicit relink, never automatic `cloudProjectId`, cloud
    roles, Runtime Instance data, secrets, grants, jobs, or publication authority.
 7. **Move and copy are distinct.** A verified move may retain the same local
-   work-folder and `projectId` identities. A concurrent or ambiguous duplicate
+   Connected Folder and `projectId` identities. A concurrent or ambiguous duplicate
    must be fenced until the person chooses which folder relinks and which forks;
    the fork receives a new `projectId`.
 8. **Ownership classes remain separate.** Project source, immutable releases,
@@ -447,7 +447,7 @@ This is enough for honest local receipts while keeping accounts optional.
 
 | Object | Primary control or ownership | What it may contain | What ownership does not imply |
 | --- | --- | --- | --- |
-| work-folder | Person's filesystem plus local registration | Ordinary files, narrow portable identity, Chats, project Pi configuration | Cloud ownership, publication, full Chat context, or restricted runtime grants |
+| Connected Folder | Person's filesystem plus local registration | Ordinary files, narrow portable identity, Chats, project Pi configuration | Cloud ownership, publication, full Chat context, or restricted runtime grants |
 | App Project | Local source controller; remotely, a Principal or Organization project-role realm | Feature definitions, selected publish inputs, App identity, publication metadata | Tenant ownership, Runtime Instance administration, secrets, end-user data, or publication by every editor |
 | Feature | App Project lineage | Stable declaration intent and revision lineage | Execution or live grants |
 | Feature Revision | Immutable artifact record | Exact reviewed bytes, declarations, schemas, provenance | Installation, connection, job enablement, or sibling authority |
@@ -467,7 +467,7 @@ The product should expose an exact noun only where it improves a decision.
 
 | Noun | Default product treatment | Where precision is necessary |
 | --- | --- | --- |
-| work-folder | Always visible | General local context, files, Chats, History, Skills & Extensions |
+| Connected Folder | Always visible | General local context, files, Chats, History, Skills & Extensions |
 | App Project | Contextual builder noun | Build, collaboration, review, publish, fork |
 | Feature | Meaningful name first; generic noun optional | Builder structure, permissions, update composition |
 | Feature Revision | Internal with digest/version evidence | Review, update, provenance, diagnostics, incident response |
@@ -492,51 +492,51 @@ remote revocation can take effect—rather than teach governance-profile jargon.
 
 The table applies the five questions in the product model's
 [Decision test](product-model.md#decision-test). “Current fit” asks whether the
-meaning can remain inside existing work-folder, Chat, Skill, or Extension
+meaning can remain inside existing Connected Folder, Chat, Skill, or Extension
 concepts. “Authority” asks whether a person can understand what it may read,
 change, or execute.
 
 | Noun | Current fit or reason it is distinct | Scope | Authority legibility | Ordinary folders and Pi | Non-coding proof | Result |
 | --- | --- | --- | --- | --- | --- | --- |
-| work-folder | Existing primary concept | One ordinary folder-backed activity | Registration and context boundaries already documented | Preserves both directly | Garden files and planning | **Pass: current visible noun** |
-| App Project | Cannot be only “work-folder” because edit/review/publish roles are optional and distinct | Zero or one declared role in one work-folder; optional `cloudProjectId` binding | Source editing, review, and publish are separate from Tenant runtime roles | Adds metadata/intent without conversion or Pi fork | Garden coordinator chooses to make member workflows | **Pass: contextual visible noun** |
+| Connected Folder | Existing primary concept | One ordinary folder-backed activity | Registration and context boundaries already documented | Preserves both directly | Garden files and planning | **Pass: current visible noun** |
+| App Project | Cannot be only “Connected Folder” because edit/review/publish roles are optional and distinct | Zero or one declared role in one Connected Folder; optional `cloudProjectId` binding | Source editing, review, and publish are separate from Tenant runtime roles | Adds metadata/intent without conversion or Pi fork | Garden coordinator chooses to make member workflows | **Pass: contextual visible noun** |
 | Feature | Current restricted app is close, but a larger App needs stable multi-contribution identity | One App Project lineage | Requests maxima; no grant until installed in a Runtime Instance | Uses separate restricted lane; does not alter Pi | Roster, watering calendar, supply requests | **Pass: contextual noun** |
-| Feature Revision | Exact executable identity cannot be a mutable work-folder, Skill, or Extension | One Feature revision; reusable only by digest and policy | Exact bytes and declarations make review intelligible | Content-addressed artifact leaves folders/Pi intact | Exact reviewed calendar implementation | **Pass internally; fail as top-level navigation** |
+| Feature Revision | Exact executable identity cannot be a mutable Connected Folder, Skill, or Extension | One Feature revision; reusable only by digest and policy | Exact bytes and declarations make review intelligible | Content-addressed artifact leaves folders/Pi intact | Exact reviewed calendar implementation | **Pass internally; fail as top-level navigation** |
 | Feature Installation | Runtime grants cannot belong to project source or immutable artifact | One Feature incarnation in one Runtime Instance; separate data namespace | Explicit default-off grants, connections, jobs, update/reinstall, and data-adoption lifecycle | Separate brokered runtime preserves Pi boundary | Installed roster with retained or fresh garden data | **Pass internally; fail as primary noun** |
 | Runtime Instance | Development and released runtimes need one authority/storage supertype, but users do not | One Tenant; kind is development or app; App placement is local or hosted | Gives brokers one exact target without implying source or Release equivalence | Internal host model leaves folders and Pi unchanged | Local garden preview and hosted garden use the same bounded powers | **Pass internally; disqualified as product navigation** |
-| Development Instance | Current source-work-folder install overlap needs explicit rules | One local App Project and degenerate local Tenant | Source grants and runtime effects become explainable | Runs reviewed bytes without converting source or loading as Pi | Preview garden roster against selected files | **Pass contextually as Local preview** |
-| App Release | Neither a work-folder nor package alone represents immutable reviewed publication | One App Project and selected audience | Digest-covered closure proves contents; append-only sidecars carry review/policy without live grants or secrets | Closed artifact excludes ambient folders and `.pi` | Private version of the garden coordinator app | **Pass with progressive disclosure** |
+| Development Instance | Current source Connected Folder install overlap needs explicit rules | One local App Project and degenerate local Tenant | Source grants and runtime effects become explainable | Runs reviewed bytes without converting source or loading as Pi | Preview garden roster against selected files | **Pass contextually as Local preview** |
+| App Release | Neither a Connected Folder nor package alone represents immutable reviewed publication | One App Project and selected audience | Digest-covered closure proves contents; append-only sidecars carry review/policy without live grants or secrets | Closed artifact excludes ambient folders and `.pi` | Private version of the garden coordinator app | **Pass with progressive disclosure** |
 | App Instance | Mutable data, users, secrets, jobs, and updates cannot live in a Release | One Tenant; local or hosted | Administration and runtime authority have a concrete target | Local instance can coexist with ordinary folder and Pi | One garden's live members and schedule | **Pass with friendly App name first** |
-| Principal | Actor attribution cannot be represented by work-folder/Chat/capability scope | One authenticated or host-derived human, agent, service, or system context | Makes roles, consent, and receipts attributable while installation identifies Feature code | Does not affect file format or Pi compatibility | Coordinator, member, Worker, reminder service | **Pass internally with friendly labels** |
+| Principal | Actor attribution cannot be represented by connected-folder/Chat/capability scope | One authenticated or host-derived human, agent, service, or system context | Makes roles, consent, and receipts attributable while installation identifies Feature code | Does not affect file format or Pi compatibility | Coordinator, member, Worker, reminder service | **Pass internally with friendly labels** |
 | Tenant | Runtime isolation and policy cannot be inferred from a folder or Principal | Local profile or cloud Runtime Instance boundary | Names the owner of runtime state without implying App Project ownership or actor identity | Degenerate local Tenant keeps accounts optional | One garden or individual private instance | **Pass internally with friendly ownership label** |
 | Organization | No current noun models durable collaborative project ownership/membership | Optional cloud project-role boundary | Member roles and effective actors remain explicit; runtime Tenant stays separate | Absent from local path; no file/Pi change | Neighborhood group owning the garden project | **Pass only when collaboration exists; not a core prerequisite** |
 
 No new noun passes as an always-visible top-level rail destination. The model
 passes because most precision stays contextual or internal while
-**work-folder** and the friendly App name carry the ordinary experience.
+**Connected Folder** and the friendly App name carry the ordinary experience.
 
 ## Journey acceptance questions
 
 These are the eleven required exploration journeys expressed as ontology tests.
 Passing them on paper is required before this vocabulary can become normative.
 
-### 1. Keep a non-App work-folder indefinitely
+### 1. Keep a non-App Connected Folder indefinitely
 
-Create or register an ordinary work-folder and use Files, Chats, History, and
-Skills & Extensions from both **Everywhere** and **This work-folder only**
+Create or register an ordinary Connected Folder and use Files, Chats, History, and
+Skills & Extensions from both **Everywhere** and **This Connected Folder only**
 without an account or App conversion.
 
-- Can the work-folder have no App Project, Release, Instance, cloud Tenant, or
+- Can the Connected Folder have no App Project, Release, Instance, cloud Tenant, or
   Organization record?
 - Are the degenerate local Tenant and Principals invisible implementation
   boundaries rather than account setup?
-- Does every current work-folder authorization and explicit-context rule remain
+- Does every current Connected Folder authorization and explicit-context rule remain
   true?
 
 ### 2. Build and run a Development Instance
 
 Build, review, install, and run a private Development Instance in its source
-work-folder, including an explicit file grant that can touch a publish input.
+Connected Folder, including an explicit file grant that can touch a publish input.
 
 - Does a source edit create a new Feature Revision rather than changing running
   bytes, and does a reviewed update retain the installation incarnation while a
@@ -552,7 +552,7 @@ Publish a local App Project as a private hosted App and deploy one hosted App
 Instance.
 
 - Does authenticated binding preserve `projectId` as the App lineage while
-  distinguishing work-folder id, registry `cloudProjectId`, project owner/role,
+  distinguishing Connected Folder id, registry `cloudProjectId`, project owner/role,
   publisher Principal, Runtime Instance, and owning Tenant?
 - Does the App Release contain only reviewed, closed, explicitly selected
   material and no Chats, `.pi`, secrets, or instance data by default,
@@ -606,7 +606,7 @@ back where safe.
 Fork an allowed Release or project snapshot into a new independently owned local
 App Project.
 
-- Does the fork create a new work-folder and `projectId` while retaining explicit
+- Does the fork create a new Connected Folder and `projectId` while retaining explicit
   provenance to the source and no inherited `cloudProjectId` binding?
 - Are source cloud roles, publication authority, instance data, secrets, grants,
   jobs, and private assets excluded unless separately transferred by policy, and
@@ -627,12 +627,12 @@ delist a Release, block new installation or launch, or suspend hosted Instances.
 - Are removing a local credential record, revoking at its provider, uninstalling
   an Instance, retaining data, and final purge separate states?
 
-### 9. Move or copy portable work-folder identity
+### 9. Move or copy portable Connected Folder identity
 
-Move or copy a folder carrying the same portable work-folder identity across
+Move or copy a folder carrying the same portable Connected Folder identity across
 machines and explicitly choose relink versus fork.
 
-- Can a verified move preserve local work-folder/App Project lineage without
+- Can a verified move preserve local connected-folder/App Project lineage without
   treating possession of metadata as cloud authority?
 - Does an ambiguous copy fence cloud publication and mutation until relink or
   fork is chosen?
@@ -673,9 +673,9 @@ These decisions were accepted into the normative
 exploration evidence and should be read through that foundation when wording
 differs.
 
-1. **work-folder stays general.** Not every work-folder is or becomes an App.
+1. **Connected Folder stays general.** Not every Connected Folder is or becomes an App.
 2. **App Project is an explicit additive role.** The initial model allows zero
-   or one per work-folder and does not convert the folder.
+   or one per Connected Folder and does not convert the folder.
 3. **App Project identity is the friendly App lineage.** `projectId` spans its
    immutable Releases. A registry's separate `cloudProjectId` is only an
    authenticated binding; there is no duplicate release-lineage identity.
@@ -713,7 +713,7 @@ differs.
     actor or implied runtime Tenant.
 14. **Identifiers never authorize by possession.** Copies, display ids, routes,
     and client-supplied scope claims do not confer roles or ownership.
-15. **Product language is progressively disclosed.** work-folder and the App's
+15. **Product language is progressively disclosed.** Connected Folder and the App's
     name carry everyday use; exact lifecycle and authority nouns appear only at
     the decisions they clarify. Runtime Instance, governance-profile labels, and
     Package remain internal plumbing.
@@ -728,7 +728,7 @@ hosting behavior; they no longer block the implemented local foundation.
 | --- | --- | --- |
 | Should the generic builder noun be **Feature**, **Page**, or contextual names only? | Requires screen and non-coding journey language tests | Phase 2 and Gate 6 |
 | Where do `projectId` and the App Project declaration live, which fields are safe portable metadata, and may one project bind to multiple registries? | Requires publication schema, provider neutrality, and copy/relink threat review | Gate 2 and Phase 5 |
-| Does a separate local App Instance own a new ordinary folder or install into a selected existing work-folder? | Affects data ownership, file grants, and navigation | Gates 3, 5, and 6 |
+| Does a separate local App Instance own a new ordinary folder or install into a selected existing Connected Folder? | Affects data ownership, file grants, and navigation | Gates 3, 5, and 6 |
 | What is the exact relink-versus-fork collision and recovery flow? | Needs multi-machine and account-recovery design | Gates 3 and 6 |
 | Which principal-owned connections may support unattended jobs, for how long, and with what consent renewal? | Identity alone cannot settle execution consent | Gate 4 |
 | When may a new Feature Installation adopt a retained `dataNamespaceId`, and what proof, migration, and rollback are required? | Incarnation identity is settled; safe data adoption is a Gate 3 lifecycle decision | Gate 3 |

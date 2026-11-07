@@ -10,11 +10,11 @@ import ts from "typescript";
 
 test("shared motion cancels running effects and removes exits when either Reduce Motion switch changes", { timeout: 60_000 }, async (t) => {
   let browser: string | undefined;
-  for (const candidate of [process.env.WORKFOLD_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[]) {
+  for (const candidate of [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[]) {
     try { await access(candidate); browser = candidate; break; } catch {}
   }
   if (!browser) { t.skip("Chromium is required for motion verification."); return; }
-  const scratch = await mkdtemp(join(tmpdir(), "work-fold-shared-motion-"));
+  const scratch = await mkdtemp(join(tmpdir(), "amplefile-shared-motion-"));
   try {
     const css = (await Promise.all(["brand.css", "styles.css", "application-appearance.css", "motion.css"].map(name => readFile(resolve("web-local/src", name), "utf8")))).join("\n");
     const source = await readFile(resolve("web-local/src/lib/motion.ts"), "utf8");

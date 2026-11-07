@@ -3,7 +3,7 @@ import test, { type TestContext } from "node:test";
 import { createRequire, registerHooks } from "node:module";
 import { createElement } from "react";
 import { createDomHarness } from "./support/dom.js";
-import type { ChatMessage, ChatStreamEvent, ConversationRuntime, LocalEventStream, WorkFolderSummary } from "../web-local/src/types.js";
+import type { ChatMessage, ChatStreamEvent, ConversationRuntime, LocalEventStream, ConnectedFolderSummary } from "../web-local/src/types.js";
 
 const userMessage: ChatMessage = { id: "request", role: "user", content: "Update the notes", createdAt: "2026-09-27T12:00:00Z" };
 
@@ -20,7 +20,7 @@ async function chatHarness(t: TestContext, readTranscript = async () => ({ messa
   const api = async (path: string, options: { method?: string; body?: unknown } = {}) => {
     const overridden = overrideApi?.(path, options);
     if (overridden !== undefined) return overridden;
-    if (path === "/api/work-folders/folder/conversations") return { conversations: [{ id: "chat", title: "Notes", updatedAt: "2026-09-27T12:00:00Z" }] };
+    if (path === "/api/connected-folders/folder/conversations") return { conversations: [{ id: "chat", title: "Notes", updatedAt: "2026-09-27T12:00:00Z" }] };
     if (path.endsWith("/conversations/chat")) return readTranscript();
     if (path.endsWith("/conversations/chat/messages")) {
       const body = options.body as { userMessageId: string; requestId: string; content: string };
@@ -58,11 +58,11 @@ async function chatHarness(t: TestContext, readTranscript = async () => ({ messa
   HTMLElement.prototype.scrollIntoView = () => {};
   HTMLElement.prototype.scrollTo = () => {};
   const { ChatPanel } = await import("../web-local/src/components/chat/ChatPanel.js");
-  const render = (target: string | null, active = true) => dom.render(createElement(ChatPanel, { surfaceTabId: "chat-tab", active, workFolder: { id: "folder", name: "Notes", workFolderRoot: "/folder" } as WorkFolderSummary,
-    workFolderCustomizations: {}, targetConversationId: target, contextPathRequest: null, selectedPath: null, onAgentFinished() {} }));
+  const render = (target: string | null, active = true) => dom.render(createElement(ChatPanel, { surfaceTabId: "chat-tab", active, connectedFolder: { id: "folder", name: "Notes", connectedFolderRoot: "/folder" } as ConnectedFolderSummary,
+    connectedFolderCustomizations: {}, targetConversationId: target, contextPathRequest: null, selectedPath: null, onAgentFinished() {} }));
   await render(targetConversationId);
-  if (targetConversationId) await dom.waitFor(() => streams.has("/api/work-folders/folder/conversations/chat/events"));
-  const stream = streams.get("/api/work-folders/folder/conversations/chat/events")!;
+  if (targetConversationId) await dom.waitFor(() => streams.has("/api/connected-folders/folder/conversations/chat/events"));
+  const stream = streams.get("/api/connected-folders/folder/conversations/chat/events")!;
   const emit = async (value: Omit<ChatStreamEvent, "conversationId">) => { await dom.act(async () => { stream.onmessage?.({ data: JSON.stringify({ conversationId: "chat", ...value }) }); await Promise.resolve(); }); await dom.settle(); };
   return { dom, stream, streams, emit, render };
 }
@@ -75,7 +75,7 @@ test("reactivating an idle Chat reads a background compaction notice saved while
   const notice: ChatMessage = { id: "background-compaction", role: "system", kind: "context_compaction", content: "Background context compacted.", createdAt: "2026-09-27T12:01:00Z" };
   messages = [userMessage, notice];
   await render("chat", true);
-  const reopened = streams.get("/api/work-folders/folder/conversations/chat/events")!;
+  const reopened = streams.get("/api/connected-folders/folder/conversations/chat/events")!;
   assert.notEqual(reopened, stream);
   await dom.act(() => reopened.onopen?.());
   await dom.waitFor(() => !!dom.container.querySelector('[role="note"]'));
@@ -86,7 +86,7 @@ test("reactivating an idle Chat reads a background compaction notice saved while
 test("switching Chats cannot carry a previous Chat's compaction notices into the selected transcript", async t => {
   const notice: ChatMessage = { id: "compacted-a", role: "system", kind: "context_compaction", content: "Chat A was compacted.", createdAt: "2026-09-27T12:01:00Z" };
   const { dom, emit, render } = await chatHarness(t, async () => ({ messages: [userMessage, notice] }), path => {
-    if (path === "/api/work-folders/folder/conversations") return { conversations: [
+    if (path === "/api/connected-folders/folder/conversations") return { conversations: [
       { id: "chat", title: "Notes", updatedAt: "2026-09-27T12:00:00Z" }, { id: "other", title: "Other", updatedAt: "2026-09-27T11:00:00Z" },
     ] };
     if (path.endsWith("/conversations/other")) return { messages: [{ ...userMessage, id: "other-request", content: "Chat B request" }] };
@@ -198,7 +198,7 @@ test("a typed /compact uses the Chat's compaction route, not a turn", async (t) 
   });
   await dom.act(async () => { dom.container.querySelector<HTMLButtonElement>('[aria-label="Send Message"]')!.click(); await Promise.resolve(); });
   await dom.waitFor(() => calls.length > 0 && !dom.container.querySelector('[aria-label="Stop Worker"]'));
-  assert.deepEqual(calls, [{ path: "/api/work-folders/folder/conversations/chat/compact", method: "POST", body: { customInstructions: "keep the open questions" } }]);
+  assert.deepEqual(calls, [{ path: "/api/connected-folders/folder/conversations/chat/compact", method: "POST", body: { customInstructions: "keep the open questions" } }]);
   assert.equal(composer.value, "", "the command leaves the composer");
 });
 

@@ -5,13 +5,13 @@ import type {
   AutomationHistoryResponse,
   AutomationProposalsResponse,
   AutomationsResponse,
-  AutomationWorkFolderRef,
+  AutomationConnectedFolderRef,
 } from "../components/modals/AutomationsPane";
 import type { RecentlyDeletedResponse } from "../components/modals/RecentlyDeletedPane";
 import type { DesktopUpdateStatus } from "../types";
 
 /**
- * Sample Settings data for the browser preview (`?fixture=work-folder`): the
+ * Sample Settings data for the browser preview (`?fixture=connected-folder`): the
  * pages that read from the desktop bridge or the local API — Recently Deleted,
  * Automations, and About — show this instead, so the preview looks
  * like the shipped Mac app. Nothing here is a real address, account, or secret.
@@ -29,7 +29,7 @@ export function buildFixtureUpdateStatus(): DesktopUpdateStatus {
     availableVersion: null,
     progressPercent: null,
     checkedAt: "2026-11-04T08:15:00.000Z",
-    message: `work-fold ${fixtureAppVersion} is up to date.`,
+    message: `AmpleFile ${fixtureAppVersion} is up to date.`,
     error: null,
   };
 }
@@ -40,7 +40,7 @@ const keptUntil = (deletedAt: string, retentionDays = 30) => new Date(Date.parse
 /**
  * Settings → Recently Deleted with one item of each common kind: a Chat, a
  * file too large for History, an Everywhere Skill, app data whose app is gone
- * (save-only), and a deleted work-folder held because its tree carries legacy
+ * (save-only), and a deleted Connected Folder held because its tree carries legacy
  * Workspace records.
  */
 export function buildFixtureRecentlyDeleted(): RecentlyDeletedResponse {
@@ -48,7 +48,7 @@ export function buildFixtureRecentlyDeleted(): RecentlyDeletedResponse {
   const fileDeletedAt = "2026-11-01T16:42:00.000Z";
   const skillDeletedAt = "2026-10-27T09:05:00.000Z";
   const appDataDeletedAt = "2026-10-19T18:30:00.000Z";
-  const workFolderDeletedAt = "2026-10-02T14:20:00.000Z";
+  const connectedFolderDeletedAt = "2026-10-02T14:20:00.000Z";
   return {
     retentionDays: 30,
     damaged: [],
@@ -57,9 +57,9 @@ export function buildFixtureRecentlyDeleted(): RecentlyDeletedResponse {
         id: "trash-20261103211400-6f1c2a9d",
         kind: "file",
         reason: "chats.delete",
-        workFolderId: "fixture-home",
-        workFolderName: "Home projects",
-        originalPath: ".work-fold/conversations/chat-3b8e0f52-1c7a-4d2e-9a61-5f0c8e7b2d14.jsonl",
+        connectedFolderId: "fixture-home",
+        connectedFolderName: "Home projects",
+        originalPath: ".amplefile/conversations/chat-3b8e0f52-1c7a-4d2e-9a61-5f0c8e7b2d14.jsonl",
         name: "Paint color shortlist",
         sizeBytes: 38_912,
         deletedAt: chatDeletedAt,
@@ -71,8 +71,8 @@ export function buildFixtureRecentlyDeleted(): RecentlyDeletedResponse {
         id: "trash-20261101164200-a24d7e10",
         kind: "file",
         reason: "files.delete",
-        workFolderId: "fixture-home",
-        workFolderName: "Home projects",
+        connectedFolderId: "fixture-home",
+        connectedFolderName: "Home projects",
         originalPath: "Kitchen refresh/walkthrough.mov",
         name: "walkthrough.mov",
         sizeBytes: 1_718_000_000,
@@ -86,8 +86,8 @@ export function buildFixtureRecentlyDeleted(): RecentlyDeletedResponse {
         id: "trash-20261027090500-0c9b4f63",
         kind: "skill",
         reason: "skills.remove",
-        workFolderId: "work-fold-agent",
-        workFolderName: "Everywhere",
+        connectedFolderId: "amplefile-agent",
+        connectedFolderName: "Everywhere",
         scope: "everywhere",
         originalPath: "skills/meal-planner",
         name: "meal-planner",
@@ -101,8 +101,8 @@ export function buildFixtureRecentlyDeleted(): RecentlyDeletedResponse {
         id: "trash-20261019183000-5e71b2c8",
         kind: "app-storage",
         reason: "apps.remove",
-        workFolderId: "fixture-trip",
-        workFolderName: "Japan trip",
+        connectedFolderId: "fixture-trip",
+        connectedFolderName: "Japan trip",
         originalPath: "packing-list",
         name: "packing-list",
         sizeBytes: 86_400,
@@ -114,32 +114,32 @@ export function buildFixtureRecentlyDeleted(): RecentlyDeletedResponse {
       },
       {
         id: "trash-20261002142000-d83a6b05",
-        kind: "work-folder",
-        reason: "work-folders.delete",
-        workFolderId: "space-4f2a9c1e7b3d6a05",
-        workFolderName: "Old client notes",
-        originalPath: "/Users/you/Library/Application Support/work-fold/spaces/Old client notes",
+        kind: "connected-folder",
+        reason: "connected-folders.delete",
+        connectedFolderId: "space-4f2a9c1e7b3d6a05",
+        connectedFolderName: "Old client notes",
+        originalPath: "/Users/you/Library/Application Support/AmpleFile/spaces/Old client notes",
         name: "Old client notes",
         sizeBytes: 248_000_000,
         sizeApproximate: true,
-        deletedAt: workFolderDeletedAt,
-        restoreBy: keptUntil(workFolderDeletedAt),
+        deletedAt: connectedFolderDeletedAt,
+        restoreBy: keptUntil(connectedFolderDeletedAt),
         receiptId: null,
-        held: { reason: "legacy-metadata", noticedAt: keptUntil(workFolderDeletedAt) },
+        held: { reason: "legacy-metadata", noticedAt: keptUntil(connectedFolderDeletedAt) },
         restorable: "in-place",
       },
     ],
   };
 }
 
-const home: AutomationWorkFolderRef = { workFolderId: "fixture-home", workFolderName: "Home projects" };
-const trip: AutomationWorkFolderRef = { workFolderId: "fixture-trip", workFolderName: "Japan trip" };
+const home: AutomationConnectedFolderRef = { connectedFolderId: "fixture-home", connectedFolderName: "Home projects" };
+const trip: AutomationConnectedFolderRef = { connectedFolderId: "fixture-trip", connectedFolderName: "Japan trip" };
 
 /**
- * Settings → Automations, matching the work-folder Automations tab's sample
+ * Settings → Automations, matching the Connected Folder Automations tab's sample
  * (`buildFixtureFolderAutomations`): "Send kitchen ideas to the trip folder"
  * is on and watches Home projects, and "Budget check-in" is off and has not
- * run. One file the work-fold agent wrote is ready to turn on.
+ * run. One file the AmpleFile agent wrote is ready to turn on.
  */
 export interface FixtureAutomationReads {
   list: () => Promise<AutomationsResponse>;
@@ -155,21 +155,21 @@ export function createFixtureAutomationReads(): FixtureAutomationReads {
     health: "enabled",
     trigger: {
       kind: "files-changed",
-      workFolderId: "fixture-home",
+      connectedFolderId: "fixture-home",
       watch: { kind: "tree", path: "Kitchen refresh", recursive: true, extensions: [".md"] },
       debounceSeconds: 10,
       cooldownMinutes: 30,
     },
     fileWatch: { state: "watching", lastObservedAt: "2026-11-04T08:02:00.000Z", lastTriggeredAt: "2026-11-03T17:44:50.000Z" },
     stepCount: 1,
-    workFolders: [home, trip],
+    connectedFolders: [home, trip],
     lastRun: { runId: "run-20261103174500-kitchen", outcome: "succeeded", startedAt: "2026-11-03T17:45:00.000Z", finishedAt: "2026-11-03T17:45:02.000Z" },
     createdAt: "2026-10-14T16:20:00.000Z",
     steps: [{
       id: "copy-ideas",
       kind: "files",
-      fromWorkFolder: home,
-      toWorkFolder: trip,
+      fromConnectedFolder: home,
+      toConnectedFolder: trip,
       to: "Shopping/Kitchen ideas",
       source: { kind: "tree", path: "Kitchen refresh", recursive: true, extensions: [".md"] },
     }],
@@ -180,12 +180,12 @@ export function createFixtureAutomationReads(): FixtureAutomationReads {
     health: "disabled",
     trigger: { kind: "interval", intervalMinutes: 30 },
     stepCount: 1,
-    workFolders: [home],
+    connectedFolders: [home],
     createdAt: "2026-10-08T15:30:00.000Z",
     steps: [{
       id: "check-in",
       kind: "chat",
-      workFolder: home,
+      connectedFolder: home,
       message: "Open Kitchen refresh/budget.xlsx and tell me in three lines whether anything is over budget.",
     }],
   };
@@ -211,7 +211,7 @@ export function createFixtureAutomationReads(): FixtureAutomationReads {
           startedAt: "2026-11-03T17:45:00.000Z",
           finishedAt: "2026-11-03T17:45:02.000Z",
           cause: "Folder changed · 2 file(s)",
-          hops: [{ hopId: "copy-ideas", kind: "files", outcome: "succeeded", workFolderName: "Japan trip", evidence: [{ label: "Files", value: "2" }, { label: "Bytes", value: "7360" }] }],
+          hops: [{ hopId: "copy-ideas", kind: "files", outcome: "succeeded", connectedFolderName: "Japan trip", evidence: [{ label: "Files", value: "2" }, { label: "Bytes", value: "7360" }] }],
         },
         {
           runId: "run-20261029191200-kitchen",
@@ -220,7 +220,7 @@ export function createFixtureAutomationReads(): FixtureAutomationReads {
           finishedAt: "2026-10-29T19:12:01.000Z",
           cause: "Folder changed · 1 file(s)",
           detail: driveUnavailable,
-          hops: [{ hopId: "copy-ideas", kind: "files", outcome: "failed", workFolderName: "Japan trip", detail: driveUnavailable }],
+          hops: [{ hopId: "copy-ideas", kind: "files", outcome: "failed", connectedFolderName: "Japan trip", detail: driveUnavailable }],
         },
         {
           runId: "run-20261021150300-kitchen",
@@ -228,7 +228,7 @@ export function createFixtureAutomationReads(): FixtureAutomationReads {
           startedAt: "2026-10-21T15:03:00.000Z",
           finishedAt: "2026-10-21T15:03:01.000Z",
           cause: "Run Now",
-          hops: [{ hopId: "copy-ideas", kind: "files", outcome: "succeeded", workFolderName: "Japan trip", evidence: [{ label: "Files", value: "3" }, { label: "Bytes", value: "11904" }] }],
+          hops: [{ hopId: "copy-ideas", kind: "files", outcome: "succeeded", connectedFolderName: "Japan trip", evidence: [{ label: "Files", value: "3" }, { label: "Bytes", value: "11904" }] }],
         },
       ],
     },
@@ -238,8 +238,8 @@ export function createFixtureAutomationReads(): FixtureAutomationReads {
     truncated: false,
     proposals: [{
       valid: true,
-      path: "/Users/you/Library/Application Support/work-fold/management/pack-for-japan.work-fold-automation.json",
-      fileName: "pack-for-japan.work-fold-automation.json",
+      path: "/Users/you/Library/Application Support/AmpleFile/management/pack-for-japan.amplefile-automation.json",
+      fileName: "pack-for-japan.amplefile-automation.json",
       automationId: "pack-for-japan",
       digest: "sha256:5d1c8a0e3b7f4296a1e0c4b8d2f6a9e3c7b1d5f8a2e6c0b4d8f2a6e0c4b8d2f6",
       title: "Remind me to pack for Japan",

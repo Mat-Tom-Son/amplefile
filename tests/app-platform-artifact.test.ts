@@ -12,18 +12,18 @@ import {
 const encoder = new TextEncoder();
 const bytes = (value: string): Uint8Array => encoder.encode(value);
 
-test("work-fold.artifact.v1 has stable tagged conformance digests independent of insertion order", () => {
+test("amplefile.artifact.v1 has stable tagged conformance digests independent of insertion order", () => {
   const fixture: readonly AppPlatformArtifactEntry[] = [
     { path: "index.html", bytes: bytes("<h1>Hello</h1>\n") },
     { path: "assets/app.js", bytes: bytes("console.log(\"hi\");\n") },
   ];
-  const expected = "work-fold.artifact.v1:sha256:abf7504b40145dc6ca30ac893911e646897003659364e6c5c49eb89c34d6380e";
+  const expected = "amplefile.artifact.v1:sha256:f3afa82c93ba8113d1fc51301e71bc46ee6d4f5a3656411d4c9c018d04b9f756";
 
   assert.equal(hashAppPlatformArtifact(fixture), expected);
   assert.equal(hashAppPlatformArtifact([...fixture].reverse()), expected);
   assert.equal(
     hashAppPlatformArtifact([]),
-    "work-fold.artifact.v1:sha256:1291c5cf7b2b906880bd9233a7f6e93d193ebdb4946f2656ee626c87f168e348",
+    "amplefile.artifact.v1:sha256:0fa560109d526e37b646475d14a8e4eae1d9e80c2acbc755528579de4bfaff06",
   );
   assert.equal(parseAppPlatformArtifactDigest(expected), expected);
   assertArtifactError(() => parseAppPlatformArtifactDigest(expected.toUpperCase()), "ARTIFACT_INVALID");
@@ -49,7 +49,7 @@ test("Unicode artifact paths use stable bytewise UTF-8 ordering", () => {
     { path: "é.txt", bytes: bytes("accent") },
     { path: "😀.txt", bytes: bytes("emoji") },
   ];
-  const expected = "work-fold.artifact.v1:sha256:deb86ae019af8fa4d4fffcda6e575fb1c7843a8caefdce1adef8c79098f00108";
+  const expected = "amplefile.artifact.v1:sha256:907607e69faf6d622136a93e0be9517ebede16fbe8512ada5aab88329a1785e3";
 
   assert.equal(hashAppPlatformArtifact(fixture), expected);
   assert.equal(hashAppPlatformArtifact([fixture[2]!, fixture[0]!, fixture[1]!]), expected);
@@ -90,7 +90,7 @@ test("case-distinct logical paths are intentionally distinct", () => {
     { path: "A.txt", bytes: bytes("upper") },
     { path: "a.txt", bytes: bytes("lower") },
   ];
-  const expected = "work-fold.artifact.v1:sha256:a3f3d65cc35bc8a59684f53d4028230de58122e0990ccdcf3d0690b7620dd9d6";
+  const expected = "amplefile.artifact.v1:sha256:c92bda97bd91a8f52f9cfb32032806f56eb731f7272094dc0e07fe211385604c";
 
   assert.equal(hashAppPlatformArtifact(fixture), expected);
   assert.equal(hashAppPlatformArtifact([...fixture].reverse()), expected);
@@ -234,5 +234,5 @@ function assertArtifactError(
 }
 
 function digestPattern(): RegExp {
-  return /^work-fold.artifact.v1:sha256:[0-9a-f]{64}$/;
+  return /^amplefile.artifact.v1:sha256:[0-9a-f]{64}$/;
 }

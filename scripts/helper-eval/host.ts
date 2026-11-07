@@ -3,10 +3,10 @@
  * Evaluation host for the helper-tool experiment.
  *
  * Starts the local API in-process (dev mode, disposable state, an isolated Pi
- * agent folder) so `npm run work-fold:drive -- --attach <origin>` can drive real
- * Pi turns, and gives those turns a working `work-fold` CLI: the real macOS
+ * agent folder) so `npm run amplefile:drive -- --attach <origin>` can drive real
+ * Pi turns, and gives those turns a working `amplefile` CLI: the real macOS
  * shim on PATH, an act token for this run, and a stand-in "app" that forwards
- * each request id to `WorkFoldDesktopCliHost.processRequest` here. Every
+ * each request id to `AmpleFileDesktopCliHost.processRequest` here. Every
  * provider call is tapped so total usage includes calls a session file never
  * records (Chat titles, and later the helper).
  *
@@ -52,7 +52,7 @@ const tapLog = join(out, "provider-calls.jsonl");
 await mkdir(agentDir, { recursive: true });
 await mkdir(stateBase, { recursive: true });
 await mkdir(binDir, { recursive: true });
-const catalogSource = argument("--catalog-source", join(homedir(), "Library", "Application Support", "work-fold", "model-catalogs", "openrouter.json"));
+const catalogSource = argument("--catalog-source", join(homedir(), "Library", "Application Support", "AmpleFile", "model-catalogs", "openrouter.json"));
 const catalogPath = join(out, "openrouter-catalog.json");
 if (existsSync(catalogSource)) await copyFile(catalogSource, catalogPath);
 let compaction: { reserveTokens: number; keepRecentTokens?: number } | null = null;
@@ -72,7 +72,7 @@ await writeFile(join(agentDir, "settings.json"), `${JSON.stringify({
   ...(compaction ? { compaction } : {}),
 }, null, 2)}\n`);
 process.env.PI_CODING_AGENT_DIR = agentDir;
-delete process.env.WORKFOLD_AGENT_DIR;
+delete process.env.AMPLEFILE_AGENT_DIR;
 
 // --- provider-call tap ------------------------------------------------------
 let callCount = 0;
@@ -154,9 +154,9 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
 
 // --- local API and CLI bridge ----------------------------------------------
 const { PackagedPiRuntimeProvider } = await import("../../desktop/src/pi-runtime.js");
-const { WorkFoldDesktopCliHost } = await import("../../desktop/src/work-fold-cli-host.js");
-const { WorkFoldCliKernelAdapter } = await import("../../src/local/work-fold-cli-adapter.js");
-const { writeWorkFoldCliActTokenFile } = await import("../../src/local/cli/act-token.js");
+const { AmpleFileDesktopCliHost } = await import("../../desktop/src/amplefile-cli-host.js");
+const { AmpleFileCliKernelAdapter } = await import("../../src/local/amplefile-cli-adapter.js");
+const { writeAmpleFileCliActTokenFile } = await import("../../src/local/cli/act-token.js");
 const { startLocalApi } = await import("../../src/local/server.js");
 
 const runtime = new PackagedPiRuntimeProvider({
@@ -166,7 +166,7 @@ const runtime = new PackagedPiRuntimeProvider({
   preferredModel: { provider: provider!, id: modelId },
 });
 
-let adapter: InstanceType<typeof WorkFoldCliKernelAdapter> | null = null;
+let adapter: InstanceType<typeof AmpleFileCliKernelAdapter> | null = null;
 const lazyKernel = new Proxy({}, {
   get: (_target, property) => (...args: unknown[]) => {
     if (!adapter) throw new Error("The local API is not ready.");
@@ -176,18 +176,18 @@ const lazyKernel = new Proxy({}, {
 let actFacade: Awaited<ReturnType<typeof startLocalApi>>["actFacade"] | null = null;
 const actToken = randomBytes(32).toString("hex");
 let handle: Awaited<ReturnType<typeof startLocalApi>> | null = null;
-const cli = new WorkFoldDesktopCliHost({
+const cli = new AmpleFileDesktopCliHost({
   stateRoot: stateBase,
   kernel: lazyKernel as never,
   version: "0.0.0-helper-eval",
   getActFacade: () => (actFacade ? { facade: actFacade, token: actToken } : null),
-  resolveLineageParent: (taskId) => handle?.resolveWorkFoldAgentLineageParent(taskId) ?? null,
+  resolveLineageParent: (taskId) => handle?.resolveAmpleFileAgentLineageParent(taskId) ?? null,
 });
 await cli.initialize();
 handle = await startLocalApi({ port: 0, appMode: "dev", loadEnv: false, stateBase, piRuntimeProvider: runtime, actReceipts: cli.receipts });
-adapter = new WorkFoldCliKernelAdapter(handle.kernel);
+adapter = new AmpleFileCliKernelAdapter(handle.kernel);
 actFacade = handle.actFacade;
-await writeWorkFoldCliActTokenFile(stateBase, actToken, "work-fold");
+await writeAmpleFileCliActTokenFile(stateBase, actToken, "amplefile");
 
 const bridge = createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -211,13 +211,13 @@ await new Promise<void>((resolvePromise) => bridge.listen(0, "127.0.0.1", resolv
 const bridgePort = (bridge.address() as { port: number }).port;
 
 const standIn = join(binDir, "app-standin.sh");
-await writeFile(standIn, `#!/bin/sh\n# Invoked by the work-fold CLI shim as: <app> --work-fold-cli-request <id>\nexec /usr/bin/curl -fsS "http://127.0.0.1:${bridgePort}/cli/$2" >/dev/null\n`);
-const shim = join(binDir, "work-fold");
+await writeFile(standIn, `#!/bin/sh\n# Invoked by the AmpleFile CLI shim as: <app> --amplefile-cli-request <id>\nexec /usr/bin/curl -fsS "http://127.0.0.1:${bridgePort}/cli/$2" >/dev/null\n`);
+const shim = join(binDir, "amplefile");
 await writeFile(shim, [
   "#!/bin/sh",
-  `export WORKFOLD_CLI_APP="${standIn}"`,
-  `export WORKFOLD_CLI_STATE_DIR="${stateBase}"`,
-  `exec /usr/bin/osascript -l JavaScript "${join(repo, "desktop", "cli", "work-fold-cli.jxa.js")}" "${join(repo, "desktop", "cli")}" "$@"`,
+  `export AMPLEFILE_CLI_APP="${standIn}"`,
+  `export AMPLEFILE_CLI_STATE_DIR="${stateBase}"`,
+  `exec /usr/bin/osascript -l JavaScript "${join(repo, "desktop", "cli", "amplefile-cli.jxa.js")}" "${join(repo, "desktop", "cli")}" "$@"`,
   "",
 ].join("\n"));
 await chmod(standIn, 0o755);

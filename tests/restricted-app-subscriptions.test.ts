@@ -16,10 +16,10 @@ import {
 } from "../src/local/agent/restricted-app-tasks.js";
 import { restrictedAppFilePermissionLimit, type RestrictedAppAssistantAction } from "../src/local/agent/restricted-app-manifest.js";
 import { restrictedAppCheckLimits } from "../src/shared/restricted-app-checks.js";
-import type { WorkFoldDurableTurnRecord } from "../src/local/agent/turn-store.js";
-import { WorkFoldCheckService } from "../src/local/checks/check-service.js";
-import { WorkFoldCheckStore } from "../src/local/checks/check-store.js";
-import { WorkFoldKernel } from "../src/local/work-fold-kernel.js";
+import type { AmpleFileDurableTurnRecord } from "../src/local/agent/turn-store.js";
+import { AmpleFileCheckService } from "../src/local/checks/check-service.js";
+import { AmpleFileCheckStore } from "../src/local/checks/check-store.js";
+import { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
 import { restrictedAppSubscriptionLimits } from "../src/shared/restricted-app-tasks.js";
 
 const root = process.cwd();
@@ -38,7 +38,7 @@ const action: RestrictedAppAssistantAction = {
 
 function scopeFor(featureInstallationId: string): RestrictedAppTaskScope {
   return {
-    workFolderId: "work-folder-one",
+    connectedFolderId: "connected-folder-one",
     appId: "quotes",
     featureInstallationId,
     digest: "a".repeat(64),
@@ -47,17 +47,17 @@ function scopeFor(featureInstallationId: string): RestrictedAppTaskScope {
 }
 
 test("a task journal change names the installations whose ids moved, and nothing else", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-app-subscriptions-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-app-subscriptions-"));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
   const now = new Date("2026-09-07T12:00:00.000Z");
-  const turns = new Map<string, WorkFoldDurableTurnRecord>();
+  const turns = new Map<string, AmpleFileDurableTurnRecord>();
   const ports: RestrictedAppTaskPorts = {
     async withApp(_pin, operation) { return operation([action], { title: "Quote board" }); },
     async dispatch(record) {
       turns.set(record.id, {
-        schema: "work-fold.turn.v1", turnId: `turn-${record.id}`, requestId: restrictedAppTaskTurnRequestId(record),
+        schema: "amplefile.turn.v1", turnId: `turn-${record.id}`, requestId: restrictedAppTaskTurnRequestId(record),
         requestDigest: "d".repeat(64), userMessageId: `message-${record.id}`, userMessageCreatedAt: now.toISOString(),
-        workFolderId: record.scope.workFolderId, conversationId: record.conversationId, actorKind: "system", status: "running",
+        connectedFolderId: record.scope.connectedFolderId, conversationId: record.conversationId, actorKind: "system", status: "running",
         userMessagePersisted: true, acceptedAt: now.toISOString(), updatedAt: now.toISOString(), assistantText: "",
       });
     },
@@ -78,7 +78,7 @@ test("a task journal change names the installations whose ids moved, and nothing
   const other = await service.request(second, { requestId: randomUUID(), requestedAt: now.toISOString(), actionId: action.id, input: { quote: "South" } });
 
   assert.equal(plainCalls, changes.length, "existing zero-argument listeners keep firing");
-  assert.deepEqual(changes.at(-1), [{ workFolderId: "work-folder-one", appId: "quotes", featureInstallationId: "feature-two", taskIds: [other.id], receiptIds: [] }]);
+  assert.deepEqual(changes.at(-1), [{ connectedFolderId: "connected-folder-one", appId: "quotes", featureInstallationId: "feature-two", taskIds: [other.id], receiptIds: [] }]);
   assert.ok(!changes.flat().some((item) => item.featureInstallationId === "feature-two" && item.taskIds.includes(one.id)),
     "one installation's activity never names another's task");
 
@@ -95,7 +95,7 @@ test("a task journal change names the installations whose ids moved, and nothing
 });
 
 test("an inference receipt marks only its terminal line as something an app can act on", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-app-infer-hint-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-app-infer-hint-"));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
   const service = await RestrictedAppInferenceService.create({
     path: join(sandbox, "inference-receipts.jsonl"),
@@ -110,7 +110,7 @@ test("an inference receipt marks only its terminal line as something an app can 
   service.on("changed", (change: { receipt: { id: string; featureInstallationId: string }; terminal: boolean }) => {
     seen.push({ terminal: change.terminal, id: change.receipt.id, featureInstallationId: change.receipt.featureInstallationId });
   });
-  const scope = { workFolderId: "work-folder-one", appId: "quotes", featureInstallationId: "feature-one", digest: "a".repeat(64) };
+  const scope = { connectedFolderId: "connected-folder-one", appId: "quotes", featureInstallationId: "feature-one", digest: "a".repeat(64) };
   const result = await service.infer(scope, "view", { instructions: "Echo", input: "north" });
 
   assert.deepEqual(seen.map((item) => item.terminal), [false, true], "the accepted line is a half-fact; only the settled line is news");
@@ -119,15 +119,15 @@ test("an inference receipt marks only its terminal line as something an app can 
 });
 
 test("a Check settle and a disable each tell the host once, and a failing listener never fails the operation", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-check-hint-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-check-hint-"));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
-  const workFolderRoot = join(sandbox, "work-folder");
+  const connectedFolderRoot = join(sandbox, "connected-folder");
   const machine = join(sandbox, "machine");
-  await mkdir(join(workFolderRoot, "Delivery"), { recursive: true });
+  await mkdir(join(connectedFolderRoot, "Delivery"), { recursive: true });
   await mkdir(machine, { recursive: true });
-  const proposalPath = join(sandbox, "handoff.work-fold-check.json");
+  const proposalPath = join(sandbox, "handoff.amplefile-check.json");
   await writeFile(proposalPath, JSON.stringify({
-    kind: "work-fold.check-proposal",
+    kind: "amplefile.check-proposal",
     version: 1,
     name: "Required handoff",
     createdBy: "human",
@@ -136,60 +136,60 @@ test("a Check settle and a disable each tell the host once, and a failing listen
       title: "The signed handoff exists",
       severity: "error",
       trigger: "manual",
-      sensor: { id: "work-fold.file-presence", revision: 1, parameters: { expect: "present" } },
+      sensor: { id: "amplefile.file-presence", revision: 1, parameters: { expect: "present" } },
       targets: [{ kind: "file", role: "primary", path: "Delivery/signed.pdf" }],
     },
   }));
 
-  const changed: Array<{ workFolderId: string; checkIds: string[] }> = [];
+  const changed: Array<{ connectedFolderId: string; checkIds: string[] }> = [];
   let listenerThrows = false;
-  const service = new WorkFoldCheckService({
-    kernel: new WorkFoldKernel(),
-    storeFactory: (workFolderId) => WorkFoldCheckStore.create(workFolderId, { path: join(machine, `${workFolderId}.json`) }),
-    listWorkFolders: async () => [{
-      id: "work-folder-delivery", name: "work-folder-delivery", workFolderRoot,
+  const service = new AmpleFileCheckService({
+    kernel: new AmpleFileKernel(),
+    storeFactory: (connectedFolderId) => AmpleFileCheckStore.create(connectedFolderId, { path: join(machine, `${connectedFolderId}.json`) }),
+    listConnectedFolders: async () => [{
+      id: "connected-folder-delivery", name: "connected-folder-delivery", connectedFolderRoot,
       location: { kind: "local" as const, storage: "linked" as const },
       createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-08-01T00:00:00.000Z",
     }],
     onResultChanged: (event) => {
-      changed.push({ workFolderId: event.workFolderId, checkIds: [...event.checkIds] });
+      changed.push({ connectedFolderId: event.connectedFolderId, checkIds: [...event.checkIds] });
       if (listenerThrows) throw new Error("a view listener exploded");
     },
   });
   t.after(() => service.close());
-  const workFolder = { id: "work-folder-delivery", workFolderRoot };
+  const connectedFolder = { id: "connected-folder-delivery", connectedFolderRoot };
 
-  const enabled = await service.enable({ workFolder, proposalPath, actor: "human" });
+  const enabled = await service.enable({ connectedFolder, proposalPath, actor: "human" });
   assert.deepEqual(changed, [], "enabling a Check is not a result change");
-  await service.status(workFolder);
+  await service.status(connectedFolder);
   assert.deepEqual(changed, [], "a read never produces a hint");
 
   listenerThrows = true;
-  const accepted = await service.run({ workFolder, checkId: enabled.declaration.id, actor: { kind: "cli", workFolderId: workFolder.id } });
+  const accepted = await service.run({ connectedFolder, checkId: enabled.declaration.id, actor: { kind: "cli", connectedFolderId: connectedFolder.id } });
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    const status = await service.taskStatus(workFolder.id, accepted.taskId);
+    const status = await service.taskStatus(connectedFolder.id, accepted.taskId);
     if (status.state !== "accepted" && status.state !== "running") break;
     await new Promise<void>((resolve) => setTimeout(resolve, 5));
   }
-  assert.equal((await service.taskStatus(workFolder.id, accepted.taskId)).state, "succeeded",
+  assert.equal((await service.taskStatus(connectedFolder.id, accepted.taskId)).state, "succeeded",
     "a listener that throws never fails the Check run");
-  assert.deepEqual(changed, [{ workFolderId: "work-folder-delivery", checkIds: [enabled.declaration.id] }],
+  assert.deepEqual(changed, [{ connectedFolderId: "connected-folder-delivery", checkIds: [enabled.declaration.id] }],
     "one settled run is exactly one hint");
 
   listenerThrows = false;
   changed.length = 0;
-  assert.equal(await service.disable(workFolder, enabled.declaration.id), true);
-  assert.deepEqual(changed, [{ workFolderId: "work-folder-delivery", checkIds: [enabled.declaration.id] }]);
+  assert.equal(await service.disable(connectedFolder, enabled.declaration.id), true);
+  assert.deepEqual(changed, [{ connectedFolderId: "connected-folder-delivery", checkIds: [enabled.declaration.id] }]);
   changed.length = 0;
-  assert.equal(await service.disable(workFolder, enabled.declaration.id), false);
+  assert.equal(await service.disable(connectedFolder, enabled.declaration.id), false);
   assert.deepEqual(changed, [], "disabling what is already gone changes nothing");
 });
 
 test("the host pushes the three hints on their own channels, to the mounts each read lane admits", () => {
   for (const channel of ["tasks-changed", "checks-changed", "files-changed"]) {
-    assert.ok(host.includes(`"work-fold:restricted-app:${channel}"`), `${channel} is a host channel`);
-    assert.ok(preload.includes(`"work-fold:restricted-app:${channel}"`), `${channel} is a preload channel`);
+    assert.ok(host.includes(`"amplefile:restricted-app:${channel}"`), `${channel} is a host channel`);
+    assert.ok(preload.includes(`"amplefile:restricted-app:${channel}"`), `${channel} is a preload channel`);
   }
   // Registration returns an unsubscribe function, so it must cross the bridge
   // unwrapped exactly as `storage.onChanged` does.
@@ -226,11 +226,11 @@ test("the host pushes the three hints on their own channels, to the mounts each 
 
   // A granted-root walk starts only for a mount that actually subscribed.
   // `files.onChanged` registers inside the preload, so the host cannot see it
-  // without being told; a directory grant binds to the whole work-folder, so an open
+  // without being told; a directory grant binds to the whole Connected Folder, so an open
   // view that never subscribed would otherwise cost a recursive metadata scan
-  // of that work-folder every poll interval for the life of the view.
+  // of that Connected Folder every poll interval for the life of the view.
   for (const source of [host, preload]) {
-    assert.ok(source.includes('"work-fold:restricted-app:files-subscribe"'), "both sides name the subscription channel");
+    assert.ok(source.includes('"amplefile:restricted-app:files-subscribe"'), "both sides name the subscription channel");
   }
   assert.match(preload, /noteFilesSubscription\(\);/);
   assert.match(preload, /const subscribed = filesChangedListeners\.size > 0;\s*\n\s*if \(subscribed === filesSubscribed\) return;/);
@@ -248,7 +248,7 @@ test("the host pushes the three hints on their own channels, to the mounts each 
 
   // The wires that make the hints reachable at all.
   assert.match(host, /publishAssistantActivity\(event: RestrictedAppAssistantActivity\): void/);
-  assert.match(host, /publishCheckResultsChanged\(event: \{ workFolderId: string; checkIds: readonly string\[\] \}\): void/);
+  assert.match(host, /publishCheckResultsChanged\(event: \{ connectedFolderId: string; checkIds: readonly string\[\] \}\): void/);
   assert.match(main, /onAppAssistantActivity: \(activity\) => host\.restrictedAppHost\.publishAssistantActivity\(activity\)/);
   assert.match(main, /onResultChanged: \(event\) => restrictedRuntime\.publishCheckResultsChanged\(event\)/);
 

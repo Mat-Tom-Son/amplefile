@@ -27,8 +27,8 @@ const background = Buffer.from(`
   <path d="M0 440 0 333 520 0h200v440Z" fill="#E9EDE3"/>
   <path d="M0 379 584 0" fill="none" stroke="#FFFFFF" stroke-opacity=".62" stroke-width="2"/>
   <path d="M720 56 119 440" fill="none" stroke="#C9D2DE" stroke-opacity=".7" stroke-width="2"/>
-  <text x="360" y="72" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif" font-size="26" font-weight="650" letter-spacing="-.5" fill="#0E386C">work-fold</text>
-  <text x="360" y="104" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#5B6472">Drag work-fold to Applications</text>
+  <text x="360" y="72" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif" font-size="26" font-weight="650" letter-spacing="-.5" fill="#0E386C">AmpleFile</text>
+  <text x="360" y="104" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#5B6472">Drag AmpleFile to Applications</text>
 </svg>`);
 
 const backgroundBytes = await sharp(background)
@@ -44,4 +44,4 @@ await Promise.all([
   writeFile(join(assetsDir, "dmg-background.png"), backgroundBytes),
 ]);
 
-console.log(`Generated work-fold DMG background at ${join(outDir, "dmg-background.png")}`);
+console.log(`Generated AmpleFile DMG background at ${join(outDir, "dmg-background.png")}`);

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { RoutedPiExtensionUiBridge, createExtensionUiContext, extensionUiLimits, type PiExtensionUiRequest } from "../src/local/agent/extension-ui.js";
 import { startLocalApi } from "../src/local/server.js";
 
-const scope = { workFolderRoot: "/work-folder", conversationId: "chat" };
+const scope = { connectedFolderRoot: "/connected-folder", conversationId: "chat" };
 const question = (id: string): PiExtensionUiRequest => ({ ...scope, id, method: "select", title: "Which one?", options: ["A", "B"] });
 
 test("Pi UI isolates editors, validates answers without consuming questions, and bounds pending callbacks", async () => {
@@ -60,7 +60,7 @@ test("turn settlement leaves session questions alive while Stop still cancels th
 });
 
 test("native session-start timers and helper callbacks remain usable across turns and reload", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-session-callbacks-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-session-callbacks-"));
   const agentDir = join(root, "pi");
   const resultsPath = join(root, "results.jsonl");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
@@ -86,7 +86,7 @@ test("native session-start timers and helper callbacks remain usable across turn
     }
   `);
   const bridge = new RoutedPiExtensionUiBridge();
-  const api = await startLocalApi({ port: 0, stateBase: join(root, "state"), workFolderBase: join(root, "content"), loadEnv: false,
+  const api = await startLocalApi({ port: 0, stateBase: join(root, "state"), connectedFolderBase: join(root, "content"), loadEnv: false,
     extensionUiBridge: bridge, piRuntimeProvider: { async resolveRuntime() { return { agentDir }; } } });
   t.after(async () => { await api.close(); await rm(root, { recursive: true, force: true }); });
   const pending = new Map<string, PiExtensionUiRequest>();
@@ -101,7 +101,7 @@ test("native session-start timers and helper callbacks remain usable across turn
     await settled(arm.taskId);
     await until(() => pending.size === 2);
     assert.deepEqual([...pending.values()].map((request) => request.title).sort(), ["Helper", "Timer"]);
-    const projection = await fetch(`${api.origin}/api/work-fold-agent/conversations/${start.conversationId}/extension-ui`).then((response) => response.json()) as any;
+    const projection = await fetch(`${api.origin}/api/amplefile-agent/conversations/${start.conversationId}/extension-ui`).then((response) => response.json()) as any;
     assert.equal(projection.requests.length, 2, "session questions survive the triggering turn's settlement");
     for (const request of pending.values()) {
       assert.equal(request.taskId, undefined, "session callbacks never borrow a turn identity");
@@ -112,8 +112,8 @@ test("native session-start timers and helper callbacks remain usable across turn
   assert.ok((await readFile(resultsPath, "utf8")).trim().split("\n").every((line) => JSON.parse(line).answer === true));
 });
 
-test("real Pi Extensions ask in fold and work-folder Chats; reconnect, answers and Stop share the same callbacks", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-extension-interaction-"));
+test("real Pi Extensions ask in fold and Connected Folder Chats; reconnect, answers and Stop share the same callbacks", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-extension-interaction-"));
   const agentDir = join(root, "pi");
   const resultsPath = join(root, "results.jsonl");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
@@ -144,46 +144,46 @@ test("real Pi Extensions ask in fold and work-folder Chats; reconnect, answers a
     }
   `);
   const bridge = new RoutedPiExtensionUiBridge();
-  const api = await startLocalApi({ port: 0, stateBase: join(root, "state"), workFolderBase: join(root, "content"), loadEnv: false,
+  const api = await startLocalApi({ port: 0, stateBase: join(root, "state"), connectedFolderBase: join(root, "content"), loadEnv: false,
     extensionUiBridge: bridge, piRuntimeProvider: { async resolveRuntime() { return { agentDir }; } } });
   t.after(async () => { await api.close(); await rm(root, { recursive: true, force: true }); });
   const pending = new Map<string, PiExtensionUiRequest>();
   bridge.on("request", (request) => pending.set(request.id, request));
   bridge.on("settled", ({ id }) => pending.delete(id));
-  const workFolder = (await api.actFacade.createWorkFolder({ name: "Extension testing" })).workFolder;
-  const chat = (await api.actFacade.createConversation({ workFolder: workFolder.id })).conversation;
+  const connectedFolder = (await api.actFacade.createConnectedFolder({ name: "Extension testing" })).connectedFolder;
+  const chat = (await api.actFacade.createConversation({ connectedFolder: connectedFolder.id })).conversation;
   const fold = await api.actFacade.agentSend({ content: "/choose", newConversation: true });
-  await api.actFacade.sendMessage({ workFolder: workFolder.id, conversationId: chat.id, content: "/choose" });
+  await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId: chat.id, content: "/choose" });
   await until(() => pending.size === 4);
-  const workFoldAgentPath = `/api/work-fold-agent/conversations/${fold.conversationId}/extension-ui`;
-  const workFolderPath = `/api/work-folders/${workFolder.id}/conversations/${chat.id}/extension-ui`;
+  const ampleFileAgentPath = `/api/amplefile-agent/conversations/${fold.conversationId}/extension-ui`;
+  const connectedFolderPath = `/api/connected-folders/${connectedFolder.id}/conversations/${chat.id}/extension-ui`;
   const get = async (path: string) => (await fetch(api.origin + path)).json() as Promise<any>;
   const post = (path: string, body: unknown) => fetch(api.origin + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  const workFoldAgentQuestions = (await get(workFoldAgentPath)).requests as PiExtensionUiRequest[];
-  assert.equal(workFoldAgentQuestions.length, 2); assert.equal((await get(workFolderPath)).requests.length, 2);
-  assert.ok(!JSON.stringify(workFoldAgentQuestions).includes(root), "projection contains no root path");
-  const select = workFoldAgentQuestions.find((item) => item.method === "select")!;
+  const ampleFileAgentQuestions = (await get(ampleFileAgentPath)).requests as PiExtensionUiRequest[];
+  assert.equal(ampleFileAgentQuestions.length, 2); assert.equal((await get(connectedFolderPath)).requests.length, 2);
+  assert.ok(!JSON.stringify(ampleFileAgentQuestions).includes(root), "projection contains no root path");
+  const select = ampleFileAgentQuestions.find((item) => item.method === "select")!;
   assert.equal(pending.get(select.id)?.taskId, fold.taskId, "the native callback carries its originating task, not an inferred active task");
-  assert.equal((await post(`${workFolderPath}/${select.id}`, { value: "Blue" })).status, 404);
-  assert.equal((await post(`${workFoldAgentPath}/${select.id}`, { value: "Red" })).status, 400);
-  const confirm = workFoldAgentQuestions.find((item) => item.method === "confirm")!;
-  assert.equal((await post(`${workFoldAgentPath}/${confirm.id}`, { value: "false" })).status, 400);
-  assert.equal((await post(`${workFoldAgentPath}/${select.id}`, { value: "Blue" })).status, 200);
-  assert.equal((await post(`${workFoldAgentPath}/${select.id}`, { value: "Green" })).status, 404);
+  assert.equal((await post(`${connectedFolderPath}/${select.id}`, { value: "Blue" })).status, 404);
+  assert.equal((await post(`${ampleFileAgentPath}/${select.id}`, { value: "Red" })).status, 400);
+  const confirm = ampleFileAgentQuestions.find((item) => item.method === "confirm")!;
+  assert.equal((await post(`${ampleFileAgentPath}/${confirm.id}`, { value: "false" })).status, 400);
+  assert.equal((await post(`${ampleFileAgentPath}/${select.id}`, { value: "Blue" })).status, 200);
+  assert.equal((await post(`${ampleFileAgentPath}/${select.id}`, { value: "Green" })).status, 404);
 
   // Subscribe after emission: recover current questions, not the answered one.
   const controller = new AbortController();
   bridge.publish({ ...[...pending.values()].find((item) => item.id === confirm.id)!, id: "device-code", method: "oauthDeviceCode", userCode: "PRIVATE-SETUP-CODE", verificationUri: "https://example.test/setup" });
-  const response = await fetch(`${api.origin}/api/work-fold-agent/conversations/${fold.conversationId}/events`, { signal: controller.signal, headers: { "last-event-id": "0" } });
+  const response = await fetch(`${api.origin}/api/amplefile-agent/conversations/${fold.conversationId}/events`, { signal: controller.signal, headers: { "last-event-id": "0" } });
   const reader = response.body!.getReader();
   let events = "";
   while (!events.includes("extension_ui_snapshot")) events += new TextDecoder().decode((await reader.read()).value);
   controller.abort(); await reader.cancel().catch(() => undefined);
   assert.ok(events.includes(confirm.id)); assert.ok(!events.includes(select.id));
   assert.ok(!events.includes("PRIVATE-SETUP-CODE"), "setup codes never enter the replay journal");
-  assert.equal((await post(`${workFoldAgentPath}/${confirm.id}`, { value: false })).status, 200);
-  for (const request of (await get(workFolderPath)).requests) {
-    assert.equal((await post(`${workFolderPath}/${request.id}`, { value: request.method === "select" ? "Green" : true })).status, 200);
+  assert.equal((await post(`${ampleFileAgentPath}/${confirm.id}`, { value: false })).status, 200);
+  for (const request of (await get(connectedFolderPath)).requests) {
+    assert.equal((await post(`${connectedFolderPath}/${request.id}`, { value: request.method === "select" ? "Green" : true })).status, 200);
   }
   await until(async () => (await readFile(resultsPath, "utf8").catch(() => "")).trim().split("\n").length === 2);
   const results = (await readFile(resultsPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));

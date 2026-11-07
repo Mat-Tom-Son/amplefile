@@ -39,7 +39,7 @@ async function main() {
     if (row.scenario === "repair") {
       try {
         const meta = JSON.parse(await readFile(join(row.directory, "case.json"), "utf8"));
-        const folder = await mkdtemp(join(tmpdir(), "work-fold-frozen-precision-"));
+        const folder = await mkdtemp(join(tmpdir(), "amplefile-frozen-precision-"));
         await writeFile(join(folder, "ledger.mjs"), repairSource);
         await exec("git", ["apply", "--check", join(meta.folder, "candidate.patch")], { cwd: folder, timeout: 30_000 });
         await exec("git", ["apply", join(meta.folder, "candidate.patch")], { cwd: folder, timeout: 30_000 });

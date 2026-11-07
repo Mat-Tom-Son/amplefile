@@ -11,7 +11,7 @@
 > records labeled candidate remain design guidance until a versioned code format
 > and conformance fixture implements them. The declaration/artifact digest and
 > immutable Release-envelope subset now has versioned code plus independent
-> conformance, and the current work-fold build implements its local Project/Release/Instance
+> conformance, and the current AmpleFile build implements its local Project/Release/Instance
 > lifecycle; other candidate records remain guidance.
 
 This document defines the accepted semantic boundaries for App Project, App
@@ -30,7 +30,7 @@ The current restricted-app implementation establishes useful safety properties:
   scripts;
 - every package byte participates in one SHA-256 digest, and installation stages
   and verifies the exact reviewed bytes;
-- a proposal receipt is bound to one work-folder, Chat, source path, and digest;
+- a proposal receipt is bound to one Connected Folder, Chat, source path, and digest;
 - installing a digest grants only the destinations, file permissions,
   notification categories, and Check-result slots it declares and enables only
   its declared automations; connection secrets are still entered by the person
@@ -57,7 +57,7 @@ ownership or authority.
 
 | Identifier | Meaning | Stability and security use |
 | --- | --- | --- |
-| `workFolderId` | Portable identity of one ordinary folder-backed work-folder | Survives a folder move; is not a cloud credential, tenant id, or project role |
+| `connectedFolderId` | Portable identity of one ordinary folder-backed Connected Folder | Survives a folder move; is not a cloud credential, tenant id, or project role |
 | `projectId` | Local/project identity of one App Project and its App lineage | Stable across releases; machine-local in the current product, and never a cloud credential or ownership proof; a future portable form needs explicit import/collision rules |
 | `cloudProjectId` | Registry identity of one remotely registered App Project | Bound to `projectId` only through an authenticated, revocable record; excluded from the immutable release identity |
 | `featureId` | Stable logical slot for one feature within the project's App lineage | Names storage and update comparison; cannot prove code or declaration continuity |
@@ -80,13 +80,13 @@ an App Instance separately chooses its runtime Tenant.
 
 ### Shipped local registry and placement
 
-work-fold implements the account-free local subset without creating the
+AmpleFile implements the account-free local subset without creating the
 candidate cloud binding above:
 
-- one source work-folder has at most one machine-local App Project and one
+- one source Connected Folder has at most one machine-local App Project and one
   Development Instance;
 - Project presentation is an explicit `{ title, description, icon }` record in
-  work-fold application data, not a new `.work-fold/` file. The first reviewed
+  AmpleFile application data, not a new `.amplefile/` file. The first reviewed
   preview may seed it from the Feature declaration, and App Studio can update it;
 - preparing a Release snapshots all current reviewed Development Features into
   an immutable format-version-2 envelope and stores it by `releaseDigest`;
@@ -98,30 +98,30 @@ candidate cloud binding above:
   conflicts or the current active pointer, and consumes the operation only when
   the registry transition commits;
 - one release-backed local App Instance may exist for a
-  `(projectId, targetWorkFolderId)` pair. A target with any Development or App
+  `(projectId, targetConnectedFolderId)` pair. A target with any Development or App
   Feature using the same `featureId` is rejected instead of silently merging
   runtimes; and
-- the target work-folder supplies navigation attachment and eligibility for
+- the target Connected Folder supplies navigation attachment and eligibility for
   explicit file grants. Release bytes, live authority, connections, schedules,
   receipts, operation journals, and mutable data remain host-owned application
   data.
 
 Local “publish” is not upload, registry publication, signing, hosting, sync, or
-App Store submission. Removing either a source work-folder whose Project has an
-active release-backed instance or that instance's target work-folder is blocked
+App Store submission. Removing either a source Connected Folder whose Project has an
+active release-backed instance or that instance's target Connected Folder is blocked
 until the App Instance is explicitly uninstalled. A retain choice keeps the source
 registered until its inactive Data Namespaces are explicitly purged; the former
 target may then be removed. Source removal without live or retained data clears
 the machine-local Project and its Release lineage, while target removal cancels
 prepared operations aimed at that registration. Both keep what they clear in
-Recently deleted first, restorable once the work-folder is registered again
+Recently deleted first, restorable once the Connected Folder is registered again
 (2026-10-11).
 
-The local registry is a clean work-fold registry. Legacy Workspace profiles,
+The local registry is a clean AmpleFile registry. Legacy Workspace profiles,
 portable `.workspace/` records, restricted-app registries, storage,
 connections, receipts, and artifacts are never opened, imported, upgraded, or
 adopted into these identities. They remain preserved and inert, and possession
-of one cannot satisfy any work-fold digest, Project, Tenant, or authority check.
+of one cannot satisfy any AmpleFile digest, Project, Tenant, or authority check.
 
 The shared candidate authority stamp is a typed set of independently advancing
 domains, not one global counter:
@@ -228,9 +228,9 @@ A release closure excludes:
 - install, postinstall, or deploy-time build scripts;
 - credentials, refresh tokens, signing private keys, connection values, or
   environment secrets;
-- machine paths, a local work-folder registry entry, local History objects, or
+- machine paths, a local Connected Folder registry entry, local History objects, or
   runtime data;
-- raw `.work-fold/` metadata or conversations; and
+- raw `.amplefile/` metadata or conversations; and
 - `.pi/` and other executable project configuration.
 
 A raw numeric-loopback destination may remain valid for a local Development
@@ -371,14 +371,14 @@ abbreviated shape remains illustrative. `releaseDigest` is outside the canonical
 manifest it identifies, avoiding a self-referential hash. Release review and
 publisher attestations are sidecars over that digest. Format version 2 adds the
 App-level presentation snapshot to the immutable manifest; the local restricted
-runtime uses `work-fold.restricted-app-bridge` compatibility `2.x`.
+runtime uses `amplefile.restricted-app-bridge` compatibility `2.x`.
 
 ```json
 {
   "recordVersion": 1,
   "releaseDigest": "sha256:release-content-address",
   "manifest": {
-    "format": "work-fold.app-release",
+    "format": "amplefile.app-release",
     "formatVersion": 2,
     "projectId": "project_opaque",
     "presentation": {
@@ -388,16 +388,16 @@ runtime uses `work-fold.restricted-app-bridge` compatibility `2.x`.
     },
     "displayVersion": "1.2.0",
     "runtimeApi": {
-      "name": "work-fold.restricted-app-bridge",
+      "name": "amplefile.restricted-app-bridge",
       "compatibleRange": "2.x"
     },
     "features": [
       {
         "featureId": "connected-inbox",
-        "featureRevisionDigest": "work-fold.artifact.v1:sha256:<64-lowercase-hex>",
+        "featureRevisionDigest": "amplefile.artifact.v1:sha256:<64-lowercase-hex>",
         "declarationDigest": "sha256:canonical-declarations",
         "artifact": {
-          "mediaType": "application/vnd.work-fold.feature+bundle",
+          "mediaType": "application/vnd.amplefile.feature+bundle",
           "sizeBytes": 48172
         },
         "dataSchema": {
@@ -450,7 +450,7 @@ release digest it reviewed or signed.
   "kind": "feature",
   "subject": {
     "featureId": "connected-inbox",
-    "featureRevisionDigest": "work-fold.artifact.v1:sha256:<64-lowercase-hex>",
+    "featureRevisionDigest": "amplefile.artifact.v1:sha256:<64-lowercase-hex>",
     "declarationDigest": "sha256:canonical-declarations"
   },
   "projectId": "project_opaque",
@@ -514,7 +514,7 @@ project plane and a Runtime Instance. It is source-bound and release-less; a
 release-backed local or hosted App Instance is a different object. It follows
 these candidate rules:
 
-1. It is local, belongs to one registered work-folder and App Project, and requires no
+1. It is local, belongs to one registered Connected Folder and App Project, and requires no
    account.
 2. It executes only a staged, inspected, approved feature revision. Editing
    source does not hot-replace installed bytes.
@@ -522,7 +522,7 @@ these candidate rules:
    `dataNamespaceId`; host-owned runtime data is not written into source or
    included in publication.
 4. Access to project files requires an explicit development file grant. Raw
-   `.work-fold/`, preserved legacy `.workspace/`, conversations, `.pi/`, and other excluded metadata roots remain
+   `.amplefile/`, preserved legacy `.workspace/`, conversations, `.pi/`, and other excluded metadata roots remain
    ungrantable.
 5. A granted resource commit is serialized through the host-owned project
    mutation authority. In one crash-safe operation it writes the file, creates
@@ -540,7 +540,7 @@ these candidate rules:
    `runtimeInstanceId`, Feature Installation identity, and the typed Authority
    Stamp just like any other runtime.
 9. Removing the Development Instance follows its explicit data-retention choice;
-   it never deletes project files. Removing or unregistering the work-folder revokes
+   it never deletes project files. Removing or unregistering the Connected Folder revokes
    future Development Instance launches.
 
 This preserves a tight edit-review-run loop without pretending source and a
@@ -550,7 +550,7 @@ running instance are the same object.
 
 ### Accepted semantic decisions
 
-1. **Do not build a work-fold-owned generic “sync the work-folder.”** Publication,
+1. **Do not build an AmpleFile-owned generic “sync the Connected Folder.”** Publication,
    project collaboration, instance-data replication, secret storage,
    operational control, and Chat sharing are separate protocols.
 2. **Each App Instance belongs to exactly one tenant in the first model.** An
@@ -582,7 +582,7 @@ running instance are the same object.
 | --- | --- | --- |
 | Primary identity | `projectId`, plus an optional authenticated `cloudProjectId` registry binding | `tenantId` and `runtimeInstanceId` |
 | Mutable content | Ordinary selected source files and assets | Typed feature records, attachments, preferences, and operational state |
-| Executable content | Builder-side `.pi` resources under work-folder-registration trust; restricted feature source before review | Exact reviewed Feature Revisions staged from source for a Development Instance or pinned by one immutable Release for an App Instance |
+| Executable content | Builder-side `.pi` resources under connected-folder-registration trust; restricted feature source before review | Exact reviewed Feature Revisions staged from source for a Development Instance or pinned by one immutable Release for an App Instance |
 | Secrets | No release or runtime secrets | Host-owned instance- or principal-owned bindings |
 | History | Source edits and History checkpoints | Data revisions, migrations, grants, jobs, and audit receipts |
 | Collaboration | Explicit source roles and selected material | Instance roles and data access policy |
@@ -662,7 +662,7 @@ Principal-owned connections never transfer with an App Instance, Tenant,
 project, or Organization. A transfer or owner removal fences them immediately
 and begins their disconnect/provider-revocation workflow according to policy.
 
-Deleting a work-fold binding is not the same as provider-side revocation. The UI
+Deleting an AmpleFile binding is not the same as provider-side revocation. The UI
 and receipt must say which occurred. Secret values never appear in manifests,
 exports, logs, receipts, worker inputs/results, or feature storage.
 
@@ -676,7 +676,7 @@ exports, logs, receipts, worker inputs/results, or feature storage.
   "runtimeInstanceId": "runtime-instance_opaque",
   "featureId": "connected-inbox",
   "featureInstallationId": "feature-installation_opaque",
-  "featureRevisionDigest": "work-fold.artifact.v1:sha256:<64-lowercase-hex>",
+  "featureRevisionDigest": "amplefile.artifact.v1:sha256:<64-lowercase-hex>",
   "declarationId": "mail-api",
   "declarationDigest": "sha256:mail-api-declaration",
   "targetIdentity": "https://api.example.com",
@@ -716,29 +716,29 @@ and domains remain explicit.
 | Export | Snapshot | Produce a bounded portable copy of selected data and metadata without secrets |
 | Backup | Snapshot/operational | Service-controlled recovery copy with retention and restore authority, not a user collaboration stream |
 
-The following stay out of work-fold-owned publication, project collaboration,
+The following stay out of AmpleFile-owned publication, project collaboration,
 and instance-data synchronization streams:
 
 - `.pi/` and all other executable project configuration. A future collaboration
   path for it must be a separate full-trust act with code-execution consequences.
-- `.work-fold/conversations/`, preserved legacy `.workspace/` content, Chat attachments, compaction state, and Pi
+- `.amplefile/conversations/`, preserved legacy `.workspace/` content, Chat attachments, compaction state, and Pi
   sessions. Chat sharing requires its own consent, participant, model-provider,
   retention, and deletion contract.
-- raw `.work-fold/work-folder.json`. It can help reconcile a moved folder locally but
+- raw `.amplefile/connected-folder.json`. It can help reconcile a moved folder locally but
   cannot claim a cloud project, tenant, role, or publication right.
-- personal Library storage. Only an explicit independent copy into the work-folder may
+- personal Library storage. Only an explicit independent copy into the Connected Folder may
   later be selected as ordinary project input.
 - provider credentials, app connection values, local encrypted stores, instance
   secrets, and signing material.
 - local History objects, machine registry state, cached views, run queues, and
   updater state.
 
-These exclusions govern work-fold-owned streams only. A work-folder remains an
+These exclusions govern AmpleFile-owned streams only. A Connected Folder remains an
 ordinary folder: Google Drive for desktop, source control, backup software, or
-another third-party synchronization tool may still copy `.work-fold/`, its
+another third-party synchronization tool may still copy `.amplefile/`, its
 conversations, `.pi/`, and any other folder content under that tool's settings.
-work-fold must retain the current privacy warning and must not describe those
-third-party copies as native work-fold sync.
+AmpleFile must retain the current privacy warning and must not describe those
+third-party copies as native AmpleFile sync.
 
 The first source-collaboration design should explicitly select paths and either
 use an existing version-control model or define per-file base versions and
@@ -888,7 +888,7 @@ consent at activation time. It never means a publisher can force continuity.
 Lifecycle verbs remain distinct:
 
 - **suspend** stops new hosted execution while retaining declared state;
-- **disconnect** deletes a work-fold-held connection binding but may not revoke
+- **disconnect** deletes an amplefile-held connection binding but may not revoke
   the provider credential;
 - **uninstall** removes one release-backed local App Instance and applies its
   runtime-data policy without deleting project source, user-selected resource
@@ -937,8 +937,8 @@ it never deletes separately selected ordinary resource targets. Retained local
 namespaces are inactive and visible to the source Project for a later explicit
 purge. The app also implements [data export](app-data-recovery.md)
 and same-installation recovery; retained-data adoption is not implemented. Only a Development Instance is
-source-bound to an App Project and source work-folder, while a local App Instance is
-attached to its chosen target work-folder. work-fold blocks removing either
+source-bound to an App Project and source Connected Folder, while a local App Instance is
+attached to its chosen target Connected Folder. AmpleFile blocks removing either
 registration while that release-backed Instance remains active and directs the
 person to uninstall first. Retained data continues to bind the source Project
 until explicit purge, but not the former target. A future hosted contract must
@@ -946,7 +946,7 @@ not weaken those distinctions.
 
 ### Gate 3 risks
 
-- A work-fold-owned generic sync engine can accidentally upload Chats,
+- An AmpleFile-owned generic sync engine can accidentally upload Chats,
   executable `.pi` configuration, credentials, or unrelated ordinary files.
 - Incorrect tenant derivation or cache keys can create cross-tenant disclosure.
 - Principal-owned credentials can become de facto shared service accounts through
@@ -999,7 +999,7 @@ real adapters and operating policy before launch:
 - offline and queued operations have documented expiry, fencing, conflict, and
   reconnection behavior; and
 - the first private hosted journey works without generalized folder sync or an
-  account requirement for unrelated local work-folders.
+  account requirement for unrelated local Connected Folders.
 
 ## Design and implementation fixtures
 
@@ -1021,7 +1021,7 @@ depends on it ships:
    restore an old backup and prove tombstones, role revocation, secret deletion,
    installation incarnation, and typed Authority Stamp values prevent
    resurrection.
-5. **Excluded-content fixture:** place `.pi`, `.work-fold/conversations`, preserved legacy `.workspace/`, local
+5. **Excluded-content fixture:** place `.pi`, `.amplefile/conversations`, preserved legacy `.workspace/`, local
    History, a Library pointer, a credential-like value, a symlink, and a mutable
    external asset near selected source; release closure must exclude or reject
    them with an understandable reason.

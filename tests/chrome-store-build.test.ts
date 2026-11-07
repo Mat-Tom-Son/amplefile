@@ -23,12 +23,12 @@ test("production connector refuses missing or mismatched real Store identity", (
   const pinned = { ...distribution, ...publicIdentity() };
   assert.doesNotThrow(() => validateChromeDistribution(pinned));
   assert.throws(() => validateChromeDistribution({ ...pinned, storeId: "b".repeat(32) }), /does not match/);
-  assert.throws(() => validateChromeDistribution({ ...pinned, nativeHostName: "com.work-fold.chrome" }), /Invalid/);
+  assert.throws(() => validateChromeDistribution({ ...pinned, nativeHostName: "com.ample-file.chrome" }), /Invalid/);
   assert.throws(() => validateChromeDistribution({ ...pinned, leaseToken: "never package this" }), /Invalid/);
 });
 
 test("Store ZIP is reproducible, contains real icons/native bootstrap, and excludes local connection files", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "workfold-store-build-"));
+  const directory = await mkdtemp(join(tmpdir(), "amplefile-store-build-"));
   try {
     const pinned = { ...distribution, ...publicIdentity() };
     const a = await buildChromeStore({ distribution: pinned, output: join(directory, "a.zip") });
@@ -39,7 +39,7 @@ test("Store ZIP is reproducible, contains real icons/native bootstrap, and exclu
     const names = Object.keys(zip.files);
     assert.equal(names.some(name => /token|credential|launch\.json|connection\.json|node_modules/.test(name)), false);
     const manifest = JSON.parse(await zip.file("manifest.json")!.async("string"));
-    assert.equal(manifest.manifest_version, 3); assert.equal(manifest.name, "work-fold");
+    assert.equal(manifest.manifest_version, 3); assert.equal(manifest.name, "AmpleFile");
     assert.equal(manifest.key, pinned.publicKey); assert.equal(manifest.version, pinned.extensionVersion);
     assert.equal(manifest.background.service_worker, "service_worker.js"); assert.equal(manifest.action.default_popup, "popup.html");
     assert.ok(manifest.permissions.includes("nativeMessaging")); assert.ok(manifest.permissions.includes("debugger"));
@@ -50,7 +50,7 @@ test("Store ZIP is reproducible, contains real icons/native bootstrap, and exclu
     assert.match(await zip.file("service_worker.js")!.async("string"), /^importScripts\("bootstrap\.js"\);/);
     for (const size of [16, 32, 48, 128]) {
       const actual = await zip.file(`icons/${size}.png`)!.async("nodebuffer");
-      const source = await readFile(new URL(`../desktop/assets/brand/pack/png/transparent/work-fold-icon-${size}.png`, import.meta.url));
+      const source = await readFile(new URL(`../desktop/assets/brand/pack/png/transparent/amplefile-icon-${size}.png`, import.meta.url));
       assert.deepEqual(actual, source); assert.equal(actual.readUInt32BE(16), size); assert.equal(actual.readUInt32BE(20), size);
     }
     assert.match(await zip.file("LICENSE")!.async("string"), /MIT/);

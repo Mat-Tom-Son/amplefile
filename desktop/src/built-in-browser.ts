@@ -76,12 +76,12 @@ import {
 } from "../../src/shared/browser.js";
 
 export const browserChannels = {
-  state: "work-fold:browser:state",
-  openTab: "work-fold:browser:open-tab",
-  closeTab: "work-fold:browser:close-tab",
-  shortcut: "work-fold:browser:shortcut",
-  findResult: "work-fold:browser:find-result",
-  download: "work-fold:browser:download",
+  state: "amplefile:browser:state",
+  openTab: "amplefile:browser:open-tab",
+  closeTab: "amplefile:browser:close-tab",
+  shortcut: "amplefile:browser:shortcut",
+  findResult: "amplefile:browser:find-result",
+  download: "amplefile:browser:download",
 } as const;
 
 export type BrowserCommand =
@@ -101,7 +101,7 @@ export interface BuiltInBrowserOptions {
   sitePermissionsPath: string;
   /** The file that keeps the pages browser tabs visited. */
   historyPath: string;
-  /** The app's own product token for the user agent, such as `work-fold/0.13.0`. */
+  /** The app's own product token for the user agent, such as `amplefile/0.13.0`. */
   userAgentProduct: string;
   /** Runs after a page joins the window, so host overlays stay above it. */
   onViewAttached?: () => void;
@@ -896,7 +896,7 @@ export class BuiltInBrowser {
       if (status === "not-determined" && await systemPreferences.askForMediaAccess(kind)) continue;
       if (page) {
         const device = kind === "camera" ? "camera" : "microphone";
-        page.notice = { kind, text: `macOS has the ${device} turned off for work-fold. Turn it on in System Settings, then reload the page.` };
+        page.notice = { kind, text: `macOS has the ${device} turned off for AmpleFile. Turn it on in System Settings, then reload the page.` };
         this.#emit(page);
       }
       return false;

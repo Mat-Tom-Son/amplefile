@@ -45,15 +45,15 @@
    controls sit in one place everywhere. */
 
 :root:not([data-desktop]) {
-  --work-fold-window-inset-top: 32px;
-  --work-fold-window-gutter-top: 0px;
+  --amplefile-window-inset-top: 32px;
+  --amplefile-window-gutter-top: 0px;
 }
 
 .window-chrome {
   position: fixed;
   z-index: 45;
   top: 0;
-  height: var(--work-fold-window-inset-top, 32px);
+  height: var(--amplefile-window-inset-top, 32px);
   display: flex;
   align-items: center;
   gap: 2px;
@@ -112,42 +112,42 @@
 
 /* Hidden navigation pane: the rail stays, the work area takes the room. */
 
-.app-shell .work-folder-layout.sidebar-collapsed {
-  grid-template-columns: var(--work-folder-rail-width) minmax(0, 1fr);
+.app-shell .connected-folder-layout.sidebar-collapsed {
+  grid-template-columns: var(--connected-folder-rail-width) minmax(0, 1fr);
 }
 
-.app-shell .work-folder-layout.sidebar-collapsed > :is(.work-folder-mode-pane, .work-folder-resizer:not(.agent-panel-resizer)) {
+.app-shell .connected-folder-layout.sidebar-collapsed > :is(.connected-folder-mode-pane, .connected-folder-resizer:not(.agent-panel-resizer)) {
   display: none;
 }
 
-/* The work-fold agent panel, beside the work area on the right. */
+/* The AmpleFile agent panel, beside the work area on the right. */
 
 /* The work area keeps a usable minimum; in a narrow window the sidebar and
    the panel give up width before it does. */
-.app-shell .work-folder-layout.agent-panel-open {
-  grid-template-columns: var(--work-folder-rail-width) minmax(220px, var(--work-folder-sidebar-width)) var(--work-folder-resizer-width) minmax(320px, 1fr) var(--work-folder-resizer-width) minmax(280px, var(--agent-panel-width, 380px));
+.app-shell .connected-folder-layout.agent-panel-open {
+  grid-template-columns: var(--connected-folder-rail-width) minmax(220px, var(--connected-folder-sidebar-width)) var(--connected-folder-resizer-width) minmax(320px, 1fr) var(--connected-folder-resizer-width) minmax(280px, var(--agent-panel-width, 380px));
 }
 
-.app-shell .work-folder-layout.agent-panel-open.sidebar-collapsed {
-  grid-template-columns: var(--work-folder-rail-width) minmax(320px, 1fr) var(--work-folder-resizer-width) minmax(280px, var(--agent-panel-width, 380px));
+.app-shell .connected-folder-layout.agent-panel-open.sidebar-collapsed {
+  grid-template-columns: var(--connected-folder-rail-width) minmax(320px, 1fr) var(--connected-folder-resizer-width) minmax(280px, var(--agent-panel-width, 380px));
 }
 
 /* A closed panel stays mounted so its chat keeps its place. Hidden must win
    over every display rule for the panel and its resizer, or the closed panel
    still takes a grid cell and the layout wraps into a second row. */
-:root[data-theme] .app-shell .work-folder-layout > :is(.agent-panel, .agent-panel-resizer)[hidden],
-.app-shell .work-folder-layout > :is(.agent-panel, .agent-panel-resizer)[hidden] {
+:root[data-theme] .app-shell .connected-folder-layout > :is(.agent-panel, .agent-panel-resizer)[hidden],
+.app-shell .connected-folder-layout > :is(.agent-panel, .agent-panel-resizer)[hidden] {
   display: none;
 }
 
-:root[data-theme] .app-shell .work-folder-layout.agent-panel-open .right-rail {
+:root[data-theme] .app-shell .connected-folder-layout.agent-panel-open .right-rail {
   border-radius: 11px;
 }
 
 /* With the navigation pane hidden the work area meets the rail directly, so
    its left corners square off like the pane's do. This follows the panel rule
    so it holds with the panel open too; the right corners are left alone. */
-:root[data-theme] .app-shell .work-folder-layout.sidebar-collapsed .right-rail {
+:root[data-theme] .app-shell .connected-folder-layout.sidebar-collapsed .right-rail {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
 }
@@ -172,7 +172,7 @@
   border-radius: 0;
   background: transparent;
   color: var(--ui-text);
-  font-size: var(--work-fold-font-size, 14px);
+  font-size: var(--amplefile-font-size, 14px);
   line-height: 1.5;
   user-select: text;
 }
@@ -197,12 +197,12 @@
 }
 
 /* An app's rail dot: the same still green "new, waiting to be seen" dot the
-   Chats use. The app sets and clears it (workFoldRestrictedApp.attention). */
-.app-shell .work-folder-rail-app {
+   Chats use. The app sets and clears it (ampleFileRestrictedApp.attention). */
+.app-shell .connected-folder-rail-app {
   position: relative;
 }
 
-.app-shell .work-folder-rail-attention {
+.app-shell .connected-folder-rail-attention {
   position: absolute;
   top: 5px;
   left: calc(50% + 9px);
@@ -230,7 +230,7 @@
   content: "";
   position: fixed;
   z-index: 46;
-  top: calc(var(--work-fold-window-inset-top) / 2 - 6px);
+  top: calc(var(--amplefile-window-inset-top) / 2 - 6px);
   left: 14px;
   width: 12px;
   height: 12px;

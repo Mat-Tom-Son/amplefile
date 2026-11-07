@@ -1,5 +1,5 @@
 /**
- * Tray/menu-bar toggle discipline for the work-fold agent popover.
+ * Tray/menu-bar toggle discipline for the AmpleFile agent popover.
  *
  * Clicking the tray icon while the popover is open delivers two events: the
  * popover's blur (the mousedown lands outside it) and then the tray's click.
@@ -23,7 +23,7 @@ export interface TrayPopoverToggleState {
   visible: boolean;
   /**
    * When a blur-caused hide last ran, or null. Only blur hides arm this;
-   * programmatic hides (Escape, Open work-fold) never suppress a tray click.
+   * programmatic hides (Escape, Open AmpleFile) never suppress a tray click.
    */
   lastBlurHiddenAt: number | null;
 }

@@ -25,7 +25,7 @@ test("read repetition distinguishes changed source bytes, selection and errors",
     const id = `call-${index}`;
     entries.push({ message: { role: "assistant", content: [{ type: "toolCall", id, name: "read", arguments: { path: "/folder/input.txt", limit } }] } },
       { message: { role: "toolResult", toolCallId: id, isError: failed } },
-      { type: "custom", customType: "work-fold-progress.v1", data: { kind: "observation", tool: "read", taskId: "task", id: `ev-${sha256(`task\0${id}`).slice(0, 20)}`, sourceBinding: "bracketed", sources: [{ path: "input.txt", sha256: hash }] } });
+      { type: "custom", customType: "amplefile-progress.v1", data: { kind: "observation", tool: "read", taskId: "task", id: `ev-${sha256(`task\0${id}`).slice(0, 20)}`, sourceBinding: "bracketed", sources: [{ path: "input.txt", sha256: hash }] } });
   }
   // An untracked shell input is never counted as an unchanged read.
   entries.push({ message: { role: "toolResult", nestedCalls: { calls: [{ id: "nested", name: "read", status: "ok", arguments: { path: "input.txt", limit: 20 } }] } } });

@@ -195,7 +195,7 @@ capability fence. Project overrides narrow Everywhere exposure/enablement and
 cannot replace or revoke its credentials. Existing runtimes drain before auth
 changes; their credential stores refuse late refresh writes after shutdown.
 OAuth starts are serialized and cancelled setup never resumes after restart.
-Only the configured agent root and authorized work-folder's `.pi` are loaded.
+Only the configured agent root and authorized Connected Folder's `.pi` are loaded.
 Chat `/mcp` is status only; setup commands direct the person to the trusted UI.
 
 ## Web 0.29.0
@@ -206,7 +206,7 @@ The additive `createWebAccessExtension` factory uses upstream DuckDuckGo/Brave s
 
 `tests/included-toolkit-native.test.ts` starts isolated child fixtures with real native Pi loaders and local HTTP/stdio servers. It covers cold loading, credential and session isolation, schema validation, source-bearing web extraction, challenge/rate-limit/error handling, cancellation, OAuth PKCE and stale-configuration rejection, and readiness probes. Setup fixtures use isolated synthetic credentials; they never touch personal credentials. `tests/included-mcp-settings-api.test.ts` exercises real local HTTP setup-session binding and restart behavior. Native Extension UI callback coverage remains in the shared bridge suites.
 
-The optional `WORKFOLD_LIVE_WEB_TEST=1` fixture runs an actual DuckDuckGo search. It is excluded from the normal network-free test lane. Packaged Electron, live model use, OS permission setup, and the Chrome companion in a real profile still need the release acceptance lane; passing local fixtures does not certify those user paths.
+The optional `AMPLEFILE_LIVE_WEB_TEST=1` fixture runs an actual DuckDuckGo search. It is excluded from the normal network-free test lane. Packaged Electron, live model use, OS permission setup, and the Chrome companion in a real profile still need the release acceptance lane; passing local fixtures does not certify those user paths.
 
 ## Document dependency review
 

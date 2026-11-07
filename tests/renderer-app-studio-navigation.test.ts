@@ -5,17 +5,17 @@ import test from "node:test";
 import { useAppStudioNavigation } from "../web-local/src/hooks/useAppStudioNavigation.js";
 import { createDomHarness } from "./support/dom.js";
 
-const instances = ["first", "second"].map((workFolderId) => ({ workFolderId, runtimeInstanceId: `runtime-${workFolderId}` }));
-const registeredWorkFolderIds = new Set(["first", "second"]);
+const instances = ["first", "second"].map((connectedFolderId) => ({ connectedFolderId, runtimeInstanceId: `runtime-${connectedFolderId}` }));
+const registeredConnectedFolderIds = new Set(["first", "second"]);
 function TargetControl({ navigation, loading = false, onError }: {
   navigation: { id: string; runtimeInstanceId: string }; loading?: boolean; onError: (message: string) => void;
 }) {
   const [target, setTarget] = useState("first");
-  useAppStudioNavigation({ active: true, loading, instances, navigation, registeredWorkFolderIds,
+  useAppStudioNavigation({ active: true, loading, instances, navigation, registeredConnectedFolderIds,
     selectId: "target", onSelect: setTarget, onError });
   return createElement("select", { id: "target", value: target, onChange: (event: any) => setTarget(event.target.value) },
-    createElement("option", { value: "", disabled: true }, "Choose a work-folder"),
-    ...instances.map((item) => createElement("option", { value: item.workFolderId, key: item.workFolderId }, item.workFolderId)));
+    createElement("option", { value: "", disabled: true }, "Choose a Connected Folder"),
+    ...instances.map((item) => createElement("option", { value: item.connectedFolderId, key: item.connectedFolderId }, item.connectedFolderId)));
 }
 
 test("App Studio navigation waits for data, selects its exact installation once, and preserves later manual selection", async (context) => {

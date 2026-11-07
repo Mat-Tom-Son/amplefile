@@ -4,24 +4,24 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { workFoldCliBrokerPaths } from "../src/local/cli/broker.js";
-import type { WorkFoldCliActReceipt } from "../src/local/cli/act-receipts.js";
+import { ampleFileCliBrokerPaths } from "../src/local/cli/broker.js";
+import type { AmpleFileCliActReceipt } from "../src/local/cli/act-receipts.js";
 import {
-  normalizeWorkFoldAutomationDeclaration,
-  workFoldAutomationDigest,
+  normalizeAmpleFileAutomationDeclaration,
+  ampleFileAutomationDigest,
 } from "../src/local/automations/automation-declarations.js";
-import type { WorkFoldAutomationReceiptV1 } from "../src/local/automations/automation-store.js";
+import type { AmpleFileAutomationReceiptV1 } from "../src/local/automations/automation-store.js";
 import { startLocalApi } from "../src/local/server.js";
 import { automationTriggerSummary, type AutomationTriggerView } from "../src/shared/automation-presentation.js";
-import { workFoldAgentRoot } from "../src/local/state-paths.js";
+import { ampleFileAgentRoot } from "../src/local/state-paths.js";
 
 test("trusted Settings manages automations with receipted enablement, bounded run history, and global receipts", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-automation-settings-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-automation-settings-"));
   const stateRoot = join(sandbox, "state");
   const api = await startLocalApi({
     port: 0,
     stateBase: stateRoot,
-    workFolderBase: join(sandbox, "work-folders"),
+    connectedFolderBase: join(sandbox, "connected-folders"),
     loadEnv: false,
   });
   t.after(async () => {
@@ -29,11 +29,11 @@ test("trusted Settings manages automations with receipted enablement, bounded ru
     await rm(sandbox, { recursive: true, force: true });
   });
 
-  const source = await api.actFacade.createWorkFolder({ name: "Automation source" });
-  const destination = await api.actFacade.createWorkFolder({ name: "Automation destination" });
-  await writeFile(join(source.workFolder.workFolderRoot, "notes.txt"), "scheduled handoff", "utf8");
-  const declaration = normalizeWorkFoldAutomationDeclaration({
-    kind: "work-fold.automation",
+  const source = await api.actFacade.createConnectedFolder({ name: "Automation source" });
+  const destination = await api.actFacade.createConnectedFolder({ name: "Automation destination" });
+  await writeFile(join(source.connectedFolder.connectedFolderRoot, "notes.txt"), "scheduled handoff", "utf8");
+  const declaration = normalizeAmpleFileAutomationDeclaration({
+    kind: "amplefile.automation",
     version: 1,
     id: "automation-settings-handoff",
     title: "Settings handoff",
@@ -43,15 +43,15 @@ test("trusted Settings manages automations with receipted enablement, bounded ru
     steps: [{
       id: "handoff",
       kind: "files",
-      fromWorkFolder: source.workFolder.id,
+      fromConnectedFolder: source.connectedFolder.id,
       from: { kind: "paths", paths: ["notes.txt"] },
-      toWorkFolder: destination.workFolder.id,
+      toConnectedFolder: destination.connectedFolder.id,
       to: "Incoming",
     }],
   });
   await api.automations.enable({
     declaration,
-    expectedDigest: workFoldAutomationDigest(declaration),
+    expectedDigest: ampleFileAutomationDigest(declaration),
     grant: { requestId: "request-settings-fixture", surface: "main-window" },
   });
 
@@ -59,9 +59,9 @@ test("trusted Settings manages automations with receipted enablement, bounded ru
   assert.equal(listed.automations[0]?.title, "Settings handoff");
   assert.equal(listed.automations[0]?.health, "enabled");
   const shown = await api.automationSettings.show(declaration.id);
-  assert.deepEqual([...shown.automation.workFolders].sort((left, right) => left.workFolderName!.localeCompare(right.workFolderName!)), [
-    { workFolderId: destination.workFolder.id, workFolderName: "Automation destination" },
-    { workFolderId: source.workFolder.id, workFolderName: "Automation source" },
+  assert.deepEqual([...shown.automation.connectedFolders].sort((left, right) => left.connectedFolderName!.localeCompare(right.connectedFolderName!)), [
+    { connectedFolderId: destination.connectedFolder.id, connectedFolderName: "Automation destination" },
+    { connectedFolderId: source.connectedFolder.id, connectedFolderName: "Automation source" },
   ]);
 
   const accepted = await api.automationSettings.run(declaration.id);
@@ -69,7 +69,7 @@ test("trusted Settings manages automations with receipted enablement, bounded ru
   assert.match(accepted.requestId, /^settings:/);
   assert.match(accepted.runId, /.+/, "Settings receives the exact admitted run id for status polling");
   await waitFor(async () => {
-    const text = await readFile(join(destination.workFolder.workFolderRoot, "Incoming", "notes.txt"), "utf8").catch(() => null);
+    const text = await readFile(join(destination.connectedFolder.connectedFolderRoot, "Incoming", "notes.txt"), "utf8").catch(() => null);
     return text === "scheduled handoff";
   }, "the Settings run to complete");
   await waitFor(async () => (await api.automationSettings.history(declaration.id)).runs[0]?.outcome === "succeeded", "the run receipt to settle");
@@ -119,12 +119,12 @@ test("trusted Settings manages automations with receipted enablement, bounded ru
   await api.automationSettings.disable(declaration.id);
   assert.equal((await api.automationSettings.delete(declaration.id)).deleted, true);
 
-  const actPath = join(workFoldCliBrokerPaths(stateRoot).root, "receipts", "act.jsonl");
+  const actPath = join(ampleFileCliBrokerPaths(stateRoot).root, "receipts", "act.jsonl");
   await waitFor(async () => {
-    const entries = await jsonLines<WorkFoldCliActReceipt>(actPath);
+    const entries = await jsonLines<AmpleFileCliActReceipt>(actPath);
     return entries.some((entry) => entry.command === "automations.run" && entry.outcome === "ok");
   }, "the asynchronous Settings run terminal act receipt");
-  const settingsActs = (await jsonLines<WorkFoldCliActReceipt>(actPath))
+  const settingsActs = (await jsonLines<AmpleFileCliActReceipt>(actPath))
     .filter((entry) => entry.command.startsWith("automations."));
   assert.ok(settingsActs.length >= 10);
   assert.ok(settingsActs.every((entry) => entry.surface === "main-window"));
@@ -135,7 +135,7 @@ test("trusted Settings manages automations with receipted enablement, bounded ru
     assert.ok(entries.some((entry) => entry.outcome === "ok"), `${command} records a terminal outcome`);
   }
 
-  const domain = await jsonLines<WorkFoldAutomationReceiptV1>(domainPath);
+  const domain = await jsonLines<AmpleFileAutomationReceiptV1>(domainPath);
   const runNow = domain.find((entry) => entry.scope === "run" && entry.outcome === "accepted" && entry.cause?.kind === "run-now");
   assert.equal(runNow?.surface, "main-window");
   assert.equal(runNow?.requestId, accepted.requestId);
@@ -143,17 +143,17 @@ test("trusted Settings manages automations with receipted enablement, bounded ru
 
 
 test("automations enable is direct and an agent step opens a new management thread", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-automation-agent-step-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-automation-agent-step-"));
   const stateRoot = join(sandbox, "state");
   const api = await startLocalApi({
     port: 0,
     stateBase: stateRoot,
-    workFolderBase: join(sandbox, "work-folders"),
+    connectedFolderBase: join(sandbox, "connected-folders"),
     loadEnv: false,
   });
   t.after(async () => {
     await api.close();
-    // The work-fold agent hop's own turn may still be flushing a best-effort receipt as
+    // The AmpleFile agent hop's own turn may still be flushing a best-effort receipt as
     // the API closes; retry so a racing write never fails the test.
     for (let attempt = 0; attempt < 20; attempt += 1) {
       try {
@@ -168,9 +168,9 @@ test("automations enable is direct and an agent step opens a new management thre
 
   // An inert typed proposal on disk is the whole input; `automations enable`
   // reads it, pins its digest, and turns the automation on at once.
-  const proposalPath = join(sandbox, "digest.work-fold-automation.json");
+  const proposalPath = join(sandbox, "digest.amplefile-automation.json");
   await writeFile(proposalPath, JSON.stringify({
-    kind: "work-fold.automation-proposal",
+    kind: "amplefile.automation-proposal",
     version: 4,
     name: "Fold digest",
     createdBy: "assistant",
@@ -185,20 +185,20 @@ test("automations enable is direct and an agent step opens a new management thre
   const enabled = await api.actFacade.automationsEnable({ proposalPath, cwd: sandbox, requestId: "act:agent-step-enable" });
   assert.equal(enabled.health, "enabled");
   assert.equal(enabled.alreadyEnabled, false);
-  assert.deepEqual(enabled.referencedWorkFolderIds, [], "an agent step names no work-folder");
+  assert.deepEqual(enabled.referencedConnectedFolderIds, [], "an agent step names no Connected Folder");
   assert.match(enabled.automationId, /^automation-[a-f0-9]{16}$/);
   const again = await api.actFacade.automationsEnable({ proposalPath, cwd: sandbox, requestId: "act:agent-step-enable-2" });
   assert.equal(again.alreadyEnabled, true, "enabling the same declaration again changes nothing");
   assert.equal((await api.automations.getAutomation(enabled.automationId))?.grants.length, 1);
 
   await api.automationSettings.run(enabled.automationId);
-  // A fold hop opens a real work-fold agent Chat and starts a real Pi turn
+  // A fold hop opens a real AmpleFile agent Chat and starts a real Pi turn
   // against it. The budget is generous on purpose: it bounds a hang, not a
   // slow start while the rest of the suite shares the machine.
   await waitFor(async () => {
     const history = await api.automationSettings.history(enabled.automationId);
     return history.runs[0]?.hops[0]?.outcome !== undefined && history.runs[0]?.hops[0]?.outcome !== "accepted";
-  }, "the work-fold agent hop to settle", 120_000);
+  }, "the AmpleFile agent hop to settle", 120_000);
   const hop = (await api.automationSettings.history(enabled.automationId)).runs[0]?.hops[0];
   assert.equal(hop?.kind, "agent");
 
@@ -210,7 +210,7 @@ test("automations enable is direct and an agent step opens a new management thre
     text: "Started by hand.",
     bytes: "Started by hand.".length,
     truncated: false,
-  }], "the receipt records exactly what work-fold filled in");
+  }], "the receipt records exactly what AmpleFile filled in");
   assert.equal(terminal?.messageBytes, "Started by hand. Say hello.".length);
 
   // The runner's temporary Pi folder has no provider credentials, so the turn
@@ -221,7 +221,7 @@ test("automations enable is direct and an agent step opens a new management thre
   // person-visible message.
   if (terminal?.conversationId) {
     const transcript = await readFile(
-      join(workFoldAgentRoot(), ".work-fold", "conversations", `${terminal.conversationId}.jsonl`),
+      join(ampleFileAgentRoot(), ".amplefile", "conversations", `${terminal.conversationId}.jsonl`),
       "utf8",
     );
     const first = transcript.split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line) as {
@@ -235,12 +235,12 @@ test("automations enable is direct and an agent step opens a new management thre
 });
 
 test("Settings lists pending proposal files and turns one on by path through the CLI enable path", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-automation-proposals-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-automation-proposals-"));
   const stateRoot = join(sandbox, "state");
   const api = await startLocalApi({
     port: 0,
     stateBase: stateRoot,
-    workFolderBase: join(sandbox, "work-folders"),
+    connectedFolderBase: join(sandbox, "connected-folders"),
     loadEnv: false,
   });
   t.after(async () => {
@@ -248,12 +248,12 @@ test("Settings lists pending proposal files and turns one on by path through the
     await rm(sandbox, { recursive: true, force: true });
   });
 
-  const alpha = await api.actFacade.createWorkFolder({ name: "Alpha" });
-  const beta = await api.actFacade.createWorkFolder({ name: "Beta" });
-  const root = workFoldAgentRoot();
+  const alpha = await api.actFacade.createConnectedFolder({ name: "Alpha" });
+  const beta = await api.actFacade.createConnectedFolder({ name: "Beta" });
+  const root = ampleFileAgentRoot();
   await mkdir(root, { recursive: true });
-  const proposal = (title: string, workFolder: string) => JSON.stringify({
-    kind: "work-fold.automation-proposal",
+  const proposal = (title: string, connectedFolder: string) => JSON.stringify({
+    kind: "amplefile.automation-proposal",
     version: 1,
     name: title,
     createdBy: "assistant",
@@ -261,37 +261,37 @@ test("Settings lists pending proposal files and turns one on by path through the
     automation: {
       title,
       trigger: { kind: "interval", intervalMinutes: 60 },
-      steps: [{ id: "hello", kind: "chat", workFolder, message: "Say hello." }],
+      steps: [{ id: "hello", kind: "chat", connectedFolder, message: "Say hello." }],
     },
   });
-  const readyPath = join(root, "hourly.work-fold-automation.json");
-  await writeFile(readyPath, proposal("Hourly hello", alpha.workFolder.id), "utf8");
-  await writeFile(join(root, "broken.work-fold-automation.json"), "{", "utf8");
-  await writeFile(join(root, "gone.work-fold-automation.json"), proposal("Gone folder", "space-00000000000000ff"), "utf8");
+  const readyPath = join(root, "hourly.amplefile-automation.json");
+  await writeFile(readyPath, proposal("Hourly hello", alpha.connectedFolder.id), "utf8");
+  await writeFile(join(root, "broken.amplefile-automation.json"), "{", "utf8");
+  await writeFile(join(root, "gone.amplefile-automation.json"), proposal("Gone folder", "space-00000000000000ff"), "utf8");
 
   const pending = await api.automationSettings.proposals();
   assert.equal(pending.truncated, false);
   assert.deepEqual(pending.proposals.map((entry) => [entry.fileName, entry.valid]), [
-    ["broken.work-fold-automation.json", false],
-    ["gone.work-fold-automation.json", false],
-    ["hourly.work-fold-automation.json", true],
+    ["broken.amplefile-automation.json", false],
+    ["gone.amplefile-automation.json", false],
+    ["hourly.amplefile-automation.json", true],
   ]);
   const ready = pending.proposals.find((entry) => entry.valid);
   assert.ok(ready?.valid);
   assert.equal(ready.title, "Hourly hello");
   assert.deepEqual(ready.trigger, { kind: "interval", intervalMinutes: 60 });
   assert.equal(ready.path, readyPath);
-  const gone = pending.proposals.find((entry) => entry.fileName === "gone.work-fold-automation.json");
-  assert.match(gone?.valid === false ? gone.problem : "", /Names a work-folder that is not on this computer/);
+  const gone = pending.proposals.find((entry) => entry.fileName === "gone.amplefile-automation.json");
+  assert.match(gone?.valid === false ? gone.problem : "", /Names a Connected Folder that is not on this computer/);
 
   // Only a proposal file directly inside the agent's working folder is admitted.
-  const outside = join(sandbox, "outside.work-fold-automation.json");
-  await writeFile(outside, proposal("Outside", alpha.workFolder.id), "utf8");
-  await assert.rejects(() => api.automationSettings.enableProposal(outside), /Only automation files in the work-fold agent's folder/);
-  await assert.rejects(() => api.automationSettings.enableProposal(join(root, "..", "outside.work-fold-automation.json")), /Only automation files/);
-  await assert.rejects(() => api.automationSettings.enableProposal("hourly.work-fold-automation.json"), /absolute automation file path/);
-  await assert.rejects(() => api.automationSettings.enableProposal(join(root, "broken.work-fold-automation.json")), /not readable JSON/);
-  const linked = join(root, "linked.work-fold-automation.json");
+  const outside = join(sandbox, "outside.amplefile-automation.json");
+  await writeFile(outside, proposal("Outside", alpha.connectedFolder.id), "utf8");
+  await assert.rejects(() => api.automationSettings.enableProposal(outside), /Only automation files in the AmpleFile agent's folder/);
+  await assert.rejects(() => api.automationSettings.enableProposal(join(root, "..", "outside.amplefile-automation.json")), /Only automation files/);
+  await assert.rejects(() => api.automationSettings.enableProposal("hourly.amplefile-automation.json"), /absolute automation file path/);
+  await assert.rejects(() => api.automationSettings.enableProposal(join(root, "broken.amplefile-automation.json")), /not readable JSON/);
+  const linked = join(root, "linked.amplefile-automation.json");
   await symlink(outside, linked);
   await assert.rejects(() => api.automationSettings.enableProposal(linked), /regular file/);
   await rm(linked);
@@ -304,7 +304,7 @@ test("Settings lists pending proposal files and turns one on by path through the
   assert.match(enabled.requestId, /^settings:/);
   assert.equal(enabled.automation.health, "enabled");
   assert.equal(enabled.automation.title, "Hourly hello");
-  assert.deepEqual(enabled.automation.workFolders, [{ workFolderId: alpha.workFolder.id, workFolderName: "Alpha" }]);
+  assert.deepEqual(enabled.automation.connectedFolders, [{ connectedFolderId: alpha.connectedFolder.id, connectedFolderName: "Alpha" }]);
   const stored = await api.automations.getAutomation(enabled.automationId);
   assert.equal(stored?.digest, ready.digest);
   assert.equal(stored?.grants.at(-1)?.surface, "main-window");
@@ -312,34 +312,34 @@ test("Settings lists pending proposal files and turns one on by path through the
 
   // An enabled proposal shows once, in the main list — and still once after it is turned off.
   const after = await api.automationSettings.proposals();
-  assert.ok(!after.proposals.some((entry) => entry.fileName === "hourly.work-fold-automation.json"));
+  assert.ok(!after.proposals.some((entry) => entry.fileName === "hourly.amplefile-automation.json"));
   await api.automationSettings.disable(enabled.automationId);
-  assert.ok(!(await api.automationSettings.proposals()).proposals.some((entry) => entry.fileName === "hourly.work-fold-automation.json"));
+  assert.ok(!(await api.automationSettings.proposals()).proposals.some((entry) => entry.fileName === "hourly.amplefile-automation.json"));
   assert.equal((await api.automationSettings.enableProposal(readyPath)).alreadyEnabled, false, "turning a stored-but-off file on again re-enables it");
   assert.equal((await api.automationSettings.enableProposal(readyPath)).alreadyEnabled, true, "the same digest again changes nothing");
 
   // Editing the file makes it a new pending proposal with a new digest.
-  await writeFile(readyPath, proposal("Hourly hello, Beta", beta.workFolder.id), "utf8");
-  const edited = (await api.automationSettings.proposals()).proposals.find((entry) => entry.fileName === "hourly.work-fold-automation.json");
+  await writeFile(readyPath, proposal("Hourly hello, Beta", beta.connectedFolder.id), "utf8");
+  const edited = (await api.automationSettings.proposals()).proposals.find((entry) => entry.fileName === "hourly.amplefile-automation.json");
   assert.equal(edited?.valid, true);
   assert.notEqual(edited?.valid ? edited.digest : "", ready.digest);
 
   const listed = await api.automationSettings.list();
-  assert.deepEqual(listed.automations[0]?.workFolders, [{ workFolderId: alpha.workFolder.id, workFolderName: "Alpha" }], "summaries carry the work-folders for the filter");
+  assert.deepEqual(listed.automations[0]?.connectedFolders, [{ connectedFolderId: alpha.connectedFolder.id, connectedFolderName: "Alpha" }], "summaries carry the Connected Folders for the filter");
 
-  const actPath = join(workFoldCliBrokerPaths(stateRoot).root, "receipts", "act.jsonl");
-  const enables = (await jsonLines<WorkFoldCliActReceipt>(actPath)).filter((entry) => entry.command === "automations.enable");
+  const actPath = join(ampleFileCliBrokerPaths(stateRoot).root, "receipts", "act.jsonl");
+  const enables = (await jsonLines<AmpleFileCliActReceipt>(actPath)).filter((entry) => entry.command === "automations.enable");
   assert.ok(enables.some((entry) => entry.outcome === "accepted" && entry.surface === "main-window"));
-  assert.ok(enables.some((entry) => entry.outcome === "ok" && /from hourly\.work-fold-automation\.json/.test(entry.detail ?? "")));
+  assert.ok(enables.some((entry) => entry.outcome === "ok" && /from hourly\.amplefile-automation\.json/.test(entry.detail ?? "")));
   assert.ok(enables.some((entry) => entry.outcome === "error"), "a refused read after acceptance records its error");
 });
 
 test("a stored one-time proposal stays out of pending files after its admission horizon passes", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-automation-proposal-expiry-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-automation-proposal-expiry-"));
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "work-folders"),
+    connectedFolderBase: join(sandbox, "connected-folders"),
     loadEnv: false,
   });
   t.after(async () => {
@@ -347,19 +347,19 @@ test("a stored one-time proposal stays out of pending files after its admission 
     await api.close();
     await rm(sandbox, { recursive: true, force: true });
   });
-  const workFolder = (await api.actFacade.createWorkFolder({ name: "Scheduled folder" })).workFolder;
+  const connectedFolder = (await api.actFacade.createConnectedFolder({ name: "Scheduled folder" })).connectedFolder;
   const at = Date.now() + 5 * 60_000;
   const value = {
-    kind: "work-fold.automation-proposal", version: 2, name: "One reminder",
+    kind: "amplefile.automation-proposal", version: 2, name: "One reminder",
     createdBy: "assistant", createdAt: new Date().toISOString(),
     automation: {
       title: "One reminder", trigger: { kind: "at", at: new Date(at).toISOString(), ifMissed: "skip" },
-      steps: [{ id: "hello", kind: "chat", workFolder: workFolder.id, message: "Say hello." }],
+      steps: [{ id: "hello", kind: "chat", connectedFolder: connectedFolder.id, message: "Say hello." }],
     },
   };
-  const root = workFoldAgentRoot();
+  const root = ampleFileAgentRoot();
   await mkdir(root, { recursive: true });
-  const path = join(root, "reminder.work-fold-automation.json");
+  const path = join(root, "reminder.amplefile-automation.json");
   await writeFile(path, JSON.stringify(value));
   const enabled = await api.automationSettings.enableProposal(path);
   await api.automationSettings.disable(enabled.automationId);
@@ -375,14 +375,14 @@ test("a stored one-time proposal stays out of pending files after its admission 
 // A wall-clock budget, not an attempt count: every attempt awaits a real API
 // call, so a count means nothing under full-suite load.
 test("a folder automation that declares ifMissed run catches up after a restart, and Settings says so", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-automation-catch-up-settings-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-automation-catch-up-settings-"));
   const stateRoot = join(sandbox, "state");
   // The desktop's state root always exists before the first launch; mirror that.
   await mkdir(stateRoot, { recursive: true });
   const launch = async () => await startLocalApi({
     port: 0,
     stateBase: stateRoot,
-    workFolderBase: join(sandbox, "work-folders"),
+    connectedFolderBase: join(sandbox, "connected-folders"),
     loadEnv: false,
   });
   let api = await launch();
@@ -398,12 +398,12 @@ test("a folder automation that declares ifMissed run catches up after a restart,
     }
   });
 
-  const desktop = await api.actFacade.createWorkFolder({ name: "Desktop" });
-  const filed = await api.actFacade.createWorkFolder({ name: "Filed screenshots" });
-  await mkdir(join(desktop.workFolder.workFolderRoot, "Screenshots"), { recursive: true });
-  await writeFile(join(desktop.workFolder.workFolderRoot, "Screenshots", "before.png"), "before", "utf8");
-  const declaration = normalizeWorkFoldAutomationDeclaration({
-    kind: "work-fold.automation",
+  const desktop = await api.actFacade.createConnectedFolder({ name: "Desktop" });
+  const filed = await api.actFacade.createConnectedFolder({ name: "Filed screenshots" });
+  await mkdir(join(desktop.connectedFolder.connectedFolderRoot, "Screenshots"), { recursive: true });
+  await writeFile(join(desktop.connectedFolder.connectedFolderRoot, "Screenshots", "before.png"), "before", "utf8");
+  const declaration = normalizeAmpleFileAutomationDeclaration({
+    kind: "amplefile.automation",
     version: 5,
     id: "automation-settings-catch-up",
     title: "File screenshots",
@@ -411,7 +411,7 @@ test("a folder automation that declares ifMissed run catches up after a restart,
     createdAt: "2026-10-11T08:00:00.000Z",
     trigger: {
       kind: "files-changed",
-      workFolder: desktop.workFolder.id,
+      connectedFolder: desktop.connectedFolder.id,
       watch: { kind: "tree", path: "Screenshots", recursive: false, extensions: [".png"] },
       debounceSeconds: 1,
       cooldownMinutes: 0,
@@ -420,15 +420,15 @@ test("a folder automation that declares ifMissed run catches up after a restart,
     steps: [{
       id: "file",
       kind: "files",
-      fromWorkFolder: desktop.workFolder.id,
+      fromConnectedFolder: desktop.connectedFolder.id,
       from: { kind: "tree", path: "Screenshots", recursive: false, extensions: [".png"] },
-      toWorkFolder: filed.workFolder.id,
+      toConnectedFolder: filed.connectedFolder.id,
       to: "Inbox",
     }],
   });
   await api.automations.enable({
     declaration,
-    expectedDigest: workFoldAutomationDigest(declaration),
+    expectedDigest: ampleFileAutomationDigest(declaration),
     grant: { requestId: "request-catch-up-fixture", surface: "main-window" },
   });
   const snapshotPath = join(stateRoot, "automations", "folder-snapshots", `${declaration.id}.json`);
@@ -439,23 +439,23 @@ test("a folder automation that declares ifMissed run catches up after a restart,
   assert.equal(summary?.trigger.ifMissed, "run");
   assert.equal(
     automationTriggerSummary(summary!.trigger as AutomationTriggerView),
-    "When Screenshots changes · wait 1s · 0 minute cooldown · catches up after work-fold was closed",
+    "When Screenshots changes · wait 1s · 0 minute cooldown · catches up after AmpleFile was closed",
   );
   assert.equal(summary?.lastCatchUp, undefined);
 
-  // Quit, let a screenshot land while work-fold is closed, and launch again.
+  // Quit, let a screenshot land while AmpleFile is closed, and launch again.
   await api.close();
-  await writeFile(join(desktop.workFolder.workFolderRoot, "Screenshots", "while-closed.png"), "landed", "utf8");
+  await writeFile(join(desktop.connectedFolder.connectedFolderRoot, "Screenshots", "while-closed.png"), "landed", "utf8");
   api = await launch();
   await waitFor(async () => {
-    const text = await readFile(join(filed.workFolder.workFolderRoot, "Inbox", "while-closed.png"), "utf8").catch(() => null);
+    const text = await readFile(join(filed.connectedFolder.connectedFolderRoot, "Inbox", "while-closed.png"), "utf8").catch(() => null);
     return text === "landed";
   }, "the catch-up run to file the screenshot", 30_000);
   await waitFor(async () => (await api.automationSettings.history(declaration.id)).runs[0]?.outcome === "succeeded", "the catch-up receipt to settle");
 
   const history = await api.automationSettings.history(declaration.id);
   assert.equal(history.runs.length, 1, "one catch-up run, never a backlog");
-  assert.equal(history.runs[0]?.cause, "Caught up on 1 file that changed while work-fold was closed");
+  assert.equal(history.runs[0]?.cause, "Caught up on 1 file that changed while AmpleFile was closed");
   const caughtUp = (await api.automationSettings.list()).automations.find((automation) => automation.automationId === declaration.id);
   assert.deepEqual(caughtUp?.lastCatchUp, {
     runId: history.runs[0]!.runId,

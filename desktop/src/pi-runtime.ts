@@ -42,17 +42,17 @@ import {
 
 export interface PackagedPiRuntimeOptions {
   includedTools?: IncludedToolsConfiguration;
-  /** Pi config, packages, models, and session root outside registered work-folders. */
+  /** Pi config, packages, models, and session root outside registered Connected Folders. */
   agentDir: string;
   /** Optional Electron-safeStorage implementation; native auth.json is the fallback. */
   authStorageHost?: PiAuthStorageHost;
   mcpCredentialBackend?: PiRuntimeConfig["mcpCredentialBackend"];
-  /** Machine-local, non-secret Worker model preferences keyed by work-folder identity. */
+  /** Machine-local, non-secret Worker model preferences keyed by Connected Folder identity. */
   modelPreferencesPath?: string;
   /** Machine-local cache of OpenRouter's live model catalog. */
   openRouterCatalogPath?: string;
-  /** App-owned root for the work-fold agent's own model preference. */
-  workFoldAgentRootPath?: string;
+  /** App-owned root for the AmpleFile agent's own model preference. */
+  ampleFileAgentRootPath?: string;
   /** Shared HTTP/SSE or IPC bridge used by all extension sessions. */
   extensionUi?: PiExtensionUiBridge;
   preferredModel?: PiPreferredModel;
@@ -78,18 +78,18 @@ export class PackagedPiRuntimeProvider implements PiRuntimeProvider {
 
   constructor(private readonly options: PackagedPiRuntimeOptions) {
     this.preferences = new ModelPreferenceStore({
-      filePath: options.modelPreferencesPath ?? join(options.agentDir, "work-fold-model-preferences.json"),
-      ...(options.workFoldAgentRootPath ? { workFoldAgentRootPath: options.workFoldAgentRootPath } : {}),
+      filePath: options.modelPreferencesPath ?? join(options.agentDir, "amplefile-model-preferences.json"),
+      ...(options.ampleFileAgentRootPath ? { ampleFileAgentRootPath: options.ampleFileAgentRootPath } : {}),
     });
     this.openRouterCatalog = new OpenRouterModelCatalog({
       cachePath: options.openRouterCatalogPath ?? join(options.agentDir, "openrouter-models.json"),
     });
   }
 
-  async resolveRuntime(workFolderRoot: string): Promise<PiRuntimeConfig> {
+  async resolveRuntime(connectedFolderRoot: string): Promise<PiRuntimeConfig> {
     const auth = await this.credentials();
-    const scopedPreferredModel = await this.preferences.get(workFolderRoot).catch(() => undefined);
-    const workerInstructions = await this.preferences.getInstructions(workFolderRoot).catch(() => "");
+    const scopedPreferredModel = await this.preferences.get(connectedFolderRoot).catch(() => undefined);
+    const workerInstructions = await this.preferences.getInstructions(connectedFolderRoot).catch(() => "");
     const openRouterCatalog = await this.openRouterCatalog.load().catch(() => undefined);
     const preferredModel = this.options.preferredModel ?? scopedPreferredModel;
     return {
@@ -118,9 +118,9 @@ export class PackagedPiRuntimeProvider implements PiRuntimeProvider {
     };
   }
 
-  async health(workFolderRoot = process.cwd()): Promise<PackagedPiRuntimeHealth> {
+  async health(connectedFolderRoot = process.cwd()): Promise<PackagedPiRuntimeHealth> {
     try {
-      const status = await this.getSetupStatus(workFolderRoot);
+      const status = await this.getSetupStatus(connectedFolderRoot);
       return {
         ok: status.error === null,
         configured: status.configured,
@@ -137,45 +137,45 @@ export class PackagedPiRuntimeProvider implements PiRuntimeProvider {
     }
   }
 
-  getSetupStatus(workFolderRoot: string): Promise<PiSetupStatus> {
-    return getPiSetupStatus(workFolderRoot, this);
+  getSetupStatus(connectedFolderRoot: string): Promise<PiSetupStatus> {
+    return getPiSetupStatus(connectedFolderRoot, this);
   }
 
-  listModels(workFolderRoot: string): Promise<PiModelSummary[]> {
-    return listPiModels(workFolderRoot, this);
+  listModels(connectedFolderRoot: string): Promise<PiModelSummary[]> {
+    return listPiModels(connectedFolderRoot, this);
   }
 
   async saveApiKey(
-    workFolderRoot: string,
+    connectedFolderRoot: string,
     provider: string,
     apiKey: string,
     env?: Record<string, string>,
   ): Promise<void> {
-    await savePiApiKey(workFolderRoot, provider, apiKey, { env, runtimeProvider: this });
+    await savePiApiKey(connectedFolderRoot, provider, apiKey, { env, runtimeProvider: this });
   }
 
-  removeAuth(workFolderRoot: string, provider: string): Promise<void> {
-    return removePiProviderAuth(workFolderRoot, provider, this);
+  removeAuth(connectedFolderRoot: string, provider: string): Promise<void> {
+    return removePiProviderAuth(connectedFolderRoot, provider, this);
   }
 
-  loginOAuth(workFolderRoot: string, provider: string, hooks: PiOAuthHooks): Promise<void> {
-    return loginPiOAuth(workFolderRoot, provider, hooks, this);
+  loginOAuth(connectedFolderRoot: string, provider: string, hooks: PiOAuthHooks): Promise<void> {
+    return loginPiOAuth(connectedFolderRoot, provider, hooks, this);
   }
 
-  setDefaultModel(workFolderRoot: string, model: PiPreferredModel): Promise<void> {
-    return setPiDefaultModel(workFolderRoot, model, this);
+  setDefaultModel(connectedFolderRoot: string, model: PiPreferredModel): Promise<void> {
+    return setPiDefaultModel(connectedFolderRoot, model, this);
   }
 
-  setPreferredModel(workFolderRoot: string, model: PiPreferredModel): Promise<void> {
-    return this.preferences.set(workFolderRoot, model);
+  setPreferredModel(connectedFolderRoot: string, model: PiPreferredModel): Promise<void> {
+    return this.preferences.set(connectedFolderRoot, model);
   }
 
-  getWorkerInstructions(workFolderRoot: string): Promise<string> {
-    return this.preferences.getInstructions(workFolderRoot);
+  getWorkerInstructions(connectedFolderRoot: string): Promise<string> {
+    return this.preferences.getInstructions(connectedFolderRoot);
   }
 
-  setWorkerInstructions(workFolderRoot: string, instructions: string): Promise<void> {
-    return this.preferences.setInstructions(workFolderRoot, instructions);
+  setWorkerInstructions(connectedFolderRoot: string, instructions: string): Promise<void> {
+    return this.preferences.setInstructions(connectedFolderRoot, instructions);
   }
 
   async refreshModelCatalog(providerId: string): Promise<PiModelCatalogRefreshResult> {
@@ -191,43 +191,43 @@ export class PackagedPiRuntimeProvider implements PiRuntimeProvider {
     return [await this.openRouterCatalog.status()];
   }
 
-  setProjectTrust(workFolderRoot: string, decision: boolean | null): Promise<void> {
-    return setPiProjectTrust(workFolderRoot, decision, this);
+  setProjectTrust(connectedFolderRoot: string, decision: boolean | null): Promise<void> {
+    return setPiProjectTrust(connectedFolderRoot, decision, this);
   }
 
-  listPackages(workFolderRoot: string): Promise<PiConfiguredPackage[]> {
-    return listPiPackages(workFolderRoot, this);
+  listPackages(connectedFolderRoot: string): Promise<PiConfiguredPackage[]> {
+    return listPiPackages(connectedFolderRoot, this);
   }
 
   installPackage(
-    workFolderRoot: string,
+    connectedFolderRoot: string,
     source: string,
     options: Omit<PiPackageMutationOptions, "runtimeProvider"> = {},
   ): Promise<void> {
-    return installPiPackage(workFolderRoot, source, { ...options, runtimeProvider: this });
+    return installPiPackage(connectedFolderRoot, source, { ...options, runtimeProvider: this });
   }
 
   removePackage(
-    workFolderRoot: string,
+    connectedFolderRoot: string,
     source: string,
     options: Omit<PiPackageMutationOptions, "runtimeProvider"> = {},
   ): Promise<boolean> {
-    return removePiPackage(workFolderRoot, source, { ...options, runtimeProvider: this });
+    return removePiPackage(connectedFolderRoot, source, { ...options, runtimeProvider: this });
   }
 
   updatePackages(
-    workFolderRoot: string,
+    connectedFolderRoot: string,
     source?: string,
     options: { onProgress?: (event: ProgressEvent) => void } = {},
   ): Promise<void> {
-    return updatePiPackages(workFolderRoot, source, { ...options, runtimeProvider: this });
+    return updatePiPackages(connectedFolderRoot, source, { ...options, runtimeProvider: this });
   }
 
   importSkillBundle(
-    workFolderRoot: string,
+    connectedFolderRoot: string,
     input: { fileName: string; bytes: Uint8Array; scope?: "user" | "project" },
   ): Promise<PiSkillBundleImportResult> {
-    return importPiSkillBundle(workFolderRoot, input, this);
+    return importPiSkillBundle(connectedFolderRoot, input, this);
   }
 
   async flush(): Promise<void> {

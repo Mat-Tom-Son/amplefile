@@ -29,7 +29,7 @@ export async function verifyHarnessEvaluation(base: string, helperName: string) 
   for (const copy of evidence.copies) {
     const owned = managedCopies.find(record => record.id === copy.id);
     assert.ok(owned, "The copy exists in the host's journal");
-    assert.equal(owned.workFolderId, copy.workFolderId);
+    assert.equal(owned.connectedFolderId, copy.connectedFolderId);
     assert.equal(resolve(owned.path), resolve(`${info.stateBase}-working-copies`, copy.id));
     // Resolve from the host's pinned identity, never a model-selected path.
     assert.equal((await readFile(join(owned.path, "branch.txt"), "utf8")).trim(), copy.expected);
@@ -40,7 +40,7 @@ export async function verifyHarnessEvaluation(base: string, helperName: string) 
     }
   }
   const requests = latest(await rows(join(info.stateBase, "requests/requests.jsonl")), "requestId"); const root = requests.find(record => record.parentRequestId === null)!;
-  const workFolderId: string = root.owner.workFolderId;
+  const connectedFolderId: string = root.owner.connectedFolderId;
   assert.equal(root.state, "done"); assert.equal(root.turns.length, 2);
   const questions = latest(await rows(join(info.stateBase, "requests/questions.jsonl")), "questionId"); assert.equal(questions.length, 1); assert.equal(questions[0].continuationTaskId, root.turns[1].taskId);
   const jobs = latest(await rows(join(info.stateBase, "jobs/jobs.jsonl")), "jobId"); assert.equal(jobs.length, 2);
@@ -51,7 +51,7 @@ export async function verifyHarnessEvaluation(base: string, helperName: string) 
   assert.match(await readFile(join(info.stateBase, "jobs", service.jobId, "output.log"), "utf8"), /SERVICE_READY/);
   assert.equal(terminal.state, "exited"); assert.equal(terminal.exitCode, 0); const serviceAtCompletion = (await rows(join(info.stateBase, "jobs/jobs.jsonl"))).filter(job => job.jobId === service.jobId && Date.parse(job.updatedAt) <= Date.parse(root.settledAt)).at(-1); assert.equal(serviceAtCompletion?.state, "running");
   if (service.state === "running") {
-  const stop = await exec(join(info.binDir, "work-fold"), ["jobs", "stop", "--work-folder", workFolderId, "--job", service.jobId, "--json"], { cwd: base, timeout: 30000 });
+  const stop = await exec(join(info.binDir, "amplefile"), ["jobs", "stop", "--connected-folder", connectedFolderId, "--job", service.jobId, "--json"], { cwd: base, timeout: 30000 });
   await writeFile(join(base, "service-stop.json"), stop.stdout);
   }
   const turns = latest(await rows(join(info.stateBase, "turns/turns.jsonl")), "turnId"); const helpers = turns.flatMap(turn => turn.helpers ?? []);

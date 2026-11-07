@@ -12,29 +12,29 @@ import {
   buildTurnIdentity,
   restatedRequestMaxChars,
   restateTurnIdentity,
-  workFoldTurnContextCustomType,
-  workFoldTurnIdentityCustomType,
+  ampleFileTurnContextCustomType,
+  ampleFileTurnIdentityCustomType,
 } from "../src/local/agent/turn-identity.js";
-import { buildWorkFolderTurnContext } from "../src/local/agent/work-folder-turn-context.js";
+import { buildConnectedFolderTurnContext } from "../src/local/agent/connected-folder-turn-context.js";
 
-const workFolderId = "space-0123456789abcdef";
+const connectedFolderId = "space-0123456789abcdef";
 
 test("answer continuations retain the original output contract through compaction", () => {
   const assignment = 'Deliver result.json with exactly {totals: {currency: "0.00"}, includedIds: [], excludedIds: []}. Preserve sources.';
   const answer = "Exclude disputed rows and use the corrected source.";
-  const workFolderTurn = buildWorkFolderTurnContext({ workFolderId, taskId: "answer-task", requestId: "request-a", assignment, answeredQuestionId: "question-a", handleSalt: "salt" });
-  const identity = buildTurnIdentity({ workFolderTurn, request: answer })!;
+  const connectedFolderTurn = buildConnectedFolderTurnContext({ connectedFolderId, taskId: "answer-task", requestId: "request-a", assignment, answeredQuestionId: "question-a", handleSalt: "salt" });
+  const identity = buildTurnIdentity({ connectedFolderTurn, request: answer })!;
   const messages = [{ role: "compactionSummary", summary: "The answer says to exclude disputes; write currencyTotals." }, { role: "user", content: answer }];
   const note = restateTurnIdentity(messages, identity)![1]!.content as string;
   assert.ok(note.includes(assignment), "the original assignment's literal fields must survive, not just the latest answer");
   assert.doesNotMatch(note, /<request>/, "the visible answer is not duplicated");
-  assert.ok(!restateTurnIdentity(messages, buildTurnIdentity({ workFolderTurn: { workFolderId, taskId: "other", requestId: "request-b" }, request: "Another request" }))![1]!.content!.includes(assignment), "another request cannot inherit this assignment");
+  assert.ok(!restateTurnIdentity(messages, buildTurnIdentity({ connectedFolderTurn: { connectedFolderId, taskId: "other", requestId: "request-b" }, request: "Another request" }))![1]!.content!.includes(assignment), "another request cannot inherit this assignment");
 });
 
 test("assignment recovery is bounded, preserves delegated scope and avoids duplicating visible instructions", () => {
   const assignment = `Use literal field names. ${"x".repeat(restatedRequestMaxChars)}TAIL`;
-  const turn = buildWorkFolderTurnContext({ workFolderId, taskId: "child-answer", requestId: "child", parentTaskId: "hidden-parent", assignment, handleSalt: "salt" });
-  const identity = buildTurnIdentity({ workFolderTurn: turn, request: "The answer is exclude." })!;
+  const turn = buildConnectedFolderTurnContext({ connectedFolderId, taskId: "child-answer", requestId: "child", parentTaskId: "hidden-parent", assignment, handleSalt: "salt" });
+  const identity = buildTurnIdentity({ connectedFolderTurn: turn, request: "The answer is exclude." })!;
   const summary = { role: "compactionSummary", summary: "Earlier work." };
   const note = restateTurnIdentity([summary], identity)![1]!.content as string;
   assert.match(note, /<assignment>\nUse literal field names\./);
@@ -42,31 +42,31 @@ test("assignment recovery is bounded, preserves delegated scope and avoids dupli
   assert.ok(!note.includes("hidden-parent"));
   const visible = restateTurnIdentity([summary, { role: "user", content: assignment }], identity)![1]!.content as string;
   assert.ok(!visible.includes("<assignment>"), "a fully visible assignment is not repeated");
-  assert.equal(buildTurnIdentity({ workFolderTurn: turn, request: assignment })!.assignment, undefined, "the current request already carries an identical assignment");
+  assert.equal(buildTurnIdentity({ connectedFolderTurn: turn, request: assignment })!.assignment, undefined, "the current request already carries an identical assignment");
   const short = { ...turn, delegated: { ...turn.delegated!, assignment: "A bounded excerpt", assignmentTruncated: true } };
-  assert.match(restateTurnIdentity([summary], buildTurnIdentity({ workFolderTurn: short, request: "Continue" }))![1]!.content as string, /already truncated/);
+  assert.match(restateTurnIdentity([summary], buildTurnIdentity({ connectedFolderTurn: short, request: "Continue" }))![1]!.content as string, /already truncated/);
   const prefix = "p".repeat(200);
-  const latest = buildTurnIdentity({ workFoldAgentTaskId: "agent-a", request: `${prefix}NEW REQUIREMENT` });
+  const latest = buildTurnIdentity({ ampleFileAgentTaskId: "agent-a", request: `${prefix}NEW REQUIREMENT` });
   assert.ok((restateTurnIdentity([summary, { role: "user", content: `${prefix}OLD REQUIREMENT` }], latest)![1]!.content as string).includes("NEW REQUIREMENT"), "a matching prefix cannot stand in for the entire current request");
 });
 
 test("a Worker's turn context still opens with its exact identity", () => {
-  const workFolderTurn = buildWorkFolderTurnContext({ workFolderId, taskId: "turn-a", requestId: "req-a", handleSalt: "salt" });
-  const text = buildTurnContextMessage({ workFolderTurn });
-  assert.match(text, /This turn's work-fold identity \(host-owned; use these exact ids\):\n\{\n {2}"workFolderId": "space-0123456789abcdef",\n {2}"taskId": "turn-a",\n {2}"requestId": "req-a"\n\}\nPass --work-folder with that work-folder id and --task with that task id/);
-  const agent = buildTurnContextMessage({ workFoldAgentTaskId: "agent-task-1" });
-  assert.match(agent, /This work-fold agent request's task id is:\nagent-task-1\nAdd --parent-task with that exact id/);
+  const connectedFolderTurn = buildConnectedFolderTurnContext({ connectedFolderId, taskId: "turn-a", requestId: "req-a", handleSalt: "salt" });
+  const text = buildTurnContextMessage({ connectedFolderTurn });
+  assert.match(text, /This turn's AmpleFile identity \(host-owned; use these exact ids\):\n\{\n {2}"connectedFolderId": "space-0123456789abcdef",\n {2}"taskId": "turn-a",\n {2}"requestId": "req-a"\n\}\nPass --connected-folder with that Connected Folder id and --task with that task id/);
+  const agent = buildTurnContextMessage({ ampleFileAgentTaskId: "agent-task-1" });
+  assert.match(agent, /This AmpleFile agent request's task id is:\nagent-task-1\nAdd --parent-task with that exact id/);
 });
 
 test("the identity is restated after a compaction summary only when the turn's own context is gone", () => {
-  const identity = buildTurnIdentity({ workFolderTurn: { workFolderId, taskId: "turn-current", requestId: "req-current" } })!;
+  const identity = buildTurnIdentity({ connectedFolderTurn: { connectedFolderId, taskId: "turn-current", requestId: "req-current" } })!;
   assert.equal(identity.taskId, "turn-current");
-  assert.match(identity.text, /replaces any task id, request id, or work-folder id named in the summary/);
+  assert.match(identity.text, /replaces any task id, request id, or Connected Folder id named in the summary/);
   assert.match(identity.text, /"taskId": "turn-current"/);
 
   const summary = { role: "compactionSummary", summary: "Task ID: turn-previous", timestamp: 10 };
-  const ownContext = { role: "custom", customType: workFoldTurnContextCustomType, content: buildTurnContextMessage({
-    workFolderTurn: buildWorkFolderTurnContext({ workFolderId, taskId: "turn-current", requestId: "req-current", handleSalt: "salt" }),
+  const ownContext = { role: "custom", customType: ampleFileTurnContextCustomType, content: buildTurnContextMessage({
+    connectedFolderTurn: buildConnectedFolderTurnContext({ connectedFolderId, taskId: "turn-current", requestId: "req-current", handleSalt: "salt" }),
   }), timestamp: 20 };
   const olderContext = { ...ownContext, content: "\"taskId\": \"turn-previous\"" };
   const user = { role: "user", content: "Find the reporters.", timestamp: 21 };
@@ -79,7 +79,7 @@ test("the identity is restated after a compaction summary only when the turn's o
   const restated = restateTurnIdentity([olderContext, summary, tool], identity)!;
   assert.deepEqual(restated.map((message) => message.role), ["custom", "compactionSummary", "custom", "toolResult"]);
   const note = restated[2] as { customType: string; content: string; display: boolean; timestamp: number };
-  assert.equal(note.customType, workFoldTurnIdentityCustomType);
+  assert.equal(note.customType, ampleFileTurnIdentityCustomType);
   assert.equal(note.display, false);
   assert.equal(note.timestamp, 10, "it sits with the summary, so its position is stable across requests");
   assert.match(note.content, /"taskId": "turn-current"/);
@@ -88,14 +88,14 @@ test("the identity is restated after a compaction summary only when the turn's o
   assert.match(note.content, /Recheck changed sources, dynamic state, missing coverage or unresolved concerns/);
   assert.doesNotMatch(note.content, /<request>/, "no request was given, so none is restated");
 
-  const agent = buildTurnIdentity({ workFoldAgentTaskId: "agent-task-9" })!;
+  const agent = buildTurnIdentity({ ampleFileAgentTaskId: "agent-task-9" })!;
   assert.match(restateTurnIdentity([summary, tool], agent)![1]!.content as string, /request's task id is:\nagent-task-9/);
   assert.equal(buildTurnIdentity({}), null);
 });
 
 test("after compaction the turn's own request is restated only when it is no longer visible", () => {
   const request = "Which interviewees reported the export bug? People describe it in many different ways.";
-  const identity = buildTurnIdentity({ workFolderTurn: { workFolderId, taskId: "turn-current", requestId: "req-current" }, request })!;
+  const identity = buildTurnIdentity({ connectedFolderTurn: { connectedFolderId, taskId: "turn-current", requestId: "req-current" }, request })!;
   const summary = { role: "compactionSummary", summary: "## Original Request\nThe user's actual task is not included.", timestamp: 10 };
   const tool = { role: "toolResult", content: [{ type: "text", text: "scan output" }], timestamp: 30 };
 
@@ -109,13 +109,13 @@ test("after compaction the turn's own request is restated only when it is no lon
   assert.doesNotMatch(visible[1]!.content as string, /<request>/, "a request still in view is not repeated");
 
   const long = `${"x".repeat(restatedRequestMaxChars)}TAIL`;
-  const cut = restateTurnIdentity([summary, tool], buildTurnIdentity({ workFoldAgentTaskId: "agent-task-1", request: long }))![1]!.content as string;
+  const cut = restateTurnIdentity([summary, tool], buildTurnIdentity({ ampleFileAgentTaskId: "agent-task-1", request: long }))![1]!.content as string;
   assert.ok(!cut.includes("TAIL"));
   assert.match(cut, /\[The message continues for 4 more characters; it is this turn's message in the Chat\.\]/);
 });
 
 test("after a real mid-turn compaction the next request carries the current turn's exact ids, and nothing extra is saved", { timeout: 30_000 }, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "wf-compaction-ids-"));
+  const root = await mkdtemp(join(tmpdir(), "af-compaction-ids-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   // A long file the second turn reads, enough to cross the compaction trigger.
   await writeFile(join(root, "big.txt"), Array.from({ length: 1500 }, (_, index) => `line ${index}: an ordinary note about the archive`).join("\n"));
@@ -137,7 +137,7 @@ test("after a real mid-turn compaction the next request carries the current turn
     if (text.includes("You are a context summarization assistant")) {
       summaries += 1;
       // The failure observed live: the summary names the previous turn's task id as current.
-      return fauxAssistantMessage("## Goal\nList the reporters.\n\n## Critical Context\n- Task ID: `turn-first-0001`\n- Work-folder ID: `space-0123456789abcdef`");
+      return fauxAssistantMessage("## Goal\nList the reporters.\n\n## Critical Context\n- Task ID: `turn-first-0001`\n- Connected Folder ID: `space-0123456789abcdef`");
     }
     requests.push(text);
     if (requests.length === 1) return fauxAssistantMessage("Noted.");
@@ -146,15 +146,15 @@ test("after a real mid-turn compaction the next request carries the current turn
   };
   faux.setResponses(Array.from({ length: 12 }, () => respond));
 
-  const turn = (taskId: string, requestId: string) => buildWorkFolderTurnContext({ workFolderId, taskId, requestId, handleSalt: "salt" });
-  assert.equal(await client.prompt("Remember this handbook.", { workFolderTurn: turn("turn-first-0001", "req-first") }), "Noted.");
+  const turn = (taskId: string, requestId: string) => buildConnectedFolderTurnContext({ connectedFolderId, taskId, requestId, handleSalt: "salt" });
+  assert.equal(await client.prompt("Remember this handbook.", { connectedFolderTurn: turn("turn-first-0001", "req-first") }), "Noted.");
   // Put the trigger just above what the Chat already holds, as a long Chat would be.
   const held = (await client.getState()).usage.contextTokens ?? 0;
   assert.ok(held > 0);
   settings.applyOverrides({ compaction: { enabled: true, reserveTokens: 200_000 - (held + 3_000), keepRecentTokens: 500 } });
 
   const assignment = 'Deliver result.json with exactly {totals: {currency: "0.00"}, includedIds: [], excludedIds: []}.';
-  assert.equal(await client.prompt("Which reporters are there?", { workFolderTurn: { ...turn("turn-second-0002", "req-second"), assignment, answeredQuestionId: "question-current" } }), "Done.");
+  assert.equal(await client.prompt("Which reporters are there?", { connectedFolderTurn: { ...turn("turn-second-0002", "req-second"), assignment, answeredQuestionId: "question-current" } }), "Done.");
   assert.ok(summaries >= 1, "Pi compacted during the second turn");
   const afterCompaction = requests.at(-1)!;
 
@@ -176,14 +176,14 @@ test("after a real mid-turn compaction the next request carries the current turn
 });
 
 test("the restatement after compaction carries the request's checklist as it stands", () => {
-  const identity = buildTurnIdentity({ workFolderTurn: { workFolderId, taskId: "turn-current", requestId: "req-current" } })!;
+  const identity = buildTurnIdentity({ connectedFolderTurn: { connectedFolderId, taskId: "turn-current", requestId: "req-current" } })!;
   const summary = { role: "compactionSummary", summary: "Earlier work.", timestamp: 10 };
   const messages = [summary, { role: "user", content: "Keep going.", timestamp: 20 }];
   const withChecklist = restateTurnIdentity(messages, { ...identity, checklist: [{ text: "Read the quotes", status: "done" }, { text: "Write the summary", status: "doing" }] })!;
-  const note = withChecklist.find((message) => (message as { customType?: string }).customType === workFoldTurnIdentityCustomType) as { content: string };
+  const note = withChecklist.find((message) => (message as { customType?: string }).customType === ampleFileTurnIdentityCustomType) as { content: string };
   assert.match(note.content, /Your checklist for this request as it stands/);
   assert.match(note.content, /\[x\] Read the quotes\n\[~\] Write the summary/);
   const without = restateTurnIdentity(messages, identity)!;
-  const plain = without.find((message) => (message as { customType?: string }).customType === workFoldTurnIdentityCustomType) as { content: string };
+  const plain = without.find((message) => (message as { customType?: string }).customType === ampleFileTurnIdentityCustomType) as { content: string };
   assert.doesNotMatch(plain.content, /checklist/i);
 });

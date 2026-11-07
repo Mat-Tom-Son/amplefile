@@ -1,75 +1,75 @@
-import type { WorkFoldCheckTextSnapshot } from "./check-text.js";
-import type { WorkFoldCheckRunRecord } from "./check-types.js";
+import type { AmpleFileCheckTextSnapshot } from "./check-text.js";
+import type { AmpleFileCheckRunRecord } from "./check-types.js";
 import { createModelReviewSensor } from "./model-review-sensor.js";
-import type { WorkFoldCheckDeclaration } from "../../shared/checks.js";
+import type { AmpleFileCheckDeclaration } from "../../shared/checks.js";
 import type {
-  WorkFoldCheckCandidateFinding,
-  WorkFoldCheckFileIdentity,
+  AmpleFileCheckCandidateFinding,
+  AmpleFileCheckFileIdentity,
 } from "./check-types.js";
 
-export interface WorkFoldCheckSensorInputSet {
-  snapshots?: WorkFoldCheckTextSnapshot[];
+export interface AmpleFileCheckSensorInputSet {
+  snapshots?: AmpleFileCheckTextSnapshot[];
   files: Array<{ path: string; sizeBytes: number }>;
   missingExactTargets: Array<{ path: string }>;
 }
 
-export interface WorkFoldCheckSensorContext {
-  declaration: WorkFoldCheckDeclaration;
+export interface AmpleFileCheckSensorContext {
+  declaration: AmpleFileCheckDeclaration;
   /** Runner-owned closed projection. Sensors never receive filesystem paths. */
-  inputs: WorkFoldCheckSensorInputSet;
+  inputs: AmpleFileCheckSensorInputSet;
   signal: AbortSignal;
 }
 
-export interface WorkFoldCheckSensorResult {
-  candidates: WorkFoldCheckCandidateFinding[];
+export interface AmpleFileCheckSensorResult {
+  candidates: AmpleFileCheckCandidateFinding[];
   skippedCount: number;
-  cost?: WorkFoldCheckRunRecord["cost"];
+  cost?: AmpleFileCheckRunRecord["cost"];
 }
 
-export interface WorkFoldCheckSensor {
+export interface AmpleFileCheckSensor {
   id: string;
   revision: number;
   /** Digest of the exact trusted implementation behind this revision. */
   implementationDigest: string;
   execution: "deterministic" | "model";
-  validate(declaration: WorkFoldCheckDeclaration): void;
-  run(context: WorkFoldCheckSensorContext): Promise<WorkFoldCheckSensorResult>;
+  validate(declaration: AmpleFileCheckDeclaration): void;
+  run(context: AmpleFileCheckSensorContext): Promise<AmpleFileCheckSensorResult>;
 }
 
-export const workFoldFilePresenceSensorDigest = "588ca4bcd9c5526a30cfa38ba27094a23d83b390b01d7390522e0be2309e90a0";
+export const ampleFileFilePresenceSensorDigest = "3e9248674bf7dc9a09d7daa3177edff672e1288d19f75c43436d9388336f15eb";
 
-const filePresenceSensor: WorkFoldCheckSensor = {
-  id: "work-fold.file-presence",
+const filePresenceSensor: AmpleFileCheckSensor = {
+  id: "amplefile.file-presence",
   revision: 1,
-  implementationDigest: workFoldFilePresenceSensorDigest,
+  implementationDigest: ampleFileFilePresenceSensorDigest,
   execution: "deterministic",
-  validate: validateWorkFoldFilePresence,
-  run: runWorkFoldFilePresence,
+  validate: validateAmpleFileFilePresence,
+  run: runAmpleFileFilePresence,
 };
 
-// WORK_FOLD_FILE_PRESENCE_SENSOR_IMPLEMENTATION_START
-function validateWorkFoldFilePresence(declaration: WorkFoldCheckDeclaration): void {
+// AMPLEFILE_FILE_PRESENCE_SENSOR_IMPLEMENTATION_START
+function validateAmpleFileFilePresence(declaration: AmpleFileCheckDeclaration): void {
   const parameters = declaration.sensor.parameters;
   const keys = Object.keys(parameters);
   if (keys.length !== 1 || keys[0] !== "expect" || (parameters.expect !== "present" && parameters.expect !== "absent")) {
-    throw new Error("work-fold.file-presence parameters must contain only expect: present or absent.");
+    throw new Error("amplefile.file-presence parameters must contain only expect: present or absent.");
   }
   if (declaration.targets.some((target) => target.kind !== "file" || target.role !== "primary")) {
-    throw new Error("work-fold.file-presence accepts only exact primary file targets.");
+    throw new Error("amplefile.file-presence accepts only exact primary file targets.");
   }
 }
 
-async function runWorkFoldFilePresence({ declaration, inputs: closedInputs, signal }: WorkFoldCheckSensorContext): Promise<WorkFoldCheckSensorResult> {
+async function runAmpleFileFilePresence({ declaration, inputs: closedInputs, signal }: AmpleFileCheckSensorContext): Promise<AmpleFileCheckSensorResult> {
   const expect = declaration.sensor.parameters.expect as "present" | "absent";
   const files = new Map(closedInputs.files.map((file) => [file.path, file]));
   const missing = new Set(closedInputs.missingExactTargets.map((target) => target.path));
-  const candidates: WorkFoldCheckCandidateFinding[] = [];
+  const candidates: AmpleFileCheckCandidateFinding[] = [];
   for (const target of declaration.targets) {
     if (signal.aborted) throw new Error(String(signal.reason || "Check sensor was aborted."));
     const file = files.get(target.path);
     const observed = file ? "file" : "missing";
     if (!file && !missing.has(target.path)) throw new Error(`Resolved target is missing from the closed input set: ${target.path}`);
-    const identity: WorkFoldCheckFileIdentity = {
+    const identity: AmpleFileCheckFileIdentity = {
       checkId: declaration.id,
       path: target.path,
       state: observed,
@@ -88,14 +88,14 @@ async function runWorkFoldFilePresence({ declaration, inputs: closedInputs, sign
   }
   return { candidates, skippedCount: 0 };
 }
-// WORK_FOLD_FILE_PRESENCE_SENSOR_IMPLEMENTATION_END
+// AMPLEFILE_FILE_PRESENCE_SENSOR_IMPLEMENTATION_END
 
-const builtinSensors = new Map<string, WorkFoldCheckSensor>([
+const builtinSensors = new Map<string, AmpleFileCheckSensor>([
   [filePresenceSensor.id, filePresenceSensor],
-  ["work-fold.text-review", createModelReviewSensor()],
+  ["amplefile.text-review", createModelReviewSensor()],
 ]);
 
-export function resolveWorkFoldCheckSensor(id: string, revision: number): WorkFoldCheckSensor | null {
+export function resolveAmpleFileCheckSensor(id: string, revision: number): AmpleFileCheckSensor | null {
   const sensor = builtinSensors.get(id) ?? null;
   return sensor?.revision === revision ? sensor : null;
 }

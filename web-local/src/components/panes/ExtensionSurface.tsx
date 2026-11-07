@@ -73,7 +73,7 @@ export function ExtensionSurfaceUnavailable({ surfaceId, viewId }: { surfaceId?:
     <div className="extension-surface-unavailable">
       <AppsListDetail24Regular aria-hidden="true" />
       <h2>Extension View Unavailable</h2>
-      <p>The Extension may have been removed, disabled, or no longer available to this work-folder.</p>
+      <p>The Extension may have been removed, disabled, or no longer available to this Connected Folder.</p>
       {surfaceId && viewId ? <code>{surfaceId}/{viewId}</code> : null}
     </div>
   );
@@ -99,5 +99,5 @@ function SurfaceBlock({ block }: { block: AgentSurfaceBlock }) {
 }
 
 function surfaceScopeLabel(surface: CapabilitySurface): string {
-  return surface.scope === "project" ? "This work-folder only" : surface.scope === "temporary" ? "Temporary" : "Everywhere";
+  return surface.scope === "project" ? "This Connected Folder only" : surface.scope === "temporary" ? "Temporary" : "Everywhere";
 }

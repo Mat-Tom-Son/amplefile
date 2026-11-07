@@ -9,12 +9,12 @@ function handlers() {
   return { call: registered.get("tool_call")!, result: registered.get("tool_result")! };
 }
 
-test("grep without its own glob leaves .work-fold and .workspace out at any depth", () => {
+test("grep without its own glob leaves .amplefile and .workspace out at any depth", () => {
   const { call } = handlers();
   const input: Record<string, unknown> = { pattern: "export bug" };
   call({ toolName: "grep", input });
   assert.equal(input.glob, reservedSearchExclusionGlob);
-  assert.equal(reservedSearchExclusionGlob, "!**/{.work-fold,.workspace}/**");
+  assert.equal(reservedSearchExclusionGlob, "!**/{.amplefile,.workspace}/**");
 
   const own: Record<string, unknown> = { pattern: "export bug", glob: "*.md" };
   call({ toolName: "grep", input: own });
@@ -31,26 +31,26 @@ test("grep and find results drop reserved paths but keep content that merely men
     toolName: "grep",
     isError: false,
     content: [{ type: "text", text: [
-      ".work-fold/conversations/c1.jsonl:1: export bug",
-      "nested/.work-fold/work-folder.json:3: export bug",
+      ".amplefile/conversations/c1.jsonl:1: export bug",
+      "nested/.amplefile/connected-folder.json:3: export bug",
       ".workspace/old.json:9: export bug",
       ".pi/skills/review/SKILL.md:2: export bug",
-      "docs/notes.md:1: export bug, see .work-fold/x",
+      "docs/notes.md:1: export bug, see .amplefile/x",
     ].join("\n") }],
   });
-  assert.equal(grep.content[0].text, [".pi/skills/review/SKILL.md:2: export bug", "docs/notes.md:1: export bug, see .work-fold/x"].join("\n"));
+  assert.equal(grep.content[0].text, [".pi/skills/review/SKILL.md:2: export bug", "docs/notes.md:1: export bug, see .amplefile/x"].join("\n"));
 
   const find = result({
     toolName: "find",
     isError: false,
-    content: [{ type: "text", text: [".work-fold/", ".work-fold/conversations/c1.jsonl", "docs/", "docs/notes.md", "nested/.work-fold/work-folder.json", ".workspace"].join("\n") }],
+    content: [{ type: "text", text: [".amplefile/", ".amplefile/conversations/c1.jsonl", "docs/", "docs/notes.md", "nested/.amplefile/connected-folder.json", ".workspace"].join("\n") }],
   });
   assert.equal(find.content[0].text, ["docs/", "docs/notes.md"].join("\n"));
 
-  const onlyReserved = result({ toolName: "grep", isError: false, content: [{ type: "text", text: ".work-fold/conversations/c1.jsonl:1: export bug" }] });
+  const onlyReserved = result({ toolName: "grep", isError: false, content: [{ type: "text", text: ".amplefile/conversations/c1.jsonl:1: export bug" }] });
   assert.deepEqual(onlyReserved.content, [{ type: "text", text: "No matches found" }]);
 
   assert.equal(result({ toolName: "grep", isError: false, content: [{ type: "text", text: "docs/notes.md:1: export bug" }] }), undefined, "an untouched result is not replaced");
-  assert.equal(result({ toolName: "read", isError: false, content: [{ type: "text", text: ".work-fold/work-folder.json" }] }), undefined, "a deliberate read is untouched");
-  assert.equal(result({ toolName: "grep", isError: true, content: [{ type: "text", text: ".work-fold/x:1: y" }] }), undefined, "errors pass through");
+  assert.equal(result({ toolName: "read", isError: false, content: [{ type: "text", text: ".amplefile/connected-folder.json" }] }), undefined, "a deliberate read is untouched");
+  assert.equal(result({ toolName: "grep", isError: true, content: [{ type: "text", text: ".amplefile/x:1: y" }] }), undefined, "errors pass through");
 });

@@ -18,7 +18,7 @@ const [settingsSource, paneSource, mainPreload, popoverPreload, desktopMain] = a
   readFile(new URL("../web-local/src/components/modals/DesktopSettingsModal.tsx", import.meta.url), "utf8"),
   readFile(new URL("../web-local/src/components/modals/AutomationsPane.tsx", import.meta.url), "utf8"),
   readFile(new URL("../desktop/src/preload.cts", import.meta.url), "utf8"),
-  readFile(new URL("../desktop/src/work-fold-agent-popover-preload.cts", import.meta.url), "utf8"),
+  readFile(new URL("../desktop/src/amplefile-agent-popover-preload.cts", import.meta.url), "utf8"),
   readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8"),
 ]);
 
@@ -32,7 +32,7 @@ test("General Settings includes Automations without introducing a builder", () =
   // surfaces tell a person the same thing (docs/automations.md).
   assert.match(paneSource, /While This Automation Is On/);
   assert.match(paneSource, /Standing channel: whatever step \{handoff\.from\}/);
-  assert.match(paneSource, /Worker turn uses the permissions its work-folder has at that moment/);
+  assert.match(paneSource, /Worker turn uses the permissions its Connected Folder has at that moment/);
   assert.match(paneSource, /No automations yet\./);
   // receipts-not-gates: nothing in this pane asks for permission or names an
   // authority mode; turning an automation on is one receipted click.
@@ -41,7 +41,7 @@ test("General Settings includes Automations without introducing a builder", () =
 
 test("Automation Settings has no HTTP fallback and stays on the trusted main-window bridge", () => {
   assert.doesNotMatch(paneSource, /\/api\/settings\/automations|\bfetch\s*\(|\bapi\s*[<(]/);
-  assert.match(paneSource, /window\.workFoldDesktop\?\.automations/);
+  assert.match(paneSource, /window\.ampleFileDesktop\?\.automations/);
 
   for (const [method, channel] of [
     ["list", "list"],
@@ -55,11 +55,11 @@ test("Automation Settings has no HTTP fallback and stays on the trusted main-win
     ["disable", "disable"],
     ["delete", "delete"],
   ] as const) {
-    assert.match(mainPreload, new RegExp(`${method}:.*ipcRenderer\\.invoke\\("work-fold:automations:${channel}"`));
-    assert.match(desktopMain, new RegExp(`ipcMain\\.handle\\("work-fold:automations:${channel}"[\\s\\S]{0,220}automationSettings\\(event`));
+    assert.match(mainPreload, new RegExp(`${method}:.*ipcRenderer\\.invoke\\("amplefile:automations:${channel}"`));
+    assert.match(desktopMain, new RegExp(`ipcMain\\.handle\\("amplefile:automations:${channel}"[\\s\\S]{0,220}automationSettings\\(event`));
   }
   assert.match(desktopMain, /const automationSettings = async \(event:[\s\S]{0,180}assertTrustedMainRenderer\(event\)/);
-  assert.doesNotMatch(popoverPreload, /work-fold:automations:|\broutings\s*:/);
+  assert.doesNotMatch(popoverPreload, /amplefile:automations:|\broutings\s*:/);
 });
 
 test("Automation actions are gated by enabled, disabled, suspended, and completed health", async (t) => {
@@ -83,8 +83,8 @@ test("Automation actions are gated by enabled, disabled, suspended, and complete
     for (const label of expectation.hidden) assert.ok(!labels.includes(label), `${expectation.health} hides ${label}`);
     assert.ok(
       [...dom.container.querySelectorAll(".automation-step-heading strong")]
-        .some((heading) => heading.textContent?.trim() === "Message work-fold agent"),
-      "a management step reads as a message to the work-fold agent",
+        .some((heading) => heading.textContent?.trim() === "Message AmpleFile agent"),
+      "a management step reads as a message to the AmpleFile agent",
     );
 
     await dom.cleanup();
@@ -141,14 +141,14 @@ test("Automations has no New automation button; the empty state says where to as
   t.after(() => dom.cleanup());
   const calls = installAutomationBridge("disabled");
   const drafts: string[] = [];
-  Object.assign(window.workFoldDesktop!, {
-    agent: { openWorkFoldAgentDraft: async (draft: string) => { drafts.push(draft); return true; } },
+  Object.assign(window.ampleFileDesktop!, {
+    agent: { openAmpleFileAgentDraft: async (draft: string) => { drafts.push(draft); return true; } },
   });
   await dom.render(createElement(AutomationsPane));
   await dom.settle();
   assert.equal([...dom.container.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent?.trim() === "New automation"), false);
   const empty = dom.container.querySelector(".automations-empty");
-  if (empty) assert.match(empty.textContent ?? "", /ask the work-fold agent/);
+  if (empty) assert.match(empty.textContent ?? "", /ask the AmpleFile agent/);
   assert.equal(drafts.length, 0);
   assert.equal(calls.run, 0);
 });
@@ -239,7 +239,7 @@ test("a folder automation that catches up says so, shows a waiting catch-up, and
   t.after(() => dom.cleanup());
   const trigger = {
     kind: "files-changed" as const,
-    workFolderId: "work-folder-a",
+    connectedFolderId: "connected-folder-a",
     watch: { kind: "tree" as const, path: "Screenshots", recursive: false, extensions: [".png"] },
     debounceSeconds: 5,
     cooldownMinutes: 1,
@@ -253,12 +253,12 @@ test("a folder automation that catches up says so, shows a waiting catch-up, and
     fileWatch: {
       state: "watching" as const,
       catchingUp: { reason: "asleep" as const, count: 2 },
-      notice: "An automation was running when work-fold stopped watching, so it took a fresh look instead of catching up; files that changed in that gap were not caught up.",
+      notice: "An automation was running when AmpleFile stopped watching, so it took a fresh look instead of catching up; files that changed in that gap were not caught up.",
     },
     stepCount: 1,
     lastCatchUp: { runId: "run-7", at: "2026-10-11T08:30:00.000Z", count: 3, reason: "closed" as const },
   };
-  Object.defineProperty(window, "workFoldDesktop", {
+  Object.defineProperty(window, "ampleFileDesktop", {
     configurable: true,
     value: {
       automations: {
@@ -270,8 +270,8 @@ test("a folder automation that catches up says so, shows a waiting catch-up, and
           automation: {
             ...summary,
             createdAt: "2026-10-11T08:00:00.000Z",
-            workFolders: [{ workFolderId: "work-folder-a", workFolderName: "Desktop" }],
-            steps: [{ id: "file", kind: "chat", workFolder: { workFolderId: "work-folder-a", workFolderName: "Desktop" }, message: "File these." }],
+            connectedFolders: [{ connectedFolderId: "connected-folder-a", connectedFolderName: "Desktop" }],
+            steps: [{ id: "file", kind: "chat", connectedFolder: { connectedFolderId: "connected-folder-a", connectedFolderName: "Desktop" }, message: "File these." }],
           },
         }),
         history: async (): Promise<AutomationHistoryResponse> => ({ runs: [], truncated: false, damagedLineCount: 0 }),
@@ -282,19 +282,19 @@ test("a folder automation that catches up says so, shows a waiting catch-up, and
   await dom.waitFor(() => Boolean(dom.container.querySelector(".automation-inspector-header")));
 
   const text = dom.container.textContent ?? "";
-  assert.match(text, /When Screenshots changes · wait 5s · 1 minute cooldown · catches up after work-fold was closed/);
-  assert.match(dom.container.querySelector(".automation-catch-up")?.textContent ?? "", /files added or changed while work-fold was closed, the computer was asleep, or this automation was off start one run/);
+  assert.match(text, /When Screenshots changes · wait 5s · 1 minute cooldown · catches up after AmpleFile was closed/);
+  assert.match(dom.container.querySelector(".automation-catch-up")?.textContent ?? "", /files added or changed while AmpleFile was closed, the computer was asleep, or this automation was off start one run/);
   assert.equal(
     dom.container.querySelector(".automation-catch-up-pending")?.textContent,
     "Catching up on 2 files that changed while the computer was asleep.",
   );
   assert.match(
     dom.container.querySelector(".automation-catch-up-last")?.textContent ?? "",
-    /^Last catch-up: .+ · Caught up on 3 files that changed while work-fold was closed$/,
+    /^Last catch-up: .+ · Caught up on 3 files that changed while AmpleFile was closed$/,
   );
   assert.match(dom.container.querySelector(".automation-catch-up-notice")?.textContent ?? "", /took a fresh look instead of catching up/);
   assert.match(text, /Changes made while an Automation is running are skipped\./);
-  assert.doesNotMatch(text, /Changes made while an Automation runs, the computer sleeps, or work-fold restarts are skipped\./);
+  assert.doesNotMatch(text, /Changes made while an Automation runs, the computer sleeps, or AmpleFile restarts are skipped\./);
 });
 
 test("desktop wake catches asynchronous automation resume failures", () => {
@@ -333,12 +333,12 @@ function installAutomationBridge(health: AutomationHealthState, running = false,
     automation: {
       ...summary,
       createdAt: "2026-09-01T11:00:00.000Z",
-      workFolders: [{ workFolderId: "work-folder-a", workFolderName: "Client launch" }],
+      connectedFolders: [{ connectedFolderId: "connected-folder-a", connectedFolderName: "Client launch" }],
       steps: [
-        { id: "handoff", kind: "chat", workFolder: { workFolderId: "work-folder-a", workFolderName: "Client launch" }, message: "Prepare the handoff." },
+        { id: "handoff", kind: "chat", connectedFolder: { connectedFolderId: "connected-folder-a", connectedFolderName: "Client launch" }, message: "Prepare the handoff." },
         { id: "report", kind: "agent", message: "The handoff finished." },
       ],
-      ...(health === "suspended" ? { suspension: { at: "2026-09-01T11:30:00.000Z", reason: "A referenced work-folder was removed." } } : {}),
+      ...(health === "suspended" ? { suspension: { at: "2026-09-01T11:30:00.000Z", reason: "A referenced Connected Folder was removed." } } : {}),
       ...(health === "completed" ? { completedAt: "2026-09-01T12:00:00.000Z" } : {}),
     },
   };
@@ -353,7 +353,7 @@ function installAutomationBridge(health: AutomationHealthState, running = false,
     truncated: false,
     damagedLineCount: 0,
   });
-  Object.defineProperty(window, "workFoldDesktop", {
+  Object.defineProperty(window, "ampleFileDesktop", {
     configurable: true,
     value: {
       automations: {
@@ -407,11 +407,11 @@ function installSwitchingAutomationBridge(): {
     automation: {
       ...summary(automationId),
       createdAt: "2026-09-01T11:00:00.000Z",
-      workFolders: [{ workFolderId: "work-folder-a", workFolderName: "Client launch" }],
+      connectedFolders: [{ connectedFolderId: "connected-folder-a", connectedFolderName: "Client launch" }],
       steps: [{
         id: "handoff",
         kind: "chat",
-        workFolder: { workFolderId: "work-folder-a", workFolderName: "Client launch" },
+        connectedFolder: { connectedFolderId: "connected-folder-a", connectedFolderName: "Client launch" },
         message: automationId === "automation-a" ? "Run A." : "Run B.",
       }],
     },
@@ -421,7 +421,7 @@ function installSwitchingAutomationBridge(): {
     status: { storeDamaged: false, journalDamaged: false, activeRunCount: 1 },
   };
   const history: AutomationHistoryResponse = { runs: [], truncated: false, damagedLineCount: 0 };
-  Object.defineProperty(window, "workFoldDesktop", {
+  Object.defineProperty(window, "ampleFileDesktop", {
     configurable: true,
     value: {
       automations: {
@@ -472,19 +472,19 @@ test("pending proposal files list above the automations and Turn on moves one in
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   installAutomationBridge("enabled");
-  const bridge = window.workFoldDesktop!.automations! as unknown as Record<string, unknown>;
-  const readyPath = "/state/management/hourly.work-fold-automation.json";
+  const bridge = window.ampleFileDesktop!.automations! as unknown as Record<string, unknown>;
+  const readyPath = "/state/management/hourly.amplefile-automation.json";
   const enabledPaths: string[] = [];
   let turnedOn = false;
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
-  Object.assign(window.workFoldDesktop!, { api: {} });
+  Object.assign(window.ampleFileDesktop!, { api: {} });
   globalThis.fetch = (async () => new Response(JSON.stringify({ automations: turnedOn ? [{ automationId: "automation-hourly" }] : [] }), {
     headers: { "content-type": "application/json" },
   })) as typeof fetch;
   function FolderRailState() {
-    const { byWorkFolder } = useFolderAutomations("work-folder-a", false);
-    return createElement("output", { "data-folder-count": true }, String(byWorkFolder["work-folder-a"]?.length ?? "loading"));
+    const { byConnectedFolder } = useFolderAutomations("connected-folder-a", false);
+    return createElement("output", { "data-folder-count": true }, String(byConnectedFolder["connected-folder-a"]?.length ?? "loading"));
   }
   const original = bridge.list as () => Promise<AutomationsResponse>;
   const added = {
@@ -493,7 +493,7 @@ test("pending proposal files list above the automations and Turn on moves one in
     health: "enabled" as const,
     trigger: { kind: "interval" as const, intervalMinutes: 60 },
     stepCount: 1,
-    workFolders: [{ workFolderId: "work-folder-a", workFolderName: "Client launch" }],
+    connectedFolders: [{ connectedFolderId: "connected-folder-a", connectedFolderName: "Client launch" }],
   };
   Object.assign(bridge, {
     list: async () => {
@@ -502,11 +502,11 @@ test("pending proposal files list above the automations and Turn on moves one in
     },
     proposals: async (): Promise<AutomationProposalsResponse> => ({
       proposals: [
-        { valid: false, path: "/state/management/broken.work-fold-automation.json", fileName: "broken.work-fold-automation.json", problem: "Not valid JSON." },
+        { valid: false, path: "/state/management/broken.amplefile-automation.json", fileName: "broken.amplefile-automation.json", problem: "Not valid JSON." },
         ...(turnedOn ? [] : [{
           valid: true as const,
           path: readyPath,
-          fileName: "hourly.work-fold-automation.json",
+          fileName: "hourly.amplefile-automation.json",
           automationId: "automation-hourly",
           digest: "a".repeat(64),
           title: "Hourly hello",
@@ -534,7 +534,7 @@ test("pending proposal files list above the automations and Turn on moves one in
   const rows = [...section.querySelectorAll<HTMLElement>(".automation-proposal")];
   assert.equal(rows.length, 2);
   const invalid = rows.find((row) => row.classList.contains("invalid"))!;
-  assert.match(invalid.textContent ?? "", /broken\.work-fold-automation\.json/);
+  assert.match(invalid.textContent ?? "", /broken\.amplefile-automation\.json/);
   assert.equal(invalid.getAttribute("title"), "Not valid JSON.");
   assert.equal(invalid.querySelector("button"), null, "an invalid file has no button");
   const ready = rows.find((row) => !row.classList.contains("invalid"))!;
@@ -560,9 +560,9 @@ test("invalid-only proposal files remain visible with their repair reason", asyn
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   installAutomationBridge("enabled");
-  Object.assign(window.workFoldDesktop!.automations!, {
+  Object.assign(window.ampleFileDesktop!.automations!, {
     proposals: async (): Promise<AutomationProposalsResponse> => ({
-      proposals: [{ valid: false, path: "/m/broken.work-fold-automation.json", fileName: "broken.work-fold-automation.json", problem: "Not valid JSON." }],
+      proposals: [{ valid: false, path: "/m/broken.amplefile-automation.json", fileName: "broken.amplefile-automation.json", problem: "Not valid JSON." }],
       truncated: false,
     }),
   });
@@ -572,27 +572,27 @@ test("invalid-only proposal files remain visible with their repair reason", asyn
   const section = dom.container.querySelector(".automation-proposals")!;
   assert.equal(section.querySelector("h5")?.textContent, "Automation Files");
   const invalid = section.querySelector(".automation-proposal.invalid")!;
-  assert.match(invalid.textContent ?? "", /broken\.work-fold-automation\.json/);
+  assert.match(invalid.textContent ?? "", /broken\.amplefile-automation\.json/);
   assert.equal(invalid.getAttribute("title"), "Not valid JSON.");
   assert.equal(invalid.querySelector("button"), null);
 });
 
-test("the work-folder filter narrows the one automation list client-side", async (t) => {
+test("the Connected Folder filter narrows the one automation list client-side", async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   installAutomationBridge("enabled");
-  const summary = (automationId: string, title: string, workFolders: Array<{ workFolderId: string; workFolderName: string }>) => ({
+  const summary = (automationId: string, title: string, connectedFolders: Array<{ connectedFolderId: string; connectedFolderName: string }>) => ({
     automationId,
     title,
     health: "enabled" as const,
     trigger: { kind: "manual" as const },
     stepCount: 1,
-    workFolders,
+    connectedFolders,
   });
-  const alpha = { workFolderId: "work-folder-alpha", workFolderName: "Alpha" };
-  const beta = { workFolderId: "work-folder-beta", workFolderName: "Beta" };
+  const alpha = { connectedFolderId: "connected-folder-alpha", connectedFolderName: "Alpha" };
+  const beta = { connectedFolderId: "connected-folder-beta", connectedFolderName: "Beta" };
   const listCalls = { count: 0 };
-  Object.assign(window.workFoldDesktop!.automations!, {
+  Object.assign(window.ampleFileDesktop!.automations!, {
     list: async (): Promise<AutomationsResponse> => {
       listCalls.count += 1;
       return {
@@ -624,7 +624,7 @@ test("the work-folder filter narrows the one automation list client-side", async
   assert.deepEqual(rows(), ["Alpha only", "Alpha to Beta", "Beta only"]);
 });
 
-test("a single automation or a single work-folder shows no work-folder filter", async (t) => {
+test("a single automation or a single Connected Folder shows no Connected Folder filter", async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   installAutomationBridge("enabled");

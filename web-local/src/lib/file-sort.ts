@@ -5,7 +5,7 @@ export type FileSortDirection = "asc" | "desc";
 export interface FileSort { key: FileSortKey; direction: FileSortDirection }
 
 export const defaultFileSort: FileSort = { key: "name", direction: "asc" };
-export const fileSortStorageKey = "work-fold.work-folder.file-sort.v1";
+export const fileSortStorageKey = "amplefile.connected-folder.file-sort.v1";
 
 /** The menu's choices, in order, with the direction each starts in. */
 export const fileSortOptions: ReadonlyArray<{ key: FileSortKey; label: string; firstDirection: FileSortDirection }> = [

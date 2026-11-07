@@ -1,7 +1,7 @@
-import { surfaceDomIdSuffix } from "../../lib/work-folder-ui";
+import { surfaceDomIdSuffix } from "../../lib/connected-folder-ui";
 import { FolderMentionMenu, type MentionFolderOption } from "./FolderMentionMenu";
 import { activeFolderMention, addressedFolderIds, insertFolderMention, matchingMentionFolders } from "../../lib/folder-mentions";
-import { useWorkFolderIdentityResolver } from "../../lib/work-folder-appearance-context";
+import { useConnectedFolderIdentityResolver } from "../../lib/connected-folder-appearance-context";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useWorkRequest } from "../../hooks/useWorkRequest";
 import { WorkRequest, openWorkFile } from "./WorkRequest";
@@ -9,13 +9,13 @@ import type * as React from "react";
 import { Add16Regular, ArrowDown20Regular, ArrowUp20Regular, Chat16Regular, ChevronDown16Regular, ChevronLeft16Regular, Desktop20Regular, Search16Regular } from "@fluentui/react-icons";
 import { AlertTriangle, Archive, CircleCheck, Clock3, Loader2, Square, X } from "../chrome/icons";
 
-import { chatDraftDebounceMs, genericChatEmptyGreetings, workFolderPathDragType } from "../../constants";
+import { chatDraftDebounceMs, genericChatEmptyGreetings, connectedFolderPathDragType } from "../../constants";
 import { createFixtureContextAttachment, fixtureConversationSummary } from "../../fixtures/shared";
 import { ApiError, api, createEventSource, errorText, isTransientNetworkError, rawErrorMessage } from "../../lib/api";
 import { requestConnectAi } from "../../lib/connect-ai";
 import { conversationLifecycleView } from "../../lib/chat-lifecycle";
 import { createChatTurnStateGate, observeChatTurnState } from "../../lib/chat-turn-state";
-import { draggedWorkFolderPaths, hasNativeFiles } from "../../lib/file-actions";
+import { draggedConnectedFolderPaths, hasNativeFiles } from "../../lib/file-actions";
 import { displayModelLabel } from "../../lib/model-display";
 import { thinkingLevelLabel } from "../../lib/thinking-levels";
 import { composerModelFilterThreshold, composerModelListView } from "../../lib/composer-model-list";
@@ -38,14 +38,14 @@ import { latestAssistantMessageId as findLatestAssistantMessageId, settledTurnHa
 import { assistantTurnView } from "../../lib/chat-work-trail";
 import type { AssistantPresentation } from "../../../../src/shared/chat-presentation";
 import { dismissRestrictedAppProposal, installRestrictedAppProposal } from "../../lib/restricted-apps";
-import { resolveFixtureWorkFolderPathCandidates } from "../../lib/work-folder-path-links";
-import { workFolderIdentityStyle, type WorkFolderIdentity } from "../../lib/work-folder-identity";
+import { resolveFixtureConnectedFolderPathCandidates } from "../../lib/connected-folder-path-links";
+import { connectedFolderIdentityStyle, type ConnectedFolderIdentity } from "../../lib/connected-folder-identity";
 import type { AgentCatalog, AgentCommand, AgentModel, AgentStatus, ComposerState, ChatContextPathRequest,
-  ChatDraftRequest, ChatLifecycleView, ChatSendRequest, ChatMessage, ChatStreamEvent, ContextAttachment, ConversationRuntime, ConversationSummary, ExtensionUiRequest, PendingChatSend, RestrictedAppInstalled, RestrictedAppProposal, RuntimePreviewEntry, TreeEntry, WorkFolderCustomizationMap, WorkFolderFixtureConversation, WorkFolderSummary } from "../../types";
+  ChatDraftRequest, ChatLifecycleView, ChatSendRequest, ChatMessage, ChatStreamEvent, ContextAttachment, ConversationRuntime, ConversationSummary, ExtensionUiRequest, PendingChatSend, RestrictedAppInstalled, RestrictedAppProposal, RuntimePreviewEntry, TreeEntry, ConnectedFolderCustomizationMap, ConnectedFolderFixtureConversation, ConnectedFolderSummary } from "../../types";
 import type { WorkRequestView } from "../../../../src/shared/request-presentation";
 import { ExtensionQuestions } from "./ExtensionQuestions";
 import { AttachmentChip } from "./AttachmentChip";
-import { Banner, FluentGlyph, WorkFolderIconGlyph } from "../chrome/common";
+import { Banner, FluentGlyph, ConnectedFolderIconGlyph } from "../chrome/common";
 import { FileTypeIcon } from "../tree/FileTree";
 import { RuntimeContextPreview } from "./activity";
 import { composerCommandQuery, composerCommandValue, matchingComposerCommands } from "./command-menu";
@@ -107,8 +107,8 @@ const emptyMentionFolders: readonly MentionFolderOption[] = [];
 
 export function ChatPanel({
   surfaceTabId,
-  workFolder,
-  workFolderCustomizations,
+  connectedFolder,
+  connectedFolderCustomizations,
   modelConfigurationRevision = 0,
   active = true,
   targetConversationId = null,
@@ -118,7 +118,7 @@ export function ChatPanel({
   variant = "default",
   onAddPathToChatContext,
   onUploadDroppedFiles,
-  onOpenWorkFolderFile,
+  onOpenConnectedFolderFile,
   onConversationActivated,
   onConversationsChanged,
   onRunningChange,
@@ -137,8 +137,8 @@ export function ChatPanel({
   mentionFolders = emptyMentionFolders,
 }: {
   surfaceTabId: string;
-  workFolder: WorkFolderSummary;
-  workFolderCustomizations: WorkFolderCustomizationMap;
+  connectedFolder: ConnectedFolderSummary;
+  connectedFolderCustomizations: ConnectedFolderCustomizationMap;
   modelConfigurationRevision?: number;
   active?: boolean;
   targetConversationId?: string | null;
@@ -155,7 +155,7 @@ export function ChatPanel({
   variant?: "default" | "panel";
   onAddPathToChatContext?: (paths: readonly string[]) => void;
   onUploadDroppedFiles?: (dataTransfer: DataTransfer) => Promise<string[]>;
-  onOpenWorkFolderFile?: (path: string) => void;
+  onOpenConnectedFolderFile?: (path: string) => void;
   onConversationActivated?: (conversation: ConversationSummary | null) => void;
   onConversationsChanged?: (conversations: ConversationSummary[]) => void;
   onRunningChange?: (conversationId: string, running: boolean) => void;
@@ -167,16 +167,16 @@ export function ChatPanel({
   onRestrictedAppInstalled?: (app: RestrictedAppInstalled) => void;
   onRestrictedAppProposalRequested?: () => void;
   onOpenModelSettings?: () => void;
-  /** Opens one of this work-folder's Chats, as its row in Chats does. */
+  /** Opens one of this Connected Folder's Chats, as its row in Chats does. */
   onOpenConversation?: (conversation: ConversationSummary) => void;
   fixtureMode?: boolean;
-  fixtureConversations?: WorkFolderFixtureConversation[];
+  fixtureConversations?: ConnectedFolderFixtureConversation[];
   fixtureTreeEntries?: TreeEntry[];
-  /** Workers this composer can address with @ (2026-10-01), nested work-folders first. */
+  /** Workers this composer can address with @ (2026-10-01), nested Connected Folders first. */
   mentionFolders?: readonly MentionFolderOption[];
 }) {
   const [conversation, setConversation] = useState<ConversationSummary | null>(null);
-  const workState = useWorkRequest(!fixtureMode && conversation ? `/api/work-folders/${encodeURIComponent(workFolder.id)}/conversations/${encodeURIComponent(conversation.id)}/work` : null);
+  const workState = useWorkRequest(!fixtureMode && conversation ? `/api/connected-folders/${encodeURIComponent(connectedFolder.id)}/conversations/${encodeURIComponent(conversation.id)}/work` : null);
   const requestBusy = Boolean(workState.work?.canStop && workState.work.state !== "waiting");
   const activeRef = useRef(active);
   const onRunningChangeRef = useRef(onRunningChange);
@@ -250,10 +250,10 @@ export function ChatPanel({
   const [appProposalBusy, setAppProposalBusy] = useState(false);
   const appProposalVersionsRef = useRef(new Map<string, Pick<RestrictedAppProposal, "status" | "updatedAt">>());
   const emptyStateGreeting = useMemo(() => randomChatEmptyGreeting(), []);
-  const workFolderIdentityFor = useWorkFolderIdentityResolver();
-  const workFolderIdentity = useMemo(
-    () => workFolderIdentityFor(workFolder, workFolderCustomizations),
-    [workFolder, workFolderCustomizations, workFolderIdentityFor],
+  const connectedFolderIdentityFor = useConnectedFolderIdentityResolver();
+  const connectedFolderIdentity = useMemo(
+    () => connectedFolderIdentityFor(connectedFolder, connectedFolderCustomizations),
+    [connectedFolder, connectedFolderCustomizations, connectedFolderIdentityFor],
   );
 
   useEffect(() => {
@@ -306,7 +306,7 @@ export function ChatPanel({
   const streamingFlushRef = useRef<number | null>(null);
   const activeThinkingPreviewIdRef = useRef<string | null>(null);
   const runtimePreviewIdRef = useRef(0);
-  const workFolderIdRef = useRef(workFolder.id);
+  const connectedFolderIdRef = useRef(connectedFolder.id);
   const messagesLoadGenerationRef = useRef(0);
   const runtimeUpdateRevisionRef = useRef(0);
   const compactionNoticeOwnersRef = useRef(new Map<string, string>());
@@ -315,7 +315,7 @@ export function ChatPanel({
   useEffect(() => () => {
     messagesLoadGenerationRef.current++;
     cancelSettlementRetry();
-  }, [workFolder.id]);
+  }, [connectedFolder.id]);
   const eventStreamReadyConversationIdRef = useRef<string | null>(null);
   const pendingSendRef = useRef<PendingChatSend | null>(null);
   const postingPendingSendRef = useRef(false);
@@ -327,11 +327,11 @@ export function ChatPanel({
   const draftRef = useRef(draft);
   const draftStorageKey = useMemo(
     () => chatDraftStorageKey(
-      workFolder.id,
+      connectedFolder.id,
       targetConversationId ?? conversation?.id ?? null,
-      surfaceTabId === `chat:${workFolder.id}:new` ? null : surfaceTabId,
+      surfaceTabId === `chat:${connectedFolder.id}:new` ? null : surfaceTabId,
     ),
-    [workFolder.id, targetConversationId, conversation?.id, surfaceTabId],
+    [connectedFolder.id, targetConversationId, conversation?.id, surfaceTabId],
   );
   const runtimePreviewScrollKey = useMemo(
     () => runtimePreviews.map((entry) => `${entry.id}:${entry.phase ?? ""}:${entry.text.length}:${entry.detail?.length ?? 0}`).join("|"),
@@ -355,12 +355,12 @@ export function ChatPanel({
   const mentionMenuId = `composer-mentions-${surfaceDomIdSuffix(surfaceTabId)}`;
   useEffect(() => { setActiveMentionIndex(0); }, [activeMention?.start, activeMention?.query]);
   const composerModelPicker: ComposerModelPickerProps = {
-    workFolderId: workFolder.id,
+    connectedFolderId: connectedFolder.id,
     fixtureMode,
     revision: modelConfigurationRevision,
     disabled: running,
     // An existing Chat keeps the model its session started with; the saved
-    // work-folder model applies to the Chats that start after it.
+    // Connected Folder model applies to the Chats that start after it.
     forNewChats: Boolean(conversationRuntime),
     shownModel: conversationRuntime?.model ?? composerState?.model ?? null,
     onSaved: handleComposerModelSaved,
@@ -420,7 +420,7 @@ export function ChatPanel({
   }, []);
 
   useEffect(() => {
-    workFolderIdRef.current = workFolder.id;
+    connectedFolderIdRef.current = connectedFolder.id;
     clearTurnSettlement();
     clearRuntimePreviews();
     resetTurnArtifactTracking();
@@ -428,13 +428,13 @@ export function ChatPanel({
     postingPendingSendRef.current = false;
     eventStreamReadyConversationIdRef.current = null;
     transientConversationIdsRef.current = new Set();
-  }, [workFolder.id]);
+  }, [connectedFolder.id]);
 
   useEffect(() => {
     setAppProposal(null);
     setAppProposalBusy(false);
     appProposalVersionsRef.current.clear();
-  }, [workFolder.id, conversation?.id]);
+  }, [connectedFolder.id, conversation?.id]);
 
   useEffect(() => {
     if (fixtureMode) return;
@@ -457,7 +457,7 @@ export function ChatPanel({
   useEffect(() => {
     if (fixtureMode) return;
     void loadConversationList();
-  }, [workFolder.id, fixtureMode]);
+  }, [connectedFolder.id, fixtureMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -466,7 +466,7 @@ export function ChatPanel({
       setCommands(fixtureComposerCommands);
       return;
     }
-    void api<AgentCatalog>(`/api/work-folders/${workFolder.id}/agent/catalog`)
+    void api<AgentCatalog>(`/api/connected-folders/${connectedFolder.id}/agent/catalog`)
       .then((catalog) => {
         if (!cancelled) setCommands(catalog.commands ?? []);
       })
@@ -476,7 +476,7 @@ export function ChatPanel({
     return () => {
       cancelled = true;
     };
-  }, [workFolder.id, fixtureMode]);
+  }, [connectedFolder.id, fixtureMode]);
 
   useEffect(() => {
     setActiveCommandIndex(0);
@@ -501,8 +501,8 @@ export function ChatPanel({
       return;
     }
     void Promise.allSettled([
-      api<{ status: AgentStatus }>(`/api/agent/status?workFolderId=${encodeURIComponent(workFolder.id)}`),
-      api<{ composer: ComposerState }>(`/api/agent/composer?scope=work-folder&workFolderId=${encodeURIComponent(workFolder.id)}`),
+      api<{ status: AgentStatus }>(`/api/agent/status?connectedFolderId=${encodeURIComponent(connectedFolder.id)}`),
+      api<{ composer: ComposerState }>(`/api/agent/composer?scope=connected-folder&connectedFolderId=${encodeURIComponent(connectedFolder.id)}`),
     ]).then(([statusResult, composerResult]) => {
       if (cancelled) return;
       setModelStatus(statusResult.status === "fulfilled" ? statusResult.value.status : null);
@@ -511,13 +511,13 @@ export function ChatPanel({
     return () => {
       cancelled = true;
     };
-  }, [workFolder.id, fixtureMode, modelConfigurationRevision, composerModelRevision]);
+  }, [connectedFolder.id, fixtureMode, modelConfigurationRevision, composerModelRevision]);
 
   useEffect(() => {
     runtimeUpdateRevisionRef.current++;
     compactionNoticeOwnersRef.current.clear();
     setConversationRuntime(null);
-  }, [workFolder.id, conversation?.id]);
+  }, [connectedFolder.id, conversation?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -541,7 +541,7 @@ export function ChatPanel({
     return () => {
       cancelled = true;
     };
-  }, [workFolder.id, conversation?.id, messages.length, running, fixtureMode, modelStatus?.configured, modelConfigurationRevision, composerModelRevision]);
+  }, [connectedFolder.id, conversation?.id, messages.length, running, fixtureMode, modelStatus?.configured, modelConfigurationRevision, composerModelRevision]);
 
   useEffect(() => {
     if (!fixtureMode) return;
@@ -587,7 +587,7 @@ export function ChatPanel({
     }
     setRunning(fixtureRunning);
     setRuntimePreviews(fixturePreviews);
-  }, [workFolder.id, fixtureMode, targetConversationId, fixtureConversations]);
+  }, [connectedFolder.id, fixtureMode, targetConversationId, fixtureConversations]);
 
   useEffect(() => {
     if (fixtureMode) return;
@@ -630,7 +630,7 @@ export function ChatPanel({
     eventStreamReadyConversationIdRef.current = null;
     // Queue numbers belong to one Chat's stream; a new Chat starts from its own.
     queueSync.resetRevision();
-    const source = createEventSource(`/api/work-folders/${workFolder.id}/conversations/${conversationId}/events`);
+    const source = createEventSource(`/api/connected-folders/${connectedFolder.id}/conversations/${conversationId}/events`);
     source.onopen = () => {
       eventStreamReadyConversationIdRef.current = conversationId;
       setError(null);
@@ -655,7 +655,7 @@ export function ChatPanel({
           return;
         }
         pendingSendRef.current = null;
-        clearStoredPendingChatSend(workFolder.id, conversationId);
+        clearStoredPendingChatSend(connectedFolder.id, conversationId);
         postingPendingSendRef.current = false;
         runningRef.current = false;
         setRunning(false);
@@ -682,7 +682,7 @@ export function ChatPanel({
       }
       if (data.type === "context_compacted" && data.chatMessage?.kind === "context_compaction") {
         const notice = data.chatMessage;
-        compactionNoticeOwnersRef.current.set(notice.id, `${workFolder.id}:${conversationId}`);
+        compactionNoticeOwnersRef.current.set(notice.id, `${connectedFolder.id}:${conversationId}`);
         setMessages((current) => current.some((message) => message.id === notice.id) ? current : [...current, notice]);
       }
       const turnFrame = data.type === "turn_state" || data.type === "turn_snapshot";
@@ -796,10 +796,10 @@ export function ChatPanel({
       }
       // A proposal installs inside the proposing turn; the Chat surfaces the
       // settled receipt (added, or failed with a retry), never a review.
-      if (data.type === "restricted_app_proposal" && data.proposal?.workFolderId === workFolder.id && data.proposal.conversationId === conversationId && observeAppProposal(data.proposal)) {
+      if (data.type === "restricted_app_proposal" && data.proposal?.connectedFolderId === connectedFolder.id && data.proposal.conversationId === conversationId && observeAppProposal(data.proposal)) {
         onRestrictedAppProposalRequested?.();
       }
-      if (data.type === "restricted_app_proposal_settled" && data.proposal?.workFolderId === workFolder.id && data.proposal.conversationId === conversationId && observeAppProposal(data.proposal)) {
+      if (data.type === "restricted_app_proposal_settled" && data.proposal?.connectedFolderId === connectedFolder.id && data.proposal.conversationId === conversationId && observeAppProposal(data.proposal)) {
         const settled = data.proposal;
         if (settled.status === "installed" || settled.status === "failed") setAppProposal(settled);
         else setAppProposal((current) => current?.id === settled.id ? null : current);
@@ -836,7 +836,7 @@ export function ChatPanel({
       cancelStreamingFlush();
       activeThinkingPreviewIdRef.current = null;
     };
-  }, [conversation?.id, shouldKeepEventStreamOpen, workFolder.id]);
+  }, [conversation?.id, shouldKeepEventStreamOpen, connectedFolder.id]);
 
   useEffect(() => {
     if (!contextPathRequest) return;
@@ -856,7 +856,7 @@ export function ChatPanel({
         for (const path of request.paths) {
           if (fixtureMode) { staged.push(createFixtureContextAttachment(path)); continue; }
           try {
-            staged.push((await api<{ attachment: ContextAttachment }>(`/api/work-folders/${workFolder.id}/context-attachments`, { method: "POST", body: { path } })).attachment);
+            staged.push((await api<{ attachment: ContextAttachment }>(`/api/connected-folders/${connectedFolder.id}/context-attachments`, { method: "POST", body: { path } })).attachment);
           } catch (caught) {
             setError(errorText(caught));
             setDraft((current) => current.trim() ? current : request.text);
@@ -1016,10 +1016,10 @@ export function ChatPanel({
     }
   }
 
-  // Dev-only fixture script playback (`?fixture=work-folder&script=<conversationId>`): replays the
+  // Dev-only fixture script playback (`?fixture=connected-folder&script=<conversationId>`): replays the
   // conversation's first user+assistant pair as live action — typed prompt,
   // model reasoning, and streamed reply — for product-video recording.
-  function startScriptPlayback(conversation: WorkFolderFixtureConversation, initialDelayMs: number) {
+  function startScriptPlayback(conversation: ConnectedFolderFixtureConversation, initialDelayMs: number) {
     scriptPlaybackStateRef.current = "playing";
     setError(null);
     commitConversations((fixtureConversations ?? []).map(fixtureConversationSummary));
@@ -1126,7 +1126,7 @@ export function ChatPanel({
     userPinnedToBottomRef.current = true;
     setUserPinnedToBottom(true);
     try {
-      const result = await api<{ conversations: ConversationSummary[] }>(`/api/work-folders/${workFolder.id}/conversations`);
+      const result = await api<{ conversations: ConversationSummary[] }>(`/api/connected-folders/${connectedFolder.id}/conversations`);
       commitConversations(result.conversations);
     } catch (conversationError) {
       setError(errorText(conversationError));
@@ -1153,10 +1153,10 @@ export function ChatPanel({
     } finally {
       setOpeningConversationId((current) => current === selected.id ? null : current);
     }
-    const stored = readStoredPendingChatSend(workFolder.id, selected.id);
+    const stored = readStoredPendingChatSend(connectedFolder.id, selected.id);
     if (!stored) return;
     if (transcript.some((message) => message.role === "user" && message.id === stored.userMessageId)) {
-      clearStoredPendingChatSend(workFolder.id, selected.id);
+      clearStoredPendingChatSend(connectedFolder.id, selected.id);
       return;
     }
     const localUserMessage: ChatMessage = {
@@ -1175,7 +1175,7 @@ export function ChatPanel({
       contextPaths: stored.contextPaths,
       transientConversation: stored.transientConversation,
       draftStorageKey: stored.draftStorageKey,
-      ...(stored.addressedWorkFolderIds?.length ? { addressedWorkFolderIds: stored.addressedWorkFolderIds } : {}),
+      ...(stored.addressedConnectedFolderIds?.length ? { addressedConnectedFolderIds: stored.addressedConnectedFolderIds } : {}),
     };
     if (stored.transientConversation) transientConversationIdsRef.current.add(selected.id);
     beginTurnArtifactTracking();
@@ -1201,7 +1201,7 @@ export function ChatPanel({
   // new-Chat greeting; that covers the wait for the Chat list as well.
   const openingPastChat = !fixtureMode && Boolean(targetConversationId)
     && (conversation?.id !== targetConversationId || openingConversationId === targetConversationId);
-  // A new Chat puts the composer under its greeting, with the work-folder's
+  // A new Chat puts the composer under its greeting, with the Connected Folder's
   // recent Chats below, until the first message is sent (2026-10-27).
   const startLayout = !hasTranscript && !conversation && !targetConversationId && lifecycleView === "active";
   // The first message carries the composer from under the greeting to its place at the bottom.
@@ -1220,7 +1220,7 @@ export function ChatPanel({
   async function loadConversationRuntime(conversationId: string): Promise<ConversationRuntime | null> {
     try {
       const result = await api<{ runtime: ConversationRuntime }>(
-        `/api/work-folders/${workFolder.id}/conversations/${conversationId}/runtime`,
+        `/api/connected-folders/${connectedFolder.id}/conversations/${conversationId}/runtime`,
       );
       return result.runtime;
     } catch {
@@ -1250,7 +1250,7 @@ export function ChatPanel({
     let transcript: ChatMessage[] = [];
     try {
       if (fixtureMode) return [];
-      const result = await api<{ messages: ChatMessage[] }>(`/api/work-folders/${workFolder.id}/conversations/${conversationId}`);
+      const result = await api<{ messages: ChatMessage[] }>(`/api/connected-folders/${connectedFolder.id}/conversations/${conversationId}`);
       transcript = result.messages.filter((message) => message.role !== "system" || message.kind === "context_compaction");
       if (generation !== messagesLoadGenerationRef.current) return transcript;
       if (settleStreamingTurn) {
@@ -1274,7 +1274,7 @@ export function ChatPanel({
         // saved notice event. Keep that notice until the next read includes it.
         const ids = new Set(transcript.map((message) => message.id));
         return [...transcript, ...current.filter((message) => message.kind === "context_compaction" && !ids.has(message.id)
-          && compactionNoticeOwnersRef.current.get(message.id) === `${workFolder.id}:${conversationId}`)];
+          && compactionNoticeOwnersRef.current.get(message.id) === `${connectedFolder.id}:${conversationId}`)];
       });
       applyModelConversationTitle(conversationId, result.messages);
       if (pinToBottom) {
@@ -1360,7 +1360,7 @@ export function ChatPanel({
     setStreamingAssistant("");
     const sentDraftStorageKey = draftStorageKey;
     if (startLayout) composerGlideFromRef.current = composerRef.current?.getBoundingClientRect() ?? null;
-    const addressedWorkFolderIds = addressedFolderIds(content, mentionFolders);
+    const addressedConnectedFolderIds = addressedFolderIds(content, mentionFolders);
     if (contentOverride === undefined) setDraft("");
     setRunning(true);
     setError(null);
@@ -1402,12 +1402,12 @@ export function ChatPanel({
       return;
     }
     try {
-      const activeConversation = conversation ?? (await api<{ conversation: ConversationSummary }>(`/api/work-folders/${workFolder.id}/conversations`, {
+      const activeConversation = conversation ?? (await api<{ conversation: ConversationSummary }>(`/api/connected-folders/${connectedFolder.id}/conversations`, {
         method: "POST",
         idempotent: true,
         body: { conversationId: clientTurnIdentity("chat") },
       })).conversation;
-      const shouldActivateConversation = !conversation || transientConversationIdsRef.current.has(activeConversation.id) || activeConversation.title === "work-fold chat";
+      const shouldActivateConversation = !conversation || transientConversationIdsRef.current.has(activeConversation.id) || activeConversation.title === "amplefile chat";
       const activatedConversation = shouldActivateConversation
         ? { ...activeConversation, title: chatDisplayTitle({ serverTitle: activeConversation.title }), updatedAt: localUserMessage.createdAt }
         : activeConversation;
@@ -1428,10 +1428,10 @@ export function ChatPanel({
         contextPaths: attachmentsForSend.map((attachment) => attachment.sourcePath),
         transientConversation: transientConversationIdsRef.current.has(activeConversation.id),
         draftStorageKey: sentDraftStorageKey,
-        ...(addressedWorkFolderIds.length ? { addressedWorkFolderIds } : {}),
+        ...(addressedConnectedFolderIds.length ? { addressedConnectedFolderIds } : {}),
       };
       pendingSendRef.current = pending;
-      writeStoredPendingChatSend(workFolder.id, activeConversation.id, {
+      writeStoredPendingChatSend(connectedFolder.id, activeConversation.id, {
         version: 1,
         requestId,
         userMessageId,
@@ -1440,7 +1440,7 @@ export function ChatPanel({
         contextPaths: pending.contextPaths,
         transientConversation: pending.transientConversation,
         draftStorageKey: sentDraftStorageKey,
-        ...(pending.addressedWorkFolderIds ? { addressedWorkFolderIds: pending.addressedWorkFolderIds } : {}),
+        ...(pending.addressedConnectedFolderIds ? { addressedConnectedFolderIds: pending.addressedConnectedFolderIds } : {}),
       });
       if (eventStreamReadyConversationIdRef.current === activeConversation.id) void postPendingMessage();
     } catch (sendError) {
@@ -1470,7 +1470,7 @@ export function ChatPanel({
     setMessages((current) => [...current, localMessage]);
     scrollMessagesToBottom("auto");
     try {
-      const result = await api<{ accepted: boolean; message: ChatMessage }>(`/api/work-folders/${workFolder.id}/conversations/${conversation.id}/messages`, {
+      const result = await api<{ accepted: boolean; message: ChatMessage }>(`/api/connected-folders/${connectedFolder.id}/conversations/${conversation.id}/messages`, {
         method: "POST",
         idempotent: true,
         body: { content, delivery: "steer", requestId, userMessageId },
@@ -1499,7 +1499,7 @@ export function ChatPanel({
     postingPendingSendRef.current = true;
     pendingSendRef.current = null;
     try {
-      const result = await api<{ accepted: boolean; message: ChatMessage }>(`/api/work-folders/${workFolder.id}/conversations/${pending.conversation.id}/messages`, {
+      const result = await api<{ accepted: boolean; message: ChatMessage }>(`/api/connected-folders/${connectedFolder.id}/conversations/${pending.conversation.id}/messages`, {
         method: "POST",
         idempotent: true,
         body: {
@@ -1507,11 +1507,11 @@ export function ChatPanel({
           contextPaths: pending.contextPaths,
           requestId: pending.requestId,
           userMessageId: pending.userMessageId,
-          ...(pending.addressedWorkFolderIds?.length ? { addressedWorkFolderIds: pending.addressedWorkFolderIds } : {}),
+          ...(pending.addressedConnectedFolderIds?.length ? { addressedConnectedFolderIds: pending.addressedConnectedFolderIds } : {}),
         },
       });
       clearStoredChatDraft(pending.draftStorageKey);
-      clearStoredPendingChatSend(workFolder.id, pending.conversation.id);
+      clearStoredPendingChatSend(connectedFolder.id, pending.conversation.id);
       // An attachment belongs to the message it went out with. Files attached
       // while this one was being delivered stay for the next message.
       const sentPaths = new Set(pending.contextPaths);
@@ -1537,7 +1537,7 @@ export function ChatPanel({
         setError(errorText(sendError));
         return;
       }
-      clearStoredPendingChatSend(workFolder.id, pending.conversation.id);
+      clearStoredPendingChatSend(connectedFolder.id, pending.conversation.id);
       setRunning(false);
       clearRuntimePreviews();
       resetTurnArtifactTracking();
@@ -1583,12 +1583,12 @@ export function ChatPanel({
     const body = {
       content: next,
       contextPaths: contextAttachments.map((attachment) => attachment.sourcePath),
-      addressedWorkFolderIds: addressedFolderIds(next, mentionFolders),
+      addressedConnectedFolderIds: addressedFolderIds(next, mentionFolders),
     };
     queueSync.writeStarted();
     setQueueUnsettled(true);
     const write = queueWritesRef.current.catch(() => undefined)
-      .then(() => api<{ queued: { content: string }; revision: number }>(`/api/work-folders/${workFolder.id}/conversations/${conversationId}/queue`, { method: "PUT", body }));
+      .then(() => api<{ queued: { content: string }; revision: number }>(`/api/connected-folders/${connectedFolder.id}/conversations/${conversationId}/queue`, { method: "PUT", body }));
     queueWritesRef.current = write;
     void write.then((result) => {
       // The text stays this window's newest; the app now holds a copy of it.
@@ -1607,7 +1607,7 @@ export function ChatPanel({
     if (!content) return;
     publishQueue();
     if (needsDelete && conversation && !fixtureMode) {
-      const path = `/api/work-folders/${workFolder.id}/conversations/${conversation.id}/queue`;
+      const path = `/api/connected-folders/${connectedFolder.id}/conversations/${conversation.id}/queue`;
       const cancel = queueWritesRef.current.catch(() => undefined)
         .then(() => api<{ revision: number }>(path, { method: "DELETE" }));
       queueWritesRef.current = cancel;
@@ -1627,7 +1627,7 @@ export function ChatPanel({
     if (pendingSendRef.current) {
       const pending = pendingSendRef.current;
       pendingSendRef.current = null;
-      clearStoredPendingChatSend(workFolder.id, pending.conversation.id);
+      clearStoredPendingChatSend(connectedFolder.id, pending.conversation.id);
       postingPendingSendRef.current = false;
       setRunning(false);
       clearRuntimePreviews();
@@ -1650,7 +1650,7 @@ export function ChatPanel({
     if (!conversation) return;
     try {
       if (workState.work?.canStop) { await workState.act("stop"); return; }
-      await api<{ aborted: boolean }>(`/api/work-folders/${workFolder.id}/conversations/${conversation.id}/abort`, { method: "POST" });
+      await api<{ aborted: boolean }>(`/api/connected-folders/${connectedFolder.id}/conversations/${conversation.id}/abort`, { method: "POST" });
     } catch (abortError) {
       setError(errorText(abortError));
     }
@@ -1677,7 +1677,7 @@ export function ChatPanel({
     setCompactPending(true);
     setError(null);
     try {
-      await api<{ compacted: boolean }>(`/api/work-folders/${workFolder.id}/conversations/${conversation.id}/compact`, {
+      await api<{ compacted: boolean }>(`/api/connected-folders/${connectedFolder.id}/conversations/${conversation.id}/compact`, {
         method: "POST",
         ...(customInstructions ? { body: { customInstructions } } : {}),
       });
@@ -1715,14 +1715,14 @@ export function ChatPanel({
       if (!conversationId || !conversationRuntime) {
         const result = await api<{ composer: ComposerState }>("/api/agent/thinking", {
           method: "POST",
-          body: { scope: "work-folder", workFolderId: workFolder.id, level },
+          body: { scope: "connected-folder", connectedFolderId: connectedFolder.id, level },
         });
         setComposerState(result.composer);
         showToast({ text: `Reasoning level: ${thinkingLevelLabel(result.composer.thinkingLevel)}`, tone: "success" });
         return;
       }
       const result = await api<{ thinking: { level: string; available: string[] }; runtime: ConversationRuntime }>(
-        `/api/work-folders/${workFolder.id}/conversations/${conversationId}/thinking`,
+        `/api/connected-folders/${connectedFolder.id}/conversations/${conversationId}/thinking`,
         { method: "POST", body: { level } },
       );
       setConversationRuntime(result.runtime);
@@ -1741,7 +1741,7 @@ export function ChatPanel({
         setContextAttachments((current) => [...current, createFixtureContextAttachment(path)]);
         return;
       }
-      const result = await api<{ attachment: ContextAttachment }>(`/api/work-folders/${workFolder.id}/context-attachments`, {
+      const result = await api<{ attachment: ContextAttachment }>(`/api/connected-folders/${connectedFolder.id}/context-attachments`, {
         method: "POST",
         body: { path },
       });
@@ -1770,9 +1770,9 @@ export function ChatPanel({
     }
   }, []);
 
-  const resolveWorkFolderPathLinks = useCallback(async (paths: string[]) => {
-    if (fixtureMode) return resolveFixtureWorkFolderPathCandidates(paths, fixtureTreeEntries);
-    const result = await api<{ existing: string[] }>(`/api/work-folders/${workFolder.id}/paths-exist`, {
+  const resolveConnectedFolderPathLinks = useCallback(async (paths: string[]) => {
+    if (fixtureMode) return resolveFixtureConnectedFolderPathCandidates(paths, fixtureTreeEntries);
+    const result = await api<{ existing: string[] }>(`/api/connected-folders/${connectedFolder.id}/paths-exist`, {
       method: "POST",
       body: { paths },
     });
@@ -1788,14 +1788,14 @@ export function ChatPanel({
       if (bareNameMatches.length === 1 && bareNameMatches[0]) byCandidate.set(path, bareNameMatches[0]);
     }
     return byCandidate;
-  }, [fixtureMode, fixtureTreeEntries, workFolder.id]);
+  }, [fixtureMode, fixtureTreeEntries, connectedFolder.id]);
 
-  function hasWorkFolderPathDrag(event: React.DragEvent<HTMLElement>): boolean {
-    return Array.from(event.dataTransfer.types).includes(workFolderPathDragType);
+  function hasConnectedFolderPathDrag(event: React.DragEvent<HTMLElement>): boolean {
+    return Array.from(event.dataTransfer.types).includes(connectedFolderPathDragType);
   }
 
-  function composerAcceptsWorkFolderPathDrag(event: React.DragEvent<HTMLElement>): boolean {
-    return hasWorkFolderPathDrag(event) && Boolean(onAddPathToChatContext);
+  function composerAcceptsConnectedFolderPathDrag(event: React.DragEvent<HTMLElement>): boolean {
+    return hasConnectedFolderPathDrag(event) && Boolean(onAddPathToChatContext);
   }
 
   function composerAcceptsNativeFileDrag(event: React.DragEvent<HTMLElement>): boolean {
@@ -1803,13 +1803,13 @@ export function ChatPanel({
   }
 
   function handleComposerDragEnter(event: React.DragEvent<HTMLFormElement>): void {
-    if (!composerAcceptsWorkFolderPathDrag(event) && !composerAcceptsNativeFileDrag(event)) return;
+    if (!composerAcceptsConnectedFolderPathDrag(event) && !composerAcceptsNativeFileDrag(event)) return;
     event.preventDefault();
     setDragActive(true);
   }
 
   function handleComposerDragOver(event: React.DragEvent<HTMLFormElement>): void {
-    if (!composerAcceptsWorkFolderPathDrag(event) && !composerAcceptsNativeFileDrag(event)) return;
+    if (!composerAcceptsConnectedFolderPathDrag(event) && !composerAcceptsNativeFileDrag(event)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
     setDragActive(true);
@@ -1820,12 +1820,12 @@ export function ChatPanel({
   }
 
   function handleComposerDrop(event: React.DragEvent<HTMLFormElement>): void {
-    const acceptsWorkFolderPath = composerAcceptsWorkFolderPathDrag(event);
-    if (!acceptsWorkFolderPath && !composerAcceptsNativeFileDrag(event)) return;
+    const acceptsConnectedFolderPath = composerAcceptsConnectedFolderPathDrag(event);
+    if (!acceptsConnectedFolderPath && !composerAcceptsNativeFileDrag(event)) return;
     event.preventDefault();
     setDragActive(false);
-    if (acceptsWorkFolderPath) {
-      const paths = draggedWorkFolderPaths(event.dataTransfer);
+    if (acceptsConnectedFolderPath) {
+      const paths = draggedConnectedFolderPaths(event.dataTransfer);
       if (paths.length) onAddPathToChatContext?.(paths);
       return;
     }
@@ -1856,7 +1856,7 @@ export function ChatPanel({
   async function respondToExtension(request: ExtensionUiRequest, value: unknown, cancelled = false) {
     if (!conversation) return;
     const conversationId = conversation.id;
-    await api(`/api/work-folders/${workFolder.id}/conversations/${conversationId}/extension-ui/${request.id}`, {
+    await api(`/api/connected-folders/${connectedFolder.id}/conversations/${conversationId}/extension-ui/${request.id}`, {
       method: "POST", body: { value, cancelled },
     });
     setExtensionSnapshot((current) => current?.conversationId === conversationId
@@ -1876,8 +1876,8 @@ export function ChatPanel({
     const proposal = appProposal;
     setAppProposalBusy(true);
     try {
-      const app = await installRestrictedAppProposal(workFolder.id, proposal.conversationId, proposal.id);
-      showToast({ text: `Added ${app.manifest.title} to this work-folder.`, tone: "success" });
+      const app = await installRestrictedAppProposal(connectedFolder.id, proposal.conversationId, proposal.id);
+      showToast({ text: `Added ${app.manifest.title} to this Connected Folder.`, tone: "success" });
     } catch (caught) {
       setError(errorText(caught));
     } finally {
@@ -1891,7 +1891,7 @@ export function ChatPanel({
     if (proposal.status !== "failed") { setAppProposal(null); return; }
     setAppProposalBusy(true);
     try {
-      await dismissRestrictedAppProposal(workFolder.id, proposal.conversationId, proposal.id);
+      await dismissRestrictedAppProposal(connectedFolder.id, proposal.conversationId, proposal.id);
       setAppProposal(null);
     } catch (caught) {
       setError(errorText(caught));
@@ -1970,10 +1970,10 @@ export function ChatPanel({
                 suppressEnterAnimation={suppressMessageEnterIdsRef.current.has(message.id)}
                 showRuntimePreview={showRuntimePreview}
                 runtimePreviews={runtimePreviews}
-                workFolderId={workFolder.id}
-                workFolderRoot={workFolder.workFolderRoot}
-                onOpenWorkFolderFile={onOpenWorkFolderFile}
-                resolveWorkFolderPathLinks={resolveWorkFolderPathLinks}
+                connectedFolderId={connectedFolder.id}
+                connectedFolderRoot={connectedFolder.connectedFolderRoot}
+                onOpenConnectedFolderFile={onOpenConnectedFolderFile}
+                resolveConnectedFolderPathLinks={resolveConnectedFolderPathLinks}
                 onCopyMessage={copyMessage}
                 onContinue={canContinue ? continueInterruptedTurn : undefined}
                 key={message.id}
@@ -1986,17 +1986,17 @@ export function ChatPanel({
                 entries={liveTurnView.steps}
                 running={running}
                 replyStarted={liveTurnView.hasFinal}
-                renderText={(content, links) => <MarkdownMessage content={content} workFolderLinks={links} onOpenWorkFolderFile={onOpenWorkFolderFile} />}
-                workFolderRoot={workFolder.workFolderRoot}
-                onOpenWorkFolderFile={onOpenWorkFolderFile}
-                resolveWorkFolderPathLinks={resolveWorkFolderPathLinks}
+                renderText={(content, links) => <MarkdownMessage content={content} connectedFolderLinks={links} onOpenConnectedFolderFile={onOpenConnectedFolderFile} />}
+                connectedFolderRoot={connectedFolder.connectedFolderRoot}
+                onOpenConnectedFolderFile={onOpenConnectedFolderFile}
+                resolveConnectedFolderPathLinks={resolveConnectedFolderPathLinks}
               />
               {previewTruncated ? <p className="work-step-evidence-note" role="note">This live preview omits some earlier activity. The saved reply will appear when the turn ends.</p> : null}
               {liveTurnView.answer ? <MarkdownMessage content={liveTurnView.answer} /> : null}
             </article>
           ) : null}
           {!hasTranscript && !openingPastChat ? (
-            <ChatEmptyState greeting={emptyStateGreeting} workFolder={workFolder} identity={workFolderIdentity} />
+            <ChatEmptyState greeting={emptyStateGreeting} connectedFolder={connectedFolder} identity={connectedFolderIdentity} />
           ) : null}
           {queuedSend ? (
             <div className="queued-send-row">
@@ -2009,10 +2009,10 @@ export function ChatPanel({
               </button>
             </div>
           ) : null}
-          {failureShownInReply(workState.work, messages) ? null : <WorkRequest {...workState} showProgress={!running} showStop={!running && !requestBusy} onOpenFile={(workFolderId, path) => {
-            if (workFolderId === workFolder.id && onOpenWorkFolderFile) onOpenWorkFolderFile(path); else return openWorkFile(workFolderId, path);
+          {failureShownInReply(workState.work, messages) ? null : <WorkRequest {...workState} showProgress={!running} showStop={!running && !requestBusy} onOpenFile={(connectedFolderId, path) => {
+            if (connectedFolderId === connectedFolder.id && onOpenConnectedFolderFile) onOpenConnectedFolderFile(path); else return openWorkFile(connectedFolderId, path);
           }} />}
-          {extensionSnapshot && extensionSnapshot.conversationId === conversation?.id ? <ExtensionQuestions requests={extensionRequests} scope={`${workFolder.id}/${conversation.id}`} respond={respondToExtension} /> : null}
+          {extensionSnapshot && extensionSnapshot.conversationId === conversation?.id ? <ExtensionQuestions requests={extensionRequests} scope={`${connectedFolder.id}/${conversation.id}`} respond={respondToExtension} /> : null}
           <div className="message-end-sentinel" ref={messageEndRef} aria-hidden="true" />
         </div>
         {!userPinnedToBottom ? (
@@ -2130,7 +2130,7 @@ export function ChatPanel({
             onSelect={(event) => setComposerCaret(event.currentTarget.selectionStart ?? 0)}
             onPaste={(event) => {
               // A pasted image (screenshot, copied picture) is an explicit act:
-              // it lands in the work-folder's dated Dropped/ folder like a dropped
+              // it lands in the Connected Folder's dated Dropped/ folder like a dropped
               // file and is attached to this turn as an image the model sees.
               const transfer = pastedImageTransfer(event.clipboardData);
               if (!transfer || !onUploadDroppedFiles) return;
@@ -2211,9 +2211,9 @@ export function ChatPanel({
           <div className="composer-capability-bar">
             {variant === "panel" ? null : <>
             <ComposerAttachMenu
-              workFolderId={workFolder.id}
-              workFolderName={workFolder.name}
-              identity={workFolderIdentity}
+              connectedFolderId={connectedFolder.id}
+              connectedFolderName={connectedFolder.name}
+              identity={connectedFolderIdentity}
               fixtureMode={fixtureMode}
               fixtureTreeEntries={fixtureTreeEntries}
               attachedPaths={contextAttachments.map((attachment) => attachment.sourcePath)}
@@ -2237,10 +2237,10 @@ export function ChatPanel({
             {variant === "panel" ? null : modelStatus?.configured && conversationRuntime ? (
               <>
                 <ConversationContextControl runtime={conversationRuntime} busy={running || requestBusy} compacting={conversationRuntime.isCompacting || compactPending} onCompact={compactFromContextMenu} />
-                <ConversationModel runtime={conversationRuntime} status={modelStatus} workFolderName={workFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
+                <ConversationModel runtime={conversationRuntime} status={modelStatus} connectedFolderName={connectedFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
               </>
             ) : modelStatus?.configured && composerState?.model
-                ? <ConfiguredModel model={composerState.model} workFolderName={workFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
+                ? <ConfiguredModel model={composerState.model} connectedFolderName={connectedFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
                 : modelStatus && !modelStatus.configured
                   ? <button className="composer-connect-ai" type="button" onClick={() => requestConnectAi()} title="Connect an AI provider so this Worker can start">Connect AI</button>
                   : null}
@@ -2257,11 +2257,11 @@ export function ChatPanel({
         </div>
         {variant === "panel" ? <div className="composer-panel-meta">
           {modelStatus?.configured && conversationRuntime ? <>
-            <ConversationModel runtime={conversationRuntime} status={modelStatus} workFolderName={workFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
+            <ConversationModel runtime={conversationRuntime} status={modelStatus} connectedFolderName={connectedFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
             <span className="composer-capability-spacer" />
             <ConversationContextControl runtime={conversationRuntime} busy={running || requestBusy} compacting={conversationRuntime.isCompacting || compactPending} onCompact={compactFromContextMenu} />
           </> : modelStatus?.configured && composerState?.model
-            ? <ConfiguredModel model={composerState.model} workFolderName={workFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
+            ? <ConfiguredModel model={composerState.model} connectedFolderName={connectedFolder.name} picker={composerModelPicker} reasoning={composerReasoning} />
             : modelStatus && !modelStatus.configured ? <SetUpAiButton /> : null}
         </div> : null}
       </form>
@@ -2305,7 +2305,7 @@ function RestrictedAppAddedNotice({ proposal, busy, onOpen, onRetry, onDismiss }
     <aside className="capability-code-warning restricted-app-added-notice" role="status">
       <CircleCheck size={20} aria-hidden="true" />
       <div>
-        <strong>Added {title} to this work-folder.</strong>
+        <strong>Added {title} to this Connected Folder.</strong>
         {still.length ? <p>Still needs you: {still.join(" · ")}.</p> : <p>Every declared destination, folder, notification, and automation is on. Turn any of them off in Settings → Apps.</p>}
         <div className="restricted-app-task-actions">
           {onOpen ? <button className="ui-control ui-control--primary" type="button" disabled={busy} onClick={onOpen}>Open App</button> : null}
@@ -2387,7 +2387,7 @@ function ConversationContextControl({ runtime, busy, compacting, onCompact }: { 
   );
 }
 
-function ConversationModel({ runtime, status, workFolderName, picker, reasoning }: { runtime: ConversationRuntime; status: AgentStatus; workFolderName: string; picker: ComposerModelPickerProps; reasoning?: ComposerReasoning }) {
+function ConversationModel({ runtime, status, connectedFolderName, picker, reasoning }: { runtime: ConversationRuntime; status: AgentStatus; connectedFolderName: string; picker: ComposerModelPickerProps; reasoning?: ComposerReasoning }) {
   const modelLabel = runtime.model?.name
     ?? runtime.model?.id
     ?? displayModelLabel(status.provider ?? "", status.model ?? "");
@@ -2396,8 +2396,8 @@ function ConversationModel({ runtime, status, workFolderName, picker, reasoning 
       {...picker}
       reasoning={reasoning}
       className="composer-model-chip"
-      ariaLabel={`Change the model saved for ${workFolderName}. Selected model: ${modelLabel}`}
-      title={`${modelLabel} · Change the model saved for ${workFolderName}`}
+      ariaLabel={`Change the model saved for ${connectedFolderName}. Selected model: ${modelLabel}`}
+      title={`${modelLabel} · Change the model saved for ${connectedFolderName}`}
     >
       <span className="conversation-context-model">{modelLabel}</span>
     </ComposerModelPicker>
@@ -2470,7 +2470,7 @@ function useDismissOnOutsideInteraction(
 }
 
 type ComposerModelPickerProps = {
-  workFolderId: string;
+  connectedFolderId: string;
   fixtureMode: boolean;
   revision: number;
   disabled: boolean;
@@ -2489,14 +2489,14 @@ type ComposerReasoning = {
   onChange: (level: string) => void | Promise<void>;
 };
 
-type ComposerModelList = { workFolderId: string; revision: number; models: AgentModel[]; status: AgentStatus };
+type ComposerModelList = { connectedFolderId: string; revision: number; models: AgentModel[]; status: AgentStatus };
 
-// One lazily read model list per work-folder, reused across Chat tabs until the
+// One lazily read model list per Connected Folder, reused across Chat tabs until the
 // model configuration revision moves.
 const composerModelLists = new Map<string, ComposerModelList>();
 
 function ComposerModelPicker({
-  workFolderId,
+  connectedFolderId,
   fixtureMode,
   revision,
   disabled,
@@ -2511,7 +2511,7 @@ function ComposerModelPicker({
   children,
 }: ComposerModelPickerProps & { reasoning?: ComposerReasoning; className: string; ariaLabel: string; title: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
-  const [list, setList] = useState<ComposerModelList | null>(() => composerModelLists.get(workFolderId) ?? null);
+  const [list, setList] = useState<ComposerModelList | null>(() => composerModelLists.get(connectedFolderId) ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -2532,7 +2532,7 @@ function ComposerModelPicker({
   }, [open]);
   useEffect(() => {
     if (!open || fixtureMode) return;
-    const cached = composerModelLists.get(workFolderId);
+    const cached = composerModelLists.get(connectedFolderId);
     if (cached && cached.revision === revision) {
       setList(cached);
       return;
@@ -2540,12 +2540,12 @@ function ComposerModelPicker({
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ scope: "work-folder", workFolderId });
+    const params = new URLSearchParams({ scope: "connected-folder", connectedFolderId });
     void api<{ models: AgentModel[]; status: AgentStatus }>(`/api/agent/models?${params.toString()}`, { signal: controller.signal })
       .then((result) => {
         if (controller.signal.aborted) return;
-        const next = { workFolderId, revision, models: result.models, status: result.status };
-        composerModelLists.set(workFolderId, next);
+        const next = { connectedFolderId, revision, models: result.models, status: result.status };
+        composerModelLists.set(connectedFolderId, next);
         setList(next);
       })
       .catch((caught) => {
@@ -2555,9 +2555,9 @@ function ComposerModelPicker({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [open, fixtureMode, workFolderId, revision]);
+  }, [open, fixtureMode, connectedFolderId, revision]);
 
-  const currentList = list?.workFolderId === workFolderId ? list : null;
+  const currentList = list?.connectedFolderId === connectedFolderId ? list : null;
   const models = fixtureMode
     ? shownModel ? [{ ...shownModel, authConfigured: true, oauthSupported: false } satisfies AgentModel] : []
     : (currentList?.models ?? []).filter((model) => model.authConfigured);
@@ -2625,12 +2625,12 @@ function ComposerModelPicker({
     try {
       const result = await api<{ status: AgentStatus }>("/api/agent/configure", {
         method: "POST",
-        body: { scope: "work-folder", workFolderId, provider: model.provider, model: model.id },
+        body: { scope: "connected-folder", connectedFolderId, provider: model.provider, model: model.id },
       });
-      const cached = composerModelLists.get(workFolderId);
+      const cached = composerModelLists.get(connectedFolderId);
       if (cached) {
         const next = { ...cached, status: result.status };
-        composerModelLists.set(workFolderId, next);
+        composerModelLists.set(connectedFolderId, next);
         setList(next);
       }
       setOpen(false);
@@ -2767,12 +2767,12 @@ function SetUpAiButton({ then }: { then?: () => void }) {
 }
 
 /**
- * The model for this work-folder's new Chats, under the file manager's message
+ * The model for this Connected Folder's new Chats, under the file manager's message
  * box (docs/product-model.md, 2026-11-06 file manager layout): the same chip
  * and menu as the Chat composer, or Set Up AI when no AI is connected yet.
  */
-export function WorkerModelRow({ workFolder, fixtureMode, revision = 0, onOpenModelSettings }: {
-  workFolder: Pick<WorkFolderSummary, "id" | "name">;
+export function WorkerModelRow({ connectedFolder, fixtureMode, revision = 0, onOpenModelSettings }: {
+  connectedFolder: Pick<ConnectedFolderSummary, "id" | "name">;
   fixtureMode: boolean;
   /** Changes when AI is connected or the model configuration changes elsewhere. */
   revision?: number;
@@ -2789,20 +2789,20 @@ export function WorkerModelRow({ workFolder, fixtureMode, revision = 0, onOpenMo
       return;
     }
     void Promise.allSettled([
-      api<{ status: AgentStatus }>(`/api/agent/status?workFolderId=${encodeURIComponent(workFolder.id)}`),
-      api<{ composer: ComposerState }>(`/api/agent/composer?scope=work-folder&workFolderId=${encodeURIComponent(workFolder.id)}`),
+      api<{ status: AgentStatus }>(`/api/agent/status?connectedFolderId=${encodeURIComponent(connectedFolder.id)}`),
+      api<{ composer: ComposerState }>(`/api/agent/composer?scope=connected-folder&connectedFolderId=${encodeURIComponent(connectedFolder.id)}`),
     ]).then(([statusResult, composerResult]) => {
       if (cancelled) return;
       setModelStatus(statusResult.status === "fulfilled" ? statusResult.value.status : null);
       setComposerState(composerResult.status === "fulfilled" ? composerResult.value.composer : null);
     });
     return () => { cancelled = true; };
-  }, [workFolder.id, fixtureMode, revision, localRevision]);
+  }, [connectedFolder.id, fixtureMode, revision, localRevision]);
   const reload = () => setLocalRevision((value) => value + 1);
   async function changeThinkingLevel(level: string) {
     if (fixtureMode) { setComposerState((current) => current ? { ...current, thinkingLevel: level } : current); return; }
     try {
-      const result = await api<{ composer: ComposerState }>("/api/agent/thinking", { method: "POST", body: { scope: "work-folder", workFolderId: workFolder.id, level } });
+      const result = await api<{ composer: ComposerState }>("/api/agent/thinking", { method: "POST", body: { scope: "connected-folder", connectedFolderId: connectedFolder.id, level } });
       setComposerState(result.composer);
       showToast({ text: `Reasoning level: ${thinkingLevelLabel(result.composer.thinkingLevel)}`, tone: "success" });
     } catch (caught) {
@@ -2813,7 +2813,7 @@ export function WorkerModelRow({ workFolder, fixtureMode, revision = 0, onOpenMo
   if (!modelStatus.configured) return <div className="composer-panel-meta"><SetUpAiButton then={reload} /></div>;
   if (!composerState?.model) return null;
   const picker: ComposerModelPickerProps = {
-    workFolderId: workFolder.id,
+    connectedFolderId: connectedFolder.id,
     fixtureMode,
     revision: revision + localRevision,
     disabled: false,
@@ -2830,32 +2830,32 @@ export function WorkerModelRow({ workFolder, fixtureMode, revision = 0, onOpenMo
     ? { level: composerState.thinkingLevel, levels: composerState.thinkingLevels ?? [], forThisChat: false, onChange: changeThinkingLevel }
     : undefined;
   return <div className="composer-panel-meta">
-    <ConfiguredModel model={composerState.model} workFolderName={workFolder.name} picker={picker} reasoning={reasoning} />
+    <ConfiguredModel model={composerState.model} connectedFolderName={connectedFolder.name} picker={picker} reasoning={reasoning} />
   </div>;
 }
 
-function ConfiguredModel({ model, workFolderName, picker, reasoning }: { model: NonNullable<ComposerState["model"]>; workFolderName: string; picker: ComposerModelPickerProps; reasoning?: ComposerReasoning }) {
+function ConfiguredModel({ model, connectedFolderName, picker, reasoning }: { model: NonNullable<ComposerState["model"]>; connectedFolderName: string; picker: ComposerModelPickerProps; reasoning?: ComposerReasoning }) {
   const label = model.name || displayModelLabel(model.provider, model.id);
   return (
     <ComposerModelPicker
       {...picker}
       reasoning={reasoning}
       className="composer-model-chip configured"
-      ariaLabel={`Change the model saved for ${workFolderName}. Selected model: ${label}`}
-      title={`Selected model for new Chats: ${label} · Change the model saved for ${workFolderName}`}
+      ariaLabel={`Change the model saved for ${connectedFolderName}. Selected model: ${label}`}
+      title={`Selected model for new Chats: ${label} · Change the model saved for ${connectedFolderName}`}
     >
       <span className="conversation-context-model">{label}</span>
     </ComposerModelPicker>
   );
 }
 
-/** How deep the attach picker reads a work-folder, the same depth Files searches. */
+/** How deep the attach picker reads a Connected Folder, the same depth Files searches. */
 const attachPickerTreeDepth = 6;
 const attachPickerVisibleLimit = 60;
 
 type AttachPickerFile = { path: string; name: string; folder: string; updatedAt: number };
 
-/** Files a person can attach, without other work-folders nested inside this one. */
+/** Files a person can attach, without other Connected Folders nested inside this one. */
 function attachPickerFiles(entries: TreeEntry[], output: AttachPickerFile[] = []): AttachPickerFile[] {
   for (const entry of entries) {
     if (entry.nestedFolder || entry.ignored) continue;
@@ -2875,13 +2875,13 @@ function attachPickerFiles(entries: TreeEntry[], output: AttachPickerFile[] = []
 }
 
 /**
- * The composer's + button (2026-10-27): attach files from this work-folder,
+ * The composer's + button (2026-10-27): attach files from this Connected Folder,
  * or copy files from the computer into its Dropped folder and attach them,
  * the same explicit act as dropping them on the composer.
  */
 function ComposerAttachMenu({
-  workFolderId,
-  workFolderName,
+  connectedFolderId,
+  connectedFolderName,
   identity,
   fixtureMode,
   fixtureTreeEntries,
@@ -2889,9 +2889,9 @@ function ComposerAttachMenu({
   onAttachPath,
   onUploadFiles,
 }: {
-  workFolderId: string;
-  workFolderName: string;
-  identity: WorkFolderIdentity;
+  connectedFolderId: string;
+  connectedFolderName: string;
+  identity: ConnectedFolderIdentity;
   fixtureMode: boolean;
   fixtureTreeEntries: TreeEntry[];
   attachedPaths: string[];
@@ -2917,7 +2917,7 @@ function ComposerAttachMenu({
     // Files can be created, renamed or removed between visits to the picker.
     setFiles(null);
   }, [open]);
-  useEffect(() => { setFiles(null); }, [workFolderId]);
+  useEffect(() => { setFiles(null); }, [connectedFolderId]);
   useEffect(() => {
     if (!open || view !== "files" || files) return;
     if (fixtureMode) {
@@ -2926,11 +2926,11 @@ function ComposerAttachMenu({
     }
     const controller = new AbortController();
     const params = new URLSearchParams({ maxDepth: String(attachPickerTreeDepth) });
-    void api<{ tree: TreeEntry[] }>(`/api/work-folders/${workFolderId}/tree?${params}`, { signal: controller.signal })
+    void api<{ tree: TreeEntry[] }>(`/api/connected-folders/${connectedFolderId}/tree?${params}`, { signal: controller.signal })
       .then((result) => { if (!controller.signal.aborted) setFiles(attachPickerFiles(result.tree)); })
       .catch((caught) => { if (!controller.signal.aborted) setError(errorText(caught)); });
     return () => controller.abort();
-  }, [open, view, files, fixtureMode, fixtureTreeEntries, workFolderId]);
+  }, [open, view, files, fixtureMode, fixtureTreeEntries, connectedFolderId]);
 
   const matches = useMemo(() => {
     if (!files) return [];
@@ -2989,10 +2989,10 @@ function ComposerAttachMenu({
       {open && view === "choose" ? (
         <div className="composer-command-menu composer-attach-menu" id={menuId} role="menu" aria-label="Attach Files">
           <button type="button" role="menuitem" autoFocus onClick={() => setView("files")}>
-            <span className="composer-attach-option-icon" style={workFolderIdentityStyle(identity)}><WorkFolderIconGlyph icon={identity.Icon} size={18} /></span>
+            <span className="composer-attach-option-icon" style={connectedFolderIdentityStyle(identity)}><ConnectedFolderIconGlyph icon={identity.Icon} size={18} /></span>
             <span className="composer-attach-option-copy">
-              <strong>From {workFolderName}</strong>
-              <small>Pick files in this work-folder</small>
+              <strong>From {connectedFolderName}</strong>
+              <small>Pick files in this Connected Folder</small>
             </span>
           </button>
           {onUploadFiles ? (
@@ -3007,7 +3007,7 @@ function ComposerAttachMenu({
         </div>
       ) : null}
       {open && view === "files" ? (
-        <div className="composer-command-menu composer-attach-menu composer-attach-picker" id={menuId} role="dialog" aria-label={`Attach from ${workFolderName}`}>
+        <div className="composer-command-menu composer-attach-menu composer-attach-picker" id={menuId} role="dialog" aria-label={`Attach from ${connectedFolderName}`}>
           <div className="composer-attach-search">
             <button type="button" className="composer-attach-back" aria-label="Back" title="Back" onClick={() => setView("choose")}>
               <ChevronLeft16Regular aria-hidden="true" />
@@ -3016,8 +3016,8 @@ function ComposerAttachMenu({
             <input
               type="search"
               value={query}
-              placeholder={`Search ${workFolderName}`}
-              aria-label={`Search ${workFolderName}`}
+              placeholder={`Search ${connectedFolderName}`}
+              aria-label={`Search ${connectedFolderName}`}
               autoFocus
               spellCheck={false}
               autoComplete="off"
@@ -3043,7 +3043,7 @@ function ComposerAttachMenu({
                   <div
                     className="composer-attach-options"
                     role="listbox"
-                    aria-label={`Files in ${workFolderName}`}
+                    aria-label={`Files in ${connectedFolderName}`}
                     ref={optionsRef}
                     onKeyDown={(event) => {
                       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
@@ -3087,26 +3087,26 @@ function formatTokenCount(value: number | null): string {
 
 function ChatEmptyState({
   greeting,
-  workFolder,
+  connectedFolder,
   identity,
 }: {
   greeting: string;
-  workFolder: WorkFolderSummary;
-  identity: WorkFolderIdentity;
+  connectedFolder: ConnectedFolderSummary;
+  identity: ConnectedFolderIdentity;
 }) {
   const Icon = identity.Icon;
   return (
-    <div className="chat-empty-state" style={workFolderIdentityStyle(identity)}>
+    <div className="chat-empty-state" style={connectedFolderIdentityStyle(identity)}>
       <strong>{greeting}</strong>
-      <span className="chat-empty-work-folder">
-        <WorkFolderIconGlyph icon={Icon} size={15} />
-        <span>{workFolder.name}</span>
+      <span className="chat-empty-connected-folder">
+        <ConnectedFolderIconGlyph icon={Icon} size={15} />
+        <span>{connectedFolder.name}</span>
       </span>
     </div>
   );
 }
 
-/** Up to three of this work-folder's Chats, newest first, on a new Chat's start screen. */
+/** Up to three of this Connected Folder's Chats, newest first, on a new Chat's start screen. */
 function ChatRecentChats({ chats, onOpen }: { chats: ConversationSummary[]; onOpen: (conversation: ConversationSummary) => void }) {
   const headingId = useId();
   return (
@@ -3138,13 +3138,13 @@ function fixtureAgentRunning(): boolean {
 }
 
 // One playback per page load: the first ChatPanel whose fixture conversations contain the script
-// conversation claims it, so extra tabs for the same work-folder never restart the show.
+// conversation claims it, so extra tabs for the same Connected Folder never restart the show.
 let fixtureScriptPlaybackClaimed = false;
 
 function fixtureScriptPlayback(): { conversationId: string; delayMs: number } | null {
   if (!import.meta.env.DEV) return null;
   const params = new URLSearchParams(window.location.search);
-  if (params.get("fixture") !== "work-folder") return null;
+  if (params.get("fixture") !== "connected-folder") return null;
   const conversationId = params.get("script");
   if (!conversationId) return null;
   const parsedDelay = Number.parseInt(params.get("scriptDelay") ?? "", 10);

@@ -21,8 +21,8 @@ import type { RestrictedAppInstalled } from "../src/local/agent/restricted-app-s
 
 const digest = "a".repeat(64);
 const installed: RestrictedAppInstalled = {
-  workFolderId: "work-folder-one",
-  sourceWorkFolderId: "work-folder-one",
+  connectedFolderId: "connected-folder-one",
+  sourceConnectedFolderId: "connected-folder-one",
   projectId: parseProjectId("project_fixture"),
   tenantId: parseTenantId("tenant_fixture"),
   principalId: parsePrincipalId("principal_fixture"),
@@ -43,7 +43,7 @@ const installed: RestrictedAppInstalled = {
   packageName: "connected-inbox",
   version: "1.0.0",
   digest,
-  artifactDigest: parseAppPlatformArtifactDigest(`work-fold.artifact.v1:sha256:${"b".repeat(64)}`),
+  artifactDigest: parseAppPlatformArtifactDigest(`amplefile.artifact.v1:sha256:${"b".repeat(64)}`),
   fileCount: 4,
   totalBytes: 1024,
   networkGrants: ["mail-api"],
@@ -70,10 +70,10 @@ const installed: RestrictedAppInstalled = {
   },
 };
 
-test("installed app actions become namespaced Pi tools bound to work-folder, app, digest, and action", async () => {
+test("installed app actions become namespaced Pi tools bound to Connected Folder, app, digest, and action", async () => {
   const calls: unknown[] = [];
   const tools = createRestrictedAppTools({
-    workFolderId: "work-folder-one",
+    connectedFolderId: "connected-folder-one",
     apps: [installed],
     service: {
       async invoke(input) {
@@ -86,7 +86,7 @@ test("installed app actions become namespaced Pi tools bound to work-folder, app
   assert.match(tools[0]!.name, /^app_[a-f0-9]{16}_inbox_search$/);
   assert.match(tools[0]!.description, /Connected inbox/);
   const result = await tools[0]!.execute("call-1", { query: "release" }, undefined, undefined, {} as never);
-  assert.deepEqual(calls, [{ workFolderId: "work-folder-one", appId: "connected-inbox", featureInstallationId: installed.featureInstallationId, expectedDigest: digest, action: "search", input: { query: "release" } }]);
+  assert.deepEqual(calls, [{ connectedFolderId: "connected-folder-one", appId: "connected-inbox", featureInstallationId: installed.featureInstallationId, expectedDigest: digest, action: "search", input: { query: "release" } }]);
   assert.deepEqual(result.content, [{ type: "text", text: '{"count":3}' }]);
 });
 
@@ -95,15 +95,15 @@ test("app tools distinguish sibling installations of identical bytes and remain 
   other.featureInstallationId = parseFeatureInstallationId("feature-installation_other");
   other.runtimeInstanceId = parseRuntimeInstanceId("runtime-instance_other");
   other.runtimeInstanceKind = "app";
-  const tools = createRestrictedAppTools({ workFolderId: "work-folder-one", apps: [installed, other], service: { invoke: async () => ({ count: 0 }) } });
+  const tools = createRestrictedAppTools({ connectedFolderId: "connected-folder-one", apps: [installed, other], service: { invoke: async () => ({ count: 0 }) } });
   assert.equal(new Set(tools.map((tool) => tool.name)).size, 2);
   assert.ok(tools.every((tool) => tool.name.length <= 64));
   assert.match(tools[0]!.label, /preview/);
   assert.doesNotMatch(tools[1]!.label, /preview/);
-  assert.deepEqual(createRestrictedAppTools({ workFolderId: "work-folder-one", apps: [installed, other], service: { invoke: async () => ({ count: 0 }) } }).map((tool) => tool.name), tools.map((tool) => tool.name));
+  assert.deepEqual(createRestrictedAppTools({ connectedFolderId: "connected-folder-one", apps: [installed, other], service: { invoke: async () => ({ count: 0 }) } }).map((tool) => tool.name), tools.map((tool) => tool.name));
   const longNames = structuredClone(installed);
   longNames.manifest.tools = ["a", "b"].map((suffix) => ({ ...installed.manifest.tools[0]!, name: "x".repeat(60) + suffix }));
-  const longTools = createRestrictedAppTools({ workFolderId: "work-folder-one", apps: [longNames], service: { invoke: async () => ({ count: 0 }) } });
+  const longTools = createRestrictedAppTools({ connectedFolderId: "connected-folder-one", apps: [longNames], service: { invoke: async () => ({ count: 0 }) } });
   assert.notEqual(longTools[0]!.name, longTools[1]!.name, "truncated display suffixes must not collide");
 });
 
@@ -111,13 +111,13 @@ test("an app tool's steps carry the app and tool names instead of the registered
   const other = structuredClone(installed);
   other.featureInstallationId = parseFeatureInstallationId("feature-installation_other");
   other.runtimeInstanceKind = "app";
-  const tools = createRestrictedAppTools({ workFolderId: "work-folder-one", apps: [installed, other], service: { invoke: async () => ({ count: 0 }) } });
+  const tools = createRestrictedAppTools({ connectedFolderId: "connected-folder-one", apps: [installed, other], service: { invoke: async () => ({ count: 0 }) } });
   const titles = restrictedAppToolTitles([installed, other]);
   assert.deepEqual([...titles.keys()], tools.map((tool) => tool.name), "every registered app tool has a title");
   assert.equal(titles.get(tools[0]!.name), "Connected inbox (preview): Inbox search");
   assert.equal(titles.get(tools[1]!.name), "Connected inbox: Inbox search");
 
-  const root = await mkdtemp(join(tmpdir(), "work-fold-app-tool-steps-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-app-tool-steps-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const client = new PiConversationClient("app-tool-steps", root);
   // Set as the session does when it registers the app's tools.

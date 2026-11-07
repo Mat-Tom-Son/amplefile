@@ -11,11 +11,11 @@ import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { startLocalApi } from "../src/local/server.js";
 import { PiConversationClient } from "../src/local/agent/pi-client.js";
 import { ModelContextInspector } from "../src/local/agent/model-context-inspector.js";
-import { workFoldAgentScopeId } from "../src/local/state-paths.js";
+import { ampleFileAgentScopeId } from "../src/local/state-paths.js";
 import type { ModelContextInspection, ModelContextInspectionState } from "../src/shared/model-context-inspection.js";
 
 test("context diagnostics are authenticated, read-only to Pi, exactly scoped and absent from portable Chat projections", { timeout: 20_000 }, async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-context-api-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-context-api-"));
   const agentDir = join(root, "pi");
   const marker = "PAYLOAD-ONLY-CONTEXT-INSPECTION-MARKER";
   const secret = "synthetic-private-provider-api-key";
@@ -51,7 +51,7 @@ test("context diagnostics are authenticated, read-only to Pi, exactly scoped and
   let runtimeResolutions = 0;
   const sessionToken = "local-context-test-session";
   const options = {
-    port: 0, appMode: "desktop" as const, stateBase: join(root, "state"), workFolderBase: join(root, "content"), loadEnv: false,
+    port: 0, appMode: "desktop" as const, stateBase: join(root, "state"), connectedFolderBase: join(root, "content"), loadEnv: false,
     sessionToken,
     piRuntimeProvider: { async resolveRuntime() {
       runtimeResolutions += 1;
@@ -66,7 +66,7 @@ test("context diagnostics are authenticated, read-only to Pi, exactly scoped and
   });
   const request = (path: string, method = "GET", body?: unknown, authenticated = true) => fetch(api.origin + path, {
     method,
-    headers: { "content-type": "application/json", ...(authenticated ? { "x-work-fold-session": sessionToken } : {}) },
+    headers: { "content-type": "application/json", ...(authenticated ? { "x-amplefile-session": sessionToken } : {}) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const json = async <T = any>(path: string, method = "GET", body?: unknown): Promise<T> => {
@@ -87,35 +87,35 @@ test("context diagnostics are authenticated, read-only to Pi, exactly scoped and
   }
   assert.equal((await request("/api/model-context/missing", "POST", { enabled: true })).status, 400);
   assert.equal((await json<ModelContextInspectionState>("/api/model-context", "POST", { enabled: true })).enabled, true);
-  assert.deepEqual((await inspect(`?workFolderId=${workFoldAgentScopeId}&conversationId=unopened-chat`)).records, []);
+  assert.deepEqual((await inspect(`?connectedFolderId=${ampleFileAgentScopeId}&conversationId=unopened-chat`)).records, []);
   assert.equal(runtimeResolutions, initialResolutions, "opening or changing diagnostics never initializes a Pi session");
   assert.equal(providerRequests.length, 0);
 
-  const workFolder = (await api.actFacade.createWorkFolder({ name: "Context inspection" })).workFolder;
-  const chat = (await api.actFacade.createConversation({ workFolder: workFolder.id })).conversation;
-  const wrongChat = (await api.actFacade.createConversation({ workFolder: workFolder.id })).conversation;
-  const [fold, workFolderTurn] = await Promise.all([
+  const connectedFolder = (await api.actFacade.createConnectedFolder({ name: "Context inspection" })).connectedFolder;
+  const chat = (await api.actFacade.createConversation({ connectedFolder: connectedFolder.id })).conversation;
+  const wrongChat = (await api.actFacade.createConversation({ connectedFolder: connectedFolder.id })).conversation;
+  const [fold, connectedFolderTurn] = await Promise.all([
     api.actFacade.agentSend({ content: "Handle a fold request.", newConversation: true }),
-    api.actFacade.sendMessage({ workFolder: workFolder.id, conversationId: chat.id, content: "Handle a work-folder request." }),
+    api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId: chat.id, content: "Handle a Connected Folder request." }),
   ]);
   await until(async () => (await api.actFacade.agentTurnStatus({ taskId: fold.taskId })).task.state === "succeeded"
-    && (await api.actFacade.turnStatus({ workFolder: workFolder.id, taskId: workFolderTurn.taskId })).task.state === "succeeded");
-  const workFoldAgentQuery = `?workFolderId=${workFoldAgentScopeId}&conversationId=${fold.conversationId}`;
-  const workFolderQuery = `?workFolderId=${workFolder.id}&conversationId=${chat.id}`;
-  const workFoldAgentRecords = (await inspect(workFoldAgentQuery)).records;
-  const workFolderRecords = (await inspect(workFolderQuery)).records;
-  const workFoldAgentRecord = workFoldAgentRecords.find((record) => record.owner.purpose === "assistant")!;
-  const workFolderRecord = workFolderRecords.find((record) => record.owner.purpose === "assistant")!;
-  assert.ok(workFoldAgentRecord); assert.ok(workFolderRecord);
-  assert.equal(workFoldAgentRecord.owner.taskId, fold.taskId);
-  assert.equal(workFolderRecord.owner.taskId, workFolderTurn.taskId);
-  assert.ok(workFoldAgentRecords.every((record) => record.owner.conversationId === fold.conversationId));
-  assert.ok(workFolderRecords.every((record) => record.owner.conversationId === chat.id));
-  assert.ok((await inspect()).records.length >= workFoldAgentRecords.length + workFolderRecords.length);
-  assert.deepEqual((await inspect(`?workFolderId=${workFolder.id}&conversationId=${wrongChat.id}`)).records, []);
-  assert.equal((await request(`/api/model-context/${workFolderRecord.id}${workFoldAgentQuery}`)).status, 404);
-  assert.equal((await request(`/api/model-context/${workFolderRecord.id}?workFolderId=${workFolder.id}&conversationId=${wrongChat.id}`)).status, 404);
-  const detail = (await json<{ record: ModelContextInspection }>(`/api/model-context/${workFolderRecord.id}${workFolderQuery}`)).record;
+    && (await api.actFacade.turnStatus({ connectedFolder: connectedFolder.id, taskId: connectedFolderTurn.taskId })).task.state === "succeeded");
+  const ampleFileAgentQuery = `?connectedFolderId=${ampleFileAgentScopeId}&conversationId=${fold.conversationId}`;
+  const connectedFolderQuery = `?connectedFolderId=${connectedFolder.id}&conversationId=${chat.id}`;
+  const ampleFileAgentRecords = (await inspect(ampleFileAgentQuery)).records;
+  const connectedFolderRecords = (await inspect(connectedFolderQuery)).records;
+  const ampleFileAgentRecord = ampleFileAgentRecords.find((record) => record.owner.purpose === "assistant")!;
+  const connectedFolderRecord = connectedFolderRecords.find((record) => record.owner.purpose === "assistant")!;
+  assert.ok(ampleFileAgentRecord); assert.ok(connectedFolderRecord);
+  assert.equal(ampleFileAgentRecord.owner.taskId, fold.taskId);
+  assert.equal(connectedFolderRecord.owner.taskId, connectedFolderTurn.taskId);
+  assert.ok(ampleFileAgentRecords.every((record) => record.owner.conversationId === fold.conversationId));
+  assert.ok(connectedFolderRecords.every((record) => record.owner.conversationId === chat.id));
+  assert.ok((await inspect()).records.length >= ampleFileAgentRecords.length + connectedFolderRecords.length);
+  assert.deepEqual((await inspect(`?connectedFolderId=${connectedFolder.id}&conversationId=${wrongChat.id}`)).records, []);
+  assert.equal((await request(`/api/model-context/${connectedFolderRecord.id}${ampleFileAgentQuery}`)).status, 404);
+  assert.equal((await request(`/api/model-context/${connectedFolderRecord.id}?connectedFolderId=${connectedFolder.id}&conversationId=${wrongChat.id}`)).status, 404);
+  const detail = (await json<{ record: ModelContextInspection }>(`/api/model-context/${connectedFolderRecord.id}${connectedFolderQuery}`)).record;
   assert.equal(detail.stage, "provider_payload");
   assert.ok(JSON.stringify(detail.payloads).includes(marker), "the native payload hook is captured after its transformation");
   assert.ok(!JSON.stringify(detail.assembled).includes(marker), "provider payload and assembled context remain distinct");
@@ -127,7 +127,7 @@ test("context diagnostics are authenticated, read-only to Pi, exactly scoped and
   const inferenceInspector = new ModelContextInspector();
   inferenceInspector.setEnabled(true);
   const sessionOnlyInstructions = "SESSION-INSTRUCTIONS-NOT-SENT-TO-BOUNDED-INFERENCE";
-  const inferenceClient = new PiConversationClient("app-inference", workFolder.workFolderRoot, {
+  const inferenceClient = new PiConversationClient("app-inference", connectedFolder.connectedFolderRoot, {
     async resolveRuntime() {
       return { ...await options.piRuntimeProvider.resolveRuntime(), workerInstructions: sessionOnlyInstructions,
         modelContextInspector: inferenceInspector };
@@ -158,28 +158,28 @@ test("context diagnostics are authenticated, read-only to Pi, exactly scoped and
 
   const baselineResolutions = runtimeResolutions;
   const baselineRequests = providerRequests.length;
-  await inspect(); await inspect(workFolderQuery);
-  await json(`/api/model-context/${workFoldAgentRecord.id}${workFoldAgentQuery}`);
+  await inspect(); await inspect(connectedFolderQuery);
+  await json(`/api/model-context/${ampleFileAgentRecord.id}${ampleFileAgentQuery}`);
   assert.equal(runtimeResolutions, baselineResolutions);
   assert.equal(providerRequests.length, baselineRequests, "reopening captures never reruns model work");
   const assertPrivateProjection = (value: unknown) => {
     const text = JSON.stringify(value);
     assert.ok(!text.includes(marker));
-    assert.ok(!text.includes(workFolderRecord.id));
-    assert.ok(!text.includes(workFoldAgentRecord.id));
+    assert.ok(!text.includes(connectedFolderRecord.id));
+    assert.ok(!text.includes(ampleFileAgentRecord.id));
     assert.ok(!text.includes("assembled"));
   };
-  const transcript = await json(`/api/work-folders/${workFolder.id}/conversations/${chat.id}`);
+  const transcript = await json(`/api/connected-folders/${connectedFolder.id}/conversations/${chat.id}`);
   assertPrivateProjection(transcript);
-  assertPrivateProjection(await json(`/api/work-fold-agent/conversations/${fold.conversationId}`));
-  const portableRoot = join(workFolder.workFolderRoot, ".work-fold", "conversations");
+  assertPrivateProjection(await json(`/api/amplefile-agent/conversations/${fold.conversationId}`));
+  const portableRoot = join(connectedFolder.connectedFolderRoot, ".amplefile", "conversations");
   for (const name of await readdir(portableRoot)) {
     if (name.endsWith(".jsonl") || name.endsWith(".json")) assertPrivateProjection(await readFile(join(portableRoot, name), "utf8"));
   }
 
   const cleared = await json<ModelContextInspectionState>("/api/model-context", "POST", { clear: true });
   assert.equal(cleared.enabled, true); assert.deepEqual(cleared.records, []);
-  assert.equal((await request(`/api/model-context/${workFolderRecord.id}${workFolderQuery}`)).status, 404);
+  assert.equal((await request(`/api/model-context/${connectedFolderRecord.id}${connectedFolderQuery}`)).status, 404);
   const afterClear = await api.actFacade.agentSend({ conversationId: fold.conversationId, content: "Create a fresh capture after clearing." });
   await until(async () => (await api.actFacade.agentTurnStatus({ taskId: afterClear.taskId })).task.state === "succeeded");
   const beforeDisable = (await inspect()).records;
@@ -187,14 +187,14 @@ test("context diagnostics are authenticated, read-only to Pi, exactly scoped and
   const disabled = await json<ModelContextInspectionState>("/api/model-context", "POST", { enabled: false });
   assert.equal(disabled.enabled, false); assert.deepEqual(disabled.records, []);
   assert.equal((await request(`/api/model-context/${beforeDisable[0]!.id}`)).status, 404, "disabling discards retained captures");
-  const next = await api.actFacade.sendMessage({ workFolder: workFolder.id, conversationId: chat.id, content: "Another ordinary request while diagnostics are off." });
-  await until(async () => (await api.actFacade.turnStatus({ workFolder: workFolder.id, taskId: next.taskId })).task.state === "succeeded");
+  const next = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId: chat.id, content: "Another ordinary request while diagnostics are off." });
+  await until(async () => (await api.actFacade.turnStatus({ connectedFolder: connectedFolder.id, taskId: next.taskId })).task.state === "succeeded");
   assert.deepEqual((await inspect()).records, [], "disabled recording stays empty during real model work");
-  assertPrivateProjection(await json(`/api/work-folders/${workFolder.id}/conversations/${chat.id}`));
+  assertPrivateProjection(await json(`/api/connected-folders/${connectedFolder.id}/conversations/${chat.id}`));
 
   await json("/api/model-context", "POST", { enabled: true });
-  const last = await api.actFacade.sendMessage({ workFolder: workFolder.id, conversationId: chat.id, content: "Create a capture before restart." });
-  await until(async () => (await api.actFacade.turnStatus({ workFolder: workFolder.id, taskId: last.taskId })).task.state === "succeeded");
+  const last = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId: chat.id, content: "Create a capture before restart." });
+  await until(async () => (await api.actFacade.turnStatus({ connectedFolder: connectedFolder.id, taskId: last.taskId })).task.state === "succeeded");
   assert.ok((await inspect()).records.length > 0);
   const beforeRestartRequests = providerRequests.length;
   await api.close();

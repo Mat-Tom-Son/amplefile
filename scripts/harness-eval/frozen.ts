@@ -32,7 +32,7 @@ export function summarizeAutonomousTrace(entries: any[], provider: any[], folder
   const results = entries.map(entry => entry.message).filter(message => message?.role === "toolResult");
   const calls = entries.flatMap(entry => entry.message?.role === "assistant" ? entry.message.content.filter((part: any) => part.type === "toolCall").map((call: any) => ({ ...call, failed: results.find(result => result.toolCallId === call.id)?.isError ?? true })) : []);
   calls.push(...results.flatMap(result => (result.nestedCalls?.calls ?? []).map((call: any) => ({ ...call, arguments: call.arguments ?? {}, failed: call.status !== "ok" }))));
-  const observations = entries.filter(entry => entry.type === "custom" && entry.customType === "work-fold-progress.v1").map(entry => entry.data);
+  const observations = entries.filter(entry => entry.type === "custom" && entry.customType === "amplefile-progress.v1").map(entry => entry.data);
   const seenReads = new Set<string>(); const seenHelpers = new Set<string>();
   let repeatedUnchangedReads = 0; let readsWithFingerprints = 0; let repeatedHelperArguments = 0;
   for (const call of calls.filter(call => !call.failed)) {

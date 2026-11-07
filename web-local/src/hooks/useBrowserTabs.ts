@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import type { BrowserPageState } from "../../../src/shared/browser";
-import type { BrowserTabLook } from "../components/chat/WorkFolderSurfaceTabBar";
+import type { BrowserTabLook } from "../components/chat/ConnectedFolderSurfaceTabBar";
 import { openBrowserTabEvent, type OpenBrowserTabRequest } from "../lib/browser-links";
 import { isMacOS } from "../lib/platform";
-import type { BrowserSurfaceTab, WorkFolderSurfaceTab } from "../types";
+import type { BrowserSurfaceTab, ConnectedFolderSurfaceTab } from "../types";
 import { showToast } from "../ui/feedback";
 import type { useSurfaceTabs } from "./useSurfaceTabs";
 
@@ -15,11 +15,11 @@ import type { useSurfaceTabs } from "./useSurfaceTabs";
  * Absent outside the desktop app.
  */
 export function useBrowserTabs(tabs: ReturnType<typeof useSurfaceTabs>) {
-  const desktop = window.workFoldDesktop?.browser;
+  const desktop = window.ampleFileDesktop?.browser;
   const [pages, setPages] = useState<Record<string, BrowserPageState>>({});
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
-  const browserTabs = tabs.surfaceTabs.filter((tab): tab is Extract<WorkFolderSurfaceTab, { kind: "browser" }> => tab.kind === "browser");
+  const browserTabs = tabs.surfaceTabs.filter((tab): tab is Extract<ConnectedFolderSurfaceTab, { kind: "browser" }> => tab.kind === "browser");
   /** Closed browser tabs, newest last, for Reopen Closed Tab; kept for this window's life. */
   const closedRef = useRef<Array<{ url: string; title: string; at: number }>>([]);
   const knownRef = useRef(new Map<string, { url: string; title: string }>());

@@ -1,8 +1,8 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
 /**
- * Pi's default system prompt opens with a coding-assistant sentence. work-fold
- * is for general computer work, so each request a Worker or the work-fold
+ * Pi's default system prompt opens with a coding-assistant sentence. AmpleFile
+ * is for general computer work, so each request a Worker or the AmpleFile
  * agent sends opens with its own role instead.
  *
  * Pi exposes the preamble only through `customPrompt`, which also drops the
@@ -16,16 +16,16 @@ import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
  */
 export const piDefaultPreamble = "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
 
-export type WorkFoldSessionRole = "worker" | "work-fold-agent";
+export type AmpleFileSessionRole = "worker" | "amplefile-agent";
 
-export function workFoldRolePreamble(role: WorkFoldSessionRole): string {
-  return role === "work-fold-agent"
-    ? "You are the work-fold agent in work-fold, a local app built on the pi agent harness. You sit above the person's work-folders and help with general computer work across them — documents, research, data, files, and code — by reading files, running commands, editing and writing files, and coordinating each work-folder's Worker."
-    : "You are this work-folder's Worker in work-fold, a local app built on the pi agent harness. You help the person with general computer work in one ordinary folder — documents, research, data, files, and code — by reading files, running commands, and editing and writing files.";
+export function ampleFileRolePreamble(role: AmpleFileSessionRole): string {
+  return role === "amplefile-agent"
+    ? "You are the AmpleFile agent in AmpleFile, a local app built on the pi agent harness. You sit above the person's Connected Folders and help with general computer work across them — documents, research, data, files, and code — by reading files, running commands, editing and writing files, and coordinating each Connected Folder's Worker."
+    : "You are this Connected Folder's Worker in AmpleFile, a local app built on the pi agent harness. You help the person with general computer work in one ordinary folder — documents, research, data, files, and code — by reading files, running commands, and editing and writing files.";
 }
 
-export function workFoldRolePreambleExtension(role: WorkFoldSessionRole): ExtensionFactory {
-  const preamble = workFoldRolePreamble(role);
+export function ampleFileRolePreambleExtension(role: AmpleFileSessionRole): ExtensionFactory {
+  const preamble = ampleFileRolePreamble(role);
   return (pi) => {
     pi.on("context_with_system", (event) => {
       let replaced = false;

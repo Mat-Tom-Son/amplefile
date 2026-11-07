@@ -243,7 +243,7 @@ export type RuntimeInstanceContext =
   | Readonly<{
       kind: "development";
       runtimeInstanceId: RuntimeInstanceId;
-      workFolderId: string;
+      connectedFolderId: string;
       projectId: ProjectId;
     }>
   | Readonly<{
@@ -256,11 +256,11 @@ export type RuntimeInstanceContext =
 export function parseRuntimeInstanceContext(value: unknown): RuntimeInstanceContext {
   const record = expectPlainRecord(value, "RuntimeInstanceContext");
   if (record.kind === "development") {
-    expectExactKeys(record, ["kind", "runtimeInstanceId", "workFolderId", "projectId"], "Development RuntimeInstanceContext");
+    expectExactKeys(record, ["kind", "runtimeInstanceId", "connectedFolderId", "projectId"], "Development RuntimeInstanceContext");
     return Object.freeze({
       kind: "development",
       runtimeInstanceId: parseRuntimeInstanceId(record.runtimeInstanceId),
-      workFolderId: parseContextId(record.workFolderId, "workFolderId"),
+      connectedFolderId: parseContextId(record.connectedFolderId, "connectedFolderId"),
       projectId: parseProjectId(record.projectId),
     });
   }

@@ -17,7 +17,7 @@ import {
 import type { RestrictedAppAssistantAction } from "../src/local/agent/restricted-app-manifest.js";
 import { restrictedAppAssistantLimits } from "../src/shared/restricted-app-tasks.js";
 import type { RestrictedAppTaskResult } from "../src/shared/restricted-app-tasks.js";
-import type { WorkFoldDurableTurnRecord } from "../src/local/agent/turn-store.js";
+import type { AmpleFileDurableTurnRecord } from "../src/local/agent/turn-store.js";
 
 const outputSchema = {
   type: "object" as const,
@@ -48,7 +48,7 @@ const blobAction: RestrictedAppAssistantAction = {
 };
 
 const scope: RestrictedAppTaskScope = {
-  workFolderId: "work-folder-one",
+  connectedFolderId: "connected-folder-one",
   appId: "quotes",
   featureInstallationId: "feature-one",
   digest: "a".repeat(64),
@@ -58,18 +58,18 @@ const scope: RestrictedAppTaskScope = {
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
 async function fixture(t: test.TestContext, options: { actions?: RestrictedAppAssistantAction[] } = {}) {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-app-envelope-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-app-envelope-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const now = new Date("2026-09-07T12:00:00.000Z");
-  const turns = new Map<string, WorkFoldDurableTurnRecord>();
+  const turns = new Map<string, AmpleFileDurableTurnRecord>();
   let report: RestrictedAppTaskResult | null = null;
   const ports: RestrictedAppTaskPorts = {
     async withApp(_pin, operation) { return operation(options.actions ?? [action], { title: "Quote board" }); },
     async dispatch(record) {
       turns.set(record.id, {
-        schema: "work-fold.turn.v1", turnId: `turn-${record.id}`, requestId: restrictedAppTaskTurnRequestId(record),
+        schema: "amplefile.turn.v1", turnId: `turn-${record.id}`, requestId: restrictedAppTaskTurnRequestId(record),
         requestDigest: "d".repeat(64), userMessageId: `message-${record.id}`, userMessageCreatedAt: now.toISOString(),
-        workFolderId: record.scope.workFolderId, conversationId: record.conversationId, actorKind: "system", status: "running",
+        connectedFolderId: record.scope.connectedFolderId, conversationId: record.conversationId, actorKind: "system", status: "running",
         userMessagePersisted: true, acceptedAt: now.toISOString(), updatedAt: now.toISOString(), assistantText: "",
       });
     },
@@ -143,20 +143,20 @@ test("the declared shape is findable from the running turn, so `chat report` can
   // (docs/collaboration-contract.md, F29 — validated at report time, and again
   // when the result is projected to the app).
   assert.deepEqual(
-    f.service.outputSchemaForTurn({ workFolderId: scope.workFolderId, conversationId: turn.conversationId, taskId: turn.turnId }),
+    f.service.outputSchemaForTurn({ connectedFolderId: scope.connectedFolderId, conversationId: turn.conversationId, taskId: turn.turnId }),
     outputSchema,
   );
-  // The pin is per task, not per manifest: another work-folder, another Chat, and
+  // The pin is per task, not per manifest: another Connected Folder, another Chat, and
   // another turn id all answer nothing.
-  assert.equal(f.service.outputSchemaForTurn({ workFolderId: "work-folder-two", conversationId: turn.conversationId, taskId: turn.turnId }), null);
-  assert.equal(f.service.outputSchemaForTurn({ workFolderId: scope.workFolderId, conversationId: "chat-other", taskId: turn.turnId }), null);
-  assert.equal(f.service.outputSchemaForTurn({ workFolderId: scope.workFolderId, conversationId: turn.conversationId, taskId: "turn-other" }), null);
+  assert.equal(f.service.outputSchemaForTurn({ connectedFolderId: "connected-folder-two", conversationId: turn.conversationId, taskId: turn.turnId }), null);
+  assert.equal(f.service.outputSchemaForTurn({ connectedFolderId: scope.connectedFolderId, conversationId: "chat-other", taskId: turn.turnId }), null);
+  assert.equal(f.service.outputSchemaForTurn({ connectedFolderId: scope.connectedFolderId, conversationId: turn.conversationId, taskId: "turn-other" }), null);
 
   // An action that declared no shape has nothing to check against.
   const plain = await f.file(plainAction.id);
   const plainTurn = f.turns.get(plain.id)!;
   assert.equal(
-    f.service.outputSchemaForTurn({ workFolderId: scope.workFolderId, conversationId: plainTurn.conversationId, taskId: plainTurn.turnId }),
+    f.service.outputSchemaForTurn({ connectedFolderId: scope.connectedFolderId, conversationId: plainTurn.conversationId, taskId: plainTurn.turnId }),
     null,
   );
 });
@@ -184,7 +184,7 @@ test("details reported for an action that declared no shape never reach the app"
   assert.match(result.summary, /declared no shape for reported details/);
 });
 
-test("deliverables are bounded and each entry must name a safe work-folder-relative path", async (t) => {
+test("deliverables are bounded and each entry must name a safe Connected Folder–relative path", async (t) => {
   const f = await fixture(t);
   const task = await f.file();
   f.setReport({
@@ -193,7 +193,7 @@ test("deliverables are bounded and each entry must name a safe work-folder-relat
     outcome: "succeeded",
     files: [
       { path: "../outside.md", sha256: sha256("a"), sizeBytes: 1 },
-      { path: ".work-fold/work-folder.json", sha256: sha256("b"), sizeBytes: 1 },
+      { path: ".amplefile/connected-folder.json", sha256: sha256("b"), sizeBytes: 1 },
       { path: "/absolute.md", sha256: sha256("c"), sizeBytes: 1 },
       { path: "ok.md", sha256: "not-a-fingerprint", sizeBytes: 1 },
       { path: "ok.md", sha256: sha256("d"), sizeBytes: -1 },
@@ -205,7 +205,7 @@ test("deliverables are bounded and each entry must name a safe work-folder-relat
   f.settle(task.id, "ignored");
   const files = (await f.service.get(scope, task.requestId)).result!.files!;
   assert.equal(files.length, 100);
-  assert.ok(files.every((file) => file.path.startsWith("exports/")), "nothing outside the work-folder survives");
+  assert.ok(files.every((file) => file.path.startsWith("exports/")), "nothing outside the Connected Folder survives");
 });
 
 test("full-size details and a full-size summary now fit the envelope untouched", async (t) => {
@@ -240,7 +240,7 @@ test("an envelope over the whole-result ceiling drops details, then files, then 
   assert.equal(detailsOnly.truncated, true);
   assert.equal(detailsOnly.data, undefined, "details go first: the app can ask for them again");
   assert.equal(detailsOnly.files?.length, 2, "deliverables outlive details");
-  assert.match(detailsOnly.summary, /^\[work-fold: this result was larger than 2 KB, the result limit in Settings → Automations → Limits, so its details were left out\.\]\n\nThe comparison is done\.$/);
+  assert.match(detailsOnly.summary, /^\[AmpleFile: this result was larger than 2 KB, the result limit in Settings → Automations → Limits, so its details were left out\.\]\n\nThe comparison is done\.$/);
   assert.ok(size(detailsOnly) <= ceiling);
 
   const files = Array.from({ length: 40 }, (_, index) => file(index));
@@ -259,7 +259,7 @@ test("an envelope over the whole-result ceiling drops details, then files, then 
   // A summary bound larger than the envelope: the summary itself is shortened, note first.
   const longSummary = restrictedAppResultWithinCeiling({ ...base, summary: "z".repeat(10_000) }, ceiling, 32 * 1024);
   assert.equal(longSummary.truncated, true);
-  assert.match(longSummary.summary, /^\[work-fold: this result was larger than 2 KB, the result limit in Settings → Automations → Limits, so its summary was shortened\.\]\n\nz+$/);
+  assert.match(longSummary.summary, /^\[AmpleFile: this result was larger than 2 KB, the result limit in Settings → Automations → Limits, so its summary was shortened\.\]\n\nz+$/);
   assert.ok(size(longSummary) <= ceiling);
 
   const untouched = { ...base, data: { ok: true }, files: [file(1)] };
@@ -286,9 +286,9 @@ test("a v2 journal upgrades its reply into a summary and is rewritten as v3", as
   await f.service.flush();
 
   const journal = JSON.parse(await readFile(f.path, "utf8"));
-  assert.equal(journal.schema, "work-fold.app-assistant-tasks.v3");
+  assert.equal(journal.schema, "amplefile.app-assistant-tasks.v3");
   const downgraded = {
-    schema: "work-fold.app-assistant-tasks.v2",
+    schema: "amplefile.app-assistant-tasks.v2",
     records: journal.records.map((record: Record<string, unknown>) => {
       const { outputSchema: _schema, ...rest } = record;
       return { ...rest, result: { text: "Saved comparison.md.", truncated: false } };
@@ -301,7 +301,7 @@ test("a v2 journal upgrades its reply into a summary and is rewritten as v3", as
   assert.deepEqual(upgraded, { summary: "Saved comparison.md.", truncated: false, outcome: "succeeded" });
   await f.file(); // the next save rewrites the whole journal at the current schema
   await f.service.flush();
-  assert.equal(JSON.parse(await readFile(f.path, "utf8")).schema, "work-fold.app-assistant-tasks.v3");
+  assert.equal(JSON.parse(await readFile(f.path, "utf8")).schema, "amplefile.app-assistant-tasks.v3");
 });
 
 test("the dispatched Chat is told how to report and what shape the app asked for", async (t) => {
@@ -312,12 +312,12 @@ test("the dispatched Chat is told how to report and what shape the app asked for
     { ...detail, outputSchema },
     "Quote board",
   );
-  assert.match(prompt, /work-fold chat report/);
+  assert.match(prompt, /amplefile chat report/);
   assert.match(prompt, /"cheapest"/);
   assert.match(prompt, /If you do not report, your final reply becomes the summary/);
   const plain = restrictedAppTaskPrompt({ title: "Summarize", instructions: "Do it.", inputJson: "{}" }, "Quote board");
   assert.doesNotMatch(plain, /JSON Schema/);
-  assert.match(plain, /work-fold chat report/);
+  assert.match(plain, /amplefile chat report/);
 });
 
 

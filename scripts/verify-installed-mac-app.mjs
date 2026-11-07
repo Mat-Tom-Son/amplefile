@@ -8,11 +8,11 @@ const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 loadLocalReleaseEnvironment();
 const packageJson = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8"));
 const identity = JSON.parse(readFileSync(join(rootDir, "src", "shared", "product-identity.json"), "utf8"));
-const appPath = process.env.WORKFOLD_MAC_APP_PATH || `/Applications/${identity.productName}.app`;
+const appPath = process.env.AMPLEFILE_MAC_APP_PATH || `/Applications/${identity.productName}.app`;
 const expectedVersion = argumentValue("--version") || String(packageJson.version || "").trim();
-const expectedOwner = stringValue(process.env.WORKFOLD_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner;
-const expectedRepo = stringValue(process.env.WORKFOLD_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName;
-const expectedTeamId = stringValue(process.env.WORKFOLD_MAC_TEAM_ID) || "464JD5K8DC";
+const expectedOwner = stringValue(process.env.AMPLEFILE_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner;
+const expectedRepo = stringValue(process.env.AMPLEFILE_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName;
+const expectedTeamId = stringValue(process.env.AMPLEFILE_MAC_TEAM_ID) || "464JD5K8DC";
 const infoPlist = join(appPath, "Contents", "Info.plist");
 const appUpdatePath = join(appPath, "Contents", "Resources", "app-update.yml");
 

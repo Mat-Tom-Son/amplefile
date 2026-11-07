@@ -4,10 +4,10 @@ import {
   restrictedAppState,
   type RestrictedAppOpenedFrom,
 } from "../../../src/shared/restricted-app-navigation";
-import type { RestrictedAppInstalled, WorkFolderRailMode, WorkFolderSummary } from "../types";
+import type { RestrictedAppInstalled, ConnectedFolderRailMode, ConnectedFolderSummary } from "../types";
 
 export interface RestrictedAppOpenRequest {
-  workFolderId: string;
+  connectedFolderId: string;
   appId: string;
   digest: string;
   featureInstallationId: string;
@@ -23,23 +23,23 @@ export interface RestrictedAppOpenRequest {
  * same view, never a tab, at the route and state the app named.
  */
 export interface RestrictedAppNavigatorTarget {
-  mode: WorkFolderRailMode;
+  mode: ConnectedFolderRailMode;
   route: string;
   state?: unknown;
   openedFrom: RestrictedAppOpenedFrom;
 }
 
-export function restrictedAppRailMode(workFolderId: string, appId: string, featureInstallationId: string): WorkFolderRailMode {
-  return `app:restricted:${workFolderId}:${appId}:${featureInstallationId}`;
+export function restrictedAppRailMode(connectedFolderId: string, appId: string, featureInstallationId: string): ConnectedFolderRailMode {
+  return `app:restricted:${connectedFolderId}:${appId}:${featureInstallationId}`;
 }
 
 export function resolveRestrictedAppOpenRequest(
   request: RestrictedAppOpenRequest,
-  workFolders: readonly WorkFolderSummary[],
-): { workFolder: WorkFolderSummary; mode: WorkFolderRailMode; target: RestrictedAppNavigatorTarget } | null {
-  if (!request.workFolderId || !request.appId || !request.digest || !request.featureInstallationId || !request.permissionId) return null;
-  const workFolder = workFolders.find((item) => item.id === request.workFolderId);
-  if (!workFolder) return null;
+  connectedFolders: readonly ConnectedFolderSummary[],
+): { connectedFolder: ConnectedFolderSummary; mode: ConnectedFolderRailMode; target: RestrictedAppNavigatorTarget } | null {
+  if (!request.connectedFolderId || !request.appId || !request.digest || !request.featureInstallationId || !request.permissionId) return null;
+  const connectedFolder = connectedFolders.find((item) => item.id === request.connectedFolderId);
+  if (!connectedFolder) return null;
   let openedFrom: RestrictedAppOpenedFrom | null;
   try {
     openedFrom = restrictedAppOpenedFrom({ kind: "notification", permissionId: request.permissionId });
@@ -47,7 +47,7 @@ export function resolveRestrictedAppOpenRequest(
     return null;
   }
   if (!openedFrom) return null;
-  const mode = restrictedAppRailMode(workFolder.id, request.appId, request.featureInstallationId);
+  const mode = restrictedAppRailMode(connectedFolder.id, request.appId, request.featureInstallationId);
   let route = "/";
   let state: unknown;
   try {
@@ -59,7 +59,7 @@ export function resolveRestrictedAppOpenRequest(
     route = "/";
     state = undefined;
   }
-  return { workFolder, mode, target: { mode, route, ...(state !== undefined ? { state } : {}), openedFrom } };
+  return { connectedFolder, mode, target: { mode, route, ...(state !== undefined ? { state } : {}), openedFrom } };
 }
 
 /** Only disambiguate a preview when its installed sibling is also in this rail. */

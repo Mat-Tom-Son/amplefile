@@ -6,7 +6,7 @@ import { basename, delimiter } from "node:path";
 /**
  * Login-shell environment repair for GUI launches.
  *
- * When macOS (or a Linux desktop) launches work-fold from the Dock, Finder,
+ * When macOS (or a Linux desktop) launches AmpleFile from the Dock, Finder,
  * Spotlight, or `open`, the process inherits launchd's minimal environment:
  * `PATH=/usr/bin:/bin:/usr/sbin:/sbin` and no shell startup files ever run.
  * Pi's bash tool spawns `/bin/bash -c` with this process environment, so the
@@ -62,13 +62,13 @@ const neverImportedKeys = new Set([
   "DISABLE_AUTO_UPDATE",
   "NODE_OPTIONS",
   "NODE_CHANNEL_FD",
-  "WORKFOLD_RESOLVING_LOGIN_SHELL",
+  "AMPLEFILE_RESOLVING_LOGIN_SHELL",
 ]);
 
 /** Prefixes whose process values are explicit product/runtime configuration and always win. */
-const processWinsPrefixes = ["WORKFOLD_", "PI_", "ELECTRON_", "__CF", "XPC_", "MallocNanoZone", "OSLogRateLimit"];
+const processWinsPrefixes = ["AMPLEFILE_", "PI_", "ELECTRON_", "__CF", "XPC_", "MallocNanoZone", "OSLogRateLimit"];
 
-export const loginShellEnvironmentMarkerEnv = "WORKFOLD_RESOLVING_LOGIN_SHELL";
+export const loginShellEnvironmentMarkerEnv = "AMPLEFILE_RESOLVING_LOGIN_SHELL";
 
 /**
  * A launch from a terminal already carries that terminal's shell environment;
@@ -81,7 +81,7 @@ export function shouldResolveLoginShellEnvironment(
   platform: NodeJS.Platform = process.platform,
 ): { resolve: boolean; reason: string } {
   if (platform === "win32") return { resolve: false, reason: "Windows launches do not use a POSIX login shell." };
-  if (env.WORKFOLD_DISABLE_LOGIN_SHELL_ENV === "1") return { resolve: false, reason: "WORKFOLD_DISABLE_LOGIN_SHELL_ENV=1 opts out." };
+  if (env.AMPLEFILE_DISABLE_LOGIN_SHELL_ENV === "1") return { resolve: false, reason: "AMPLEFILE_DISABLE_LOGIN_SHELL_ENV=1 opts out." };
   if (env[loginShellEnvironmentMarkerEnv] === "1") return { resolve: false, reason: "This process is itself a login-shell environment probe." };
   if (typeof env.TERM === "string" && env.TERM.trim()) {
     return { resolve: false, reason: "Launched from a terminal; its shell environment is already present." };
@@ -199,7 +199,7 @@ export async function resolveLoginShellEnvironment(
   const shell = options.shell ?? defaultLoginShell(env, platform);
   if (!shell) return { shell: null, error: "No login shell is available." };
   if (!existsSync(shell)) return { shell, error: `Login shell not found: ${shell}` };
-  const marker = `__work-fold-env-${randomUUID()}__`;
+  const marker = `__amplefile-env-${randomUUID()}__`;
   const timeoutMs = options.timeoutMs ?? 10_000;
   return new Promise((resolvePromise) => {
     let settled = false;

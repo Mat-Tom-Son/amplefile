@@ -1,8 +1,8 @@
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
 import { describeChecklist } from "./checklist-tool.js";
-import type { WorkFoldChecklistItem } from "../requests/request-records.js";
-import type { PiWorkFolderTurnContext } from "./work-folder-turn-context.js";
+import type { AmpleFileChecklistItem } from "../requests/request-records.js";
+import type { PiConnectedFolderTurnContext } from "./connected-folder-turn-context.js";
 
 /**
  * A turn survives compaction: its ids, its request, and the care it needs.
@@ -25,18 +25,18 @@ import type { PiWorkFolderTurnContext } from "./work-folder-turn-context.js";
  */
 
 /** The hidden message every accepted turn sends before its prompt. */
-export const workFoldTurnContextCustomType = "work-fold-turn-context";
+export const ampleFileTurnContextCustomType = "amplefile-turn-context";
 /** The request-local restatement added after a compaction summary. */
-export const workFoldTurnIdentityCustomType = "work-fold-turn-identity";
+export const ampleFileTurnIdentityCustomType = "amplefile-turn-identity";
 
-export interface WorkFoldTurnIdentityInput {
-  workFolderTurn?: Pick<PiWorkFolderTurnContext, "workFolderId" | "taskId" | "requestId" | "assignment" | "delegated">;
-  workFoldAgentTaskId?: string;
+export interface AmpleFileTurnIdentityInput {
+  connectedFolderTurn?: Pick<PiConnectedFolderTurnContext, "connectedFolderId" | "taskId" | "requestId" | "assignment" | "delegated">;
+  ampleFileAgentTaskId?: string;
   /** The person's message for this turn. */
   request?: string;
 }
 
-export interface WorkFoldTurnIdentity {
+export interface AmpleFileTurnIdentity {
   taskId: string;
   text: string;
   request?: string;
@@ -44,7 +44,7 @@ export interface WorkFoldTurnIdentity {
   assignment?: string;
   assignmentTruncated?: boolean;
   /** The request's checklist as it stands now, so the plan survives the summary too (2026-10-18). */
-  checklist?: readonly WorkFoldChecklistItem[];
+  checklist?: readonly AmpleFileChecklistItem[];
 }
 
 /**
@@ -56,32 +56,32 @@ export const restatedRequestMaxChars = 32_000;
 const recheckReminder = "Earlier work in this turn is summarized above; the summary can omit completed results or checks. Recover applicable observations and findings with progress first, including their coverage and freshness. Keep completed verification when its evidence still applies. Recheck changed sources, dynamic state, missing coverage or unresolved concerns with the appropriate tools; compaction alone is not a reason to repeat every check. Never replay a mutation to recover its result. Finish when the requested outcome has supporting evidence, and say plainly if anything is still incomplete.";
 
 /** The identity lines a Worker turn's context opens with. */
-export function workFolderTurnIdentityLines(turn: { workFolderId: string; taskId: string; requestId: string }): string[] {
+export function connectedFolderTurnIdentityLines(turn: { connectedFolderId: string; taskId: string; requestId: string }): string[] {
   return [
-    "This turn's work-fold identity (host-owned; use these exact ids):",
-    JSON.stringify({ workFolderId: turn.workFolderId, taskId: turn.taskId, requestId: turn.requestId }, null, 2),
-    "Pass --work-folder with that work-folder id and --task with that task id on chat report, chat ask, and chat handoff. A task id is accepted only while that exact turn is yours and running.",
+    "This turn's AmpleFile identity (host-owned; use these exact ids):",
+    JSON.stringify({ connectedFolderId: turn.connectedFolderId, taskId: turn.taskId, requestId: turn.requestId }, null, 2),
+    "Pass --connected-folder with that Connected Folder id and --task with that task id on chat report, chat ask, and chat handoff. A task id is accepted only while that exact turn is yours and running.",
   ];
 }
 
-/** The lines that give a work-fold agent request its own task id. */
-export function workFoldAgentTaskLines(taskId: string): string[] {
+/** The lines that give an AmpleFile agent request its own task id. */
+export function ampleFileAgentTaskLines(taskId: string): string[] {
   return [
-    "This work-fold agent request's task id is:",
+    "This AmpleFile agent request's task id is:",
     taskId,
-    "Add --parent-task with that exact id to each chat send, work-folders create/register, or files add command you run for this request. Do not reuse it in a later request.",
+    "Add --parent-task with that exact id to each chat send, connected-folders create/register, or files add command you run for this request. Do not reuse it in a later request.",
   ];
 }
 
-/** What to restate after compaction for this turn, or null when it carries no work-fold ids. */
-export function buildTurnIdentity(input: WorkFoldTurnIdentityInput): WorkFoldTurnIdentity | null {
-  const turn = input.workFolderTurn;
-  const taskId = turn?.taskId ?? input.workFoldAgentTaskId;
+/** What to restate after compaction for this turn, or null when it carries no AmpleFile ids. */
+export function buildTurnIdentity(input: AmpleFileTurnIdentityInput): AmpleFileTurnIdentity | null {
+  const turn = input.connectedFolderTurn;
+  const taskId = turn?.taskId ?? input.ampleFileAgentTaskId;
   if (!taskId) return null;
   const lines = [
-    "The conversation above was compacted while this turn was running, so work-fold restates this turn's identity here. It replaces any task id, request id, or work-folder id named in the summary or in earlier messages.",
-    ...(turn ? workFolderTurnIdentityLines(turn) : []),
-    ...(input.workFoldAgentTaskId ? workFoldAgentTaskLines(input.workFoldAgentTaskId) : []),
+    "The conversation above was compacted while this turn was running, so AmpleFile restates this turn's identity here. It replaces any task id, request id, or Connected Folder id named in the summary or in earlier messages.",
+    ...(turn ? connectedFolderTurnIdentityLines(turn) : []),
+    ...(input.ampleFileAgentTaskId ? ampleFileAgentTaskLines(input.ampleFileAgentTaskId) : []),
   ];
   const request = input.request?.trim();
   const assignment = turn?.assignment ?? turn?.delegated?.assignment;
@@ -96,7 +96,7 @@ function restatedRequest(request: string): string {
   return `This turn's request (the person's message, restated because the summary above may not include it):\n<request>\n${shown}\n</request>`;
 }
 
-function restatedAssignment(identity: WorkFoldTurnIdentity): string {
+function restatedAssignment(identity: AmpleFileTurnIdentity): string {
   const assignment = identity.assignment!;
   const shown = assignment.length > restatedRequestMaxChars
     ? `${assignment.slice(0, restatedRequestMaxChars)}\n[The original assignment continues for ${assignment.length - restatedRequestMaxChars} more characters; the full text is in this Chat's original assignment.]`
@@ -117,7 +117,7 @@ function messageText(message: ContextMessage): string {
  * turn's own context message is no longer among the messages the model sees.
  * Returns undefined (leaving the request untouched) in every other case.
  */
-export function restateTurnIdentity<T extends ContextMessage>(messages: T[], identity: WorkFoldTurnIdentity | null): T[] | undefined {
+export function restateTurnIdentity<T extends ContextMessage>(messages: T[], identity: AmpleFileTurnIdentity | null): T[] | undefined {
   if (!identity) return undefined;
   let summaryIndex = -1;
   for (let index = messages.length - 1; index >= 0 && summaryIndex < 0; index -= 1) {
@@ -125,7 +125,7 @@ export function restateTurnIdentity<T extends ContextMessage>(messages: T[], ide
   }
   if (summaryIndex < 0) return undefined;
   const ownContextVisible = messages.some((message) => message.role === "custom"
-    && message.customType === workFoldTurnContextCustomType && messageText(message).includes(identity.taskId));
+    && message.customType === ampleFileTurnContextCustomType && messageText(message).includes(identity.taskId));
   if (ownContextVisible) return undefined;
   const requestVisible = identity.request !== undefined
     && messages.some((message) => message.role === "user" && messageText(message).includes(identity.request!));
@@ -133,7 +133,7 @@ export function restateTurnIdentity<T extends ContextMessage>(messages: T[], ide
     && messages.some((message) => message.role === "user" && messageText(message).includes(identity.assignment!));
   const note = {
     role: "custom",
-    customType: workFoldTurnIdentityCustomType,
+    customType: ampleFileTurnIdentityCustomType,
     content: [
       identity.text,
       ...(identity.assignment && !assignmentVisible ? [restatedAssignment(identity)] : []),
@@ -148,7 +148,7 @@ export function restateTurnIdentity<T extends ContextMessage>(messages: T[], ide
 }
 
 /** Built-in session extension; `current` returns the running turn's identity, or null between turns. */
-export function turnIdentityAfterCompactionExtension(current: () => WorkFoldTurnIdentity | null): ExtensionFactory {
+export function turnIdentityAfterCompactionExtension(current: () => AmpleFileTurnIdentity | null): ExtensionFactory {
   return (pi) => {
     pi.on("context", (event) => {
       const messages = restateTurnIdentity(event.messages as ContextMessage[], current());

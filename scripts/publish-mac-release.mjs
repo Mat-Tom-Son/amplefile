@@ -13,9 +13,9 @@ loadLocalReleaseEnvironment();
 const packageJson = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8"));
 const identity = JSON.parse(readFileSync(join(rootDir, "src", "shared", "product-identity.json"), "utf8"));
 const version = String(packageJson.version ?? "").trim();
-const arch = stringValue(process.env.WORKFOLD_DESKTOP_RELEASE_ARCH) || (process.arch === "x64" ? "x64" : "arm64");
-const owner = stringValue(process.env.WORKFOLD_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner;
-const repo = stringValue(process.env.WORKFOLD_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName;
+const arch = stringValue(process.env.AMPLEFILE_DESKTOP_RELEASE_ARCH) || (process.arch === "x64" ? "x64" : "arm64");
+const owner = stringValue(process.env.AMPLEFILE_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner;
+const repo = stringValue(process.env.AMPLEFILE_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName;
 const releaseRepo = `${owner}/${repo}`;
 const sourceRepo = `${identity.sourceRepositoryOwner}/${identity.sourceRepositoryName}`;
 const tag = `v${version}`;
@@ -35,7 +35,7 @@ const requiredAssets = [
 
 if (process.platform !== "darwin") throw new Error(`${identity.productName} macOS releases must be published from a Mac host.`);
 if (!version) throw new Error("package.json does not declare a release version.");
-if (process.env.WORKFOLD_SOURCE_RELEASE_REPO && process.env.WORKFOLD_SOURCE_RELEASE_REPO !== sourceRepo) {
+if (process.env.AMPLEFILE_SOURCE_RELEASE_REPO && process.env.AMPLEFILE_SOURCE_RELEASE_REPO !== sourceRepo) {
   throw new Error(`Release evidence must come from the canonical source repository ${sourceRepo}.`);
 }
 
@@ -76,7 +76,7 @@ await withReleaseVerificationLock(rootDir, "publication", async (lockToken) => {
   const notes = [
     `${identity.productName} ${version} for macOS`,
     "",
-    `Signed with Apple Team ID ${stringValue(process.env.WORKFOLD_MAC_TEAM_ID) || "464JD5K8DC"}, notarized by Apple, and published for ${arch}.`,
+    `Signed with Apple Team ID ${stringValue(process.env.AMPLEFILE_MAC_TEAM_ID) || "464JD5K8DC"}, notarized by Apple, and published for ${arch}.`,
     "Use the DMG for a first install. Existing updater-capable Mac installs consume the ZIP and latest-mac.yml assets.",
   ].join("\n");
 
@@ -124,8 +124,8 @@ async function assertBuildState(lockToken) {
     arch,
     mode: "release",
     nodeVersion: process.version,
-    signIdentity: stringValue(process.env.WORKFOLD_MAC_SIGN_IDENTITY || process.env.CSC_NAME),
-    teamId: stringValue(process.env.WORKFOLD_MAC_TEAM_ID || process.env.APPLE_TEAM_ID),
+    signIdentity: stringValue(process.env.AMPLEFILE_MAC_SIGN_IDENTITY || process.env.CSC_NAME),
+    teamId: stringValue(process.env.AMPLEFILE_MAC_TEAM_ID || process.env.APPLE_TEAM_ID),
     feedOwner: owner,
     feedRepo: repo,
   }, requiredAssets);
@@ -198,9 +198,9 @@ function commandOptions() {
     cwd: rootDir,
     env: {
       ...process.env,
-      WORKFOLD_DESKTOP_RELEASE_PLATFORM: "darwin",
-      WORKFOLD_DESKTOP_RELEASE_ARCH: arch,
-      WORKFOLD_MAC_RELEASE_BUILD: "1",
+      AMPLEFILE_DESKTOP_RELEASE_PLATFORM: "darwin",
+      AMPLEFILE_DESKTOP_RELEASE_ARCH: arch,
+      AMPLEFILE_MAC_RELEASE_BUILD: "1",
     },
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],

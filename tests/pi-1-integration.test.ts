@@ -15,7 +15,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { McpOAuthCredentialStore } from "@earendil-works/pi-coding-agent";
 
 test("desktop MCP credentials keep native locking and never fall back to plaintext", async t => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-mcp-encrypted-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-mcp-encrypted-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const path = join(root, "credentials.bin"), key = randomBytes(32);
   let available = true;
@@ -82,7 +82,7 @@ test("native auth preserves secret prompts, cancels losing callback input, and p
 });
 
 test("native project MCP overrides narrow one folder without copying or revoking Everywhere credentials", async t => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-native-override-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-native-override-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "pi"), cwd = join(root, "folder");
   await mkdir(agentDir); await mkdir(join(cwd, ".pi"), { recursive: true });
@@ -102,7 +102,7 @@ test("native project MCP overrides narrow one folder without copying or revoking
 });
 
 test("closing a native MCP runtime prevents an in-flight refresh from restoring revoked credentials", async t => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-native-revoke-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-native-revoke-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const options = await includedNativeMcpOptions({ agentDir: root }, FileCredentialStore.inMemory(), "session");
   const pendingRefresh = options.credentials!.forServer("fixture", "https://example.invalid/mcp");
@@ -112,7 +112,7 @@ test("closing a native MCP runtime prevents an in-flight refresh from restoring 
 });
 
 test("real codemode calls image and classifier models, returns file evidence and attributes usage to its accepted turn", async t => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-pi-one-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-pi-one-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const faux = fauxProvider({ provider: "fixture-chat", models: [{ id: "chat", cost: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 } }] });
   const credentials = FileCredentialStore.inMemory();
@@ -142,7 +142,7 @@ test("real codemode calls image and classifier models, returns file evidence and
     text(await models.classify(judge, {state:{note:'review'}, questions:{ready:{type:'bool',instructions:'Ready?',criteria:{true:'ready',false:'not ready'}}}}));
     text(await tools.write({path:'native-evidence.txt', content:'codemode wrote this'}));
   ` }, { id: "code-1" })), fauxAssistantMessage("The native calls completed.")]);
-  assert.equal(await client.prompt("Run native model operations.", { workFoldAgentTaskId: "accepted-native-turn" }), "The native calls completed.");
+  assert.equal(await client.prompt("Run native model operations.", { ampleFileAgentTaskId: "accepted-native-turn" }), "The native calls completed.");
   assert.equal(images, 1); assert.equal(classifications, 1);
   assert.equal(await readFile(join(root, "native-evidence.txt"), "utf8"), "codemode wrote this");
   assert.ok(events.some(event => event.type === "tool" && event.toolName === "write" && event.phase === "complete" && Number.isFinite(event.durationMs)));
@@ -157,7 +157,7 @@ test("real codemode calls image and classifier models, returns file evidence and
 });
 
 test("native cache warming stays inside an accepted turn, records usage and is observed once with the correct owner", { timeout: 10_000 }, async t => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-native-warm-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-native-warm-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "pi"); await mkdir(join(agentDir, "extensions"), { recursive: true });
   await writeFile(join(agentDir, "extensions", "warm.ts"), "export default pi => pi.on('cache_warming_decision', () => ({action:'warm'}));");
@@ -184,7 +184,7 @@ test("native cache warming stays inside an accepted turn, records usage and is o
     settingsManager: settings, modelContextInspector: inspector, preferredModel: { provider: "fixture-warm", id: "chat" } }) });
   t.after(() => client.stop());
   await client.prompt("Seed the cache.");
-  assert.equal(await client.prompt("Wait for a warm request.", { workFoldAgentTaskId: "warm-owner" }), "The turn finished.");
+  assert.equal(await client.prompt("Wait for a warm request.", { ampleFileAgentTaskId: "warm-owner" }), "The turn finished.");
   const entries = (await readFile((await client.getState()).sessionFile!, "utf8")).trim().split("\n").map(line => JSON.parse(line));
   assert.ok(entries.some(entry => entry.type === "usage" && entry.kind === "cache_warm"));
   const captures = inspector.list().filter(record => record.owner.purpose === "cache_warm");

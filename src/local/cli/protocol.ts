@@ -7,15 +7,15 @@ import { isAbsolute, resolve } from "node:path";
  * separately versioned act lane (`act-protocol.ts`), which authenticates each
  * request with the per-launch act token the running desktop app mints.
  */
-export const WORKFOLD_CLI_PROTOCOL_VERSION = 1 as const;
+export const AMPLEFILE_CLI_PROTOCOL_VERSION = 1 as const;
 
 /** Accepted shape for per-launch act tokens carried by act-lane requests. */
-export const WORKFOLD_CLI_ACT_TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,256}$/;
-export const WORKFOLD_CLI_MAX_ARG_COUNT = 16_384;
-export const WORKFOLD_CLI_MAX_ARG_LENGTH = 4 * 1024 * 1024;
-export const WORKFOLD_CLI_MAX_ARGV_LENGTH = 16 * 1024 * 1024;
+export const AMPLEFILE_CLI_ACT_TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,256}$/;
+export const AMPLEFILE_CLI_MAX_ARG_COUNT = 16_384;
+export const AMPLEFILE_CLI_MAX_ARG_LENGTH = 4 * 1024 * 1024;
+export const AMPLEFILE_CLI_MAX_ARGV_LENGTH = 16 * 1024 * 1024;
 
-export const WorkFoldCliExitCode = {
+export const AmpleFileCliExitCode = {
   success: 0,
   failure: 1,
   usage: 2,
@@ -27,22 +27,22 @@ export const WorkFoldCliExitCode = {
   protocolError: 8,
 } as const;
 
-export type WorkFoldCliExitCode = typeof WorkFoldCliExitCode[keyof typeof WorkFoldCliExitCode];
-export type WorkFoldCliErrorCode = Exclude<keyof typeof WorkFoldCliExitCode, "success">;
-export type WorkFoldCliOutputMode = "human" | "json";
-export type WorkFoldCliCommandName = "help" | "version" | "skill" | "context" | "work-folders.list" | "tasks.list" | "capabilities.list" | "checks.status";
+export type AmpleFileCliExitCode = typeof AmpleFileCliExitCode[keyof typeof AmpleFileCliExitCode];
+export type AmpleFileCliErrorCode = Exclude<keyof typeof AmpleFileCliExitCode, "success">;
+export type AmpleFileCliOutputMode = "human" | "json";
+export type AmpleFileCliCommandName = "help" | "version" | "skill" | "context" | "connected-folders.list" | "tasks.list" | "capabilities.list" | "checks.status";
 
-export type WorkFoldCliJson =
+export type AmpleFileCliJson =
   | null
   | boolean
   | number
   | string
-  | WorkFoldCliJson[]
-  | { [key: string]: WorkFoldCliJson };
+  | AmpleFileCliJson[]
+  | { [key: string]: AmpleFileCliJson };
 
 /** Stable on-disk request contract shared by platform shims and the desktop broker. */
-export interface WorkFoldCliRequestV1 {
-  protocolVersion: typeof WORKFOLD_CLI_PROTOCOL_VERSION;
+export interface AmpleFileCliRequestV1 {
+  protocolVersion: typeof AMPLEFILE_CLI_PROTOCOL_VERSION;
   id: string;
   argv: string[];
   cwd: string;
@@ -50,62 +50,62 @@ export interface WorkFoldCliRequestV1 {
 }
 
 /** Stable on-disk response contract shared by the desktop broker and platform shims. */
-export interface WorkFoldCliResponseV1 {
-  protocolVersion: typeof WORKFOLD_CLI_PROTOCOL_VERSION;
+export interface AmpleFileCliResponseV1 {
+  protocolVersion: typeof AMPLEFILE_CLI_PROTOCOL_VERSION;
   id: string;
-  exitCode: WorkFoldCliExitCode;
+  exitCode: AmpleFileCliExitCode;
   stdout: string;
   stderr: string;
-  result?: WorkFoldCliJson;
+  result?: AmpleFileCliJson;
   completedAt?: string;
 }
 
-export interface WorkFoldCliParsedCommand {
-  name: WorkFoldCliCommandName;
-  output: WorkFoldCliOutputMode;
-  workFolder?: string;
+export interface AmpleFileCliParsedCommand {
+  name: AmpleFileCliCommandName;
+  output: AmpleFileCliOutputMode;
+  connectedFolder?: string;
   topic?: string;
 }
 
-export interface WorkFoldCliActor {
+export interface AmpleFileCliActor {
   kind: "cli";
   cwd: string;
 }
 
-export interface WorkFoldCliWorkFolderSummary {
+export interface AmpleFileCliConnectedFolderSummary {
   id: string;
   name: string;
-  workFolderRoot?: string;
+  connectedFolderRoot?: string;
   active?: boolean;
-  /** The registered work-folder whose folder contains this one; absent for a top-level work-folder. */
-  parentWorkFolderId?: string;
+  /** The registered Connected Folder whose folder contains this one; absent for a top-level Connected Folder. */
+  parentConnectedFolderId?: string;
 }
 
-export interface WorkFoldCliContextSnapshot {
+export interface AmpleFileCliContextSnapshot {
   cwd: string;
-  workFolder: WorkFoldCliWorkFolderSummary | null;
+  connectedFolder: AmpleFileCliConnectedFolderSummary | null;
   selectedPath?: string | null;
   activeSurface?: string | null;
 }
 
-export interface WorkFoldCliTaskSummary {
+export interface AmpleFileCliTaskSummary {
   id: string;
   label: string;
   status: string;
-  workFolderId?: string;
+  connectedFolderId?: string;
   updatedAt?: string;
 }
 
-export interface WorkFoldCliCapabilitySummary {
+export interface AmpleFileCliCapabilitySummary {
   id: string;
   name: string;
   kind: "skill" | "extension" | "tool" | "package" | "other";
-  scope: "everywhere" | "work-folder" | string;
+  scope: "everywhere" | "connected-folder" | string;
   status?: string;
   source?: string;
 }
 
-export type WorkFoldCliCheckAggregateState =
+export type AmpleFileCliCheckAggregateState =
   | "unavailable"
   | "not-configured"
   | "current-clear"
@@ -115,12 +115,12 @@ export type WorkFoldCliCheckAggregateState =
   | "check-error";
 
 /** Experimental, aggregate-only Check status. It never carries content. */
-export interface WorkFoldCliCheckStatusSummary {
-  kind: "work-fold.checks.experimental";
+export interface AmpleFileCliCheckStatusSummary {
+  kind: "amplefile.checks.experimental";
   version: 1;
   available: boolean;
-  workFolderId: string;
-  state: WorkFoldCliCheckAggregateState;
+  connectedFolderId: string;
+  state: AmpleFileCliCheckAggregateState;
   configured: number;
   proposed: number;
   enabled: number;
@@ -135,61 +135,61 @@ export interface WorkFoldCliCheckStatusSummary {
 }
 
 /**
- * The deliberately narrow adapter needed by the CLI executor. WorkFoldKernel
+ * The deliberately narrow adapter needed by the CLI executor. AmpleFileKernel
  * satisfies this interface through a compact projection without importing
  * desktop code into the reusable control plane.
  */
-export interface WorkFoldCliKernel {
-  getContext(actor: WorkFoldCliActor, options: { workFolder?: string }): Promise<WorkFoldCliContextSnapshot>;
-  listWorkFolders(actor: WorkFoldCliActor, options: { workFolder?: string }): Promise<WorkFoldCliWorkFolderSummary[]>;
-  listTasks(actor: WorkFoldCliActor, options: { workFolder?: string }): Promise<WorkFoldCliTaskSummary[]>;
-  listCapabilities(actor: WorkFoldCliActor, options: { workFolder?: string }): Promise<WorkFoldCliCapabilitySummary[]>;
-  getChecksStatus?(actor: WorkFoldCliActor, options: { workFolder?: string }): Promise<WorkFoldCliCheckStatusSummary>;
+export interface AmpleFileCliKernel {
+  getContext(actor: AmpleFileCliActor, options: { connectedFolder?: string }): Promise<AmpleFileCliContextSnapshot>;
+  listConnectedFolders(actor: AmpleFileCliActor, options: { connectedFolder?: string }): Promise<AmpleFileCliConnectedFolderSummary[]>;
+  listTasks(actor: AmpleFileCliActor, options: { connectedFolder?: string }): Promise<AmpleFileCliTaskSummary[]>;
+  listCapabilities(actor: AmpleFileCliActor, options: { connectedFolder?: string }): Promise<AmpleFileCliCapabilitySummary[]>;
+  getChecksStatus?(actor: AmpleFileCliActor, options: { connectedFolder?: string }): Promise<AmpleFileCliCheckStatusSummary>;
 }
 
-export class WorkFoldCliError extends Error {
-  readonly exitCode: WorkFoldCliExitCode;
+export class AmpleFileCliError extends Error {
+  readonly exitCode: AmpleFileCliExitCode;
 
   constructor(
-    readonly code: WorkFoldCliErrorCode,
+    readonly code: AmpleFileCliErrorCode,
     message: string,
     options: ErrorOptions = {},
   ) {
     super(message, options);
-    this.name = "WorkFoldCliError";
-    this.exitCode = WorkFoldCliExitCode[code];
+    this.name = "AmpleFileCliError";
+    this.exitCode = AmpleFileCliExitCode[code];
   }
 }
 
-export function normalizeWorkFoldCliRequestId(value: string): string {
+export function normalizeAmpleFileCliRequestId(value: string): string {
   const normalized = value.trim().toLocaleLowerCase();
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalized)) {
-    throw new WorkFoldCliError("protocolError", "CLI request id must be a UUID.");
+    throw new AmpleFileCliError("protocolError", "CLI request id must be a UUID.");
   }
   return normalized;
 }
 
-export function parseWorkFoldCliRequest(value: unknown): WorkFoldCliRequestV1 {
+export function parseAmpleFileCliRequest(value: unknown): AmpleFileCliRequestV1 {
   const record = objectRecord(value, "CLI request must be a JSON object.");
   assertExactKeys(record, ["protocolVersion", "id", "argv", "cwd", "createdAt"], "CLI request");
-  if (record.protocolVersion !== WORKFOLD_CLI_PROTOCOL_VERSION) {
-    throw new WorkFoldCliError(
+  if (record.protocolVersion !== AMPLEFILE_CLI_PROTOCOL_VERSION) {
+    throw new AmpleFileCliError(
       "protocolError",
-      `Unsupported CLI protocol version: ${String(record.protocolVersion)}. Expected ${WORKFOLD_CLI_PROTOCOL_VERSION}.`,
+      `Unsupported CLI protocol version: ${String(record.protocolVersion)}. Expected ${AMPLEFILE_CLI_PROTOCOL_VERSION}.`,
     );
   }
-  if (typeof record.id !== "string") throw new WorkFoldCliError("protocolError", "CLI request id must be a string.");
-  const id = normalizeWorkFoldCliRequestId(record.id);
+  if (typeof record.id !== "string") throw new AmpleFileCliError("protocolError", "CLI request id must be a string.");
+  const id = normalizeAmpleFileCliRequestId(record.id);
   const argv = parseArgv(record.argv);
   if (typeof record.cwd !== "string" || !record.cwd.trim() || !isAbsolute(record.cwd)) {
-    throw new WorkFoldCliError("protocolError", "CLI request cwd must be an absolute path.");
+    throw new AmpleFileCliError("protocolError", "CLI request cwd must be an absolute path.");
   }
-  if (record.cwd.includes("\u0000")) throw new WorkFoldCliError("protocolError", "CLI request cwd contains an invalid character.");
+  if (record.cwd.includes("\u0000")) throw new AmpleFileCliError("protocolError", "CLI request cwd contains an invalid character.");
   if (typeof record.createdAt !== "string" || !Number.isFinite(Date.parse(record.createdAt))) {
-    throw new WorkFoldCliError("protocolError", "CLI request createdAt must be an ISO timestamp.");
+    throw new AmpleFileCliError("protocolError", "CLI request createdAt must be an ISO timestamp.");
   }
   return {
-    protocolVersion: WORKFOLD_CLI_PROTOCOL_VERSION,
+    protocolVersion: AMPLEFILE_CLI_PROTOCOL_VERSION,
     id,
     argv,
     cwd: resolve(record.cwd),
@@ -197,26 +197,26 @@ export function parseWorkFoldCliRequest(value: unknown): WorkFoldCliRequestV1 {
   };
 }
 
-export function parseWorkFoldCliResponse(value: unknown): WorkFoldCliResponseV1 {
+export function parseAmpleFileCliResponse(value: unknown): AmpleFileCliResponseV1 {
   const record = objectRecord(value, "CLI response must be a JSON object.");
   assertExactKeys(record, ["protocolVersion", "id", "exitCode", "stdout", "stderr", "result", "completedAt"], "CLI response", true);
-  if (record.protocolVersion !== WORKFOLD_CLI_PROTOCOL_VERSION) {
-    throw new WorkFoldCliError("protocolError", `Unsupported CLI response protocol version: ${String(record.protocolVersion)}.`);
+  if (record.protocolVersion !== AMPLEFILE_CLI_PROTOCOL_VERSION) {
+    throw new AmpleFileCliError("protocolError", `Unsupported CLI response protocol version: ${String(record.protocolVersion)}.`);
   }
-  if (typeof record.id !== "string") throw new WorkFoldCliError("protocolError", "CLI response id must be a string.");
-  const id = normalizeWorkFoldCliRequestId(record.id);
-  if (!isWorkFoldCliExitCode(record.exitCode)) throw new WorkFoldCliError("protocolError", "CLI response exitCode is invalid.");
+  if (typeof record.id !== "string") throw new AmpleFileCliError("protocolError", "CLI response id must be a string.");
+  const id = normalizeAmpleFileCliRequestId(record.id);
+  if (!isAmpleFileCliExitCode(record.exitCode)) throw new AmpleFileCliError("protocolError", "CLI response exitCode is invalid.");
   if (typeof record.stdout !== "string" || typeof record.stderr !== "string") {
-    throw new WorkFoldCliError("protocolError", "CLI response output must be text.");
+    throw new AmpleFileCliError("protocolError", "CLI response output must be text.");
   }
   if (record.completedAt !== undefined && (typeof record.completedAt !== "string" || !Number.isFinite(Date.parse(record.completedAt)))) {
-    throw new WorkFoldCliError("protocolError", "CLI response completedAt must be an ISO timestamp.");
+    throw new AmpleFileCliError("protocolError", "CLI response completedAt must be an ISO timestamp.");
   }
-  if (record.result !== undefined && !isWorkFoldCliJson(record.result)) {
-    throw new WorkFoldCliError("protocolError", "CLI response result must be JSON-serializable.");
+  if (record.result !== undefined && !isAmpleFileCliJson(record.result)) {
+    throw new AmpleFileCliError("protocolError", "CLI response result must be JSON-serializable.");
   }
   return {
-    protocolVersion: WORKFOLD_CLI_PROTOCOL_VERSION,
+    protocolVersion: AMPLEFILE_CLI_PROTOCOL_VERSION,
     id,
     exitCode: record.exitCode,
     stdout: record.stdout,
@@ -226,14 +226,14 @@ export function parseWorkFoldCliResponse(value: unknown): WorkFoldCliResponseV1 
   };
 }
 
-export function createWorkFoldCliRequest(input: {
+export function createAmpleFileCliRequest(input: {
   id: string;
   argv: string[];
   cwd: string;
   createdAt?: string;
-}): WorkFoldCliRequestV1 {
-  return parseWorkFoldCliRequest({
-    protocolVersion: WORKFOLD_CLI_PROTOCOL_VERSION,
+}): AmpleFileCliRequestV1 {
+  return parseAmpleFileCliRequest({
+    protocolVersion: AMPLEFILE_CLI_PROTOCOL_VERSION,
     id: input.id,
     argv: input.argv,
     cwd: input.cwd,
@@ -241,8 +241,8 @@ export function createWorkFoldCliRequest(input: {
   });
 }
 
-export function createWorkFoldCliResponse(input: Omit<WorkFoldCliResponseV1, "protocolVersion">): WorkFoldCliResponseV1 {
-  return parseWorkFoldCliResponse({ protocolVersion: WORKFOLD_CLI_PROTOCOL_VERSION, ...input });
+export function createAmpleFileCliResponse(input: Omit<AmpleFileCliResponseV1, "protocolVersion">): AmpleFileCliResponseV1 {
+  return parseAmpleFileCliResponse({ protocolVersion: AMPLEFILE_CLI_PROTOCOL_VERSION, ...input });
 }
 
 /** Shared bounded argv validation for both protocol lanes. */
@@ -252,28 +252,28 @@ export function parseBoundedCliArgv(value: unknown): string[] {
 
 function parseArgv(value: unknown): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    throw new WorkFoldCliError("protocolError", "CLI request argv must be an array of strings.");
+    throw new AmpleFileCliError("protocolError", "CLI request argv must be an array of strings.");
   }
-  if (value.length > WORKFOLD_CLI_MAX_ARG_COUNT) {
-    throw new WorkFoldCliError("protocolError", `CLI request has more than ${WORKFOLD_CLI_MAX_ARG_COUNT} arguments.`);
+  if (value.length > AMPLEFILE_CLI_MAX_ARG_COUNT) {
+    throw new AmpleFileCliError("protocolError", `CLI request has more than ${AMPLEFILE_CLI_MAX_ARG_COUNT} arguments.`);
   }
   const argv = value as string[];
   let total = 0;
   for (const argument of argv) {
-    if (argument.includes("\u0000")) throw new WorkFoldCliError("protocolError", "CLI argument contains an invalid character.");
-    if (argument.length > WORKFOLD_CLI_MAX_ARG_LENGTH) {
-      throw new WorkFoldCliError("protocolError", `CLI argument exceeds ${WORKFOLD_CLI_MAX_ARG_LENGTH} characters.`);
+    if (argument.includes("\u0000")) throw new AmpleFileCliError("protocolError", "CLI argument contains an invalid character.");
+    if (argument.length > AMPLEFILE_CLI_MAX_ARG_LENGTH) {
+      throw new AmpleFileCliError("protocolError", `CLI argument exceeds ${AMPLEFILE_CLI_MAX_ARG_LENGTH} characters.`);
     }
     total += argument.length;
   }
-  if (total > WORKFOLD_CLI_MAX_ARGV_LENGTH) {
-    throw new WorkFoldCliError("protocolError", `CLI arguments exceed ${WORKFOLD_CLI_MAX_ARGV_LENGTH} characters in total.`);
+  if (total > AMPLEFILE_CLI_MAX_ARGV_LENGTH) {
+    throw new AmpleFileCliError("protocolError", `CLI arguments exceed ${AMPLEFILE_CLI_MAX_ARGV_LENGTH} characters in total.`);
   }
   return [...argv];
 }
 
 function objectRecord(value: unknown, message: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new WorkFoldCliError("protocolError", message);
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new AmpleFileCliError("protocolError", message);
   return value as Record<string, unknown>;
 }
 
@@ -285,20 +285,20 @@ function assertExactKeys(
 ): void {
   const allowed = new Set(keys);
   const unexpected = Object.keys(record).filter((key) => !allowed.has(key));
-  if (unexpected.length) throw new WorkFoldCliError("protocolError", `${label} contains unsupported field: ${unexpected[0]}.`);
+  if (unexpected.length) throw new AmpleFileCliError("protocolError", `${label} contains unsupported field: ${unexpected[0]}.`);
   if (optional) return;
   const missing = keys.filter((key) => !(key in record));
-  if (missing.length) throw new WorkFoldCliError("protocolError", `${label} is missing required field: ${missing[0]}.`);
+  if (missing.length) throw new AmpleFileCliError("protocolError", `${label} is missing required field: ${missing[0]}.`);
 }
 
-function isWorkFoldCliExitCode(value: unknown): value is WorkFoldCliExitCode {
-  return typeof value === "number" && Object.values(WorkFoldCliExitCode).includes(value as WorkFoldCliExitCode);
+function isAmpleFileCliExitCode(value: unknown): value is AmpleFileCliExitCode {
+  return typeof value === "number" && Object.values(AmpleFileCliExitCode).includes(value as AmpleFileCliExitCode);
 }
 
-function isWorkFoldCliJson(value: unknown): value is WorkFoldCliJson {
+function isAmpleFileCliJson(value: unknown): value is AmpleFileCliJson {
   if (value === null || typeof value === "string" || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.every(isWorkFoldCliJson);
+  if (Array.isArray(value)) return value.every(isAmpleFileCliJson);
   if (!value || typeof value !== "object") return false;
-  return Object.values(value as Record<string, unknown>).every((item) => item !== undefined && isWorkFoldCliJson(item));
+  return Object.values(value as Record<string, unknown>).every((item) => item !== undefined && isAmpleFileCliJson(item));
 }

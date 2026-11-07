@@ -6,20 +6,20 @@ import { queueHistoryRequest } from "../../lib/history-queue";
 import { formatBytes, formatDateTime, formatTimeAgo, splitConfirmMessage } from "../../lib/format";
 import { useModalDialog } from "../../hooks/useModalDialog";
 import { requestConfirm, showToast } from "../../ui/feedback";
-import type { FileVersionEntry, FileVersionRestoreOutcome, WorkFolderSummary } from "../../types";
+import type { FileVersionEntry, FileVersionRestoreOutcome, ConnectedFolderSummary } from "../../types";
 
 function fileVersionSourceLabel(source: FileVersionEntry["source"]): string {
   return source === "edit" ? "Saved during an edit" : "From a restore point";
 }
 
 function FileVersionHistoryModal({
-  workFolder,
+  connectedFolder,
   filePath,
   fileName,
   onClose,
   onRestored,
 }: {
-  workFolder: WorkFolderSummary;
+  connectedFolder: ConnectedFolderSummary;
   filePath: string;
   fileName: string;
   onClose: () => void;
@@ -44,8 +44,8 @@ function FileVersionHistoryModal({
     loadRequestRef.current = requestId;
     setError(null);
     try {
-      const body = await queueHistoryRequest(workFolder.id, () => api<{ path: string; versions: FileVersionEntry[] }>(
-        `/api/work-folders/${workFolder.id}/history/file-versions?path=${encodeURIComponent(filePath)}`,
+      const body = await queueHistoryRequest(connectedFolder.id, () => api<{ path: string; versions: FileVersionEntry[] }>(
+        `/api/connected-folders/${connectedFolder.id}/history/file-versions?path=${encodeURIComponent(filePath)}`,
       ));
       if (loadRequestRef.current !== requestId) return;
       setVersions(body.versions);
@@ -54,7 +54,7 @@ function FileVersionHistoryModal({
       setError(errorText(loadError));
       setVersions([]);
     }
-  }, [workFolder.id, filePath]);
+  }, [connectedFolder.id, filePath]);
 
   useEffect(() => {
     setVersions(null);
@@ -68,7 +68,7 @@ function FileVersionHistoryModal({
 
   async function restoreVersion(version: FileVersionEntry): Promise<void> {
     const restoreConfirm = splitConfirmMessage(
-      `Restore "${fileName}" to the version from ${formatDateTime(version.capturedAt)}? work-fold saves a restore point first, so you can undo this.`,
+      `Restore "${fileName}" to the version from ${formatDateTime(version.capturedAt)}? AmpleFile saves a restore point first, so you can undo this.`,
     );
     const confirmed = await requestConfirm({
       ...restoreConfirm,
@@ -80,8 +80,8 @@ function FileVersionHistoryModal({
     setError(null);
     setNotice(null);
     try {
-      const body = await queueHistoryRequest(workFolder.id, () => api<{ result: FileVersionRestoreOutcome }>(
-        `/api/work-folders/${workFolder.id}/history/file-versions`,
+      const body = await queueHistoryRequest(connectedFolder.id, () => api<{ result: FileVersionRestoreOutcome }>(
+        `/api/connected-folders/${connectedFolder.id}/history/file-versions`,
         { method: "POST", body: { path: filePath, hashSha256: version.hashSha256 } },
       ));
       setUndoRestorePointId(body.result.safetyCheckpointId);
@@ -102,7 +102,7 @@ function FileVersionHistoryModal({
     setUndoing(true);
     setError(null);
     try {
-      await queueHistoryRequest(workFolder.id, () => api(`/api/work-folders/${workFolder.id}/history/checkpoints/${undoRestorePointId}/restore`, { method: "POST" }));
+      await queueHistoryRequest(connectedFolder.id, () => api(`/api/connected-folders/${connectedFolder.id}/history/checkpoints/${undoRestorePointId}/restore`, { method: "POST" }));
       setUndoRestorePointId(null);
       setNotice(`Undo complete — "${fileName}" is back to how it was.`);
       setComparisonRevision((value) => value + 1);
@@ -192,7 +192,7 @@ function FileVersionHistoryModal({
               {(versions ?? []).filter((version) => version.checkpointId !== comparisonVersion.checkpointId).map((version) => <option key={version.checkpointId} value={version.checkpointId}>{formatDateTime(version.capturedAt)}</option>)}
             </select>
           </label>
-          <HistoryFileComparison workFolderId={workFolder.id} path={filePath} fromCheckpointId={comparisonVersion.checkpointId} toCheckpointId={comparisonTarget || undefined} refreshRequest={comparisonRevision} />
+          <HistoryFileComparison connectedFolderId={connectedFolder.id} path={filePath} fromCheckpointId={comparisonVersion.checkpointId} toCheckpointId={comparisonTarget || undefined} refreshRequest={comparisonRevision} />
         </div> : null}
       </section>
     </div>

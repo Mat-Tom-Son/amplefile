@@ -38,9 +38,9 @@ interface Harness {
 }
 
 async function startHarness(t: { after: (fn: () => unknown) => void }): Promise<Harness> {
-  const previous = process.env.WORKFOLD_PI_BACKGROUND_COMPACTION_IDLE_MS;
-  process.env.WORKFOLD_PI_BACKGROUND_COMPACTION_IDLE_MS = "50";
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-background-compaction-"));
+  const previous = process.env.AMPLEFILE_PI_BACKGROUND_COMPACTION_IDLE_MS;
+  process.env.AMPLEFILE_PI_BACKGROUND_COMPACTION_IDLE_MS = "50";
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-background-compaction-"));
   const faux = fauxProvider({ provider: "fixture-compact", models: [{ id: "chat", contextWindow }] });
   const runtime = await ModelRuntime.create({ credentials: FileCredentialStore.inMemory(), modelsPath: null });
   const harness = { turns: [], summaries: 0, reportContext: null, holdSummaries: false, aborted: 0, compactionTaskActors: [], setResponses: faux.setResponses } as unknown as Harness;
@@ -76,7 +76,7 @@ async function startHarness(t: { after: (fn: () => unknown) => void }): Promise<
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: {
       resolveRuntime: async () => ({
@@ -94,8 +94,8 @@ async function startHarness(t: { after: (fn: () => unknown) => void }): Promise<
     return startTask(input);
   };
   t.after(async () => {
-    if (previous === undefined) delete process.env.WORKFOLD_PI_BACKGROUND_COMPACTION_IDLE_MS;
-    else process.env.WORKFOLD_PI_BACKGROUND_COMPACTION_IDLE_MS = previous;
+    if (previous === undefined) delete process.env.AMPLEFILE_PI_BACKGROUND_COMPACTION_IDLE_MS;
+    else process.env.AMPLEFILE_PI_BACKGROUND_COMPACTION_IDLE_MS = previous;
     await api.close().catch(() => undefined);
     await rm(sandbox, { recursive: true, force: true });
   });
@@ -114,10 +114,10 @@ async function compactionTasks(h: Harness) {
   return (await h.api.kernel.getTasks({ kind: "system" })).tasks.filter((task) => task.kind === "compaction");
 }
 
-async function settled(h: Harness, workFolderId: string, taskId: string): Promise<string> {
+async function settled(h: Harness, connectedFolderId: string, taskId: string): Promise<string> {
   let state = "running";
   await waitFor(async () => {
-    state = (await h.api.actFacade.turnStatus({ workFolder: workFolderId, taskId })).task.state;
+    state = (await h.api.actFacade.turnStatus({ connectedFolder: connectedFolderId, taskId })).task.state;
     return state !== "running";
   }, `turn ${taskId}`);
   return state;
@@ -126,23 +126,23 @@ async function settled(h: Harness, workFolderId: string, taskId: string): Promis
 test("an idle Chat near Pi's compaction point is summarized in the background as its own task", { timeout: 60_000 }, async (t) => {
   const h = await startHarness(t);
   h.setResponses([fauxAssistantMessage("First reply."), fauxAssistantMessage("Title"), fauxAssistantMessage("Second reply.")]);
-  const { workFolder } = await h.api.actFacade.createWorkFolder({ name: "Long Chat" });
-  const first = await h.api.actFacade.sendMessage({ workFolder: workFolder.id, newConversation: true, content: "Start a long piece of work." });
-  assert.equal(await settled(h, workFolder.id, first.taskId), "succeeded");
+  const { connectedFolder } = await h.api.actFacade.createConnectedFolder({ name: "Long Chat" });
+  const first = await h.api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "Start a long piece of work." });
+  assert.equal(await settled(h, connectedFolder.id, first.taskId), "succeeded");
   await new Promise((resolve) => setTimeout(resolve, 200));
   assert.equal(h.summaries, 0, "a Chat with room left is not summarized");
 
   // The second reply reports a context past 80% of Pi's own compaction point
   // (100k window − 16k reserve), but short of it, so Pi does not compact mid-turn.
   h.reportContext = 75_000;
-  const second = await h.api.actFacade.sendMessage({ workFolder: workFolder.id, conversationId: first.conversationId, content: "Keep going." });
-  assert.equal(await settled(h, workFolder.id, second.taskId), "succeeded");
+  const second = await h.api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId: first.conversationId, content: "Keep going." });
+  assert.equal(await settled(h, connectedFolder.id, second.taskId), "succeeded");
   h.reportContext = null;
   h.setResponses([fauxAssistantMessage("Third reply.")]);
   await waitFor(() => h.summaries >= 1, "the background summary");
   await waitFor(async () => !(await compactionTasks(h)).length, "the compaction task to finish");
   assert.deepEqual(h.compactionTaskActors, [{ kind: "system", conversationId: first.conversationId }], "recorded as its own kernel compaction task");
-  const transcriptUrl = `${h.api.origin}/api/work-folders/${workFolder.id}/conversations/${first.conversationId}`;
+  const transcriptUrl = `${h.api.origin}/api/connected-folders/${connectedFolder.id}/conversations/${first.conversationId}`;
   const saved = await (await fetch(transcriptUrl)).json();
   const notices = saved.messages.filter((message: any) => message.kind === "context_compaction");
   assert.equal(notices.length, 1, "a background summary leaves one durable Chat notice");
@@ -153,8 +153,8 @@ test("an idle Chat near Pi's compaction point is summarized in the background as
   assert.equal(compactedRuntime.usage.contextTokens, null, "pre-compaction usage is not presented as current");
   const summaryRequests = h.summaries;
 
-  const third = await h.api.actFacade.sendMessage({ workFolder: workFolder.id, conversationId: first.conversationId, content: "And the last step." });
-  assert.equal(await settled(h, workFolder.id, third.taskId), "succeeded");
+  const third = await h.api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId: first.conversationId, content: "And the last step." });
+  assert.equal(await settled(h, connectedFolder.id, third.taskId), "succeeded");
   assert.match(JSON.stringify(h.turns.at(-1)), /SUMMARY-MARKER/, "the next turn starts from the summary, without waiting on one");
   assert.equal(h.summaries, summaryRequests, "no further summary mid-turn");
 });
@@ -162,20 +162,20 @@ test("an idle Chat near Pi's compaction point is summarized in the background as
 test("a message sent during a background summary cancels it and runs at once", { timeout: 60_000 }, async (t) => {
   const h = await startHarness(t);
   h.setResponses([fauxAssistantMessage("First reply."), fauxAssistantMessage("Title")]);
-  const { workFolder } = await h.api.actFacade.createWorkFolder({ name: "Busy Chat" });
+  const { connectedFolder } = await h.api.actFacade.createConnectedFolder({ name: "Busy Chat" });
   h.reportContext = 75_000;
-  const first = await h.api.actFacade.sendMessage({ workFolder: workFolder.id, newConversation: true, content: "Start." });
-  assert.equal(await settled(h, workFolder.id, first.taskId), "succeeded");
+  const first = await h.api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "Start." });
+  assert.equal(await settled(h, connectedFolder.id, first.taskId), "succeeded");
   h.reportContext = null;
   // Send a short follow-up while the summary is still running.
   h.holdSummaries = true;
   h.setResponses([fauxAssistantMessage("Answered right away.")]);
   // Wait for the hold, the follow-up, and the reply. Pi may still compact mid-turn if it must, so that answer stays free.
   await waitFor(() => h.summaries >= 1, "the background summary to start");
-  const followUp = await h.api.actFacade.sendMessage({ workFolder: workFolder.id, conversationId: first.conversationId, content: "Quick question." });
+  const followUp = await h.api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId: first.conversationId, content: "Quick question." });
   assert.ok(h.aborted >= 1, "the summary was cancelled for the person's message");
-  assert.equal(await settled(h, workFolder.id, followUp.taskId), "succeeded");
+  assert.equal(await settled(h, connectedFolder.id, followUp.taskId), "succeeded");
   assert.equal((await compactionTasks(h)).length, 0);
-  const saved = await (await fetch(`${h.api.origin}/api/work-folders/${workFolder.id}/conversations/${first.conversationId}`)).json();
+  const saved = await (await fetch(`${h.api.origin}/api/connected-folders/${connectedFolder.id}/conversations/${first.conversationId}`)).json();
   assert.equal(saved.messages.filter((message: any) => message.kind === "context_compaction").length, 0, "cancelling a summary never claims it compacted");
 });

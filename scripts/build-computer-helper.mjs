@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const platform = process.env.WORKFOLD_DESKTOP_RELEASE_PLATFORM || process.platform;
+const platform = process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM || process.platform;
 if (platform !== "darwin") {
   console.log("The included computer helper is built in the macOS desktop lane only.");
 } else {
@@ -28,8 +28,8 @@ async function build() {
     sources.push({ path, sha256: actual });
   }
   const outputDir = join(root, "out", "included-tools", "computer-helper");
-  const output = join(outputDir, "work-fold Computer.app");
-  const temporary = join(outputDir, `work-fold Computer.build-${process.pid}.app`);
+  const output = join(outputDir, "AmpleFile Computer.app");
+  const temporary = join(outputDir, `AmpleFile Computer.build-${process.pid}.app`);
   const executable = join(temporary, "Contents", "MacOS", "bridge");
   const resources = join(temporary, "Contents", "Resources");
   await mkdir(join(temporary, "Contents", "MacOS"), { recursive: true });
@@ -42,9 +42,9 @@ async function build() {
     await writeFile(join(temporary, "Contents", "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>com.work-fold.desktop.computer</string>
-<key>CFBundleName</key><string>work-fold Computer</string>
-<key>CFBundleDisplayName</key><string>work-fold Computer</string>
+<key>CFBundleIdentifier</key><string>com.amplefile.desktop.computer</string>
+<key>CFBundleName</key><string>AmpleFile Computer</string>
+<key>CFBundleDisplayName</key><string>AmpleFile Computer</string>
 <key>CFBundleExecutable</key><string>bridge</string>
 <key>CFBundleIconFile</key><string>icon.icns</string>
 <key>CFBundlePackageType</key><string>APPL</string>
@@ -53,14 +53,14 @@ async function build() {
 <key>LSUIElement</key><true/>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
-<key>NSScreenCaptureUsageDescription</key><string>Let work-fold observe the windows you ask your agent to work with.</string>
-<key>NSAccessibilityUsageDescription</key><string>Let work-fold interact with the applications you ask your agent to use.</string>
+<key>NSScreenCaptureUsageDescription</key><string>Let AmpleFile observe the windows you ask your agent to work with.</string>
+<key>NSAccessibilityUsageDescription</key><string>Let AmpleFile interact with the applications you ask your agent to use.</string>
 </dict></plist>
 `);
     await copyFile(join(root, "desktop", "assets", "icon.icns"), join(resources, "icon.icns"));
     await copyFile(join(packageRoot, "LICENSE"), join(resources, "LICENSE.pi-computer-use"));
     await writeFile(join(resources, "source.json"), `${JSON.stringify({
-      schema: "work-fold.computer-helper-source.v1", package: entry.package, version: entry.version,
+      schema: "amplefile.computer-helper-source.v1", package: entry.package, version: entry.version,
       source: entry.sourceURL || entry.source, license: entry.license, integrationPatchSha256: entry.sha256,
       sources, target: "arm64-apple-macosx14.0", protocolVersion: 7,
       compiler: execFileSync("xcrun", ["swiftc", "--version"], { encoding: "utf8" }).trim(),

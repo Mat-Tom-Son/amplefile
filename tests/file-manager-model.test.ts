@@ -19,7 +19,7 @@ import {
   normalizeFileManagerView,
   parentPath,
   rangeSelection,
-  sidebarWorkFolderRows,
+  sidebarConnectedFolderRows,
   sortFileManagerEntries,
   typeSelectMatch,
 } from "../web-local/src/components/file-manager/file-manager-model.js";
@@ -132,19 +132,19 @@ test("the path bar reads like Finder's, from the disk down to the selected item"
 });
 
 test("places: routes and sidebar Standard Folders", () => {
-  assert.equal(placeApiBase({ kind: "work-folder", id: "wf 1" }), "/api/work-folders/wf%201");
+  assert.equal(placeApiBase({ kind: "connected-folder", id: "wf 1" }), "/api/connected-folders/wf%201");
   assert.equal(placeApiBase({ kind: "standard", id: "downloads" }), "/api/standard-folders/downloads");
-  assert.equal(placeEventsUrl({ kind: "work-folder", id: "a" }, "Quotes"), "/api/work-folders/a/file-events");
+  assert.equal(placeEventsUrl({ kind: "connected-folder", id: "a" }, "Quotes"), "/api/connected-folders/a/file-events");
   assert.equal(placeEventsUrl({ kind: "standard", id: "downloads" }, "Receipts/2026"), "/api/standard-folders/downloads/events?path=Receipts%2F2026");
   assert.equal(sameLocation({ place: { kind: "standard", id: "desktop" }, path: "" }, { place: { kind: "standard", id: "desktop" }, path: "" }), true);
-  assert.equal(sameLocation({ place: { kind: "standard", id: "desktop" }, path: "" }, { place: { kind: "work-folder", id: "desktop" }, path: "" }), false);
+  assert.equal(sameLocation({ place: { kind: "standard", id: "desktop" }, path: "" }, { place: { kind: "connected-folder", id: "desktop" }, path: "" }), false);
   const folders = [
-    { id: "desktop", name: "Desktop", root: "/Users/mat/Desktop", workFolderId: null },
-    { id: "downloads", name: "Downloads", root: "/Users/mat/Downloads", workFolderId: "wf-downloads" },
-    { id: "documents", name: "Documents", root: "/Users/mat/Documents", workFolderId: "wf-removed" },
+    { id: "desktop", name: "Desktop", root: "/Users/mat/Desktop", connectedFolderId: null },
+    { id: "downloads", name: "Downloads", root: "/Users/mat/Downloads", connectedFolderId: "af-downloads" },
+    { id: "documents", name: "Documents", root: "/Users/mat/Documents", connectedFolderId: "af-removed" },
   ];
-  assert.deepEqual(sidebarStandardFolders(folders, [{ id: "wf-downloads" }]).map((folder) => folder.id), ["desktop", "documents"],
-    "a registered standard folder moves down to work-folders; one whose registration is gone comes back");
+  assert.deepEqual(sidebarStandardFolders(folders, [{ id: "af-downloads" }]).map((folder) => folder.id), ["desktop", "documents"],
+    "a registered standard folder moves down to Connected Folders; one whose registration is gone comes back");
 });
 
 test("the enclosing folder and status line", () => {
@@ -176,23 +176,23 @@ test("suggested messages are plain fallbacks: up to four, two when Automations a
   assert.deepEqual(fileManagerSuggestions({ selection: [{ kind: "file" }, { kind: "file" }], inSubfolder: false }), ["Summarize each", "Put these in a folder", "Give them clearer names"]);
 });
 
-test("sub work-folders sit under their parent behind a caret, shown only while their parents are open", () => {
-  const folder = (id: string, name: string, root: string) => ({ id, name, workFolderRoot: root });
+test("nested Connected Folders sit under their parent behind a caret, shown only while their parents are open", () => {
+  const folder = (id: string, name: string, root: string) => ({ id, name, connectedFolderRoot: root });
   const home = folder("home", "Home projects", "/Users/you/Documents/Home projects");
   const bath = folder("bath", "Bathroom remodel", "/Users/you/Documents/Home projects/Bathroom remodel");
   const tile = folder("tile", "Tile", "/Users/you/Documents/Home projects/Bathroom remodel/Tile");
   const trip = folder("trip", "Japan trip", "/Users/you/Trips/Japan trip");
   const all = [trip, tile, home, bath];
-  const shown = (open: string[]) => sidebarWorkFolderRows(all, open).map((row) => `${"  ".repeat(row.depth)}${row.workFolder.name}${row.inside.length ? (row.open ? " (open)" : " (closed)") : ""}`);
+  const shown = (open: string[]) => sidebarConnectedFolderRows(all, open).map((row) => `${"  ".repeat(row.depth)}${row.connectedFolder.name}${row.inside.length ? (row.open ? " (open)" : " (closed)") : ""}`);
 
-  // Closed by default: only top-level work-folders, A–Z, with a caret where one holds others.
+  // Closed by default: only top-level Connected Folders, A–Z, with a caret where one holds others.
   assert.deepEqual(shown([]), ["Home projects (closed)", "Japan trip"]);
   assert.deepEqual(shown(["home"]), ["Home projects (open)", "  Bathroom remodel (closed)", "Japan trip"]);
   assert.deepEqual(shown(["home", "bath"]), ["Home projects (open)", "  Bathroom remodel (open)", "    Tile", "Japan trip"]);
-  // A grandchild stays hidden while any work-folder around it is closed.
+  // A grandchild stays hidden while any Connected Folder around it is closed.
   assert.deepEqual(shown(["bath"]), ["Home projects (closed)", "Japan trip"]);
-  // A parent counts every work-folder inside it, for its combined activity dot.
-  assert.deepEqual(sidebarWorkFolderRows(all, []).find((row) => row.workFolder.id === "home")?.inside.map((item) => item.id).sort(), ["bath", "tile"]);
+  // A parent counts every Connected Folder inside it, for its combined activity dot.
+  assert.deepEqual(sidebarConnectedFolderRows(all, []).find((row) => row.connectedFolder.id === "home")?.inside.map((item) => item.id).sort(), ["bath", "tile"]);
   // Going into Tile opens its closed parents, outermost first.
   assert.deepEqual(closedSidebarParents(tile, all, []), ["home", "bath"]);
   assert.deepEqual(closedSidebarParents(tile, all, ["home"]), ["bath"]);
@@ -200,7 +200,7 @@ test("sub work-folders sit under their parent behind a caret, shown only while t
 });
 
 test("a folder you go to comes in from the side you went", () => {
-  const at = (path: string, placeKey = "work-folder:home") => ({ placeKey, path });
+  const at = (path: string, placeKey = "connected-folder:home") => ({ placeKey, path });
   assert.equal(navigationSide(at(""), at("Garden"), "push"), "right", "into a folder");
   assert.equal(navigationSide(at("Garden"), at("Garden/Beds"), "push"), "right", "deeper");
   assert.equal(navigationSide(at("Garden/Beds"), at("Garden"), "push"), "left", "up one");

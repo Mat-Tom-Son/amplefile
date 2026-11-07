@@ -7,12 +7,12 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  RegisteredWorkFolderRuntimeProvider,
-  RegisteredWorkFolderTrustAuthority,
-} from "../src/local/agent/registered-work-folder-runtime.js";
-import { createWorkFoldCliActRequest, executeWorkFoldCliActRequest } from "../src/local/cli/index.js";
+  RegisteredConnectedFolderRuntimeProvider,
+  RegisteredConnectedFolderTrustAuthority,
+} from "../src/local/agent/registered-connected-folder-runtime.js";
+import { createAmpleFileCliActRequest, executeAmpleFileCliActRequest } from "../src/local/cli/index.js";
 import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
-import { WorkFoldKernel } from "../src/local/work-fold-kernel.js";
+import { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
 
 /**
  * Removing an imported Skill is reversible (docs/receipts-not-gates.md, F20):
@@ -23,44 +23,44 @@ import { WorkFoldKernel } from "../src/local/work-fold-kernel.js";
 async function skillHarness(t: test.TestContext): Promise<{
   api: LocalApiHandle;
   agentDir: string;
-  workFolder: { id: string; name: string; workFolderRoot: string };
+  connectedFolder: { id: string; name: string; connectedFolderRoot: string };
   importSkill: (scope: "global" | "project", markdown: string) => Promise<void>;
   catalogSkills: () => Promise<Array<{ name: string; path: string; scope?: string }>>;
   removeSkill: (scope: "global" | "project", name: string) => Promise<{ entryId: string; path: string }>;
-  execute: (argv: string[]) => ReturnType<typeof executeWorkFoldCliActRequest>;
+  execute: (argv: string[]) => ReturnType<typeof executeAmpleFileCliActRequest>;
 }> {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-skill-recently-deleted-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-skill-recently-deleted-"));
   const agentDir = join(sandbox, "agent");
   const piRuntimeProvider = { async resolveRuntime() { return { agentDir }; } };
-  const workFolderTrustAuthority = new RegisteredWorkFolderTrustAuthority();
+  const connectedFolderTrustAuthority = new RegisteredConnectedFolderTrustAuthority();
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
-    kernel: new WorkFoldKernel({ runtimeProvider: new RegisteredWorkFolderRuntimeProvider(piRuntimeProvider, workFolderTrustAuthority) }),
+    kernel: new AmpleFileKernel({ runtimeProvider: new RegisteredConnectedFolderRuntimeProvider(piRuntimeProvider, connectedFolderTrustAuthority) }),
     piRuntimeProvider,
-    workFolderTrustAuthority,
+    connectedFolderTrustAuthority,
   });
   t.after(async () => {
     await api.close();
     await rm(sandbox, { recursive: true, force: true });
   });
-  const created = await api.actFacade.createWorkFolder({ name: "Skill notes" });
-  const workFolder = created.workFolder;
+  const created = await api.actFacade.createConnectedFolder({ name: "Skill notes" });
+  const connectedFolder = created.connectedFolder;
   const catalogSkills = async () => {
-    const catalog = await json(`${api.origin}/api/work-folders/${workFolder.id}/agent/catalog`) as { skills: Array<{ name: string; path: string; scope?: string }> };
+    const catalog = await json(`${api.origin}/api/connected-folders/${connectedFolder.id}/agent/catalog`) as { skills: Array<{ name: string; path: string; scope?: string }> };
     return catalog.skills;
   };
   const token = "a".repeat(64);
   return {
     api,
     agentDir,
-    workFolder,
+    connectedFolder,
     catalogSkills,
     async importSkill(scope, markdown) {
       const form = new FormData();
-      form.set("workFolderId", workFolder.id);
+      form.set("connectedFolderId", connectedFolder.id);
       form.set("scope", scope === "project" ? "project" : "user");
       form.append("files", new Blob([markdown]), "SKILL.md");
       const response = await fetch(`${api.origin}/api/agent/skills/import`, { method: "POST", body: form });
@@ -72,18 +72,18 @@ async function skillHarness(t: test.TestContext): Promise<{
       const removed = await json(`${api.origin}/api/agent/skills/remove`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ workFolderId: workFolder.id, path: skill.path, scope }),
+        body: JSON.stringify({ connectedFolderId: connectedFolder.id, path: skill.path, scope }),
       }) as { removed: boolean; path: string; recentlyDeleted: { entryId: string; restoreBy: string } };
       assert.equal(removed.removed, true);
       assert.match(removed.recentlyDeleted.entryId, /^trash-\d{14}-[0-9a-f]{8}$/);
       return { entryId: removed.recentlyDeleted.entryId, path: removed.path };
     },
-    execute: (argv) => executeWorkFoldCliActRequest(
-      createWorkFoldCliActRequest({ id: randomUUID(), argv, cwd: sandbox, actToken: token }),
+    execute: (argv) => executeAmpleFileCliActRequest(
+      createAmpleFileCliActRequest({ id: randomUUID(), argv, cwd: sandbox, actToken: token }),
       {
         version: "test",
         getActFacade: () => ({ facade: api.actFacade, token }),
-        resolveLineageParent: (taskId) => api.resolveWorkFoldAgentLineageParent(taskId),
+        resolveLineageParent: (taskId) => api.resolveAmpleFileAgentLineageParent(taskId),
         receipts: { hasAccepted: async () => false, append: async () => true },
       },
     ),
@@ -95,7 +95,7 @@ test("removing a Skill in either scope keeps it in Recently deleted, and restori
   await h.importSkill("global", "---\nname: writer\ndescription: Writes things\n---\nWrite clearly.\n");
   await h.importSkill("project", "---\nname: notes\ndescription: Keeps notes\n---\nKeep notes.\n");
   const everywherePath = join(h.agentDir, "skills", "writer");
-  const localPath = join(h.workFolder.workFolderRoot, ".pi", "skills", "notes");
+  const localPath = join(h.connectedFolder.connectedFolderRoot, ".pi", "skills", "notes");
   assert.equal(existsSync(join(everywherePath, "SKILL.md")), true);
   assert.equal(existsSync(join(localPath, "SKILL.md")), true);
 
@@ -115,8 +115,8 @@ test("removing a Skill in either scope keeps it in Recently deleted, and restori
     kind: "skill",
     reason: "skills.remove",
     scope: "everywhere",
-    workFolderId: "work-fold-agent",
-    workFolderName: "Everywhere",
+    connectedFolderId: "amplefile-agent",
+    connectedFolderName: "Everywhere",
     originalPath: "writer",
     name: "writer",
     restorable: "in-place",
@@ -124,9 +124,9 @@ test("removing a Skill in either scope keeps it in Recently deleted, and restori
   assert.deepEqual(pick(byId.get(local.entryId)!), {
     kind: "skill",
     reason: "skills.remove",
-    scope: "work-folder",
-    workFolderId: h.workFolder.id,
-    workFolderName: "Skill notes",
+    scope: "connected-folder",
+    connectedFolderId: h.connectedFolder.id,
+    connectedFolderName: "Skill notes",
     originalPath: "notes",
     name: "notes",
     restorable: "in-place",
@@ -138,7 +138,7 @@ test("removing a Skill in either scope keeps it in Recently deleted, and restori
   const human = await h.execute(["recently-deleted", "list"]);
   assert.equal(human.exitCode, 0, human.stderr);
   assert.match(human.stdout, new RegExp(`${everywhere.entryId} — Skill "writer" from Everywhere`));
-  assert.match(human.stdout, new RegExp(`${local.entryId} — Skill "notes" from Skill notes \\[${h.workFolder.id}\\]`));
+  assert.match(human.stdout, new RegExp(`${local.entryId} — Skill "notes" from Skill notes \\[${h.connectedFolder.id}\\]`));
 
   // The desktop's Undo uses the Settings restore route.
   const undone = await json(`${h.api.origin}/api/settings/recently-deleted/${everywhere.entryId}/restore`, {
@@ -151,19 +151,19 @@ test("removing a Skill in either scope keeps it in Recently deleted, and restori
   });
   assert.equal(await readFile(join(everywherePath, "SKILL.md"), "utf8"), "---\nname: writer\ndescription: Writes things\n---\nWrite clearly.\n");
 
-  // The act lane restores the work-folder Skill.
+  // The act lane restores the Connected Folder Skill.
   const restored = await h.execute(["recently-deleted", "restore", "--entry", local.entryId, "--json"]);
   assert.equal(restored.exitCode, 0, restored.stderr);
   const restoredJson = JSON.parse(restored.stdout) as { data: { restored: Record<string, unknown> } };
   assert.equal(restoredJson.data.restored.kind, "skill");
-  assert.equal(restoredJson.data.restored.scope, "work-folder");
+  assert.equal(restoredJson.data.restored.scope, "connected-folder");
   assert.equal(restoredJson.data.restored.path, localPath);
-  assert.equal((restoredJson.data.restored.workFolder as { id: string }).id, h.workFolder.id);
+  assert.equal((restoredJson.data.restored.connectedFolder as { id: string }).id, h.connectedFolder.id);
   assert.equal(existsSync(join(localPath, "SKILL.md")), true);
 
   const loaded = await h.catalogSkills();
   assert.equal(loaded.some((skill) => skill.name === "writer" && skill.path === join(everywherePath, "SKILL.md")), true, "the Everywhere Skill loads again");
-  assert.equal(loaded.some((skill) => skill.name === "notes" && skill.path === join(localPath, "SKILL.md")), true, "the work-folder Skill loads again");
+  assert.equal(loaded.some((skill) => skill.name === "notes" && skill.path === join(localPath, "SKILL.md")), true, "the Connected Folder Skill loads again");
   assert.deepEqual((await h.api.recentlyDeleted.list()).entries, []);
 });
 
@@ -200,8 +200,8 @@ test("a Skill installed again under the same name blocks the restore, and the ke
 });
 
 function pick(entry: Record<string, unknown>): Record<string, unknown> {
-  const { kind, reason, scope, workFolderId, workFolderName, originalPath, name, restorable } = entry;
-  return { kind, reason, scope, workFolderId, workFolderName, originalPath, name, restorable };
+  const { kind, reason, scope, connectedFolderId, connectedFolderName, originalPath, name, restorable } = entry;
+  return { kind, reason, scope, connectedFolderId, connectedFolderName, originalPath, name, restorable };
 }
 
 async function json(url: string, init?: RequestInit): Promise<unknown> {

@@ -16,13 +16,13 @@ import {
   type FluentIcon,
 } from "@fluentui/react-icons";
 
-import { collectWorkFolderPathCandidates, workFolderPathCandidate } from "../../lib/work-folder-path-links";
+import { collectConnectedFolderPathCandidates, connectedFolderPathCandidate } from "../../lib/connected-folder-path-links";
 import { safeExternalHref } from "../../lib/api";
 import { rehypeSingleLineBreaks } from "../../lib/markdown-line-breaks";
 import type { AgentActivityPhase, RuntimePreviewEntry } from "../../types";
 import { FluentGlyph } from "../chrome/common";
 
-export type WorkFolderPathLinkResolver = (paths: string[]) => Promise<Map<string, string>>;
+export type ConnectedFolderPathLinkResolver = (paths: string[]) => Promise<Map<string, string>>;
 export type WorkStepsRunningView = "every-step" | "current-step";
 
 interface RuntimeContextPreviewProps {
@@ -33,11 +33,11 @@ interface RuntimeContextPreviewProps {
   replyStarted?: boolean;
   /** Which rows stay visible while the turn runs. */
   runningView?: WorkStepsRunningView;
-  workFolderRoot?: string;
-  onOpenWorkFolderFile?: (path: string) => void;
-  resolveWorkFolderPathLinks?: WorkFolderPathLinkResolver;
-  /** Already-resolved work-folder paths (candidate → existing path); skips the resolver. */
-  resolvedWorkFolderPaths?: Map<string, string>;
+  connectedFolderRoot?: string;
+  onOpenConnectedFolderFile?: (path: string) => void;
+  resolveConnectedFolderPathLinks?: ConnectedFolderPathLinkResolver;
+  /** Already-resolved Connected Folder paths (candidate → existing path); skips the resolver. */
+  resolvedConnectedFolderPaths?: Map<string, string>;
   /** The Chat supplies its existing Markdown renderer without a module cycle. */
   renderText?: (text: string, links: Map<string, string> | null) => ReactNode;
 }
@@ -54,10 +54,10 @@ export function RuntimeContextPreview({
   running = false,
   replyStarted = false,
   runningView = "every-step",
-  workFolderRoot,
-  onOpenWorkFolderFile,
-  resolveWorkFolderPathLinks,
-  resolvedWorkFolderPaths,
+  connectedFolderRoot,
+  onOpenConnectedFolderFile,
+  resolveConnectedFolderPathLinks,
+  resolvedConnectedFolderPaths,
   renderText,
 }: RuntimeContextPreviewProps) {
   const settled = !running || replyStarted;
@@ -67,7 +67,7 @@ export function RuntimeContextPreview({
   const steps = entries.filter(isVisibleStep);
   const timerRunning = working && steps.some((entry) => entry.kind === "thinking" && isActivePhase(entry.phase) && !entry.text.trim());
   const now = useClock(timerRunning);
-  const workFolderLinks = useWorkFolderPathLinks(steps, workFolderRoot, resolveWorkFolderPathLinks, resolvedWorkFolderPaths);
+  const connectedFolderLinks = useConnectedFolderPathLinks(steps, connectedFolderRoot, resolveConnectedFolderPathLinks, resolvedConnectedFolderPaths);
   if (!steps.length && !working) return null;
   const summary = workStepsSummary(steps);
   const rows = working && runningView === "current-step" ? steps.slice(-1) : steps;
@@ -96,9 +96,9 @@ export function RuntimeContextPreview({
             </div>
           ) : null}
           {rows.map((entry) => (entry.kind === "tool" ? (
-            <ToolStep entry={entry} workFolderRoot={workFolderRoot} workFolderLinks={workFolderLinks} onOpenWorkFolderFile={onOpenWorkFolderFile} key={entry.id} />
+            <ToolStep entry={entry} connectedFolderRoot={connectedFolderRoot} connectedFolderLinks={connectedFolderLinks} onOpenConnectedFolderFile={onOpenConnectedFolderFile} key={entry.id} />
           ) : entry.kind === "progress" || entry.kind === "command" ? (
-            <TextStep entry={entry} rendered={renderText?.(entry.text, workFolderLinks)} key={entry.id} />
+            <TextStep entry={entry} rendered={renderText?.(entry.text, connectedFolderLinks)} key={entry.id} />
           ) : (
             <ThoughtStep
               entry={entry}
@@ -117,22 +117,22 @@ export function RuntimeContextPreview({
 
 function ToolStep({
   entry,
-  workFolderRoot,
-  workFolderLinks,
-  onOpenWorkFolderFile,
+  connectedFolderRoot,
+  connectedFolderLinks,
+  onOpenConnectedFolderFile,
 }: {
   entry: RuntimePreviewEntry;
-  workFolderRoot?: string;
-  workFolderLinks: Map<string, string> | null;
-  onOpenWorkFolderFile?: (path: string) => void;
+  connectedFolderRoot?: string;
+  connectedFolderLinks: Map<string, string> | null;
+  onOpenConnectedFolderFile?: (path: string) => void;
 }) {
   const key = toolKey(entry);
   const active = isActivePhase(entry.phase);
   const failed = entry.phase === "error";
   const target = entry.edit?.path ?? entry.detail?.trim() ?? "";
   const command = commandTools.has(key);
-  const candidate = !command && target ? workFolderRelativeToolPath(target, workFolderRoot) : null;
-  const resolved = candidate ? workFolderLinks?.get(candidate) ?? null : null;
+  const candidate = !command && target ? connectedFolderRelativeToolPath(target, connectedFolderRoot) : null;
+  const resolved = candidate ? connectedFolderLinks?.get(candidate) ?? null : null;
   const display = stepTarget(key, target);
   const shimmer = active ? " work-step-shimmer" : "";
   const diffLines = entry.edit?.diff.split("\n") ?? [];
@@ -142,8 +142,8 @@ function ToolStep({
       <div className="work-step-body">
         <div className="work-step-line">
           <span className={`work-step-verb${shimmer}`}>{display ? toolVerb(key, active, toolTitle(entry)) : bareToolVerb(key, active, toolTitle(entry))}</span>
-          {display ? (resolved && onOpenWorkFolderFile ? (
-            <button type="button" className={`work-step-target file${shimmer}`} title={resolved} onClick={() => onOpenWorkFolderFile(resolved)}>
+          {display ? (resolved && onOpenConnectedFolderFile ? (
+            <button type="button" className={`work-step-target file${shimmer}`} title={resolved} onClick={() => onOpenConnectedFolderFile(resolved)}>
               {display}
             </button>
           ) : (
@@ -244,13 +244,13 @@ function useClock(active: boolean): number {
   return now;
 }
 
-function useWorkFolderPathLinks(
+function useConnectedFolderPathLinks(
   steps: RuntimePreviewEntry[],
-  workFolderRoot: string | undefined,
-  resolver: WorkFolderPathLinkResolver | undefined,
+  connectedFolderRoot: string | undefined,
+  resolver: ConnectedFolderPathLinkResolver | undefined,
   override: Map<string, string> | undefined,
 ): Map<string, string> | null {
-  const candidates = toolPathCandidates(steps, workFolderRoot);
+  const candidates = toolPathCandidates(steps, connectedFolderRoot);
   const key = candidates.join("\n");
   const [links, setLinks] = useState<Map<string, string> | null>(null);
   const skip = Boolean(override) || !resolver || !key;
@@ -270,20 +270,20 @@ function useWorkFolderPathLinks(
   return override ?? links;
 }
 
-/** A work-folder file a turn changed: "saved" when a write tool wrote it whole, else "edited". */
+/** A Connected Folder file a turn changed: "saved" when a write tool wrote it whole, else "edited". */
 export interface TurnChangedFile {
   path: string;
   change: "saved" | "edited";
 }
 
-/** The work-folder files a turn's write and edit tools changed, in the order first changed. */
-export function turnChangedFiles(steps: RuntimePreviewEntry[], workFolderRoot: string | undefined): TurnChangedFile[] {
+/** The Connected Folder files a turn's write and edit tools changed, in the order first changed. */
+export function turnChangedFiles(steps: RuntimePreviewEntry[], connectedFolderRoot: string | undefined): TurnChangedFile[] {
   const files = new Map<string, TurnChangedFile>();
   for (const entry of steps) {
     if (entry.kind !== "tool" || entry.phase === "error") continue;
     const key = toolKey(entry);
     if (key !== "write" && key !== "edit") continue;
-    const path = entry.detail?.trim() ? workFolderRelativeToolPath(entry.detail, workFolderRoot) : null;
+    const path = entry.detail?.trim() ? connectedFolderRelativeToolPath(entry.detail, connectedFolderRoot) : null;
     if (!path) continue;
     const known = files.get(path);
     if (!known) files.set(path, { path, change: key === "write" ? "saved" : "edited" });
@@ -292,15 +292,15 @@ export function turnChangedFiles(steps: RuntimePreviewEntry[], workFolderRoot: s
   return [...files.values()];
 }
 
-function toolPathCandidates(steps: RuntimePreviewEntry[], workFolderRoot: string | undefined): string[] {
+function toolPathCandidates(steps: RuntimePreviewEntry[], connectedFolderRoot: string | undefined): string[] {
   const candidates = new Set<string>();
   for (const entry of steps) {
     if (entry.kind === "progress" || entry.kind === "command") {
-      for (const path of collectWorkFolderPathCandidates(entry.text)) candidates.add(path);
+      for (const path of collectConnectedFolderPathCandidates(entry.text)) candidates.add(path);
       continue;
     }
     if (entry.kind !== "tool" || commandTools.has(toolKey(entry)) || !entry.detail?.trim()) continue;
-    const candidate = workFolderRelativeToolPath(entry.detail, workFolderRoot);
+    const candidate = connectedFolderRelativeToolPath(entry.detail, connectedFolderRoot);
     if (candidate) candidates.add(candidate);
   }
   return [...candidates];
@@ -308,16 +308,16 @@ function toolPathCandidates(steps: RuntimePreviewEntry[], workFolderRoot: string
 
 /**
  * Tool calls name files by absolute path more often than not. A path inside the
- * work-folder becomes work-folder-relative so it resolves and opens like a link in a
+ * Connected Folder becomes Connected Folder–relative so it resolves and opens like a link in a
  * reply; anything outside stays plain text.
  */
-export function workFolderRelativeToolPath(detail: string, workFolderRoot?: string): string | null {
+export function connectedFolderRelativeToolPath(detail: string, connectedFolderRoot?: string): string | null {
   const value = detail.trim().replace(/\\/g, "/");
   if (!value) return null;
-  const root = workFolderRoot?.replace(/\\/g, "/").replace(/\/+$/, "");
-  if (root && value.startsWith(`${root}/`)) return workFolderPathCandidate(value.slice(root.length + 1), { allowWorkFolders: true });
+  const root = connectedFolderRoot?.replace(/\\/g, "/").replace(/\/+$/, "");
+  if (root && value.startsWith(`${root}/`)) return connectedFolderPathCandidate(value.slice(root.length + 1), { allowConnectedFolders: true });
   if (value.startsWith("/") || value.startsWith("~") || /^[A-Za-z]:\//.test(value)) return null;
-  return workFolderPathCandidate(value, { allowWorkFolders: true });
+  return connectedFolderPathCandidate(value, { allowConnectedFolders: true });
 }
 
 function targetFileName(target: string): string {

@@ -5,112 +5,112 @@ import { basename, join, resolve } from "node:path";
 
 let configuredStateRoot: string | null = null;
 
-export function configureWorkFoldStateRoot(stateRoot: string | undefined): void {
+export function configureAmpleFileStateRoot(stateRoot: string | undefined): void {
   configuredStateRoot = stateRoot?.trim() ? resolve(stateRoot) : null;
 }
 
-export function workFoldStateRoot(): string {
+export function ampleFileStateRoot(): string {
   if (configuredStateRoot) return configuredStateRoot;
-  const override = process.env.WORKFOLD_STATE_DIR?.trim();
+  const override = process.env.AMPLEFILE_STATE_DIR?.trim();
   if (override) return resolve(override);
-  return join(platformAppDataBase(), "work-fold");
+  return join(platformAppDataBase(), "AmpleFile");
 }
 
-export function managedWorkFolderRoot(): string {
-  const override = process.env.WORKFOLD_CONTENT_DIR?.trim();
-  return override ? resolve(override) : join(workFoldStateRoot(), "spaces");
+export function managedConnectedFolderRoot(): string {
+  const override = process.env.AMPLEFILE_CONTENT_DIR?.trim();
+  return override ? resolve(override) : join(ampleFileStateRoot(), "spaces");
 }
 
-export function workFolderRegistryFile(): string {
-  return join(workFoldStateRoot(), "work-folder-registry.json");
+export function connectedFolderRegistryFile(): string {
+  return join(ampleFileStateRoot(), "connected-folder-registry.json");
 }
 
-/** Machine-local work-folder identity and appearance preferences. */
-export function workFolderAppearanceFile(): string {
-  return join(workFoldStateRoot(), "appearance.json");
+/** Machine-local Connected Folder identity and appearance preferences. */
+export function connectedFolderAppearanceFile(): string {
+  return join(ampleFileStateRoot(), "appearance.json");
 }
 
 /** Machine-local staged code and lifecycle receipts for restricted apps. */
 export function restrictedAppRoot(): string {
-  return join(workFoldStateRoot(), "restricted-apps");
+  return join(ampleFileStateRoot(), "restricted-apps");
 }
 
 /** Recently deleted, the machine-local trash for reversible destruction (docs/receipts-not-gates.md, F20). */
-export function workFoldRecentlyDeletedRoot(): string {
-  return join(workFoldStateRoot(), "recently-deleted");
+export function ampleFileRecentlyDeletedRoot(): string {
+  return join(ampleFileStateRoot(), "recently-deleted");
 }
 
 /** Machine-local durable request graph (docs/collaboration-contract.md, F25). */
-export function workFoldRequestsRoot(): string {
-  return join(workFoldStateRoot(), "requests");
+export function ampleFileRequestsRoot(): string {
+  return join(ampleFileStateRoot(), "requests");
 }
 
-/** Background job records and their output (docs/background-jobs.md); never inside a work-folder. */
-export function workFoldJobsRoot(): string {
-  return join(workFoldStateRoot(), "jobs");
+/** Background job records and their output (docs/background-jobs.md); never inside a Connected Folder. */
+export function ampleFileJobsRoot(): string {
+  return join(ampleFileStateRoot(), "jobs");
 }
 
 /**
- * Scope id for the work-fold agent that sits above all work-folders. It is
- * a distinct conversation scope, not a work-folder: its records describe this
- * machine's work-folder registry, so they are machine-local application state.
+ * Scope id for the AmpleFile agent that sits above all Connected Folders. It is
+ * a distinct conversation scope, not a Connected Folder: its records describe this
+ * machine's Connected Folder registry, so they are machine-local application state.
  */
-export const workFoldAgentScopeId = "work-fold-agent";
+export const ampleFileAgentScopeId = "amplefile-agent";
 
-/** Machine-local root holding the work-fold agent scope's conversation records. */
-export function workFoldAgentRoot(): string {
-  return join(workFoldStateRoot(), "management");
+/** Machine-local root holding the AmpleFile agent scope's conversation records. */
+export function ampleFileAgentRoot(): string {
+  return join(ampleFileStateRoot(), "management");
 }
 
-export function workFolderStateDir(workFolderRoot: string): string {
-  const resolved = resolve(workFolderRoot);
-  const key = workFolderStateKey(resolved);
-  return join(workFoldStateRoot(), "state", "work-folders", key);
+export function connectedFolderStateDir(connectedFolderRoot: string): string {
+  const resolved = resolve(connectedFolderRoot);
+  const key = connectedFolderStateKey(resolved);
+  return join(ampleFileStateRoot(), "state", "connected-folders", key);
 }
 
 /**
  * Machine-local Check authority and private run state, keyed by stable
- * work-folder identity rather than the folder path. Moving a registered
- * work-folder therefore preserves its state, while removal can explicitly
+ * Connected Folder identity rather than the folder path. Moving a registered
+ * Connected Folder therefore preserves its state, while removal can explicitly
  * revoke the one identity.
  */
-export function workFolderCheckStateFile(workFolderId: string): string {
-  const normalized = workFolderId.trim();
+export function connectedFolderCheckStateFile(connectedFolderId: string): string {
+  const normalized = connectedFolderId.trim();
   if (!normalized || normalized.length > 160 || /[^\x20-\x7e]/.test(normalized)) {
-    throw new Error("A valid work-folder id is required for Check state.");
+    throw new Error("A valid Connected Folder id is required for Check state.");
   }
   const readable = safeSegment(normalized).slice(0, 48) || "space";
   const hash = createHash("sha256").update(normalized).digest("hex").slice(0, 16);
-  return join(workFoldStateRoot(), "checks", "work-folders", `${readable}-${hash}.json`);
+  return join(ampleFileStateRoot(), "checks", "connected-folders", `${readable}-${hash}.json`);
 }
 
-export function workFolderMetadataDir(workFolderRoot: string): string {
-  return portableMetadataPath(join(resolve(workFolderRoot), ".work-fold"), "work-folder metadata directory");
+export function connectedFolderMetadataDir(connectedFolderRoot: string): string {
+  return portableMetadataPath(join(resolve(connectedFolderRoot), ".amplefile"), "Connected Folder metadata directory");
 }
 
-export function workFolderStateKey(workFolderRoot: string): string {
-  const resolved = resolve(workFolderRoot);
+export function connectedFolderStateKey(connectedFolderRoot: string): string {
+  const resolved = resolve(connectedFolderRoot);
   const readable = safeSegment(basename(resolved)).slice(0, 40) || "space";
   const normalized = process.platform === "win32" ? resolved.toLocaleLowerCase() : resolved;
   const hash = createHash("sha256").update(normalized).digest("hex").slice(0, 16);
   return `${readable}-${hash}`;
 }
 
-export function workFolderManifestFile(workFolderRoot: string): string {
-  return portableMetadataPath(join(workFolderMetadataDir(workFolderRoot), "work-folder.json"), "work-folder manifest");
+export function connectedFolderManifestFile(connectedFolderRoot: string): string {
+  return portableMetadataPath(join(connectedFolderMetadataDir(connectedFolderRoot), "connected-folder.json"), "Connected Folder manifest");
 }
 
-export function workFolderConversationDir(workFolderRoot: string): string {
-  return portableMetadataPath(join(workFolderMetadataDir(workFolderRoot), "conversations"), "work-folder conversation directory");
+export function connectedFolderConversationDir(connectedFolderRoot: string): string {
+  return portableMetadataPath(join(connectedFolderMetadataDir(connectedFolderRoot), "conversations"), "Connected Folder conversation directory");
 }
 
 /** Portable, inert Check declarations. Local enablement remains in app state. */
-export function workFolderCheckDeclarationDir(workFolderRoot: string): string {
-  return portableMetadataPath(join(workFolderMetadataDir(workFolderRoot), "checks"), "work-folder Check declaration directory");
+export function connectedFolderCheckDeclarationDir(connectedFolderRoot: string): string {
+  return portableMetadataPath(join(connectedFolderMetadataDir(connectedFolderRoot), "checks"), "Connected Folder Check declaration directory");
 }
 
-export function workFolderHistoryRoot(workFolderRoot: string): string {
-  return join(workFolderStateDir(workFolderRoot), "history");
+export function connectedFolderHistoryRoot(connectedFolderRoot: string): string {
+  return join(connectedFolderStateDir(connectedFolderRoot), "history");
 }
 
 function platformAppDataBase(): string {

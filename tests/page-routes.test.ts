@@ -22,33 +22,33 @@ const fixture = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "pages
 const session = "pages-session";
 
 async function setup(t: TestContext) {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-page-routes-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-page-routes-"));
   const stateBase = join(sandbox, "state");
-  const api = await startLocalApi({ port: 0, stateBase, workFolderBase: join(sandbox, "content"), loadEnv: false, sessionToken: session });
+  const api = await startLocalApi({ port: 0, stateBase, connectedFolderBase: join(sandbox, "content"), loadEnv: false, sessionToken: session });
   t.after(async () => {
     await api.close();
     await rm(sandbox, { recursive: true, force: true });
   });
-  const { workFolder } = await api.actFacade.createWorkFolder({ name: "Events" });
-  await cp(fixture, join(workFolder.workFolderRoot, "Sign up"), { recursive: true });
-  const base = `/api/work-folders/${encodeURIComponent(workFolder.id)}/pages`;
+  const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Events" });
+  await cp(fixture, join(connectedFolder.connectedFolderRoot, "Sign up"), { recursive: true });
+  const base = `/api/connected-folders/${encodeURIComponent(connectedFolder.id)}/pages`;
   const get = async (path: string, query: Record<string, string> = {}) => {
     const url = new URL(`${base}${path}`, api.origin);
     for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
-    const response = await fetch(url, { headers: { "x-work-fold-session": session } });
+    const response = await fetch(url, { headers: { "x-amplefile-session": session } });
     const text = await response.text();
     return { status: response.status, headers: response.headers, text, body: response.headers.get("content-type")?.includes("json") ? JSON.parse(text) as Record<string, unknown> : null };
   };
   const post = async (path: string, body: unknown) => {
     const response = await fetch(new URL(`${base}${path}`, api.origin), {
       method: "POST",
-      headers: { "content-type": "application/json", "x-work-fold-session": session },
+      headers: { "content-type": "application/json", "x-amplefile-session": session },
       body: JSON.stringify(body),
     });
     return { status: response.status, body: await response.json() as Record<string, unknown> };
   };
   const call = (viewer: unknown, pageCall: unknown, page = "Sign up") => post("/preview/call", { page, viewer, call: pageCall });
-  return { api, sandbox, stateBase, workFolder, get, post, call };
+  return { api, sandbox, stateBase, connectedFolder, get, post, call };
 }
 
 test("the sandbox intermediary is served without a session, with its own policy", async (t) => {
@@ -61,14 +61,14 @@ test("the sandbox intermediary is served without a session, with its own policy"
     if (PAGE_FRAME_CONTENT_SECURITY_POLICY) assert.equal(response.headers.get("content-security-policy"), PAGE_FRAME_CONTENT_SECURITY_POLICY);
     assert.equal(await response.text(), body);
   }
-  const pages = await fetch(new URL("/api/work-folders/anything/pages", api.origin));
+  const pages = await fetch(new URL("/api/connected-folders/anything/pages", api.origin));
   assert.equal(pages.status, 401, "page routes need the ordinary local session");
 });
 
 test("pages are listed, inspected, and assembled", async (t) => {
-  const { get, workFolder } = await setup(t);
-  await cp(fixture, join(workFolder.workFolderRoot, "Drafts", "Broken"), { recursive: true });
-  await writeFile(join(workFolder.workFolderRoot, "Drafts", "Broken", "index.html"), `<script src="https://cdn.example.com/x.js"></script>`);
+  const { get, connectedFolder } = await setup(t);
+  await cp(fixture, join(connectedFolder.connectedFolderRoot, "Drafts", "Broken"), { recursive: true });
+  await writeFile(join(connectedFolder.connectedFolderRoot, "Drafts", "Broken", "index.html"), `<script src="https://cdn.example.com/x.js"></script>`);
 
   const list = await get("");
   assert.equal(list.status, 200);
@@ -104,8 +104,8 @@ test("pages are listed, inspected, and assembled", async (t) => {
 });
 
 test("preview calls keep test entries under the state root and apply the declared rules", async (t) => {
-  const { post, call, get, stateBase, workFolder } = await setup(t);
-  const before = await readdir(join(workFolder.workFolderRoot, "Sign up"));
+  const { post, call, get, stateBase, connectedFolder } = await setup(t);
+  const before = await readdir(join(connectedFolder.connectedFolderRoot, "Sign up"));
 
   const first = await post("/preview/visitor", { page: "Sign up" });
   assert.equal(first.status, 200);
@@ -145,9 +145,9 @@ test("preview calls keep test entries under the state root and apply the declare
   const full = await call({ role: "visitor", visitor: fresh }, { op: "add", table: "signups", values: { name: "Dee", email: "dee@example.com" } });
   assert.deepEqual([full.status, full.body.code], [409, "LIMIT_REACHED"]);
 
-  // Test entries live under the state root, keyed by the page's path, never in the work-folder.
-  assert.deepEqual(await readdir(join(workFolder.workFolderRoot, "Sign up")), before);
-  const databasePath = join(stateBase, "pages", "preview", workFolder.id, `${pagePreviewKey("Sign up")}.sqlite`);
+  // Test entries live under the state root, keyed by the page's path, never in the Connected Folder.
+  assert.deepEqual(await readdir(join(connectedFolder.connectedFolderRoot, "Sign up")), before);
+  const databasePath = join(stateBase, "pages", "preview", connectedFolder.id, `${pagePreviewKey("Sign up")}.sqlite`);
   assert.ok(existsSync(databasePath));
   const db = openPageSqliteDatabase(databasePath);
   try {
@@ -158,13 +158,13 @@ test("preview calls keep test entries under the state root and apply the declare
   }
 
   // Renaming the page folder starts a fresh test database.
-  await rename(join(workFolder.workFolderRoot, "Sign up"), join(workFolder.workFolderRoot, "Volunteers"));
+  await rename(join(connectedFolder.connectedFolderRoot, "Sign up"), join(connectedFolder.connectedFolderRoot, "Volunteers"));
   assert.deepEqual((await call({ role: "owner" }, { op: "count", table: "signups" }, "Volunteers")).body, { result: 0 });
   assert.equal((await get("/preview/data", { page: "Volunteers" })).status, 200);
 });
 
 test("the Data view lists, edits, deletes, restores, marks seen, and exports test entries", async (t) => {
-  const { post, call, get, workFolder } = await setup(t);
+  const { post, call, get, connectedFolder } = await setup(t);
   const visitor = String((await post("/preview/visitor", { page: "Sign up" })).body.visitor);
   const ada = (await call({ role: "visitor", visitor }, { op: "add", table: "signups", values: { name: "Ada", email: "ada@example.com" } })).body.result as { id: string };
   await call({ role: "visitor", visitor }, { op: "add", table: "signups", values: { name: "Bea", email: "bea@example.com", notes: "=1+1" } });
@@ -207,7 +207,7 @@ test("the Data view lists, edits, deletes, restores, marks seen, and exports tes
 
 
   // Removing a column keeps its data as no longer collected; a broken page.json pauses calls, not the Data view.
-  const pageJson = join(workFolder.workFolderRoot, "Sign up", "page.json");
+  const pageJson = join(connectedFolder.connectedFolderRoot, "Sign up", "page.json");
   const declaration = JSON.parse(await readFile(pageJson, "utf8")) as { tables: { signups: { columns: Record<string, unknown> } } };
   delete declaration.tables.signups.columns.notes;
   declaration.tables.signups.columns.phone = { type: "text" };

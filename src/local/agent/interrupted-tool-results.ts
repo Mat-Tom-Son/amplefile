@@ -4,7 +4,7 @@ import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
  * A tool call that never recorded a result tells the model so honestly.
  *
  * Pi saves an assistant message when it ends and each tool result when that
- * tool finishes. When work-fold closes or crashes while a tool runs, the
+ * tool finishes. When AmpleFile closes or crashes while a tool runs, the
  * session keeps the call and no result. Before every model request Pi fills
  * the gap with an error result reading only "No result provided", and the
  * model reads that as a failed call it can simply repeat — although the call
@@ -17,7 +17,7 @@ import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
  * session and no tool is ever replayed.
  */
 
-export const interruptedToolResultText = "No result was recorded for this call: work-fold closed, or the turn was stopped, while it was running. It may have partly happened. Check its effects (for example, the files it was changing) before running it again.";
+export const interruptedToolResultText = "No result was recorded for this call: AmpleFile closed, or the turn was stopped, while it was running. It may have partly happened. Check its effects (for example, the files it was changing) before running it again.";
 
 type ContextMessage = {
   role: string;

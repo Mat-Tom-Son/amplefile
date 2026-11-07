@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { IncludedMcpServer, IncludedMcpOAuthJob } from "../../../../src/local/agent/included-mcp-setup";
 import { api, errorText } from "../../lib/api";
 
-export function IncludedMcpSetup({ workFolderId, enabled }: { workFolderId: string; enabled: boolean }) {
+export function IncludedMcpSetup({ connectedFolderId, enabled }: { connectedFolderId: string; enabled: boolean }) {
   const [opened, setOpened] = useState(false);
   const [servers, setServers] = useState<IncludedMcpServer[]>([]);
   const [busy, setBusy] = useState(false);
@@ -25,18 +25,18 @@ export function IncludedMcpSetup({ workFolderId, enabled }: { workFolderId: stri
     alive.current = true; setOpened(false);
     let ownedId: string | null = null;
     let cancelled = false;
-    void api<{ sessionId: string; servers: IncludedMcpServer[] }>("/api/agent/mcp-setup", { method: "POST", body: { workFolderId, operation: "open" } }).then((result) => {
+    void api<{ sessionId: string; servers: IncludedMcpServer[] }>("/api/agent/mcp-setup", { method: "POST", body: { connectedFolderId, operation: "open" } }).then((result) => {
       ownedId = result.sessionId;
       if (cancelled) { void close(ownedId); return; }
       session.current = ownedId; setServers(result.servers); setOpened(true);
     }).catch((caught) => { if (!cancelled) setError(errorText(caught)); });
-    const close = (sessionId: string) => api("/api/agent/mcp-setup", { method: "POST", body: { workFolderId, sessionId, operation: "close" } }).catch(() => undefined);
+    const close = (sessionId: string) => api("/api/agent/mcp-setup", { method: "POST", body: { connectedFolderId, sessionId, operation: "close" } }).catch(() => undefined);
     return () => { cancelled = true; alive.current = false; session.current = null; if (ownedId) void close(ownedId); };
-  }, [workFolderId]);
+  }, [connectedFolderId]);
 
   async function operation(action: string, fields: Record<string, unknown> = {}) {
     if (!session.current) throw new Error("Wait for connection setup to open, then try again.");
-    return api<{ servers?: IncludedMcpServer[]; job?: IncludedMcpOAuthJob; probe?: { state: string; detail: string } }>("/api/agent/mcp-setup", { method: "POST", body: { ...fields, workFolderId, sessionId: session.current, operation: action } });
+    return api<{ servers?: IncludedMcpServer[]; job?: IncludedMcpOAuthJob; probe?: { state: string; detail: string } }>("/api/agent/mcp-setup", { method: "POST", body: { ...fields, connectedFolderId, sessionId: session.current, operation: action } });
   }
   async function act(action: string, fields: Record<string, unknown> = {}) {
     if (busyRef.current) return;
@@ -79,7 +79,7 @@ export function IncludedMcpSetup({ workFolderId, enabled }: { workFolderId: stri
     {job ? <div className="included-mcp-auth" role="status"><p>{job.state === "running" ? "Complete sign-in in your browser." : job.state === "connected" ? "Signed in." : job.message ?? `Sign-in ${job.state}.`}</p>{job.state === "running" ? <button type="button" className="ui-control" onClick={() => void act("oauth-cancel", { jobId: job.id })}>Cancel Sign-In</button> : null}</div> : null}
     {!opened && !error ? <p role="status">Loading connections…</p> : opened && !servers.length && !adding ? <p>No Connections</p> : null}
     {opened && servers.length ? <p>Connections are checked when used. Check a connection below to verify it now.</p> : null}
-    <ul className="included-mcp-list">{servers.map((server) => <li key={`${server.scope}:${server.name}`}><div><strong>{server.name}</strong><small>{server.scope === "global" ? "Everywhere" : "This work-folder only"} · {server.disabled ? "Turned Off" : server.auth === "provider" ? "Uses AI Models Connection" : server.inherited ? "Uses Everywhere Connection" : server.auth === "none" ? "No Sign-In Required" : server.credential === "present" ? "Signed In" : server.credential === "not_checked" ? "Sign-In Not Checked" : server.credential === "unavailable" ? "Secure Storage Unavailable" : server.auth === "automatic" ? "No Saved Sign-In" : "Not Signed In"}</small></div><div className="included-tool-actions">
+    <ul className="included-mcp-list">{servers.map((server) => <li key={`${server.scope}:${server.name}`}><div><strong>{server.name}</strong><small>{server.scope === "global" ? "Everywhere" : "This Connected Folder only"} · {server.disabled ? "Turned Off" : server.auth === "provider" ? "Uses AI Models Connection" : server.inherited ? "Uses Everywhere Connection" : server.auth === "none" ? "No Sign-In Required" : server.credential === "present" ? "Signed In" : server.credential === "not_checked" ? "Sign-In Not Checked" : server.credential === "unavailable" ? "Secure Storage Unavailable" : server.auth === "automatic" ? "No Saved Sign-In" : "Not Signed In"}</small></div><div className="included-tool-actions">
       <button type="button" className="ui-control" disabled={busy || !enabled || server.disabled} onClick={() => void act("check", selection(server))}>Check</button>
       <button type="button" className="ui-control" disabled={busy || !enabled} onClick={() => void act("enabled", { ...selection(server), enabled: server.disabled })}>{server.disabled ? "Turn On" : "Turn Off"}</button>
       {server.transport === "http" && server.auth !== "none" && server.auth !== "provider" && !server.inherited ? <><button type="button" className="ui-control" disabled={busy || !enabled || server.disabled || job?.state === "running"} onClick={() => void act("oauth", selection(server))}>Sign In</button></> : null}
@@ -89,7 +89,7 @@ export function IncludedMcpSetup({ workFolderId, enabled }: { workFolderId: stri
     {tokenFor ? <form className="included-mcp-form" onSubmit={(event) => { event.preventDefault(); void act("bearer", { ...selection(tokenFor), token }); }}><label>Token for {tokenFor.name}<input type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} /></label><div className="included-tool-actions"><button type="submit" className="ui-control ui-control--primary" disabled={busy || !token.trim()}>Connect</button><button type="button" className="ui-control" onClick={() => { setTokenFor(null); setToken(""); }}>Cancel</button></div></form> : null}
     {adding ? <form className="included-mcp-form" onSubmit={(event) => { event.preventDefault(); save(); }}>
       <h3>Add Connection</h3><label>Name<input required value={name} onChange={(event) => setName(event.target.value)} placeholder="my-service" /></label>
-      <label>Availability<select value={scope} onChange={(event) => setScope(event.target.value as "global" | "project")}><option value="global">Everywhere</option><option value="project">This work-folder only</option></select></label>
+      <label>Availability<select value={scope} onChange={(event) => setScope(event.target.value as "global" | "project")}><option value="global">Everywhere</option><option value="project">This Connected Folder only</option></select></label>
       <label>Connection<select value={transport} onChange={(event) => setTransport(event.target.value as "url" | "command")}><option value="url">Service URL</option><option value="command">Local Server Command</option></select></label>
       <label>{transport === "url" ? "MCP Service URL" : "Executable"}<input required type={transport === "url" ? "url" : "text"} value={endpoint} onChange={(event) => setEndpoint(event.target.value)} placeholder={transport === "url" ? "https://example.com/mcp" : "/path/to/server"} /></label>
       {transport === "command" ? <><p>Install the command and its runtime first.</p><label>Arguments (JSON Array)<input value={args} onChange={(event) => setArgs(event.target.value)} /></label></> : null}

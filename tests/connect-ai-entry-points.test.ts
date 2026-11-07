@@ -30,7 +30,7 @@ test("a turn that stopped for want of a model offers Connect AI instead of repea
       interruption: { reason: "setup_error" },
     } as never,
     copied: false, showLanding: false, suppressEnterAnimation: true, showRuntimePreview: false, runtimePreviews: [],
-    workFolderId: "w", workFolderRoot: "/synthetic/w", onCopyMessage: () => {},
+    connectedFolderId: "w", connectedFolderRoot: "/synthetic/w", onCopyMessage: () => {},
   }));
   const card = document.querySelector<HTMLElement>('[aria-label="Worker setup needed"]')!;
   assert.equal(card.querySelector("strong")?.textContent, "Connect Your AI to Continue");

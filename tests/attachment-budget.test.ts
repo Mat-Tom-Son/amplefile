@@ -19,7 +19,7 @@ function session(contextWindow: number, occupied = 0) {
 const render = (attachment: LoadedConversationContextAttachment) => buildTurnContextMessage({ contextAttachments: [attachment] });
 
 test("attachment admission uses the selected model and existing context, including text and image metadata", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-context-capacity-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-context-capacity-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, "large.txt"), "a".repeat(400_000));
   const smallBudget = availableAttachmentTokens(session(32_768), "Read the attachment.", "");
@@ -70,15 +70,15 @@ test("context accounting includes new user text, host context, system instructio
 });
 
 test("explicit attachment configuration only narrows the live model budget", () => {
-  const previous = process.env.WORKFOLD_CHAT_CONTEXT_BUDGET_TOKENS;
+  const previous = process.env.AMPLEFILE_CHAT_CONTEXT_BUDGET_TOKENS;
   try {
-    process.env.WORKFOLD_CHAT_CONTEXT_BUDGET_TOKENS = "200000";
+    process.env.AMPLEFILE_CHAT_CONTEXT_BUDGET_TOKENS = "200000";
     assert.ok(availableAttachmentTokens(session(16_384), "", "") < 16_384);
-    process.env.WORKFOLD_CHAT_CONTEXT_BUDGET_TOKENS = "1000";
+    process.env.AMPLEFILE_CHAT_CONTEXT_BUDGET_TOKENS = "1000";
     assert.equal(availableAttachmentTokens(session(262_144), "", ""), 1000);
   } finally {
-    if (previous === undefined) delete process.env.WORKFOLD_CHAT_CONTEXT_BUDGET_TOKENS;
-    else process.env.WORKFOLD_CHAT_CONTEXT_BUDGET_TOKENS = previous;
+    if (previous === undefined) delete process.env.AMPLEFILE_CHAT_CONTEXT_BUDGET_TOKENS;
+    else process.env.AMPLEFILE_CHAT_CONTEXT_BUDGET_TOKENS = previous;
   }
 });
 
@@ -87,7 +87,7 @@ test("reference overflow preserves every selected path in a body-free ordinary m
   const { readFile, readdir, stat } = await import("node:fs/promises");
   const { createHash } = await import("node:crypto");
   const { prepareAttachmentContext } = await import("../src/local/agent/attachment-budget.js");
-  const root = await mkdtemp(join(tmpdir(), "work-fold-reference-overflow-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-reference-overflow-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const attachments: LoadedConversationContextAttachment[] = Array.from({ length: 75 }, (_, index) => ({
     sourcePath: `selected/${index}.txt`, sourceFileName: `${index}.txt`, sourceSizeBytes: 4096,
@@ -119,7 +119,7 @@ test("reference overflow preserves every selected path in a body-free ordinary m
 test("fitting attachment references stay inline without creating artifacts and session fallback is explicit", async (t) => {
   const { access, readFile } = await import("node:fs/promises");
   const { prepareAttachmentContext } = await import("../src/local/agent/attachment-budget.js");
-  const root = await mkdtemp(join(tmpdir(), "work-fold-reference-inline-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-reference-inline-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const attachment: LoadedConversationContextAttachment = { sourcePath: "one.txt", sourceFileName: "one.txt", sourceSizeBytes: 4,
     mode: "full_original_text", includedInPrompt: true, reason: null, estimatedTokens: 2, budgetTokens: 1000,

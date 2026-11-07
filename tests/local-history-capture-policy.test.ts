@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createWorkFolderCheckpoint, createWorkFolderMutationCheckpoint, restoreWorkFolderCheckpoint } from "../src/local/history.js";
+import { createConnectedFolderCheckpoint, createConnectedFolderMutationCheckpoint, restoreConnectedFolderCheckpoint } from "../src/local/history.js";
 import { GitignoreDirectoryRules, createFullHistoryCapturePolicy } from "../src/local/history-capture-policy.js";
-import { setWorkFolderIgnoreState } from "../src/local/work-folder-ignore.js";
-import { configureWorkFoldStateRoot } from "../src/local/state-paths.js";
+import { setConnectedFolderIgnoreState } from "../src/local/connected-folder-ignore.js";
+import { configureAmpleFileStateRoot } from "../src/local/state-paths.js";
 
 test("gitignore directory rules follow git precedence: anchoring, any-depth names, descendants, negation, nesting", () => {
   const rules = new GitignoreDirectoryRules();
@@ -45,12 +45,12 @@ test("gitignore directory rules follow git precedence: anchoring, any-depth name
   assert.equal(rules.excludesDirectory("packages/app/dist"), false, "a closer negation wins over the root rule");
 });
 
-test("full checkpoints skip gitignored, work-folder-ignored, dependency, and cache directories — but keep every individual file", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-folder-history-policy-"));
-  const root = join(sandbox, "work-folder");
-  configureWorkFoldStateRoot(join(sandbox, "state"));
+test("full checkpoints skip gitignored, connected-folder-ignored, dependency, and cache directories — but keep every individual file", async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), "connected-folder-history-policy-"));
+  const root = join(sandbox, "connected-folder");
+  configureAmpleFileStateRoot(join(sandbox, "state"));
   t.after(async () => {
-    configureWorkFoldStateRoot(undefined);
+    configureAmpleFileStateRoot(undefined);
     await rm(sandbox, { recursive: true, force: true });
   });
   await mkdir(join(root, "src"), { recursive: true });
@@ -77,9 +77,9 @@ test("full checkpoints skip gitignored, work-folder-ignored, dependency, and cac
   await writeFile(join(root, ".env"), "SECRET=keep-me\n");
   await writeFile(join(root, "debug.log"), "gitignored file, still captured\n");
   await writeFile(join(root, "README.md"), "# Project\n");
-  await setWorkFolderIgnoreState(root, ["scratch", "README.md"], true);
+  await setConnectedFolderIgnoreState(root, ["scratch", "README.md"], true);
 
-  const checkpoint = await createWorkFolderCheckpoint(root, { reason: "pre_turn" });
+  const checkpoint = await createConnectedFolderCheckpoint(root, { reason: "pre_turn" });
   assert.deepEqual(new Set(checkpoint.files.map((file) => file.path)), new Set([
     ".env",
     ".gitignore",
@@ -96,7 +96,7 @@ test("full checkpoints skip gitignored, work-folder-ignored, dependency, and cac
   const policy = await createFullHistoryCapturePolicy(root);
   await policy.enterDirectory("", root);
   assert.equal(await policy.excludeDirectory("dist", join(root, "dist")), "gitignore");
-  assert.equal(await policy.excludeDirectory("scratch", join(root, "scratch")), "work-folder_ignore");
+  assert.equal(await policy.excludeDirectory("scratch", join(root, "scratch")), "connected-folder_ignore");
   assert.equal(await policy.excludeDirectory("target", join(root, "target")), "builtin");
   assert.equal(await policy.excludeDirectory(".venv", join(root, ".venv")), "builtin");
   assert.equal(policy.excludeFile("README.md"), null, "a file hidden from Files and Search remains History material");
@@ -106,22 +106,22 @@ test("full checkpoints skip gitignored, work-folder-ignored, dependency, and cac
   // A targeted mutation checkpoint still captures exactly what it is asked
   // about, even inside gitignored output, so an explicit edit there keeps a
   // restore point.
-  const targeted = await createWorkFolderMutationCheckpoint(root, { paths: ["dist/assets/bundle.js"], reason: "mutation" });
+  const targeted = await createConnectedFolderMutationCheckpoint(root, { paths: ["dist/assets/bundle.js"], reason: "mutation" });
   assert.deepEqual(targeted.files.map((file) => file.path), ["dist/assets/bundle.js"]);
 
   // Restoring a full checkpoint never deletes excluded content.
   await writeFile(join(root, "src", "index.ts"), "export const answer = 43;\n");
-  const restored = await restoreWorkFolderCheckpoint(root, checkpoint.checkpointId);
+  const restored = await restoreConnectedFolderCheckpoint(root, checkpoint.checkpointId);
   assert.deepEqual(restored.restoredFiles, ["src/index.ts"]);
   assert.deepEqual(restored.deletedFiles, []);
 });
 
 test("large files are hashed from a stream and stored once", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-folder-history-stream-"));
-  const root = join(sandbox, "work-folder");
-  configureWorkFoldStateRoot(join(sandbox, "state"));
+  const sandbox = await mkdtemp(join(tmpdir(), "connected-folder-history-stream-"));
+  const root = join(sandbox, "connected-folder");
+  configureAmpleFileStateRoot(join(sandbox, "state"));
   t.after(async () => {
-    configureWorkFoldStateRoot(undefined);
+    configureAmpleFileStateRoot(undefined);
     await rm(sandbox, { recursive: true, force: true });
   });
   await mkdir(root, { recursive: true });
@@ -129,11 +129,11 @@ test("large files are hashed from a stream and stored once", async (t) => {
   await writeFile(join(root, "big.bin"), big);
   await writeFile(join(root, "big-copy.bin"), big);
   await writeFile(join(root, "small.txt"), "hello");
-  const first = await createWorkFolderCheckpoint(root, { reason: "manual" });
+  const first = await createConnectedFolderCheckpoint(root, { reason: "manual" });
   assert.equal(first.fileCount, 3);
   const hashes = new Set(first.files.map((file) => file.hashSha256));
   assert.equal(hashes.size, 2, "identical large files share one blob");
   assert.equal(first.files.find((file) => file.path === "big.bin")?.sizeBytes, big.byteLength);
-  const second = await createWorkFolderCheckpoint(root, { reason: "manual" });
-  assert.equal(second.checkpointId, first.checkpointId, "an unchanged work-folder reuses the identical manifest");
+  const second = await createConnectedFolderCheckpoint(root, { reason: "manual" });
+  assert.equal(second.checkpointId, first.checkpointId, "an unchanged Connected Folder reuses the identical manifest");
 });

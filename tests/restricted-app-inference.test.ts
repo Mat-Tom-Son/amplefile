@@ -19,7 +19,7 @@ import { restrictedAppInferenceLimits } from "../src/shared/restricted-app-infer
 import { inferenceReceiptOutcomeLabel } from "../web-local/src/components/panes/RestrictedAppInferenceReceipts.js";
 
 const scope: RestrictedAppInferenceScope = {
-  workFolderId: "work-folder-one",
+  connectedFolderId: "connected-folder-one",
   appId: "quotes",
   featureInstallationId: "feature-one",
   digest: "a".repeat(64),
@@ -33,7 +33,7 @@ function codeOf(error: unknown): string {
 }
 
 async function fixture(t: test.TestContext, overrides: RestrictedAppInferenceLimitOverrides = {}) {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-app-inference-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-app-inference-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const path = join(root, "inference-receipts.jsonl");
   let now = new Date("2026-09-10T12:00:00.000Z");
@@ -51,8 +51,8 @@ async function fixture(t: test.TestContext, overrides: RestrictedAppInferenceLim
         throw new RestrictedAppTaskError("TASK_DENIED", "This app's permissions changed. Open the app again.");
       }
     },
-    async infer(workFolderId, request) {
-      assert.equal(workFolderId, scope.workFolderId);
+    async infer(connectedFolderId, request) {
+      assert.equal(connectedFolderId, scope.connectedFolderId);
       calls.push(request);
       if (behavior === "fail") throw new BoundedInferenceError("INFER_MODEL_UNAVAILABLE", "No model.");
       if (behavior === "hold") {
@@ -371,7 +371,7 @@ test("projection preserves revision and ownership pins even when journal IDs col
   const changed = { ...scope, digest: "b".repeat(64) };
   const rows = [accepted, ok,
     { ...accepted, digest: changed.digest }, { ...ok, digest: changed.digest, outcome: "error", errorCode: "INFER_FAILED" },
-    { ...ok, workFolderId: "another-work-folder" }, { ...ok, appId: "another-app" }, { ...ok, featureInstallationId: "another-installation" }];
+    { ...ok, connectedFolderId: "another-connected-folder" }, { ...ok, appId: "another-app" }, { ...ok, featureInstallationId: "another-installation" }];
   await writeFile(f.path, rows.map((row) => JSON.stringify(row)).join("\n") + "\n", "utf8");
   f.changeScope(changed);
   await f.restart();
@@ -379,7 +379,7 @@ test("projection preserves revision and ownership pins even when journal IDs col
   assert.deepEqual(revision.map((receipt) => [receipt.digest, receipt.outcome]), [[changed.digest, "error"]]);
   const installation = await f.service.list(changed, { ownership: "installation" });
   assert.deepEqual(installation.map((receipt) => [receipt.digest, receipt.outcome]), [[changed.digest, "error"], [scope.digest, "ok"]]);
-  for (const row of installation) assert.deepEqual([row.workFolderId, row.appId, row.featureInstallationId], [scope.workFolderId, scope.appId, scope.featureInstallationId]);
+  for (const row of installation) assert.deepEqual([row.connectedFolderId, row.appId, row.featureInstallationId], [scope.connectedFolderId, scope.appId, scope.featureInstallationId]);
   installation[0].outcome = "accepted";
   assert.equal((await f.service.list(changed))[0].outcome, "error", "callers cannot mutate the projection");
 });

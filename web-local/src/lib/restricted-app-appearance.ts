@@ -2,31 +2,31 @@ import type { AppTheme } from "../types";
 
 /**
  * The shell's own tokens, read where the app sits, so they carry the theme,
- * the work-folder's accent, and the person's appearance choices. Each app
+ * the Connected Folder's accent, and the person's appearance choices. Each app
  * token takes the first source the shell defines.
  */
 const appearanceSources: ReadonlyArray<readonly [string, readonly string[]]> = [
-  ["--wf-canvas", ["--ui-canvas"]],
-  ["--wf-surface", ["--ui-surface"]],
-  ["--wf-surface-subtle", ["--ui-surface-subtle"]],
-  ["--wf-surface-hover", ["--ui-surface-hover"]],
-  ["--wf-text", ["--ui-text"]],
-  ["--wf-text-muted", ["--ui-text-muted"]],
-  ["--wf-text-subtle", ["--ui-text-subtle"]],
-  ["--wf-border", ["--ui-border"]],
-  ["--wf-border-strong", ["--ui-border-strong"]],
-  ["--wf-accent", ["--work-folder-accent-solid", "--ui-accent"]],
-  ["--wf-on-accent", ["--work-folder-on-accent-solid", "--ui-on-accent"]],
-  ["--wf-accent-soft", ["--work-folder-accent-soft-fill", "--ui-accent-soft"]],
-  ["--wf-accent-text", ["--work-folder-accent-text-ui", "--ui-accent"]],
-  ["--wf-focus", ["--work-folder-accent-focus-ring", "--ui-focus", "--ui-accent"]],
-  ["--wf-success", ["--ui-success"]],
-  ["--wf-danger", ["--ui-danger"]],
-  ["--wf-attention", ["--ui-attention"]],
-  ["--wf-radius-sm", ["--ui-radius-sm"]],
-  ["--wf-radius-md", ["--ui-radius-md"]],
-  ["--wf-radius-lg", ["--ui-radius-lg"]],
-  ["--wf-shadow", ["--ui-shadow-menu"]],
+  ["--af-canvas", ["--ui-canvas"]],
+  ["--af-surface", ["--ui-surface"]],
+  ["--af-surface-subtle", ["--ui-surface-subtle"]],
+  ["--af-surface-hover", ["--ui-surface-hover"]],
+  ["--af-text", ["--ui-text"]],
+  ["--af-text-muted", ["--ui-text-muted"]],
+  ["--af-text-subtle", ["--ui-text-subtle"]],
+  ["--af-border", ["--ui-border"]],
+  ["--af-border-strong", ["--ui-border-strong"]],
+  ["--af-accent", ["--connected-folder-accent-solid", "--ui-accent"]],
+  ["--af-on-accent", ["--connected-folder-on-accent-solid", "--ui-on-accent"]],
+  ["--af-accent-soft", ["--connected-folder-accent-soft-fill", "--ui-accent-soft"]],
+  ["--af-accent-text", ["--connected-folder-accent-text-ui", "--ui-accent"]],
+  ["--af-focus", ["--connected-folder-accent-focus-ring", "--ui-focus", "--ui-accent"]],
+  ["--af-success", ["--ui-success"]],
+  ["--af-danger", ["--ui-danger"]],
+  ["--af-attention", ["--ui-attention"]],
+  ["--af-radius-sm", ["--ui-radius-sm"]],
+  ["--af-radius-md", ["--ui-radius-md"]],
+  ["--af-radius-lg", ["--ui-radius-lg"]],
+  ["--af-shadow", ["--ui-shadow-menu"]],
 ];
 
 export function currentAppearance(element: HTMLElement, theme: AppTheme): Record<string, string> {
@@ -39,8 +39,8 @@ export function currentAppearance(element: HTMLElement, theme: AppTheme): Record
     }
   }
   // Apps load Inter from their own origin under this name.
-  if (style.fontFamily) appearance["--wf-font"] = style.fontFamily.replace(/"Inter Variable"|'Inter Variable'/g, '"work-fold Inter"');
-  if (style.fontSize) appearance["--wf-font-size"] = style.fontSize;
+  if (style.fontFamily) appearance["--af-font"] = style.fontFamily.replace(/"Inter Variable"|'Inter Variable'/g, '"AmpleFile Inter"');
+  if (style.fontSize) appearance["--af-font-size"] = style.fontSize;
   return appearance;
 }
 

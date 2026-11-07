@@ -4,19 +4,19 @@ type DesktopPlatform = NodeJS.Platform | undefined;
 
 function desktopPlatform(): DesktopPlatform {
   if (typeof window === "undefined") return undefined;
-  return window.workFoldDesktop?.app?.platform ?? previewPlatform();
+  return window.ampleFileDesktop?.app?.platform ?? previewPlatform();
 }
 
 /**
- * The inert UI previews (`/?fixture=work-folder`, `/popover.html?fixture=agent`)
+ * The inert UI previews (`/?fixture=connected-folder`, `/popover.html?fixture=agent`)
  * draw the Mac app, the active desktop lane: Mac words, key glyphs, and window
  * chrome. `&platform=browser` shows the plain browser rendering instead.
  */
 function previewPlatform(): DesktopPlatform {
-  if (typeof window === "undefined" || window.workFoldDesktop) return undefined;
+  if (typeof window === "undefined" || window.ampleFileDesktop) return undefined;
   const params = new URLSearchParams(window.location.search);
   const fixture = params.get("fixture");
-  if (fixture !== "work-folder" && fixture !== "agent") return undefined;
+  if (fixture !== "connected-folder" && fixture !== "agent") return undefined;
   return params.get("platform") === "browser" ? undefined : "darwin";
 }
 
@@ -34,7 +34,7 @@ function desktopFileDragHint(path: string, platform: DesktopPlatform = desktopPl
   return `${path} — drag to move`;
 }
 
-function workFolderEntryNativePath(rootPath: string, relativePath: string, platform: DesktopPlatform = desktopPlatform()): string {
+function connectedFolderEntryNativePath(rootPath: string, relativePath: string, platform: DesktopPlatform = desktopPlatform()): string {
   if (!relativePath) return rootPath;
   const separator = platform === "win32" ? "\\" : "/";
   const root = rootPath.replace(/[\\/]+$/, "");
@@ -42,5 +42,5 @@ function workFolderEntryNativePath(rootPath: string, relativePath: string, platf
   return [root, ...segments].join(separator);
 }
 
-export { desktopFileDragHint, desktopPlatform, isMacOS, previewPlatform, typographyFontForPlatform, workFolderEntryNativePath };
+export { desktopFileDragHint, desktopPlatform, isMacOS, previewPlatform, typographyFontForPlatform, connectedFolderEntryNativePath };
 export type { DesktopPlatform };

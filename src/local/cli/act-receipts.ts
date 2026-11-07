@@ -1,11 +1,11 @@
 import { appendFile, mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { WORKFOLD_CLI_REQUEST_MAX_AGE_MS, workFoldCliBrokerPaths } from "./broker.js";
-import { WorkFoldCliError, type WorkFoldCliErrorCode } from "./protocol.js";
+import { AMPLEFILE_CLI_REQUEST_MAX_AGE_MS, ampleFileCliBrokerPaths } from "./broker.js";
+import { AmpleFileCliError, type AmpleFileCliErrorCode } from "./protocol.js";
 
 /** Every act scans this journal for replays, so it stays a size one read handles quickly. */
-export const WORKFOLD_CLI_ACT_RECEIPTS_MAX_BYTES = 8 * 1024 * 1024;
+export const AMPLEFILE_CLI_ACT_RECEIPTS_MAX_BYTES = 8 * 1024 * 1024;
 
 /**
  * Durable, append-only journal of act-lane commands. Every authorized command
@@ -19,18 +19,18 @@ export const WORKFOLD_CLI_ACT_RECEIPTS_MAX_BYTES = 8 * 1024 * 1024;
  * must not be failed retroactively); the executor surfaces a warning when one
  * cannot be written.
  */
-export interface WorkFoldCliActReceiptV1 {
+export interface AmpleFileCliActReceiptV1 {
   v: 1;
   at: string;
   requestId: string;
   command: string;
-  workFolderId?: string;
+  connectedFolderId?: string;
   conversationId?: string;
   outcome: "accepted" | "ok" | "error" | "rejected";
-  errorCode?: WorkFoldCliErrorCode;
+  errorCode?: AmpleFileCliErrorCode;
   checkpointId?: string;
   taskId?: string;
-  /** Kernel task id of the work-fold agent turn this act was performed for, when one was running. */
+  /** Kernel task id of the AmpleFile agent turn this act was performed for, when one was running. */
   parentTaskId?: string;
   detail?: string;
 }
@@ -40,9 +40,9 @@ export interface WorkFoldCliActReceiptV1 {
  * initiated an act — the act CLI, the menu-bar popover, or the main window's
  * Settings acts.
  */
-export const WORKFOLD_CLI_ACT_SURFACES = ["cli", "popover", "main-window"] as const;
+export const AMPLEFILE_CLI_ACT_SURFACES = ["cli", "popover", "main-window"] as const;
 
-export type WorkFoldCliActSurface = (typeof WORKFOLD_CLI_ACT_SURFACES)[number];
+export type AmpleFileCliActSurface = (typeof AMPLEFILE_CLI_ACT_SURFACES)[number];
 
 /**
  * Surfaces older builds wrote: on decision receipts (a standing policy or the
@@ -51,16 +51,16 @@ export type WorkFoldCliActSurface = (typeof WORKFOLD_CLI_ACT_SURFACES)[number];
  * Nothing writes them any more; readers of durable records accept them so
  * those lines stay readable history and still gate replays.
  */
-export const WORKFOLD_CLI_ACT_LEGACY_SURFACES = ["policy", "unrestricted", "remote_web"] as const;
+export const AMPLEFILE_CLI_ACT_LEGACY_SURFACES = ["policy", "unrestricted", "remote_web"] as const;
 
-export type WorkFoldCliActLegacySurface = (typeof WORKFOLD_CLI_ACT_LEGACY_SURFACES)[number];
+export type AmpleFileCliActLegacySurface = (typeof AMPLEFILE_CLI_ACT_LEGACY_SURFACES)[number];
 
 /**
  * Typed pointer to the prior state an undo verb needs — identifiers, digests,
  * or short prior values (a title, a lifecycle state) only. Receipts never
  * grow file contents, message text, queries, or secrets.
  */
-export interface WorkFoldCliActUndoRef {
+export interface AmpleFileCliActUndoRef {
   kind: string;
   value: string;
 }
@@ -70,35 +70,35 @@ export interface WorkFoldCliActUndoRef {
  * decision id, a policy id, and the two legacy surfaces. Still parsed, still
  * an at-most-once ledger entry, never written.
  */
-export interface WorkFoldCliActReceiptV2 extends Omit<WorkFoldCliActReceiptV1, "v"> {
+export interface AmpleFileCliActReceiptV2 extends Omit<AmpleFileCliActReceiptV1, "v"> {
   v: 2;
-  surface?: WorkFoldCliActSurface | WorkFoldCliActLegacySurface;
+  surface?: AmpleFileCliActSurface | AmpleFileCliActLegacySurface;
   decisionId?: string;
   policyId?: string;
   browserId?: string;
   grantId?: string;
-  undoRef?: WorkFoldCliActUndoRef;
+  undoRef?: AmpleFileCliActUndoRef;
 }
 
-export interface WorkFoldCliActReceiptV3 extends Omit<WorkFoldCliActReceiptV1, "v"> {
+export interface AmpleFileCliActReceiptV3 extends Omit<AmpleFileCliActReceiptV1, "v"> {
   v: 3;
-  surface?: WorkFoldCliActSurface | WorkFoldCliActLegacySurface;
+  surface?: AmpleFileCliActSurface | AmpleFileCliActLegacySurface;
   /** Read only: the paired browser older builds stamped on acts that came through Web Access. */
   browserId?: string;
   grantId?: string;
-  undoRef?: WorkFoldCliActUndoRef;
+  undoRef?: AmpleFileCliActUndoRef;
 }
 
 /** Journal lines are written at the current version; readers accept every version. */
-export type WorkFoldCliActReceipt = WorkFoldCliActReceiptV1 | WorkFoldCliActReceiptV2 | WorkFoldCliActReceiptV3;
+export type AmpleFileCliActReceipt = AmpleFileCliActReceiptV1 | AmpleFileCliActReceiptV2 | AmpleFileCliActReceiptV3;
 
-export interface WorkFoldCliActReceiptsOptions {
+export interface AmpleFileCliActReceiptsOptions {
   stateRoot: string;
   maxBytes?: number;
   now?: () => Date;
 }
 
-export class WorkFoldCliActReceipts {
+export class AmpleFileCliActReceipts {
   readonly path: string;
   readonly rotatedPath: string;
   readonly #directory: string;
@@ -106,19 +106,19 @@ export class WorkFoldCliActReceipts {
   readonly #now: () => Date;
   #queue: Promise<unknown> = Promise.resolve();
 
-  constructor(options: WorkFoldCliActReceiptsOptions) {
-    this.#directory = join(workFoldCliBrokerPaths(options.stateRoot).root, "receipts");
+  constructor(options: AmpleFileCliActReceiptsOptions) {
+    this.#directory = join(ampleFileCliBrokerPaths(options.stateRoot).root, "receipts");
     this.path = join(this.#directory, "act.jsonl");
     this.rotatedPath = join(this.#directory, "act.1.jsonl");
-    this.#maxBytes = options.maxBytes ?? WORKFOLD_CLI_ACT_RECEIPTS_MAX_BYTES;
+    this.#maxBytes = options.maxBytes ?? AMPLEFILE_CLI_ACT_RECEIPTS_MAX_BYTES;
     this.#now = options.now ?? (() => new Date());
   }
 
   /** Serialized best-effort append; resolves false when the receipt could not be written. */
-  append(entry: Omit<WorkFoldCliActReceiptV3, "v" | "at">): Promise<boolean> {
+  append(entry: Omit<AmpleFileCliActReceiptV3, "v" | "at">): Promise<boolean> {
     const operation = this.#queue.catch(() => undefined).then(async () => {
       try {
-        const record: WorkFoldCliActReceiptV3 = {
+        const record: AmpleFileCliActReceiptV3 = {
           v: 3,
           at: this.#now().toISOString(),
           ...entry,
@@ -146,18 +146,18 @@ export class WorkFoldCliActReceipts {
       for (const path of [this.path, this.rotatedPath]) {
         const text = await readFile(path, "utf8").catch((error: unknown) => {
           if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-          throw new WorkFoldCliError("failure", "work-fold could not verify the act receipt journal.", { cause: error });
+          throw new AmpleFileCliError("failure", "AmpleFile could not verify the act receipt journal.", { cause: error });
         });
         if (!text) continue;
         for (const line of text.split("\n")) {
           if (!line) continue;
           try {
-            const record = JSON.parse(line) as Partial<WorkFoldCliActReceipt>;
+            const record = JSON.parse(line) as Partial<AmpleFileCliActReceipt>;
             if (record.requestId === requestId && record.outcome === "accepted") return true;
           } catch (error) {
             // A damaged ledger cannot safely prove that this request id was
             // never accepted, so fail closed instead of risking a replay.
-            throw new WorkFoldCliError("failure", "work-fold could not verify the act receipt journal.", { cause: error });
+            throw new AmpleFileCliError("failure", "AmpleFile could not verify the act receipt journal.", { cause: error });
           }
         }
       }
@@ -180,7 +180,7 @@ export class WorkFoldCliActReceipts {
     if (firstLine) {
       try {
         const at = Date.parse((JSON.parse(firstLine) as { at?: string }).at ?? "");
-        if (Number.isFinite(at) && this.#now().getTime() - at < WORKFOLD_CLI_REQUEST_MAX_AGE_MS) return;
+        if (Number.isFinite(at) && this.#now().getTime() - at < AMPLEFILE_CLI_REQUEST_MAX_AGE_MS) return;
       } catch {
         // An unreadable first line never blocks rotation.
       }

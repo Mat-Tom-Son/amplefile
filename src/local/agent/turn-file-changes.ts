@@ -1,7 +1,7 @@
-import type { WorkFolderCheckpoint } from "../history.js";
+import type { ConnectedFolderCheckpoint } from "../history.js";
 
 export const maxTurnFileChanges = 64;
-export interface WorkFoldTurnFileChanges {
+export interface AmpleFileTurnFileChanges {
   beforeCheckpointId: string;
   afterCheckpointId: string;
   files: Array<{ path: string; hashSha256: string; sizeBytes: number }>;
@@ -9,7 +9,7 @@ export interface WorkFoldTurnFileChanges {
 }
 
 /** Observed History changes during a turn, not a claim that every edit was made by the model. */
-export function turnFileChanges(before: WorkFolderCheckpoint | null, after: WorkFolderCheckpoint | null): WorkFoldTurnFileChanges | undefined {
+export function turnFileChanges(before: ConnectedFolderCheckpoint | null, after: ConnectedFolderCheckpoint | null): AmpleFileTurnFileChanges | undefined {
   if (!before || !after || before.scope !== "full" || after.scope !== "full") return undefined;
   const prior = new Map(before.files.map((file) => [file.path, file.hashSha256]));
   const skipped = before.skippedFiles.map((file) => file.path);
@@ -20,7 +20,7 @@ export function turnFileChanges(before: WorkFolderCheckpoint | null, after: Work
     truncated: changed.length > maxTurnFileChanges };
 }
 
-export function parseTurnFileChanges(value: unknown): WorkFoldTurnFileChanges {
+export function parseTurnFileChanges(value: unknown): AmpleFileTurnFileChanges {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Turn file changes are invalid.");
   const data = value as Record<string, unknown>;
   if (Object.keys(data).some((key) => !["beforeCheckpointId", "afterCheckpointId", "files", "truncated"].includes(key))
@@ -40,5 +40,5 @@ export function parseTurnFileChanges(value: unknown): WorkFoldTurnFileChanges {
 
 export function safeTurnFilePath(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 2048 && !/[\\\u0000-\u001f\u007f]/u.test(value)
-    && !value.split("/").some((part) => !part || part === "." || part === ".." || [".work-fold", ".workspace", ".pi"].includes(part.toLowerCase()));
+    && !value.split("/").some((part) => !part || part === "." || part === ".." || [".amplefile", ".workspace", ".pi"].includes(part.toLowerCase()));
 }

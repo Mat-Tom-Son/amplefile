@@ -9,11 +9,11 @@ import test from "node:test";
 import ts from "typescript";
 
 test("connected tab motion retargets, settles on layout changes and honors reduced motion in Chromium", { timeout: 60_000 }, async (t) => {
-  const candidates = [process.env.WORKFOLD_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[];
+  const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[];
   let browser: string | undefined;
   for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
-  if (!browser) { t.skip("A Chromium binary is required; set WORKFOLD_CSS_BROWSER."); return; }
-  const scratch = await mkdtemp(join(tmpdir(), "work-fold-tab-motion-"));
+  if (!browser) { t.skip("A Chromium binary is required; set AMPLEFILE_CSS_BROWSER."); return; }
+  const scratch = await mkdtemp(join(tmpdir(), "amplefile-tab-motion-"));
   try {
     const css = (await Promise.all(["brand.css", "styles.css", "application-appearance.css"].map(name => readFile(resolve("web-local/src", name), "utf8")))).join("\n");
     const source = await readFile(resolve("web-local/src/lib/surface-tab-motion.ts"), "utf8");

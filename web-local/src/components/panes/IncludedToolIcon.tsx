@@ -6,7 +6,7 @@ import type { IncludedToolId } from "../../../../src/shared/included-tools";
  * (https://creativecommons.org/licenses/by/4.0/). Adapted for React/theme colors;
  * Arcticons strokes widened and paths simplified, under CC BY-SA 4.0.
  * Sources, modifications, and license notices: THIRD_PARTY_NOTICES.md.
- * These artwork licenses are separate from work-fold's MIT-licensed code.
+ * These artwork licenses are separate from AmpleFile's MIT-licensed code.
  */
 export function IncludedToolIcon({ id, size = 20 }: { id: IncludedToolId; size?: number }) {
   const line = { fill: "none", stroke: "currentColor", strokeWidth: 2.6, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };

@@ -15,13 +15,13 @@ import { subscribeControlEvents } from "../lib/control-events";
 import { activeFolderMention, addressedFolderIds, insertFolderMention, matchingMentionFolders, mentionNames } from "../lib/folder-mentions";
 import { folderTreeRows } from "../lib/folder-nesting";
 import { FolderMentionMenu, type MentionFolderOption } from "../components/chat/FolderMentionMenu";
-import { WorkFoldLockup } from "../components/brand/WorkFoldBrand";
+import { AmpleFileLockup } from "../components/brand/AmpleFileBrand";
 import { RuntimeContextPreview } from "../components/chat/activity";
 import { savedWorkTrailPreviews } from "../lib/chat-work-trail";
 import type { ChatMessage, ComposerState, ConversationRuntime, ChatStreamEvent, ExtensionUiRequest, RuntimePreviewEntry } from "../types";
 
-/** Mirrors the server's WorkFoldActManagementRequest projection. */
-interface WorkFoldAgentRequestView {
+/** Mirrors the server's AmpleFileActManagementRequest projection. */
+interface AmpleFileAgentRequestView {
   taskId: string;
   conversationId: string;
   phase: "working" | "needs_you" | "handed_off" | "done" | "failed" | "stopped";
@@ -33,15 +33,15 @@ interface WorkFoldAgentRequestView {
   dispositions: Array<{
     attachment: { kind: "file" | "folder" | "url"; target: string; name: string };
     status: "placed" | "registered" | "unrecorded";
-    workFolderName?: string;
+    connectedFolderName?: string;
     copied?: string[];
     checkpointId?: string | null;
   }>;
   actions: Array<{
-    command: "files.add" | "work-folders.create" | "work-folders.register" | "chat.send";
+    command: "files.add" | "connected-folders.create" | "connected-folders.register" | "chat.send";
     at: string;
-    workFolderId: string;
-    workFolderName: string;
+    connectedFolderId: string;
+    connectedFolderName: string;
     copied?: string[];
     checkpointId?: string | null;
     rootPath?: string;
@@ -50,8 +50,8 @@ interface WorkFoldAgentRequestView {
   }>;
   children: Array<{
     taskId: string;
-    workFolderId: string;
-    workFolderName: string;
+    connectedFolderId: string;
+    connectedFolderName: string;
     conversationId: string;
     state: "running" | "succeeded" | "failed" | "aborted" | "unknown";
     error: string | null;
@@ -59,21 +59,21 @@ interface WorkFoldAgentRequestView {
   reply: { messageId: string; content: string } | null;
 }
 
-function workFoldAgentTurnIdentity(prefix: "request" | "message"): string {
+function ampleFileAgentTurnIdentity(prefix: "request" | "message"): string {
   const value = globalThis.crypto?.randomUUID?.()
     ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   return `${prefix}-${value}`;
 }
 
-interface WorkFoldAgentSummary {
+interface AmpleFileAgentSummary {
   available: boolean;
   reason?: string;
   conversation: { id: string; title: string } | null;
   state: "idle" | "running" | "compacting";
-  latestRequest: WorkFoldAgentRequestView | null;
+  latestRequest: AmpleFileAgentRequestView | null;
 }
 
-interface WorkFoldAgentMessage {
+interface AmpleFileAgentMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
@@ -91,7 +91,7 @@ interface StagedItem {
   isLink: boolean;
 }
 
-interface WorkFoldAgentChat {
+interface AmpleFileAgentChat {
   id: string;
   title: string;
   updatedAt: string;
@@ -101,8 +101,8 @@ interface WorkFoldAgentChat {
   needsAnswer?: boolean;
 }
 
-const fixtureChats: WorkFoldAgentChat[] = [
-  { id: "fixture-agent", title: "Catch up on my work-folders", updatedAt: "2026-09-11T19:30:00Z", requestState: "done" },
+const fixtureChats: AmpleFileAgentChat[] = [
+  { id: "fixture-agent", title: "Catch up on my Connected Folders", updatedAt: "2026-09-11T19:30:00Z", requestState: "done" },
   { id: "fixture-plan", title: "Plan next week’s workshop", updatedAt: "2026-09-10T16:00:00Z", requestState: "waiting", needsAnswer: true },
   { id: "fixture-notes", title: "Organize the field notes", updatedAt: "2026-09-09T15:00:00Z", requestState: "done" },
 ];
@@ -113,7 +113,7 @@ const idlePollIntervalMs = 5_000;
 const popoverFixtureRequested = new URLSearchParams(window.location.search).get("fixture") === "agent";
 const extensionFixtureRequested = popoverFixtureRequested && new URLSearchParams(window.location.search).get("extensions") === "1";
 
-const popoverFixtureMessages: WorkFoldAgentMessage[] = [
+const popoverFixtureMessages: AmpleFileAgentMessage[] = [
   {
     id: "fixture-user-1",
     role: "user",
@@ -124,7 +124,7 @@ const popoverFixtureMessages: WorkFoldAgentMessage[] = [
     id: "fixture-assistant-1",
     role: "assistant",
     content: [
-      "Two work-folders moved forward:",
+      "Two Connected Folders moved forward:",
       "",
       "- **Launch plan** — the draft is ready and its Check passed.",
       "- **Field notes** — three duplicates need your choice.",
@@ -144,10 +144,10 @@ const popoverFixtureComposer: ComposerState = {
 /** The menu-bar popover: its own window, so it owns the appearance preferences. */
 export function PopoverApp() {
   useApplicationAppearance({ fixtureMode: popoverFixtureRequested });
-  return <WorkFoldAgentChat host="popover" fixtureMode={popoverFixtureRequested} />;
+  return <AmpleFileAgentChat host="popover" fixtureMode={popoverFixtureRequested} />;
 }
 
-export interface WorkFoldAgentChatProps {
+export interface AmpleFileAgentChatProps {
   /** The menu-bar popover window, or the panel beside the main window's work area. */
   host: "popover" | "panel";
   fixtureMode?: boolean;
@@ -155,37 +155,37 @@ export interface WorkFoldAgentChatProps {
   controlsTarget?: HTMLElement | null;
   /** Panel only: the panel is showing (it stays mounted while closed). */
   visible?: boolean;
-  /** Panel only: opens Settings → AI Models for the work-fold agent. */
+  /** Panel only: opens Settings → AI Models for the AmpleFile agent. */
   onOpenModelSettings?: () => void;
   /** Panel only: text another surface handed over, added to the message box like a tray drop. */
   draftRequest?: { id: number; text: string } | null;
 }
 
 /**
- * The work-fold agent's chat. The menu-bar popover and the main window's
+ * The AmpleFile agent's chat. The menu-bar popover and the main window's
  * panel render this same component, so both show one conversation the same
  * way, including each turn's thinking and tool steps as they happen.
  */
-export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = null, visible = true, onOpenModelSettings, draftRequest = null }: WorkFoldAgentChatProps) {
+export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget = null, visible = true, onOpenModelSettings, draftRequest = null }: AmpleFileAgentChatProps) {
   const popoverFixtureRequested = fixtureMode;
   const extensionFixture = fixtureMode && extensionFixtureRequested;
-  const bridge = window.workFoldDesktop;
+  const bridge = window.ampleFileDesktop;
   const [available, setAvailable] = useState<boolean | null>(popoverFixtureRequested ? true : null);
   const [unavailableReason, setUnavailableReason] = useState<string>("");
-  const [request, setRequest] = useState<WorkFoldAgentRequestView | null>(null);
+  const [request, setRequest] = useState<AmpleFileAgentRequestView | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(popoverFixtureRequested ? "fixture-agent" : null);
-  const [messages, setMessages] = useState<WorkFoldAgentMessage[]>(popoverFixtureRequested ? popoverFixtureMessages : []);
+  const [messages, setMessages] = useState<AmpleFileAgentMessage[]>(popoverFixtureRequested ? popoverFixtureMessages : []);
   const [staged, setStaged] = useState<StagedItem[]>([]);
   const [text, setText] = useState("");
-  // work-folder Workers the work-fold agent can be told to involve with @
-  // (2026-10-01), in the same nested order as the work-folder switcher.
+  // Connected Folder Workers the AmpleFile agent can be told to involve with @
+  // (2026-10-01), in the same nested order as the Connected Folder switcher.
   const [mentionFolders, setMentionFolders] = useState<MentionFolderOption[]>([]);
   const [composerCaret, setComposerCaret] = useState(0);
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const [dismissedMentionKey, setDismissedMentionKey] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [startingNewChat, setStartingNewChat] = useState(false);
-  const [chats, setChats] = useState<WorkFoldAgentChat[]>(popoverFixtureRequested ? fixtureChats : []);
+  const [chats, setChats] = useState<AmpleFileAgentChat[]>(popoverFixtureRequested ? fixtureChats : []);
   const [chatTitle, setChatTitle] = useState(popoverFixtureRequested ? fixtureChats[0].title : "New Chat");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyQuery, setHistoryQuery] = useState("");
@@ -193,7 +193,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
   const [chatAction, setChatAction] = useState<{ id: string; mode: "menu" | "rename"; title: string } | null>(null);
   const [savingChat, setSavingChat] = useState(false);
   const [loadingChat, setLoadingChat] = useState(false);
-  const workState = useWorkRequest(!popoverFixtureRequested && conversationId && !startingNewChat ? `/api/work-fold-agent/conversations/${encodeURIComponent(conversationId)}/work` : null);
+  const workState = useWorkRequest(!popoverFixtureRequested && conversationId && !startingNewChat ? `/api/amplefile-agent/conversations/${encodeURIComponent(conversationId)}/work` : null);
   const [stopping, setStopping] = useState(false);
   const [banner, setBanner] = useState<string>("");
   const [dropActive, setDropActive] = useState(false);
@@ -203,7 +203,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
   const [liveSteps, setLiveSteps] = useState<RuntimePreviewEntry[]>([]);
   const activeThinkingIdRef = useRef<string | null>(null);
   const stepCounterRef = useRef(0);
-  const [workFoldAgentComposer, setWorkFoldAgentComposer] = useState<ComposerState | null>(popoverFixtureRequested ? popoverFixtureComposer : null);
+  const [ampleFileAgentComposer, setAmpleFileAgentComposer] = useState<ComposerState | null>(popoverFixtureRequested ? popoverFixtureComposer : null);
   const [conversationRuntime, setConversationRuntime] = useState<ConversationRuntime | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -232,7 +232,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
   const dragDepthRef = useRef(0);
   const streamingDeltaRef = useRef("");
   const streamingFrameRef = useRef<number | null>(null);
-  const requestRef = useRef<WorkFoldAgentRequestView | null>(null);
+  const requestRef = useRef<AmpleFileAgentRequestView | null>(null);
   const pendingSendIdentityRef = useRef<{
     signature: string;
     requestId: string;
@@ -240,11 +240,11 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
   } | null>(null);
   const startingNewChatRef = useRef(false);
   requestRef.current = request;
-  const refreshWorkFoldAgentComposer = useCallback(async () => {
+  const refreshAmpleFileAgentComposer = useCallback(async () => {
     if (popoverFixtureRequested) return;
     try {
       const result = await api<{ composer: ComposerState }>("/api/agent/composer?scope=agent");
-      setWorkFoldAgentComposer(result.composer);
+      setAmpleFileAgentComposer(result.composer);
     } catch {
       // Model setup is a convenience affordance, not popover availability.
       // Keep the last known composer state if this optional read is unavailable.
@@ -255,7 +255,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
     if (popoverFixtureRequested) return;
     const revision = runtimeUpdateRevision.current;
     try {
-      const result = await api<{ runtime: ConversationRuntime }>(`/api/work-fold-agent/conversations/${encodeURIComponent(id)}/runtime`);
+      const result = await api<{ runtime: ConversationRuntime }>(`/api/amplefile-agent/conversations/${encodeURIComponent(id)}/runtime`);
       if (selectionRef.current === id && revision === runtimeUpdateRevision.current) setConversationRuntime(result.runtime);
     } catch {
       if (selectionRef.current === id && revision === runtimeUpdateRevision.current) setConversationRuntime(null);
@@ -295,8 +295,8 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
     const selectedId = selectionRef.current;
     try {
       const [summary, history] = await Promise.all([
-        api<WorkFoldAgentSummary>(selectedId ? `/api/work-fold-agent/summary?conversationId=${encodeURIComponent(selectedId)}` : "/api/work-fold-agent/summary"),
-        api<{ conversations: WorkFoldAgentChat[] }>("/api/work-fold-agent/conversations").then(
+        api<AmpleFileAgentSummary>(selectedId ? `/api/amplefile-agent/summary?conversationId=${encodeURIComponent(selectedId)}` : "/api/amplefile-agent/summary"),
+        api<{ conversations: AmpleFileAgentChat[] }>("/api/amplefile-agent/conversations").then(
           (result) => ({ chats: result.conversations, error: "" }),
           (error) => ({ chats: null, error: errorText(error) }),
         ),
@@ -318,7 +318,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
         replaceStreamingAssistant("");
         return;
       }
-      const transcript = await api<{ messages: WorkFoldAgentMessage[] }>(`/api/work-fold-agent/conversations/${encodeURIComponent(nextConversationId)}`);
+      const transcript = await api<{ messages: AmpleFileAgentMessage[] }>(`/api/amplefile-agent/conversations/${encodeURIComponent(nextConversationId)}`);
       if (generation !== refreshGeneration.current) return;
       selectionRef.current = nextConversationId;
       setConversationId(nextConversationId);
@@ -359,13 +359,13 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
 
   useEffect(() => {
     void refreshConversation();
-    void refreshWorkFoldAgentComposer();
-  }, [refreshConversation, refreshWorkFoldAgentComposer]);
+    void refreshAmpleFileAgentComposer();
+  }, [refreshConversation, refreshAmpleFileAgentComposer]);
 
   // Staged material handed over by the tray (macOS icon drops).
   useEffect(() => {
     if (popoverFixtureRequested) return;
-    const unsubscribe = bridge?.workFoldAgent?.onStaged((items) => {
+    const unsubscribe = bridge?.ampleFileAgent?.onStaged((items) => {
       for (const item of items) {
         if (item.kind === "path") addStagedValue(item.value, setStaged);
         else if (looksLikeLink(item.value)) addStagedValue(item.value.trim(), setStaged);
@@ -424,7 +424,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
   // Live turn events for the active request's conversation.
   useEffect(() => {
     if (!conversationId || popoverFixtureRequested) return;
-    const stream = createEventSource(`/api/work-fold-agent/conversations/${encodeURIComponent(conversationId)}/events`);
+    const stream = createEventSource(`/api/amplefile-agent/conversations/${encodeURIComponent(conversationId)}/events`);
     let observedRunning = false;
     stream.onmessage = (raw) => {
       if (selectionRef.current !== conversationId) return;
@@ -529,21 +529,21 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
       // Focus and visibility often fire together on one show; read once.
       if (!force && Date.now() - lastMentionRefresh < 1000) return;
       lastMentionRefresh = Date.now();
-      void api<{ workFolders: Array<{ id: string; name: string; workFolderRoot: string }> }>("/api/work-folders/outline")
-        .then(({ workFolders }) => { const names = mentionNames(workFolders); setMentionFolders(folderTreeRows(workFolders).map(({ workFolder, depth }) => ({
-          id: workFolder.id,
-          name: names.get(workFolder.id) ?? workFolder.name,
+      void api<{ connectedFolders: Array<{ id: string; name: string; connectedFolderRoot: string }> }>("/api/connected-folders/outline")
+        .then(({ connectedFolders }) => { const names = mentionNames(connectedFolders); setMentionFolders(folderTreeRows(connectedFolders).map(({ connectedFolder, depth }) => ({
+          id: connectedFolder.id,
+          name: names.get(connectedFolder.id) ?? connectedFolder.name,
           icon: <Folder aria-hidden="true" />,
           style: { paddingLeft: `${8 + depth * 16}px` },
         }))); })
         .catch(() => {});
     };
     refreshMentionFolders(true);
-    const unsubscribeControl = subscribeControlEvents((hint) => { if (hint === "work-folders" || hint === "reset") refreshMentionFolders(true); });
+    const unsubscribeControl = subscribeControlEvents((hint) => { if (hint === "connected-folders" || hint === "reset") refreshMentionFolders(true); });
     const refreshWhenVisible = () => {
       if (document.visibilityState !== "hidden") {
         void refreshConversation();
-        void refreshWorkFoldAgentComposer();
+        void refreshAmpleFileAgentComposer();
         refreshMentionFolders();
       }
     };
@@ -554,7 +554,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
       window.removeEventListener("focus", refreshWhenVisible);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [refreshConversation, refreshWorkFoldAgentComposer]);
+  }, [refreshConversation, refreshAmpleFileAgentComposer]);
 
   const setTranscriptPinned = useCallback((pinned: boolean) => {
     transcriptPinnedRef.current = pinned;
@@ -673,7 +673,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
     followLatest();
     try {
       const current = requestRef.current;
-      const addressedWorkFolderIds = addressedFolderIds(content, mentionFolders);
+      const addressedConnectedFolderIds = addressedFolderIds(content, mentionFolders);
       // Match the host's request digest: a registry change may remove or
       // rename an addressed Worker between retries of the same message.
       const signature = JSON.stringify({
@@ -687,8 +687,8 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
         ? pendingSendIdentityRef.current
         : {
             signature,
-            requestId: workFoldAgentTurnIdentity("request"),
-            userMessageId: workFoldAgentTurnIdentity("message"),
+            requestId: ampleFileAgentTurnIdentity("request"),
+            userMessageId: ampleFileAgentTurnIdentity("message"),
           };
       pendingSendIdentityRef.current = identity;
       const body: Record<string, unknown> = {
@@ -697,7 +697,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
         userMessageId: identity.userMessageId,
       };
       if (staged.length) body.attachments = staged.map((item) => item.value);
-      if (addressedWorkFolderIds.length) body.addressedWorkFolderIds = addressedWorkFolderIds;
+      if (addressedConnectedFolderIds.length) body.addressedConnectedFolderIds = addressedConnectedFolderIds;
       if (startingNewChatRef.current) {
         body.newConversation = true;
       } else if (selectionRef.current) {
@@ -705,7 +705,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
         if (current?.phase === "needs_you") body.continuationTaskId = current.taskId;
       }
       const result = await api<{ taskId: string; conversationId: string }>(
-        "/api/work-fold-agent/messages",
+        "/api/amplefile-agent/messages",
         { method: "POST", body, idempotent: true },
       );
       startingNewChatRef.current = false;
@@ -726,8 +726,8 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
     }
   }, [text, staged, sending, loadingChat, stopping, refreshConversation, replaceStreamingAssistant, clearLiveSteps, mentionFolders, followLatest]);
 
-  // Enter while the work-fold agent is working reaches its running turn after
-  // its current step, the way a work-folder Chat steers (2026-10-27).
+  // Enter while the AmpleFile agent is working reaches its running turn after
+  // its current step, the way a Connected Folder Chat steers (2026-10-27).
   const steer = useCallback(async () => {
     const content = text.trim();
     const conversation = selectionRef.current;
@@ -739,10 +739,10 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
     setSending(true);
     setBanner("");
     try {
-      await api("/api/work-fold-agent/messages", {
+      await api("/api/amplefile-agent/messages", {
         method: "POST",
         idempotent: true,
-        body: { content, delivery: "steer", conversationId: conversation, requestId: workFoldAgentTurnIdentity("request"), userMessageId: workFoldAgentTurnIdentity("message") },
+        body: { content, delivery: "steer", conversationId: conversation, requestId: ampleFileAgentTurnIdentity("request"), userMessageId: ampleFileAgentTurnIdentity("message") },
       });
       setText((current) => (current === text ? "" : current));
       await refreshConversation();
@@ -810,7 +810,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
     // Invalidate reads started before this mutation so they cannot restore an old title/list.
     refreshGeneration.current++;
     try {
-      if (!popoverFixtureRequested) await api(`/api/work-fold-agent/conversations/${encodeURIComponent(id)}${action === "rename" ? "/title" : ""}`, {
+      if (!popoverFixtureRequested) await api(`/api/amplefile-agent/conversations/${encodeURIComponent(id)}${action === "rename" ? "/title" : ""}`, {
         method: action === "rename" ? "POST" : "DELETE",
         ...(action === "rename" ? { body: { title } } : {}),
       });
@@ -865,7 +865,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
       if (event.key === "Escape") {
         if (chatAction) { if (!savingChat) setChatAction(null); }
         else if (historyOpen) { setHistoryOpen(false); window.setTimeout(() => composerRef.current?.focus(), 0); }
-        else bridge?.workFoldAgent?.hide();
+        else bridge?.ampleFileAgent?.hide();
       }
       // ⌘N/Ctrl+N mirrors the direct header action.
       if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "n") {
@@ -883,9 +883,9 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
     setStopping(true);
     try {
       const result = await api<{
-        stopped: { workFoldAgentAborted: boolean; children: Array<{ aborted: boolean }> };
-      }>(`/api/work-fold-agent/requests/${encodeURIComponent(current.taskId)}/stop`, { method: "POST", body: {} });
-      if (!result.stopped.workFoldAgentAborted && !result.stopped.children.some((child) => child.aborted)) {
+        stopped: { ampleFileAgentAborted: boolean; children: Array<{ aborted: boolean }> };
+      }>(`/api/amplefile-agent/requests/${encodeURIComponent(current.taskId)}/stop`, { method: "POST", body: {} });
+      if (!result.stopped.ampleFileAgentAborted && !result.stopped.children.some((child) => child.aborted)) {
         setBanner("No running work was stopped. It may have finished just before the request arrived.");
       }
       await refreshConversation();
@@ -903,7 +903,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
     const transfer = event.dataTransfer;
     let added = false;
     for (const file of Array.from(transfer.files)) {
-      const path = (bridge?.workFoldAgent?.getPathForFile ?? bridge?.agent?.getPathForFile)?.(file) ?? "";
+      const path = (bridge?.ampleFileAgent?.getPathForFile ?? bridge?.agent?.getPathForFile)?.(file) ?? "";
       if (path) {
         addStagedValue(path, setStaged);
         added = true;
@@ -920,7 +920,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
       }
     }
     if (!added && transfer.files.length) {
-      setBanner("Dropped files need the work-fold desktop app; links and paths still work here.");
+      setBanner("Dropped files need the AmpleFile desktop app; links and paths still work here.");
     }
     // A staged chip waits for its instruction — put the cursor where the
     // instruction goes.
@@ -964,16 +964,16 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
   }, [request, now]);
 
   if (available === null) {
-    return <div className="popover popover-loading"><WorkFoldLockup className="popover-loading-brand" animated /><p className="muted">Connecting…</p></div>;
+    return <div className="popover popover-loading"><AmpleFileLockup className="popover-loading-brand" animated /><p className="muted">Connecting…</p></div>;
   }
   if (available === false && !conversationId) {
     return (
       <div className="popover">
         <header className="popover-header">
-          <h1 className="popover-chat-title">work-fold agent</h1>
+          <h1 className="popover-chat-title">AmpleFile agent</h1>
         </header>
         <div className="card">
-          <p>The work-fold agent is unavailable.</p>
+          <p>The AmpleFile agent is unavailable.</p>
           {unavailableReason ? <p className="muted small">{unavailableReason}</p> : null}
         </div>
       </div>
@@ -987,11 +987,11 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
     : requestRunning
     ? "Draft a follow-up"
     : request?.phase === "needs_you"
-      ? "Reply to work-fold"
-      : "Tell work-fold what to do";
-  const composerThinking = conversationRuntime && !startingNewChat ? conversationRuntime : workFoldAgentComposer;
+      ? "Reply to AmpleFile"
+      : "Tell AmpleFile what to do";
+  const composerThinking = conversationRuntime && !startingNewChat ? conversationRuntime : ampleFileAgentComposer;
   const thinkingLevels = composerThinking?.thinkingLevels ?? [];
-  const workFoldAgentModelLabel = composerThinking?.model?.name || composerThinking?.model?.id || "Choose Model";
+  const ampleFileAgentModelLabel = composerThinking?.model?.name || composerThinking?.model?.id || "Choose Model";
   const visibleBanner = banner || (available === false ? unavailableReason : "");
   const backgroundChats = chats.filter((chat) => chat.id !== conversationId && (chat.requestState === "working" || chat.requestState === "handed_off"));
   const filteredChats = chats.filter((chat) => chat.title.toLocaleLowerCase().includes(historyQuery.trim().toLocaleLowerCase()));
@@ -1003,7 +1003,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
     const selectedId = selectionRef.current;
     try {
       if (conversationId && conversationRuntime && !startingNewChat) {
-        const result = await api<{ runtime: ConversationRuntime }>(`/api/work-fold-agent/conversations/${encodeURIComponent(conversationId)}/thinking`, {
+        const result = await api<{ runtime: ConversationRuntime }>(`/api/amplefile-agent/conversations/${encodeURIComponent(conversationId)}/thinking`, {
           method: "POST",
           body: { level },
         });
@@ -1013,7 +1013,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
           method: "POST",
           body: { scope: "agent", level },
         });
-        setWorkFoldAgentComposer(result.composer);
+        setAmpleFileAgentComposer(result.composer);
       }
     } catch (error) {
       if (selectionRef.current === selectedId) setBanner(errorText(error));
@@ -1069,7 +1069,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
       ) : null}
 
       {historyOpen ? (
-        <section className="agent-chat-history" id="agent-chat-history" aria-label="Saved work-fold agent chats">
+        <section className="agent-chat-history" id="agent-chat-history" aria-label="Saved AmpleFile agent chats">
           <div className="agent-history-heading">
             <button type="button" className="agent-back" aria-label="Back to Chat" onClick={() => { setHistoryOpen(false); window.setTimeout(() => composerRef.current?.focus(), 0); }}><ArrowLeft aria-hidden="true" /></button>
             <h1>Chats</h1>
@@ -1110,7 +1110,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
           className="popover-transcript"
           id="popover-conversation"
           ref={attachTranscript}
-          aria-label="work-fold agent chat" aria-live="polite"
+          aria-label="AmpleFile agent chat" aria-live="polite"
           tabIndex={-1}
           onScroll={(event) => {
             const target = event.currentTarget;
@@ -1139,7 +1139,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
             <RuntimeContextPreview entries={liveSteps} running={request?.phase === "working"} replyStarted={Boolean(streamingAssistant)} renderText={renderStepText} />
           ) : null}
           {streamingAssistant ? (
-            <article className="popover-message assistant streaming" aria-label="work-fold is replying">
+            <article className="popover-message assistant streaming" aria-label="amplefile is replying">
               <div className="popover-message-body">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSingleLineBreaks]}>{streamingAssistant}</ReactMarkdown>
               </div>
@@ -1151,7 +1151,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
                 {request.children.map((child) => (
                   <li key={child.taskId}>
                     {child.state === "running" ? <span className="spinner" aria-hidden="true" /> : <Tick state={child.state} />}
-                    <span>{child.workFolderName}: {childStateLabel(child.state)}</span>
+                    <span>{child.connectedFolderName}: {childStateLabel(child.state)}</span>
                   </li>
                 ))}
               </ul>
@@ -1162,7 +1162,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
           ) : null}
           {conversationId && extensionSnapshot?.conversationId === conversationId ? <ExtensionQuestions requests={extensionSnapshot.requests} scope={`agent/${conversationId}`} respond={async (question, value, cancelled = false) => {
             const selectedId = conversationId;
-            if (!popoverFixtureRequested) await api(`/api/work-fold-agent/conversations/${encodeURIComponent(selectedId)}/extension-ui/${encodeURIComponent(question.id)}`, { method: "POST", body: { value, cancelled } });
+            if (!popoverFixtureRequested) await api(`/api/amplefile-agent/conversations/${encodeURIComponent(selectedId)}/extension-ui/${encodeURIComponent(question.id)}`, { method: "POST", body: { value, cancelled } });
             setExtensionSnapshot((current) => current?.conversationId === selectedId ? { ...current, requests: current.requests.filter((item) => item.id !== question.id) } : current);
           }} /> : null}
           <WorkRequest {...workState} showProgress={request?.phase !== "working"} showStop={request?.phase === "needs_you"} />
@@ -1176,7 +1176,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
                 // The steps above show what is happening; this line keeps the time.
                 elapsedLabel ? <p className="working-line" role="status" aria-live="polite"><span className="working-elapsed">{elapsedLabel}</span></p> : null
               ) : !workState.work ? (
-                <p className="working-line" role="status" aria-live="polite"><span className="spinner" aria-hidden="true" /><span className="working-copy">Working in {request.children.filter((child) => child.state === "running").length === 1 ? "a work-folder" : "work-folders"}…</span></p>
+                <p className="working-line" role="status" aria-live="polite"><span className="spinner" aria-hidden="true" /><span className="working-copy">Working in {request.children.filter((child) => child.state === "running").length === 1 ? "a Connected Folder" : "Connected Folders"}…</span></p>
               ) : null}
             </div>
           ) : null}
@@ -1249,10 +1249,10 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
               <button
                 className="composer-model"
                 type="button"
-                onClick={() => { if (host === "panel") onOpenModelSettings?.(); else void bridge?.workFoldAgent?.openAiModelsSettings(); }}
-                aria-label={`Change the model used by the work-fold agent. Current model: ${workFoldAgentModelLabel}`}
+                onClick={() => { if (host === "panel") onOpenModelSettings?.(); else void bridge?.ampleFileAgent?.openAiModelsSettings(); }}
+                aria-label={`Change the model used by the AmpleFile agent. Current model: ${ampleFileAgentModelLabel}`}
               >
-                <span>{workFoldAgentModelLabel}</span>
+                <span>{ampleFileAgentModelLabel}</span>
               </button>
               {thinkingLevels.length >= 2 && composerThinking ? (
                 <select
@@ -1260,7 +1260,7 @@ export function WorkFoldAgentChat({ host, fixtureMode = false, controlsTarget = 
                   value={composerThinking.thinkingLevel}
                   disabled={requestRunning}
                   onChange={(event) => { void changeThinkingLevel(event.target.value); }}
-                  aria-label={`Reasoning level for this work-fold agent chat: ${composerThinking.thinkingLevel}`}
+                  aria-label={`Reasoning level for this AmpleFile agent chat: ${composerThinking.thinkingLevel}`}
                 >
                   {thinkingLevels.map((level) => <option key={level} value={level}>{formatThinkingLevel(level)}</option>)}
                 </select>
@@ -1304,7 +1304,7 @@ function chatDateLabel(value: string): string {
  * The settled request's inline conversation entry — the same host-recorded
  * outcome the old result card carried, absorbed into the one narrator.
  */
-function ResultEntry({ request, showState = true }: { request: WorkFoldAgentRequestView; showState?: boolean }) {
+function ResultEntry({ request, showState = true }: { request: AmpleFileAgentRequestView; showState?: boolean }) {
   const showOutcome = request.phase === "failed"
     || request.phase === "stopped"
     || request.dispositions.length > 0
@@ -1326,9 +1326,9 @@ function ResultEntry({ request, showState = true }: { request: WorkFoldAgentRequ
  * actions, not the agent's prose. An attachment with no recorded action is shown
  * as exactly that — nothing silently disappears from the story.
  */
-function DispositionTrail({ request }: { request: WorkFoldAgentRequestView }) {
+function DispositionTrail({ request }: { request: AmpleFileAgentRequestView }) {
   const extraActions = request.actions.filter((action) =>
-    action.command === "work-folders.create" || action.command === "work-folders.register" || action.command === "chat.send");
+    action.command === "connected-folders.create" || action.command === "connected-folders.register" || action.command === "chat.send");
   if (!request.dispositions.length && !extraActions.length) return null;
   return (
     <ul className="trail">
@@ -1337,9 +1337,9 @@ function DispositionTrail({ request }: { request: WorkFoldAgentRequestView }) {
           {disposition.status === "unrecorded" ? <span className="dot" aria-hidden="true" /> : <Tick state="succeeded" />}
           <span>
             {disposition.status === "placed"
-              ? <>Copied {disposition.attachment.name} to {disposition.workFolderName}{disposition.checkpointId ? <span className="muted small"> · restore point {shortId(disposition.checkpointId)}</span> : null}</>
+              ? <>Copied {disposition.attachment.name} to {disposition.connectedFolderName}{disposition.checkpointId ? <span className="muted small"> · restore point {shortId(disposition.checkpointId)}</span> : null}</>
               : disposition.status === "registered"
-                ? <>Registered {disposition.attachment.name} as the folder {disposition.workFolderName}</>
+                ? <>Registered {disposition.attachment.name} as the folder {disposition.connectedFolderName}</>
                 : <>{disposition.attachment.name}: no recorded placement — see the reply below</>}
           </span>
         </li>
@@ -1354,10 +1354,10 @@ function DispositionTrail({ request }: { request: WorkFoldAgentRequestView }) {
             {state === "running" ? <span className="spinner" aria-hidden="true" /> : <Tick state={state} />}
             <span>
               {action.command === "chat.send"
-                ? <>Work in {action.workFolderName}: {childStateLabel(state)}</>
-                : action.command === "work-folders.create"
-                  ? <>Created the folder {action.workFolderName}</>
-                  : <>Registered the folder {action.workFolderName}</>}
+                ? <>Work in {action.connectedFolderName}: {childStateLabel(state)}</>
+                : action.command === "connected-folders.create"
+                  ? <>Created the folder {action.connectedFolderName}</>
+                  : <>Registered the folder {action.connectedFolderName}</>}
               {child?.error ? <span className="muted small"> · {child.error}</span> : null}
             </span>
           </li>
@@ -1392,7 +1392,7 @@ function timestampTitle(value: string): string | undefined {
   return Number.isFinite(at) ? new Date(at).toLocaleString() : undefined;
 }
 
-function sameTranscript(current: WorkFoldAgentMessage[], next: WorkFoldAgentMessage[]): boolean {
+function sameTranscript(current: AmpleFileAgentMessage[], next: AmpleFileAgentMessage[]): boolean {
   if (current.length !== next.length) return false;
   return current.every((message, index) => {
     const candidate = next[index];

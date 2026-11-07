@@ -40,7 +40,7 @@ export function useApplicationAppearance({ fixtureMode = false, store: suppliedS
 
   useEffect(() => {
     if (fixtureMode) return;
-    const desktop = window.workFoldDesktop?.window;
+    const desktop = window.ampleFileDesktop?.window;
     if (!desktop?.getAccentColor) return;
     let live = true;
     let revision = 0;
@@ -57,8 +57,8 @@ export function useApplicationAppearance({ fixtureMode = false, store: suppliedS
     const resolved = { ...preferences, font: typographyFontForPlatform(preferences.font) };
     root.dataset.theme = theme;
     root.style.colorScheme = theme;
-    root.dataset.workFoldFont = resolved.font;
-    root.dataset.workFoldTextSize = preferences.textSize;
+    root.dataset.ampleFileFont = resolved.font;
+    root.dataset.ampleFileTextSize = preferences.textSize;
     root.dataset.appearancePalette = preferences.palette;
     // The file manager keeps its own blue for the device accent and takes a chosen one.
     root.dataset.appearanceAccent = preferences.accent === "system" ? "system" : "custom";
@@ -69,7 +69,7 @@ export function useApplicationAppearance({ fixtureMode = false, store: suppliedS
     root.dataset.appearanceMotion = effective.motion ? "reduce" : "system";
     root.dataset.appearanceTransparency = effective.transparency ? "opaque" : "system";
     for (const [key, value] of Object.entries(applicationAppearanceVariables(resolved, theme, fixtureMode ? null : systemAccent, effective.contrast))) root.style.setProperty(key, value);
-    if (!fixtureMode) window.workFoldDesktop?.window?.setTheme?.(theme, preferences.mode);
+    if (!fixtureMode) window.ampleFileDesktop?.window?.setTheme?.(theme, preferences.mode);
   }, [preferences, theme, systemAccent, fixtureMode, effective.contrast, effective.motion, effective.transparency]);
 
   return { ...snapshot, store, theme, device, effective };

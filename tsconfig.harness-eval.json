@@ -4,9 +4,9 @@
     "scripts/harness-eval/**/*.ts",
     "scripts/helper-eval/**/*.ts",
     "scripts/document-eval/**/*.ts",
-    "scripts/work-fold-drive.ts",
-    "scripts/work-fold-appearance.ts",
-    "scripts/work-fold-checks.ts"
+    "scripts/amplefile-drive.ts",
+    "scripts/amplefile-appearance.ts",
+    "scripts/amplefile-checks.ts"
   ],
   "exclude": []
 }

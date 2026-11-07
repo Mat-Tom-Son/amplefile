@@ -28,11 +28,11 @@ import type { EffectivePrincipal } from "../src/local/agent/app-platform-contrac
 import type { RestrictedAppOAuthPkceClient } from "../src/local/agent/restricted-app-oauth.js";
 import { FileRestrictedAppStorage, type RestrictedAppDataBackup, type RestrictedAppDataRecovery } from "../src/local/agent/restricted-app-storage.js";
 import { startLocalApi } from "../src/local/server.js";
-import { listWorkFolderCheckpoints } from "../src/local/history.js";
+import { listConnectedFolderCheckpoints } from "../src/local/history.js";
 import type { RestrictedAppChangeDraft } from "../web-local/src/lib/restricted-apps.js";
 
 test("restricted app API keeps review, install, grants, connections, invocation, and removal separate", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-restricted-api-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-restricted-api-"));
   let nextWorkerBlock: { entered(): void; released: Promise<void> } | null = null;
   const blockNextWorkerRuntime = () => {
     let entered!: () => void;
@@ -61,7 +61,7 @@ test("restricted app API keeps review, install, grants, connections, invocation,
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "work-folders"),
+    connectedFolderBase: join(sandbox, "connected-folders"),
     loadEnv: false,
     restrictedAppService: service,
     piRuntimeProvider: {
@@ -78,56 +78,56 @@ test("restricted app API keeps review, install, grants, connections, invocation,
     },
   });
   try {
-    const created = await request<{ workFolder: { id: string; workFolderRoot: string } }>(api.origin, "/api/work-folders", {
+    const created = await request<{ connectedFolder: { id: string; connectedFolderRoot: string } }>(api.origin, "/api/connected-folders", {
       method: "POST",
       body: { name: "Restricted apps" },
     });
-    const workFolder = created.workFolder;
+    const connectedFolder = created.connectedFolder;
     const sourcePath = "tools/mail-app";
-    await writePackage(join(workFolder.workFolderRoot, ...sourcePath.split("/")));
-    await mkdir(join(workFolder.workFolderRoot, "reports"), { recursive: true });
+    await writePackage(join(connectedFolder.connectedFolderRoot, ...sourcePath.split("/")));
+    await mkdir(join(connectedFolder.connectedFolderRoot, "reports"), { recursive: true });
 
     // A preview arrives through the service's own inspect-then-install path
     // (a Worker's proposal or `apps install-preview`); the desktop API has no
     // path-entry install route.
     await assert.rejects(
-      service.inspect({ workFolderId: workFolder.id, workFolderRoot: workFolder.workFolderRoot, sourcePath: join(workFolder.workFolderRoot, "tools", "mail-app") }),
+      service.inspect({ connectedFolderId: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot, sourcePath: join(connectedFolder.connectedFolderRoot, "tools", "mail-app") }),
       /relative package folder/,
     );
-    const inspected = { review: await service.inspect({ workFolderId: workFolder.id, workFolderRoot: workFolder.workFolderRoot, sourcePath }) };
+    const inspected = { review: await service.inspect({ connectedFolderId: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot, sourcePath }) };
     assert.equal(inspected.review.manifest.id, "mail-app");
     for (const [path, init] of [
-      [`/api/work-folders/${workFolder.id}/restricted-apps/inspect`, { method: "POST", body: { sourcePath } }],
-      [`/api/work-folders/${workFolder.id}/restricted-apps`, { method: "POST", body: { sourcePath, expectedDigest: inspected.review.digest } }],
+      [`/api/connected-folders/${connectedFolder.id}/restricted-apps/inspect`, { method: "POST", body: { sourcePath } }],
+      [`/api/connected-folders/${connectedFolder.id}/restricted-apps`, { method: "POST", body: { sourcePath, expectedDigest: inspected.review.digest } }],
     ] as const) {
       const retired = await fetch(`${api.origin}${path}`, { method: init.method, headers: { "content-type": "application/json" }, body: JSON.stringify(init.body) });
       assert.ok(retired.status === 404 || retired.status === 405, `${path} is not a desktop install route (${retired.status})`);
       await retired.body?.cancel();
     }
 
-    const installed = { app: await service.install({ workFolderId: workFolder.id, workFolderRoot: workFolder.workFolderRoot, sourcePath, expectedDigest: inspected.review.digest }) };
+    const installed = { app: await service.install({ connectedFolderId: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot, sourcePath, expectedDigest: inspected.review.digest }) };
     assert.equal(installed.app.digest, inspected.review.digest);
     assert.deepEqual(installed.app.networkGrants, ["mail-api"], "an added app reaches its declared destination");
-    assert.deepEqual(installed.app.fileGrants, [{ id: "exports", declarationId: "exports", root: ".", access: "read-write" }], "a directory permission binds to the whole work-folder");
+    assert.deepEqual(installed.app.fileGrants, [{ id: "exports", declarationId: "exports", root: ".", access: "read-write" }], "a directory permission binds to the whole Connected Folder");
     assert.deepEqual(installed.app.notificationGrants, ["new-mail"]);
     assert.equal(installed.app.automations[0]?.id, "refresh-mail");
     assert.equal(installed.app.automations[0]?.enabled, true, "every declared automation is on");
     assert.ok(installed.app.automations[0]?.nextRunAt, "an enabled automation has a next run");
 
     const changeInput = { requestId: randomUUID(), expectedDigest: installed.app.digest };
-    const changeUrl = `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/change`;
+    const changeUrl = `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/change`;
     const changed = await request<{ change: RestrictedAppChangeDraft }>(api.origin, changeUrl, { method: "POST", body: changeInput });
-    assert.equal(changed.change.sourceWorkFolderId, workFolder.id);
+    assert.equal(changed.change.sourceConnectedFolderId, connectedFolder.id);
     assert.equal(changed.change.baseDigest, installed.app.digest);
-    const buildContext = await request<{ context: { sourceWorkFolderId: string; sourcePath: string; buildConversationId: string | null; updateTargetRuntimeInstanceId: string | null } }>(api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/build-context?expectedDigest=${installed.app.digest}`);
-    assert.deepEqual(buildContext.context, { sourceWorkFolderId: workFolder.id, sourcePath: changed.change.sourcePath,
+    const buildContext = await request<{ context: { sourceConnectedFolderId: string; sourcePath: string; buildConversationId: string | null; updateTargetRuntimeInstanceId: string | null } }>(api.origin,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/build-context?expectedDigest=${installed.app.digest}`);
+    assert.deepEqual(buildContext.context, { sourceConnectedFolderId: connectedFolder.id, sourcePath: changed.change.sourcePath,
       buildConversationId: null, updateTargetRuntimeInstanceId: null });
-    assert.equal(await readFile(join(workFolder.workFolderRoot, changed.change.sourcePath, "index.html"), "utf8"), await readFile(join(workFolder.workFolderRoot, sourcePath, "index.html"), "utf8"));
-    const checkpoints = await listWorkFolderCheckpoints(workFolder.workFolderRoot);
+    assert.equal(await readFile(join(connectedFolder.connectedFolderRoot, changed.change.sourcePath, "index.html"), "utf8"), await readFile(join(connectedFolder.connectedFolderRoot, sourcePath, "index.html"), "utf8"));
+    const checkpoints = await listConnectedFolderCheckpoints(connectedFolder.connectedFolderRoot);
     assert.equal(checkpoints.filter((item) => item.reason === "app-change").length, 1);
     assert.deepEqual(await request(api.origin, changeUrl, { method: "POST", body: changeInput }), changed);
-    assert.equal((await listWorkFolderCheckpoints(workFolder.workFolderRoot)).length, checkpoints.length);
+    assert.equal((await listConnectedFolderCheckpoints(connectedFolder.connectedFolderRoot)).length, checkpoints.length);
     const wrongRevision = await fetch(`${api.origin}${changeUrl}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...changeInput, expectedDigest: "a".repeat(64) }) });
     assert.equal(wrongRevision.status, 409);
 
@@ -141,34 +141,34 @@ test("restricted app API keeps review, install, grants, connections, invocation,
 
     const granted = await request<{ app: { networkGrants: string[] } }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/permissions/network/mail-api`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/permissions/network/mail-api`,
       { method: "PUT", body: { expectedDigest: inspected.review.digest } },
     );
     assert.deepEqual(granted.app.networkGrants, ["mail-api"]);
 
     const fileGranted = await request<{ app: { fileGrants: Array<{ declarationId: string; root: string; access: string }> } }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/permissions/files/exports`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/permissions/files/exports`,
       { method: "PUT", body: { expectedDigest: inspected.review.digest, root: "reports" } },
     );
-    assert.deepEqual(fileGranted.app.fileGrants, [{ id: "exports", declarationId: "exports", root: "reports", access: "read-write" }], "granting again with a folder narrows the whole-work-folder default");
+    assert.deepEqual(fileGranted.app.fileGrants, [{ id: "exports", declarationId: "exports", root: "reports", access: "read-write" }], "granting again with a folder narrows the whole-connected-folder default");
 
     const notificationsGranted = await request<{ app: { notificationGrants: string[] } }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/permissions/notifications/new-mail`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/permissions/notifications/new-mail`,
       { method: "PUT", body: { expectedDigest: inspected.review.digest } },
     );
     assert.deepEqual(notificationsGranted.app.notificationGrants, ["new-mail"]);
     const notificationsRevoked = await request<{ app: { notificationGrants: string[] } }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/permissions/notifications/new-mail`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/permissions/notifications/new-mail`,
       { method: "DELETE", body: { expectedDigest: inspected.review.digest } },
     );
     assert.deepEqual(notificationsRevoked.app.notificationGrants, []);
 
     const automation = await request<{ app: { automations: Array<{ id: string; enabled: boolean; nextRunAt?: string }> } }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/automations/refresh-mail`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/automations/refresh-mail`,
       { method: "PUT", body: { expectedDigest: inspected.review.digest } },
     );
     assert.equal(automation.app.automations[0]?.enabled, true);
@@ -188,32 +188,32 @@ test("restricted app API keeps review, install, grants, connections, invocation,
       };
     }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/automations/refresh-mail/run`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/automations/refresh-mail/run`,
       { method: "POST", body: { expectedDigest: inspected.review.digest } },
     );
     try {
       await appAutomationControl.started;
       const blockedMutation = await fetch(
-        `${api.origin}/api/work-folders/${workFolder.id}/restricted-apps/mail-app/permissions/network/mail-api`,
+        `${api.origin}/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/permissions/network/mail-api`,
         {
           method: "DELETE",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ expectedDigest: inspected.review.digest }),
         },
       );
-      assert.equal(blockedMutation.status, 409, "a manual automation run must reserve the work-folder capability-mutation lane");
+      assert.equal(blockedMutation.status, 409, "a manual automation run must reserve the Connected Folder capability-mutation lane");
       const blockedClear = await fetch(
-        `${api.origin}/api/work-folders/${workFolder.id}/restricted-apps/mail-app/storage`,
+        `${api.origin}/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/storage`,
         {
           method: "DELETE",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ expectedDigest: inspected.review.digest }),
         },
       );
-      assert.equal(blockedClear.status, 409, "storage clear must join the work-folder capability-mutation lane");
+      assert.equal(blockedClear.status, 409, "storage clear must join the Connected Folder capability-mutation lane");
       assert.equal((await request<{ usage: { keyCount: number } }>(
         api.origin,
-        `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/storage?expectedDigest=${inspected.review.digest}`,
+        `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/storage?expectedDigest=${inspected.review.digest}`,
       )).usage.keyCount, 1, "read-only storage usage remains available during a capability mutation");
     } finally {
       appAutomationControl.release();
@@ -243,33 +243,33 @@ test("restricted app API keeps review, install, grants, connections, invocation,
 
     const appAutomationRuns = await request<{ runs: Array<typeof appAutomationRun.run> }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/automations/refresh-mail/runs?expectedDigest=${inspected.review.digest}`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/automations/refresh-mail/runs?expectedDigest=${inspected.review.digest}`,
     );
     assert.deepEqual(appAutomationRuns.runs, [appAutomationRun.run]);
 
     const usage = await request<{ usage: { keyCount: number } }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/storage?expectedDigest=${inspected.review.digest}`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/storage?expectedDigest=${inspected.review.digest}`,
     );
     assert.equal(usage.usage.keyCount, 1);
-    const dataUrl = `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/storage`;
+    const dataUrl = `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/storage`;
     const exported = await request<{ backup: RestrictedAppDataBackup }>(api.origin, `${dataUrl}/export?expectedDigest=${inspected.review.digest}`);
     assert.equal(exported.backup.data.entries[0]?.key, "view");
     assert.equal("connections" in exported.backup, false);
     const controlAbort = new AbortController();
-    const controlResponse = await fetch(`${api.origin}/api/work-fold-agent/control-events`, { signal: controlAbort.signal });
+    const controlResponse = await fetch(`${api.origin}/api/amplefile-agent/control-events`, { signal: controlAbort.signal });
     assert.equal(controlResponse.status, 200);
     const controlReader = controlResponse.body!.getReader();
     assert.equal(new TextDecoder().decode((await controlReader.read()).value), 'data: {"type":"reset"}\n\n');
 
     const conversation = await request<{ conversation: { id: string } }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/conversations`,
+      `/api/connected-folders/${connectedFolder.id}/conversations`,
       { method: "POST" },
     );
     const workerControl = blockNextWorkerRuntime();
     const activeTurn = await fetch(
-      `${api.origin}/api/work-folders/${workFolder.id}/conversations/${conversation.conversation.id}/messages`,
+      `${api.origin}/api/connected-folders/${connectedFolder.id}/conversations/${conversation.conversation.id}/messages`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -280,7 +280,7 @@ test("restricted app API keeps review, install, grants, connections, invocation,
     await workerControl.entered;
     try {
       const blockedClear = await fetch(
-        `${api.origin}/api/work-folders/${workFolder.id}/restricted-apps/mail-app/storage`,
+        `${api.origin}/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/storage`,
         {
           method: "DELETE",
           headers: { "content-type": "application/json" },
@@ -294,10 +294,10 @@ test("restricted app API keeps review, install, grants, connections, invocation,
       });
       assert.equal(blockedRestore.status, 409, "restore shares the capability-mutation reservation");
       const blockedChange = await fetch(`${api.origin}${changeUrl}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...changeInput, requestId: randomUUID() }) });
-      assert.equal(blockedChange.status, 409, "app source preparation reserves the owning work-folder against agent work");
+      assert.equal(blockedChange.status, 409, "app source preparation reserves the owning Connected Folder against agent work");
       assert.equal((await request<{ usage: { keyCount: number } }>(
         api.origin,
-        `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/storage?expectedDigest=${inspected.review.digest}`,
+        `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/storage?expectedDigest=${inspected.review.digest}`,
       )).usage.keyCount, 1);
     } finally {
       workerControl.release();
@@ -306,7 +306,7 @@ test("restricted app API keeps review, install, grants, connections, invocation,
 
     const cleared = await request<{ usage: { keyCount: number }; recentlyDeleted: { entryId: string; restoreBy: string } | null }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/storage`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/storage`,
       { method: "DELETE", body: { expectedDigest: inspected.review.digest } },
     );
     assert.equal(cleared.usage.keyCount, 0);
@@ -328,13 +328,13 @@ test("restricted app API keeps review, install, grants, connections, invocation,
     controlAbort.abort();
     const recovery = await request<{ recovery: RestrictedAppDataRecovery }>(api.origin, `${dataUrl}/recovery?expectedDigest=${inspected.review.digest}`);
     assert.equal(recovery.recovery.available, true);
-    const beforeRestore = (await service.list(workFolder.id))[0]!;
+    const beforeRestore = (await service.list(connectedFolder.id))[0]!;
     const restored = await request<{ usage: { revision: number; keyCount: number } }>(api.origin, `${dataUrl}/restore`, {
       method: "POST", body: { expectedDigest: inspected.review.digest, expectedRevision: 2, backup: exported.backup },
     });
     assert.equal(restored.usage.keyCount, 1);
     assert.equal(restored.usage.revision, 3, "restore advances the current revision instead of replaying the backup revision");
-    const afterRestore = (await service.list(workFolder.id))[0]!;
+    const afterRestore = (await service.list(connectedFolder.id))[0]!;
     assert.deepEqual(afterRestore.networkGrants, beforeRestore.networkGrants);
     assert.deepEqual(afterRestore.fileGrants, beforeRestore.fileGrants);
     assert.deepEqual(afterRestore.automations, beforeRestore.automations);
@@ -349,11 +349,11 @@ test("restricted app API keeps review, install, grants, connections, invocation,
       body: JSON.stringify({ expectedDigest: inspected.review.digest, expectedRevision: 3, backup: { ...exported.backup, sha256: "0".repeat(64) } }),
     });
     assert.equal(corruptRestore.status, 422);
-    assert.deepEqual((await service.list(workFolder.id))[0]!.authority, afterRestore.authority, "invalid or stale restores do not change authority");
+    assert.deepEqual((await service.list(connectedFolder.id))[0]!.authority, afterRestore.authority, "invalid or stale restores do not change authority");
 
     const oauthStatus = await request<{ connection: { destinationId: string; owner: string; kind: string; configured: boolean; diagnostics: Array<{ code: string; issuer: string; message: string }> } }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/connections/mail-api/oauth`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/connections/mail-api/oauth`,
       { method: "POST", body: { expectedDigest: inspected.review.digest } },
     );
     assert.deepEqual(oauthStatus.connection, {
@@ -372,7 +372,7 @@ test("restricted app API keeps review, install, grants, connections, invocation,
 
     await request(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/connections/mail-api`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/connections/mail-api`,
       {
         method: "PUT",
         body: {
@@ -383,13 +383,13 @@ test("restricted app API keeps review, install, grants, connections, invocation,
     );
     const statuses = await request<{ connections: Array<{ destinationId: string; owner: string; kind: string; configured: boolean }> }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/connections?expectedDigest=${inspected.review.digest}`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/connections?expectedDigest=${inspected.review.digest}`,
     );
     assert.deepEqual(statuses.connections, [{ destinationId: "mail-api", owner: "instance", kind: "api-key", configured: true }]);
 
     const invoked = await request<{ result: unknown }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/invoke`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/invoke`,
       { method: "POST", body: { expectedDigest: inspected.review.digest, action: "search", input: { query: "invoice" } } },
     );
     assert.deepEqual(invoked.result, { count: 3 });
@@ -397,31 +397,31 @@ test("restricted app API keeps review, install, grants, connections, invocation,
 
     const revoked = await request<{ app: { networkGrants: string[] } }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/permissions/network/mail-api`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/permissions/network/mail-api`,
       { method: "DELETE", body: { expectedDigest: inspected.review.digest } },
     );
     assert.deepEqual(revoked.app.networkGrants, []);
 
     const filesRevoked = await request<{ app: { fileGrants: unknown[] } }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/permissions/files/exports`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/permissions/files/exports`,
       { method: "DELETE", body: { expectedDigest: inspected.review.digest } },
     );
     assert.deepEqual(filesRevoked.app.fileGrants, []);
 
     const removed = await request<{ removed: boolean }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app`,
       { method: "DELETE", body: { expectedDigest: inspected.review.digest } },
     );
     assert.equal(removed.removed, true);
-    assert.deepEqual((await request<{ apps: unknown[] }>(api.origin, `/api/work-folders/${workFolder.id}/restricted-apps`)).apps, []);
+    assert.deepEqual((await request<{ apps: unknown[] }>(api.origin, `/api/connected-folders/${connectedFolder.id}/restricted-apps`)).apps, []);
 
     // Identical code is not the same installation. Exercise each management
     // route with the old card's identity after remove/reinstall.
-    const reinstalled = { app: await service.install({ workFolderId: workFolder.id, workFolderRoot: workFolder.workFolderRoot, sourcePath, expectedDigest: inspected.review.digest }) };
+    const reinstalled = { app: await service.install({ connectedFolderId: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot, sourcePath, expectedDigest: inspected.review.digest }) };
     assert.notEqual(reinstalled.app.featureInstallationId, installed.app.featureInstallationId);
-    const itemUrl = `/api/work-folders/${workFolder.id}/restricted-apps/mail-app`;
+    const itemUrl = `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app`;
     const stale = { expectedDigest: inspected.review.digest, featureInstallationId: installed.app.featureInstallationId };
     const oldQuery = new URLSearchParams(stale);
     const staleReads = ["build-context", "connections", "automations/refresh-mail/runs", "storage", "storage/export", "storage/recovery", "assistant-tasks"];
@@ -451,7 +451,7 @@ test("restricted app API keeps review, install, grants, connections, invocation,
     }
     // A stale removal removes nothing, so it leaves no Recently deleted entry.
     assert.deepEqual(await request(api.origin, itemUrl, { method: "DELETE", body: stale }), { removed: false, recentlyDeleted: null });
-    assert.deepEqual(await service.list(workFolder.id), [reinstalled.app]);
+    assert.deepEqual(await service.list(connectedFolder.id), [reinstalled.app]);
     assert.equal(runtime.invocations.length, callsBeforeStaleRequests);
     const current = { ...stale, featureInstallationId: reinstalled.app.featureInstallationId };
     const currentGrant = await request<{ app: RestrictedAppInstalled }>(api.origin, `${itemUrl}/permissions/network/mail-api`, { method: "PUT", body: current });
@@ -461,16 +461,16 @@ test("restricted app API keeps review, install, grants, connections, invocation,
     const malformed = await fetch(`${api.origin}${itemUrl}/storage`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...current, featureInstallationId: null }) });
     assert.equal(malformed.status, 400, "a malformed pin must not fall back to name-only selection");
 
-    const release = await service.prepareLocalAppRelease({ workFolderId: workFolder.id, displayVersion: "coexist-1" });
-    await service.publishLocalAppRelease({ workFolderId: workFolder.id, releaseDigest: release.releaseDigest });
-    const install = await service.prepareLocalAppInstall({ sourceWorkFolderId: workFolder.id, targetWorkFolderId: workFolder.id, releaseDigest: release.releaseDigest });
+    const release = await service.prepareLocalAppRelease({ connectedFolderId: connectedFolder.id, displayVersion: "coexist-1" });
+    await service.publishLocalAppRelease({ connectedFolderId: connectedFolder.id, releaseDigest: release.releaseDigest });
+    const install = await service.prepareLocalAppInstall({ sourceConnectedFolderId: connectedFolder.id, targetConnectedFolderId: connectedFolder.id, releaseDigest: release.releaseDigest });
     const released = (await service.activateLocalAppInstall(install.operationId)).apps[0]!;
     const dataOwner = (app: RestrictedAppInstalled) => ({ ownerClass: "instance" as const, tenantId: app.tenantId,
       runtimeInstanceId: app.runtimeInstanceId, featureInstallationId: app.featureInstallationId, dataNamespaceId: app.dataNamespaceId });
     await storage.set(dataOwner(reinstalled.app), "preview", "keep this");
     await storage.set(dataOwner(released), "release", "clear this");
-    await assert.rejects(api.actFacade.appsStorageClear({ workFolder: workFolder.id, app: "mail-app" }), /More than one installation/);
-    const storageCleared = await api.actFacade.appsStorageClear({ workFolder: workFolder.id, app: released.featureInstallationId });
+    await assert.rejects(api.actFacade.appsStorageClear({ connectedFolder: connectedFolder.id, app: "mail-app" }), /More than one installation/);
+    const storageCleared = await api.actFacade.appsStorageClear({ connectedFolder: connectedFolder.id, app: released.featureInstallationId });
     assert.equal(storageCleared.appId, "mail-app");
     assert.ok(storageCleared.clearedBytes > 0, "the receipt states the byte count cleared");
     assert.equal(storageCleared.remainingBytes, 0);
@@ -509,28 +509,28 @@ test("restricted app API keeps review, install, grants, connections, invocation,
  * (docs/app-data-recovery.md).
  */
 test("app data restore accepts an export larger than the general body cap and refuses one past the export bound", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-restricted-restore-size-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-restricted-restore-size-"));
   const storage = new FileRestrictedAppStorage(join(sandbox, "state", "restricted-apps", "data"));
   const service = await RestrictedAppService.create({ rootPath: join(sandbox, "state", "restricted-apps"), runtimeHost: new RuntimeHost(), storage });
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "work-folders"),
+    connectedFolderBase: join(sandbox, "connected-folders"),
     loadEnv: false,
     restrictedAppService: service,
     maxBodyBytes: 1024 * 1024,
   });
   try {
-    const { workFolder } = await request<{ workFolder: { id: string; workFolderRoot: string } }>(api.origin, "/api/work-folders", { method: "POST", body: { name: "Restore size" } });
-    await writePackage(join(workFolder.workFolderRoot, "tools", "mail-app"));
-    const review = await service.inspect({ workFolderId: workFolder.id, workFolderRoot: workFolder.workFolderRoot, sourcePath: "tools/mail-app" });
-    const app = await service.install({ workFolderId: workFolder.id, workFolderRoot: workFolder.workFolderRoot, sourcePath: "tools/mail-app", expectedDigest: review.digest });
+    const { connectedFolder } = await request<{ connectedFolder: { id: string; connectedFolderRoot: string } }>(api.origin, "/api/connected-folders", { method: "POST", body: { name: "Restore size" } });
+    await writePackage(join(connectedFolder.connectedFolderRoot, "tools", "mail-app"));
+    const review = await service.inspect({ connectedFolderId: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot, sourcePath: "tools/mail-app" });
+    const app = await service.install({ connectedFolderId: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot, sourcePath: "tools/mail-app", expectedDigest: review.digest });
     const owner = { ownerClass: "instance" as const, tenantId: app.tenantId, runtimeInstanceId: app.runtimeInstanceId,
       featureInstallationId: app.featureInstallationId, dataNamespaceId: app.dataNamespaceId };
     const large = "x".repeat(7 * 1024 * 1024);
     await storage.set(owner, "archive", large);
     const pin = { featureInstallationId: app.featureInstallationId, expectedDigest: app.digest };
-    const itemUrl = `/api/work-folders/${workFolder.id}/restricted-apps/mail-app`;
+    const itemUrl = `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app`;
     const exported = await request<{ backup: RestrictedAppDataBackup }>(api.origin, `${itemUrl}/storage/export?${new URLSearchParams(pin)}`);
     await storage.set(owner, "archive", "replaced");
     const revision = (await storage.usage(owner)).revision;
@@ -542,7 +542,7 @@ test("app data restore accepts an export larger than the general body cap and re
     assert.equal(await storage.get(owner, "archive"), large);
 
     // The general cap still holds for every other route.
-    const capped = await fetch(`${api.origin}/api/work-folders`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "x".repeat(2 * 1024 * 1024) }) });
+    const capped = await fetch(`${api.origin}/api/connected-folders`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "x".repeat(2 * 1024 * 1024) }) });
     assert.equal(capped.status, 413);
     await capped.body?.cancel();
 
@@ -565,8 +565,8 @@ test("app data restore accepts an export larger than the general body cap and re
   }
 });
 
-test("machine-wide automation ledgers feed the overview and the restore fence, and a files grant binds to the whole work-folder", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-restricted-ledgers-"));
+test("machine-wide automation ledgers feed the overview and the restore fence, and a files grant binds to the whole Connected Folder", async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-restricted-ledgers-"));
   const runtime = new RuntimeHost();
   const service = await RestrictedAppService.create({
     rootPath: join(sandbox, "state", "restricted-apps"),
@@ -575,39 +575,39 @@ test("machine-wide automation ledgers feed the overview and the restore fence, a
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "work-folders"),
+    connectedFolderBase: join(sandbox, "connected-folders"),
     loadEnv: false,
     restrictedAppService: service,
   });
   try {
-    const { workFolder } = await request<{ workFolder: { id: string; workFolderRoot: string } }>(
+    const { connectedFolder } = await request<{ connectedFolder: { id: string; connectedFolderRoot: string } }>(
       api.origin,
-      "/api/work-folders",
+      "/api/connected-folders",
       { method: "POST", body: { name: "Ledger apps" } },
     );
-    await writePackage(join(workFolder.workFolderRoot, "tools", "mail-app"));
-    await mkdir(join(workFolder.workFolderRoot, "reports"), { recursive: true });
-    const inspected = { review: await service.inspect({ workFolderId: workFolder.id, workFolderRoot: workFolder.workFolderRoot, sourcePath: "tools/mail-app" }) };
-    const installed = { app: await service.install({ workFolderId: workFolder.id, workFolderRoot: workFolder.workFolderRoot, sourcePath: "tools/mail-app", expectedDigest: inspected.review.digest }) };
+    await writePackage(join(connectedFolder.connectedFolderRoot, "tools", "mail-app"));
+    await mkdir(join(connectedFolder.connectedFolderRoot, "reports"), { recursive: true });
+    const inspected = { review: await service.inspect({ connectedFolderId: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot, sourcePath: "tools/mail-app" }) };
+    const installed = { app: await service.install({ connectedFolderId: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot, sourcePath: "tools/mail-app", expectedDigest: inspected.review.digest }) };
     await request(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/automations/refresh-mail`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/automations/refresh-mail`,
       { method: "PUT", body: { expectedDigest: inspected.review.digest } },
     );
 
     // The install already granted the directory permission over the whole
-    // work-folder (docs/receipts-not-gates.md, F21); the person's narrowing control
+    // Connected Folder (docs/receipts-not-gates.md, F21); the person's narrowing control
     // takes it away first.
     assert.deepEqual(installed.app.fileGrants, [{ id: "exports", declarationId: "exports", root: ".", access: "read-write" }]);
     const revoked = await api.actFacade.appsRevoke({
-      workFolder: workFolder.id,
+      connectedFolder: connectedFolder.id,
       app: installed.app.featureInstallationId,
       digest: installed.app.digest,
       kind: "files",
       declaration: "exports",
     });
     assert.equal(revoked.revoked, true);
-    assert.deepEqual((await service.list(workFolder.id))[0]?.fileGrants, []);
+    assert.deepEqual((await service.list(connectedFolder.id))[0]?.fileGrants, []);
 
     // Phase A: an active accepted run with no file grants is visible in the
     // machine-wide ledger and the overview, but never blocks a restore.
@@ -615,13 +615,13 @@ test("machine-wide automation ledgers feed the overview and the restore fence, a
     const firstControl = runtime.blockNextAppAutomation();
     const firstRun = request<{ run: { runId: string; outcome: string } }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/automations/refresh-mail/run`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/automations/refresh-mail/run`,
       { method: "POST", body: { expectedDigest: inspected.review.digest } },
     );
     await firstControl.started;
     const activeWithoutGrant = await service.listActiveAppAutomationRuns();
     assert.equal(activeWithoutGrant.length, 1);
-    assert.equal(activeWithoutGrant[0]!.workFolderId, workFolder.id);
+    assert.equal(activeWithoutGrant[0]!.connectedFolderId, connectedFolder.id);
     assert.equal(activeWithoutGrant[0]!.appId, "mail-app");
     assert.equal(activeWithoutGrant[0]!.appAutomationId, "refresh-mail");
     assert.equal(activeWithoutGrant[0]!.reason, "manual");
@@ -638,7 +638,7 @@ test("machine-wide automation ledgers feed the overview and the restore fence, a
       "the overview names the app and the automation's title, not its id",
     );
     assert.deepEqual(
-      await api.kernel.listExperimentalHistoryRestoreBlockers(workFolder.id),
+      await api.kernel.listExperimentalHistoryRestoreBlockers(connectedFolder.id),
       [],
       "a run holding no file grant never blocks a restore",
     );
@@ -647,9 +647,9 @@ test("machine-wide automation ledgers feed the overview and the restore fence, a
     assert.deepEqual(await service.listActiveAppAutomationRuns(), []);
 
     // Phase B: granting the files permission again runs at once and binds to
-    // the whole work-folder, exactly as the install default did; the receipt names the root.
+    // the whole Connected Folder, exactly as the install default did; the receipt names the root.
     const granted = await api.actFacade.appsGrant({
-      workFolder: workFolder.id,
+      connectedFolder: connectedFolder.id,
       app: installed.app.featureInstallationId,
       digest: installed.app.digest,
       kind: "files",
@@ -657,43 +657,43 @@ test("machine-wide automation ledgers feed the overview and the restore fence, a
     });
     assert.equal(granted.granted, true);
     assert.equal(granted.root, ".");
-    const grantedApps = await service.list(workFolder.id);
+    const grantedApps = await service.list(connectedFolder.id);
     assert.deepEqual(
       grantedApps[0]?.fileGrants,
       [{ id: "exports", declarationId: "exports", root: ".", access: "read-write" }],
-      "the grant covers the whole work-folder",
+      "the grant covers the whole Connected Folder",
     );
 
     // Phase C: the same run now holds the grant, so the machine-wide join
-    // reports it and the whole-work-folder restore fence blocks this work-folder only.
+    // reports it and the whole–Connected Folder restore fence blocks this Connected Folder only.
     const secondControl = runtime.blockNextAppAutomation();
     const secondRun = request<{ run: { outcome: string } }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/restricted-apps/mail-app/automations/refresh-mail/run`,
+      `/api/connected-folders/${connectedFolder.id}/restricted-apps/mail-app/automations/refresh-mail/run`,
       { method: "POST", body: { expectedDigest: inspected.review.digest } },
     );
     await secondControl.started;
     const activeWithGrant = await service.listActiveAppAutomationRuns();
     assert.deepEqual(activeWithGrant[0]?.fileGrantIds, ["exports"]);
-    const blockers = await api.kernel.listExperimentalHistoryRestoreBlockers(workFolder.id);
+    const blockers = await api.kernel.listExperimentalHistoryRestoreBlockers(connectedFolder.id);
     assert.equal(blockers.length, 1);
     assert.match(blockers[0]!, /app automation refresh-mail of mail-app/);
-    assert.match(blockers[0]!, /file grant into this work-folder/);
+    assert.match(blockers[0]!, /file grant into this Connected Folder/);
     assert.deepEqual(
       await api.kernel.listExperimentalHistoryRestoreBlockers("ws-elsewhere-0000000"),
       [],
-      "the fence blocks only the work-folder the grant reaches into",
+      "the fence blocks only the Connected Folder the grant reaches into",
     );
     secondControl.release();
     assert.equal((await secondRun).run.outcome, "success");
-    assert.deepEqual(await api.kernel.listExperimentalHistoryRestoreBlockers(workFolder.id), []);
+    assert.deepEqual(await api.kernel.listExperimentalHistoryRestoreBlockers(connectedFolder.id), []);
 
     // Settled receipts reach the machine-wide history ledger and the overview's
-    // what-changed digest with their work-folder and app identity intact.
+    // what-changed digest with their Connected Folder and app identity intact.
     const history = await service.listAppAutomationRunHistory();
     assert.equal(history.length, 2);
     for (const receipt of history) {
-      assert.equal(receipt.workFolderId, workFolder.id);
+      assert.equal(receipt.connectedFolderId, connectedFolder.id);
       assert.equal(receipt.appId, "mail-app");
       assert.equal(receipt.appAutomationId, "refresh-mail");
       assert.equal(receipt.outcome, "success");
@@ -712,29 +712,29 @@ test("machine-wide automation ledgers feed the overview and the restore fence, a
 });
 
 test("restricted app proposals are host-inspected, owning-Chat bound, persisted, and digest-pinned", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-restricted-proposal-api-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-restricted-proposal-api-"));
   const stateRoot = join(sandbox, "state", "restricted-apps");
   const service = await RestrictedAppService.create({ rootPath: stateRoot });
   const proposals = await RoutedRestrictedAppProposalHost.create({ service, registryPath: join(stateRoot, "proposals.json") });
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "work-folders"),
+    connectedFolderBase: join(sandbox, "connected-folders"),
     loadEnv: false,
     restrictedAppService: service,
     restrictedAppProposalHost: proposals,
   });
   try {
-    const { workFolder } = await request<{ workFolder: { id: string; workFolderRoot: string } }>(api.origin, "/api/work-folders", { method: "POST", body: { name: "Proposed apps" } });
-    const first = await request<{ conversation: { id: string } }>(api.origin, `/api/work-folders/${workFolder.id}/conversations`, { method: "POST" });
-    const second = await request<{ conversation: { id: string } }>(api.origin, `/api/work-folders/${workFolder.id}/conversations`, { method: "POST" });
-    await writePackage(join(workFolder.workFolderRoot, "tools", "mail-app"));
+    const { connectedFolder } = await request<{ connectedFolder: { id: string; connectedFolderRoot: string } }>(api.origin, "/api/connected-folders", { method: "POST", body: { name: "Proposed apps" } });
+    const first = await request<{ conversation: { id: string } }>(api.origin, `/api/connected-folders/${connectedFolder.id}/conversations`, { method: "POST" });
+    const second = await request<{ conversation: { id: string } }>(api.origin, `/api/connected-folders/${connectedFolder.id}/conversations`, { method: "POST" });
+    await writePackage(join(connectedFolder.connectedFolderRoot, "tools", "mail-app"));
 
     const settledEvents: string[] = [];
     proposals.on("settled", ({ proposal }) => settledEvents.push(proposal.status));
     const result = await proposals.propose({
-      workFolderId: workFolder.id,
-      workFolderRoot: workFolder.workFolderRoot,
+      connectedFolderId: connectedFolder.id,
+      connectedFolderRoot: connectedFolder.connectedFolderRoot,
       conversationId: first.conversation.id,
       sourcePath: "tools/mail-app",
     });
@@ -742,35 +742,35 @@ test("restricted app proposals are host-inspected, owning-Chat bound, persisted,
     assert.deepEqual(result.needs, { connections: ["mail-api"], files: [], checks: [] });
     assert.deepEqual(settledEvents, ["installed"]);
     const proposalId = result.proposal!.id;
-    assert.equal((await service.list(workFolder.id))[0]?.digest, result.proposal!.review.digest);
+    assert.equal((await service.list(connectedFolder.id))[0]?.digest, result.proposal!.review.digest);
 
-    const owned = await request<{ proposals: Array<{ id: string; sourcePath: string; workFolderRoot?: string; status: string; needs?: { connections: string[] }; error?: string }> }>(
+    const owned = await request<{ proposals: Array<{ id: string; sourcePath: string; connectedFolderRoot?: string; status: string; needs?: { connections: string[] }; error?: string }> }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/conversations/${first.conversation.id}/restricted-app-proposals`,
+      `/api/connected-folders/${connectedFolder.id}/conversations/${first.conversation.id}/restricted-app-proposals`,
     );
     assert.deepEqual(owned.proposals.map(({ id, sourcePath, status }) => ({ id, sourcePath, status })), [{ id: proposalId, sourcePath: "tools/mail-app", status: "installed" }]);
     assert.deepEqual(owned.proposals[0]!.needs?.connections, ["mail-api"], "the renderer receipt names what still needs the person");
-    assert.equal("workFolderRoot" in owned.proposals[0]!, false, "machine paths stay outside renderer proposal payloads");
-    assert.deepEqual((await request<{ proposals: unknown[] }>(api.origin, `/api/work-folders/${workFolder.id}/conversations/${second.conversation.id}/restricted-app-proposals`)).proposals, []);
+    assert.equal("connectedFolderRoot" in owned.proposals[0]!, false, "machine paths stay outside renderer proposal payloads");
+    assert.deepEqual((await request<{ proposals: unknown[] }>(api.origin, `/api/connected-folders/${connectedFolder.id}/conversations/${second.conversation.id}/restricted-app-proposals`)).proposals, []);
 
-    const wrongChat = await fetch(`${api.origin}/api/work-folders/${workFolder.id}/conversations/${second.conversation.id}/restricted-app-proposals/${proposalId}/install`, { method: "POST" });
+    const wrongChat = await fetch(`${api.origin}/api/connected-folders/${connectedFolder.id}/conversations/${second.conversation.id}/restricted-app-proposals/${proposalId}/install`, { method: "POST" });
     assert.equal(wrongChat.status, 404);
 
     const installed = await request<{ app: { digest: string; networkGrants: string[] }; proposal: { status: string } }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/conversations/${first.conversation.id}/restricted-app-proposals/${proposalId}/install`,
+      `/api/connected-folders/${connectedFolder.id}/conversations/${first.conversation.id}/restricted-app-proposals/${proposalId}/install`,
       { method: "POST" },
     );
     assert.equal(installed.app.digest, result.proposal!.review.digest, "the install route is an idempotent retry");
     assert.deepEqual(installed.app.networkGrants, ["mail-api"]);
     assert.equal(installed.proposal.status, "installed");
-    assert.equal((await service.list(workFolder.id)).length, 1);
+    assert.equal((await service.list(connectedFolder.id)).length, 1);
 
-    const again = await proposals.propose({ workFolderId: workFolder.id, workFolderRoot: workFolder.workFolderRoot, conversationId: first.conversation.id, sourcePath: "tools/mail-app" });
+    const again = await proposals.propose({ connectedFolderId: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot, conversationId: first.conversation.id, sourcePath: "tools/mail-app" });
     assert.equal(again.proposal!.id, proposalId, "the same source and revision reuse the installed receipt");
     const dismissed = await request<{ dismissed: boolean }>(
       api.origin,
-      `/api/work-folders/${workFolder.id}/conversations/${first.conversation.id}/restricted-app-proposals/${proposalId}`,
+      `/api/connected-folders/${connectedFolder.id}/conversations/${first.conversation.id}/restricted-app-proposals/${proposalId}`,
       { method: "DELETE" },
     );
     assert.equal(dismissed.dismissed, false, "an installed receipt is not dismissable");
@@ -861,7 +861,7 @@ async function writePackage(root: string): Promise<void> {
           methods: ["GET"],
           auth: [
             { kind: "api-key", header: "x-api-key" },
-            { kind: "oauth2-pkce", issuer: "https://identity.example.com", clientId: "work-fold-mail", scopes: ["mail.read"] },
+            { kind: "oauth2-pkce", issuer: "https://identity.example.com", clientId: "amplefile-mail", scopes: ["mail.read"] },
           ],
         }],
       },
@@ -1005,7 +1005,7 @@ function key(binding: RestrictedAppConnectionBinding): string {
 }
 
 test("app requests use reviewed native Pi turns, History, exact task cancellation and durable response replay", { timeout: 45_000 }, async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-app-assistant-api-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-app-assistant-api-"));
   const agentDir = join(sandbox, "agent");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
   const bodies: string[] = [];
@@ -1031,22 +1031,22 @@ test("app requests use reviewed native Pi turns, History, exact task cancellatio
   const providerPort = (provider.address() as AddressInfo).port;
   await writeFile(join(agentDir, "extensions", "app-provider.ts"), `export default function(pi) { pi.registerProvider("app-provider", { api: "openai-completions", baseUrl: "http://127.0.0.1:${providerPort}/v1", apiKey: "synthetic", models: [{ id: "app-model", name: "App Model", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 32768, maxTokens: 1024 }] }); }`);
   const settingsManager = SettingsManager.inMemory({ defaultProvider: "app-provider", defaultModel: "app-model", defaultThinkingLevel: "off" });
-  const options = { port: 0, stateBase: join(sandbox, "state"), workFolderBase: join(sandbox, "work-folders"), loadEnv: false,
+  const options = { port: 0, stateBase: join(sandbox, "state"), connectedFolderBase: join(sandbox, "connected-folders"), loadEnv: false,
     piRuntimeProvider: { async resolveRuntime() { return { agentDir, settingsManager }; } } };
   let api = await startLocalApi(options);
   try {
-    const { workFolder } = await request<{ workFolder: { id: string; workFolderRoot: string } }>(api.origin, "/api/work-folders", { method: "POST", body: { name: "Quotes" } });
-    await writePackage(join(workFolder.workFolderRoot, "app"));
-    const manifestPath = join(workFolder.workFolderRoot, "app", "agent-app.json");
+    const { connectedFolder } = await request<{ connectedFolder: { id: string; connectedFolderRoot: string } }>(api.origin, "/api/connected-folders", { method: "POST", body: { name: "Quotes" } });
+    await writePackage(join(connectedFolder.connectedFolderRoot, "app"));
+    const manifestPath = join(connectedFolder.connectedFolderRoot, "app", "agent-app.json");
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
     manifest.assistantActions = [{ id: "compare", title: "Compare quotes", instructions: "Compare the quote and write comparison.md.", inputSchema: {
       type: "object", properties: { quote: { type: "string", maxLength: 1_000 } }, required: ["quote"], additionalProperties: false } }];
     await writeFile(manifestPath, JSON.stringify(manifest));
-    const base = `/api/work-folders/${workFolder.id}/restricted-apps`;
-    await api.actFacade.appsInstallPreview({ workFolder: workFolder.id, packagePath: "app" });
+    const base = `/api/connected-folders/${connectedFolder.id}/restricted-apps`;
+    await api.actFacade.appsInstallPreview({ connectedFolder: connectedFolder.id, packagePath: "app" });
     const app = (await request<{ apps: RestrictedAppInstalled[] }>(api.origin, base)).apps.find((item) => item.manifest.id === "mail-app")!;
     const pin = { featureInstallationId: app.featureInstallationId, expectedDigest: app.digest };
-    const scope = { workFolderId: app.workFolderId, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, digest: app.digest, authorityDigest: restrictedAppTaskAuthorityDigest(app.authority) };
+    const scope = { connectedFolderId: app.connectedFolderId, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, digest: app.digest, authorityDigest: restrictedAppTaskAuthorityDigest(app.authority) };
     const taskBase = `${base}/mail-app/assistant-tasks`;
     const query = new URLSearchParams(pin);
     const input = { actionId: "compare", input: { quote: "North $42" }, requestId: randomUUID(), requestedAt: new Date().toISOString() };
@@ -1078,19 +1078,19 @@ test("app requests use reviewed native Pi turns, History, exact task cancellatio
     assert.match(done.result!.summary, /Saved comparison.md/);
     assert.equal(done.result!.outcome, "succeeded");
     assert.equal(done.result!.files, undefined, "turn evidence is not a deliverable list");
-    assert.equal(await readFile(join(workFolder.workFolderRoot, "comparison.md"), "utf8"), "# Comparison\nNorth: $42\n");
+    assert.equal(await readFile(join(connectedFolder.connectedFolderRoot, "comparison.md"), "utf8"), "# Comparison\nNorth: $42\n");
     const journal = (await readFile(join(sandbox, "state", "turns", "turns.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
     const completedTurn = journal.filter((record) => record.conversationId === `chat-app-${started.id}` && record.status === "succeeded").at(-1);
     assert.deepEqual(completedTurn.fileChanges.files.map((file: { path: string }) => file.path), ["comparison.md"], "the actual Pi write has durable History-derived navigation evidence");
     assert.ok(bodies.some((body) => body.includes("App request: Compare quotes")), "ordinary Pi sees the app's request");
     // The Chat shows the request as the app's, under a title that names the app.
-    const { conversations } = await request<{ conversations: Array<{ id: string; title: string }> }>(api.origin, `/api/work-folders/${workFolder.id}/conversations`);
+    const { conversations } = await request<{ conversations: Array<{ id: string; title: string }> }>(api.origin, `/api/connected-folders/${connectedFolder.id}/conversations`);
     assert.equal(conversations.find((item) => item.id === `chat-app-${started.id}`)?.title, "Mail · Compare quotes");
-    const { messages } = await request<{ messages: Array<{ id: string; role: string; source?: string; appId?: string; appTitle?: string }> }>(api.origin, `/api/work-folders/${workFolder.id}/conversations/chat-app-${started.id}`);
+    const { messages } = await request<{ messages: Array<{ id: string; role: string; source?: string; appId?: string; appTitle?: string }> }>(api.origin, `/api/connected-folders/${connectedFolder.id}/conversations/chat-app-${started.id}`);
     const asked = messages.find((item) => item.id === `message-app-${started.id}`)!;
     assert.equal(asked.role, "user");
     assert.deepEqual({ source: asked.source, appId: asked.appId, appTitle: asked.appTitle }, { source: "app", appId: "mail-app", appTitle: "Mail" });
-    assert.ok((await listWorkFolderCheckpoints(workFolder.workFolderRoot)).length > 0, "the ordinary turn captures History");
+    assert.ok((await listConnectedFolderCheckpoints(connectedFolder.connectedFolderRoot)).length > 0, "the ordinary turn captures History");
     const listed = (await request<{ tasks: RestrictedAppAssistantTask[] }>(api.origin, `${taskBase}?${query}`)).tasks[0]!;
     assert.equal(listed.result?.summary, "Saved comparison.md. North costs $42.", "the trusted Apps list shows its primary result");
     assert.equal(listed.result?.data, undefined, "the trusted list leaves structured details to the individual read");
@@ -1105,7 +1105,7 @@ test("app requests use reviewed native Pi turns, History, exact task cancellatio
     assert.equal(next.status, "running");
     await providerEntered;
     const removal = await fetch(`${api.origin}${base}/mail-app`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify(pin) });
-    assert.equal(removal.status, 409, "capability mutation cannot overtake an accepted work-folder turn");
+    assert.equal(removal.status, 409, "capability mutation cannot overtake an accepted Connected Folder turn");
     const stopping = await request<{ task: RestrictedAppAssistantTask }>(api.origin, `${taskBase}/${next.requestId}/cancel`, { method: "POST", body: pin });
     assert.equal(stopping.task.cancellationRequested, true);
     assert.equal((await waitForTask(next.requestId, "cancelled")).result, undefined);
@@ -1118,8 +1118,8 @@ test("app requests use reviewed native Pi turns, History, exact task cancellatio
   }
 });
 
-test("app inference runs on the work-folder's configured model with no Chat and leaves receipts", { timeout: 45_000 }, async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-app-inference-api-"));
+test("app inference runs on the Connected Folder's configured model with no Chat and leaves receipts", { timeout: 45_000 }, async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-app-inference-api-"));
   const agentDir = join(sandbox, "agent");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
   const bodies: string[] = [];
@@ -1148,17 +1148,17 @@ test("app inference runs on the work-folder's configured model with no Chat and 
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "work-folders"),
+    connectedFolderBase: join(sandbox, "connected-folders"),
     loadEnv: false,
     piRuntimeProvider: { async resolveRuntime() { return { agentDir, settingsManager }; } },
   });
   try {
-    const { workFolder } = await request<{ workFolder: { id: string; workFolderRoot: string } }>(api.origin, "/api/work-folders", { method: "POST", body: { name: "Quotes" } });
-    await writePackage(join(workFolder.workFolderRoot, "app"));
-    const base = `/api/work-folders/${workFolder.id}/restricted-apps`;
-    await api.actFacade.appsInstallPreview({ workFolder: workFolder.id, packagePath: "app" });
+    const { connectedFolder } = await request<{ connectedFolder: { id: string; connectedFolderRoot: string } }>(api.origin, "/api/connected-folders", { method: "POST", body: { name: "Quotes" } });
+    await writePackage(join(connectedFolder.connectedFolderRoot, "app"));
+    const base = `/api/connected-folders/${connectedFolder.id}/restricted-apps`;
+    await api.actFacade.appsInstallPreview({ connectedFolder: connectedFolder.id, packagePath: "app" });
     const app = (await request<{ apps: RestrictedAppInstalled[] }>(api.origin, base)).apps.find((item) => item.manifest.id === "mail-app")!;
-    const scope = { workFolderId: app.workFolderId, appId: app.manifest.id, featureInstallationId: app.featureInstallationId,
+    const scope = { connectedFolderId: app.connectedFolderId, appId: app.manifest.id, featureInstallationId: app.featureInstallationId,
       digest: app.digest, authorityDigest: restrictedAppTaskAuthorityDigest(app.authority) };
 
     const text = await api.appInference.infer(scope, "view", { instructions: "Name the cheapest quote.", input: "North $42, South $58" });
@@ -1169,8 +1169,8 @@ test("app inference runs on the work-folder's configured model with no Chat and 
     assert.ok(bodies[0]!.includes("North $42, South $58"), "the app's input is the only user message");
     assert.ok(!bodies[0]!.includes("App request:"), "bounded inference never carries a Chat prompt");
     assert.ok(!bodies[0]!.includes("\"tools\""), "no tools reach the model without a schema");
-    assert.equal((await listWorkFolderCheckpoints(workFolder.workFolderRoot)).length, 0, "a bounded call is not a turn and captures no History");
-    assert.deepEqual(await request<{ conversations: unknown[] }>(api.origin, `/api/work-folders/${workFolder.id}/conversations`).then((value) => value.conversations), [], "no Chat is created");
+    assert.equal((await listConnectedFolderCheckpoints(connectedFolder.connectedFolderRoot)).length, 0, "a bounded call is not a turn and captures no History");
+    assert.deepEqual(await request<{ conversations: unknown[] }>(api.origin, `/api/connected-folders/${connectedFolder.id}/conversations`).then((value) => value.conversations), [], "no Chat is created");
 
     const outputSchema = { type: "object", properties: { total: { type: "integer", minimum: 0 } }, required: ["total"], additionalProperties: false };
     const json = await api.appInference.infer(scope, "worker", { instructions: "Total the quotes.", input: "North $42", outputSchema });
@@ -1212,21 +1212,21 @@ test("app inference runs on the work-folder's configured model with no Chat and 
 });
 
 test("desktop Check selection composes the canonical Check service with exact app controls", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-app-selected-check-api-"));
-  const api = await startLocalApi({ port: 0, stateBase: join(sandbox, "state"), workFolderBase: join(sandbox, "work-folders"), loadEnv: false });
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-app-selected-check-api-"));
+  const api = await startLocalApi({ port: 0, stateBase: join(sandbox, "state"), connectedFolderBase: join(sandbox, "connected-folders"), loadEnv: false });
   try {
-    const { workFolder } = await request<{ workFolder: { id: string; workFolderRoot: string } }>(api.origin, "/api/work-folders", { method: "POST", body: { name: "Check access" } });
-    const base = `/api/work-folders/${workFolder.id}`;
-    await writePackage(join(workFolder.workFolderRoot, "app"));
-    const manifestPath = join(workFolder.workFolderRoot, "app", "agent-app.json");
+    const { connectedFolder } = await request<{ connectedFolder: { id: string; connectedFolderRoot: string } }>(api.origin, "/api/connected-folders", { method: "POST", body: { name: "Check access" } });
+    const base = `/api/connected-folders/${connectedFolder.id}`;
+    await writePackage(join(connectedFolder.connectedFolderRoot, "app"));
+    const manifestPath = join(connectedFolder.connectedFolderRoot, "app", "agent-app.json");
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
     manifest.permissions.checks = [{ id: "review", title: "Handoff review" }];
     await writeFile(manifestPath, JSON.stringify(manifest));
-    await api.actFacade.appsInstallPreview({ workFolder: workFolder.id, packagePath: "app" });
+    await api.actFacade.appsInstallPreview({ connectedFolder: connectedFolder.id, packagePath: "app" });
     const app = (await request<{ apps: RestrictedAppInstalled[] }>(api.origin, `${base}/restricted-apps`)).apps.find((item) => item.manifest.id === "mail-app")!;
     const check = await request<{ declaration: { id: string }; digest: string }>(api.origin, `${base}/checks/configure`, { method: "POST", body: { proposal: {
-      kind: "work-fold.check-proposal", version: 1, name: "Handoff", createdBy: "human", createdAt: "2026-09-06T00:00:00.000Z",
-      check: { title: "Handoff exists", severity: "error", trigger: "manual", sensor: { id: "work-fold.file-presence", revision: 1, parameters: { expect: "present" } }, targets: [{ kind: "file", role: "primary", path: "handoff.txt" }] },
+      kind: "amplefile.check-proposal", version: 1, name: "Handoff", createdBy: "human", createdAt: "2026-09-06T00:00:00.000Z",
+      check: { title: "Handoff exists", severity: "error", trigger: "manual", sensor: { id: "amplefile.file-presence", revision: 1, parameters: { expect: "present" } }, targets: [{ kind: "file", role: "primary", path: "handoff.txt" }] },
     } } });
     const path = `${base}/restricted-apps/mail-app/permissions/checks/review`;
     const body = { featureInstallationId: app.featureInstallationId, expectedDigest: app.digest, checkId: check.declaration.id, declarationDigest: check.digest };

@@ -3,39 +3,39 @@ import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:f
 import { dirname, join, resolve } from "node:path";
 
 import {
-  WORKFOLD_CLI_ACT_LEGACY_SURFACES,
-  WORKFOLD_CLI_ACT_SURFACES,
-  type WorkFoldCliActLegacySurface,
-  type WorkFoldCliActSurface,
+  AMPLEFILE_CLI_ACT_LEGACY_SURFACES,
+  AMPLEFILE_CLI_ACT_SURFACES,
+  type AmpleFileCliActLegacySurface,
+  type AmpleFileCliActSurface,
 } from "../cli/act-receipts.js";
 import type { AutomationCatchUpReason } from "../../shared/automation-presentation.js";
-import { workFoldStateRoot } from "../state-paths.js";
+import { ampleFileStateRoot } from "../state-paths.js";
 import {
-  assertWorkFoldAutomationAtAdmissionHorizon,
-  normalizeWorkFoldAutomationDeclaration,
-  scrubWorkFoldAutomationMessageText,
-  workFoldAutomationBounds,
-  workFoldAutomationDigest,
-  workFoldAutomationReferencedWorkFolderIds,
-  type WorkFoldAutomationDeclaration,
+  assertAmpleFileAutomationAtAdmissionHorizon,
+  normalizeAmpleFileAutomationDeclaration,
+  scrubAmpleFileAutomationMessageText,
+  ampleFileAutomationBounds,
+  ampleFileAutomationDigest,
+  ampleFileAutomationReferencedConnectedFolderIds,
+  type AmpleFileAutomationDeclaration,
 } from "./automation-declarations.js";
 
 /**
  * Machine-local automation authority and its receipts journal
  * (docs/automations.md). Everything here is application state that
- * references multiple work-folders and must never travel with any folder: the
+ * references multiple Connected Folders and must never travel with any folder: the
  * enabled declarations, their exact-digest enablement grants, cadence
  * anchors, health states, and the append-only run/hop receipts. A file
  * claiming to be automation state is inert bytes anywhere else — authority
  * exists only in this store, and only over the exact digest the enabling
  * receipt pinned.
  */
-export const WORKFOLD_AUTOMATION_STORE_SCHEMA_VERSION = 3;
+export const AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION = 3;
 
-export const WORKFOLD_AUTOMATION_RECEIPTS_MAX_BYTES = 16 * 1024 * 1024;
+export const AMPLEFILE_AUTOMATION_RECEIPTS_MAX_BYTES = 16 * 1024 * 1024;
 
 /** Bounded per-automation enablement history; every re-enablement with a changed declaration is a fresh receipt. */
-export const WORKFOLD_AUTOMATION_GRANT_HISTORY_LIMIT = 16;
+export const AMPLEFILE_AUTOMATION_GRANT_HISTORY_LIMIT = 16;
 
 const maximumStateBytes = 512 * 1024 * 1024;
 const maximumTextLength = 2_000;
@@ -43,8 +43,8 @@ const forbiddenTextPattern = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2
 const scrubReplacePattern = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g;
 
 /** The automation state file: enabled declarations, grants, anchors, health. */
-export function workFoldAutomationStateFile(stateRoot?: string): string {
-  return join(stateRoot ? resolve(stateRoot) : workFoldStateRoot(), "automations", "automations.json");
+export function ampleFileAutomationStateFile(stateRoot?: string): string {
+  return join(stateRoot ? resolve(stateRoot) : ampleFileStateRoot(), "automations", "automations.json");
 }
 
 /**
@@ -52,18 +52,18 @@ export function workFoldAutomationStateFile(stateRoot?: string): string {
  * overview's tolerant reader (src/local/overview.ts) consumes exactly this file
  * and its rotated sibling.
  */
-export function workFoldAutomationReceiptsFile(stateRoot?: string): string {
-  return join(stateRoot ? resolve(stateRoot) : workFoldStateRoot(), "automations", "receipts.jsonl");
+export function ampleFileAutomationReceiptsFile(stateRoot?: string): string {
+  return join(stateRoot ? resolve(stateRoot) : ampleFileStateRoot(), "automations", "receipts.jsonl");
 }
 
-export function workFoldAutomationReceiptsRotatedFile(stateRoot?: string): string {
-  return join(stateRoot ? resolve(stateRoot) : workFoldStateRoot(), "automations", "receipts.1.jsonl");
+export function ampleFileAutomationReceiptsRotatedFile(stateRoot?: string): string {
+  return join(stateRoot ? resolve(stateRoot) : ampleFileStateRoot(), "automations", "receipts.1.jsonl");
 }
 
-export type WorkFoldAutomationHealth = "enabled" | "disabled" | "suspended" | "completed";
+export type AmpleFileAutomationHealth = "enabled" | "disabled" | "suspended" | "completed";
 
 /** Terminal and progress outcomes for run- and hop-scoped receipt records. */
-export type WorkFoldAutomationRunReceiptOutcome =
+export type AmpleFileAutomationRunReceiptOutcome =
   | "accepted"
   | "succeeded"
   | "failed"
@@ -72,7 +72,7 @@ export type WorkFoldAutomationRunReceiptOutcome =
   | "skipped";
 
 /** Store lifecycle outcomes for automation-scoped receipt records. */
-export type WorkFoldAutomationLifecycleReceiptOutcome =
+export type AmpleFileAutomationLifecycleReceiptOutcome =
   | "enabled"
   | "disabled"
   | "suspended"
@@ -80,14 +80,14 @@ export type WorkFoldAutomationLifecycleReceiptOutcome =
   | "completed"
   | "deleted";
 
-export type WorkFoldAutomationReceiptScope = "automation" | "run" | "hop";
+export type AmpleFileAutomationReceiptScope = "automation" | "run" | "hop";
 
 /** Why a run was admitted; the terminal record names the trigger cause exactly. */
-export type WorkFoldAutomationRunCause =
+export type AmpleFileAutomationRunCause =
   | { kind: "scheduled" | "resume"; slotAt: string }
   | {
       kind: "files-changed";
-      workFolderId: string;
+      connectedFolderId: string;
       snapshotDigest: string;
       changedCount: number;
       /** The first `maxChangedPathsRecorded` changed paths, sorted; `changedCount` keeps the true total. */
@@ -95,16 +95,16 @@ export type WorkFoldAutomationRunCause =
       /**
        * Present when the run catches up (`"ifMissed": "run"`): `count` of the
        * changed paths were added or changed during `reason`'s gap; any others
-       * changed while work-fold was watching and coalesced into the same run.
+       * changed while AmpleFile was watching and coalesced into the same run.
        */
       catchUp?: { reason: AutomationCatchUpReason; count: number };
     }
-  | { kind: "run-now"; requestId?: string; surface?: WorkFoldCliActSurface }
+  | { kind: "run-now"; requestId?: string; surface?: AmpleFileCliActSurface }
   | {
       kind: "on-settled";
       source:
-        | { kind: "check-run"; workFolderId: string; runId: string; state: string; checkIds: string[]; taskId?: string }
-        | { kind: "app-automation-run"; workFolderId: string; appId: string; appAutomationId: string; runId: string; outcome: string };
+        | { kind: "check-run"; connectedFolderId: string; runId: string; state: string; checkIds: string[]; taskId?: string }
+        | { kind: "app-automation-run"; connectedFolderId: string; appId: string; appAutomationId: string; runId: string; outcome: string };
     };
 
 /**
@@ -112,17 +112,17 @@ export type WorkFoldAutomationRunCause =
  * unknown fields are ignored by readers (the overview destructures only what it
  * knows), and every text field is scrubbed before it is written. Receipts
  * carry identifiers, digests, paths, and counts — never file contents or
- * secrets. The one bounded exception is `placeholders`: the text work-fold
+ * secrets. The one bounded exception is `placeholders`: the text AmpleFile
  * itself filled into a chat- or agent-step message, so a person can see what
  * the automation actually said. The message the step declared is in the
  * declaration; the whole sent message lives in the conversation named by
  * `conversationId`.
  */
-export interface WorkFoldAutomationReceiptV1 {
+export interface AmpleFileAutomationReceiptV1 {
   v: 1;
   at: string;
-  scope: WorkFoldAutomationReceiptScope;
-  outcome: WorkFoldAutomationRunReceiptOutcome | WorkFoldAutomationLifecycleReceiptOutcome;
+  scope: AmpleFileAutomationReceiptScope;
+  outcome: AmpleFileAutomationRunReceiptOutcome | AmpleFileAutomationLifecycleReceiptOutcome;
   automationId: string;
   /** Present on every run- and hop-scoped record; absent on lifecycle records. */
   runId?: string;
@@ -130,7 +130,7 @@ export interface WorkFoldAutomationReceiptV1 {
   hopKind?: "chat" | "files" | "check" | "agent";
   title?: string;
   digest?: string;
-  cause?: WorkFoldAutomationRunCause;
+  cause?: AmpleFileAutomationRunCause;
   detail?: string;
   /**
    * On a succeeded hop or run: its Worker reported finishing only partly
@@ -138,9 +138,9 @@ export interface WorkFoldAutomationReceiptV1 {
    * run's later steps still run and nothing that counts successes changes.
    */
   partial?: true;
-  workFolderId?: string;
-  fromWorkFolderId?: string;
-  toWorkFolderId?: string;
+  connectedFolderId?: string;
+  fromConnectedFolderId?: string;
+  toConnectedFolderId?: string;
   conversationId?: string;
   /** Turn task id (chat hops) or Check task id (check hops). */
   taskId?: string;
@@ -159,38 +159,38 @@ export interface WorkFoldAutomationReceiptV1 {
   failedHopId?: string;
   /** Hop task ids a stop aborted, exactly as `agent stop` names child turns. */
   stoppedHopTaskIds?: string[];
-  /** What work-fold filled into this hop's message, bounded per placeholder. */
-  placeholders?: WorkFoldAutomationReceiptPlaceholder[];
+  /** What AmpleFile filled into this hop's message, bounded per placeholder. */
+  placeholders?: AmpleFileAutomationReceiptPlaceholder[];
   /** Byte length of the message the hop actually sent. */
   messageBytes?: number;
-  surface?: WorkFoldCliActSurface;
+  surface?: AmpleFileCliActSurface;
   /** Legacy field on receipts written before receipts-not-gates; never written now. */
   decisionId?: string;
   browserId?: string;
-  missingWorkFolderIds?: string[];
+  missingConnectedFolderIds?: string[];
   requestId?: string;
   occurrenceId?: string;
   scheduledRunId?: string;
 }
 
 /** One filled-in placeholder, as the hop's terminal receipt records it. */
-export interface WorkFoldAutomationReceiptPlaceholder {
+export interface AmpleFileAutomationReceiptPlaceholder {
   name: string;
   text: string;
   bytes: number;
   truncated: boolean;
 }
 
-export interface WorkFoldAutomationOpenRun {
+export interface AmpleFileAutomationOpenRun {
   automationId: string;
   runId: string;
   title?: string;
   digest?: string;
-  cause?: Extract<WorkFoldAutomationRunCause, { kind: "scheduled" | "resume" }>;
+  cause?: Extract<AmpleFileAutomationRunCause, { kind: "scheduled" | "resume" }>;
   openHopIds: string[];
 }
 
-export type WorkFoldAutomationStoreErrorCode =
+export type AmpleFileAutomationStoreErrorCode =
   | "STORE_DAMAGED"
   | "JOURNAL_UNAVAILABLE"
   | "JOURNAL_DAMAGED"
@@ -200,24 +200,24 @@ export type WorkFoldAutomationStoreErrorCode =
   | "HEALTH_INVALID"
   | "DIGEST_MISMATCH";
 
-export class WorkFoldAutomationStoreError extends Error {
-  readonly code: WorkFoldAutomationStoreErrorCode;
+export class AmpleFileAutomationStoreError extends Error {
+  readonly code: AmpleFileAutomationStoreErrorCode;
   /** The health a refused transition found, when one exists. */
-  readonly health?: WorkFoldAutomationHealth;
+  readonly health?: AmpleFileAutomationHealth;
 
   constructor(
-    code: WorkFoldAutomationStoreErrorCode,
+    code: AmpleFileAutomationStoreErrorCode,
     message: string,
-    options: { health?: WorkFoldAutomationHealth; cause?: unknown } = {},
+    options: { health?: AmpleFileAutomationHealth; cause?: unknown } = {},
   ) {
     super(message, options.cause !== undefined ? { cause: options.cause } : undefined);
-    this.name = "WorkFoldAutomationStoreError";
+    this.name = "AmpleFileAutomationStoreError";
     this.code = code;
     if (options.health !== undefined) this.health = options.health;
   }
 }
 
-export interface WorkFoldAutomationReceiptsOptions {
+export interface AmpleFileAutomationReceiptsOptions {
   path?: string;
   rotatedPath?: string;
   maxBytes?: number;
@@ -233,29 +233,29 @@ export interface WorkFoldAutomationReceiptsOptions {
  * holds a run without a terminal record — the startup recovery scan must
  * always be able to find an interrupted run's `accepted` line.
  */
-export class WorkFoldAutomationReceipts {
+export class AmpleFileAutomationReceipts {
   readonly path: string;
   readonly rotatedPath: string;
   readonly #maxBytes: number;
   readonly #now: () => Date;
   #queue: Promise<unknown> = Promise.resolve();
 
-  constructor(options: WorkFoldAutomationReceiptsOptions = {}) {
-    this.path = options.path ? resolve(options.path) : workFoldAutomationReceiptsFile();
+  constructor(options: AmpleFileAutomationReceiptsOptions = {}) {
+    this.path = options.path ? resolve(options.path) : ampleFileAutomationReceiptsFile();
     this.rotatedPath = options.rotatedPath
       ? resolve(options.rotatedPath)
       : options.path
         ? `${resolve(options.path)}.1`
-        : workFoldAutomationReceiptsRotatedFile();
-    this.#maxBytes = options.maxBytes ?? WORKFOLD_AUTOMATION_RECEIPTS_MAX_BYTES;
+        : ampleFileAutomationReceiptsRotatedFile();
+    this.#maxBytes = options.maxBytes ?? AMPLEFILE_AUTOMATION_RECEIPTS_MAX_BYTES;
     this.#now = options.now ?? (() => new Date());
   }
 
   /** Serialized best-effort append; resolves false when the receipt could not be written. */
-  append(entry: Omit<WorkFoldAutomationReceiptV1, "v" | "at">): Promise<boolean> {
+  append(entry: Omit<AmpleFileAutomationReceiptV1, "v" | "at">): Promise<boolean> {
     const operation = this.#queue.catch(() => undefined).then(async () => {
       try {
-        const record: WorkFoldAutomationReceiptV1 = {
+        const record: AmpleFileAutomationReceiptV1 = {
           v: 1,
           at: this.#now().toISOString(),
           ...entry,
@@ -286,32 +286,32 @@ export class WorkFoldAutomationReceipts {
    * that cannot be parsed makes honest crash recovery impossible, so the
    * caller refuses to arm anything instead of guessing.
    */
-  scanOpenRuns(): Promise<WorkFoldAutomationOpenRun[]> {
+  scanOpenRuns(): Promise<AmpleFileAutomationOpenRun[]> {
     const operation = this.#queue.catch(() => undefined).then(async () => {
       const open = new Map<string, {
         automationId: string;
         title?: string;
         digest?: string;
-        cause?: Extract<WorkFoldAutomationRunCause, { kind: "scheduled" | "resume" }>;
+        cause?: Extract<AmpleFileAutomationRunCause, { kind: "scheduled" | "resume" }>;
         openHopIds: Set<string>;
       }>();
       for (const path of [this.rotatedPath, this.path]) {
         const text = await readFile(path, "utf8").catch((error: unknown) => {
           if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-          throw new WorkFoldAutomationStoreError(
+          throw new AmpleFileAutomationStoreError(
             "JOURNAL_DAMAGED",
-            "work-fold could not read the automation receipts journal, so crash recovery cannot be trusted.",
+            "AmpleFile could not read the automation receipts journal, so crash recovery cannot be trusted.",
             { cause: error },
           );
         });
         if (text === null) continue;
         for (const line of text.split("\n")) {
           if (!line.trim()) continue;
-          let record: Partial<WorkFoldAutomationReceiptV1>;
+          let record: Partial<AmpleFileAutomationReceiptV1>;
           try {
-            record = JSON.parse(line) as Partial<WorkFoldAutomationReceiptV1>;
+            record = JSON.parse(line) as Partial<AmpleFileAutomationReceiptV1>;
           } catch (error) {
-            throw new WorkFoldAutomationStoreError(
+            throw new AmpleFileAutomationStoreError(
               "JOURNAL_DAMAGED",
               "The automation receipts journal holds an unreadable line, so crash recovery cannot be trusted.",
               { cause: error },
@@ -349,7 +349,7 @@ export class WorkFoldAutomationReceipts {
       }));
     });
     this.#queue = operation;
-    return operation as Promise<WorkFoldAutomationOpenRun[]>;
+    return operation as Promise<AmpleFileAutomationOpenRun[]>;
   }
 
   async #rotateIfNeeded(): Promise<void> {
@@ -370,9 +370,9 @@ export class WorkFoldAutomationReceipts {
     const open = new Set<string>();
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
-      let record: Partial<WorkFoldAutomationReceiptV1>;
+      let record: Partial<AmpleFileAutomationReceiptV1>;
       try {
-        record = JSON.parse(line) as Partial<WorkFoldAutomationReceiptV1>;
+        record = JSON.parse(line) as Partial<AmpleFileAutomationReceiptV1>;
       } catch {
         return true;
       }
@@ -389,48 +389,48 @@ export class WorkFoldAutomationReceipts {
  * history, never destroyed by disable or suspension; only the newest grant on
  * an `enabled` record is live authority.
  */
-export interface WorkFoldAutomationGrant {
+export interface AmpleFileAutomationGrant {
   digest: string;
   /** The enabling act's request id. */
   requestId: string;
   enabledAt: string;
   /** Current surfaces on write; a legacy surface an older build recorded still loads. */
-  surface: WorkFoldCliActSurface | WorkFoldCliActLegacySurface;
+  surface: AmpleFileCliActSurface | AmpleFileCliActLegacySurface;
   /** Read only: the paired browser older builds recorded with a `remote_web` grant. */
   browserId?: string;
 }
 
 /** The grant shape builds before receipts-not-gates wrote; converted on load. */
-interface LegacyWorkFoldAutomationGrant {
+interface LegacyAmpleFileAutomationGrant {
   digest: string;
   decisionId: string;
   approvedAt: string;
-  surface: WorkFoldCliActSurface | WorkFoldCliActLegacySurface;
+  surface: AmpleFileCliActSurface | AmpleFileCliActLegacySurface;
   browserId?: string;
   browserGrantId?: string;
 }
 
-export interface WorkFoldAutomationSuspension {
+export interface AmpleFileAutomationSuspension {
   at: string;
-  /** Every referenced work-folder whose removal revoked this automation's grant. */
-  missingWorkFolderIds: string[];
+  /** Every referenced Connected Folder whose removal revoked this automation's grant. */
+  missingConnectedFolderIds: string[];
   /**
-   * Missing work-folders later re-registered with preserved portable identity.
+   * Missing Connected Folders later re-registered with preserved portable identity.
    * Copy-level detail only: the automation stays suspended either way, and
    * leaving suspension is always a fresh enablement.
    */
-  reRegisteredWorkFolderIds: string[];
+  reRegisteredConnectedFolderIds: string[];
 }
 
-export interface WorkFoldAutomationRecord {
-  declaration: WorkFoldAutomationDeclaration;
+export interface AmpleFileAutomationRecord {
+  declaration: AmpleFileAutomationDeclaration;
   digest: string;
-  health: WorkFoldAutomationHealth;
-  grants: WorkFoldAutomationGrant[];
+  health: AmpleFileAutomationHealth;
+  grants: AmpleFileAutomationGrant[];
   /** Durable cadence anchor for interval triggers; restarts resume, never reset. */
   lastScheduledAt?: string;
   disabledAt?: string;
-  suspension?: WorkFoldAutomationSuspension;
+  suspension?: AmpleFileAutomationSuspension;
   /** Durable single-fire claim for a version-2 one-time trigger. */
   atOccurrence?: {
     occurrenceId: string;
@@ -441,12 +441,12 @@ export interface WorkFoldAutomationRecord {
   };
 }
 
-export interface WorkFoldAutomationActionReceiptContext {
+export interface AmpleFileAutomationActionReceiptContext {
   requestId?: string;
-  surface?: WorkFoldCliActSurface;
+  surface?: AmpleFileCliActSurface;
 }
 
-export interface WorkFoldAutomationEnableInput {
+export interface AmpleFileAutomationEnableInput {
   declaration: unknown;
   /**
    * The digest the enabling call pinned. Enablement is exact authority: a
@@ -455,35 +455,35 @@ export interface WorkFoldAutomationEnableInput {
   expectedDigest: string;
   grant: {
     requestId: string;
-    surface: WorkFoldCliActSurface;
+    surface: AmpleFileCliActSurface;
   };
   now?: Date;
 }
 
-export interface WorkFoldAutomationSuspendResult {
+export interface AmpleFileAutomationSuspendResult {
   /** Enabled automations this removal revoked into suspension. */
-  suspended: WorkFoldAutomationRecord[];
-  /** Already-suspended automations that gained this missing work-folder id. */
-  noted: WorkFoldAutomationRecord[];
+  suspended: AmpleFileAutomationRecord[];
+  /** Already-suspended automations that gained this missing Connected Folder id. */
+  noted: AmpleFileAutomationRecord[];
 }
 
-export interface WorkFoldAutomationStoreStatus {
+export interface AmpleFileAutomationStoreStatus {
   damaged: boolean;
   damageReason?: string;
   automationCount: number;
   enabledCount: number;
 }
 
-export interface WorkFoldAutomationStoreOptions {
-  /** Defaults to `automations/automations.json` under the work-fold state root. */
+export interface AmpleFileAutomationStoreOptions {
+  /** Defaults to `automations/automations.json` under the AmpleFile state root. */
   path?: string;
-  receipts?: WorkFoldAutomationReceipts;
+  receipts?: AmpleFileAutomationReceipts;
   now?: () => Date;
 }
 
 interface AutomationStoreFileShape {
-  schemaVersion: typeof WORKFOLD_AUTOMATION_STORE_SCHEMA_VERSION;
-  automations: WorkFoldAutomationRecord[];
+  schemaVersion: typeof AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION;
+  automations: AmpleFileAutomationRecord[];
 }
 
 /**
@@ -496,12 +496,12 @@ interface AutomationStoreFileShape {
  * Journaling is asymmetric on purpose, failing toward less authority:
  * widening (enable) and destruction of the audit anchor (delete) are strictly
  * journal-first — an unwritable journal refuses them — while narrowing
- * (disable, work-folder-removal suspension) persists even when its journal line
+ * (disable, connected-folder-removal suspension) persists even when its journal line
  * cannot be written, because revocation must never be blocked by a full disk.
  */
-export class WorkFoldAutomationStore {
+export class AmpleFileAutomationStore {
   readonly path: string;
-  readonly receipts: WorkFoldAutomationReceipts;
+  readonly receipts: AmpleFileAutomationReceipts;
   readonly #now: () => Date;
   readonly #damageReason: string | null;
   #file: AutomationStoreFileShape;
@@ -509,7 +509,7 @@ export class WorkFoldAutomationStore {
 
   private constructor(
     path: string,
-    receipts: WorkFoldAutomationReceipts,
+    receipts: AmpleFileAutomationReceipts,
     now: () => Date,
     file: AutomationStoreFileShape,
     damageReason: string | null,
@@ -521,15 +521,15 @@ export class WorkFoldAutomationStore {
     this.#damageReason = damageReason;
   }
 
-  static async create(options: WorkFoldAutomationStoreOptions = {}): Promise<WorkFoldAutomationStore> {
-    const path = resolve(options.path ?? workFoldAutomationStateFile());
+  static async create(options: AmpleFileAutomationStoreOptions = {}): Promise<AmpleFileAutomationStore> {
+    const path = resolve(options.path ?? ampleFileAutomationStateFile());
     const now = options.now ?? (() => new Date());
-    const receipts = options.receipts ?? new WorkFoldAutomationReceipts({ now });
+    const receipts = options.receipts ?? new AmpleFileAutomationReceipts({ now });
     const loaded = await loadAutomationStoreFile(path);
-    return new WorkFoldAutomationStore(path, receipts, now, loaded.file, loaded.damageReason);
+    return new AmpleFileAutomationStore(path, receipts, now, loaded.file, loaded.damageReason);
   }
 
-  status(): WorkFoldAutomationStoreStatus {
+  status(): AmpleFileAutomationStoreStatus {
     if (this.#damageReason !== null) {
       return { damaged: true, damageReason: this.#damageReason, automationCount: 0, enabledCount: 0 };
     }
@@ -540,7 +540,7 @@ export class WorkFoldAutomationStore {
     };
   }
 
-  async list(): Promise<WorkFoldAutomationRecord[]> {
+  async list(): Promise<AmpleFileAutomationRecord[]> {
     return await this.#mutate(async () => {
       this.#assertOperational();
       return this.#file.automations
@@ -549,7 +549,7 @@ export class WorkFoldAutomationStore {
     });
   }
 
-  async get(automationId: string): Promise<WorkFoldAutomationRecord | undefined> {
+  async get(automationId: string): Promise<AmpleFileAutomationRecord | undefined> {
     return await this.#mutate(async () => {
       this.#assertOperational();
       const automation = this.#file.automations.find((candidate) => candidate.declaration.id === automationId);
@@ -563,13 +563,13 @@ export class WorkFoldAutomationStore {
    * prior state intact — never undeclared or digest-mismatched authority.
    * Re-enabling an existing automation id records a fresh grant.
    */
-  async enable(input: WorkFoldAutomationEnableInput): Promise<WorkFoldAutomationRecord> {
+  async enable(input: AmpleFileAutomationEnableInput): Promise<AmpleFileAutomationRecord> {
     return await this.#mutate(async () => {
       this.#assertOperational();
       const declaration = normalizeDeclarationInput(input.declaration);
-      const digest = workFoldAutomationDigest(declaration);
+      const digest = ampleFileAutomationDigest(declaration);
       if (typeof input.expectedDigest !== "string" || input.expectedDigest !== digest) {
-        throw new WorkFoldAutomationStoreError(
+        throw new AmpleFileAutomationStoreError(
           "DIGEST_MISMATCH",
           "This declaration does not match the digest the enabling call pinned; an edited automation never coasts on a stale enablement.",
         );
@@ -577,23 +577,23 @@ export class WorkFoldAutomationStore {
       const grantRef = normalizeGrantInput(input.grant);
       const admissionTime = input.now ?? this.#now();
       try {
-        assertWorkFoldAutomationAtAdmissionHorizon(declaration, admissionTime);
+        assertAmpleFileAutomationAtAdmissionHorizon(declaration, admissionTime);
       } catch (error) {
-        throw new WorkFoldAutomationStoreError(
+        throw new AmpleFileAutomationStoreError(
           "INPUT_INVALID",
-          `work-fold refused this automation declaration: ${error instanceof Error ? error.message : String(error)}`,
+          `AmpleFile refused this automation declaration: ${error instanceof Error ? error.message : String(error)}`,
           { cause: error },
         );
       }
       const now = admissionTime.toISOString();
       const draft = structuredClone(this.#file);
       const existing = draft.automations.find((candidate) => candidate.declaration.id === declaration.id);
-      const grant: WorkFoldAutomationGrant = { digest, enabledAt: now, ...grantRef };
-      const record: WorkFoldAutomationRecord = {
+      const grant: AmpleFileAutomationGrant = { digest, enabledAt: now, ...grantRef };
+      const record: AmpleFileAutomationRecord = {
         declaration,
         digest,
         health: "enabled",
-        grants: [...(existing?.grants ?? []), grant].slice(-WORKFOLD_AUTOMATION_GRANT_HISTORY_LIMIT),
+        grants: [...(existing?.grants ?? []), grant].slice(-AMPLEFILE_AUTOMATION_GRANT_HISTORY_LIMIT),
         // A fresh enablement starts a fresh cadence: the first scheduled
         // slot is one interval after enablement, as restricted-app
         // automations anchor at enable time.
@@ -623,21 +623,21 @@ export class WorkFoldAutomationStore {
    */
   async disable(
     automationId: string,
-    receiptContext: WorkFoldAutomationActionReceiptContext = {},
-  ): Promise<WorkFoldAutomationRecord> {
+    receiptContext: AmpleFileAutomationActionReceiptContext = {},
+  ): Promise<AmpleFileAutomationRecord> {
     return await this.#mutate(async () => {
       this.#assertOperational();
       const action = normalizeActionReceiptContext(receiptContext);
       const draft = structuredClone(this.#file);
       const automation = this.#requireAutomation(draft, automationId);
       if (automation.health !== "enabled") {
-        throw new WorkFoldAutomationStoreError(
+        throw new AmpleFileAutomationStoreError(
           "HEALTH_INVALID",
           automation.health === "disabled"
             ? "This automation is already disabled."
             : automation.health === "completed"
               ? "This one-time automation is completed; its scheduled occurrence has already been consumed."
-              : "This automation is suspended because a referenced work-folder was removed; there is no enablement left to disable, and leaving suspension is a fresh enablement.",
+              : "This automation is suspended because a referenced Connected Folder was removed; there is no enablement left to disable, and leaving suspension is a fresh enablement.",
           { health: automation.health },
         );
       }
@@ -656,25 +656,25 @@ export class WorkFoldAutomationStore {
   }
 
   /**
-   * work-folder-removal revocation: every enabled automation referencing the removed
-   * work-folder loses its grant and enters durable `suspended` health with the
-   * missing work-folder id recorded. A suspended automation never runs, never
+   * connected-folder-removal revocation: every enabled automation referencing the removed
+   * Connected Folder loses its grant and enters durable `suspended` health with the
+   * missing Connected Folder id recorded. A suspended automation never runs, never
    * retargets, and never resumes automatically — re-registration is noted in
    * copy only, and leaving suspension is a fresh enablement.
    */
-  async suspendForWorkFolderRemoval(workFolderId: string, now?: Date): Promise<WorkFoldAutomationSuspendResult> {
+  async suspendForConnectedFolderRemoval(connectedFolderId: string, now?: Date): Promise<AmpleFileAutomationSuspendResult> {
     return await this.#mutate(async () => {
       this.#assertOperational();
       const removedAt = (now ?? this.#now()).toISOString();
-      requireReference(workFolderId, "work-folder id");
+      requireReference(connectedFolderId, "Connected Folder id");
       const draft = structuredClone(this.#file);
-      const suspended: WorkFoldAutomationRecord[] = [];
-      const noted: WorkFoldAutomationRecord[] = [];
+      const suspended: AmpleFileAutomationRecord[] = [];
+      const noted: AmpleFileAutomationRecord[] = [];
       for (const automation of draft.automations) {
-        if (!workFoldAutomationReferencedWorkFolderIds(automation.declaration).includes(workFolderId)) continue;
+        if (!ampleFileAutomationReferencedConnectedFolderIds(automation.declaration).includes(connectedFolderId)) continue;
         if (automation.health === "enabled") {
           automation.health = "suspended";
-          automation.suspension = { at: removedAt, missingWorkFolderIds: [workFolderId], reRegisteredWorkFolderIds: [] };
+          automation.suspension = { at: removedAt, missingConnectedFolderIds: [connectedFolderId], reRegisteredConnectedFolderIds: [] };
           delete automation.lastScheduledAt;
           suspended.push(automation);
           await this.#journalBestEffort({
@@ -682,21 +682,21 @@ export class WorkFoldAutomationStore {
             outcome: "suspended",
             automationId: automation.declaration.id,
             digest: automation.digest,
-            missingWorkFolderIds: [workFolderId],
-            detail: "A referenced work-folder was removed; the enablement is revoked and turning the automation on again is a fresh enablement.",
+            missingConnectedFolderIds: [connectedFolderId],
+            detail: "A referenced Connected Folder was removed; the enablement is revoked and turning the automation on again is a fresh enablement.",
           });
           continue;
         }
-        if (automation.health === "suspended" && automation.suspension && !automation.suspension.missingWorkFolderIds.includes(workFolderId)) {
-          automation.suspension.missingWorkFolderIds = [...automation.suspension.missingWorkFolderIds, workFolderId].sort();
+        if (automation.health === "suspended" && automation.suspension && !automation.suspension.missingConnectedFolderIds.includes(connectedFolderId)) {
+          automation.suspension.missingConnectedFolderIds = [...automation.suspension.missingConnectedFolderIds, connectedFolderId].sort();
           noted.push(automation);
           await this.#journalBestEffort({
             scope: "automation",
             outcome: "suspended",
             automationId: automation.declaration.id,
             digest: automation.digest,
-            missingWorkFolderIds: automation.suspension.missingWorkFolderIds,
-            detail: "Another referenced work-folder was removed while this automation was already suspended.",
+            missingConnectedFolderIds: automation.suspension.missingConnectedFolderIds,
+            detail: "Another referenced Connected Folder was removed while this automation was already suspended.",
           });
         }
       }
@@ -709,30 +709,30 @@ export class WorkFoldAutomationStore {
   }
 
   /**
-   * Copy-level detail when a missing work-folder's portable identity is
+   * Copy-level detail when a missing Connected Folder's portable identity is
    * re-registered: the person sees "re-registered" rather than "removed",
    * and nothing else changes — registration must never silently re-arm
    * standing behavior.
    */
-  async noteWorkFolderReRegistered(workFolderId: string): Promise<WorkFoldAutomationRecord[]> {
+  async noteConnectedFolderReRegistered(connectedFolderId: string): Promise<AmpleFileAutomationRecord[]> {
     return await this.#mutate(async () => {
       this.#assertOperational();
-      requireReference(workFolderId, "work-folder id");
+      requireReference(connectedFolderId, "Connected Folder id");
       const draft = structuredClone(this.#file);
-      const affected: WorkFoldAutomationRecord[] = [];
+      const affected: AmpleFileAutomationRecord[] = [];
       for (const automation of draft.automations) {
         if (automation.health !== "suspended" || !automation.suspension) continue;
-        if (!automation.suspension.missingWorkFolderIds.includes(workFolderId)) continue;
-        if (automation.suspension.reRegisteredWorkFolderIds.includes(workFolderId)) continue;
-        automation.suspension.reRegisteredWorkFolderIds = [...automation.suspension.reRegisteredWorkFolderIds, workFolderId].sort();
+        if (!automation.suspension.missingConnectedFolderIds.includes(connectedFolderId)) continue;
+        if (automation.suspension.reRegisteredConnectedFolderIds.includes(connectedFolderId)) continue;
+        automation.suspension.reRegisteredConnectedFolderIds = [...automation.suspension.reRegisteredConnectedFolderIds, connectedFolderId].sort();
         affected.push(automation);
         await this.#journalBestEffort({
           scope: "automation",
           outcome: "re-registered",
           automationId: automation.declaration.id,
           digest: automation.digest,
-          missingWorkFolderIds: [workFolderId],
-          detail: "The missing work-folder was re-registered with preserved identity. The automation stays suspended; turning it on again is a fresh enablement.",
+          missingConnectedFolderIds: [connectedFolderId],
+          detail: "The missing Connected Folder was re-registered with preserved identity. The automation stays suspended; turning it on again is a fresh enablement.",
         });
       }
       if (affected.length) await this.#commit(draft);
@@ -745,7 +745,7 @@ export class WorkFoldAutomationStore {
     return await this.#mutate(async () => {
       this.#assertOperational();
       if (typeof lastScheduledAt !== "string" || !Number.isFinite(Date.parse(lastScheduledAt))) {
-        throw new WorkFoldAutomationStoreError("INPUT_INVALID", "A cadence anchor must be an ISO timestamp.");
+        throw new AmpleFileAutomationStoreError("INPUT_INVALID", "A cadence anchor must be an ISO timestamp.");
       }
       const draft = structuredClone(this.#file);
       const automation = draft.automations.find((candidate) => candidate.declaration.id === automationId);
@@ -768,12 +768,12 @@ export class WorkFoldAutomationStore {
     slotAt: string,
     runId: string,
     now?: Date,
-  ): Promise<WorkFoldAutomationRecord | null> {
+  ): Promise<AmpleFileAutomationRecord | null> {
     return await this.#mutate(async () => {
       this.#assertOperational();
       requireReference(runId, "Scheduled run id");
       if (!isTimestamp(slotAt)) {
-        throw new WorkFoldAutomationStoreError("INPUT_INVALID", "A one-time occurrence slot must be an ISO timestamp.");
+        throw new AmpleFileAutomationStoreError("INPUT_INVALID", "A one-time occurrence slot must be an ISO timestamp.");
       }
       const canonicalSlot = new Date(slotAt).toISOString();
       const draft = structuredClone(this.#file);
@@ -782,7 +782,7 @@ export class WorkFoldAutomationStore {
       if (automation.declaration.trigger.at !== canonicalSlot) return null;
       automation.health = "completed";
       automation.atOccurrence = {
-        occurrenceId: workFoldAutomationAtOccurrenceId(automationId, automation.digest, canonicalSlot),
+        occurrenceId: ampleFileAutomationAtOccurrenceId(automationId, automation.digest, canonicalSlot),
         slotAt: canonicalSlot,
         consumedAt: (now ?? this.#now()).toISOString(),
         runId,
@@ -797,7 +797,7 @@ export class WorkFoldAutomationStore {
     return await this.#mutate(async () => {
       this.#assertOperational();
       if (!isTimestamp(finishedAt)) {
-        throw new WorkFoldAutomationStoreError("INPUT_INVALID", "A one-time occurrence finish time must be an ISO timestamp.");
+        throw new AmpleFileAutomationStoreError("INPUT_INVALID", "A one-time occurrence finish time must be an ISO timestamp.");
       }
       const draft = structuredClone(this.#file);
       const automation = draft.automations.find((candidate) => candidate.declaration.id === automationId);
@@ -825,15 +825,15 @@ export class WorkFoldAutomationStore {
    */
   async delete(
     automationId: string,
-    receiptContext: WorkFoldAutomationActionReceiptContext = {},
-  ): Promise<WorkFoldAutomationRecord> {
+    receiptContext: AmpleFileAutomationActionReceiptContext = {},
+  ): Promise<AmpleFileAutomationRecord> {
     return await this.#mutate(async () => {
       this.#assertOperational();
       const action = normalizeActionReceiptContext(receiptContext);
       const draft = structuredClone(this.#file);
       const automation = this.#requireAutomation(draft, automationId);
       if (automation.health === "enabled") {
-        throw new WorkFoldAutomationStoreError(
+        throw new AmpleFileAutomationStoreError(
           "HEALTH_INVALID",
           "This automation is enabled; disable it before deleting it so revocation stops stale work first.",
           { health: automation.health },
@@ -853,10 +853,10 @@ export class WorkFoldAutomationStore {
     });
   }
 
-  #requireAutomation(draft: AutomationStoreFileShape, automationId: string): WorkFoldAutomationRecord {
+  #requireAutomation(draft: AutomationStoreFileShape, automationId: string): AmpleFileAutomationRecord {
     const automation = draft.automations.find((candidate) => candidate.declaration.id === automationId);
     if (!automation) {
-      throw new WorkFoldAutomationStoreError(
+      throw new AmpleFileAutomationStoreError(
         "NOT_FOUND",
         "No automation has this id. A proposal holds no authority; enabling pins the exact declaration before anything runs.",
       );
@@ -864,15 +864,15 @@ export class WorkFoldAutomationStore {
     return automation;
   }
 
-  async #journalStrict(entry: Omit<WorkFoldAutomationReceiptV1, "v" | "at">): Promise<void> {
+  async #journalStrict(entry: Omit<AmpleFileAutomationReceiptV1, "v" | "at">): Promise<void> {
     if (await this.receipts.append(entry)) return;
-    throw new WorkFoldAutomationStoreError(
+    throw new AmpleFileAutomationStoreError(
       "JOURNAL_UNAVAILABLE",
-      "work-fold could not journal this automation mutation, so nothing was changed.",
+      "AmpleFile could not journal this automation mutation, so nothing was changed.",
     );
   }
 
-  async #journalBestEffort(entry: Omit<WorkFoldAutomationReceiptV1, "v" | "at">): Promise<void> {
+  async #journalBestEffort(entry: Omit<AmpleFileAutomationReceiptV1, "v" | "at">): Promise<void> {
     // Narrowing proceeds even when its journal line cannot be written: the
     // durable state file is the authority record, and failing toward less
     // authority is the safe direction.
@@ -881,9 +881,9 @@ export class WorkFoldAutomationStore {
 
   #assertOperational(): void {
     if (this.#damageReason === null) return;
-    throw new WorkFoldAutomationStoreError(
+    throw new AmpleFileAutomationStoreError(
       "STORE_DAMAGED",
-      `work-fold disabled automations: ${this.#damageReason} Nothing is guessed from damaged authority state.`,
+      `AmpleFile disabled automations: ${this.#damageReason} Nothing is guessed from damaged authority state.`,
     );
   }
 
@@ -902,38 +902,38 @@ export class WorkFoldAutomationStore {
   }
 }
 
-function normalizeDeclarationInput(value: unknown): WorkFoldAutomationDeclaration {
+function normalizeDeclarationInput(value: unknown): AmpleFileAutomationDeclaration {
   try {
-    return normalizeWorkFoldAutomationDeclaration(value);
+    return normalizeAmpleFileAutomationDeclaration(value);
   } catch (error) {
-    throw new WorkFoldAutomationStoreError(
+    throw new AmpleFileAutomationStoreError(
       "INPUT_INVALID",
-      `work-fold refused this automation declaration: ${error instanceof Error ? error.message : String(error)}`,
+      `AmpleFile refused this automation declaration: ${error instanceof Error ? error.message : String(error)}`,
       { cause: error },
     );
   }
 }
 
-function normalizeGrantInput(value: WorkFoldAutomationEnableInput["grant"]): WorkFoldAutomationEnableInput["grant"] {
+function normalizeGrantInput(value: AmpleFileAutomationEnableInput["grant"]): AmpleFileAutomationEnableInput["grant"] {
   if (!value || typeof value !== "object") {
-    throw new WorkFoldAutomationStoreError("INPUT_INVALID", "An enablement requires its enabling act record.");
+    throw new AmpleFileAutomationStoreError("INPUT_INVALID", "An enablement requires its enabling act record.");
   }
   requireReference(value.requestId, "Request id");
-  if (!WORKFOLD_CLI_ACT_SURFACES.includes(value.surface)) {
-    throw new WorkFoldAutomationStoreError("INPUT_INVALID", "The enabling surface must be an act surface.");
+  if (!AMPLEFILE_CLI_ACT_SURFACES.includes(value.surface)) {
+    throw new AmpleFileAutomationStoreError("INPUT_INVALID", "The enabling surface must be an act surface.");
   }
   return { requestId: value.requestId, surface: value.surface };
 }
 
 function normalizeActionReceiptContext(
-  value: WorkFoldAutomationActionReceiptContext,
-): WorkFoldAutomationActionReceiptContext {
+  value: AmpleFileAutomationActionReceiptContext,
+): AmpleFileAutomationActionReceiptContext {
   if (!value || typeof value !== "object") {
-    throw new WorkFoldAutomationStoreError("INPUT_INVALID", "Automation receipt context must be an object.");
+    throw new AmpleFileAutomationStoreError("INPUT_INVALID", "Automation receipt context must be an object.");
   }
   if (value.requestId !== undefined) requireReference(value.requestId, "Request id");
-  if (value.surface !== undefined && !WORKFOLD_CLI_ACT_SURFACES.includes(value.surface)) {
-    throw new WorkFoldAutomationStoreError("INPUT_INVALID", "Automation action surface is invalid.");
+  if (value.surface !== undefined && !AMPLEFILE_CLI_ACT_SURFACES.includes(value.surface)) {
+    throw new AmpleFileAutomationStoreError("INPUT_INVALID", "Automation action surface is invalid.");
   }
   return {
     ...(value.requestId !== undefined ? { requestId: value.requestId } : {}),
@@ -943,7 +943,7 @@ function normalizeActionReceiptContext(
 
 function requireReference(value: unknown, label: string): asserts value is string {
   if (typeof value !== "string" || !value.trim() || value.length > maximumTextLength || forbiddenTextPattern.test(value)) {
-    throw new WorkFoldAutomationStoreError("INPUT_INVALID", `${label} is required and must be plain text.`);
+    throw new AmpleFileAutomationStoreError("INPUT_INVALID", `${label} is required and must be plain text.`);
   }
 }
 
@@ -955,7 +955,7 @@ function scrubText(value: string): string {
 // before it is substituted, so this is defense in depth over the same
 // character class; it keeps its newlines (it is a list) and is re-bounded.
 function scrubPlaceholderText(value: string): string {
-  return scrubWorkFoldAutomationMessageText(value).slice(0, workFoldAutomationBounds.maxPlaceholderTextBytes);
+  return scrubAmpleFileAutomationMessageText(value).slice(0, ampleFileAutomationBounds.maxPlaceholderTextBytes);
 }
 
 function compareStrings(left: string, right: string): number {
@@ -963,7 +963,7 @@ function compareStrings(left: string, right: string): number {
 }
 
 function emptyFile(): AutomationStoreFileShape {
-  return { schemaVersion: WORKFOLD_AUTOMATION_STORE_SCHEMA_VERSION, automations: [] };
+  return { schemaVersion: AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION, automations: [] };
 }
 
 async function loadAutomationStoreFile(
@@ -994,25 +994,25 @@ async function loadAutomationStoreFile(
   const record = parsed as Record<string, unknown>;
   const unknown = Object.keys(record).find((key) => key !== "schemaVersion" && key !== "automations");
   if (unknown) return damaged(`carries the unknown field ${unknown}`);
-  if (record.schemaVersion !== 1 && record.schemaVersion !== 2 && record.schemaVersion !== WORKFOLD_AUTOMATION_STORE_SCHEMA_VERSION) {
-    return typeof record.schemaVersion === "number" && record.schemaVersion > WORKFOLD_AUTOMATION_STORE_SCHEMA_VERSION
-      ? damaged(`was written by a newer work-fold (schema version ${record.schemaVersion})`)
+  if (record.schemaVersion !== 1 && record.schemaVersion !== 2 && record.schemaVersion !== AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION) {
+    return typeof record.schemaVersion === "number" && record.schemaVersion > AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION
+      ? damaged(`was written by a newer AmpleFile (schema version ${record.schemaVersion})`)
       : damaged(`uses the unsupported schema version ${String(record.schemaVersion)}`);
   }
-  const legacyGrants = record.schemaVersion !== WORKFOLD_AUTOMATION_STORE_SCHEMA_VERSION;
+  const legacyGrants = record.schemaVersion !== AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION;
   if (!Array.isArray(record.automations)) return damaged("does not list its automations");
-  const automations: WorkFoldAutomationRecord[] = [];
+  const automations: AmpleFileAutomationRecord[] = [];
   const ids = new Set<string>();
   for (const [index, candidate] of record.automations.entries()) {
     const converted = legacyGrants ? convertLegacyGrants(candidate) : candidate;
     const issue = automationRecordIssue(converted);
     if (issue) return damaged(`holds an invalid automation at index ${index}: ${issue}`);
-    const automation = converted as WorkFoldAutomationRecord;
+    const automation = converted as AmpleFileAutomationRecord;
     if (ids.has(automation.declaration.id)) return damaged(`holds the duplicate automation id ${automation.declaration.id}`);
     ids.add(automation.declaration.id);
     automations.push(structuredClone(automation));
   }
-  return { file: { schemaVersion: WORKFOLD_AUTOMATION_STORE_SCHEMA_VERSION, automations }, damageReason: null };
+  return { file: { schemaVersion: AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION, automations }, damageReason: null };
 }
 
 const AUTOMATION_RECORD_KEYS = [
@@ -1044,7 +1044,7 @@ function convertLegacyGrants(candidate: unknown): unknown {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
       const grant = entry as Record<string, unknown>;
       if (grant.decisionId === undefined && grant.approvedAt === undefined) return entry;
-      const legacy = grant as unknown as LegacyWorkFoldAutomationGrant;
+      const legacy = grant as unknown as LegacyAmpleFileAutomationGrant;
       return {
         digest: legacy.digest,
         requestId: legacy.decisionId,
@@ -1055,7 +1055,7 @@ function convertLegacyGrants(candidate: unknown): unknown {
     }),
   };
 }
-const SUSPENSION_KEYS = ["at", "missingWorkFolderIds", "reRegisteredWorkFolderIds"];
+const SUSPENSION_KEYS = ["at", "missingConnectedFolderIds", "reRegisteredConnectedFolderIds"];
 const AT_OCCURRENCE_KEYS = ["occurrenceId", "slotAt", "consumedAt", "runId", "finishedAt"];
 
 function automationRecordIssue(value: unknown): string | null {
@@ -1063,26 +1063,26 @@ function automationRecordIssue(value: unknown): string | null {
   const record = value as Record<string, unknown>;
   const unknown = Object.keys(record).find((key) => !AUTOMATION_RECORD_KEYS.includes(key));
   if (unknown) return `${unknown} is not part of the automation record contract`;
-  let declaration: WorkFoldAutomationDeclaration;
+  let declaration: AmpleFileAutomationDeclaration;
   try {
-    declaration = normalizeWorkFoldAutomationDeclaration(record.declaration);
+    declaration = normalizeAmpleFileAutomationDeclaration(record.declaration);
   } catch (error) {
     return `its declaration is invalid (${error instanceof Error ? error.message : String(error)})`;
   }
   // Recompute rather than trust: a digest that does not match its declaration
   // is digest-mismatched authority, which must never load.
-  if (record.digest !== workFoldAutomationDigest(declaration)) return "its digest does not match its declaration";
+  if (record.digest !== ampleFileAutomationDigest(declaration)) return "its digest does not match its declaration";
   if (record.health !== "enabled" && record.health !== "disabled" && record.health !== "suspended" && record.health !== "completed") {
     return "its health state is unknown";
   }
-  if (!Array.isArray(record.grants) || record.grants.length < 1 || record.grants.length > WORKFOLD_AUTOMATION_GRANT_HISTORY_LIMIT) {
+  if (!Array.isArray(record.grants) || record.grants.length < 1 || record.grants.length > AMPLEFILE_AUTOMATION_GRANT_HISTORY_LIMIT) {
     return "its grant history is missing or oversized";
   }
   for (const grant of record.grants) {
     const issue = grantIssue(grant);
     if (issue) return issue;
   }
-  const newest = record.grants[record.grants.length - 1] as WorkFoldAutomationGrant;
+  const newest = record.grants[record.grants.length - 1] as AmpleFileAutomationGrant;
   if ((record.health === "enabled" || record.health === "completed") && newest.digest !== record.digest) {
     return "its live grant does not pin its declaration digest";
   }
@@ -1095,7 +1095,7 @@ function automationRecordIssue(value: unknown): string | null {
     return "suspension detail and suspended health must appear together";
   }
   if (record.suspension !== undefined) {
-    const issue = suspensionIssue(record.suspension, workFoldAutomationReferencedWorkFolderIds(declaration));
+    const issue = suspensionIssue(record.suspension, ampleFileAutomationReferencedConnectedFolderIds(declaration));
     if (issue) return issue;
   }
   if ((record.health === "completed") !== (record.atOccurrence !== undefined)) {
@@ -1109,7 +1109,7 @@ function automationRecordIssue(value: unknown): string | null {
   return null;
 }
 
-function atOccurrenceIssue(value: unknown, declaration: WorkFoldAutomationDeclaration): string | null {
+function atOccurrenceIssue(value: unknown, declaration: AmpleFileAutomationDeclaration): string | null {
   if (declaration.trigger.kind !== "at") return "only a one-time declaration may validate occurrence detail";
   const trigger = declaration.trigger;
   if (!value || typeof value !== "object" || Array.isArray(value)) return "one-time occurrence detail must be an object";
@@ -1131,18 +1131,18 @@ function atOccurrenceIssue(value: unknown, declaration: WorkFoldAutomationDeclar
     occurrence.finishedAt !== undefined
     && Date.parse(occurrence.finishedAt as string) < Date.parse(occurrence.consumedAt as string)
   ) return "the one-time occurrence finished before it was consumed";
-  const expected = workFoldAutomationAtOccurrenceId(declaration.id, workFoldAutomationDigest(declaration), trigger.at);
+  const expected = ampleFileAutomationAtOccurrenceId(declaration.id, ampleFileAutomationDigest(declaration), trigger.at);
   if (occurrence.occurrenceId !== expected) return "the one-time occurrence id does not match its declaration";
   return null;
 }
 
-export function workFoldAutomationAtOccurrenceId(automationId: string, digest: string, slotAt: string): string {
+export function ampleFileAutomationAtOccurrenceId(automationId: string, digest: string, slotAt: string): string {
   return `at-${createHash("sha256").update(`${automationId}\0${digest}\0${slotAt}`).digest("hex").slice(0, 32)}`;
 }
 
 function scheduledReceiptCause(
   value: unknown,
-): Extract<WorkFoldAutomationRunCause, { kind: "scheduled" | "resume" }> | undefined {
+): Extract<AmpleFileAutomationRunCause, { kind: "scheduled" | "resume" }> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const cause = value as Record<string, unknown>;
   if ((cause.kind !== "scheduled" && cause.kind !== "resume") || !isTimestamp(cause.slotAt)) return undefined;
@@ -1161,8 +1161,8 @@ function grantIssue(value: unknown): string | null {
   if (typeof grant.digest !== "string" || !/^[a-f0-9]{64}$/.test(grant.digest)) return "a grant digest is invalid";
   if (typeof grant.requestId !== "string" || !grant.requestId.trim()) return "a grant request id is invalid";
   if (!isTimestamp(grant.enabledAt)) return "a grant enabledAt is invalid";
-  if (!(WORKFOLD_CLI_ACT_SURFACES as readonly string[]).includes(String(grant.surface))
-    && !(WORKFOLD_CLI_ACT_LEGACY_SURFACES as readonly string[]).includes(String(grant.surface))) {
+  if (!(AMPLEFILE_CLI_ACT_SURFACES as readonly string[]).includes(String(grant.surface))
+    && !(AMPLEFILE_CLI_ACT_LEGACY_SURFACES as readonly string[]).includes(String(grant.surface))) {
     return "a grant surface is invalid";
   }
   if ((grant.surface === "remote_web") !== (typeof grant.browserId === "string")) {
@@ -1171,28 +1171,28 @@ function grantIssue(value: unknown): string | null {
   return null;
 }
 
-function suspensionIssue(value: unknown, referencedWorkFolderIds: string[]): string | null {
+function suspensionIssue(value: unknown, referencedConnectedFolderIds: string[]): string | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return "suspension detail must be an object";
   const suspension = value as Record<string, unknown>;
   const unknown = Object.keys(suspension).find((key) => !SUSPENSION_KEYS.includes(key));
   if (unknown) return `suspension field ${unknown} is not part of the suspension contract`;
   if (!isTimestamp(suspension.at)) return "the suspension timestamp is invalid";
-  for (const key of ["missingWorkFolderIds", "reRegisteredWorkFolderIds"] as const) {
+  for (const key of ["missingConnectedFolderIds", "reRegisteredConnectedFolderIds"] as const) {
     const list = suspension[key];
-    if (!Array.isArray(list) || (key === "missingWorkFolderIds" && list.length < 1) || list.length > 64) {
+    if (!Array.isArray(list) || (key === "missingConnectedFolderIds" && list.length < 1) || list.length > 64) {
       return `suspension ${key} is invalid`;
     }
     for (const id of list) {
-      if (typeof id !== "string" || !id.trim()) return `suspension ${key} holds an invalid work-folder id`;
+      if (typeof id !== "string" || !id.trim()) return `suspension ${key} holds an invalid Connected Folder id`;
     }
   }
-  const missing = suspension.missingWorkFolderIds as string[];
-  const reRegistered = suspension.reRegisteredWorkFolderIds as string[];
-  if (!missing.every((id) => referencedWorkFolderIds.includes(id))) {
-    return "suspension names a work-folder the declaration never references";
+  const missing = suspension.missingConnectedFolderIds as string[];
+  const reRegistered = suspension.reRegisteredConnectedFolderIds as string[];
+  if (!missing.every((id) => referencedConnectedFolderIds.includes(id))) {
+    return "suspension names a Connected Folder the declaration never references";
   }
   if (!reRegistered.every((id) => missing.includes(id))) {
-    return "suspension notes a re-registered work-folder it never recorded as missing";
+    return "suspension notes a re-registered Connected Folder it never recorded as missing";
   }
   return null;
 }

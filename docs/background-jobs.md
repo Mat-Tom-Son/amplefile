@@ -6,7 +6,7 @@
 > records govern. `src/local/jobs/`, `src/local/agent/job-tools.ts`, the
 > `jobs` act verbs, and their suites are the implementation authority.
 
-A Worker or the work-fold agent starts a shell command, keeps working or ends
+A Worker or the AmpleFile agent starts a shell command, keeps working or ends
 its turn, and is woken with the result when the command exits. Exports,
 conversions, installs, builds, test suites, and servers stop holding a turn
 open, and a Chat stops going quiet while something long runs.
@@ -27,9 +27,9 @@ continuation behind Stop. A finished job uses that path instead of a new one.
 
 | # | Decision | What it does not change |
 |---|---|---|
-| F31 | **A background job belongs to the turn that started it.** A job is one shell command started by a running Worker or work-fold agent turn. It joins that turn's request: while it runs, the request reads `working`, so `chat wait`, the work line, the overview, Stop, and settled deletion treat it as outstanding work. A job record is journaled before the process starts, executes at most once, and is never re-run: a restart records a running job as `interrupted`. | Pi's `bash` tool stays as it is and remains the right tool for short commands. Turn acceptance, one turn per Chat, and History's turn checkpoints are unchanged. |
+| F31 | **A background job belongs to the turn that started it.** A job is one shell command started by a running Worker or AmpleFile agent turn. It joins that turn's request: while it runs, the request reads `working`, so `chat wait`, the work line, the overview, Stop, and settled deletion treat it as outstanding work. A job record is journaled before the process starts, executes at most once, and is never re-run: a restart records a running job as `interrupted`. | Pi's `bash` tool stays as it is and remains the right tool for short commands. Turn acceptance, one turn per Chat, and History's turn checkpoints are unchanged. |
 | F32 | **A finished job wakes its Chat once.** A job's end is delivered exactly once: to a turn in its Chat that reads it, to the next turn that starts in that Chat, or else in one host follow-up turn joined to the job's request when the Chat is idle. The follow-up carries the exit status, how long it ran, its History coverage, and the end of its output. It is the F28 continuation, so it follows Stop fences, the Limits switch that turns continuations off, and "restart never replays". | No busy-wait, no held turn, no polling loop. Nothing wakes a Chat for a job that settled before a restart. |
-| F33 | **Job output stays machine-local.** Combined output is kept under the state root (`jobs/`), never in the work-folder, and is removed with the request retention window. Only what a turn reads or what the follow-up turn carries enters the Chat. | `.work-fold/` and `.pi/` stay untouched. A job's own writes are ordinary file changes in whatever folder it writes to. |
+| F33 | **Job output stays machine-local.** Combined output is kept under the state root (`jobs/`), never in the Connected Folder, and is removed with the request retention window. Only what a turn reads or what the follow-up turn carries enters the Chat. | `.amplefile/` and `.pi/` stay untouched. A job's own writes are ordinary file changes in whatever folder it writes to. |
 
 ## Surface
 
@@ -39,8 +39,8 @@ refusals, and receipts.
 ### Tools in every Chat
 
 Three Pi custom tools, registered beside `generate_image` in
-`src/local/agent/pi-client.ts`, for Workers and the work-fold agent alike. The
-tool knows its own turn, work-folder, and Chat, so it needs no ids or flags.
+`src/local/agent/pi-client.ts`, for Workers and the AmpleFile agent alike. The
+tool knows its own turn, Connected Folder, and Chat, so it needs no ids or flags.
 
 | Tool | Parameters | Returns |
 |---|---|---|
@@ -54,47 +54,47 @@ another round trip. Stop interrupts the wait. The output text uses Pi's own
 `bash` bounds: the last 2,000 lines or 50 KB per read, whichever is smaller,
 with ANSI escapes and control characters removed.
 
-### `work-fold jobs` on the CLI
+### `amplefile jobs` on the CLI
 
 The same operations as act-lane verbs, so codemode, a Worker's shell, and the
-work-fold agent can drive Workers' jobs with receipts:
+AmpleFile agent can drive Workers' jobs with receipts:
 
 ```
-work-fold jobs start  --work-folder <id> --task <own-task-id> (--command "<cmd>" | --command-file <path>) [--name "<label>"] [--cwd <path>] [--timeout <s>] --json
-work-fold jobs list   --work-folder <id> [--conversation <id>] [--running] --json
-work-fold jobs show   --work-folder <id> --job <id> --json
-work-fold jobs output --work-folder <id> --job <id> [--offset <line>] [--limit <lines>] [--wait <s>] [--until "<pattern>"] [--task <own-task-id>] --json
-work-fold jobs stop   --work-folder <id> --job <id> [--parent-task <id>] --json
+amplefile jobs start  --connected-folder <id> --task <own-task-id> (--command "<cmd>" | --command-file <path>) [--name "<label>"] [--cwd <path>] [--timeout <s>] --json
+amplefile jobs list   --connected-folder <id> [--conversation <id>] [--running] --json
+amplefile jobs show   --connected-folder <id> --job <id> --json
+amplefile jobs output --connected-folder <id> --job <id> [--offset <line>] [--limit <lines>] [--wait <s>] [--until "<pattern>"] [--task <own-task-id>] --json
+amplefile jobs stop   --connected-folder <id> --job <id> [--parent-task <id>] --json
 ```
 
 - `start` and `stop` are receipted, journal-first act verbs and join the
   request's action trail as `jobs.start` and `jobs.stop`. `start` requires
   `--task` to be the caller's own running turn, as `chat report` does.
 - `list`, `show`, and `output` are act reads. A job is readable only through
-  its own work-folder. A read counts as delivery only when `--task` names the
+  its own Connected Folder. A read counts as delivery only when `--task` names the
   reader's running turn in the job's own Chat; `jobs stop` takes no `--task`,
   so a job stopped from the CLI still wakes its Chat once.
-- The work-fold agent reaches its own jobs through the tools; `requests show`
-  lists them. The work-fold agent can read and stop any Worker's job through
-  `--work-folder`.
+- The AmpleFile agent reaches its own jobs through the tools; `requests show`
+  lists them. The AmpleFile agent can read and stop any Worker's job through
+  `--connected-folder`.
 - The tool path writes the same job journal and request action, so both
   surfaces leave the same record.
 
 ## Lifecycle
 
-A job record carries its id (`job-<yyyymmddhhmmss>-<8 hex>`), work-folder (absent
-for the work-fold agent), Chat, starting task, request, name, command, folder,
+A job record carries its id (`job-<yyyymmddhhmmss>-<8 hex>`), Connected Folder (absent
+for the AmpleFile agent), Chat, starting task, request, name, command, folder,
 start and end times, process id, exit code or signal, output size, History
 coverage, delivery, and state:
 
 `accepted` → `running` → `exited` | `stopped` | `timed_out` | `failed` (could
-not start) | `interrupted` (work-fold closed or restarted first).
+not start) | `interrupted` (AmpleFile closed or restarted first).
 
 - **Start.** The `accepted` record is written before the process is spawned;
   an unwritable journal refuses. The command runs through Pi's own shell
   configuration and environment with stdin closed, in its own process group,
-  with `WORKFOLD_JOB_ID` set. A kernel task record (`job`, experimental like
-  `check_run`, outside the stable `work-fold.tasks` v1 projection) lives while it runs.
+  with `AMPLEFILE_JOB_ID` set. A kernel task record (`job`, experimental like
+  `check_run`, outside the stable `amplefile.tasks` v1 projection) lives while it runs.
 - **Turn end.** The starting turn ends normally; the job keeps running. The
   turn's post-turn History checkpoint covers what the job wrote by then.
 - **Shell exit.** On macOS and other POSIX hosts, remaining processes in the
@@ -110,7 +110,7 @@ not start) | `interrupted` (work-fold closed or restarted first).
   request and its descendants: SIGTERM to the process group, then SIGKILL after
   5 seconds. `job_stop` and `jobs stop` stop one job the same way. Stopping a
   newer, unrelated request in the same Chat does not stop an older request's job.
-- **Quit and restart.** Quitting work-fold stops every running job the same
+- **Quit and restart.** Quitting AmpleFile stops every running job the same
   way and records it `interrupted`; close-to-tray, sleep, and tab switches do
   not. A synchronous exit handler kills the process groups if the app exits
   abruptly. On the next start, any job still `accepted` or `running` is recorded
@@ -118,11 +118,11 @@ not start) | `interrupted` (work-fold closed or restarted first).
   start time, it is killed. An interrupted job makes its request read
   `failed`, is never re-run, and never wakes its Chat.
 - **Deletion and restore.** A running job keeps its request unfinished, so
-  deleting its Chat, a file in its work-folder, or the work-folder refuses
+  deleting its Chat, a file in its Connected Folder, or the Connected Folder refuses
   until the job ends or is stopped, as settled deletion already does for
   turns, and a job a Stop is still ending keeps it unfinished until it has.
-  Removing the work-folder's registration and restoring the whole
-  work-folder from History refuse while a job runs in it; the restore
+  Removing the Connected Folder's registration and restoring the whole
+  Connected Folder from History refuse while a job runs in it; the restore
   refusal names the job. Installing, updating, or removing Skills &
   Extensions does not wait for jobs: a shell process loads no Pi resources.
 
@@ -148,7 +148,7 @@ is reserved never reads `done` in between:
 The follow-up message is deterministic and needs no model call:
 
 ```text
-work-fold is continuing request req-…: a background job this Chat started has finished. Nobody typed this message.
+amplefile is continuing request req-…: a background job this Chat started has finished. Nobody typed this message.
 
 - Job job-… "Build the site" — exited with code 1 after 6 min 12 s
   command: npm run build
@@ -168,15 +168,15 @@ rather than `done` while the server runs.
 ## History
 
 The turn's final checkpoint is taken before a background job finishes, so a
-job's later writes would be uncovered. When a work-folder job ends, the host
-attempts a full History capture of that work-folder (label
+job's later writes would be uncovered. When a Connected Folder job ends, the host
+attempts a full History capture of that Connected Folder (label
 `After background job: <name>`) and records its real coverage on the job:
 the checkpoint id, files kept, and files skipped by reason, or why no capture
 was possible. Identical content reuses the existing checkpoint. The follow-up
 message, `job_output`, and `jobs show` report that coverage as it is. Jobs
-of the work-fold agent have no History of their own; their record says so,
-and the work-fold agent's instructions say to take `history save` in a
-work-folder it changed through a job.
+of the AmpleFile agent have no History of their own; their record says so,
+and the AmpleFile agent's instructions say to take `history save` in a
+Connected Folder it changed through a job.
 
 ## Storage and bounds
 
@@ -204,11 +204,11 @@ their slots, and a live process group holds its slot until it drains.
 
 ## Teaching
 
-The Worker operations guide and the work-fold agent instructions gain one
+The Worker operations guide and the AmpleFile agent instructions gain one
 rule, stated once: *use `job_start` for anything that may take more than a
 couple of minutes, or whose partial output decides the next step; use `bash`
 for everything else.* Around it they say: after starting a job, keep working
-or finish the turn and say what is running — work-fold brings its result back
+or finish the turn and say what is running — AmpleFile brings its result back
 to this Chat once; never poll in a loop or sleep; use `wait`/`until` only when
 there is nothing else to do and the result is close; read a job a turn
 context lists when it bears on the request; stop servers you started when the
@@ -225,7 +225,7 @@ work is done.
   turns job follow-ups off; a finished job then reaches the next turn's
   context instead.
 - `requests show` and the request record list their jobs; `jobs list`
-  lists a work-folder's.
+  lists a Connected Folder's.
 
 Interactive terminals (`interactive`, `job_input`) and services (`service`)
 are now supported by the same job service; see [Worker tools](worker-tools.md).
@@ -241,15 +241,15 @@ process group on Stop.
   announced local address, such as a dev server's `http://localhost:5173/`, is
   reported by `job_start`, `job_output`, and `jobs show` as `serving` while it
   runs; see [Built-in browser](built-in-browser.md).)
-- CLI access to the work-fold agent's own jobs (it uses the tools).
+- CLI access to the AmpleFile agent's own jobs (it uses the tools).
 
 ## Owner decisions (2026-10-18)
 
 1. **Name.** **Background job** in the interface, `jobs` on the CLI,
    `job_start`/`job_output`/`job_stop` as tools. ("Command" collides with
-   "the `work-fold` command"; "task" is already the turn id.)
+   "the `amplefile` command"; "task" is already the turn id.)
 2. **Capability mutations do not wait.** Deletion, registration removal,
-   and whole-work-folder History restore wait for a running job; installing,
+   and whole–Connected Folder History restore wait for a running job; installing,
    updating, or removing Skills & Extensions does not. A shell process does
    not load Pi resources, and a dev server would otherwise block installs for
    hours.
@@ -278,11 +278,11 @@ restart reconciliation with provable-identity reaping, single delivery, and
 retention. `tests/background-jobs-journey.test.ts` drives real turns on a
 scripted provider: the one follow-up with exit, History, and output; delivery
 by a read and by the next turn's context; request Stop with deletion waiting;
-the restore fence; quit and restart without a wake-up; and the work-fold
-agent's own jobs and scope. `tests/work-fold-cli-jobs-verbs.test.ts` runs the
+the restore fence; quit and restart without a wake-up; and the AmpleFile
+agent's own jobs and scope. `tests/amplefile-cli-jobs-verbs.test.ts` runs the
 `jobs` family through the real executor and facade inside a held turn.
 
-Real turn, 2026-10-18 (`npm run work-fold:drive -- --follow-ups 1`, OpenRouter
+Real turn, 2026-10-18 (`npm run amplefile:drive -- --follow-ups 1`, OpenRouter
 `openai/gpt-6-luna`, disposable folder): asked to run a 40-second command
 without waiting, the Worker called `job_start` and ended its turn; 40 seconds
 later one follow-up turn arrived carrying exit code 0, a History checkpoint

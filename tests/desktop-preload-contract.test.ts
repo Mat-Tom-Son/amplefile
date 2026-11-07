@@ -6,7 +6,7 @@ const main = await readFile(new URL("../desktop/src/main.ts", import.meta.url), 
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 const preloads = await Promise.all([
   readFile(new URL("../desktop/src/preload.cts", import.meta.url), "utf8"),
-  readFile(new URL("../desktop/src/work-fold-agent-popover-preload.cts", import.meta.url), "utf8"),
+  readFile(new URL("../desktop/src/amplefile-agent-popover-preload.cts", import.meta.url), "utf8"),
 ]);
 
 test("sandboxed desktop preloads only require Electron", () => {
@@ -36,11 +36,11 @@ test("native clipboard writes require a trusted top-level sender and expose no r
   const inspector = await readFile(new URL("../desktop/src/model-context-preload.cts", import.meta.url), "utf8");
   const restricted = await readFile(new URL("../desktop/src/restricted-app-preload.cts", import.meta.url), "utf8");
   for (const source of [...preloads, inspector]) {
-    assert.match(source, /ipcRenderer\.invoke\("work-fold:clipboard:write", content\)/);
+    assert.match(source, /ipcRenderer\.invoke\("amplefile:clipboard:write", content\)/);
     assert.doesNotMatch(source, /clipboard:(?:read|clear)|clipboard\.read/);
   }
-  assert.doesNotMatch(restricted, /work-fold:clipboard/);
-  const handler = main.slice(main.indexOf('ipcMain.handle("work-fold:clipboard:write"'));
+  assert.doesNotMatch(restricted, /amplefile:clipboard/);
+  const handler = main.slice(main.indexOf('ipcMain.handle("amplefile:clipboard:write"'));
   const body = handler.slice(0, handler.indexOf("\n  });\n"));
   assert.match(body, /modelContextWindow\.assertSender\(event\)/);
   assert.match(body, /assertTrustedRenderer\(event\)/);
@@ -52,14 +52,14 @@ test("native clipboard writes require a trusted top-level sender and expose no r
   assert.match(body, /\{ text: content\.text, \.\.\.\(content\.html !== undefined \? \{ html: content\.html \} : \{\}\) \}/);
 });
 
-test("Open with reaches the host only as a work-folder file reference and launches only the app the dialog returned", () => {
+test("Open with reaches the host only as a Connected Folder file reference and launches only the app the dialog returned", () => {
   const [preload] = preloads;
-  assert.match(preload, /openPathWith: \(workFolderId: string, path: string\) => ipcRenderer\.invoke\("work-fold:work-folder:open-path-with", \{ workFolderId, path \}\)/);
-  const handler = main.slice(main.indexOf('ipcMain.handle("work-fold:work-folder:open-path-with"'));
+  assert.match(preload, /openPathWith: \(connectedFolderId: string, path: string\) => ipcRenderer\.invoke\("amplefile:connected-folder:open-path-with", \{ connectedFolderId, path \}\)/);
+  const handler = main.slice(main.indexOf('ipcMain.handle("amplefile:connected-folder:open-path-with"'));
   const body = handler.slice(0, handler.indexOf("\n  });\n") + 1);
   assert.match(body, /assertTrustedRenderer\(event\);/);
-  assert.match(body, /workFolderPathRequest\(value, false\)/);
-  assert.match(body, /resolveWorkFolderItem\(request\.workFolderId, request\.path\)/);
+  assert.match(body, /connectedFolderPathRequest\(value, false\)/);
+  assert.match(body, /resolveConnectedFolderItem\(request\.connectedFolderId, request\.path\)/);
   assert.match(body, /dialog\.showOpenDialog\(window, options\)/);
   assert.match(body, /return openFileWithPickedApp\(process\.platform, \{/);
   assert.match(body, /return choice\.canceled \? null : choice\.filePaths\[0\] \?\? null;/);

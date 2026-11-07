@@ -14,7 +14,7 @@ import {
   restrictedAppAssistantTaskCanStop,
   restrictedAppAssistantTaskStatusLabel,
 } from "../web-local/src/lib/restricted-app-assistant.js";
-import type { RestrictedAppInstalled, WorkFolderSummary } from "../web-local/src/types.js";
+import type { RestrictedAppInstalled, ConnectedFolderSummary } from "../web-local/src/types.js";
 
 test("automation history distinguishes interrupted work from an explicit cancellation", () => {
   assert.equal(restrictedAppAutomationOutcomeLabel({ outcome: "cancelled", state: "cancelled" }), "Cancelled");
@@ -73,7 +73,7 @@ test("turning an automation back on acts on the click and leaves a receipt, with
   const longError = `Error: digest failed\n${"    at digest (worker.js:4:2)\n".repeat(400)}`;
   const automation = { id: "digest", title: "Daily digest", handler: "digest", trigger: { kind: "interval", intervalMinutes: 1440 },
     permissions: { network: ["mail"], files: [], notifications: [] }, catchUp: "latest", overlap: "skip" } as const;
-  const app = { workFolderId: "work-folder-one", sourceWorkFolderId: "work-folder-one", featureInstallationId: "feature-one", runtimeInstanceKind: "development", runtimeInstanceId: "runtime-one",
+  const app = { connectedFolderId: "connected-folder-one", sourceConnectedFolderId: "connected-folder-one", featureInstallationId: "feature-one", runtimeInstanceKind: "development", runtimeInstanceId: "runtime-one",
     packageName: "digests", version: "1.0.0", digest: "b".repeat(64), installedAt: "2026-09-09T00:00:00.000Z", updatedAt: "2026-09-09T00:00:00.000Z",
     networkGrants: ["mail"], fileGrants: [], notificationGrants: [], automations: [{ id: automation.id, enabled: false, lastError: longError }],
     manifest: { id: "digests", title: "Digests", version: 1, runtime: { kind: "sandboxed-web", entry: "index.html", worker: "worker.js" }, ui: {}, tools: [],
@@ -94,7 +94,7 @@ test("turning an automation back on acts on the click and leaves a receipt, with
       value = { app: { ...app, automations: [{ id: automation.id, enabled: true, nextRunAt: "2026-09-10T00:00:00.000Z" }] } };
     } else if (path.includes("assistant-tasks")) value = { tasks: [] };
     else if (path.includes("inference")) value = { receipts: [] };
-    else if (path.includes("build-context")) value = { context: { sourceWorkFolderId: app.workFolderId, sourcePath: null, buildConversationId: null, updateTargetRuntimeInstanceId: null } };
+    else if (path.includes("build-context")) value = { context: { sourceConnectedFolderId: app.connectedFolderId, sourcePath: null, buildConversationId: null, updateTargetRuntimeInstanceId: null } };
     else if (path.includes("connections")) value = { connections: [] };
     else if (path.includes("storage/recovery")) value = { recovery: null };
     else if (path.includes("storage")) value = { usage: { revision: 0, usageBytes: 0, quotaBytes: 1000, keyCount: 0, keyLimit: 512 } };
@@ -106,7 +106,7 @@ test("turning an automation back on acts on the click and leaves a receipt, with
   const errors: (string | null)[] = [];
   await dom.render(createElement("main", null,
     createElement(RestrictedAppsSection, {
-      workFolder: { id: app.workFolderId, name: "Digests", workFolderRoot: "/synthetic" } as WorkFolderSummary,
+      connectedFolder: { id: app.connectedFolderId, name: "Digests", connectedFolderRoot: "/synthetic" } as ConnectedFolderSummary,
       apps: [app], loading: false, onBuildApp() {}, onOpenAppStudio() {},
       onUpsertApp(next: RestrictedAppInstalled) { changed.push(next); },
       onRemoveApp() {}, onError(message: string | null) { errors.push(message); },

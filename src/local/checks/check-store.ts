@@ -4,17 +4,17 @@ import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, open, opendir, rename, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
-import { normalizeWorkFoldCheckTargetPath, type WorkFoldCheckDeclaration } from "../../shared/checks.js";
-import { workFolderCheckStateFile } from "../state-paths.js";
+import { normalizeAmpleFileCheckTargetPath, type AmpleFileCheckDeclaration } from "../../shared/checks.js";
+import { connectedFolderCheckStateFile } from "../state-paths.js";
 import {
-  workFoldCheckStateVersion,
-  type WorkFoldCheckAuthorization,
-  type WorkFoldCheckDecision,
-  type WorkFoldCheckDecisionKind,
-  type WorkFoldCheckFinding,
-  type WorkFoldCheckMachineState,
-  type WorkFoldCheckRunLimits,
-  type WorkFoldCheckRunRecord,
+  ampleFileCheckStateVersion,
+  type AmpleFileCheckAuthorization,
+  type AmpleFileCheckDecision,
+  type AmpleFileCheckDecisionKind,
+  type AmpleFileCheckFinding,
+  type AmpleFileCheckMachineState,
+  type AmpleFileCheckRunLimits,
+  type AmpleFileCheckRunRecord,
 } from "./check-types.js";
 
 const maximumRunRecords = 2_000;
@@ -22,13 +22,13 @@ const maximumDecisionRecords = 5_000;
 const maximumMachineStateBytes = 256 * 1024 * 1024;
 const maximumAuthorizationRecords = 10_000;
 
-export interface WorkFoldCheckStoreOptions {
+export interface AmpleFileCheckStoreOptions {
   path?: string;
 }
 
 /** Removal-only cleanup: revoke Check bytes without trusting or parsing them. */
-export async function purgeWorkFoldCheckState(workFolderId: string, options: WorkFoldCheckStoreOptions = {}): Promise<void> {
-  const path = options.path ?? workFolderCheckStateFile(workFolderId);
+export async function purgeAmpleFileCheckState(connectedFolderId: string, options: AmpleFileCheckStoreOptions = {}): Promise<void> {
+  const path = options.path ?? connectedFolderCheckStateFile(connectedFolderId);
   for (const candidate of [path, `${path}.bak`]) {
     await unlink(candidate).catch((error: unknown) => {
       if (!isMissingFile(error)) throw error;
@@ -56,20 +56,20 @@ export async function purgeWorkFoldCheckState(workFolderId: string, options: Wor
   }
 }
 
-export class WorkFoldCheckStore {
+export class AmpleFileCheckStore {
   readonly #path: string;
-  #state: WorkFoldCheckMachineState;
+  #state: AmpleFileCheckMachineState;
   #writeQueue: Promise<void> = Promise.resolve();
   #preserveBackupOnNextWrite: boolean;
 
-  private constructor(path: string, state: WorkFoldCheckMachineState, preserveBackupOnNextWrite = false) {
+  private constructor(path: string, state: AmpleFileCheckMachineState, preserveBackupOnNextWrite = false) {
     this.#path = path;
     this.#state = state;
     this.#preserveBackupOnNextWrite = preserveBackupOnNextWrite;
   }
 
-  static async create(workFolderId: string, options: WorkFoldCheckStoreOptions = {}): Promise<WorkFoldCheckStore> {
-    const path = options.path ?? workFolderCheckStateFile(workFolderId);
+  static async create(connectedFolderId: string, options: AmpleFileCheckStoreOptions = {}): Promise<AmpleFileCheckStore> {
+    const path = options.path ?? connectedFolderCheckStateFile(connectedFolderId);
     let firstError: unknown;
     for (const candidate of [path, `${path}.bak`]) {
       const source = await readBoundedStateFile(candidate).catch((error: unknown) => {
@@ -87,7 +87,7 @@ export class WorkFoldCheckStore {
           recoveredState.authorizations = {};
           recoveredState.revision += 1;
         }
-        const store = new WorkFoldCheckStore(path, recoveredState, recoveredFromBackup);
+        const store = new AmpleFileCheckStore(path, recoveredState, recoveredFromBackup);
         if (recoveredFromBackup) await store.#persistRecoveredBackup();
         await store.#reconcileInterruptedRuns();
         return store;
@@ -96,11 +96,11 @@ export class WorkFoldCheckStore {
         firstError ??= error;
       }
     }
-    if (firstError) throw new Error(`work-fold could not read Check state: ${errorMessage(firstError)}`);
-    return new WorkFoldCheckStore(path, emptyState());
+    if (firstError) throw new Error(`AmpleFile could not read Check state: ${errorMessage(firstError)}`);
+    return new AmpleFileCheckStore(path, emptyState());
   }
 
-  snapshot(): WorkFoldCheckMachineState {
+  snapshot(): AmpleFileCheckMachineState {
     return structuredClone(this.#state);
   }
 
@@ -122,21 +122,21 @@ export class WorkFoldCheckStore {
   }
 
   async authorize(
-    declaration: WorkFoldCheckDeclaration,
+    declaration: AmpleFileCheckDeclaration,
     declarationDigest: string,
-    actor: WorkFoldCheckAuthorization["enabledBy"],
+    actor: AmpleFileCheckAuthorization["enabledBy"],
     sensorDigest: string,
     now = new Date(),
-    execution: WorkFoldCheckAuthorization["execution"] = "deterministic",
-    limits: WorkFoldCheckRunLimits = {
+    execution: AmpleFileCheckAuthorization["execution"] = "deterministic",
+    limits: AmpleFileCheckRunLimits = {
       maximumFiles: 100_000,
       maximumFileBytes: 1024 * 1024 * 1024,
       maximumTotalBytes: 16 * 1024 * 1024 * 1024,
       maximumFindings: 100_000,
       timeoutMs: 30 * 60_000,
     },
-  ): Promise<WorkFoldCheckAuthorization> {
-    const authorization: WorkFoldCheckAuthorization = {
+  ): Promise<AmpleFileCheckAuthorization> {
+    const authorization: AmpleFileCheckAuthorization = {
       checkId: declaration.id,
       declarationDigest: digest(declarationDigest, "Declaration digest"),
       sensorId: declaration.sensor.id,
@@ -163,14 +163,14 @@ export class WorkFoldCheckStore {
     return removed;
   }
 
-  async recordRun(run: WorkFoldCheckRunRecord): Promise<void> {
+  async recordRun(run: AmpleFileCheckRunRecord): Promise<void> {
     const normalized = normalizeRun(run);
     await this.#update((state) => {
       state.runs = [normalized, ...state.runs.filter((item) => item.id !== normalized.id)].slice(0, maximumRunRecords);
     });
   }
 
-  async acceptRun(run: WorkFoldCheckRunRecord): Promise<void> {
+  async acceptRun(run: AmpleFileCheckRunRecord): Promise<void> {
     if (run.state !== "accepted" || run.endedAt !== undefined) throw new Error("An accepted Check run cannot already be terminal.");
     await this.recordRun(run);
   }
@@ -188,7 +188,7 @@ export class WorkFoldCheckStore {
     if (!found) throw new Error("Check run not found.");
   }
 
-  async finishRun(run: WorkFoldCheckRunRecord): Promise<void> {
+  async finishRun(run: AmpleFileCheckRunRecord): Promise<void> {
     if (run.state === "accepted" || run.state === "running" || !run.endedAt) {
       throw new Error("A terminal Check run requires a terminal state and endedAt.");
     }
@@ -227,12 +227,12 @@ export class WorkFoldCheckStore {
   async decide(input: {
     fingerprint: string;
     findingId?: string;
-    decision: WorkFoldCheckDecisionKind;
-    actor: WorkFoldCheckDecision["actor"];
+    decision: AmpleFileCheckDecisionKind;
+    actor: AmpleFileCheckDecision["actor"];
     deferUntil?: string;
     note?: string;
     now?: Date;
-  }): Promise<WorkFoldCheckDecision> {
+  }): Promise<AmpleFileCheckDecision> {
     const existingDecision = this.#state.decisions[input.fingerprint];
     if (!input.findingId && existingDecision && existingDecision.decision === input.decision
       && existingDecision.actor === input.actor && existingDecision.deferUntil === input.deferUntil
@@ -311,7 +311,7 @@ export class WorkFoldCheckStore {
     await operation;
   }
 
-  async #update(mutate: (state: WorkFoldCheckMachineState) => void | boolean): Promise<void> {
+  async #update(mutate: (state: AmpleFileCheckMachineState) => void | boolean): Promise<void> {
     const operation = this.#writeQueue.catch(() => undefined).then(async () => {
       const next = this.snapshot();
       if (mutate(next) === false) return;
@@ -329,13 +329,13 @@ export class WorkFoldCheckStore {
     if (!this.#state.runs.some((run) => run.state === "accepted" || run.state === "running") && !this.#state.corrections?.some((item) => item.state === "applying")) return;
     const endedAt = new Date().toISOString();
     await this.#update((state) => {
-      state.corrections = state.corrections?.map((item) => item.state === "applying" ? { ...item, state: "failed", error: "work-fold stopped during correction application. Inspect the file and its History checkpoint before continuing; the correction was not retried." } : item);
+      state.corrections = state.corrections?.map((item) => item.state === "applying" ? { ...item, state: "failed", error: "AmpleFile stopped during correction application. Inspect the file and its History checkpoint before continuing; the correction was not retried." } : item);
       state.runs = state.runs.map((run) => run.state === "accepted" || run.state === "running"
         ? {
             ...run,
             state: "interrupted" as const,
             endedAt,
-            error: "work-fold stopped before this Check run recorded a terminal outcome. It was not retried.",
+            error: "AmpleFile stopped before this Check run recorded a terminal outcome. It was not retried.",
           }
         : run);
     });
@@ -349,25 +349,25 @@ export class WorkFoldCheckStore {
   }
 }
 
-function emptyState(): WorkFoldCheckMachineState {
-  return { version: workFoldCheckStateVersion, revision: 0, authorizations: {}, decisions: {}, runs: [] };
+function emptyState(): AmpleFileCheckMachineState {
+  return { version: ampleFileCheckStateVersion, revision: 0, authorizations: {}, decisions: {}, runs: [] };
 }
 
-function clearHidingDecisions(state: WorkFoldCheckMachineState, fingerprints: Set<string>): void {
+function clearHidingDecisions(state: AmpleFileCheckMachineState, fingerprints: Set<string>): void {
   for (const fingerprint of fingerprints) {
     const decision = state.decisions[fingerprint];
     if (decision && decision.decision !== "accept") delete state.decisions[fingerprint];
   }
 }
 
-function normalizeMachineState(value: unknown): WorkFoldCheckMachineState {
+function normalizeMachineState(value: unknown): AmpleFileCheckMachineState {
   const record = objectRecord(value, "Check state must be a JSON object.");
-  if (typeof record.version === "number" && record.version > workFoldCheckStateVersion) {
-    throw Object.assign(new Error(`Check state uses unsupported version ${record.version}.`), { code: "ERR_WORK_FOLD_CHECKS_VERSION" });
+  if (typeof record.version === "number" && record.version > ampleFileCheckStateVersion) {
+    throw Object.assign(new Error(`Check state uses unsupported version ${record.version}.`), { code: "ERR_AMPLEFILE_CHECKS_VERSION" });
   }
   assertAllowedKeys(record, ["version", "revision", "authorizations", "decisions", "runs"], ["corrections"], "Check state");
   if (record.corrections !== undefined && (!Array.isArray(record.corrections) || record.corrections.length > 32)) throw new Error("Invalid correction records.");
-  if (record.version !== 1 && record.version !== 2 && record.version !== workFoldCheckStateVersion) throw new Error("Check state version is invalid.");
+  if (record.version !== 1 && record.version !== 2 && record.version !== ampleFileCheckStateVersion) throw new Error("Check state version is invalid.");
   if (!Number.isSafeInteger(record.revision) || (record.revision as number) < 0) throw new Error("Check state revision is invalid.");
   const authorizations = objectRecord(record.authorizations, "Check authorizations must be an object.");
   const decisions = objectRecord(record.decisions, "Check decisions must be an object.");
@@ -375,7 +375,7 @@ function normalizeMachineState(value: unknown): WorkFoldCheckMachineState {
   if (Object.keys(decisions).length > maximumDecisionRecords) throw new Error("Check decisions are oversized.");
   if (!Array.isArray(record.runs) || record.runs.length > maximumRunRecords) throw new Error("Check run records are invalid or oversized.");
   return {
-    version: workFoldCheckStateVersion,
+    version: ampleFileCheckStateVersion,
     revision: record.revision as number,
     authorizations: Object.fromEntries(Object.entries(authorizations).map(([id, item]) => {
       const authorization = normalizeAuthorization(item);
@@ -392,7 +392,7 @@ function normalizeMachineState(value: unknown): WorkFoldCheckMachineState {
   };
 }
 
-function normalizeAuthorization(value: unknown): WorkFoldCheckAuthorization {
+function normalizeAuthorization(value: unknown): AmpleFileCheckAuthorization {
   const record = objectRecord(value, "Check authorization must be an object.");
   assertExactKeys(record, ["checkId", "declarationDigest", "sensorId", "sensorRevision", "sensorDigest", "enabledAt", "enabledBy", "execution", "limits"], "Check authorization");
   const enabledBy = record.enabledBy;
@@ -414,7 +414,7 @@ function normalizeAuthorization(value: unknown): WorkFoldCheckAuthorization {
   };
 }
 
-function normalizeDecision(value: unknown): WorkFoldCheckDecision {
+function normalizeDecision(value: unknown): AmpleFileCheckDecision {
   const record = objectRecord(value, "Check decision must be an object.");
   assertAllowedKeys(record, ["fingerprint", "decision", "decidedAt", "actor"], ["deferUntil", "note"], "Check decision");
   const decision = record.decision;
@@ -440,7 +440,7 @@ function normalizeDecision(value: unknown): WorkFoldCheckDecision {
   };
 }
 
-function normalizeRun(value: unknown): WorkFoldCheckRunRecord {
+function normalizeRun(value: unknown): AmpleFileCheckRunRecord {
   const record = objectRecord(value, "Check run must be an object.");
   assertAllowedKeys(
     record,
@@ -493,7 +493,7 @@ function normalizeRun(value: unknown): WorkFoldCheckRunRecord {
   };
 }
 
-function normalizeFinding(value: unknown): WorkFoldCheckFinding {
+function normalizeFinding(value: unknown): AmpleFileCheckFinding {
   const record = objectRecord(value, "Check finding must be an object.");
   const required = [
     "id", "fingerprint", "checkId", "declarationDigest", "sensorId", "sensorRevision", "severity",
@@ -505,7 +505,7 @@ function normalizeFinding(value: unknown): WorkFoldCheckFinding {
   if (record.status !== "active" && record.status !== "invalidated" && record.status !== "superseded") throw new Error("Check finding status is invalid.");
   if (!Number.isSafeInteger(record.sensorRevision) || (record.sensorRevision as number) < 1) throw new Error("Check finding sensor revision is invalid.");
   const checkId = boundedText(record.checkId, "Check id", 160);
-  const targetPath = normalizeWorkFoldCheckTargetPath(record.targetPath, "Check finding target");
+  const targetPath = normalizeAmpleFileCheckTargetPath(record.targetPath, "Check finding target");
   const evidence = record.evidence.map(normalizeEvidence);
   if (evidence.some((item) => item.path !== targetPath || item.identity.checkId !== checkId)) {
     throw new Error("Check finding evidence is not bound to its target and Check.");
@@ -529,10 +529,10 @@ function normalizeFinding(value: unknown): WorkFoldCheckFinding {
     ...(record.remediation !== undefined ? { remediation: boundedText(record.remediation, "Check finding remediation", 2_000) } : {}),
     ...(record.invalidatedAt !== undefined ? { invalidatedAt: timestamp(record.invalidatedAt, "Check finding invalidatedAt") } : {}),
     ...(record.invalidationReason !== undefined ? { invalidationReason: boundedText(record.invalidationReason, "Check finding invalidation reason", 500) } : {}),
-  }) as WorkFoldCheckFinding;
+  }) as AmpleFileCheckFinding;
 }
 
-function normalizeInput(value: unknown): WorkFoldCheckRunRecord["inputs"][number] {
+function normalizeInput(value: unknown): AmpleFileCheckRunRecord["inputs"][number] {
   const record = objectRecord(value, "Check input identity must be an object.");
   assertAllowedKeys(record, ["checkId", "path", "state"], ["sha256", "size", "modifiedAt"], "Check input identity");
   if (record.state !== "file" && record.state !== "missing") throw new Error("Check input state is invalid.");
@@ -547,7 +547,7 @@ function normalizeInput(value: unknown): WorkFoldCheckRunRecord["inputs"][number
   }
   return {
     checkId: boundedText(record.checkId, "Check id", 160),
-    path: normalizeWorkFoldCheckTargetPath(record.path, "Check input path"),
+    path: normalizeAmpleFileCheckTargetPath(record.path, "Check input path"),
     state: record.state,
     ...(record.sha256 !== undefined ? { sha256: record.sha256 } : {}),
     ...(record.size !== undefined ? { size: record.size as number } : {}),
@@ -555,11 +555,11 @@ function normalizeInput(value: unknown): WorkFoldCheckRunRecord["inputs"][number
   };
 }
 
-function normalizeEvidence(value: unknown): WorkFoldCheckFinding["evidence"][number] {
+function normalizeEvidence(value: unknown): AmpleFileCheckFinding["evidence"][number] {
   const record = objectRecord(value, "Check evidence must be an object.");
   if (record.kind === "text-span") {
     assertExactKeys(record, ["kind", "path", "start", "end", "quote", "identity", "context"], "Check text evidence");
-    const path = normalizeWorkFoldCheckTargetPath(record.path, "Check evidence path");
+    const path = normalizeAmpleFileCheckTargetPath(record.path, "Check evidence path");
     const identity = normalizeInput(record.identity);
     if (identity.path !== path || identity.state !== "file" || !identity.sha256
       || !Number.isSafeInteger(record.start) || !Number.isSafeInteger(record.end) || (record.start as number) < 0
@@ -579,12 +579,12 @@ function normalizeEvidence(value: unknown): WorkFoldCheckFinding["evidence"][num
     throw new Error("Check path-state evidence is invalid.");
   }
   const identity = normalizeInput(record.identity);
-  const path = normalizeWorkFoldCheckTargetPath(record.path, "Check evidence path");
+  const path = normalizeAmpleFileCheckTargetPath(record.path, "Check evidence path");
   if (identity.path !== path || identity.state !== record.observed) throw new Error("Check evidence identity does not match its observation.");
   return { kind: "path-state", path, expected: record.expected, observed: record.observed, identity };
 }
 
-function normalizeCost(value: unknown): NonNullable<WorkFoldCheckRunRecord["cost"]> {
+function normalizeCost(value: unknown): NonNullable<AmpleFileCheckRunRecord["cost"]> {
   const record = objectRecord(value, "Check run cost must be an object.");
   assertAllowedKeys(record, [], ["model", "inputTokens", "outputTokens", "amountUsd"], "Check run cost");
   const tokens = [record.inputTokens, record.outputTokens];
@@ -658,13 +658,13 @@ function findingFingerprint(value: unknown): string {
   return value;
 }
 
-function normalizeRunLimits(value: unknown): WorkFoldCheckRunLimits {
+function normalizeRunLimits(value: unknown): AmpleFileCheckRunLimits {
   const limits = objectRecord(value, "Check run limits must be an object.");
   assertExactKeys(limits, ["maximumFiles", "maximumFileBytes", "maximumTotalBytes", "maximumFindings", "timeoutMs"], "Check run limits");
   return Object.fromEntries(Object.entries(limits).map(([key, item]) => {
     if (!Number.isSafeInteger(item) || (item as number) < 1) throw new Error(`Check run limit ${key} is invalid.`);
     return [key, item as number];
-  })) as unknown as WorkFoldCheckRunLimits;
+  })) as unknown as AmpleFileCheckRunLimits;
 }
 
 function timestamp(value: unknown, label: string): string {
@@ -707,7 +707,7 @@ function isReplaceRenameError(error: unknown): boolean {
 }
 
 function isUnsupportedVersionError(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ERR_WORK_FOLD_CHECKS_VERSION");
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ERR_AMPLEFILE_CHECKS_VERSION");
 }
 
 function errorMessage(error: unknown): string {

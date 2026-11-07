@@ -25,16 +25,16 @@ export interface PageSqlDatabase {
   transaction?<T>(operation: () => T): T;
 }
 
-/** Work-fold's own columns on every page table, in creation order. */
+/** AmpleFile's own columns on every page table, in creation order. */
 export const pageSystemColumns = ["_id", "_visitor", "_created", "_updated", "_deleted", "_request"] as const;
 export type PageSystemColumn = (typeof pageSystemColumns)[number];
 
 export const pageMetaTable = "_page_meta";
 
-/** Page table and column names, plus work-fold's own `_`-prefixed names. */
+/** Page table and column names, plus AmpleFile's own `_`-prefixed names. */
 const safeIdentifier = /^(?:[a-z][a-z0-9_]{0,40}|_[a-z][a-z0-9_]{0,63})$/u;
 
-/** Double-quotes an identifier after checking it is one work-fold could have produced. */
+/** Double-quotes an identifier after checking it is one AmpleFile could have produced. */
 export function quotePageIdentifier(name: string): string {
   if (!safeIdentifier.test(name)) throw new Error(`Refusing an unexpected SQL identifier: ${JSON.stringify(name)}`);
   return `"${name.replaceAll("\"", "\"\"")}"`;

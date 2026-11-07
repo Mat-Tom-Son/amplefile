@@ -8,7 +8,7 @@ import {
   resolveChatSnoozePresets,
 } from "../../lib/chat-lifecycle";
 import { errorText } from "../../lib/api";
-import type { ChatActionsState, ConversationSummary, WorkFolderSummary } from "../../types";
+import type { ChatActionsState, ConversationSummary, ConnectedFolderSummary } from "../../types";
 
 type ActionView = "menu" | "rename" | "snooze";
 
@@ -21,15 +21,15 @@ export function ChatActionsPopover({
   onClose,
 }: {
   state: ChatActionsState;
-  onRename: (workFolder: WorkFolderSummary, conversation: ConversationSummary, title: string) => Promise<void>;
+  onRename: (connectedFolder: ConnectedFolderSummary, conversation: ConversationSummary, title: string) => Promise<void>;
   onLifecycle: (
-    workFolder: WorkFolderSummary,
+    connectedFolder: ConnectedFolderSummary,
     conversation: ConversationSummary,
     patch: { archived?: boolean; snoozedUntil?: string | null },
   ) => Promise<void>;
-  onDelete: (workFolder: WorkFolderSummary, conversation: ConversationSummary) => Promise<void>;
+  onDelete: (connectedFolder: ConnectedFolderSummary, conversation: ConversationSummary) => Promise<void>;
   /** Make a Copy: a new Chat with this one's history, to try a different direction. */
-  onCopy?: (workFolder: WorkFolderSummary, conversation: ConversationSummary) => Promise<void>;
+  onCopy?: (connectedFolder: ConnectedFolderSummary, conversation: ConversationSummary) => Promise<void>;
   onClose: () => void;
 }) {
   // Opened straight to Rename (from the native menu), Cancel and Escape close instead of going back.
@@ -93,15 +93,15 @@ export function ChatActionsPopover({
       setError("Enter a Chat title.");
       return;
     }
-    await runAction(() => onRename(state.workFolder, state.conversation, nextTitle));
+    await runAction(() => onRename(state.connectedFolder, state.conversation, nextTitle));
   }
 
   async function handleLifecycle(patch: { archived?: boolean; snoozedUntil?: string | null }): Promise<void> {
-    await runAction(() => onLifecycle(state.workFolder, state.conversation, patch));
+    await runAction(() => onLifecycle(state.connectedFolder, state.conversation, patch));
   }
 
   async function handleDelete(): Promise<void> {
-    await runAction(() => onDelete(state.workFolder, state.conversation), "Deleting");
+    await runAction(() => onDelete(state.connectedFolder, state.conversation), "Deleting");
   }
 
   async function runAction(action: () => Promise<void>, label = "Saving"): Promise<void> {
@@ -139,14 +139,14 @@ export function ChatActionsPopover({
         <div className="chat-actions-menu">
           <div className="chat-actions-heading">
             <strong>{state.conversation.title}</strong>
-            <span>{state.workFolder.name}</span>
+            <span>{state.connectedFolder.name}</span>
           </div>
           <button ref={firstActionRef} type="button" disabled={busy} onClick={() => setView("rename")}>
             <Pencil size={14} />
             <span><strong>Rename</strong></span>
           </button>
           {onCopy ? (
-            <button type="button" disabled={busy} onClick={() => void runAction(() => onCopy(state.workFolder, state.conversation), "Copying")}>
+            <button type="button" disabled={busy} onClick={() => void runAction(() => onCopy(state.connectedFolder, state.conversation), "Copying")}>
               <Copy size={14} />
               <span><strong>Make a Copy</strong><small>New Chat with this history</small></span>
             </button>

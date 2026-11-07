@@ -7,7 +7,7 @@
 import { createRequire, registerHooks } from "node:module";
 
 const require = createRequire(import.meta.url);
-const shimUrl = "work-fold-test:fluent-icons";
+const shimUrl = "amplefile-test:fluent-icons";
 let source = null;
 
 registerHooks({

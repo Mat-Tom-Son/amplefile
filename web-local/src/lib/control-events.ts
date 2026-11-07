@@ -1,7 +1,7 @@
 import { createEventSource } from "./api";
 import type { LocalEventStream } from "../types";
 
-export type ControlHint = "apps" | "work-folders" | "models" | "activity" | "reset";
+export type ControlHint = "apps" | "connected-folders" | "models" | "activity" | "reset";
 const listeners = new Set<(hint: ControlHint) => void>();
 let stream: LocalEventStream | null = null;
 
@@ -12,11 +12,11 @@ function connectWhenVisible(): void {
     return;
   }
   if (stream) return;
-  stream = createEventSource("/api/work-fold-agent/control-events");
+  stream = createEventSource("/api/amplefile-agent/control-events");
   stream.onmessage = ({ data }) => {
     let type: unknown;
     try { type = (JSON.parse(data) as { type?: unknown }).type; } catch { return; }
-    if (type !== "apps" && type !== "work-folders" && type !== "models" && type !== "activity" && type !== "reset") return;
+    if (type !== "apps" && type !== "connected-folders" && type !== "models" && type !== "activity" && type !== "reset") return;
     for (const listener of listeners) listener(type);
   };
 }

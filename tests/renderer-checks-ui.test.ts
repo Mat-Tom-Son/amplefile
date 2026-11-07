@@ -2,18 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement, StrictMode } from "react";
 
-import type { WorkFoldCheckRendererOverview } from "../src/local/checks/check-types.js";
-import type { WorkFolderSummary } from "../web-local/src/types.js";
+import type { AmpleFileCheckRendererOverview } from "../src/local/checks/check-types.js";
+import type { ConnectedFolderSummary } from "../web-local/src/types.js";
 import { createDomHarness } from "./support/dom.js";
 
-const overview: WorkFoldCheckRendererOverview = {
-  kind: "work-fold.checks.renderer",
+const overview: AmpleFileCheckRendererOverview = {
+  kind: "amplefile.checks.renderer",
   version: 1,
-  workFolderId: "work-folder-checks-ui",
+  connectedFolderId: "connected-folder-checks-ui",
   status: {
-    kind: "work-fold.checks.experimental",
+    kind: "amplefile.checks.experimental",
     version: 1,
-    workFolderId: "work-folder-checks-ui",
+    connectedFolderId: "connected-folder-checks-ui",
     state: "current-clear",
     configured: 1,
     proposed: 0,
@@ -32,7 +32,7 @@ const overview: WorkFoldCheckRendererOverview = {
     title: "Weekend plan stays available",
     severity: "warning",
     trigger: "manual",
-    sensor: { id: "work-fold.file-presence", revision: 1 },
+    sensor: { id: "amplefile.file-presence", revision: 1 },
     targets: [{ kind: "file", role: "primary", path: "Notes/Weekend plan.md" }],
     authority: "enabled",
   }],
@@ -57,9 +57,9 @@ test("opening the Checks tab re-verifies status once and never starts a run", as
   };
 
   const { ChecksPane } = await import("../web-local/src/components/panes/ChecksPane.js");
-  const workFolder = { id: "work-folder-checks-ui", name: "Weekend Launch", workFolderRoot: "/tmp/weekend-launch" } as WorkFolderSummary;
+  const connectedFolder = { id: "connected-folder-checks-ui", name: "Weekend Launch", connectedFolderRoot: "/tmp/weekend-launch" } as ConnectedFolderSummary;
   await dom.render(createElement(StrictMode, null, createElement(ChecksPane, {
-    workFolder,
+    connectedFolder,
     active: true,
     onOpenFile: () => undefined,
     onChecksChanged: () => undefined,
@@ -76,7 +76,7 @@ test("proposals-only Checks stay unknown instead of rendering a clear result", a
   t.after(() => dom.cleanup());
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
-  const proposalsOnly: WorkFoldCheckRendererOverview = {
+  const proposalsOnly: AmpleFileCheckRendererOverview = {
     ...overview,
     status: {
       ...overview.status,
@@ -88,16 +88,16 @@ test("proposals-only Checks stay unknown instead of rendering a clear result", a
     },
     checks: overview.checks.map((check) => ({ ...check, authority: "proposed" as const })),
   };
-  let responseOverview: WorkFoldCheckRendererOverview = proposalsOnly;
+  let responseOverview: AmpleFileCheckRendererOverview = proposalsOnly;
   globalThis.fetch = async () => new Response(JSON.stringify({ overview: responseOverview }), {
     status: 200,
     headers: { "content-type": "application/json" },
   });
 
   const { ChecksPane } = await import("../web-local/src/components/panes/ChecksPane.js");
-  const workFolder = { id: "work-folder-checks-ui", name: "Weekend Launch", workFolderRoot: "/tmp/weekend-launch" } as WorkFolderSummary;
+  const connectedFolder = { id: "connected-folder-checks-ui", name: "Weekend Launch", connectedFolderRoot: "/tmp/weekend-launch" } as ConnectedFolderSummary;
   await dom.render(createElement(ChecksPane, {
-    workFolder,
+    connectedFolder,
     active: true,
     onOpenFile: () => undefined,
     onChecksChanged: () => undefined,
@@ -109,10 +109,10 @@ test("proposals-only Checks stay unknown instead of rendering a clear result", a
 
   responseOverview = {
     ...proposalsOnly,
-    workFolderId: "work-folder-checks-blocked",
+    connectedFolderId: "connected-folder-checks-blocked",
     status: {
       ...proposalsOnly.status,
-      workFolderId: "work-folder-checks-blocked",
+      connectedFolderId: "connected-folder-checks-blocked",
       state: "blocked",
       proposed: 0,
       blocked: 1,
@@ -120,7 +120,7 @@ test("proposals-only Checks stay unknown instead of rendering a clear result", a
     checks: proposalsOnly.checks.map((check) => ({ ...check, authority: "blocked" as const })),
   };
   await dom.render(createElement(ChecksPane, {
-    workFolder: { ...workFolder, id: "work-folder-checks-blocked" },
+    connectedFolder: { ...connectedFolder, id: "connected-folder-checks-blocked" },
     active: true,
     onOpenFile: () => undefined,
     onChecksChanged: () => undefined,
@@ -136,7 +136,7 @@ test("finding decisions expose a distinct accessible name per finding", async (t
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   const findingTitle = "Signed delivery is missing";
-  const needsAttention: WorkFoldCheckRendererOverview = {
+  const needsAttention: AmpleFileCheckRendererOverview = {
     ...overview,
     status: { ...overview.status, state: "needs-attention", current: 0, needsAttention: 1 },
     findings: [{
@@ -144,7 +144,7 @@ test("finding decisions expose a distinct accessible name per finding", async (t
       fingerprint: "fingerprint-one",
       checkId: "check-one",
       declarationDigest: "declaration-digest",
-      sensorId: "work-fold.file-presence",
+      sensorId: "amplefile.file-presence",
       sensorRevision: 1,
       sensorDigest: "sensor-digest",
       severity: "warning",
@@ -171,9 +171,9 @@ test("finding decisions expose a distinct accessible name per finding", async (t
   });
 
   const { ChecksPane } = await import("../web-local/src/components/panes/ChecksPane.js");
-  const workFolder = { id: "work-folder-checks-ui", name: "Weekend Launch", workFolderRoot: "/tmp/weekend-launch" } as WorkFolderSummary;
+  const connectedFolder = { id: "connected-folder-checks-ui", name: "Weekend Launch", connectedFolderRoot: "/tmp/weekend-launch" } as ConnectedFolderSummary;
   await dom.render(createElement(ChecksPane, {
-    workFolder,
+    connectedFolder,
     active: true,
     onOpenFile: () => undefined,
     onChecksChanged: () => undefined,
@@ -202,10 +202,10 @@ test("a transient status failure preserves known configuration but marks it unav
     });
   };
 
-  const { useWorkFolderChecks } = await import("../web-local/src/hooks/useWorkFolderChecks.js");
-  const workFolder = { id: "work-folder-checks-ui", name: "Weekend Launch", workFolderRoot: "/tmp/weekend-launch" } as WorkFolderSummary;
+  const { useConnectedFolderChecks } = await import("../web-local/src/hooks/useConnectedFolderChecks.js");
+  const connectedFolder = { id: "connected-folder-checks-ui", name: "Weekend Launch", connectedFolderRoot: "/tmp/weekend-launch" } as ConnectedFolderSummary;
   function Harness() {
-    const checks = useWorkFolderChecks(workFolder, false, true);
+    const checks = useConnectedFolderChecks(connectedFolder, false, true);
     return createElement("button", {
       type: "button",
       "data-configured": String(checks.status?.configured ?? 0),
@@ -243,11 +243,11 @@ test("suspending Check status drains the current request and blocks removal-time
     });
   };
 
-  const { useWorkFolderChecks } = await import("../web-local/src/hooks/useWorkFolderChecks.js");
-  const workFolder = { id: "work-folder-checks-ui", name: "Weekend Launch", workFolderRoot: "/tmp/weekend-launch" } as WorkFolderSummary;
-  let controls: ReturnType<typeof useWorkFolderChecks> | undefined;
+  const { useConnectedFolderChecks } = await import("../web-local/src/hooks/useConnectedFolderChecks.js");
+  const connectedFolder = { id: "connected-folder-checks-ui", name: "Weekend Launch", connectedFolderRoot: "/tmp/weekend-launch" } as ConnectedFolderSummary;
+  let controls: ReturnType<typeof useConnectedFolderChecks> | undefined;
   function Harness() {
-    controls = useWorkFolderChecks(workFolder, false, true);
+    controls = useConnectedFolderChecks(connectedFolder, false, true);
     return createElement("span", null, "Checks");
   }
   await dom.render(createElement(Harness));
@@ -260,7 +260,7 @@ test("suspending Check status drains the current request and blocks removal-time
   releaseRequest?.();
   await dom.act(async () => { await suspension; });
   await controls?.refresh();
-  assert.equal(requests, 1, "a suspended hook cannot start a stale request for the removed work-folder");
+  assert.equal(requests, 1, "a suspended hook cannot start a stale request for the removed Connected Folder");
 });
 
 test("a failed overview suppresses cached health claims and decisions", async (t) => {
@@ -268,7 +268,7 @@ test("a failed overview suppresses cached health claims and decisions", async (t
   t.after(() => dom.cleanup());
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
-  const cachedFindingOverview: WorkFoldCheckRendererOverview = {
+  const cachedFindingOverview: AmpleFileCheckRendererOverview = {
     ...overview,
     status: { ...overview.status, state: "needs-attention", current: 0, needsAttention: 1 },
     findings: [{
@@ -276,7 +276,7 @@ test("a failed overview suppresses cached health claims and decisions", async (t
       fingerprint: "finding-99999999999999999999999999999999",
       checkId: "check-one",
       declarationDigest: "a".repeat(64),
-      sensorId: "work-fold.file-presence",
+      sensorId: "amplefile.file-presence",
       sensorRevision: 1,
       sensorDigest: "b".repeat(64),
       severity: "warning",
@@ -296,9 +296,9 @@ test("a failed overview suppresses cached health claims and decisions", async (t
   };
 
   const { ChecksPane } = await import("../web-local/src/components/panes/ChecksPane.js");
-  const workFolder = { id: "work-folder-checks-ui", name: "Weekend Launch", workFolderRoot: "/tmp/weekend-launch" } as WorkFolderSummary;
+  const connectedFolder = { id: "connected-folder-checks-ui", name: "Weekend Launch", connectedFolderRoot: "/tmp/weekend-launch" } as ConnectedFolderSummary;
   const renderPane = (active: boolean) => createElement(ChecksPane, {
-    workFolder,
+    connectedFolder,
     active,
     onOpenFile: () => undefined,
     onChecksChanged: () => undefined,
@@ -345,8 +345,8 @@ test("a transient task poll failure retries until the accepted run settles", asy
   };
 
   const { ChecksPane } = await import("../web-local/src/components/panes/ChecksPane.js");
-  const workFolder = { id: "work-folder-checks-ui", name: "Weekend Launch", workFolderRoot: "/tmp/weekend-launch" } as WorkFolderSummary;
-  await dom.render(createElement(ChecksPane, { workFolder, active: true, onOpenFile: () => undefined, onChecksChanged: () => undefined }));
+  const connectedFolder = { id: "connected-folder-checks-ui", name: "Weekend Launch", connectedFolderRoot: "/tmp/weekend-launch" } as ConnectedFolderSummary;
+  await dom.render(createElement(ChecksPane, { connectedFolder, active: true, onOpenFile: () => undefined, onChecksChanged: () => undefined }));
   await dom.waitFor(() => Boolean(dom.container.querySelector("button.ui-control--primary")));
   await dom.act(() => dom.container.querySelector<HTMLButtonElement>("button.ui-control--primary")?.click());
   await dom.waitFor(() => taskRequests >= 7, 5_000);
@@ -375,8 +375,8 @@ test("the Run action admits only one submission before its response", async (t) 
   };
 
   const { ChecksPane } = await import("../web-local/src/components/panes/ChecksPane.js");
-  const workFolder = { id: "work-folder-checks-ui", name: "Weekend Launch", workFolderRoot: "/tmp/weekend-launch" } as WorkFolderSummary;
-  await dom.render(createElement(ChecksPane, { workFolder, active: true, onOpenFile: () => undefined, onChecksChanged: () => undefined }));
+  const connectedFolder = { id: "connected-folder-checks-ui", name: "Weekend Launch", connectedFolderRoot: "/tmp/weekend-launch" } as ConnectedFolderSummary;
+  await dom.render(createElement(ChecksPane, { connectedFolder, active: true, onOpenFile: () => undefined, onChecksChanged: () => undefined }));
   await dom.waitFor(() => Boolean(dom.container.querySelector("button.ui-control--primary")));
   await dom.act(() => {
     const button = dom.container.querySelector<HTMLButtonElement>("button.ui-control--primary");
@@ -398,7 +398,7 @@ test("a stale-decision conflict refreshes away the superseded finding", async (t
     fingerprint: "finding-11111111111111111111111111111111",
     checkId: "check-one",
     declarationDigest: "a".repeat(64),
-    sensorId: "work-fold.file-presence",
+    sensorId: "amplefile.file-presence",
     sensorRevision: 1,
     sensorDigest: "b".repeat(64),
     severity: "warning" as const,
@@ -408,7 +408,7 @@ test("a stale-decision conflict refreshes away the superseded finding", async (t
     status: "active" as const,
     evidence: [{ kind: "path-state" as const, path: "Notes/Weekend plan.md", expected: "file" as const, observed: "missing" as const, identity: { checkId: "check-one", path: "Notes/Weekend plan.md", state: "missing" as const } }],
   };
-  const needsAttention: WorkFoldCheckRendererOverview = {
+  const needsAttention: AmpleFileCheckRendererOverview = {
     ...overview,
     status: { ...overview.status, state: "needs-attention", current: 0, needsAttention: 1 },
     findings: [finding],
@@ -427,8 +427,8 @@ test("a stale-decision conflict refreshes away the superseded finding", async (t
   };
 
   const { ChecksPane } = await import("../web-local/src/components/panes/ChecksPane.js");
-  const workFolder = { id: "work-folder-checks-ui", name: "Weekend Launch", workFolderRoot: "/tmp/weekend-launch" } as WorkFolderSummary;
-  await dom.render(createElement(ChecksPane, { workFolder, active: true, onOpenFile: () => undefined, onChecksChanged: () => undefined }));
+  const connectedFolder = { id: "connected-folder-checks-ui", name: "Weekend Launch", connectedFolderRoot: "/tmp/weekend-launch" } as ConnectedFolderSummary;
+  await dom.render(createElement(ChecksPane, { connectedFolder, active: true, onOpenFile: () => undefined, onChecksChanged: () => undefined }));
   await dom.waitFor(() => Boolean(dom.container.querySelector('[aria-label="Mark Signed delivery is missing resolved"]')));
   await dom.act(() => dom.container.querySelector<HTMLButtonElement>('[aria-label="Mark Signed delivery is missing resolved"]')?.click());
   await dom.waitFor(() => !dom.container.querySelector('[aria-label="Mark Signed delivery is missing resolved"]'));
@@ -445,10 +445,10 @@ test("returning to the app refreshes agent-made Check status changes", async (t)
   let status = overview.status;
   globalThis.fetch = async () => new Response(JSON.stringify({ status }), { status: 200, headers: { "content-type": "application/json" } });
 
-  const { useWorkFolderChecks } = await import("../web-local/src/hooks/useWorkFolderChecks.js");
-  const workFolder = { id: "work-folder-checks-ui", name: "Weekend Launch", workFolderRoot: "/tmp/weekend-launch" } as WorkFolderSummary;
+  const { useConnectedFolderChecks } = await import("../web-local/src/hooks/useConnectedFolderChecks.js");
+  const connectedFolder = { id: "connected-folder-checks-ui", name: "Weekend Launch", connectedFolderRoot: "/tmp/weekend-launch" } as ConnectedFolderSummary;
   function Harness() {
-    const checks = useWorkFolderChecks(workFolder, false, true);
+    const checks = useConnectedFolderChecks(connectedFolder, false, true);
     return createElement("span", { "data-attention": String(checks.status?.needsAttention ?? 0) });
   }
   await dom.render(createElement(Harness));
@@ -473,8 +473,8 @@ test("Try it displays its completed result without enabling the proposal", async
   };
   const { ChecksPane } = await import("../web-local/src/components/panes/ChecksPane.js");
   const { ConfirmDialogHost } = await import("../web-local/src/ui/feedback.js");
-  const workFolder = { id: "work-folder-checks-ui", name: "Review", workFolderRoot: "/tmp/review" } as WorkFolderSummary;
-  await dom.render(createElement("div", null, createElement(ChecksPane, { workFolder, active: true, onOpenFile: () => {}, onChecksChanged: () => {} }), createElement(ConfirmDialogHost)));
+  const connectedFolder = { id: "connected-folder-checks-ui", name: "Review", connectedFolderRoot: "/tmp/review" } as ConnectedFolderSummary;
+  await dom.render(createElement("div", null, createElement(ChecksPane, { connectedFolder, active: true, onOpenFile: () => {}, onChecksChanged: () => {} }), createElement(ConfirmDialogHost)));
   await dom.waitFor(() => Boolean([...dom.container.querySelectorAll("button")].find((item) => item.textContent === "Try It")));
   await dom.act(() => { [...dom.container.querySelectorAll("button")].find((item) => item.textContent === "Try It")!.click(); });
   await dom.waitFor(() => Boolean(dom.container.querySelector('[role="dialog"]')));
@@ -498,7 +498,7 @@ test("overlapping Files and Checks refreshes retry read conflicts without starti
     });
   };
   const { ChecksPane } = await import("../web-local/src/components/panes/ChecksPane.js");
-  await dom.render(createElement(ChecksPane, { workFolder: { id: overview.workFolderId, name: "Review", workFolderRoot: "/tmp/review" } as WorkFolderSummary, active: true, onOpenFile: () => {}, onChecksChanged: () => {} }));
+  await dom.render(createElement(ChecksPane, { connectedFolder: { id: overview.connectedFolderId, name: "Review", connectedFolderRoot: "/tmp/review" } as ConnectedFolderSummary, active: true, onOpenFile: () => {}, onChecksChanged: () => {} }));
   await dom.waitFor(() => (dom.container.textContent ?? "").includes("No current findings"));
   assert.equal(requested.length, 3); assert.ok(requested.every((url) => url.endsWith("/overview")));
   assert.equal(dom.container.querySelector('[role="alert"]'), null);

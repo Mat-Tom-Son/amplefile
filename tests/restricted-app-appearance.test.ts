@@ -10,32 +10,32 @@ const root = resolve(import.meta.dirname, "..");
 
 test("app views get only known tokens with plain values; anything else is dropped, not fatal", () => {
   const parsed = parseRestrictedAppAppearance({
-    "--wf-accent": "#0d74ce",
-    "--wf-accent-soft": "color-mix(in srgb, #0d74ce 18%, #fafbf8)",
-    "--wf-font": "\"work-fold Inter\", Inter, system-ui, sans-serif",
-    "--wf-shadow": "0 8px 16px rgba(23, 29, 39, 0.14)",
-    "--wf-text": "url(https://example.invalid/x)",
-    "--wf-surface": "red;}body{display:none",
-    "--wf-border": "#000\n}",
-    "--wf-danger": "\"unbalanced",
-    "--wf-success": "image-set(\"a.png\" 1x)",
+    "--af-accent": "#0d74ce",
+    "--af-accent-soft": "color-mix(in srgb, #0d74ce 18%, #fafbf8)",
+    "--af-font": "\"AmpleFile Inter\", Inter, system-ui, sans-serif",
+    "--af-shadow": "0 8px 16px rgba(23, 29, 39, 0.14)",
+    "--af-text": "url(https://example.invalid/x)",
+    "--af-surface": "red;}body{display:none",
+    "--af-border": "#000\n}",
+    "--af-danger": "\"unbalanced",
+    "--af-success": "image-set(\"a.png\" 1x)",
     "--not-a-token": "#fff",
   });
   assert.deepEqual(parsed, {
-    "--wf-accent": "#0d74ce",
-    "--wf-accent-soft": "color-mix(in srgb, #0d74ce 18%, #fafbf8)",
-    "--wf-font": "\"work-fold Inter\", Inter, system-ui, sans-serif",
-    "--wf-shadow": "0 8px 16px rgba(23, 29, 39, 0.14)",
+    "--af-accent": "#0d74ce",
+    "--af-accent-soft": "color-mix(in srgb, #0d74ce 18%, #fafbf8)",
+    "--af-font": "\"AmpleFile Inter\", Inter, system-ui, sans-serif",
+    "--af-shadow": "0 8px 16px rgba(23, 29, 39, 0.14)",
   });
   assert.throws(() => parseRestrictedAppAppearance("tokens"), /must be an object/);
 });
 
 test("the injected CSS is variables and the font only, so it restyles nothing by itself", () => {
-  const css = restrictedAppAppearanceCss("dark", { "--wf-accent": "#b1d5ff" });
-  assert.match(css, /@font-face\{font-family:"work-fold Inter";[^}]*src:url\("\/__work-fold\/fonts\/inter-latin-wght-normal\.woff2"\)/);
-  assert.match(css, /:root\{--wf-theme:dark;--wf-color-scheme:dark;--wf-accent:#b1d5ff;\}$/);
-  assert.doesNotMatch(css.replace(/@font-face\{[^}]*\}/g, ""), /(^|[;{])color-scheme:|body|\.wf-/, "no element rules and no color-scheme change");
-  assert.ok(restrictedAppAppearanceTokens.every((name) => name.startsWith("--wf-")));
+  const css = restrictedAppAppearanceCss("dark", { "--af-accent": "#b1d5ff" });
+  assert.match(css, /@font-face\{font-family:"AmpleFile Inter";[^}]*src:url\("\/__amplefile\/fonts\/inter-latin-wght-normal\.woff2"\)/);
+  assert.match(css, /:root\{--af-theme:dark;--af-color-scheme:dark;--af-accent:#b1d5ff;\}$/);
+  assert.doesNotMatch(css.replace(/@font-face\{[^}]*\}/g, ""), /(^|[;{])color-scheme:|body|\.af-/, "no element rules and no color-scheme change");
+  assert.ok(restrictedAppAppearanceTokens.every((name) => name.startsWith("--af-")));
 });
 
 test("light-dark pairs are settled for the shell's theme before they reach an app", () => {
@@ -57,5 +57,5 @@ test("every kit rule has zero specificity, so an app's own styles always win", a
       assert.match(part.trim(), /^:where\(/, `kit selector "${part.trim()}" must start with :where()`);
     }
   }
-  assert.match(kit, /<link rel="stylesheet" href="\/__work-fold\/kit\.css">/);
+  assert.match(kit, /<link rel="stylesheet" href="\/__amplefile\/kit\.css">/);
 });

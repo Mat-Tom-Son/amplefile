@@ -3,34 +3,34 @@ import { join } from "node:path";
 
 /**
  * The shell's look, handed to every app view as CSS custom properties so an
- * app can match work-fold without copying colors (2026-10-11). The trusted
+ * app can match AmpleFile without copying colors (2026-10-11). The trusted
  * renderer reads these from its own live styles, so they follow the theme,
- * the work-folder's accent, and the person's appearance choices.
+ * the Connected Folder's accent, and the person's appearance choices.
  */
 export const restrictedAppAppearanceTokens = [
-  "--wf-font",
-  "--wf-font-size",
-  "--wf-canvas",
-  "--wf-surface",
-  "--wf-surface-subtle",
-  "--wf-surface-hover",
-  "--wf-text",
-  "--wf-text-muted",
-  "--wf-text-subtle",
-  "--wf-border",
-  "--wf-border-strong",
-  "--wf-accent",
-  "--wf-on-accent",
-  "--wf-accent-soft",
-  "--wf-accent-text",
-  "--wf-focus",
-  "--wf-success",
-  "--wf-danger",
-  "--wf-attention",
-  "--wf-radius-sm",
-  "--wf-radius-md",
-  "--wf-radius-lg",
-  "--wf-shadow",
+  "--af-font",
+  "--af-font-size",
+  "--af-canvas",
+  "--af-surface",
+  "--af-surface-subtle",
+  "--af-surface-hover",
+  "--af-text",
+  "--af-text-muted",
+  "--af-text-subtle",
+  "--af-border",
+  "--af-border-strong",
+  "--af-accent",
+  "--af-on-accent",
+  "--af-accent-soft",
+  "--af-accent-text",
+  "--af-focus",
+  "--af-success",
+  "--af-danger",
+  "--af-attention",
+  "--af-radius-sm",
+  "--af-radius-md",
+  "--af-radius-lg",
+  "--af-shadow",
 ] as const;
 
 export type RestrictedAppAppearanceToken = typeof restrictedAppAppearanceTokens[number];
@@ -62,7 +62,7 @@ export function parseRestrictedAppAppearance(value: unknown): RestrictedAppAppea
   return appearance;
 }
 
-const interFace = (file: string, unicodeRange: string) => `@font-face{font-family:"work-fold Inter";font-style:normal;font-display:swap;font-weight:100 900;src:url("/__work-fold/fonts/${file}") format("woff2-variations");unicode-range:${unicodeRange};}`;
+const interFace = (file: string, unicodeRange: string) => `@font-face{font-family:"AmpleFile Inter";font-style:normal;font-display:swap;font-weight:100 900;src:url("/__amplefile/fonts/${file}") format("woff2-variations");unicode-range:${unicodeRange};}`;
 
 const fontFaces = [
   interFace("inter-latin-ext-wght-normal.woff2", "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF"),
@@ -71,10 +71,10 @@ const fontFaces = [
 
 /**
  * Variables only: nothing here restyles an app that does not use them. The
- * opt-in kit at /__work-fold/kit.css applies them to elements.
+ * opt-in kit at /__amplefile/kit.css applies them to elements.
  */
 export function restrictedAppAppearanceCss(theme: "light" | "dark", appearance: RestrictedAppAppearance | undefined): string {
-  const declarations = [`--wf-theme:${theme};`, `--wf-color-scheme:${theme};`];
+  const declarations = [`--af-theme:${theme};`, `--af-color-scheme:${theme};`];
   for (const name of restrictedAppAppearanceTokens) {
     const value = appearance?.[name];
     if (value) declarations.push(`${name}:${value};`);
@@ -87,7 +87,7 @@ export interface RestrictedAppKitAsset {
   contentType: string;
 }
 
-/** Files served on every app view's own origin under /__work-fold/. */
+/** Files served on every app view's own origin under /__amplefile/. */
 const kitFiles: Record<string, string> = {
   "kit.css": "text/css; charset=utf-8",
   "fonts/inter-latin-wght-normal.woff2": "font/woff2",

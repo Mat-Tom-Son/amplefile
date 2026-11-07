@@ -4,12 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { workFoldCliBrokerPaths } from "../src/local/cli/broker.js";
-import type { WorkFoldCliActReceipt } from "../src/local/cli/act-receipts.js";
+import { ampleFileCliBrokerPaths } from "../src/local/cli/broker.js";
+import type { AmpleFileCliActReceipt } from "../src/local/cli/act-receipts.js";
 import {
-  normalizeWorkFoldAutomationDeclaration,
-  workFoldAutomationDigest,
-  workFoldAutomationWorkFolderRoles,
+  normalizeAmpleFileAutomationDeclaration,
+  ampleFileAutomationDigest,
+  ampleFileAutomationConnectedFolderRoles,
 } from "../src/local/automations/automation-declarations.js";
 import { startLocalApi } from "../src/local/server.js";
 import { automationTriggerSummary, type FolderAutomationsResponse } from "../src/shared/automation-presentation.js";
@@ -18,9 +18,9 @@ const home = "space-0123456789abcdef";
 const trip = "space-fedcba9876543210";
 const other = "space-aaaaaaaaaaaaaaaa";
 
-test("an automation's roles in a work-folder come from its trigger and the work-folder each step targets", () => {
-  const declaration = normalizeWorkFoldAutomationDeclaration({
-    kind: "work-fold.automation",
+test("an automation's roles in a Connected Folder come from its trigger and the Connected Folder each step targets", () => {
+  const declaration = normalizeAmpleFileAutomationDeclaration({
+    kind: "amplefile.automation",
     version: 4,
     id: "automation-folder-roles",
     title: "Roles",
@@ -28,47 +28,47 @@ test("an automation's roles in a work-folder come from its trigger and the work-
     createdAt: "2026-09-24T12:00:00.000Z",
     trigger: {
       kind: "files-changed",
-      workFolder: home,
+      connectedFolder: home,
       watch: { kind: "tree", path: "Ready", recursive: false, extensions: [".md"] },
       debounceSeconds: 5,
       cooldownMinutes: 1,
     },
     steps: [
-      { id: "adopt", kind: "chat", workFolder: trip, message: "Adopt the newest brief." },
-      { id: "copy", kind: "files", fromWorkFolder: home, from: { kind: "paths", paths: ["Ready/brief.md"] }, toWorkFolder: trip, to: "Incoming" },
-      { id: "verify", kind: "check", workFolder: trip },
+      { id: "adopt", kind: "chat", connectedFolder: trip, message: "Adopt the newest brief." },
+      { id: "copy", kind: "files", fromConnectedFolder: home, from: { kind: "paths", paths: ["Ready/brief.md"] }, toConnectedFolder: trip, to: "Incoming" },
+      { id: "verify", kind: "check", connectedFolder: trip },
       { id: "report", kind: "agent", message: "Done." },
     ],
   });
-  assert.deepEqual(workFoldAutomationWorkFolderRoles(declaration, home), ["watches", "copies-from"]);
-  assert.deepEqual(workFoldAutomationWorkFolderRoles(declaration, trip), ["copies-to", "chats-here", "checks-here"]);
-  assert.deepEqual(workFoldAutomationWorkFolderRoles(declaration, other), [], "an agent step names no work-folder");
+  assert.deepEqual(ampleFileAutomationConnectedFolderRoles(declaration, home), ["watches", "copies-from"]);
+  assert.deepEqual(ampleFileAutomationConnectedFolderRoles(declaration, trip), ["copies-to", "chats-here", "checks-here"]);
+  assert.deepEqual(ampleFileAutomationConnectedFolderRoles(declaration, other), [], "an agent step names no Connected Folder");
 
-  const settled = normalizeWorkFoldAutomationDeclaration({
-    kind: "work-fold.automation",
+  const settled = normalizeAmpleFileAutomationDeclaration({
+    kind: "amplefile.automation",
     version: 1,
     id: "automation-after-a-check",
     title: "After a Check",
     createdBy: "human",
     createdAt: "2026-09-24T12:00:00.000Z",
-    trigger: { kind: "on-settled", source: { kind: "check-run", workFolder: other } },
-    steps: [{ id: "tell", kind: "chat", workFolder: home, message: "A Check settled." }],
+    trigger: { kind: "on-settled", source: { kind: "check-run", connectedFolder: other } },
+    steps: [{ id: "tell", kind: "chat", connectedFolder: home, message: "A Check settled." }],
   });
-  assert.deepEqual(workFoldAutomationWorkFolderRoles(settled, other), ["watches"]);
-  assert.deepEqual(workFoldAutomationWorkFolderRoles(settled, home), ["chats-here"]);
+  assert.deepEqual(ampleFileAutomationConnectedFolderRoles(settled, other), ["watches"]);
+  assert.deepEqual(ampleFileAutomationConnectedFolderRoles(settled, home), ["chats-here"]);
 });
 
-test("the shared trigger summary is the one Settings and the work-folder view print", () => {
+test("the shared trigger summary is the one Settings and the Connected Folder view print", () => {
   assert.equal(automationTriggerSummary({ kind: "manual" }), "Manual only");
   assert.equal(automationTriggerSummary({ kind: "interval", intervalMinutes: 30 }), "Every 30 minutes");
   assert.equal(automationTriggerSummary({ kind: "interval", intervalMinutes: 120 }), "Every 2 hours");
   assert.equal(
-    automationTriggerSummary({ kind: "on-settled", source: { kind: "check-run", workFolderId: home, workFolderName: "Home projects" } }),
+    automationTriggerSummary({ kind: "on-settled", source: { kind: "check-run", connectedFolderId: home, connectedFolderName: "Home projects" } }),
     "After a Check settles in Home projects",
   );
   const folderTrigger = {
     kind: "files-changed" as const,
-    workFolderId: home,
+    connectedFolderId: home,
     watch: { kind: "tree" as const, path: "Screenshots", recursive: false, extensions: [".png"] },
     debounceSeconds: 5,
     cooldownMinutes: 1,
@@ -77,17 +77,17 @@ test("the shared trigger summary is the one Settings and the work-folder view pr
   assert.equal(automationTriggerSummary({ ...folderTrigger, ifMissed: "skip" }), "When Screenshots changes · wait 5s · 1 minute cooldown");
   assert.equal(
     automationTriggerSummary({ ...folderTrigger, ifMissed: "run" }),
-    "When Screenshots changes · wait 5s · 1 minute cooldown · catches up after work-fold was closed",
+    "When Screenshots changes · wait 5s · 1 minute cooldown · catches up after AmpleFile was closed",
   );
 });
 
-test("GET /api/work-folders/:id/automations lists only automations naming the work-folder; its acts are the Settings acts and refuse unrelated automations", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-folder-automations-"));
+test("GET /api/connected-folders/:id/automations lists only automations naming the Connected Folder; its acts are the Settings acts and refuse unrelated automations", async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-folder-automations-"));
   const stateRoot = join(sandbox, "state");
   const api = await startLocalApi({
     port: 0,
     stateBase: stateRoot,
-    workFolderBase: join(sandbox, "work-folders"),
+    connectedFolderBase: join(sandbox, "connected-folders"),
     sessionToken: "folder-automations-session",
     loadEnv: false,
   });
@@ -95,45 +95,45 @@ test("GET /api/work-folders/:id/automations lists only automations naming the wo
     await api.close();
     await rm(sandbox, { recursive: true, force: true });
   });
-  const headers = { "content-type": "application/json", "x-work-fold-session": "folder-automations-session" };
-  const get = async (workFolderId: string) => {
-    const response = await fetch(`${api.origin}/api/work-folders/${workFolderId}/automations`, { headers });
+  const headers = { "content-type": "application/json", "x-amplefile-session": "folder-automations-session" };
+  const get = async (connectedFolderId: string) => {
+    const response = await fetch(`${api.origin}/api/connected-folders/${connectedFolderId}/automations`, { headers });
     assert.equal(response.status, 200, await response.clone().text());
     return await response.json() as FolderAutomationsResponse;
   };
-  const post = (workFolderId: string, automationId: string, action: string) =>
-    fetch(`${api.origin}/api/work-folders/${workFolderId}/automations/${automationId}/${action}`, { method: "POST", headers });
+  const post = (connectedFolderId: string, automationId: string, action: string) =>
+    fetch(`${api.origin}/api/connected-folders/${connectedFolderId}/automations/${automationId}/${action}`, { method: "POST", headers });
 
-  const a = (await api.actFacade.createWorkFolder({ name: "Folder A" })).workFolder;
-  const b = (await api.actFacade.createWorkFolder({ name: "Folder B" })).workFolder;
-  const c = (await api.actFacade.createWorkFolder({ name: "Folder C" })).workFolder;
-  const d = (await api.actFacade.createWorkFolder({ name: "Folder D" })).workFolder;
-  await writeFile(join(a.workFolderRoot, "notes.txt"), "folder handoff", "utf8");
+  const a = (await api.actFacade.createConnectedFolder({ name: "Folder A" })).connectedFolder;
+  const b = (await api.actFacade.createConnectedFolder({ name: "Folder B" })).connectedFolder;
+  const c = (await api.actFacade.createConnectedFolder({ name: "Folder C" })).connectedFolder;
+  const d = (await api.actFacade.createConnectedFolder({ name: "Folder D" })).connectedFolder;
+  await writeFile(join(a.connectedFolderRoot, "notes.txt"), "folder handoff", "utf8");
 
   const declarations = [
     {
-      kind: "work-fold.automation", version: 1, id: "automation-a-to-b-handoff", title: "A to B",
+      kind: "amplefile.automation", version: 1, id: "automation-a-to-b-handoff", title: "A to B",
       createdBy: "human", createdAt: "2026-09-24T12:00:00.000Z",
       trigger: { kind: "manual" },
-      steps: [{ id: "handoff", kind: "files", fromWorkFolder: a.id, from: { kind: "paths", paths: ["notes.txt"] }, toWorkFolder: b.id, to: "Incoming" }],
+      steps: [{ id: "handoff", kind: "files", fromConnectedFolder: a.id, from: { kind: "paths", paths: ["notes.txt"] }, toConnectedFolder: b.id, to: "Incoming" }],
     },
     {
-      kind: "work-fold.automation", version: 1, id: "automation-chat-in-c", title: "Chat in C",
+      kind: "amplefile.automation", version: 1, id: "automation-chat-in-c", title: "Chat in C",
       createdBy: "human", createdAt: "2026-09-24T12:00:00.000Z",
       trigger: { kind: "manual" },
-      steps: [{ id: "ask", kind: "chat", workFolder: c.id, message: "Summarize the week." }],
+      steps: [{ id: "ask", kind: "chat", connectedFolder: c.id, message: "Summarize the week." }],
     },
     {
-      kind: "work-fold.automation", version: 1, id: "automation-after-b-check", title: "After a Check in B",
+      kind: "amplefile.automation", version: 1, id: "automation-after-b-check", title: "After a Check in B",
       createdBy: "human", createdAt: "2026-09-24T12:00:00.000Z",
-      trigger: { kind: "on-settled", source: { kind: "check-run", workFolder: b.id } },
-      steps: [{ id: "forward", kind: "files", fromWorkFolder: b.id, from: { kind: "paths", paths: ["Incoming/notes.txt"] }, toWorkFolder: c.id, to: "From B" }],
+      trigger: { kind: "on-settled", source: { kind: "check-run", connectedFolder: b.id } },
+      steps: [{ id: "forward", kind: "files", fromConnectedFolder: b.id, from: { kind: "paths", paths: ["Incoming/notes.txt"] }, toConnectedFolder: c.id, to: "From B" }],
     },
-  ].map((value) => normalizeWorkFoldAutomationDeclaration(value));
+  ].map((value) => normalizeAmpleFileAutomationDeclaration(value));
   for (const declaration of declarations) {
     await api.automations.enable({
       declaration,
-      expectedDigest: workFoldAutomationDigest(declaration),
+      expectedDigest: ampleFileAutomationDigest(declaration),
       grant: { requestId: `request-${declaration.id}`, surface: "main-window" },
     });
   }
@@ -157,16 +157,16 @@ test("GET /api/work-folders/:id/automations lists only automations naming the wo
   assert.equal(
     inB.automations.find((item) => item.automationId === "automation-after-b-check")?.triggerSummary,
     "After a Check settles in Folder B",
-    "the settled source is named by its work-folder name",
+    "the settled source is named by its Connected Folder name",
   );
   const inC = await get(c.id);
   assert.deepEqual(inC.automations.map((item) => [item.automationId, item.roles]).sort(), [
     ["automation-after-b-check", ["copies-to"]],
     ["automation-chat-in-c", ["chats-here"]],
   ]);
-  assert.deepEqual(await get(d.id), { automations: [] }, "an untouched work-folder gets an empty list");
+  assert.deepEqual(await get(d.id), { automations: [] }, "an untouched Connected Folder gets an empty list");
 
-  // An automation that does not name the work-folder is refused and left unchanged.
+  // An automation that does not name the Connected Folder is refused and left unchanged.
   for (const action of ["disable", "enable", "run"]) {
     const refused = await post(a.id, "automation-chat-in-c", action);
     assert.equal(refused.status, 404, action);
@@ -174,7 +174,7 @@ test("GET /api/work-folders/:id/automations lists only automations naming the wo
   }
   assert.equal((await api.automations.getAutomation("automation-chat-in-c"))?.health, "enabled");
   assert.equal((await post(a.id, "automation-missing-one", "run")).status, 404);
-  const unauthenticated = await fetch(`${api.origin}/api/work-folders/${a.id}/automations`);
+  const unauthenticated = await fetch(`${api.origin}/api/connected-folders/${a.id}/automations`);
   assert.equal(unauthenticated.status, 401);
 
   const disabled = await post(c.id, "automation-chat-in-c", "disable");
@@ -195,17 +195,17 @@ test("GET /api/work-folders/:id/automations lists only automations naming the wo
   assert.equal(runBody.accepted, true);
   assert.match(runBody.requestId, /^settings:/);
   await waitFor(async () => {
-    const text = await readFile(join(b.workFolderRoot, "Incoming", "notes.txt"), "utf8").catch(() => null);
+    const text = await readFile(join(b.connectedFolderRoot, "Incoming", "notes.txt"), "utf8").catch(() => null);
     return text === "folder handoff";
-  }, "the work-folder-view run to copy the file");
+  }, "the connected-folder-view run to copy the file");
   await waitFor(async () => (await get(a.id)).automations[0]?.lastRun?.outcome === "succeeded", "the last run to settle");
 
-  const actPath = join(workFoldCliBrokerPaths(stateRoot).root, "receipts", "act.jsonl");
-  await waitFor(async () => (await jsonLines<WorkFoldCliActReceipt>(actPath))
+  const actPath = join(ampleFileCliBrokerPaths(stateRoot).root, "receipts", "act.jsonl");
+  await waitFor(async () => (await jsonLines<AmpleFileCliActReceipt>(actPath))
     .some((entry) => entry.command === "automations.run" && entry.outcome === "ok"), "the run's terminal act receipt");
-  const acts = (await jsonLines<WorkFoldCliActReceipt>(actPath)).filter((entry) => entry.command.startsWith("automations."));
+  const acts = (await jsonLines<AmpleFileCliActReceipt>(actPath)).filter((entry) => entry.command.startsWith("automations."));
   assert.ok(acts.every((entry) => entry.surface === "main-window" && entry.requestId.startsWith("settings:")),
-    "the work-folder view writes exactly the receipts Settings writes");
+    "the Connected Folder view writes exactly the receipts Settings writes");
   for (const command of ["automations.disable", "automations.enable", "automations.run"]) {
     assert.ok(acts.some((entry) => entry.command === command && entry.outcome === "accepted"), `${command} accepted`);
     assert.ok(acts.some((entry) => entry.command === command && entry.outcome === "ok"), `${command} ok`);

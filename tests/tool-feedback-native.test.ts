@@ -15,9 +15,9 @@ const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwA
 
 /** A real Pi serializer talks only to this local deterministic provider. */
 async function fixture(t: test.TestContext, options: { vision?: boolean; blockImages?: boolean; tool?: string; arguments?: Record<string, unknown>; fail?: boolean; instructions?: string } = {}) {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-native-feedback-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-native-feedback-"));
   const agentDir = join(root, "pi");
-  const workFolderRoot = join(root, "work-folder");
+  const connectedFolderRoot = join(root, "connected-folder");
   const requests: any[] = [];
   const failures: unknown[] = [];
   const server = createServer(async (request, response) => {
@@ -33,7 +33,7 @@ async function fixture(t: test.TestContext, options: { vision?: boolean; blockIm
       })}\n\n`);
       const hasToolResult = body.messages.some((message: any) => message.role === "tool");
       const isTitle = JSON.stringify(body.messages).includes("Write a specific 3 to 7 word title");
-      const isInference = JSON.stringify(body.messages).includes("You are answering one bounded request from a work-folder app");
+      const isInference = JSON.stringify(body.messages).includes("You are answering one bounded request from a Connected Folder app");
       const isCheck = body.tools?.some((tool: any) => tool.function?.name === "submit_review");
       if (isCheck) {
         send({ role: "assistant", tool_calls: [{ index: 0, id: "review-1", type: "function", function: {
@@ -57,8 +57,8 @@ async function fixture(t: test.TestContext, options: { vision?: boolean; blockIm
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   await mkdir(join(agentDir, "extensions"), { recursive: true });
-  await mkdir(workFolderRoot, { recursive: true });
-  await writeFile(join(workFolderRoot, "preview.png"), Buffer.from(png, "base64"));
+  await mkdir(connectedFolderRoot, { recursive: true });
+  await writeFile(join(connectedFolderRoot, "preview.png"), Buffer.from(png, "base64"));
   await writeFile(join(agentDir, "extensions", "observations.ts"), `
     export default function(pi) {
       pi.registerTool({ name: "observe_fixture", label: "Observe fixture", description: "Read explicit fixture evidence",
@@ -83,7 +83,7 @@ async function fixture(t: test.TestContext, options: { vision?: boolean; blockIm
   });
   const inspector = new ModelContextInspector();
   inspector.setEnabled(true);
-  const client = new PiConversationClient("feedback-chat", workFolderRoot, {
+  const client = new PiConversationClient("feedback-chat", connectedFolderRoot, {
     async resolveRuntime() {
       return { agentDir, credentials: authStorage, modelRuntime, modelContextInspector: inspector,
         workerInstructions: options.instructions ?? "PERSONAL_INSTRUCTIONS_SURVIVE",
@@ -100,12 +100,12 @@ async function fixture(t: test.TestContext, options: { vision?: boolean; blockIm
     await rm(root, { recursive: true, force: true });
     assert.deepEqual(failures, []);
   });
-  return { client, inspector, requests, events, workFolderRoot };
+  return { client, inspector, requests, events, connectedFolderRoot };
 }
 
-test("native extension text and images reach the next provider request without work-fold result metadata", async (t) => {
+test("native extension text and images reach the next provider request without AmpleFile result metadata", async (t) => {
   const { client, requests, events, inspector } = await fixture(t);
-  assert.equal(await client.prompt("Inspect the fixture.", { workFoldAgentTaskId: "task-fixture" }), "Inspected the returned evidence.");
+  assert.equal(await client.prompt("Inspect the fixture.", { ampleFileAgentTaskId: "task-fixture" }), "Inspected the returned evidence.");
   assert.equal(requests.length, 2);
   const next = JSON.stringify(requests[1]);
   assert.match(next, /Observed rows 1–3: total=6/);
@@ -193,7 +193,7 @@ test("Pi's actual provider conversion omits unsupported images and preserves use
 
 test("auxiliary title calls are recorded with their own context and no borrowed task", async (t) => {
   const { client, requests, inspector } = await fixture(t);
-  await client.prompt("Inspect the fixture.", { workFoldAgentTaskId: "original-task" });
+  await client.prompt("Inspect the fixture.", { ampleFileAgentTaskId: "original-task" });
   assert.equal(await client.generateConversationTitle("Fixture request", "Fixture answer"), "A verified fixture result");
   assert.equal(requests.length, 3);
   assert.doesNotMatch(JSON.stringify(requests[2]), /Observed rows|PERSONAL_INSTRUCTIONS_SURVIVE|NATIVE_CONTEXT_HOOK/);
@@ -205,7 +205,7 @@ test("auxiliary title calls are recorded with their own context and no borrowed 
 
 test("overlapping title, Check and app inference contexts retain separate purposes without Chat instructions", async (t) => {
   const { client, inspector } = await fixture(t);
-  await client.prompt("Inspect the fixture.", { workFoldAgentTaskId: "parent-turn" });
+  await client.prompt("Inspect the fixture.", { ampleFileAgentTaskId: "parent-turn" });
   inspector.clear();
   await Promise.all([
     client.generateConversationTitle("Only title input", "Only title reply"),

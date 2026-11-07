@@ -8,36 +8,36 @@ import {
   RestrictedAppRegistryVersionUnsupportedError,
 } from "../src/local/agent/restricted-app-registry-error.js";
 import {
-  latestWorkFoldReleaseUrl,
-  runWorkFoldStartupRecovery,
-  workFoldStartupRecoveryDialog,
-  workFoldStartupRecoveryPlan,
-  type WorkFoldStartupRecoveryDialog,
-  type WorkFoldStartupRecoveryHost,
+  latestAmpleFileReleaseUrl,
+  runAmpleFileStartupRecovery,
+  ampleFileStartupRecoveryDialog,
+  ampleFileStartupRecoveryPlan,
+  type AmpleFileStartupRecoveryDialog,
+  type AmpleFileStartupRecoveryHost,
 } from "../desktop/src/startup-recovery.js";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 test("newer local state produces update recovery without treating corruption as an update", () => {
-  const plan = workFoldStartupRecoveryPlan(new RestrictedAppRegistryVersionUnsupportedError(6, 5));
+  const plan = ampleFileStartupRecoveryPlan(new RestrictedAppRegistryVersionUnsupportedError(6, 5));
   assert.deepEqual(plan, {
     reason: "newer-local-state",
     actualVersion: 6,
     supportedVersion: 5,
-    title: "work-fold Update Required",
-    message: "This version of work-fold cannot safely open newer local data.",
+    title: "AmpleFile Update Required",
+    message: "This version of AmpleFile cannot safely open newer local data.",
   });
-  assert.equal(workFoldStartupRecoveryPlan(new RestrictedAppRegistryVersionUnsupportedError(5, 5)), null);
-  assert.equal(workFoldStartupRecoveryPlan(new RestrictedAppRegistryVersionUnsupportedError("future", 5)), null);
-  assert.equal(workFoldStartupRecoveryPlan(new Error("Registry is corrupt.")), null);
+  assert.equal(ampleFileStartupRecoveryPlan(new RestrictedAppRegistryVersionUnsupportedError(5, 5)), null);
+  assert.equal(ampleFileStartupRecoveryPlan(new RestrictedAppRegistryVersionUnsupportedError("future", 5)), null);
+  assert.equal(ampleFileStartupRecoveryPlan(new Error("Registry is corrupt.")), null);
 });
 
 test("startup recovery prompts before network work and hands successful installation off without quitting", async () => {
   const plan = requiredPlan();
   const events: string[] = [];
-  const dialogs: WorkFoldStartupRecoveryDialog[] = [];
+  const dialogs: AmpleFileStartupRecoveryDialog[] = [];
   const responses = [0, 0];
-  const outcome = await runWorkFoldStartupRecovery(plan, recoveryHost({
+  const outcome = await runAmpleFileStartupRecovery(plan, recoveryHost({
     events,
     dialogs,
     responses,
@@ -60,9 +60,9 @@ test("startup recovery prompts before network work and hands successful installa
 test("startup recovery keeps release fallback and quit behavior for check and install failures", async () => {
   for (const scenario of ["check", "install"] as const) {
     const events: string[] = [];
-    const dialogs: WorkFoldStartupRecoveryDialog[] = [];
+    const dialogs: AmpleFileStartupRecoveryDialog[] = [];
     const responses = scenario === "check" ? [0, 0] : [0, 0, 0];
-    const outcome = await runWorkFoldStartupRecovery(requiredPlan(), recoveryHost({
+    const outcome = await runAmpleFileStartupRecovery(requiredPlan(), recoveryHost({
       events,
       dialogs,
       responses,
@@ -84,7 +84,7 @@ test("startup recovery keeps release fallback and quit behavior for check and in
 
 test("opening Releases from the initial prompt performs no update effect", async () => {
   const events: string[] = [];
-  const outcome = await runWorkFoldStartupRecovery(requiredPlan(), recoveryHost({
+  const outcome = await runAmpleFileStartupRecovery(requiredPlan(), recoveryHost({
     events,
     dialogs: [],
     responses: [1],
@@ -103,25 +103,25 @@ test("opening Releases from the initial prompt performs no update effect", async
 
 test("desktop startup wires the tested recovery controller to updater and release adapters", () => {
   const source = readFileSync(join(rootDir, "desktop", "src", "main.ts"), "utf8");
-  assert.match(source, /workFoldStartupRecoveryPlan\(error\)/);
-  assert.match(source, /runWorkFoldStartupRecovery\(plan/);
+  assert.match(source, /ampleFileStartupRecoveryPlan\(error\)/);
+  assert.match(source, /runAmpleFileStartupRecovery\(plan/);
   assert.match(source, /desktopUpdater\.updateNow\(\)/);
-  assert.match(source, /openExternal\(latestWorkFoldReleaseUrl\)/);
+  assert.match(source, /openExternal\(latestAmpleFileReleaseUrl\)/);
   assert.match(source, /could not complete update recovery/);
-  assert.equal(latestWorkFoldReleaseUrl, "https://github.com/Mat-Tom-Son/work-fold-mac-releases/releases/latest");
+  assert.equal(latestAmpleFileReleaseUrl, "https://github.com/Mat-Tom-Son/amplefile-mac-releases/releases/latest");
 });
 
 function requiredPlan() {
-  return workFoldStartupRecoveryPlan(new RestrictedAppRegistryVersionUnsupportedError(6, 5))!;
+  return ampleFileStartupRecoveryPlan(new RestrictedAppRegistryVersionUnsupportedError(6, 5))!;
 }
 
 function recoveryHost(input: {
   events: string[];
-  dialogs: WorkFoldStartupRecoveryDialog[];
+  dialogs: AmpleFileStartupRecoveryDialog[];
   responses: number[];
-  checkForUpdate: WorkFoldStartupRecoveryHost["checkForUpdate"];
-  downloadAndInstall: WorkFoldStartupRecoveryHost["downloadAndInstall"];
-}): WorkFoldStartupRecoveryHost {
+  checkForUpdate: AmpleFileStartupRecoveryHost["checkForUpdate"];
+  downloadAndInstall: AmpleFileStartupRecoveryHost["downloadAndInstall"];
+}): AmpleFileStartupRecoveryHost {
   return {
     showDialog: async (dialog) => {
       input.dialogs.push(dialog);
@@ -146,6 +146,6 @@ test("dialog copy keeps data safety explicit in every recovery stage", () => {
     { kind: "check-failed" },
     { kind: "install-failed" },
   ] as const) {
-    assert.match(workFoldStartupRecoveryDialog(plan, stage).detail, /work-folders and app data are safe/);
+    assert.match(ampleFileStartupRecoveryDialog(plan, stage).detail, /Connected Folders and app data are safe/);
   }
 });

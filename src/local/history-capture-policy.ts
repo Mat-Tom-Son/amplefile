@@ -1,7 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { isWorkFolderIgnored, readWorkFolderIgnoreState } from "./work-folder-ignore.js";
+import { isConnectedFolderIgnored, readConnectedFolderIgnoreState } from "./connected-folder-ignore.js";
 
 /**
  * What a full History checkpoint captures.
@@ -13,8 +13,8 @@ import { isWorkFolderIgnored, readWorkFolderIgnoreState } from "./work-folder-ig
  *
  * - directories that are version-control internals, installed dependencies,
  *   Python virtual environments (`pyvenv.cfg`), or self-declared caches
- *   (`CACHEDIR.TAG`), plus work-fold's own hidden support directories;
- * - directories the person ignored in Files (the work-folder ignore rules);
+ *   (`CACHEDIR.TAG`), plus AmpleFile's own hidden support directories;
+ * - directories the person ignored in Files (the Connected Folder ignore rules);
  * - directories a `.gitignore` excludes — build output, tool caches.
  *
  * Individual files are always recovery material: a gitignored `.env` or a
@@ -25,7 +25,7 @@ import { isWorkFolderIgnored, readWorkFolderIgnoreState } from "./work-folder-ig
  * consult only the always-skipped set.
  */
 
-export type HistoryExclusionReason = "builtin" | "work-folder_ignore" | "gitignore";
+export type HistoryExclusionReason = "builtin" | "connected-folder_ignore" | "gitignore";
 
 export interface HistoryCapturePolicy {
   /** Decides whether a directory (and everything beneath it) is skipped. */
@@ -42,7 +42,7 @@ export const historyAlwaysSkippedSegments = new Set([
   ".svn",
   ".jj",
   ".pi",
-  ".work-fold",
+  ".amplefile",
   ".workspace",
   "node_modules",
   "__pycache__",
@@ -84,15 +84,15 @@ export function createTargetedHistoryCapturePolicy(): HistoryCapturePolicy {
   };
 }
 
-export async function createFullHistoryCapturePolicy(workFolderRoot: string): Promise<HistoryCapturePolicy> {
-  const ignore = await readWorkFolderIgnoreState(workFolderRoot).catch(() => ({ version: 1 as const, patterns: [] as string[] }));
+export async function createFullHistoryCapturePolicy(connectedFolderRoot: string): Promise<HistoryCapturePolicy> {
+  const ignore = await readConnectedFolderIgnoreState(connectedFolderRoot).catch(() => ({ version: 1 as const, patterns: [] as string[] }));
   const gitignore = new GitignoreDirectoryRules();
   return {
     async excludeDirectory(relativePath, absolutePath) {
       const name = relativePath.split("/").pop() ?? "";
       if (isHistoryAlwaysSkippedSegment(name)) return "builtin";
       if (await directoryLooksGenerated(absolutePath)) return "builtin";
-      if (isWorkFolderIgnored(relativePath, ignore.patterns)) return "work-folder_ignore";
+      if (isConnectedFolderIgnored(relativePath, ignore.patterns)) return "connected-folder_ignore";
       if (gitignore.excludesDirectory(relativePath)) return "gitignore";
       return null;
     },

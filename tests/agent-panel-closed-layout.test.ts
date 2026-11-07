@@ -11,16 +11,16 @@ import { pathToFileURL } from "node:url";
 // still takes a grid cell and the work area wraps into a second row.
 test("a closed agent panel takes no space, with the sidebar shown or hidden, in both themes", { timeout: 30_000 }, async (t) => {
   let browser: string | undefined;
-  for (const candidate of [process.env.WORKFOLD_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"]) {
+  for (const candidate of [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"]) {
     if (!candidate) continue;
     try { await access(candidate); browser = candidate; break; } catch {}
   }
   if (!browser) { t.skip("Chromium is required for actual layout coverage."); return; }
-  const scratch = await mkdtemp(join(tmpdir(), "work-fold-agent-panel-layout-"));
+  const scratch = await mkdtemp(join(tmpdir(), "amplefile-agent-panel-layout-"));
   t.after(() => rm(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }));
   const sheets = ["brand.css", "styles.css", "application-appearance.css", "panels.css"];
   const css = (await Promise.all(sheets.map((name) => readFile(resolve("web-local/src", name), "utf8")))).join("\n");
-  const script = `const results=[];const layout=document.querySelector('.work-folder-layout');
+  const script = `const results=[];const layout=document.querySelector('.connected-folder-layout');
   for(const theme of ['light','dark'])for(const collapsed of [false,true])for(const open of [true,false]){
     document.documentElement.dataset.theme=theme;document.querySelector('.app-shell').dataset.theme=theme;
     layout.classList.toggle('sidebar-collapsed',collapsed);layout.classList.toggle('agent-panel-open',open);
@@ -29,7 +29,7 @@ test("a closed agent panel takes no space, with the sidebar shown or hidden, in 
     results.push({theme,collapsed,open,panelDisplay:getComputedStyle(panel).display,rows:getComputedStyle(layout).gridTemplateRows.split(' ').length,
       tabsHeight:Math.round(tabs.getBoundingClientRect().height),layoutHeight:Math.round(layout.getBoundingClientRect().height)});
   }document.documentElement.innerHTML='<head></head><body><pre id="result"></pre></body>';document.querySelector('#result').textContent=JSON.stringify(results);`;
-  const html = `<!doctype html><html data-theme="light" data-platform="darwin"><head><style>${css}</style></head><body><div class="app-shell" data-theme="light" style="height:700px"><main class="work-folder-layout agent-panel-open" style="height:700px"><nav class="professional-work-folder-rail"></nav><section class="work-folder-mode-pane"></section><button class="work-folder-resizer"></button><aside class="right-rail"></aside><button class="work-folder-resizer agent-panel-resizer"></button><aside class="agent-panel"><div class="popover agent-panel-chat">Chat</div></aside></main></div><script>${script}</script></body></html>`;
+  const html = `<!doctype html><html data-theme="light" data-platform="darwin"><head><style>${css}</style></head><body><div class="app-shell" data-theme="light" style="height:700px"><main class="connected-folder-layout agent-panel-open" style="height:700px"><nav class="professional-connected-folder-rail"></nav><section class="connected-folder-mode-pane"></section><button class="connected-folder-resizer"></button><aside class="right-rail"></aside><button class="connected-folder-resizer agent-panel-resizer"></button><aside class="agent-panel"><div class="popover agent-panel-chat">Chat</div></aside></main></div><script>${script}</script></body></html>`;
   const path = join(scratch, "fixture.html"); await writeFile(path, html);
   const output = await new Promise<string>((done, fail) => {
     const child = spawn(browser!, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-extensions", "--use-mock-keychain", "--password-store=basic", "--virtual-time-budget=1000", "--disable-features=HangWatcher", "--window-size=1400,800", `--user-data-dir=${join(scratch, "profile")}`, "--dump-dom", pathToFileURL(path).href], { stdio: ["ignore", "pipe", "ignore"] });

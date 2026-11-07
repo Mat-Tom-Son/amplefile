@@ -1,19 +1,19 @@
 # Pages
 
 > **Status:** Contract, 2026-11-05; Publish removed 2026-11-07. Pages are
-> built, previewed, and their entries explored inside work-fold, on this
+> built, previewed, and their entries explored inside AmpleFile, on this
 > computer. Nothing in this document uploads anything. The earlier plan to put
 > pages online is archived in the work-fold repository.
 
 A **page** is a small interactive web page kept in a folder: an announcement,
 an RSVP form, a sign-up sheet, a poll. It runs in its page tab on this
-computer. An **app** is a tool for you inside work-fold. Both are web pages
+computer. An **app** is a tool for you inside AmpleFile. Both are web pages
 underneath, but pages never use your files, your Worker, your connections, or
 your computer, and they never go through App Studio.
 
 ## A page is a folder
 
-A page is any folder inside a work-folder that contains a `page.json` file.
+A page is any folder inside a Connected Folder that contains a `page.json` file.
 
 ```
 Garden Party RSVP/
@@ -22,18 +22,18 @@ Garden Party RSVP/
   style.css, app.js, images/…
 ```
 
-- Everything in the folder except hidden files, `.work-fold/`, `.pi/`, and a
+- Everything in the folder except hidden files, `.amplefile/`, `.pi/`, and a
   `data.sqlite` (with its `-journal`/`-wal`/`-shm` side files) left by an
   earlier version is part of the page.
 - A page folder cannot contain another page folder.
-- Pages are not App Projects. A work-folder can hold any number of pages.
+- Pages are not App Projects. A Connected Folder can hold any number of pages.
 - A loose HTML file outside a page folder is just a file.
 
 ## page.json
 
 ```json
 {
-  "format": "work-fold.page/1",
+  "format": "amplefile.page/1",
   "title": "Garden Party RSVP",
   "tables": {
     "rsvps": {
@@ -52,7 +52,7 @@ Garden Party RSVP/
 
 | Field | Rule |
 | --- | --- |
-| `format` | Required, exactly `work-fold.page/1`. |
+| `format` | Required, exactly `amplefile.page/1`. |
 | `title` | Required, 1–120 characters. |
 | `description` | Optional, up to 500 characters. |
 | `entry` | Optional relative `.html` path inside the folder; default `index.html`. |
@@ -65,7 +65,7 @@ silently ignored.
 `sqlite_`.
 
 - `columns`: 1–64 columns, names matching the same pattern, never starting
-  with `_` (work-fold's own columns do) and never `id` or `visitor` (every row
+  with `_` (AmpleFile's own columns do) and never `id` or `visitor` (every row
   already has those).
 - `visitors`: what a visitor may do, any of `add`, `see-own`, `see-all`,
   `edit-own`, `delete-own`. Default: nothing. The owner may always do
@@ -94,7 +94,7 @@ values may be at most 1 MiB of JSON.
 
 ## What a page's code can use
 
-work-fold injects `window.workFoldPage` before the page's own scripts. Every
+AmpleFile injects `window.ampleFilePage` before the page's own scripts. Every
 call returns a promise. Visitors' browsers never send SQL; the host checks the
 declared rules on every call.
 
@@ -126,7 +126,7 @@ deleted row is `NOT_FOUND`. While `page.json` is broken, page calls answer
 
 **Form helper.** A form with `data-page-table="rsvps"` saves itself:
 
-- On submit, work-fold collects fields whose `name` is a column of the table
+- On submit, AmpleFile collects fields whose `name` is a column of the table
   (checkboxes become booleans, number inputs numbers, empty fields are left
   out), checks them against the declaration, and calls `add`. It keeps one
   request id until the entry is saved, so a retry never adds twice.
@@ -146,7 +146,7 @@ Page CSS styles the states, for example
 
 A page runs in an opaque-origin sandbox.
 
-- work-fold assembles the page folder into one self-contained document.
+- AmpleFile assembles the page folder into one self-contained document.
   Stylesheets, scripts, CSS `url()` and `@import` targets, images, media,
   fonts, and icons that point at files inside the folder are inlined (data URLs
   for binary files). `type="module"` scripts are allowed but cannot import
@@ -163,8 +163,8 @@ A page runs in an opaque-origin sandbox.
   script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:;
   font-src data:; media-src data: blob:; connect-src 'none';
   form-action 'none'; frame-src 'none'; base-uri 'none'`. Page code cannot
-  reach the network, work-fold, or other pages; it talks only to
-  `workFoldPage` over a per-view message channel through a sandbox
+  reach the network, AmpleFile, or other pages; it talks only to
+  `ampleFilePage` over a per-view message channel through a sandbox
   intermediary (`/page-frame.html`). One gap remains: no policy covers WebRTC,
   so a page could still reach a STUN server.
 - Limits: up to 500 files, 10 MiB per file, 25 MiB per page.
@@ -179,10 +179,10 @@ A page opens in a **page tab** with two views, **Preview** and **Data**.
 - Preview runs the page as described above. A small bar above it shows
   **Viewing as**: Visitor, Owner, or New visitor (a fresh visitor, to check
   that one visitor can't see another's entries).
-- Entries made in Preview are **test entries**. They live in work-fold's own
-  storage under the state root (`pages/preview/<workFolderId>/<key>.sqlite`,
-  keyed by the page folder's work-folder-relative path), never in the
-  work-folder. Renaming the page folder starts a fresh test
+- Entries made in Preview are **test entries**. They live in AmpleFile's own
+  storage under the state root (`pages/preview/<connectedFolderId>/<key>.sqlite`,
+  keyed by the page folder's Connected Folder–relative path), never in the
+  Connected Folder. Renaming the page folder starts a fresh test
   database.
 - Edits to the page's files show up in Preview on reload. When `page.json`
   changes, new tables and columns are added automatically. Columns and tables
@@ -212,7 +212,7 @@ the declaration) or delete rows.
 
 ## For the Worker
 
-- `work-fold pages validate --work-folder <id> --page <path> [--json]` checks a
+- `amplefile pages validate --connected-folder <id> --page <path> [--json]` checks a
   page folder: `page.json`, the entry, every reference, sizes, and nested
   pages. It reports problems with the file and a plain message, and a summary
   (title, tables, files, bytes). It exits 0 whenever it could check the page;
@@ -228,18 +228,18 @@ the declaration) or delete rows.
   SQL interface (`exec`, `run`, `all`, `get` with bound parameters). It lives
   under `src/shared/pages/`. The Node adapter uses the built-in `node:sqlite`
   (`DatabaseSync`), available in Node 24 and Electron 42.
-- Work-fold's own columns on every table: `_id` (text), `_visitor` (text),
+- AmpleFile's own columns on every table: `_id` (text), `_visitor` (text),
   `_created`, `_updated`, `_deleted` (ISO timestamps; `_deleted` null when
   live), `_request` (the add's request id). A `_page_meta` table records the
   declaration digest and when it was applied.
 - Local API routes live in their own module under `src/local/pages/`, mounted
-  from `src/local/server.ts`, all scoped to `/api/work-folders/:id/pages/…`
+  from `src/local/server.ts`, all scoped to `/api/connected-folders/:id/pages/…`
   and requiring the ordinary local session.
 
 ## Local API
 
-`:id` is the work-folder id and `page` is the page folder's
-work-folder-relative path. Page-call refusals answer
+`:id` is the Connected Folder id and `page` is the page folder's
+Connected Folder–relative path. Page-call refusals answer
 `{ error, code, message, field? }` with status 403 (`NOT_ALLOWED`), 400
 (`INVALID`), 409 (`DUPLICATE`, `LIMIT_REACHED`), 404 (`NOT_FOUND`), 413
 (`TOO_LARGE`), or 503 (`UNAVAILABLE`). The frame assets are served without a
@@ -247,7 +247,7 @@ session, because an iframe cannot send the session header.
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/work-folders/:id/pages` | `{ pages: [{ path, title, problemCount, errorCount }], truncated }` for every page folder |
+| `GET /api/connected-folders/:id/pages` | `{ pages: [{ path, title, problemCount, errorCount }], truncated }` for every page folder |
 | `GET …/pages/inspect?page=` | `{ page: { path, title, description, entry, tables: [{ name, columns: [{ name, type, … }], visitors, limit }] }, problems: [{ file, message, severity }], summary: { files, bytes } }` |
 | `GET …/pages/document?page=` | `{ html, problems }`; `html` is the assembled document, or `null` when errors prevent assembly |
 | `POST …/pages/preview/call` | `{ page, viewer: { role: "visitor", visitor } \| { role: "owner" }, call: { op, table, values, id, where, options, requestId } }` → `{ result }` |

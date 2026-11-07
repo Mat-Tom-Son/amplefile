@@ -14,13 +14,13 @@ export interface ImageModelSettings {
 }
 
 /** The list's own entry for Automatic, kept apart from any real provider id. */
-const automaticEntry = { provider: "work-fold", id: "automatic" };
+const automaticEntry = { provider: "amplefile", id: "automatic" };
 
 /**
  * Settings → AI Models → Image model (2026-10-11): one machine-wide choice for
- * every Worker and the work-fold agent, saved as soon as it is picked. Its
+ * every Worker and the AmpleFile agent, saved as soon as it is picked. Its
  * data arrives with the AI Models load, so opening Settings costs no extra request.
- * Automatic follows work-fold's own preference among connected image models.
+ * Automatic follows AmpleFile's own preference among connected image models.
  */
 export function ImageModelSection({ settings, onChange }: {
   settings: ImageModelSettings;
@@ -58,7 +58,7 @@ export function ImageModelSection({ settings, onChange }: {
     <section className="ai-models-settings-section" aria-labelledby="image-model-heading">
       <div className="ai-models-section-heading"><h3 id="image-model-heading">Image Model</h3></div>
       <div className="professional-field">
-        <span className="professional-field-label" id="image-model-label">Used by every Worker and the work-fold agent to make pictures</span>
+        <span className="professional-field-label" id="image-model-label">Used by every Worker and the AmpleFile agent to make pictures</span>
         <ModelCatalogList id="image-model" labelledBy="image-model-label" models={entries} value={value} groupByProvider disabled={saving} onChange={(key) => { void choose(key); }} />
         {!settings.models.length ? <span className="professional-field-hint">Connect a provider with image models above, such as OpenRouter, to make pictures.</span> : null}
         {settings.selected && !settings.selectedAvailable ? <span className="professional-field-hint">The chosen model's provider is not connected, so Automatic is used until it is.</span> : null}

@@ -1,6 +1,6 @@
 /**
- * Pictures generate_image makes (2026-10-11). Each is kept in work-fold's own
- * app state, outside every work-folder, so a Chat can show it inline and the
+ * Pictures generate_image makes (2026-10-11). Each is kept in AmpleFile's own
+ * app state, outside every Connected Folder, so a Chat can show it inline and the
  * person can copy it or add it to the folder later. A Chat log carries only
  * the picture's id and size, never its bytes (docs/image-generation.md).
  */
@@ -19,7 +19,7 @@ export interface GeneratedImageRecord {
   size: number;
   sha256: string;
   createdAt: string;
-  /** Where the person added it, by work-folder id: work-folder-relative paths. */
+  /** Where the person added it, by Connected Folder id: Connected Folder–relative paths. */
   added?: Record<string, string>;
 }
 
@@ -73,10 +73,10 @@ export class GeneratedImageStore {
   }
 
   /** Remembers where the person added the picture, so the Chat can offer Show in Files. */
-  async noteAdded(id: string, workFolderId: string, path: string): Promise<void> {
+  async noteAdded(id: string, connectedFolderId: string, path: string): Promise<void> {
     const record = await this.get(id);
     if (!record) return;
-    await this.#writeRecord({ ...record, added: { ...record.added, [workFolderId]: path } });
+    await this.#writeRecord({ ...record, added: { ...record.added, [connectedFolderId]: path } });
   }
 
   /** True while `file` is still this picture, so a different file under the same name never counts. */

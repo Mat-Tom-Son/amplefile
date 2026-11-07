@@ -1,7 +1,7 @@
 /**
  * The machine-local record of what each app's notifications did
  * (docs/restricted-app-runtime.md, Worker host): one line per
- * `notifications.show` outcome, kept outside every work-folder. It names the
+ * `notifications.show` outcome, kept outside every Connected Folder. It names the
  * reviewed category and never the route or state the app attached.
  */
 export type RestrictedAppNotificationRecordStatus = "shown" | "rate-limited" | "unsupported";
@@ -11,7 +11,7 @@ export interface RestrictedAppNotificationRecordEntry {
   id: string;
   /** ISO time the host answered the call. */
   at: string;
-  workFolderId: string;
+  connectedFolderId: string;
   appId: string;
   /** The exact installation; null only for an owner recorded without one. */
   featureInstallationId: string | null;

@@ -5,7 +5,7 @@
  * listens here. `then` runs once a provider is connected, so the action that
  * needed AI can carry on.
  */
-const connectAiEvent = "work-fold:connect-ai";
+const connectAiEvent = "amplefile:connect-ai";
 
 export function requestConnectAi(then?: () => void): void {
   window.dispatchEvent(new CustomEvent(connectAiEvent, { detail: { then } }));

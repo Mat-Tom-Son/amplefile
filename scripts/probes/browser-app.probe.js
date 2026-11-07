@@ -1,6 +1,6 @@
-// Run with Playwright CLI run-code against the inert local work-folders fixture on port 4319.
+// Run with Playwright CLI run-code against the inert local Connected Folders fixture on port 4319.
 async (page) => {
-  if (page.url() !== 'http://127.0.0.1:4319/?fixture=work-folders') throw new Error('Expected the isolated fixture');
+  if (page.url() !== 'http://127.0.0.1:4319/?fixture=connected-folders') throw new Error('Expected the isolated fixture');
   await page.reload();
   await page.getByRole('button', { name: 'Quote board', exact: true }).click();
   const app = page.locator('iframe[title="Quote board"]').contentFrame().locator('iframe[title="App content"]').contentFrame();
@@ -15,9 +15,9 @@ async (page) => {
       managementDomDenied: denied(() => top.document.body.textContent),
       cookiesDenied: denied(() => document.cookie),
       storageDenied: denied(() => localStorage.length),
-      frozenApi: Object.isFrozen(workFoldViewerApp) && Object.isFrozen(workFoldViewerApp.data),
-      noWriteApi: !('set' in workFoldViewerApp.data),
-      noActionApi: !('actions' in workFoldViewerApp),
+      frozenApi: Object.isFrozen(ampleFileViewerApp) && Object.isFrozen(ampleFileViewerApp.data),
+      noWriteApi: !('set' in ampleFileViewerApp.data),
+      noActionApi: !('actions' in ampleFileViewerApp),
       networkDenied: false,
     };
     try { await fetch('http://127.0.0.1:4319/api/auth/session?isolation-probe=1'); } catch { result.networkDenied = true; }

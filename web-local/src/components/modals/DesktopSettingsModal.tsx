@@ -19,14 +19,14 @@ import {
 import { useModalDialog } from "../../hooks/useModalDialog";
 import { errorText } from "../../lib/api";
 import { nextMenuItemIndex, type MenuNavigationKey } from "../../lib/menu-navigation";
-import type { AgentStatus, DesktopUpdateStatus, WorkFolderSummary } from "../../types";
+import type { AgentStatus, DesktopUpdateStatus, ConnectedFolderSummary } from "../../types";
 import { buildFixtureUpdateStatus, fixtureAppVersion } from "../../fixtures/settings-fixture";
 import { showToast } from "../../ui/feedback";
-import { WorkFoldLockup } from "../brand/WorkFoldBrand";
+import { AmpleFileLockup } from "../brand/AmpleFileBrand";
 import { AiModelsPane, type AiModelsDraft, type ModelScope } from "../panes/AiModelsPane";
 import type { ApplicationAppearanceController } from "../../hooks/useApplicationAppearance";
 import { AppearanceSettingsPane } from "./AppearanceSettingsPane";
-import { WorkFoldLimitsPane } from "./WorkFoldLimitsPane";
+import { AmpleFileLimitsPane } from "./AmpleFileLimitsPane";
 import { SettingsAppsPane, type RestrictedAppsState } from "./SettingsAppsPane";
 import { KeyboardShortcutsPane } from "./KeyboardShortcutsPane";
 import { IconCredits } from "./IconCredits";
@@ -53,17 +53,17 @@ export function settingsTabForPage(page: SettingsPage, section?: SettingsSection
   return page;
 }
 
-export function DesktopSettingsModal({ appearance, onCustomizeWorkFolder, workFolder, workFolders = [], restrictedApps = null, onChangeApp, onOpenAppBuildChat, onOpenAppResultFile, onOpenAppStudio, agentStatus, fixtureMode = false, initialPage = "appearance", initialSection, initialModelScope, focusAiModel = false, focusWorkerInstructions = false, onAgentConfigured, onModelChanged, onClose, onBackToCustomization, updateStatus, onUpdateAction, layout = "classic" }: {
+export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, connectedFolder, connectedFolders = [], restrictedApps = null, onChangeApp, onOpenAppBuildChat, onOpenAppResultFile, onOpenAppStudio, agentStatus, fixtureMode = false, initialPage = "appearance", initialSection, initialModelScope, focusAiModel = false, focusWorkerInstructions = false, onAgentConfigured, onModelChanged, onClose, onBackToCustomization, updateStatus, onUpdateAction, layout = "classic" }: {
   appearance: ApplicationAppearanceController;
-  onCustomizeWorkFolder?: (workFolderId: string) => void;
-  workFolder: WorkFolderSummary | null;
-  /** Settings → Apps lists every installed app by work-folder (the work-folder-owned Apps tab was retired 2026-09-25). */
-  workFolders?: WorkFolderSummary[];
+  onCustomizeConnectedFolder?: (connectedFolderId: string) => void;
+  connectedFolder: ConnectedFolderSummary | null;
+  /** Settings → Apps lists every installed app by Connected Folder (the Connected Folder–owned Apps tab was retired 2026-09-25). */
+  connectedFolders?: ConnectedFolderSummary[];
   restrictedApps?: RestrictedAppsState | null;
   onChangeApp?: (app: RestrictedAppInstalled) => void;
-  onOpenAppBuildChat?: (workFolderId: string, conversationId: string) => void;
-  onOpenAppResultFile?: (workFolderId: string, path: string) => void;
-  onOpenAppStudio?: (workFolderId: string, runtimeInstanceId?: string) => void;
+  onOpenAppBuildChat?: (connectedFolderId: string, conversationId: string) => void;
+  onOpenAppResultFile?: (connectedFolderId: string, path: string) => void;
+  onOpenAppStudio?: (connectedFolderId: string, runtimeInstanceId?: string) => void;
   agentStatus: AgentStatus;
   fixtureMode?: boolean;
   /** Which window layout Settings opened over; Shortcut Keys lists that layout's keys. */
@@ -110,7 +110,7 @@ export function DesktopSettingsModal({ appearance, onCustomizeWorkFolder, workFo
   }, []);
   useEffect(() => {
     let cancelled = false;
-    const desktopWindow = window.workFoldDesktop?.window;
+    const desktopWindow = window.ampleFileDesktop?.window;
     if (!desktopWindow?.getCloseToTray) return;
     void desktopWindow.getCloseToTray()
       .then((result) => { if (!cancelled) setCloseToTray(result); })
@@ -118,7 +118,7 @@ export function DesktopSettingsModal({ appearance, onCustomizeWorkFolder, workFo
     return () => { cancelled = true; };
   }, []);
   async function updateCloseToTray(enabled: boolean) {
-    const desktopWindow = window.workFoldDesktop?.window;
+    const desktopWindow = window.ampleFileDesktop?.window;
     if (!desktopWindow?.setCloseToTray || !closeToTray || closeToTrayBusy || closeToTray.enabled === enabled) return;
     const previous = closeToTray;
     setCloseToTrayBusy(true);
@@ -155,10 +155,10 @@ export function DesktopSettingsModal({ appearance, onCustomizeWorkFolder, workFo
         </span>
         <div className="theme-segmented-control two-options" role="radiogroup" aria-labelledby="window-close-settings-title">
           <button className={closeToTray.enabled ? "active" : ""} type="button" role="radio" aria-checked={closeToTray.enabled} tabIndex={closeToTray.enabled ? 0 : -1} disabled={closeToTrayBusy} onClick={() => void updateCloseToTray(true)}>
-            <Subtract20Regular /><span className="theme-choice-copy"><span>Keep work-fold Running</span></span>
+            <Subtract20Regular /><span className="theme-choice-copy"><span>Keep AmpleFile Running</span></span>
           </button>
           <button className={!closeToTray.enabled ? "active" : ""} type="button" role="radio" aria-checked={!closeToTray.enabled} tabIndex={!closeToTray.enabled ? 0 : -1} disabled={closeToTrayBusy} onClick={() => void updateCloseToTray(false)}>
-            <Power20Regular /><span className="theme-choice-copy"><span>Quit work-fold</span></span>
+            <Power20Regular /><span className="theme-choice-copy"><span>Quit AmpleFile</span></span>
           </button>
         </div>
       </div>
@@ -170,7 +170,7 @@ export function DesktopSettingsModal({ appearance, onCustomizeWorkFolder, workFo
       <section ref={dialogRef} tabIndex={-1} className="settings-modal settings-window" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="modal-title settings-title">
           <div className="settings-title-copy">
-            {onBackToCustomization ? <button className="ui-control ui-control--icon settings-customization-back" type="button" onClick={onBackToCustomization} aria-label="Back to Customize work-folder" title="Back to Customize work-folder"><ArrowLeft20Regular /></button> : null}
+            {onBackToCustomization ? <button className="ui-control ui-control--icon settings-customization-back" type="button" onClick={onBackToCustomization} aria-label="Back to Customize Connected Folder" title="Back to Customize Connected Folder"><ArrowLeft20Regular /></button> : null}
             <div><h2 id="settings-title">Settings</h2></div>
           </div>
           <button ref={closeRef} className="ui-control ui-control--icon settings-close-button" type="button" onClick={onClose} aria-label="Close Settings"><Dismiss20Regular /></button>
@@ -199,23 +199,23 @@ export function DesktopSettingsModal({ appearance, onCustomizeWorkFolder, workFo
             <h2 className="settings-page-title" aria-hidden="true">{tabs.find((tab) => tab.id === page)?.label}</h2>
             {page === "appearance" ? (
               <div className="settings-tab-panel" id="settings-panel-appearance" role="tabpanel" aria-labelledby="settings-tab-appearance">
-                <AppearanceSettingsPane appearance={appearance} workFolder={workFolder} onCustomizeWorkFolder={onCustomizeWorkFolder} interfaceExtra={closeWindowControl} />
+                <AppearanceSettingsPane appearance={appearance} connectedFolder={connectedFolder} onCustomizeConnectedFolder={onCustomizeConnectedFolder} interfaceExtra={closeWindowControl} />
               </div>
             ) : null}
             {page === "ai-models" || aiModelsVisited ? (
               <div hidden={page !== "ai-models"} className="settings-tab-panel" id="settings-panel-ai-models" role="tabpanel" aria-labelledby="settings-tab-ai-models">
-                <AiModelsPane active={page === "ai-models"} workFolder={workFolder} status={agentStatus} fixtureMode={fixtureMode} embedded drafts={unsavedAiModelsEdits} initialScope={initialModelScope} focusModelOnOpen={focusAiModel} focusInstructionsOnOpen={focusWorkerInstructions} onConfigured={onAgentConfigured} onModelChanged={onModelChanged} />
+                <AiModelsPane active={page === "ai-models"} connectedFolder={connectedFolder} status={agentStatus} fixtureMode={fixtureMode} embedded drafts={unsavedAiModelsEdits} initialScope={initialModelScope} focusModelOnOpen={focusAiModel} focusInstructionsOnOpen={focusWorkerInstructions} onConfigured={onAgentConfigured} onModelChanged={onModelChanged} />
               </div>
             ) : null}
             {page === "automations" ? (
               <div className="settings-tab-panel" id="settings-panel-automations" role="tabpanel" aria-labelledby="settings-tab-automations">
                 <AutomationsPane fixtureMode={fixtureMode} />
-                <WorkFoldLimitsPane onOpenRecentlyDeleted={() => setPage("recently-deleted")} fixtureMode={fixtureMode} />
+                <AmpleFileLimitsPane onOpenRecentlyDeleted={() => setPage("recently-deleted")} fixtureMode={fixtureMode} />
               </div>
             ) : null}
             {page === "apps" ? (
               <div className="settings-tab-panel" id="settings-panel-apps" role="tabpanel" aria-labelledby="settings-tab-apps">
-                <SettingsAppsPane workFolders={workFolders} apps={restrictedApps} fixtureMode={fixtureMode} onChangeApp={onChangeApp} onOpenBuildChat={onOpenAppBuildChat} onOpenResultFile={onOpenAppResultFile} onOpenAppStudio={onOpenAppStudio} />
+                <SettingsAppsPane connectedFolders={connectedFolders} apps={restrictedApps} fixtureMode={fixtureMode} onChangeApp={onChangeApp} onOpenBuildChat={onOpenAppBuildChat} onOpenResultFile={onOpenAppResultFile} onOpenAppStudio={onOpenAppStudio} />
               </div>
             ) : null}
             {page === "command-line" ? (
@@ -236,8 +236,8 @@ export function DesktopSettingsModal({ appearance, onCustomizeWorkFolder, workFo
             {page === "about" ? (
               <div className="settings-tab-panel" id="settings-panel-about" role="tabpanel" aria-labelledby="settings-tab-about">
                 <section className="settings-section">
-                  <WorkFoldLockup className="about-work-fold-brand" />
-                  <dl className="context-meta-grid"><div><dt>Version</dt><dd>{window.workFoldDesktop?.app.version ?? (fixtureMode ? fixtureAppVersion : "Development")}</dd></div><div><dt>Storage</dt><dd>Local</dd></div><div><dt>License</dt><dd>MIT</dd></div></dl>
+                  <AmpleFileLockup className="about-amplefile-brand" />
+                  <dl className="context-meta-grid"><div><dt>Version</dt><dd>{window.ampleFileDesktop?.app.version ?? (fixtureMode ? fixtureAppVersion : "Development")}</dd></div><div><dt>Storage</dt><dd>Local</dd></div><div><dt>License</dt><dd>MIT</dd></div></dl>
                   <IconCredits />
                 </section>
                 <section className="settings-section update-settings-section" aria-labelledby="desktop-update-settings-title">

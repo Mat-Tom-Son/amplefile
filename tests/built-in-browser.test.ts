@@ -14,7 +14,7 @@ import { BrowserSitePermissionStore, isSiteOrigin } from "../desktop/src/browser
 import { macSpellingGuesses } from "../desktop/src/mac-spelling.js";
 import { describeJobForModel } from "../src/local/agent/job-tools.js";
 import { localServerAddress } from "../src/local/jobs/job-output.js";
-import type { WorkFoldJobRecord } from "../src/local/jobs/job-records.js";
+import type { AmpleFileJobRecord } from "../src/local/jobs/job-records.js";
 import { localServerHref } from "../web-local/src/lib/browser-links.js";
 import {
   browserAddressFor,
@@ -30,16 +30,16 @@ import {
   type BrowserTabSummary,
   type BrowserToolHost,
 } from "../src/shared/browser.js";
-import type { WorkFolderSurfaceTab } from "../web-local/src/types";
+import type { ConnectedFolderSurfaceTab } from "../web-local/src/types";
 
 const surfaceTabsModuleUrl = pathToFileURL(join(process.cwd(), "web-local/src/hooks/useSurfaceTabs.ts")).href;
 const surfaceTabs = await import(surfaceTabsModuleUrl) as {
-  browserSurfaceTab: (pageId: string, url: string, title?: string) => WorkFolderSurfaceTab;
+  browserSurfaceTab: (pageId: string, url: string, title?: string) => ConnectedFolderSurfaceTab;
   browserTabTitle: (title: string, url: string) => string;
-  normalizeStoredSurfaceTabsValue: (value: unknown) => { tabs: WorkFolderSurfaceTab[]; activeTabId: string | null };
-  restoreStoredSurfaceTabsForWorkFolders: (state: { tabs: WorkFolderSurfaceTab[]; activeTabId: string | null }, workFolders: Array<{ id: string }>) => { tabs: WorkFolderSurfaceTab[]; activeTabId: string | null };
-  surfaceTabWorkFolderSwitchTarget: (input: { activeTabId: string | null; activeWorkFolderId: string; tabs: WorkFolderSurfaceTab[]; workFolders: Array<{ id: string; name: string }> }) => { id: string } | null;
-  recordActiveSurfaceTabWorkFolderRecency: (recent: Map<string, string>, tabs: WorkFolderSurfaceTab[], activeTabId: string | null) => void;
+  normalizeStoredSurfaceTabsValue: (value: unknown) => { tabs: ConnectedFolderSurfaceTab[]; activeTabId: string | null };
+  restoreStoredSurfaceTabsForConnectedFolders: (state: { tabs: ConnectedFolderSurfaceTab[]; activeTabId: string | null }, connectedFolders: Array<{ id: string }>) => { tabs: ConnectedFolderSurfaceTab[]; activeTabId: string | null };
+  surfaceTabConnectedFolderSwitchTarget: (input: { activeTabId: string | null; activeConnectedFolderId: string; tabs: ConnectedFolderSurfaceTab[]; connectedFolders: Array<{ id: string; name: string }> }) => { id: string } | null;
+  recordActiveSurfaceTabConnectedFolderRecency: (recent: Map<string, string>, tabs: ConnectedFolderSurfaceTab[], activeTabId: string | null) => void;
 };
 
 test("the address bar turns hosts, local servers, and files into addresses and everything else into a search", () => {
@@ -68,7 +68,7 @@ test("browser tabs show only web pages, files, and a blank page", () => {
   assert.equal(isBrowserUrl("about:settings"), false);
   assert.equal(isBrowserUrl("javascript:alert(1)"), false);
   assert.equal(isBrowserUrl("mailto:someone@example.com"), false);
-  assert.equal(isBrowserUrl("work-fold-desktop://app/index.html"), false);
+  assert.equal(isBrowserUrl("amplefile-desktop://app/index.html"), false);
   assert.equal(isBrowserUrl("chrome://settings"), false);
   assert.equal(isBrowserUrl("not a url"), false);
   assert.equal(browserDisplayAddress("about:blank"), "");
@@ -168,16 +168,16 @@ test("the browser tools name tabs plainly and follow the tab a Chat used", async
   assert.deepEqual(calls.at(-1), { method: "close", input: { tab: "work01" } });
 
   // A Chat's tools carry its identity, so the tabs it opens are its own to close.
-  const owned = new Map(createBrowserTools({ host, owner: "wf-1/chat-1" }).map((tool) => [tool.name, tool]));
+  const owned = new Map(createBrowserTools({ host, owner: "af-1/chat-1" }).map((tool) => [tool.name, tool]));
   await owned.get("browser_open")!.execute("call", { url: "docs.example" } as never, undefined as never, undefined as never, undefined as never);
-  assert.deepEqual(calls.at(-1), { method: "open", input: { url: "docs.example", owner: "wf-1/chat-1" } });
+  assert.deepEqual(calls.at(-1), { method: "open", input: { url: "docs.example", owner: "af-1/chat-1" } });
   await owned.get("browser_close")!.execute("call", { tab: "work01" } as never, undefined as never, undefined as never, undefined as never);
-  assert.deepEqual(calls.at(-1), { method: "close", input: { tab: "work01", owner: "wf-1/chat-1" } });
+  assert.deepEqual(calls.at(-1), { method: "close", input: { tab: "work01", owner: "af-1/chat-1" } });
   // Every call names the Chat, so the tab can show which Worker is using it.
   await owned.get("browser_read")!.execute("call", { tab: "mine01" } as never, undefined as never, undefined as never, undefined as never);
-  assert.deepEqual(calls.at(-1), { method: "read", input: { tab: "mine01", mode: "structure", owner: "wf-1/chat-1" } });
+  assert.deepEqual(calls.at(-1), { method: "read", input: { tab: "mine01", mode: "structure", owner: "af-1/chat-1" } });
   await owned.get("browser_click")!.execute("call", { tab: "mine01", ref: "e3" } as never, undefined as never, undefined as never, undefined as never);
-  assert.deepEqual(calls.at(-1), { method: "click", input: { tab: "mine01", ref: "e3", owner: "wf-1/chat-1" } });
+  assert.deepEqual(calls.at(-1), { method: "click", input: { tab: "mine01", ref: "e3", owner: "af-1/chat-1" } });
 
   const empty = createBrowserTools({ host: { ...host, tabs: async () => [] } });
   await assert.rejects(
@@ -216,14 +216,14 @@ test("advanced browser tools keep Chat attribution, Stop, targets, and download 
       return { tab, downloads: [{ id: "download-1", tab: tab.tab, filename: "report.csv", url: "https://example.com/report", state: "completed", path: "/tmp/report.csv", receivedBytes: 42, totalBytes: 42 }] };
     },
   } as Partial<BrowserToolHost> as BrowserToolHost;
-  const tools = new Map(createBrowserTools({ host, owner: "work-fold-agent/chat-1" }).map((tool) => [tool.name, tool]));
+  const tools = new Map(createBrowserTools({ host, owner: "amplefile-agent/chat-1" }).map((tool) => [tool.name, tool]));
   const signal = new AbortController().signal;
   const run = async (name: string, params: Record<string, unknown>) => {
     const tool = tools.get(name)!;
     const validated = validateToolArguments(tool, { type: "toolCall", id: "call", name, arguments: params });
     return await tool.execute("call", validated as never, signal, undefined as never, undefined as never) as { content: Array<{ text?: string }> };
   };
-  const by = { tab: tab.tab, owner: "work-fold-agent/chat-1", signal };
+  const by = { tab: tab.tab, owner: "amplefile-agent/chat-1", signal };
   await run("browser_hover", { ref: "e1" });
   assert.deepEqual(calls.at(-1), { method: "hover", input: { ...by, ref: "e1" } });
   await run("browser_drag", { from: { ref: "e1" }, to: { x: 120, y: 50 } });
@@ -271,25 +271,25 @@ test("browser tabs reopen, take a right-click menu, and show which Worker is usi
   assert.match(host, /replaceMisspelling/, "the page's right-click menu offers spelling suggestions");
 });
 
-test("browser tabs survive a restart and belong to no work-folder", () => {
+test("browser tabs survive a restart and belong to no Connected Folder", () => {
   const browser = surfaceTabs.browserSurfaceTab("k3j9x2", "https://example.com/docs", "");
-  assert.deepEqual(browser, { id: "browser:k3j9x2", kind: "browser", workFolderId: null, pageId: "k3j9x2", url: "https://example.com/docs", title: "example.com" });
-  const chat: WorkFolderSurfaceTab = { id: "chat:wf1:new", kind: "chat", workFolderId: "wf1", conversationId: null, title: "New Chat" };
+  assert.deepEqual(browser, { id: "browser:k3j9x2", kind: "browser", connectedFolderId: null, pageId: "k3j9x2", url: "https://example.com/docs", title: "example.com" });
+  const chat: ConnectedFolderSurfaceTab = { id: "chat:wf1:new", kind: "chat", connectedFolderId: "wf1", conversationId: null, title: "New Chat" };
   const stored = surfaceTabs.normalizeStoredSurfaceTabsValue(JSON.parse(JSON.stringify({
-    tabs: [chat, { ...browser, title: "Docs" }, { kind: "browser", id: "browser:bad", pageId: "BAD ID", url: "", title: "x", workFolderId: null }],
+    tabs: [chat, { ...browser, title: "Docs" }, { kind: "browser", id: "browser:bad", pageId: "BAD ID", url: "", title: "x", connectedFolderId: null }],
     activeTabId: "browser:k3j9x2",
   })));
   assert.deepEqual(stored.tabs.map((tab) => tab.id), ["chat:wf1:new", "browser:k3j9x2"]);
   assert.equal(stored.activeTabId, "browser:k3j9x2");
 
-  // Removing every work-folder the tabs belonged to leaves the browser tabs open.
-  const restored = surfaceTabs.restoreStoredSurfaceTabsForWorkFolders(stored, [{ id: "wf2" }]);
+  // Removing every Connected Folder the tabs belonged to leaves the browser tabs open.
+  const restored = surfaceTabs.restoreStoredSurfaceTabsForConnectedFolders(stored, [{ id: "wf2" }]);
   assert.deepEqual(restored.tabs.map((tab) => tab.id), ["browser:k3j9x2"]);
 
-  // Selecting a browser tab keeps the open work-folder, and is never a work-folder's most recent tab.
-  assert.equal(surfaceTabs.surfaceTabWorkFolderSwitchTarget({ activeTabId: "browser:k3j9x2", activeWorkFolderId: "wf2", tabs: stored.tabs, workFolders: [{ id: "wf1", name: "One" }, { id: "wf2", name: "Two" }] }), null);
+  // Selecting a browser tab keeps the open Connected Folder, and is never a Connected Folder's most recent tab.
+  assert.equal(surfaceTabs.surfaceTabConnectedFolderSwitchTarget({ activeTabId: "browser:k3j9x2", activeConnectedFolderId: "wf2", tabs: stored.tabs, connectedFolders: [{ id: "wf1", name: "One" }, { id: "wf2", name: "Two" }] }), null);
   const recent = new Map<string, string>();
-  surfaceTabs.recordActiveSurfaceTabWorkFolderRecency(recent, stored.tabs, "browser:k3j9x2");
+  surfaceTabs.recordActiveSurfaceTabConnectedFolderRecency(recent, stored.tabs, "browser:k3j9x2");
   assert.equal(recent.size, 0);
 
   assert.equal(surfaceTabs.browserTabTitle("", ""), "New Tab");
@@ -298,13 +298,13 @@ test("browser tabs survive a restart and belong to no work-folder", () => {
 });
 
 test("the tab strip offers a browser tab beside New Chat, and Workers get the tools in every session", async () => {
-  const tabBar = await readFile("web-local/src/components/chat/WorkFolderSurfaceTabBar.tsx", "utf8");
+  const tabBar = await readFile("web-local/src/components/chat/ConnectedFolderSurfaceTabBar.tsx", "utf8");
   assert.match(tabBar, /aria-label="Open a Browser Tab"/);
   assert.match(tabBar, /surface-tab-new-browser[\s\S]*surface-tab-new-chat/, "the browser button sits beside New Chat");
   const piClient = await readFile("src/local/agent/pi-client.ts", "utf8");
   assert.match(piClient, /this\.options\.browser \? createBrowserTools\(\{ host: this\.options\.browser, \.\.\.\(this\.options\.browserOwner \? \{ owner: this\.options\.browserOwner \} : \{\}\) \}\)/);
   const server = await readFile("src/local/server.ts", "utf8");
-  assert.match(server, /\.\.\.\(state\.browser \? \{ browser: state\.browser, browserOwner: `\$\{workFolderId\}\/\$\{conversationId\}` \} : \{\}\)/, "every scope, the work-fold agent included, gets the browser, with its own Chat identity");
+  assert.match(server, /\.\.\.\(state\.browser \? \{ browser: state\.browser, browserOwner: `\$\{connectedFolderId\}\/\$\{conversationId\}` \} : \{\}\)/, "every scope, the AmpleFile agent included, gets the browser, with its own Chat identity");
   const main = await readFile("desktop/src/main.ts", "utf8");
   assert.match(main, /browser: ensureBuiltInBrowser\(\)\.toolHost/);
   // Pages never receive the app's preload or desktop powers.
@@ -315,11 +315,11 @@ test("the tab strip offers a browser tab beside New Chat, and Workers get the to
 
 test("the browser names itself the way Claude's browser does, so Google's sign-in accepts it", () => {
   assert.equal(
-    browserUserAgent("work-fold/0.13.0", "darwin", "148.0.7778.280"),
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) work-fold/0.13.0 Chrome/148.0.7778.280 Safari/537.36",
+    browserUserAgent("AmpleFile/0.13.0", "darwin", "148.0.7778.280"),
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) AmpleFile/0.13.0 Chrome/148.0.7778.280 Safari/537.36",
   );
-  assert.match(browserUserAgent("work-fold/0.13.0", "win32", "148.0.1.2"), /^Mozilla\/5\.0 \(Windows NT 10\.0; Win64; x64\) .* work-fold\/0\.13\.0 Chrome\/148\.0\.1\.2 Safari\/537\.36$/);
-  assert.doesNotMatch(browserUserAgent("work-fold/0.13.0"), /Electron/);
+  assert.match(browserUserAgent("AmpleFile/0.13.0", "win32", "148.0.1.2"), /^Mozilla\/5\.0 \(Windows NT 10\.0; Win64; x64\) .* AmpleFile\/0\.13\.0 Chrome\/148\.0\.1\.2 Safari\/537\.36$/);
+  assert.doesNotMatch(browserUserAgent("AmpleFile/0.13.0"), /Electron/);
   // A malformed product token is left out rather than breaking the header.
   assert.doesNotMatch(browserUserAgent("work fold Local Smoke/1", "darwin", "148.0.0.1"), /Local Smoke/);
 });
@@ -370,22 +370,22 @@ test("history remembers visited pages, suggests what was typed best-first, and c
     const history = new BrowserHistoryStore(path, { now: () => now });
     history.record("https://news.example.com/today#top", "Today's news");
     history.record("https://docs.example.org/guide", "Example guide");
-    history.record("https://www.github.com/work-fold", "work-fold on GitHub");
+    history.record("https://www.github.com/amplefile", "AmpleFile on GitHub");
     now = new Date("2026-10-23T12:05:00Z");
     history.record("https://docs.example.org/guide");
     history.record("chrome://settings", "Settings");
     history.retitle("https://news.example.com/today", "Today's headlines");
     assert.equal(history.size, 3, "web pages only, one entry per address without its fragment");
-    assert.deepEqual(history.recent().map((entry) => entry.url), ["https://docs.example.org/guide", "https://www.github.com/work-fold", "https://news.example.com/today"]);
+    assert.deepEqual(history.recent().map((entry) => entry.url), ["https://docs.example.org/guide", "https://www.github.com/amplefile", "https://news.example.com/today"]);
     assert.equal(history.recent()[0]!.visits, 2);
     assert.equal(history.recent()[0]!.title, "Example guide", "a visit without a title keeps the one it had");
-    assert.deepEqual(history.suggest("git").map((entry) => entry.url), ["https://www.github.com/work-fold"], "an address that starts with the text, ignoring www");
+    assert.deepEqual(history.suggest("git").map((entry) => entry.url), ["https://www.github.com/amplefile"], "an address that starts with the text, ignoring www");
     assert.deepEqual(history.suggest("example").map((entry) => entry.url), ["https://docs.example.org/guide", "https://news.example.com/today"], "more visits rank higher");
     assert.deepEqual(history.suggest("today headlines").map((entry) => entry.url), ["https://news.example.com/today"], "every word must match the address or title");
     assert.deepEqual(history.suggest("   "), []);
     await history.flush();
     const reopened = new BrowserHistoryStore(path);
-    assert.deepEqual(reopened.recent().map((entry) => entry.title), ["Example guide", "work-fold on GitHub", "Today's headlines"]);
+    assert.deepEqual(reopened.recent().map((entry) => entry.title), ["Example guide", "AmpleFile on GitHub", "Today's headlines"]);
     await reopened.clear();
     assert.equal(new BrowserHistoryStore(path).size, 0);
     await writeFile(path, "not json");
@@ -406,7 +406,7 @@ test("a job's own announcement of a local server reaches the Worker, and Chat li
   const job = {
     jobId: "job_1", name: "Dev server", state: "running", exitCode: null, signal: null, stoppedBy: null, error: null,
     startedAt: "2026-10-23T12:00:00Z", endedAt: null, createdAt: "2026-10-23T12:00:00Z", pid: 42, history: null, serving: "http://localhost:5173/",
-  } as unknown as WorkFoldJobRecord;
+  } as unknown as AmpleFileJobRecord;
   assert.match(describeJobForModel(job, null, new Date("2026-10-23T12:00:10Z")), /It is serving http:\/\/localhost:5173\/\. Look at it with browser_open/);
   assert.equal(localServerHref("http://localhost:5173/app"), "http://localhost:5173/app");
   assert.equal(localServerHref("http://0.0.0.0:8000/"), "http://localhost:8000/");

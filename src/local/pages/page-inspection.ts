@@ -1,7 +1,7 @@
 /**
  * Validating and assembling one page folder (docs/pages.md, "How a page
  * runs", "For the Worker"): page.json, the entry, every reference, sizes, and
- * nested pages. The page tab, the local API, and `work-fold pages validate`
+ * nested pages. The page tab, the local API, and `amplefile pages validate`
  * all report the same problems from here.
  */
 import type { PageDeclaration, PageInspection, PageProblem } from "../../shared/pages/index.js";
@@ -14,8 +14,8 @@ import {
   normalizePagePath,
   pageDeclarationFileName,
   pageFolderLimits,
-  readWorkFolderFileBytes,
-  readWorkFolderTextFile,
+  readConnectedFolderFileBytes,
+  readConnectedFolderTextFile,
   resolvePageFolder,
   walkPageFolder,
 } from "./page-folder-files.js";
@@ -41,17 +41,17 @@ export interface PageDeclarationRead {
 }
 
 /** Reads and parses just page.json: what page calls and the Data view need. */
-export async function readPageFolderDeclaration(workFolderRoot: string, page: unknown): Promise<PageDeclarationRead> {
+export async function readPageFolderDeclaration(connectedFolderRoot: string, page: unknown): Promise<PageDeclarationRead> {
   const path = normalizePagePath(page);
-  await resolvePageFolder(workFolderRoot, path);
-  return readDeclaration(workFolderRoot, path);
+  await resolvePageFolder(connectedFolderRoot, path);
+  return readDeclaration(connectedFolderRoot, path);
 }
 
-async function readDeclaration(workFolderRoot: string, path: string): Promise<PageDeclarationRead & { rawEntry: string | null; rawDescription: string | null }> {
+async function readDeclaration(connectedFolderRoot: string, path: string): Promise<PageDeclarationRead & { rawEntry: string | null; rawDescription: string | null }> {
   const folderName = path.split("/").at(-1) ?? path;
   let text: string;
   try {
-    text = await readWorkFolderTextFile(workFolderRoot, `${path}/${pageDeclarationFileName}`, pageFolderLimits.maxDeclarationBytes);
+    text = await readConnectedFolderTextFile(connectedFolderRoot, `${path}/${pageDeclarationFileName}`, pageFolderLimits.maxDeclarationBytes);
   } catch (failure) {
     const message = failure instanceof Error && /larger than/u.test(failure.message)
       ? `page.json can be at most ${formatBytes(pageFolderLimits.maxDeclarationBytes)}.`
@@ -90,17 +90,17 @@ async function readDeclaration(workFolderRoot: string, path: string): Promise<Pa
  * Checks one page folder. In "assemble" mode it also builds the document,
  * which is returned only when nothing is an error.
  */
-export async function analyzePageFolder(workFolderRoot: string, page: unknown, mode: PageDocumentMode = "check"): Promise<PageFolderAnalysis> {
+export async function analyzePageFolder(connectedFolderRoot: string, page: unknown, mode: PageDocumentMode = "check"): Promise<PageFolderAnalysis> {
   const path = normalizePagePath(page);
-  await resolvePageFolder(workFolderRoot, path);
+  await resolvePageFolder(connectedFolderRoot, path);
   const problems: PageProblem[] = [];
-  const enclosing = await enclosingPageFolder(workFolderRoot, path);
+  const enclosing = await enclosingPageFolder(connectedFolderRoot, path);
   if (enclosing) {
     problems.push({ file: "", message: `This folder is inside another page folder (${enclosing}). A page folder can't contain another page folder.`, severity: "error" });
   }
-  const declarationRead = await readDeclaration(workFolderRoot, path);
+  const declarationRead = await readDeclaration(connectedFolderRoot, path);
   problems.push(...declarationRead.problems);
-  const walk = await walkPageFolder(workFolderRoot, path);
+  const walk = await walkPageFolder(connectedFolderRoot, path);
   problems.push(...walk.problems);
 
   const declaration = declarationRead.declaration;
@@ -111,8 +111,8 @@ export async function analyzePageFolder(workFolderRoot: string, page: unknown, m
   } else {
     const processed = await processPageEntry(entry, {
       files: walk.files,
-      readText: (file) => readWorkFolderTextFile(workFolderRoot, `${path}/${file}`, pageFolderLimits.maxFileBytes),
-      readBytes: (file) => readWorkFolderFileBytes(workFolderRoot, `${path}/${file}`, pageFolderLimits.maxFileBytes),
+      readText: (file) => readConnectedFolderTextFile(connectedFolderRoot, `${path}/${file}`, pageFolderLimits.maxFileBytes),
+      readBytes: (file) => readConnectedFolderFileBytes(connectedFolderRoot, `${path}/${file}`, pageFolderLimits.maxFileBytes),
     }, mode);
     problems.push(...processed.problems);
     html = processed.html;
@@ -148,14 +148,14 @@ export async function analyzePageFolder(workFolderRoot: string, page: unknown, m
 }
 
 /** `GET …/pages/inspect`: the page, its problems, and a summary. */
-export async function inspectPageFolder(workFolderRoot: string, page: unknown): Promise<PageInspection> {
-  const { page: summaryPage, problems, summary } = await analyzePageFolder(workFolderRoot, page, "check");
+export async function inspectPageFolder(connectedFolderRoot: string, page: unknown): Promise<PageInspection> {
+  const { page: summaryPage, problems, summary } = await analyzePageFolder(connectedFolderRoot, page, "check");
   return { page: summaryPage, problems, summary };
 }
 
 /** `GET …/pages/document`: the assembled document, or null when errors prevent it. */
-export async function assemblePageFolder(workFolderRoot: string, page: unknown): Promise<{ html: string | null; problems: PageProblem[] }> {
-  const { html, problems } = await analyzePageFolder(workFolderRoot, page, "assemble");
+export async function assemblePageFolder(connectedFolderRoot: string, page: unknown): Promise<{ html: string | null; problems: PageProblem[] }> {
+  const { html, problems } = await analyzePageFolder(connectedFolderRoot, page, "assemble");
   return { html, problems };
 }
 

@@ -18,7 +18,7 @@ const icons = registerHooks({
     return next(url, context);
   },
 });
-const { RuntimeContextPreview, formatDuration, turnChangedFiles, workFolderRelativeToolPath, thoughtPreview, workStepsSummary } = await import("../web-local/src/components/chat/activity.js");
+const { RuntimeContextPreview, formatDuration, turnChangedFiles, connectedFolderRelativeToolPath, thoughtPreview, workStepsSummary } = await import("../web-local/src/components/chat/activity.js");
 icons.deregister();
 
 const read = (id: string, detail: string): RuntimePreviewEntry => ({ id, kind: "tool", toolName: "read", text: "Read finished", detail, phase: "complete" });
@@ -58,7 +58,7 @@ test("steps keep the order they happened and fold into a plain summary once the 
     thought("t2", "Now the budget."),
     bash("b1", "rg -n total budget.csv"),
   ];
-  const running = render({ entries, running: true, workFolderRoot: "/Users/mat/Folder" });
+  const running = render({ entries, running: true, connectedFolderRoot: "/Users/mat/Folder" });
   const order = ["Let me read the notes first.", ">Read<", "notes.md", "Now the budget.", ">Ran<", "rg -n total budget.csv"]
     .map((needle) => running.indexOf(needle));
   assert.ok(order.every((index) => index >= 0), running);
@@ -111,16 +111,16 @@ test("hidden reasoning shows its time while running and stays as a timed thought
   assert.equal(render({ running: true, replyStarted: true, entries: [] }), "");
 });
 
-test("a finished thought shows its first sentence until opened, and file targets link only inside the work-folder", () => {
+test("a finished thought shows its first sentence until opened, and file targets link only inside the Connected Folder", () => {
   const html = render({
     entries: [
       thought("t1", "**Checking the files.** I'm matching the notes against the budget.\n\n```\nlong code line\n```"),
       read("r1", "/Users/mat/Folder/Kitchen refresh/ideas.md"),
       read("r2", "/elsewhere/secret.txt"),
     ],
-    workFolderRoot: "/Users/mat/Folder",
-    resolvedWorkFolderPaths: new Map([["Kitchen refresh/ideas.md", "Kitchen refresh/ideas.md"]]),
-    onOpenWorkFolderFile: () => undefined,
+    connectedFolderRoot: "/Users/mat/Folder",
+    resolvedConnectedFolderPaths: new Map([["Kitchen refresh/ideas.md", "Kitchen refresh/ideas.md"]]),
+    onOpenConnectedFolderFile: () => undefined,
   });
   assert.match(html, /aria-expanded="false"><span class="work-step-verb">Thought<\/span><span class="work-step-target">Checking the files\.<\/span>/);
   assert.doesNotMatch(html, /long code line/);
@@ -128,13 +128,13 @@ test("a finished thought shows its first sentence until opened, and file targets
   assert.match(html, /<span class="work-step-target" title="\/elsewhere\/secret\.txt">secret\.txt<\/span>/);
 });
 
-test("tool paths become work-folder-relative only when they sit inside the work-folder", () => {
-  assert.equal(workFolderRelativeToolPath("/Users/mat/Folder/notes/a.md", "/Users/mat/Folder"), "notes/a.md");
-  assert.equal(workFolderRelativeToolPath("/Users/mat/Folder-2/a.md", "/Users/mat/Folder"), null);
-  assert.equal(workFolderRelativeToolPath("/tmp/a.md", "/Users/mat/Folder"), null);
-  assert.equal(workFolderRelativeToolPath("notes/a.md", "/Users/mat/Folder"), "notes/a.md");
-  assert.equal(workFolderRelativeToolPath("budget variance", "/Users/mat/Folder"), null);
-  assert.equal(workFolderRelativeToolPath("/Users/mat/Folder/a.md", undefined), null);
+test("tool paths become Connected Folder–relative only when they sit inside the Connected Folder", () => {
+  assert.equal(connectedFolderRelativeToolPath("/Users/mat/Folder/notes/a.md", "/Users/mat/Folder"), "notes/a.md");
+  assert.equal(connectedFolderRelativeToolPath("/Users/mat/Folder-2/a.md", "/Users/mat/Folder"), null);
+  assert.equal(connectedFolderRelativeToolPath("/tmp/a.md", "/Users/mat/Folder"), null);
+  assert.equal(connectedFolderRelativeToolPath("notes/a.md", "/Users/mat/Folder"), "notes/a.md");
+  assert.equal(connectedFolderRelativeToolPath("budget variance", "/Users/mat/Folder"), null);
+  assert.equal(connectedFolderRelativeToolPath("/Users/mat/Folder/a.md", undefined), null);
 });
 
 test("durations and thought previews read plainly", () => {
@@ -195,7 +195,7 @@ test("an app's tool step names the app and the tool, never the registered hash",
   assert.equal(workStepsSummary(interrupted), "Used Inbox: Inbox search");
 });
 
-test("a turn's changed files are its write and edit targets inside the work-folder, in first-change order", () => {
+test("a turn's changed files are its write and edit targets inside the Connected Folder, in first-change order", () => {
   const tool = (id: string, toolName: string, detail: string, phase: RuntimePreviewEntry["phase"] = "complete"): RuntimePreviewEntry => ({ id, kind: "tool", toolName, text: `${toolName} finished`, detail, phase });
   const files = turnChangedFiles([
     read("r1", "/Users/me/Stories/Catalog.md"),

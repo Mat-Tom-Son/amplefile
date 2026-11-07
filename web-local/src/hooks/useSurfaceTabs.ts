@@ -3,69 +3,69 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { chatDisplayTitle } from "../lib/format";
 import { readStoredJsonValue, writeStoredJsonValue } from "../lib/storage";
 import { retargetMovedPath } from "../lib/tree";
-import type { AgentExtensionSurfaceView, BrowserSurfaceTab, CapabilitySurface, ConversationSummary, RestrictedAppInstalled, WorkFolderSummary, WorkFolderSurfaceTab } from "../types";
+import type { AgentExtensionSurfaceView, BrowserSurfaceTab, CapabilitySurface, ConversationSummary, RestrictedAppInstalled, ConnectedFolderSummary, ConnectedFolderSurfaceTab } from "../types";
 
-const surfaceTabsStorageKey = "work-fold.work-folder.surface-tabs.v1";
+const surfaceTabsStorageKey = "amplefile.connected-folder.surface-tabs.v1";
 
 export function useSurfaceTabs({
-  workFolder,
-  workFolders,
+  connectedFolder,
+  connectedFolders,
   fixtureMode = false,
-  openChatWorkFolderId,
-  onOpenChatWorkFolderConsumed,
-  onSwitchWorkFolder,
+  openChatConnectedFolderId,
+  onOpenChatConnectedFolderConsumed,
+  onSwitchConnectedFolder,
 }: {
-  workFolder: WorkFolderSummary;
-  workFolders: WorkFolderSummary[];
+  connectedFolder: ConnectedFolderSummary;
+  connectedFolders: ConnectedFolderSummary[];
   fixtureMode?: boolean;
-  openChatWorkFolderId?: string | null;
-  onOpenChatWorkFolderConsumed?: () => void;
-  onSwitchWorkFolder?: (workFolder: WorkFolderSummary) => void;
+  openChatConnectedFolderId?: string | null;
+  onOpenChatConnectedFolderConsumed?: () => void;
+  onSwitchConnectedFolder?: (connectedFolder: ConnectedFolderSummary) => void;
 }) {
   const initialStateRef = useRef<SurfaceTabsState | null>(null);
   const skipNextPersistRef = useRef(!fixtureMode);
-  const recentSurfaceTabIdsByWorkFolderRef = useRef<Map<string, string>>(new Map());
-  const recentChatSurfaceTabIdsByWorkFolderRef = useRef<Map<string, string>>(new Map());
+  const recentSurfaceTabIdsByConnectedFolderRef = useRef<Map<string, string>>(new Map());
+  const recentChatSurfaceTabIdsByConnectedFolderRef = useRef<Map<string, string>>(new Map());
   const previousActiveSurfaceTabIdRef = useRef<string | null | undefined>(undefined);
-  const previousWorkFolderCountRef = useRef(workFolders.length);
-  const previousWorkFolderIdRef = useRef(workFolder.id);
+  const previousConnectedFolderCountRef = useRef(connectedFolders.length);
+  const previousConnectedFolderIdRef = useRef(connectedFolder.id);
   if (!initialStateRef.current) {
     const initialState = fixtureMode
-      ? defaultSurfaceTabsState(workFolder)
-      : readStoredSurfaceTabsState(workFolder, workFolders);
+      ? defaultSurfaceTabsState(connectedFolder)
+      : readStoredSurfaceTabsState(connectedFolder, connectedFolders);
     initialStateRef.current = initialState;
   }
-  const [surfaceTabs, setSurfaceTabs] = useState<WorkFolderSurfaceTab[]>(() => initialStateRef.current?.tabs ?? [newChatSurfaceTab(workFolder)]);
-  const [activeSurfaceTabId, setActiveSurfaceTabId] = useState<string | null>(() => initialStateRef.current?.activeTabId ?? newChatSurfaceTabId(workFolder.id));
+  const [surfaceTabs, setSurfaceTabs] = useState<ConnectedFolderSurfaceTab[]>(() => initialStateRef.current?.tabs ?? [newChatSurfaceTab(connectedFolder)]);
+  const [activeSurfaceTabId, setActiveSurfaceTabId] = useState<string | null>(() => initialStateRef.current?.activeTabId ?? newChatSurfaceTabId(connectedFolder.id));
 
   useEffect(() => {
-    recordActiveSurfaceTabWorkFolderRecency(recentSurfaceTabIdsByWorkFolderRef.current, surfaceTabs, activeSurfaceTabId);
-    recordActiveSurfaceTabWorkFolderRecency(recentChatSurfaceTabIdsByWorkFolderRef.current, surfaceTabs.filter((tab) => tab.kind === "chat"), activeSurfaceTabId);
+    recordActiveSurfaceTabConnectedFolderRecency(recentSurfaceTabIdsByConnectedFolderRef.current, surfaceTabs, activeSurfaceTabId);
+    recordActiveSurfaceTabConnectedFolderRecency(recentChatSurfaceTabIdsByConnectedFolderRef.current, surfaceTabs.filter((tab) => tab.kind === "chat"), activeSurfaceTabId);
   }, [activeSurfaceTabId, surfaceTabs]);
 
   useEffect(() => {
     const activeChanged = previousActiveSurfaceTabIdRef.current !== activeSurfaceTabId;
-    const workFoldersHydrated = previousWorkFolderCountRef.current === 0 && workFolders.length > 0;
+    const connectedFoldersHydrated = previousConnectedFolderCountRef.current === 0 && connectedFolders.length > 0;
     previousActiveSurfaceTabIdRef.current = activeSurfaceTabId;
-    previousWorkFolderCountRef.current = workFolders.length;
-    if (!activeChanged && !workFoldersHydrated) return;
-    const targetWorkFolder = surfaceTabWorkFolderSwitchTarget({
+    previousConnectedFolderCountRef.current = connectedFolders.length;
+    if (!activeChanged && !connectedFoldersHydrated) return;
+    const targetConnectedFolder = surfaceTabConnectedFolderSwitchTarget({
       activeTabId: activeSurfaceTabId,
-      activeWorkFolderId: workFolder.id,
+      activeConnectedFolderId: connectedFolder.id,
       tabs: surfaceTabs,
-      workFolders,
+      connectedFolders,
     });
-    if (targetWorkFolder) onSwitchWorkFolder?.(targetWorkFolder);
-  }, [activeSurfaceTabId, onSwitchWorkFolder, surfaceTabs, workFolder.id, workFolders]);
+    if (targetConnectedFolder) onSwitchConnectedFolder?.(targetConnectedFolder);
+  }, [activeSurfaceTabId, onSwitchConnectedFolder, surfaceTabs, connectedFolder.id, connectedFolders]);
 
   useEffect(() => {
-    if (previousWorkFolderIdRef.current === workFolder.id) return;
-    previousWorkFolderIdRef.current = workFolder.id;
-    const resolution = surfaceTabActivationForWorkFolder({
+    if (previousConnectedFolderIdRef.current === connectedFolder.id) return;
+    previousConnectedFolderIdRef.current = connectedFolder.id;
+    const resolution = surfaceTabActivationForConnectedFolder({
       activeTabId: activeSurfaceTabId,
-      recentTabIdsByWorkFolder: recentSurfaceTabIdsByWorkFolderRef.current,
+      recentTabIdsByConnectedFolder: recentSurfaceTabIdsByConnectedFolderRef.current,
       tabs: surfaceTabs,
-      workFolder,
+      connectedFolder,
     });
     if (!resolution || resolution.tabId === activeSurfaceTabId) return;
     if (resolution.tabToAdd) {
@@ -73,27 +73,27 @@ export function useSurfaceTabs({
       setSurfaceTabs((current) => current.some((tab) => tab.id === tabToAdd.id) ? current : [...current, tabToAdd]);
     }
     setActiveSurfaceTabId(resolution.tabId);
-  }, [activeSurfaceTabId, surfaceTabs, workFolder]);
+  }, [activeSurfaceTabId, surfaceTabs, connectedFolder]);
 
   useEffect(() => {
-    if (openChatWorkFolderId !== workFolder.id) return;
-    const existingDraftTab = surfaceTabs.find((tab) => tab.kind === "chat" && tab.workFolderId === workFolder.id && !tab.conversationId);
+    if (openChatConnectedFolderId !== connectedFolder.id) return;
+    const existingDraftTab = surfaceTabs.find((tab) => tab.kind === "chat" && tab.connectedFolderId === connectedFolder.id && !tab.conversationId);
     if (existingDraftTab) {
       setActiveSurfaceTabId(existingDraftTab.id);
-      onOpenChatWorkFolderConsumed?.();
+      onOpenChatConnectedFolderConsumed?.();
       return;
     }
-    const tab = newChatSurfaceTab(workFolder);
+    const tab = newChatSurfaceTab(connectedFolder);
     setSurfaceTabs((current) => current.some((item) => item.id === tab.id) ? current : [...current, tab]);
     setActiveSurfaceTabId(tab.id);
-    onOpenChatWorkFolderConsumed?.();
-  }, [openChatWorkFolderId, onOpenChatWorkFolderConsumed, surfaceTabs, workFolder.id, workFolder.name]);
+    onOpenChatConnectedFolderConsumed?.();
+  }, [openChatConnectedFolderId, onOpenChatConnectedFolderConsumed, surfaceTabs, connectedFolder.id, connectedFolder.name]);
 
   useEffect(() => {
-    if (!workFolders.length) return;
+    if (!connectedFolders.length) return;
     setSurfaceTabs((current) => {
-      const next = filterSurfaceTabsToWorkFolders(current, workFolders);
-      const resolved = next.length ? next : [newChatSurfaceTab(workFolder)];
+      const next = filterSurfaceTabsToConnectedFolders(current, connectedFolders);
+      const resolved = next.length ? next : [newChatSurfaceTab(connectedFolder)];
       setActiveSurfaceTabId((currentActiveTabId) => (
         currentActiveTabId && resolved.some((tab) => tab.id === currentActiveTabId)
           ? currentActiveTabId
@@ -101,7 +101,7 @@ export function useSurfaceTabs({
       ));
       return resolved;
     });
-  }, [workFolder.id, workFolder.name, workFolders]);
+  }, [connectedFolder.id, connectedFolder.name, connectedFolders]);
 
   useEffect(() => {
     setActiveSurfaceTabId((current) => {
@@ -122,16 +122,16 @@ export function useSurfaceTabs({
   function syncSurfaceTabConversationTitles(groups: Record<string, ConversationSummary[]>): void {
     setSurfaceTabs((current) => current.map((tab) => {
       if (tab.kind !== "chat" || !tab.conversationId) return tab;
-      const refreshedConversation = groups[tab.workFolderId]?.find((conversation) => conversation.id === tab.conversationId);
+      const refreshedConversation = groups[tab.connectedFolderId]?.find((conversation) => conversation.id === tab.conversationId);
       if (!refreshedConversation) return tab;
       const title = chatDisplayTitle({ serverTitle: refreshedConversation.title });
       return tab.title === title ? tab : { ...tab, title };
     }));
   }
 
-  function openChatSurfaceTab(targetWorkFolder: WorkFolderSummary, conversation: ConversationSummary | null = null): string {
+  function openChatSurfaceTab(targetConnectedFolder: ConnectedFolderSummary, conversation: ConversationSummary | null = null): string {
     if (conversation) {
-      const existingTab = surfaceTabs.find((tab) => tab.kind === "chat" && tab.workFolderId === targetWorkFolder.id && tab.conversationId === conversation.id);
+      const existingTab = surfaceTabs.find((tab) => tab.kind === "chat" && tab.connectedFolderId === targetConnectedFolder.id && tab.conversationId === conversation.id);
       if (existingTab) {
         setSurfaceTabs((current) => current.map((tab) => (
           tab.id === existingTab.id ? { ...tab, title: chatDisplayTitle({ serverTitle: conversation.title }) } : tab
@@ -140,20 +140,20 @@ export function useSurfaceTabs({
         return existingTab.id;
       }
     }
-    const tab = conversation ? chatSurfaceTab(targetWorkFolder, conversation) : newChatSurfaceTab(targetWorkFolder, { fresh: true });
+    const tab = conversation ? chatSurfaceTab(targetConnectedFolder, conversation) : newChatSurfaceTab(targetConnectedFolder, { fresh: true });
     setSurfaceTabs((current) => conversation ? upsertSurfaceTab(current, tab) : [...current, tab]);
     setActiveSurfaceTabId(tab.id);
     return tab.id;
   }
 
-  function openHistorySurfaceTab(targetWorkFolder: WorkFolderSummary, checkpointId?: string, title = "History"): void {
-    const tab = historySurfaceTab(targetWorkFolder, checkpointId, title);
+  function openHistorySurfaceTab(targetConnectedFolder: ConnectedFolderSummary, checkpointId?: string, title = "History"): void {
+    const tab = historySurfaceTab(targetConnectedFolder, checkpointId, title);
     setSurfaceTabs((current) => upsertSurfaceTab(current, tab));
     setActiveSurfaceTabId(tab.id);
   }
 
-  function openFileSurfaceTab(targetWorkFolder: WorkFolderSummary, path: string): void {
-    const tab = fileSurfaceTab(targetWorkFolder, path);
+  function openFileSurfaceTab(targetConnectedFolder: ConnectedFolderSummary, path: string): void {
+    const tab = fileSurfaceTab(targetConnectedFolder, path);
     setSurfaceTabs((current) => upsertSurfaceTab(current, tab));
     setActiveSurfaceTabId(tab.id);
   }
@@ -162,8 +162,8 @@ export function useSurfaceTabs({
    * Opens a page folder's tab, or selects it; an open tab keeps its title,
    * and its view unless one is asked for (Files' Data row asks for Data).
    */
-  function openPageSurfaceTab(targetWorkFolder: WorkFolderSummary, path: string, title?: string, view?: "preview" | "data"): void {
-    const tab = pageSurfaceTab(targetWorkFolder, path, title);
+  function openPageSurfaceTab(targetConnectedFolder: ConnectedFolderSummary, path: string, title?: string, view?: "preview" | "data"): void {
+    const tab = pageSurfaceTab(targetConnectedFolder, path, title);
     setSurfaceTabs((current) => current.some((item) => item.id === tab.id)
       ? view ? current.map((item) => item.id === tab.id && item.kind === "page" && item.view !== view ? { ...item, view } : item) : current
       : [...current, view ? { ...tab, view } : tab]);
@@ -186,64 +186,64 @@ export function useSurfaceTabs({
     });
   }, []);
 
-  function openAppStudioSurfaceTab(targetWorkFolder: WorkFolderSummary): void {
-    const tab = appStudioSurfaceTab(targetWorkFolder);
+  function openAppStudioSurfaceTab(targetConnectedFolder: ConnectedFolderSummary): void {
+    const tab = appStudioSurfaceTab(targetConnectedFolder);
     setSurfaceTabs((current) => upsertSurfaceTab(current, tab));
     setActiveSurfaceTabId(tab.id);
   }
 
-  function openChecksSurfaceTab(targetWorkFolder: WorkFolderSummary): void {
-    const tab = checksSurfaceTab(targetWorkFolder);
+  function openChecksSurfaceTab(targetConnectedFolder: ConnectedFolderSummary): void {
+    const tab = checksSurfaceTab(targetConnectedFolder);
     setSurfaceTabs((current) => upsertSurfaceTab(current, tab));
     setActiveSurfaceTabId(tab.id);
   }
 
-  function openWorkFolderAutomationsSurfaceTab(targetWorkFolder: WorkFolderSummary): void {
-    const tab = spaceAutomationsSurfaceTab(targetWorkFolder);
+  function openConnectedFolderAutomationsSurfaceTab(targetConnectedFolder: ConnectedFolderSummary): void {
+    const tab = spaceAutomationsSurfaceTab(targetConnectedFolder);
     setSurfaceTabs((current) => upsertSurfaceTab(current, tab));
     setActiveSurfaceTabId(tab.id);
   }
 
-  function openWorkFolderAutomationSurfaceTab(targetWorkFolder: WorkFolderSummary, automation: { automationId: string; title: string }): void {
-    const tab = workFolderAutomationSurfaceTab(targetWorkFolder, automation);
+  function openConnectedFolderAutomationSurfaceTab(targetConnectedFolder: ConnectedFolderSummary, automation: { automationId: string; title: string }): void {
+    const tab = connectedFolderAutomationSurfaceTab(targetConnectedFolder, automation);
     setSurfaceTabs((current) => upsertSurfaceTab(current, tab));
     setActiveSurfaceTabId(tab.id);
   }
 
   function openExtensionSurfaceTab(
-    targetWorkFolder: WorkFolderSummary,
+    targetConnectedFolder: ConnectedFolderSummary,
     surface: CapabilitySurface,
     view: AgentExtensionSurfaceView,
   ): void {
-    const tab = extensionSurfaceTab(targetWorkFolder, surface, view);
+    const tab = extensionSurfaceTab(targetConnectedFolder, surface, view);
     setSurfaceTabs((current) => upsertSurfaceTab(current, tab));
     setActiveSurfaceTabId(tab.id);
   }
 
   function openRestrictedAppSurfaceTab(
-    targetWorkFolder: WorkFolderSummary,
+    targetConnectedFolder: ConnectedFolderSummary,
     app: { appId: string; digest: string; featureInstallationId: string },
     target: { appTabId: string; title: string; route: string; state?: unknown },
   ): void {
-    const tab = restrictedAppSurfaceTab(targetWorkFolder.id, app, target);
+    const tab = restrictedAppSurfaceTab(targetConnectedFolder.id, app, target);
     setSurfaceTabs((current) => upsertSurfaceTab(current, tab));
     setActiveSurfaceTabId(tab.id);
   }
 
   function updateRestrictedAppSurfaceTab(
-    workFolderId: string,
+    connectedFolderId: string,
     app: { appId: string; digest: string; featureInstallationId: string },
     target: { appTabId: string; title: string; route: string; state?: unknown },
   ): void {
-    const id = restrictedAppSurfaceTabId(workFolderId, app.appId, app.digest, target.appTabId, app.featureInstallationId);
+    const id = restrictedAppSurfaceTabId(connectedFolderId, app.appId, app.digest, target.appTabId, app.featureInstallationId);
     setSurfaceTabs((current) => current.map((tab) => tab.id === id && tab.kind === "restricted-app"
-      ? restrictedAppSurfaceTab(workFolderId, app, target)
+      ? restrictedAppSurfaceTab(connectedFolderId, app, target)
       : tab));
   }
 
   /**
    * Opens a browser tab (docs/built-in-browser.md). It belongs to no
-   * work-folder, so selecting it keeps the work-folder that is open. A tab the
+   * Connected Folder, so selecting it keeps the Connected Folder that is open. A tab the
    * desktop opened (a link, or a Worker's page) brings its own page id.
    */
   function openBrowserSurfaceTab(options: { pageId?: string; url?: string; title?: string; show?: boolean } = {}): string {
@@ -268,16 +268,16 @@ export function useSurfaceTabs({
     });
   }, []);
 
-  function closeRestrictedAppSurfaceTab(workFolderId: string, appId: string, digest: string, appTabId: string, featureInstallationId: string): void {
-    closeSurfaceTab(restrictedAppSurfaceTabId(workFolderId, appId, digest, appTabId, featureInstallationId));
+  function closeRestrictedAppSurfaceTab(connectedFolderId: string, appId: string, digest: string, appTabId: string, featureInstallationId: string): void {
+    closeSurfaceTab(restrictedAppSurfaceTabId(connectedFolderId, appId, digest, appTabId, featureInstallationId));
   }
 
   const reconcileRestrictedAppSurfaceTabs = useCallback((
-    appsByWorkFolder: Record<string, RestrictedAppInstalled[]>,
-    knownWorkFolderIds: ReadonlySet<string>,
+    appsByConnectedFolder: Record<string, RestrictedAppInstalled[]>,
+    knownConnectedFolderIds: ReadonlySet<string>,
   ): void => {
     setSurfaceTabs((current) => {
-      const next = closeUnavailableRestrictedAppSurfaceTabs(current, appsByWorkFolder, knownWorkFolderIds);
+      const next = closeUnavailableRestrictedAppSurfaceTabs(current, appsByConnectedFolder, knownConnectedFolderIds);
       if (next === current) return current;
       setActiveSurfaceTabId((currentActiveTabId) => {
         if (currentActiveTabId && next.some((tab) => tab.id === currentActiveTabId)) return currentActiveTabId;
@@ -290,7 +290,7 @@ export function useSurfaceTabs({
   }, []);
 
   /** Tabs the person closed, newest last, for Reopen Closed Tab; kept for this window's life. Browser tabs keep their own. */
-  const closedSurfaceTabsRef = useRef<Array<{ tab: WorkFolderSurfaceTab; index: number; at: number }>>([]);
+  const closedSurfaceTabsRef = useRef<Array<{ tab: ConnectedFolderSurfaceTab; index: number; at: number }>>([]);
 
   /** Closes a tab. `remember` keeps it for Reopen Closed Tab: only the person's own closes are remembered. */
   function closeSurfaceTab(tabId: string, remember = false): void {
@@ -315,7 +315,7 @@ export function useSurfaceTabs({
   }
 
   /** Opens the tab the person closed last again, in its old place. False when there is none left to reopen. */
-  function reopenClosedSurfaceTab(canReopen: (tab: WorkFolderSurfaceTab) => boolean): boolean {
+  function reopenClosedSurfaceTab(canReopen: (tab: ConnectedFolderSurfaceTab) => boolean): boolean {
     while (closedSurfaceTabsRef.current.length) {
       const { tab, index } = closedSurfaceTabsRef.current.at(-1)!;
       closedSurfaceTabsRef.current = closedSurfaceTabsRef.current.slice(0, -1);
@@ -336,18 +336,18 @@ export function useSurfaceTabs({
     setSurfaceTabs((current) => reorderSurfaceTabList(current, ids));
   }, []);
 
-  function handleTabConversationActivated(tabId: string, tabWorkFolder: WorkFolderSummary, conversation: ConversationSummary | null): void {
+  function handleTabConversationActivated(tabId: string, tabConnectedFolder: ConnectedFolderSummary, conversation: ConversationSummary | null): void {
     if (!conversation) return;
-    const duplicate = surfaceTabs.find((tab) => tab.kind === "chat" && tab.id !== tabId && tab.workFolderId === tabWorkFolder.id && tab.conversationId === conversation.id);
+    const duplicate = surfaceTabs.find((tab) => tab.kind === "chat" && tab.id !== tabId && tab.connectedFolderId === tabConnectedFolder.id && tab.conversationId === conversation.id);
     if (duplicate) {
       setSurfaceTabs((current) => current.filter((tab) => tab.id !== tabId));
       setActiveSurfaceTabId((current) => activeTabAfterConversationActivation(current, tabId, duplicate.id));
       return;
     }
-    const nextTab: WorkFolderSurfaceTab = {
+    const nextTab: ConnectedFolderSurfaceTab = {
       id: tabId,
       kind: "chat",
-      workFolderId: tabWorkFolder.id,
+      connectedFolderId: tabConnectedFolder.id,
       conversationId: conversation.id,
       title: chatDisplayTitle({ serverTitle: conversation.title }),
     };
@@ -356,37 +356,37 @@ export function useSurfaceTabs({
     });
   }
 
-  function removeWorkFolderSurfaceTabs(workFolderId: string): void {
-    setSurfaceTabs((current) => current.filter((tab) => tab.workFolderId !== workFolderId));
+  function removeConnectedFolderSurfaceTabs(connectedFolderId: string): void {
+    setSurfaceTabs((current) => current.filter((tab) => tab.connectedFolderId !== connectedFolderId));
   }
 
-  function retargetFileSurfaceTabsForMove(workFolderId: string, sourcePath: string, movedPath: string): void {
-    setSurfaceTabs((current) => retargetFileSurfaceTabs(current, workFolderId, sourcePath, movedPath));
+  function retargetFileSurfaceTabsForMove(connectedFolderId: string, sourcePath: string, movedPath: string): void {
+    setSurfaceTabs((current) => retargetFileSurfaceTabs(current, connectedFolderId, sourcePath, movedPath));
     // A file or page tab's id names its path, so the selected tab follows it.
     setActiveSurfaceTabId((current) => {
-      for (const [prefix, tabId] of [[`file:${workFolderId}:`, fileSurfaceTabId], [`page:${workFolderId}:`, pageSurfaceTabId]] as const) {
+      for (const [prefix, tabId] of [[`file:${connectedFolderId}:`, fileSurfaceTabId], [`page:${connectedFolderId}:`, pageSurfaceTabId]] as const) {
         if (!current?.startsWith(prefix)) continue;
         const path = current.slice(prefix.length);
         const nextPath = retargetMovedPath(path, sourcePath, movedPath);
-        return nextPath && nextPath !== path ? tabId(workFolderId, nextPath) : current;
+        return nextPath && nextPath !== path ? tabId(connectedFolderId, nextPath) : current;
       }
       return current;
     });
   }
 
-  function closeFileSurfaceTabsForDeletedPaths(workFolderId: string, deletedPaths: Set<string>): void {
-    setSurfaceTabs((current) => closeFileSurfaceTabs(current, workFolderId, deletedPaths));
+  function closeFileSurfaceTabsForDeletedPaths(connectedFolderId: string, deletedPaths: Set<string>): void {
+    setSurfaceTabs((current) => closeFileSurfaceTabs(current, connectedFolderId, deletedPaths));
   }
 
-  /** The Chat tab a person was last in for this work-folder, while it is still open. */
-  function recentChatSurfaceTab(workFolderId: string): WorkFolderSurfaceTab | null {
-    const recentTabId = recentChatSurfaceTabIdsByWorkFolderRef.current.get(workFolderId);
-    return surfaceTabs.find((tab) => tab.id === recentTabId && tab.kind === "chat" && tab.workFolderId === workFolderId) ?? null;
+  /** The Chat tab a person was last in for this Connected Folder, while it is still open. */
+  function recentChatSurfaceTab(connectedFolderId: string): ConnectedFolderSurfaceTab | null {
+    const recentTabId = recentChatSurfaceTabIdsByConnectedFolderRef.current.get(connectedFolderId);
+    return surfaceTabs.find((tab) => tab.id === recentTabId && tab.kind === "chat" && tab.connectedFolderId === connectedFolderId) ?? null;
   }
 
-  function updateSurfaceTabConversationTitle(workFolderId: string, conversation: ConversationSummary): void {
+  function updateSurfaceTabConversationTitle(connectedFolderId: string, conversation: ConversationSummary): void {
     setSurfaceTabs((current) => current.map((tab) => (
-      tab.kind === "chat" && tab.workFolderId === workFolderId && tab.conversationId === conversation.id
+      tab.kind === "chat" && tab.connectedFolderId === connectedFolderId && tab.conversationId === conversation.id
         ? { ...tab, title: chatDisplayTitle({ serverTitle: conversation.title }) }
         : tab
     )));
@@ -404,8 +404,8 @@ export function useSurfaceTabs({
     updatePageSurfaceTab,
     openAppStudioSurfaceTab,
     openChecksSurfaceTab,
-    openWorkFolderAutomationsSurfaceTab,
-    openWorkFolderAutomationSurfaceTab,
+    openConnectedFolderAutomationsSurfaceTab,
+    openConnectedFolderAutomationSurfaceTab,
     openExtensionSurfaceTab,
     openRestrictedAppSurfaceTab,
     updateRestrictedAppSurfaceTab,
@@ -418,7 +418,7 @@ export function useSurfaceTabs({
     lastClosedSurfaceTabAt,
     reorderSurfaceTabs,
     handleTabConversationActivated,
-    removeWorkFolderSurfaceTabs,
+    removeConnectedFolderSurfaceTabs,
     retargetFileSurfaceTabsForMove,
     closeFileSurfaceTabsForDeletedPaths,
     recentChatSurfaceTab,
@@ -427,7 +427,7 @@ export function useSurfaceTabs({
 }
 
 /** Reorder known slots without dropping tabs opened during the gesture. */
-export function reorderSurfaceTabList(tabs: WorkFolderSurfaceTab[], ids: string[]): WorkFolderSurfaceTab[] {
+export function reorderSurfaceTabList(tabs: ConnectedFolderSurfaceTab[], ids: string[]): ConnectedFolderSurfaceTab[] {
   const byId = new Map(tabs.map((tab) => [tab.id, tab]));
   const ordered = [...new Set(ids)].flatMap((id) => byId.has(id) ? [byId.get(id)!] : []);
   const selected = new Set(ordered.map((tab) => tab.id));
@@ -436,34 +436,34 @@ export function reorderSurfaceTabList(tabs: WorkFolderSurfaceTab[], ids: string[
   return next.every((tab, position) => tab === tabs[position]) ? tabs : next;
 }
 
-function newChatSurfaceTab(workFolder: WorkFolderSummary, options: { fresh?: boolean } = {}): WorkFolderSurfaceTab {
+function newChatSurfaceTab(connectedFolder: ConnectedFolderSummary, options: { fresh?: boolean } = {}): ConnectedFolderSurfaceTab {
   return {
-    id: options.fresh ? `chat:${workFolder.id}:draft:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}` : newChatSurfaceTabId(workFolder.id),
+    id: options.fresh ? `chat:${connectedFolder.id}:draft:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}` : newChatSurfaceTabId(connectedFolder.id),
     kind: "chat",
-    workFolderId: workFolder.id,
+    connectedFolderId: connectedFolder.id,
     conversationId: null,
     title: "New Chat",
   };
 }
 
 interface SurfaceTabsState {
-  tabs: WorkFolderSurfaceTab[];
+  tabs: ConnectedFolderSurfaceTab[];
   activeTabId: string | null;
 }
 
-function defaultSurfaceTabsState(workFolder: WorkFolderSummary): SurfaceTabsState {
+function defaultSurfaceTabsState(connectedFolder: ConnectedFolderSummary): SurfaceTabsState {
   return {
-    tabs: [newChatSurfaceTab(workFolder)],
-    activeTabId: newChatSurfaceTabId(workFolder.id),
+    tabs: [newChatSurfaceTab(connectedFolder)],
+    activeTabId: newChatSurfaceTabId(connectedFolder.id),
   };
 }
 
-function readStoredSurfaceTabsState(workFolder: WorkFolderSummary, workFolders: WorkFolderSummary[]): SurfaceTabsState {
+function readStoredSurfaceTabsState(connectedFolder: ConnectedFolderSummary, connectedFolders: ConnectedFolderSummary[]): SurfaceTabsState {
   const stored = readStoredJsonValue<SurfaceTabsState>(surfaceTabsStorageKey, normalizeStoredSurfaceTabsValue, { tabs: [], activeTabId: null });
-  if (!stored.tabs.length) return defaultSurfaceTabsState(workFolder);
-  if (!workFolders.length) return normalizeActiveSurfaceTab(stored);
-  const restored = restoreStoredSurfaceTabsForWorkFolders(stored, workFolders);
-  return restored.tabs.length ? restored : defaultSurfaceTabsState(workFolder);
+  if (!stored.tabs.length) return defaultSurfaceTabsState(connectedFolder);
+  if (!connectedFolders.length) return normalizeActiveSurfaceTab(stored);
+  const restored = restoreStoredSurfaceTabsForConnectedFolders(stored, connectedFolders);
+  return restored.tabs.length ? restored : defaultSurfaceTabsState(connectedFolder);
 }
 
 function writeStoredSurfaceTabsState(state: SurfaceTabsState): void {
@@ -487,8 +487,8 @@ function normalizeStoredSurfaceTabsValue(parsed: unknown): SurfaceTabsState {
   return normalizeActiveSurfaceTab({ tabs, activeTabId });
 }
 
-function normalizeStoredSurfaceTabs(tabs: unknown[]): WorkFolderSurfaceTab[] {
-  const next: WorkFolderSurfaceTab[] = [];
+function normalizeStoredSurfaceTabs(tabs: unknown[]): ConnectedFolderSurfaceTab[] {
+  const next: ConnectedFolderSurfaceTab[] = [];
   const seenIds = new Set<string>();
   for (const value of tabs) {
     const tab = normalizeStoredSurfaceTab(value);
@@ -499,7 +499,7 @@ function normalizeStoredSurfaceTabs(tabs: unknown[]): WorkFolderSurfaceTab[] {
   return next;
 }
 
-function normalizeStoredSurfaceTab(value: unknown): WorkFolderSurfaceTab | null {
+function normalizeStoredSurfaceTab(value: unknown): ConnectedFolderSurfaceTab | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   if (record.kind === "browser") {
@@ -507,24 +507,24 @@ function normalizeStoredSurfaceTab(value: unknown): WorkFolderSurfaceTab | null 
     const url = typeof record.url === "string" && record.url.length <= 32_768 ? record.url : "";
     return browserSurfaceTab(record.pageId, url, typeof record.title === "string" ? record.title : undefined);
   }
-  if (typeof record.id !== "string" || typeof record.workFolderId !== "string" || typeof record.title !== "string") return null;
+  if (typeof record.id !== "string" || typeof record.connectedFolderId !== "string" || typeof record.title !== "string") return null;
   if (record.kind === "chat") {
     if (record.conversationId !== null && typeof record.conversationId !== "string") return null;
     return {
       id: record.id,
       kind: "chat",
-      workFolderId: record.workFolderId,
+      connectedFolderId: record.connectedFolderId,
       conversationId: record.conversationId,
       title: record.title,
     };
   }
   if (record.kind === "file") {
     if (typeof record.path !== "string") return null;
-    // Tabs saved before files had a tab each carry the old per-work-folder id.
+    // Tabs saved before files had a tab each carry the old per–Connected Folder id.
     return {
-      id: fileSurfaceTabId(record.workFolderId, record.path),
+      id: fileSurfaceTabId(record.connectedFolderId, record.path),
       kind: "file",
-      workFolderId: record.workFolderId,
+      connectedFolderId: record.connectedFolderId,
       path: record.path,
       title: record.title,
     };
@@ -532,9 +532,9 @@ function normalizeStoredSurfaceTab(value: unknown): WorkFolderSurfaceTab | null 
   if (record.kind === "page") {
     if (typeof record.path !== "string" || !validPagePath(record.path)) return null;
     return {
-      id: pageSurfaceTabId(record.workFolderId, record.path),
+      id: pageSurfaceTabId(record.connectedFolderId, record.path),
       kind: "page",
-      workFolderId: record.workFolderId,
+      connectedFolderId: record.connectedFolderId,
       path: record.path,
       title: record.title || pageFolderTitle(record.path),
       ...(record.view === "data" || record.view === "preview" ? { view: record.view } : {}),
@@ -545,42 +545,42 @@ function normalizeStoredSurfaceTab(value: unknown): WorkFolderSurfaceTab | null 
     return {
       id: record.id,
       kind: "history",
-      workFolderId: record.workFolderId,
+      connectedFolderId: record.connectedFolderId,
       checkpointId: typeof record.checkpointId === "string" ? record.checkpointId : undefined,
       title: record.title,
     };
   }
   if (record.kind === "app-studio") {
     return {
-      id: `app-studio:${record.workFolderId}`,
+      id: `app-studio:${record.connectedFolderId}`,
       kind: "app-studio",
-      workFolderId: record.workFolderId,
+      connectedFolderId: record.connectedFolderId,
       title: record.title,
     };
   }
   if (record.kind === "checks") {
     return {
-      id: `checks:${record.workFolderId}`,
+      id: `checks:${record.connectedFolderId}`,
       kind: "checks",
-      workFolderId: record.workFolderId,
+      connectedFolderId: record.connectedFolderId,
       title: "Checks",
     };
   }
-  if (record.kind === "work-folder-automation") {
+  if (record.kind === "connected-folder-automation") {
     if (typeof record.automationId !== "string" || !record.automationId || record.automationId.length > 200) return null;
     return {
-      id: `work-folder-automation:${record.workFolderId}:${record.automationId}`,
-      kind: "work-folder-automation",
-      workFolderId: record.workFolderId,
+      id: `connected-folder-automation:${record.connectedFolderId}:${record.automationId}`,
+      kind: "connected-folder-automation",
+      connectedFolderId: record.connectedFolderId,
       automationId: record.automationId,
       title: record.title,
     };
   }
-  if (record.kind === "work-folder-automations") {
+  if (record.kind === "connected-folder-automations") {
     return {
-      id: `work-folder-automations:${record.workFolderId}`,
-      kind: "work-folder-automations",
-      workFolderId: record.workFolderId,
+      id: `connected-folder-automations:${record.connectedFolderId}`,
+      kind: "connected-folder-automations",
+      connectedFolderId: record.connectedFolderId,
       title: "Automations",
     };
   }
@@ -590,7 +590,7 @@ function normalizeStoredSurfaceTab(value: unknown): WorkFolderSurfaceTab | null 
     return {
       id: record.id,
       kind: "extension",
-      workFolderId: record.workFolderId,
+      connectedFolderId: record.connectedFolderId,
       surfaceId: record.surfaceId,
       surfaceExecution: "full-trust-pi",
       viewId: record.viewId,
@@ -603,11 +603,11 @@ function normalizeStoredSurfaceTab(value: unknown): WorkFolderSurfaceTab | null 
     if (typeof record.appTabId !== "string" || !/^[a-z0-9][a-z0-9._:-]{0,127}$/.test(record.appTabId)) return null;
     if (typeof record.route !== "string" || !validRestrictedAppRoute(record.route)) return null;
     if (typeof record.featureInstallationId !== "string" || !/^feature-installation_[a-z0-9](?:[a-z0-9-]{0,126}[a-z0-9])?$/.test(record.featureInstallationId)) return null;
-    const id = restrictedAppSurfaceTabId(record.workFolderId, record.appId, record.digest, record.appTabId, record.featureInstallationId);
+    const id = restrictedAppSurfaceTabId(record.connectedFolderId, record.appId, record.digest, record.appTabId, record.featureInstallationId);
     return {
       id,
       kind: "restricted-app",
-      workFolderId: record.workFolderId,
+      connectedFolderId: record.connectedFolderId,
       appId: record.appId,
       featureInstallationId: record.featureInstallationId,
       digest: record.digest,
@@ -620,17 +620,17 @@ function normalizeStoredSurfaceTab(value: unknown): WorkFolderSurfaceTab | null 
   return null;
 }
 
-function restoreStoredSurfaceTabsForWorkFolders(state: SurfaceTabsState, workFolders: WorkFolderSummary[]): SurfaceTabsState {
+function restoreStoredSurfaceTabsForConnectedFolders(state: SurfaceTabsState, connectedFolders: ConnectedFolderSummary[]): SurfaceTabsState {
   return normalizeActiveSurfaceTab({
-    tabs: filterSurfaceTabsToWorkFolders(state.tabs, workFolders),
+    tabs: filterSurfaceTabsToConnectedFolders(state.tabs, connectedFolders),
     activeTabId: state.activeTabId,
   });
 }
 
-function filterSurfaceTabsToWorkFolders(tabs: WorkFolderSurfaceTab[], workFolders: WorkFolderSummary[]): WorkFolderSurfaceTab[] {
-  const workFolderIds = new Set(workFolders.map((item) => item.id));
-  // Browser tabs belong to no work-folder, so removing one never closes them.
-  const kept = tabs.filter((tab) => tab.workFolderId === null || workFolderIds.has(tab.workFolderId));
+function filterSurfaceTabsToConnectedFolders(tabs: ConnectedFolderSurfaceTab[], connectedFolders: ConnectedFolderSummary[]): ConnectedFolderSurfaceTab[] {
+  const connectedFolderIds = new Set(connectedFolders.map((item) => item.id));
+  // Browser tabs belong to no Connected Folder, so removing one never closes them.
+  const kept = tabs.filter((tab) => tab.connectedFolderId === null || connectedFolderIds.has(tab.connectedFolderId));
   // Every registry read (each window focus) passes a new list; keeping the
   // same array when nothing closed avoids a re-render and a saved-tabs write.
   return kept.length === tabs.length ? tabs : kept;
@@ -644,95 +644,95 @@ function normalizeActiveSurfaceTab(state: SurfaceTabsState): SurfaceTabsState {
   };
 }
 
-function recordActiveSurfaceTabWorkFolderRecency(recentTabIdsByWorkFolder: Map<string, string>, tabs: WorkFolderSurfaceTab[], activeTabId: string | null): void {
+function recordActiveSurfaceTabConnectedFolderRecency(recentTabIdsByConnectedFolder: Map<string, string>, tabs: ConnectedFolderSurfaceTab[], activeTabId: string | null): void {
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
-  if (!activeTab || activeTab.workFolderId === null) return;
-  recentTabIdsByWorkFolder.set(activeTab.workFolderId, activeTab.id);
+  if (!activeTab || activeTab.connectedFolderId === null) return;
+  recentTabIdsByConnectedFolder.set(activeTab.connectedFolderId, activeTab.id);
 }
 
 function activeTabAfterConversationActivation(currentActiveTabId: string | null, sourceTabId: string, duplicateTabId: string): string | null {
   return currentActiveTabId === sourceTabId ? duplicateTabId : currentActiveTabId;
 }
 
-function surfaceTabWorkFolderSwitchTarget({
+function surfaceTabConnectedFolderSwitchTarget({
   activeTabId,
-  activeWorkFolderId,
+  activeConnectedFolderId,
   tabs,
-  workFolders,
+  connectedFolders,
 }: {
   activeTabId: string | null;
-  activeWorkFolderId: string;
-  tabs: WorkFolderSurfaceTab[];
-  workFolders: WorkFolderSummary[];
-}): WorkFolderSummary | null {
+  activeConnectedFolderId: string;
+  tabs: ConnectedFolderSurfaceTab[];
+  connectedFolders: ConnectedFolderSummary[];
+}): ConnectedFolderSummary | null {
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
-  // A browser tab keeps whichever work-folder is open.
-  if (!activeTab || activeTab.workFolderId === null || activeTab.workFolderId === activeWorkFolderId) return null;
-  return workFolders.find((item) => item.id === activeTab.workFolderId) ?? null;
+  // A browser tab keeps whichever Connected Folder is open.
+  if (!activeTab || activeTab.connectedFolderId === null || activeTab.connectedFolderId === activeConnectedFolderId) return null;
+  return connectedFolders.find((item) => item.id === activeTab.connectedFolderId) ?? null;
 }
 
-function surfaceTabActivationForWorkFolder({
+function surfaceTabActivationForConnectedFolder({
   activeTabId,
-  recentTabIdsByWorkFolder,
+  recentTabIdsByConnectedFolder,
   tabs,
-  workFolder,
+  connectedFolder,
 }: {
   activeTabId: string | null;
-  recentTabIdsByWorkFolder: Map<string, string>;
-  tabs: WorkFolderSurfaceTab[];
-  workFolder: WorkFolderSummary;
-}): { tabId: string; tabToAdd?: WorkFolderSurfaceTab } | null {
+  recentTabIdsByConnectedFolder: Map<string, string>;
+  tabs: ConnectedFolderSurfaceTab[];
+  connectedFolder: ConnectedFolderSummary;
+}): { tabId: string; tabToAdd?: ConnectedFolderSurfaceTab } | null {
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
-  if (activeTab?.workFolderId === workFolder.id) return null;
+  if (activeTab?.connectedFolderId === connectedFolder.id) return null;
 
-  const recentTabId = recentTabIdsByWorkFolder.get(workFolder.id);
-  const recentTab = recentTabId ? tabs.find((tab) => tab.id === recentTabId && tab.workFolderId === workFolder.id) : null;
+  const recentTabId = recentTabIdsByConnectedFolder.get(connectedFolder.id);
+  const recentTab = recentTabId ? tabs.find((tab) => tab.id === recentTabId && tab.connectedFolderId === connectedFolder.id) : null;
   if (recentTab) return { tabId: recentTab.id };
 
-  const draftTab = tabs.find((tab) => tab.kind === "chat" && tab.workFolderId === workFolder.id && !tab.conversationId);
+  const draftTab = tabs.find((tab) => tab.kind === "chat" && tab.connectedFolderId === connectedFolder.id && !tab.conversationId);
   if (draftTab) return { tabId: draftTab.id };
 
-  const tab = newChatSurfaceTab(workFolder);
+  const tab = newChatSurfaceTab(connectedFolder);
   return { tabId: tab.id, tabToAdd: tab };
 }
 
-function newChatSurfaceTabId(workFolderId: string): string {
-  return `chat:${workFolderId}:new`;
+function newChatSurfaceTabId(connectedFolderId: string): string {
+  return `chat:${connectedFolderId}:new`;
 }
 
-function chatSurfaceTab(workFolder: WorkFolderSummary, conversation: ConversationSummary): WorkFolderSurfaceTab {
+function chatSurfaceTab(connectedFolder: ConnectedFolderSummary, conversation: ConversationSummary): ConnectedFolderSurfaceTab {
   return {
-    id: `chat:${workFolder.id}:${conversation.id}`,
+    id: `chat:${connectedFolder.id}:${conversation.id}`,
     kind: "chat",
-    workFolderId: workFolder.id,
+    connectedFolderId: connectedFolder.id,
     conversationId: conversation.id,
     title: chatDisplayTitle({ serverTitle: conversation.title }),
   };
 }
 
-function historySurfaceTab(workFolder: WorkFolderSummary, checkpointId?: string, title = "History"): WorkFolderSurfaceTab {
+function historySurfaceTab(connectedFolder: ConnectedFolderSummary, checkpointId?: string, title = "History"): ConnectedFolderSurfaceTab {
   return {
-    id: checkpointId ? `history:${workFolder.id}:${checkpointId}` : `history:${workFolder.id}`,
+    id: checkpointId ? `history:${connectedFolder.id}:${checkpointId}` : `history:${connectedFolder.id}`,
     kind: "history",
-    workFolderId: workFolder.id,
+    connectedFolderId: connectedFolder.id,
     checkpointId,
     title,
   };
 }
 
 /** Each file opens in its own tab; opening a file that is already open selects its tab. */
-function fileSurfaceTab(workFolder: WorkFolderSummary, path: string): WorkFolderSurfaceTab {
+function fileSurfaceTab(connectedFolder: ConnectedFolderSummary, path: string): ConnectedFolderSurfaceTab {
   return {
-    id: fileSurfaceTabId(workFolder.id, path),
+    id: fileSurfaceTabId(connectedFolder.id, path),
     kind: "file",
-    workFolderId: workFolder.id,
+    connectedFolderId: connectedFolder.id,
     path,
     title: fileSurfaceTitle(path),
   };
 }
 
-function fileSurfaceTabId(workFolderId: string, path: string): string {
-  return `file:${workFolderId}:${path}`;
+function fileSurfaceTabId(connectedFolderId: string, path: string): string {
+  return `file:${connectedFolderId}:${path}`;
 }
 
 function fileSurfaceTitle(path: string): string {
@@ -743,81 +743,81 @@ function fileSurfaceTitle(path: string): string {
  * Each page folder opens in one tab (docs/pages.md, "Preview and test
  * entries"), titled with the page's title once it is read.
  */
-function pageSurfaceTab(workFolder: WorkFolderSummary, path: string, title?: string): WorkFolderSurfaceTab {
+function pageSurfaceTab(connectedFolder: ConnectedFolderSummary, path: string, title?: string): ConnectedFolderSurfaceTab {
   return {
-    id: pageSurfaceTabId(workFolder.id, path),
+    id: pageSurfaceTabId(connectedFolder.id, path),
     kind: "page",
-    workFolderId: workFolder.id,
+    connectedFolderId: connectedFolder.id,
     path,
     title: title?.trim() || pageFolderTitle(path),
   };
 }
 
-function pageSurfaceTabId(workFolderId: string, path: string): string {
-  return `page:${workFolderId}:${path}`;
+function pageSurfaceTabId(connectedFolderId: string, path: string): string {
+  return `page:${connectedFolderId}:${path}`;
 }
 
 function pageFolderTitle(path: string): string {
   return path.split("/").filter(Boolean).pop() || path;
 }
 
-/** A work-folder-relative folder path: no empty, dot, or absolute parts. */
+/** A Connected Folder–relative folder path: no empty, dot, or absolute parts. */
 function validPagePath(path: string): boolean {
   if (!path || path.length > 4_096 || path.startsWith("/") || /[\\\0]/.test(path)) return false;
   return path.split("/").every((part) => part !== "" && part !== "." && part !== "..");
 }
 
-export function appStudioSurfaceTab(workFolder: WorkFolderSummary): WorkFolderSurfaceTab {
+export function appStudioSurfaceTab(connectedFolder: ConnectedFolderSummary): ConnectedFolderSurfaceTab {
   return {
-    id: `app-studio:${workFolder.id}`,
+    id: `app-studio:${connectedFolder.id}`,
     kind: "app-studio",
-    workFolderId: workFolder.id,
+    connectedFolderId: connectedFolder.id,
     title: "App Studio",
   };
 }
 
 /**
- * One work-folder-owned tab onto the automations that touch this work-folder
+ * One Connected Folder–owned tab onto the automations that touch this Connected Folder
  * (docs/automations.md, F15 as amended 2026-09-24).
  */
-export function spaceAutomationsSurfaceTab(workFolder: WorkFolderSummary): WorkFolderSurfaceTab {
+export function spaceAutomationsSurfaceTab(connectedFolder: ConnectedFolderSummary): ConnectedFolderSurfaceTab {
   return {
-    id: `work-folder-automations:${workFolder.id}`,
-    kind: "work-folder-automations",
-    workFolderId: workFolder.id,
+    id: `connected-folder-automations:${connectedFolder.id}`,
+    kind: "connected-folder-automations",
+    connectedFolderId: connectedFolder.id,
     title: "Automations",
   };
 }
 
-/** One automation that touches this work-folder, opened from the Automations list in the left pane. */
-export function workFolderAutomationSurfaceTab(workFolder: WorkFolderSummary, automation: { automationId: string; title: string }): WorkFolderSurfaceTab {
+/** One automation that touches this Connected Folder, opened from the Automations list in the left pane. */
+export function connectedFolderAutomationSurfaceTab(connectedFolder: ConnectedFolderSummary, automation: { automationId: string; title: string }): ConnectedFolderSurfaceTab {
   return {
-    id: `work-folder-automation:${workFolder.id}:${automation.automationId}`,
-    kind: "work-folder-automation",
-    workFolderId: workFolder.id,
+    id: `connected-folder-automation:${connectedFolder.id}:${automation.automationId}`,
+    kind: "connected-folder-automation",
+    connectedFolderId: connectedFolder.id,
     automationId: automation.automationId,
     title: automation.title,
   };
 }
 
-export function checksSurfaceTab(workFolder: WorkFolderSummary): WorkFolderSurfaceTab {
+export function checksSurfaceTab(connectedFolder: ConnectedFolderSummary): ConnectedFolderSurfaceTab {
   return {
-    id: `checks:${workFolder.id}`,
+    id: `checks:${connectedFolder.id}`,
     kind: "checks",
-    workFolderId: workFolder.id,
+    connectedFolderId: connectedFolder.id,
     title: "Checks",
   };
 }
 
 function extensionSurfaceTab(
-  workFolder: WorkFolderSummary,
+  connectedFolder: ConnectedFolderSummary,
   surface: CapabilitySurface,
   view: AgentExtensionSurfaceView,
-): WorkFolderSurfaceTab {
+): ConnectedFolderSurfaceTab {
   return {
-    id: `extension:${workFolder.id}:${surface.key}:${view.id}`,
+    id: `extension:${connectedFolder.id}:${surface.key}:${view.id}`,
     kind: "extension",
-    workFolderId: workFolder.id,
+    connectedFolderId: connectedFolder.id,
     surfaceId: surface.key,
     surfaceExecution: "full-trust-pi",
     viewId: view.id,
@@ -826,14 +826,14 @@ function extensionSurfaceTab(
 }
 
 function restrictedAppSurfaceTab(
-  workFolderId: string,
+  connectedFolderId: string,
   app: { appId: string; digest: string; featureInstallationId: string },
   target: { appTabId: string; title: string; route: string; state?: unknown },
-): WorkFolderSurfaceTab {
+): ConnectedFolderSurfaceTab {
   return {
-    id: restrictedAppSurfaceTabId(workFolderId, app.appId, app.digest, target.appTabId, app.featureInstallationId),
+    id: restrictedAppSurfaceTabId(connectedFolderId, app.appId, app.digest, target.appTabId, app.featureInstallationId),
     kind: "restricted-app",
-    workFolderId,
+    connectedFolderId,
     appId: app.appId,
     featureInstallationId: app.featureInstallationId,
     digest: app.digest,
@@ -850,7 +850,7 @@ function browserSurfaceTab(pageId: string, url: string, title?: string): Browser
   return {
     id: browserSurfaceTabId(pageId),
     kind: "browser",
-    workFolderId: null,
+    connectedFolderId: null,
     pageId,
     url,
     title: browserTabTitle(title ?? "", url),
@@ -881,18 +881,18 @@ function newBrowserPageId(): string {
   return Array.from(bytes, (byte) => (byte % 36).toString(36)).join("");
 }
 
-function restrictedAppSurfaceTabId(workFolderId: string, appId: string, digest: string, appTabId: string, featureInstallationId: string): string {
-  return `restricted-app:${workFolderId}:${appId}:${featureInstallationId}:${digest}:${appTabId}`;
+function restrictedAppSurfaceTabId(connectedFolderId: string, appId: string, digest: string, appTabId: string, featureInstallationId: string): string {
+  return `restricted-app:${connectedFolderId}:${appId}:${featureInstallationId}:${digest}:${appTabId}`;
 }
 
 function closeUnavailableRestrictedAppSurfaceTabs(
-  tabs: WorkFolderSurfaceTab[],
-  appsByWorkFolder: Record<string, Array<{ manifest: { id: string }; digest: string; featureInstallationId: string }>>,
-  knownWorkFolderIds: ReadonlySet<string>,
-): WorkFolderSurfaceTab[] {
+  tabs: ConnectedFolderSurfaceTab[],
+  appsByConnectedFolder: Record<string, Array<{ manifest: { id: string }; digest: string; featureInstallationId: string }>>,
+  knownConnectedFolderIds: ReadonlySet<string>,
+): ConnectedFolderSurfaceTab[] {
   const next = tabs.filter((tab) => {
-    if (tab.kind !== "restricted-app" || !knownWorkFolderIds.has(tab.workFolderId)) return true;
-    return (appsByWorkFolder[tab.workFolderId] ?? []).some((app) => app.manifest.id === tab.appId && app.digest === tab.digest && app.featureInstallationId === tab.featureInstallationId);
+    if (tab.kind !== "restricted-app" || !knownConnectedFolderIds.has(tab.connectedFolderId)) return true;
+    return (appsByConnectedFolder[tab.connectedFolderId] ?? []).some((app) => app.manifest.id === tab.appId && app.digest === tab.digest && app.featureInstallationId === tab.featureInstallationId);
   });
   return next.length === tabs.length ? tabs : next;
 }
@@ -906,24 +906,24 @@ function validRestrictedAppRoute(value: string): boolean {
   }
 }
 
-function upsertSurfaceTab(tabs: WorkFolderSurfaceTab[], tab: WorkFolderSurfaceTab): WorkFolderSurfaceTab[] {
+function upsertSurfaceTab(tabs: ConnectedFolderSurfaceTab[], tab: ConnectedFolderSurfaceTab): ConnectedFolderSurfaceTab[] {
   const existing = tabs.find((item) => item.id === tab.id);
   if (existing) return tabs.map((item) => item.id === tab.id ? { ...existing, ...tab } : item);
   return [...tabs, tab];
 }
 
-function retargetFileSurfaceTabs(tabs: WorkFolderSurfaceTab[], workFolderId: string, sourcePath: string, movedPath: string): WorkFolderSurfaceTab[] {
+function retargetFileSurfaceTabs(tabs: ConnectedFolderSurfaceTab[], connectedFolderId: string, sourcePath: string, movedPath: string): ConnectedFolderSurfaceTab[] {
   const seen = new Set<string>();
   return tabs.flatMap((tab) => {
     let next = tab;
-    if (tab.kind === "file" && tab.workFolderId === workFolderId && tab.path) {
+    if (tab.kind === "file" && tab.connectedFolderId === connectedFolderId && tab.path) {
       const nextPath = retargetMovedPath(tab.path, sourcePath, movedPath);
-      if (nextPath && nextPath !== tab.path) next = { ...tab, id: fileSurfaceTabId(workFolderId, nextPath), path: nextPath, title: fileSurfaceTitle(nextPath) };
+      if (nextPath && nextPath !== tab.path) next = { ...tab, id: fileSurfaceTabId(connectedFolderId, nextPath), path: nextPath, title: fileSurfaceTitle(nextPath) };
     }
     // A moved page keeps its title; its test entries start fresh (docs/pages.md).
-    if (tab.kind === "page" && tab.workFolderId === workFolderId && tab.path) {
+    if (tab.kind === "page" && tab.connectedFolderId === connectedFolderId && tab.path) {
       const nextPath = retargetMovedPath(tab.path, sourcePath, movedPath);
-      if (nextPath && nextPath !== tab.path) next = { ...tab, id: pageSurfaceTabId(workFolderId, nextPath), path: nextPath };
+      if (nextPath && nextPath !== tab.path) next = { ...tab, id: pageSurfaceTabId(connectedFolderId, nextPath), path: nextPath };
     }
     if (seen.has(next.id)) return [];
     seen.add(next.id);
@@ -931,8 +931,8 @@ function retargetFileSurfaceTabs(tabs: WorkFolderSurfaceTab[], workFolderId: str
   });
 }
 
-function closeFileSurfaceTabs(tabs: WorkFolderSurfaceTab[], workFolderId: string, deletedPaths: Set<string>): WorkFolderSurfaceTab[] {
-  return tabs.filter((tab) => (tab.kind !== "file" && tab.kind !== "page") || tab.workFolderId !== workFolderId || !tab.path || !deletedPaths.has(tab.path));
+function closeFileSurfaceTabs(tabs: ConnectedFolderSurfaceTab[], connectedFolderId: string, deletedPaths: Set<string>): ConnectedFolderSurfaceTab[] {
+  return tabs.filter((tab) => (tab.kind !== "file" && tab.kind !== "page") || tab.connectedFolderId !== connectedFolderId || !tab.path || !deletedPaths.has(tab.path));
 }
 
 export {
@@ -948,12 +948,12 @@ export {
   pageSurfaceTab,
   pageSurfaceTabId,
   normalizeStoredSurfaceTabsValue,
-  recordActiveSurfaceTabWorkFolderRecency,
+  recordActiveSurfaceTabConnectedFolderRecency,
   readStoredSurfaceTabsState,
-  restoreStoredSurfaceTabsForWorkFolders,
+  restoreStoredSurfaceTabsForConnectedFolders,
   retargetFileSurfaceTabs,
   restrictedAppSurfaceTabId,
-  surfaceTabActivationForWorkFolder,
-  surfaceTabWorkFolderSwitchTarget,
+  surfaceTabActivationForConnectedFolder,
+  surfaceTabConnectedFolderSwitchTarget,
   upsertSurfaceTab,
 };

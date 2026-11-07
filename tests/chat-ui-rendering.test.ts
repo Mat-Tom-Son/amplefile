@@ -9,18 +9,18 @@ import {
   readStoredPendingChatSend,
   writeStoredPendingChatSend,
 } from "../web-local/src/lib/format.js";
-import { collectWorkFolderPathCandidates, workFolderPathCandidate } from "../web-local/src/lib/work-folder-path-links.js";
+import { collectConnectedFolderPathCandidates, connectedFolderPathCandidate } from "../web-local/src/lib/connected-folder-path-links.js";
 
 test("blank Chat tabs keep independent drafts while saved conversations keep stable keys", () => {
-  const firstDraft = chatDraftStorageKey("work-folder-1", null, "chat:work-folder-1:draft:first");
-  const secondDraft = chatDraftStorageKey("work-folder-1", null, "chat:work-folder-1:draft:second");
+  const firstDraft = chatDraftStorageKey("connected-folder-1", null, "chat:connected-folder-1:draft:first");
+  const secondDraft = chatDraftStorageKey("connected-folder-1", null, "chat:connected-folder-1:draft:second");
 
   assert.notEqual(firstDraft, secondDraft);
   assert.equal(
-    chatDraftStorageKey("work-folder-1", "conversation-1", "chat:work-folder-1:draft:first"),
-    chatDraftStorageKey("work-folder-1", "conversation-1", "chat:work-folder-1:draft:second"),
+    chatDraftStorageKey("connected-folder-1", "conversation-1", "chat:connected-folder-1:draft:first"),
+    chatDraftStorageKey("connected-folder-1", "conversation-1", "chat:connected-folder-1:draft:second"),
   );
-  assert.equal(chatDraftStorageKey("work-folder-1", null), "work-fold.work-folder.chat-draft:work-folder-1:new-chat");
+  assert.equal(chatDraftStorageKey("connected-folder-1", null), "amplefile.connected-folder.chat-draft:connected-folder-1:new-chat");
 });
 
 test("pending Chat sends preserve one stable acceptance identity across renderer recovery", () => {
@@ -47,13 +47,13 @@ test("pending Chat sends preserve one stable acceptance identity across renderer
       transientConversation: false,
       draftStorageKey: "draft-key",
     };
-    assert.equal(writeStoredPendingChatSend("work-folder-1", "chat-1", pending), true);
-    assert.deepEqual(readStoredPendingChatSend("work-folder-1", "chat-1"), pending);
+    assert.equal(writeStoredPendingChatSend("connected-folder-1", "chat-1", pending), true);
+    assert.deepEqual(readStoredPendingChatSend("connected-folder-1", "chat-1"), pending);
     // A send saved before 2026-10-11 still carries the file selected in Files; it reads back without it.
-    assert.equal(writeStoredPendingChatSend("work-folder-1", "chat-1", { ...pending, selectedPath: "notes.md" } as typeof pending), true);
-    assert.deepEqual(readStoredPendingChatSend("work-folder-1", "chat-1"), pending);
-    clearStoredPendingChatSend("work-folder-1", "chat-1");
-    assert.equal(readStoredPendingChatSend("work-folder-1", "chat-1"), null);
+    assert.equal(writeStoredPendingChatSend("connected-folder-1", "chat-1", { ...pending, selectedPath: "notes.md" } as typeof pending), true);
+    assert.deepEqual(readStoredPendingChatSend("connected-folder-1", "chat-1"), pending);
+    clearStoredPendingChatSend("connected-folder-1", "chat-1");
+    assert.equal(readStoredPendingChatSend("connected-folder-1", "chat-1"), null);
   } finally {
     if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
     else Reflect.deleteProperty(globalThis, "window");
@@ -123,8 +123,8 @@ test("Chat title rendering ignores only the initial placeholder and accepts gene
   ]), "New Chat");
 });
 
-test("assistant Markdown discovers relative work-folder links and common code paths", () => {
-  const candidates = collectWorkFolderPathCandidates([
+test("assistant Markdown discovers relative Connected Folder links and common code paths", () => {
+  const candidates = collectConnectedFolderPathCandidates([
     "Open [App](web-local/src/App.tsx) and [product notes](<docs/Product notes.md>).",
     "Then inspect `src/local/server.ts:42:7`, README.md#L12, and scripts/release.ps1.",
     "Leave [the web](https://example.com/docs/file.ts) external.",
@@ -137,8 +137,8 @@ test("assistant Markdown discovers relative work-folder links and common code pa
     "README.md",
     "scripts/release.ps1",
   ]);
-  assert.equal(workFolderPathCandidate("./web-local/src/App.tsx:120", { allowWorkFolders: true }), "web-local/src/App.tsx");
-  assert.equal(workFolderPathCandidate("README.md#installation", { allowWorkFolders: true }), "README.md");
-  assert.equal(workFolderPathCandidate("https://example.com/file.ts", { allowWorkFolders: true }), null);
-  assert.equal(workFolderPathCandidate("../outside.ts", { allowWorkFolders: true }), null);
+  assert.equal(connectedFolderPathCandidate("./web-local/src/App.tsx:120", { allowConnectedFolders: true }), "web-local/src/App.tsx");
+  assert.equal(connectedFolderPathCandidate("README.md#installation", { allowConnectedFolders: true }), "README.md");
+  assert.equal(connectedFolderPathCandidate("https://example.com/file.ts", { allowConnectedFolders: true }), null);
+  assert.equal(connectedFolderPathCandidate("../outside.ts", { allowConnectedFolders: true }), null);
 });

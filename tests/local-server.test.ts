@@ -11,53 +11,53 @@ import { FileCredentialStore, ModelRuntime, SettingsManager } from "@earendil-wo
 import type { CapabilityRegistryService } from "../src/local/agent/capability-registry.js";
 import { RoutedPiExtensionUiBridge } from "../src/local/agent/extension-ui.js";
 import {
-  RegisteredWorkFolderRuntimeProvider,
-  RegisteredWorkFolderTrustAuthority,
-} from "../src/local/agent/registered-work-folder-runtime.js";
+  RegisteredConnectedFolderRuntimeProvider,
+  RegisteredConnectedFolderTrustAuthority,
+} from "../src/local/agent/registered-connected-folder-runtime.js";
 import { appendMessage, createConversation, readConversationSummary } from "../src/local/agent/chat-store.js";
 import { startLocalApi } from "../src/local/server.js";
-import { defaultWorkFolderAccent } from "../src/shared/work-folder-appearance.js";
-import { WorkFoldKernel } from "../src/local/work-fold-kernel.js";
-import { WorkFoldRecentlyDeletedStore } from "../src/local/recently-deleted-store.js";
+import { defaultConnectedFolderAccent } from "../src/shared/connected-folder-appearance.js";
+import { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
+import { AmpleFileRecentlyDeletedStore } from "../src/local/recently-deleted-store.js";
 
-test("local API covers work-folder files and external restore points", async () => {
+test("local API covers Connected Folder files and external restore points", async () => {
   const sandbox = await mkdtemp(join(tmpdir(), "workspace-api-test-"));
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
   });
   try {
-    assert.ok(api.kernel instanceof WorkFoldKernel, "startLocalApi must expose its compatible default kernel");
+    assert.ok(api.kernel instanceof AmpleFileKernel, "startLocalApi must expose its compatible default kernel");
     assert.deepEqual(await json(`${api.origin}/api/bootstrap`), {
-      workFolders: [],
+      connectedFolders: [],
       agent: { ready: true, configured: false, provider: null, model: null, piVersion: null, projectTrusted: false, error: null },
       appearance: { version: 2, revision: 0, customizations: {} },
     });
 
-    const created = await json(`${api.origin}/api/work-folders`, {
+    const created = await json(`${api.origin}/api/connected-folders`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "API work-folder" }),
-    }) as { workFolder: { id: string } };
+      body: JSON.stringify({ name: "API Connected Folder" }),
+    }) as { connectedFolder: { id: string } };
 
     const files = new FormData();
     files.set("targetFolderPath", "");
     files.set("relativePaths", JSON.stringify(["Notes/readme.md"]));
     files.append("files", new Blob(["# Hello\n"]), "readme.md");
-    await ok(`${api.origin}/api/work-folders/${created.workFolder.id}/upload-local-files`, { method: "POST", body: files });
-    const preview = await json(`${api.origin}/api/work-folders/${created.workFolder.id}/file?path=Notes%2Freadme.md`) as { text: string };
+    await ok(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/upload-local-files`, { method: "POST", body: files });
+    const preview = await json(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/file?path=Notes%2Freadme.md`) as { text: string };
     assert.equal(preview.text, "# Hello\n");
 
-    const checkpoint = await json(`${api.origin}/api/work-folders/${created.workFolder.id}/history/checkpoints`, {
+    const checkpoint = await json(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/history/checkpoints`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ label: "API snapshot" }),
     }) as { checkpoint: { checkpointId: string; fileCount: number }; created: boolean };
     assert.equal(checkpoint.checkpoint.fileCount, 1);
     assert.equal(checkpoint.created, true);
-    const duplicateCheckpoint = await json(`${api.origin}/api/work-folders/${created.workFolder.id}/history/checkpoints`, {
+    const duplicateCheckpoint = await json(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/history/checkpoints`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ label: "Same files" }),
@@ -70,39 +70,39 @@ test("local API covers work-folder files and external restore points", async () 
   }
 });
 
-test("new work-folders start in colors no other work-folder uses", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-starting-colors-"));
+test("new Connected Folders start in colors no other Connected Folder uses", async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-starting-colors-"));
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
   });
   try {
     const ids: string[] = [];
     for (const name of ["One", "Two", "Three", "Four", "Five", "Six"]) {
-      const created = await json(`${api.origin}/api/work-folders`, {
+      const created = await json(`${api.origin}/api/connected-folders`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name }),
-      }) as { workFolder: { id: string } };
-      ids.push(created.workFolder.id);
+      }) as { connectedFolder: { id: string } };
+      ids.push(created.connectedFolder.id);
     }
     const linkedRoot = join(sandbox, "linked");
     await mkdir(linkedRoot);
-    const linked = await json(`${api.origin}/api/work-folders/local-folder`, {
+    const linked = await json(`${api.origin}/api/connected-folders/local-folder`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workFolderRoot: linkedRoot }),
-    }) as { workFolder: { id: string } };
-    ids.push(linked.workFolder.id);
+      body: JSON.stringify({ connectedFolderRoot: linkedRoot }),
+    }) as { connectedFolder: { id: string } };
+    ids.push(linked.connectedFolder.id);
     const boot = await json(`${api.origin}/api/bootstrap`) as {
       appearance: { customizations: Record<string, { primary?: { referenceHex: string } }> };
     };
-    const colors = ids.map((id) => boot.appearance.customizations[id]?.primary?.referenceHex ?? defaultWorkFolderAccent(id).hex);
-    assert.equal(new Set(colors).size, ids.length, "created and registered work-folders all differ");
+    const colors = ids.map((id) => boot.appearance.customizations[id]?.primary?.referenceHex ?? defaultConnectedFolderAccent(id).hex);
+    assert.equal(new Set(colors).size, ids.length, "created and registered Connected Folders all differ");
     for (const [id, customization] of Object.entries(boot.appearance.customizations)) {
-      assert.notEqual(customization.primary?.referenceHex, defaultWorkFolderAccent(id).hex, "a color its id already picks is not saved");
+      assert.notEqual(customization.primary?.referenceHex, defaultConnectedFolderAccent(id).hex, "a color its id already picks is not saved");
     }
   } finally {
     await api.close();
@@ -111,7 +111,7 @@ test("new work-folders start in colors no other work-folder uses", async () => {
 });
 
 test("agent credentials require explicit removal before replacement", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-ai-models-credential-api-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-ai-models-credential-api-"));
   const agentDir = join(sandbox, "agent");
   const authStorage = FileCredentialStore.inMemory({
     "credential-test": { type: "api_key", key: "test-key" },
@@ -120,7 +120,7 @@ test("agent credentials require explicit removal before replacement", async () =
   modelRuntime.registerProvider("credential-test", {
     api: "openai-completions",
     baseUrl: "http://127.0.0.1:1/v1",
-    apiKey: "$WORKFOLD_CREDENTIAL_TEST_MISSING_KEY",
+    apiKey: "$AMPLEFILE_CREDENTIAL_TEST_MISSING_KEY",
     models: [{
       id: "credential-model",
       name: "Credential Model",
@@ -134,7 +134,7 @@ test("agent credentials require explicit removal before replacement", async () =
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: {
       async resolveRuntime() {
@@ -143,12 +143,12 @@ test("agent credentials require explicit removal before replacement", async () =
     },
   });
   try {
-    const created = await json(`${api.origin}/api/work-folders`, {
+    const created = await json(`${api.origin}/api/connected-folders`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Credential work-folder" }),
-    }) as { workFolder: { id: string } };
-    const before = await json(`${api.origin}/api/agent/models?workFolderId=${created.workFolder.id}`) as { models: Array<{ provider: string; authSource?: string; authType?: string }> };
+      body: JSON.stringify({ name: "Credential Connected Folder" }),
+    }) as { connectedFolder: { id: string } };
+    const before = await json(`${api.origin}/api/agent/models?connectedFolderId=${created.connectedFolder.id}`) as { models: Array<{ provider: string; authSource?: string; authType?: string }> };
     const configured = before.models.find((item) => item.provider === "credential-test");
     assert.equal(configured?.authSource, "stored");
     assert.equal(configured?.authType, "api_key");
@@ -156,7 +156,7 @@ test("agent credentials require explicit removal before replacement", async () =
     const removed = await json(`${api.origin}/api/agent/auth`, {
       method: "DELETE",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workFolderId: created.workFolder.id, provider: "credential-test" }),
+      body: JSON.stringify({ connectedFolderId: created.connectedFolder.id, provider: "credential-test" }),
     }) as { models: Array<{ provider: string; authConfigured: boolean; authSource?: string; authType?: string }> };
     const cleared = removed.models.find((item) => item.provider === "credential-test");
     assert.equal(cleared?.authConfigured, false);
@@ -174,28 +174,28 @@ test("uploads record additive restore points", async () => {
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
   });
   try {
-    const created = await json(`${api.origin}/api/work-folders`, {
+    const created = await json(`${api.origin}/api/connected-folders`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Additive History work-folder" }),
-    }) as { workFolder: { id: string } };
+      body: JSON.stringify({ name: "Additive History Connected Folder" }),
+    }) as { connectedFolder: { id: string } };
 
     const files = new FormData();
     files.set("targetFolderPath", "Dropped");
     files.set("relativePaths", JSON.stringify(["notes.md"]));
     files.append("files", new Blob(["dropped"]), "notes.md");
-    const uploaded = await json(`${api.origin}/api/work-folders/${created.workFolder.id}/upload-local-files`, {
+    const uploaded = await json(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/upload-local-files`, {
       method: "POST",
       body: files,
     }) as { uploaded: Array<{ path: string }>; safetyCheckpointId: string | null };
     assert.equal(uploaded.uploaded[0]?.path, "Dropped/notes.md");
     assert.ok(uploaded.safetyCheckpointId, "uploads must record a restore point");
 
-    const checkpoints = await json(`${api.origin}/api/work-folders/${created.workFolder.id}/history/checkpoints`) as {
+    const checkpoints = await json(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/history/checkpoints`) as {
       checkpoints: Array<{ checkpointId: string; reason: string; deleteOnRestore: string[] }>;
     };
     const uploadCheckpoint = checkpoints.checkpoints.find((item) => item.checkpointId === uploaded.safetyCheckpointId);
@@ -203,11 +203,11 @@ test("uploads record additive restore points", async () => {
     assert.deepEqual(uploadCheckpoint?.deleteOnRestore, ["Dropped/notes.md"]);
 
     const restored = await json(
-      `${api.origin}/api/work-folders/${created.workFolder.id}/history/checkpoints/${uploaded.safetyCheckpointId}/restore`,
+      `${api.origin}/api/connected-folders/${created.connectedFolder.id}/history/checkpoints/${uploaded.safetyCheckpointId}/restore`,
       { method: "POST" },
     ) as { restored: true; deletedFiles: string[] };
     assert.deepEqual(restored.deletedFiles, ["Dropped/notes.md"]);
-    const missing = await fetch(`${api.origin}/api/work-folders/${created.workFolder.id}/file?path=Dropped%2Fnotes.md`);
+    const missing = await fetch(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/file?path=Dropped%2Fnotes.md`);
     assert.equal(missing.ok, false, "restoring the upload checkpoint must remove the uploaded file");
   } finally {
     await api.close();
@@ -220,7 +220,7 @@ test("conversation runtime snapshots expose model and context state without tran
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: {
       async resolveRuntime() {
@@ -229,16 +229,16 @@ test("conversation runtime snapshots expose model and context state without tran
     },
   });
   try {
-    const created = await json(`${api.origin}/api/work-folders`, {
+    const created = await json(`${api.origin}/api/connected-folders`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Runtime work-folder" }),
-    }) as { workFolder: { id: string } };
-    const conversation = await json(`${api.origin}/api/work-folders/${created.workFolder.id}/conversations`, {
+      body: JSON.stringify({ name: "Runtime Connected Folder" }),
+    }) as { connectedFolder: { id: string } };
+    const conversation = await json(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/conversations`, {
       method: "POST",
     }) as { conversation: { id: string } };
     const result = await json(
-      `${api.origin}/api/work-folders/${created.workFolder.id}/conversations/${conversation.conversation.id}/runtime`,
+      `${api.origin}/api/connected-folders/${created.connectedFolder.id}/conversations/${conversation.conversation.id}/runtime`,
     ) as {
       runtime: {
         sessionId: string;
@@ -281,7 +281,7 @@ test("desktop linked folders require the exact one-shot picker grant", async () 
     loadEnv: false,
     localFolderGrantProvider: {
       consumeLocalFolderGrant(input) {
-        assert.deepEqual(input, { workFolderRoot: linkedRoot, grantId: "grant-1" });
+        assert.deepEqual(input, { connectedFolderRoot: linkedRoot, grantId: "grant-1" });
         if (!available) return false;
         available = false;
         return true;
@@ -289,17 +289,17 @@ test("desktop linked folders require the exact one-shot picker grant", async () 
     },
   });
   try {
-    const headers = { "content-type": "application/json", "x-work-fold-session": "desktop-session" };
-    const first = await fetch(`${api.origin}/api/work-folders/local-folder`, {
+    const headers = { "content-type": "application/json", "x-amplefile-session": "desktop-session" };
+    const first = await fetch(`${api.origin}/api/connected-folders/local-folder`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ workFolderRoot: linkedRoot, folderGrantId: "grant-1" }),
+      body: JSON.stringify({ connectedFolderRoot: linkedRoot, folderGrantId: "grant-1" }),
     });
     assert.equal(first.status, 201, await first.text());
-    const replay = await fetch(`${api.origin}/api/work-folders/local-folder`, {
+    const replay = await fetch(`${api.origin}/api/connected-folders/local-folder`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ workFolderRoot: linkedRoot, folderGrantId: "grant-1" }),
+      body: JSON.stringify({ connectedFolderRoot: linkedRoot, folderGrantId: "grant-1" }),
     });
     assert.equal(replay.status, 403);
   } finally {
@@ -308,13 +308,13 @@ test("desktop linked folders require the exact one-shot picker grant", async () 
   }
 });
 
-test("registered work-folder authorization overrides Pi's independent project-trust decision", async () => {
+test("registered Connected Folder authorization overrides Pi's independent project-trust decision", async () => {
   const sandbox = await mkdtemp(join(tmpdir(), "workspace-default-trust-test-"));
   const agentDir = join(sandbox, "agent");
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: {
       async resolveRuntime() {
@@ -323,12 +323,12 @@ test("registered work-folder authorization overrides Pi's independent project-tr
     },
   });
   try {
-    const created = await json(`${api.origin}/api/work-folders`, {
+    const created = await json(`${api.origin}/api/connected-folders`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Default Trust work-folder" }),
-    }) as { workFolder: { id: string } };
-    const catalog = await json(`${api.origin}/api/work-folders/${created.workFolder.id}/agent/catalog`) as any;
+      body: JSON.stringify({ name: "Default Trust Connected Folder" }),
+    }) as { connectedFolder: { id: string } };
+    const catalog = await json(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/agent/catalog`) as any;
     assert.deepEqual(catalog.projectTrust, {
       required: false,
       trusted: true,
@@ -369,29 +369,29 @@ test("capability catalog and package lifecycle preserve native Pi state and prov
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: { async resolveRuntime() { return { agentDir }; } },
   });
   try {
-    const created = await json(`${api.origin}/api/work-folders`, {
+    const created = await json(`${api.origin}/api/connected-folders`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Capability work-folder" }),
-    }) as { workFolder: { id: string } };
-    const workFolderId = created.workFolder.id;
+      body: JSON.stringify({ name: "Capability Connected Folder" }),
+    }) as { connectedFolder: { id: string } };
+    const connectedFolderId = created.connectedFolder.id;
 
-    const initialCatalog = await json(`${api.origin}/api/work-folders/${workFolderId}/agent/catalog`) as any;
+    const initialCatalog = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/agent/catalog`) as any;
     assert.deepEqual(initialCatalog.projectTrust, { required: false, trusted: true, savedDecision: null, mutationTrusted: true });
-    assert.equal(initialCatalog.projectTrusted, true, "a work-folder with no gated resources must not be mislabeled untrusted");
+    assert.equal(initialCatalog.projectTrusted, true, "a Connected Folder with no gated resources must not be mislabeled untrusted");
 
     await ok(`${api.origin}/api/agent/packages/install`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workFolderId, source: packageRoot, scope: "project" }),
+      body: JSON.stringify({ connectedFolderId, source: packageRoot, scope: "project" }),
     });
 
-    const catalog = await json(`${api.origin}/api/work-folders/${workFolderId}/agent/catalog`) as any;
+    const catalog = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/agent/catalog`) as any;
     assert.deepEqual(catalog.projectTrust, { required: true, trusted: true, savedDecision: null, mutationTrusted: true });
     assert.deepEqual(catalog.trust, catalog.projectTrust);
     assert.equal(catalog.projectTrusted, true);
@@ -442,15 +442,15 @@ test("capability catalog and package lifecycle preserve native Pi state and prov
     await ok(`${api.origin}/api/agent/packages/update`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workFolderId, source: catalog.packages[0].source, scope: "project" }),
+      body: JSON.stringify({ connectedFolderId, source: catalog.packages[0].source, scope: "project" }),
     });
     const removal = await json(`${api.origin}/api/agent/packages/remove`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workFolderId, source: catalog.packages[0].source, scope: "project" }),
+      body: JSON.stringify({ connectedFolderId, source: catalog.packages[0].source, scope: "project" }),
     }) as { removed: boolean };
     assert.equal(removal.removed, true);
-    const after = await json(`${api.origin}/api/work-folders/${workFolderId}/agent/catalog`) as any;
+    const after = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/agent/catalog`) as any;
     assert.deepEqual(after.packages, []);
     assert.equal(after.skills.some((item: any) => item.name === "catalog-skill"), false);
     assert.equal(after.extensions.some((item: any) => item.name === "catalog"), false);
@@ -521,20 +521,20 @@ test("registry discovery installs through guarded capability mutations without s
     },
   };
   const piRuntimeProvider = { async resolveRuntime() { return { agentDir }; } };
-  const workFolderTrustAuthority = new RegisteredWorkFolderTrustAuthority();
-  const kernel = new WorkFoldKernel({
-    runtimeProvider: new RegisteredWorkFolderRuntimeProvider(piRuntimeProvider, workFolderTrustAuthority),
+  const connectedFolderTrustAuthority = new RegisteredConnectedFolderTrustAuthority();
+  const kernel = new AmpleFileKernel({
+    runtimeProvider: new RegisteredConnectedFolderRuntimeProvider(piRuntimeProvider, connectedFolderTrustAuthority),
   });
 
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     capabilityRegistry,
     kernel,
     piRuntimeProvider,
-    workFolderTrustAuthority,
+    connectedFolderTrustAuthority,
   });
   try {
     const discovered = await json(`${api.origin}/api/agent/capabilities/discover?type=skill&sort=name&limit=10`) as any;
@@ -544,28 +544,28 @@ test("registry discovery installs through guarded capability mutations without s
     const details = await json(`${api.origin}/api/agent/capabilities/details?id=${encodeURIComponent(registryItem.id)}`) as any;
     assert.equal(details.item.installSource, packageRoot);
 
-    const created = await json(`${api.origin}/api/work-folders`, {
+    const created = await json(`${api.origin}/api/connected-folders`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Registry work-folder" }),
-    }) as { workFolder: { id: string } };
-    const workFolderId = created.workFolder.id;
-    const createdConversation = await json(`${api.origin}/api/work-folders/${workFolderId}/conversations`, { method: "POST" }) as { conversation: { id: string } };
+      body: JSON.stringify({ name: "Registry Connected Folder" }),
+    }) as { connectedFolder: { id: string } };
+    const connectedFolderId = created.connectedFolder.id;
+    const createdConversation = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/conversations`, { method: "POST" }) as { conversation: { id: string } };
     const conversationId = createdConversation.conversation.id;
 
-    const activeTurn = await fetch(`${api.origin}/api/work-folders/${workFolderId}/conversations/${conversationId}/messages`, {
+    const activeTurn = await fetch(`${api.origin}/api/connected-folders/${connectedFolderId}/conversations/${conversationId}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ content: "/hold" }),
     });
     assert.equal(activeTurn.status, 202, await activeTurn.text());
     const runningTasks = await kernel.getTasks({ kind: "system" });
-    assert.equal(runningTasks.tasks.some((task) => task.kind === "assistant_turn" && task.workFolderId === workFolderId && task.conversationId === conversationId), true);
+    assert.equal(runningTasks.tasks.some((task) => task.kind === "assistant_turn" && task.connectedFolderId === connectedFolderId && task.conversationId === conversationId), true);
 
     const blockedRegistryInstall = await fetch(`${api.origin}/api/agent/capabilities/install`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workFolderId, id: registryItem.id, scope: "global" }),
+      body: JSON.stringify({ connectedFolderId, id: registryItem.id, scope: "global" }),
     });
     assert.equal(blockedRegistryInstall.status, 409, await blockedRegistryInstall.text());
 
@@ -573,25 +573,25 @@ test("registry discovery installs through guarded capability mutations without s
       const blockedPackageMutation = await fetch(`${api.origin}/api/agent/packages/${action}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ workFolderId, source: packageRoot, scope: "global" }),
+        body: JSON.stringify({ connectedFolderId, source: packageRoot, scope: "global" }),
       });
       assert.equal(blockedPackageMutation.status, 409, `${action}: ${await blockedPackageMutation.text()}`);
     }
 
     const skillImport = new FormData();
-    skillImport.set("workFolderId", workFolderId);
+    skillImport.set("connectedFolderId", connectedFolderId);
     skillImport.set("scope", "global");
     skillImport.append("files", new Blob(["---\nname: blocked-skill\ndescription: Blocked Skill\n---\nWait.\n"]), "SKILL.md");
     const blockedSkillImport = await fetch(`${api.origin}/api/agent/skills/import`, { method: "POST", body: skillImport });
     assert.equal(blockedSkillImport.status, 409, await blockedSkillImport.text());
 
     await waitForAsync(async () => {
-      const transcript = await json(`${api.origin}/api/work-folders/${workFolderId}/conversations/${conversationId}`) as any;
+      const transcript = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/conversations/${conversationId}`) as any;
       return transcript.messages.some((message: any) => message.role === "assistant" && message.content === "Command completed.");
     });
     await waitForAsync(async () => (await kernel.getTasks({ kind: "system" })).tasks.length === 0);
     assert.deepEqual((await kernel.getTasks({ kind: "system" })).tasks, []);
-    const namedTranscript = await json(`${api.origin}/api/work-folders/${workFolderId}/conversations/${conversationId}`) as any;
+    const namedTranscript = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/conversations/${conversationId}`) as any;
     assert.equal(
       namedTranscript.messages.filter((message: any) => (
         message.kind === "conversation_title"
@@ -599,23 +599,23 @@ test("registry discovery installs through guarded capability mutations without s
       )).length,
       1,
     );
-    const namedConversations = await json(`${api.origin}/api/work-folders/${workFolderId}/conversations`) as any;
+    const namedConversations = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/conversations`) as any;
     assert.equal(namedConversations.conversations.find((item: any) => item.id === conversationId)?.title, "New Chat");
 
     const installed = await json(`${api.origin}/api/agent/capabilities/install`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workFolderId, id: registryItem.id, scope: "project" }),
+      body: JSON.stringify({ connectedFolderId, id: registryItem.id, scope: "project" }),
     }) as any;
     assert.equal(installed.installed.kind, "package");
     assert.equal(installed.installed.source, details.item.installSource, "installation must use the exact source returned by review");
     const installedBundle = await json(`${api.origin}/api/agent/capabilities/install`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workFolderId, id: bundleItem.id, scope: "project" }),
+      body: JSON.stringify({ connectedFolderId, id: bundleItem.id, scope: "project" }),
     }) as any;
     assert.equal(installedBundle.installed.kind, "skill");
-    const catalog = await json(`${api.origin}/api/work-folders/${workFolderId}/agent/catalog`) as any;
+    const catalog = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/agent/catalog`) as any;
     assert.equal(catalog.skills.some((skill: any) => skill.name === "registry-skill" && skill.scope === "project"), true);
     assert.equal(catalog.skills.some((skill: any) => skill.name === "bundled-skill" && skill.scope === "project"), true);
   } finally {
@@ -641,7 +641,7 @@ test("capability mutations and explicit Chat compaction are mutually exclusive",
     nextRuntimeBlock = { signalEntered, released };
     return { entered, release };
   };
-  const kernel = new WorkFoldKernel();
+  const kernel = new AmpleFileKernel();
   const piRuntimeProvider = {
     async resolveRuntime() {
       const block = nextRuntimeBlock;
@@ -657,21 +657,21 @@ test("capability mutations and explicit Chat compaction are mutually exclusive",
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     kernel,
     piRuntimeProvider,
   });
   try {
-    const created = await json(`${api.origin}/api/work-folders`, {
+    const created = await json(`${api.origin}/api/connected-folders`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Compaction work-folder" }),
-    }) as { workFolder: { id: string } };
-    const workFolderId = created.workFolder.id;
-    const createdConversation = await json(`${api.origin}/api/work-folders/${workFolderId}/conversations`, { method: "POST" }) as { conversation: { id: string } };
+      body: JSON.stringify({ name: "Compaction Connected Folder" }),
+    }) as { connectedFolder: { id: string } };
+    const connectedFolderId = created.connectedFolder.id;
+    const createdConversation = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/conversations`, { method: "POST" }) as { conversation: { id: string } };
     const conversationId = createdConversation.conversation.id;
-    const compactUrl = `${api.origin}/api/work-folders/${workFolderId}/conversations/${conversationId}/compact`;
+    const compactUrl = `${api.origin}/api/connected-folders/${connectedFolderId}/conversations/${conversationId}/compact`;
 
     const compactBlock = blockNextRuntimeResolution();
     const compactPromise = fetch(compactUrl, {
@@ -681,15 +681,15 @@ test("capability mutations and explicit Chat compaction are mutually exclusive",
     });
     await compactBlock.entered;
     const compactingTasks = await kernel.getTasks({ kind: "system" });
-    assert.deepEqual(compactingTasks.tasks.map((task) => ({ kind: task.kind, workFolderId: task.workFolderId, conversationId: task.conversationId })), [{
+    assert.deepEqual(compactingTasks.tasks.map((task) => ({ kind: task.kind, connectedFolderId: task.connectedFolderId, conversationId: task.conversationId })), [{
       kind: "compaction",
-      workFolderId,
+      connectedFolderId,
       conversationId,
     }]);
     const mutationDuringCompact = await fetch(`${api.origin}/api/agent/packages/install`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workFolderId, source: packageRoot, scope: "global" }),
+      body: JSON.stringify({ connectedFolderId, source: packageRoot, scope: "global" }),
     });
     assert.equal(mutationDuringCompact.status, 409, await mutationDuringCompact.text());
     compactBlock.release();
@@ -700,7 +700,7 @@ test("capability mutations and explicit Chat compaction are mutually exclusive",
     const mutationPromise = fetch(`${api.origin}/api/agent/packages/install`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workFolderId, source: packageRoot, scope: "global" }),
+      body: JSON.stringify({ connectedFolderId, source: packageRoot, scope: "global" }),
     });
     await mutationBlock.entered;
     const compactDuringMutation = await fetch(compactUrl, {
@@ -718,41 +718,41 @@ test("capability mutations and explicit Chat compaction are mutually exclusive",
   }
 });
 
-test("extension UI events retain the portable work-folder id after its folder moves", async () => {
+test("extension UI events retain the portable Connected Folder id after its folder moves", async () => {
   const sandbox = await mkdtemp(join(tmpdir(), "workspace-moved-extension-routing-test-"));
-  const originalRoot = join(sandbox, "original-work-folder");
-  const movedRoot = join(sandbox, "moved-work-folder");
+  const originalRoot = join(sandbox, "original-connected-folder");
+  const movedRoot = join(sandbox, "moved-connected-folder");
   await mkdir(originalRoot, { recursive: true });
   const extensionUi = new RoutedPiExtensionUiBridge();
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     extensionUiBridge: extensionUi,
   });
   const streamController = new AbortController();
   try {
-    const original = await json(`${api.origin}/api/work-folders/local-folder`, {
+    const original = await json(`${api.origin}/api/connected-folders/local-folder`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workFolderRoot: originalRoot }),
-    }) as { workFolder: { id: string } };
-    const workFolderId = original.workFolder.id;
-    const createdConversation = await json(`${api.origin}/api/work-folders/${workFolderId}/conversations`, { method: "POST" }) as { conversation: { id: string } };
+      body: JSON.stringify({ connectedFolderRoot: originalRoot }),
+    }) as { connectedFolder: { id: string } };
+    const connectedFolderId = original.connectedFolder.id;
+    const createdConversation = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/conversations`, { method: "POST" }) as { conversation: { id: string } };
     const conversationId = createdConversation.conversation.id;
 
     await rename(originalRoot, movedRoot);
-    const relinked = await json(`${api.origin}/api/work-folders/local-folder`, {
+    const relinked = await json(`${api.origin}/api/connected-folders/local-folder`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workFolderRoot: movedRoot }),
-    }) as { workFolder: { id: string; workFolderRoot: string } };
-    assert.equal(relinked.workFolder.id, workFolderId);
-    assert.equal(relinked.workFolder.workFolderRoot, movedRoot);
+      body: JSON.stringify({ connectedFolderRoot: movedRoot }),
+    }) as { connectedFolder: { id: string; connectedFolderRoot: string } };
+    assert.equal(relinked.connectedFolder.id, connectedFolderId);
+    assert.equal(relinked.connectedFolder.connectedFolderRoot, movedRoot);
 
     const streamResponse = await fetch(
-      `${api.origin}/api/work-folders/${workFolderId}/conversations/${conversationId}/events`,
+      `${api.origin}/api/connected-folders/${connectedFolderId}/conversations/${conversationId}/events`,
       { signal: streamController.signal },
     );
     assert.equal(streamResponse.ok, true);
@@ -763,14 +763,14 @@ test("extension UI events retain the portable work-folder id after its folder mo
     await waitFor(() => streamEvents.some((event) => event.type === "turn_state"));
 
     extensionUi.publish({
-      id: "moved-work-folder-notification",
+      id: "moved-connected-folder-notification",
       method: "notify",
       message: "Portable route preserved.",
-      workFolderRoot: movedRoot,
+      connectedFolderRoot: movedRoot,
       conversationId,
     });
-    await waitFor(() => streamEvents.some((event) => event.request?.id === "moved-work-folder-notification"));
-    assert.equal(streamEvents.find((event) => event.request?.id === "moved-work-folder-notification")?.request?.message, "Portable route preserved.");
+    await waitFor(() => streamEvents.some((event) => event.request?.id === "moved-connected-folder-notification"));
+    assert.equal(streamEvents.find((event) => event.request?.id === "moved-connected-folder-notification")?.request?.message, "Portable route preserved.");
 
     streamController.abort();
     await pump;
@@ -795,7 +795,7 @@ test("chat streams snapshot running state and survive a throwing desktop activit
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: { async resolveRuntime() { return { agentDir }; } },
     onAgentTurnActivity(activeTurns) {
@@ -805,17 +805,17 @@ test("chat streams snapshot running state and survive a throwing desktop activit
   });
   const streamController = new AbortController();
   try {
-    const created = await json(`${api.origin}/api/work-folders`, {
+    const created = await json(`${api.origin}/api/connected-folders`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Background work-folder" }),
-    }) as { workFolder: { id: string } };
-    const createdConversation = await json(`${api.origin}/api/work-folders/${created.workFolder.id}/conversations`, {
+      body: JSON.stringify({ name: "Background Connected Folder" }),
+    }) as { connectedFolder: { id: string } };
+    const createdConversation = await json(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/conversations`, {
       method: "POST",
     }) as { conversation: { id: string } };
     const conversationId = createdConversation.conversation.id;
     const streamResponse = await fetch(
-      `${api.origin}/api/work-folders/${created.workFolder.id}/conversations/${conversationId}/events`,
+      `${api.origin}/api/connected-folders/${created.connectedFolder.id}/conversations/${conversationId}/events`,
       { signal: streamController.signal },
     );
     assert.equal(streamResponse.ok, true);
@@ -825,7 +825,7 @@ test("chat streams snapshot running state and survive a throwing desktop activit
     });
 
     await waitFor(() => streamEvents.some((event) => event.type === "turn_state" && event.running === false));
-    const firstPost = await fetch(`${api.origin}/api/work-folders/${created.workFolder.id}/conversations/${conversationId}/messages`, {
+    const firstPost = await fetch(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/conversations/${conversationId}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ content: "/complete" }),
@@ -837,7 +837,7 @@ test("chat streams snapshot running state and survive a throwing desktop activit
 
     // If the observer exception escaped changeTurnCount, the running key would
     // remain stranded and this second turn would return 409.
-    const secondPost = await fetch(`${api.origin}/api/work-folders/${created.workFolder.id}/conversations/${conversationId}/messages`, {
+    const secondPost = await fetch(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/conversations/${conversationId}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ content: "/complete" }),
@@ -856,7 +856,7 @@ test("chat streams snapshot running state and survive a throwing desktop activit
 });
 
 test("provider HTTP 402 explains credit limits without leaking the body or retrying the request", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-provider-credit-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-provider-credit-test-"));
   let requestCount = 0;
   let permitted = false;
   const providerServer = createServer((_request, response) => {
@@ -875,11 +875,11 @@ test("provider HTTP 402 explains credit limits without leaking the body or retry
   await mkdir(join(agentDir, "extensions"), { recursive: true });
   await writeFile(join(agentDir, "extensions", "credit-provider.ts"), `export default function(pi){pi.registerProvider("credit-provider",{api:"openai-completions",baseUrl:"http://127.0.0.1:${port}/v1",apiKey:"test-key",models:[{id:"credit-model",name:"Credit Model",reasoning:false,input:["text"],cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:4096,maxTokens:1024}]});}`);
   const settingsManager = SettingsManager.inMemory({ defaultProvider: "credit-provider", defaultModel: "credit-model", defaultThinkingLevel: "off", retry: { enabled: true, maxRetries: 1, baseDelayMs: 1, provider: { maxRetries: 0 } } });
-  const api = await startLocalApi({ port: 0, stateBase: join(sandbox, "state"), workFolderBase: join(sandbox, "content"), loadEnv: false, piRuntimeProvider: { async resolveRuntime() { return { agentDir, settingsManager }; } } });
+  const api = await startLocalApi({ port: 0, stateBase: join(sandbox, "state"), connectedFolderBase: join(sandbox, "content"), loadEnv: false, piRuntimeProvider: { async resolveRuntime() { return { agentDir, settingsManager }; } } });
   try {
-    const created = await json(`${api.origin}/api/work-folders`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Credit Test" }) }) as { workFolder: { id: string } };
-    const conversation = await json(`${api.origin}/api/work-folders/${created.workFolder.id}/conversations`, { method: "POST" }) as { conversation: { id: string } };
-    const url = `${api.origin}/api/work-folders/${created.workFolder.id}/conversations/${conversation.conversation.id}`;
+    const created = await json(`${api.origin}/api/connected-folders`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Credit Test" }) }) as { connectedFolder: { id: string } };
+    const conversation = await json(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/conversations`, { method: "POST" }) as { conversation: { id: string } };
+    const url = `${api.origin}/api/connected-folders/${created.connectedFolder.id}/conversations/${conversation.conversation.id}`;
     assert.equal((await fetch(`${url}/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "A bounded test request." }) })).status, 202);
     await waitForAsync(async () => {
       const transcript = await json(url) as any;
@@ -978,7 +978,7 @@ test("terminal provider failures persist partial output and leave the Chat resum
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: {
       async resolveRuntime() {
@@ -988,17 +988,17 @@ test("terminal provider failures persist partial output and leave the Chat resum
   });
 
   try {
-    const created = await json(`${api.origin}/api/work-folders`, {
+    const created = await json(`${api.origin}/api/connected-folders`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Durability work-folder" }),
-    }) as { workFolder: { id: string } };
-    const workFolderId = created.workFolder.id;
-    const createdConversation = await json(`${api.origin}/api/work-folders/${workFolderId}/conversations`, {
+      body: JSON.stringify({ name: "Durability Connected Folder" }),
+    }) as { connectedFolder: { id: string } };
+    const connectedFolderId = created.connectedFolder.id;
+    const createdConversation = await json(`${api.origin}/api/connected-folders/${connectedFolderId}/conversations`, {
       method: "POST",
     }) as { conversation: { id: string } };
     const conversationId = createdConversation.conversation.id;
-    const conversationUrl = `${api.origin}/api/work-folders/${workFolderId}/conversations/${conversationId}`;
+    const conversationUrl = `${api.origin}/api/connected-folders/${connectedFolderId}/conversations/${conversationId}`;
     const messagesUrl = `${conversationUrl}/messages`;
 
     const failedTurn = await fetch(messagesUrl, {
@@ -1013,7 +1013,7 @@ test("terminal provider failures persist partial output and leave the Chat resum
       return transcript.messages.some((message: any) => message.interruption?.reason === "provider_error")
         && !tasks.tasks.some((task) => (
           task.kind === "assistant_turn"
-          && task.workFolderId === workFolderId
+          && task.connectedFolderId === connectedFolderId
           && task.conversationId === conversationId
         ));
     });
@@ -1049,7 +1049,7 @@ test("terminal provider failures persist partial output and leave the Chat resum
         && message.content === "Durable Conversation Recovery"
       )) && !tasks.tasks.some((task) => (
         task.kind === "assistant_turn"
-        && task.workFolderId === workFolderId
+        && task.connectedFolderId === connectedFolderId
         && task.conversationId === conversationId
       ));
     });
@@ -1068,7 +1068,7 @@ test("terminal provider failures persist partial output and leave the Chat resum
         message.role === "assistant" && message.content === "Still titled safely."
       )) && !tasks.tasks.some((task) => (
         task.kind === "assistant_turn"
-        && task.workFolderId === workFolderId
+        && task.connectedFolderId === connectedFolderId
         && task.conversationId === conversationId
       ));
     });
@@ -1089,10 +1089,10 @@ test("terminal provider failures persist partial output and leave the Chat resum
   }
 });
 
-test("automatic titles and later manual renames persist for work-folder and work-fold agent Chats", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-chat-title-settlement-test-"));
+test("automatic titles and later manual renames persist for Connected Folder and AmpleFile agent Chats", async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-chat-title-settlement-test-"));
   const stateBase = join(sandbox, "state");
-  const workFolderBase = join(sandbox, "content");
+  const connectedFolderBase = join(sandbox, "content");
   const agentDir = join(sandbox, "agent");
   let requestCount = 0;
   const providerServer = createServer(async (request, response) => {
@@ -1132,43 +1132,43 @@ test("automatic titles and later manual renames persist for work-folder and work
     retry: { enabled: false },
   });
   const runtimeProvider = { async resolveRuntime() { return { agentDir, settingsManager }; } };
-  let api = await startLocalApi({ port: 0, stateBase, workFolderBase, loadEnv: false, piRuntimeProvider: runtimeProvider });
+  let api = await startLocalApi({ port: 0, stateBase, connectedFolderBase, loadEnv: false, piRuntimeProvider: runtimeProvider });
   try {
-    const created = await json(`${api.origin}/api/work-folders`, {
+    const created = await json(`${api.origin}/api/connected-folders`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Title settlement" }),
-    }) as { workFolder: { id: string } };
-    const folderConversation = await json(`${api.origin}/api/work-folders/${created.workFolder.id}/conversations`, { method: "POST" }) as { conversation: { id: string } };
-    const folderUrl = `${api.origin}/api/work-folders/${created.workFolder.id}/conversations/${folderConversation.conversation.id}`;
+    }) as { connectedFolder: { id: string } };
+    const folderConversation = await json(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/conversations`, { method: "POST" }) as { conversation: { id: string } };
+    const folderUrl = `${api.origin}/api/connected-folders/${created.connectedFolder.id}/conversations/${folderConversation.conversation.id}`;
     const folderAccepted = await json(`${folderUrl}/messages`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "Name this Worker Chat." }),
     }) as { taskId: string };
     await waitForAsync(async () => (await json(folderUrl) as { messages: Array<{ titleSource?: string; content: string }> }).messages
       .some((message) => message.titleSource === "generated" && message.content === "Generated conversation title"));
-    await waitForAsync(async () => (await api.actFacade.turnStatus({ workFolder: created.workFolder.id, taskId: folderAccepted.taskId })).task.state !== "running");
+    await waitForAsync(async () => (await api.actFacade.turnStatus({ connectedFolder: created.connectedFolder.id, taskId: folderAccepted.taskId })).task.state !== "running");
     const folderRenamed = await json(folderUrl, {
       method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Folder manual title" }),
     }) as { conversation: { title: string } };
     assert.equal(folderRenamed.conversation.title, "Folder manual title");
 
-    const workFoldAgentAccepted = await json(`${api.origin}/api/work-fold-agent/messages`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "Name this work-fold agent Chat.", newConversation: true }),
+    const ampleFileAgentAccepted = await json(`${api.origin}/api/amplefile-agent/messages`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "Name this AmpleFile agent Chat.", newConversation: true }),
     }) as { conversationId: string; taskId: string };
-    const workFoldAgentUrl = `${api.origin}/api/work-fold-agent/conversations/${workFoldAgentAccepted.conversationId}`;
-    await waitForAsync(async () => (await json(workFoldAgentUrl) as { messages: Array<{ titleSource?: string; content: string }> }).messages
+    const ampleFileAgentUrl = `${api.origin}/api/amplefile-agent/conversations/${ampleFileAgentAccepted.conversationId}`;
+    await waitForAsync(async () => (await json(ampleFileAgentUrl) as { messages: Array<{ titleSource?: string; content: string }> }).messages
       .some((message) => message.titleSource === "generated" && message.content === "Generated conversation title"));
-    await waitForAsync(async () => (await api.actFacade.agentTurnStatus({ taskId: workFoldAgentAccepted.taskId })).task.state !== "running");
-    const workFoldAgentRenamed = await json(`${workFoldAgentUrl}/title`, {
+    await waitForAsync(async () => (await api.actFacade.agentTurnStatus({ taskId: ampleFileAgentAccepted.taskId })).task.state !== "running");
+    const ampleFileAgentRenamed = await json(`${ampleFileAgentUrl}/title`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Management manual title" }),
     }) as { conversation: { title: string } };
-    assert.equal(workFoldAgentRenamed.conversation.title, "Management manual title");
+    assert.equal(ampleFileAgentRenamed.conversation.title, "Management manual title");
     assert.equal(requestCount, 4, "each first successful Chat turn makes one answer and one title request");
 
     await api.close();
-    api = await startLocalApi({ port: 0, stateBase, workFolderBase, loadEnv: false, piRuntimeProvider: runtimeProvider });
-    const folderList = await json(`${api.origin}/api/work-folders/${created.workFolder.id}/conversations`) as { conversations: Array<{ id: string; title: string }> };
+    api = await startLocalApi({ port: 0, stateBase, connectedFolderBase, loadEnv: false, piRuntimeProvider: runtimeProvider });
+    const folderList = await json(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/conversations`) as { conversations: Array<{ id: string; title: string }> };
     assert.equal(folderList.conversations.find((item) => item.id === folderConversation.conversation.id)?.title, "Folder manual title");
-    const workFoldAgentList = await json(`${api.origin}/api/work-fold-agent/conversations`) as { conversations: Array<{ id: string; title: string }> };
-    assert.equal(workFoldAgentList.conversations.find((item) => item.id === workFoldAgentAccepted.conversationId)?.title, "Management manual title");
+    const ampleFileAgentList = await json(`${api.origin}/api/amplefile-agent/conversations`) as { conversations: Array<{ id: string; title: string }> };
+    assert.equal(ampleFileAgentList.conversations.find((item) => item.id === ampleFileAgentAccepted.conversationId)?.title, "Management manual title");
   } finally {
     await api.close();
     await new Promise<void>((resolve, reject) => providerServer.close((error) => error ? reject(error) : resolve()));
@@ -1176,8 +1176,8 @@ test("automatic titles and later manual renames persist for work-folder and work
   }
 });
 
-test("Worker Chats delete only into Recently deleted, refuse while work is outstanding, and restore into their own work-folder", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-folder-chat-delete-test-"));
+test("Worker Chats delete only into Recently deleted, refuse while work is outstanding, and restore into their own Connected Folder", async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-folder-chat-delete-test-"));
   const agentDir = join(sandbox, "agent");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
   await writeFile(join(agentDir, "extensions", "hold.ts"), `export default function (pi) {
@@ -1187,83 +1187,83 @@ test("Worker Chats delete only into Recently deleted, refuse while work is outst
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: { async resolveRuntime() { return { agentDir }; } },
     beforeAgentPrompt: async (event) => {
       await new Promise<void>((release) => held.push({ taskId: event.taskId, release }));
     },
   });
-  const addChat = async (workFolderRoot: string, title: string) => {
-    const conversation = await createConversation(workFolderRoot, title);
-    await appendMessage(workFolderRoot, conversation.id, {
+  const addChat = async (connectedFolderRoot: string, title: string) => {
+    const conversation = await createConversation(connectedFolderRoot, title);
+    await appendMessage(connectedFolderRoot, conversation.id, {
       id: `message-${conversation.id}`, role: "user", content: `Notes for ${title}.`, createdAt: new Date().toISOString(),
     });
     return conversation.id;
   };
   try {
-    const { workFolder } = await api.actFacade.createWorkFolder({ name: "Chat deletion" });
-    const chatUrl = (conversationId: string) => `${api.origin}/api/work-folders/${workFolder.id}/conversations/${conversationId}`;
-    const listed = async () => (await json(`${api.origin}/api/work-folders/${workFolder.id}/conversations`) as { conversations: Array<{ id: string; title: string }> }).conversations;
+    const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Chat deletion" });
+    const chatUrl = (conversationId: string) => `${api.origin}/api/connected-folders/${connectedFolder.id}/conversations/${conversationId}`;
+    const listed = async () => (await json(`${api.origin}/api/connected-folders/${connectedFolder.id}/conversations`) as { conversations: Array<{ id: string; title: string }> }).conversations;
 
     // A running turn and an open question both hold the Chat in place.
-    const sent = await api.actFacade.sendMessage({ workFolder: workFolder.id, newConversation: true, content: "/hold" });
+    const sent = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "/hold" });
     await waitFor(() => held.some((turn) => turn.taskId === sent.taskId));
     const whileRunning = await fetch(chatUrl(sent.conversationId), { method: "DELETE" });
     assert.equal(whileRunning.status, 409);
     assert.match((await whileRunning.json() as { error: string }).error, /Wait for the current turn to finish/);
-    await api.actFacade.chatAsk({ workFolder: workFolder.id, taskId: sent.taskId, question: "Which quarter?", respondent: "person" });
+    await api.actFacade.chatAsk({ connectedFolder: connectedFolder.id, taskId: sent.taskId, question: "Which quarter?", respondent: "person" });
     held.splice(0).forEach((turn) => turn.release());
-    await waitForAsync(async () => (await api.actFacade.turnStatus({ workFolder: workFolder.id, taskId: sent.taskId })).task.state !== "running");
+    await waitForAsync(async () => (await api.actFacade.turnStatus({ connectedFolder: connectedFolder.id, taskId: sent.taskId })).task.state !== "running");
     const whileWaiting = await fetch(chatUrl(sent.conversationId), { method: "DELETE" });
     assert.equal(whileWaiting.status, 409);
     assert.match((await whileWaiting.json() as { error: string }).error, /Finish or stop this Chat's outstanding work before deleting it/);
-    assert.ok(await readConversationSummary(workFolder.workFolderRoot, sent.conversationId), "a refused delete leaves the transcript in place");
+    assert.ok(await readConversationSummary(connectedFolder.connectedFolderRoot, sent.conversationId), "a refused delete leaves the transcript in place");
 
     const missing = await fetch(chatUrl("no-such-chat"), { method: "DELETE" });
     assert.equal(missing.status, 404);
 
     // An idle Chat moves into Recently deleted under its title.
-    const conversationId = await addChat(workFolder.workFolderRoot, "Quarterly notes");
+    const conversationId = await addChat(connectedFolder.connectedFolderRoot, "Quarterly notes");
     const removed = await json(chatUrl(conversationId), { method: "DELETE" }) as {
       deleted: { conversationId: string; recentlyDeleted: { entryId: string; restoreBy: string } };
     };
     assert.equal(removed.deleted.conversationId, conversationId);
     assert.ok(removed.deleted.recentlyDeleted.restoreBy);
-    assert.equal(await readConversationSummary(workFolder.workFolderRoot, conversationId), null);
+    assert.equal(await readConversationSummary(connectedFolder.connectedFolderRoot, conversationId), null);
     assert.equal((await listed()).some((item) => item.id === conversationId), false);
     const entry = (await api.actFacade.recentlyDeletedList()).entries.find((item) => item.id === removed.deleted.recentlyDeleted.entryId);
     assert.equal(entry?.reason, "chats.delete");
     assert.equal(entry?.kind, "file");
     assert.equal(entry?.name, "Quarterly notes", "Recently deleted names a Chat by its title, never its transcript id");
-    assert.equal(entry?.workFolderId, workFolder.id);
-    assert.equal(entry?.workFolderName, "Chat deletion");
-    assert.equal(entry?.originalPath, `.work-fold/conversations/${conversationId}.jsonl`);
+    assert.equal(entry?.connectedFolderId, connectedFolder.id);
+    assert.equal(entry?.connectedFolderName, "Chat deletion");
+    assert.equal(entry?.originalPath, `.amplefile/conversations/${conversationId}.jsonl`);
     assert.equal(entry?.restorable, "in-place");
     const receipts = (await readFile(join(sandbox, "state", "cli", "receipts", "act.jsonl"), "utf8"))
       .trim().split("\n").map((line) => JSON.parse(line) as { command: string; outcome: string; detail?: string });
     assert.equal(receipts.find((receipt) => receipt.command === "chats.delete" && receipt.outcome === "ok")?.detail,
-      `work-folder ${workFolder.id}; conversation ${conversationId}; trash ${removed.deleted.recentlyDeleted.entryId}`);
+      `Connected Folder ${connectedFolder.id}; conversation ${conversationId}; trash ${removed.deleted.recentlyDeleted.entryId}`);
 
     // A restore never collision-renames a transcript into another identity.
-    await createConversation(workFolder.workFolderRoot, "Replacement", conversationId);
+    await createConversation(connectedFolder.connectedFolderRoot, "Replacement", conversationId);
     await assert.rejects(() => api.actFacade.recentlyDeletedRestore({ entry: removed.deleted.recentlyDeleted.entryId }), /identity already exists/);
-    await rm(join(workFolder.workFolderRoot, ".work-fold", "conversations", `${conversationId}.jsonl`));
+    await rm(join(connectedFolder.connectedFolderRoot, ".amplefile", "conversations", `${conversationId}.jsonl`));
     const { restored } = await api.actFacade.recentlyDeletedRestore({ entry: removed.deleted.recentlyDeleted.entryId });
     assert.equal(restored.kind, "file");
     if (restored.kind !== "file" && restored.kind !== "folder") throw new Error("expected a file restore");
-    assert.equal(restored.workFolder.id, workFolder.id);
-    assert.equal(restored.path, `.work-fold/conversations/${conversationId}.jsonl`);
-    assert.equal(restored.safetyCheckpointId, null, ".work-fold/ is outside History, so there is no restore point");
+    assert.equal(restored.connectedFolder.id, connectedFolder.id);
+    assert.equal(restored.path, `.amplefile/conversations/${conversationId}.jsonl`);
+    assert.equal(restored.safetyCheckpointId, null, ".amplefile/ is outside History, so there is no restore point");
     assert.equal((await listed()).find((item) => item.id === conversationId)?.title, "Quarterly notes");
 
-    // A Chat whose work-folder is gone has nowhere to go back to.
-    const orphanId = await addChat(workFolder.workFolderRoot, "Orphaned notes");
+    // A Chat whose Connected Folder is gone has nowhere to go back to.
+    const orphanId = await addChat(connectedFolder.connectedFolderRoot, "Orphaned notes");
     const orphan = await json(chatUrl(orphanId), { method: "DELETE" }) as { deleted: { recentlyDeleted: { entryId: string } } };
-    const folderWhileWaiting = await fetch(`${api.origin}/api/work-folders/${workFolder.id}`, { method: "DELETE" });
-    assert.equal(folderWhileWaiting.status, 409, "the earlier waiting Chat still owns unfinished work in this work-folder");
+    const folderWhileWaiting = await fetch(`${api.origin}/api/connected-folders/${connectedFolder.id}`, { method: "DELETE" });
+    assert.equal(folderWhileWaiting.status, 409, "the earlier waiting Chat still owns unfinished work in this Connected Folder");
     await api.actFacade.agentStop({ taskId: sent.taskId });
-    await ok(`${api.origin}/api/work-folders/${workFolder.id}`, { method: "DELETE" });
+    await ok(`${api.origin}/api/connected-folders/${connectedFolder.id}`, { method: "DELETE" });
     const orphanEntry = (await api.actFacade.recentlyDeletedList()).entries.find((item) => item.id === orphan.deleted.recentlyDeleted.entryId);
     assert.equal(orphanEntry?.restorable, "blocked");
     await assert.rejects(() => api.actFacade.recentlyDeletedRestore({ entry: orphan.deleted.recentlyDeleted.entryId }), /no longer registered/);
@@ -1275,8 +1275,8 @@ test("Worker Chats delete only into Recently deleted, refuse while work is outst
 });
 
 test("restoring a Worker Chat reserves its identity against concurrent creation and CLI edits", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-chat-restore-fence-"));
-  const recentlyDeleted = await WorkFoldRecentlyDeletedStore.open({ rootPath: join(sandbox, "recently-deleted") });
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-chat-restore-fence-"));
+  const recentlyDeleted = await AmpleFileRecentlyDeletedStore.open({ rootPath: join(sandbox, "recently-deleted") });
   const originalRestore = recentlyDeleted.restoreTree.bind(recentlyDeleted);
   let releaseRestore!: () => void;
   let enteredRestore!: () => void;
@@ -1288,15 +1288,15 @@ test("restoring a Worker Chat reserves its identity against concurrent creation 
     return originalRestore(...args);
   };
   const api = await startLocalApi({
-    port: 0, stateBase: join(sandbox, "state"), workFolderBase: join(sandbox, "content"), loadEnv: false, recentlyDeletedStore: recentlyDeleted,
+    port: 0, stateBase: join(sandbox, "state"), connectedFolderBase: join(sandbox, "content"), loadEnv: false, recentlyDeletedStore: recentlyDeleted,
   });
   try {
-    const { workFolder } = await api.actFacade.createWorkFolder({ name: "Restore fence" });
-    const conversation = await createConversation(workFolder.workFolderRoot, "Saved chat");
-    await appendMessage(workFolder.workFolderRoot, conversation.id, {
+    const { connectedFolder } = await api.actFacade.createConnectedFolder({ name: "Restore fence" });
+    const conversation = await createConversation(connectedFolder.connectedFolderRoot, "Saved chat");
+    await appendMessage(connectedFolder.connectedFolderRoot, conversation.id, {
       id: "message-original", role: "user", content: "Keep this message.", createdAt: new Date().toISOString(),
     });
-    const url = `${api.origin}/api/work-folders/${workFolder.id}/conversations`;
+    const url = `${api.origin}/api/connected-folders/${connectedFolder.id}/conversations`;
     const { deleted } = await json(`${url}/${conversation.id}`, { method: "DELETE" }) as { deleted: { recentlyDeleted: { entryId: string } } };
     const restoring = api.actFacade.recentlyDeletedRestore({ entry: deleted.recentlyDeleted.entryId });
     await restoreEntered;
@@ -1306,10 +1306,10 @@ test("restoring a Worker Chat reserves its identity against concurrent creation 
       });
       assert.equal(creating.status, 409, "a restore must not race an optimistic Chat creation with the same id");
       for (const mutate of [
-        () => api.actFacade.chatRename({ workFolder: workFolder.id, conversationId: conversation.id, title: "Other title" }),
-        () => api.actFacade.chatSnooze({ workFolder: workFolder.id, conversationId: conversation.id, until: new Date(Date.now() + 60_000).toISOString() }),
-        () => api.actFacade.chatArchive({ workFolder: workFolder.id, conversationId: conversation.id }),
-        () => api.actFacade.chatResume({ workFolder: workFolder.id, conversationId: conversation.id }),
+        () => api.actFacade.chatRename({ connectedFolder: connectedFolder.id, conversationId: conversation.id, title: "Other title" }),
+        () => api.actFacade.chatSnooze({ connectedFolder: connectedFolder.id, conversationId: conversation.id, until: new Date(Date.now() + 60_000).toISOString() }),
+        () => api.actFacade.chatArchive({ connectedFolder: connectedFolder.id, conversationId: conversation.id }),
+        () => api.actFacade.chatResume({ connectedFolder: connectedFolder.id, conversationId: conversation.id }),
       ]) {
         await assert.rejects(mutate, (error: unknown) =>
           error instanceof Error && "code" in error && error.code === "conflict", "CLI edits share the identity reservation");
@@ -1318,8 +1318,8 @@ test("restoring a Worker Chat reserves its identity against concurrent creation 
       releaseRestore();
       await restoring;
     }
-    assert.equal((await readConversationSummary(workFolder.workFolderRoot, conversation.id))?.title, "Saved chat");
-    const renamed = await api.actFacade.chatRename({ workFolder: workFolder.id, conversationId: conversation.id, title: "Restored chat" });
+    assert.equal((await readConversationSummary(connectedFolder.connectedFolderRoot, conversation.id))?.title, "Saved chat");
+    const renamed = await api.actFacade.chatRename({ connectedFolder: connectedFolder.id, conversationId: conversation.id, title: "Restored chat" });
     assert.equal(renamed.conversation.title, "Restored chat", "restoring releases the fence after its final write");
   } finally {
     releaseRestore();
@@ -1331,25 +1331,25 @@ test("restoring a Worker Chat reserves its identity against concurrent creation 
 test("agent setup failures are sanitized, persisted, and survive an API restart", async () => {
   const sandbox = await mkdtemp(join(tmpdir(), "workspace-model-setup-failure-test-"));
   const stateBase = join(sandbox, "state");
-  const workFolderBase = join(sandbox, "content");
+  const connectedFolderBase = join(sandbox, "content");
   const rawFailure = "No API key found. Read /Users/example/private/node_modules/provider/providers.md for setup details.";
   const piRuntimeProvider = {
     async resolveRuntime() {
       throw new Error(rawFailure);
     },
   };
-  const firstApi = await startLocalApi({ port: 0, stateBase, workFolderBase, loadEnv: false, piRuntimeProvider });
+  const firstApi = await startLocalApi({ port: 0, stateBase, connectedFolderBase, loadEnv: false, piRuntimeProvider });
   let firstApiClosed = false;
   try {
-    const created = await json(`${firstApi.origin}/api/work-folders`, {
+    const created = await json(`${firstApi.origin}/api/connected-folders`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Setup Failure work-folder" }),
-    }) as { workFolder: { id: string } };
-    const conversation = await json(`${firstApi.origin}/api/work-folders/${created.workFolder.id}/conversations`, {
+      body: JSON.stringify({ name: "Setup Failure Connected Folder" }),
+    }) as { connectedFolder: { id: string } };
+    const conversation = await json(`${firstApi.origin}/api/connected-folders/${created.connectedFolder.id}/conversations`, {
       method: "POST",
     }) as { conversation: { id: string } };
-    const conversationPath = `/api/work-folders/${created.workFolder.id}/conversations/${conversation.conversation.id}`;
+    const conversationPath = `/api/connected-folders/${created.connectedFolder.id}/conversations/${conversation.conversation.id}`;
     const accepted = await fetch(`${firstApi.origin}${conversationPath}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1369,7 +1369,7 @@ test("agent setup failures are sanitized, persisted, and survive an API restart"
 
     await firstApi.close();
     firstApiClosed = true;
-    const restartedApi = await startLocalApi({ port: 0, stateBase, workFolderBase, loadEnv: false, piRuntimeProvider });
+    const restartedApi = await startLocalApi({ port: 0, stateBase, connectedFolderBase, loadEnv: false, piRuntimeProvider });
     try {
       const afterRestart = await json(`${restartedApi.origin}${conversationPath}`) as any;
       const durableFailure = afterRestart.messages.find((message: any) => message.interruption?.reason === "setup_error");
@@ -1393,7 +1393,7 @@ test("agent setup diagnostics are sanitized before reaching renderer event strea
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: {
       async resolveRuntime() {
@@ -1403,15 +1403,15 @@ test("agent setup diagnostics are sanitized before reaching renderer event strea
   });
   const streamController = new AbortController();
   try {
-    const created = await json(`${api.origin}/api/work-folders`, {
+    const created = await json(`${api.origin}/api/connected-folders`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Setup Stream work-folder" }),
-    }) as { workFolder: { id: string } };
-    const conversation = await json(`${api.origin}/api/work-folders/${created.workFolder.id}/conversations`, {
+      body: JSON.stringify({ name: "Setup Stream Connected Folder" }),
+    }) as { connectedFolder: { id: string } };
+    const conversation = await json(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/conversations`, {
       method: "POST",
     }) as { conversation: { id: string } };
-    const conversationUrl = `${api.origin}/api/work-folders/${created.workFolder.id}/conversations/${conversation.conversation.id}`;
+    const conversationUrl = `${api.origin}/api/connected-folders/${created.connectedFolder.id}/conversations/${conversation.conversation.id}`;
     const streamResponse = await fetch(`${conversationUrl}/events`, { signal: streamController.signal });
     assert.equal(streamResponse.ok, true);
     const streamEvents: TestStreamEvent[] = [];

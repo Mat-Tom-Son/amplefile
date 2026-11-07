@@ -16,7 +16,7 @@ test("Claude Code imports the canonical Codex contributor contract", async () =>
   assert.match(claude, /canonical contributor contract/i);
   assert.match(agents, /Harness parity/);
   assert.match(agents, /Native full-trust Skills, Extensions, built-in tools, and their catalog\/runtime remain Pi-owned/);
-  assert.match(agents, /work-fold owns the product documentation and restricted-app lane, but both remain harness-neutral/);
+  assert.match(agents, /AmpleFile owns the product documentation and restricted-app lane, but both remain harness-neutral/);
   assert.match(agents, /\.agents\/skills\//);
   assert.match(gitignore, /^\/\.claude\/\*$/m);
   assert.match(gitignore, /^!\/\.claude\/skills\/ship-macos-release$/m);
@@ -37,7 +37,7 @@ test("README local links and screenshots resolve without duplicating the docs", 
   assert.ok(destinations.includes("CONTRIBUTING.md"));
   assert.ok(destinations.includes("docs/README.md"));
   for (const destination of destinations) await access(join(root, destination.split("#")[0]!));
-  assert.doesNotMatch(readme, /output\/playwright\/work-fold-/);
+  assert.doesNotMatch(readme, /output\/playwright\/amplefile-/);
 });
 
 test("canonical product docs describe the Skills & Extensions popup and Settings → Apps (2026-09-25)", async () => {
@@ -59,13 +59,13 @@ test("canonical product docs describe the Skills & Extensions popup and Settings
   const assistantCapabilities = await readFile(join(root, "docs/skills-and-extensions.md"), "utf8");
   assert.match(assistantCapabilities, /popup/i);
   assert.match(assistantCapabilities, /Settings → Apps/);
-  assert.doesNotMatch(assistantCapabilities, /one persistent Library tab per (?:work-folder|work-folder)/i);
+  assert.doesNotMatch(assistantCapabilities, /one persistent Library tab per (?:connected-folder|Connected Folder)/i);
 });
 test("public and contributor docs route management behavior to one guide", async () => {
   const files = ["docs/README.md", "AGENTS.md", "CONTRIBUTING.md", "docs/product-model.md", "docs/architecture.md"];
   const contents = await Promise.all(files.map((file) => readFile(join(root, file), "utf8")));
   for (const content of contents) {
-    assert.match(content, /work-fold-agent-and-cli\.md/, "Each canonical doc must link the management guide.");
+    assert.match(content, /amplefile-agent-and-cli\.md/, "Each canonical doc must link the management guide.");
   }
 });
 
@@ -83,7 +83,7 @@ test("App-platform docs route future behavior to one accepted foundation", async
   }
 
   const foundation = await readFile(join(root, "docs/app-platform-foundation.md"), "utf8");
-  assert.match(foundation, /work-folder.*may never become an App/s);
+  assert.match(foundation, /Connected Folder.*may never become an App/s);
   assert.match(foundation, /kind: development/);
   assert.match(foundation, /kind: app/);
   assert.match(foundation, /host: local \| hosted/);

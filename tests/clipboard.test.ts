@@ -14,7 +14,7 @@ function globals(t: TestContext, values: Record<string, unknown>) {
 test("desktop copies both formats without accessing the focus-sensitive browser clipboard", async (t) => {
   const writes: unknown[] = [];
   globals(t, {
-    window: { workFoldDesktop: { clipboard: { write: async (value: unknown) => { writes.push(value); } } } },
+    window: { ampleFileDesktop: { clipboard: { write: async (value: unknown) => { writes.push(value); } } } },
     navigator: { get clipboard() { throw new Error("Document is not focused"); } },
   });
   const content = { text: "Progress.\n\nFinal — 你好 🌍", html: "<p>Progress.</p><p>Final — 你好 🌍</p>" };
@@ -26,7 +26,7 @@ test("desktop copies both formats without accessing the focus-sensitive browser 
 test("inspector uses its narrow native writer and native failures never fall back or report success", async (t) => {
   const failure = new Error("Native write failed");
   globals(t, {
-    window: { workFoldDiagnostics: { clipboard: { write: async () => { throw failure; } } } },
+    window: { ampleFileDiagnostics: { clipboard: { write: async () => { throw failure; } } } },
     navigator: { get clipboard() { assert.fail("Must not turn a native failure into a second clipboard operation"); } },
   });
   await assert.rejects(copyToClipboard({ text: "diagnostic" }), (error) => error === failure);

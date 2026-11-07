@@ -12,7 +12,7 @@ import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
 /**
  * Queue and steer from every window (2026-10-27): a Chat's queued message is
  * held by the app, so every window shows it and it is sent when the turn ends
- * (never after a Stop); and the work-fold agent's running turn takes a
+ * (never after a Stop); and the AmpleFile agent's running turn takes a
  * steering message from the menu-bar panel.
  */
 
@@ -26,7 +26,7 @@ interface Harness {
 }
 
 async function startHarness(t: { after: (fn: () => unknown) => void }): Promise<Harness> {
-  const sandbox = await mkdtemp(join(tmpdir(), "work-fold-queue-steer-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-queue-steer-"));
   const faux = fauxProvider({ provider: "fixture-queue", models: [{ id: "chat" }] });
   const runtime = await ModelRuntime.create({ credentials: FileCredentialStore.inMemory(), modelsPath: null });
   const replies: Array<{ text: string; held: boolean }> = [];
@@ -46,7 +46,7 @@ async function startHarness(t: { after: (fn: () => unknown) => void }): Promise<
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
-    workFolderBase: join(sandbox, "content"),
+    connectedFolderBase: join(sandbox, "content"),
     loadEnv: false,
     piRuntimeProvider: {
       resolveRuntime: async () => ({
@@ -91,18 +91,18 @@ async function call(api: LocalApiHandle, path: string, init: { method: string; b
   return { status: response.status, body: await response.json().catch(() => null) };
 }
 
-async function transcript(api: LocalApiHandle, workFolderId: string, conversationId: string): Promise<Array<{ role: string; content: string; delivery?: string }>> {
-  return (await call(api, `/api/work-folders/${workFolderId}/conversations/${conversationId}`, { method: "GET" })).body.messages;
+async function transcript(api: LocalApiHandle, connectedFolderId: string, conversationId: string): Promise<Array<{ role: string; content: string; delivery?: string }>> {
+  return (await call(api, `/api/connected-folders/${connectedFolderId}/conversations/${conversationId}`, { method: "GET" })).body.messages;
 }
 
 test("a queued message is held by the app, replaced as it grows, and sent when the turn ends", { timeout: 60_000 }, async (t) => {
   const h = await startHarness(t);
   h.reply("First answer.", { held: true });
   h.reply("Second answer.");
-  const { workFolder } = await h.api.actFacade.createWorkFolder({ name: "Queue" });
-  const sent = await h.api.actFacade.sendMessage({ workFolder: workFolder.id, newConversation: true, content: "Start." });
+  const { connectedFolder } = await h.api.actFacade.createConnectedFolder({ name: "Queue" });
+  const sent = await h.api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "Start." });
   await waitFor(() => h.requests.length === 1, "the held turn");
-  const queuePath = `/api/work-folders/${workFolder.id}/conversations/${sent.conversationId}/queue`;
+  const queuePath = `/api/connected-folders/${connectedFolder.id}/conversations/${sent.conversationId}/queue`;
 
   const first = await call(h.api, queuePath, { method: "PUT", body: { content: "Then this." } });
   assert.equal(first.status, 200);
@@ -111,13 +111,13 @@ test("a queued message is held by the app, replaced as it grows, and sent when t
   assert.ok(grown.body.revision > first.body.revision, "every queue change gets a higher number");
 
   h.release();
-  await waitFor(async () => (await transcript(h.api, workFolder.id, sent.conversationId)).some((message) => message.role === "assistant" && message.content === "Second answer."), "the queued message's turn");
-  const messages = await transcript(h.api, workFolder.id, sent.conversationId);
+  await waitFor(async () => (await transcript(h.api, connectedFolder.id, sent.conversationId)).some((message) => message.role === "assistant" && message.content === "Second answer."), "the queued message's turn");
+  const messages = await transcript(h.api, connectedFolder.id, sent.conversationId);
   assert.deepEqual(messages.filter((message) => message.role === "user").map((message) => message.content), ["Start.", "Then this.\nAnd that."]);
   assert.match(JSON.stringify(h.requests.at(-1)), /Then this\.\\nAnd that\./);
 
-  const idle = await h.api.actFacade.createConversation({ workFolder: workFolder.id });
-  const idlePath = `/api/work-folders/${workFolder.id}/conversations/${idle.conversation.id}/queue`;
+  const idle = await h.api.actFacade.createConversation({ connectedFolder: connectedFolder.id });
+  const idlePath = `/api/connected-folders/${connectedFolder.id}/conversations/${idle.conversation.id}/queue`;
   assert.equal((await call(h.api, idlePath, { method: "PUT", body: { content: "Now." } })).status, 409, "an idle Chat sends instead");
   assert.equal((await call(h.api, idlePath, { method: "DELETE" })).body.queued, null, "an idle Chat holds nothing");
 });
@@ -126,24 +126,24 @@ test("Stop holds the queued message for the person, and no later turn sends it",
   const h = await startHarness(t);
   h.reply("Never finished.", { held: true });
   h.reply("Answer to the unrelated message.");
-  const { workFolder } = await h.api.actFacade.createWorkFolder({ name: "Stopped" });
-  const sent = await h.api.actFacade.sendMessage({ workFolder: workFolder.id, newConversation: true, content: "Start." });
+  const { connectedFolder } = await h.api.actFacade.createConnectedFolder({ name: "Stopped" });
+  const sent = await h.api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "Start." });
   await waitFor(() => h.requests.length === 1, "the held turn");
-  const queuePath = `/api/work-folders/${workFolder.id}/conversations/${sent.conversationId}/queue`;
+  const queuePath = `/api/connected-folders/${connectedFolder.id}/conversations/${sent.conversationId}/queue`;
   await call(h.api, queuePath, { method: "PUT", body: { content: "Not after a stop." } });
 
-  assert.equal((await call(h.api, `/api/work-folders/${workFolder.id}/conversations/${sent.conversationId}/abort`, { method: "POST" })).status, 200);
-  await waitFor(async () => (await h.api.actFacade.turnStatus({ workFolder: workFolder.id, taskId: sent.taskId })).task.state === "aborted", "the stop");
+  assert.equal((await call(h.api, `/api/connected-folders/${connectedFolder.id}/conversations/${sent.conversationId}/abort`, { method: "POST" })).status, 200);
+  await waitFor(async () => (await h.api.actFacade.turnStatus({ connectedFolder: connectedFolder.id, taskId: sent.taskId })).task.state === "aborted", "the stop");
   await new Promise((resolve) => setTimeout(resolve, 200));
-  const afterStop = (await transcript(h.api, workFolder.id, sent.conversationId)).filter((message) => message.role === "user");
+  const afterStop = (await transcript(h.api, connectedFolder.id, sent.conversationId)).filter((message) => message.role === "user");
   assert.deepEqual(afterStop.map((message) => message.content), ["Start."], "nothing was sent after the stop");
 
   // The Stop came from another surface, so no window took the draft back. A
   // later, unrelated turn ending must not send it either.
-  const unrelated = await h.api.actFacade.sendMessage({ workFolder: workFolder.id, conversationId: sent.conversationId, content: "Something else." });
-  await waitFor(async () => (await h.api.actFacade.turnStatus({ workFolder: workFolder.id, taskId: unrelated.taskId })).task.state === "succeeded", "the unrelated turn");
+  const unrelated = await h.api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, conversationId: sent.conversationId, content: "Something else." });
+  await waitFor(async () => (await h.api.actFacade.turnStatus({ connectedFolder: connectedFolder.id, taskId: unrelated.taskId })).task.state === "succeeded", "the unrelated turn");
   await new Promise((resolve) => setTimeout(resolve, 200));
-  const users = (await transcript(h.api, workFolder.id, sent.conversationId)).filter((message) => message.role === "user");
+  const users = (await transcript(h.api, connectedFolder.id, sent.conversationId)).filter((message) => message.role === "user");
   assert.deepEqual(users.map((message) => message.content), ["Start.", "Something else."], "the held message never ran");
   assert.deepEqual((await call(h.api, queuePath, { method: "DELETE" })).body.queued?.content, "Not after a stop.", "Cancel hands it back");
 });
@@ -152,13 +152,13 @@ test("a queued message keeps the Workers it addresses with @", { timeout: 60_000
   const h = await startHarness(t);
   h.reply("First.", { held: true });
   h.reply("Asked the Worker.");
-  const { workFolder } = await h.api.actFacade.createWorkFolder({ name: "Home" });
-  const { workFolder: research } = await h.api.actFacade.createWorkFolder({ name: "Research" });
-  const sent = await h.api.actFacade.sendMessage({ workFolder: workFolder.id, newConversation: true, content: "Start." });
+  const { connectedFolder } = await h.api.actFacade.createConnectedFolder({ name: "Home" });
+  const { connectedFolder: research } = await h.api.actFacade.createConnectedFolder({ name: "Research" });
+  const sent = await h.api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "Start." });
   await waitFor(() => h.requests.length === 1, "the held turn");
-  const queued = await call(h.api, `/api/work-folders/${workFolder.id}/conversations/${sent.conversationId}/queue`, {
+  const queued = await call(h.api, `/api/connected-folders/${connectedFolder.id}/conversations/${sent.conversationId}/queue`, {
     method: "PUT",
-    body: { content: "Then ask @Research for sources.", addressedWorkFolderIds: [research.id] },
+    body: { content: "Then ask @Research for sources.", addressedConnectedFolderIds: [research.id] },
   });
   assert.equal(queued.status, 200);
   h.release();
@@ -166,21 +166,21 @@ test("a queued message keeps the Workers it addresses with @", { timeout: 60_000
   assert.ok(JSON.stringify(h.requests[1]).includes(research.id), "the addressed Worker's id reaches the model with the message");
 });
 
-test("the work-fold agent's running turn takes a steering message from the panel", { timeout: 60_000 }, async (t) => {
+test("the AmpleFile agent's running turn takes a steering message from the panel", { timeout: 60_000 }, async (t) => {
   const h = await startHarness(t);
   h.reply("Working on it.", { held: true });
   h.reply("Adjusted.");
-  const panel = await call(h.api, "/api/work-fold-agent/messages", { method: "POST", body: { content: "Plan my week.", newConversation: true } });
+  const panel = await call(h.api, "/api/amplefile-agent/messages", { method: "POST", body: { content: "Plan my week.", newConversation: true } });
   assert.equal(panel.status, 202);
   await waitFor(() => h.requests.length === 1, "the held agent turn");
 
-  const steered = await call(h.api, "/api/work-fold-agent/messages", {
+  const steered = await call(h.api, "/api/amplefile-agent/messages", {
     method: "POST",
     body: { content: "Leave Friday free.", delivery: "steer", conversationId: panel.body.conversationId, requestId: "steer-panel-1" },
   });
   assert.equal(steered.status, 202);
   assert.equal(steered.body.delivery, "steer");
-  assert.equal((await call(h.api, "/api/work-fold-agent/messages", {
+  assert.equal((await call(h.api, "/api/amplefile-agent/messages", {
     method: "POST",
     body: { content: "No.", delivery: "steer" },
   })).status, 400, "steering names the running Chat");
@@ -193,15 +193,15 @@ test("two simultaneous retries of one steer reach the turn once", { timeout: 60_
   const h = await startHarness(t);
   h.reply("Working.", { held: true });
   h.reply("Adjusted once.");
-  const { workFolder } = await h.api.actFacade.createWorkFolder({ name: "Retry" });
-  const sent = await h.api.actFacade.sendMessage({ workFolder: workFolder.id, newConversation: true, content: "Start." });
+  const { connectedFolder } = await h.api.actFacade.createConnectedFolder({ name: "Retry" });
+  const sent = await h.api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "Start." });
   await waitFor(() => h.requests.length === 1, "the held turn");
-  const path = `/api/work-folders/${workFolder.id}/conversations/${sent.conversationId}/messages`;
+  const path = `/api/connected-folders/${connectedFolder.id}/conversations/${sent.conversationId}/messages`;
   const body = { content: "Only once, please.", delivery: "steer", requestId: "steer-retry-1", userMessageId: "message-steer-retry-1" };
   const [first, second] = await Promise.all([call(h.api, path, { method: "POST", body }), call(h.api, path, { method: "POST", body })]);
   assert.deepEqual([first.status, second.status], [202, 202]);
   assert.deepEqual([first.body.replayed, second.body.replayed].sort(), [false, true]);
-  const steers = (await transcript(h.api, workFolder.id, sent.conversationId)).filter((message) => message.delivery === "steer");
+  const steers = (await transcript(h.api, connectedFolder.id, sent.conversationId)).filter((message) => message.delivery === "steer");
   assert.equal(steers.length, 1);
   h.release();
   await waitFor(() => h.requests.length === 2, "the steered step");

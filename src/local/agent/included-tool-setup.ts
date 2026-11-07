@@ -20,15 +20,15 @@ function chromeStatus(summary?: ChromeConnectionSummary, environment?: { browser
   };
   const details: Record<ChromeConnectionState, string> = {
     not_connected: "Chrome is not connected.", connecting: "Connecting to Chrome.", connected: "Chrome is connected.",
-    app_not_running: "Open work-fold.", native_host_missing: "Chrome setup requires the desktop app.",
-    update_app: "Update work-fold.", update_extension: "Update the Chrome extension.",
+    app_not_running: "Open AmpleFile.", native_host_missing: "Chrome setup requires the desktop app.",
+    update_app: "Update AmpleFile.", update_extension: "Update the Chrome extension.",
     profile_conflict: "Another Chrome profile is connected.", busy: "Chrome is in use. Stop its work before changing the connection.",
     store_unavailable: "The Chrome extension is not available yet.", connection_error: "The Chrome connection could not be verified.",
   };
   return {
     id: "chrome", state: !summary ? "unavailable" : chrome.state === "connected" ? "ready"
       : ["app_not_running", "update_app", "update_extension", "store_unavailable", "connection_error"].includes(chrome.state) ? "unavailable" : "setup_required",
-    detail: chrome.problem === "transport_unavailable" ? "The local Chrome connection could not start. Another local browser automation host may be using its port. Quit that host, then restart work-fold."
+    detail: chrome.problem === "transport_unavailable" ? "The local Chrome connection could not start. Another local browser automation host may be using its port. Quit that host, then restart AmpleFile."
       : chrome.problem === "native_host_unavailable" ? "The Chrome native helper could not be registered. Open Chrome setup to repair the connection."
       : chrome.state === "not_connected" && chrome.hasSelection ? "Open Chrome. Your selected profile reconnects automatically."
       : environment && !environment.browserInstalled && chrome.state !== "connected" ? "Install Google Chrome to let your Worker browse with it."
@@ -50,7 +50,7 @@ export async function listIncludedToolStatus(cwd: string, provider?: PiRuntimePr
   } catch {
     mcp = { id: "mcp", state: "unavailable", checkedAt: new Date().toISOString(), detail: "Service connection configuration could not be read. Open its settings to check the configuration." };
   }
-  const braveCredential = await runtime.credentials.read("work-fold:web:brave");
+  const braveCredential = await runtime.credentials.read("amplefile:web:brave");
   // File checks only, so a person who just installed LibreOffice sees it on the next refresh.
   const documentEngines = await discoverDocumentEngines(runtime.config.includedTools.documentEngineSearch);
   return includedToolDefinitions.map(({ id }) => {
@@ -102,10 +102,10 @@ export async function setupIncludedTool(cwd: string, id: IncludedToolId, action:
     if (action === "connect-brave") {
       const secret = input.secret?.trim();
       if (!secret || secret.length > 4096) throw new Error("Enter a valid Brave Search API key.");
-      await runtime.credentials.modify("work-fold:web:brave", async () => ({ type: "api_key", key: secret }));
+      await runtime.credentials.modify("amplefile:web:brave", async () => ({ type: "api_key", key: secret }));
       await runtime.flushCredentials();
     } else if (action === "disconnect-brave") {
-      await runtime.credentials.delete("work-fold:web:brave");
+      await runtime.credentials.delete("amplefile:web:brave");
       await runtime.flushCredentials();
     } else if (action !== "check") throw new Error("Unknown web setup action.");
     status = (await listIncludedToolStatus(cwd, provider)).find((item) => item.id === id)!;

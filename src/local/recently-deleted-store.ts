@@ -2,41 +2,41 @@
  * Recently deleted (the machine-local trash) for reversible destruction
  * (docs/receipts-not-gates.md, F20).
  *
- * Nothing work-fold destroys is permanent at the moment it happens. History
+ * Nothing AmpleFile destroys is permanent at the moment it happens. History
  * covers ordinary deletion; whatever History cannot capture (oversized,
  * unreadable, symbolic-link, or always-excluded content), a deleted managed
- * work-folder, a removed imported Skill, app data that was cleared or purged,
+ * Connected Folder, a removed imported Skill, app data that was cleared or purged,
  * a deleted App Studio Release, and the App Studio history a removed
- * work-folder takes with it is moved here instead of erased, and stays
+ * Connected Folder takes with it is moved here instead of erased, and stays
  * restorable for a retention window (default 30 days, 1..365).
  *
- * Layout under `rootPath` (`workFoldRecentlyDeletedRoot()` in production):
+ * Layout under `rootPath` (`ampleFileRecentlyDeletedRoot()` in production):
  *
  *   settings.json                              { version: 1, retentionDays, lastPurgeAt }
- *   entries/<entryId>/manifest.json            WorkFoldRecentlyDeletedManifest — the only commit marker
- *   entries/<entryId>/payload/<name>           file | folder | work-folder | skill: the moved tree, original basename
+ *   entries/<entryId>/manifest.json            AmpleFileRecentlyDeletedManifest — the only commit marker
+ *   entries/<entryId>/payload/<name>           file | folder | Connected Folder | skill: the moved tree, original basename
  *   entries/<entryId>/payload/app-data.json    app-storage | app-retained: a RestrictedAppDataBackup
  *   entries/<entryId>/payload/app-release.json app-release: the Release's registry record and its verified envelope
  *   entries/<entryId>/payload/app-studio/      app-studio: studio.json (the Project, Development Instance, previews,
  *                                              operations, receipts), releases/<hex>.json (record and envelope
  *                                              per Release), packages/<digest>/ (each preview's staged package)
- *   entries/<entryId>/state/                   work-folder only: the work-folder's machine-local state dir (History)
+ *   entries/<entryId>/state/                   Connected Folder only: the Connected Folder's machine-local state dir (History)
  *   incoming/<uuid>/                           cross-device copy staging, swept on open()
  *
  * Entry ids are `trash-<yyyymmddHHMMSS>-<uuid8>` (see
- * `workFoldRecentlyDeletedEntryIdPattern`). Directories are 0o700 and files
+ * `ampleFileRecentlyDeletedEntryIdPattern`). Directories are 0o700 and files
  * 0o600, like the other machine-local stores.
  *
  * API (every method serializes through one in-process queue):
  *
- *   WorkFoldRecentlyDeletedStore.open(options)   create the layout, load settings, sweep debris
- *   store.moveTreeToRecentlyDeleted(input)       move a file, folder, work-folder, or Skill folder in
+ *   AmpleFileRecentlyDeletedStore.open(options)   create the layout, load settings, sweep debris
+ *   store.moveTreeToRecentlyDeleted(input)       move a file, folder, Connected Folder, or Skill folder in
  *   store.moveAppDataToRecentlyDeleted(input)    write a verified app-data export in
  *   store.moveAppReleaseToRecentlyDeleted(input) write a deleted Release's record and envelope in
- *   store.moveAppStudioToRecentlyDeleted(input)  write a removed work-folder's App Studio history in
+ *   store.moveAppStudioToRecentlyDeleted(input)  write a removed Connected Folder's App Studio history in
  *   store.list() / store.get(id)                 tolerant listing; damaged records are reported, never dropped
- *   store.attachWorkFolderState(id, path)        finish carrying History after an interrupted work-folder deletion
- *   store.restoreTree(id, destination)           move a tree back, collision-renaming like work-folder.ts
+ *   store.attachConnectedFolderState(id, path)        finish carrying History after an interrupted Connected Folder deletion
+ *   store.restoreTree(id, destination)           move a tree back, collision-renaming like connected-folder.ts
  *   store.readAppData(id)                        read and re-verify an app-data export
  *   store.readAppRelease(id)                     read a kept Release back (the service re-verifies it)
  *   store.readAppStudio(id)                      read kept App Studio history back (the service re-verifies it)
@@ -61,8 +61,8 @@
  *   pattern, payload shape). Anything else lands in `damaged` with the
  *   reason and is never removed silently.
  * - Ids come only from the store and are re-validated against
- *   `workFoldRecentlyDeletedEntryIdPattern` before any path join.
- * - Reserved names inside payloads (`.work-fold`, `.pi`, `.workspace`) are
+ *   `ampleFileRecentlyDeletedEntryIdPattern` before any path join.
+ * - Reserved names inside payloads (`.amplefile`, `.pi`, `.workspace`) are
  *   data, never interpreted — except that a tree holding legacy
  *   `.workspace/` records is never erased by retention or "Delete now" (the
  *   clean-break rule). Such an entry is marked `held`; the person can still
@@ -74,10 +74,10 @@ import { cp, lstat, mkdir, open, readdir, readFile, rename, rm } from "node:fs/p
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 
 import {
-  workFoldRecentlyDeletedDefaultRetentionDays,
-  workFoldRecentlyDeletedMaxRetentionDays,
-  workFoldRecentlyDeletedMinRetentionDays,
-} from "../shared/work-fold-limits.js";
+  ampleFileRecentlyDeletedDefaultRetentionDays,
+  ampleFileRecentlyDeletedMaxRetentionDays,
+  ampleFileRecentlyDeletedMinRetentionDays,
+} from "../shared/amplefile-limits.js";
 import {
   parseDataNamespaceId,
   parseFeatureInstallationId,
@@ -91,30 +91,30 @@ import {
 } from "./agent/restricted-app-storage.js";
 import { writeFileAtomic } from "./agent/turn-store.js";
 
-export const WORKFOLD_RECENTLY_DELETED_DEFAULT_RETENTION_DAYS = workFoldRecentlyDeletedDefaultRetentionDays;
-export const WORKFOLD_RECENTLY_DELETED_MIN_RETENTION_DAYS = workFoldRecentlyDeletedMinRetentionDays;
-export const WORKFOLD_RECENTLY_DELETED_MAX_RETENTION_DAYS = workFoldRecentlyDeletedMaxRetentionDays;
+export const AMPLEFILE_RECENTLY_DELETED_DEFAULT_RETENTION_DAYS = ampleFileRecentlyDeletedDefaultRetentionDays;
+export const AMPLEFILE_RECENTLY_DELETED_MIN_RETENTION_DAYS = ampleFileRecentlyDeletedMinRetentionDays;
+export const AMPLEFILE_RECENTLY_DELETED_MAX_RETENTION_DAYS = ampleFileRecentlyDeletedMaxRetentionDays;
 /** "Daily while awake": `purgeExpiredIfDue` runs at most this often by default. */
-export const WORKFOLD_RECENTLY_DELETED_PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+export const AMPLEFILE_RECENTLY_DELETED_PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /** Shape of every entry id; CLI and route input must match it before any path join. */
-export const workFoldRecentlyDeletedEntryIdPattern = /^trash-\d{14}-[0-9a-f]{8}$/;
+export const ampleFileRecentlyDeletedEntryIdPattern = /^trash-\d{14}-[0-9a-f]{8}$/;
 
-export type WorkFoldRecentlyDeletedKind = "file" | "folder" | "work-folder" | "skill" | "app-storage" | "app-retained" | "app-release" | "app-studio";
+export type AmpleFileRecentlyDeletedKind = "file" | "folder" | "connected-folder" | "skill" | "app-storage" | "app-retained" | "app-release" | "app-studio";
 
-export type WorkFoldRecentlyDeletedReason =
+export type AmpleFileRecentlyDeletedReason =
   | "files.delete"
   /** Deleting a work-fold agent Chat keeps its transcript recoverable. */
   | "agent.chat.delete"
   /** Deleting a Worker Chat keeps its portable transcript recoverable. */
   | "chats.delete"
-  | "work-folders.delete"
+  | "connected-folders.delete"
   /** Removing an imported Skill keeps its whole folder; `.pi/` and Pi's own folder are outside History. */
   | "skills.remove"
   /** Removing a Development preview, which takes its namespace with it. */
   | "apps.remove"
   /** Unregistering a work-folder removes the previews installed in it, and its App Studio history. */
-  | "apps.work-folder.removed"
+  | "apps.connected-folder.removed"
   | "apps.storage.clear"
   | "apps.retained.purge"
   | "apps.uninstall.purge"
@@ -122,21 +122,21 @@ export type WorkFoldRecentlyDeletedReason =
   | "apps.release.delete";
 
 /** Why History alone could not keep a copy of one path inside a Recently deleted entry. */
-export interface WorkFoldRecentlyDeletedUncoveredPath {
-  /** work-folder-relative path inside the moved entry. */
+export interface AmpleFileRecentlyDeletedUncoveredPath {
+  /** Connected Folder–relative path inside the moved entry. */
   path: string;
   /** Mirrors `CheckpointSkippedFile.reason` in history.ts. */
   reason: "too_large" | "unreadable" | "symbolic_link" | "excluded";
 }
 
-export type WorkFoldRecentlyDeletedAppDataIdentity = {
+export type AmpleFileRecentlyDeletedAppDataIdentity = {
   kind: "app-data";
   appId: string;
   appDigest: string;
   featureInstallationId: string;
   runtimeInstanceId: string;
   dataNamespaceId: string;
-  sourceWorkFolderId: string;
+  sourceConnectedFolderId: string;
   projectId: string;
   releaseDigest: string | null;
   /** app-retained only. */
@@ -144,69 +144,69 @@ export type WorkFoldRecentlyDeletedAppDataIdentity = {
 };
 
 /** Which Release an `app-release` entry keeps: enough to list it and to check the kept file against. */
-export type WorkFoldRecentlyDeletedAppReleaseIdentity = {
+export type AmpleFileRecentlyDeletedAppReleaseIdentity = {
   kind: "app-release";
   projectId: string;
   releaseDigest: string;
   displayVersion: string;
-  sourceWorkFolderId: string;
+  sourceConnectedFolderId: string;
 };
 
 /**
- * Whose App Studio history an `app-studio` entry keeps: the work-folder it was
- * removed with and the App Project whose source that work-folder was. A
- * work-folder that only had prepared installs aimed at it keeps those with
+ * Whose App Studio history an `app-studio` entry keeps: the Connected Folder it was
+ * removed with and the App Project whose source that Connected Folder was. A
+ * Connected Folder that only had prepared installs aimed at it keeps those with
  * `projectId: null`.
  */
-export type WorkFoldRecentlyDeletedAppStudioIdentity = {
+export type AmpleFileRecentlyDeletedAppStudioIdentity = {
   kind: "app-studio";
-  workFolderId: string;
+  connectedFolderId: string;
   projectId: string | null;
 };
 
 /**
  * A removed Skill's folder, kept like a tree, and where it goes back: the
- * same scope's skills folder (Pi's own for Everywhere, the work-folder's
+ * same scope's skills folder (Pi's own for Everywhere, the Connected Folder's
  * `.pi/skills` otherwise), at the entry's `originalPath` inside it.
  */
-export type WorkFoldRecentlyDeletedSkillPayload = {
+export type AmpleFileRecentlyDeletedSkillPayload = {
   kind: "skill";
-  scope: "everywhere" | "work-folder";
+  scope: "everywhere" | "connected-folder";
   /** The basename of the moved Skill folder under `payload/`. */
   name: string;
   /** The name Pi loads the Skill under; another Skill with it in the same scope blocks the restore. */
   skillName: string;
 };
 
-export type WorkFoldRecentlyDeletedPayload =
-  /** file | folder | work-folder: the basename of the moved tree under `payload/`. */
+export type AmpleFileRecentlyDeletedPayload =
+  /** file | folder | Connected Folder: the basename of the moved tree under `payload/`. */
   | { kind: "tree"; name: string }
-  | WorkFoldRecentlyDeletedSkillPayload
-  | WorkFoldRecentlyDeletedAppDataIdentity
-  | WorkFoldRecentlyDeletedAppReleaseIdentity
-  | WorkFoldRecentlyDeletedAppStudioIdentity;
+  | AmpleFileRecentlyDeletedSkillPayload
+  | AmpleFileRecentlyDeletedAppDataIdentity
+  | AmpleFileRecentlyDeletedAppReleaseIdentity
+  | AmpleFileRecentlyDeletedAppStudioIdentity;
 
-export interface WorkFoldRecentlyDeletedHold {
+export interface AmpleFileRecentlyDeletedHold {
   /**
    * `legacy-metadata`: the tree holds `.workspace/` records from the earlier
-   * product, which work-fold never erases. `unreadable`: a directory inside
+   * product, which AmpleFile never erases. `unreadable`: a directory inside
    * the tree could not be listed, so the store cannot prove it holds none.
    */
   reason: "legacy-metadata" | "unreadable";
   noticedAt: string;
 }
 
-export interface WorkFoldRecentlyDeletedManifest {
+export interface AmpleFileRecentlyDeletedManifest {
   version: 1;
   id: string;
-  kind: WorkFoldRecentlyDeletedKind;
-  reason: WorkFoldRecentlyDeletedReason;
-  workFolderId: string;
-  /** Display and work-folder re-registration. */
-  workFolderName?: string;
+  kind: AmpleFileRecentlyDeletedKind;
+  reason: AmpleFileRecentlyDeletedReason;
+  connectedFolderId: string;
+  /** Display and Connected Folder re-registration. */
+  connectedFolderName?: string;
   /** Person-facing label; the payload name remains the recovery identity. */
   displayName?: string;
-  /** file/folder: work-folder-relative path. work-folder: absolute managed folder path. skill: the Skill folder's `/`-separated path inside its scope's skills folder. app-storage/app-retained: `<appId>/<dataNamespaceId>`. app-release: `<projectId>/<releaseDigest>`. app-studio: the project id, or the work-folder id when there is no Project. */
+  /** file/folder: Connected Folder–relative path. Connected Folder: absolute managed folder path. skill: the Skill folder's `/`-separated path inside its scope's skills folder. app-storage/app-retained: `<appId>/<dataNamespaceId>`. app-release: `<projectId>/<releaseDigest>`. app-studio: the project id, or the Connected Folder id when there is no Project. */
   originalPath: string;
   sizeBytes: number;
   /** The measurement walk hit its budget, so `sizeBytes` is a lower bound. */
@@ -215,98 +215,98 @@ export interface WorkFoldRecentlyDeletedManifest {
   restoreBy: string;
   /** The act request id (CLI) or the desktop's minted `settings:`/`desktop:` request id that produced the entry. */
   receiptId: string | null;
-  payload: WorkFoldRecentlyDeletedPayload;
+  payload: AmpleFileRecentlyDeletedPayload;
   /** False until the move landed (crash marker). */
   complete: boolean;
   /** files.delete: why History alone could not cover it. */
-  uncovered?: WorkFoldRecentlyDeletedUncoveredPath[];
+  uncovered?: AmpleFileRecentlyDeletedUncoveredPath[];
   /** Set at purge or "Delete now" time; a held entry is never erased by the store. */
-  held?: WorkFoldRecentlyDeletedHold;
-  /** work-folder: the History state dir travelled with the folder and sits under `state/`. */
+  held?: AmpleFileRecentlyDeletedHold;
+  /** Connected Folder: the History state dir travelled with the folder and sits under `state/`. */
   stateDir?: true;
 }
 
-export interface WorkFoldRecentlyDeletedEntry extends WorkFoldRecentlyDeletedManifest {
+export interface AmpleFileRecentlyDeletedEntry extends AmpleFileRecentlyDeletedManifest {
   entryPath: string;
   payloadPath: string;
 }
 
-export interface WorkFoldRecentlyDeletedDamagedRecord {
+export interface AmpleFileRecentlyDeletedDamagedRecord {
   id: string;
   error: string;
 }
 
-export interface WorkFoldRecentlyDeletedListing {
+export interface AmpleFileRecentlyDeletedListing {
   /** Newest first. */
-  entries: WorkFoldRecentlyDeletedEntry[];
+  entries: AmpleFileRecentlyDeletedEntry[];
   /** Records the store cannot read or trust. They are never removed silently. */
-  damaged: WorkFoldRecentlyDeletedDamagedRecord[];
+  damaged: AmpleFileRecentlyDeletedDamagedRecord[];
   retentionDays: number;
 }
 
-export type WorkFoldRecentlyDeletedErrorCode = "NOT_FOUND" | "INPUT_INVALID" | "STORE_DAMAGED" | "HELD" | "MOVE_FAILED";
+export type AmpleFileRecentlyDeletedErrorCode = "NOT_FOUND" | "INPUT_INVALID" | "STORE_DAMAGED" | "HELD" | "MOVE_FAILED";
 
-export class WorkFoldRecentlyDeletedError extends Error {
-  readonly code: WorkFoldRecentlyDeletedErrorCode;
+export class AmpleFileRecentlyDeletedError extends Error {
+  readonly code: AmpleFileRecentlyDeletedErrorCode;
   /** Present when the failure left (or refused to remove) a specific entry. */
   readonly entryId?: string;
 
-  constructor(code: WorkFoldRecentlyDeletedErrorCode, message: string, options: { entryId?: string; cause?: unknown } = {}) {
+  constructor(code: AmpleFileRecentlyDeletedErrorCode, message: string, options: { entryId?: string; cause?: unknown } = {}) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
-    this.name = "WorkFoldRecentlyDeletedError";
+    this.name = "AmpleFileRecentlyDeletedError";
     this.code = code;
     if (options.entryId !== undefined) this.entryId = options.entryId;
   }
 }
 
 /** Filesystem seams for tests (cross-device fallback, failing moves). Production uses node:fs. */
-export interface WorkFoldRecentlyDeletedStoreIo {
+export interface AmpleFileRecentlyDeletedStoreIo {
   rename?(from: string, to: string): Promise<void>;
   cp?(from: string, to: string, options: CopyOptions): Promise<void>;
 }
 
-export interface WorkFoldRecentlyDeletedStoreOptions {
-  /** `workFoldRecentlyDeletedRoot()` in production; a temporary directory in tests. */
+export interface AmpleFileRecentlyDeletedStoreOptions {
+  /** `ampleFileRecentlyDeletedRoot()` in production; a temporary directory in tests. */
   rootPath: string;
   now?: () => Date;
   /** 1..365; default 30. Applied only when `settings.json` does not exist yet. */
   defaultRetentionDays?: number;
-  io?: WorkFoldRecentlyDeletedStoreIo;
+  io?: AmpleFileRecentlyDeletedStoreIo;
 }
 
-export interface WorkFoldRecentlyDeletedTreeInput {
-  kind: "file" | "folder" | "work-folder" | "skill";
-  reason: WorkFoldRecentlyDeletedReason;
-  /** Absolute path of the file or directory to move (for `work-folder`, the removal claim path). */
+export interface AmpleFileRecentlyDeletedTreeInput {
+  kind: "file" | "folder" | "connected-folder" | "skill";
+  reason: AmpleFileRecentlyDeletedReason;
+  /** Absolute path of the file or directory to move (for `connected-folder`, the removal claim path). */
   sourcePath: string;
-  workFolderId: string;
-  workFolderName?: string;
+  connectedFolderId: string;
+  connectedFolderName?: string;
   /** Optional Recently deleted label; it never affects the restore path. */
   displayName?: string;
-  /** work-folder-relative path (file/folder), the absolute original root (work-folder), or the path inside the scope's skills folder (skill). Its basename names the payload. */
+  /** Connected Folder–relative path (file/folder), the absolute original root (Connected Folder), or the path inside the scope's skills folder (skill). Its basename names the payload. */
   originalPath: string;
   receiptId: string | null;
-  uncovered?: WorkFoldRecentlyDeletedUncoveredPath[];
-  /** work-folder: absolute `workFolderStateDir` to move under `state/`; a missing directory is fine. */
+  uncovered?: AmpleFileRecentlyDeletedUncoveredPath[];
+  /** Connected Folder: absolute `connectedFolderStateDir` to move under `state/`; a missing directory is fine. */
   stateDirPath?: string;
   /** skill only, and required there: the scope it goes back into and the name Pi loads it under. */
-  skill?: { scope: WorkFoldRecentlyDeletedSkillPayload["scope"]; skillName: string };
+  skill?: { scope: AmpleFileRecentlyDeletedSkillPayload["scope"]; skillName: string };
 }
 
-export interface WorkFoldRecentlyDeletedAppDataInput {
+export interface AmpleFileRecentlyDeletedAppDataInput {
   kind: "app-storage" | "app-retained";
-  reason: WorkFoldRecentlyDeletedReason;
+  reason: AmpleFileRecentlyDeletedReason;
   /** From restricted-app-storage.ts `exportData` / the service's `exportStorage`. */
   backup: RestrictedAppDataBackup;
-  identity: WorkFoldRecentlyDeletedAppDataIdentity;
-  workFolderId: string;
-  workFolderName?: string;
+  identity: AmpleFileRecentlyDeletedAppDataIdentity;
+  connectedFolderId: string;
+  connectedFolderName?: string;
   receiptId: string | null;
 }
 
-export interface WorkFoldRecentlyDeletedAppReleaseInput {
-  reason: WorkFoldRecentlyDeletedReason;
-  identity: WorkFoldRecentlyDeletedAppReleaseIdentity;
+export interface AmpleFileRecentlyDeletedAppReleaseInput {
+  reason: AmpleFileRecentlyDeletedReason;
+  identity: AmpleFileRecentlyDeletedAppReleaseIdentity;
   /**
    * The service's registry record for the Release and the canonical Release
    * envelope read from its store, as plain JSON. The store checks only that
@@ -314,22 +314,22 @@ export interface WorkFoldRecentlyDeletedAppReleaseInput {
    */
   record: unknown;
   release: unknown;
-  workFolderId: string;
-  workFolderName?: string;
+  connectedFolderId: string;
+  connectedFolderName?: string;
   /** Person-facing label, such as the App title and version. */
   displayName?: string;
   receiptId: string | null;
 }
 
 /** A kept Release as `readAppRelease` returns it: still to be re-verified by the service. */
-export interface WorkFoldRecentlyDeletedAppRelease {
-  identity: WorkFoldRecentlyDeletedAppReleaseIdentity;
+export interface AmpleFileRecentlyDeletedAppRelease {
+  identity: AmpleFileRecentlyDeletedAppReleaseIdentity;
   record: Record<string, unknown>;
   release: Record<string, unknown>;
 }
 
 /** The registry records an `app-studio` entry keeps, as plain JSON; the service re-validates each before a restore. */
-export interface WorkFoldRecentlyDeletedAppStudioRecords {
+export interface AmpleFileRecentlyDeletedAppStudioRecords {
   project: unknown;
   runtimeInstances: unknown[];
   previews: unknown[];
@@ -337,78 +337,78 @@ export interface WorkFoldRecentlyDeletedAppStudioRecords {
   adminReceipts: unknown[];
 }
 
-export interface WorkFoldRecentlyDeletedAppStudioInput {
-  reason: WorkFoldRecentlyDeletedReason;
-  identity: WorkFoldRecentlyDeletedAppStudioIdentity;
-  studio: WorkFoldRecentlyDeletedAppStudioRecords;
+export interface AmpleFileRecentlyDeletedAppStudioInput {
+  reason: AmpleFileRecentlyDeletedReason;
+  identity: AmpleFileRecentlyDeletedAppStudioIdentity;
+  studio: AmpleFileRecentlyDeletedAppStudioRecords;
   /** One registry record and verified envelope per Release, like an `app-release` entry. */
   releases: ReadonlyArray<{ record: unknown; release: unknown }>;
   /** Each preview's staged package folder, by package digest. The store copies them; it never moves the originals. */
   packages: ReadonlyArray<{ digest: string; root: string }>;
-  workFolderId: string;
-  workFolderName?: string;
+  connectedFolderId: string;
+  connectedFolderName?: string;
   /** Person-facing label, such as the App Project's title. */
   displayName?: string;
   receiptId: string | null;
 }
 
 /** Kept App Studio history as `readAppStudio` returns it: still to be re-verified by the service. */
-export interface WorkFoldRecentlyDeletedAppStudio {
-  identity: WorkFoldRecentlyDeletedAppStudioIdentity;
-  studio: WorkFoldRecentlyDeletedAppStudioRecords;
+export interface AmpleFileRecentlyDeletedAppStudio {
+  identity: AmpleFileRecentlyDeletedAppStudioIdentity;
+  studio: AmpleFileRecentlyDeletedAppStudioRecords;
   releases: Array<{ record: Record<string, unknown>; release: Record<string, unknown> }>;
   /** Package digest → the kept package folder inside the entry; the service re-stages each from here. */
   packageRoots: Map<string, string>;
 }
 
-export interface WorkFoldRecentlyDeletedRestoreDestination {
+export interface AmpleFileRecentlyDeletedRestoreDestination {
   /** Where the tree goes back. An occupied path is collision-renamed (`stem (2).ext` / `name-2`). */
   absolutePath: string;
   /** Transcript filenames are identities and must never be collision-renamed. */
   onConflict?: "rename" | "error";
-  /** work-folder entries whose History state travelled: where `state/` goes back. */
+  /** Connected Folder entries whose History state travelled: where `state/` goes back. */
   stateDirPath?: string;
   /** Alternative to `stateDirPath` that sees the final (possibly renamed) path first. */
   stateDirFor?: (restoredPath: string) => string;
 }
 
-export interface WorkFoldRecentlyDeletedRestoreResult {
+export interface AmpleFileRecentlyDeletedRestoreResult {
   restoredPath: string;
   renamed: boolean;
   stateDirMovedTo?: string;
 }
 
-export interface WorkFoldRecentlyDeletedPurgeResult {
+export interface AmpleFileRecentlyDeletedPurgeResult {
   purged: string[];
   held: string[];
-  failed: WorkFoldRecentlyDeletedDamagedRecord[];
+  failed: AmpleFileRecentlyDeletedDamagedRecord[];
 }
 
-const RECENTLY_DELETED_KINDS: readonly WorkFoldRecentlyDeletedKind[] = ["file", "folder", "work-folder", "skill", "app-storage", "app-retained", "app-release", "app-studio"];
-const RECENTLY_DELETED_REASONS: readonly WorkFoldRecentlyDeletedReason[] = [
-  "files.delete", "agent.chat.delete", "chats.delete", "work-folders.delete", "skills.remove", "apps.remove", "apps.work-folder.removed",
+const RECENTLY_DELETED_KINDS: readonly AmpleFileRecentlyDeletedKind[] = ["file", "folder", "connected-folder", "skill", "app-storage", "app-retained", "app-release", "app-studio"];
+const RECENTLY_DELETED_REASONS: readonly AmpleFileRecentlyDeletedReason[] = [
+  "files.delete", "agent.chat.delete", "chats.delete", "connected-folders.delete", "skills.remove", "apps.remove", "apps.connected-folder.removed",
   "apps.storage.clear", "apps.retained.purge", "apps.uninstall.purge", "apps.release.delete",
 ];
-const SKILL_SCOPES: readonly WorkFoldRecentlyDeletedSkillPayload["scope"][] = ["everywhere", "work-folder"];
-const UNCOVERED_REASONS: readonly WorkFoldRecentlyDeletedUncoveredPath["reason"][] = ["too_large", "unreadable", "symbolic_link", "excluded"];
-const HOLD_REASONS: readonly WorkFoldRecentlyDeletedHold["reason"][] = ["legacy-metadata", "unreadable"];
+const SKILL_SCOPES: readonly AmpleFileRecentlyDeletedSkillPayload["scope"][] = ["everywhere", "connected-folder"];
+const UNCOVERED_REASONS: readonly AmpleFileRecentlyDeletedUncoveredPath["reason"][] = ["too_large", "unreadable", "symbolic_link", "excluded"];
+const HOLD_REASONS: readonly AmpleFileRecentlyDeletedHold["reason"][] = ["legacy-metadata", "unreadable"];
 const MANIFEST_KEYS = new Set([
-  "version", "id", "kind", "reason", "workFolderId", "workFolderName", "displayName", "originalPath", "sizeBytes", "sizeApproximate",
+  "version", "id", "kind", "reason", "connectedFolderId", "connectedFolderName", "displayName", "originalPath", "sizeBytes", "sizeApproximate",
   "deletedAt", "restoreBy", "receiptId", "payload", "complete", "uncovered", "held", "stateDir",
 ]);
 const APP_DATA_IDENTITY_KEYS = new Set([
   "kind", "appId", "appDigest", "featureInstallationId", "runtimeInstanceId", "dataNamespaceId",
-  "sourceWorkFolderId", "projectId", "releaseDigest", "retainedDataId",
+  "sourceConnectedFolderId", "projectId", "releaseDigest", "retainedDataId",
 ]);
-const APP_RELEASE_IDENTITY_KEYS = new Set(["kind", "projectId", "releaseDigest", "displayVersion", "sourceWorkFolderId"]);
-const APP_STUDIO_IDENTITY_KEYS = new Set(["kind", "workFolderId", "projectId"]);
+const APP_RELEASE_IDENTITY_KEYS = new Set(["kind", "projectId", "releaseDigest", "displayVersion", "sourceConnectedFolderId"]);
+const APP_STUDIO_IDENTITY_KEYS = new Set(["kind", "connectedFolderId", "projectId"]);
 const APP_STUDIO_RECORD_KEYS = ["project", "runtimeInstances", "previews", "operations", "adminReceipts"] as const;
 const APP_DATA_FILE = "app-data.json";
 const APP_RELEASE_FILE = "app-release.json";
-const APP_RELEASE_FORMAT = "work-fold.app-release-recovery";
+const APP_RELEASE_FORMAT = "amplefile.app-release-recovery";
 const APP_STUDIO_DIR = "app-studio";
 const APP_STUDIO_FILE = "studio.json";
-const APP_STUDIO_FORMAT = "work-fold.app-studio-recovery";
+const APP_STUDIO_FORMAT = "amplefile.app-studio-recovery";
 const RELEASE_DIGEST_PATTERN = /^sha256:([0-9a-f]{64})$/;
 const PACKAGE_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const MANIFEST_FILE = "manifest.json";
@@ -426,7 +426,7 @@ interface RecentlyDeletedSettingsFile {
 }
 
 type EntryRead =
-  | { state: "entry"; entry: WorkFoldRecentlyDeletedEntry }
+  | { state: "entry"; entry: AmpleFileRecentlyDeletedEntry }
   | { state: "damaged"; id: string; error: string }
   | { state: "absent" };
 
@@ -438,14 +438,14 @@ class MoveError extends Error {
   }
 }
 
-export class WorkFoldRecentlyDeletedStore {
+export class AmpleFileRecentlyDeletedStore {
   readonly rootPath: string;
   readonly #now: () => Date;
-  readonly #io: Required<WorkFoldRecentlyDeletedStoreIo>;
+  readonly #io: Required<AmpleFileRecentlyDeletedStoreIo>;
   #settings: RecentlyDeletedSettingsFile;
   #queue: Promise<void> = Promise.resolve();
 
-  private constructor(rootPath: string, options: WorkFoldRecentlyDeletedStoreOptions, settings: RecentlyDeletedSettingsFile) {
+  private constructor(rootPath: string, options: AmpleFileRecentlyDeletedStoreOptions, settings: RecentlyDeletedSettingsFile) {
     this.rootPath = rootPath;
     this.#now = options.now ?? (() => new Date());
     this.#io = {
@@ -461,15 +461,15 @@ export class WorkFoldRecentlyDeletedStore {
    * payload, nor state). Never deletes anything that holds a payload, even
    * without a manifest: `list()` reports it under `damaged`.
    */
-  static async open(options: WorkFoldRecentlyDeletedStoreOptions): Promise<WorkFoldRecentlyDeletedStore> {
+  static async open(options: AmpleFileRecentlyDeletedStoreOptions): Promise<AmpleFileRecentlyDeletedStore> {
     const rootPath = resolve(options.rootPath);
-    const defaultRetentionDays = options.defaultRetentionDays ?? WORKFOLD_RECENTLY_DELETED_DEFAULT_RETENTION_DAYS;
+    const defaultRetentionDays = options.defaultRetentionDays ?? AMPLEFILE_RECENTLY_DELETED_DEFAULT_RETENTION_DAYS;
     assertRetentionDays(defaultRetentionDays);
     await mkdir(rootPath, { recursive: true, mode: 0o700 });
     await mkdir(join(rootPath, "entries"), { recursive: true, mode: 0o700 });
     await mkdir(join(rootPath, "incoming"), { recursive: true, mode: 0o700 });
     const settings = await loadSettings(join(rootPath, "settings.json"), defaultRetentionDays);
-    const store = new WorkFoldRecentlyDeletedStore(rootPath, options, settings);
+    const store = new AmpleFileRecentlyDeletedStore(rootPath, options, settings);
     await store.#sweep();
     return store;
   }
@@ -498,9 +498,9 @@ export class WorkFoldRecentlyDeletedStore {
         }
       }
       if (firstFailure !== null) {
-        throw new WorkFoldRecentlyDeletedError(
+        throw new AmpleFileRecentlyDeletedError(
           "STORE_DAMAGED",
-          `work-fold saved the new retention but could not update every item in ${RECENTLY_DELETED}: ${errorMessage(firstFailure)}`,
+          `AmpleFile saved the new retention but could not update every item in ${RECENTLY_DELETED}: ${errorMessage(firstFailure)}`,
           { cause: firstFailure },
         );
       }
@@ -508,7 +508,7 @@ export class WorkFoldRecentlyDeletedStore {
   }
 
   /**
-   * Moves a file, folder, work-folder, or Skill folder into Recently deleted.
+   * Moves a file, folder, Connected Folder, or Skill folder into Recently deleted.
    * Crash-safe order: entry dir → manifest `{complete:false}` → move source →
    * optional state dir → measure → manifest `{complete:true}`. A failure
    * before the source moved removes the entry directory and throws
@@ -516,34 +516,34 @@ export class WorkFoldRecentlyDeletedStore {
    * the entry — the copy is now the only complete one — and throws
    * MOVE_FAILED naming it.
    */
-  async moveTreeToRecentlyDeleted(input: WorkFoldRecentlyDeletedTreeInput): Promise<WorkFoldRecentlyDeletedEntry> {
+  async moveTreeToRecentlyDeleted(input: AmpleFileRecentlyDeletedTreeInput): Promise<AmpleFileRecentlyDeletedEntry> {
     const sourcePath = requireAbsolutePath(input.sourcePath, "The path to move");
-    if (input.kind !== "file" && input.kind !== "folder" && input.kind !== "work-folder" && input.kind !== "skill") {
-      throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "Only files, folders, work-folders, and Skills can be moved as trees.");
+    if (input.kind !== "file" && input.kind !== "folder" && input.kind !== "connected-folder" && input.kind !== "skill") {
+      throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "Only files, folders, Connected Folders, and Skills can be moved as trees.");
     }
     assertReason(input.reason);
-    const workFolderId = requireText(input.workFolderId, "work-folder id", 160);
-    const workFolderName = input.workFolderName === undefined ? undefined : requireText(input.workFolderName, "work-folder name", 200);
+    const connectedFolderId = requireText(input.connectedFolderId, "Connected Folder id", 160);
+    const connectedFolderName = input.connectedFolderName === undefined ? undefined : requireText(input.connectedFolderName, "Connected Folder name", 200);
     const displayName = input.displayName === undefined ? undefined : requireText(input.displayName, "Display name", 200);
     const originalPath = requireText(input.originalPath, "The original path", MAX_TEXT_LENGTH);
     const receiptId = requireReceiptId(input.receiptId);
     const uncovered = normalizeUncovered(input.uncovered);
     const name = payloadNameFor(originalPath);
-    const stateDirPath = input.stateDirPath === undefined ? undefined : requireAbsolutePath(input.stateDirPath, "The work-folder state path");
-    if (stateDirPath !== undefined && input.kind !== "work-folder") {
-      throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "Only a work-folder carries History state with it.");
+    const stateDirPath = input.stateDirPath === undefined ? undefined : requireAbsolutePath(input.stateDirPath, "The Connected Folder state path");
+    if (stateDirPath !== undefined && input.kind !== "connected-folder") {
+      throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "Only a Connected Folder carries History state with it.");
     }
     if ((input.kind === "skill") !== (input.skill !== undefined)) {
-      throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "A Skill, and only a Skill, names the scope it goes back into.");
+      throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "A Skill, and only a Skill, names the scope it goes back into.");
     }
-    const payload: WorkFoldRecentlyDeletedPayload = input.skill === undefined
+    const payload: AmpleFileRecentlyDeletedPayload = input.skill === undefined
       ? { kind: "tree", name }
       : normalizeSkillPayload({ kind: "skill", scope: input.skill.scope, name, skillName: input.skill.skillName });
     const sourceInfo = await lstat(sourcePath).catch((error: NodeJS.ErrnoException) => {
-      throw new WorkFoldRecentlyDeletedError("MOVE_FAILED", `work-fold could not move ${sourcePath} into ${RECENTLY_DELETED}: ${errorMessage(error)}. Nothing was moved.`, { cause: error });
+      throw new AmpleFileRecentlyDeletedError("MOVE_FAILED", `AmpleFile could not move ${sourcePath} into ${RECENTLY_DELETED}: ${errorMessage(error)}. Nothing was moved.`, { cause: error });
     });
     if (input.kind === "file" ? sourceInfo.isDirectory() : !sourceInfo.isDirectory()) {
-      throw new WorkFoldRecentlyDeletedError(
+      throw new AmpleFileRecentlyDeletedError(
         "INPUT_INVALID",
         input.kind === "file" ? `${sourcePath} is a folder, not a file.` : `${sourcePath} is not a folder.`,
       );
@@ -555,13 +555,13 @@ export class WorkFoldRecentlyDeletedStore {
       const entryPath = join(this.rootPath, "entries", id);
       const payloadDir = join(entryPath, "payload");
       const payloadPath = join(payloadDir, name);
-      const manifest: WorkFoldRecentlyDeletedManifest = {
+      const manifest: AmpleFileRecentlyDeletedManifest = {
         version: 1,
         id,
         kind: input.kind,
         reason: input.reason,
-        workFolderId,
-        ...(workFolderName === undefined ? {} : { workFolderName }),
+        connectedFolderId,
+        ...(connectedFolderName === undefined ? {} : { connectedFolderName }),
         ...(displayName === undefined ? {} : { displayName }),
         originalPath,
         sizeBytes: 0,
@@ -578,20 +578,20 @@ export class WorkFoldRecentlyDeletedStore {
         await this.#writeManifest(entryPath, manifest);
       } catch (error) {
         await rm(entryPath, { recursive: true, force: true }).catch(() => undefined);
-        throw new WorkFoldRecentlyDeletedError("MOVE_FAILED", `work-fold could not prepare ${RECENTLY_DELETED}: ${errorMessage(error)}. Nothing was moved.`, { cause: error });
+        throw new AmpleFileRecentlyDeletedError("MOVE_FAILED", `AmpleFile could not prepare ${RECENTLY_DELETED}: ${errorMessage(error)}. Nothing was moved.`, { cause: error });
       }
       try {
         await this.#move(sourcePath, payloadPath, { stagingDir: this.#newStagingDir() });
       } catch (error) {
         if (error instanceof MoveError && error.landed) {
-          throw new WorkFoldRecentlyDeletedError(
+          throw new AmpleFileRecentlyDeletedError(
             "MOVE_FAILED",
-            `work-fold copied ${sourcePath} into ${RECENTLY_DELETED} (${id}) but could not release the original: ${error.message}. The copy is kept there.`,
+            `AmpleFile copied ${sourcePath} into ${RECENTLY_DELETED} (${id}) but could not release the original: ${error.message}. The copy is kept there.`,
             { entryId: id, cause: error },
           );
         }
         await rm(entryPath, { recursive: true, force: true }).catch(() => undefined);
-        throw new WorkFoldRecentlyDeletedError("MOVE_FAILED", `work-fold could not move ${sourcePath} into ${RECENTLY_DELETED}: ${errorMessage(error)}. Nothing was moved.`, { cause: error });
+        throw new AmpleFileRecentlyDeletedError("MOVE_FAILED", `AmpleFile could not move ${sourcePath} into ${RECENTLY_DELETED}: ${errorMessage(error)}. Nothing was moved.`, { cause: error });
       }
       // From here the source is gone: the entry stays whatever happens next.
       let stateDir = false;
@@ -602,16 +602,16 @@ export class WorkFoldRecentlyDeletedStore {
             await this.#move(stateDirPath, join(entryPath, "state"), { stagingDir: this.#newStagingDir() });
             stateDir = true;
           } catch (error) {
-            throw new WorkFoldRecentlyDeletedError(
+            throw new AmpleFileRecentlyDeletedError(
               "MOVE_FAILED",
-              `work-fold moved ${sourcePath} into ${RECENTLY_DELETED} (${id}) but could not move its History state along: ${errorMessage(error)}.`,
+              `AmpleFile moved ${sourcePath} into ${RECENTLY_DELETED} (${id}) but could not move its History state along: ${errorMessage(error)}.`,
               { entryId: id, cause: error },
             );
           }
         }
       }
       const measured = await measureTree(payloadPath);
-      const completed: WorkFoldRecentlyDeletedManifest = {
+      const completed: AmpleFileRecentlyDeletedManifest = {
         ...manifest,
         sizeBytes: measured.sizeBytes,
         ...(measured.approximate ? { sizeApproximate: true as const } : {}),
@@ -629,17 +629,17 @@ export class WorkFoldRecentlyDeletedStore {
    * shape, identity, sha256); a mismatch is INPUT_INVALID and nothing is
    * written.
    */
-  async moveAppDataToRecentlyDeleted(input: WorkFoldRecentlyDeletedAppDataInput): Promise<WorkFoldRecentlyDeletedEntry> {
+  async moveAppDataToRecentlyDeleted(input: AmpleFileRecentlyDeletedAppDataInput): Promise<AmpleFileRecentlyDeletedEntry> {
     if (input.kind !== "app-storage" && input.kind !== "app-retained") {
-      throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "Only app data exports can be kept this way.");
+      throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "Only app data exports can be kept this way.");
     }
     assertReason(input.reason);
-    const workFolderId = requireText(input.workFolderId, "work-folder id", 160);
-    const workFolderName = input.workFolderName === undefined ? undefined : requireText(input.workFolderName, "work-folder name", 200);
+    const connectedFolderId = requireText(input.connectedFolderId, "Connected Folder id", 160);
+    const connectedFolderName = input.connectedFolderName === undefined ? undefined : requireText(input.connectedFolderName, "Connected Folder name", 200);
     const receiptId = requireReceiptId(input.receiptId);
     const identity = normalizeAppDataIdentity(input.identity);
     if (input.kind === "app-retained" && identity.retainedDataId === undefined) {
-      throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "Retained app data needs its retained-data id.");
+      throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "Retained app data needs its retained-data id.");
     }
     const backup = verifyBackup(input.backup, identity, "INPUT_INVALID");
     const serialized = `${JSON.stringify(backup)}\n`;
@@ -650,13 +650,13 @@ export class WorkFoldRecentlyDeletedStore {
       const entryPath = join(this.rootPath, "entries", id);
       const payloadDir = join(entryPath, "payload");
       const payloadPath = join(payloadDir, APP_DATA_FILE);
-      const manifest: WorkFoldRecentlyDeletedManifest = {
+      const manifest: AmpleFileRecentlyDeletedManifest = {
         version: 1,
         id,
         kind: input.kind,
         reason: input.reason,
-        workFolderId,
-        ...(workFolderName === undefined ? {} : { workFolderName }),
+        connectedFolderId,
+        ...(connectedFolderName === undefined ? {} : { connectedFolderName }),
         originalPath: `${identity.appId}/${identity.dataNamespaceId}`,
         sizeBytes: Buffer.byteLength(serialized, "utf8"),
         deletedAt,
@@ -675,7 +675,7 @@ export class WorkFoldRecentlyDeletedStore {
         return { ...completed, entryPath, payloadPath };
       } catch (error) {
         await rm(entryPath, { recursive: true, force: true }).catch(() => undefined);
-        throw new WorkFoldRecentlyDeletedError("MOVE_FAILED", `work-fold could not keep a copy of the app data in ${RECENTLY_DELETED}: ${errorMessage(error)}.`, { cause: error });
+        throw new AmpleFileRecentlyDeletedError("MOVE_FAILED", `AmpleFile could not keep a copy of the app data in ${RECENTLY_DELETED}: ${errorMessage(error)}.`, { cause: error });
       }
     });
   }
@@ -687,10 +687,10 @@ export class WorkFoldRecentlyDeletedStore {
    * taken before the Release store prunes its object, so the restore path
    * re-verifies the envelope's content digest before anything is reinstated.
    */
-  async moveAppReleaseToRecentlyDeleted(input: WorkFoldRecentlyDeletedAppReleaseInput): Promise<WorkFoldRecentlyDeletedEntry> {
+  async moveAppReleaseToRecentlyDeleted(input: AmpleFileRecentlyDeletedAppReleaseInput): Promise<AmpleFileRecentlyDeletedEntry> {
     assertReason(input.reason);
-    const workFolderId = requireText(input.workFolderId, "work-folder id", 160);
-    const workFolderName = input.workFolderName === undefined ? undefined : requireText(input.workFolderName, "work-folder name", 200);
+    const connectedFolderId = requireText(input.connectedFolderId, "Connected Folder id", 160);
+    const connectedFolderName = input.connectedFolderName === undefined ? undefined : requireText(input.connectedFolderName, "Connected Folder name", 200);
     const displayName = input.displayName === undefined ? undefined : requireText(input.displayName, "Display name", 200);
     const receiptId = requireReceiptId(input.receiptId);
     const identity = normalizeAppReleaseIdentity(input.identity);
@@ -703,13 +703,13 @@ export class WorkFoldRecentlyDeletedStore {
       const entryPath = join(this.rootPath, "entries", id);
       const payloadDir = join(entryPath, "payload");
       const payloadPath = join(payloadDir, APP_RELEASE_FILE);
-      const manifest: WorkFoldRecentlyDeletedManifest = {
+      const manifest: AmpleFileRecentlyDeletedManifest = {
         version: 1,
         id,
         kind: "app-release",
         reason: input.reason,
-        workFolderId,
-        ...(workFolderName === undefined ? {} : { workFolderName }),
+        connectedFolderId,
+        ...(connectedFolderName === undefined ? {} : { connectedFolderName }),
         ...(displayName === undefined ? {} : { displayName }),
         originalPath: `${identity.projectId}/${identity.releaseDigest}`,
         sizeBytes: Buffer.byteLength(serialized, "utf8"),
@@ -729,13 +729,13 @@ export class WorkFoldRecentlyDeletedStore {
         return { ...completed, entryPath, payloadPath };
       } catch (error) {
         await rm(entryPath, { recursive: true, force: true }).catch(() => undefined);
-        throw new WorkFoldRecentlyDeletedError("MOVE_FAILED", `work-fold could not keep a copy of the Release in ${RECENTLY_DELETED}: ${errorMessage(error)}.`, { cause: error });
+        throw new AmpleFileRecentlyDeletedError("MOVE_FAILED", `AmpleFile could not keep a copy of the Release in ${RECENTLY_DELETED}: ${errorMessage(error)}.`, { cause: error });
       }
     });
   }
 
   /**
-   * Writes the App Studio history a removed work-folder takes with it as
+   * Writes the App Studio history a removed Connected Folder takes with it as
    * `payload/app-studio/`: the registry records, one file per Release, and a
    * copy of each preview's staged package folder. Everything must name the
    * identity the entry claims; a mismatch is INPUT_INVALID and nothing is
@@ -743,19 +743,19 @@ export class WorkFoldRecentlyDeletedStore {
    * own cleanup stays the only thing that removes them; the restore path
    * re-stages each one against its content digest.
    */
-  async moveAppStudioToRecentlyDeleted(input: WorkFoldRecentlyDeletedAppStudioInput): Promise<WorkFoldRecentlyDeletedEntry> {
+  async moveAppStudioToRecentlyDeleted(input: AmpleFileRecentlyDeletedAppStudioInput): Promise<AmpleFileRecentlyDeletedEntry> {
     assertReason(input.reason);
-    const workFolderId = requireText(input.workFolderId, "work-folder id", 160);
-    const workFolderName = input.workFolderName === undefined ? undefined : requireText(input.workFolderName, "work-folder name", 200);
+    const connectedFolderId = requireText(input.connectedFolderId, "Connected Folder id", 160);
+    const connectedFolderName = input.connectedFolderName === undefined ? undefined : requireText(input.connectedFolderName, "Connected Folder name", 200);
     const displayName = input.displayName === undefined ? undefined : requireText(input.displayName, "Display name", 200);
     const receiptId = requireReceiptId(input.receiptId);
     const identity = normalizeAppStudioIdentity(input.identity);
-    if (identity.workFolderId !== workFolderId) {
-      throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "The App Studio history must belong to the work-folder it is kept for.");
+    if (identity.connectedFolderId !== connectedFolderId) {
+      throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "The App Studio history must belong to the Connected Folder it is kept for.");
     }
     const studio = verifyKeptStudio(input.studio, identity, "INPUT_INVALID");
     if (!Array.isArray(input.releases) || !Array.isArray(input.packages)) {
-      throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "The App Studio history must list its Releases and packages.");
+      throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "The App Studio history must list its Releases and packages.");
     }
     const releases = input.releases.map((item) => {
       const kept = verifyKeptStudioRelease(item, identity, "INPUT_INVALID");
@@ -765,11 +765,11 @@ export class WorkFoldRecentlyDeletedStore {
     const packages: Array<{ digest: string; root: string }> = [];
     for (const item of input.packages) {
       const digest = typeof item?.digest === "string" && PACKAGE_DIGEST_PATTERN.test(item.digest) ? item.digest : null;
-      if (!digest) throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "A kept package needs its content digest.");
+      if (!digest) throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "A kept package needs its content digest.");
       const root = requireAbsolutePath(item.root, "The package folder");
       const info = await lstat(root).catch(() => null);
       if (!info?.isDirectory() || info.isSymbolicLink()) {
-        throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", `The package folder for ${digest} is not a real folder.`);
+        throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `The package folder for ${digest} is not a real folder.`);
       }
       packages.push({ digest, root });
     }
@@ -787,15 +787,15 @@ export class WorkFoldRecentlyDeletedStore {
       const id = newEntryId(deletedAt);
       const entryPath = join(this.rootPath, "entries", id);
       const payloadPath = join(entryPath, "payload", APP_STUDIO_DIR);
-      const manifest: WorkFoldRecentlyDeletedManifest = {
+      const manifest: AmpleFileRecentlyDeletedManifest = {
         version: 1,
         id,
         kind: "app-studio",
         reason: input.reason,
-        workFolderId,
-        ...(workFolderName === undefined ? {} : { workFolderName }),
+        connectedFolderId,
+        ...(connectedFolderName === undefined ? {} : { connectedFolderName }),
         ...(displayName === undefined ? {} : { displayName }),
-        originalPath: identity.projectId ?? identity.workFolderId,
+        originalPath: identity.projectId ?? identity.connectedFolderId,
         sizeBytes: 0,
         deletedAt,
         restoreBy: addDays(deletedAt, this.#settings.retentionDays),
@@ -831,7 +831,7 @@ export class WorkFoldRecentlyDeletedStore {
         await this.#io.rename(building, payloadPath);
         await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
         const measured = await measureTree(payloadPath);
-        const completed: WorkFoldRecentlyDeletedManifest = {
+        const completed: AmpleFileRecentlyDeletedManifest = {
           ...manifest,
           sizeBytes: measured.sizeBytes,
           ...(measured.approximate ? { sizeApproximate: true as const } : {}),
@@ -842,13 +842,13 @@ export class WorkFoldRecentlyDeletedStore {
       } catch (error) {
         await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
         await rm(entryPath, { recursive: true, force: true }).catch(() => undefined);
-        throw new WorkFoldRecentlyDeletedError("MOVE_FAILED", `work-fold could not keep a copy of the App Studio history in ${RECENTLY_DELETED}: ${errorMessage(error)}.`, { cause: error });
+        throw new AmpleFileRecentlyDeletedError("MOVE_FAILED", `AmpleFile could not keep a copy of the App Studio history in ${RECENTLY_DELETED}: ${errorMessage(error)}.`, { cause: error });
       }
     });
   }
 
   /** Every readable entry, newest first, plus the records that could not be trusted. Repairs missed commits. */
-  async list(): Promise<WorkFoldRecentlyDeletedListing> {
+  async list(): Promise<AmpleFileRecentlyDeletedListing> {
     return await this.#mutate(async () => {
       const { entries, damaged } = await this.#readAll(true);
       return { entries, damaged, retentionDays: this.#settings.retentionDays };
@@ -856,40 +856,40 @@ export class WorkFoldRecentlyDeletedStore {
   }
 
   /** One entry by id; null when nothing has that id; STORE_DAMAGED when its record cannot be trusted. */
-  async get(id: string): Promise<WorkFoldRecentlyDeletedEntry | null> {
+  async get(id: string): Promise<AmpleFileRecentlyDeletedEntry | null> {
     assertEntryId(id);
     return await this.#mutate(async () => this.#requireReadable(id, true));
   }
 
   /**
-   * Finishes an interrupted work-folder deletion whose folder reached Recently
+   * Finishes an interrupted Connected Folder deletion whose folder reached Recently
    * deleted before its History state. Existing state is never merged or replaced;
    * a missing source is already finished, and a missed marker write is
    * reconstructed from the carried directory by the normal read path.
    */
-  async attachWorkFolderState(id: string, stateDirPath: string): Promise<WorkFoldRecentlyDeletedEntry> {
+  async attachConnectedFolderState(id: string, stateDirPath: string): Promise<AmpleFileRecentlyDeletedEntry> {
     assertEntryId(id);
-    const source = requireAbsolutePath(stateDirPath, "The work-folder state path");
+    const source = requireAbsolutePath(stateDirPath, "The Connected Folder state path");
     return await this.#mutate(async () => {
       const entry = await this.#requireEntry(id, true);
-      if (entry.kind !== "work-folder" || entry.payload.kind !== "tree") {
-        throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "Only a work-folder can carry History state.", { entryId: id });
+      if (entry.kind !== "connected-folder" || entry.payload.kind !== "tree") {
+        throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "Only a Connected Folder can carry History state.", { entryId: id });
       }
       const sourceInfo = await lstat(source).catch((error: unknown) => {
         if (isNodeError(error, "ENOENT")) return null;
-        throw new WorkFoldRecentlyDeletedError("MOVE_FAILED", `work-fold could not inspect the remaining History state: ${errorMessage(error)}.`, { entryId: id, cause: error });
+        throw new AmpleFileRecentlyDeletedError("MOVE_FAILED", `AmpleFile could not inspect the remaining History state: ${errorMessage(error)}.`, { entryId: id, cause: error });
       });
       if (!sourceInfo) return entry;
       if (!sourceInfo.isDirectory() || sourceInfo.isSymbolicLink()) {
-        throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "The remaining History state must be a real directory.", { entryId: id });
+        throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "The remaining History state must be a real directory.", { entryId: id });
       }
       if (entry.stateDir) {
-        throw new WorkFoldRecentlyDeletedError("MOVE_FAILED", "History state is present both in Recently deleted and at its original path. Neither copy was changed.", { entryId: id });
+        throw new AmpleFileRecentlyDeletedError("MOVE_FAILED", "History state is present both in Recently deleted and at its original path. Neither copy was changed.", { entryId: id });
       }
       try {
         await this.#move(source, join(entry.entryPath, "state"), { stagingDir: this.#newStagingDir() });
       } catch (error) {
-        throw new WorkFoldRecentlyDeletedError("MOVE_FAILED", `work-fold could not keep the remaining History state with ${id}: ${errorMessage(error)}.`, { entryId: id, cause: error });
+        throw new AmpleFileRecentlyDeletedError("MOVE_FAILED", `AmpleFile could not keep the remaining History state with ${id}: ${errorMessage(error)}.`, { entryId: id, cause: error });
       }
       const completed = { ...manifestOf(entry), stateDir: true as const };
       await this.#writeManifest(entry.entryPath, completed).catch(() => undefined);
@@ -898,25 +898,25 @@ export class WorkFoldRecentlyDeletedStore {
   }
 
   /**
-   * Moves a file, folder, work-folder, or Skill folder back. An occupied
-   * destination is collision-renamed with the work-folder.ts rules
+   * Moves a file, folder, Connected Folder, or Skill folder back. An occupied
+   * destination is collision-renamed with the connected-folder.ts rules
    * (`stem (2).ext` for files, `name-2` for folders) unless the caller says
    * the name is an identity. On success the entry directory is removed. On
    * failure the entry is left intact and MOVE_FAILED is thrown.
    */
-  async restoreTree(id: string, destination: WorkFoldRecentlyDeletedRestoreDestination): Promise<WorkFoldRecentlyDeletedRestoreResult> {
+  async restoreTree(id: string, destination: AmpleFileRecentlyDeletedRestoreDestination): Promise<AmpleFileRecentlyDeletedRestoreResult> {
     assertEntryId(id);
     const desired = requireAbsolutePath(destination.absolutePath, "The restore destination");
     return await this.#mutate(async () => {
       const entry = await this.#requireEntry(id, true);
       if (entry.payload.kind !== "tree" && entry.payload.kind !== "skill") {
         const holds = entry.payload.kind === "app-release" ? "a Release" : entry.payload.kind === "app-studio" ? "App Studio history" : "app data";
-        throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", `${id} holds ${holds}, which cannot be put back as a file or folder this way.`);
+        throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${id} holds ${holds}, which cannot be put back as a file or folder this way.`);
       }
       if (destination.onConflict === "error" && existsSync(desired)) {
-        throw new WorkFoldRecentlyDeletedError(
+        throw new AmpleFileRecentlyDeletedError(
           "MOVE_FAILED",
-          `work-fold could not restore ${basename(desired)}: that identity already exists. It is still in ${RECENTLY_DELETED}.`,
+          `AmpleFile could not restore ${basename(desired)}: that identity already exists. It is still in ${RECENTLY_DELETED}.`,
           { entryId: id },
         );
       }
@@ -927,20 +927,20 @@ export class WorkFoldRecentlyDeletedStore {
       if (entry.stateDir) {
         const chosen = destination.stateDirFor ? destination.stateDirFor(finalPath) : destination.stateDirPath;
         if (chosen === undefined) {
-          throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", `${id} carries the work-folder's History state; say where that state goes back.`);
+          throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${id} carries the Connected Folder's History state; say where that state goes back.`);
         }
         stateTarget = requireAbsolutePath(chosen, "The History state destination");
         if (existsSync(stateTarget)) {
-          throw new WorkFoldRecentlyDeletedError(
+          throw new AmpleFileRecentlyDeletedError(
             "MOVE_FAILED",
-            `work-fold could not restore ${basename(finalPath)}: History state already exists at ${stateTarget}. It is still in ${RECENTLY_DELETED}.`,
+            `AmpleFile could not restore ${basename(finalPath)}: History state already exists at ${stateTarget}. It is still in ${RECENTLY_DELETED}.`,
             { entryId: id },
           );
         }
       }
-      const failure = (error: unknown): WorkFoldRecentlyDeletedError => new WorkFoldRecentlyDeletedError(
+      const failure = (error: unknown): AmpleFileRecentlyDeletedError => new AmpleFileRecentlyDeletedError(
         "MOVE_FAILED",
-        `work-fold could not restore ${entry.payload.kind === "tree" || entry.payload.kind === "skill" ? entry.payload.name : id} to ${finalPath}: ${errorMessage(error)}. It is still in ${RECENTLY_DELETED}.`,
+        `AmpleFile could not restore ${entry.payload.kind === "tree" || entry.payload.kind === "skill" ? entry.payload.name : id} to ${finalPath}: ${errorMessage(error)}. It is still in ${RECENTLY_DELETED}.`,
         { entryId: id, cause: error },
       );
       try {
@@ -949,9 +949,9 @@ export class WorkFoldRecentlyDeletedStore {
       } catch (error) {
         if (error instanceof MoveError && error.landed) {
           // The copy is in place but Recently deleted still holds the original; keep it so nothing is lost twice.
-          throw new WorkFoldRecentlyDeletedError(
+          throw new AmpleFileRecentlyDeletedError(
             "MOVE_FAILED",
-            `work-fold copied ${basename(finalPath)} back to ${finalPath} but could not clear the copy in ${RECENTLY_DELETED}: ${error.message}.`,
+            `AmpleFile copied ${basename(finalPath)} back to ${finalPath} but could not clear the copy in ${RECENTLY_DELETED}: ${error.message}.`,
             { entryId: id, cause: error },
           );
         }
@@ -980,31 +980,31 @@ export class WorkFoldRecentlyDeletedStore {
     return await this.#mutate(async () => {
       const entry = await this.#requireEntry(id, false);
       if (entry.payload.kind !== "app-data") {
-        throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", `${id} is a ${entry.kind}, not app data.`);
+        throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${id} is a ${entry.kind}, not app data.`);
       }
       let parsed: unknown;
       try {
         parsed = JSON.parse(await readFile(entry.payloadPath, "utf8"));
       } catch (error) {
-        throw new WorkFoldRecentlyDeletedError("STORE_DAMAGED", `The app data kept as ${id} in ${RECENTLY_DELETED} cannot be read: ${errorMessage(error)}`, { entryId: id, cause: error });
+        throw new AmpleFileRecentlyDeletedError("STORE_DAMAGED", `The app data kept as ${id} in ${RECENTLY_DELETED} cannot be read: ${errorMessage(error)}`, { entryId: id, cause: error });
       }
       return verifyBackup(parsed, entry.payload, "STORE_DAMAGED", id);
     });
   }
 
   /** Reads a kept Release back; a truncated file or one naming another Release is STORE_DAMAGED. */
-  async readAppRelease(id: string): Promise<WorkFoldRecentlyDeletedAppRelease> {
+  async readAppRelease(id: string): Promise<AmpleFileRecentlyDeletedAppRelease> {
     assertEntryId(id);
     return await this.#mutate(async () => {
       const entry = await this.#requireEntry(id, false);
       if (entry.payload.kind !== "app-release") {
-        throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", `${id} is a ${entry.kind}, not a Release.`);
+        throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${id} is a ${entry.kind}, not a Release.`);
       }
       let parsed: unknown;
       try {
         parsed = JSON.parse(await readFile(entry.payloadPath, "utf8"));
       } catch (error) {
-        throw new WorkFoldRecentlyDeletedError("STORE_DAMAGED", `The Release kept as ${id} in ${RECENTLY_DELETED} cannot be read: ${errorMessage(error)}`, { entryId: id, cause: error });
+        throw new AmpleFileRecentlyDeletedError("STORE_DAMAGED", `The Release kept as ${id} in ${RECENTLY_DELETED} cannot be read: ${errorMessage(error)}`, { entryId: id, cause: error });
       }
       const kept = verifyKeptRelease(parsed, entry.payload, "STORE_DAMAGED", id);
       return { identity: { ...entry.payload }, record: kept.record, release: kept.release };
@@ -1014,20 +1014,20 @@ export class WorkFoldRecentlyDeletedStore {
   /**
    * Reads kept App Studio history back: its records, every Release file, and
    * where each kept package folder is. A truncated file, a Release or record
-   * naming another Project or work-folder, or a missing package is
+   * naming another Project or Connected Folder, or a missing package is
    * STORE_DAMAGED. The package bytes themselves are the service's to verify
    * when it re-stages them.
    */
-  async readAppStudio(id: string): Promise<WorkFoldRecentlyDeletedAppStudio> {
+  async readAppStudio(id: string): Promise<AmpleFileRecentlyDeletedAppStudio> {
     assertEntryId(id);
     return await this.#mutate(async () => {
       const entry = await this.#requireEntry(id, false);
       if (entry.payload.kind !== "app-studio") {
-        throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", `${id} is a ${entry.kind}, not App Studio history.`);
+        throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${id} is a ${entry.kind}, not App Studio history.`);
       }
       const identity = entry.payload;
       const damaged = (reason: string, cause?: unknown): never => {
-        throw new WorkFoldRecentlyDeletedError(
+        throw new AmpleFileRecentlyDeletedError(
           "STORE_DAMAGED",
           `The App Studio history kept as ${id} in ${RECENTLY_DELETED} failed its check: ${reason}`,
           { entryId: id, ...(cause === undefined ? {} : { cause }) },
@@ -1046,7 +1046,7 @@ export class WorkFoldRecentlyDeletedStore {
         return damaged("it is not kept App Studio history.");
       }
       const studio = verifyKeptStudio(file.studio, identity, "STORE_DAMAGED", id);
-      const releases: WorkFoldRecentlyDeletedAppStudio["releases"] = [];
+      const releases: AmpleFileRecentlyDeletedAppStudio["releases"] = [];
       for (const digest of file.releases) {
         const match = typeof digest === "string" ? RELEASE_DIGEST_PATTERN.exec(digest) : null;
         if (!match) return damaged("it lists an invalid Release.");
@@ -1092,7 +1092,7 @@ export class WorkFoldRecentlyDeletedStore {
       if (read.state === "entry" && read.entry.held) throw heldError(read.entry.held, id, entryPath);
       const hold = await holdReasonFor(entryPath);
       if (hold) {
-        const held: WorkFoldRecentlyDeletedHold = { reason: hold, noticedAt: this.#now().toISOString() };
+        const held: AmpleFileRecentlyDeletedHold = { reason: hold, noticedAt: this.#now().toISOString() };
         if (read.state === "entry") {
           await this.#writeManifest(entryPath, { ...manifestOf(read.entry), held }).catch(() => undefined);
         }
@@ -1109,9 +1109,9 @@ export class WorkFoldRecentlyDeletedStore {
    * become `held` and stay. Never throws for a single entry; records
    * `lastPurgeAt` in `settings.json`.
    */
-  async purgeExpired(now: Date = this.#now()): Promise<WorkFoldRecentlyDeletedPurgeResult> {
+  async purgeExpired(now: Date = this.#now()): Promise<AmpleFileRecentlyDeletedPurgeResult> {
     return await this.#mutate(async () => {
-      const result: WorkFoldRecentlyDeletedPurgeResult = { purged: [], held: [], failed: [] };
+      const result: AmpleFileRecentlyDeletedPurgeResult = { purged: [], held: [], failed: [] };
       for (const entry of (await this.#readAll(false)).entries) {
         if (entry.held) {
           result.held.push(entry.id);
@@ -1137,9 +1137,9 @@ export class WorkFoldRecentlyDeletedStore {
   }
 
   /** Runs `purgeExpired` only when at least `intervalMs` passed since the last purge (wake-tolerant daily cadence). */
-  async purgeExpiredIfDue(intervalMs: number = WORKFOLD_RECENTLY_DELETED_PURGE_INTERVAL_MS): Promise<WorkFoldRecentlyDeletedPurgeResult | null> {
+  async purgeExpiredIfDue(intervalMs: number = AMPLEFILE_RECENTLY_DELETED_PURGE_INTERVAL_MS): Promise<AmpleFileRecentlyDeletedPurgeResult | null> {
     if (!Number.isFinite(intervalMs) || intervalMs < 0) {
-      throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "The purge interval must be a non-negative number of milliseconds.");
+      throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "The purge interval must be a non-negative number of milliseconds.");
     }
     const now = this.#now();
     const last = this.#settings.lastPurgeAt === null ? Number.NaN : Date.parse(this.#settings.lastPurgeAt);
@@ -1175,7 +1175,7 @@ export class WorkFoldRecentlyDeletedStore {
     this.#settings = settings;
   }
 
-  async #writeManifest(entryPath: string, manifest: WorkFoldRecentlyDeletedManifest): Promise<void> {
+  async #writeManifest(entryPath: string, manifest: AmpleFileRecentlyDeletedManifest): Promise<void> {
     await writeFileAtomic(join(entryPath, MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`);
   }
 
@@ -1226,12 +1226,12 @@ export class WorkFoldRecentlyDeletedStore {
     await rm(parked, { recursive: true, force: true });
   }
 
-  async #readAll(repair: boolean): Promise<{ entries: WorkFoldRecentlyDeletedEntry[]; damaged: WorkFoldRecentlyDeletedDamagedRecord[] }> {
+  async #readAll(repair: boolean): Promise<{ entries: AmpleFileRecentlyDeletedEntry[]; damaged: AmpleFileRecentlyDeletedDamagedRecord[] }> {
     const entriesDir = join(this.rootPath, "entries");
-    const entries: WorkFoldRecentlyDeletedEntry[] = [];
-    const damaged: WorkFoldRecentlyDeletedDamagedRecord[] = [];
+    const entries: AmpleFileRecentlyDeletedEntry[] = [];
+    const damaged: AmpleFileRecentlyDeletedDamagedRecord[] = [];
     for (const name of await readdir(entriesDir).catch(() => [] as string[])) {
-      if (!workFoldRecentlyDeletedEntryIdPattern.test(name)) {
+      if (!ampleFileRecentlyDeletedEntryIdPattern.test(name)) {
         const info = await lstat(join(entriesDir, name)).catch(() => null);
         if (info?.isDirectory()) damaged.push({ id: name, error: `${name} is not a ${RECENTLY_DELETED} record name.` });
         continue;
@@ -1245,18 +1245,18 @@ export class WorkFoldRecentlyDeletedStore {
     return { entries, damaged };
   }
 
-  async #requireReadable(id: string, repair: boolean): Promise<WorkFoldRecentlyDeletedEntry | null> {
+  async #requireReadable(id: string, repair: boolean): Promise<AmpleFileRecentlyDeletedEntry | null> {
     const read = await this.#readEntry(id, repair);
     if (read.state === "absent") return null;
     if (read.state === "damaged") {
-      throw new WorkFoldRecentlyDeletedError("STORE_DAMAGED", `The ${RECENTLY_DELETED} record ${id} is damaged: ${read.error}`, { entryId: id });
+      throw new AmpleFileRecentlyDeletedError("STORE_DAMAGED", `The ${RECENTLY_DELETED} record ${id} is damaged: ${read.error}`, { entryId: id });
     }
     return read.entry;
   }
 
-  async #requireEntry(id: string, repair: boolean): Promise<WorkFoldRecentlyDeletedEntry> {
+  async #requireEntry(id: string, repair: boolean): Promise<AmpleFileRecentlyDeletedEntry> {
     const entry = await this.#requireReadable(id, repair);
-    if (!entry) throw new WorkFoldRecentlyDeletedError("NOT_FOUND", `Nothing in ${RECENTLY_DELETED} has the id ${id}.`, { entryId: id });
+    if (!entry) throw new AmpleFileRecentlyDeletedError("NOT_FOUND", `Nothing in ${RECENTLY_DELETED} has the id ${id}.`, { entryId: id });
     return entry;
   }
 
@@ -1275,7 +1275,7 @@ export class WorkFoldRecentlyDeletedStore {
       }
       return { state: "damaged", id, error: `manifest.json cannot be read: ${errorMessage(error)}` };
     }
-    let manifest: WorkFoldRecentlyDeletedManifest;
+    let manifest: AmpleFileRecentlyDeletedManifest;
     try {
       manifest = parseManifest(JSON.parse(raw));
     } catch (error) {
@@ -1298,8 +1298,8 @@ export class WorkFoldRecentlyDeletedStore {
       if (!isNodeError(error, "ENOENT")) return { state: "damaged", id, error: "its History state cannot be inspected." };
       stateInfo = null;
     }
-    if (stateInfo && (manifest.kind !== "work-folder" || !stateInfo.isDirectory() || stateInfo.isSymbolicLink())) {
-      return { state: "damaged", id, error: "its carried History state is not a valid work-folder state directory." };
+    if (stateInfo && (manifest.kind !== "connected-folder" || !stateInfo.isDirectory() || stateInfo.isSymbolicLink())) {
+      return { state: "damaged", id, error: "its carried History state is not a valid Connected Folder state directory." };
     }
     if (manifest.stateDir && !stateInfo) {
       return { state: "damaged", id, error: "its History state is missing." };
@@ -1329,17 +1329,17 @@ export class WorkFoldRecentlyDeletedStore {
   }
 }
 
-function manifestOf(entry: WorkFoldRecentlyDeletedEntry): WorkFoldRecentlyDeletedManifest {
+function manifestOf(entry: AmpleFileRecentlyDeletedEntry): AmpleFileRecentlyDeletedManifest {
   const { entryPath: _entryPath, payloadPath: _payloadPath, ...manifest } = entry;
   return manifest;
 }
 
-function heldError(held: WorkFoldRecentlyDeletedHold, id: string, entryPath: string): WorkFoldRecentlyDeletedError {
-  return new WorkFoldRecentlyDeletedError(
+function heldError(held: AmpleFileRecentlyDeletedHold, id: string, entryPath: string): AmpleFileRecentlyDeletedError {
+  return new AmpleFileRecentlyDeletedError(
     "HELD",
     held.reason === "legacy-metadata"
-      ? `This item holds records from the earlier Workspace product, so work-fold never erases it. Open its folder to handle it yourself: ${entryPath}`
-      : `work-fold could not look through everything in this item, so it will not erase it. Open its folder to handle it yourself: ${entryPath}`,
+      ? `This item holds records from the earlier Workspace product, so AmpleFile never erases it. Open its folder to handle it yourself: ${entryPath}`
+      : `AmpleFile could not look through everything in this item, so it will not erase it. Open its folder to handle it yourself: ${entryPath}`,
     { entryId: id },
   );
 }
@@ -1353,29 +1353,29 @@ function addDays(iso: string, days: number): string {
 }
 
 function assertRetentionDays(days: number): void {
-  if (!Number.isInteger(days) || days < WORKFOLD_RECENTLY_DELETED_MIN_RETENTION_DAYS || days > WORKFOLD_RECENTLY_DELETED_MAX_RETENTION_DAYS) {
-    throw new WorkFoldRecentlyDeletedError(
+  if (!Number.isInteger(days) || days < AMPLEFILE_RECENTLY_DELETED_MIN_RETENTION_DAYS || days > AMPLEFILE_RECENTLY_DELETED_MAX_RETENTION_DAYS) {
+    throw new AmpleFileRecentlyDeletedError(
       "INPUT_INVALID",
-      `Deleted items can be kept for a whole number of days between ${WORKFOLD_RECENTLY_DELETED_MIN_RETENTION_DAYS} and ${WORKFOLD_RECENTLY_DELETED_MAX_RETENTION_DAYS}.`,
+      `Deleted items can be kept for a whole number of days between ${AMPLEFILE_RECENTLY_DELETED_MIN_RETENTION_DAYS} and ${AMPLEFILE_RECENTLY_DELETED_MAX_RETENTION_DAYS}.`,
     );
   }
 }
 
 function assertEntryId(id: string): void {
-  if (typeof id !== "string" || !workFoldRecentlyDeletedEntryIdPattern.test(id)) {
-    throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", `${RECENTLY_DELETED} ids look like trash-YYYYMMDDHHMMSS-xxxxxxxx.`);
+  if (typeof id !== "string" || !ampleFileRecentlyDeletedEntryIdPattern.test(id)) {
+    throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${RECENTLY_DELETED} ids look like trash-YYYYMMDDHHMMSS-xxxxxxxx.`);
   }
 }
 
-function assertReason(reason: unknown): asserts reason is WorkFoldRecentlyDeletedReason {
-  if (!RECENTLY_DELETED_REASONS.includes(reason as WorkFoldRecentlyDeletedReason)) {
-    throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "The reason must name the delete, work-folder, Skill, app-data, or Release command that produced the item.");
+function assertReason(reason: unknown): asserts reason is AmpleFileRecentlyDeletedReason {
+  if (!RECENTLY_DELETED_REASONS.includes(reason as AmpleFileRecentlyDeletedReason)) {
+    throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "The reason must name the delete, Connected Folder, Skill, app-data, or Release command that produced the item.");
   }
 }
 
 function requireText(value: unknown, label: string, maxLength: number): string {
   if (typeof value !== "string" || !value.trim() || value.length > maxLength || FORBIDDEN_TEXT.test(value)) {
-    throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", `${label} must be plain text of at most ${maxLength} characters.`);
+    throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${label} must be plain text of at most ${maxLength} characters.`);
   }
   return value;
 }
@@ -1387,7 +1387,7 @@ function requireReceiptId(value: unknown): string | null {
 
 function requireAbsolutePath(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim() || !isAbsolute(value) || FORBIDDEN_TEXT.test(value)) {
-    throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", `${label} must be an absolute path.`);
+    throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${label} must be an absolute path.`);
   }
   return resolve(value);
 }
@@ -1395,7 +1395,7 @@ function requireAbsolutePath(value: unknown, label: string): string {
 function payloadNameFor(originalPath: string): string {
   const name = basename(originalPath.replace(/[\\/]+$/, ""));
   if (!isSafeSegment(name)) {
-    throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "The original path must end in a file or folder name.");
+    throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "The original path must end in a file or folder name.");
   }
   return name;
 }
@@ -1405,53 +1405,53 @@ function isSafeSegment(name: string): boolean {
     && !/[\\/\u0000-\u001f]/.test(name);
 }
 
-function normalizeUncovered(value: unknown): WorkFoldRecentlyDeletedUncoveredPath[] {
+function normalizeUncovered(value: unknown): AmpleFileRecentlyDeletedUncoveredPath[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > MAX_UNCOVERED_PATHS) {
-    throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", `The uncovered paths must be a list of at most ${MAX_UNCOVERED_PATHS} items.`);
+    throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `The uncovered paths must be a list of at most ${MAX_UNCOVERED_PATHS} items.`);
   }
   return value.map((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)
       || Object.keys(item).some((key) => key !== "path" && key !== "reason")
-      || !UNCOVERED_REASONS.includes((item as WorkFoldRecentlyDeletedUncoveredPath).reason)) {
-      throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "Each uncovered path needs a path and one of the History skip reasons.");
+      || !UNCOVERED_REASONS.includes((item as AmpleFileRecentlyDeletedUncoveredPath).reason)) {
+      throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "Each uncovered path needs a path and one of the History skip reasons.");
     }
-    return { path: requireText((item as WorkFoldRecentlyDeletedUncoveredPath).path, "An uncovered path", MAX_TEXT_LENGTH), reason: (item as WorkFoldRecentlyDeletedUncoveredPath).reason };
+    return { path: requireText((item as AmpleFileRecentlyDeletedUncoveredPath).path, "An uncovered path", MAX_TEXT_LENGTH), reason: (item as AmpleFileRecentlyDeletedUncoveredPath).reason };
   });
 }
 
-function normalizeSkillPayload(value: unknown): WorkFoldRecentlyDeletedSkillPayload {
+function normalizeSkillPayload(value: unknown): AmpleFileRecentlyDeletedSkillPayload {
   const invalid = (): never => {
-    throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "A kept Skill must name its scope, its folder, and the name Pi loads it under.");
+    throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "A kept Skill must name its scope, its folder, and the name Pi loads it under.");
   };
   if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
-  const raw = value as Partial<WorkFoldRecentlyDeletedSkillPayload>;
+  const raw = value as Partial<AmpleFileRecentlyDeletedSkillPayload>;
   if (Object.keys(raw).some((key) => !["kind", "scope", "name", "skillName"].includes(key)) || raw.kind !== "skill") return invalid();
-  if (!SKILL_SCOPES.includes(raw.scope as WorkFoldRecentlyDeletedSkillPayload["scope"]) || !isSafeSegment(raw.name as string)) return invalid();
+  if (!SKILL_SCOPES.includes(raw.scope as AmpleFileRecentlyDeletedSkillPayload["scope"]) || !isSafeSegment(raw.name as string)) return invalid();
   if (typeof raw.skillName !== "string" || !raw.skillName.trim() || raw.skillName.length > 200 || FORBIDDEN_TEXT.test(raw.skillName)) return invalid();
   return { kind: "skill", scope: raw.scope!, name: raw.name!, skillName: raw.skillName };
 }
 
-function normalizeAppDataIdentity(value: unknown): WorkFoldRecentlyDeletedAppDataIdentity {
+function normalizeAppDataIdentity(value: unknown): AmpleFileRecentlyDeletedAppDataIdentity {
   const invalid = (): never => {
-    throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "The app data identity must name the app, its revision, installation, instance, namespace, source work-folder, and project.");
+    throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "The app data identity must name the app, its revision, installation, instance, namespace, source Connected Folder, and project.");
   };
   if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
   if (Object.keys(value).some((key) => !APP_DATA_IDENTITY_KEYS.has(key))) return invalid();
-  const raw = value as Partial<WorkFoldRecentlyDeletedAppDataIdentity>;
+  const raw = value as Partial<AmpleFileRecentlyDeletedAppDataIdentity>;
   if (raw.kind !== "app-data") return invalid();
   const text = (field: unknown): string => {
     if (typeof field !== "string" || !field.trim() || field.length > 512 || FORBIDDEN_TEXT.test(field)) return invalid();
     return field;
   };
-  const identity: WorkFoldRecentlyDeletedAppDataIdentity = {
+  const identity: AmpleFileRecentlyDeletedAppDataIdentity = {
     kind: "app-data",
     appId: text(raw.appId),
     appDigest: text(raw.appDigest),
     featureInstallationId: text(raw.featureInstallationId),
     runtimeInstanceId: text(raw.runtimeInstanceId),
     dataNamespaceId: text(raw.dataNamespaceId),
-    sourceWorkFolderId: text(raw.sourceWorkFolderId),
+    sourceConnectedFolderId: text(raw.sourceConnectedFolderId),
     projectId: text(raw.projectId),
     releaseDigest: raw.releaseDigest === null ? null : text(raw.releaseDigest),
   };
@@ -1459,13 +1459,13 @@ function normalizeAppDataIdentity(value: unknown): WorkFoldRecentlyDeletedAppDat
   return identity;
 }
 
-function normalizeAppReleaseIdentity(value: unknown): WorkFoldRecentlyDeletedAppReleaseIdentity {
+function normalizeAppReleaseIdentity(value: unknown): AmpleFileRecentlyDeletedAppReleaseIdentity {
   const invalid = (): never => {
-    throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "The Release identity must name its App Project, digest, version, and source work-folder.");
+    throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "The Release identity must name its App Project, digest, version, and source Connected Folder.");
   };
   if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
   if (Object.keys(value).some((key) => !APP_RELEASE_IDENTITY_KEYS.has(key))) return invalid();
-  const raw = value as Partial<WorkFoldRecentlyDeletedAppReleaseIdentity>;
+  const raw = value as Partial<AmpleFileRecentlyDeletedAppReleaseIdentity>;
   if (raw.kind !== "app-release") return invalid();
   const text = (field: unknown): string => {
     if (typeof field !== "string" || !field.trim() || field.length > 512 || FORBIDDEN_TEXT.test(field)) return invalid();
@@ -1476,7 +1476,7 @@ function normalizeAppReleaseIdentity(value: unknown): WorkFoldRecentlyDeletedApp
     projectId: text(raw.projectId),
     releaseDigest: text(raw.releaseDigest),
     displayVersion: text(raw.displayVersion),
-    sourceWorkFolderId: text(raw.sourceWorkFolderId),
+    sourceConnectedFolderId: text(raw.sourceConnectedFolderId),
   };
 }
 
@@ -1487,12 +1487,12 @@ function normalizeAppReleaseIdentity(value: unknown): WorkFoldRecentlyDeletedApp
  */
 function verifyKeptRelease(
   value: unknown,
-  identity: WorkFoldRecentlyDeletedAppReleaseIdentity,
+  identity: AmpleFileRecentlyDeletedAppReleaseIdentity,
   code: "INPUT_INVALID" | "STORE_DAMAGED",
   entryId?: string,
 ): { record: Record<string, unknown>; release: Record<string, unknown> } {
   const fail = (reason: string): never => {
-    throw new WorkFoldRecentlyDeletedError(
+    throw new AmpleFileRecentlyDeletedError(
       code,
       code === "INPUT_INVALID"
         ? `The Release cannot be kept: ${reason}`
@@ -1514,20 +1514,20 @@ function verifyKeptRelease(
   if (record.releaseDigest !== identity.releaseDigest || release.releaseDigest !== identity.releaseDigest) {
     return fail("it names a different Release.");
   }
-  if (record.projectId !== identity.projectId || record.sourceWorkFolderId !== identity.sourceWorkFolderId
+  if (record.projectId !== identity.projectId || record.sourceConnectedFolderId !== identity.sourceConnectedFolderId
     || record.displayVersion !== identity.displayVersion) {
-    return fail("its record names a different App Project, work-folder, or version.");
+    return fail("its record names a different App Project, Connected Folder, or version.");
   }
   return { record, release };
 }
 
-function normalizeAppStudioIdentity(value: unknown): WorkFoldRecentlyDeletedAppStudioIdentity {
+function normalizeAppStudioIdentity(value: unknown): AmpleFileRecentlyDeletedAppStudioIdentity {
   const invalid = (): never => {
-    throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", "The App Studio identity must name its work-folder and App Project.");
+    throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "The App Studio identity must name its Connected Folder and App Project.");
   };
   if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
   if (Object.keys(value).some((key) => !APP_STUDIO_IDENTITY_KEYS.has(key))) return invalid();
-  const raw = value as Partial<WorkFoldRecentlyDeletedAppStudioIdentity>;
+  const raw = value as Partial<AmpleFileRecentlyDeletedAppStudioIdentity>;
   if (raw.kind !== "app-studio" || !Object.hasOwn(raw, "projectId")) return invalid();
   const text = (field: unknown): string => {
     if (typeof field !== "string" || !field.trim() || field.length > 512 || FORBIDDEN_TEXT.test(field)) return invalid();
@@ -1535,24 +1535,24 @@ function normalizeAppStudioIdentity(value: unknown): WorkFoldRecentlyDeletedAppS
   };
   return {
     kind: "app-studio",
-    workFolderId: text(raw.workFolderId),
+    connectedFolderId: text(raw.connectedFolderId),
     projectId: raw.projectId === null ? null : text(raw.projectId),
   };
 }
 
 /**
  * The closed shape of kept App Studio records, and that each one names the
- * entry's work-folder and App Project. Their full shapes and the links between
+ * entry's Connected Folder and App Project. Their full shapes and the links between
  * them are the service's to verify at restore time.
  */
 function verifyKeptStudio(
   value: unknown,
-  identity: WorkFoldRecentlyDeletedAppStudioIdentity,
+  identity: AmpleFileRecentlyDeletedAppStudioIdentity,
   code: "INPUT_INVALID" | "STORE_DAMAGED",
   entryId?: string,
-): WorkFoldRecentlyDeletedAppStudioRecords {
+): AmpleFileRecentlyDeletedAppStudioRecords {
   const fail = (reason: string): never => {
-    throw new WorkFoldRecentlyDeletedError(
+    throw new AmpleFileRecentlyDeletedError(
       code,
       code === "INPUT_INVALID"
         ? `The App Studio history cannot be kept: ${reason}`
@@ -1570,8 +1570,8 @@ function verifyKeptStudio(
   }
   const project = studio.project === null ? null : object(studio.project);
   if (studio.project !== null && !project) return fail("its App Project record is invalid.");
-  if ((project?.projectId ?? null) !== identity.projectId || (project && project.workFolderId !== identity.workFolderId)) {
-    return fail("its App Project names a different Project or work-folder.");
+  if ((project?.projectId ?? null) !== identity.projectId || (project && project.connectedFolderId !== identity.connectedFolderId)) {
+    return fail("its App Project names a different Project or Connected Folder.");
   }
   const owned = [
     ...(studio.runtimeInstances as unknown[]),
@@ -1583,9 +1583,9 @@ function verifyKeptStudio(
   }
   if ((studio.operations as unknown[]).some((record) => {
     const operation = object(record);
-    return !operation || (operation.projectId !== identity.projectId && operation.targetWorkFolderId !== identity.workFolderId);
+    return !operation || (operation.projectId !== identity.projectId && operation.targetConnectedFolderId !== identity.connectedFolderId);
   })) {
-    return fail("a prepared operation belongs to neither this App Project nor this work-folder.");
+    return fail("a prepared operation belongs to neither this App Project nor this Connected Folder.");
   }
   return {
     project: project ?? null,
@@ -1599,12 +1599,12 @@ function verifyKeptStudio(
 /** One kept Release inside App Studio history: its record and envelope name the same Release of this Project. */
 function verifyKeptStudioRelease(
   value: unknown,
-  identity: WorkFoldRecentlyDeletedAppStudioIdentity,
+  identity: AmpleFileRecentlyDeletedAppStudioIdentity,
   code: "INPUT_INVALID" | "STORE_DAMAGED",
   entryId?: string,
 ): { record: Record<string, unknown>; release: Record<string, unknown> } {
   const fail = (reason: string): never => {
-    throw new WorkFoldRecentlyDeletedError(
+    throw new AmpleFileRecentlyDeletedError(
       code,
       code === "INPUT_INVALID"
         ? `The App Studio history cannot be kept: ${reason}`
@@ -1623,15 +1623,15 @@ function verifyKeptStudioRelease(
     || release.releaseDigest !== record.releaseDigest) {
     return fail("a Release envelope names a different Release.");
   }
-  if (identity.projectId === null || record.projectId !== identity.projectId || record.sourceWorkFolderId !== identity.workFolderId) {
-    return fail("a Release belongs to a different App Project or work-folder.");
+  if (identity.projectId === null || record.projectId !== identity.projectId || record.sourceConnectedFolderId !== identity.connectedFolderId) {
+    return fail("a Release belongs to a different App Project or Connected Folder.");
   }
   return { record, release };
 }
 
 function assertUniqueText(values: readonly string[], label: string): void {
   if (new Set(values).size !== values.length) {
-    throw new WorkFoldRecentlyDeletedError("INPUT_INVALID", `The App Studio history lists the same ${label} twice.`);
+    throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `The App Studio history lists the same ${label} twice.`);
   }
 }
 
@@ -1640,9 +1640,9 @@ function assertUniqueText(values: readonly string[], label: string): void {
  * owner identity taken from the export itself, sha256) and checks it names
  * the identity the entry claims.
  */
-function verifyBackup(value: unknown, identity: WorkFoldRecentlyDeletedAppDataIdentity, code: "INPUT_INVALID" | "STORE_DAMAGED", entryId?: string): RestrictedAppDataBackup {
+function verifyBackup(value: unknown, identity: AmpleFileRecentlyDeletedAppDataIdentity, code: "INPUT_INVALID" | "STORE_DAMAGED", entryId?: string): RestrictedAppDataBackup {
   const fail = (reason: string): never => {
-    throw new WorkFoldRecentlyDeletedError(
+    throw new AmpleFileRecentlyDeletedError(
       code,
       code === "INPUT_INVALID"
         ? `The app data export cannot be kept: ${reason}`
@@ -1673,17 +1673,17 @@ function verifyBackup(value: unknown, identity: WorkFoldRecentlyDeletedAppDataId
   }
 }
 
-function parseManifest(value: unknown): WorkFoldRecentlyDeletedManifest {
+function parseManifest(value: unknown): AmpleFileRecentlyDeletedManifest {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("not an object");
   const unknownKey = Object.keys(value).find((key) => !MANIFEST_KEYS.has(key));
   if (unknownKey !== undefined) throw new Error(`unknown field ${unknownKey}`);
   const raw = value as Record<string, unknown>;
   if (raw.version !== 1) throw new Error("unsupported version");
-  if (typeof raw.id !== "string" || !workFoldRecentlyDeletedEntryIdPattern.test(raw.id)) throw new Error("invalid id");
-  if (!RECENTLY_DELETED_KINDS.includes(raw.kind as WorkFoldRecentlyDeletedKind)) throw new Error("invalid kind");
-  if (!RECENTLY_DELETED_REASONS.includes(raw.reason as WorkFoldRecentlyDeletedReason)) throw new Error("invalid reason");
-  if (typeof raw.workFolderId !== "string" || !raw.workFolderId.trim()) throw new Error("invalid spaceId");
-  if (raw.workFolderName !== undefined && (typeof raw.workFolderName !== "string" || !raw.workFolderName.trim())) throw new Error("invalid spaceName");
+  if (typeof raw.id !== "string" || !ampleFileRecentlyDeletedEntryIdPattern.test(raw.id)) throw new Error("invalid id");
+  if (!RECENTLY_DELETED_KINDS.includes(raw.kind as AmpleFileRecentlyDeletedKind)) throw new Error("invalid kind");
+  if (!RECENTLY_DELETED_REASONS.includes(raw.reason as AmpleFileRecentlyDeletedReason)) throw new Error("invalid reason");
+  if (typeof raw.connectedFolderId !== "string" || !raw.connectedFolderId.trim()) throw new Error("invalid spaceId");
+  if (raw.connectedFolderName !== undefined && (typeof raw.connectedFolderName !== "string" || !raw.connectedFolderName.trim())) throw new Error("invalid spaceName");
   if (raw.displayName !== undefined && (typeof raw.displayName !== "string" || !raw.displayName.trim())) throw new Error("invalid displayName");
   if (typeof raw.originalPath !== "string" || !raw.originalPath.trim()) throw new Error("invalid originalPath");
   if (!Number.isSafeInteger(raw.sizeBytes) || (raw.sizeBytes as number) < 0) throw new Error("invalid sizeBytes");
@@ -1694,13 +1694,13 @@ function parseManifest(value: unknown): WorkFoldRecentlyDeletedManifest {
   if (raw.receiptId !== null && (typeof raw.receiptId !== "string" || !raw.receiptId.trim())) throw new Error("invalid receiptId");
   if (typeof raw.complete !== "boolean") throw new Error("invalid complete");
   if (raw.stateDir !== undefined && raw.stateDir !== true) throw new Error("invalid stateDir");
-  const payload = parsePayload(raw.payload, raw.kind as WorkFoldRecentlyDeletedKind);
-  const manifest: WorkFoldRecentlyDeletedManifest = {
+  const payload = parsePayload(raw.payload, raw.kind as AmpleFileRecentlyDeletedKind);
+  const manifest: AmpleFileRecentlyDeletedManifest = {
     version: 1,
     id: raw.id,
-    kind: raw.kind as WorkFoldRecentlyDeletedKind,
-    reason: raw.reason as WorkFoldRecentlyDeletedReason,
-    workFolderId: raw.workFolderId,
+    kind: raw.kind as AmpleFileRecentlyDeletedKind,
+    reason: raw.reason as AmpleFileRecentlyDeletedReason,
+    connectedFolderId: raw.connectedFolderId,
     originalPath: raw.originalPath,
     sizeBytes: raw.sizeBytes as number,
     deletedAt: raw.deletedAt as string,
@@ -1709,11 +1709,11 @@ function parseManifest(value: unknown): WorkFoldRecentlyDeletedManifest {
     payload,
     complete: raw.complete,
   };
-  if (raw.workFolderName !== undefined) manifest.workFolderName = raw.workFolderName as string;
+  if (raw.connectedFolderName !== undefined) manifest.connectedFolderName = raw.connectedFolderName as string;
   if (raw.displayName !== undefined) manifest.displayName = raw.displayName as string;
   if (raw.sizeApproximate === true) manifest.sizeApproximate = true;
   if (raw.stateDir === true) {
-    if (manifest.kind !== "work-folder") throw new Error("only a work-folder entry carries state");
+    if (manifest.kind !== "connected-folder") throw new Error("only a Connected Folder entry carries state");
     manifest.stateDir = true;
   }
   if (raw.uncovered !== undefined) {
@@ -1724,22 +1724,22 @@ function parseManifest(value: unknown): WorkFoldRecentlyDeletedManifest {
     }
   }
   if (raw.held !== undefined) {
-    const held = raw.held as Partial<WorkFoldRecentlyDeletedHold> | null;
+    const held = raw.held as Partial<AmpleFileRecentlyDeletedHold> | null;
     if (!held || typeof held !== "object" || Array.isArray(held)
       || Object.keys(held).some((key) => key !== "reason" && key !== "noticedAt")
-      || !HOLD_REASONS.includes(held.reason as WorkFoldRecentlyDeletedHold["reason"])
+      || !HOLD_REASONS.includes(held.reason as AmpleFileRecentlyDeletedHold["reason"])
       || typeof held.noticedAt !== "string" || !Number.isFinite(Date.parse(held.noticedAt))) {
       throw new Error("invalid held");
     }
-    manifest.held = { reason: held.reason as WorkFoldRecentlyDeletedHold["reason"], noticedAt: held.noticedAt };
+    manifest.held = { reason: held.reason as AmpleFileRecentlyDeletedHold["reason"], noticedAt: held.noticedAt };
   }
   return manifest;
 }
 
-function parsePayload(value: unknown, kind: WorkFoldRecentlyDeletedKind): WorkFoldRecentlyDeletedPayload {
+function parsePayload(value: unknown, kind: AmpleFileRecentlyDeletedKind): AmpleFileRecentlyDeletedPayload {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid payload");
   const raw = value as Record<string, unknown>;
-  if (kind === "file" || kind === "folder" || kind === "work-folder") {
+  if (kind === "file" || kind === "folder" || kind === "connected-folder") {
     if (raw.kind !== "tree" || Object.keys(raw).some((key) => key !== "kind" && key !== "name") || !isSafeSegment(raw.name as string)) {
       throw new Error("invalid tree payload");
     }
@@ -1779,7 +1779,7 @@ async function loadSettings(path: string, defaultRetentionDays: number): Promise
     raw = await readFile(path, "utf8");
   } catch (error) {
     if (!isNodeError(error, "ENOENT")) {
-      throw new WorkFoldRecentlyDeletedError("STORE_DAMAGED", `The ${RECENTLY_DELETED} settings at ${path} cannot be read: ${errorMessage(error)}`, { cause: error });
+      throw new AmpleFileRecentlyDeletedError("STORE_DAMAGED", `The ${RECENTLY_DELETED} settings at ${path} cannot be read: ${errorMessage(error)}`, { cause: error });
     }
     const settings: RecentlyDeletedSettingsFile = { version: 1, retentionDays: defaultRetentionDays, lastPurgeAt: null };
     await writeFileAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
@@ -1789,15 +1789,15 @@ async function loadSettings(path: string, defaultRetentionDays: number): Promise
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    throw new WorkFoldRecentlyDeletedError("STORE_DAMAGED", `The ${RECENTLY_DELETED} settings at ${path} are not valid JSON. Nothing is guessed from a damaged file.`, { cause: error });
+    throw new AmpleFileRecentlyDeletedError("STORE_DAMAGED", `The ${RECENTLY_DELETED} settings at ${path} are not valid JSON. Nothing is guessed from a damaged file.`, { cause: error });
   }
   const record = parsed as Partial<RecentlyDeletedSettingsFile> | null;
   if (!record || typeof record !== "object" || Array.isArray(record)
     || Object.keys(record).some((key) => !["version", "retentionDays", "lastPurgeAt"].includes(key))
     || record.version !== 1
-    || !Number.isInteger(record.retentionDays) || record.retentionDays! < WORKFOLD_RECENTLY_DELETED_MIN_RETENTION_DAYS || record.retentionDays! > WORKFOLD_RECENTLY_DELETED_MAX_RETENTION_DAYS
+    || !Number.isInteger(record.retentionDays) || record.retentionDays! < AMPLEFILE_RECENTLY_DELETED_MIN_RETENTION_DAYS || record.retentionDays! > AMPLEFILE_RECENTLY_DELETED_MAX_RETENTION_DAYS
     || (record.lastPurgeAt !== null && (typeof record.lastPurgeAt !== "string" || !Number.isFinite(Date.parse(record.lastPurgeAt))))) {
-    throw new WorkFoldRecentlyDeletedError("STORE_DAMAGED", `The ${RECENTLY_DELETED} settings at ${path} are not a valid record. Nothing is guessed from a damaged file.`);
+    throw new AmpleFileRecentlyDeletedError("STORE_DAMAGED", `The ${RECENTLY_DELETED} settings at ${path} are not a valid record. Nothing is guessed from a damaged file.`);
   }
   return { version: 1, retentionDays: record.retentionDays!, lastPurgeAt: record.lastPurgeAt ?? null };
 }
@@ -1867,7 +1867,7 @@ async function measureTree(path: string): Promise<{ sizeBytes: number; approxima
 
 /**
  * The clean-break rule: a tree that holds a `.workspace` segment is legacy
- * metadata work-fold never erases. Directories only (symbolic links are not
+ * metadata AmpleFile never erases. Directories only (symbolic links are not
  * descended); an unlistable directory fails closed as `unreadable`.
  */
 /**
@@ -1877,7 +1877,7 @@ async function measureTree(path: string): Promise<{ sizeBytes: number; approxima
  * of an unbounded walk that stalls every later purge behind it. Holding is
  * always the safe answer — it never erases anything.
  */
-async function holdReasonFor(entryPath: string): Promise<WorkFoldRecentlyDeletedHold["reason"] | null> {
+async function holdReasonFor(entryPath: string): Promise<AmpleFileRecentlyDeletedHold["reason"] | null> {
   const stack = [entryPath];
   let visited = 0;
   while (stack.length) {

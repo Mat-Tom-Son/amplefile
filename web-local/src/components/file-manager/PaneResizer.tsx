@@ -12,8 +12,8 @@ export interface PaneWidthSpec {
   max: number;
 }
 
-export const sidebarWidthSpec: PaneWidthSpec = { property: "--fm-sidebar-width", storageKey: "work-fold.file-manager.sidebar-width.v1", defaultWidth: 228, min: 168, max: 360 };
-export const panelWidthSpec: PaneWidthSpec = { property: "--fm-panel-width", storageKey: "work-fold.file-manager.panel-width.v1", defaultWidth: 320, min: 270, max: 600 };
+export const sidebarWidthSpec: PaneWidthSpec = { property: "--fm-sidebar-width", storageKey: "amplefile.file-manager.sidebar-width.v1", defaultWidth: 228, min: 168, max: 360 };
+export const panelWidthSpec: PaneWidthSpec = { property: "--fm-panel-width", storageKey: "amplefile.file-manager.panel-width.v1", defaultWidth: 320, min: 270, max: 600 };
 
 /** The folder list keeps at least this much room between the two panes. */
 const minimumListWidth = 360;

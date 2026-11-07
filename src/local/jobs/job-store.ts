@@ -22,46 +22,46 @@ import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import { workFoldRequestLimits } from "../../shared/work-fold-limits.js";
+import { ampleFileRequestLimits } from "../../shared/amplefile-limits.js";
 import { syncDirectory } from "../agent/turn-store.js";
 import {
-  isWorkFoldJobTerminalState,
-  parseWorkFoldJobRecord,
-  workFoldJobIdPattern,
-  type WorkFoldJobRecord,
+  isAmpleFileJobTerminalState,
+  parseAmpleFileJobRecord,
+  ampleFileJobIdPattern,
+  type AmpleFileJobRecord,
 } from "./job-records.js";
 
 const defaultCompactBytes = 8 * 1024 * 1024;
 
-export interface WorkFoldJobStoreOptions {
+export interface AmpleFileJobStoreOptions {
   rootPath: string;
   now?: () => Date;
   compactBytes?: number;
   retentionDays?: number;
 }
 
-export class WorkFoldJobStore {
+export class AmpleFileJobStore {
   readonly rootPath: string;
   readonly journalPath: string;
   readonly #now: () => Date;
   readonly #compactBytes: number;
   readonly #retentionDays: number;
-  readonly #records = new Map<string, WorkFoldJobRecord>();
+  readonly #records = new Map<string, AmpleFileJobRecord>();
   #damaged = 0;
   #queue: Promise<unknown> = Promise.resolve();
 
-  private constructor(rootPath: string, options: WorkFoldJobStoreOptions) {
+  private constructor(rootPath: string, options: AmpleFileJobStoreOptions) {
     this.rootPath = rootPath;
     this.journalPath = join(rootPath, "jobs.jsonl");
     this.#now = options.now ?? (() => new Date());
     this.#compactBytes = options.compactBytes ?? defaultCompactBytes;
-    this.#retentionDays = options.retentionDays ?? workFoldRequestLimits.retentionDays;
+    this.#retentionDays = options.retentionDays ?? ampleFileRequestLimits.retentionDays;
   }
 
-  static async open(options: WorkFoldJobStoreOptions): Promise<WorkFoldJobStore> {
+  static async open(options: AmpleFileJobStoreOptions): Promise<AmpleFileJobStore> {
     const rootPath = resolve(options.rootPath);
     await mkdir(rootPath, { recursive: true, mode: 0o700 });
-    const store = new WorkFoldJobStore(rootPath, options);
+    const store = new AmpleFileJobStore(rootPath, options);
     await store.#load();
     return store;
   }
@@ -72,7 +72,7 @@ export class WorkFoldJobStore {
   }
 
   outputDirectory(jobId: string): string {
-    if (!workFoldJobIdPattern.test(jobId)) throw new Error("That background job id is invalid.");
+    if (!ampleFileJobIdPattern.test(jobId)) throw new Error("That background job id is invalid.");
     return join(this.rootPath, jobId);
   }
 
@@ -80,31 +80,31 @@ export class WorkFoldJobStore {
     return this.#damaged;
   }
 
-  get(jobId: string): WorkFoldJobRecord | null {
+  get(jobId: string): AmpleFileJobRecord | null {
     const record = this.#records.get(jobId);
     return record ? structuredClone(record) : null;
   }
 
   list(filter: {
-    workFolderId?: string | null;
+    connectedFolderId?: string | null;
     conversationId?: string;
     requestId?: string;
     taskId?: string;
     running?: boolean;
-  } = {}): WorkFoldJobRecord[] {
+  } = {}): AmpleFileJobRecord[] {
     return [...this.#records.values()]
-      .filter((record) => filter.workFolderId === undefined
-        || (filter.workFolderId === null ? record.workFolderId === undefined : record.workFolderId === filter.workFolderId))
+      .filter((record) => filter.connectedFolderId === undefined
+        || (filter.connectedFolderId === null ? record.connectedFolderId === undefined : record.connectedFolderId === filter.connectedFolderId))
       .filter((record) => filter.conversationId === undefined || record.conversationId === filter.conversationId)
       .filter((record) => filter.requestId === undefined || record.requestId === filter.requestId)
       .filter((record) => filter.taskId === undefined || record.taskId === filter.taskId)
-      .filter((record) => filter.running === undefined || filter.running === !isWorkFoldJobTerminalState(record.state))
+      .filter((record) => filter.running === undefined || filter.running === !isAmpleFileJobTerminalState(record.state))
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.jobId.localeCompare(right.jobId))
       .map((record) => structuredClone(record));
   }
 
   /** Appends the first record. Refuses an id already on record. */
-  create(record: WorkFoldJobRecord): Promise<WorkFoldJobRecord> {
+  create(record: AmpleFileJobRecord): Promise<AmpleFileJobRecord> {
     return this.#run(async () => {
       if (this.#records.has(record.jobId)) throw new Error("That background job is already on record.");
       return await this.#write(record);
@@ -112,7 +112,7 @@ export class WorkFoldJobStore {
   }
 
   /** Whole-record update under the store's queue; `mutate` sees the current record. */
-  update(jobId: string, mutate: (record: WorkFoldJobRecord) => WorkFoldJobRecord): Promise<WorkFoldJobRecord> {
+  update(jobId: string, mutate: (record: AmpleFileJobRecord) => AmpleFileJobRecord): Promise<AmpleFileJobRecord> {
     return this.#run(async () => {
       const current = this.#records.get(jobId);
       if (!current) throw new Error("That background job is not on record.");
@@ -127,12 +127,12 @@ export class WorkFoldJobStore {
    * becomes `interrupted`, keeping the process identity so the caller can
    * stop an orphan that is provably the same process. Nothing is re-run.
    */
-  reconcile(reason: string): Promise<WorkFoldJobRecord[]> {
+  reconcile(reason: string): Promise<AmpleFileJobRecord[]> {
     return this.#run(async () => {
       const now = this.#now().toISOString();
-      const settled: WorkFoldJobRecord[] = [];
+      const settled: AmpleFileJobRecord[] = [];
       for (const record of [...this.#records.values()]) {
-        if (isWorkFoldJobTerminalState(record.state)) continue;
+        if (isAmpleFileJobTerminalState(record.state)) continue;
         settled.push(await this.#write({
           ...record,
           state: "interrupted",
@@ -145,11 +145,11 @@ export class WorkFoldJobStore {
       // A job that ended but whose History or request settle a crash cut off
       // is settled as it stands: its end is recorded, its delivery is not owed.
       for (const record of [...this.#records.values()]) {
-        if (!isWorkFoldJobTerminalState(record.state) || record.settledAt !== null) continue;
+        if (!isAmpleFileJobTerminalState(record.state) || record.settledAt !== null) continue;
         settled.push(await this.#write({
           ...record,
           settledAt: now,
-          history: record.history?.status === "pending" ? { status: "unavailable", reason: "work-fold closed before it could save a checkpoint." } : record.history,
+          history: record.history?.status === "pending" ? { status: "unavailable", reason: "AmpleFile closed before it could save a checkpoint." } : record.history,
         }));
       }
       return settled.map((record) => structuredClone(record));
@@ -165,7 +165,7 @@ export class WorkFoldJobStore {
       const at = (now ?? this.#now()).getTime();
       const cutoff = at - this.#retentionDays * 24 * 60 * 60 * 1000;
       const doomed = [...this.#records.values()].filter((record) =>
-        isWorkFoldJobTerminalState(record.state) && record.settledAt !== null && Date.parse(record.settledAt) <= cutoff);
+        isAmpleFileJobTerminalState(record.state) && record.settledAt !== null && Date.parse(record.settledAt) <= cutoff);
       for (const record of doomed) {
         await rm(this.outputDirectory(record.jobId), { recursive: true, force: true }).catch(() => undefined);
         this.#records.delete(record.jobId);
@@ -187,8 +187,8 @@ export class WorkFoldJobStore {
     return result;
   }
 
-  async #write(record: WorkFoldJobRecord): Promise<WorkFoldJobRecord> {
-    const next = parseWorkFoldJobRecord({ ...record, updatedAt: this.#now().toISOString() });
+  async #write(record: AmpleFileJobRecord): Promise<AmpleFileJobRecord> {
+    const next = parseAmpleFileJobRecord({ ...record, updatedAt: this.#now().toISOString() });
     await mkdir(dirname(this.journalPath), { recursive: true, mode: 0o700 });
     await appendFile(this.journalPath, `${JSON.stringify(next)}\n`, { encoding: "utf8", mode: 0o600, flush: true });
     this.#records.set(next.jobId, next);
@@ -199,7 +199,7 @@ export class WorkFoldJobStore {
   async #load(): Promise<void> {
     for (const line of await this.#readJournal(this.journalPath)) {
       try {
-        const record = parseWorkFoldJobRecord(JSON.parse(line));
+        const record = parseAmpleFileJobRecord(JSON.parse(line));
         this.#records.set(record.jobId, record);
       } catch {
         this.#damaged += 1;

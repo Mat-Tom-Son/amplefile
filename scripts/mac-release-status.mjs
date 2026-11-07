@@ -23,10 +23,10 @@ const descriptor = {
   arch,
   mode: "release",
   nodeVersion: process.version,
-  signIdentity: value(process.env.WORKFOLD_MAC_SIGN_IDENTITY || process.env.CSC_NAME),
-  teamId: value(process.env.WORKFOLD_MAC_TEAM_ID || process.env.APPLE_TEAM_ID),
-  feedOwner: value(process.env.WORKFOLD_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner,
-  feedRepo: value(process.env.WORKFOLD_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName,
+  signIdentity: value(process.env.AMPLEFILE_MAC_SIGN_IDENTITY || process.env.CSC_NAME),
+  teamId: value(process.env.AMPLEFILE_MAC_TEAM_ID || process.env.APPLE_TEAM_ID),
+  feedOwner: value(process.env.AMPLEFILE_MAC_RELEASE_OWNER) || identity.sourceRepositoryOwner,
+  feedRepo: value(process.env.AMPLEFILE_MAC_RELEASE_REPO) || identity.macReleaseRepositoryName,
 };
 const path = releaseStatePath(rootDir, identity.productName);
 const state = await readReleaseState(path);

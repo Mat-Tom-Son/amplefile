@@ -2,12 +2,12 @@ import { Fragment, useEffect, useRef, useState, type KeyboardEvent as ReactKeybo
 import { AppWindow, Check, CirclePlus, Copy, ExternalLink, FolderOpen, History, Loader2, MoreHorizontal, PencilLine } from "../chrome/icons";
 import { api, errorText } from "../../lib/api";
 import { copyToClipboard } from "../../lib/clipboard";
-import { workFolderRawFileBlob, workFolderRawFileObjectUrl } from "../../lib/raw-file";
+import { connectedFolderRawFileBlob, connectedFolderRawFileObjectUrl } from "../../lib/raw-file";
 import { nativeOpenLabel, revealInFileManagerLabel } from "../../lib/file-actions";
 import { formatBytes, formatDateTime } from "../../lib/format";
-import { workFolderEntryNativePath } from "../../lib/platform";
+import { connectedFolderEntryNativePath } from "../../lib/platform";
 import { fileExtension } from "../../lib/tree";
-import type { TreeEntry, WorkFolderSummary } from "../../types";
+import type { TreeEntry, ConnectedFolderSummary } from "../../types";
 import { showToast } from "../../ui/feedback";
 import { EmptyInline } from "../chrome/common";
 import { FileTypeIcon } from "../tree/FileTree";
@@ -21,8 +21,8 @@ type FileMenuItem = { key: string; label: string; icon: ReactNode; run: () => vo
 
 type FilePreview = { kind: "text" | "image" | "pdf" | "none"; reason?: string; content?: string; truncated?: boolean; sizeBytes: number };
 
-export function FileDetailsPane({ workFolder, path, entry, active = true, fixtureMode = false, fixtureText, canOpenWith = false, onOpenLocal, onAddToChatContext, onShowVersionHistory, onRename }: {
-  workFolder: WorkFolderSummary;
+export function FileDetailsPane({ connectedFolder, path, entry, active = true, fixtureMode = false, fixtureText, canOpenWith = false, onOpenLocal, onAddToChatContext, onShowVersionHistory, onRename }: {
+  connectedFolder: ConnectedFolderSummary;
   path: string;
   entry: TreeEntry | null;
   active?: boolean;
@@ -41,13 +41,13 @@ export function FileDetailsPane({ workFolder, path, entry, active = true, fixtur
   // `undefined` while the preview is still being read; `null` when none exists.
   const [preview, setPreview] = useState<FilePreview | null | undefined>(undefined);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
-  // Which file content the preview reflects: work-folder, path, and modified time.
+  // Which file content the preview reflects: Connected Folder, path, and modified time.
   // A new modified time refreshes the preview in place; a new path clears it.
   const [contentKey, setContentKey] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copying" | "copied">("idle");
   const copiedTimerRef = useRef<number | null>(null);
   const copyRequestRef = useRef<AbortController | null>(null);
-  const fileKey = `${workFolder.id}\0${path}`;
+  const fileKey = `${connectedFolder.id}\0${path}`;
   const [shownFileKey, setShownFileKey] = useState(fileKey);
   if (shownFileKey !== fileKey) {
     setShownFileKey(fileKey);
@@ -69,16 +69,16 @@ export function FileDetailsPane({ workFolder, path, entry, active = true, fixtur
     let cancelled = false;
     setLoading(true); setMissing(false); setInfo(null);
     if (fixtureMode) {
-      setInfo(entry ? { name: entry.name, path: entry.path, kind: entry.kind, sizeBytes: fixtureText === undefined ? entry.sizeBytes ?? 0 : new TextEncoder().encode(fixtureText).length, createdAt: workFolder.createdAt, modifiedAt: entry.updatedAt ?? workFolder.updatedAt, mimeType: "application/octet-stream" } : null);
+      setInfo(entry ? { name: entry.name, path: entry.path, kind: entry.kind, sizeBytes: fixtureText === undefined ? entry.sizeBytes ?? 0 : new TextEncoder().encode(fixtureText).length, createdAt: connectedFolder.createdAt, modifiedAt: entry.updatedAt ?? connectedFolder.updatedAt, mimeType: "application/octet-stream" } : null);
       setLoading(false);
       return () => { cancelled = true; };
     }
-    void api<{ name: string; path: string; kind: "file" | "folder"; sizeBytes: number; createdAt: string; modifiedAt: string; mimeType: string }>(`/api/work-folders/${workFolder.id}/file-info?path=${encodeURIComponent(path)}`)
+    void api<{ name: string; path: string; kind: "file" | "folder"; sizeBytes: number; createdAt: string; modifiedAt: string; mimeType: string }>(`/api/connected-folders/${connectedFolder.id}/file-info?path=${encodeURIComponent(path)}`)
       .then((result) => { if (!cancelled) { setInfo(result); setContentKey(`${fileKey}\0${result.modifiedAt}`); } })
       .catch((caught) => { if (!cancelled) { const message = errorText(caught); const gone = message.includes("not found") || message.includes("ENOENT") || message.includes("no longer"); setMissing(gone); if (!gone) setContentKey(`${fileKey}\0`); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [entry, fixtureMode, fixtureText, path, workFolder.id]);
+  }, [entry, fixtureMode, fixtureText, path, connectedFolder.id]);
   // The tab shows the file itself, not a card about it: bounded text, common
   // image types, and PDFs render inline; everything else keeps the actions.
   useEffect(() => {
@@ -88,7 +88,7 @@ export function FileDetailsPane({ workFolder, path, entry, active = true, fixtur
     }
     if (!contentKey) return;
     let cancelled = false;
-    void api<{ preview: FilePreview }>(`/api/work-folders/${workFolder.id}/file-preview?path=${encodeURIComponent(path)}`)
+    void api<{ preview: FilePreview }>(`/api/connected-folders/${connectedFolder.id}/file-preview?path=${encodeURIComponent(path)}`)
       .then((result) => { if (!cancelled) setPreview(result.preview); })
       .catch(() => { if (!cancelled) setPreview(null); });
     return () => { cancelled = true; };
@@ -99,7 +99,7 @@ export function FileDetailsPane({ workFolder, path, entry, active = true, fixtur
     setObjectUrl(null);
     const controller = new AbortController();
     let created: string | null = null;
-    void workFolderRawFileObjectUrl(workFolder.id, path, controller.signal)
+    void connectedFolderRawFileObjectUrl(connectedFolder.id, path, controller.signal)
       .then((url) => {
         if (controller.signal.aborted) { URL.revokeObjectURL(url); return; }
         created = url;
@@ -133,7 +133,7 @@ export function FileDetailsPane({ workFolder, path, entry, active = true, fixtur
     copiedTimerRef.current = null;
     setCopyState("copying");
     try {
-      const text = fixtureMode ? fixtureText ?? "" : await (await workFolderRawFileBlob(workFolder.id, path, controller.signal)).text();
+      const text = fixtureMode ? fixtureText ?? "" : await (await connectedFolderRawFileBlob(connectedFolder.id, path, controller.signal)).text();
       if (controller.signal.aborted) return;
       if (markdown) await copyMarkdownToClipboard(text);
       else await copyToClipboard({ text });
@@ -150,7 +150,7 @@ export function FileDetailsPane({ workFolder, path, entry, active = true, fixtur
   }
   async function copyPath() {
     try {
-      await copyToClipboard({ text: workFolderEntryNativePath(workFolder.workFolderRoot, path) });
+      await copyToClipboard({ text: connectedFolderEntryNativePath(connectedFolder.connectedFolderRoot, path) });
       showToast({ text: "Path copied", tone: "success" });
     } catch (caught) {
       showToast({ text: `Couldn't copy the path. ${errorText(caught)}`, tone: "error" });
@@ -166,7 +166,7 @@ export function FileDetailsPane({ workFolder, path, entry, active = true, fixtur
     { key: "history", label: "Version History", icon: <History size={15} />, run: () => onShowVersionHistory(path) },
     ...(onRename ? [{ key: "rename", label: "Rename", icon: <PencilLine size={15} />, run: () => onRename(path), separatorBefore: true }] : []),
   ];
-  if (missing) return <section className="file-details-pane file-details-empty"><EmptyInline text="This file is no longer in the work-folder" /></section>;
+  if (missing) return <section className="file-details-pane file-details-empty"><EmptyInline text="This file is no longer in the Connected Folder" /></section>;
   return (
     <section className="file-details-pane" aria-label={`File details for ${fileName}`}>
       <header className="file-details-header">

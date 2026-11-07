@@ -2,7 +2,7 @@ import { ApiError } from "../lib/api";
 import type { PageCall, PageCallError, PageDataColumn, PageEntriesClient, PageInspection, PageRow, PagesClient, PageTableData, PageTableSummary, PageViewer } from "../lib/pages";
 
 /**
- * The browser preview's page (`?fixture=work-folder`): one RSVP page in
+ * The browser preview's page (`?fixture=connected-folder`): one RSVP page in
  * "Home projects", kept in memory so the page tab can be tried without the
  * local API, with entries made in Preview. The rules here are a small
  * stand-in for the real engine.
@@ -55,10 +55,10 @@ const fixtureHtml = `<!doctype html>
 </main>
 <script>
   async function refresh() {
-    const count = await workFoldPage.count("rsvps");
+    const count = await ampleFilePage.count("rsvps");
     document.getElementById("count").textContent = count === 1 ? "1 person has replied." : count + " people have replied.";
   }
-  workFoldPage.onChange(refresh);
+  ampleFilePage.onChange(refresh);
   refresh();
 </script>
 </body></html>`;
@@ -73,7 +73,7 @@ interface EntryStore {
   lastSeen: string | null;
 }
 
-const fixtureWorkFolderId = "fixture-home";
+const fixtureConnectedFolderId = "fixture-home";
 const fixturePageFiles = [
   { path: "index.html", bytes: 2_410 },
   { path: "page.json", bytes: 602 },
@@ -135,11 +135,11 @@ export function createFixturePagesClient(): PagesClient {
         const { lastSeen } = store;
         return delay([{ name: "rsvps", retired: false, live: current.length, deleted: store.rows.length - current.length, newCount: current.filter((row) => !lastSeen || row.createdAt > lastSeen).length, lastSeen }]);
       },
-      async data(_workFolderId, _page, table, deleted): Promise<PageTableData> {
+      async data(_connectedFolderId, _page, table, deleted): Promise<PageTableData> {
         const shown = store.rows.filter((row) => Boolean(row._deleted) === deleted);
         return delay({ table, columns, rows: shown.map((row) => ({ ...publicRow(row, true), ...(row._deleted ? { deletedAt: row._deleted } : {}) })), total: shown.length, lastSeen: store.lastSeen });
       },
-      async update(_workFolderId, _page, _table, id, values) {
+      async update(_connectedFolderId, _page, _table, id, values) {
         const row = live(store).find((item) => item.id === id);
         if (!row) throw new Error("That entry isn't here any more.");
         const clean = check(store, values, row);
@@ -148,12 +148,12 @@ export function createFixturePagesClient(): PagesClient {
         store.rows = store.rows.map((item) => item.id === id ? next : item);
         return delay(publicRow(next, true));
       },
-      async remove(_workFolderId, _page, _table, ids) {
+      async remove(_connectedFolderId, _page, _table, ids) {
         const stamp = new Date().toISOString();
         store.rows = store.rows.map((row) => ids.includes(row.id) && !row._deleted ? { ...row, _deleted: stamp } : row);
         return delay(ids.length);
       },
-      async restore(_workFolderId, _page, _table, ids) {
+      async restore(_connectedFolderId, _page, _table, ids) {
         store.rows = store.rows.map((row) => ids.includes(row.id) ? { ...row, _deleted: null } : row);
         return delay(ids.length);
       },
@@ -173,8 +173,8 @@ export function createFixturePagesClient(): PagesClient {
   const known = (page: string) => { if (page !== fixturePagePath) throw new ApiError(404, "This folder isn't a page."); };
 
   const client: PagesClient = {
-    async list(workFolderId) { return workFolderId === fixtureWorkFolderId ? [{ path: fixturePagePath, title: "Garden Party RSVP", problemCount: 0 }] : []; },
-    async inspect(_workFolderId, page): Promise<PageInspection> {
+    async list(connectedFolderId) { return connectedFolderId === fixtureConnectedFolderId ? [{ path: fixturePagePath, title: "Garden Party RSVP", problemCount: 0 }] : []; },
+    async inspect(_connectedFolderId, page): Promise<PageInspection> {
       known(page);
       return {
         page: {
@@ -186,11 +186,11 @@ export function createFixturePagesClient(): PagesClient {
       };
     },
     async document() { return delay({ html: fixtureHtml, problems: [] }); },
-    async visitor(_workFolderId, _page, fresh) {
+    async visitor(_connectedFolderId, _page, fresh) {
       if (fresh) currentVisitor = `visitor-${++visitorCount}`;
       return currentVisitor;
     },
-    async call(_workFolderId, _page, viewer: PageViewer, call: PageCall) {
+    async call(_connectedFolderId, _page, viewer: PageViewer, call: PageCall) {
       const owner = viewer.role === "owner";
       const visitor = viewer.role === "owner" ? "owner" : viewer.visitor;
       if (call.table !== "rsvps") return fail({ code: "NOT_FOUND", message: `This page has no table named "${call.table}".` });

@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 // Real IPC, with the OS launch effect replaced by a disposable helper server.
 // No installed helper, desktop permissions, or personal socket is touched.
-const directory = await mkdtemp("/tmp/workfold-cu-recovery-");
+const directory = await mkdtemp("/tmp/amplefile-cu-recovery-");
 const socketPath = join(directory, "helper.sock");
 process.env.PI_COMPUTER_USE_OWNED_SOCKET_PATH = socketPath;
 delete process.env.PI_CU_SOCKET_PATH;

@@ -1,8 +1,8 @@
 /**
  * The image model a person picked in Settings → AI Models (2026-10-11). One
- * machine-wide choice for every Worker and the work-fold agent; no choice
+ * machine-wide choice for every Worker and the AmpleFile agent; no choice
  * means Automatic (docs/image-generation.md). Machine-local app state, never
- * in a work-folder.
+ * in a Connected Folder.
  */
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createRequire, registerHooks } from "node:module";
 import test from "node:test";
 import { createElement, useState } from "react";
-import type { AgentStatus, RestrictedAppInstalled, WorkFolderSummary } from "../web-local/src/types.js";
+import type { AgentStatus, RestrictedAppInstalled, ConnectedFolderSummary } from "../web-local/src/types.js";
 import { createDomHarness } from "./support/dom.js";
 
 const iconNames = Object.keys(createRequire(import.meta.url)("@fluentui/react-icons")).filter((name) => /^[A-Za-z_$][\w$]*$/.test(name));
@@ -21,10 +21,10 @@ const { useRestrictedApps } = await import("../web-local/src/hooks/useRestricted
 const { useApplicationAppearance } = await import("../web-local/src/hooks/useApplicationAppearance.js");
 const { useSurfaceTabs } = await import("../web-local/src/hooks/useSurfaceTabs.js");
 
-const source = { id: "source", name: "App source", workFolderRoot: "/synthetic/source" } as WorkFolderSummary;
-const target = { id: "target", name: "App installation", workFolderRoot: "/synthetic/target" } as WorkFolderSummary;
-const unrelated = { id: "unrelated", name: "Current folder", workFolderRoot: "/synthetic/unrelated" } as WorkFolderSummary;
-const workFolders = [source, target, unrelated];
+const source = { id: "source", name: "App source", connectedFolderRoot: "/synthetic/source" } as ConnectedFolderSummary;
+const target = { id: "target", name: "App installation", connectedFolderRoot: "/synthetic/target" } as ConnectedFolderSummary;
+const unrelated = { id: "unrelated", name: "Current folder", connectedFolderRoot: "/synthetic/unrelated" } as ConnectedFolderSummary;
+const connectedFolders = [source, target, unrelated];
 
 test("Settings Apps stops after a failed catalog read and retries only on request or reopening", async (t) => {
   const dom = await createDomHarness();
@@ -37,16 +37,16 @@ test("Settings Apps stops after a failed catalog read and retries only on reques
   const registered = [target];
   globalThis.fetch = async (input, init) => {
     if (String(input).endsWith("/api/events")) return pendingEvents(init?.signal);
-    assert.ok(String(input).endsWith("/api/work-folders/target/restricted-apps"));
+    assert.ok(String(input).endsWith("/api/connected-folders/target/restricted-apps"));
     attempts++;
     return fail ? Response.json({ error: "Folder unavailable" }, { status: 404 }) : Response.json({ apps: [] });
   };
   function Screen() {
-    const apps = useRestrictedApps({ activeWorkFolderId: "", workFolders: registered, onError });
+    const apps = useRestrictedApps({ activeConnectedFolderId: "", connectedFolders: registered, onError });
     const [open, setOpen] = useState(false);
     return createElement("main", null,
       createElement("button", { id: "toggle-settings", onClick: () => setOpen((value) => !value) }, "Toggle settings"),
-      open ? createElement(SettingsAppsPane, { workFolders: registered, apps }) : null);
+      open ? createElement(SettingsAppsPane, { connectedFolders: registered, apps }) : null);
   }
   const retry = () => [...dom.container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Retry Loading Apps");
   await dom.render(createElement(Screen));
@@ -70,7 +70,7 @@ test("Settings Apps stops after a failed catalog read and retries only on reques
   assert.equal(retry(), undefined);
 });
 
-test("each work-folder group in Settings Apps opens that work-folder's App Studio", async (t) => {
+test("each Connected Folder group in Settings Apps opens that Connected Folder's App Studio", async (t) => {
   const dom = await createDomHarness();
   const originalFetch = globalThis.fetch;
   t.after(async () => { await dom.cleanup(); globalThis.fetch = originalFetch; });
@@ -78,36 +78,36 @@ test("each work-folder group in Settings Apps opens that work-folder's App Studi
     if (String(input).endsWith("/api/events")) return pendingEvents(init?.signal);
     throw new Error(`Unexpected API read: ${String(input)}`);
   };
-  const app = (workFolder: WorkFolderSummary, id: string) => ({ workFolderId: workFolder.id, sourceWorkFolderId: workFolder.id, featureInstallationId: `feature-installation_${id}`,
+  const app = (connectedFolder: ConnectedFolderSummary, id: string) => ({ connectedFolderId: connectedFolder.id, sourceConnectedFolderId: connectedFolder.id, featureInstallationId: `feature-installation_${id}`,
     runtimeInstanceKind: "development", runtimeInstanceId: `runtime-instance_${id}`, packageName: id, version: "1.0.0", digest: "a".repeat(64),
     installedAt: "2026-10-11T00:00:00.000Z", updatedAt: "2026-10-11T00:00:00.000Z", networkGrants: [], fileGrants: [], notificationGrants: [], automations: [],
     manifest: { id, title: id, version: 2, runtime: { kind: "sandboxed-web", entry: "index.html" }, ui: {}, tools: [], automations: [],
       permissions: { network: [], files: [], notifications: [] } } }) as unknown as RestrictedAppInstalled;
   const installed = {
-    appsByWorkFolder: { [source.id]: [app(source, "quotes")], [target.id]: [app(target, "ledger")] },
-    knownWorkFolderIds: new Set(workFolders.map((workFolder) => workFolder.id)), loadingWorkFolderIds: new Set<string>(),
+    appsByConnectedFolder: { [source.id]: [app(source, "quotes")], [target.id]: [app(target, "ledger")] },
+    knownConnectedFolderIds: new Set(connectedFolders.map((connectedFolder) => connectedFolder.id)), loadingConnectedFolderIds: new Set<string>(),
     async refresh() {}, replaceApps() {}, replaceRuntimeInstanceApps() {}, upsertApp() {}, removeApp() {},
   };
   const opened: Array<[string, string | undefined]> = [];
   await dom.render(createElement(SettingsAppsPane, {
-    workFolders, apps: installed as never,
-    onOpenAppStudio: (workFolderId: string, runtimeInstanceId?: string) => { opened.push([workFolderId, runtimeInstanceId]); },
+    connectedFolders, apps: installed as never,
+    onOpenAppStudio: (connectedFolderId: string, runtimeInstanceId?: string) => { opened.push([connectedFolderId, runtimeInstanceId]); },
   }));
   const studioButtons = [...dom.container.querySelectorAll<HTMLButtonElement>("button")].filter((button) => button.textContent === "App Studio");
   assert.deepEqual(studioButtons.map((button) => button.getAttribute("aria-label")), [`Open App Studio for ${source.name}`, `Open App Studio for ${target.name}`],
-    "one App Studio button per work-folder that has apps, in its group heading");
-  assert.equal(dom.container.querySelector(`[aria-label="Apps in ${unrelated.name}"]`), null, "a work-folder without apps has no group");
+    "one App Studio button per Connected Folder that has apps, in its group heading");
+  assert.equal(dom.container.querySelector(`[aria-label="Apps in ${unrelated.name}"]`), null, "a Connected Folder without apps has no group");
   await dom.act(() => studioButtons[1]!.click());
   assert.deepEqual(opened, [[target.id, undefined]]);
 });
 
-test("an app result file leaves both Settings dialogs and activates the installation's work-folder", async (t) => {
+test("an app result file leaves both Settings dialogs and activates the installation's Connected Folder", async (t) => {
   const dom = await createDomHarness();
   const originalFetch = globalThis.fetch;
   t.after(async () => { await dom.cleanup(); globalThis.fetch = originalFetch; });
   HTMLElement.prototype.scrollIntoView = () => {};
   window.matchMedia = (() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
-  const app = { workFolderId: target.id, sourceWorkFolderId: source.id, featureInstallationId: "feature-installation_target", runtimeInstanceKind: "app", runtimeInstanceId: "runtime-instance_target",
+  const app = { connectedFolderId: target.id, sourceConnectedFolderId: source.id, featureInstallationId: "feature-installation_target", runtimeInstanceKind: "app", runtimeInstanceId: "runtime-instance_target",
     packageName: "quotes", version: "1.0.0", digest: "a".repeat(64), installedAt: "2026-09-25T00:00:00.000Z", updatedAt: "2026-09-25T00:00:00.000Z",
     networkGrants: [], fileGrants: [], notificationGrants: [], automations: [],
     manifest: { id: "quotes", title: "Quotes", version: 2, runtime: { kind: "sandboxed-web", entry: "index.html" }, ui: {}, tools: [], automations: [],
@@ -118,33 +118,33 @@ test("an app result file leaves both Settings dialogs and activates the installa
     const path = String(input);
     if (path.endsWith("/api/events")) return pendingEvents(init?.signal);
     if (path.includes("assistant-tasks")) return Response.json({ tasks: [task] });
-    if (path.includes("build-context")) return Response.json({ context: { sourceWorkFolderId: source.id, sourcePath: null, buildConversationId: null, updateTargetRuntimeInstanceId: app.runtimeInstanceId } });
+    if (path.includes("build-context")) return Response.json({ context: { sourceConnectedFolderId: source.id, sourcePath: null, buildConversationId: null, updateTargetRuntimeInstanceId: app.runtimeInstanceId } });
     if (path.includes("connections")) return Response.json({ connections: [] });
     if (path.includes("storage/recovery")) return Response.json({ recovery: null });
     if (path.includes("storage")) return Response.json({ usage: { revision: 0, usageBytes: 0, quotaBytes: 1000, keyCount: 0, keyLimit: 512 } });
     throw new Error(`Unexpected API read: ${path}`);
   };
   const installed = {
-    appsByWorkFolder: { [target.id]: [app] }, knownWorkFolderIds: new Set(workFolders.map((workFolder) => workFolder.id)), loadingWorkFolderIds: new Set<string>(),
+    appsByConnectedFolder: { [target.id]: [app] }, knownConnectedFolderIds: new Set(connectedFolders.map((connectedFolder) => connectedFolder.id)), loadingConnectedFolderIds: new Set<string>(),
     async refresh() {}, replaceApps() {}, replaceRuntimeInstanceApps() {}, upsertApp() {}, removeApp() {},
   };
   const opened: string[][] = [];
   function Screen() {
     const appearance = useApplicationAppearance({ fixtureMode: true });
     const [settingsOpen, setSettingsOpen] = useState(true);
-    const [activeWorkFolder, setActiveWorkFolder] = useState(unrelated);
-    const tabs = useSurfaceTabs({ workFolder: activeWorkFolder, workFolders, fixtureMode: true, onSwitchWorkFolder: setActiveWorkFolder });
+    const [activeConnectedFolder, setActiveConnectedFolder] = useState(unrelated);
+    const tabs = useSurfaceTabs({ connectedFolder: activeConnectedFolder, connectedFolders, fixtureMode: true, onSwitchConnectedFolder: setActiveConnectedFolder });
     const selectedTab = tabs.surfaceTabs.find((tab) => tab.id === tabs.activeSurfaceTabId);
     return createElement("main", null,
       createElement("button", { id: "shell-navigation" }, "Files"),
-      createElement("output", { "data-active-work-folder": activeWorkFolder.id }, selectedTab?.kind === "file" ? selectedTab.path : "Chat"),
+      createElement("output", { "data-active-connected-folder": activeConnectedFolder.id }, selectedTab?.kind === "file" ? selectedTab.path : "Chat"),
       settingsOpen ? createElement(DesktopSettingsModal, {
-        appearance, workFolder: activeWorkFolder, workFolders, restrictedApps: installed, initialPage: "apps", updateStatus: null,
+        appearance, connectedFolder: activeConnectedFolder, connectedFolders, restrictedApps: installed, initialPage: "apps", updateStatus: null,
         agentStatus: { configured: true, ready: true } as AgentStatus, onAgentConfigured() {}, onClose: () => setSettingsOpen(false),
-        onOpenAppResultFile(workFolderId, path) {
-          opened.push([workFolderId, path]);
+        onOpenAppResultFile(connectedFolderId, path) {
+          opened.push([connectedFolderId, path]);
           setSettingsOpen(false);
-          tabs.openFileSurfaceTab(workFolders.find((workFolder) => workFolder.id === workFolderId)!, path);
+          tabs.openFileSurfaceTab(connectedFolders.find((connectedFolder) => connectedFolder.id === connectedFolderId)!, path);
         },
       }) : null);
   }
@@ -157,16 +157,16 @@ test("an app result file leaves both Settings dialogs and activates the installa
   await dom.act(() => dom.container.querySelector<HTMLButtonElement>('[aria-label="Worker result files"] button')!.click());
   await dom.waitFor(() => !dom.container.querySelector('[role="dialog"]'));
   assert.deepEqual(opened, [[target.id, "exports/comparison.md"]]);
-  assert.equal(dom.container.querySelector("output")?.getAttribute("data-active-work-folder"), target.id);
+  assert.equal(dom.container.querySelector("output")?.getAttribute("data-active-connected-folder"), target.id);
   assert.equal(dom.container.querySelector("output")?.textContent, "exports/comparison.md");
   assert.notEqual(dom.container.querySelector<HTMLElement>("#shell-navigation")!.inert, true);
 });
 
-test("a stale saved work-folder cannot fetch apps before bootstrap validates registrations", async (t) => {
+test("a stale saved Connected Folder cannot fetch apps before bootstrap validates registrations", async (t) => {
   const dom = await createDomHarness();
   const originalFetch = globalThis.fetch;
   const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
-  const saved = new Map([["work-fold.work-folder.active", "removed-folder"]]);
+  const saved = new Map([["amplefile.connected-folder.active", "removed-folder"]]);
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
     getItem: (key: string) => saved.get(key) ?? null,
     setItem: (key: string, value: string) => saved.set(key, value),
@@ -205,9 +205,9 @@ test("a stale saved work-folder cannot fetch apps before bootstrap validates reg
   await dom.waitFor(() => Boolean(completeBootstrap));
   await dom.settle();
   assert.deepEqual(appReads, [], "the stale persisted selection has not been admitted by bootstrap");
-  await dom.act(() => completeBootstrap(Response.json({ workFolders: [], agent: { configured: false, ready: false } })));
+  await dom.act(() => completeBootstrap(Response.json({ connectedFolders: [], agent: { configured: false, ready: false } })));
   await dom.waitFor(() => Boolean(dom.container.querySelector(".onboarding-flow")));
-  assert.deepEqual(appReads, [], "the removed work-folder is never fetched after the registry is known");
+  assert.deepEqual(appReads, [], "the removed Connected Folder is never fetched after the registry is known");
   assert.equal(dom.container.querySelector('[role="alert"]'), null);
 });
 

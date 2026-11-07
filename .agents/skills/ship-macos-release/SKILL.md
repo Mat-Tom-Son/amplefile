@@ -1,6 +1,6 @@
 ---
 name: ship-macos-release
-description: Build, inspect, resume, verify, install-test, or publish work-fold macOS release candidates with the repository's Developer ID signing, Apple notarization, artifact verification, and guarded GitHub release lanes. Use when working on macOS packaging or release tooling, preparing an interactive signed candidate, diagnosing a slow or failed Mac build, resuming notarization or publication, auditing release evidence, or shipping a public Mac release.
+description: Build, inspect, resume, verify, install-test, or publish AmpleFile macOS release candidates with the repository's Developer ID signing, Apple notarization, artifact verification, and guarded GitHub release lanes. Use when working on macOS packaging or release tooling, preparing an interactive signed candidate, diagnosing a slow or failed Mac build, resuming notarization or publication, auditing release evidence, or shipping a public Mac release.
 ---
 
 # Ship a macOS release
@@ -74,13 +74,13 @@ and dependency state; hidden lockfile hashes detect ordinary dependency drift.
 
 ## Keep candidate, installed, and published versions distinct
 
-A production-signed macOS candidate has the normal work-fold name, identity,
+A production-signed macOS candidate has the normal AmpleFile name, identity,
 and application-data profile even when launched from `out/mac-rc`. It is not
-the isolated Local Smoke app. An explicit `WORKFOLD_DESKTOP_STATE_DIR` selects
+the isolated Local Smoke app. An explicit `AMPLEFILE_DESKTOP_STATE_DIR` selects
 separate app data but does not isolate Keychain.
 
 Before updater testing or reporting a version, inspect the running executable
-path, the bundle version in `/Applications/work-fold.app`, and the public feed
+path, the bundle version in `/Applications/AmpleFile.app`, and the public feed
 separately. Quit the candidate before opening the installed copy; their shared
 single-instance identity can otherwise keep the candidate running. Removing a
 temporary candidate means removing its bundle, not the shared application data.
@@ -100,7 +100,7 @@ verify the offered version and leave installation and relaunch unclaimed.
    architecture, Node runtime, signing identity, feed, or artifact bytes.
    Changed source, Node/npm, or dependencies also requires fresh local checks.
 
-Never edit `out/builder/work-fold-mac-release-state.json`. A checkpoint is
+Never edit `out/builder/amplefile-mac-release-state.json`. A checkpoint is
 ignored recovery data, not proof by itself. Resume must validate the source
 fingerprint, exact artifact receipts, signed app, notarization staple, and
 Gatekeeper result. Never edit `out/release-checks/local-verification.json`

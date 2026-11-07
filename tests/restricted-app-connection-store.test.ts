@@ -38,7 +38,7 @@ const tenantId = parseTenantId("tenant_local-test");
 const runtimeInstanceId = parseRuntimeInstanceId("runtime-instance_mail-test");
 const featureInstallationId = parseFeatureInstallationId("feature-installation_mail-test");
 const principalId = parsePrincipalId("principal_local-test");
-const featureRevisionDigest = parseAppPlatformArtifactDigest(`work-fold.artifact.v1:sha256:${"b".repeat(64)}`);
+const featureRevisionDigest = parseAppPlatformArtifactDigest(`amplefile.artifact.v1:sha256:${"b".repeat(64)}`);
 const declarationDigest = computeDeclarationDigest({ destinationId: "mail-api", auth: "bearer" });
 
 function binding(overrides: Partial<RestrictedAppConnectionBinding> = {}): RestrictedAppConnectionBinding {
@@ -61,7 +61,7 @@ async function temporaryStore(t: test.TestContext): Promise<{
   encryption: TestEncryption;
   store: EncryptedRestrictedAppConnectionStore;
 }> {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-connections-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-connections-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const file = join(root, "restricted-app-connections.bin");
   const encryption = new TestEncryption();
@@ -85,7 +85,7 @@ test("encrypted connection store persists without exposing plaintext credentials
   assert.equal(persisted.records[0]?.runtimeInstanceId, runtimeInstanceId);
   assert.equal(persisted.records[0]?.featureInstallationId, featureInstallationId);
   assert.deepEqual(persisted.records[0]?.owner, { kind: "instance", runtimeInstanceId });
-  assert.equal("workFolderId" in (persisted.records[0] ?? {}), false);
+  assert.equal("connectedFolderId" in (persisted.records[0] ?? {}), false);
   assert.equal("appId" in (persisted.records[0] ?? {}), false);
   assert.equal("digest" in (persisted.records[0] ?? {}), false);
 
@@ -94,7 +94,7 @@ test("encrypted connection store persists without exposing plaintext credentials
 });
 
 test("removing absent connections never creates an encrypted file or opens the keychain", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-empty-connections-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-empty-connections-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const store = new EncryptedRestrictedAppConnectionStore(join(root, "connections.bin"), {
     isAvailable() { throw new Error("Unexpected keychain access"); },
@@ -118,7 +118,7 @@ test("encrypted connection store binds secrets to Tenant, Runtime Instance, Feat
     binding({ runtimeInstanceId: parseRuntimeInstanceId("runtime-instance_other-test"), owner: { kind: "instance", runtimeInstanceId: parseRuntimeInstanceId("runtime-instance_other-test") } }),
     binding({ featureId: "other-app" }),
     binding({ featureInstallationId: parseFeatureInstallationId("feature-installation_other-test") }),
-    binding({ featureRevisionDigest: parseAppPlatformArtifactDigest(`work-fold.artifact.v1:sha256:${"c".repeat(64)}`) }),
+    binding({ featureRevisionDigest: parseAppPlatformArtifactDigest(`amplefile.artifact.v1:sha256:${"c".repeat(64)}`) }),
     binding({ declarationId: "calendar-api" }),
     binding({ declarationDigest: computeDeclarationDigest({ destinationId: "mail-api", auth: "basic" }) }),
     binding({ targetIdentity: "https://other.example.com" }),
@@ -210,7 +210,7 @@ test("old connection formats are rejected without rewriting their ciphertext", a
   const legacy = {
     schemaVersion: 1,
     records: [{
-      workFolderId: "work-folder-one",
+      connectedFolderId: "connected-folder-one",
       appId: "mail-app",
       digest: "b".repeat(64),
       destinationId: "mail-api",
@@ -282,7 +282,7 @@ test("encrypted connection store rejects the 1,025th record without corrupting t
 
 test("carryForward moves only the listed byte-identical bindings onto the successor revision scope", async (t) => {
   const { store } = await temporaryStore(t);
-  const successorDigest = parseAppPlatformArtifactDigest(`work-fold.artifact.v1:sha256:${"c".repeat(64)}`);
+  const successorDigest = parseAppPlatformArtifactDigest(`amplefile.artifact.v1:sha256:${"c".repeat(64)}`);
   const otherDigest = computeDeclarationDigest({ destinationId: "calendar-api", auth: "api-key" });
   const kept = binding();
   const dropped = binding({ declarationId: "calendar-api", declarationDigest: otherDigest, targetIdentity: "https://calendar.example.com" });

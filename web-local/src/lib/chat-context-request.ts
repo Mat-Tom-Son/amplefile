@@ -3,20 +3,20 @@ import type { RestrictedAppChangeDraft } from "./restricted-apps";
 
 export function chatContextRequestForTab(
   request: ChatContextPathRequest | null,
-  workFolderId: string,
+  connectedFolderId: string,
   surfaceTabId: string,
 ): ChatContextPathRequest | null {
-  return request?.workFolderId === workFolderId && request.surfaceTabId === surfaceTabId
+  return request?.connectedFolderId === connectedFolderId && request.surfaceTabId === surfaceTabId
     ? request
     : null;
 }
 
 export function chatDraftRequestForTab(
   request: ChatDraftRequest | null,
-  workFolderId: string,
+  connectedFolderId: string,
   surfaceTabId: string,
 ): ChatDraftRequest | null {
-  return request?.workFolderId === workFolderId && request.surfaceTabId === surfaceTabId
+  return request?.connectedFolderId === connectedFolderId && request.surfaceTabId === surfaceTabId
     ? request
     : null;
 }

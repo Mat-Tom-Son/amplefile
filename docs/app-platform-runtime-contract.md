@@ -36,8 +36,8 @@ The current desktop runtime already establishes useful constraints:
 
 - reviewed feature bytes are content-addressed and digest-pinned before execution;
 - visible UI and hidden action/automation workers run in separate sandboxed Chromium hosts;
-- main binds each sender to its work-folder, app id, exact Feature Installation, digest, lifecycle, placement, and current grants;
-- network, storage, work-folder files, tabs, and notifications are host brokers rather than ambient browser powers;
+- main binds each sender to its Connected Folder, app id, exact Feature Installation, digest, lifecycle, placement, and current grants;
+- network, storage, Connected Folder files, tabs, and notifications are host brokers rather than ambient browser powers;
 - storage uses revisions and bounded atomic transactions;
 - file writes are grant-relative, atomic, and History-covered;
 - secrets stay in a separate encrypted store and are injected only by the network broker;
@@ -47,7 +47,7 @@ The current desktop runtime already establishes useful constraints:
 
 Those are strong reference semantics. Fixed byte limits, interval vocabulary, Windows delivery, machine-wide concurrency, in-process timers, and Electron lifecycle are current local policy rather than automatically portable law.
 
-work-fold begins with a new runtime authority domain. Legacy Workspace profiles,
+AmpleFile begins with a new runtime authority domain. Legacy Workspace profiles,
 portable `.workspace/` records, registries, storage, connections, receipts, and
 artifacts are never imported or adopted by either adapter and cannot authorize
 a mount, invocation, grant, data namespace, or effect.
@@ -58,7 +58,7 @@ a mount, invocation, grant, data namespace, or effect.
 | --- | --- |
 | **Feature Revision** | Immutable reviewed feature bytes plus their closed declarations, identified by a digest. |
 | **Runtime Instance** | Internal union over exactly two runtime owners: a source-bound, release-less Development Instance or a release-backed App Instance. It is not a user-facing third instance kind. |
-| **Development Instance** | A local Runtime Instance bound to one work-folder and App Project. It runs reviewed Feature Revisions without an App Release. |
+| **Development Instance** | A local Runtime Instance bound to one Connected Folder and App Project. It runs reviewed Feature Revisions without an App Release. |
 | **App Instance** | A release-backed Runtime Instance that may be hosted locally or in the cloud. It always identifies its immutable App Release. |
 | **Feature Installation** | One stable runtime incarnation of a Feature inside one Runtime Instance, with its own current revision, grants, connections, jobs, and complete `AuthorityStamp`. A fresh install receives a fresh id; a reviewed update preserves it. |
 | **Data Namespace** | Mutable Feature data identity separate from executable installation identity. Retention, export, migration, removal, and purge policy decide whether it survives an installation transition. |
@@ -127,7 +127,7 @@ type RuntimeInstanceContext =
   | {
       kind: "development";
       runtimeInstanceId: string;
-      workFolderId: string;
+      connectedFolderId: string;
       projectId: string;
       connectivity: "online" | "offline" | "degraded";
       authorityExpiresAt?: string;
@@ -268,7 +268,7 @@ Portable guarantees:
 - cancellation or revocation is checked before commit; and
 - resource contents never become model context, network payload, or another feature's data implicitly.
 
-The Electron adapter maps `tree` grants to ordinary work-folder-relative files and keeps `.work-fold`, preserved legacy `.workspace`, and `.pi` unavailable; its writes remain atomic and History-covered. A hosted adapter maps grants to a tenant-aware object/document service and records audit lineage. Local History and cloud audit are different host services even when the feature observes the same write result.
+The Electron adapter maps `tree` grants to ordinary Connected Folder–relative files and keeps `.amplefile`, preserved legacy `.workspace`, and `.pi` unavailable; its writes remain atomic and History-covered. A hosted adapter maps grants to a tenant-aware object/document service and records audit lineage. Local History and cloud audit are different host services even when the feature observes the same write result.
 
 A Development Instance may grant selected project files, but publish inputs require visible risk composition and History. When a granted resource mutation commits bytes that are selected publish inputs, the trusted project mutation service must, in one serialized crash-safe transaction, commit the file change, advance the durable project-source generation, invalidate every proposal/review over the prior source generation or digest, and commit its History/receipt metadata before reporting success. A journal or equivalent recovery record must make an interrupted commit complete or fail closed after restart; a successful file write with a still-valid stale publish proposal is forbidden.
 
@@ -333,7 +333,7 @@ Transferring a Runtime Instance to another Tenant is not connection continuity. 
 - No connection changes owner class or Principal owner during transfer. Jobs remain off until their connection, grant, role, and budget dependencies are revalidated under the new Tenant.
 - The transfer receipt names the prior and new Tenant ids, effective Principal and authorizer, connection outcomes, before/after `AuthorityStamp`, and provider-revocation status without containing secrets.
 
-Provider-side credential revocation remains a separate operation and receipt even when transfer disconnects every work-fold-held binding.
+Provider-side credential revocation remains a separate operation and receipt even when transfer disconnects every amplefile-held binding.
 
 ## Actions
 
@@ -441,7 +441,7 @@ Host-specific until deliberately standardized:
 - cost, CPU, memory, network, notification, and wall-time budgets; and
 - retention duration for detailed attempt logs.
 
-The current desktop values—1-minute to 366-day intervals, the machine-wide FIFO slots shown in Settings → Automations → Limits, `skip` overlap, one latest catch-up, a ten-minute worker hang guard that excludes host-call waits, and execution only while work-fold runs—remain local policy. A hosted adapter must publish its actual policy through capability/limit introspection instead of imitating those values accidentally.
+The current desktop values—1-minute to 366-day intervals, the machine-wide FIFO slots shown in Settings → Automations → Limits, `skip` overlap, one latest catch-up, a ten-minute worker hang guard that excludes host-call waits, and execution only while AmpleFile runs—remain local policy. A hosted adapter must publish its actual policy through capability/limit introspection instead of imitating those values accidentally.
 
 A manual run while a schedule is disabled requires independent interactive authority. It does not inherit schedule-only notification or unattended connection authority unless policy explicitly grants the manual invocation those powers.
 
@@ -593,7 +593,7 @@ Revocation is a sequence with observable limits:
 
 Already delivered external effects cannot be recalled. The product must state a revocation-latency objective rather than imply magic rollback.
 
-Every Runtime Instance has an internal governance-policy enum. Its possible internal states distinguish authority administered entirely by the local work-fold profile, authority requiring current cloud policy or a bounded lease, and a mixed policy that assigns those behaviors per named power. These enum labels are implementation/policy vocabulary, not user-facing modes or marketing promises.
+Every Runtime Instance has an internal governance-policy enum. Its possible internal states distinguish authority administered entirely by the local AmpleFile profile, authority requiring current cloud policy or a bounded lease, and a mixed policy that assigns those behaviors per named power. These enum labels are implementation/policy vocabulary, not user-facing modes or marketing promises.
 
 The UI explains concrete outcomes instead of exposing raw governance labels: whether this action can run without a connection, which powers pause and when, the lease expiry or required check-in, which data remains available locally, and when a disconnected device may not yet have received a revocation.
 
@@ -653,11 +653,11 @@ Break-glass access, if ever offered, requires a named incident/purpose, least-pr
 | --- | --- | --- |
 | Principal binding | Trusted main process binds one human, agent, service, or system Principal to the sender, agent turn, or event. | Authenticated human/agent/service/system Principal plus Tenant and Runtime Instance authorization. |
 | Feature binding | Verified staged digest, sender-bound ephemeral origin, and complete host-owned `AuthorityStamp`. | Immutable artifact digest, installation record, worker/image identity, and complete durable `AuthorityStamp`. |
-| Views | Sandboxed `WebContentsView`, rail navigator, work-folder-owned tabs. | Sandboxed browser frame/document and host-owned route/navigation shell. |
+| Views | Sandboxed `WebContentsView`, rail navigator, Connected Folder–owned tabs. | Sandboxed browser frame/document and host-owned route/navigation shell. |
 | Storage | Bounded local host-owned JSON namespace. | Tenant-aware database/service with the same revision/transaction contract. |
-| Resources | Explicit work-folder-relative file grants; atomic History-covered writes. | Explicit object/document collection grants; revisioned writes and audit. |
+| Resources | Explicit Connected Folder–relative file grants; atomic History-covered writes. | Explicit object/document collection grants; revisioned writes and audit. |
 | Network | Main-process public-HTTPS or development loopback broker; OS-encrypted connections. | Egress proxy/service; cloud secret/connection service; destination and tenant policy. |
-| Jobs | In-process scheduler while work-fold runs. | Durable scheduler, queue, leases, fenced workers, retries, and regional policy. |
+| Jobs | In-process scheduler while AmpleFile runs. | Durable scheduler, queue, leases, fenced workers, retries, and regional policy. |
 | Notifications | Static reviewed Windows notifications. | Separately configured web push/email/mobile adapters. |
 | Offline | Internal local governance policy by default; optional linked authority lease later. UI describes the resulting availability and expiry. | Online authority plane; clients may cache display data but do not become workers. |
 | Isolation | Chromium sandbox plus host broker; Electron exploit/DoS risk remains. | Browser isolation plus worker/container/process limits; platform exploit/DoS risk remains. |
@@ -701,7 +701,7 @@ Capability names should be granular, for example `storage.instance.transactions`
 Feature revisions record the runtime contract and declaration digests in the immutable release closure. Updates that change a required API major, data schema, resource kind, connection owner class, job identity, or permission maximum receive explicit review and migration handling.
 
 The current local `agent-app.json` version uses runtime API
-`work-fold.restricted-app-bridge` and the frozen `workFoldRestrictedApp` global.
+`amplefile.restricted-app-bridge` and the frozen `ampleFileRestrictedApp` global.
 They are inputs to a future portable adapter, not aliases for this candidate
 `feature-runtime/v1` contract. No compatibility promise exists until a
 normative contract and conformance tests are accepted.

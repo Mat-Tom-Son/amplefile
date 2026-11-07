@@ -31,6 +31,8 @@ const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 /** Files that name the old spellings on purpose and keep doing so after a rename. */
 const historicalPaths = [
   /^scripts\/rebrand\//,
+  /^docs\/rebrand-plan\.md$/,
+  /^scripts\/vocabulary\/GLOSSARY\.md$/,
   /^scripts\/vocabulary\//,
   /^src\/local\/vocabulary-migration/,
   /^tests\/vocabulary-migration/,
@@ -41,7 +43,7 @@ export const concepts = [
   { id: "agent", label: "work-fold agent", test: (parts) => hasRun(parts, ["work", "fold", "agent"]) },
   { id: "noun", label: "work-folder", test: (parts) => hasRun(parts, ["work", "folder"]) || hasRun(parts, ["work", "folders"]) },
   { id: "brand", label: "work-fold", test: (parts) => hasRun(parts, ["work", "fold"]) || parts.includes("workfold") },
-  { id: "kit", label: "wf (app kit prefix)", test: (parts, token) => /^(--)?wf(-|$)/i.test(token) || parts[0] === "wf" },
+  { id: "kit", label: "wf (app kit prefix)", test: (parts, token) => /^(--)?wf-/i.test(token) },
 ];
 
 export const areas = [
@@ -116,6 +118,14 @@ export function collect() {
       const lineContracts = contractsIn(region.value, file, region.cls);
       for (const match of region.value.matchAll(tokenPattern)) {
         const token = match[0];
+        // Notes that name the old product on purpose: its repository, its
+        // website and hosted services, and the builds that used them.
+        // A quoted old name ("work-folder") is a dated quotation.
+        const after = region.value.slice(match.index + token.length);
+        // The reviewed pi-chrome patch still reads globalThis.workFoldChrome.
+        if (token === "workFoldChrome") continue;
+        if (/^work-fold\.com$/i.test(token) || (/^work-fold$/i.test(token) && /^(?: repositor|'s (?:Web Access|page service)| builds)/.test(after))) continue;
+        if (region.value[match.index - 1] === '"' && after[0] === '"' && region.cls === "doc") continue;
         const parts = wordParts(token);
         let concept = concepts.find((candidate) => candidate.test(parts, token));
         if (!concept) continue;

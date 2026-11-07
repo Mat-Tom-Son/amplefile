@@ -5,7 +5,7 @@ export const includedToolDefinitions = [
   { id: "chrome", title: "Chrome", package: "pi-chrome", version: "0.15.51", description: "Work in your signed-in Chrome profile using separate targets for each Chat." },
   { id: "web", title: "Web", package: "pi-web-access", version: "0.29.0", description: "Search the web and read pages. An optional Brave connection is available." },
   { id: "mcp", title: "Service Connections", package: "@earendil-works/pi-coding-agent", version: "1.1.0", description: "Connect standard MCP tools and services using native Pi discovery." },
-  { id: "documents", title: "Documents", package: "work-fold-document-tools", version: "1.0.0", description: "Create and inspect ordinary documents, spreadsheets, presentations, and PDFs." },
+  { id: "documents", title: "Documents", package: "amplefile-document-tools", version: "1.0.0", description: "Create and inspect ordinary documents, spreadsheets, presentations, and PDFs." },
 ] as const;
 export type IncludedToolDefinition = typeof includedToolDefinitions[number];
 export type IncludedToolId = typeof includedToolDefinitions[number]["id"];
@@ -13,7 +13,7 @@ export type IncludedToolId = typeof includedToolDefinitions[number]["id"];
 export type IncludedToolReadiness = "ready" | "setup_required" | "unavailable" | "unknown";
 export interface IncludedToolStatus {
   id: IncludedToolId; state: IncludedToolReadiness; detail: string; checkedAt: string; stale?: boolean; facts?: Record<string, string | boolean>; chrome?: ChromeConnectionSummary;
-  /** Chrome setup only (2026-10-11): whether Chrome is installed and the extension has reached work-fold. Never read from a Chrome profile. */
+  /** Chrome setup only (2026-10-11): whether Chrome is installed and the extension has reached AmpleFile. Never read from a Chrome profile. */
   chromeSetup?: { browserInstalled: boolean; extensionSeen: boolean };
   /** Documents setup only (2026-10-18): the installed programs that let a Worker check its documents. */
   documentsSetup?: DocumentsSetup;

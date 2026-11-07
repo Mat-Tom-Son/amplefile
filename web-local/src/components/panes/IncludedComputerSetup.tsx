@@ -14,12 +14,12 @@ const watchMs = 5 * 60_000;
 /**
  * Computer Control setup (2026-10-11): one Allow button that asks macOS, then
  * watches until both permissions are on, restarting the helper by itself when
- * Screen Recording needs it. Names the helper macOS lists, work-fold
+ * Screen Recording needs it. Names the helper macOS lists, AmpleFile
  * Computer, so people know what to turn on. Works with or without a
- * work-folder, so first run can offer it.
+ * Connected Folder, so first run can offer it.
  */
-export function IncludedComputerSetup({ workFolderId, enabled, onStatusChange }: {
-  workFolderId?: string;
+export function IncludedComputerSetup({ connectedFolderId, enabled, onStatusChange }: {
+  connectedFolderId?: string;
   enabled: boolean;
   onStatusChange?: (status: IncludedToolStatus | null) => void;
 }) {
@@ -45,7 +45,7 @@ export function IncludedComputerSetup({ workFolderId, enabled, onStatusChange }:
     const controller = new AbortController();
     const read = () => {
       if (request.current || document.visibilityState === "hidden") return;
-      void api<{ tools: IncludedToolStatus[] }>(includedToolsPath(workFolderId), { signal: controller.signal })
+      void api<{ tools: IncludedToolStatus[] }>(includedToolsPath(connectedFolderId), { signal: controller.signal })
         .then(({ tools }) => {
           if (!alive.current || request.current) return;
           publish(tools.find((tool) => tool.id === "computer") ?? null);
@@ -57,7 +57,7 @@ export function IncludedComputerSetup({ workFolderId, enabled, onStatusChange }:
     const timer = window.setInterval(read, 5_000);
     window.addEventListener("focus", read);
     return () => { alive.current = false; controller.abort(); request.current?.abort(); window.clearInterval(timer); window.removeEventListener("focus", read); };
-  }, [workFolderId]);
+  }, [connectedFolderId]);
 
   async function act(action: ComputerAction, quiet = false): Promise<IncludedToolStatus | null> {
     if (request.current || !enabled) return null;
@@ -66,7 +66,7 @@ export function IncludedComputerSetup({ workFolderId, enabled, onStatusChange }:
     if (!quiet) { setBusy(action); setError(null); }
     try {
       const result = await api<{ status: IncludedToolStatus }>("/api/agent/included-tools/setup", {
-        method: "POST", signal: controller.signal, body: includedToolSetupBody(workFolderId, "computer", action),
+        method: "POST", signal: controller.signal, body: includedToolSetupBody(connectedFolderId, "computer", action),
       });
       if (alive.current && !controller.signal.aborted) publish(result.status);
       return result.status;
@@ -141,7 +141,7 @@ export function IncludedComputerSetup({ workFolderId, enabled, onStatusChange }:
               })}
             </ul>
           ) : null}
-          <p className="setup-hint">In System Settings → Privacy &amp; Security, turn on <strong>work-fold Computer</strong>. That is the small helper, part of work-fold, that does the clicking and typing.</p>
+          <p className="setup-hint">In System Settings → Privacy &amp; Security, turn on <strong>AmpleFile Computer</strong>. That is the small helper, part of AmpleFile, that does the clicking and typing.</p>
           {watching ? <p className="setup-waiting" role="status"><Loader2 className="spin" size={14} aria-hidden="true" />Watching for your OK. This updates by itself.</p>
             : <button className="ui-control ui-control--primary" type="button" disabled={Boolean(busy)} onClick={() => void allow()}>{busy === "request-permissions" ? "Asking macOS…" : "Allow Computer Control"}</button>}
         </>

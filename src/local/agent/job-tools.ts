@@ -1,34 +1,34 @@
 /**
  * job_start, job_output, job_stop: the background job tools every Worker and
- * the work-fold agent carry (docs/background-jobs.md). They sit beside Pi's
+ * the AmpleFile agent carry (docs/background-jobs.md). They sit beside Pi's
  * `bash`, which stays the tool for short commands. The tools know their own
- * turn, work-folder, and Chat, so they take no ids or flags; the host behind
- * them is the same job service the `work-fold jobs` verbs use, so both leave
+ * turn, Connected Folder, and Chat, so they take no ids or flags; the host behind
+ * them is the same job service the `amplefile jobs` verbs use, so both leave
  * the same record.
  */
 import { isAbsolute, join, resolve } from "node:path";
 
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
-import { workFoldBackgroundJobLimits } from "../../shared/work-fold-limits.js";
+import { ampleFileBackgroundJobLimits } from "../../shared/amplefile-limits.js";
 import {
   describeJobHistory,
   describeJobState,
-  isWorkFoldJobTerminalState,
-  type WorkFoldJobRecord,
+  isAmpleFileJobTerminalState,
+  type AmpleFileJobRecord,
 } from "../jobs/job-records.js";
 import { describeJobOutputRead, type JobOutputRead } from "../jobs/job-output.js";
-import type { WorkFoldJobShell, WorkFoldJobWaitOutcome } from "../jobs/job-service.js";
+import type { AmpleFileJobShell, AmpleFileJobWaitOutcome } from "../jobs/job-service.js";
 
 /** What the tools need from the host; one instance per Chat client. */
 export interface BackgroundJobToolHost {
-  start(input: { taskId: string; command: string; name?: string; cwd: string; timeoutSeconds?: number; shell: WorkFoldJobShell; interactive?: boolean; service?: boolean }): Promise<WorkFoldJobRecord>;
-  input?(input: { taskId: string; jobId: string; text: string; eof?: boolean }): Promise<WorkFoldJobRecord>;
+  start(input: { taskId: string; command: string; name?: string; cwd: string; timeoutSeconds?: number; shell: AmpleFileJobShell; interactive?: boolean; service?: boolean }): Promise<AmpleFileJobRecord>;
+  input?(input: { taskId: string; jobId: string; text: string; eof?: boolean }): Promise<AmpleFileJobRecord>;
   /** This Chat's jobs, then running jobs elsewhere in the same scope. */
-  list(input: { taskId: string }): { here: WorkFoldJobRecord[]; elsewhere: WorkFoldJobRecord[] };
-  read(input: { taskId: string; jobId: string; offset?: number; limit?: number }): Promise<{ job: WorkFoldJobRecord; output: JobOutputRead }>;
-  wait(input: { taskId: string; jobId: string; seconds: number; until?: RegExp; fromLine?: number; signal?: AbortSignal }): Promise<WorkFoldJobWaitOutcome>;
-  stop(input: { taskId: string; jobId: string }): Promise<WorkFoldJobRecord>;
+  list(input: { taskId: string }): { here: AmpleFileJobRecord[]; elsewhere: AmpleFileJobRecord[] };
+  read(input: { taskId: string; jobId: string; offset?: number; limit?: number }): Promise<{ job: AmpleFileJobRecord; output: JobOutputRead }>;
+  wait(input: { taskId: string; jobId: string; seconds: number; until?: RegExp; fromLine?: number; signal?: AbortSignal }): Promise<AmpleFileJobWaitOutcome>;
+  stop(input: { taskId: string; jobId: string }): Promise<AmpleFileJobRecord>;
 }
 
 export interface BackgroundJobToolsInput {
@@ -38,7 +38,7 @@ export interface BackgroundJobToolsInput {
   /** The running turn's task id; tools refuse outside a turn. */
   taskId: () => string | undefined;
   /** Pi's shell settings, read when a job starts so a settings change applies. */
-  shell: () => WorkFoldJobShell;
+  shell: () => AmpleFileJobShell;
 }
 
 function requireTask(input: BackgroundJobToolsInput): string {
@@ -69,15 +69,15 @@ export function parseUntilPattern(value: unknown): RegExp | undefined {
   }
 }
 
-function jobHeader(job: WorkFoldJobRecord, now: Date): string {
+function jobHeader(job: AmpleFileJobRecord, now: Date): string {
   const pid = job.state === "running" && job.pid ? `; process ${job.pid}` : "";
   return `Background job ${job.jobId} "${job.name}": ${describeJobState(job, now)}${pid}.`;
 }
 
 /** The text a tool returns for one job: its state, History once ended, and its output. */
-export function describeJobForModel(job: WorkFoldJobRecord, output: JobOutputRead | null, now: Date, notes: string[] = []): string {
+export function describeJobForModel(job: AmpleFileJobRecord, output: JobOutputRead | null, now: Date, notes: string[] = []): string {
   const lines = [jobHeader(job, now)];
-  if (isWorkFoldJobTerminalState(job.state)) lines.push(describeJobHistory(job.history));
+  if (isAmpleFileJobTerminalState(job.state)) lines.push(describeJobHistory(job.history));
   else if (job.serving) lines.push(servingNote(job.serving));
   lines.push(...notes);
   if (output) {
@@ -92,7 +92,7 @@ function servingNote(address: string): string {
   return `It is serving ${address}. Look at it with browser_open when that tool is available, and write the address in your reply: the person can click it to open it as a browser tab.`;
 }
 
-function describeWait(outcome: WorkFoldJobWaitOutcome | null, seconds: number): string[] {
+function describeWait(outcome: AmpleFileJobWaitOutcome | null, seconds: number): string[] {
   if (!outcome) return [];
   switch (outcome.outcome) {
     case "matched": return [`Matched line ${outcome.line}: ${outcome.text}`];
@@ -109,15 +109,15 @@ function resolveCwd(root: string, value: unknown): string {
 }
 
 export function createBackgroundJobTools(input: BackgroundJobToolsInput): ToolDefinition<any>[] {
-  const defaultWait = workFoldBackgroundJobLimits.defaultStartWaitSeconds;
+  const defaultWait = ampleFileBackgroundJobLimits.defaultStartWaitSeconds;
   const start: ToolDefinition<any> = {
     name: "job_start",
     label: "Start background job",
-    description: `Start a shell command as a background job that keeps running after this call returns. Use it instead of bash for anything that may take more than a couple of minutes — exports, conversions, installs, builds, test suites, servers — or whose partial output decides your next step. Returns the job id and its output so far after waiting up to ${defaultWait} seconds (wait), or as soon as it exits or a line matches until. A command that finishes inside the wait returns like bash. If your turn ends first, work-fold brings the job's result back to this Chat once when it ends.`,
+    description: `Start a shell command as a background job that keeps running after this call returns. Use it instead of bash for anything that may take more than a couple of minutes — exports, conversions, installs, builds, test suites, servers — or whose partial output decides your next step. Returns the job id and its output so far after waiting up to ${defaultWait} seconds (wait), or as soon as it exits or a line matches until. A command that finishes inside the wait returns like bash. If your turn ends first, AmpleFile brings the job's result back to this Chat once when it ends.`,
     promptSnippet: "Start a long-running shell command in the background",
     promptGuidelines: [
       "Use job_start for anything that may take more than a couple of minutes, or whose partial output decides the next step; use bash for everything else.",
-      "After job_start, keep working, or finish your turn and say what is running: work-fold brings a job's result back to this Chat once when it ends. Never poll in a loop or sleep waiting for it. Use job_output's wait or until only when nothing else is left and the result is close, such as a server's ready line.",
+      "After job_start, keep working, or finish your turn and say what is running: AmpleFile brings a job's result back to this Chat once when it ends. Never poll in a loop or sleep waiting for it. Use job_output's wait or until only when nothing else is left and the result is close, such as a server's ready line.",
       "Stop servers and watchers you started with job_stop when the work no longer needs them.",
       "timeout is the maximum lifetime of the whole command in seconds; wait controls how soon this tool returns. For an immediate return set wait:0 and omit timeout, or give the command enough time for model/tool round trips. Never use a tiny timeout to make job_start return quickly.",
     ],
@@ -161,7 +161,7 @@ export function createBackgroundJobTools(input: BackgroundJobToolsInput): ToolDe
         ? await input.host.wait({ taskId, jobId: job.jobId, seconds, ...(until ? { until } : {}), ...(signal ? { signal } : {}) })
         : null;
       const read = await input.host.read({ taskId, jobId: job.jobId });
-      const ended = isWorkFoldJobTerminalState(read.job.state);
+      const ended = isAmpleFileJobTerminalState(read.job.state);
       // Still running after the default wait is the ordinary case, not news.
       const waitNote = waited?.outcome === "timed_out" && !until ? null : waited;
       const notes = [
@@ -170,7 +170,7 @@ export function createBackgroundJobTools(input: BackgroundJobToolsInput): ToolDe
         ...describeWait(waitNote, seconds),
         ...(ended ? [] : [job.service
           ? `This service keeps running independently of request completion. Read it with job_output (job "${job.jobId}") and stop it with job_stop when no longer needed. Its exit does not start a follow-up turn.`
-          : `It keeps running. Read it with job_output (job "${job.jobId}"; wait or until to wait for it) and stop it with job_stop. If your turn ends first, work-fold brings its result back to this Chat when it ends.`]),
+          : `It keeps running. Read it with job_output (job "${job.jobId}"; wait or until to wait for it) and stop it with job_stop. If your turn ends first, AmpleFile brings its result back to this Chat when it ends.`]),
       ];
       const endedBadly = ended && (read.job.state !== "exited" || read.job.exitCode !== 0);
       return {
@@ -184,14 +184,14 @@ export function createBackgroundJobTools(input: BackgroundJobToolsInput): ToolDe
   const output: ToolDefinition<any> = {
     name: "job_output",
     label: "Background job output",
-    description: `Read a background job's state and output. Without job, lists this Chat's jobs and any running elsewhere in this folder. By default returns the end of the output (at most ${workFoldBackgroundJobLimits.readMaxLines} lines or ${workFoldBackgroundJobLimits.readMaxBytes / 1024} KB); offset and limit page through it from a line, and nextOffset reads only what is new. wait returns early when the job ends; until returns as soon as a line matches.`,
+    description: `Read a background job's state and output. Without job, lists this Chat's jobs and any running elsewhere in this folder. By default returns the end of the output (at most ${ampleFileBackgroundJobLimits.readMaxLines} lines or ${ampleFileBackgroundJobLimits.readMaxBytes / 1024} KB); offset and limit page through it from a line, and nextOffset reads only what is new. wait returns early when the job ends; until returns as soon as a line matches.`,
     promptSnippet: "Read a background job's status and output",
     parameters: {
       type: "object",
       properties: {
         job: { type: "string", description: "The job id from job_start. Leave it out to list jobs." },
         offset: { type: "integer", minimum: 1, description: "First line to read, counted from the job's first line of output." },
-        limit: { type: "integer", minimum: 1, description: `Lines to read from offset (at most ${workFoldBackgroundJobLimits.readMaxBytes / 1024} KB are returned per call).` },
+        limit: { type: "integer", minimum: 1, description: `Lines to read from offset (at most ${ampleFileBackgroundJobLimits.readMaxBytes / 1024} KB are returned per call).` },
         wait: { type: "number", minimum: 0, description: "Seconds to wait for the job to end (or for until to match) before reading. Defaults to 0." },
         until: { type: "string", description: "A pattern (JavaScript regular expression) to wait for in the output, tested from offset when given." },
       },
@@ -204,7 +204,7 @@ export function createBackgroundJobTools(input: BackgroundJobToolsInput): ToolDe
       if (value.job === undefined || value.job === null || value.job === "") {
         const { here, elsewhere } = input.host.list({ taskId });
         const lines = here.length
-          ? ["Background jobs in this Chat:", ...here.map((job) => `- ${job.jobId} "${job.name}" — ${describeJobState(job, now)}${job.serving && !isWorkFoldJobTerminalState(job.state) ? `; serving ${job.serving}` : ""}`)]
+          ? ["Background jobs in this Chat:", ...here.map((job) => `- ${job.jobId} "${job.name}" — ${describeJobState(job, now)}${job.serving && !isAmpleFileJobTerminalState(job.state) ? `; serving ${job.serving}` : ""}`)]
           : ["No background jobs in this Chat."];
         if (elsewhere.length) lines.push("Running elsewhere in this folder:", ...elsewhere.map((job) => `- ${job.jobId} "${job.name}" — ${describeJobState(job, now)}`));
         return { content: [{ type: "text" as const, text: lines.join("\n") }], details: { jobs: here.length } };
@@ -228,7 +228,7 @@ export function createBackgroundJobTools(input: BackgroundJobToolsInput): ToolDe
   const stop: ToolDefinition<any> = {
     name: "job_stop",
     label: "Stop background job",
-    description: `Stop a background job: SIGTERM to its whole process group, then SIGKILL after ${workFoldBackgroundJobLimits.stopGraceMs / 1000} seconds. Returns its final state and the end of its output.`,
+    description: `Stop a background job: SIGTERM to its whole process group, then SIGKILL after ${ampleFileBackgroundJobLimits.stopGraceMs / 1000} seconds. Returns its final state and the end of its output.`,
     promptSnippet: "Stop a background job",
     parameters: {
       type: "object",

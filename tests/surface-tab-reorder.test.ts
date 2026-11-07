@@ -9,11 +9,11 @@ import test from "node:test";
 import ts from "typescript";
 
 test("real tab dragging reorders, cancels, scrolls and respects groups and reduced motion", { timeout: 60_000 }, async (t) => {
-  const candidates = [process.env.WORKFOLD_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[];
+  const candidates = [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].filter(Boolean) as string[];
   let browser: string | undefined;
   for (const candidate of candidates) { try { await access(candidate); browser = candidate; break; } catch {} }
   if (!browser) { t.skip("Chromium is required for real layout and animation coverage."); return; }
-  const scratch = await mkdtemp(join(tmpdir(), "work-fold-tab-reorder-"));
+  const scratch = await mkdtemp(join(tmpdir(), "amplefile-tab-reorder-"));
   try {
     const css = (await Promise.all(["brand.css", "styles.css", "application-appearance.css"].map(name => readFile(resolve("web-local/src", name), "utf8")))).join("\n");
     const source = await readFile(resolve("web-local/src/lib/surface-tab-reorder.ts"), "utf8");
@@ -21,7 +21,7 @@ test("real tab dragging reorders, cancels, scrolls and respects groups and reduc
     const html = `<!doctype html><html data-theme="light" data-appearance-motion="system"><head><style>${css}
       .surface-tabbar { width:600px; } .surface-tab { flex:none!important; width:150px!important; }
       </style></head><body><div class="app-shell"><div class="surface-tabbar"><div class="surface-tabs">
-      ${["a", "b", "c", "d"].map((id,index) => `<span class="surface-tab ${index === 0 ? "active" : ""}" data-tab-id="${id}" data-work-folder-id="${index < 2 ? "one" : "two"}"><button class="surface-tab-main">${id}</button><button class="surface-tab-close">Close</button></span>`).join("")}
+      ${["a", "b", "c", "d"].map((id,index) => `<span class="surface-tab ${index === 0 ? "active" : ""}" data-tab-id="${id}" data-connected-folder-id="${index < 2 ? "one" : "two"}"><button class="surface-tab-main">${id}</button><button class="surface-tab-close">Close</button></span>`).join("")}
       </div></div><textarea id="draft">Unsent draft</textarea></div><pre id="result">pending</pre><script>${script}
       (async () => {
         const strip=document.querySelector('.surface-tabs'); const elements=[...strip.querySelectorAll('.surface-tab')];

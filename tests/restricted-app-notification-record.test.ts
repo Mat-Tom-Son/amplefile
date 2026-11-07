@@ -21,7 +21,7 @@ import {
 } from "../web-local/src/lib/restricted-app-notification-record.js";
 
 const digest = "1".repeat(64);
-const scope = { workFolderId: "ws-1111111111111111", appId: "screenshots", featureInstallationId: "feature-installation_one" };
+const scope = { connectedFolderId: "ws-1111111111111111", appId: "screenshots", featureInstallationId: "feature-installation_one" };
 
 function outcome(overrides: Partial<RestrictedAppNotificationOutcome> = {}): RestrictedAppNotificationOutcome {
   return {
@@ -36,14 +36,14 @@ function outcome(overrides: Partial<RestrictedAppNotificationOutcome> = {}): Res
 }
 
 async function sandbox(t: test.TestContext): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-notification-record-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-notification-record-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }
 
 /**
  * Each `notifications.show` outcome lands in a bounded machine-local record
- * outside every work-folder (docs/restricted-app-runtime.md): when, which app
+ * outside every Connected Folder (docs/restricted-app-runtime.md): when, which app
  * and installation, the reviewed category and its title, and what happened.
  */
 test("the notification record keeps each outcome per installation, newest first, across a restart", async (t) => {
@@ -65,7 +65,7 @@ test("the notification record keeps each outcome per installation, newest first,
     ["rate-limited", "2026-10-11T19:05:00.000Z"],
     ["shown", "2026-10-11T19:02:00.000Z"],
   ], "one installation's outcomes, newest first, across code changes");
-  assert.deepEqual(Object.keys(listed[0]!).sort(), ["appId", "at", "digest", "featureInstallationId", "id", "permissionId", "status", "title", "v", "workFolderId"].sort(),
+  assert.deepEqual(Object.keys(listed[0]!).sort(), ["appId", "at", "digest", "featureInstallationId", "id", "permissionId", "status", "title", "v", "connectedFolderId"].sort(),
     "the record names the category and its title — never a route, state, or other app content");
   assert.deepEqual((await record.list(scope, 1)).map((entry) => entry.status), ["unsupported"]);
 
@@ -117,7 +117,7 @@ class Sink {
 
 function context(overrides: Record<string, unknown> = {}) {
   return {
-    workFolderId: scope.workFolderId,
+    connectedFolderId: scope.connectedFolderId,
     appId: scope.appId,
     featureInstallationId: scope.featureInstallationId,
     digest,
@@ -163,13 +163,13 @@ test("Settings → Apps reads one exact installation's notification record throu
   const api = await startLocalApi({
     port: 0,
     stateBase: join(root, "state"),
-    workFolderBase: join(root, "work-folders"),
+    connectedFolderBase: join(root, "connected-folders"),
     loadEnv: false,
     appNotificationRecord: record,
   });
   try {
-    const created = await api.actFacade.createWorkFolder({ name: "Screenshots" });
-    const packageRoot = join(created.workFolder.workFolderRoot, "app");
+    const created = await api.actFacade.createConnectedFolder({ name: "Screenshots" });
+    const packageRoot = join(created.connectedFolder.connectedFolderRoot, "app");
     await mkdir(packageRoot, { recursive: true });
     await writeFile(join(packageRoot, "package.json"), JSON.stringify({ name: "screenshots", version: "1.0.0", private: true, type: "module", agentApp: "agent-app.json" }), "utf8");
     await writeFile(join(packageRoot, "agent-app.json"), JSON.stringify({
@@ -178,11 +178,11 @@ test("Settings → Apps reads one exact installation's notification record throu
       permissions: { network: [], files: [], notifications: [] },
     }), "utf8");
     await writeFile(join(packageRoot, "index.html"), "<!doctype html><title>Screenshots</title>", "utf8");
-    await api.actFacade.appsInstallPreview({ workFolder: created.workFolder.id, packagePath: "app" });
-    const base = `${api.origin}/api/work-folders/${created.workFolder.id}/restricted-apps`;
+    await api.actFacade.appsInstallPreview({ connectedFolder: created.connectedFolder.id, packagePath: "app" });
+    const base = `${api.origin}/api/connected-folders/${created.connectedFolder.id}/restricted-apps`;
     const app = ((await (await fetch(base)).json()) as { apps: RestrictedAppInstalled[] }).apps[0]!;
-    await record.record(outcome({ workFolderId: app.workFolderId, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, digest: app.digest }));
-    await record.record(outcome({ workFolderId: app.workFolderId, appId: app.manifest.id, featureInstallationId: "feature-installation_other", digest: app.digest, title: "Someone else" }));
+    await record.record(outcome({ connectedFolderId: app.connectedFolderId, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, digest: app.digest }));
+    await record.record(outcome({ connectedFolderId: app.connectedFolderId, appId: app.manifest.id, featureInstallationId: "feature-installation_other", digest: app.digest, title: "Someone else" }));
 
     const response = await fetch(`${base}/screenshots/notification-receipts?${new URLSearchParams({ featureInstallationId: app.featureInstallationId, expectedDigest: app.digest })}`);
     assert.equal(response.ok, true);

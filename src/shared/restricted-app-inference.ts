@@ -1,6 +1,6 @@
 /**
- * Bounded inference for work-folder apps: `assistant.infer` runs one model call on
- * the owning work-folder's configured model with no tools, no transcript, and an
+ * Bounded inference for Connected Folder apps: `assistant.infer` runs one model call on
+ * the owning Connected Folder's configured model with no tools, no transcript, and an
  * optional schema-validated JSON result. This file is the contract shared by
  * the app bridge, the local API, and the desktop host; it carries no runtime
  * code and imports nothing from `src/local`.
@@ -58,7 +58,7 @@ export interface RestrictedAppInferenceUsage {
  * made without reading anything back.
  *
  * `truncated` is true only when the model itself stopped at its output-token
- * limit before finishing; the text is everything it produced. work-fold never
+ * limit before finishing; the text is everything it produced. AmpleFile never
  * cuts a reply: one over `maxOutputBytes` fails with INFER_OUTPUT_TOO_LARGE.
  */
 export type RestrictedAppInferenceResult =
@@ -70,7 +70,7 @@ export interface RestrictedAppInferenceReceipt {
   v: 1;
   id: string;
   at: string;
-  workFolderId: string;
+  connectedFolderId: string;
   appId: string;
   featureInstallationId: string;
   digest: string;

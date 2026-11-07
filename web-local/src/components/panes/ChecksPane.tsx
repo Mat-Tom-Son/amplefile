@@ -1,6 +1,6 @@
-import { openWorkFoldAgentDraft } from "../../lib/agent-draft";
+import { openAmpleFileAgentDraft } from "../../lib/agent-draft";
 import type { CheckCorrectionRecord } from "../../../../src/local/checks/check-corrections";
-import type { WorkFoldCheckRunRecord } from "../../../../src/local/checks/check-types";
+import type { AmpleFileCheckRunRecord } from "../../../../src/local/checks/check-types";
 import { CheckSetup } from "./CheckSetup";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, Clock3, FileCheck2, Loader2, RefreshCw, X } from "../chrome/icons";
@@ -14,7 +14,7 @@ import type {
   ChecksOverview,
   ChecksStatus,
   ChecksTaskStatus,
-  WorkFolderSummary,
+  ConnectedFolderSummary,
 } from "../../types";
 import { requestConfirm, showToast } from "../../ui/feedback";
 
@@ -51,13 +51,13 @@ export function ChecksToolbarButton({
 }
 
 export function ChecksPane({
-  workFolder,
+  connectedFolder,
   active,
   onOpenFile,
   onChecksChanged,
   onAskWorker,
 }: {
-  workFolder: WorkFolderSummary;
+  connectedFolder: ConnectedFolderSummary;
   active: boolean;
   onOpenFile: (path: string) => void;
   onChecksChanged: () => void | Promise<void>;
@@ -65,7 +65,7 @@ export function ChecksPane({
 }) {
   const [correctionReview, setCorrectionReview] = useState<{ correction: CheckCorrectionRecord; before: string } | null>(null);
   const [correctionBusy, setCorrectionBusy] = useState(false);
-  const [trialResult, setTrialResult] = useState<WorkFoldCheckRunRecord | null>(null);
+  const [trialResult, setTrialResult] = useState<AmpleFileCheckRunRecord | null>(null);
   const trialTaskRef = useRef<string | null>(null);
   const [configuring, setConfiguring] = useState(false);
   const [overview, setOverview] = useState<ChecksOverview | null>(null);
@@ -81,8 +81,8 @@ export function ChecksPane({
   const overviewFlightRef = useRef<Promise<void> | null>(null);
   const onChecksChangedRef = useRef(onChecksChanged);
   const mutationRef = useRef<"run" | "abort" | `finding:${string}` | null>(null);
-  const workFolderId = workFolder.id;
-  const workFolderIdRef = useRef(workFolderId);
+  const connectedFolderId = connectedFolder.id;
+  const connectedFolderIdRef = useRef(connectedFolderId);
 
   useEffect(() => {
     onChecksChangedRef.current = onChecksChanged;
@@ -95,7 +95,7 @@ export function ChecksPane({
     else setLoading(true);
     const operation = (async () => {
       try {
-        const response = await readCheckOverview(workFolderId, () => request === requestRef.current);
+        const response = await readCheckOverview(connectedFolderId, () => request === requestRef.current);
         if (request !== requestRef.current) return;
         setOverview(response.overview);
         setOverviewUnavailable(false);
@@ -117,11 +117,11 @@ export function ChecksPane({
     });
     overviewFlightRef.current = operation;
     return operation;
-  }, [workFolderId]);
+  }, [connectedFolderId]);
 
   useEffect(() => {
-    if (workFolderIdRef.current === workFolderId) return;
-    workFolderIdRef.current = workFolderId;
+    if (connectedFolderIdRef.current === connectedFolderId) return;
+    connectedFolderIdRef.current = connectedFolderId;
     requestRef.current += 1;
     overviewFlightRef.current = null;
     setOverview(null);
@@ -136,11 +136,11 @@ export function ChecksPane({
     setError(null);
     setOverviewUnavailable(false);
     setLoading(true);
-  }, [workFolderId]);
+  }, [connectedFolderId]);
 
   useEffect(() => {
     if (active) void loadOverview();
-  }, [active, workFolderId]);
+  }, [active, connectedFolderId]);
 
   useEffect(() => {
     if (!active) return;
@@ -163,11 +163,11 @@ export function ChecksPane({
     const poll = async () => {
       try {
         const response = await api<{ task: ChecksTaskStatus }>(
-          `/api/work-folders/${encodeURIComponent(workFolderId)}/checks/tasks/${encodeURIComponent(task.taskId)}`,
+          `/api/connected-folders/${encodeURIComponent(connectedFolderId)}/checks/tasks/${encodeURIComponent(task.taskId)}`,
         );
         if (cancelled) return;
         if (!isPendingTask(response.task) && trialTaskRef.current === response.task.taskId) {
-          const result = await api<{ run: WorkFoldCheckRunRecord }>(`/api/work-folders/${encodeURIComponent(workFolderId)}/checks/tasks/${encodeURIComponent(response.task.taskId)}/result`);
+          const result = await api<{ run: AmpleFileCheckRunRecord }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/checks/tasks/${encodeURIComponent(response.task.taskId)}/result`);
           if (cancelled) return;
           setTrialResult(result.run);
         }
@@ -190,7 +190,7 @@ export function ChecksPane({
       cancelled = true;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [loadOverview, task, workFolderId]);
+  }, [loadOverview, task, connectedFolderId]);
 
   useEffect(() => {
     if (!active || (task && isPendingTask(task)) || !overview?.status.running) return;
@@ -203,22 +203,22 @@ export function ChecksPane({
     [overview?.checks],
   );
 
-  async function askWorkFoldAgent(check?: ChecksOverview["checks"][number]) {
+  async function askAmpleFileAgent(check?: ChecksOverview["checks"][number]) {
     const draft = check
-      ? `Help me change ${JSON.stringify(check.title)} in work-folder ${JSON.stringify(workFolder.name)} (${workFolderId}). Keep the current Check unchanged while we review a new proposal. Check reference: ${check.id}.`
-      : `Help me set up a Check in work-folder ${JSON.stringify(workFolder.name)} (${workFolderId}).`;
+      ? `Help me change ${JSON.stringify(check.title)} in Connected Folder ${JSON.stringify(connectedFolder.name)} (${connectedFolderId}). Keep the current Check unchanged while we review a new proposal. Check reference: ${check.id}.`
+      : `Help me set up a Check in Connected Folder ${JSON.stringify(connectedFolder.name)} (${connectedFolderId}).`;
     try {
-      await openWorkFoldAgentDraft(draft);
+      await openAmpleFileAgentDraft(draft);
     } catch (caught) { setError(errorText(caught)); }
   }
 
   async function tryCheck(check: ChecksOverview["checks"][number]) {
     if (mutationRef.current) return;
-    if (!await requestConfirm({ title: `Try ${check.title}?`, body: `Run once over the displayed files${check.execution === "model" ? " using the work-fold agent’s model. Designated text is sent to your provider and charges may apply" : ""}. This trial does not turn on the Check or replace its live results.`, confirmLabel: "Try It" })) return;
+    if (!await requestConfirm({ title: `Try ${check.title}?`, body: `Run once over the displayed files${check.execution === "model" ? " using the AmpleFile agent’s model. Designated text is sent to your provider and charges may apply" : ""}. This trial does not turn on the Check or replace its live results.`, confirmLabel: "Try It" })) return;
     mutationRef.current = "run";
     setRunSubmitting(true); setTrialResult(null); setError(null);
     try {
-      const { task: accepted } = await api<{ task: { taskId: string; runId: string } }>(`/api/work-folders/${encodeURIComponent(workFolderId)}/checks/${encodeURIComponent(check.id)}/try`, { method: "POST", body: { expectedDigest: check.digest } });
+      const { task: accepted } = await api<{ task: { taskId: string; runId: string } }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/checks/${encodeURIComponent(check.id)}/try`, { method: "POST", body: { expectedDigest: check.digest } });
       trialTaskRef.current = accepted.taskId;
       setTask({ ...accepted, state: "accepted", startedAt: new Date().toISOString(), endedAt: null, error: null });
     } catch (caught) { setError(errorText(caught)); }
@@ -229,7 +229,7 @@ export function ChecksPane({
     if (!onAskWorker || mutationRef.current) return;
     mutationRef.current = `finding:${finding.id}`; setFindingBusy(finding.id);
     try {
-      const { draft } = await api<{ draft: string }>(`/api/work-folders/${encodeURIComponent(workFolderId)}/checks/findings/${encodeURIComponent(finding.id)}/help`, { method: "POST", body: { fingerprint: finding.fingerprint } });
+      const { draft } = await api<{ draft: string }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/checks/findings/${encodeURIComponent(finding.id)}/help`, { method: "POST", body: { fingerprint: finding.fingerprint } });
       onAskWorker(draft);
     } catch (caught) { setError(errorText(caught)); await loadOverview(true); }
     finally { mutationRef.current = null; setFindingBusy(null); }
@@ -239,7 +239,7 @@ export function ChecksPane({
     if (mutationRef.current) return;
     mutationRef.current = "run"; setCorrectionBusy(true); setError(null);
     try {
-      const result = await api<{ correction: CheckCorrectionRecord; before: string; task?: { taskId: string; runId: string }; rerunError?: string }>(`/api/work-folders/${encodeURIComponent(workFolderId)}/checks/corrections/${encodeURIComponent(id)}/${action}`, { method: "POST", body: {} });
+      const result = await api<{ correction: CheckCorrectionRecord; before: string; task?: { taskId: string; runId: string }; rerunError?: string }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/checks/corrections/${encodeURIComponent(id)}/${action}`, { method: "POST", body: {} });
       if (action === "review") setCorrectionReview(result);
       else {
         setCorrectionReview(null);
@@ -254,10 +254,10 @@ export function ChecksPane({
   async function toggleCheck(check: ChecksOverview["checks"][number]): Promise<void> {
     if (mutationRef.current) return;
     const enabled = check.authority === "enabled";
-    if (!enabled && !await requestConfirm({ title: `Enable ${check.title}?`, body: `Allow this Check to inspect the displayed targets when requested${check.execution === "model" ? ", using the work-fold agent’s model and displayed criteria. Provider charges may apply" : ""}. Enabling does not start a run.`, confirmLabel: "Enable Check" })) return;
+    if (!enabled && !await requestConfirm({ title: `Enable ${check.title}?`, body: `Allow this Check to inspect the displayed targets when requested${check.execution === "model" ? ", using the AmpleFile agent’s model and displayed criteria. Provider charges may apply" : ""}. Enabling does not start a run.`, confirmLabel: "Enable Check" })) return;
     mutationRef.current = "run";
     try {
-      await api(`/api/work-folders/${encodeURIComponent(workFolderId)}/checks/${encodeURIComponent(check.id)}/${enabled ? "disable" : "enable"}`, { method: "POST", body: enabled ? {} : { expectedDigest: check.digest } });
+      await api(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/checks/${encodeURIComponent(check.id)}/${enabled ? "disable" : "enable"}`, { method: "POST", body: enabled ? {} : { expectedDigest: check.digest } });
       await loadOverview(true);
     } catch (caught) { setError(errorText(caught)); }
     finally { mutationRef.current = null; }
@@ -272,7 +272,7 @@ export function ChecksPane({
     setError(null);
     try {
       const response = await api<{ task: { taskId: string; runId: string; checkIds: string[] } }>(
-        `/api/work-folders/${encodeURIComponent(workFolderId)}/checks/run`,
+        `/api/connected-folders/${encodeURIComponent(connectedFolderId)}/checks/run`,
         { method: "POST", body: {} },
       );
       setTask({
@@ -296,7 +296,7 @@ export function ChecksPane({
     mutationRef.current = "abort";
     setAbortSubmitting(true);
     try {
-      const response = await api<{ aborted: boolean }>(`/api/work-folders/${encodeURIComponent(workFolderId)}/checks/tasks/${encodeURIComponent(task.taskId)}/abort`, {
+      const response = await api<{ aborted: boolean }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/checks/tasks/${encodeURIComponent(task.taskId)}/abort`, {
         method: "POST",
         body: {},
       });
@@ -329,7 +329,7 @@ export function ChecksPane({
       const deferUntil = decision === "defer"
         ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
         : undefined;
-      await api(`/api/work-folders/${encodeURIComponent(workFolderId)}/checks/findings/${encodeURIComponent(finding.id)}/decision`, {
+      await api(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/checks/findings/${encodeURIComponent(finding.id)}/decision`, {
         method: "POST",
         body: { decision, ...(deferUntil ? { deferUntil } : {}) },
       });
@@ -357,13 +357,13 @@ export function ChecksPane({
   const taskPending = Boolean(task && isPendingTask(task));
   const running = runSubmitting || taskPending || Boolean(status?.running);
   return (
-    <div className="work-folder-pane-content checks-pane professional-surface">
+    <div className="connected-folder-pane-content checks-pane professional-surface">
       <header className="checks-header">
         <div>
           <h1>Checks</h1>
         </div>
         <div className="checks-header-actions">
-          <button type="button" className="ui-control" disabled={running} onClick={() => void askWorkFoldAgent()}>Ask the work-fold agent</button>
+          <button type="button" className="ui-control" disabled={running} onClick={() => void askAmpleFileAgent()}>Ask the AmpleFile agent</button>
           <button type="button" className="checks-manual-button" disabled={running} onClick={() => setConfiguring(!configuring)}>Set Up Manually</button>
           {status?.lastRunAt ? <span className="checks-last-run">Last run {formatTimeAgo(status.lastRunAt)}</span> : null}
           {runSubmitting ? (
@@ -386,7 +386,7 @@ export function ChecksPane({
         </div>
       </header>
 
-      {configuring ? <CheckSetup workFolderId={workFolderId} onCancel={() => setConfiguring(false)} onSaved={async () => { setConfiguring(false); await loadOverview(true); }} /> : null}
+      {configuring ? <CheckSetup connectedFolderId={connectedFolderId} onCancel={() => setConfiguring(false)} onSaved={async () => { setConfiguring(false); await loadOverview(true); }} /> : null}
       {error ? <div className="checks-health-message error" role="alert"><AlertCircle size={15} /><span>{error}</span><button type="button" onClick={() => void loadOverview(true)}>Try Again</button></div> : null}
       {running ? <div className="checks-running" aria-live="polite"><Loader2 className="spin" size={15} /><span>Checking only the designated files…</span></div> : null}
       {overviewUnavailable
@@ -400,7 +400,7 @@ export function ChecksPane({
           {item.state === "pending" ? <div className="checks-header-actions"><button type="button" disabled={running || correctionBusy} onClick={() => void correctionAction(item.id, "review")}>Review Correction</button><button type="button" disabled={correctionBusy} onClick={() => void correctionAction(item.id, "dismiss")}>Dismiss</button></div> : null}
         </article>)}
         {correctionReview ? <div className="checks-correction-review" aria-label="Review Correction">
-          <h3>{correctionReview.correction.proposal.path}</h3><p>Apply saves the original in History and rechecks with the work-fold agent’s model. Provider charges may apply.</p>
+          <h3>{correctionReview.correction.proposal.path}</h3><p>Apply saves the original in History and rechecks with the AmpleFile agent’s model. Provider charges may apply.</p>
           <CorrectionDiff before={correctionReview.before} after={correctionReview.correction.proposal.replacement} />
           <button type="button" className="ui-control ui-control--primary" disabled={correctionBusy || running} onClick={() => void correctionAction(correctionReview.correction.id, "apply")}>Apply and Recheck</button>
           <button type="button" disabled={correctionBusy} onClick={() => setCorrectionReview(null)}>Close Review</button>
@@ -413,9 +413,9 @@ export function ChecksPane({
         {trialResult.findings.map((finding) => <article key={finding.id}><strong>{finding.title}</strong><p>{finding.targetPath}</p>{finding.evidence.map((evidence, index) => evidence.kind === "text-span" ? <blockquote key={index}>{evidence.quote}</blockquote> : null)}<p>{finding.detail}</p></article>)}
       </section> : null}
 
-      {Boolean(overview?.findings.length || running || overviewUnavailable) ? <section className="checks-section" aria-labelledby={`checks-findings-${workFolderId}`}>
+      {Boolean(overview?.findings.length || running || overviewUnavailable) ? <section className="checks-section" aria-labelledby={`checks-findings-${connectedFolderId}`}>
         <div className="checks-section-heading">
-          <div><h2 id={`checks-findings-${workFolderId}`}>Needs Attention</h2></div>
+          <div><h2 id={`checks-findings-${connectedFolderId}`}>Needs Attention</h2></div>
           {!overviewUnavailable && overview?.findings.length ? <span>{overview.findings.length}</span> : null}
         </div>
         {overviewUnavailable ? (
@@ -452,18 +452,18 @@ export function ChecksPane({
             })}
           </div>
         ) : running ? <p>Results will appear when this review finishes.</p> : <ChecksEmptyFindings overview={overview} />}
-        {!overviewUnavailable && overview?.truncated ? <p className="checks-truncated">More current findings exist. Narrow the Check or review them with the work-fold CLI.</p> : null}
+        {!overviewUnavailable && overview?.truncated ? <p className="checks-truncated">More current findings exist. Narrow the Check or review them with the AmpleFile CLI.</p> : null}
       </section> : null}
 
       {!overviewUnavailable && overview?.healthErrors.length ? (
-        <section className="checks-section checks-health" aria-labelledby={`checks-health-${workFolderId}`}>
-          <div className="checks-section-heading"><div><h2 id={`checks-health-${workFolderId}`}>Check Health</h2></div></div>
+        <section className="checks-section checks-health" aria-labelledby={`checks-health-${connectedFolderId}`}>
+          <div className="checks-section-heading"><div><h2 id={`checks-health-${connectedFolderId}`}>Check Health</h2></div></div>
           <ul>{overview.healthErrors.map((message, index) => <li key={`${message}-${index}`}>{message}</li>)}</ul>
         </section>
       ) : null}
 
-      <section className="checks-section" aria-labelledby={`checks-expectations-${workFolderId}`}>
-        <div className="checks-section-heading"><div><h2 id={`checks-expectations-${workFolderId}`}>Your Checks</h2></div></div>
+      <section className="checks-section" aria-labelledby={`checks-expectations-${connectedFolderId}`}>
+        <div className="checks-section-heading"><div><h2 id={`checks-expectations-${connectedFolderId}`}>Your Checks</h2></div></div>
         {overviewUnavailable ? (
           <div className="checks-empty-config"><strong>Could not refresh Check configuration.</strong></div>
         ) : overview?.checks.length ? (
@@ -472,10 +472,10 @@ export function ChecksPane({
               <div className="checks-definition" key={check.id}>
                 <details open={check.authority !== "enabled"}><summary className="checks-definition-main"><strong>{check.title}</strong><span className={`checks-authority ${check.authority}`}>{authorityLabel(check.authority)}</span></summary>
                 {check.criteria ? <p>{check.criteria}</p> : null}
-                {check.execution === "model" ? <p>Text review · work-fold agent model · suggestions only</p> : null}
+                {check.execution === "model" ? <p>Text review · AmpleFile agent model · suggestions only</p> : null}
                 <button type="button" className="ui-control" disabled={Boolean(mutationRef.current) || (check.authority !== "enabled" && !check.digest)} onClick={() => void toggleCheck(check)}>{check.authority === "enabled" ? "Turn Off" : "Turn On"}</button>
                 <button type="button" className="ui-control" disabled={running || !check.digest} onClick={() => void tryCheck(check)}>Try It</button>
-                <button type="button" className="ui-control" disabled={running} onClick={() => void askWorkFoldAgent(check)}>Change with work-fold agent</button>
+                <button type="button" className="ui-control" disabled={running} onClick={() => void askAmpleFileAgent(check)}>Change with AmpleFile agent</button>
                 <div className="checks-target-list">
                   {check.targets.map((target, index) => (
                     <span key={`${target.role}:${target.path}:${index}`}>
@@ -526,7 +526,7 @@ function ChecksStatusLine({ status }: { status: ChecksOverview["status"] }) {
   } else {
     copy = status.configured
       ? "Checks are configured and run only when requested."
-      : "No Checks are configured for this work-folder.";
+      : "No Checks are configured for this Connected Folder.";
   }
   return <div className={`checks-status-line ${status.state}`}><span aria-hidden="true" /><p>{copy}</p></div>;
 }
@@ -565,10 +565,10 @@ function CorrectionDiff({ before, after }: { before: string; after: string }) {
 
 /** Files status and this work tab may refresh on the same focus event. Retry
  * only their brief read reservation conflict; never retry a Check or mutation. */
-async function readCheckOverview(workFolderId: string, current: () => boolean): Promise<{ overview: ChecksOverview }> {
+async function readCheckOverview(connectedFolderId: string, current: () => boolean): Promise<{ overview: ChecksOverview }> {
   for (let attempt = 0; ; attempt++) {
     if (!current()) throw new Error("Check refresh superseded.");
-    try { return await api<{ overview: ChecksOverview }>(`/api/work-folders/${encodeURIComponent(workFolderId)}/checks/overview`, { method: "POST", body: {} }); }
+    try { return await api<{ overview: ChecksOverview }>(`/api/connected-folders/${encodeURIComponent(connectedFolderId)}/checks/overview`, { method: "POST", body: {} }); }
     catch (caught) {
       if (!(caught instanceof ApiError) || caught.status !== 409 || attempt >= 3) throw caught;
       await new Promise<void>((resolve) => window.setTimeout(resolve, 80 * (2 ** attempt)));

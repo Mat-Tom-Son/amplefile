@@ -17,8 +17,8 @@ test("many independent consumers share one connection, retain separate cursors a
     connections.push(connection);
     return { close: () => { connection.closing = true; return drained; } };
   });
-  const sources = Array.from({ length: 12 }, (_, index) => pool.subscribe(`/api/work-folders/lab/conversations/chat-${index}/events`));
-  const duplicate = pool.subscribe("/api/work-folders/lab/conversations/chat-0/events");
+  const sources = Array.from({ length: 12 }, (_, index) => pool.subscribe(`/api/connected-folders/lab/conversations/chat-${index}/events`));
+  const duplicate = pool.subscribe("/api/connected-folders/lab/conversations/chat-0/events");
   const events: string[] = [];
   sources[0]!.onmessage = (event) => { events.push(`first:${event.data}`); };
   duplicate.onmessage = (event) => { events.push(`duplicate:${event.data}`); };
@@ -39,7 +39,7 @@ test("many independent consumers share one connection, retain separate cursors a
   first.receive({ subscriptionId: ids[0]!, event: "late old frame", eventId: "99" });
   first.error(new Error("late old failure"));
   assert.equal(sources[0]!.lastEventId, "21");
-  const transient = pool.subscribe("/api/work-folders/lab/file-events");
+  const transient = pool.subscribe("/api/connected-folders/lab/file-events");
   transient.close();
   first.release();
   await settle();
@@ -52,7 +52,7 @@ test("many independent consumers share one connection, retain separate cursors a
   sources[0]!.onerror = () => { throw new Error("bad consumer"); };
   duplicate.onerror = () => { errors++; };
   duplicate.onopen = () => { opens++; };
-  second.receive({ subscriptionId: ids[0]!, error: { status: 404, message: "work-folder removed" } });
+  second.receive({ subscriptionId: ids[0]!, error: { status: 404, message: "Connected Folder removed" } });
   second.receive({ subscriptionId: ids[12]!, ready: true });
   assert.equal(opens, 1);
   assert.equal(errors, 0, "a removed channel does not fail its sibling");
@@ -67,14 +67,14 @@ test("many independent consumers share one connection, retain separate cursors a
 });
 
 test("local stream descriptors are bounded exact routes, never an arbitrary URL proxy", () => {
-  assert.equal(parseLocalEventSubscriptions({ subscriptions: [{ id: "one", path: "/api/work-folders/lab/conversations/chat/events", lastEventId: "42" }] })[0]!.lastEventId, "42");
-  assert.equal(parseLocalEventSubscriptions({ subscriptions: [{ id: "one", path: "/api/work-folders/lab/conversations/chat.history-1/events" }] }).length, 1, "existing valid conversation ids may contain dots");
-  for (const path of ["https://elsewhere/api/work-fold-agent/control-events", "/api/requests/q/answer", "/api/work-folders/../file-events", "/api/work-folders/lab/file-events?token=x", "/api/work-fold-agent/overview"]) {
+  assert.equal(parseLocalEventSubscriptions({ subscriptions: [{ id: "one", path: "/api/connected-folders/lab/conversations/chat/events", lastEventId: "42" }] })[0]!.lastEventId, "42");
+  assert.equal(parseLocalEventSubscriptions({ subscriptions: [{ id: "one", path: "/api/connected-folders/lab/conversations/chat.history-1/events" }] }).length, 1, "existing valid conversation ids may contain dots");
+  for (const path of ["https://elsewhere/api/amplefile-agent/control-events", "/api/requests/q/answer", "/api/connected-folders/../file-events", "/api/connected-folders/lab/file-events?token=x", "/api/amplefile-agent/overview"]) {
     assert.throws(() => parseLocalEventSubscriptions({ subscriptions: [{ id: "one", path }] }));
   }
-  assert.throws(() => parseLocalEventSubscriptions({ subscriptions: [{ id: "one", path: "/api/work-fold-agent/control-events", lastEventId: "9007199254740992" }] }));
-  assert.throws(() => parseLocalEventSubscriptions({ subscriptions: Array.from({ length: 129 }, (_, index) => ({ id: String(index), path: "/api/work-fold-agent/control-events" })) }));
-  assert.throws(() => parseLocalEventSubscriptions({ subscriptions: [{ id: "same", path: "/api/work-fold-agent/control-events" }, { id: "same", path: "/api/work-fold-agent/control-events" }] }));
+  assert.throws(() => parseLocalEventSubscriptions({ subscriptions: [{ id: "one", path: "/api/amplefile-agent/control-events", lastEventId: "9007199254740992" }] }));
+  assert.throws(() => parseLocalEventSubscriptions({ subscriptions: Array.from({ length: 129 }, (_, index) => ({ id: String(index), path: "/api/amplefile-agent/control-events" })) }));
+  assert.throws(() => parseLocalEventSubscriptions({ subscriptions: [{ id: "same", path: "/api/amplefile-agent/control-events" }, { id: "same", path: "/api/amplefile-agent/control-events" }] }));
 });
 
 test("physical close disposes all channels once, including a watcher that finishes initialization after disconnect", async () => {

@@ -1,6 +1,6 @@
 /**
  * Local API routes for pages (docs/pages.md, "Local API"). Everything under
- * `/api/work-folders/:id/pages` requires the ordinary local session, which
+ * `/api/connected-folders/:id/pages` requires the ordinary local session, which
  * `server.ts` checks before routing here. The sandbox intermediary
  * (`/page-frame.html`, `/page-frame.js`) is static and content-free, so it is
  * served before the session check: a frame cannot send the session header.
@@ -22,7 +22,7 @@ import {
   runPageCall,
   updatePageDataRow,
 } from "../../shared/pages/index.js";
-import { getWorkFolder, type WorkFolderSummary } from "../work-folder.js";
+import { getConnectedFolder, type ConnectedFolderSummary } from "../connected-folder.js";
 import { PAGE_FRAME_CONTENT_SECURITY_POLICY, PAGE_FRAME_HTML, PAGE_FRAME_SCRIPT } from "./frame/page-frame-assets.js";
 import { findPageFolders, PageFolderError } from "./page-folder-files.js";
 import { analyzePageFolder, assemblePageFolder, inspectPageFolder, readPageFolderDeclaration } from "./page-inspection.js";
@@ -64,10 +64,10 @@ export function servePageFrameAsset(req: IncomingMessage, res: ServerResponse): 
   return true;
 }
 
-const pagesRoute = /^\/api\/work-folders\/([^/]+)\/pages(?:\/(.*))?$/u;
+const pagesRoute = /^\/api\/connected-folders\/([^/]+)\/pages(?:\/(.*))?$/u;
 
 /**
- * Handles `/api/work-folders/:id/pages…`. Returns false when the path isn't a
+ * Handles `/api/connected-folders/:id/pages…`. Returns false when the path isn't a
  * page route. Refusals from page calls and the Data view answer with
  * `{ error, code, message, field? }`; anything else throws for the server's
  * ordinary error response.
@@ -81,11 +81,11 @@ export async function handlePageRoute(
   const method = req.method ?? "GET";
   const matched = pagesRoute.exec(url.pathname);
   if (!matched) return false;
-  const workFolderId = decodePathSegment(matched[1] ?? "");
+  const connectedFolderId = decodePathSegment(matched[1] ?? "");
   const route = `${method} ${matched[2] ?? ""}`;
   try {
-    const workFolder = await getWorkFolder(workFolderId);
-    const root = workFolder.workFolderRoot;
+    const connectedFolder = await getConnectedFolder(connectedFolderId);
+    const root = connectedFolder.connectedFolderRoot;
     switch (route) {
       case "GET ":
       case "GET /": {
@@ -122,7 +122,7 @@ export async function handlePageRoute(
         }
         const viewer = parsePageViewer(body.viewer);
         const call = parsePageCall(body.call);
-        const result = await withPagePreviewDatabase(workFolder.id, read.path, declaration, ({ db }) => runPageCall(db, declaration, viewer, call));
+        const result = await withPagePreviewDatabase(connectedFolder.id, read.path, declaration, ({ db }) => runPageCall(db, declaration, viewer, call));
         sendJson(res, { result });
         return true;
       }
@@ -130,7 +130,7 @@ export async function handlePageRoute(
         const body = await readBody(context);
         if (body.fresh !== undefined && typeof body.fresh !== "boolean") throw new PageFolderError(400, "fresh must be true or false.");
         const read = await readPageFolderDeclaration(root, body.page);
-        const visitor = await withPagePreviewDatabase(workFolder.id, read.path, read.declaration, ({ db }) => currentPreviewVisitor(db, body.fresh === true));
+        const visitor = await withPagePreviewDatabase(connectedFolder.id, read.path, read.declaration, ({ db }) => currentPreviewVisitor(db, body.fresh === true));
         sendJson(res, { visitor });
         return true;
       }
@@ -138,7 +138,7 @@ export async function handlePageRoute(
         const read = await readPageFolderDeclaration(root, url.searchParams.get("page"));
         const table = url.searchParams.get("table");
         const deleted = /^(?:1|true)$/iu.test(url.searchParams.get("deleted") ?? "");
-        const payload = await withPagePreviewDatabase(workFolder.id, read.path, read.declaration, ({ db }) => {
+        const payload = await withPagePreviewDatabase(connectedFolder.id, read.path, read.declaration, ({ db }) => {
           const declaration = effectiveDeclaration(read.declaration, db);
           return table ? readPageDataTable(db, declaration, table, { deleted }) : { tables: listPageDataTables(db, declaration) };
         });
@@ -149,7 +149,7 @@ export async function handlePageRoute(
         const body = await readBody(context);
         const table = requireTableName(body.table);
         const read = await readPageFolderDeclaration(root, body.page);
-        const row = await withPagePreviewDatabase(workFolder.id, read.path, read.declaration, ({ db }) => {
+        const row = await withPagePreviewDatabase(connectedFolder.id, read.path, read.declaration, ({ db }) => {
           const declaration = effectiveDeclaration(read.declaration, db);
           if (!declaration) throw new PageCallError("UNAVAILABLE", "Entries can't be edited until the problems in page.json are fixed.");
           return updatePageDataRow(db, declaration, table, body.id, body.values);
@@ -163,7 +163,7 @@ export async function handlePageRoute(
         const table = requireTableName(body.table);
         const read = await readPageFolderDeclaration(root, body.page);
         const restoring = route.endsWith("restore");
-        const count = await withPagePreviewDatabase(workFolder.id, read.path, read.declaration, ({ db }) => {
+        const count = await withPagePreviewDatabase(connectedFolder.id, read.path, read.declaration, ({ db }) => {
           const declaration = effectiveDeclaration(read.declaration, db);
           return restoring ? restorePageDataRows(db, declaration, table, body.ids) : deletePageDataRows(db, declaration, table, body.ids);
         });
@@ -174,7 +174,7 @@ export async function handlePageRoute(
         const body = await readBody(context);
         const table = requireTableName(body.table);
         const read = await readPageFolderDeclaration(root, body.page);
-        const lastSeen = await withPagePreviewDatabase(workFolder.id, read.path, read.declaration, ({ db }) =>
+        const lastSeen = await withPagePreviewDatabase(connectedFolder.id, read.path, read.declaration, ({ db }) =>
           markPageDataTableSeen(db, effectiveDeclaration(read.declaration, db), table));
         sendJson(res, { lastSeen });
         return true;
@@ -182,7 +182,7 @@ export async function handlePageRoute(
       case "GET preview/data/export": {
         const table = requireTableName(url.searchParams.get("table"));
         const read = await readPageFolderDeclaration(root, url.searchParams.get("page"));
-        const csv = await withPagePreviewDatabase(workFolder.id, read.path, read.declaration, ({ db }) =>
+        const csv = await withPagePreviewDatabase(connectedFolder.id, read.path, read.declaration, ({ db }) =>
           exportPageDataTableCsv(db, effectiveDeclaration(read.declaration, db), table));
         const fileName = `${table}.csv`;
         res.writeHead(200, {
@@ -223,7 +223,7 @@ function requireTableName(value: unknown): string {
 }
 
 function decodePathSegment(value: string): string {
-  try { return decodeURIComponent(value); } catch { throw new PageFolderError(400, "That work-folder id isn't valid."); }
+  try { return decodeURIComponent(value); } catch { throw new PageFolderError(400, "That Connected Folder id isn't valid."); }
 }
 
 function sendJson(res: ServerResponse, payload: unknown, status = 200): void {

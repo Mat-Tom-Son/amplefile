@@ -1,7 +1,7 @@
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { workFoldStateRoot } from "./state-paths.js";
+import { ampleFileStateRoot } from "./state-paths.js";
 
 /**
  * Retired gate state (docs/receipts-not-gates.md, F19). Older builds kept a
@@ -26,7 +26,7 @@ const RETIRED_GATE_FILES = [
 
 const RETIRED_GATE_DIRECTORIES = ["staged-routings"] as const;
 
-export async function removeRetiredGateState(stateRoot: string = workFoldStateRoot()): Promise<void> {
+export async function removeRetiredGateState(stateRoot: string = ampleFileStateRoot()): Promise<void> {
   const fold = join(stateRoot, "fold");
   for (const name of RETIRED_GATE_FILES) {
     await rm(join(fold, name), { force: true }).catch(() => undefined);

@@ -1,19 +1,19 @@
 # App-requested Worker work
 
-A work-folder app can hand one of its named, declared requests to the work-folder's
+A Connected Folder app can hand one of its named, declared requests to the Connected Folder's
 Worker. The request is journaled and dispatched in the same call: the host
-creates a fresh ordinary Chat in the owning work-folder and starts the turn at once
+creates a fresh ordinary Chat in the owning Connected Folder and starts the turn at once
 (docs/receipts-not-gates.md, F22). The app reads that task's state and its
 successful reply, or asks for it to stop. In **Settings → Apps → the app →
 Worker requests**, the person sees each request's status, its exact instructions and
 input under **Details**, the reply once done, and **Open Chat** and **Stop**.
 Nothing there waits for a click.
 
-The Chat uses the work-folder's usual model, native Pi resources and full-trust
+The Chat uses the Connected Folder's usual model, native Pi resources and full-trust
 tools. Bounds on the request and the returned text only keep one request's
 memory and journal footprint finite; they are not a filesystem or tool sandbox
-for the Worker and not a quota on how much an app may ask. No work-fold agent transcript,
-other work-folder context, arbitrary Chat id, credential, model selection or
+for the Worker and not a quota on how much an app may ask. No AmpleFile agent transcript,
+other Connected Folder context, arbitrary Chat id, credential, model selection or
 tool-policy override comes from the app request.
 
 ## Declaration and bridge
@@ -32,7 +32,7 @@ by itself.
   "assistantActions": [{
     "id": "compare",
     "title": "Compare quotes",
-    "instructions": "Compare these quotes and save comparison.md in this work-folder.",
+    "instructions": "Compare these quotes and save comparison.md in this connected-folder.",
     "inputSchema": {
       "type": "object",
       "properties": { "quotes": { "type": "string", "maxLength": 4000 } },
@@ -53,7 +53,7 @@ An active app view, the app's worker handling a tool action, and a named
 automation run all reach the same bridge; nothing beyond installation is needed:
 
 ```js
-const bridge = globalThis.workFoldRestrictedApp;
+const bridge = globalThis.ampleFileRestrictedApp;
 // Save this envelope in app storage before sending. Replay the same envelope
 // after an uncertain response; do not regenerate its identity or timestamp.
 const request = {
@@ -72,7 +72,7 @@ The request envelope has exactly those four fields. JSON input is at most
 4 MiB; a larger input is refused with a message naming the bound. New
 requests carry a canonical UTC timestamp as part of their idempotency record.
 A replayed envelope returns the same record; changing its input conflicts. The
-app cannot choose another work-folder or read arbitrary task or Chat ids.
+app cannot choose another Connected Folder or read arbitrary task or Chat ids.
 
 Task states are `dispatching`, `running`, `waiting`, `succeeded`, `failed`, `cancelled`
 and `interrupted`; every task carries `startedAt`, its dispatch time. A
@@ -121,9 +121,9 @@ report, a handoff outcome, and an automation chat hop produce:
 | `outcome` | `succeeded`, `partial`, or `failed` — the Worker's own account |
 | `truncated` | something was cut to fit a bound — the summary at 4 MiB, or the envelope at its 32 MiB ceiling — and what the app holds is the trimmed version |
 | `data` | present only for an action that declared `outputSchema`, and only when the reported value matches it (at most 16 MiB) |
-| `files` | work-folder-relative deliverables the Worker named, each with `path`, `sha256`, and `sizeBytes` |
+| `files` | Connected Folder–relative deliverables the Worker named, each with `path`, `sha256`, and `sizeBytes` |
 
-The Worker files that envelope with `work-fold chat report` during its turn.
+The Worker files that envelope with `amplefile chat report` during its turn.
 The latest own turn's latest report is selected. If that turn files none, its
 final reply becomes the summary and the request determines the outcome, with
 no details or files. `files` are the deliverables the
@@ -175,7 +175,7 @@ and replayable receipts alone fill it. A result summary is bounded at 4 MiB,
 reported details at 16 MiB, and the whole envelope at 32 MiB; `limits.get()`
 publishes these bounds under `assistant`.
 
-While any of an app's request Chats runs, capability changes for that work-folder
+While any of an app's request Chats runs, capability changes for that Connected Folder
 (grant, revoke, install, update) are refused with a message asking you to wait
 for the affected Worker work to finish. Stop the request first, or let it finish.
 
@@ -189,13 +189,13 @@ it used, and a turn that spent nothing — a built-in command, or a provider tha
 never reported a settled request — reports no usage at all.
 
 `usage` carries `inputTokens` and `outputTokens`, plus `amountUsd` only when the
-effective model carries pricing work-fold can apply. `inputTokens` counts every
+effective model carries pricing AmpleFile can apply. `inputTokens` counts every
 prompt token the provider processed, including ones read from or written to its
 prompt cache, and the cost prices cached tokens at the model's cache rates (an
 OpenRouter model without a listed cache rate uses its prompt rate). A model with no published
 rates leaves the cost out: it is unknown, not zero. Token counts are measured
 around that one turn, so a Chat title request or a bounded inference call on the
-same work-folder is never charged to it.
+same Connected Folder is never charged to it.
 
 `assistant.get` and `assistant.list` carry `model` and `usage` to the app, and
 **Settings → Apps → the app → Worker requests** shows them as one compact line under
@@ -212,16 +212,16 @@ lanes read alike. Neither records prompt or reply content in that receipt.
 
 `assistant.request` is the app's way to ask for full Worker work. Its
 sibling, `assistant.infer`, is the app's way to ask one question of the
-work-folder's configured model and get an answer back. It runs with no tools, no
+Connected Folder's configured model and get an answer back. It runs with no tools, no
 files, no conversation history, and nothing persisted to any transcript
 (docs/receipts-not-gates.md, F22). Like requests, it needs no grant beyond
 installation.
 
 ```js
-const { text, truncated, model, usage } = await globalThis.workFoldRestrictedApp
+const { text, truncated, model, usage } = await globalThis.ampleFileRestrictedApp
   .assistant.infer({ instructions: "Name the cheapest quote.", input: "North $42, South $58" });
 
-const { json } = await globalThis.workFoldRestrictedApp.assistant.infer({
+const { json } = await globalThis.ampleFileRestrictedApp.assistant.infer({
   instructions: "Total the quotes.",
   input: quotesText,
   outputSchema: { type: "object", properties: { total: { type: "integer", minimum: 0 } },
@@ -236,14 +236,14 @@ indentation. Without `outputSchema` the result is `{ text, truncated }`; with
 one — the same closed JSON Schema subset tool declarations use — the result is
 `{ json }`, already validated against that schema, carried by one
 `submit_result` tool call. Both shapes carry `model` (`provider`, `id`) and
-`usage` (`inputTokens`, `outputTokens`). work-fold never cuts a reply:
+`usage` (`inputTokens`, `outputTokens`). AmpleFile never cuts a reply:
 `truncated` is true only when the model itself stopped at its output-token
 limit, and the text is everything it produced; a reply larger than
 `maxOutputBytes`, or a structured result the model could not finish, is
 refused with `INFER_OUTPUT_TOO_LARGE`.
 
-The call runs the way a Chat turn in the same work-folder would: on the work-folder's
-configured model at the work-folder's configured thinking level (no reasoning option
+The call runs the way a Chat turn in the same Connected Folder would: on the Connected Folder's
+configured model at the Connected Folder's configured thinking level (no reasoning option
 when that level is off), with the model's own output-token limit, and with the
 provider SDK's usual two retries for transient failures. The one adjustment is
 the context window: once the request is in it, the output budget shrinks only
@@ -286,13 +286,13 @@ never stops an app from working.
 
 ## Authority, receipts and recovery
 
-The host derives and pins the work-folder, Feature Installation, exact package digest
+The host derives and pins the Connected Folder, Feature Installation, exact package digest
 and authority generations. The request journal stores the instructions and
 canonical input the Chat received. App and grant mutations and task admission
 serialize through the same app service. A changed authority makes the old
 revision's tasks invisible to the app bridge; the trusted Settings → Apps page still lists
 an installation's requests across code changes, so a task started before a
-change can be opened and stopped. Once dispatched, the Chat is ordinary work-folder
+change can be opened and stopped. Once dispatched, the Chat is ordinary Connected Folder
 work; closing the app view does not stop it.
 
 The machine-local `restricted-apps/assistant-tasks.json` journal (schema v3; a
@@ -325,9 +325,9 @@ without a usable title (one plain line, at most 80 characters), loads as an
 ordinary message.
 
 Damage disables only this task lane without overwriting its evidence or
-preventing work-fold startup. Task input and results stay machine-local; the
+preventing AmpleFile startup. Task input and results stay machine-local; the
 dispatched prompt and the normal reply also belong to the portable Chat in the
-owning work-folder. App data backup and restore do not restore requests.
+owning Connected Folder. App data backup and restore do not restore requests.
 
 Each request is a receipt in the journal, not a grant: the app was installed,
 so it may ask; the person sees what it asked for and what came back. The CLI
@@ -335,11 +335,11 @@ gains no generic Worker endpoint from this. The
 app bridge gets only request, list, get and cancel; the authenticated renderer
 owns Details, Open Chat and Stop.
 
-Traffic in the other direction has its own verbs: the work-fold agent sees an
+Traffic in the other direction has its own verbs: the AmpleFile agent sees an
 installation's declared tools, actions, grants, connections and automations
-with `work-fold apps list --work-folder <id> --json` and calls one with
-`work-fold apps invoke --work-folder <id> --app <id> --tool <name> --input <json>`,
+with `amplefile apps list --connected-folder <id> --json` and calls one with
+`amplefile apps invoke --connected-folder <id> --app <id> --tool <name> --input <json>`,
 which runs through the app service with lineage and a receipt
 ([Receipts, not gates](receipts-not-gates.md), F22; the verb rows are in the
-[act ledger](act-ledger.md)). That is the work-fold agent reaching into an app, not
-an app reaching out of its work-folder.
+[act ledger](act-ledger.md)). That is the AmpleFile agent reaching into an app, not
+an app reaching out of its Connected Folder.

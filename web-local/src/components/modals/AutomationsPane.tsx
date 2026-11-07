@@ -1,4 +1,4 @@
-import { openWorkFoldAgentDraft } from "../../lib/agent-draft";
+import { openAmpleFileAgentDraft } from "../../lib/agent-draft";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { errorText } from "../../lib/api";
@@ -19,9 +19,9 @@ import {
 export type AutomationHealthState = "enabled" | "disabled" | "suspended" | "completed";
 export type AutomationsPaneOutcome = AutomationOutcome;
 
-export interface AutomationWorkFolderRef {
-  workFolderId: string;
-  workFolderName?: string;
+export interface AutomationConnectedFolderRef {
+  connectedFolderId: string;
+  connectedFolderName?: string;
 }
 
 export type AutomationsPaneTriggerView = AutomationTriggerView;
@@ -30,15 +30,15 @@ export type AutomationStepView =
   | {
     id: string;
     kind: "chat";
-    workFolder: AutomationWorkFolderRef;
+    connectedFolder: AutomationConnectedFolderRef;
     message: string;
     model?: { provider: string; id: string };
   }
   | {
     id: string;
     kind: "files";
-    fromWorkFolder: AutomationWorkFolderRef;
-    toWorkFolder: AutomationWorkFolderRef;
+    fromConnectedFolder: AutomationConnectedFolderRef;
+    toConnectedFolder: AutomationConnectedFolderRef;
     to: string;
     source:
       | { kind: "paths"; paths: string[] }
@@ -48,7 +48,7 @@ export type AutomationStepView =
   | {
     id: string;
     kind: "check";
-    workFolder: AutomationWorkFolderRef;
+    connectedFolder: AutomationConnectedFolderRef;
     checkId?: string;
   }
   | {
@@ -74,8 +74,8 @@ export interface AutomationSummaryView {
     notice?: string;
   };
   stepCount: number;
-  /** Every work-folder the trigger or a step names; drives the work-folder filter. */
-  workFolders?: AutomationWorkFolderRef[];
+  /** Every Connected Folder the trigger or a step names; drives the Connected Folder filter. */
+  connectedFolders?: AutomationConnectedFolderRef[];
   nextScheduledAt?: string;
   lastScheduledAt?: string;
   activeRun?: { runId: string; startedAt: string };
@@ -86,19 +86,19 @@ export interface AutomationSummaryView {
     finishedAt?: string;
     partial?: true;
   };
-  /** The newest run that caught up on files changed while work-fold could not watch. */
+  /** The newest run that caught up on files changed while AmpleFile could not watch. */
   lastCatchUp?: { runId: string; at: string; count: number; reason: AutomationCatchUpReason };
   suspension?: {
     at: string;
     reason?: string;
-    missingWorkFolders?: AutomationWorkFolderRef[];
+    missingConnectedFolders?: AutomationConnectedFolderRef[];
   };
 }
 
 export interface AutomationDetailView extends AutomationSummaryView {
   createdAt: string;
   createdBy?: string;
-  workFolders: AutomationWorkFolderRef[];
+  connectedFolders: AutomationConnectedFolderRef[];
   steps: AutomationStepView[];
   completedAt?: string;
 }
@@ -108,7 +108,7 @@ export interface AutomationHistoryHopView {
   kind: "chat" | "files" | "check" | "agent";
   outcome: AutomationsPaneOutcome;
   partial?: true;
-  workFolderName?: string;
+  connectedFolderName?: string;
   detail?: string;
   evidence?: Array<{ label: string; value: string }>;
 }
@@ -160,7 +160,7 @@ export interface AutomationRunResponse {
   accepted: true;
 }
 
-/** A `*.work-fold-automation.json` file the work-fold agent wrote that is not stored yet. */
+/** A `*.amplefile-automation.json` file the AmpleFile agent wrote that is not stored yet. */
 export type AutomationProposalView =
   | {
     valid: true;
@@ -186,9 +186,9 @@ const emptyHistory: AutomationHistoryResponse = { runs: [], truncated: false, da
 
 /**
  * Settings-only projection over the host automation service. The renderer never
- * parses declarations or receipt JSONL itself: the host resolves work-folder names,
+ * parses declarations or receipt JSONL itself: the host resolves Connected Folder names,
  * safe details, run groups, and evidence identifiers before they arrive here.
- * The browser preview (`?fixture=work-folder`) reads sample automations
+ * The browser preview (`?fixture=connected-folder`) reads sample automations
  * instead and changes nothing.
  */
 export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean } = {}) {
@@ -212,7 +212,7 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
   // Pending proposal files are a desktop-only read; without the bridge the
   // section is simply absent and the load error line explains why.
   const loadProposals = useCallback(async () => {
-    const scan = fixtureReads?.proposals ?? window.workFoldDesktop?.automations?.proposals;
+    const scan = fixtureReads?.proposals ?? window.ampleFileDesktop?.automations?.proposals;
     if (!scan) return;
     const next = await scan();
     setProposals((current) => sameProposals(current, next.proposals) ? current : next.proposals);
@@ -221,7 +221,7 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
-      const scan = fixtureReads?.proposals ?? window.workFoldDesktop?.automations?.proposals;
+      const scan = fixtureReads?.proposals ?? window.ampleFileDesktop?.automations?.proposals;
       if (!scan) return;
       void scan()
         .then((next) => {
@@ -395,7 +395,7 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
     setActionError(null);
     try {
       const draft = `Review the automation “${existing.title}” (id: ${existing.automationId}). Its current trigger is: ${triggerSummary(existing.trigger)}. Preserve it until I give a clear instruction to change it.`;
-      await openWorkFoldAgentDraft(draft);
+      await openAmpleFileAgentDraft(draft);
     } catch (caught) {
       setActionError(errorText(caught));
     } finally {
@@ -408,31 +408,31 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
   const storeUnavailable = Boolean(status?.storeDamaged);
   const wideningUnavailable = storeUnavailable || Boolean(status?.journalDamaged);
 
-  // Automations sit above work-folders and are managed here, so the work-folder filter
-  // is a client-side view over one list. A work-folder's own Automations tab is
+  // Automations sit above Connected Folders and are managed here, so the Connected Folder filter
+  // is a client-side view over one list. A Connected Folder's own Automations tab is
   // a read-mostly window onto the same automations (docs/automations.md,
   // F15 as amended 2026-09-24).
   const folderChips = useMemo(() => {
-    const byId = new Map<string, AutomationWorkFolderRef>();
+    const byId = new Map<string, AutomationConnectedFolderRef>();
     for (const automation of allAutomations) {
-      for (const workFolder of automation.workFolders ?? []) {
-        if (!byId.has(workFolder.workFolderId) || (!byId.get(workFolder.workFolderId)!.workFolderName && workFolder.workFolderName)) byId.set(workFolder.workFolderId, workFolder);
+      for (const connectedFolder of automation.connectedFolders ?? []) {
+        if (!byId.has(connectedFolder.connectedFolderId) || (!byId.get(connectedFolder.connectedFolderId)!.connectedFolderName && connectedFolder.connectedFolderName)) byId.set(connectedFolder.connectedFolderId, connectedFolder);
       }
     }
-    return [...byId.values()].sort((left, right) => workFolderLabel(left).localeCompare(workFolderLabel(right)));
+    return [...byId.values()].sort((left, right) => connectedFolderLabel(left).localeCompare(connectedFolderLabel(right)));
   }, [allAutomations]);
   const showFolderFilter = allAutomations.length > 1 && folderChips.length > 1;
-  const activeFolder = showFolderFilter && folderFilter && folderChips.some((workFolder) => workFolder.workFolderId === folderFilter)
+  const activeFolder = showFolderFilter && folderFilter && folderChips.some((connectedFolder) => connectedFolder.connectedFolderId === folderFilter)
     ? folderFilter
     : null;
   const automations = activeFolder
-    ? allAutomations.filter((automation) => automation.workFolders?.some((workFolder) => workFolder.workFolderId === activeFolder))
+    ? allAutomations.filter((automation) => automation.connectedFolders?.some((connectedFolder) => connectedFolder.connectedFolderId === activeFolder))
     : allAutomations;
 
-  function chooseFolder(workFolderId: string | null) {
-    setFolderFilter(workFolderId);
-    const visible = workFolderId
-      ? allAutomations.filter((automation) => automation.workFolders?.some((workFolder) => workFolder.workFolderId === workFolderId))
+  function chooseFolder(connectedFolderId: string | null) {
+    setFolderFilter(connectedFolderId);
+    const visible = connectedFolderId
+      ? allAutomations.filter((automation) => automation.connectedFolders?.some((connectedFolder) => connectedFolder.connectedFolderId === connectedFolderId))
       : allAutomations;
     if (!visible.some((automation) => automation.automationId === selectedIdRef.current)) {
       selectAutomation(visible[0]?.automationId ?? null);
@@ -490,20 +490,20 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
         </section>
       ) : null}
       {data && !allAutomations.length ? (
-        <div className="automations-empty">No automations yet. To set one up, ask the work-fold agent in the menu bar. Say what should happen, when, and in which work-folders.</div>
+        <div className="automations-empty">No automations yet. To set one up, ask the AmpleFile agent in the menu bar. Say what should happen, when, and in which Connected Folders.</div>
       ) : null}
       {showFolderFilter ? (
-        <div className="capabilities-type-chips automation-folder-filter" role="group" aria-label="work-folder">
+        <div className="capabilities-type-chips automation-folder-filter" role="group" aria-label="Connected Folder">
           <button type="button" className={activeFolder === null ? "active" : ""} aria-pressed={activeFolder === null} onClick={() => chooseFolder(null)}>All</button>
-          {folderChips.map((workFolder) => (
+          {folderChips.map((connectedFolder) => (
             <button
-              key={workFolder.workFolderId}
+              key={connectedFolder.connectedFolderId}
               type="button"
-              className={activeFolder === workFolder.workFolderId ? "active" : ""}
-              aria-pressed={activeFolder === workFolder.workFolderId}
-              onClick={() => chooseFolder(workFolder.workFolderId)}
+              className={activeFolder === connectedFolder.connectedFolderId ? "active" : ""}
+              aria-pressed={activeFolder === connectedFolder.connectedFolderId}
+              onClick={() => chooseFolder(connectedFolder.connectedFolderId)}
             >
-              {workFolderLabel(workFolder)}
+              {connectedFolderLabel(connectedFolder)}
             </button>
           ))}
         </div>
@@ -560,23 +560,23 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
                       running={Boolean(selectedSummary.activeRun)}
                       starting={Boolean(runWatches[selectedSummary.automationId]) && !selectedSummary.activeRun}
                     />
-                    <button className="ui-control" type="button" onClick={() => void openAutomationDraft(detail)} disabled={drafting}>Edit with work-fold agent</button>
+                    <button className="ui-control" type="button" onClick={() => void openAutomationDraft(detail)} disabled={drafting}>Edit with AmpleFile agent</button>
                   </div>
                 </header>
 
                 {detail.health === "suspended" ? (
                   <p className="automation-suspension">
-                    {detail.suspension?.reason ?? missingWorkFoldersMessage(detail.suspension?.missingWorkFolders)}
+                    {detail.suspension?.reason ?? missingConnectedFoldersMessage(detail.suspension?.missingConnectedFolders)}
                   </p>
                 ) : null}
 
                 {detail.trigger.kind === "files-changed" ? <section className="automation-detail-section">
                   <h5>Watched Folder</h5>
-                  <p>{detail.trigger.watch.path || "Top level of the work-folder"}{detail.trigger.watch.recursive ? " and subfolders" : ""} · {detail.trigger.watch.extensions.join(", ")}</p>
+                  <p>{detail.trigger.watch.path || "Top level of the Connected Folder"}{detail.trigger.watch.recursive ? " and subfolders" : ""} · {detail.trigger.watch.extensions.join(", ")}</p>
                   <p>{watchStateLabel(detail.fileWatch?.state)}{detail.fileWatch?.detail ? ` · ${detail.fileWatch.detail}` : ""}</p>
                   {detail.trigger.ifMissed === "run" ? <>
                     <p className="automation-catch-up">
-                      Catches up after work-fold was closed: files added or changed while work-fold was closed, the computer was asleep, or this automation was off start one run when work-fold is back.
+                      Catches up after AmpleFile was closed: files added or changed while AmpleFile was closed, the computer was asleep, or this automation was off start one run when AmpleFile is back.
                     </p>
                     {detail.fileWatch?.catchingUp ? (
                       <p className="automation-catch-up-pending">
@@ -590,7 +590,7 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
                     </p>
                     {detail.fileWatch?.notice ? <p className="automation-catch-up-notice">{detail.fileWatch.notice}</p> : null}
                     <p>Changes made while an Automation is running are skipped.</p>
-                  </> : <p>Changes made while an Automation runs, the computer sleeps, or work-fold restarts are skipped.</p>}
+                  </> : <p>Changes made while an Automation runs, the computer sleeps, or AmpleFile restarts are skipped.</p>}
                 </section> : null}
                 <dl className="automation-facts">
                   <div><dt>Next</dt><dd>{detail.nextScheduledAt ? formatDateTime(detail.nextScheduledAt) : "—"}</dd></div>
@@ -755,13 +755,13 @@ function AutomationHealth({ health, running, starting = false }: { health: Autom
 /**
  * What stays true for as long as this automation is on (docs/automations.md).
  * These are residuals rather than gates: a created-files handoff is a
- * standing, content-dependent channel from one work-folder into another, and a chat
- * step's turn runs with whatever Worker authority its work-folder holds at that
+ * standing, content-dependent channel from one Connected Folder into another, and a chat
+ * step's turn runs with whatever Worker authority its Connected Folder holds at that
  * moment. `automations show` states the same two things in the terminal.
  */
 function AutomationResiduals({ steps }: { steps: AutomationStepView[] }) {
   const handoffs = steps.flatMap((step) => step.kind === "files" && step.source.kind === "step-created-files"
-    ? [{ id: step.id, from: step.source.step, toWorkFolder: step.toWorkFolder }]
+    ? [{ id: step.id, from: step.source.step, toConnectedFolder: step.toConnectedFolder }]
     : []);
   const hasChat = steps.some((step) => step.kind === "chat");
   if (!handoffs.length && !hasChat) return null;
@@ -772,12 +772,12 @@ function AutomationResiduals({ steps }: { steps: AutomationStepView[] }) {
         {handoffs.map((handoff) => (
           <li key={`residual-${handoff.id}`}>
             Standing channel: whatever step {handoff.from}&apos;s turn writes is copied into{" "}
-            {workFolderLabel(handoff.toWorkFolder)} on every run.
+            {connectedFolderLabel(handoff.toConnectedFolder)} on every run.
           </li>
         ))}
         {hasChat ? (
           <li key="residual-authority">
-            Each Worker turn uses the permissions its work-folder has at that moment, not the
+            Each Worker turn uses the permissions its Connected Folder has at that moment, not the
             permissions it had when this automation was turned on.
           </li>
         ) : null}
@@ -790,7 +790,7 @@ function AutomationStep({ step }: { step: AutomationStepView }) {
   if (step.kind === "chat") {
     return (
       <li>
-        <div className="automation-step-heading"><strong>Worker</strong><span>{workFolderLabel(step.workFolder)}</span></div>
+        <div className="automation-step-heading"><strong>Worker</strong><span>{connectedFolderLabel(step.connectedFolder)}</span></div>
         <blockquote>{step.message}</blockquote>
         {step.model ? <p className="automation-step-model">Uses {step.model.id} ({step.model.provider}) for this step</p> : null}
       </li>
@@ -799,7 +799,7 @@ function AutomationStep({ step }: { step: AutomationStepView }) {
   if (step.kind === "files") {
     return (
       <li>
-        <div className="automation-step-heading"><strong>Copy Files</strong><span>{workFolderLabel(step.fromWorkFolder)} → {workFolderLabel(step.toWorkFolder)}</span></div>
+        <div className="automation-step-heading"><strong>Copy Files</strong><span>{connectedFolderLabel(step.fromConnectedFolder)} → {connectedFolderLabel(step.toConnectedFolder)}</span></div>
         <p>{filesSourceSummary(step.source)} into <code>{step.to || "/"}</code></p>
       </li>
     );
@@ -807,7 +807,7 @@ function AutomationStep({ step }: { step: AutomationStepView }) {
   if (step.kind === "agent") {
     return (
       <li>
-        <div className="automation-step-heading"><strong>Message work-fold agent</strong><span>Starts a new chat</span></div>
+        <div className="automation-step-heading"><strong>Message AmpleFile agent</strong><span>Starts a new chat</span></div>
         <blockquote>{step.message}</blockquote>
         {step.model ? <p className="automation-step-model">Uses {step.model.id} ({step.model.provider}) for this step</p> : null}
       </li>
@@ -815,7 +815,7 @@ function AutomationStep({ step }: { step: AutomationStepView }) {
   }
   return (
     <li>
-      <div className="automation-step-heading"><strong>Run Checks</strong><span>{workFolderLabel(step.workFolder)}</span></div>
+      <div className="automation-step-heading"><strong>Run Checks</strong><span>{connectedFolderLabel(step.connectedFolder)}</span></div>
       <p>{step.checkId ? `Check ${step.checkId}` : "All enabled Checks"}</p>
     </li>
   );
@@ -836,7 +836,7 @@ function AutomationRun({ run }: { run: AutomationHistoryRunView }) {
           <ol>
             {run.hops.map((hop) => (
               <li key={hop.hopId}>
-                <div><strong>{hopLabel(hop.kind)}</strong><span>{outcomeLabel(hop.outcome, hop.partial)}{hop.workFolderName ? ` · ${hop.workFolderName}` : ""}</span></div>
+                <div><strong>{hopLabel(hop.kind)}</strong><span>{outcomeLabel(hop.outcome, hop.partial)}{hop.connectedFolderName ? ` · ${hop.connectedFolderName}` : ""}</span></div>
                 {hop.detail ? <small>{hop.detail}</small> : null}
                 {hop.evidence?.map((item) => <small key={`${hop.hopId}:${item.label}:${item.value}`}>{item.label}: <code>{item.value}</code></small>)}
               </li>
@@ -863,13 +863,13 @@ function lastRunSummary(automation: AutomationSummaryView): string {
   return `${outcomeLabel(automation.lastRun.outcome, automation.lastRun.partial)} · ${formatDateTime(automation.lastRun.startedAt)}`;
 }
 
-function missingWorkFoldersMessage(workFolders: AutomationWorkFolderRef[] | undefined): string {
-  if (!workFolders?.length) return "A referenced work-folder is no longer available. Review the automation before turning it on again.";
-  return `${workFolders.map(workFolderLabel).join(", ")} ${workFolders.length === 1 ? "is" : "are"} no longer available. Review the automation before turning it on again.`;
+function missingConnectedFoldersMessage(connectedFolders: AutomationConnectedFolderRef[] | undefined): string {
+  if (!connectedFolders?.length) return "A referenced Connected Folder is no longer available. Review the automation before turning it on again.";
+  return `${connectedFolders.map(connectedFolderLabel).join(", ")} ${connectedFolders.length === 1 ? "is" : "are"} no longer available. Review the automation before turning it on again.`;
 }
 
-function workFolderLabel(workFolder: AutomationWorkFolderRef): string {
-  return workFolder.workFolderName ?? workFolder.workFolderId;
+function connectedFolderLabel(connectedFolder: AutomationConnectedFolderRef): string {
+  return connectedFolder.connectedFolderName ?? connectedFolder.connectedFolderId;
 }
 
 /** A succeeded run or step whose Worker reported finishing only partly reads "Partly done". */
@@ -898,7 +898,7 @@ function watchStateLabel(state: "starting" | "watching" | "paused" | "error" | u
 function hopLabel(kind: AutomationHistoryHopView["kind"]): string {
   if (kind === "chat") return "Chat";
   if (kind === "files") return "Copy Files";
-  return kind === "agent" ? "Message work-fold agent" : "Run Checks";
+  return kind === "agent" ? "Message AmpleFile agent" : "Run Checks";
 }
 
 function sameProposals(left: AutomationProposalView[], right: AutomationProposalView[]): boolean {
@@ -906,7 +906,7 @@ function sameProposals(left: AutomationProposalView[], right: AutomationProposal
 }
 
 function automationBridge() {
-  const bridge = window.workFoldDesktop?.automations;
+  const bridge = window.ampleFileDesktop?.automations;
   if (!bridge) throw new Error("Automation settings are available in the desktop app.");
   return bridge;
 }

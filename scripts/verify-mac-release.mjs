@@ -11,9 +11,9 @@ const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const packageJson = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8"));
 const identity = JSON.parse(readFileSync(join(rootDir, "src", "shared", "product-identity.json"), "utf8"));
 const version = packageJson.version;
-const arch = process.env.WORKFOLD_DESKTOP_RELEASE_ARCH?.trim() || (process.arch === "x64" ? "x64" : "arm64");
-const releaseBuild = process.env.WORKFOLD_MAC_RELEASE_BUILD === "1";
-const unsignedSmokeBuild = process.env.WORKFOLD_ALLOW_UNSIGNED_MAC_BUILD === "1";
+const arch = process.env.AMPLEFILE_DESKTOP_RELEASE_ARCH?.trim() || (process.arch === "x64" ? "x64" : "arm64");
+const releaseBuild = process.env.AMPLEFILE_MAC_RELEASE_BUILD === "1";
+const unsignedSmokeBuild = process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD === "1";
 const builderDir = join(rootDir, "out", "builder");
 const expectedProductName = unsignedSmokeBuild ? identity.macSmokeProductName : identity.productName;
 const appBundleName = `${expectedProductName}.app`;
@@ -27,8 +27,8 @@ const zipPath = join(builderDir, `${artifactStem}.zip`);
 const updatePath = join(builderDir, "latest-mac.yml");
 const manifestPath = join(builderDir, `${identity.productName}-mac-release-manifest.json`);
 const textManifestPath = join(builderDir, `${identity.productName}-mac-release-manifest.txt`);
-const expectedFeedOwner = process.env.WORKFOLD_MAC_RELEASE_OWNER?.trim() || identity.sourceRepositoryOwner;
-const expectedFeedRepo = process.env.WORKFOLD_MAC_RELEASE_REPO?.trim() || identity.macReleaseRepositoryName;
+const expectedFeedOwner = process.env.AMPLEFILE_MAC_RELEASE_OWNER?.trim() || identity.sourceRepositoryOwner;
+const expectedFeedRepo = process.env.AMPLEFILE_MAC_RELEASE_REPO?.trim() || identity.macReleaseRepositoryName;
 const failures = [];
 
 for (const [path, label] of [

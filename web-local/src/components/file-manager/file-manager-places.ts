@@ -1,11 +1,11 @@
 /**
  * The places the file manager's sidebar opens (docs/product-model.md,
- * "2026-11-06 file manager layout"): a work-folder, or one of the Standard
+ * "2026-11-06 file manager layout"): a Connected Folder, or one of the Standard
  * Folders (Desktop, Documents, Downloads, Pictures, the home folder, iCloud
  * Drive, and any folder added with +).
  */
 export type FileManagerPlace =
-  | { kind: "work-folder"; id: string }
+  | { kind: "connected-folder"; id: string }
   | { kind: "standard"; id: string };
 
 export interface FileManagerLocation { place: FileManagerPlace; path: string }
@@ -14,8 +14,8 @@ export interface StandardFolderSummary {
   id: string;
   name: string;
   root: string;
-  /** Set when the folder is itself a registered work-folder. */
-  workFolderId: string | null;
+  /** Set when the folder is itself a registered Connected Folder. */
+  connectedFolderId: string | null;
   /** A folder the person added with +, which Remove from Sidebar takes away. */
   added?: boolean;
 }
@@ -36,25 +36,25 @@ export function sameLocation(left: FileManagerLocation, right: FileManagerLocati
 
 /** The local API routes for a place's files. */
 export function placeApiBase(place: FileManagerPlace): string {
-  return place.kind === "work-folder"
-    ? `/api/work-folders/${encodeURIComponent(place.id)}`
+  return place.kind === "connected-folder"
+    ? `/api/connected-folders/${encodeURIComponent(place.id)}`
     : `/api/standard-folders/${encodeURIComponent(place.id)}`;
 }
 
 export function placeEventsUrl(place: FileManagerPlace, path: string): string {
   const base = placeApiBase(place);
-  if (place.kind === "work-folder") return `${base}/file-events`;
+  if (place.kind === "connected-folder") return `${base}/file-events`;
   return `${base}/events${path ? `?path=${encodeURIComponent(path)}` : ""}`;
 }
 
 /**
- * Standard Folders that are not registered work-folders. A registered one is
- * listed with the other work-folders instead, so it is never shown twice.
+ * Standard Folders that are not registered Connected Folders. A registered one is
+ * listed with the other Connected Folders instead, so it is never shown twice.
  */
 export function sidebarStandardFolders(
   folders: readonly StandardFolderSummary[],
-  workFolders: ReadonlyArray<{ id: string }>,
+  connectedFolders: ReadonlyArray<{ id: string }>,
 ): StandardFolderSummary[] {
-  const registered = new Set(workFolders.map((workFolder) => workFolder.id));
-  return folders.filter((folder) => !folder.workFolderId || !registered.has(folder.workFolderId));
+  const registered = new Set(connectedFolders.map((connectedFolder) => connectedFolder.id));
+  return folders.filter((folder) => !folder.connectedFolderId || !registered.has(folder.connectedFolderId));
 }

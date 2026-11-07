@@ -4,83 +4,83 @@ import { win32 } from "node:path";
 import test from "node:test";
 
 import {
-  workFoldDesktopUserDataPath,
-  workFoldDesktopStateOverride,
-  workFoldDesktopUsesInstalledProductData,
+  ampleFileDesktopUserDataPath,
+  ampleFileDesktopStateOverride,
+  ampleFileDesktopUsesInstalledProductData,
 } from "../desktop/src/user-data-path.js";
 
-test("non-packaged desktop runs cannot default to installed work-fold state", () => {
+test("non-packaged desktop runs cannot default to installed AmpleFile state", () => {
   const appDataPath = "C:\\Users\\developer\\AppData\\Roaming";
-  const development = workFoldDesktopUserDataPath({
+  const development = ampleFileDesktopUserDataPath({
     appDataPath,
-    productName: "work-fold",
+    productName: "AmpleFile",
     useInstalledProductData: false,
     platform: "win32",
     currentDirectory: "C:\\source\\workspace",
   });
-  const production = workFoldDesktopUserDataPath({
+  const production = ampleFileDesktopUserDataPath({
     appDataPath,
-    productName: "work-fold",
+    productName: "AmpleFile",
     useInstalledProductData: true,
     platform: "win32",
     currentDirectory: "C:\\source\\workspace",
   });
 
-  assert.equal(development, win32.join(appDataPath, "work-fold Development"));
-  assert.equal(production, win32.join(appDataPath, "work-fold"));
+  assert.equal(development, win32.join(appDataPath, "AmpleFile Development"));
+  assert.equal(production, win32.join(appDataPath, "AmpleFile"));
   assert.notEqual(development.toLowerCase(), production.toLowerCase());
 });
 
 test("desktop user-data override remains explicit in development and production", () => {
   const common = {
     appDataPath: "/Users/developer/Library/Application Support",
-    productName: "work-fold",
+    productName: "AmpleFile",
     override: "fixtures/desktop-state",
     platform: "darwin" as const,
     currentDirectory: "/source/workspace",
   };
   assert.equal(
-    workFoldDesktopUserDataPath({ ...common, useInstalledProductData: false }),
+    ampleFileDesktopUserDataPath({ ...common, useInstalledProductData: false }),
     "/source/workspace/fixtures/desktop-state",
   );
   assert.equal(
-    workFoldDesktopUserDataPath({ ...common, useInstalledProductData: true }),
+    ampleFileDesktopUserDataPath({ ...common, useInstalledProductData: true }),
     "/source/workspace/fixtures/desktop-state",
   );
 });
 
 test("the legacy host-injected desktop variable cannot opt a child into production state", () => {
-  const productionState = "C:\\Users\\developer\\AppData\\Roaming\\work-fold";
-  assert.equal(workFoldDesktopStateOverride({
+  const productionState = "C:\\Users\\developer\\AppData\\Roaming\\amplefile";
+  assert.equal(ampleFileDesktopStateOverride({
     WORKSPACE_DESKTOP_USER_DATA_DIR: productionState,
   }), undefined);
-  assert.equal(workFoldDesktopStateOverride({
+  assert.equal(ampleFileDesktopStateOverride({
     WORKSPACE_DESKTOP_STATE_DIR: productionState,
-    WORKFOLD_DESKTOP_STATE_DIR: "C:\\fixtures\\explicit-desktop-state",
+    AMPLEFILE_DESKTOP_STATE_DIR: "C:\\fixtures\\explicit-desktop-state",
   }), "C:\\fixtures\\explicit-desktop-state");
 });
 
 test("only an installer-owned packaged Windows app selects installed product data", () => {
-  const executablePath = "C:\\build\\win-unpacked\\work-fold.exe";
-  const expectedUninstaller = "C:\\build\\win-unpacked\\Uninstall work-fold.exe";
+  const executablePath = "C:\\build\\win-unpacked\\AmpleFile.exe";
+  const expectedUninstaller = "C:\\build\\win-unpacked\\Uninstall AmpleFile.exe";
 
-  assert.equal(workFoldDesktopUsesInstalledProductData({
+  assert.equal(ampleFileDesktopUsesInstalledProductData({
     executablePath,
-    productName: "work-fold",
+    productName: "AmpleFile",
     isPackaged: false,
     platform: "win32",
     fileExists: () => true,
   }), false, "source Electron stays isolated even if its directory happens to contain an uninstaller");
-  assert.equal(workFoldDesktopUsesInstalledProductData({
+  assert.equal(ampleFileDesktopUsesInstalledProductData({
     executablePath,
-    productName: "work-fold",
+    productName: "AmpleFile",
     isPackaged: true,
     platform: "win32",
     fileExists: (path) => path === expectedUninstaller,
   }), true);
-  assert.equal(workFoldDesktopUsesInstalledProductData({
+  assert.equal(ampleFileDesktopUsesInstalledProductData({
     executablePath,
-    productName: "work-fold",
+    productName: "AmpleFile",
     isPackaged: true,
     platform: "win32",
     fileExists: () => false,
@@ -88,9 +88,9 @@ test("only an installer-owned packaged Windows app selects installed product dat
 });
 
 test("packaged non-Windows identities retain their configured data directory", () => {
-  assert.equal(workFoldDesktopUsesInstalledProductData({
-    executablePath: "/Applications/work-fold.app/Contents/MacOS/work-fold",
-    productName: "work-fold",
+  assert.equal(ampleFileDesktopUsesInstalledProductData({
+    executablePath: "/Applications/AmpleFile.app/Contents/MacOS/AmpleFile",
+    productName: "AmpleFile",
     isPackaged: true,
     platform: "darwin",
     fileExists: () => false,
@@ -99,7 +99,7 @@ test("packaged non-Windows identities retain their configured data directory", (
 
 test("desktop startup delegates installed-state selection to the fail-safe classifier", () => {
   const main = readFileSync(new URL("../desktop/src/main.ts", import.meta.url), "utf8");
-  assert.match(main, /workFoldDesktopUsesInstalledProductData\(\{[\s\S]*?executablePath:\s*process\.execPath/);
+  assert.match(main, /ampleFileDesktopUsesInstalledProductData\(\{[\s\S]*?executablePath:\s*process\.execPath/);
   assert.match(main, /fileExists:\s*existsSync/);
-  assert.match(main, /workFoldDesktopUserDataPath\(\{[\s\S]*?useInstalledProductData/);
+  assert.match(main, /ampleFileDesktopUserDataPath\(\{[\s\S]*?useInstalledProductData/);
 });

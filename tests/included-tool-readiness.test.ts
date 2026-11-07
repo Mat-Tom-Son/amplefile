@@ -13,7 +13,7 @@ import { includedToolReadiness } from "../web-local/src/lib/included-tool-readin
 import type { ResolvedPiRuntime } from "../src/local/agent/pi-runtime-config.js";
 
 test("readiness summaries stay cold, preserve unknown setup, and disclose no saved secret", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-readiness-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-readiness-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const included = join(root, "included");
   const marker = join(root, "probe-loaded");
@@ -55,7 +55,7 @@ test("readiness summaries stay cold, preserve unknown setup, and disclose no sav
   assert.doesNotMatch(JSON.stringify(declared), /synthetic-config-secret|example.invalid/);
   await assert.rejects(readFile(marker), { code: "ENOENT" });
   await assert.rejects(setupIncludedTool(root, "chrome", "connect-chrome", {}, provider), /Chrome setup requires the desktop app/);
-  await authStorage.modify("work-fold:web:brave", async () => ({ type: "api_key", key: "synthetic-secret-not-for-status" }));
+  await authStorage.modify("amplefile:web:brave", async () => ({ type: "api_key", key: "synthetic-secret-not-for-status" }));
   const configured = await listIncludedToolStatus(root, provider);
   assert.equal(configured.find(({ id }) => id === "web")!.state, "unknown");
   assert.doesNotMatch(JSON.stringify(configured), /synthetic-secret-not-for-status/);
@@ -121,7 +121,7 @@ test("native observations are runtime-bound, ordered against explicit checks, an
 });
 
 test("Computer Check observes without starting or repairing the helper", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-computer-check-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-computer-check-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const included = join(root, "included");
   await mkdir(join(included, "computer"), { recursive: true });
@@ -147,7 +147,7 @@ test("Computer Check observes without starting or repairing the helper", async (
 
 
 test("Chrome readiness uses only current host observations and trusted actions, without exposing native connection data", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "work-fold-chrome-readiness-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-chrome-readiness-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const calls: string[] = [];
   let observed: ChromeConnectionSummary = { state: "not_connected", hasSelection: false, checkedAt: new Date().toISOString() };

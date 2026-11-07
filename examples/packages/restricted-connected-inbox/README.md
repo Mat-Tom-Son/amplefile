@@ -1,9 +1,9 @@
 # Connected inbox app example
 
-This package exercises work-fold's dynamic restricted-app runtime: a real
-interactive rail navigator, persistent work-folder-owned tabs, brokered public
+This package exercises AmpleFile's dynamic restricted-app runtime: a real
+interactive rail navigator, persistent Connected Folder–owned tabs, brokered public
 HTTPS, a numeric loopback service panel, durable app storage, a reviewed
-work-folder-folder export, an optional worker, a named inbox-refresh automation, and
+connected-folder-folder export, an optional worker, a named inbox-refresh automation, and
 a reviewed static notification category for completed automation runs.
 
 Use the canonical [Restricted app authoring guide](../../../docs/restricted-app-authoring.md)
@@ -15,31 +15,31 @@ security architecture.
   worker, tools, schemas, and exact network destinations.
 - `index.html`, `styles.css`, and `app.js` form the sandboxed app UI. The same
   code adapts to the rail navigator and app-owned work tabs using
-  `workFoldRestrictedApp.context`.
+  `ampleFileRestrictedApp.context`.
 - `worker.js` exposes an agent action and the `refresh-inbox` automation;
   that automation records its remote result and may select the separately
   granted `inbox-refresh-finished` notification.
 - Network calls and tab creation go through the narrow
-  `workFoldRestrictedApp` bridge; the app has no Node, filesystem, process,
+  `ampleFileRestrictedApp` bridge; the app has no Node, filesystem, process,
   or direct network access. Search and automation status use the host
   storage bridge, active visible UI re-reads after bounded invalidation hints,
-  and service exports use a separately granted work-folder's folder plus History
+  and service exports use a separately granted Connected Folder's folder plus History
   safety.
 
-The normal generated-app path begins in a work-folder Chat: the agent writes the
-completed work-folder-relative package, proposes it through work-fold's host-owned
+The normal generated-app path begins in a Connected Folder Chat: the agent writes the
+completed Connected Folder–relative package, proposes it through AmpleFile's host-owned
 tool, and the person reviews and installs the exact digest in that Chat. For
-this checked-in developer sample, register the repository as a work-folder or copy
+this checked-in developer sample, register the repository as a Connected Folder or copy
 this directory into one, then run
-`work-fold apps install-preview --work-folder <id-or-name> --package examples/packages/restricted-connected-inbox`
-(adjust the work-folder-relative path if copied) and review the pending decision.
+`amplefile apps install-preview --connected-folder <id-or-name> --package examples/packages/restricted-connected-inbox`
+(adjust the Connected Folder–relative path if copied) and review the pending decision.
 
 The mail endpoint is intentionally non-functional and declares API-key or
 bearer authentication. It would need both a destination grant and a host-owned
 connection configured in Settings → Apps; the example contains no real
 credential. The local `project-service` destination is anonymous and expects a
 service on `127.0.0.1:4317`, but still requires its own destination grant.
-Together they demonstrate that installing an app grants nothing. work-fold
+Together they demonstrate that installing an app grants nothing. AmpleFile
 verifies the loopback address and port, but this version does not verify
 process ownership.
 
@@ -58,13 +58,13 @@ destination on. Click **Project service** in the app's left pane to open its
 tab, then use **Check health** or **Run refresh job**.
 
 This helper is an ordinary developer process outside the restricted app
-package. work-fold and the sandboxed app do not execute, install, stop, or
-trust it. work-fold verifies only the reviewed numeric loopback address and
+package. AmpleFile and the sandboxed app do not execute, install, stop, or
+trust it. AmpleFile verifies only the reviewed numeric loopback address and
 port before brokering a request; it does not verify that this particular
 process owns the port. Stop the helper from its terminal when testing is done.
 
 Notifications are on after installation and can be turned off in Settings →
-Apps. They can be shown only during an enabled automation run while work-fold is running, using
+Apps. They can be shown only during an enabled automation run while AmpleFile is running, using
 the exact title and body reviewed in `agent-app.json`; app code cannot supply
 dynamic notification copy, actions, or URLs. An explicit **Run now** while the
 automation is disabled has no notification authority.

@@ -13,20 +13,20 @@ missing. Installation, successful loading, enabled scope, and readiness to
 perform a particular job are distinct facts. Missing setup is named precisely;
 it does not produce an approval queue or a turn suspended on a secret.
 
-**Included with work-fold** describes maintenance: pinned dependencies,
+**Included with AmpleFile** describes maintenance: pinned dependencies,
 reviewed compatibility changes, setup, and verification in the release lane.
 It is not another execution tier. User-added Extensions use the same native
-Pi loader and supported UI. Ordinary Pi packages need no work-fold manifest,
+Pi loader and supported UI. Ordinary Pi packages need no AmpleFile manifest,
 wrapper format or tool registry. Full-trust native code retains full-user
 authority; host facilities cannot sandbox arbitrary shell access.
 
 **Skills & Extensions** owns discovery, installation, source, scope,
 configuration, diagnostics, update, enable/disable and removal. Since
 2026-09-25 it is a popup dialog opened by the rail's Add button and pinned to
-the work-folder it was opened from. Its Installed view starts with an **Included
-with work-fold** strip holding the five included tools; **Everywhere** and
+the Connected Folder it was opened from. Its Installed view starts with an **Included
+with AmpleFile** strip holding the five included tools; **Everywhere** and
 **This folder only** remain the scope groups below it, side by side. Account and OS setup stays on a trusted local surface. Generated
-work-folder apps remain separate: they may request agent work through
+Connected Folder apps remain separate: they may request agent work through
 `assistant.request`, but receive no native desktop-control bridge.
 
 ## Responsibilities
@@ -34,14 +34,14 @@ work-folder apps remain separate: they may request agent work through
 | Layer | Owns |
 |---|---|
 | Pi | Packages, Skills, Extensions, tool definitions, commands, session events, model conversion and native cancellation signals |
-| work-fold host | Chat/request identity, supported UI, setup, capability mutation fences, resource lifecycle and diagnostics |
+| AmpleFile host | Chat/request identity, supported UI, setup, capability mutation fences, resource lifecycle and diagnostics |
 | Integration | Domain operations, valid observations, connection/helper protocol, readiness checks, bounded results and cleanup |
 | Desktop | Presentation and input for the exact owning Chat; identity, secret and OS setup |
 
 Included resources live in `resources/included-tools` as ordinary native
 Extensions and a standard document-work `SKILL.md`. Pi evaluates the same
 resource filters used for user-added files. An optional versioned native event
-bus query, `work-fold:extension-host:v1`, provides explicit runtime paths,
+bus query, `amplefile:extension-host:v1`, provides explicit runtime paths,
 catalog/session mode and on-demand configuration callbacks. This context stays
 inside the full-trust native runtime; it is not a renderer or restricted-app
 API, and other native Extensions can use the same supported event bus.
@@ -86,7 +86,7 @@ is not rendered as a desktop component.
 | Tool | Included implementation | Setup and supported boundary |
 |---|---|---|
 | Computer Control | `@injaneity/pi-computer-use` 0.5.1; existing native observations/input coordination with reviewed helper lifecycle changes | Apple-silicon macOS helper built from source and included in the app signing lane. Accessibility and Screen Recording setup names the actual helper. Requested observations and actions, no continuous recorder. |
-| Chrome | `pi-chrome` 0.15.51; shared transport with independent Chat targets and embedded-host ownership | Install work-fold from the Chrome Web Store and choose Connect in the selected profile. Native bootstrap and authenticated protocol/capability checks precede use. Signed-in account effects use that profile's authority; cleanup preserves user tabs. |
+| Chrome | `pi-chrome` 0.15.51; shared transport with independent Chat targets and embedded-host ownership | Install AmpleFile from the Chrome Web Store and choose Connect in the selected profile. Native bootstrap and authenticated protocol/capability checks precede use. Signed-in account effects use that profile's authority; cleanup preserves user tabs. |
 | Web | `pi-web-access` 0.29.0 pure search and readable-page functions through an additive native factory | DuckDuckGo search needs no key; optional Brave key is entered in tool setup. Explicit HTTP(S) reading, bounded output and cancellation. No automatic cookie/profile import, media service, global fetch replacement or hidden model call. Challenges and rate limits remain visible failures. |
 | Documents | Ordinary JavaScript worker, maintained document libraries and a standard document-work Skill | DOCX/XLSX/PPTX/PDF creation, spreadsheet read/write, PDF text extraction and selected page rendering using bundled dependencies. No separate Node/Python required. The separate `document_engine` tool detects installed LibreOffice for Office rendering/XLSX recalculation and Tesseract for page-image OCR. These optional engines are not bundled; missing setup is explicit. Built-in PDF text extraction itself is not OCR. |
 | Service Connections | Pi 1.1.0 `createMcpExtension` using native MCP transport, discovery, schemas and cancellation | Configure HTTP or stdio servers in native Pi files. Trusted setup supports bearer credentials and loopback PKCE OAuth. Stdio commands need their own installed executable/runtime. Native MCP currently has no elicitation or sampling path. No automatic imports from other applications. |
@@ -98,8 +98,8 @@ when an operation needs them. The document worker imports its libraries on
 requested execution or an explicit health check.
 
 The packaged Computer helper runs from a private, versioned directory outside
-the enclosing work-fold app bundle so macOS attributes its Screen Recording
-permission to `work-fold Computer`. On first requested setup or tool execution,
+the enclosing AmpleFile app bundle so macOS attributes its Screen Recording
+permission to `amplefile Computer`. On first requested setup or tool execution,
 the host copies the exact signed bundle, verifies its bytes and signature, and
 preserves its identity and icon. Catalog reads create no helper copy or process.
 An update creates a new version without replacing a running helper; the host
@@ -147,7 +147,7 @@ performs bounded native connect and tool/resource/prompt discovery, without
 invoking a server tool. Chrome checks its authenticated companion; computer
 checks report actual helper/permission state. Web reports configured or unknown
 until the relevant operation supplies evidence; the default keyless Web path
-is available without setup. Included tiles in the Installed view's **Included with work-fold** strip read
+is available without setup. Included tiles in the Installed view's **Included with AmpleFile** strip read
 cold host status. While the popup is visible they refresh every five seconds
 and when the window returns to the foreground; hidden or closed surfaces stop
 reading. A failed read keeps previously verified evidence neutral and historical
@@ -167,7 +167,7 @@ An idle helper is unverified rather than unavailable. **Check** never repairs th
 helper or disposes Chat sessions. Setup (2026-10-11) is one **Allow Computer
 Control** button: it asks macOS for both permissions, then watches every two
 seconds for up to five minutes, with a checklist that shows each permission and
-opens its System Settings pane, and the one sentence that names **work-fold
+opens its System Settings pane, and the one sentence that names **AmpleFile
 Computer** as what to turn on. Once macOS reports Screen Recording allowed but
 the running helper cannot capture yet, setup restarts the helper once, because
 macOS applies the permission only after a restart. Allow finishes at once when
@@ -184,23 +184,23 @@ Individual connection details own their bounded native checks.
 
 **Set up** appears only when a person can act. Explicit checks invalidate previous
 evidence before work starts. Runtime-bound observation ordering prevents an older
-probe from replacing a newer check; renderer reads cannot cross work-folders,
+probe from replacing a newer check; renderer reads cannot cross Connected Folders,
 overwrite newer results, or survive a closed owner. Setup and failures remain in
 the same tool detail rather than a new navigation destination.
 
 Enable/disable persists through Pi's native filters, preserving unrelated
 package selections, manifest defaults, resource aliases and scopes. Desktop
 and `tools enable|disable --path <resource-path> --kind
-extensions|skills|prompts|themes --scope everywhere|work-folder [--work-folder <id>]` share
+extensions|skills|prompts|themes --scope everywhere|connected-folder [--connected-folder <id>]` share
 `capability.resource.enabled`: prepare, pin resource and settings identity,
 journal, recheck under the capability fence, execute once and return a receipt.
 Active affected work refuses the change instead of losing its session. Included
-resources use that same path; their updates arrive with work-fold. Pi does not
-filter a package configured as one Extension file, so work-fold explains the
+resources use that same path; their updates arrive with AmpleFile. Pi does not
+filter a package configured as one Extension file, so AmpleFile explains the
 limitation and offers removal rather than pretending its switch worked.
 
-MCP setup sessions bind the selected work-folder, authorized root and Pi agent
-directory. Native global `mcp.json` and the registered work-folder's `.pi/mcp.json`
+MCP setup sessions bind the selected Connected Folder, authorized root and Pi agent
+directory. Native global `mcp.json` and the registered Connected Folder's `.pi/mcp.json`
 merge through Pi; ambient other-app configuration is not imported.
 Bearer credentials use the encrypted desktop CredentialStore; OAuth state uses
 an encrypted native Pi backend with scope/endpoint-bound identities. Development
@@ -270,7 +270,7 @@ loading. Relevant suites include `extension-interactions`,
 
 Passing isolated fixtures does not certify the signed installed user journey
 or a model's judgment. Release acceptance still requires live model work in
-disposable work-folders, real desktop/companion setup and recovery, computer-use
+disposable Connected Folders, real desktop/companion setup and recovery, computer-use
 inspection, repository and desktop checks, and the normal signed/notarized
 candidate lane. Record that evidence for the exact candidate rather than
 inferring it from source or a previous build. Document acceptance must

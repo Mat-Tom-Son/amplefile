@@ -8,12 +8,12 @@ import { pathToFileURL } from "node:url";
 
 test("Latest occupies its own row instead of covering the scrollable transcript", { timeout: 30_000 }, async (t) => {
   let browser: string | undefined;
-  for (const candidate of [process.env.WORKFOLD_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"]) {
+  for (const candidate of [process.env.AMPLEFILE_CSS_BROWSER, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"]) {
     if (!candidate) continue;
     try { await access(candidate); browser = candidate; break; } catch {}
   }
   if (!browser) { t.skip("Chromium is required for actual Chat layout coverage."); return; }
-  const scratch = await mkdtemp(join(tmpdir(), "work-fold-latest-layout-"));
+  const scratch = await mkdtemp(join(tmpdir(), "amplefile-latest-layout-"));
   t.after(() => rm(scratch, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }));
   const sheets = ["brand.css", "styles.css", "application-appearance.css"];
   const css = (await Promise.all(sheets.map((name) => readFile(resolve("web-local/src", name), "utf8")))).join("\n");
