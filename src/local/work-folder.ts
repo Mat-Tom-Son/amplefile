@@ -36,7 +36,6 @@ import {
 } from "./state-paths.js";
 import { isAlwaysHiddenWorkFolderEntry, isWorkFolderIgnored, readWorkFolderIgnoreState } from "./work-folder-ignore.js";
 import { containsReservedWorkFolderPathSegment } from "./work-folder-path-policy.js";
-import { migrateWorkFolderMetadata } from "./vocabulary-migration.js";
 import { productIdentity } from "../shared/product-identity.js";
 
 import type { WorkFolderLocation, WorkFolderSummary } from "../shared/work-folder-summary.js";
@@ -1371,7 +1370,6 @@ async function withRegistryMutation<T>(operation: () => Promise<T>): Promise<T> 
 }
 
 async function writePortableManifest(workFolder: WorkFolderSummary): Promise<void> {
-  await migrateWorkFolderMetadata(workFolder.workFolderRoot);
   const file = workFolderManifestFile(workFolder.workFolderRoot);
   await mkdir(dirname(file), { recursive: true });
   let existingFields: Record<string, unknown> = {};
@@ -1429,8 +1427,6 @@ async function restoreFileSnapshot(file: string, snapshot: FileSnapshot): Promis
 }
 
 async function readExistingWorkFolderManifest(workFolderRoot: string): Promise<PortableWorkFolderManifest | null> {
-  // A folder from an older install, or another machine, still carries `.work-fold/space.json`.
-  await migrateWorkFolderMetadata(workFolderRoot).catch(() => false);
   const file = workFolderManifestFile(workFolderRoot);
   if (!existsSync(file)) return null;
   try {

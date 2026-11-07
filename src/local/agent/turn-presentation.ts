@@ -86,8 +86,7 @@ function hasPortableFolderIdentity(path: string): boolean {
     const metadata = join(path, entry);
     // Never follow a purported identity's symlink just to decide presentation scope.
     if (lstatSync(metadata).isSymbolicLink()) return true;
-    // `space.json` is the name a folder from before 2026-10-10 still carries until it is opened.
-    if (readdirSync(metadata).some((name) => ["work-folder.json", "space.json"].includes(name.toLowerCase()))) return true;
+    if (readdirSync(metadata).some((name) => name.toLowerCase() === "work-folder.json")) return true;
   }
   return false;
 }

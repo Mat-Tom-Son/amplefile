@@ -1,4 +1,4 @@
-import { lstat, mkdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { workFoldAgentRoot } from "./state-paths.js";
@@ -239,8 +239,6 @@ export async function ensureWorkFoldAgentInstructions(): Promise<void> {
   for (const [index, directory] of directories.entries()) {
     await ensureAppOwnedDirectory(directory, index === 0);
   }
-  // Builds before 2026-10-10 generated the same Skill as `manage-spaces`.
-  await rm(join(root, ".pi", "skills", "manage-spaces"), { recursive: true, force: true });
   await writeAppOwnedFile(join(root, "AGENTS.md"), workFoldAgentAgentsMd);
   await writeAppOwnedFile(join(directories.at(-1)!, "SKILL.md"), manageWorkFoldersSkill);
 }

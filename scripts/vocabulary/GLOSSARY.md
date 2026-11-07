@@ -58,26 +58,9 @@ Access was removed from the desktop on 2026-11-07.)
 
 ## Existing data
 
-Two one-time migrations carry a profile from before 2026-10-10 forward:
-
-- `src/local/vocabulary-migration.ts` runs at desktop and local-API startup.
-  It renames the app-state stores whose names changed (for example
-  `space-registry.json` → `work-folder-registry.json`, `routings/` →
-  `automations/`, `trash/` → `recently-deleted/`), rewrites the JSON keys and
-  enum values inside an allowlist of app-owned stores using
-  `vocabulary-migration-tables.json` (generated from this codemod's report),
-  and moves each registered folder's `.work-fold/space.json` to
-  `.work-fold/work-folder.json`. It never rewrites a person's words, file
-  paths, conversation logs, History objects, or deleted folders' contents,
-  keeps every original under `vocabulary-migration-backup/`, and records
-  `vocabulary-migration.json` so it runs once. A folder that arrives later
-  from another machine is migrated when it is registered or read.
-- `web-local/src/lib/storage-migration.ts` moves the renderer's saved tabs,
-  unsent Chat drafts, and view preferences from `work-fold.space.*` to
-  `work-fold.work-folder.*` keys.
-
-The generated `manage-spaces` Skill in the work-fold agent's folder is
-replaced by `manage-work-folders` on the next start.
+The one-time migrations that carried a profile from before 2026-10-10
+forward stayed with the work-fold repository: AmpleFile starts with a new
+app id and an empty profile, so it has no such state.
 
 ## Re-running the codemod
 

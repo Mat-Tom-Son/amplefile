@@ -49,7 +49,6 @@ import {
   writeWorkFoldCliActTokenFile,
 } from "../../src/local/cli/act-token.js";
 import { configureWorkFoldStateRoot, managedWorkFolderRoot, workFoldAgentRoot } from "../../src/local/state-paths.js";
-import { migrateVocabularyState } from "../../src/local/vocabulary-migration.js";
 import { getWorkFolder, listWorkFolders } from "../../src/local/work-folder.js";
 import { WorkFoldCliKernelAdapter } from "../../src/local/work-fold-cli-adapter.js";
 import { WorkFoldKernel } from "../../src/local/work-fold-kernel.js";
@@ -355,8 +354,6 @@ if (ownsInstance) {
     configureWorkFoldStateRoot(app.getPath("userData"));
     await ensureLoginShellEnvironment();
     configureCliEnvironment();
-    // Before anything reads app state, including a CLI request served from this launch.
-    await migrateVocabularyState(app.getPath("userData"));
     if (initialCliArgumentError) throw initialCliArgumentError;
     if (initialCliRequestId) {
       await processWorkFoldCliRequest(initialCliRequestId);

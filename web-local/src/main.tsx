@@ -21,10 +21,6 @@ import { App } from "./App";
 import { ModelContextInspector } from "./components/chat/ModelContextInspector";
 import { startExitMotion } from "./lib/motion";
 import { desktopPlatform, previewPlatform } from "./lib/platform";
-import { migrateRendererStorage } from "./lib/storage-migration";
-
-// Before any component reads a saved tab, draft, or preference.
-migrateRendererStorage();
 
 const platform = desktopPlatform();
 if (platform) document.documentElement.dataset.platform = platform;

@@ -377,8 +377,7 @@ test("a stored one-time proposal stays out of pending files after its admission 
 test("a folder automation that declares ifMissed run catches up after a restart, and Settings says so", async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), "work-fold-automation-catch-up-settings-"));
   const stateRoot = join(sandbox, "state");
-  // The desktop's state root always exists before the first launch, so its
-  // one-time vocabulary migration records completion then; mirror that.
+  // The desktop's state root always exists before the first launch; mirror that.
   await mkdir(stateRoot, { recursive: true });
   const launch = async () => await startLocalApi({
     port: 0,

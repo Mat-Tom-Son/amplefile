@@ -331,7 +331,6 @@ import {
   workFoldJobsRoot,
   workFoldRecentlyDeletedRoot,
 } from "./state-paths.js";
-import { migrateVocabularyState } from "./vocabulary-migration.js";
 import {
   WorkFoldRecentlyDeletedError,
   WorkFoldRecentlyDeletedStore,
@@ -874,7 +873,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     ? createLocalDevelopmentApiOptions()
     : null;
   configureWorkFoldStateRoot(options.stateBase ?? developmentDefaults?.stateBase);
-  await migrateVocabularyState(workFoldStateRoot());
   // Recently deleted opens before anything can destroy: an interrupted work-folder
   // deletion finished by startup recovery below must reach Recently deleted rather
   // than an erase (docs/receipts-not-gates.md, F20).
@@ -5323,8 +5321,7 @@ function managedWorkFolderRemovalIo(
 /** Best-effort display name for a folder already claimed for removal. */
 async function claimedWorkFolderName(claimPath: string): Promise<string | null> {
   try {
-    const raw = await readFile(join(claimPath, ".work-fold", "work-folder.json"), "utf8")
-      .catch(() => readFile(join(claimPath, ".work-fold", "space.json"), "utf8"));
+    const raw = await readFile(join(claimPath, ".work-fold", "work-folder.json"), "utf8");
     const parsed = JSON.parse(raw) as { name?: unknown };
     return typeof parsed.name === "string" && parsed.name.trim() ? parsed.name.trim().slice(0, 200) : null;
   } catch {
