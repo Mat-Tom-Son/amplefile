@@ -1,0 +1,1013 @@
+# Product model and roadmap
+
+This document is the durable product brief for work-fold. It exists so design, implementation, and release decisions stay aligned as the app grows.
+
+## Product promise
+
+work-fold makes an ordinary folder understandable as a place for getting something done, then gives that place a capable Worker.
+
+Many people already have the right raw material—folders, files, cloud-synchronized directories, and repeatable ways of working—but do not think of a folder as an environment they can return to. A **work-folder** closes that gap. It adds a human mental model and a Worker without turning the folder into a proprietary format.
+
+work-fold is for general computer work. Coding is one valid use, not the organizing metaphor.
+
+Long tasks can recover their own completed tool observations and saved findings
+through `progress` after compaction or an answer. The host preserves evidence
+references and file freshness separately from the request's checklist; a done
+item remains an agent claim. This uses the existing machine-local Pi session
+and request ownership, as documented in [Worker tools](worker-tools.md).
+If compaction removes a Worker answer continuation's hidden context, the host
+restates that request's original assignment separately from its latest answer,
+so the requested deliverable contract remains available alongside corrections.
+
+The Chat composer's context circle updates during a turn as text and tool results
+arrive, using Pi's context estimate and its estimator for a response still
+streaming. Finalized provider usage replaces that streaming estimate. The circle
+is its own button beside the model chip (2026-11-05): it opens a **Context**
+popover with the share used, tokens of the window, tokens processed in the
+Chat, and **Compact Chat**, which takes the same route as `/compact` and waits
+for the turn to end. After successful manual,
+automatic, or background compaction, a quiet saved Chat notice says that earlier
+messages were summarized and the chat history remains available. Cancelled or
+failed compactions never claim success. Context pressure clears until Pi has
+usage from the next model reply; an unknown count is never shown as zero.
+
+Workers are taught to keep temporary working files in an ordinary `.worker/<task-id>/`
+folder, created only when needed, and deliver requested files outside it.
+The Files tab gives that top-level folder a muted name and icon while keeping
+it fully usable. It follows normal file, Search, History, attachment and Check
+policies, including the person's ignore choices. It is not hidden metadata,
+private storage or an automatic cleanup area, and existing project edits stay
+in their original locations. work-folder registration creates no scratch files.
+
+Workers can use structured collaboration calls, ask asynchronous questions while
+independent work continues, send input to terminal jobs, create managed Git
+working copies for independent edits, and run focused read-only helpers. These
+use the same request, receipt and Stop paths: [Worker tools](worker-tools.md).
+
+## The nouns
+
+| Concept | User promise | Boundary |
+|---|---|---|
+| **work-fold** | The desktop product that brings folders, conversations, materials, and Workers together. | It is not the name of each folder-backed activity. |
+| **work-folder** | One understandable place for an activity, backed by an ordinary folder. | Registering a folder does not move or convert it. |
+| **Files** | The ordinary folder contents visible for the selected work-folder. | Files are not a separate container or proprietary format. |
+| **Chats** | Conversations grounded in the selected work-folder. | A chat does not automatically receive every file in the work-folder. |
+| **History** | Checkpoints and recoverable changes associated with a work-folder. | It should remain distinct from chat history. |
+| **Checks** | Optional, manual expectations over exact files or bounded file sets a person deliberately designates. | They are not ambient scanning, a permanent rail destination, or proof that an unconfigured work-folder is healthy. |
+| **Worker** | The Pi-powered helper in a work-folder. | Provider connections are configured in Settings and stay machine-local; model choices are saved separately for each work-folder and for the work-fold agent, independently from work-folder content. |
+| **Skills & Extensions** | One popup dialog, opened by the rail's Add button, to discover and manage what the Workers and the work-fold agent can do. | It groups Skills and Extensions and is pinned to the work-folder it was opened from; installed work-folder apps are managed in Settings → Apps. |
+| **Skill** | A reusable way of working that helps the agent approach a task. | A Skill may contain executable scripts and is not merely a document. |
+| **Extension** | An executable capability or connection available to the agent. | It has a stronger trust implication than an ordinary file. |
+| **App Project** | An optional build-and-publication identity declared for one work-folder. | Its presentation and identity are machine-local application state, not another portable file or cloud ownership record. |
+| **Feature** | One stable reviewed contribution to an App Project. | A Feature id names a slot; only an exact reviewed revision identifies executable bytes. |
+| **Release** | An immutable content-addressed snapshot of reviewed Features and App presentation. | Preparing, publishing, and installing it are separate local acts; a display version is not executable identity. |
+| **App Instance** | One published Release installed into a chosen work-folder with its own runtime, data, grants, connections, jobs, and receipts. | It is distinct from the source-bound Development preview and does not live in or own the work-folder's folder. |
+| **work-fold agent** | The agent above all work-folders: one conversation scope, shown in the menu-bar/tray popover and the main window's agent panel under one name. | It is not a work-folder, a second Worker, or a renamed contract; "work-fold agent" stays the technical term. |
+| **Automation** | A declared, inert-until-enabled set of deterministic steps that move work between work-folders on a reviewed trigger. | It is executed by app code, never by a Worker conversation, and nothing automation-shaped is written into any work-folder. The technical contract remains `automation`. |
+| **Recently deleted** | The machine-local holding place for anything work-fold removed that History could not restore — files, folders, a managed work-folder's folder, a removed imported Skill, app storage and retained-data exports — kept for a retention window and restorable from Settings or the CLI. | It is not a work-folder, not portable, not a backup, and never empties on a verb; only retention purges it. |
+
+The work-folder header chooses the active working folder and provides compact
+actions to use an existing folder, create a work-folder, or manage work-folders. The
+stable primary navigation then follows these everyday surface nouns:
+
+- **Files**
+- **Chats**
+- **History**
+
+An **Automations** entry follows History while an automation's trigger or
+step names the active work-folder. It opens that work-folder's read-mostly Automations
+tab; **Settings → Automations** remains the place to manage declarations
+(the 2026-09-24 amendment in [Automations](automations.md)).
+
+The bottom-rail **Add** button opens the **Skills & Extensions** popup directly
+(2026-09-25). There is no Add menu and no Library (desktop 2026-09-25, CLI 2026-10-10); the work-folder-owned Apps tab is retired too. App building is not an Add
+destination and has no button: a person asks a Worker to build an app in a
+Chat. Skills, Extensions, packages, and core tools are managed in the
+**Skills & Extensions** popup, a dialog like Settings and Keyboard shortcuts
+that is pinned to the work-folder it was opened from. Its Installed view starts with
+an **Included with work-fold** strip holding the five included tools, then shows
+**Everywhere** tools for the work-fold agent and every work-folder beside
+**This folder only** tools that travel with one work-folder; the two groups stack on
+narrow widths. Installed work-folder apps open from their contributed rail region,
+while **Settings → Apps** lists apps by work-folder and owns their grants,
+connections, named automations and run history, local data, update review,
+removal, Worker requests, and the receipts of their model use. Provider connections,
+API keys, supported provider OAuth, scoped model choices, and per-work-folder
+**Worker instructions** live in **Settings → AI Models**. Credentials are shared
+machine-wide, while model choices and Worker instructions are machine-local
+preferences keyed by portable work-folder identity; the work-fold agent has its own
+model choice but no editable Worker instructions. A model change becomes the
+default for new Chats because a live Pi session retains its session model. A
+Worker-instruction change reloads that work-folder's idle clients and applies to
+subsequent turns, including existing Chats. Worker instructions are also where a
+Worker remembers (2026-10-18): when the person states a lasting preference about
+working in that folder, the Worker or the work-fold agent adds it as one line
+with `work-folders worker instructions --append`, which keeps what is already
+there and skips an exact repeat, and says what it saved. OpenRouter has an explicit live
+refresh backed by its tool-capable text-model API; the last good result is
+cached outside every work-folder and Pi's built-in catalog remains a fallback. A
+restricted work-folder app's connection is managed with that app in **Settings → Apps**.
+
+Microsoft Foundry setup in AI Models offers **Microsoft Foundry / Azure
+(OpenAI)**, **Microsoft Foundry (Chat Completions)**, and **Microsoft Foundry
+(Anthropic)**. They can be connected together; each keeps its own endpoint,
+API key, and deployment names (separated by commas or new lines). The original
+Azure/OpenAI provider retains Pi's per-model Responses or Chat Completions choice,
+including existing saved deployments; the separate Chat Completions connection
+selects that format explicitly. Names become the available model
+choices without a prerequisite catalog-model selection or mapping. An optional
+**Deployment model details** disclosure lets the person choose a base model
+from Pi's catalog when a custom deployment name hides its context, image, or
+reasoning capabilities. New Chat Completions and Anthropic connections give
+unknown aliases Pi's generic limits until a base model is chosen, with the
+default-limits choice labeled explicitly. Native Pi `models.json` definitions
+and overrides remain available for models outside the base-model picker.
+A base-model id later removed from the catalog makes only that deployment
+unavailable; Settings remains usable to repair or remove it.
+Pi owns provider auth, streaming, and tool-call parsing.
+One deployment is selected separately for each work-folder and the work-fold
+agent. Connection settings are machine-wide, use Pi's existing provider
+credential storage, and can be edited without re-entering the key. Resource or
+full inference URLs normalize to `/openai/v1` or `/anthropic` for the selected
+connection. Saving configures existing chat deployments; it does not test
+inference, sign in to Azure, or discover deployments. This setup uses API keys;
+Microsoft Entra ID authentication and non-chat model operations are separate work.
+
+**First run and Connect your AI (2026-10-11).** With no work-folder yet, the
+app opens on a short first run: a welcome that says what work-fold is, **Connect
+your AI**, then **Pick a folder to start with** (Use existing folder or Create
+new work-folder). Connect your AI offers ChatGPT, Claude, and OpenRouter first,
+signing in where the desktop app can run the provider's sign-in and taking a key
+otherwise, plus **Another provider**, a search over the rest of Pi's catalog
+(Azure and providers that need more than a key go to AI Models). The step is
+skipped when a provider is already connected and can be skipped by the person;
+a work-folder is still a useful folder without AI. The same picker opens as a
+dialog from the composer's **Connect AI** chip (shown in place of the model
+label while nothing is connected), from the **Connect AI** button on a turn
+that stopped for want of a model, and before **Set up for me**, which then
+carries on once a provider is connected; it also leads AI Models while nothing
+is connected. Connecting a provider when no usable default model is saved
+saves a recommended one for that provider as Pi's default (OpenAI and ChatGPT:
+GPT-6.1 Sol; Claude: Claude Opus 4.8; OpenRouter: GPT-6 Luna; Google: Gemini
+3.1 Pro; otherwise the provider's first model), so every Worker without its own
+choice, the composer, and the status agree on the model in use. A failed turn
+whose reply already explains the failure shows no second status line. ChatGPT
+sign-in defaults to the direct OpenAI connection. Settings also offers
+**OpenAI (Codex subscription)** as a distinct connection for Codex models and
+account/usage details; choosing it never silently replaces a working model.
+When the desktop app includes Chrome and Computer Control
+and either is not yet set up, first run adds an optional **Let your Worker use
+your Mac** step before the folder, with each tool's setup inline; the included
+tools' setup works with or without a work-folder.
+
+AI Models lists Pi's complete provider catalog and uses its advertised sign-in
+methods and labels. Providers with no chat models can connect without changing
+the Worker's model. Guided setup runs Pi's native credential prompts, including
+provider-specific configuration and cloud credential choices. ChatGPT sign-in
+uses the installation UUID Pi saves in global settings, never a project identity.
+Connections retain the complete credential in encrypted machine-local storage;
+only non-secret connection status and model metadata reach Settings.
+
+For a direct OpenAI account connection, native Pi validates and retains the sign-in
+ID token and its narrow identity metadata in the protected credential. AI Models
+shows the retained email even when OIDC UserInfo returns only a subject. Older
+direct connections saved without identity show a one-time reconnect action,
+rather than claiming that OpenAI did not provide the email. A refresh that
+returns no ID token preserves the verified identity; optional identity-check
+failure after token rotation clears that identity while retaining the replacement
+auth credential so model access does not break.
+
+The direct ChatGPT-plan grant does not authorize Codex workspace/usage reads.
+**View Codex connection** selects the distinct **OpenAI (Codex subscription)**
+entry; a person signs in explicitly to that connection. Its Settings details
+read the selected workspace name/plan and actual provider usage windows, used
+percentages, reset timestamps and available reset count. Reads pin the workspace
+header and reject usage whose returned account id differs or is missing. They
+never infer a workspace from email, a user id, an API organization or a client id,
+and never substitute a default workspace. No reset is consumed by this display.
+Usage refreshes every minute while the details are open and on window focus.
+**Refresh account details** also updates it without changing the model. A
+missing field stays **Not returned by this sign-in**; a failed read says
+**Unavailable** and explains the failure. **Manage usage in ChatGPT** opens the
+corresponding provider usage page. Account details stay in Settings, outside
+Chat, CLI snapshots, portable work-folder records and model prompts.
+
+Each open tab belongs to one work-folder. Selecting a tab takes the user back to
+that work-folder; selecting a work-folder restores its most recent tab. Browser
+tabs are the exception (2026-10-23): they belong to no work-folder, every
+work-folder's tab strip shows them, and selecting one keeps the work-folder that
+is open ([built-in browser](built-in-browser.md)). With four or more
+tabs open, tabs narrow but keep their work-folder icon and a normal close button.
+Tabs can be dragged to reorder, or moved with Alt+Shift+Left/Right while focused.
+The order is saved on this computer; grouping by work-folder confines moves to
+the owning work-folder, and reordering preserves the active tab and mounted work. A
+working Chat remains alive when another tab is selected, work-fold is minimized, the Windows
+window is hidden to the tray, or the last macOS window closes and is recreated.
+Every accepted Worker turn has one stable request id through the transcript,
+kernel task, and bounded machine-local turn journal. Retrying an uncertain
+delivery returns that original acceptance rather than running the Worker twice.
+The live event stream carries resumable cursors and an authoritative
+running/text snapshot, so sleep, renderer reload, and short local-service
+disconnects reconcile without losing or duplicating the visible response.
+When a settled turn's transcript read fails, the Chat retains its reply and
+steps while retrying transient failures. It shows the Worker as idle; only a
+successful read for the same conversation and turn replaces the preview.
+
+Chats have a lightweight lifecycle for keeping a growing conversation list usable. **Active** is current work, **Snoozed** is deferred until a future local time, and **Archived** is retained reference material. A due snooze resurfaces automatically in Active. The selected work-folder's active Chats lead the list, followed by the work-folders nested inside it, each indented under it with its own Chats; every other registered work-folder appears below as a compact, collapsed group, including a zero count when it has no active Chats. Snoozed and Archived are closed rows at the bottom of the list, each listing those Chats across every work-folder with the work-folder's name and time (2026-10-01; earlier the three views were tabs). Aggregate activity remains visible, and search covers active, snoozed, and archived Chats alike and may expand those groups to expose results. Snoozing or archiving a Chat closes its open tab but never deletes or rewrites its transcript; the state is an append-only lifecycle event in that Chat's portable `.work-fold/conversations/` log. A snoozed or archived Chat may be opened for reading, but it must be resumed or restored before another message can be sent. Lifecycle changes are unavailable while its agent turn or compaction is active. A work-folder Chat can also be deleted: its transcript moves to Recently deleted and can be restored from there, and the delete refuses while the Chat has a running turn or unfinished request work. **Make a Copy** in a Chat's menu (2026-10-18) starts a new Chat in the same work-folder with that Chat's history as of its last finished reply, so a different direction can start with the same context; the original is never changed.
+
+A new Chat begins with a temporary **New Chat** label. After its first successful
+turn, work-fold asks that Chat's active Pi model for a short title based on the
+first request and reply, then persists the result so it remains stable across
+tabs, restarts, and machines. The title request uses the same authenticated Pi
+model transport as the turn, including live provider catalogs and stored Azure
+endpoint, key, and deployment settings. For reasoning models it prefers the
+lowest ordinary reasoning level exposed by Pi, avoiding `minimal` when another
+level is available because some providers reject it. If that one
+bounded request fails, the Chat remains **New Chat** rather than presenting its
+first message as though it were a generated title; naming can never fail the
+otherwise successful turn, and the failed attempt is not repeated. Previously saved titles remain authoritative, including titles made by older
+versions; rebuilding a cache must not replace them with **New Chat**. An explicit
+person-authored rename always wins, including an intentional rename to
+**New Chat**. Title and lifecycle summaries may be cached in machine-local
+application state, but those caches are disposable and versioned independently
+from the portable append-only transcript.
+
+The work-fold agent's menu-bar chat history offers **Rename** and **Delete** in
+each chat's actions.
+Deleting an idle chat moves its transcript to **Recently deleted**; restoring it
+returns it to the chat list. Chats with outstanding work must be stopped or
+finished before deletion, and stopped turns must finish draining first.
+
+File deletion and work-folder removal likewise refuse until the affected
+work-folder's requests and delegated work have settled or been stopped and
+drained. Running turns, compaction, Checks, app jobs with file access, and
+Automation file work hold the same backend reservation across deletion. A waiting question still
+counts as unfinished work. This applies to desktop and CLI calls, including a
+Worker deleting from its own running turn; a busy refusal must not be bypassed
+with raw filesystem tools.
+
+Background state is quieter and machine-local: a small running marker follows an accepted agent turn across the Chat navigator and tab strip, and becomes an attention marker only when the turn settles out of view. Viewing the Chat clears that marker. This acknowledgement state is an app preference on the current computer, not portable conversation content.
+
+The configured provider and model remain visible in the Chat composer before the first message; with no provider connected, the composer shows a **Connect AI** chip there instead. Clicking that label opens an inline model picker with the work-folder’s saved model pinned first and search when more than eight connected models are available. A selection saves the work-folder default for new Chats; existing Chat sessions keep their model. The picker’s **Model settings** link opens **Settings → AI Models** scoped to that work-folder. The label always names the provider/model, never the product. The reasoning level shares that chip and its menu (2026-10-27): the chip reads like "GPT-6.1 Sol High", and the menu ends with a Reasoning row of only the supported levels, hydrated before the first send from Pi's saved default; once the Chat exists the row is labelled **Reasoning for this Chat** and its live Pi session is authoritative. Successful and interrupted Worker messages persist their bounded tool trail with terminal states, so tab switches and relaunches restore it without a ghost spinner or replay of completed tools. In the Chat that trail is the Worker's steps: while a turn runs, each step appears in the order it happened with the active one shimmering and live reasoning in a short panel; once the reply starts, the steps fold into one plain line such as "Read a file, edited a file, ran commands" that opens on click, and a "Thought" row opens its reasoning. Reasoning a model keeps hidden still shows as "Thought for 3s", so a saved thinking entry records its duration. A step that used an app's tool names the app and the tool ("Used Inbox: Search messages"), never the tool's registered name. Provider failures use Pi's bounded retry path, preserving completed tool results; exhausted retries, setup failures, stops, terminal failures, and recovery append typed user-safe results. Startup never reruns a Worker turn that reached the runtime. The portable transcript is the content authority and the local journal supplies acceptance deduplication and reconciliation.
+
+Attaching a file from Files stages a reference to its work-folder-relative path for
+the next message. Selecting a file in Files is not context: since 2026-10-11 the
+Worker is not told which file is selected, so a stale or deleted selection can
+neither mislead it nor block a message; attach a file to include it. A quiet file icon, filename, and remove control above the
+composer show that selection; attaching does not produce a success toast or
+an extraction-status warning. Once that message is accepted, its files leave the
+composer and appear as the same chips above the sent message, which keeps their
+work-folder-relative paths and opens the file on click; a send that fails keeps
+them in the composer. Attach to Chat goes to the Chat in front, else the
+work-folder's Chat the person was last in, else a blank draft. Documents and other non-image files are not
+extracted or copied into the model prompt: the Worker is told which paths the
+person attached and uses its file or document tools to inspect the originals
+as the task needs. Staging checks that each path names an available file;
+missing files and invalid paths remain errors. Supported images still use
+Pi's existing bounded vision pipeline when sending.
+
+## A work-folder is a view of a folder, not a new file format
+
+There are two honest ways to create a work-folder:
+
+1. **Create a work-folder:** work-fold creates a normal folder under its managed local content location.
+2. **Use an existing folder:** work-fold registers the folder in place.
+
+Both routes should lead to the same product experience. Registration must not move, duplicate, or rename user files. work-fold adds one intentionally narrow, hidden metadata layer: `.work-fold/work-folder.json` preserves the work-folder identity when its folder moves, and `.work-fold/conversations/` keeps that work-folder's Chats with it. The Files and History surfaces hide this directory. Provider credentials, the work-folder registry, History objects, Pi sessions, ignore rules, and other machine-specific app state remain in application storage. Portable executable Pi configuration remains separate under `.pi/`. Creating or registering the work-folder is the user's authorization for work-fold to load that local configuration; removing the work-folder revokes that authorization.
+
+work-fold starts from a clean profile. It does not parse, import, migrate, rewrite, wipe, or delete legacy Workspace application state, `.workspace/` metadata, restricted-app data, connections, receipts, or artifacts. Preserved `.workspace/` content is non-authoritative and remains hidden and excluded from History, Search, Checks, and restricted-app file grants. Pi's personal resources and authentication may remain shared at the configured Pi root, but work-fold sessions are isolated under `sessions/work-fold/`.
+
+Deleting a managed work-folder moves its folder into Recently deleted and
+unregisters it; removing a linked work-folder only unregisters. The clean-break rule
+holds inside Recently deleted: an entry whose tree carries preserved
+`.workspace/` metadata is marked held, so neither the retention window nor
+**Delete now** erases it, and work-fold still never parses, migrates, or
+rewrites that metadata.
+
+A work-folder may also have a personal visual identity: accent colors, a compact banner, and a Fluent icon. Those preferences help distinguish work-folders inside work-fold, but they currently remain application state on this computer. The versioned `work-folder.json` schema can grow deliberately if portable appearance is introduced later; current code must not smuggle machine-specific state into it.
+
+The same portability rule applies to the App Project declaration. Its
+`projectId`, source-work-folder binding, title, description, and icon live in work-fold
+application data. A Release captures an immutable presentation snapshot, but
+work-fold does not create `.work-fold/app-project.json` or imply that copying a
+folder transfers Project ownership. Portable Project metadata, import, and
+collision handling require a later explicit design.
+
+The user should always be able to reveal a work-folder in the operating system, open its files with other applications, back it up normally, or synchronize it with a desktop sync tool. A Google Drive for desktop folder works because it is a local folder; that is not the same as direct Google Drive API integration.
+
+Settings uses one preferences window with **Appearance**, **AI Models**,
+**Automations**, **Command Line** (2026-11-07: add the command to Terminal and
+the skill to Claude Code or Codex, so other AI agents can use work-fold),
+**Recently deleted**, and **About** navigation,
+plus an **Apps** page (2026-09-25) that lists installed work-folder apps by work-folder and
+owns their management. Automations also carries **Limits**, collapsed by default
+under a Limits disclosure and unchanged in meaning; **Closing the window**, where supported,
+lives in Appearance → Interface, and updates live in About. The navigation becomes a single horizontally scrollable row in
+narrow windows; keyboard selection brings the selected item into view. AI Models
+settings separate model defaults, shared provider
+connections, and work-folder instructions; the scope is chosen with two large buttons —
+**This worker**, naming the work-folder, and **work-fold agent** — and the model is a
+dropdown: closed, it shows the chosen model; open, it starts with a search box
+and groups every connected provider's chat models by provider and vendor (for
+OpenRouter, the vendor prefix of the model name), and choosing a model closes
+it. **Provider connections** is separate, with saved connections grouped above
+available providers. Connection setup preserves the model choice and draft;
+this includes Azure endpoint and deployment setup (2026-10-09).
+Unsaved model/instruction drafts survive
+page and scope changes while that window stays open; credentials are not cached
+across scope changes. Accepted saves retain their completion ownership if the
+window closes, so reopening waits for their result. External settings changes
+refresh clean forms and offer an explicit reload when drafts are present.
+
+[Application appearance](application-appearance.md) adds editable presets,
+application palettes and accent, separate interface/conversation typography,
+reading width and spacing, list density, quiet messages, which Worker steps
+stay visible while a turn runs, and accessibility preferences. The desktop and menu-bar chat share device-local preferences.
+Typed appearance files are
+inert data. Undo and reset operate on these preferences without changing work-folder
+colors, icons, or banners. **Customize work-folder** opens a popup from the work-folder header,
+Manage work-folders, or Settings → Appearance, pinned to that work-folder while the existing work tab stays
+in place. It shares the focus, Escape, and outside-click behavior of the other popup dialogs.
+Its compact Banner, Icon, and Color sections include four offline image presets, draggable image
+framing, and categorized Fluent icons. Model and Instructions shortcuts open that work-folder's existing
+Worker settings; appearance stays personal application state outside the ordinary folder.
+
+## Context is explicit
+
+Registering a folder is also the host authorization for its existing local Pi configuration. Agent context, new package installation, restricted-app permissions, and external connections remain separate states:
+
+| Action | What changes | What does not happen implicitly |
+|---|---|---|
+| Register a folder as a work-folder | The folder appears in work-fold and its local Pi configuration may load. | Files are not uploaded or converted, and local code is not certified as safe. |
+| Attach a file to a Chat | That file is made available to the conversation. | Other work-folder files are not included automatically. |
+| Create a Check proposal | An inert, typed expectation names one sensor and exact primary/reference targets for review. | It is not enabled, run, scheduled, or treated as executable configuration. |
+| Enable a Check | work-fold writes the portable code-free declaration and records an exact-digest, exact-sensor machine grant. | Registration, proposal discovery, and a one-off request never enable standing behavior. |
+| Run a Check | work-fold inspects only its designated targets within hard host limits and admits only independently re-verifiable evidence. | No other work-folder files are scanned; health failures and stale results never become content findings or a clear state. |
+| Install a personal Skill or Extension | It becomes available through the user's Pi scope. | It is not copied into every work-folder. |
+| Ask a Worker to build a work-folder app | The agent writes an ordinary restricted-app package and asks work-fold to inspect it; the inspected digest is installed at once as a Local preview with every declared destination, file permission, notification category, Check-result slot, and automation, and the proposal record is the receipt. | No JavaScript is evaluated during inspection, no secret is collected, and destinations that need a secret are named for the person to connect in Settings → Apps. |
+| Add a reviewed work-folder app | The exact reviewed digest becomes a Local preview in that work-folder's Development Instance, able to reach everything its package declares. | It is not a Release or App Instance, and a destination that needs a secret stays unusable until the person connects it. |
+| Declare an App Project | work-fold records an explicit machine-local title, description, icon, Project identity, and source-work-folder binding. | No file is added to `.work-fold/`, no account or cloud Project is created, and source is not uploaded. |
+| Prepare a Release | work-fold snapshots every current reviewed Development preview into one verified, immutable, content-addressed v2 Release and records a prepared state. | It is not yet eligible to install, and later source edits cannot alter its bytes. |
+| Publish a prepared Release | work-fold rechecks that the reviewed previews are still exact, then records a separate local publication receipt. | Nothing is uploaded, signed, listed, hosted, granted, or installed. |
+| Delete an unused Release | work-fold keeps the Release's record and envelope in Recently deleted, removes its machine-local lifecycle record, then safely prunes the unreferenced immutable object. Restoring it from Recently deleted puts it back in App Studio as it was. | A Release required by an active App Instance, either side of a prepared install/update/rollback, or retained data cannot be deleted. Project source and App data are not removed. |
+| Prepare and activate an App install | work-fold durably allocates one new App Instance and its Feature/Data identities, then installs the exact published Release into the chosen registered work-folder. | It does not convert the Development Instance. Declared powers are granted and declared automations enabled on install; connections with a byte-identical destination declaration, automation enabled states by id, and run receipts carry forward across a changed digest; an identical digest is idempotent. |
+| Prepare and activate an update or rollback | work-fold records a deterministic plan, rechecks it at activation, fences the old runtime, and atomically changes the active Release and authority. | A friendly version cannot override digest identity. Only exact unchanged content is eligible for continuity; schema/migration execution is not supported locally. |
+| Uninstall an App Instance | work-fold fences the whole release-backed runtime and requires an explicit retain-or-purge choice for local data. A purge first writes a recovery export into Recently deleted. | Project source and separately selected work-folder files are never deleted. Retained namespaces do not remain runnable and require a later explicit purge. |
+| Re-allow or revoke one app destination, file root, notification category, or Check slot | Declared powers are on from install; the person narrows them and can re-allow them, and each control names one exact reviewed declaration. | Other declarations, saved connections, automations, and other work-folders receive no authority. |
+| See what an app's notifications did | Settings → Apps lists the app's recent notifications under its categories — when, which one, and whether it was shown — from a bounded machine-local record (2026-10-11). | The record names reviewed categories only; it never holds where a click would have opened the app. |
+| Save or remove an app connection | work-fold adds or deletes one operating-system-encrypted binding for the host-derived Tenant, Runtime Instance, Feature Installation, canonical Feature Revision, declaration, target, and current Runtime Instance owner. | Destination access is not implicitly granted, and deleting the local record does not revoke the credential at its provider. Principal-owned connections remain a future portable-runtime journey, not a current local UI. |
+| Disable or re-enable one app automation | Declared automations run from install on their bounded schedules while work-fold is running; disabling stops one, and re-enabling starts it again. | A disabled job does not run, and every run receives only the intersection of current grants and its reviewed permission subset. |
+| Run an app automation now | work-fold runs that named job once and records a durable receipt, even if its schedule is off. | It does not enable or shift the schedule; a disabled job has no notification authority. |
+| Delete a file or folder | work-fold records a safety restore point; anything the restore point cannot cover moves into Recently deleted with a manifest naming its work-folder, path, size, deleted-at, restore-by, and receipt. | Nothing is permanent at the moment it happens; `.work-fold/`, `.pi/`, and `.workspace/` are never valid endpoints. |
+| Restore from Recently deleted | work-fold puts the entry back at its recorded work-folder path, or re-registers a deleted managed work-folder, and receipts the restore. | The retention clock is the only thing that empties Recently deleted; no agent or CLI verb does. |
+| Ask an app for agent work or a model call | `assistant.request` starts a fresh full-tools Chat in the owning work-folder immediately, titled with the app's name and the action's and showing its message as **From** the app; `assistant.infer` returns bounded text or schema-validated JSON from the work-folder's model with no tools or transcript. Both leave receipts naming the effective model and usage. | No grant beyond installation is needed; remote app views get neither; model selection stays with the person. |
+| Enable an automation | work-fold records an exact-digest machine grant over one reviewed declaration on a single receipted call. | Proposal authoring, registration, and run-now never enable standing behavior; an edited declaration returns to proposed. |
+| Run an automation | App code executes the reviewed steps in order with per-hop receipts inside the shared scheduler bounds. A declared `fold` step may message the work-fold agent, and a closed set of host-resolved placeholders may fill a step's message. | No model composes glue, an automation never moves or deletes source files, and no work-folder's folder learns another work-folder exists. |
+
+This separation is a core product rail. “Available,” “in this work-folder,” “in this chat,” and “allowed to execute” must never collapse into one invisible state.
+
+## Agent model
+
+work-fold hosts Pi instead of recreating an agent framework. Pi owns model/provider behavior, built-in tools, standard resource discovery, packages, Skills, Extensions, and project trust mechanics. work-fold supplies the desktop experience: setup, catalog surfaces, secure credential persistence, folder selection, the registered-work-folder authorization override, extension UI bridges, and clear execution/permission explanations.
+
+Supported native Extension questions stay inline in their owning Chat,
+including the work-fold agent, with transient reconnect recovery and Stop. They are live
+Pi callbacks rather than durable agent questions. Included capabilities
+use this same native Extension path; inclusion describes work-fold's
+maintenance responsibility, not another trust or runtime tier.
+See [Extensions and computer work](extension-foundation.md) for the design,
+compatibility requirements, and work still required before inclusion.
+
+The [tool feedback contract](tool-feedback.md) applies across general computer
+work: native tools return observations, and the agent uses Pi's ordinary
+loop to verify or correct its result. Context inspection is a developer-only
+local diagnostic at `?dev-context`, outside ordinary Chats and Settings. Its
+optional memory-only recording captures assembled model context and observable
+provider payloads with provenance; recording is off by default. It does not
+add a new navigation concept or execution framework.
+
+There are two capability scopes:
+
+- **Everywhere** (everywhere scope): available to the work-fold agent and every work-folder from the user's Pi agent directory.
+- **This work-folder only** (project scope): portable configuration stored under the work-folder's `.pi/` directory and authorized while the folder is registered as a work-folder.
+
+The **Skills & Extensions** popup unifies discovery and management without erasing the distinctions that matter. Its Installed view starts with the **Included with work-fold** strip, then shows **Everywhere** and **This folder only** side by side; a row opens its details on click, and adding starts from one Add dialog that asks **Where should it live?** first. It identifies whether an item is a Skill or Extension, Everywhere or This work-folder only, active or merely available, direct-imported or package-provided, and healthy or diagnostic-failing. Installed items can be searched, filtered by type and scope, and sorted by name, type, scope, or source. Discover results can be searched, filtered, and sorted by first-party/reference status, downloads, recency, or name.
+
+Packages can distribute Skills, Extensions, prompts, themes, and related Pi resources. They remain installation and lifecycle plumbing; the primary UI should describe the capability a person is gaining, show inspected resource types and lifecycle scripts when registry metadata is available, and label unavailable details as unknown rather than absent. A package that includes Extensions or install scripts is a code-execution decision and must not be presented as a harmless Skill-only import. See [Skills & Extensions](skills-and-extensions.md) for the complete compatibility and safety model.
+
+work-fold has two deliberately different executable lanes:
+
+| Lane | Trust and distribution | UI and authority |
+|---|---|---|
+| Native Pi Extension | Standard Pi package/resource locations; full current-user execution after Everywhere install or work-folder registration. | May add Pi tools, commands, providers, events, and a static host-rendered `surface.json` contribution. Its code owns its network and operating-system access. |
+| Restricted work-folder app | A complete, work-folder-local reviewed-web package proposed by the agent or added with `work-fold apps install-preview`. It never enters Pi's package manager or loaded catalog. | Runs reviewed UI and worker code in separate sandboxed Electron hosts. Tabs, network, storage, files, connections, notifications, and named automations exist only through narrow host contracts. |
+
+The model experiences either lane as a package-shaped capability, but the product must not flatten their execution boundaries. Native Pi compatibility remains the full-trust ecosystem lane; restricted apps are the flexible app canvas for generated inboxes, dashboards, extractors, project-service panels, and other work-folder-specific tools. See [Restricted app authoring](restricted-app-authoring.md) and [Restricted app runtime](restricted-app-runtime.md).
+
+## Apps without turning every work-folder into an App
+
+work-fold is growing from a local work-folder tool into a local-first App studio and
+runtime, but **work-folder** and **App** are not synonyms. A work-folder remains the ordinary
+folder-backed context for general work and may never produce an App. A work-folder may
+instead declare one optional **App Project**: a source-and-publication role that
+defines reviewed **Features** such as the current restricted sidebar app.
+
+Preparing selected reviewed material creates an immutable **App Release**;
+publishing it is a separate local decision. Installing or hosting a Release creates a release-backed **App Instance** with
+its own mutable data, grants, connections, jobs, users, and receipts. Local
+builder preview runs in a separate, release-less **Development Instance** so
+editable source never becomes running bytes implicitly. Internally both runtime
+forms share a tightly scoped broker contract, but Development and App Instances
+never convert into one another.
+
+Project ownership and runtime tenancy are separate. `projectId` is the local App
+lineage; an optional registry `cloudProjectId` is only an authenticated binding.
+A Principal or Organization owns project roles, while a Tenant owns Runtime
+Instance policy and data. Every effect is attributed to one human, agent,
+service, or system Principal and the exact Feature Installation executing for
+it.
+
+Review, publication, installation, every live grant, connection, named
+automation, role, migration, and data-retention decision remain separate acts.
+Publication is not folder sync, an App Release contains no ambient work-folder or Pi
+authority, and hosted web must implement the same semantic broker restrictions
+as the desktop runtime. The accepted identities, authority rules, implementation
+order, and private hosted milestone are defined in
+[App platform foundation](app-platform-foundation.md).
+
+In the shipped local path, a Chat-bound or `work-fold apps install-preview` preview
+is explicitly a **Local preview** in the source work-folder's Development Instance.
+App Studio separately declares Project presentation, prepares, publishes, and
+deletes unused Releases, installs one into a chosen registered work-folder, and
+manages update, rollback, uninstall, retained data, and purge. App Studio is a work-folder-bound work
+tab reached from each work-folder's group heading in Settings → Apps and from an
+app's details there, not a fifth top-level rail destination.
+
+## Shared semantic layer
+
+work-fold also needs a semantic layer above its individual screens so the same product can be understood by the renderer, command line, scripts, Pi, and eventually a higher-level agent. `WorkFoldKernel` is that shared in-process read authority. It resolves actor context to the most-specific work-folder, exposes versioned snapshots of registered work-folders and running agent work, and projects Pi's authoritative capability catalog without creating another registry.
+
+The installed `work-fold` command is the first adapter over that layer. Its read lane reports context, work-folders, active agent turns and compactions, and available Skills, Extensions, tools, packages, prompts, themes, and commands in human or stable JSON form, and stays deliberately content-free. A separately versioned act lane — authenticated per app launch and recorded with durable receipts — additionally gives a shell-capable agent the product's receipted verbs while the app is running: work-folder lifecycle and appearance, per-work-folder model defaults and instructions, Chats and their lifecycle, History restore points and restores, restore-pointed file operations, content search, Checks, App Studio's authority-neutral lifecycle, Recently deleted, app listing and tool invocation for the work-fold agent (`apps list|invoke`), the collaboration verbs and request reads (`chat report|ask|answer|handoff`, `requests list|show`), and the work-fold agent itself. `work-folders worker show` is a content-bearing act read because it returns the instruction text and only already-connected model choices; its model and instruction setters are direct, work-folder-scoped, metadata-receipted acts fenced against active work-folder work. Provider credentials and provider connection setup remain unavailable. Act commands reuse the same trust, conflict, History, and task rules as the desktop surfaces. Acts that make bytes runnable, widen a standing power, or destroy run immediately through the same prepare, pin, journal-first, fenced execution path and return a receipt; destruction is reversible through History or Recently deleted (`recently-deleted list|restore`). The act lane has no approval state. Tabs, panes, other application settings, pairing, and secret entry stay outside it.
+
+The **work-fold agent** is the first in-product consumer of that layer: one conversation scope above all work-folders and the door through which material enters them. Its transcript is machine-local, and its Pi session loads Everywhere capabilities plus two app-materialized work-fold agent instructions. It is a full-trust agent with ordinary local tools, taught to prefer receipted `work-fold` read and act commands for work that touches work-folders. It is reached through `work-fold agent …`, with a default single saved conversation and `--new` creating another thread, and through the menu-bar popover. The popover is a compact conventional chat: person messages are colored bubbles on the right and agent replies are unboxed on the left. Its header shows the current Chat title, **Previous**, and **New chat**; it has no **Open app** action, brand lockup, conversation disclosure, overflow menu, or phase badge. **New chat** makes a clean slate, creates a saved transcript on first send, and never deletes a prior transcript. The popover remains a separate window rather than a work-folder-bound tab. Dragging files, folders, or links over it stages inert reference chips; the person adds an instruction and send remains the explicit act. Its composer is an expanding field with a centered circular send action; the model label opens **Settings → AI Models** scoped to the work-fold agent and the reasoning selector saves the next-session default before a Chat exists and changes a live management session when one exists. While a turn runs, the action becomes **Stop**, the draft remains usable, and incremental agent text streams before the persisted reply replaces it. A request whose delegated work-folder turn is still running shows **handed off**, never done; a failed child fails the request, Stop names every recorded child it aborts, and every attachment receives a final disposition.
+
+A person's ask is a **request**: one durable, machine-local record that owns the outcome across however many turns and work-folders it takes ([the collaboration contract](collaboration-contract.md)). The work-fold agent hands a piece of it to a work-folder's own agent, that agent hands one result shape back — a plain-language summary, optional structured details, the files it chose, and whether it finished, finished partly, or failed — and either side can ask a question instead of guessing. A question stops that task rather than the person's day: the turn ends, the request says it is waiting, and one accepted answer starts exactly one continuation turn carrying it. A parent turn never sits on a waiting child; it finishes and says what is outstanding, and when the work it handed out settles, work-fold starts at most one follow-up turn in the work-fold agent carrying the collected reports, within that request's bounds and switchable off in Settings → Automations → Limits. A work-folder that needs another work-folder asks for a handoff, and work-fold starts that Chat with the message and copies of the named files through the ordinary restore-pointed path; no model turn is needed to move a result. What crosses into a work-folder Chat is only its assignment, payloads someone deliberately released to it, and answers to its own questions — the request graph, other work-folders' results, and the work-fold agent's transcript stay above work-folders. The same verbs are available to the work-fold agent, to a Worker, to an app's requested task, and to any shell-capable agent on the CLI, with the same receipts and the same named limits.
+
+**Web Access and Publish were removed (2026-11-07, owner decision).** The desktop no longer offers a paired-browser surface at `<name>.work-fold.com`, enrolls an address, relays work through the bridge, or puts page folders online; it makes no connection to the work-fold.com bridge or page service, which stay deployed from `services/`. Core work-folder use stays local and account-free. Records older builds wrote with paired-browser provenance (`remote_web`) still load as history.
+
+This is infrastructure over the existing nouns, not a new user-facing concept. A future cross-Worker and controlled work-folder runtimes should build on the same typed actor, scope, task, and capability contracts instead of scraping renderer state or bypassing domain policy. See [work-fold agent and CLI](work-fold-agent-and-cli.md) for the exact contract and security boundary.
+
+## Product rails
+
+When a design is ambiguous, prefer the option that best preserves these properties:
+
+1. **Local first:** core work does not require an account or cloud service.
+2. **Ordinary files:** user content stays portable and directly accessible.
+3. **Clear language:** expose the work-folder mental model before filesystem or package-manager jargon.
+4. **Explicit context:** people can tell what the agent can see in the current chat.
+5. **Layered authorization:** work-folder registration authorizes local Pi configuration; package installation, restricted-app permissions, connections, and Chat context stay explicit and separately revocable.
+6. **Pi compatibility:** use standard Pi behavior and formats instead of parallel work-fold-only systems.
+7. **Capability transparency:** show source, scope, status, and diagnostics for executable additions.
+8. **Provider neutrality:** cloud and model integrations should use replaceable adapters rather than shape the core model.
+9. **Receipts, not gates:** every verb executes on first call, journaled before and receipted after; verbs that make bytes runnable, widen a power, or destroy keep their identity pins, effect-time rechecks, and at-most-once execution as attribution and recovery. No surface offers an authority mode, a standing rule, or an approval card.
+10. **Reversible destruction, setup-only secrets:** History covers ordinary deletion; what it cannot cover goes to Recently deleted with a retention window; exposure and grants are revocable. Provider credentials are local desktop Settings acts with no agent or CLI verb, and no task waits on them. Per-work-folder model defaults and work-folder instructions are configuration with the narrow receipted fold verbs described above.
+11. **Agency on a cadence lives in work-folders:** above work-folders, only declared deterministic automations run unattended; enabling one is a single receipted call that pins the declaration digest; an automation may message the work-fold agent only through its declared `fold` step; cross-work-folder work never runs inside a work-folder chat because work-folder transcripts travel — what enters a work-folder Chat from above is its assignment, released payloads, and answers to its own questions. The one bounded exception is a person-initiated request's follow-up turn: when the work it handed out settles, the host may continue that request in the work-fold agent once per settle batch, within the request's own limits.
+
+## Roadmap and known gaps
+
+### Foundation now
+
+- Create a folder-backed work-folder or register an existing folder without conversion.
+- Rename a work-folder, remove a linked-folder registration without deleting its files, or delete a managed work-folder into Recently deleted.
+- Browse and upload work-folder files, run work-folder-scoped Chats, and view History.
+- Search a work-folder by content as well as by name: matches inside ordinary files and inside Chat transcripts, honouring the work-folder's ignore rules, skipping binary and oversized files, and disclosing when a bound stopped the search rather than implying a complete answer.
+- Restore content-addressed History checkpoints created around file mutations and agent turns. A full checkpoint hashes real bytes rather than trusting metadata, and keeps that cost proportional to the person's own work: it skips version-control internals, installed dependencies, Python virtual environments, self-declared caches (`CACHEDIR.TAG`), work-fold's hidden support directories, directories the person ignored in Files, and directories a `.gitignore` excludes — while every individual file, including a gitignored `.env` or a file hidden from Files, remains recovery material. A targeted mutation checkpoint captures exactly the paths it is asked about.
+- Configure a Pi provider/model with an API key or an advertised Pi provider OAuth flow and use Pi's built-in tools.
+- Discover installed Skills, prompts, Extension commands, and supported built-ins from the Chat composer, and inspect the active model and context-window pressure during a conversation.
+- Show the configured provider/model before a Chat's first send, safely retry transient provider stream failures from completed tool results, preserve terminal partial output and activity as a resumable interruption, and save sanitized setup or unexpected failures in the transcript. A saved reply keeps every text segment the turn produced — what the agent said before, between, and after its tool calls — joined as paragraphs in the order it streamed, so a reopened Chat reads the way it did live.
+- Discover and search Personal and registered-work-folder Skills and Extensions in the Skills & Extensions popup, with accurate source, scope, load state, and diagnostics.
+- Browse curated first-party/reference Skills and Extensions alongside community Pi packages, with type filters and explicit provenance.
+- Import standard Skills and compatible skill bundles while preserving their supporting files.
+- Install, update, and remove Pi packages at Personal or registered-work-folder scope.
+- Customize each work-folder with semantic light/dark accent roles, a compact banner, paired colours, and a searchable Fluent icon catalog without changing its folder; machine-local service storage, dual previews, contrast auditing, undo/reset, and inert proposal import/export keep the same typed contract available to people, Codex, and Claude Code.
+- Inspect work-folder context, registered work-folders, active agent/compaction tasks, and Pi capabilities through one versioned `WorkFoldKernel` and the installed `work-fold` CLI's content-free read lane.
+- Operate the product from any shell-capable agent through the CLI's per-launch-authenticated act lane while the app is running: create or register work-folders, copy outside material into a work-folder with a History restore point, and start, continue, await, or abort work-folder Chats — every action journaled before it runs and every CLI-initiated turn tracked as a kernel task with a task-scoped outcome.
+- Talk to the work-fold agent above all work-folders through `work-fold agent send|status|result|wait|abort|stop|list`: the same agent runtime with personal capabilities plus work-fold's two app-owned management resources, reference attachments, an explicit request/child action trail, machine-local saved transcripts, default single-conversation behavior with an explicit New chat clean slate, and task-scoped outcomes; the menu-bar/tray popover is its visible desktop surface.
+- Define optional file-presence or model-backed text Checks over designated files through the desktop setup form or inert proposals and explicit machine-local enablement; run, await, inspect evidence-backed problems, and record fingerprint-scoped decisions through the installed CLI, work-fold agent, and one work-folder-owned desktop work tab. A conditional Files-toolbar summary and quiet exact-file markers appear only for configured state; unconfigured means unknown, portable declarations remain inert, and opening Checks never starts a model or enables automation. A separately reviewed automation may run Checks on a schedule or after an explicitly designated folder changes.
+- Drop native OS files onto any Chat composer to upload them into that work-folder's dated `Dropped/` folder and attach them as context in one explicit act; uploads record additive History restore points.
+- Steer a running agent turn: Enter mid-turn delivers the message through Pi's steering queue, the agent reads it after its current step, and the transcript records it as sent mid-turn; if the turn settles first the message becomes the queued draft instead. ⌘/Ctrl+Enter queues one follow-up message behind the running turn as a visible, cancellable draft that sends when the turn settles; Stop returns it to the composer instead of firing it into the stopped turn's aftermath. The app, not the window, holds that queued draft (`PUT`/`DELETE …/conversations/:id/queue`, a `queued_message` Chat event): every window on the Chat shows it, it outlives the window that queued it, and the app sends it as an ordinary turn when the running turn ends, with the files staged when it was queued and the Workers it addresses with @. A Stop from any surface holds it instead (shown as not sent); no later turn sends a held message, and Cancel hands it back to the composer, ordered after any queue write still in flight. The app numbers every queue change, and a window applies only a change newer than any it has applied or made. While its own writes or Cancel are in flight it keeps the newest app change aside and applies it once they are answered, if it is still newer than the window's own last change, so an echo can neither erase newer text nor restore a cancelled message, and a message the app sent or a Stop held meanwhile is never lost. Meanwhile the window never sends the message itself. Quitting work-fold drops it. The work-fold agent's running turn takes steering the same way from the menu-bar panel and the desktop agent panel (Enter while it is working); attachments wait for the next message (2026-10-27).
+- Attach images to a turn: an attached PNG, JPEG, GIF, or WebP work-folder file reaches the model as image content (resized locally by Pi's own image pipeline when needed) rather than as a path-only reference, and a pasted screenshot lands in the work-folder's dated `Dropped/` folder through the same explicit upload path as a dropped file before it is attached.
+- Choose the reasoning level for a work-folder or work-fold agent Chat from its text-only composer control (in a work-folder Chat, the Reasoning row of the model chip's menu) (or `/thinking` in a work-folder Chat), limited to what the current model supports, persisted in the Pi session, and remembered as the default for new sessions exactly as Pi's own TUI does.
+- Run an agent turn without a wall-clock cap, as native Pi does; Pi's own HTTP idle timeout still catches a provider that stops answering, and a host may opt into an explicit cap with `WORKFOLD_PI_TURN_TIMEOUT_MS`. A single model response that sends no text, thinking, or tool input for three minutes (keep-alive pings do not count) ends as a retryable stream timeout, keeping its partial response, and Pi's own retry sends it again; asking the model again never changes anything on the computer. `WORKFOLD_PI_STREAM_STALL_MS` changes that silence, and `0` turns it off (2026-10-27).
+- Give the agent's shell tools the person's real login-shell environment: a Dock, Finder, Spotlight, or `open` launch asks the login shell for its environment once at startup (profile-provided `PATH` entries such as Homebrew or nvm included) before any Pi session exists, while a terminal launch keeps the environment it was given; `WORKFOLD_DISABLE_LOGIN_SHELL_ENV=1` opts out.
+- Reach model providers through the same transport as the Pi CLI: Pi's `httpProxy` setting and `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` are honored, Pi's HTTP idle timeout applies to headers and bodies, and the guarded dispatcher is installed before the first provider request.
+- Preview bounded text and common image files inline in the file tab — truncation disclosed, binary or oversized content declined with its reason — under the same work-folder path policy as every file route.
+- Reach tabs, files, and running work from the keyboard: close, cycle, and jump between surface tabs, open a new Chat tab, stop the running turn, move the Files selection with arrow keys, rename and delete from the tree into the existing undo window, and answer Settings groups with arrows.
+- Drive one real Pi turn through the local API with the harness-neutral `work-fold:drive` test driver.
+- Render validated declarative `surface.json` contributions from loaded Pi Extensions as a contributed rail destination, left-pane navigator, and work-folder-bound view tabs without injecting Extension code into the renderer.
+- Let the agent submit a completed, work-folder-relative restricted-app package through a host-owned proposal tool. work-fold persists a work-folder-and-Chat-bound, digest-pinned review without evaluating JavaScript; the inspected package is installed at once as a Local preview with every declared power and automation, and destinations needing a secret are named for the person.
+- Give each installed work-folder app arbitrary reviewed web UI in a sandboxed rail navigator that may open host-derived work-folder-owned tabs from a click, plus optional bounded agent actions and named automations in a separate worker sandbox. A machine-wide scheduler shared across work-folders provides 32 execution slots by default, FIFO admission, same-job non-overlap, durable cadence, bounded catch-up, and run receipts. Settings → Apps manages each job independently alongside exact network/file/notification grants, host-owned encrypted connections, local data, updates that carry eligible authority forward, and removal; the CLI's `apps install-preview` is the local-package path.
+- Provide bounded host-owned JSON storage with active-visible-view invalidation hints, History-covered work-folder-file grants, exact public-HTTPS or numeric-loopback requests, API-key/bearer/basic/OAuth PKCE connection adapters, and static reviewed system notifications from enabled automation runs, whose click opens the app's left pane at the route and state the app named (2026-10-11).
+- Carry host-owned local App Project, Development Instance, Feature Installation,
+  Data Namespace, canonical Feature Revision, and seven-domain authority identity
+  through the restricted-app UI. The first work-folder-app preview may
+  establish the work-folder's machine-local App Project/Development Instance scaffold;
+  App Studio exposes its explicit presentation and lifecycle.
+- Produce portable, authority-captured receipts for local automation runs.
+  Unsupported, future, or legacy registries remain inert rather than being
+  assigned invented authority. Post-update and uninstall cleanup is a durable, restart-retried
+  outbox, so stale secret/data bytes never regain live authority after partial
+  cleanup failure.
+- Provide canonical declaration/artifact conformance and a durable local App
+  Studio: immutable v2 Release assembly and verification; a content-addressed
+  Release store; separate prepared and published states; persisted
+  install/update operations; release-backed App Instance
+  install/update/rollback; and explicit uninstall retain/purge plus later purge.
+- Attach each local App Instance to one chosen registered work-folder while keeping its
+  bytes, data, grants, connections, schedules, journals, and receipts in
+  work-fold application data. Enforce one instance per `(projectId, target
+  work-folder)` and reject Feature-id collisions with previews or other installed Apps
+  in that work-folder.
+- Preserve only exact eligible authority across a release change. A changed
+  Feature revision keeps its installation/data lineage but resets grants,
+  connections, and jobs; the current local runtime rejects schema-bearing
+  Releases and migration execution rather than applying them partially.
+- Block removal of a Project's source work-folder or an App Instance's target work-folder
+  while a release-backed instance remains active, directing the person to
+  uninstall it with an explicit data choice first. Keep the source blocked while
+  its Project owns retained data; after explicit purge, source removal clears the
+  machine-local Project/Release lineage and target removal cancels prepared
+  operations aimed at that work-folder. Both keep what they clear in Recently
+  deleted as one App Studio item, which goes back once the work-folder is
+  registered again and brings its previews' data with it (2026-10-11).
+- Build, Developer ID-sign, notarize, and publish the macOS arm64 app, DMG, ZIP, blockmap, and update metadata, with a verified installed two-version updater lane. This is the only active desktop distribution lane.
+
+- Meet the whole product through the **work-fold agent** — the work-fold agent above all work-folders, its menu-bar/tray popover, and the main window's agent panel — with capture in. See [the work-fold agent](work-fold-agent-decisions.md).
+- Perform every product verb through the work-fold agent's receipted act lane at human parity: chat lifecycle and compaction, History restore with automation-aware fencing, file operations, content search, work-folder rename/unregister and appearance, capability removal, and App Studio's authority-neutral lifecycle — each act journaled before it runs, receipted after, with typed undo references.
+- Run every verb — including those that make bytes runnable, widen a standing power, or delete — on first call with identity pins, journal-first receipts, and at-most-once execution; keep every deletion reversible through History or Recently deleted, restorable from Settings → Recently deleted and `work-fold recently-deleted`.
+- Declare deterministic cross-work-folder automations — a schedule, explicitly designated folder change, or settled Check or automation run driving fixed Chat, files, Check, and agent steps on a separate eight-slot automation scheduler with per-hop receipts and host-resolved placeholders; enablement is one receipted call, and nothing above work-folders runs an unattended conversation.
+- Read the overview — the app-composed digest of running work, needs-you questions and due snoozes, and changes since each surface last looked — through `work-fold agent overview --json` and narration on demand, neither of which advances seen markers. The compact popover stays focused on the live conversation and capture.
+
+- Follow an explicit request across agent turns and delegated work. The
+  [collaboration contract](collaboration-contract.md) provides durable questions,
+  selected result envelopes, non-blocking waits and bounded continuations.
+  Chats, the work-fold agent, and Apps share the
+  [collaboration experience](collaboration-experience.md): questions answered in
+  place, request-wide Stop, visible results and explicit saved-work recovery.
+
+### Next product layer
+
+- Add a deliberate portable App Project declaration, import/relink, and
+  collision model only if it can preserve ordinary-folder semantics without
+  treating a copied id as ownership.
+- Add reviewed schema and migration execution, retained-data adoption, and
+  bounded export before allowing a Release that needs those transitions to run
+  locally.
+- Add richer multi-Feature composition review and instance diagnostics while
+  preserving the current per-Feature authority boundary.
+- Make work-folder location, storage ownership, History coverage, and executable capability class easier to inspect at a glance.
+- Add named-pack selection for Anthropic marketplace bundles instead of importing every discovered Skill in an archive.
+- Extend the shipped personal act lane with Chat-scoped grants, confirmation and revocation ceremonies, and headless execution, if the surface ever outgrows the per-launch single-user token.
+- Extend the shipped fold and bounded Automation triggers only through deliberate contracts for any new event source, handoff condition, or recovery behavior. Cross-work-folder coordination stays in the work-fold agent; work-folder Chats remain local to their own work.
+- Add restricted-app remote subscriptions and arbitrary push adapters, finer web-runtime resource controls, and a verified work-folder-service registry backed by a trusted launcher, per-instance challenge, and process-generation lifecycle. Raw numeric loopback grants remain useful for development but do not prove which process owns a port.
+- Offer Chrome and Computer Control setup in a Chat the first time a Worker needs them, deepen accessibility coverage beyond the shipped keyboard reach, renderer interaction tests, recovery, export, and diagnostics.
+
+### Later adapters and distribution maturity
+
+- Prove one private hosted-web App Instance end to end—publish, deploy, explicit
+  destination and connection grant, named automation and receipt, update, and
+  revocation—before public discovery, an App Store, or generalized sync.
+- Verify and document supported provider OAuth flows account tier by account tier in packaged desktop releases; do not turn Pi's generic OAuth hook support into a blanket compatibility claim.
+- Add direct cloud-storage integrations behind a provider-neutral model with stable remote IDs, offline behavior, explicit conflicts, and no surprise deletion.
+- Reactivate Windows distribution only as a deliberate future product decision with a publicly trusted code-signing identity, platform-native CI/package evidence, an updater proof, and revised release authority that does not silently gate the Mac lane.
+- Consider Windows architectures only after that release lane is deliberately restored and x64 is stable.
+
+Roadmap wording must distinguish shipped behavior from direction. Update this section when a capability moves between layers.
+
+The completed [App platform exploration](archive/app-platform-exploration.md) and its
+Gate 1–4 memos preserve the rationale and rejected ambiguities behind the
+accepted [App platform foundation](app-platform-foundation.md). Roadmap wording
+must continue to distinguish accepted direction from shipped behavior.
+
+## Decision test
+
+Before adding a new top-level concept, ask:
+
+1. Can it fit cleanly as work-folder content, a Chat, a Skill, or an Extension?
+2. Is its scope obvious: personal, one work-folder, or one Chat?
+3. Can a person understand what it can read, change, or execute?
+4. Does it preserve normal folders and standard Pi compatibility?
+5. Would it still make sense for non-coding computer work?
+
+If those answers are unclear, the feature needs a sharper mental model before it needs another navigation item.
+
+
+### September 2026 recovery and automation expansion
+
+History refuses a restore that would overwrite or delete content its new safety checkpoint cannot capture. Protected metadata and nested registered work-folders remain outside parent recovery, and historical exclusion of a directory protects its descendants even after ignore rules change. Relinking a moved work-folder on the same computer relocates its existing machine-local recovery state before committing the new registration. The desktop shows an effect preview; desktop and CLI hold the same active-work reservation through restore. History is bounded local recovery, not a complete or external-writer-transactional backup.
+
+An automation version-3 `files-changed` trigger observes one explicitly reviewed folder and file-type set. Stable edits coalesce after debounce, with a cooldown; enablement is one receipted call and every run is receipted. Observers start from a baseline and pause during any automation work, sleep, or shutdown; changes during those pauses are not replayed. This prevents automation-generated edits from looping. Complete handoffs use one automation's ordered steps (A's Chat → its output files → B's Chat or Check). See [Automations](automations.md). *Amended 2026-10-11 (owner decision):* a version-5 trigger may declare `"ifMissed": "run"` to catch up instead: it keeps a machine-local metadata snapshot, and files added or changed while work-fold was closed, the computer was asleep, or the automation was off start one coalesced run when work-fold is back. Edits made during automation work are still never replayed, and Settings says when an automation catches up.
+
+Text Checks use the work-fold agent's configured model in a bounded review request containing only designated UTF-8 files, optional reference text, and reviewed criteria. They return quoted suggestions, cannot run tools or edit files, and become stale when any input changes. The model's assessment is judgment; the host verifies quotations and freshness. See [Checks](checks.md).
+
+
+### 2026-11-06 file manager layout
+
+Owner direction: work-fold is being rebuilt around a smart file manager that
+looks native to macOS and Finder. The approved mockup is the design reference.
+It is built beside the classic layout and chosen in **Settings → Appearance →
+Layout** (Classic or File Manager, stored on this Mac; `?layout=file-manager`
+previews it). It uses the same local API, file events, and desktop bridge as
+Files, so a native front end could later sit on the same server.
+
+- **Window:** a sidebar, a toolbar (Back and Forward, the folder's name, Icons
+  or List, **Organize** at a work-folder's top level, the panel button, Search),
+  the folder's contents, and Finder's path bar (the disk down to the selected
+  item) with an item count. Organize opens a Chat in the panel asking the
+  Worker to organize the folder. The toolbar's **Action** button (⋯, as in
+  Finder) and right-clicking a work-folder in the sidebar offer **Customize
+  work-folder**, Set Up for Me, Just the Look, Show in Finder, **Skills &
+  Extensions…**, and **Settings…**. Dragging the edge beside the sidebar or the
+  panel resizes it (double-click resets it; the widths are kept); a narrower
+  window takes room from the panel first, so the folder list keeps 360px.
+- **Settings and dialogs:** Settings (⌘, or the Action menu), Skills &
+  Extensions, Connect AI, and the other dialogs open over the file manager in
+  its own palette, and the Settings window is a sidebar of pages beside grouped
+  white cards on gray, restyled in the file manager's own look (owner request,
+  2026-11-07): its sidebar is the file manager's (line icons, a gray pill for
+  the page shown), the page's name is its toolbar, groups are headings over
+  white cards, and choices use the file manager's pop-up buttons, fields,
+  switches, and segmented controls; Skills & Extensions follows. Settings →
+  Appearance restyles the file manager: Original keeps the design's Finder
+  colors, the other palettes, a chosen accent (which also tints plain folders,
+  as on the Mac), the app font, text size, list density, contrast,
+  transparency, and message style apply to the window and its dialogs, and the
+  page's preview is a small file manager. Every page is the same Settings page the classic layout uses,
+  and its buttons open their targets here: an app's build Chat opens in the
+  panel, a result file is shown selected where it lives,
+  and an app change starts a Chat with the request drafted. App Studio stays in
+  the classic layout, and Shortcut Keys lists the file manager's own keys.
+  **Customize work-folder** keeps Name, Icon, and Color; the file manager draws
+  no banner, so Banner and Title are left out, and a chosen icon is stamped on
+  the work-folder's folder as macOS draws a symbol on a folder.
+- **Search** reads names and contents. A scope bar offers **All work-folders**
+  or the folder shown; results list name matches, then text matches with the
+  words around them, in Name, Match, and work-folder columns. A standard
+  folder searches its names only. Selection is
+  accent-colored while the contents have focus.
+- **Sidebar:** flush with the window's edges, square like the rest of the
+  window (owner decision, 2026-11-07). **Standard Folders** (Desktop,
+  Documents, Downloads, Pictures, the home folder by the account's name, and
+  iCloud Drive), then **work-folders**, each drawn as a folder in its own color
+  with its chosen icon. A standard folder that is a work-folder appears only
+  under work-folders. Each heading has a **+** at its far right: beside
+  Standard Folders it adds any folder through the folder picker (kept on this
+  computer only); beside work-folders it offers Create New work-folder and Use
+  Existing Folder. Right-clicking a Standard Folder offers Show in Finder, Put
+  This Folder to Work, and, for one added with +, Remove from Sidebar. There is no Recently
+  Deleted here (owner decision, 2026-11-07): a deleted file comes back from
+  History, and what History cannot keep, such as a deleted Chat or a removed
+  work-folder, stays in Settings → Recently Deleted. A work-folder's dot pulses while
+  its Worker runs and turns green when a Chat has a reply nobody has read; the
+  same dots mark History's Chat rows and the History tab. A work-folder
+  registered inside another sits under it, indented, behind a caret in the
+  left gutter (owner request, 2026-11-07): the caret (or the arrow keys)
+  shows and hides the work-folders inside, the sidebar remembers which are
+  open, a closed parent shows its sub work-folders' activity on its own dot,
+  and going into a sub work-folder opens its parents. A folder inside a
+  work-folder made with **Create New work-folder** can become a sub
+  work-folder too, although managed work-folders live in the app's data
+  folder; the rest of that folder, and hidden folders such as `.work-fold/`,
+  stay off limits.
+- **Standard Folders** are ordinary folders, not work-folders: no Worker,
+  History, or `.work-fold/` record. The host resolves each from the home folder
+  and lists it only when it exists; macOS asks for access the first time one is
+  opened. Opening, Quick Look, dragging out, Rename, and New Folder work as in
+  a work-folder; deleting is the system's **Move to Trash**. Anything a
+  registered work-folder owns (a work-folder inside, or a folder holding one)
+  is changed only from that work-folder, so History keeps it. The panel's
+  **Put This Folder to Work** (or **Make a work-folder** on a folder inside)
+  registers the folder; nothing moves.
+- **Contents:** list and icon views, sortable columns (Name, Date Modified,
+  Size, Kind), Finder keys (arrows, Shift and Command selection, Space for
+  Quick Look, Command-Down to open, Command-Up for the enclosing folder,
+  Command-Delete, Return to rename, typing to jump to a name). Double-click
+  opens a folder here and a file in its default app. Files drag out to other
+  apps; files dragged in from Finder are added to the folder shown, or to the
+  folder row they are dropped on, and a file dragged onto a folder row in the
+  list moves there, each kept by History (a Standard Folder is changed in
+  Finder). Right-click uses the same native menu as Files.
+- **Path bar and Go to Folder** (owner request, 2026-11-07): clicking an item
+  in the path bar copies its path; double-clicking a folder opens it; a long
+  path keeps the disk and its last four items whole with "…" between. The
+  button at the bar's start, or ⇧⌘G, opens Go to Folder as Finder has it: a
+  path field (a full path, "~/…", or a name inside the folder shown) over the
+  names that complete it; Tab completes, the arrow keys choose, Return goes,
+  and a file's path opens its folder with the file selected. It opens any
+  folder inside a work-folder or a Standard Folder (including the home folder
+  and iCloud Drive) and says so plainly for anything else.
+- **Removing a work-folder:** right-clicking it in the sidebar, or the Action
+  menu, offers Remove work-folder…; a linked folder and its files stay where
+  they are, a managed one moves to Recently Deleted, and the host still refuses
+  while its work or apps need it.
+- **Finder's file actions** (owner request, 2026-11-07): ⌘C copies the
+  selection, also onto the system pasteboard so Finder can paste it; ⌘V pastes
+  what was copied here or in Finder (the desktop process reads the pasteboard
+  and pastes; the window never reads the clipboard); ⌥⌘V moves what was copied
+  here; ⌘D duplicates; the right-click menu adds Copy, Duplicate, Compress, New
+  Folder with Selection, and Paste Here. Nothing is replaced: a taken name gets
+  " copy". Files dropped on a sidebar place go to its top. Every change keeps a
+  History restore point in each work-folder it touches (a Standard Folder has
+  none), and ⌘Z / ⇧⌘Z undo and redo the last file change. A move between work-
+  folders keeps a restore point on both sides; any other move across places
+  copies and says the original stays.
+- **Recents** sits at the top of the sidebar: files changed in the last 30 days
+  across the work-folders and the top of Desktop, Documents, and Downloads,
+  newest first, with where each lives; Return opens one and ⌘↑ shows it in its
+  folder.
+- **What the Worker changed:** after a Worker reply or an Automation run, the
+  files it added, moved, or changed carry a small dot in the list, and Info
+  opens with a receipt ("The Worker changed 14 items · 3 added · 9 moved · 2
+  changed") listing the first few, with Undo (History's restore) and Done.
+- **Ask in search:** the last row of search results asks the Worker to find it
+  by what the person remembers; Return with nothing chosen does the same.
+- **Suggestions written from the folder:** with AI connected, the suggestions
+  over the message box are written by the work-folder's own model from the
+  names in the folder shown and its recent Chat titles, kept for 30 minutes or
+  until those change; the plain ones cover a selection and the wait.
+- **Notices:** one card for everything the window says, errors included: an
+  icon for its kind, the words, one action, and Close, stacked over the folder
+  list. Errors stay longer and carry a red edge.
+- **A message needs AI:** with no AI connected, sending from the message box,
+  a suggestion, Organize, or Set Up for Me opens Set Up AI first and then
+  sends.
+- **Right panel:** **Info** shows the selection (a picture shows itself; files
+  show Information: Where, Modified, Size) or, at a work-folder's top level,
+  its Automations with their on/off switches, followed by the ready-made ones
+  it has not turned on ([Automations](automations.md), 2026-11-07); **History** lists
+  the work-folder's changes, then its Chats below, newest first, each row
+  carrying its own day and time, with no filter (owner decision, 2026-11-07); each
+  section shows its five newest until **Show More**. A Chat row
+  opens that Chat in the panel. A change offers **Undo** (a "Before …"
+  restore point) or **Restore**; with one file selected, History lists that
+  file's versions, marks the **Current** one, and offers **Restore** on the
+  others. Each runs at once and leaves its own restore point, which the
+  toast's **Undo** goes back to. A deleted file comes back this way: History
+  keeps it, as it does in Files (owner decision, 2026-11-07).
+- **Message box:** at the foot of the panel on both Info and History, reading
+  "Work in <folder>", "Work on this file", or "Work on these N items". The
+  selection goes to the Worker as path references it reads with its own tools
+  (a folder too), shown as a removable chip; with nothing selected in a
+  subfolder, that folder is the reference. Sending opens the Chat in the panel
+  with a back button and a **Reply** field. A small row under either field
+  shows the Worker's model (and, in a Chat, its context circle), or **Set Up
+  AI** when no AI is connected. It is work-fold's ordinary Chat, so
+  Stop, questions, and the Worker's steps work as they do in Chats, and a Chat
+  left running keeps going while Info is shown. There are no automatic AI file
+  summaries (owner decision).
+- **Suggested messages:** push buttons above the message box, on Info only,
+  that send at once: up to four, or two when the folder already has an
+  Automation on. They are plain fallbacks for now ("What’s in
+  here?", "Summarize"); the owner wants them written by a model from the
+  folder's context and its earlier Chats (2026-11-07).
+- **Left out for now:** the built-in browser, page tabs, apps, and full-width
+  Chats.
+
+### 2026-09-25 information architecture amendment
+
+Owner decisions, recorded here in dated form; the body of this document and
+`AGENTS.md` carry them:
+
+- The rail's **Add** button opens the **Skills & Extensions** popup directly.
+  There is no Add menu, and "Agent tools" is no longer a rail or tab concept.
+- The **Library** is retired from the desktop: no Library tab, no Add entry, no
+  copy-to-work-folder control, no "Your Library". The CLI act-lane `library` family
+  and its server routes stay unchanged for now as a compatibility contract,
+  pending a deliberate removal in a later change. *(Removed 2026-10-10.)*
+- The work-folder-owned **Apps** tab is retired. Installed work-folder apps still appear
+  in their contributed rail region and open there. Per-app management — grants,
+  connections, named automations and run history, local data, update review,
+  removal, Worker requests, and the receipts of the app's model use — lives in
+  **Settings → Apps**, which lists apps by work-folder. **Build with Worker** is
+  gone; a person asks a Worker to build an app in a Chat.
+- **Skills & Extensions** is a popup dialog like Settings and Keyboard
+  shortcuts, pinned to the work-folder it was opened from. Its Installed view starts
+  with an **Included with work-fold** strip holding exactly the five included
+  tools (Chrome, Computer Control, Web, Documents, Service Connections), each
+  with one Title Case status word (Ready, Setup Needed, Unavailable, Not Checked, Turned
+  Off; Chrome shows Connected or Not Connected) and a **Set Up** pointer only
+  when a person can act. Below the strip, **Everywhere** and **This folder
+  only** sit side by side and stack on narrow widths; rows open their details
+  on click; the per-group Add buttons are gone. The Add dialog asks **Where
+  should it live?** first with the same two-card chooser, then offers a Skill
+  or pack (files) or a Pi package (source). The Discover details dialog shows
+  the description, the where-chooser, what is inside (the Skills and Extensions
+  found), one plain warning when the install can run code on the computer, and
+  a collapsed **Technical details** section holding source, version and
+  license, provenance, dependencies, and install scripts. Package review still
+  discloses install scripts and Extensions before installation.
+- **Settings → AI Models** chooses its scope with two large buttons — **This
+  worker**, naming the work-folder, and **work-fold agent** — instead of radio
+  circles; the model is a dropdown that shows the chosen model closed and opens
+  with a search box and vendor headings (for OpenRouter, the vendor prefix of
+  the model name), closing again on a choice.
+- **Settings → Automations** collapses its limits under a **Limits**
+  disclosure by default; they stay visible on demand and unchanged in meaning.
+- With four or more tabs open, tabs narrow but keep their work-folder icon and a
+  normal close button.
+
+### 2026-10-11 Set up for me
+
+- Right after a work-folder is added (Use existing folder or Create new
+  work-folder), the top of its left pane offers a card with two choices:
+  **Set up for me** and **Just the look**. Its **×** dismisses the card for
+  that work-folder for good; there is no "Not now". The card never runs
+  anything by itself.
+- Both choices stay in the work-folder header's right-click menu, after
+  **Customize work-folder**, and in the command palette.
+- Each choice starts a new Chat with one message, and the included
+  `set-up-work-folder` Skill does the rest. **Set up for me** looks the folder
+  over, organizes it when that helps (moves and renames only, never deletes,
+  each through a restore-pointed `work-fold files` verb that refuses to
+  overwrite; a deliberate structure stays; projects, app-managed folders, and
+  hidden files are left as they are), writes the work-folder's Worker instructions,
+  and sets a generated banner, an icon, and a color. **Just the look** reads
+  the folder and sets only the banner, icon, and color; it never touches a
+  file. A Chat's own reply says what changed and how to undo it.
+- The Skill is listed under **Everywhere** as Included with work-fold. It can
+  be turned off but not removed, and typing a request such as "set up this
+  folder" in any Chat uses it too.
+- Settings → AI Models gains an **Image model** section: one machine-wide
+  choice for every Worker and the work-fold agent, with **Automatic** first
+  (see [Image generation](image-generation.md)).
+
+### 2026-10-27 start screen, attach button, and reply files
+
+- A new Chat places its composer directly under the greeting, with up to three
+  of the work-folder's most recent active Chats listed below as **Recent
+  Chats**; clicking one opens it the way its row in Chats does. Sending the
+  first message settles the composer at the bottom as before.
+- The composer starts one line tall. Its **+** button attaches files **From**
+  the work-folder (a searchable list of its files, other work-folders nested
+  inside excluded) or **From This Computer**, which copies the chosen files into
+  the dated `Dropped/` folder and attaches them: the same explicit act as
+  dropping them on the composer. Commands sits beside it; the model chip, now
+  carrying the reasoning level, and Send sit on the right.
+- Composer chip menus choose the side with more room and stay within the Chat
+  panel. The work-folder attachment picker refreshes its file list whenever it
+  is reopened.
+- A finished reply ends with the files its write and edit tools changed, each
+  labelled **Saved** or **Edited** with its folder and opening its file on
+  click. Files that no longer exist are left out; past five, **Show all**
+  reveals the rest. Files changed by commands are not listed, because the steps
+  do not name them.
+- A Markdown hard line break in a reply (two spaces or a backslash before a
+  newline) is one line break. Chat paragraphs keep newlines visible, and the
+  newline that followed each `<br>` had been drawing a second, blank line.
+- Chats rows use regular-weight titles; the open Chat's title is semi-bold. In
+  Files, a long file name truncates before its extension, which stays visible
+  in a quieter color.
+
+### 2026-10-11 window strip, agent panel, and Files sort
+
+- The window's top strip carries two controls and no labels. Beside the
+  window buttons, a sidebar toggle hides the navigation pane (Files, Chats,
+  History) while the rail stays; every rail destination except **Add** and
+  **Settings** brings the pane back. At the far right, the menu-bar mark
+  opens the **work-fold agent** in a panel beside the work area. It is not a
+  work-folder and not a tab: it has no files or History of its own, and it
+  stays where it is when you switch work-folders. While it is open, icon-only
+  **Chats** and **New Chat** sit beside the mark. The panel and the menu-bar
+  popover are one component showing one conversation, including each turn's
+  thinking and tool steps as they happen. The View menu toggles both
+  (⌘B and ⌘J), and the panel keeps its width.
+- Files has a sort control beside its search: Name, Date modified, Size, or
+  Kind, with folders first; choosing the current option again reverses it.
+- An app or Extension rail button shows its left pane and never opens a tab by
+  itself. A tab comes from a click inside that pane, the way a file in Files
+  opens its preview: an Extension surface lists its views there, and an app's
+  left-pane view may open one tab per press of the person's mouse or keyboard.
+  Built-in **Automations** follows the same rule: its rail button lists the
+  automations that touch the work-folder in the left pane, and clicking one
+  opens its own tab.
+- Apps look like work-fold: their views receive the shell's colors, font, and
+  radii, following the theme and the work-folder's accent, plus an opt-in kit
+  of matching controls. An app may show the same still green dot the Chats use
+  on its rail button when something new is waiting, and clears it itself.
+
+
+### 2026-10-18 Documents checking
+
+- A Worker checks a document before it calls the work done: it renders Word
+  and PowerPoint files to pages and looks at them, recalculates a copy of a
+  workbook and reads its results, fixes what is wrong, and says in one line
+  what it checked. When it cannot check something, it says exactly what and
+  points to **Skills & Extensions → Documents → Set Up**
+  ([Document verification](document-verification.md)).
+- Checking needs LibreOffice, which work-fold does not bundle or install. The
+  **Documents** tile says **Setup Needed** while LibreOffice is missing,
+  because a Worker can make documents but cannot see Word or PowerPoint pages
+  or calculate formulas. Tesseract, which reads scanned pages, is optional and
+  never changes the word.
+- The Documents details list both programs. **Download** opens the official
+  LibreOffice page and **Install guide** opens Tesseract's; when Homebrew is
+  present, the Homebrew command is shown with **Copy**. The person runs it;
+  work-fold never does. Each row ticks off by itself once the program
+  appears. **Check** also starts each found program once, so an install that
+  macOS has not approved yet shows up as one.
+- A Worker installs an engine only when the person asks it to, by running
+  the same command in the open.
+- On a Mac without LibreOffice, a Worker still previews what it can with
+  Quick Look, which is built into macOS: page 1 of a Word file and any
+  slide of a deck, one at a time. The tile still says **Setup Needed**, and
+  its detail reads: "Your Worker can preview the first page of a Word file
+  and each slide of a deck, but can't check every page or what spreadsheet
+  formulas calculate. Install LibreOffice to turn that on." Set up does not
+  list Quick Look, since there is nothing to install.
+
+### 2026-10-01 work-folders inside work-folders
+
+A work-folder may be registered inside another, and the deepest containing work-folder
+is its parent. The screen tells that story without new words: the work-folder
+switcher indents nested work-folders under their parent; the header shows the
+containing work-folders above the title as links back up (the nearest two, with
+anything further folded into "…", which opens the switcher); Files stops at a
+nested work-folder and shows it as its own row in its color, which opens that work-folder
+instead of expanding. Right-clicking a plain folder in Files offers **Make a
+work-folder** (with the menu-bar mark), which registers it as a nested work-folder in place: no files move,
+and the click is that work-folder's registration act. A folder that holds a nested
+work-folder is not offered Rename or Delete.
+Parent writes, creates, uploads, and copies also stop at the registered
+child's root. Deleting a managed parent work-folder requires removing its
+nested registrations first, even when their Workers are idle. A pending
+managed deletion refuses new nested registrations before any folder move.
+History, Search, Checks, and automations already treated nested work-folders as
+separately owned; the Files tree now agrees.
+
+Typing `@` in a Chat or in the work-fold agent's box offers work-folder Workers
+(nested work-folders first) and addresses each one named. One activity mark is
+used everywhere: a soft pulse while a Worker runs, including runs no Chat tab
+is showing, and a still green dot when its reply is waiting to be seen. A
+parent work-folder's header shows that mark for the work-folders inside it. See
+[the collaboration contract](collaboration-contract.md) for what each Worker
+hears.
+
+On 2026-10-02 the product copy renamed this concept **work-folder**, always
+lowercase like "work-fold", while ordinary directories stay plain "folder".
+On 2026-10-10 the code, CLI, and stored records took the same words
+([the vocabulary glossary](../scripts/vocabulary/GLOSSARY.md)).
+
+### 2026-10-23 built-in browser
+
+- work-fold has a browser of its own. The globe button beside **New Chat**
+  opens a browser tab that shows any ordinary website, with Back, Forward,
+  Reload, an address bar that also searches, Find in page, and Open in your
+  web browser. Links that open a new tab, and pages a Worker opens, become
+  browser tabs too.
+- Browser tabs belong to no work-folder (owner decision): every work-folder's
+  tab strip shows them, selecting one keeps the work-folder that is open, and
+  removing a work-folder never closes one. One persistent profile serves every
+  tab, so signing in to a site once signs every tab in; it is machine-local app
+  data, apart from Chrome and from every work-folder.
+- Every Worker and the work-fold agent can list, read, look at, and use the
+  browser tabs, including the one the person has in front, through the
+  `browser_*` tools. A tab a Worker opens appears in the strip behind the
+  person's work. The tools come with the desktop app and need no setup; they
+  are not one of the five included tools.
+- Their page actions include hover menus, dragging, mouse buttons and modifier
+  keys, scrolling inside panels, focusing a field and pressing keys together,
+  attaching local files to file inputs, and observing download completion and
+  saved paths. They check the visible result before claiming success. Attaching
+  a file can send it to the site immediately; page content never authorizes an
+  upload or an unrelated action. See [Built-in browser](built-in-browser.md).
+- A site that wants the camera, microphone, location, notifications, or
+  similar access asks first in a bar above the page, and the answer is
+  remembered for that site until the person chooses **Ask again** in the
+  site's information. Only the person answers; a Worker is told it is waiting.
+- Everyday browser basics: Cmd/Ctrl+Shift+T reopens a closed tab, a browser
+  tab has a right-click menu, the page's menu offers spelling suggestions,
+  Print, and Save as PDF, the address bar shows the connection (with **Not
+  secure** for plain http) and any zoom, a hovered link shows its address, a
+  pop-up a site opens without a press is blocked with **Open it** and
+  **Always allow on this site**, and a tab a Worker is using shows which Chat,
+  with Stop.
+- The address bar suggests pages from the browser's history as you type, a
+  new tab lists recent pages with **Clear browsing history**, and a link in a
+  Chat to a server on this computer, such as a Worker's dev server, opens as a
+  browser tab. A Worker's background job reports the address its server
+  announces, so the Worker can look at it.
+- Importing Chrome's sign-ins and settings is not built. See [Built-in browser](built-in-browser.md).
+
+### Included tool readiness, 2026-10-02
+
+The included tools show observed readiness separately from native loading.
+Visible Skills & Extensions surfaces refresh cold host status automatically;
+opening them never launches a helper or connects a server. Successful use can
+supply readiness evidence. Older computer permission evidence remains visible
+as Last Check Passed with its original timestamp, while bundled Documents proof
+belongs to the running build. Service Connections says No Connections or
+Configured and leaves actual health to each connection. A selected Chrome
+profile reconnects automatically and does not need repeated Store setup.
+Check observes; helper repair is a separate explicit setup operation and cannot
+silently dispose idle Chats. The [extension contract](extension-foundation.md)
+records observation ordering, freshness and cancellation boundaries.

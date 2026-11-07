@@ -1,0 +1,1379 @@
+import { includedToolDefinitions, type IncludedToolDefinition, type IncludedToolId, type IncludedToolStatus } from "../../../../src/shared/included-tools";
+import { IncludedToolSetup } from "./IncludedToolSetup";
+import { IncludedToolIcon } from "./IncludedToolIcon";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  Add16Regular,
+  ArrowSync16Regular,
+  ArrowUpload16Regular,
+  BookToolbox20Regular,
+  ChevronRight16Regular,
+  Box16Regular,
+  Code16Regular,
+  Delete16Regular,
+  Dismiss20Regular,
+  Open16Regular,
+  PlugConnected20Regular,
+  Search20Regular,
+  ShieldCheckmark20Regular,
+} from "@fluentui/react-icons";
+
+import { api, apiForm, errorText, safeExternalHref } from "../../lib/api";
+import { useModalDialog } from "../../hooks/useModalDialog";
+import { externalLinkHost } from "../../lib/capability-identity";
+import { createWorkFolderOperationGate, type WorkFolderOperationToken } from "../../lib/work-folder-operation-gate";
+import { includedToolReadiness } from "../../lib/included-tool-readiness";
+import type {
+  AgentCatalog,
+  AgentCapabilityOrigin,
+  AgentCapabilityScope,
+  AgentCapabilitySource,
+  AgentCapabilityStatus,
+  AgentDiagnostic,
+  AgentExtension,
+  AgentPackage,
+  AgentSkill,
+  AgentStatus,
+  AgentTool,
+  AgentToolManagement,
+  SkillsExtensionsView,
+  CapabilityDiscoverItem,
+  CapabilityDiscoverDetailsItem,
+  CapabilityDiscoverDetailsResponse,
+  CapabilityDiscoverResponse,
+  WorkFolderSummary,
+} from "../../types";
+import { requestConfirm, showToast } from "../../ui/feedback";
+
+type CapabilityTypeFilter = "all" | "skill" | "extension";
+type DiscoverSort = "official" | "downloads" | "recent" | "name";
+/** Mirrors the registry's one-page npm window (see capability-registry.ts). */
+const npmSearchWindowSize = 250;
+
+interface InstalledCapability {
+  id: string;
+  kind: "skill" | "extension";
+  name: string;
+  description: string;
+  path: string;
+  scope: AgentCapabilityScope;
+  origin: AgentCapabilityOrigin;
+  source: string;
+  enabled: boolean;
+  loaded: boolean;
+  status: AgentCapabilityStatus;
+  diagnostics: AgentDiagnostic[];
+  content?: string;
+  disableModelInvocation?: boolean;
+  tools: string[];
+  commands: string[];
+  flags: string[];
+  configurable?: boolean;
+  included?: IncludedToolDefinition;
+  /** Shipped with work-fold outside the five included tools: turned off, never removed. */
+  bundled?: true;
+}
+
+type PendingInstall = {
+  kind: "skill-files";
+  files: File[];
+  scope: AgentCapabilityScope;
+} | {
+  kind: "package";
+  source: string;
+  scope: AgentCapabilityScope;
+  item?: CapabilityDiscoverItem;
+} | {
+  kind: "catalog";
+  scope: AgentCapabilityScope;
+  item: CapabilityDiscoverDetailsItem;
+};
+
+export function CapabilitiesPane({
+  workFolder,
+  status,
+  view,
+  fixtureMode = false,
+  onError,
+  onCatalogChanged,
+  onViewChange,
+}: {
+  workFolder: WorkFolderSummary;
+  status: AgentStatus;
+  view: SkillsExtensionsView;
+  fixtureMode?: boolean;
+  onError: (message: string | null) => void;
+  onCatalogChanged?: (catalog: AgentCatalog) => void;
+  onViewChange: (view: SkillsExtensionsView) => void;
+}) {
+  const [catalog, setCatalog] = useState<AgentCatalog | null>(null);
+  const [readiness, setReadiness] = useState<{ workFolderId: string; tools: IncludedToolStatus[]; error?: string } | null>(null);
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<CapabilityTypeFilter>("all");
+  /** Where the next install lands; chosen in the review step and remembered for the next one. */
+  const [installScope, setInstallScope] = useState<AgentCapabilityScope>("global");
+  const [discoverSort, setDiscoverSort] = useState<DiscoverSort>("official");
+  const [packageSource, setPackageSource] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [packageBusy, setPackageBusy] = useState<string | null>(null);
+  const [pendingInstall, setPendingInstall] = useState<PendingInstall | null>(null);
+  const [selectedCapability, setSelectedCapability] = useState<InstalledCapability | null>(null);
+  const [discoverItems, setDiscoverItems] = useState<CapabilityDiscoverItem[]>([]);
+  const [discoverTotal, setDiscoverTotal] = useState(0);
+  const [discoverCatalogUrl, setDiscoverCatalogUrl] = useState("");
+  const [discoverDiagnostics, setDiscoverDiagnostics] = useState<string[]>([]);
+  const [discoverTruncated, setDiscoverTruncated] = useState(false);
+  const [discoverLoading, setDiscoverLoading] = useState(false);
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
+  const [reviewingItemId, setReviewingItemId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const importRef = useRef<HTMLInputElement>(null);
+  const installedViewRef = useRef<HTMLElement>(null);
+  const discoverViewRef = useRef<HTMLElement>(null);
+  const paneRef = useRef<HTMLDivElement>(null);
+  const catalogRequestRef = useRef(0);
+  const readinessRevisions = useRef(new Map<IncludedToolId, number>());
+  const discoverRequestRef = useRef(0);
+  const operationGateRef = useRef(createWorkFolderOperationGate(workFolder.id));
+  operationGateRef.current.activate(workFolder.id);
+  const readinessOwner = operationGateRef.current.capture();
+
+  useEffect(() => {
+    setCatalog(null);
+    setInstallScope("global");
+    setTypeFilter("all");
+    setQuery("");
+    setAddOpen(false);
+    setPendingInstall(null);
+    setSelectedCapability(null);
+    setBusy(false);
+    setPackageBusy(null);
+    setReviewingItemId(null);
+    void loadCatalog(operationGateRef.current.capture());
+  }, [fixtureMode, workFolder.id]);
+
+  useEffect(() => {
+    if (view !== "discover") return;
+    const timer = window.setTimeout(() => void loadDiscover(true), 220);
+    return () => window.clearTimeout(timer);
+  }, [view, query, typeFilter, discoverSort, fixtureMode]);
+
+  useEffect(() => {
+    if (fixtureMode || view !== "installed") return;
+    const operation = operationGateRef.current.capture();
+    let controller: AbortController | undefined;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = () => {
+      if (stopped || document.visibilityState === "hidden") return;
+      controller?.abort();
+      const request = new AbortController();
+      controller = request;
+      const revisions = new Map(readinessRevisions.current);
+      void api<{ tools: IncludedToolStatus[] }>(`/api/agent/included-tools?workFolderId=${encodeURIComponent(workFolder.id)}`, { signal: request.signal })
+      .then(({ tools }) => {
+        if (!request.signal.aborted && operationGateRef.current.isCurrent(operation)) {
+          setReadiness((current) => {
+            const merged = new Map((current?.workFolderId === operation.workFolderId ? current.tools : []).map((tool) => [tool.id, tool]));
+            for (const tool of tools) {
+              if ((revisions.get(tool.id) ?? 0) === (readinessRevisions.current.get(tool.id) ?? 0)) merged.set(tool.id, tool);
+            }
+            return { workFolderId: operation.workFolderId, tools: [...merged.values()] };
+          });
+        }
+      })
+      .catch((caught) => {
+        if (!request.signal.aborted && operationGateRef.current.isCurrent(operation)) setReadiness((current) => ({ workFolderId: operation.workFolderId, tools: current?.workFolderId === operation.workFolderId ? current.tools.map((tool) => ({ ...tool, stale: true })) : [], error: errorText(caught) }));
+      });
+    };
+    // Read only the host's observations. Never POST a check or launch a tool.
+    const tick = () => { refresh(); timer = setTimeout(tick, 5_000); };
+    const returned = () => refresh();
+    tick();
+    window.addEventListener("focus", returned);
+    document.addEventListener("visibilitychange", returned);
+    return () => { stopped = true; clearTimeout(timer); controller?.abort(); window.removeEventListener("focus", returned); document.removeEventListener("visibilitychange", returned); };
+  }, [fixtureMode, workFolder.id, view]);
+
+  function rememberReadiness(id: IncludedToolId, tool: IncludedToolStatus | null, operation: WorkFolderOperationToken) {
+    if (!operationGateRef.current.isCurrent(operation)) return;
+    readinessRevisions.current.set(id, (readinessRevisions.current.get(id) ?? 0) + 1);
+    setReadiness((current) => {
+      const previous = current?.workFolderId === operation.workFolderId ? current.tools : [];
+      return { workFolderId: operation.workFolderId, tools: [...previous.filter((item) => item.id !== id), ...(tool ? [tool] : [])] };
+    });
+  }
+
+  async function loadCatalog(operation: WorkFolderOperationToken = operationGateRef.current.capture()) {
+    const requestId = ++catalogRequestRef.current;
+    if (fixtureMode) {
+      if (operationGateRef.current.isCurrent(operation)) {
+        const next = fixtureCatalog();
+        setCatalog(next);
+        setReadiness({ workFolderId: operation.workFolderId, tools: fixtureIncludedToolStatuses() });
+      }
+      return;
+    }
+    try {
+      const next = await api<AgentCatalog>(`/api/work-folders/${operation.workFolderId}/agent/catalog`);
+      if (catalogRequestRef.current === requestId && operationGateRef.current.isCurrent(operation)) {
+        setCatalog(next);
+        onCatalogChanged?.(next);
+      }
+    } catch (caught) {
+      if (catalogRequestRef.current === requestId && operationGateRef.current.isCurrent(operation)) onError(errorText(caught));
+    }
+  }
+
+  async function loadDiscover(reset: boolean) {
+    const requestId = ++discoverRequestRef.current;
+    const offset = reset ? 0 : discoverItems.length;
+    setDiscoverLoading(true);
+    setDiscoverError(null);
+    if (fixtureMode) {
+      const response = fixtureDiscover(query, typeFilter, discoverSort, offset);
+      setDiscoverItems((current) => reset ? response.items : [...current, ...response.items]);
+      setDiscoverTotal(response.total);
+      setDiscoverCatalogUrl(response.catalogUrl);
+      setDiscoverDiagnostics(response.diagnostics ?? []);
+      setDiscoverTruncated(Boolean(response.truncated));
+      setDiscoverLoading(false);
+      return;
+    }
+    const params = new URLSearchParams({
+      query: query.trim(),
+      type: typeFilter,
+      sort: discoverSort,
+      offset: String(offset),
+      limit: "24",
+    });
+    try {
+      const response = await api<CapabilityDiscoverResponse>(`/api/agent/capabilities/discover?${params}`);
+      if (discoverRequestRef.current !== requestId) return;
+      setDiscoverItems((current) => reset ? response.items : [...current, ...response.items]);
+      setDiscoverTotal(response.total);
+      setDiscoverCatalogUrl(response.catalogUrl);
+      setDiscoverDiagnostics(response.diagnostics ?? []);
+      setDiscoverTruncated(Boolean(response.truncated));
+    } catch (caught) {
+      if (discoverRequestRef.current === requestId) setDiscoverError(errorText(caught));
+    } finally {
+      if (discoverRequestRef.current === requestId) setDiscoverLoading(false);
+    }
+  }
+
+  const resources = useMemo(() => catalog ? normalizedCapabilities(catalog) : [], [catalog]);
+  const visibleResources = useMemo(
+    () => filterAndSortCapabilities(resources, query, typeFilter),
+    [resources, query, typeFilter],
+  );
+  // The strip holds the five included Extensions; an included Skill (like document-work) is an ordinary Everywhere row.
+  const includedResources = visibleResources.filter((item) => item.scope === "global" && item.included && item.kind === "extension");
+  const everywhereResources = visibleResources.filter((item) => item.scope === "global" && !(item.included && item.kind === "extension"));
+  const workFolderResources = visibleResources.filter((item) => item.scope === "project");
+  const installedTotal = resources.length;
+  const installedVisible = visibleResources.length;
+  const includedStatuses = readiness?.workFolderId === workFolder.id ? readiness.tools : [];
+  const hasInstalledQuery = Boolean(query.trim()) || typeFilter !== "all";
+  const catalogHref = safeExternalHref(discoverCatalogUrl);
+
+  function openAddDialog(scope: AgentCapabilityScope = installScope) {
+    setInstallScope(scope);
+    setAddOpen(true);
+  }
+
+  function changePendingScope(scope: AgentCapabilityScope) {
+    setInstallScope(scope);
+    setPendingInstall((current) => current ? { ...current, scope } : current);
+  }
+
+  function selectView(nextView: SkillsExtensionsView) {
+    onViewChange(nextView);
+    setQuery("");
+    setAddOpen(false);
+    window.requestAnimationFrame(() => {
+      const panel = nextView === "installed" ? installedViewRef.current : discoverViewRef.current;
+      panel?.focus({ preventScroll: true });
+      resetPaneScroll();
+    });
+  }
+
+  /**
+   * Only this pane scrolls. Scrolling the panel into view instead would also
+   * drag every scrollable ancestor, which pushed the title and the whole app
+   * shell out of view.
+   */
+  function resetPaneScroll() {
+    paneRef.current?.scrollTo({ top: 0 });
+  }
+
+  function changeQuery(value: string) {
+    setQuery(value);
+    resetPaneScroll();
+  }
+
+  function changeTypeFilter(value: CapabilityTypeFilter) {
+    setTypeFilter(value);
+    resetPaneScroll();
+  }
+
+  function handleViewTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    const direction = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    const nextView = event.key === "Home" ? "installed" : event.key === "End" ? "discover" : direction ? (view === "installed" ? "discover" : "installed") : null;
+    if (!nextView) return;
+    event.preventDefault();
+    selectView(nextView);
+    window.requestAnimationFrame(() => document.getElementById(`capabilities-${nextView}-tab`)?.focus());
+  }
+
+  function chooseSkillFiles(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (!files.length) return;
+    setAddOpen(false);
+    setPendingInstall({ kind: "skill-files", files, scope: installScope });
+  }
+
+  function reviewPackage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const source = packageSource.trim();
+    if (!source) return;
+    setAddOpen(false);
+    setPendingInstall({ kind: "package", source, scope: installScope });
+  }
+
+  async function reviewDiscoverItem(item: CapabilityDiscoverItem) {
+    if (!canInstallDiscoverItem(item)) return;
+    if (fixtureMode) {
+      setPendingInstall({ kind: "catalog", scope: installScope, item: fixtureDiscoverDetails(item) });
+      return;
+    }
+    const operation = operationGateRef.current.capture();
+    setReviewingItemId(item.id);
+    try {
+      const response = await api<CapabilityDiscoverDetailsResponse>(`/api/agent/capabilities/details?id=${encodeURIComponent(item.id)}`);
+      if (!operationGateRef.current.isCurrent(operation)) return;
+      setPendingInstall({ kind: "catalog", scope: installScope, item: response.item });
+    } catch (caught) {
+      if (operationGateRef.current.isCurrent(operation)) onError(errorText(caught));
+    } finally {
+      if (operationGateRef.current.isCurrent(operation)) setReviewingItemId(null);
+    }
+  }
+
+  async function installPending() {
+    if (!pendingInstall) return;
+    const operation = operationGateRef.current.capture();
+    const install = pendingInstall;
+    setBusy(true);
+    try {
+      if (fixtureMode) {
+        setCatalog(fixtureCatalog());
+      } else if (install.kind === "skill-files") {
+        const form = new FormData();
+        form.set("workFolderId", operation.workFolderId);
+        form.set("scope", install.scope);
+        install.files.forEach((file) => form.append("files", file, file.name));
+        await apiForm("/api/agent/skills/import", form);
+      } else if (install.kind === "catalog") {
+        await api("/api/agent/capabilities/install", {
+          method: "POST",
+          body: { workFolderId: operation.workFolderId, id: install.item.id, scope: install.scope },
+        });
+      } else {
+        await api("/api/agent/packages/install", {
+          method: "POST",
+          body: { workFolderId: operation.workFolderId, source: install.source, scope: install.scope },
+        });
+      }
+      if (!operationGateRef.current.isCurrent(operation)) return;
+      const successText = install.kind === "skill-files" ? "Skill installed." : "Installed.";
+      setPackageSource("");
+      setPendingInstall(null);
+      await loadCatalog(operation);
+      if (!operationGateRef.current.isCurrent(operation)) return;
+      setTypeFilter("all");
+      selectView("installed");
+      showToast({ text: successText, tone: "success" });
+    } catch (caught) {
+      if (operationGateRef.current.isCurrent(operation)) onError(errorText(caught));
+    } finally {
+      if (operationGateRef.current.isCurrent(operation)) setBusy(false);
+    }
+  }
+
+  // Removal is reversible, so it asks nothing first: like Chat deletion, it acts and offers Undo.
+  async function removeSkill(item: InstalledCapability) {
+    const operation = operationGateRef.current.capture();
+    setBusy(true);
+    try {
+      let recentlyDeleted: { entryId: string; restoreBy: string } | null = null;
+      if (fixtureMode) {
+        setCatalog((current) => current ? { ...current, skills: current.skills.filter((skill) => skill.path !== item.path) } : current);
+      } else {
+        recentlyDeleted = (await api<{ recentlyDeleted: { entryId: string; restoreBy: string } }>("/api/agent/skills/remove", {
+          method: "POST",
+          body: { workFolderId: operation.workFolderId, path: item.path, scope: item.scope },
+        })).recentlyDeleted;
+        if (!operationGateRef.current.isCurrent(operation)) return;
+        await loadCatalog(operation);
+      }
+      if (!operationGateRef.current.isCurrent(operation)) return;
+      setSelectedCapability(null);
+      showToast({
+        text: `Moved "${item.name}" to Recently Deleted`,
+        tone: "success",
+        durationMs: 6500,
+        ...(recentlyDeleted ? {
+          actionLabel: "Undo",
+          onAction: () => {
+            // Restoring puts the Skill back in the same scope and reloads
+            // capabilities like an install; a same-named Skill added since is a refusal.
+            void api(`/api/settings/recently-deleted/${recentlyDeleted.entryId}/restore`, { method: "POST", body: {} })
+              .then(() => loadCatalog(operation))
+              .catch((caught) => { if (operationGateRef.current.isCurrent(operation)) onError(errorText(caught)); });
+          },
+        } : {}),
+      });
+    } catch (caught) {
+      if (operationGateRef.current.isCurrent(operation)) onError(errorText(caught));
+    } finally {
+      if (operationGateRef.current.isCurrent(operation)) setBusy(false);
+    }
+  }
+
+  async function mutatePackage(item: AgentPackage, action: "update" | "remove") {
+    const operation = operationGateRef.current.capture();
+    const remove = action === "remove";
+    const confirmed = await requestConfirm({
+      title: remove ? "Remove this Pi package?" : "Update this Pi package?",
+      body: remove
+        ? `${item.source} will be removed from ${scopeDescription(item.scope)}. Resources managed by that package will stop loading.`
+        : `${item.source} will be checked and updated in ${scopeDescription(item.scope)}. Pinned versions and refs remain pinned.`,
+      confirmLabel: remove ? "Remove Package" : "Update Package",
+      tone: remove ? "danger" : "default",
+    });
+    if (!confirmed) return;
+    if (!operationGateRef.current.isCurrent(operation)) return;
+    const key = `${action}:${item.scope}:${item.source}`;
+    setPackageBusy(key);
+    try {
+      if (fixtureMode) {
+        if (remove) setCatalog((current) => current ? { ...current, packages: current.packages.filter((pkg) => pkg !== item) } : current);
+      } else {
+        await api(`/api/agent/packages/${action}`, {
+          method: "POST",
+          body: { workFolderId: operation.workFolderId, source: item.source, scope: item.scope },
+        });
+        if (!operationGateRef.current.isCurrent(operation)) return;
+        await loadCatalog(operation);
+      }
+      if (!operationGateRef.current.isCurrent(operation)) return;
+      showToast({ text: remove ? "Pi package removed." : "Pi package updated.", tone: "success" });
+    } catch (caught) {
+      if (operationGateRef.current.isCurrent(operation)) onError(errorText(caught));
+    } finally {
+      if (operationGateRef.current.isCurrent(operation)) setPackageBusy(null);
+    }
+  }
+
+  async function toggleResource(item: InstalledCapability) {
+    const operation = operationGateRef.current.capture();
+    setBusy(true);
+    try {
+      if (!fixtureMode) {
+        await api("/api/agent/resources/enabled", { method: "POST", body: {
+          workFolderId: operation.workFolderId, path: item.path, kind: item.kind === "skill" ? "skills" : "extensions", scope: item.scope, enabled: !item.enabled,
+        } });
+        if (!operationGateRef.current.isCurrent(operation)) return;
+        await loadCatalog(operation);
+      }
+      if (operationGateRef.current.isCurrent(operation)) setSelectedCapability(null);
+    } catch (caught) {
+      if (operationGateRef.current.isCurrent(operation)) onError(errorText(caught));
+    } finally {
+      if (operationGateRef.current.isCurrent(operation)) setBusy(false);
+    }
+  }
+
+  return (
+    <div ref={paneRef} className="work-folder-pane-content capabilities-pane skills-extensions-pane professional-surface professional-setup">
+      <header className="skills-extensions-header">
+        <div>
+          <h1>Skills &amp; Extensions</h1>
+        </div>
+      </header>
+
+      <div className="capabilities-navigation">
+        <div className="capabilities-view-tabs" role="tablist" aria-label="Skills & Extensions view">
+          <button id="capabilities-installed-tab" type="button" role="tab" tabIndex={view === "installed" ? 0 : -1} aria-controls="capabilities-installed-panel" aria-selected={view === "installed"} className={view === "installed" ? "active" : ""} onKeyDown={handleViewTabKeyDown} onClick={() => selectView("installed")}>Installed</button>
+          <button id="capabilities-discover-tab" type="button" role="tab" tabIndex={view === "discover" ? 0 : -1} aria-controls="capabilities-discover-panel" aria-selected={view === "discover"} className={view === "discover" ? "active" : ""} onKeyDown={handleViewTabKeyDown} onClick={() => selectView("discover")}>Discover</button>
+        </div>
+        <button className="ui-control capabilities-add-trigger" type="button" onClick={() => openAddDialog()}><Add16Regular aria-hidden="true" />Add Custom</button>
+      </div>
+
+      {view === "installed" ? (
+        <section ref={installedViewRef} id="capabilities-installed-panel" className="capabilities-view-content" role="tabpanel" aria-labelledby="capabilities-installed-tab" tabIndex={-1}>
+          <CapabilityToolbar
+            view="installed"
+            query={query}
+            typeFilter={typeFilter}
+            discoverSort={discoverSort}
+            onQueryChange={changeQuery}
+            onTypeChange={changeTypeFilter}
+            onDiscoverSortChange={setDiscoverSort}
+          />
+          {!catalog ? <div className="professional-loading-row" role="status"><ArrowSync16Regular className="spin" />Loading Skills & Extensions</div> : null}
+          {readiness?.workFolderId === workFolder.id && readiness.error ? <div className="inline-error" role="alert">Setup status could not be loaded: {readiness.error}</div> : null}
+          {catalog && !installedVisible && installedTotal ? <CapabilityEmpty title="No Matching Tools" /> : null}
+          {catalog ? (
+            <>
+              <IncludedToolsStrip items={includedResources} statuses={includedStatuses} onSelect={setSelectedCapability} />
+              <div className="capabilities-scope-columns">
+                <ScopeGroup
+                  scope="global"
+                  workFolderName={workFolder.name}
+                  items={everywhereResources}
+                  hiddenByQuery={hasInstalledQuery && everywhereResources.length === 0 && resources.some((item) => item.scope === "global" && !(item.included && item.kind === "extension"))}
+                  onSelect={setSelectedCapability}
+                />
+                <ScopeGroup
+                  scope="project"
+                  workFolderName={workFolder.name}
+                  items={workFolderResources}
+                  hiddenByQuery={hasInstalledQuery && workFolderResources.length === 0 && resources.some((item) => item.scope === "project")}
+                  onSelect={setSelectedCapability}
+                />
+              </div>
+            </>
+          ) : null}
+          {catalog && !query.trim() ? (
+            <section className="capabilities-panel capabilities-supporting-details" aria-labelledby="capabilities-supporting-title">
+              <div className="capabilities-supporting-heading">
+                <h3 id="capabilities-supporting-title">Tools and Packages</h3>
+              </div>
+              <div className="capabilities-supporting-list">
+                <CoreToolsSection tools={catalog.tools} management={catalog.toolManagement} />
+                {catalog.packages.length ? <PackageManagementSection packages={catalog.packages} packageBusy={packageBusy} onPackageAction={(item, action) => void mutatePackage(item, action)} /> : null}
+              </div>
+            </section>
+          ) : null}
+        </section>
+      ) : (
+        <section ref={discoverViewRef} id="capabilities-discover-panel" className="capabilities-view-content" role="tabpanel" aria-labelledby="capabilities-discover-tab" tabIndex={-1}>
+          <div className="capabilities-view-heading">
+            <div><h2>Pi Catalog</h2></div>
+            <div className="capabilities-view-actions">{catalogHref ? <ExternalSourceLink href={catalogHref} label="Browse the Catalog" /> : null}</div>
+          </div>
+          <CapabilityToolbar
+            view="discover"
+            query={query}
+            typeFilter={typeFilter}
+            discoverSort={discoverSort}
+            onQueryChange={changeQuery}
+            onTypeChange={changeTypeFilter}
+            onDiscoverSortChange={setDiscoverSort}
+          />
+          <section className="capabilities-panel capabilities-discover-panel" aria-label="Catalog results">
+          <DiscoverCapabilities
+            items={discoverItems}
+            total={discoverTotal}
+            loading={discoverLoading}
+            error={discoverError}
+            diagnostics={discoverDiagnostics}
+            truncated={discoverTruncated}
+            reviewingItemId={reviewingItemId}
+            onInstall={reviewDiscoverItem}
+            onLoadMore={() => void loadDiscover(false)}
+          />
+          </section>
+        </section>
+      )}
+
+      <input hidden ref={importRef} type="file" accept=".zip,.skill,.md" multiple onChange={chooseSkillFiles} />
+      {addOpen ? (
+        <AddCapabilityDialog
+          busy={busy}
+          scope={installScope}
+          workFolderName={workFolder.name}
+          onScopeChange={setInstallScope}
+          packageSource={packageSource}
+          onClose={() => setAddOpen(false)}
+          onChooseFiles={() => importRef.current?.click()}
+          onPackageSourceChange={setPackageSource}
+          onReviewPackage={reviewPackage}
+        />
+      ) : null}
+      {pendingInstall ? (
+        <InstallReviewDialog
+          pending={pendingInstall}
+          workFolderName={workFolder.name}
+          busy={busy}
+          onClose={() => { if (!busy) setPendingInstall(null); }}
+          onScopeChange={changePendingScope}
+          onInstall={() => void installPending()}
+        />
+      ) : null}
+      {selectedCapability ? (
+        <CapabilityDetailsDialog
+          item={selectedCapability}
+          workFolderId={workFolder.id}
+          onReadinessChange={(tool) => { if (selectedCapability.included) rememberReadiness(selectedCapability.included.id, tool, readinessOwner); }}
+          busy={busy}
+          onClose={() => { if (!busy) setSelectedCapability(null); }}
+          {...(canRemoveSkill(selectedCapability) ? { onRemove: () => void removeSkill(selectedCapability) } : {})}
+          {...(selectedCapability.configurable ? { onToggle: () => void toggleResource(selectedCapability) } : {})}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function CapabilityToolbar({
+  view,
+  query,
+  typeFilter,
+  discoverSort,
+  onQueryChange,
+  onTypeChange,
+  onDiscoverSortChange,
+}: {
+  view: SkillsExtensionsView;
+  query: string;
+  typeFilter: CapabilityTypeFilter;
+  discoverSort: DiscoverSort;
+  onQueryChange: (value: string) => void;
+  onTypeChange: (value: CapabilityTypeFilter) => void;
+  onDiscoverSortChange: (value: DiscoverSort) => void;
+}) {
+  const types: Array<{ value: CapabilityTypeFilter; label: string }> = [
+    { value: "all", label: "All" },
+    { value: "skill", label: "Skills" },
+    { value: "extension", label: "Extensions" },
+  ];
+  return (
+    <section className="capabilities-toolbar" aria-label={`${view === "installed" ? "Installed" : "Discover"} tool filters`}>
+      <label className="capabilities-search"><Search20Regular aria-hidden="true" /><input type="search" aria-label={view === "installed" ? "Search installed tools" : "Search the catalog"} value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={view === "installed" ? "Search installed tools" : "Search the catalog"} /></label>
+      <div className="capabilities-filter-row">
+        <div className="capabilities-type-chips" role="group" aria-label="Tool type">
+          {types.map((type) => (
+            <button key={type.value} type="button" className={typeFilter === type.value ? "active" : ""} aria-pressed={typeFilter === type.value} onClick={() => onTypeChange(type.value)}>{type.label}</button>
+          ))}
+        </div>
+        {view === "discover" ? (
+          <label className="capabilities-sort"><span>Sort</span><select aria-label="Catalog Sort" value={discoverSort} onChange={(event) => onDiscoverSortChange(event.target.value as DiscoverSort)}><option value="official">First-Party First</option><option value="downloads">Most Downloads</option><option value="recent">Recently Updated</option><option value="name">Name</option></select></label>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * One of the two homes a tool can have: Everywhere serves the work-fold agent
+ * and every Worker; This work-folder only lives in the work-folder and travels with it.
+ */
+function ScopeGroup({ scope, workFolderName, items, hiddenByQuery, onSelect }: {
+  scope: AgentCapabilityScope;
+  workFolderName: string;
+  items: InstalledCapability[];
+  hiddenByQuery: boolean;
+  onSelect: (item: InstalledCapability) => void;
+}) {
+  const everywhere = scope === "global";
+  const titleId = `capabilities-scope-${scope}-title`;
+  return (
+    <section className={`capabilities-panel capabilities-scope-group scope-${scope}`} aria-labelledby={titleId}>
+      <div className="capabilities-scope-heading">
+        <div>
+          <h3 id={titleId}>{everywhere ? "Everywhere" : "This work-folder only"}</h3>
+          <p>{everywhere ? "work-fold agent and all Workers" : workFolderName}</p>
+        </div>
+        <span className="capabilities-scope-count">{items.length}</span>
+      </div>
+      {items.length ? (
+        <div className="capabilities-resource-list">{items.map((item) => <InstalledCapabilityRow key={item.id} item={item} onSelect={() => onSelect(item)} />)}</div>
+      ) : (
+        <div className="capabilities-scope-empty">
+          <p>{hiddenByQuery ? "Nothing here matches the search." : "Nothing here yet."}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** The five tools that ship with work-fold, in the order they are shown. */
+const includedToolOrder: IncludedToolId[] = ["chrome", "computer", "web", "documents", "mcp"];
+
+/** Every included tool with its status word, so setup state is visible without opening anything. */
+function IncludedToolsStrip({ items, statuses, onSelect }: {
+  items: InstalledCapability[];
+  statuses: IncludedToolStatus[];
+  onSelect: (item: InstalledCapability) => void;
+}) {
+  const ordered = includedToolOrder
+    .map((id) => items.find((item) => item.included?.id === id))
+    .filter((item): item is InstalledCapability => Boolean(item));
+  if (!ordered.length) return null;
+  return (
+    <section className="capabilities-included" aria-labelledby="capabilities-included-title">
+      <div className="capabilities-scope-heading">
+        <div><h3 id="capabilities-included-title">Included with work-fold</h3></div>
+      </div>
+      <div className="capabilities-included-grid">
+        {ordered.map((item) => <IncludedToolTile key={item.id} item={item} readiness={statuses.find((status) => status.id === item.included?.id)} onSelect={() => onSelect(item)} />)}
+      </div>
+    </section>
+  );
+}
+
+function IncludedToolTile({ item, readiness, onSelect }: { item: InstalledCapability; readiness?: IncludedToolStatus; onSelect: () => void }) {
+  const state = includedToolState(item, readiness);
+  // The whole tile opens the tool; "Set Up" is a plain pointer to what waits inside, not a second control.
+  return (
+    <button className={`capabilities-included-tile tone-${state.tone}`} type="button" onClick={onSelect}>
+      <span className="capabilities-included-name">
+        <span className="capabilities-included-icon">{item.included ? <IncludedToolIcon id={item.included.id} /> : null}</span>
+        <strong>{item.name}</strong>
+      </span>
+      <span className="capabilities-included-status"><span className="capabilities-status-dot" aria-hidden="true" />{state.label}</span>
+      {state.setup ? <span className="capabilities-included-setup">Set Up<ChevronRight16Regular aria-hidden="true" /></span> : null}
+    </button>
+  );
+}
+
+/** The one status word a tile shows, and whether a person can act on it. */
+function includedToolState(item: InstalledCapability, readiness: IncludedToolStatus | undefined): { label: string; tone: "enabled" | "error" | "attention" | "neutral"; setup: boolean } {
+  if (!item.enabled) return { label: "Turned Off", tone: "neutral", setup: false };
+  if (["error", "blocked", "missing"].includes(item.status)) return { label: statusLabel(item.status), tone: "error", setup: false };
+  const state = includedToolReadiness(readiness);
+  return { label: state.label, tone: state.setup ? "attention" : state.tone === "enabled" ? "enabled" : state.tone === "error" ? "error" : "neutral", setup: state.setup };
+}
+
+/** The work-fold agent above, work-folders below; filled pills show where a tool is available. */
+function ScopeHierarchyGlyph({ scope }: { scope: AgentCapabilityScope }) {
+  const everywhere = scope === "global";
+  const pill = (x: number, y: number, w: number, label: string, active: boolean, key: string) => (
+    <g key={key} className={active ? "active" : "inactive"}>
+      <rect x={x} y={y} width={w} height={18} rx={9} />
+      <text x={x + w / 2} y={y + 12.5} textAnchor="middle">{label}</text>
+    </g>
+  );
+  return (
+    <svg className="capabilities-hierarchy-glyph large" viewBox="0 0 170 60" width={170} height={60} aria-hidden="true" focusable="false">
+      <g className="links">
+        <path d="M85 22 L85 30 L27 30 L27 38" />
+        <path d="M85 22 L85 38" />
+        <path d="M85 22 L85 30 L143 30 L143 38" />
+      </g>
+      {pill(35, 4, 100, "work-fold agent", everywhere, "agent")}
+      {pill(4, 38, 46, "Folder", everywhere, "a")}
+      {pill(62, 38, 46, "Folder", everywhere, "b")}
+      {pill(120, 38, 46, "Here", true, "here")}
+    </svg>
+  );
+}
+
+/** Two cards, one decision: where the new tool lives in the hierarchy. */
+function ScopeChooser({ value, workFolderName, disabled, onChange }: {
+  value: AgentCapabilityScope;
+  workFolderName: string;
+  disabled?: boolean;
+  onChange: (value: AgentCapabilityScope) => void;
+}) {
+  const options: Array<{ scope: AgentCapabilityScope; title: string; detail: string }> = [
+    { scope: "global", title: "Everywhere", detail: "work-fold agent and all Workers" },
+    { scope: "project", title: "This work-folder only", detail: workFolderName },
+  ];
+  return (
+    <fieldset className="capabilities-scope-chooser" disabled={disabled}>
+      <legend>Where should it live?</legend>
+      <div className="capabilities-scope-options" role="radiogroup" aria-label="Where the tool lives">
+        {options.map((option) => (
+          <label key={option.scope} className={`capabilities-scope-option${value === option.scope ? " active" : ""}`}>
+            <input type="radio" name="capability-scope" value={option.scope} checked={value === option.scope} onChange={() => onChange(option.scope)} />
+            <ScopeHierarchyGlyph scope={option.scope} />
+            <span className="capabilities-scope-option-copy"><strong>{option.title}</strong><span>{option.detail}</span></span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+function PackageManagementSection({ packages, packageBusy, onPackageAction }: {
+  packages: AgentPackage[];
+  packageBusy: string | null;
+  onPackageAction: (item: AgentPackage, action: "update" | "remove") => void;
+}) {
+  const updates = packages.filter((item) => item.updateAvailable).length;
+  return (
+    <details className="capabilities-packages capabilities-management-section">
+      <summary>
+        <span><Box16Regular aria-hidden="true" /><strong>Packages</strong></span>
+        <small>{packages.length}{updates ? ` · ${updates} ${updates === 1 ? "update" : "updates"}` : ""}</small>
+      </summary>
+      <div className="capabilities-package-list">{packages.map((item) => {
+        const updateKey = `update:${item.scope}:${item.source}`;
+        const removeKey = `remove:${item.scope}:${item.source}`;
+        return <article className="capabilities-package-row" key={`${item.scope}:${item.source}`}><div><strong>{item.displayName || item.source}</strong><span>{scopeLabel(item.scope)}{item.filtered ? " · filtered resources" : ""}{item.installedPath ? ` · ${item.installedPath}` : ""}</span></div><span className={item.updateAvailable || item.loaded ? "professional-status-badge enabled" : "professional-status-badge"}>{packageStatusLabel(item)}</span><div className="capabilities-package-actions"><button className="ui-control" type="button" disabled={Boolean(packageBusy)} onClick={() => onPackageAction(item, "update")}>{packageBusy === updateKey ? <ArrowSync16Regular className="spin" /> : null}Update</button><button className="ui-control ui-control--icon" type="button" disabled={Boolean(packageBusy)} onClick={() => onPackageAction(item, "remove")} aria-label={`Remove ${item.displayName || item.source}`} title="Remove Package">{packageBusy === removeKey ? <ArrowSync16Regular className="spin" /> : <Delete16Regular />}</button></div></article>;
+      })}</div>
+    </details>
+  );
+}
+
+function CoreToolsSection({ tools, management }: { tools: AgentTool[]; management?: AgentToolManagement }) {
+  const coreTools = tools.filter(isCoreTool);
+  if (!coreTools.length) return null;
+  return (
+    <details className="capabilities-core-tools capabilities-management-section" data-management-mode={management?.mode}>
+      <summary><span><Code16Regular aria-hidden="true" /><strong>Built-In Tools</strong></span><small>{coreTools.length}</small></summary>
+      <div className="capabilities-core-tools-body">
+        <div className="capabilities-core-tool-list">{coreTools.map((tool) => (
+          <article className="capabilities-core-tool-row" key={`${tool.source}:${tool.name}`}>
+            <div><strong>{tool.label?.trim() || humanizeToolName(tool.name)}</strong><p>{tool.description}</p><small>{tool.source}</small></div>
+            <span className={`professional-status-badge ${tool.active ? "enabled" : ""}`}>{tool.active ? "On in New Chats" : "Available to Chats"}</span>
+          </article>
+        ))}</div>
+      </div>
+    </details>
+  );
+}
+
+function isCoreTool(tool: AgentTool): boolean {
+  return tool.core === true || tool.kind === "core" || (tool.core === undefined && tool.kind === undefined && /^(?:pi|built-?in)$/i.test(tool.source.trim()));
+}
+
+/** "1 tool · 2 commands"; a part with nothing in it is left out. */
+function extensionContentsSummary(tools: number, commands: number): string {
+  return [
+    tools ? `${tools} ${tools === 1 ? "tool" : "tools"}` : "",
+    commands ? `${commands} ${commands === 1 ? "command" : "commands"}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+/** One installed Skill or Extension; the whole row opens its details. */
+function InstalledCapabilityRow({ item, onSelect }: { item: InstalledCapability; onSelect: () => void }) {
+  const trouble = ["error", "blocked", "missing"].includes(item.status);
+  const detail = item.description || (item.kind === "extension" ? extensionContentsSummary(item.tools.length, item.commands.length) : "");
+  return (
+    <button className="capabilities-resource-card" type="button" onClick={onSelect}>
+      <span className="capabilities-kind-icon" aria-hidden="true">{item.kind === "skill" ? <BookToolbox20Regular /> : <PlugConnected20Regular />}</span>
+      <span className="capabilities-resource-copy">
+        <span className="capabilities-resource-title"><strong>{item.name}</strong><span>{item.kind === "skill" ? "Skill" : "Extension"}</span>{!item.enabled ? <span className="capabilities-resource-state">Turned Off</span> : trouble ? <span className="capabilities-resource-state error">{statusLabel(item.status)}</span> : null}</span>
+        {detail ? <span className="capabilities-resource-detail">{detail}</span> : null}
+      </span>
+      <ChevronRight16Regular className="capabilities-resource-chevron" aria-hidden="true" />
+    </button>
+  );
+}
+
+function DiscoverCapabilities({ items, total, loading, error, diagnostics, truncated, reviewingItemId, onInstall, onLoadMore }: {
+  items: CapabilityDiscoverItem[];
+  total: number;
+  loading: boolean;
+  error: string | null;
+  diagnostics: string[];
+  truncated: boolean;
+  reviewingItemId: string | null;
+  onInstall: (item: CapabilityDiscoverItem) => void;
+  onLoadMore: () => void;
+}) {
+  return (
+    <div className="capabilities-discover-stack">
+      {diagnostics.length ? <div className="professional-diagnostics" role="status">{diagnostics.map((message) => <span key={message}>{message}</span>)}</div> : null}
+      {error ? <div className="inline-error" role="alert">{error}</div> : null}
+      {loading && !items.length ? <div className="professional-loading-row" role="status"><ArrowSync16Regular className="spin" />Loading catalog…</div> : null}
+      {items.length ? <div className="capabilities-discover-list">{items.map((item) => <DiscoverCapabilityCard key={item.id} item={item} busy={reviewingItemId === item.id} disabled={Boolean(reviewingItemId) || !canInstallDiscoverItem(item)} onInstall={() => onInstall(item)} />)}</div> : !loading && !error ? <CapabilityEmpty title="No Catalog Matches" /> : null}
+      {items.length < total ? <button className="ui-control capabilities-load-more" type="button" disabled={loading} onClick={onLoadMore}>{loading ? <ArrowSync16Regular className="spin" /> : null}Load More</button> : null}
+      {truncated && !loading ? <p className="capabilities-results-summary capabilities-window-note">First {npmSearchWindowSize} npm matches</p> : null}
+    </div>
+  );
+}
+
+function DiscoverCapabilityCard({ item, busy, disabled, onInstall }: { item: CapabilityDiscoverItem; busy: boolean; disabled: boolean; onInstall: () => void }) {
+  const repositoryHref = safeExternalHref(item.repositoryUrl || item.homepageUrl || item.npmUrl);
+  const installable = canInstallDiscoverItem(item);
+  return (
+    <article className="capabilities-discover-card">
+      <div className="capabilities-resource-copy">
+        <div className="capabilities-resource-title"><strong>{item.name}</strong>{item.types.map((type) => <span className="capabilities-resource-kind" key={type}>{type === "skill" ? "Skill" : "Extension"}</span>)}</div>
+        <p>{item.description}</p>
+        <div className="capabilities-resource-meta">
+          {item.author ? <span>{item.author}</span> : null}
+          {item.official ? <span title="On Pi's first-party / reference list. That says where it comes from, not that it was safety-reviewed.">First-Party / Reference</span> : null}
+          {typeof item.downloads === "number" ? <span>{item.downloads.toLocaleString()} downloads</span> : null}
+          {repositoryHref ? <ExternalSourceLink href={repositoryHref} label="View Source" icon={false} /> : null}
+        </div>
+      </div>
+      {installable ? <button className="ui-control" type="button" disabled={disabled} onClick={onInstall}>{busy ? "Loading…" : "Details"}</button> : <span className="professional-status-badge">Reference Only</span>}
+    </article>
+  );
+}
+
+function AddCapabilityDialog({
+  busy,
+  scope,
+  workFolderName,
+  onScopeChange,
+  packageSource,
+  onClose,
+  onChooseFiles,
+  onPackageSourceChange,
+  onReviewPackage,
+}: {
+  busy: boolean;
+  scope: AgentCapabilityScope;
+  workFolderName: string;
+  onScopeChange: (scope: AgentCapabilityScope) => void;
+  packageSource: string;
+  onClose: () => void;
+  onChooseFiles: () => void;
+  onPackageSourceChange: (value: string) => void;
+  onReviewPackage: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const dialogRef = useModalDialog({ onClose, blocked: busy });
+  return (
+    <div className="modal-backdrop capability-dialog-backdrop" role="presentation" onMouseDown={onClose}>
+      <section ref={dialogRef} tabIndex={-1} className="capability-dialog capability-add-dialog" role="dialog" aria-modal="true" aria-labelledby="capabilities-add-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-title"><div><h2 id="capabilities-add-title">Add a Skill or Extension</h2></div><button className="ui-control ui-control--icon" type="button" onClick={onClose} disabled={busy} aria-label="Close"><Dismiss20Regular /></button></div>
+        <div className="capability-dialog-body capabilities-add-panel">
+          <ScopeChooser value={scope} workFolderName={workFolderName} disabled={busy} onChange={onScopeChange} />
+          <div className="capabilities-add-options">
+            <div className="capabilities-add-option">
+              <span className="professional-icon-tile" aria-hidden="true"><BookToolbox20Regular /></span>
+              <div><strong>Skill or Pack</strong><span>SKILL.md, .skill, or ZIP</span></div>
+              <button className="ui-control ui-control--primary" type="button" disabled={busy} onClick={onChooseFiles}><ArrowUpload16Regular />Choose Files</button>
+            </div>
+            <form className="capabilities-add-option capabilities-package-option" onSubmit={onReviewPackage}>
+              <span className="professional-icon-tile" aria-hidden="true"><Box16Regular /></span>
+              <label><strong>Pi Package</strong><input value={packageSource} onChange={(event) => onPackageSourceChange(event.target.value)} placeholder="npm package, git URL, or local path" aria-label="Pi Package Source" /></label>
+              <button className="ui-control" type="submit" disabled={busy || !packageSource.trim()}>Continue</button>
+            </form>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function InstallReviewDialog({ pending, workFolderName, busy, onClose, onScopeChange, onInstall }: { pending: PendingInstall; workFolderName: string; busy: boolean; onClose: () => void; onScopeChange: (scope: AgentCapabilityScope) => void; onInstall: () => void }) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useModalDialog({ onClose, blocked: busy, initialFocusRef: cancelRef });
+  const packageInstall = pending.kind === "package";
+  const catalogInstall = pending.kind === "catalog";
+  const catalogPackageInstall = catalogInstall && pending.item.sourceKind !== "bundle";
+  const executablePackageInstall = packageInstall || catalogPackageInstall;
+  const extensionInstall = executablePackageInstall || (catalogInstall && (pending.item.types.includes("extension") || Boolean(pending.item.extensions?.length)));
+  const title = pending.kind === "skill-files" ? "Review Skill Import" : catalogInstall ? pending.item.name : "Review Pi Package";
+  const source = pending.kind === "skill-files" ? pending.files.map((file) => file.name).join(", ") : catalogInstall ? pending.item.installSource || pending.item.name : pending.source;
+  const repositoryHref = catalogInstall ? safeExternalHref(pending.item.repositoryUrl || pending.item.homepageUrl || pending.item.npmUrl) : "";
+  const unpinned = executablePackageInstall && mutableGitSource(source);
+  const inside = reviewContents(pending);
+  const insideCount = inside.reduce((sum, group) => sum + group.items.length, 0);
+  const insideLabel = inside.length === 1 ? `${insideCount} ${insideCount === 1 ? inside[0]!.label.replace(/s$/, "") : inside[0]!.label}` : `${insideCount} items`;
+  return (
+    <div className="modal-backdrop capability-dialog-backdrop" role="presentation" onMouseDown={onClose}>
+      <section ref={dialogRef} tabIndex={-1} className="capability-dialog capability-review-dialog" role="dialog" aria-modal="true" aria-labelledby="capability-install-review-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-title">
+          <div>
+            <h2 id="capability-install-review-title">{title}</h2>
+            {catalogInstall ? <p className="capability-review-byline"><span>{pending.item.types.map(capabilityTypeLabel).join(" and ")}</span>{pending.item.author ? <span>{pending.item.author}</span> : null}{repositoryHref ? <ExternalSourceLink href={repositoryHref} label="View Source" /> : null}</p> : null}
+          </div>
+          <button className="ui-control ui-control--icon" type="button" onClick={onClose} disabled={busy} aria-label="Close Review"><Dismiss20Regular /></button>
+        </div>
+        <div className="capability-dialog-body">
+          {catalogInstall && pending.item.description ? <p className="capability-review-description">{pending.item.description}</p> : null}
+          <ScopeChooser value={pending.scope} workFolderName={workFolderName} disabled={busy} onChange={onScopeChange} />
+          {inside.length ? (
+            <section className="capability-review-inside" aria-labelledby="capability-review-inside-title">
+              <div className="capabilities-scope-heading"><div><h3 id="capability-review-inside-title">What's Inside</h3></div><span className="capabilities-scope-count">{insideLabel}</span></div>
+              {inside.map((group) => (
+                <div className="capability-review-group" key={group.label}>
+                  {inside.length > 1 ? <span className="capability-review-group-label">{group.label}</span> : null}
+                  <div className="capability-review-items">{group.items.map((name) => <span className="capability-review-item" key={name}>{name}</span>)}</div>
+                </div>
+              ))}
+            </section>
+          ) : null}
+          <div className={extensionInstall ? "capability-code-warning danger" : "capability-code-warning"}>
+            <ShieldCheckmark20Regular aria-hidden="true" />
+            <div>
+              <strong>{extensionInstall ? "This can run code on your computer" : "Skills can include scripts"}</strong>
+              <p>{extensionInstall ? `${executablePackageInstall ? "Setup scripts and Extensions in this package" : "Extensions in this package"} run with the same access you have.${unpinned ? " The source isn't pinned to a version." : ""}` : "The Worker may run scripts included in this Skill."}</p>
+            </div>
+          </div>
+          <details className="capability-technical-details">
+            <summary>Technical Details</summary>
+            <div className="capability-technical-body">
+              <dl className="capability-review-facts">
+                <div><dt>Source</dt><dd>{source}</dd></div>
+                {catalogInstall && pending.item.official ? <div><dt>Provenance</dt><dd>On Pi's first-party / reference list. That says where it comes from, not that it was safety-reviewed.</dd></div> : null}
+                {catalogInstall && (pending.item.version || pending.item.license) ? <div><dt>Version</dt><dd>{[pending.item.version ? `v${pending.item.version}` : null, pending.item.license].filter(Boolean).join(" · ")}</dd></div> : null}
+                {packageInstall ? <div><dt>Advertised Contents</dt><dd>{pending.item?.types.map(capabilityTypeLabel).join(", ") || "Package-defined Pi resources"}</dd></div> : null}
+                {pending.kind === "skill-files" ? <div><dt>Files</dt><dd>{pending.files.length}</dd></div> : null}
+                {catalogInstall ? <><div><dt>Dependencies</dt><dd>{typeof pending.item.dependencyCount === "number" ? pending.item.dependencyCount : "Not inspected"}</dd></div><div><dt>Install Scripts</dt><dd>{installScriptDetail(pending.item)}</dd></div></> : null}
+                {unpinned ? <div><dt>Pinned</dt><dd>No. This git source is not pinned to a commit.</dd></div> : null}
+              </dl>
+            </div>
+          </details>
+        </div>
+        <div className="capability-dialog-footer"><button ref={cancelRef} className="ui-control" type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="ui-control ui-control--primary" type="button" onClick={onInstall} disabled={busy}>{busy ? <ArrowSync16Regular className="spin" /> : null}{pending.kind === "skill-files" ? "Import Skill" : "Install"}</button></div>
+      </section>
+    </div>
+  );
+}
+
+/** What the person is about to install, as plain names grouped by kind. */
+function reviewContents(pending: PendingInstall): Array<{ label: string; items: string[] }> {
+  if (pending.kind === "skill-files") return [{ label: "Files", items: pending.files.map((file) => file.name) }];
+  if (pending.kind !== "catalog") return [];
+  const item = pending.item;
+  return [
+    { label: "Skills", items: item.skills ?? [] },
+    { label: "Extensions", items: item.extensions ?? [] },
+    { label: "Prompts", items: item.prompts ?? [] },
+    { label: "Themes", items: item.themes ?? [] },
+  ].filter((group) => group.items.length).map((group) => ({ ...group, items: group.items.map(reviewItemName) }));
+}
+
+/** "skills/documents/SKILL.md" reads as "documents"; other paths keep their file name without the extension. */
+function reviewItemName(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  const last = parts.at(-1) ?? path;
+  if (/^skill\.md$/i.test(last) && parts.length >= 2) return parts.at(-2)!;
+  return last.replace(/\.[^.]+$/, "");
+}
+
+function installScriptDetail(item: CapabilityDiscoverDetailsItem): string {
+  if (item.installScripts === undefined) return "Not inspected";
+  if (!item.installScripts.length) return "None declared";
+  return item.installScripts.map((script) => `${script.name}: ${script.command}`).join("; ");
+}
+
+export function CapabilityDetailsDialog({ item, workFolderId, busy, onClose, onRemove, onToggle, onReadinessChange }: { item: InstalledCapability; workFolderId: string; busy: boolean; onClose: () => void; onRemove?: () => void; onToggle?: () => void; onReadinessChange?: (status: IncludedToolStatus | null) => void }) {
+  const dialogRef = useModalDialog({ onClose, blocked: busy });
+  return (
+    <div className="modal-backdrop capability-dialog-backdrop" role="presentation" onMouseDown={onClose}>
+      <section ref={dialogRef} tabIndex={-1} className="capability-dialog capability-details-dialog" role="dialog" aria-modal="true" aria-labelledby="capability-details-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-title"><div><h2 id="capability-details-title">{item.name}</h2><p>{item.kind === "skill" ? "Skill" : "Extension"} · {scopeLabel(item.scope)}{item.included ? "" : ` · ${statusLabel(item.status)}`}</p></div><button className="ui-control ui-control--icon" type="button" onClick={onClose} aria-label="Close Details"><Dismiss20Regular /></button></div>
+        <div className="capability-dialog-body">
+          {item.included ? <IncludedToolSetup key={`${workFolderId}:${item.included.id}`} workFolderId={workFolderId} tool={item.included} enabled={item.enabled} onStatusChange={onReadinessChange} /> : null}
+          {item.diagnostics.length ? <div className="professional-diagnostics" role="status">{item.diagnostics.map((diagnostic, index) => <span className={diagnostic.type} key={`${diagnostic.message}:${index}`}>{diagnostic.message}</span>)}</div> : null}
+          <details className="capability-technical-details">
+            <summary>Technical Details</summary>
+            <div className="capability-technical-body">
+              <dl className="capability-review-facts">
+                {item.included ? <><div><dt>Extension</dt><dd>{statusLabel(item.status)}</dd></div><div><dt>Enabled</dt><dd>{item.enabled ? "Yes" : "No"}</dd></div></> : null}
+                {item.description && !item.included ? <div><dt>Description</dt><dd>{item.description}</dd></div> : null}
+                <div><dt>Source</dt><dd>{provenanceLabel(item)}</dd></div>
+                <div><dt>Path</dt><dd><code>{item.path}</code></dd></div>
+                {item.kind === "skill" && item.disableModelInvocation ? <div><dt>Invocation</dt><dd>Only when requested</dd></div> : null}
+              </dl>
+              {item.kind === "extension" ? <div className="capability-extension-details"><CapabilityStringList title="Tools" items={item.tools} /><CapabilityStringList title="Commands" items={item.commands} /><CapabilityStringList title="Flags" items={item.flags} /></div> : null}
+            </div>
+          </details>
+          {item.kind === "skill" && item.content ? <details className="capability-technical-details"><summary>Instructions</summary><div className="markdown-preview capability-skill-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{stripSkillFrontmatter(item.content)}</ReactMarkdown></div></details> : null}
+        </div>
+        <div className="capability-dialog-footer">
+          {onToggle ? <button className="ui-control" type="button" disabled={busy} onClick={onToggle}>{item.enabled ? "Turn Off" : "Turn On"}</button> : null}
+          {onRemove ? <button className="ui-control professional-button-danger capability-details-remove" type="button" disabled={busy} onClick={onRemove}>{busy ? <ArrowSync16Regular className="spin" /> : <Delete16Regular />}Remove Skill</button> : null}
+          <button className="ui-control ui-control--primary" type="button" onClick={onClose} disabled={busy}>Done</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CapabilityStringList({ title, items }: { title: string; items: string[] }) {
+  return items.length ? <section className="capability-string-list"><h3>{title}</h3><div>{items.map((item) => <code key={item}>{item}</code>)}</div></section> : null;
+}
+
+/** Names the destination of an outbound link — a GitHub mark for GitHub, the host otherwise. */
+function ExternalSourceLink({ href, label, icon = true }: { href: string; label: string; icon?: boolean }) {
+  const host = externalLinkHost(href);
+  const github = host === "github.com";
+  return (
+    <a className="capabilities-external-link" href={href} target="_blank" rel="noreferrer" title={`${label} on ${host}`}>
+      {icon ? (github ? <GitHubMark /> : <Open16Regular aria-hidden="true" />) : null}
+      <span>{label}</span>
+    </a>
+  );
+}
+
+function GitHubMark() {
+  return (
+    <svg className="capabilities-github-mark" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
+    </svg>
+  );
+}
+
+function CapabilityEmpty({ title }: { title: string }) {
+  return <div className="professional-empty-state capabilities-empty-state"><span className="professional-empty-icon" aria-hidden="true"><BookToolbox20Regular /></span><div><h2>{title}</h2></div></div>;
+}
+
+export function normalizedCapabilities(catalog: AgentCatalog): InstalledCapability[] {
+  const fromSkills = catalog.skills.map((item) => normalizeSkill(item, catalog.diagnostics));
+  // Named built-in factories (Pi's native tools and work-fold's own turn hooks)
+  // have no installable resource or lifecycle controls to present as an
+  // Extension; any tools they add already appear in Core Tools.
+  const fromExtensions = catalog.extensions
+    .filter((item) => !item.path.startsWith("builtin:"))
+    .map((item) => normalizeExtension(item, catalog.diagnostics));
+  const items = [...fromSkills, ...fromExtensions];
+  for (const resource of catalog.resources ?? []) {
+    if (resource.kind !== "skills" && resource.kind !== "extensions") continue;
+    const current = items.find((item) => item.path === resource.path);
+    if (current) {
+      current.configurable = true;
+      if (resource.included) Object.assign(current, { included: resource.included, name: resource.kind === "extensions" ? resource.included.title : current.name, description: resource.kind === "extensions" ? resource.included.description : current.description, scope: "global", source: `${resource.included.package} ${resource.included.version} · Included with work-fold`, origin: "top-level" });
+      if (resource.bundled) Object.assign(current, { bundled: true, scope: "global", source: "Included with work-fold", origin: "top-level" });
+      continue;
+    }
+    const source = resource.metadata;
+    // A Skill is a folder holding SKILL.md, so its folder names it.
+    const segments = resource.path.split(/[\\/]/).filter(Boolean);
+    const name = (segments.at(-1)?.toLowerCase() === "skill.md" ? segments.at(-2) : segments.at(-1)?.replace(/\.[^.]+$/, "")) ?? resource.path;
+    items.push({
+      id: `${resource.kind}:${source.scope}:${resource.path}`, kind: resource.kind === "skills" ? "skill" : "extension",
+      ...(resource.included ? { included: resource.included } : {}),
+      ...(resource.bundled ? { bundled: true as const } : {}),
+      name: resource.included?.title ?? name, description: resource.included?.description ?? "",
+      path: resource.path, source: source.source, origin: source.origin, scope: productScope(source.scope),
+      enabled: resource.enabled, loaded: false, status: resource.enabled ? "error" : "disabled", configurable: true,
+      diagnostics: resourceDiagnostics(resource.path, undefined, catalog.diagnostics), tools: [], commands: [], flags: [],
+    });
+  }
+  return items;
+}
+
+function normalizeSkill(item: AgentSkill, catalogDiagnostics: AgentDiagnostic[]): InstalledCapability {
+  const source = capabilitySource(item);
+  const diagnostics = resourceDiagnostics(item.path, item.diagnostics, catalogDiagnostics);
+  const enabled = item.enabled !== false;
+  const status = capabilityStatus(item.status, enabled, item.loaded, diagnostics);
+  return {
+    id: item.id || `skill:${source.scope}:${source.source}:${item.path}:${item.name}`,
+    kind: "skill",
+    name: item.name,
+    description: item.description,
+    path: item.path,
+    scope: productScope(item.scope ?? source.scope),
+    origin: item.origin ?? source.origin,
+    source: item.packageSource || source.packageSource || source.source,
+    enabled,
+    loaded: item.loaded ?? enabled,
+    status,
+    diagnostics,
+    ...(item.content ? { content: item.content } : {}),
+    ...(item.disableModelInvocation ? { disableModelInvocation: true } : {}),
+    tools: [],
+    commands: [],
+    flags: [],
+  };
+}
+
+function normalizeExtension(item: AgentExtension, catalogDiagnostics: AgentDiagnostic[]): InstalledCapability {
+  const source = capabilitySource(item);
+  const diagnostics = resourceDiagnostics(item.path, item.diagnostics, catalogDiagnostics);
+  const enabled = item.enabled !== false;
+  const status = capabilityStatus(item.status, enabled, item.loaded, diagnostics);
+  return {
+    id: item.id || `extension:${source.scope}:${source.source}:${item.path}`,
+    kind: "extension",
+    name: item.name,
+    description: "",
+    path: item.path,
+    scope: productScope(item.scope ?? source.scope),
+    origin: item.origin ?? source.origin,
+    source: item.packageSource || source.packageSource || source.source,
+    enabled,
+    loaded: item.loaded ?? enabled,
+    status,
+    diagnostics,
+    tools: item.tools,
+    commands: item.commands,
+    flags: item.flags ?? [],
+  };
+}
+
+function capabilitySource(item: Pick<AgentSkill, "source" | "sourceInfo" | "scope" | "origin" | "packageSource" | "path">): AgentCapabilitySource {
+  if (item.sourceInfo) return item.sourceInfo;
+  if (typeof item.source === "object") return item.source;
+  const sourceText = item.source || item.path;
+  const normalized = sourceText.toLocaleLowerCase();
+  const scope = item.scope ?? (normalized.startsWith("project") || normalized.startsWith("this work-folder") ? "project" : "user");
+  const origin = item.origin ?? (normalized.includes("package") || Boolean(item.packageSource) ? "package" : "top-level");
+  return { path: item.path, source: item.packageSource || sourceText, scope, origin, ...(item.packageSource ? { packageSource: item.packageSource } : {}) };
+}
+
+function resourceDiagnostics(path: string, own: AgentDiagnostic[] | undefined, catalog: AgentDiagnostic[]): AgentDiagnostic[] {
+  if (own?.length) return own;
+  return catalog.filter((item) => item.path === path);
+}
+
+function capabilityStatus(status: AgentCapabilityStatus | undefined, enabled: boolean, loaded: boolean | undefined, diagnostics: AgentDiagnostic[]): AgentCapabilityStatus {
+  if (status) return status;
+  if (diagnostics.some((item) => item.type === "error")) return "error";
+  if (!enabled) return "disabled";
+  return loaded ?? enabled ? "loaded" : "available";
+}
+
+function filterAndSortCapabilities(items: InstalledCapability[], query: string, type: CapabilityTypeFilter): InstalledCapability[] {
+  const needle = query.trim().toLocaleLowerCase();
+  const filtered = items.filter((item) => {
+    if (type !== "all" && item.kind !== type) return false;
+    if (!needle) return true;
+    return [item.name, item.description, item.source, item.path, ...item.tools, ...item.commands, ...item.flags].some((value) => value.toLocaleLowerCase().includes(needle));
+  });
+  return filtered.sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base", numeric: true }));
+}
+
+function productScope(value: AgentCapabilitySource["scope"] | AgentCapabilityScope | "user" | undefined): AgentCapabilityScope {
+  return value === "project" ? "project" : "global";
+}
+
+/**
+ * Only Skills work-fold itself placed in an import root can be removed here;
+ * package Skills go with their package, and Skills shipped with work-fold can
+ * only be turned off.
+ */
+export function canRemoveSkill(item: InstalledCapability): boolean {
+  return item.kind === "skill" && item.origin !== "package" && !item.included && !item.bundled;
+}
+
+/** The two rungs of the hierarchy as people see them: Everywhere (work-fold agent and every Worker) or This work-folder only. */
+function scopeLabel(scope: AgentCapabilityScope): string {
+  return scope === "project" ? "This work-folder only" : "Everywhere";
+}
+
+function scopeDescription(scope: AgentCapabilityScope): string {
+  return scope === "project" ? "this work-folder" : "your everywhere tools";
+}
+
+function humanizeToolName(name: string): string {
+  return name.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toLocaleUpperCase());
+}
+
+/** One plain sentence for where a tool came from, instead of Pi's raw source codes. */
+function provenanceLabel(item: InstalledCapability): string {
+  if (item.origin === "package") return "A Pi package";
+  switch (item.source) {
+    case "auto":
+      return item.scope === "project" ? "A folder in this work-folder" : "A folder in your Pi setup";
+    case "settings":
+      return "A path listed in Pi settings";
+    case "cli":
+      return "A path given on the command line";
+    case "builtin":
+      return "Built into Pi";
+    default:
+      return item.source || "A folder in your Pi setup";
+  }
+}
+
+function statusLabel(status: AgentCapabilityStatus): string {
+  if (status === "loaded") return "Loaded";
+  if (status === "available") return "Available";
+  if (status === "disabled") return "Disabled";
+  if (status === "blocked") return "Blocked";
+  if (status === "missing") return "Missing";
+  return "Error";
+}
+
+function packageStatusLabel(item: AgentPackage): string {
+  if (item.updateAvailable) return "Update Available";
+  if (item.loaded) return "Loaded";
+  if (item.installed) return "Installed";
+  if (item.enabled === false) return "Disabled";
+  return "Configured";
+}
+
+function capabilityTypeLabel(value: "skill" | "extension"): string {
+  return value === "skill" ? "Skills" : "Extensions";
+}
+
+function canInstallDiscoverItem(item: CapabilityDiscoverItem): boolean {
+  return Boolean(item.installSource || item.sourceKind === "bundle");
+}
+
+function mutableGitSource(source: string): boolean {
+  const normalized = source.trim();
+  if (!/^(?:git:|https?:\/\/|ssh:\/\/|git:\/\/)/i.test(normalized)) return false;
+  const withoutScheme = normalized.replace(/^[a-z]+:\/\//i, "").replace(/^git:/i, "");
+  const ref = withoutScheme.lastIndexOf("@");
+  if (ref < 0) return true;
+  const value = withoutScheme.slice(ref + 1);
+  return !/^[0-9a-f]{40}$/i.test(value);
+}
+
+function stripSkillFrontmatter(content: string): string {
+  return content.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "").trimStart();
+}
+
+function fixtureCatalog(): AgentCatalog {
+  const includedExtensions = includedToolDefinitions.map((tool) => ({
+    id: `included-${tool.id}`, name: tool.title, path: `included/${tool.id}/index.ts`,
+    source: { source: tool.package, scope: "user" as const, origin: "top-level" as const },
+    scope: "global" as const, origin: "top-level" as const, enabled: true, loaded: true, commands: [], tools: [],
+  }));
+  return {
+    trust: { required: true, trusted: true, savedDecision: true },
+    projectTrusted: true,
+    diagnostics: [],
+    packages: [{ source: "npm:@pi-work-fold/calendar-tools", scope: "global", enabled: true, displayName: "Calendar tools", types: ["extension"] }],
+    skills: [{ id: "trip-planner", name: "Trip planner", description: "Turns bookings and preferences into a practical itinerary.", path: "skills/trip-planner/SKILL.md", source: { source: "anthropics/skills", scope: "user", origin: "package", packageSource: "github:anthropics/skills" }, scope: "global", origin: "package", packageSource: "github:anthropics/skills", enabled: true, loaded: true, content: "---\nname: trip-planner\ndescription: Plan a trip\n---\n\n# Trip planner\n\nBuild an itinerary from confirmed details, preferences, and constraints." }],
+    extensions: [...includedExtensions, { id: "calendar", name: "Calendar helper", path: ".pi/extensions/calendar.ts", source: { source: ".pi/extensions/calendar.ts", scope: "project", origin: "top-level" }, scope: "project", origin: "top-level", enabled: true, loaded: true, commands: ["calendar"], tools: ["read_calendar"], flags: ["calendar-account"] }],
+    resources: includedExtensions.map((extension, index) => ({
+      kind: "extensions", path: extension.path, enabled: true, metadata: extension.source, included: includedToolDefinitions[index],
+    })),
+    tools: [
+      { name: "read", label: "Read files", description: "Read files in the current work-folder", source: "Pi", active: true, kind: "core", core: true, configurable: false, configurationScope: "chat" },
+      { name: "write", label: "Write files", description: "Create and update files", source: "Pi", active: true, kind: "core", core: true, configurable: false, configurationScope: "chat" },
+      { name: "read_calendar", label: "Read calendar", description: "Read connected calendar events", source: "Calendar helper", active: false, kind: "extension", core: false, configurable: false, configurationScope: "chat" },
+    ],
+    toolManagement: { mode: "session-only", persisted: false, mutable: false, scope: "chat", reason: "Pi supports active-tool selection only for a running Chat; it has no supported persisted tool setting." },
+  };
+}
+
+function fixtureIncludedToolStatuses(): IncludedToolStatus[] {
+  const checkedAt = "2026-07-10T18:30:00.000Z";
+  return [
+    { id: "chrome", state: "setup_required", detail: "Preview Chrome connection", checkedAt, chrome: { state: "not_connected", hasSelection: true, checkedAt } },
+    { id: "computer", state: "ready", detail: "Preview computer check", checkedAt, stale: true },
+    { id: "web", state: "ready", detail: "Preview Web readiness", checkedAt },
+    { id: "documents", state: "ready", detail: "Preview Documents readiness", checkedAt },
+    { id: "mcp", state: "setup_required", detail: "Preview service connections", checkedAt, facts: { connections: "0" } },
+  ];
+}
+
+function fixtureDiscover(query: string, type: CapabilityTypeFilter, sort: DiscoverSort, offset: number): CapabilityDiscoverResponse {
+  const all: CapabilityDiscoverItem[] = [
+    { id: "anthropic-document-skills", name: "Document Skills", description: "First-party Anthropic Skills for creating and working with common document formats.", types: ["skill"], sourceKind: "bundle", official: true, author: "Anthropic", version: "1.0", downloads: 28400, publishedAt: "2026-06-14T00:00:00.000Z", repositoryUrl: "https://github.com/anthropics/skills", license: "Apache-2.0" },
+    { id: "pi-web-tools", name: "Pi web tools", description: "A Pi package with browser-oriented tools and commands.", types: ["extension"], sourceKind: "npm", installSource: "npm:@pi-work-fold/web-tools", official: false, author: "Pi community", version: "2.3.1", downloads: 12800, publishedAt: "2026-07-01T00:00:00.000Z", npmUrl: "https://www.npmjs.com/package/@pi-work-fold/web-tools", license: "MIT" },
+    { id: "research-workbench", name: "Research workbench", description: "Skills and Extensions for collecting, organizing, and citing research.", types: ["skill", "extension"], sourceKind: "git", installSource: "git:github.com/example/research-workbench", official: false, author: "Community", version: "0.9.0", downloads: 4100, publishedAt: "2026-05-20T00:00:00.000Z", repositoryUrl: "https://github.com/example/research-workbench", license: "MIT" },
+  ];
+  const needle = query.trim().toLocaleLowerCase();
+  const filtered = all.filter((item) => (type === "all" || item.types.includes(type)) && (!needle || [item.name, item.description, item.author ?? ""].some((value) => value.toLocaleLowerCase().includes(needle))));
+  filtered.sort((left, right) => sort === "downloads" ? (right.downloads ?? 0) - (left.downloads ?? 0) : sort === "recent" ? Date.parse(right.publishedAt ?? "") - Date.parse(left.publishedAt ?? "") : sort === "name" ? left.name.localeCompare(right.name) : Number(right.official) - Number(left.official) || left.name.localeCompare(right.name));
+  return { items: filtered.slice(offset, offset + 24), total: filtered.length, offset, limit: 24, catalogUrl: "https://pi.dev/packages" };
+}
+
+function fixtureDiscoverDetails(item: CapabilityDiscoverItem): CapabilityDiscoverDetailsItem {
+  if (item.id === "pi-web-tools") {
+    return { ...item, skills: [], extensions: ["extensions/web-tools.ts"], prompts: ["prompts/research.md"], themes: [], dependencyCount: 4, installScripts: [{ name: "postinstall", command: "node scripts/prepare.js" }] };
+  }
+  if (item.id === "research-workbench") {
+    return { ...item, skills: ["skills/research/SKILL.md"], extensions: ["extensions/research.ts"], prompts: [], themes: [], dependencyCount: 2 };
+  }
+  return { ...item, skills: ["skills/documents/SKILL.md"], extensions: [], prompts: [], themes: [], dependencyCount: 0, installScripts: [] };
+}

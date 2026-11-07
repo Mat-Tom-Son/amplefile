@@ -1,0 +1,736 @@
+# Restricted app runtime
+
+> Request lifecycle consolidation: the [collaboration contract](collaboration-contract.md#completion-delivery-and-recovery)
+> governs completion across turns. Questions use `chat ask|answer` or `agent
+> ask|answer`; an accepted answer remains outstanding until linked. The work-fold
+> agent, work-folder and app owners receive bounded, recorded child-result
+> deliveries.
+> App status/stop/usage follow the owned request, and task result reads expose
+> its selected envelope. Transport fields and concurrent execution remain
+> bounded; requests and automations have no lifetime or declaration-count quota.
+
+
+work-fold has a second executable lane for apps an agent creates for a work-folder.
+These apps can render arbitrary reviewed web UI in the left navigator and open
+normal persistent tabs in the work area. They are intentionally separate from
+native Pi Extensions.
+
+The version-2 package is now the reviewed Feature format for two distinct local
+runtime kinds: a source-bound **Local preview** in a Development Instance and a
+release-backed **Installed Release** in an App Instance. App Studio owns the
+Project/Release/Instance lifecycle; the package and bridge contract described
+here is unchanged. See [App platform foundation](app-platform-foundation.md).
+
+For the exact package format, manifest template, bridge methods, worker
+exports, denial handling, and hands-on workflow, use the canonical
+[Restricted app authoring guide](restricted-app-authoring.md).
+
+| Lane | Execution | Intended use |
+|---|---|---|
+| Native Pi Extension | Full current-user permissions; Pi may evaluate it while building the catalog. | Trusted developer capabilities, commands, providers, and compatibility with the Pi ecosystem. |
+| Restricted app package | An exact reviewed revision runs as sandboxed web content with a narrow host bridge. | Agent-created inboxes, dashboards, extractors, and project-service panels with host-mediated powers. |
+
+Restricted packages must never declare `pi.extensions`, use Pi's package
+installer, or appear in Pi's loaded Extension catalog. Pi imports Extension
+modules and calls their factories during catalog loading, which would cross the
+restricted execution boundary before the app opened.
+
+This lane begins empty in work-fold's new application profile. Legacy Workspace
+registries, package records, staged artifacts, storage namespaces, connections,
+receipts, grants, and automations are never opened, imported, or adopted. They
+cannot confer identity or authority in work-fold.
+
+## Package contract
+
+Apps may also declare [named Worker requests](app-assistant-tasks.md).
+A request journals and starts its ordinary work-folder Chat in the same call; the
+caller can read only its own request's state and bounded reply. The same
+document carries `assistant.infer`, the bounded model call with no tools and
+no transcript. Neither needs a grant beyond installation and both leave
+receipts naming the effective model and its usage; active views, workers
+holding a tool action, and named automation runs reach `assistant.request`,
+and views and workers reach `assistant.infer`.
+
+`agent-app.json` is strict and versioned. It declares:
+
+- a required `sandboxed-web` HTML entry;
+- an optional JavaScript worker entry for the app's tools and named
+  automations;
+- optional UI metadata such as a rail icon and a whole-pixel app-canvas corner
+  radius from 0 through 24;
+- bounded tool declarations the Worker can call, using a closed JSON Schema
+  subset;
+- exact broker destinations, methods, and acceptable authentication modes;
+- reviewed work-folder-file needs (`file` or `directory`, `read` or `read-write`);
+- optional static notification categories, each with reviewed title and body;
+  and
+- a required `automations` array containing zero to 256 independently
+  controlled named interval jobs. Each job declares its handler, schedule,
+  catch-up policy, overlap policy, and an exact subset of the app's reviewed
+  network, file, and notification permissions; and
+- an optional, retired `viewer` declaration (a packaged `entry` plus readable
+  storage key prefixes). It once defined a paired browser's read-only app
+  view; since Web Access was removed on 2026-11-07 it still parses but nothing
+  opens it and it grants nothing.
+
+Public destinations use `{ "kind": "public-https", "origin": "https://api.example.com" }`.
+Local development services use an explicit numeric target such as
+`{ "kind": "loopback-http", "host": "127.0.0.1", "port": 4317 }`.
+Loopback targets do not use DNS, cannot redirect, and cannot receive saved
+credentials. work-fold verifies the numeric address and port, but does not yet
+verify which local process owns that port; the UI states that limitation when
+access is granted.
+
+Public auth declarations can use `none`, `api-key`, `bearer`, `basic`, or
+`oauth2-pkce`. Manifests contain no secret values. OAuth declarations contain a
+public HTTPS issuer, an existing public native-client id, scopes, an optional
+discovery mode, and optional reviewed authorization parameters. work-fold does
+not accept client secrets, OIDC scopes, or device-code declarations in this
+lane. Generated apps cannot create a provider registration; provider-specific
+convenience connections require a future work-fold-owned adapter and
+registration.
+
+An OAuth declaration locates its authorization server through RFC 8414
+discovery (the default), OpenID Connect discovery, or pinned endpoints. A pinned
+endpoint must use the issuer's exact host, enforced both in the manifest parser
+and again in the OAuth client. Subdomains are refused too: authority inferred
+from DNS structure grows as the issuer host shortens, and shared-tenant
+platforms make co-tenants indistinguishable from the operator. Discovery may name a token
+endpoint on an unrelated origin because that document is served over TLS from
+the issuer's own well-known path and a package author cannot forge it; a pinned
+endpoint has no such document and must therefore establish the same authority
+structurally. Otherwise a package could pair a genuine issuer and authorization
+endpoint with an attacker-controlled token endpoint and receive the
+authorization code and PKCE verifier after a real provider consent screen.
+work-fold renders the exact issuer, client id, scopes, discovery mode, pinned
+endpoints, and static authorization parameters during app review and connection
+management, but that transparency is not a substitute for structural
+validation. Pinned mode also cannot require the RFC 9207
+authorization-response `iss` check, because no metadata states whether the
+provider supports it.
+work-fold enforces what it can prove — the metadata issuer must equal the
+declared issuer, endpoints must be public HTTPS, and an advertised grant list
+must include `authorization_code` — and reports rather than refuses
+under-declared provider capabilities, because the client itself always sends
+PKCE S256 and never holds a client secret. Those bounded notes are retained
+with the encrypted connection and remain visible in its management surface.
+Gating on those advertisements
+rejected Google and Microsoft, which both support public PKCE clients without
+saying so in their metadata. Malformed metadata values still fail closed.
+
+Reviewed `authorizationParameters` carry provider dialects such as Google's
+`access_type=offline`, without which a provider need not issue a refresh token
+and an unattended automation loses its connection within the hour. They are
+bounded static text, may not use any name the authorization request owns, and
+are overwritten by the protocol layer at request time.
+
+The package inspector never invokes npm, imports package code, or runs lifecycle
+scripts. It rejects scripts, binaries, workspaces, native build flags, Pi
+declarations, unsafe paths, links, missing entries, unknown powers, and
+oversized content. Dependency metadata is permitted because an agent may use a
+normal frontend toolchain, but work-fold never resolves or installs it: all
+runtime assets must already be present in the reviewed package.
+Enumeration captures each regular file's identity, size, and change metadata;
+later reads use bounded file handles, require the same identity before and
+after the exact read, and derive the manifest, byte totals, and both digests
+from that one captured snapshot. A package that changes during inspection
+fails closed instead of allocating or reviewing the replacement bytes.
+
+Files are copied into application storage under a SHA-256 content digest and
+verified again. Inspection also computes the portable
+`work-fold.artifact.v1:sha256:<64-lowercase-hex>` digest used by the App-platform
+release contract. Installation requires the
+exact reviewed bytes. The local registry owns one App Project and Development
+Instance per participating work-folder, with a distinct Feature Installation and Data
+Namespace per app. Source edits after installation do not change the installed
+revision. This direct preview is a Development preview, not a published Release
+or release-backed App Instance.
+
+```text
+connected-inbox/
+├── package.json
+├── agent-app.json
+├── index.html
+├── app.js
+├── styles.css
+└── worker.js       # optional; required for tools, automations, or notifications
+```
+
+The checked-in [connected inbox app](../examples/packages/restricted-connected-inbox/README.md)
+is an interactive reference package with a separate ordinary loopback demo
+service. work-fold does not launch or trust that developer process.
+
+## Visible app host
+
+The trusted work-fold renderer owns only a placeholder rectangle and app
+identity. Electron main verifies the installed Runtime Instance, Feature
+Installation, exact revision, and seven-domain Authority Stamp, snapshots the
+installed package, and mounts a `WebContentsView` in the main window. Every mount
+gets a separate ephemeral session and origin.
+
+The view has Chromium sandboxing and context isolation enabled, with Node,
+webviews, popups, downloads, dialogs, permissions, direct network access,
+navigation, workers, frames, service workers, and file selection denied. A
+file dragged or pasted in from the computer is stopped before any app listener
+can read it (2026-10-11); an app's own drag and drop of text or elements still
+reaches it. Its CSP permits only reviewed same-origin scripts, styles, images,
+and fonts. The host injects the shell's look as `--wf-*` CSS variables
+(validated against an allowlist, unsafe values dropped) and serves its kit
+stylesheet and Inter font on the app's own origin under the host-owned
+`/__work-fold/` path, so the policy is unchanged (2026-10-11). Native
+view bounds and visibility follow the owning DOM placeholder; inactive tabs,
+hidden windows, minimization, and modal occlusion detach the native view while
+leaving its renderer alive.
+
+Shell UI that must cross the native-view boundary is also host-owned. Rail
+tooltips use a scriptless, bounded native overlay that is re-raised after app
+layout; showing one never hides or detaches the app view underneath it. The
+trusted renderer may supply only validated text, bounds, and theme.
+
+The shell gives a navigator app the same 12px inset used by built-in pane
+content. Its placeholder and native view share a rounded 12px canvas by
+default. A reviewed manifest may override that radius from 0 through 24 pixels;
+the host clips the native view itself because renderer CSS cannot clip a
+`WebContentsView` layered above it. Electron's rounded cutout is visual only;
+the corner area still participates in hit testing, so the inset keeps it over
+inert pane background rather than trusted controls.
+
+The `work-fold.restricted-app-bridge` preload exposes only the frozen
+`workFoldRestrictedApp` global:
+
+- `context.get()` and `context.onChanged()` report placement (`navigator` or
+  `tab`), route, host-owned app identity, theme, active state, bounded tab
+  state, and `openedFrom` — `{ kind: "notification", permissionId }` when a
+  notification click opened the left-pane view, otherwise null (2026-10-11);
+- `tabs.open(...)` asks work-fold to create or activate a work-folder-owned work
+  tab. Only the left-pane (`navigator`) view may ask, and only within five
+  seconds of the person pressing a mouse button or key in it, as Electron main
+  sees that input; one press opens at most one tab, and anything else is
+  refused with `TAB_DENIED` (2026-10-11). The rail button itself only shows the
+  left pane, like a file in Files, a tab comes from a click inside it;
+- a tab may update or close itself, but cannot open others;
+- `request(...)` sends a declared request through the network broker;
+- `storage` provides Tenant-and-Data-Namespace-owned JSON data and active-UI
+  invalidation hints;
+- `files` lists, reads, or writes only through current reviewed grants;
+- `checks.read` returns locally re-verified results from one explicitly selected
+  Check revision in the owning work-folder, only in an active visible desktop view; and
+- `notifications.show({ permissionId, route, state })` selects reviewed static
+  copy, only during an enabled automation invocation whose permission subset
+  includes a separately granted category; the optional route and state say
+  where a click opens the app (2026-10-11);
+- `attention.set({ count })` and `attention.clear()` put or remove a dot on the
+  app's rail button, from a mounted view or a worker holding an operation
+  (2026-10-11); the shell keeps the current set across a window reload; and
+- `limits.get()` returns the host's effective network, storage, file,
+  automation, inference, Worker request, and change-hint bounds synchronously.
+
+The limits view is a mount argument rather than an IPC call: the values never
+change while a mount lives, are not secret, and are composed from the live
+brokers so a host enforcing non-default bounds cannot publish stale ones. It
+exists so an app — and the agent writing one — can design to the budget instead
+of discovering it by crashing into it. Each bound also has its own terminal
+error code (`NETWORK_RESPONSE_TOO_LARGE`, `NETWORK_REQUEST_TOO_LARGE`,
+`FILE_TOO_LARGE`, `STORAGE_QUOTA`) naming the limit that was hit, so an
+over-large read is distinguishable from a transport failure.
+
+An app supplies a local `appTabId`, title, route, and JSON state. It never
+supplies the owning work-folder, app id, Feature Installation, digest, or shell tab id. work-fold derives
+those values from the sending `WebContents` and constructs
+`restricted-app:<work-folder>:<app>:<installation>:<digest>:<appTabId>`. App tabs use the same shell
+storage, cross-work-folder activation, close behavior, and most-recent-tab restoration
+as built-in tabs. An updated or reinstalled app cannot silently take over a
+persisted old tab, including a reinstall of identical bytes. Once the host has
+loaded the current installed-app catalog, it closes tabs whose exact installation
+and digest are no longer present. Older stored tabs lacking an installation
+identity are discarded; the app remains available from the rail.
+
+Native view requests, rail selection, app details, catalog updates and removal,
+and notification navigation retain the same installation identity. Mounting
+requires the exact current work-folder, app, installation and digest. A reused mount
+id never reuses a sibling installation's native view.
+
+Desktop app-management requests carry `featureInstallationId` alongside the exact
+digest for grants, connections, automations, data operations, build provenance
+and changes. Domain controls also accept older unpinned callers only when the
+work-folder/app selector resolves uniquely; an ambiguous selector never chooses the
+first record. CLI `--app` accepts either a unique manifest id or an exact
+Feature Installation id, and resolved CLI actions retain that pin through
+execution. A stale removal reports nothing removed; other stale controls refuse
+to operate on a same-byte reinstall. Worker-facing tool names include a hash of the
+installation and complete tool name, keeping sibling actions distinct even when
+long displayed name suffixes are truncated. That name is never shown: a Chat's
+steps, live and saved, name the app and the tool instead — `Used Inbox:
+Search messages`, with `(preview)` after a local preview's title — through
+an optional `toolTitle` on the saved work-trail entry (2026-10-11). A step
+saved before that falls back to the tool's own name marked as an app's
+(`Used Search messages (app)`).
+
+## Worker host
+
+Apps that expose tools or automations declare a separate worker
+module. work-fold loads it in a hidden sandboxed renderer with the same
+direct-network and Node denials. Inputs and outputs are schema checked and
+bounded at 64 MiB. Timeouts and crashes terminate the worker; cyclic,
+tampered, or oversized results are refused with `OUTPUT_INVALID`. The timeout is a ten-minute hang guard
+measured only over time the worker spends in its own code — a host call in
+flight (network, Worker request, bounded inference) stops the clock — so it
+never caps real work that waits on the host. A worker holds one operation at a
+time because host effects are attributed to the operation holding it; a second
+action or automation queues for that slot instead of being refused, and moves
+to a fresh worker if the current one is replaced while it waits. Worker error
+text is kept up to 16,384 characters. The worker is optional so a UI-only app
+does not need executable worker code.
+
+Worker reuse, pending launches, stop generations, and authority lookup are
+scoped to the exact Feature Installation as well as work-folder, app, and revision.
+Revoking one installation cannot stop or lend authority to another installation
+of the same bytes. Removing and re-adding authority also invalidates launches
+that have not created a worker yet. Duplicate Feature Installation identities
+in an authority snapshot are rejected before replacing the current snapshot.
+
+Automations are first-class host jobs, not one app-wide background switch.
+Every declared job is enabled on install and can be turned off or on separately in Settings → Apps.
+The worker exports `handleAutomation(event)` and dispatches using the reviewed
+`appAutomationId` and `handler`. Intervals are whole minutes from 1 through
+527,040 (366 days); [Automation](automations.md) interval triggers share that
+range.
+`catchUp: "latest"` permits at most one deterministically staggered run
+for the latest missed occurrence after startup or resume; `"none"` skips missed
+occurrences. `overlap` is currently fixed to `"skip"`.
+
+One machine-wide `WorkFoldSchedulerService` owns scheduling across every
+work-folder and restricted app. It uses a FIFO queue, at most 32 active jobs by
+default (a generous bound, not a cap), and never overlaps the same named job.
+That 32 is this document's number to own: it lives as
+`workFoldAppAutomationDefaultConcurrency` in `src/shared/work-fold-limits.ts`, is read
+by `src/local/agent/work-fold-scheduler-service.ts`, and is shown read-only
+in Settings → Automations → Limits. Scheduled, manual, skipped, cancelled, and
+failed attempts produce durable run receipts. A failed run's receipt and the
+automation's **Last error** keep the worker's error text whole, up to the same
+16,384 characters the worker host keeps (`workFoldAppErrorTextMaxLength`;
+before 2026-10-11 they were cut to 300). The text is made well-formed (a lone
+surrogate becomes U+FFFD) and never cut inside a character pair, so it always
+persists. The machine-wide history the overview reads keeps a 300-character
+copy, since it is read only for outcomes. Settings → Apps folds a long error
+to four lines with **Show all**. The cadence anchor is persisted
+separately from one-off manual runs, so **Run now** does not shift the next
+scheduled occurrence. A manual run is allowed while its schedule is disabled,
+but it receives no notification authority. At launch, work-fold re-reads the
+installed digest and current grants, then intersects those grants with that
+job's reviewed permission subset. One warm worker serves an installation's tool
+calls and automations one at a time, and each operation brings its own grants:
+an automation that reuses a worker a tool call started still gets only its
+subset, and the next tool call gets the app's grants back (2026-10-11; before,
+a reused worker kept the grants it launched with). Disabling, updating, removing, sleeping, or
+quitting stops stale launches before authority changes take effect.
+
+Notifications are host-owned system notifications, not arbitrary renderer
+UI. The manifest title and category copy are single-line reviewed text; the
+runtime cannot add dynamic copy, actions, or URLs. It may name only where a
+click opens the app (2026-10-11): an origin-relative route of at most 2,048
+characters (default `/`) and JSON state of at most 64 KiB, validated exactly
+like a tab's route and state. Neither reaches the notification's text. A category grant, an enabled
+automation, and inclusion in that automation's permission subset are all
+required. The host limits each invocation (20),
+category frequency (one per category every 30 seconds), hourly app volume
+(120), and outstanding notifications (3, oldest closed first); a notification
+over a rate is answered `rate-limited`, never queued. These protect the person
+from spam rather than ration the app. Rate
+history is keyed by work-folder and app so renderer restarts, permission churn, and
+digest updates cannot reset the anti-spam budget. Clicking revalidates the
+current digest, declaration, grant, and automation authority before opening
+the exact owning work-folder and the app's left-pane view — never a tab, the
+same rule as the rail — at that route and state, with `context.openedFrom`
+naming the category. A left pane that is already open receives the route,
+state, and origin through `context.onChanged`; the rail button still opens the
+app at `/` with no origin. Suspend, disable, update, removal, and shutdown
+close outstanding notifications. Notification handles and click targets retain
+the exact Feature Installation; category replacement and scoped cleanup cannot
+close another installation's notification. The aggregate hourly app budget
+continues to span installations.
+
+Every call the host answers with a status — `shown`, `rate-limited`, or
+`unsupported` — lands in a bounded machine-local record (2026-10-11),
+`restricted-apps/notification-receipts.jsonl` under the state root and outside
+every work-folder, like the inference receipts. A line holds the time, work-folder,
+app, installation, revision, category id and its reviewed title, and the
+status; never the route or state the app attached. A refused call has no
+status and is not recorded. The record keeps each installation's newest 1,000
+and the newest 20,000 overall, for at most 90 days; a torn or damaged line is
+skipped, and a line that cannot be written is lost rather than delaying the
+notification. Settings → Apps shows each app's recent ones under its
+notification categories, such as "Shown Oct 11, 3:02 PM · New screenshots
+sorted", across code changes.
+
+The real-Electron preparation probe covers both hosts: missing Node globals,
+rejected Node imports, direct loopback HTTP/WebSocket denial, WebRTC and popup
+denial, sender-bound broker failure, bounded results, timeout recovery, visible
+UI loading, durable storage, active-only storage invalidation, a
+History-covered work-folder-file write, automation execution, static notification
+delivery and cleanup, a notification click's route, state, and origin reaching a
+mounted and an already-open left pane (and refused for a tab), and an
+app-requested host-owned tab.
+
+## Network and credentials
+
+Connections live in a separate operating-system-encrypted store outside the
+work-folder and provider AuthStorage. A binding includes the host-derived Tenant,
+Runtime Instance, Feature Installation, canonical Feature Revision artifact
+digest, destination declaration and digest, canonical target identity, and an
+explicit owner. The current local path creates Runtime-Instance-owned bindings;
+Principal-owned consent and delegation remain future product work. Apps receive
+status and errors, not secret values. Legacy Workspace connection stores are
+never opened or imported. Connecting in work-fold creates a new binding in the
+new profile without transferring credentials or authority.
+
+OAuth PKCE uses RFC 8414 discovery, S256, a random one-shot loopback callback,
+state and verifier checks, the system browser, encrypted token storage, and
+serialized refresh with refresh-token rotation. The same public-HTTPS broker
+validates and pins discovery and token endpoints. Access and refresh tokens are
+never returned to app JavaScript.
+
+For public HTTPS, the broker enforces method, exact origin, bounded same-origin
+redirects, public DNS resolution, approved-address pinning, TLS verification,
+header stripping, credential injection, byte limits, and deadlines. For numeric
+loopback HTTP, it bypasses DNS, connects only to the declared address and port,
+rejects redirects, permits anonymous auth only, and applies the same method,
+header, byte, and deadline controls. Direct renderer networking remains off in
+both cases.
+
+## Storage and work-folder files
+
+Every installed app has bounded, machine-local JSON storage physically keyed by
+Tenant and Data Namespace and self-describing its Runtime Instance and Feature
+Installation owner. The default limits are 256 MiB, 65,536 keys, 16 MiB per
+value, and atomic transactions of up to 4,096 operations or 64 MiB with revision
+checks. Storage is one document per installation read and rewritten whole, so
+its quota stays well under V8's maximum string length (about 512 MiB). Legacy Workspace storage
+is never opened or adopted. Data created by work-fold survives renderer
+replacement and reviewed updates and is never
+placed in the work-folder. Removing a Development preview purges its namespace after
+a complete copy has been written into Recently deleted.
+Uninstalling a release-backed App Instance instead requires an explicit
+retain-or-purge choice: retained data loses all live Feature authority and can
+be purged later from App Studio. Removing either a source or target work-folder is
+blocked while an active App Instance still depends on it. A retain choice also
+keeps the source work-folder registered until its Project's retained data is purged;
+the former target is no longer required.
+
+Four invalidation channels tell an app that something it can already read has
+moved: `storage.onChanged`, `tasks.onChanged`, `checks.onChanged`, and
+`files.onChanged` ([Collaboration contract](collaboration-contract.md), F30).
+Each carries ids and an ordering `revision` and never content; the app re-reads
+through the lane it already has, and event data is not a second state channel.
+The host coalesces per installation per channel and emits at most ten times per
+second — once per second for `files` — capping storage keys with a fallback of
+`reset: true` and capping task and receipt ids at 64.
+
+Eligibility follows each read lane exactly, because a hint an app cannot act on
+would be a lie. Storage and Check hints reach active visible views only, matching
+the Check-result lane's own view-only rule. Task and granted-file hints also
+reach a worker while it holds a tool action or an automation run, matching the
+owned-power rule those two read lanes use. Nothing reaches an inactive or
+occluded view, a minimized window, a worker between operations, or a view owned
+by another Feature Installation even in the same work-folder.
+
+Hints are briefly coalesced in memory and never durably queued or replayed. A
+hint whose eligible mounts all closed while it waited is dropped and its
+revision does not advance; a new mount starts with no backlog; the revision
+sequence is cleared wherever an installation's mounts are destroyed — an
+authority or bytes change, a stop, or host close. A hint never starts a model
+turn, and the internal settle signal stays private to the Automations service.
+
+A directory declaration is granted over the whole work-folder when the app is
+added; in Settings → Apps the person can limit it to one folder or revoke it. A
+file declaration needs the person to choose the file first. The sandbox sends only
+the grant id and a grant-relative path; the host derives Runtime Instance,
+Feature Installation, exact revision, current authority, and the selected root.
+The broker rejects absolute paths, traversal, links and
+junction escapes, alternate data streams, `.work-fold`, preserved legacy
+`.workspace`, `.pi`, oversized
+operations, and authority beyond the declaration. Writes are atomic and create
+a targeted History checkpoint. An exact-file grant uses the grant-relative
+path `.` and may replace only that selected file; its atomic temporary stays in
+the verified ordinary parent directory without widening sandbox authority.
+Revocation or a digest update stops current app hosts and removes the grant;
+uninstall never deletes or rewrites work-folder files.
+
+## Review and lifecycle
+
+The primary path starts in a work-folder Chat. The host-owned `propose_work-folder_app`
+tool accepts only a work-folder-relative package folder, inspects it, records a
+machine-local receipt bound to that work-folder, Chat, source path, and digest, and
+adds that exact revision as a Local preview in the source work-folder's Development
+Instance in the same call (docs/receipts-not-gates.md, F21). The tool never
+collects a credential. Its model-facing guidelines include the complete
+package, bridge, worker, permission, storage, file, tab, automation, Worker
+request, and OAuth declaration contract, so app generation does not depend on
+a source checkout or hidden work-fold-only skill.
+
+An added app comes up able to work: every declared destination, every
+directory permission (bound to the whole work-folder), every notification category,
+and every Check slot when the work-folder has exactly one Check are on, and every
+automation is enabled. Secrets stay person-entered once per destination; a
+file-target permission needs a chosen file. The receipt and the Chat report
+what still needs the person. **Settings → Apps**, which lists apps by work-folder,
+is where the person narrows any of that: destination, file, and notification grants, connections,
+each automation's schedule and run history, local data, and removal. Settings
+→ Apps has no path-entry add; `work-fold apps install-preview` remains the
+developer path for adding a package by hand. A code change preserves the
+Feature Installation and Data Namespace and advances the Feature, grant,
+connection, and job authority domains; the person's granted or revoked state
+carries by declaration id, a chosen file root carries when the declaration is
+unchanged, automation states carry by id, run receipts carry (labelled with
+the revision they ran under), and connections carry only for destinations
+whose declaration is byte-identical. Removing or updating an app stops its UI
+views and worker before changing installed bytes.
+
+App Studio is a separate work-folder-bound work tab for moving reviewed previews into
+the local release-backed lane. Settings → Apps opens it from each work-folder's
+group heading and from an app's details. The shipped lifecycle is:
+
+1. Declare or edit one App Project's machine-local title, description, and icon.
+   The Project record stays in work-fold application data; no portable Project
+   file is written into the work-folder.
+2. Prepare an immutable `work-fold.app-release` format-version-2 envelope from
+   every current preview. The digest covers App presentation, exact Feature
+   artifacts and declarations, dependency inventory, provenance, and inspection
+   evidence. The verified canonical envelope is stored durably by digest.
+3. Separately publish the prepared Release. Publication revalidates the source
+   Feature stamps and only marks the Release eligible for local installation; it
+   does not upload, host, sign, list, or grant anything.
+4. Prepare installation into one chosen registered work-folder, then activate the
+   persisted operation. Activation re-verifies and stages the closure before a
+   single registry commit creates a new App Runtime Instance, Feature
+   Installation ids, and Data Namespace ids. Preview state never transfers;
+   the installed Features come up with the same defaults as a preview.
+5. Prepare an update or rollback to another published Release, review the
+   deterministic per-Feature continuity/reset plan, then activate it. The host
+   recomputes the durable plan and verifies the active Release before fencing
+   the old runtime and committing the new pointer. The default continuity
+   carries grants, byte-identical connections, automation states, and run
+   receipts across changed content; **reset** is the person's explicit choice
+   to start over with the install defaults.
+6. Uninstall the whole App Instance with an explicit data disposition. Purge
+   first writes a complete data copy into Recently deleted, then queues
+   namespace deletion; retain detaches the namespace from all execution and
+   exposes a later explicit purge action, which makes its own copy. Project source and separately
+   selected ordinary work-folder files are never deleted.
+7. Delete an individual Release only after it is unused. The host refuses while
+   an active App Instance, either side of a prepared install/update/rollback, or
+   retained-data lineage still references it. The Release's record and verified
+   envelope go to Recently deleted first, registry deletion commits before safe
+   object pruning, and interrupted pruning is retried. Restoring from Recently
+   deleted re-verifies the envelope and returns the Release in the state it was
+   deleted in.
+
+The current local host admits at most one App Instance for a `(projectId,
+target work-folder)` pair. In the Project's source work-folder, its Development preview may
+coexist with its installed Release. These are distinct Runtime Instances,
+Feature Installations and Data Namespaces. A different Project's preview or
+App cannot claim the same Feature id in that work-folder. The host also rejects Release
+Features with a data schema or migrations; migration execution and retained-data
+adoption are future management operations. Install and update preparations
+survive restart until activated or cancelled.
+
+The local registry uses schema version 6 for this placement rule. A valid
+work-fold version-5 registry is validated against its original uniqueness rule
+and atomically rewritten without changing identities, grants or data. Older
+Workspace formats and unknown future versions remain unsupported and are never
+rewritten. Older work-fold builds refuse version 6 instead of interpreting
+co-located installations using their old name-only rule.
+
+The canonical Release store has a four-GiB aggregate byte quota in addition to
+per-envelope and object-count bounds. A new put measures owned regular-file
+bytes before it creates the digest directory; retrying an already verified
+digest stays idempotent even at the quota. Startup verifies every closed object
+once, passes compact verified projections into registry and installed-package
+validation before pruning orphans, and rechecks filesystem snapshots around the
+deletion boundary. Directory enumeration stops at the declared object bounds.
+After validation, a transient physical lock on an orphan is recorded as pending
+cleanup and retried without blocking startup; referenced, canonical, path, and
+snapshot failures still fail closed.
+
+Persisted automations are inert when the service is constructed. The owning
+Local API starts them exactly once, after durable work-folder-removal recovery, and
+keeps every still-pending work-folder excluded for that service lifetime.
+
+Authority is rechecked at effect time, including immediately before an external
+fetch and before atomic storage or work-folder-file commits. Persistent connections
+are bound to Tenant, Runtime Instance, Feature Installation, exact Feature
+revision, declaration digest, target identity, and the current Runtime Instance
+owner. The portable contract also defines future Principal-owned connection
+consent and unattended delegation, but the version-2 local product does not
+offer that path. Old Workspace connection schemas are outside this profile and
+are never parsed. A connection created in work-fold starts with the complete
+new identity tuple.
+
+New automation receipts capture the accepting Tenant, Runtime Instance,
+Feature Installation, canonical Feature Revision, Data Namespace, effective
+Principal, seven-domain authority, occurrence, attempt, state, and acceptance
+time without storing worker inputs, outputs, file contents, request bodies, or
+credentials. Old Workspace receipts are not imported, so they cannot be
+presented as work-fold audit evidence. The host persists an installation-independent `accepted` receipt
+before starting worker execution and later terminalizes that run by its durable
+run id, even if update or removal has already detached the installation.
+On startup, any receipt left only in `accepted` state is reconciled to an
+`interrupted` outcome and `expired` state with an explicit warning that the
+completion of external effects is unknown; work-fold never reports a guessed
+success, failure, or cancellation.
+The registry has the same 256 MiB bound on write and read — one JSON document
+holding every installation's manifest, kept well under V8's maximum string
+length — and machine-wide counts (4,096 App Projects, 32,768 installations,
+16,384 Releases) generous enough never to be a working limit. Each automation
+acceptance preflights enough space for every currently accepted run to become a
+worst-case terminal receipt, so a successful admission cannot create a result
+that the persistence format has no room to record.
+
+Update, removal, and permitted work-folder-removal registry transitions durably record every
+required credential, storage, and package cleanup before making the old
+authority unreachable. Every path that purges data writes its recovery copy
+into Recently deleted first ([App data export and recovery](app-data-recovery.md)). Cleanup is idempotent and retried at startup and before
+later mutations. A cleanup failure therefore cannot reactivate an installation
+or make an already-committed authority change appear to have failed.
+
+Removing a source work-folder is blocked while its Project has any active local App
+Instance or retained data; removing a target work-folder is blocked only while an App
+Instance is attached there. work-fold requires the whole App Instance to be
+uninstalled first so a work-folder-removal shortcut cannot silently choose a data
+disposition. After explicit purge, source removal takes the machine-local App
+Project with it — its Development Instance and previews, every Release, its
+prepared operations, and its receipts — and target removal cancels unactivated
+operations prepared for that work-folder.
+
+Neither is erased (2026-10-11). Before anything is cleared, the host writes it
+all into Recently deleted as one **App Studio** item: the registry records, a
+copy of each preview's package folder, and each Release's record and verified
+envelope. If that copy cannot be written, nothing is cleared and the removal
+stays pending; startup recovery of an interrupted removal writes the same
+copies, the previews' data included, before it clears anything. Restoring the
+item needs the work-folder registered again (restore it from Recently deleted,
+or add its folder again) and refuses plainly until it is. It re-validates every
+record, re-places each package only if it matches its content digest and its
+record, re-verifies each envelope as startup does, and brings the previews back
+with their grants, automation states, and run receipts under fresh authority
+generations; connection secrets were removed with them and are entered again.
+A prepared operation returns only while its Release, target work-folder, and
+App Instance still fit; the rest are counted, not guessed at. Each preview's
+kept data goes back into it in the same act. A different App Project started in
+the work-folder since is never merged with the kept one; only an empty one —
+no apps, Releases, operations, App Instances, or retained data — gives way.
+
+The restricted app itself appears directly in the contributed rail. Selecting
+it mounts its navigator; the app decides which persistent work tabs to open.
+This is not a `surface.json` contribution. `surface.json` remains the separate,
+static compatibility lane for full-trust Pi Extensions.
+
+## Remaining host capabilities
+
+The web canvas and tab model are intentionally general; new product powers
+should be narrow host services rather than additions to a fixed widget schema.
+The main gaps are:
+
+- host-owned remote subscriptions and arbitrary push adapters (static reviewed
+  automation notifications are available);
+- a registry of work-folder services that can verify process ownership and lifecycle,
+  replacing raw loopback-port grants for managed project services;
+- reviewed schema/migration execution, retained-data reuse, and a
+  portable Project import/collision model; and
+- finer resource controls for long-running or memory-heavy web apps.
+
+A verified work-folder service target is deliberately not exposed yet. An honest
+implementation needs a trusted work-fold launcher/process authority outside the
+renderer and local API, per-instance secret challenge, and generation-aware
+lifecycle. Treating any listener on a reviewed port as owned would only rename
+the existing raw-loopback limitation.
+
+Chromium still carries browser-engine exploit and denial-of-service risk.
+Electron updates, sender validation, package review, and the real-runtime probe
+remain release requirements.
+
+[App data export and recovery](app-data-recovery.md) live in Settings → Apps and retained-data export to App Studio. These are host management
+operations, separate from the restricted runtime bridge.
+
+
+History restore holds an inverse automation-launch reservation as well as checking existing active jobs. A queued automation rechecks that reservation after its durable acceptance and before host invocation. Restricted-app file writes hold the shared History ownership reservation through safety capture and atomic commit; a replacement whose prior content could not be captured is refused. These are conflict controls, not new grants or schema fields.
+
+## Selected Check authority
+
+Optional reviewed Check-result slots map to machine-local exact Check id/digest
+selections on a Feature Installation. Their changes advance grant authority and
+stop stale views; the broker rechecks the native sender and its current effect
+lease after re-verification. A runtime request contains only a permission id.
+Workers have no Check-result lane. Installation binds a
+declared slot automatically when the owning work-folder has exactly one Check, and
+otherwise grants the slot and reports it as still needing the person's pick
+([Receipts, not gates](receipts-not-gates.md), F21); changed revisions reset
+the binding and exact unchanged release updates may retain it through the
+visible continuity plan. The existing Check service
+owns the bounded projection and never runs a sensor while reading. It notifies
+the host through its own narrow callback — separate from the internal settle
+signal — when a run settles, when a correction is applied, and when a Check is
+turned off; each of those produces one `checks.onChanged` hint naming only the
+permission ids of installations that selected that Check. A result that merely
+drifts stale on the clock, and a target edited on disk, produce no hint. See
+[the authoring contract](restricted-app-authoring.md#selected-check-results).
+
+## Granted-root observation
+
+While at least one eligible mount is open, the host observes each granted file
+root on a bounded metadata-only poll: device, inode, size, and modification and
+change times, never file bytes. Links and the `.work-fold`, `.pi`, and
+preserved legacy `.workspace` trees are invisible here exactly as they are to
+the file broker. A changed observation must hold still for a debounce before it
+becomes a hint, and at most one hint per root per second follows. Reaching a
+bound — files, visited entries, or depth — sets `truncated: true` and keeps the
+partial observation rather than failing, so the app still learns that something
+under its root moved. A root that moved or disappeared fails that watch, which
+emits nothing and re-establishes a baseline on its next success.
+
+No path and no byte crosses the bridge: the hint names the grant id. Polling
+rather than an OS watcher is deliberate, for the same reason the Automation
+folder-change observer polls — it behaves the same on a synchronized drive as on
+a local disk, where watcher events are lossy. On such a drive a hint can arrive late
+rather than wrongly. Nothing polls until an eligible mount has actually
+subscribed: `files.onChanged` registers in the preload, so the mount tells the
+host when its first listener arrives and when its last one goes, and a view
+that never calls it starts no walk at all. Sleep stops the poll and drops every
+baseline, and waking re-establishes baselines instead of announcing what
+happened while the machine was asleep.
+
+## Bounded inference channel
+
+`work-fold:restricted-app:assistant-infer` carries one bounded model call
+(docs/receipts-not-gates.md, F22). It is admitted exactly like the
+`assistant.request` channel: the sender must be an owned main frame that is either an
+active app view or a worker holding a tool action or an automation run, and the
+host captures an effect lease it rechecks before the result is delivered. An
+inactive view and a worker between operations are refused with
+`INFER_UNAVAILABLE`.
+
+The host parses the request against the published bounds, pins the
+installation, revision, and authority before and after the model call, and runs
+it on the owning work-folder's configured session through the same transport the
+text-review Check uses — no tools beyond an optional `submit_result` schema
+carrier, no transcript, nothing persisted. Provider text never crosses the
+bridge; every failure is one of the closed `INFER_*` codes whose message names
+the bound or state it reports. Each call appends accepted and terminal lines to
+a machine-local receipt journal that records the surface, byte sizes, the
+effective model, and its usage, never app content. The delivered result carries
+that line's `receiptId`, so the id a `tasks.onChanged` hint carries can be
+matched to the call the app made without reading anything back.
+
+Inference waits for an available scheduler slot without a host wall-clock
+budget. Once dispatched, provider transport, Stop, and authority revocation
+govern the exact in-flight call; this lane has no fixed host timeout. The call
+uses the work-folder session's configured thinking level and the model's own
+output-token limit, reduced only as far as the context window requires, with
+the provider SDK's usual two retries; a reply is never cut to fit, and one
+larger than `maxOutputBytes` is refused with `INFER_OUTPUT_TOO_LARGE`.
+
+The native bridge transfers asynchronous outcomes as plain data and constructs
+public Errors in the app's JavaScript world. This preserves `error.code`, which
+Electron drops from Error objects copied across isolated contexts. The transport
+is captured through the context bridge and never installed as a raw window API;
+all sender, size, schema and effect checks remain in the authoritative host.

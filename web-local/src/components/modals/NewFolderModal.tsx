@@ -1,0 +1,32 @@
+import { api } from "../../lib/api";
+import { TextInputModal } from "./TextInputModal";
+
+export interface NewFolderTarget {
+  workFolderId: string;
+  workFolderName: string;
+  parentPath: string;
+}
+
+export function NewFolderModal({ target, fixtureMode = false, onCreated, onClose }: {
+  target: NewFolderTarget;
+  fixtureMode?: boolean;
+  onCreated: (folder: { path: string; name: string }) => void;
+  onClose: () => void;
+}) {
+  return <TextInputModal
+    title="New Folder"
+    description={`Create inside ${target.parentPath || target.workFolderName}.`}
+    label="Folder Name"
+    placeholder="Untitled folder"
+    confirmLabel="Create Folder"
+    onSubmit={async (name) => {
+      if (fixtureMode) throw new Error("Folder creation is disabled in the preview.");
+      const result = await api<{ folder: { path: string; name: string } }>(`/api/work-folders/${encodeURIComponent(target.workFolderId)}/folders`, {
+        method: "POST",
+        body: { parentPath: target.parentPath, name },
+      });
+      onCreated(result.folder);
+    }}
+    onClose={onClose}
+  />;
+}

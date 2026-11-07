@@ -1,0 +1,174 @@
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createJiti } from "jiti";
+const root = await mkdtemp(join(tmpdir(), "workfold-chrome-native-"));
+const reservation = createServer();
+await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
+const port = (reservation.address() as { port: number }).port;
+await new Promise<void>(resolve => reservation.close(() => resolve()));
+process.env.PI_CHROME_BRIDGE_PORT = String(port);
+process.env.PI_CODING_AGENT_DIR = join(root, "agent");
+const { FileCredentialStore, createAgentSession, createEventBus, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } = await import("@earendil-works/pi-coding-agent");
+const jiti = createJiti(import.meta.url, { moduleCache: true, fsCache: false });
+const chrome = await jiti.import<any>(new URL("../../../resources/included-tools/chrome/index.ts", import.meta.url).pathname);
+const config = { companionPath: join(root, "companion") }, url = `http://127.0.0.1:${port}`;
+const sessions: any[] = [];
+let token: string;
+async function next() {
+  for (let i = 0; i < 100; i++) {
+    try {
+      const response = await fetch(`${url}/next-v2?protocol=2&version=0.15.51&name=native-fixture`, { headers: { "x-pi-chrome-companion": token }, signal: AbortSignal.timeout(2000) });
+      assert.equal(response.status, 200); return (await response.json() as any).command;
+    } catch (error) { if (i === 99) throw error; await new Promise(resolve => setTimeout(resolve, 10)); }
+  }
+}
+async function reply(command: any, result: unknown) {
+  const response = await fetch(url + "/result", { method: "POST", headers: { "content-type": "application/json", "x-pi-chrome-companion": token }, body: JSON.stringify({ id: command.id, bridgeEpoch: command.bridgeEpoch, ok: true, result }) });
+  assert.equal(response.status, 200);
+}
+async function makeSession(name: string) {
+  const cwd = join(root, name); await mkdir(cwd);
+  const eventBus = createEventBus();
+  eventBus.on("work-fold:extension-host:v1", (event: any) => { event.context = { version: 1, mode: "session", cwd, agentDir: process.env.PI_CODING_AGENT_DIR, stateRoot: root, companionPath: config.companionPath }; });
+  const settingsManager = SettingsManager.inMemory({ retry: { enabled: false } });
+  const resourceLoader = new DefaultResourceLoader({ cwd, agentDir: process.env.PI_CODING_AGENT_DIR, settingsManager, eventBus, noContextFiles: true, noSkills: true, noThemes: true, noPromptTemplates: true,
+    extensionFactories: [{ path: join(root, `${name}.ts`), factory: chrome.default }] });
+  await resourceLoader.reload(); assert.deepEqual(resourceLoader.getExtensions().errors, []);
+  const authStorage = FileCredentialStore.inMemory();
+  const { session } = await createAgentSession({ cwd, agentDir: process.env.PI_CODING_AGENT_DIR, resourceLoader, settingsManager, modelRuntime: await ModelRuntime.create({ credentials: authStorage, modelsPath: null }), sessionManager: SessionManager.inMemory(), noTools: "builtin" });
+  await session.bindExtensions({ mode: "rpc" }); sessions.push(session); return { session, cwd };
+}
+function call(session: any, name: string, args: any) { const tool = session.agent.state.tools.find((item: any) => item.name === name); assert.ok(tool); return tool.execute("fixture", args); }
+async function stop(session: any) { await session.extensionRunner.emit({ type: "session_shutdown", reason: "exit" }); session.dispose(); sessions.splice(sessions.indexOf(session), 1); }
+try {
+  assert.equal((await chrome.probeIncludedChrome(config)).state, "setup_required");
+  const a = await makeSession("work-folder-a"), b = await makeSession("work-folder-b");
+  await assert.rejects(stat(config.companionPath));
+  await assert.rejects(call(a.session, "chrome_tab", { action: "list" }), /Connect Chrome in Skills & Extensions/);
+  await assert.rejects(fetch(url + "/status"));
+  await chrome.prepareIncludedChromeCompanion(config);
+  token = JSON.parse(await readFile(join(config.companionPath, "host-config.json"), "utf8")).token;
+  assert.match(token, /^[a-f0-9]{64}$/);
+  assert.equal((await stat(join(config.companionPath, "host-config.json"))).mode & 0o777, 0o600);
+  await chrome.prepareIncludedChromeCompanion(config);
+  assert.equal(JSON.parse(await readFile(join(config.companionPath, "host-config.json"), "utf8")).token, token);
+  // Setup checks must bootstrap their own connection before any successful
+  // Chat tool use, then release it without leaving a resident listener.
+  const bootstrap = chrome.probeIncludedChrome(config);
+  await new Promise(resolve => setTimeout(resolve, 3_000));
+  const versionCommand = await next();
+  assert.equal(versionCommand.action, "tab.version");
+  await reply(versionCommand, { extensionVersion: "0.15.51", capabilities: { protocolVersion: 2, cancellation: true } });
+  assert.equal((await bootstrap).state, "ready");
+  await assert.rejects(fetch(url + "/status"));
+  const list = call(a.session, "chrome_tab", { action: "list" }); let command = await next(); await reply(command, []); await list;
+  const body = "Faithful body text with BODY_ONLY_MARKER, independent of snippets.";
+  const snapshot = { mode: "text", url: "https://fixture.test/text", title: "Text", targetId: "4101", observedAt: "2026-09-27T12:00:00.000Z", text: body, textSnippets: [{ uid: "s1", text: "Old preview" }], textRange: { start: 0, end: body.length, total: body.length + 100, version: "a".repeat(64) }, elements: [], summary: { totalInteractiveVisible: 0 } };
+  const snapshotCall = call(a.session, "chrome_snapshot", { mode: "text", targetId: "4101" }); command = await next(); await reply(command, snapshot);
+  const captured = await snapshotCall;
+  const capturedText = captured.content[0].text;
+  assert.match(capturedText, /BODY_ONLY_MARKER/);
+  assert.match(capturedText, /textOffset.*expectedTextVersion/);
+  assert.match(capturedText, /Captured: 2026-09-27T12:00:00.000Z/);
+  const artifactA = capturedText.match(/saved to: (.*?) —/)?.[1]; assert.ok(artifactA);
+  assert.deepEqual(JSON.parse(await readFile(artifactA, "utf8")), snapshot);
+  const continuation = call(a.session, "chrome_snapshot", { mode: "text", targetId: "4101", textOffset: body.length, expectedTextVersion: "a".repeat(64) }); command = await next();
+  assert.equal(command.params.textOffset, body.length); assert.equal(command.params.expectedTextVersion, "a".repeat(64));
+  await reply(command, { ...snapshot, text: "continued", textRange: { ...snapshot.textRange, start: body.length, end: body.length + 100 } }); await continuation;
+  const fullSnapshot = { ...snapshot, mode: "full", text: "large body ".repeat(6000) };
+  const fullCall = call(b.session, "chrome_snapshot", { mode: "full", targetId: "4102" }); command = await next(); await reply(command, fullSnapshot);
+  const full = await fullCall, fullText = full.content[0].text;
+  assert.doesNotMatch(fullText, /^\s*\{/); assert.match(fullText, /Complete captured snapshot JSON/);
+  const artifactB = fullText.match(/saved to: (.*?) —/)?.[1]; assert.ok(artifactB);
+  assert.deepEqual(JSON.parse(await readFile(artifactB, "utf8")), fullSnapshot);
+  const actionResult = { result: { clicked: true, actionEvidence: "ACTION_OUTCOME_MARKER" }, snapshot: fullSnapshot };
+  const actionCall = call(b.session, "chrome_click", { input: { targetId: "4102", uid: "e1", includeSnapshot: true } }); command = await next(); await reply(command, actionResult);
+  const actionText = (await actionCall).content[0].text;
+  assert.match(actionText, /Complete captured action result and snapshot JSON/);
+  const actionArtifact = actionText.match(/saved to: (.*?) —/)?.[1]; assert.ok(actionArtifact);
+  assert.deepEqual(JSON.parse(await readFile(actionArtifact, "utf8")), actionResult, "large action observations must retain their action outcome without replay");
+  for (const name of ["chrome_click", "chrome_fill"]) {
+    const args = { targetId: "4101", selector: "#field", text: "hello" };
+    const fallback = call(a.session, name, name === "chrome_click" ? { input: args } : args);
+    command = await next();
+    await reply(command, { input: "dom-fallback", valueMatches: false, submitted: false, reason: "hidden tab: trusted input was not dispatched" });
+    const text = (await fallback).content[0].text;
+    assert.match(text, /DOM fallback \(untrusted page events\)/);
+    assert.match(text, /trusted input was not dispatched/);
+    assert.match(text, /input value did not stick/);
+    assert.match(text, /not submitted: field value differs/);
+  }
+  const controls = Array.from({ length: 80 }, (_, i) => ({ uid: `e${i}`, role: "button", label: `Control ${i}` }));
+  const controlsCall = call(a.session, "chrome_snapshot", { mode: "interactive", maxElements: 80 }); command = await next(); await reply(command, { ...snapshot, mode: "interactive", elements: controls, summary: { totalInteractiveVisible: 100 } });
+  const controlsText = (await controlsCall).content[0].text;
+  assert.match(controlsText, /Control 79/); assert.match(controlsText, /80 of 100/); assert.doesNotMatch(controlsText, /mode=interactive/);
+  // Two implicit navigations can share a destination while resolving to different
+  // owned tabs. The model receives content, not Pi's diagnostic details.
+  for (const [owner, tabId] of [[a.session, 4101], [b.session, 4102]] as const) {
+    const requested = "https://fixture.test/start", resolved = "https://fixture.test/redirected";
+    const navigate = call(owner, "chrome_navigate", { url: requested }); command = await next();
+    assert.equal(command.action, "page.navigate"); assert.equal(command.params.targetId, undefined);
+    assert.equal(command.params.background, true); assert.equal(command.params.foreground, false);
+    const tab = { id: tabId, url: resolved, title: "Shared destination", group: { id: tabId + 100, title: "Owned fixture group" } };
+    await reply(command, tab);
+    const navigation = await navigate;
+    assert.deepEqual(navigation.details, { result: tab });
+    const text = navigation.content.find((item: any) => item.type === "text")?.text ?? "";
+    assert.ok(text.includes(resolved), "Navigation must report the returned URL after a redirect");
+    assert.ok(!text.includes(requested), "The requested URL is not evidence of the final location");
+    const target = text.match(/Navigated tab (\d+) to /)?.[1];
+    assert.equal(target, String(tabId), "The model must receive the actual target without inspecting other tabs");
+    const inspect = call(owner, "chrome_evaluate", { expression: "document.URL", targetId: target }); command = await next();
+    assert.equal(command.action, "page.evaluate"); assert.equal(command.params.targetId, String(tabId));
+    await reply(command, resolved); await inspect;
+  }
+  const activate = call(a.session, "chrome_tab", { action: "activate", targetId: "4101" });
+  command = await next(); assert.equal(command.action, "tab.activate");
+  assert.equal(command.params.foreground, true); assert.equal(command.params.targetId, "4101");
+  await reply(command, { id: 4101, active: true }); await activate;
+  const chromeCommand = a.session.extensionRunner.getCommand("chrome");
+  assert.deepEqual(chromeCommand.getArgumentCompletions("").map((item: any) => item.value), ["doctor", "onboard"]);
+  assert.equal(chromeCommand.getArgumentCompletions("background "), null);
+  assert.doesNotMatch(chromeCommand.description, /background|authorize|revoke/);
+  await a.session.prompt("/chrome background on");
+  await a.session.prompt("/chrome settings background on");
+  await a.session.extensionRunner.emit({ type: "agent_end", messages: [] });
+  const perCall = call(a.session, "chrome_navigate", { url: "https://fixture.test/foreground", targetId: "4101", background: false });
+  command = await next(); assert.equal(command.params.foreground, true); assert.equal(command.params.targetId, "4101");
+  await reply(command, { id: 4101, url: "https://fixture.test/foreground" }); await perCall;
+  const independent = call(b.session, "chrome_tab", { action: "activate", targetId: "4102" });
+  command = await next(); assert.equal(command.params.foreground, true); assert.equal(command.params.targetId, "4102");
+  await reply(command, { id: 4102, active: true }); await independent;
+  for (const route of ["/status", "/next-v2?protocol=2&version=0.15.51", "/command-state-v2?id=made-up"]) assert.equal((await fetch(url + route)).status, 403);
+  const { RestrictedAppNetworkBroker } = await import("../../../src/local/agent/restricted-app-connections.ts");
+  const { parseRestrictedAppManifest } = await import("../../../src/local/agent/restricted-app-manifest.ts");
+  const broker = new RestrictedAppNetworkBroker({ credentials: { get: async () => undefined } as any });
+  const restricted = parseRestrictedAppManifest({ version: 2, id: "probe-app", title: "Probe", runtime: { kind: "sandboxed-web", entry: "index.html" }, ui: {}, tools: [], automations: [], permissions: { network: [{ id: "chrome-loopback", target: { kind: "loopback-http", host: "127.0.0.1", port }, methods: ["GET", "POST"], auth: [{ kind: "none" }] }] } });
+  const owner: any = { tenantId: "tenant_probe", runtimeInstanceId: "runtime-instance_probe", featureId: "probe-app", featureInstallationId: "feature-installation_probe", featureRevisionDigest: `work-fold.artifact.v1:sha256:${"a".repeat(64)}`, effectivePrincipalId: "principal_probe", connectionOwner: { kind: "instance", runtimeInstanceId: "runtime-instance_probe" }, networkGrants: ["chrome-loopback"] };
+  for (const [method, path] of [["GET", "/next-v2?protocol=2&version=0.15.51"], ["GET", "/status"], ["POST", "/result"], ["POST", "/command-v2"]] as const) {
+    const response = await broker.request(owner, restricted, { destinationId: "chrome-loopback", method, path, ...(method === "POST" ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "page.evaluate", params: { expression: "submit()" }, protocolVersion: 2, id: "made-up", ok: true }) } : {}) });
+    assert.equal(response.status, 403); assert.ok(!response.body.includes(token));
+  }
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ1sAAAAASUVORK5CYII=";
+  const screenshot = call(b.session, "chrome_screenshot", { targetId: "42" }); command = await next();
+  await reply(command, { dataUrl: `data:image/png;base64,${png}`, method: "cdp", tab: { id: "42", title: "Synthetic fixture", url: "https://fixture.test" } });
+  const imageResult = await screenshot;
+  assert.equal(imageResult.content.find((item: any) => item.type === "image")?.data, png);
+  assert.equal(imageResult.details.capture.tab.id, "42");
+  assert.deepEqual(await readdir(b.cwd), []);
+  assert.ok(!JSON.stringify(imageResult).includes(token));
+  const stoppingA = stop(a.session); command = await next(); await reply(command, {}); await stoppingA;
+  await assert.rejects(readFile(artifactA, "utf8"));
+  assert.deepEqual(JSON.parse(await readFile(artifactB, "utf8")), fullSnapshot);
+  const stillWorks = call(b.session, "chrome_tab", { action: "list" }); command = await next(); await reply(command, []); await stillWorks;
+  const stoppingB = stop(b.session); command = await next(); await reply(command, {}); await stoppingB;
+  await assert.rejects(readFile(artifactB, "utf8"));
+  await assert.rejects(fetch(url + "/status"));
+  console.log("PASS native Chrome: lazy credential, persistent companion identity, authenticated transport and actual restricted-app broker refusal, native Pi image result, no work-folder capture files, two-session disposal");
+} finally {
+  for (const session of sessions) { await session.extensionRunner.emit({ type: "session_shutdown", reason: "reload" }); session.dispose(); }
+  await rm(root, { recursive: true, force: true });
+}

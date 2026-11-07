@@ -1,0 +1,1247 @@
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import {
+  Apps24Regular,
+  ArrowSync16Regular,
+  Box16Regular,
+  Checkmark16Regular,
+  Delete16Regular,
+  Dismiss16Regular,
+  Edit16Regular,
+  ShieldCheckmark16Regular,
+} from "@fluentui/react-icons";
+
+import { errorText } from "../../lib/api";
+import { useAppStudioNavigation } from "../../hooks/useAppStudioNavigation";
+import { downloadAppData } from "../../lib/app-data-download";
+import { releaseDeletionResultToast, retainedDataPurgeResultToast, uninstallResultToast } from "../../lib/app-studio-copy";
+import {
+  activateLocalAppOperation,
+  cancelLocalAppOperation,
+  declareLocalAppProject,
+  deleteLocalAppRelease,
+  getLocalAppStudio,
+  prepareLocalAppInstall,
+  prepareLocalAppRelease,
+  prepareLocalAppUpdate,
+  publishLocalAppRelease,
+  purgeLocalAppRetainedData,
+  exportRetainedAppData,
+  uninstallLocalApp,
+} from "../../lib/restricted-apps";
+import type {
+  LocalAppInstance,
+  LocalAppOperation,
+  LocalAppPresentation,
+  LocalAppRelease,
+  LocalAppRetainedData,
+  LocalAppStudioSnapshot,
+  LocalAppUpdateOperation,
+  RestrictedAppInstalled,
+  WorkFolderSummary,
+} from "../../types";
+import { requestConfirm, showToast } from "../../ui/feedback";
+import { workFolderIconOptions } from "../../work-folder-icons";
+import { WorkFolderIconGlyph } from "../chrome/common";
+
+type ContinuityPolicy = "eligible" | "reset";
+
+export function AppStudioPane({
+  workFolder,
+  workFolders,
+  active,
+  previewRevision,
+  navigation = null,
+  fixtureMode = false,
+  onAppsChanged,
+  onError,
+}: {
+  workFolder: WorkFolderSummary;
+  workFolders: WorkFolderSummary[];
+  active: boolean;
+  previewRevision: string;
+  navigation?: { id: string; runtimeInstanceId: string } | null;
+  fixtureMode?: boolean;
+  onAppsChanged?: (workFolderId: string, runtimeInstanceId: string, apps: RestrictedAppInstalled[]) => void;
+  onError: (message: string) => void;
+}) {
+  const ids = useId().replace(/:/g, "");
+  const requestSequence = useRef(0);
+  const loadedSource = useRef<{ workFolderId: string; fixtureMode: boolean } | null>(null);
+  const operationToFocus = useRef<string | null>(null);
+  const [studio, setStudio] = useState<LocalAppStudioSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [editingProject, setEditingProject] = useState(false);
+  const [projectTitle, setProjectTitle] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
+  const [projectIcon, setProjectIcon] = useState("");
+  const [releaseVersion, setReleaseVersion] = useState("");
+  const [targetWorkFolderId, setTargetWorkFolderId] = useState("");
+  const [continuityPolicy, setContinuityPolicy] = useState<ContinuityPolicy>("eligible");
+  const [recentlyPublished, setRecentlyPublished] = useState<string | null>(null);
+
+  const workFolderById = useMemo(
+    () => new Map(workFolders.map((item) => [item.id, item])),
+    [workFolders],
+  );
+  const workFolderIdsKey = useMemo(
+    () => workFolders.map((item) => item.id).sort().join("\0"),
+    [workFolders],
+  );
+  const installTargets = useMemo(
+    () => workFolders,
+    [workFolders],
+  );
+  const installTargetIds = useMemo(
+    () => new Set(installTargets.map((item) => item.id)),
+    [installTargets],
+  );
+  const releasesByDigest = useMemo(
+    () => new Map((studio?.releases ?? []).map((release) => [release.releaseDigest, release])),
+    [studio?.releases],
+  );
+  const publishedReleases = useMemo(
+    () => (studio?.releases ?? [])
+      .filter((release) => release.state === "published")
+      .sort((left, right) => right.preparedAt.localeCompare(left.preparedAt)),
+    [studio?.releases],
+  );
+  const selectedInstance = useMemo(
+    () => studio?.instances.find((instance) => instance.workFolderId === targetWorkFolderId) ?? null,
+    [studio?.instances, targetWorkFolderId],
+  );
+
+  useEffect(() => {
+    if (!active) return;
+    const sequence = ++requestSequence.current;
+    const sourceChanged = loadedSource.current?.workFolderId !== workFolder.id
+      || loadedSource.current?.fixtureMode !== fixtureMode;
+    loadedSource.current = { workFolderId: workFolder.id, fixtureMode };
+    setLoading(true);
+    if (sourceChanged) {
+      setStudio(null);
+      setEditingProject(false);
+    }
+    if (fixtureMode) {
+      if (sourceChanged) setStudio(fixtureStudio(workFolder, workFolders));
+      setLoading(false);
+      return () => { requestSequence.current += 1; };
+    }
+    void getLocalAppStudio(workFolder.id)
+      .then((next) => {
+        if (requestSequence.current === sequence) setStudio(next);
+      })
+      .catch((caught) => {
+        if (requestSequence.current === sequence) onError(errorText(caught));
+      })
+      .finally(() => {
+        if (requestSequence.current === sequence) setLoading(false);
+    });
+    return () => { requestSequence.current += 1; };
+  }, [active, fixtureMode, previewRevision, workFolder.id, workFolderIdsKey]);
+
+  useEffect(() => {
+    const project = studio?.project;
+    setProjectTitle(project?.presentation.title ?? "");
+    setProjectDescription(project?.presentation.description ?? "");
+    setProjectIcon(project?.presentation.icon ?? "");
+  }, [studio?.project?.projectId, studio?.project?.updatedAt]);
+
+  useEffect(() => {
+    if (targetWorkFolderId && installTargetIds.has(targetWorkFolderId)) return;
+    if (navigation) return;
+    const installedTarget = studio?.instances.find((instance) => installTargetIds.has(instance.workFolderId))?.workFolderId;
+    setTargetWorkFolderId(installedTarget ?? installTargets[0]?.id ?? "");
+  }, [installTargetIds, installTargets, studio?.instances, targetWorkFolderId, navigation]);
+
+  useAppStudioNavigation({ active, loading, instances: studio?.instances, navigation, registeredWorkFolderIds: installTargetIds,
+    selectId: `${ids}-target-work-folder`, onSelect: setTargetWorkFolderId, onError });
+
+  useEffect(() => {
+    if (!recentlyPublished) return;
+    const timer = window.setTimeout(() => setRecentlyPublished(null), 700);
+    return () => window.clearTimeout(timer);
+  }, [recentlyPublished]);
+
+  useEffect(() => {
+    const operationId = operationToFocus.current;
+    if (!operationId || !studio?.operations.some((operation) => operation.operationId === operationId)) return;
+    operationToFocus.current = null;
+    window.requestAnimationFrame(() => focusOperation(operationId));
+  }, [studio?.operations]);
+
+  // A Release restored from Settings → Recently Deleted belongs back in this list.
+  useEffect(() => {
+    if (fixtureMode) return;
+    function onRestored(event: Event): void {
+      if ((event as CustomEvent<{ kind?: string }>).detail?.kind === "app-release") void refreshStudio();
+    }
+    window.addEventListener("work-fold:recently-deleted-restored", onRestored);
+    return () => window.removeEventListener("work-fold:recently-deleted-restored", onRestored);
+  }, [fixtureMode, workFolder.id]);
+
+  async function refreshStudio(): Promise<LocalAppStudioSnapshot | null> {
+    if (fixtureMode) return studio;
+    const sequence = ++requestSequence.current;
+    try {
+      const next = await getLocalAppStudio(workFolder.id);
+      if (requestSequence.current === sequence) setStudio(next);
+      return next;
+    } catch (caught) {
+      if (requestSequence.current === sequence) onError(errorText(caught));
+      return null;
+    }
+  }
+
+  async function runMutation(key: string, mutation: () => Promise<void>): Promise<void> {
+    if (busyKey) return;
+    setBusyKey(key);
+    try {
+      await mutation();
+    } catch (caught) {
+      onError(errorText(caught));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  function updateFixture(mutator: (current: LocalAppStudioSnapshot) => LocalAppStudioSnapshot): void {
+    setStudio((current) => current ? mutator(current) : current);
+  }
+
+  async function saveProject(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const presentation: LocalAppPresentation = {
+      title: projectTitle.trim(),
+      description: projectDescription.trim() || null,
+      icon: projectIcon.trim() || null,
+    };
+    if (!presentation.title) return;
+    await runMutation("project", async () => {
+      if (fixtureMode) {
+        const timestamp = new Date().toISOString();
+        updateFixture((current) => ({
+          ...current,
+          project: {
+            workFolderId: workFolder.id,
+            projectId: current.project?.projectId ?? "project_fixture-connected-inbox",
+            presentation,
+            createdAt: current.project?.createdAt ?? timestamp,
+            updatedAt: timestamp,
+          },
+        }));
+      } else {
+        await declareLocalAppProject(workFolder.id, presentation);
+        await refreshStudio();
+      }
+      setEditingProject(false);
+      showToast({ text: studio?.project ? "App details saved" : "App created", tone: "success" });
+    });
+  }
+
+  async function prepareRelease(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const displayVersion = releaseVersion.trim();
+    if (!displayVersion || !studio?.project || !studio.previews.length) return;
+    await runMutation("release:prepare", async () => {
+      if (fixtureMode) {
+        const timestamp = new Date().toISOString();
+        const release: LocalAppRelease = {
+          projectId: studio.project!.projectId,
+          sourceWorkFolderId: workFolder.id,
+          releaseDigest: fixtureDigest(displayVersion),
+          displayVersion,
+          presentation: { ...studio.project!.presentation },
+          featureIds: studio.previews.map((preview) => preview.manifest.id).sort(),
+          state: "prepared",
+          preparedAt: timestamp,
+          publishedAt: null,
+        };
+        updateFixture((current) => ({ ...current, releases: [release, ...current.releases] }));
+      } else {
+        await prepareLocalAppRelease(workFolder.id, displayVersion);
+        await refreshStudio();
+      }
+      setReleaseVersion("");
+      showToast({ text: `Release ${displayVersion} is ready to review`, tone: "success" });
+    });
+  }
+
+  async function publishRelease(release: LocalAppRelease): Promise<void> {
+    await runMutation(`release:publish:${release.releaseDigest}`, async () => {
+      if (fixtureMode) {
+        const publishedAt = new Date().toISOString();
+        updateFixture((current) => ({
+          ...current,
+          releases: current.releases.map((item) => item.releaseDigest === release.releaseDigest
+            ? { ...item, state: "published", publishedAt }
+            : item),
+        }));
+      } else {
+        await publishLocalAppRelease(workFolder.id, release.releaseDigest);
+        await refreshStudio();
+      }
+      setRecentlyPublished(release.releaseDigest);
+      showToast({ text: `Release ${release.displayVersion} published locally`, tone: "success" });
+    });
+  }
+
+  async function deleteRelease(release: LocalAppRelease): Promise<void> {
+    const blocker = studio ? releaseDeletionBlocker(studio, release) : "Refresh App Studio before deleting this Release.";
+    if (blocker) {
+      onError(blocker);
+      return;
+    }
+    const confirmed = await requestConfirm({
+      title: `Delete Release ${release.displayVersion}?`,
+      body: "Moves this Release to Recently Deleted, where you can restore it. Development previews and other Releases do not change.",
+      confirmLabel: "Delete Release",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    await runMutation(`release:delete:${release.releaseDigest}`, async () => {
+      let result: { deleted: boolean; cleanupPending: boolean; recentlyDeleted?: { entryId: string; restoreBy: string } | null } = { deleted: true, cleanupPending: false };
+      if (fixtureMode) {
+        updateFixture((current) => ({
+          ...current,
+          releases: current.releases.filter((item) => item.releaseDigest !== release.releaseDigest),
+        }));
+      } else {
+        result = await deleteLocalAppRelease(workFolder.id, release.releaseDigest);
+        await refreshStudio();
+      }
+      showToast(releaseDeletionResultToast({
+        displayVersion: release.displayVersion,
+        deleted: result.deleted,
+        cleanupPending: result.cleanupPending,
+        recentlyDeleted: Boolean(result.recentlyDeleted),
+      }));
+    });
+  }
+
+  async function prepareActivation(
+    release: LocalAppRelease,
+    targetOverride?: string,
+    policyOverride?: ContinuityPolicy,
+  ): Promise<void> {
+    const resolvedTargetWorkFolderId = targetOverride ?? targetWorkFolderId;
+    if (!resolvedTargetWorkFolderId || !installTargetIds.has(resolvedTargetWorkFolderId)) return;
+    const resolvedPolicy = policyOverride ?? continuityPolicy;
+    const targetInstance = studio?.instances.find((instance) => instance.workFolderId === resolvedTargetWorkFolderId) ?? null;
+    await runMutation(`operation:prepare:${release.releaseDigest}`, async () => {
+      let operation: LocalAppOperation;
+      if (fixtureMode) {
+        operation = targetInstance
+          ? fixtureUpdateOperation(studio!, targetInstance, release, resolvedPolicy)
+          : fixtureInstallOperation(studio!, resolvedTargetWorkFolderId, release);
+        updateFixture((current) => ({ ...current, operations: [...current.operations, operation] }));
+      } else if (targetInstance) {
+        operation = await prepareLocalAppUpdate(
+          workFolder.id,
+          targetInstance.runtimeInstanceId,
+          release.releaseDigest,
+          resolvedPolicy,
+        );
+        await refreshStudio();
+      } else {
+        operation = await prepareLocalAppInstall(workFolder.id, resolvedTargetWorkFolderId, release.releaseDigest);
+        await refreshStudio();
+      }
+      operationToFocus.current = operation.operationId;
+      showToast({ text: `${targetInstance ? "Update" : "Install"} ready to review`, tone: "success" });
+    });
+  }
+
+  async function activateOperation(operation: LocalAppOperation): Promise<void> {
+    const release = releasesByDigest.get(operation.releaseDigest);
+    const instance = studio?.instances.find((item) => item.runtimeInstanceId === operation.runtimeInstanceId) ?? null;
+    const rollback = operation.kind === "update" && release && instance
+      ? releaseIsOlder(release, releasesByDigest.get(instance.releaseDigest))
+      : false;
+    await runMutation(`operation:activate:${operation.operationId}`, async () => {
+      if (fixtureMode) {
+        const timestamp = new Date().toISOString();
+        updateFixture((current) => {
+          const target = current.releases.find((item) => item.releaseDigest === operation.releaseDigest)!;
+          const nextInstance: LocalAppInstance = {
+            runtimeInstanceId: operation.runtimeInstanceId,
+            projectId: operation.projectId,
+            workFolderId: operation.targetWorkFolderId,
+            releaseDigest: target.releaseDigest,
+            displayVersion: target.displayVersion,
+            presentation: { ...target.presentation },
+            featureIds: [...target.featureIds],
+            installedAt: instance?.installedAt ?? timestamp,
+            updatedAt: timestamp,
+          };
+          return {
+            ...current,
+            instances: [...current.instances.filter((item) => item.runtimeInstanceId !== operation.runtimeInstanceId), nextInstance],
+            operations: current.operations.filter((item) => item.operationId !== operation.operationId),
+          };
+        });
+      } else {
+        const result = await activateLocalAppOperation(workFolder.id, operation.operationId);
+        onAppsChanged?.(operation.targetWorkFolderId, result.instance.runtimeInstanceId, result.apps);
+        await refreshStudio();
+      }
+      showToast({
+        text: operation.kind === "install"
+          ? `Installed in ${workFolderName(operation.targetWorkFolderId, workFolderById)}`
+          : rollback ? "Rollback activated" : "Update activated",
+        tone: "success",
+      });
+    });
+  }
+
+  async function cancelOperation(operation: LocalAppOperation): Promise<void> {
+    await runMutation(`operation:cancel:${operation.operationId}`, async () => {
+      if (fixtureMode) {
+        updateFixture((current) => ({
+          ...current,
+          operations: current.operations.filter((item) => item.operationId !== operation.operationId),
+        }));
+      } else {
+        await cancelLocalAppOperation(workFolder.id, operation.operationId);
+        await refreshStudio();
+      }
+      showToast({ text: "Activation review cancelled" });
+    });
+  }
+
+  async function uninstall(instance: LocalAppInstance, disposition: "retain" | "purge"): Promise<void> {
+    const targetName = workFolderName(instance.workFolderId, workFolderById);
+    const retained = disposition === "retain";
+    const confirmed = await requestConfirm({
+      title: `Uninstall ${instance.presentation.title} from ${targetName}?`,
+      body: retained
+        ? "Uninstalls the app and keeps its data on this device."
+        : "Uninstalls the app and moves its data to Recently Deleted.",
+      confirmLabel: retained ? "Uninstall & Retain Data" : "Uninstall & Purge Data",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    await runMutation(`uninstall:${instance.runtimeInstanceId}`, async () => {
+      let result = { removed: true, cleanupPending: false };
+      if (fixtureMode) {
+        const timestamp = new Date().toISOString();
+        const added = retained
+          ? instance.featureIds.map((featureId, index): LocalAppRetainedData => ({
+            retainedDataId: `retained_fixture_${index}_${Date.now()}`,
+            projectId: instance.projectId,
+            runtimeInstanceId: instance.runtimeInstanceId,
+            featureId,
+            featureInstallationId: `feature_fixture_${index}`,
+            dataNamespaceId: `data_fixture_${index}`,
+            releaseDigest: instance.releaseDigest,
+            removedAt: timestamp,
+          }))
+          : [];
+        updateFixture((current) => ({
+          ...current,
+          instances: current.instances.filter((item) => item.runtimeInstanceId !== instance.runtimeInstanceId),
+          operations: current.operations.filter((item) => item.runtimeInstanceId !== instance.runtimeInstanceId),
+          retainedData: [...current.retainedData, ...added],
+        }));
+      } else {
+        result = await uninstallLocalApp(instance.workFolderId, instance.runtimeInstanceId, disposition);
+        onAppsChanged?.(instance.workFolderId, instance.runtimeInstanceId, []);
+        await refreshStudio();
+      }
+      showToast(uninstallResultToast({ ...result, disposition }));
+    });
+  }
+
+  async function purgeRetainedData(item: LocalAppRetainedData): Promise<void> {
+    const confirmed = await requestConfirm({
+      title: `Purge retained data for ${item.featureId}?`,
+      body: "Moves this app’s retained data to Recently Deleted.",
+      confirmLabel: "Purge Data",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    await runMutation(`retained:${item.retainedDataId}`, async () => {
+      let result = { purged: true, cleanupPending: false };
+      if (fixtureMode) {
+        updateFixture((current) => ({
+          ...current,
+          retainedData: current.retainedData.filter((entry) => entry.retainedDataId !== item.retainedDataId),
+        }));
+      } else {
+        result = await purgeLocalAppRetainedData(workFolder.id, item.retainedDataId);
+        await refreshStudio();
+      }
+      showToast(retainedDataPurgeResultToast(result));
+    });
+  }
+
+  async function exportRetainedData(item: LocalAppRetainedData): Promise<void> {
+    await runMutation(`export:${item.retainedDataId}`, async () => {
+      downloadAppData(item.featureId, await exportRetainedAppData(workFolder.id, item.retainedDataId));
+    });
+  }
+
+  function focusOperation(operationId: string): void {
+    const element = document.getElementById(`${ids}-app-studio-operation-${operationId}`);
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    element?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
+    element?.focus({ preventScroll: true });
+  }
+
+  if (loading && !studio) {
+    return (
+      <div className="work-folder-pane-content professional-surface app-studio-pane">
+        <div className="app-studio-loading" role="status"><ArrowSync16Regular className="spin" />Loading App Studio</div>
+      </div>
+    );
+  }
+
+  const project = studio?.project ?? null;
+  const hasInstallTarget = Boolean(targetWorkFolderId && installTargetIds.has(targetWorkFolderId));
+  const targetName = hasInstallTarget ? workFolderName(targetWorkFolderId, workFolderById) : "";
+  const pendingForTarget = hasInstallTarget
+    ? studio?.operations.find((operation) => operation.targetWorkFolderId === targetWorkFolderId) ?? null
+    : null;
+
+  return (
+    <div className="work-folder-pane-content professional-surface app-studio-pane">
+      <section className="app-studio-canvas" aria-labelledby={`${ids}-title`}>
+        <header className="app-studio-header">
+          <div className="app-studio-project-identity">
+            <div>
+              <span className="professional-kicker">App Studio</span>
+              <h1 id={`${ids}-title`}>{project?.presentation.title ?? "Edit Your App"}</h1>
+              {project?.presentation.description ? <p>{project.presentation.description}</p> : null}
+              {project ? <small>Built from {workFolder.name} · Releases stay on this device</small> : null}
+            </div>
+          </div>
+          {project ? (
+            <div className="app-studio-header-actions">
+              <button className="ui-control" type="button" onClick={() => setEditingProject((current) => !current)} disabled={Boolean(busyKey)}>
+                {editingProject ? <Dismiss16Regular /> : <Edit16Regular />}{editingProject ? "Close" : "Edit Details"}
+              </button>
+            </div>
+          ) : null}
+        </header>
+
+        {!project || editingProject ? (
+          <ProjectEditor
+            ids={ids}
+            creating={!project}
+            title={projectTitle}
+            description={projectDescription}
+            icon={projectIcon}
+            busy={busyKey === "project"}
+            onTitleChange={setProjectTitle}
+            onDescriptionChange={setProjectDescription}
+            onIconChange={setProjectIcon}
+            onSubmit={(event) => void saveProject(event)}
+            onCancel={project ? () => {
+              setProjectTitle(project.presentation.title);
+              setProjectDescription(project.presentation.description ?? "");
+              setProjectIcon(project.presentation.icon ?? "");
+              setEditingProject(false);
+            } : undefined}
+          />
+        ) : null}
+
+        {project ? (
+          <>
+            <section className="app-studio-stage" aria-labelledby={`${ids}-build-title`}>
+              <StageNumber value="01" />
+              <div className="app-studio-stage-body">
+                <StageHeader
+                  titleId={`${ids}-build-title`}
+                  title="Build"
+                  status={`${studio?.previews.length ?? 0} preview${studio?.previews.length === 1 ? "" : "s"}`}
+                />
+                {studio?.previews.length ? (
+                  <div className="app-studio-row-list" aria-label="Development Previews">
+                    {studio.previews.map((preview) => (
+                      <article className="app-studio-row" key={preview.featureInstallationId}>
+                        <span className="app-studio-row-icon" aria-hidden="true"><Box16Regular /></span>
+                        <div className="app-studio-row-copy">
+                          <div className="app-studio-row-title">
+                            <strong>{preview.manifest.title}</strong>
+                            <span className="professional-status-badge enabled">Local Preview</span>
+                          </div>
+                          {preview.manifest.description ? <p>{preview.manifest.description}</p> : null}
+                          <small>{preview.manifest.id} · package {preview.version} · reviewed digest {shortDigest(preview.digest)}</small>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="app-studio-empty-row">
+                    <Box16Regular aria-hidden="true" />
+                    <div><strong>No Development Previews</strong></div>
+                  </div>
+                )}
+                <form className="app-studio-release-form" onSubmit={(event) => void prepareRelease(event)}>
+                  <label htmlFor={`${ids}-release-version`}>
+                    <span>Release Version</span>
+                    <input
+                      id={`${ids}-release-version`}
+                      value={releaseVersion}
+                      onChange={(event) => setReleaseVersion(event.target.value)}
+                      maxLength={128}
+                      placeholder="0.1.0"
+                      autoComplete="off"
+                      disabled={Boolean(busyKey)}
+                    />
+                  </label>
+                  <button className="ui-control ui-control--primary" type="submit" disabled={Boolean(busyKey) || !releaseVersion.trim() || !studio?.previews.length}>
+                    {busyKey === "release:prepare" ? <ArrowSync16Regular className="spin" /> : null}Prepare Release
+                  </button>
+                </form>
+              </div>
+            </section>
+
+            <section className="app-studio-stage" aria-labelledby={`${ids}-releases-title`}>
+              <StageNumber value="02" />
+              <div className="app-studio-stage-body">
+                <StageHeader
+                  titleId={`${ids}-releases-title`}
+                  title="Releases"
+                  status={`${studio?.releases.length ?? 0} total`}
+                />
+                <div className="app-studio-target-bar">
+                  <label htmlFor={`${ids}-target-work-folder`}>
+                    <span>Install in work-folder</span>
+                    <select id={`${ids}-target-work-folder`} value={targetWorkFolderId} onChange={(event) => setTargetWorkFolderId(event.target.value)} disabled={Boolean(busyKey) || !installTargets.length}>
+                      {installTargets.length ? <option value="" disabled>Choose a work-folder</option> : null}
+                      {installTargets.length
+                        ? installTargets.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)
+                        : <option value="">No work-folders Registered</option>}
+                    </select>
+                  </label>
+                  {selectedInstance ? (
+                    <label htmlFor={`${ids}-continuity`}>
+                      <span>Update Access</span>
+                      <select id={`${ids}-continuity`} value={continuityPolicy} onChange={(event) => setContinuityPolicy(event.target.value as ContinuityPolicy)} disabled={Boolean(busyKey)}>
+                        <option value="eligible">Keep Current Choices</option>
+                        <option value="reset">Use Install Defaults</option>
+                      </select>
+                    </label>
+                  ) : null}
+                  <p>{!hasInstallTarget
+                    ? "Choose a work-folder to install in."
+                    : selectedInstance
+                      ? `${selectedInstance.presentation.title} ${selectedInstance.displayVersion} is active in ${targetName}.`
+                      : `No app installed in ${targetName}.`}</p>
+                </div>
+                {studio?.releases.length ? (
+                  <div className="app-studio-release-list">
+                    {studio.releases.map((release) => {
+                      const active = selectedInstance?.releaseDigest === release.releaseDigest;
+                      const rollback = selectedInstance ? releaseIsOlder(release, releasesByDigest.get(selectedInstance.releaseDigest)) : false;
+                      const pending = studio.operations.find((operation) => operation.targetWorkFolderId === targetWorkFolderId && operation.releaseDigest === release.releaseDigest);
+                      const blockedByOtherPending = pending ? null : pendingForTarget;
+                      const deletionBlocker = releaseDeletionBlocker(studio, release);
+                      return (
+                        <article
+                          className={`app-studio-release-row${recentlyPublished === release.releaseDigest ? " recently-published" : ""}`}
+                          data-state={release.state}
+                          key={release.releaseDigest}
+                        >
+                          <div className="app-studio-release-main">
+                            <div className="app-studio-row-title">
+                              <strong>{release.displayVersion}</strong>
+                              <span className={release.state === "published" ? "professional-status-badge enabled" : "professional-status-badge"}>{release.state === "published" ? "Published Locally" : "Prepared"}</span>
+                              {active ? <span className="app-studio-active-label"><Checkmark16Regular />Active in {targetName}</span> : null}
+                            </div>
+                            <p>{release.presentation.title} · {formatCount(release.featureIds.length, "Feature")}</p>
+                            <small>{formatTimestamp(release.publishedAt ?? release.preparedAt)} · {shortDigest(release.releaseDigest)}</small>
+                          </div>
+                          <div className="app-studio-release-action">
+                            {release.state === "published" ? (
+                              active ? (
+                                <span className="app-studio-quiet-state">Current Release</span>
+                              ) : pending || blockedByOtherPending ? (
+                                <button className="ui-control" type="button" disabled={Boolean(busyKey)} onClick={() => focusOperation((pending ?? blockedByOtherPending)!.operationId)}>
+                                  Open Review
+                                </button>
+                              ) : (
+                                <button className="ui-control" type="button" disabled={Boolean(busyKey) || !hasInstallTarget} onClick={() => void prepareActivation(release)}>
+                                  {busyKey === `operation:prepare:${release.releaseDigest}` ? <ArrowSync16Regular className="spin" /> : null}
+                                  {selectedInstance ? `Review ${rollback ? "Rollback" : "Update"}` : "Review Install"}
+                                </button>
+                              )
+                            ) : null}
+                            <button
+                              className="app-studio-icon-button danger"
+                              type="button"
+                              disabled={Boolean(busyKey)}
+                              aria-disabled={Boolean(deletionBlocker)}
+                              onClick={() => void deleteRelease(release)}
+                              aria-label={deletionBlocker
+                                ? `Cannot delete Release ${release.displayVersion}. ${deletionBlocker}`
+                                : `Delete Release ${release.displayVersion}`}
+                              title={deletionBlocker ?? `Delete Release ${release.displayVersion}`}
+                            >
+                              {busyKey === `release:delete:${release.releaseDigest}` ? <ArrowSync16Regular className="spin" /> : <Delete16Regular />}
+                            </button>
+                          </div>
+                          {release.state === "prepared" ? (
+                            <details className="app-studio-release-review" open>
+                              <summary>Review Prepared Release</summary>
+                              <div>
+                                <dl className="app-studio-facts">
+                                  <div><dt>App</dt><dd>{release.presentation.title}</dd></div>
+                                  <div><dt>Version</dt><dd>{release.displayVersion}</dd></div>
+                                  <div><dt>Features</dt><dd>{release.featureIds.join(", ")}</dd></div>
+                                  <div><dt>Release Digest</dt><dd><code>{release.releaseDigest}</code></dd></div>
+                                </dl>
+                                <p><ShieldCheckmark16Regular aria-hidden="true" />Available for local installation only.</p>
+                                <button className="ui-control ui-control--primary" type="button" disabled={Boolean(busyKey)} onClick={() => void publishRelease(release)}>
+                                  {busyKey === `release:publish:${release.releaseDigest}` ? <ArrowSync16Regular className="spin" /> : null}Publish Locally
+                                </button>
+                              </div>
+                            </details>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="app-studio-empty-row"><Box16Regular aria-hidden="true" /><div><strong>No Releases Yet</strong></div></div>
+                )}
+              </div>
+            </section>
+
+            <section className="app-studio-stage" aria-labelledby={`${ids}-installations-title`}>
+              <StageNumber value="03" />
+              <div className="app-studio-stage-body">
+                <StageHeader
+                  titleId={`${ids}-installations-title`}
+                  title="Installations"
+                  status={`${studio?.instances.length ?? 0} installed`}
+                />
+
+                {studio?.operations.length ? (
+                  <div className="app-studio-operation-list" aria-label="Activation reviews">
+                    {studio.operations.map((operation) => (
+                      <OperationReview
+                        key={operation.operationId}
+                        idPrefix={ids}
+                        operation={operation}
+                        release={releasesByDigest.get(operation.releaseDigest)}
+                        activeRelease={releasesByDigest.get(studio.instances.find((item) => item.runtimeInstanceId === operation.runtimeInstanceId)?.releaseDigest ?? "")}
+                        targetName={workFolderName(operation.targetWorkFolderId, workFolderById)}
+                        busyKey={busyKey}
+                        onActivate={() => void activateOperation(operation)}
+                        onCancel={() => void cancelOperation(operation)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+
+                {studio?.instances.length ? (
+                  <div className="app-studio-installation-list" aria-label="Installed App Instances">
+                    {studio.instances.map((instance) => {
+                      const instanceWorkFolderName = workFolderName(instance.workFolderId, workFolderById);
+                      const latest = publishedReleases[0];
+                      const updateAvailable = latest && latest.releaseDigest !== instance.releaseDigest
+                        && !releaseIsOlder(latest, releasesByDigest.get(instance.releaseDigest));
+                      const pending = studio.operations.find((operation) => operation.runtimeInstanceId === instance.runtimeInstanceId);
+                      return (
+                        <article className={`app-studio-installation-row${instance.workFolderId === targetWorkFolderId ? " selected" : ""}`} key={instance.runtimeInstanceId}>
+                          <div className="app-studio-installation-copy">
+                            <div className="app-studio-row-title">
+                              <strong>{instance.presentation.title}</strong>
+                              <span className="professional-status-badge enabled">{instance.displayVersion}</span>
+                              {updateAvailable ? <span className="professional-status-badge">Update Available</span> : null}
+                            </div>
+                            <p>Installed in {instanceWorkFolderName} · Data on this device</p>
+                            <small>{formatCount(instance.featureIds.length, "Feature")} · Updated {formatTimestamp(instance.updatedAt)} · {shortDigest(instance.releaseDigest)}</small>
+                          </div>
+                          <div className="app-studio-installation-actions">
+                            {instance.workFolderId !== targetWorkFolderId && !updateAvailable ? (
+                              <button className="app-studio-text-button" type="button" disabled={Boolean(busyKey)} onClick={() => setTargetWorkFolderId(instance.workFolderId)}>Choose work-folder</button>
+                            ) : null}
+                            {updateAvailable && !pending ? (
+                              <button className="ui-control" type="button" disabled={Boolean(busyKey)} onClick={() => {
+                                setTargetWorkFolderId(instance.workFolderId);
+                                window.requestAnimationFrame(() => document.getElementById(`${ids}-releases-title`)?.scrollIntoView({ block: "start" }));
+                              }}>
+                                Review in Releases
+                              </button>
+                            ) : null}
+                            <button className="ui-control" type="button" disabled={Boolean(busyKey)} onClick={() => void uninstall(instance, "retain")}>Uninstall · Retain Data</button>
+                            <button className="app-studio-icon-button danger" type="button" disabled={Boolean(busyKey)} onClick={() => void uninstall(instance, "purge")} aria-label={`Uninstall ${instance.presentation.title} from ${instanceWorkFolderName} and purge its data`} title="Uninstall and Purge Data">
+                              {busyKey === `uninstall:${instance.runtimeInstanceId}` ? <ArrowSync16Regular className="spin" /> : <Delete16Regular />}
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="app-studio-empty-row"><Apps24Regular aria-hidden="true" /><div><strong>No Installed Apps</strong></div></div>
+                )}
+
+                <div className="app-studio-retained-heading">
+                  <div><h3>Retained Data</h3></div>
+                  <span>{studio?.retainedData.length ?? 0}</span>
+                </div>
+                {studio?.retainedData.length ? (
+                  <div className="app-studio-retained-list">
+                    {studio.retainedData.map((item) => (
+                      <article className="app-studio-retained-row" key={item.retainedDataId}>
+                        <div>
+                          <strong>{item.featureId}</strong>
+                          <p>Stored on This Device</p>
+                          <small>Retained {formatTimestamp(item.removedAt)} · Release {shortDigest(item.releaseDigest)}</small>
+                        </div>
+                        <div className="app-studio-retained-actions"><button className="ui-control" type="button" disabled={fixtureMode || Boolean(busyKey)} onClick={() => void exportRetainedData(item)}>Export Data</button>
+                        <button className="ui-control professional-button-danger" type="button" disabled={Boolean(busyKey)} onClick={() => void purgeRetainedData(item)}>
+                          {busyKey === `retained:${item.retainedDataId}` ? <ArrowSync16Regular className="spin" /> : <Delete16Regular />}Purge Data
+                        </button></div>
+                      </article>
+                    ))}
+                  </div>
+                ) : <p className="app-studio-retained-empty">No retained App data.</p>}
+              </div>
+            </section>
+          </>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+function ProjectEditor({
+  ids,
+  creating,
+  title,
+  description,
+  icon,
+  busy,
+  onTitleChange,
+  onDescriptionChange,
+  onIconChange,
+  onSubmit,
+  onCancel,
+}: {
+  ids: string;
+  creating: boolean;
+  title: string;
+  description: string;
+  icon: string;
+  busy: boolean;
+  onTitleChange: (value: string) => void;
+  onDescriptionChange: (value: string) => void;
+  onIconChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onCancel?: () => void;
+}) {
+  return (
+    <section className={`app-studio-project-editor${creating ? " creating" : ""}`} aria-label={creating ? "Edit Your App" : "App Details"}>
+      {!creating ? <p className="app-studio-project-editor-note">Changes apply to new Releases; existing Releases keep their details.</p> : null}
+      <form className="app-studio-project-form" onSubmit={onSubmit}>
+        <label htmlFor={`${ids}-project-title`}>
+          <span>App Name</span>
+          <input id={`${ids}-project-title`} value={title} onChange={(event) => onTitleChange(event.target.value)} maxLength={80} required disabled={busy} autoFocus={creating} />
+        </label>
+        <label className="wide" htmlFor={`${ids}-project-description`}>
+          <span>Description <small>Optional</small></span>
+          <textarea id={`${ids}-project-description`} value={description} onChange={(event) => onDescriptionChange(event.target.value)} maxLength={280} rows={3} disabled={busy} />
+        </label>
+        <div className="app-studio-project-icon wide">
+          <span className="app-studio-project-icon-label">Icon</span>
+          <AppIconPicker value={icon} disabled={busy} onChange={onIconChange} />
+        </div>
+        <div className="app-studio-project-form-actions">
+          {onCancel ? <button className="ui-control" type="button" onClick={onCancel} disabled={busy}>Cancel</button> : null}
+          <button className="ui-control ui-control--primary" type="submit" disabled={busy || !title.trim()}>
+            {busy ? <ArrowSync16Regular className="spin" /> : null}{creating ? "Create App" : "Save"}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+/** The whole Fluent icon catalog Customize work-folder uses, picking the app's icon id. */
+function AppIconPicker({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (value: string) => void }) {
+  const selected = value.trim() || "apps";
+  return (
+    <div className="work-folder-icon-picker app-studio-icon-picker">
+      <div className="work-folder-icon-grid" role="listbox" aria-label="App Icon">
+        {workFolderIconOptions.map((option) => {
+          const Icon = option.Icon;
+          const active = option.name === selected;
+          return (
+            <button
+              className={active ? "work-folder-icon-option active" : "work-folder-icon-option"}
+              key={option.name}
+              type="button"
+              role="option"
+              aria-selected={active}
+              disabled={disabled}
+              onClick={() => onChange(option.name)}
+              aria-label={`Use ${option.label} Icon`}
+              title={option.label}
+            >
+              <WorkFolderIconGlyph icon={Icon} size={18} filled={active} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function StageNumber({ value }: { value: string }) {
+  return <span className="app-studio-stage-number" aria-hidden="true">{value}</span>;
+}
+
+function StageHeader({ titleId, title, status }: { titleId: string; title: string; status: string }) {
+  return (
+    <header className="app-studio-stage-header">
+      <div><h2 id={titleId}>{title}</h2></div>
+      <span>{status}</span>
+    </header>
+  );
+}
+
+function OperationReview({
+  idPrefix,
+  operation,
+  release,
+  activeRelease,
+  targetName,
+  busyKey,
+  onActivate,
+  onCancel,
+}: {
+  idPrefix: string;
+  operation: LocalAppOperation;
+  release?: LocalAppRelease;
+  activeRelease?: LocalAppRelease;
+  targetName: string;
+  busyKey: string | null;
+  onActivate: () => void;
+  onCancel: () => void;
+}) {
+  const update = operation.kind === "update" ? operation : null;
+  const rollback = update && release ? releaseIsOlder(release, activeRelease) : false;
+  const label = operation.kind === "install" ? "Install" : rollback ? "Rollback" : "Update";
+  const canActivate = !update || update.plan.canCommit;
+  const operationDomId = `${idPrefix}-app-studio-operation-${operation.operationId}`;
+  const titleDomId = `${idPrefix}-app-studio-operation-title-${operation.operationId}`;
+  return (
+    <article
+      className="app-studio-operation-review"
+      id={operationDomId}
+      tabIndex={-1}
+      aria-labelledby={titleDomId}
+    >
+      <header>
+        <div>
+          <span className="app-studio-operation-eyebrow">Activation Review</span>
+          <h3 id={titleDomId}>{label} {release?.displayVersion ?? "Release"} in {targetName}</h3>
+          <p>Prepared {formatTimestamp(operation.preparedAt)}</p>
+        </div>
+        <span className={canActivate ? "professional-status-badge enabled" : "professional-status-badge error"}>{canActivate ? "Ready" : "Blocked"}</span>
+      </header>
+      <dl className="app-studio-facts compact">
+        <div><dt>Target work-folder</dt><dd>{targetName}</dd></div>
+        <div><dt>Release</dt><dd>{release?.displayVersion ?? shortDigest(operation.releaseDigest)}</dd></div>
+        <div><dt>Local Data</dt><dd>{operation.kind === "install" ? "Fresh data" : "Per plan below"}</dd></div>
+        <div><dt>Authority</dt><dd>{operation.kind === "install" ? "Declared access enabled" : operation.continuityPolicy === "eligible" ? "Keep current choices" : "Install defaults"}</dd></div>
+      </dl>
+      {operation.kind === "install" ? (
+        <p className="app-studio-authority-note"><ShieldCheckmark16Regular aria-hidden="true" />Enables declared network destinations, whole-work-folder directory access, notifications, and automations. Connections and individual files need setup.</p>
+      ) : (
+        <UpdatePlan operation={operation} />
+      )}
+      <footer>
+        <button className="ui-control" type="button" disabled={Boolean(busyKey)} onClick={onCancel}>
+          {busyKey === `operation:cancel:${operation.operationId}` ? <ArrowSync16Regular className="spin" /> : null}Cancel Review
+        </button>
+        <button className="ui-control ui-control--primary" type="button" disabled={Boolean(busyKey) || !canActivate} onClick={onActivate}>
+          {busyKey === `operation:activate:${operation.operationId}` ? <ArrowSync16Regular className="spin" /> : null}Activate {label.toLocaleLowerCase()}
+        </button>
+      </footer>
+    </article>
+  );
+}
+
+function UpdatePlan({ operation }: { operation: LocalAppUpdateOperation }) {
+  return (
+    <div className="app-studio-update-plan">
+      <div className="app-studio-update-plan-heading">
+        <div><strong>Update Plan</strong><span>Exact plan {shortDigest(operation.plan.planDigest)}</span></div>
+        <span>{formatCount(operation.plan.transitions.length, "Feature change")}</span>
+      </div>
+      <div className="app-studio-transition-list">
+        {operation.plan.transitions.map((transition) => {
+          const continuity = transition.continuity.grants.length + transition.continuity.connections.length + transition.continuity.enabledJobs.length;
+          return (
+            <div className="app-studio-transition-row" key={transition.featureId}>
+              <div><strong>{transition.featureId}</strong><small>{transition.action} · data: {transition.data}</small></div>
+              <div className="app-studio-continuity-detail">
+                {continuity ? (
+                  <>
+                    {transition.continuity.grants.length ? <span><b>Grants</b>{transition.continuity.grants.join(", ")}</span> : null}
+                    {transition.continuity.connections.length ? <span><b>Connections</b>{transition.continuity.connections.join(", ")}</span> : null}
+                    {transition.continuity.enabledJobs.length ? <span><b>Enabled Jobs</b>{transition.continuity.enabledJobs.join(", ")}</span> : null}
+                  </>
+                ) : <span>No state carried</span>}
+              </div>
+              <span className={transition.resets.length ? "reset" : ""}>{transition.resets.length ? `Reset ${transition.resets.join(", ")}` : "No reset"}</span>
+            </div>
+          );
+        })}
+      </div>
+      {operation.plan.blockedReasons.length ? (
+        <div className="app-studio-blocked-reasons" role="alert">
+          <strong>This plan cannot activate</strong>
+          {operation.plan.blockedReasons.map((reason) => <p key={reason}>{reason}</p>)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function releaseIsOlder(target: LocalAppRelease, active?: LocalAppRelease): boolean {
+  if (!active) return false;
+  return target.preparedAt.localeCompare(active.preparedAt) < 0;
+}
+
+function releaseDeletionBlocker(studio: LocalAppStudioSnapshot, release: LocalAppRelease): string | null {
+  if (studio.instances.some((instance) => instance.releaseDigest === release.releaseDigest)) {
+    return "Uninstall every App Instance using it first.";
+  }
+  if (studio.operations.some((operation) => (
+    operation.releaseDigest === release.releaseDigest
+    || (operation.kind === "update" && operation.plan.fromReleaseDigest === release.releaseDigest)
+  ))) {
+    return "Cancel every prepared install, update, or rollback using it first.";
+  }
+  if (studio.retainedData.some((item) => item.releaseDigest === release.releaseDigest)) {
+    return "Purge the retained App data that records it first.";
+  }
+  return null;
+}
+
+function workFolderName(workFolderId: string, byId: ReadonlyMap<string, WorkFolderSummary>): string {
+  return byId.get(workFolderId)?.name ?? "Unavailable work-folder";
+}
+
+function formatCount(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
+function shortDigest(value: string): string {
+  const digest = value.startsWith("sha256:") ? value.slice(7) : value;
+  return `${digest.slice(0, 10)}…`;
+}
+
+function fixtureStudio(workFolder: WorkFolderSummary, workFolders: WorkFolderSummary[]): LocalAppStudioSnapshot {
+  const sourceTimestamp = workFolder.updatedAt || "2026-07-16T14:00:00.000Z";
+  const target = workFolders.find((item) => item.id !== workFolder.id) ?? null;
+  const projectId = "project_fixture-connected-inbox";
+  const presentation: LocalAppPresentation = {
+    title: "Connected Inbox",
+    description: "Sort incoming requests and keep the next action visible.",
+    icon: "mail-inbox",
+  };
+  const oldRelease: LocalAppRelease = {
+    projectId,
+    sourceWorkFolderId: workFolder.id,
+    releaseDigest: fixtureDigest("0.3.0"),
+    displayVersion: "0.3.0",
+    presentation,
+    featureIds: ["inbox-triage"],
+    state: "published",
+    preparedAt: "2026-07-02T14:00:00.000Z",
+    publishedAt: "2026-07-02T14:10:00.000Z",
+  };
+  const currentRelease: LocalAppRelease = {
+    ...oldRelease,
+    releaseDigest: fixtureDigest("0.4.0"),
+    displayVersion: "0.4.0",
+    preparedAt: "2026-07-14T14:00:00.000Z",
+    publishedAt: "2026-07-14T14:10:00.000Z",
+  };
+  const preparedRelease: LocalAppRelease = {
+    ...oldRelease,
+    releaseDigest: fixtureDigest("0.5.0"),
+    displayVersion: "0.5.0",
+    state: "prepared",
+    preparedAt: "2026-07-16T13:30:00.000Z",
+    publishedAt: null,
+  };
+  const preview = fixturePreview(workFolder.id, projectId, sourceTimestamp);
+  const instance: LocalAppInstance | null = target ? {
+    runtimeInstanceId: "runtime_fixture-connected-inbox",
+    projectId,
+    workFolderId: target.id,
+    releaseDigest: oldRelease.releaseDigest,
+    displayVersion: oldRelease.displayVersion,
+    presentation,
+    featureIds: ["inbox-triage"],
+    installedAt: "2026-07-03T14:00:00.000Z",
+    updatedAt: "2026-07-03T14:00:00.000Z",
+  } : null;
+  const update = instance
+    ? fixtureUpdateOperation(
+      { project: null, previews: [], releases: [currentRelease, oldRelease], instances: [instance], operations: [], retainedData: [] },
+      instance,
+      currentRelease,
+      "eligible",
+    )
+    : null;
+  return {
+    project: { workFolderId: workFolder.id, projectId, presentation, createdAt: sourceTimestamp, updatedAt: sourceTimestamp },
+    previews: [preview],
+    releases: [preparedRelease, currentRelease, oldRelease],
+    instances: instance ? [instance] : [],
+    operations: update ? [update] : [],
+    retainedData: [{
+      retainedDataId: "retained_fixture-summary-panel",
+      projectId,
+      runtimeInstanceId: "runtime_fixture-prior",
+      featureId: "summary-panel",
+      featureInstallationId: "feature_fixture-summary-panel",
+      dataNamespaceId: "data_fixture-summary-panel",
+      releaseDigest: fixtureDigest("0.2.0"),
+      removedAt: "2026-07-01T12:00:00.000Z",
+    }],
+  };
+}
+
+function fixturePreview(workFolderId: string, projectId: string, timestamp: string): RestrictedAppInstalled {
+  const generation = "00000000-0000-4000-8000-000000000001";
+  return {
+    workFolderId: workFolderId,
+    sourceWorkFolderId: workFolderId,
+    projectId,
+    tenantId: "tenant_fixture",
+    principalId: "principal_fixture",
+    runtimeInstanceId: "runtime_fixture-preview",
+    runtimeInstanceKind: "development",
+    releaseDigest: null,
+    featureInstallationId: "feature_fixture-preview",
+    dataNamespaceId: "data_fixture-preview",
+    authority: {
+      runtimeInstanceGeneration: generation,
+      featureInstallationGeneration: generation,
+      grantGeneration: generation,
+      connectionGeneration: generation,
+      jobGeneration: generation,
+      principalGeneration: generation,
+      dataGeneration: generation,
+    },
+    packageName: "@work-fold-examples/connected-inbox",
+    version: "0.5.0-preview.2",
+    digest: fixtureDigest("preview-package"),
+    artifactDigest: fixtureDigest("preview-artifact"),
+    manifest: {
+      version: 2,
+      id: "inbox-triage",
+      title: "Inbox triage",
+      description: "Groups incoming requests and suggests the next action.",
+      runtime: { kind: "sandboxed-web", entry: "index.html", worker: "worker.js" },
+      ui: { icon: "mail-inbox" },
+      tools: [],
+      automations: [{
+        id: "daily-triage",
+        title: "Daily triage",
+        description: "Refresh the inbox summary each morning.",
+        handler: "dailyTriage",
+        trigger: { kind: "interval", intervalMinutes: 1440 },
+        permissions: { network: [], files: [], notifications: [] },
+        catchUp: "latest",
+        overlap: "skip",
+      }],
+      permissions: { network: [], files: [], notifications: [] },
+    },
+    networkGrants: [],
+    fileGrants: [],
+    notificationGrants: [],
+    automations: [{ id: "daily-triage", enabled: false }],
+    installedAt: timestamp,
+    updatedAt: timestamp,
+    fileCount: 4,
+    totalBytes: 18_420,
+  };
+}
+
+function fixtureInstallOperation(studio: LocalAppStudioSnapshot, targetWorkFolderId: string, release: LocalAppRelease): LocalAppOperation {
+  return {
+    operationId: `operation_fixture_install_${Date.now()}`,
+    kind: "install",
+    projectId: studio.project!.projectId,
+    targetWorkFolderId: targetWorkFolderId,
+    releaseDigest: release.releaseDigest,
+    runtimeInstanceId: `runtime_fixture_${Date.now()}`,
+    features: release.featureIds.map((featureId, index) => ({
+      featureId,
+      featureInstallationId: `feature_fixture_${index}_${Date.now()}`,
+      dataNamespaceId: `data_fixture_${index}_${Date.now()}`,
+    })),
+    preparedAt: new Date().toISOString(),
+  };
+}
+
+function fixtureUpdateOperation(
+  studio: LocalAppStudioSnapshot,
+  instance: LocalAppInstance,
+  release: LocalAppRelease,
+  continuityPolicy: ContinuityPolicy,
+): LocalAppUpdateOperation {
+  const currentIds = new Set(instance.featureIds);
+  const targetIds = new Set(release.featureIds);
+  const featureIds = [...new Set([...instance.featureIds, ...release.featureIds])].sort();
+  return {
+    operationId: `operation_fixture_update_${release.displayVersion.replace(/[^a-z0-9]/gi, "-")}`,
+    kind: "update",
+    projectId: studio.project?.projectId ?? instance.projectId,
+    targetWorkFolderId: instance.workFolderId,
+    releaseDigest: release.releaseDigest,
+    runtimeInstanceId: instance.runtimeInstanceId,
+    continuityPolicy,
+    plan: {
+      planDigest: fixtureDigest(`plan-${release.displayVersion}-${continuityPolicy}`),
+      fromReleaseDigest: instance.releaseDigest,
+      toReleaseDigest: release.releaseDigest,
+      canCommit: true,
+      blockedReasons: [],
+      transitions: featureIds.map((featureId) => ({
+        featureId,
+        action: !currentIds.has(featureId) ? "add" : !targetIds.has(featureId) ? "remove" : "update",
+        data: !currentIds.has(featureId) ? "create" : !targetIds.has(featureId) ? "retain-disabled" : "retain",
+        continuity: continuityPolicy === "eligible"
+          ? { grants: ["eligible grants"], connections: [], enabledJobs: [] }
+          : { grants: [], connections: [], enabledJobs: [] },
+        resets: continuityPolicy === "reset" ? ["grants", "connections", "jobs"] : ["connections", "jobs"],
+      })),
+    },
+    preparedAt: new Date().toISOString(),
+  };
+}
+
+function fixtureDigest(seed: string): string {
+  let value = 2_166_136_261;
+  for (const character of seed) {
+    value ^= character.charCodeAt(0);
+    value = Math.imul(value, 16_777_619);
+  }
+  return `sha256:${(value >>> 0).toString(16).padStart(8, "0").repeat(8)}`;
+}

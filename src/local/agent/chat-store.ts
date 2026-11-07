@@ -1,0 +1,780 @@
+import { randomUUID } from "node:crypto";
+import { existsSync, lstatSync, type Stats } from "node:fs";
+import { appendFile, mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+import { workFolderConversationDir, workFolderStateDir } from "../state-paths.js";
+import { maxChatToolTitleLength, maxTurnToolEditDiffBytes, type AssistantPresentation, type ChatWorkTrailEntry } from "../../shared/chat-presentation.js";
+import { parseAssistantPresentation, parseChatToolEdit, parseChatToolImage } from "./turn-presentation.js";
+import {
+  normalizeConversationTitle,
+  untitledConversationTitle,
+} from "../../shared/chat-title.js";
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAt: string;
+  kind?: "conversation_title" | "conversation_lifecycle" | "assistant_continuation" | "context_compaction";
+  titleSource?: "placeholder" | "generated" | "attempted" | "manual";
+  lifecycle?: ConversationLifecyclePatch;
+  landing?: ChatMessageLanding;
+  workTrail?: ChatMessageWorkTrailEntry[];
+  assistantPresentation?: AssistantPresentation;
+  interruption?: ChatMessageInterruption;
+  attachments?: ChatMessageAttachmentRef[];
+  /**
+   * Durable surface provenance: `app` for a request an installed app made
+   * with `assistant.request` (the message is the app's, not the person's).
+   */
+  source?: "app";
+  /** With `source: "app"`: the app's manifest id and its title when it asked. */
+  appId?: string;
+  appTitle?: string;
+  /** Stable host-owned identity for one accepted turn. */
+  turnId?: string;
+  /** Stable caller identity used to make turn acceptance idempotent. */
+  requestId?: string;
+  /** A user message delivered into an already-running turn through Pi's steering queue. */
+  delivery?: "steer";
+}
+
+/**
+ * Reference-style attachment metadata persisted with a user message. The
+ * work-fold agent records absolute paths and links here; a work-folder Chat
+ * records its attached files as work-folder-relative paths. The content
+ * itself is never copied into the transcript.
+ */
+export interface ChatMessageAttachmentRef {
+  kind: "file" | "folder" | "url";
+  target: string;
+  name: string;
+}
+
+export interface ChatMessageInterruption {
+  reason: "provider_error" | "setup_error" | "assistant_error" | "cancelled" | "app_interrupted";
+  message: string;
+  retryAttempts: number;
+  provider: string | null;
+  model: string | null;
+  activities: ChatMessageInterruptionActivity[];
+}
+
+export interface ChatMessageInterruptionActivity {
+  message: string;
+  detail?: string;
+  toolName?: string;
+  toolTitle?: string;
+  phase?: "queued" | "running" | "streaming" | "complete" | "error";
+}
+
+export type ChatMessageWorkTrailEntry = ChatWorkTrailEntry;
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+  snoozedUntil: string | null;
+}
+
+export interface ConversationLifecyclePatch {
+  archived?: boolean;
+  snoozedUntil?: string | null;
+}
+
+export interface ChatMessageLanding {
+  summary: string;
+  nextActions: string[];
+  followUpPrompt: string | null;
+  conversationTitle?: string;
+  generatedAt: string;
+  provider: string;
+  model: string;
+}
+
+/**
+ * How long a transcript with no person- or agent-authored message is left
+ * alone before listing treats it as abandoned and removes it. It only has to
+ * outlast the gap between creating a Chat and its first user message landing.
+ */
+const abandonedConversationGraceMs = 60_000;
+
+export async function listConversations(workFolderRoot: string): Promise<ConversationSummary[]> {
+  const files = new Set<string>();
+  const dir = conversationsDir(workFolderRoot);
+  if (existsSync(dir)) {
+    for (const file of await readdir(dir)) if (file.endsWith(".jsonl")) files.add(file);
+  }
+  const cachedIndex = await readConversationIndex(workFolderRoot);
+  const nextIndex = new Map<string, ConversationIndexEntry>();
+  const summaries: ConversationSummary[] = [];
+  let recomputed = 0;
+  for (const file of files) {
+    const conversationId = file.replace(/\.jsonl$/, "");
+    if (!isValidConversationId(conversationId)) continue;
+    // work-fold writes are append-only, but transcripts remain ordinary files
+    // that sync tools and editors may replace. Include filesystem change
+    // identity as well as size and mtime so a metadata-preserving rewrite
+    // cannot leave the Chat list indefinitely stale.
+    const info = await stat(existingConversationPath(workFolderRoot, conversationId)).catch(() => null);
+    const cached = info ? cachedIndex.get(conversationId) : undefined;
+    if (info && cached && conversationIndexMatches(cached, info)) {
+      nextIndex.set(conversationId, cached);
+      summaries.push(cached.summary);
+      continue;
+    }
+    const { messages, malformedLineCount } = await readConversationFile(workFolderRoot, conversationId);
+    if (!messages.some((message) => message.role !== "system")) {
+      // A transcript carrying only system lines is either a Chat somebody
+      // opened and walked away from or one that is being started right now:
+      // `createConversation` writes the title line first, and the first user
+      // message lands a moment later, after the turn has been reserved. Both
+      // look identical here, so housekeeping waits until the transcript is old
+      // enough to be certainly abandoned. Removing it on sight deletes a Chat
+      // out from under the turn about to write into it — whoever happens to
+      // list Chats in that window (the rail, an automation chat hop's sibling, a
+      // handoff into another work-folder) would make that turn fail as
+      // "Conversation not found." Either way the Chat is left out of the
+      // listing below, so what a person sees is the same.
+      if (malformedLineCount === 0 && info && Date.now() - info.mtimeMs >= abandonedConversationGraceMs) {
+        await unlink(existingConversationPath(workFolderRoot, conversationId)).catch(() => undefined);
+      }
+      continue;
+    }
+    recomputed += 1;
+    const summary = conversationSummary(conversationId, messages);
+    if (info) nextIndex.set(conversationId, conversationIndexEntry(info, summary));
+    summaries.push(summary);
+  }
+  // Rebuilding the map from scratch drops entries for transcripts that no
+  // longer exist, so the cache cannot outgrow the work-folder it describes.
+  if (recomputed || nextIndex.size !== cachedIndex.size) await writeConversationIndex(workFolderRoot, nextIndex);
+  return summaries.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+export async function createConversation(
+  workFolderRoot: string,
+  title = untitledConversationTitle,
+  conversationId = `chat-${randomUUID()}`,
+): Promise<ConversationSummary> {
+  assertValidConversationId(conversationId);
+  const existing = await readConversation(workFolderRoot, conversationId);
+  if (existing.length) return conversationSummary(conversationId, existing);
+  const now = new Date().toISOString();
+  const normalizedTitle = normalizeConversationTitle(title) || untitledConversationTitle;
+  await appendMessage(workFolderRoot, conversationId, {
+    id: randomUUID(),
+    role: "system",
+    kind: "conversation_title",
+    titleSource: normalizedTitle === untitledConversationTitle ? "placeholder" : "manual",
+    content: normalizedTitle,
+    createdAt: now,
+  });
+  return { id: conversationId, title: normalizedTitle, createdAt: now, updatedAt: now, archivedAt: null, snoozedUntil: null };
+}
+
+export async function renameConversation(
+  workFolderRoot: string,
+  conversationId: string,
+  title: string,
+): Promise<ConversationSummary> {
+  const now = new Date().toISOString();
+  const normalizedTitle = normalizeConversationTitle(title);
+  if (!normalizedTitle) throw new Error("Conversation title is required.");
+  const messages = await readConversation(workFolderRoot, conversationId);
+  if (!messages.length) throw new Error("Conversation not found.");
+  const titleMessage: ChatMessage = {
+    id: randomUUID(),
+    role: "system",
+    kind: "conversation_title",
+    titleSource: "manual",
+    content: normalizedTitle,
+    createdAt: now,
+  };
+  await appendMessage(workFolderRoot, conversationId, titleMessage);
+  const refreshedMessages = await readConversation(workFolderRoot, conversationId);
+  return conversationSummary(conversationId, refreshedMessages);
+}
+
+export async function setGeneratedConversationTitle(
+  workFolderRoot: string,
+  conversationId: string,
+  title: string,
+): Promise<ConversationSummary> {
+  const messages = await readConversation(workFolderRoot, conversationId);
+  if (!messages.length) throw new Error("Conversation not found.");
+  const current = conversationSummary(conversationId, messages);
+  const normalizedTitle = normalizeConversationTitle(title);
+  if (!normalizedTitle || manualConversationTitle(messages) || generatedConversationTitle(messages)) return current;
+  await appendMessage(workFolderRoot, conversationId, {
+    id: randomUUID(),
+    role: "system",
+    kind: "conversation_title",
+    titleSource: "generated",
+    content: normalizedTitle,
+    createdAt: new Date().toISOString(),
+  });
+  return conversationSummary(conversationId, await readConversation(workFolderRoot, conversationId));
+}
+
+export async function markConversationTitleAttempted(
+  workFolderRoot: string,
+  conversationId: string,
+): Promise<ConversationSummary> {
+  const messages = await readConversation(workFolderRoot, conversationId);
+  if (!messages.length) throw new Error("Conversation not found.");
+  const current = conversationSummary(conversationId, messages);
+  if (!conversationNeedsGeneratedTitle(messages)) return current;
+  await appendMessage(workFolderRoot, conversationId, {
+    id: randomUUID(),
+    role: "system",
+    kind: "conversation_title",
+    titleSource: "attempted",
+    content: untitledConversationTitle,
+    createdAt: new Date().toISOString(),
+  });
+  return conversationSummary(conversationId, await readConversation(workFolderRoot, conversationId));
+}
+
+export function conversationNeedsGeneratedTitle(messages: ChatMessage[]): boolean {
+  return !manualConversationTitle(messages)
+    && !generatedConversationTitle(messages)
+    && !messages.some((message) => message.kind === "conversation_title" && message.titleSource === "attempted");
+}
+
+export async function updateConversationLifecycle(
+  workFolderRoot: string,
+  conversationId: string,
+  patch: ConversationLifecyclePatch,
+): Promise<ConversationSummary> {
+  const messages = await readConversation(workFolderRoot, conversationId);
+  if (!messages.length) throw new Error("Conversation not found.");
+  const current = conversationSummary(conversationId, messages);
+  if (typeof patch.snoozedUntil === "string" && Date.parse(patch.snoozedUntil) <= Date.now()) {
+    throw new Error("Choose a future snooze time.");
+  }
+  const lifecycle = normalizeLifecyclePatch(patch);
+  if (lifecycle.snoozedUntil && current.archivedAt && lifecycle.archived !== false) {
+    throw new Error("Unarchive this Chat before snoozing it.");
+  }
+  if (lifecycle.archived === true) lifecycle.snoozedUntil = null;
+  const now = new Date().toISOString();
+  await appendMessage(workFolderRoot, conversationId, {
+    id: randomUUID(),
+    role: "system",
+    kind: "conversation_lifecycle",
+    content: lifecycleMessage(lifecycle),
+    lifecycle,
+    createdAt: now,
+  });
+  return conversationSummary(conversationId, await readConversation(workFolderRoot, conversationId));
+}
+
+export async function readConversation(workFolderRoot: string, conversationId: string): Promise<ChatMessage[]> {
+  return (await readConversationFile(workFolderRoot, conversationId)).messages;
+}
+
+export async function readConversationSummary(
+  workFolderRoot: string,
+  conversationId: string,
+): Promise<ConversationSummary | null> {
+  const messages = await readConversation(workFolderRoot, conversationId);
+  return messages.length ? conversationSummary(conversationId, messages) : null;
+}
+
+async function readConversationFile(workFolderRoot: string, conversationId: string): Promise<{ messages: ChatMessage[]; malformedLineCount: number }> {
+  const path = existingConversationPath(workFolderRoot, conversationId);
+  if (!existsSync(path)) return { messages: [], malformedLineCount: 0 };
+  const messages: ChatMessage[] = [];
+  let malformedLineCount = 0;
+  for (const rawLine of (await readFile(path, "utf8")).split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const parsed = parseChatMessage(line);
+    if (parsed) messages.push(parsed);
+    else malformedLineCount += 1;
+  }
+  return { messages, malformedLineCount };
+}
+
+export async function appendMessage(workFolderRoot: string, conversationId: string, message: ChatMessage): Promise<void> {
+  const path = conversationPath(workFolderRoot, conversationId);
+  const previous = conversationAppendQueues.get(path) ?? Promise.resolve();
+  const operation = previous.catch(() => undefined).then(async () => {
+    await mkdir(conversationsDir(workFolderRoot), { recursive: true });
+    const prefix = await needsLineBreakBeforeAppend(path) ? "\n" : "";
+    const { workTrail: _workTrail, assistantPresentation: _presentation, ...base } = message;
+    const workTrail = parseChatMessageWorkTrail(message.workTrail);
+    const assistantPresentation = message.role === "assistant" ? parseAssistantPresentation(message.assistantPresentation, message.content) : undefined;
+    const stored: ChatMessage = {
+      ...base,
+      ...(workTrail?.length ? { workTrail } : {}),
+      ...(assistantPresentation ? { assistantPresentation } : {}),
+    };
+    await appendFile(path, `${prefix}${JSON.stringify(stored)}\n`, { encoding: "utf8", flush: true });
+  });
+  conversationAppendQueues.set(path, operation);
+  try {
+    await operation;
+  } finally {
+    if (conversationAppendQueues.get(path) === operation) conversationAppendQueues.delete(path);
+  }
+}
+
+const conversationAppendQueues = new Map<string, Promise<void>>();
+
+export function conversationsDir(workFolderRoot: string): string {
+  return workFolderConversationDir(workFolderRoot);
+}
+
+interface ConversationIndexEntry {
+  sizeBytes: number;
+  modifiedAt: string;
+  changedAt: string;
+  device: string;
+  inode: string;
+  summary: ConversationSummary;
+}
+
+// Bump whenever conversationSummary title or lifecycle semantics change so a
+// structurally valid cache cannot preserve an obsolete derived result.
+const conversationIndexVersion = 5;
+
+function conversationIndexFile(workFolderRoot: string): string {
+  return join(workFolderStateDir(workFolderRoot), "conversation-index.json");
+}
+
+/**
+ * A derived summary cache for the Chat list. It lives in machine-local
+ * application state rather than the work-folder's portable `.work-fold/` records
+ * because it can always be rebuilt from the transcripts themselves, and every
+ * failure path here falls back to doing exactly that.
+ */
+async function readConversationIndex(workFolderRoot: string): Promise<Map<string, ConversationIndexEntry>> {
+  const entries = new Map<string, ConversationIndexEntry>();
+  try {
+    const parsed = JSON.parse(await readFile(conversationIndexFile(workFolderRoot), "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return entries;
+    const record = parsed as { version?: unknown; entries?: unknown };
+    if (record.version !== conversationIndexVersion) return entries;
+    if (!record.entries || typeof record.entries !== "object" || Array.isArray(record.entries)) return entries;
+    for (const [conversationId, value] of Object.entries(record.entries as Record<string, unknown>)) {
+      if (!isValidConversationId(conversationId)) continue;
+      const entry = parseConversationIndexEntry(conversationId, value);
+      if (entry) entries.set(conversationId, entry);
+    }
+  } catch {
+    // A missing, unreadable, or malformed cache is not an error.
+  }
+  return entries;
+}
+
+/**
+ * Cache records are ordinary local files, so a summary is rebuilt from the
+ * transcript unless every field it claims is well formed and self-consistent.
+ */
+function parseConversationIndexEntry(conversationId: string, value: unknown): ConversationIndexEntry | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as {
+    sizeBytes?: unknown;
+    modifiedAt?: unknown;
+    changedAt?: unknown;
+    device?: unknown;
+    inode?: unknown;
+    summary?: unknown;
+  };
+  if (typeof record.sizeBytes !== "number" || !Number.isInteger(record.sizeBytes) || record.sizeBytes < 0) return null;
+  if (typeof record.modifiedAt !== "string" || typeof record.changedAt !== "string"
+    || typeof record.device !== "string" || typeof record.inode !== "string") return null;
+  if (!record.summary || typeof record.summary !== "object" || Array.isArray(record.summary)) return null;
+  const summary = record.summary as Partial<ConversationSummary>;
+  if (summary.id !== conversationId) return null;
+  if (typeof summary.title !== "string" || typeof summary.createdAt !== "string" || typeof summary.updatedAt !== "string") return null;
+  if (summary.archivedAt !== null && typeof summary.archivedAt !== "string") return null;
+  if (summary.snoozedUntil !== null && typeof summary.snoozedUntil !== "string") return null;
+  return {
+    sizeBytes: record.sizeBytes,
+    modifiedAt: record.modifiedAt,
+    changedAt: record.changedAt,
+    device: record.device,
+    inode: record.inode,
+    summary: {
+      id: conversationId,
+      title: summary.title,
+      createdAt: summary.createdAt,
+      updatedAt: summary.updatedAt,
+      archivedAt: summary.archivedAt,
+      snoozedUntil: summary.snoozedUntil,
+    },
+  };
+}
+
+function conversationIndexMatches(
+  entry: ConversationIndexEntry,
+  info: Stats,
+): boolean {
+  return entry.sizeBytes === info.size
+    && entry.modifiedAt === info.mtime.toISOString()
+    && entry.changedAt === info.ctime.toISOString()
+    && entry.device === String(info.dev)
+    && entry.inode === String(info.ino);
+}
+
+function conversationIndexEntry(
+  info: Stats,
+  summary: ConversationSummary,
+): ConversationIndexEntry {
+  return {
+    sizeBytes: info.size,
+    modifiedAt: info.mtime.toISOString(),
+    changedAt: info.ctime.toISOString(),
+    device: String(info.dev),
+    inode: String(info.ino),
+    summary,
+  };
+}
+
+async function writeConversationIndex(workFolderRoot: string, entries: Map<string, ConversationIndexEntry>): Promise<void> {
+  const path = conversationIndexFile(workFolderRoot);
+  const temporary = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
+  try {
+    await mkdir(workFolderStateDir(workFolderRoot), { recursive: true });
+    const payload = { version: conversationIndexVersion, entries: Object.fromEntries(entries) };
+    await writeFile(temporary, `${JSON.stringify(payload)}\n`, "utf8");
+    await rename(temporary, path);
+  } catch {
+    // Losing the cache only costs a rebuild on the next listing.
+    await unlink(temporary).catch(() => undefined);
+  }
+}
+
+function conversationPath(workFolderRoot: string, conversationId: string): string {
+  assertValidConversationId(conversationId);
+  const path = join(conversationsDir(workFolderRoot), `${conversationId}.jsonl`);
+  if (existsSync(path) && lstatSync(path).isSymbolicLink()) {
+    throw new Error("Conversation logs cannot be symbolic links or junctions.");
+  }
+  return path;
+}
+
+function existingConversationPath(workFolderRoot: string, conversationId: string): string {
+  return conversationPath(workFolderRoot, conversationId);
+}
+
+function parseChatMessage(line: string): ChatMessage | null {
+  try {
+    const parsed = JSON.parse(line) as Partial<ChatMessage>;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.id !== "string") return null;
+    if (parsed.role !== "user" && parsed.role !== "assistant" && parsed.role !== "system") return null;
+    if (typeof parsed.content !== "string") return null;
+    if (typeof parsed.createdAt !== "string") return null;
+    const message: ChatMessage = {
+      id: parsed.id,
+      role: parsed.role,
+      content: parsed.content,
+      createdAt: parsed.createdAt,
+    };
+    if (parsed.kind === "conversation_title") {
+      message.kind = parsed.kind;
+      if (parsed.titleSource === "placeholder" || parsed.titleSource === "generated"
+        || parsed.titleSource === "attempted" || parsed.titleSource === "manual") {
+        message.titleSource = parsed.titleSource;
+      }
+    }
+    if (parsed.kind === "conversation_lifecycle") {
+      if (!isConversationLifecyclePatch(parsed.lifecycle)) return null;
+      message.kind = parsed.kind;
+      message.lifecycle = normalizeLifecyclePatch(parsed.lifecycle);
+    }
+    if (parsed.kind === "assistant_continuation") message.kind = parsed.kind;
+    if (parsed.kind === "context_compaction" && parsed.role === "system") message.kind = parsed.kind;
+    if (isChatMessageLanding(parsed.landing)) message.landing = parsed.landing;
+    const workTrail = parseChatMessageWorkTrail(parsed.workTrail);
+    if (workTrail?.length) message.workTrail = workTrail;
+    const assistantPresentation = parsed.role === "assistant" ? parseAssistantPresentation(parsed.assistantPresentation, parsed.content) : undefined;
+    if (assistantPresentation) message.assistantPresentation = assistantPresentation;
+    if (isChatMessageInterruption(parsed.interruption)) message.interruption = parsed.interruption;
+    if (Array.isArray(parsed.attachments)) {
+      const attachments = parsed.attachments.filter(isChatMessageAttachmentRef).slice(0, 32);
+      if (attachments.length) message.attachments = attachments;
+    }
+    // An app's request keeps its marker only with a readable title; a log
+    // without it (or from before it existed) loads as an ordinary message.
+    if (parsed.role === "user" && parsed.source === "app" && isAppSourceTitle(parsed.appTitle)) {
+      message.source = "app";
+      message.appTitle = parsed.appTitle;
+      if (isProvenanceId(parsed.appId)) message.appId = parsed.appId;
+    }
+    if (isTurnIdentity(parsed.turnId)) message.turnId = parsed.turnId;
+    if (isTurnIdentity(parsed.requestId)) message.requestId = parsed.requestId;
+    if (parsed.role === "user" && parsed.delivery === "steer") message.delivery = "steer";
+    return message;
+  } catch {
+    return null;
+  }
+}
+
+/** Same shape the app manifest requires of a title: one plain line, at most 80 characters. */
+function isAppSourceTitle(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= 80
+    && !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(value);
+}
+
+function isChatToolTitle(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= maxChatToolTitleLength
+    && !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(value);
+}
+
+function isProvenanceId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 160 && /^[A-Za-z0-9._:-]+$/.test(value);
+}
+
+function isTurnIdentity(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 160 && /^[A-Za-z0-9._:-]+$/.test(value);
+}
+
+function isChatMessageAttachmentRef(value: unknown): value is ChatMessageAttachmentRef {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Partial<ChatMessageAttachmentRef>;
+  return (record.kind === "file" || record.kind === "folder" || record.kind === "url")
+    && typeof record.target === "string"
+    && record.target.length > 0
+    && record.target.length <= 4_096
+    && typeof record.name === "string"
+    && record.name.length > 0
+    && record.name.length <= 512;
+}
+
+function isChatMessageInterruption(value: unknown): value is ChatMessageInterruption {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Partial<ChatMessageInterruption>;
+  return (record.reason === "provider_error" || record.reason === "setup_error" || record.reason === "assistant_error"
+      || record.reason === "cancelled" || record.reason === "app_interrupted")
+    && typeof record.message === "string"
+    && typeof record.retryAttempts === "number"
+    && Number.isInteger(record.retryAttempts)
+    && record.retryAttempts >= 0
+    && (record.provider === null || typeof record.provider === "string")
+    && (record.model === null || typeof record.model === "string")
+    && Array.isArray(record.activities)
+    && record.activities.every(isChatMessageInterruptionActivity);
+}
+
+function isChatMessageInterruptionActivity(value: unknown): value is ChatMessageInterruptionActivity {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Partial<ChatMessageInterruptionActivity>;
+  return typeof record.message === "string"
+    && (record.detail === undefined || typeof record.detail === "string")
+    && (record.toolName === undefined || typeof record.toolName === "string")
+    && (record.toolTitle === undefined || typeof record.toolTitle === "string")
+    && (
+      record.phase === undefined
+      || record.phase === "queued"
+      || record.phase === "running"
+      || record.phase === "streaming"
+      || record.phase === "complete"
+      || record.phase === "error"
+    );
+}
+
+function parseChatMessageWorkTrail(value: unknown): ChatMessageWorkTrailEntry[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const entries = value.slice(0, 64);
+  if (!entries.every(isChatMessageWorkTrailEntry)) return undefined;
+  let editDiffBytes = 0;
+  return entries.map((entry) => {
+    const edit = entry.kind === "tool" && entry.toolName === "edit" && entry.phase === "complete" ? parseChatToolEdit(entry.edit) : undefined;
+    const image = entry.kind === "tool" && entry.toolName === "generate_image" && entry.phase === "complete" ? parseChatToolImage(entry.image) : undefined;
+    const bytes = edit ? Buffer.byteLength(edit.diff, "utf8") : 0;
+    const includeEdit = edit && editDiffBytes + bytes <= maxTurnToolEditDiffBytes;
+    if (includeEdit) editDiffBytes += bytes;
+    // Copy the known projection only. Unknown native result fields never enter
+    // the portable transcript when historical metadata is read back.
+    return {
+      kind: entry.kind,
+      text: entry.text,
+      ...(entry.detail === undefined ? {} : { detail: entry.detail }),
+      ...(entry.toolName === undefined ? {} : { toolName: entry.toolName }),
+      // A newer field: an unreadable title is dropped, never the whole trail.
+      ...(isChatToolTitle(entry.toolTitle) ? { toolTitle: entry.toolTitle } : {}),
+      ...(entry.phase === undefined ? {} : { phase: entry.phase }),
+      ...(entry.order === undefined ? {} : { order: entry.order }),
+      ...(entry.durationMs !== undefined ? { durationMs: entry.durationMs } : {}),
+      ...(includeEdit ? { edit } : {}),
+      ...(image ? { image } : {}),
+    };
+  });
+}
+
+function isChatMessageWorkTrailEntry(value: unknown): value is ChatMessageWorkTrailEntry {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Partial<ChatMessageWorkTrailEntry>;
+  const validDuration = record.durationMs === undefined
+    || (typeof record.durationMs === "number" && Number.isFinite(record.durationMs) && record.durationMs >= 0 && record.durationMs <= 86_400_000);
+  const timedThinking = record.kind === "thinking" && record.durationMs !== undefined;
+  return (record.kind === "thinking" || record.kind === "tool")
+    && typeof record.text === "string"
+    && (record.text.trim().length > 0 || timedThinking)
+    && record.text.length <= 32_000
+    && validDuration
+    && (record.order === undefined || (Number.isSafeInteger(record.order) && record.order >= 0))
+    && (record.detail === undefined || (typeof record.detail === "string" && record.detail.length <= 4_096))
+    && (record.toolName === undefined || (typeof record.toolName === "string" && record.toolName.length <= 256))
+    && (
+      record.phase === undefined
+      || record.phase === "queued"
+      || record.phase === "running"
+      || record.phase === "streaming"
+      || record.phase === "complete"
+      || record.phase === "error"
+    );
+}
+
+function isChatMessageLanding(value: unknown): value is ChatMessageLanding {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Partial<ChatMessageLanding>;
+  return (
+    typeof record.summary === "string" &&
+    Array.isArray(record.nextActions) &&
+    record.nextActions.every((item) => typeof item === "string") &&
+    (typeof record.followUpPrompt === "string" || record.followUpPrompt === null) &&
+    (record.conversationTitle === undefined || typeof record.conversationTitle === "string") &&
+    typeof record.generatedAt === "string" &&
+    typeof record.provider === "string" &&
+    typeof record.model === "string"
+  );
+}
+
+function conversationSummary(conversationId: string, messages: ChatMessage[]): ConversationSummary {
+  const lastActivity = [...messages].reverse().find((message) => message.kind !== "conversation_lifecycle");
+  const lifecycle = conversationLifecycle(messages);
+  return {
+    id: conversationId,
+    title: manualConversationTitle(messages)
+      || generatedConversationTitle(messages)
+      || untitledConversationTitle,
+    createdAt: messages[0]?.createdAt ?? new Date().toISOString(),
+    updatedAt: lastActivity?.createdAt ?? new Date().toISOString(),
+    archivedAt: lifecycle.archivedAt,
+    snoozedUntil: lifecycle.snoozedUntil,
+  };
+}
+
+function conversationLifecycle(messages: ChatMessage[]): { archivedAt: string | null; snoozedUntil: string | null } {
+  let archivedAt: string | null = null;
+  let snoozedUntil: string | null = null;
+  for (const message of messages) {
+    if (message.kind !== "conversation_lifecycle" || !message.lifecycle) continue;
+    if (message.lifecycle.archived !== undefined) {
+      archivedAt = message.lifecycle.archived ? message.createdAt : null;
+    }
+    if (message.lifecycle.snoozedUntil !== undefined) {
+      snoozedUntil = message.lifecycle.snoozedUntil;
+    }
+  }
+  return { archivedAt, snoozedUntil };
+}
+
+function manualConversationTitle(messages: ChatMessage[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "system" || message.kind !== "conversation_title") continue;
+    const title = normalizeConversationTitle(message.content);
+    if (message.titleSource === "placeholder" || message.titleSource === "generated" || message.titleSource === "attempted") continue;
+    // createConversation historically seeded every transcript with a manual
+    // "New Chat" title. Treat only that first seed as a placeholder so an
+    // Agent-generated landing title can win, while a later intentional
+    // rename to "New Chat" remains authoritative.
+    if (index === 0 && title === untitledConversationTitle) continue;
+    if (title) return title;
+  }
+  return null;
+}
+
+function generatedConversationTitle(messages: ChatMessage[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === "system" && message.kind === "conversation_title" && message.titleSource === "generated") {
+      const title = normalizeConversationTitle(message.content);
+      if (title) return title;
+    }
+    const title = message.landing?.conversationTitle?.replace(/\s+/g, " ").trim();
+    if (title) return title.slice(0, 80);
+  }
+  return null;
+}
+
+function normalizeLifecyclePatch(patch: ConversationLifecyclePatch): ConversationLifecyclePatch {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    throw new Error("Chat lifecycle update is required.");
+  }
+  const lifecycle: ConversationLifecyclePatch = {};
+  if (patch.archived !== undefined) {
+    if (typeof patch.archived !== "boolean") throw new Error("Archived state must be true or false.");
+    lifecycle.archived = patch.archived;
+  }
+  if (patch.snoozedUntil !== undefined) {
+    if (patch.snoozedUntil === null) {
+      lifecycle.snoozedUntil = null;
+    } else {
+      const time = Date.parse(patch.snoozedUntil);
+      if (!Number.isFinite(time)) throw new Error("Snooze time is invalid.");
+      lifecycle.snoozedUntil = new Date(time).toISOString();
+    }
+  }
+  if (lifecycle.archived === undefined && lifecycle.snoozedUntil === undefined) {
+    throw new Error("Choose an archive or snooze change.");
+  }
+  return lifecycle;
+}
+
+function isConversationLifecyclePatch(value: unknown): value is ConversationLifecyclePatch {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const patch = value as ConversationLifecyclePatch;
+  const keys = Object.keys(patch);
+  if (!keys.length || keys.some((key) => key !== "archived" && key !== "snoozedUntil")) return false;
+  return (patch.archived === undefined || typeof patch.archived === "boolean")
+    && (patch.snoozedUntil === undefined || patch.snoozedUntil === null || typeof patch.snoozedUntil === "string");
+}
+
+function lifecycleMessage(patch: ConversationLifecyclePatch): string {
+  if (patch.archived === true) return "Chat archived.";
+  if (patch.archived === false) return "Chat restored.";
+  if (patch.snoozedUntil === null) return "Chat snooze cleared.";
+  return `Chat snoozed until ${patch.snoozedUntil}.`;
+}
+
+function assertValidConversationId(conversationId: string): void {
+  if (!isValidConversationId(conversationId)) {
+    throw new Error("Invalid conversation id.");
+  }
+}
+
+function isValidConversationId(conversationId: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(conversationId);
+}
+
+async function needsLineBreakBeforeAppend(path: string): Promise<boolean> {
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  try {
+    handle = await open(path, "r");
+    const info = await handle.stat();
+    if (info.size === 0) return false;
+    const lastByte = Buffer.alloc(1);
+    await handle.read(lastByte, 0, 1, info.size - 1);
+    return lastByte[0] !== 0x0a && lastByte[0] !== 0x0d;
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return false;
+    throw error;
+  } finally {
+    await handle?.close();
+  }
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}

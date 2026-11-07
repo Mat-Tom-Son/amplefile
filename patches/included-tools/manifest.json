@@ -1,0 +1,297 @@
+[
+  {
+    "package": "pi-chrome",
+    "version": "0.15.51",
+    "source": "https://github.com/tianrendong/pi-chrome/tree/4811ee616d2bbd5ead669a7e2f33a0bb14bd43ef",
+    "license": "MIT",
+    "patch": "pi-chrome-0.15.51.patch",
+    "sha256": "ebe9d71f6131de73e264b6030f9f701dea7879c051521e8f75ed6c1134bdb9fe",
+    "files": [
+      {
+        "path": "docs/EMBEDDED-HOST.md",
+        "before": null,
+        "after": "9e7ee8398b20063deeedf0faf2043668d81a9eece25e409ee92ac3c147ebda3b"
+      },
+      {
+        "path": "extensions/chrome-profile-bridge/browser-extension/host-config.json",
+        "before": null,
+        "after": "8d778d2f9e23a0cfa8416c70a55e36397c8fcae664e477219f7858aa250e8d51"
+      },
+      {
+        "path": "extensions/chrome-profile-bridge/browser-extension/manifest.json",
+        "before": "357cc1bcf0e3949c8dbbda3fbef837c7ec64060e0d94b97967d7435bc78e8f0b",
+        "after": "357cc1bcf0e3949c8dbbda3fbef837c7ec64060e0d94b97967d7435bc78e8f0b"
+      },
+      {
+        "path": "extensions/chrome-profile-bridge/browser-extension/service_worker.js",
+        "before": "ac1e346d88aaa684d1998b17f899c4b50077d27f01eeb1a3393649013643ee3f",
+        "after": "2f1d0bcb813812458378766678b64f2054ac4d8cc12018b9f593a2f7e3a2a973"
+      },
+      {
+        "path": "extensions/chrome-profile-bridge/browser-extension/snapshot_injected.js",
+        "before": "25f9cb6c866846bca9a8b7c7f943e9c1ca1af82e5179b03e8a5550629e95bf9b",
+        "after": "a8f5fa66215122f4125aaf926a4899a44354557311713dd0747cbf838af3a2a4"
+      },
+      {
+        "path": "extensions/chrome-profile-bridge/index.ts",
+        "before": "fc38900ea5f9d8e7bb8b1988ff6e172d49c24e50213f9c8905d689187728d187",
+        "after": "38cb7226db4352804389764f74bb4fbbc75afe37f96e9e02bd5ce7dcbfd4484b"
+      },
+      {
+        "path": "package.json",
+        "before": "59a873404fede3a95a70edbe297c9fe64fcd6d03e75862f0e3542be61656e16c",
+        "after": "652d891546dbf55683b54e9a60047407d46792204b39e2343104c5b7b8754d7f"
+      },
+      {
+        "path": "test-suite/unit/background-policy.test.mjs",
+        "before": "a1718cf6536685165ed126163df30cf012303fd3c825ccb1c618b6dcd5d847fa",
+        "after": "13e2c716737320f1354a69632727527e2af7e6c9b383a480d45f616db2288eb6"
+      },
+      {
+        "path": "test-suite/unit/chrome-command.test.mjs",
+        "before": "d7dee056db789e12a5f887b176dc469cf32675bcc880921309d47246d9bbabed",
+        "after": "3122802b7375d0892b25210675ddf16bc06efbc57ef66491836984b7d118d470"
+      },
+      {
+        "path": "test-suite/unit/embedded-host.test.mjs",
+        "before": null,
+        "after": "7987cd259aa7088c4bcb0ee67aed89368c4027c9938c967cecf04c27a6ef2757"
+      },
+      {
+        "path": "test-suite/unit/session-cleanup.test.mjs",
+        "before": "a19b3d47dfbb7415c973132017bc36d79a859373a561de6cb62080af797ccc87",
+        "after": "1ff89c6669a4b47df9f095c7130ca25394cfa671272dc0f55deec0d2b27c9b18"
+      }
+    ]
+  },
+  {
+    "package": "@injaneity/pi-computer-use",
+    "version": "0.5.1",
+    "source": "https://github.com/injaneity/pi-computer-use/tree/4b8dbd7eaa13328ab1a8a4b55d0be0b077de7d62",
+    "license": "MIT",
+    "patch": "pi-computer-use-0.5.1.patch",
+    "sha256": "bee057699474dec0e16019d44a32c138be0deccbfbe76eff97a46bb0a062ac16",
+    "files": [
+      {
+        "path": "extensions/computer-use.ts",
+        "before": "1ed753c7b9bd4f11e36225e3358f827c2349d3a0fb71bbb18f8e4de38c5a9420",
+        "after": "0ee64cb01e6c71df7a862bd9b017e3ffd15111b0d6a5d91fd1186c738c499a3f"
+      },
+      {
+        "path": "native/macos/bridge.swift",
+        "before": "adb5a4eb6ada931a5cbc16761fec7dbe27a290900326a4142bd7f4097865a7ba",
+        "after": "f57b57111748db2c4b10d7f79a7bae4fa3558872048fd34881370054818c318c"
+      },
+      {
+        "path": "native/macos/request_lifecycle.swift",
+        "before": null,
+        "after": "f8cecd597eb7c4b87292acda20879183c4858c7ca263072a5c61d7e23f6a0f46"
+      },
+      {
+        "path": "native/macos/request_lifecycle_tests.swift",
+        "before": null,
+        "after": "93f573d7fd478daee6f18864899eb087d7028b079cb266c3a7e2ad925675a4b8"
+      },
+      {
+        "path": "package.json",
+        "before": "009d7e870f82837a7b8e2d69e89b0d5ed522b4514bec9206e68afbb0243ff152",
+        "after": "9cdbde5586b2cad89a95d7deeff9911f0488bf926ab01978fc37cabae7efe0e3"
+      },
+      {
+        "path": "scripts/build-native.mjs",
+        "before": "990ebcfb0ecef1e4718ae2e2187a314c2580b5fdd638d974c2651dd067bbc66e",
+        "after": "272399c4836f2ff802f9dad47c71c805afcfe62c0b04643058b8a84cabf763a7"
+      },
+      {
+        "path": "scripts/check-embedded.mjs",
+        "before": null,
+        "after": "af4ac139446e560f765c4fa9d986b973748976fa107a1f7d85c1eaaa93f75bf1"
+      },
+      {
+        "path": "scripts/check-helper-cancellation.mjs",
+        "before": null,
+        "after": "c5e0c82dd33058a3a7bf360f48d71559fa4f81e10808dd3eca017d69276e17fb"
+      },
+      {
+        "path": "scripts/setup-helper.mjs",
+        "before": "4595a69a0eea88e73fb09bb5ff9066b1c3b5632c1a173d36e5200ccd50fe21f4",
+        "after": "6a04735d79a8afdc6ec45f4cb83fd7284c6bcaa1083801568a66962d623311d9"
+      },
+      {
+        "path": "src/actions.ts",
+        "before": "1f6aaf9a1cc51ee9ac640f2cb2c31426c522f90cc8b338f5c9dde1ed462de0bb",
+        "after": "bd33eb4501d65744c32c40d2b65805e7ab28a6d12a7fb8aae0f4a6a374045052"
+      },
+      {
+        "path": "src/bridge.ts",
+        "before": "4a206d8e714e910e00f83746524f8ffefaa72219966da89c3dde5af48213f34b",
+        "after": "a446d6b1aa9a80335c9d11a6015946a8f8a963b6d57c8760ab78b50dac46fca8"
+      },
+      {
+        "path": "src/config.ts",
+        "before": "f453b7572cadcb6f3a84d0641e1b35112156458b77adfa290ca94a0155f6c5f9",
+        "after": "ed13c79f4afd97169f474205642d729dc40a1008ae10989d6cf9450439d82742"
+      },
+      {
+        "path": "src/output.ts",
+        "before": "42c2075e8e42e27a203a356f962ba5ed2c656cc08108c9923513289a04a12d94",
+        "after": "0a8a95d5723c49cb86c9818ca5042856b9bb51ecfb5ce26db8f952b8e51fadad"
+      },
+      {
+        "path": "src/platform/macos/helper.ts",
+        "before": "4c344d4396a61f58cba7334f67e17108f40d9950c24940ce470f8d640a75eff3",
+        "after": "96cff8b61ae1accab894b27b5596a7c4abdb10ce43dc80e4777279fd020a782b"
+      },
+      {
+        "path": "src/platform/macos/permissions.ts",
+        "before": "ee453e77162fb49fae1a63d851e1c14b2e69d065af378348bc592c04b247c814",
+        "after": "fcfbc1e78701e10eb1ffe6412019048d247d5604a32f29ed3c647d369c92448b"
+      },
+      {
+        "path": "src/runtime.ts",
+        "before": "dd2c969de1e9de8b3424404b70334f5356d4f9147c598517e2e09f00ded1510a",
+        "after": "a558744904e41a61e73884d34e45553f874be84bbf8f26197680548a1b7f393d"
+      },
+      {
+        "path": "native/macos/agent_cursor.swift",
+        "before": null,
+        "after": "96017adbf4b851cd034c195f2215122e1de8ad6f7454857b47706f4ba6a83687"
+      },
+      {
+        "path": "native/macos/agent_cursor_motion.swift",
+        "before": null,
+        "after": "bbe26e29317ecf1dc9dace61e37e2054147d3bc47f9b424dfcc76c3e5bca4b52"
+      },
+      {
+        "path": "docs/architecture.md",
+        "before": "479a2b8870a6ef338f6a0771d52a29096f8baf1d66ac4b6753330a74f3e59101",
+        "after": "b7c5ffd4d17cc51df34f06ecd3a25118b5ee3b688bc68cea79888e286171b5db"
+      },
+      {
+        "path": "src/platform/macos/helper-identity.mjs",
+        "before": null,
+        "after": "b8a8f261d4ea0c5fbe580c836594c8ad0ddd9b54a0ebd9c7fe4da825f7fb3b75"
+      },
+      {
+        "path": "src/platform/macos/helper-identity.d.mts",
+        "before": null,
+        "after": "16cbedd529e87d714a17bd13659fef510a8bb66d8bf5ceb79929237fa7cb67e2"
+      },
+      {
+        "path": "native/macos/accessibility_contract.swift",
+        "before": null,
+        "after": "f918abf32d3b9c4e33f8ee249e938b0c3a9d069a42be519f67a337da97b0861c"
+      },
+      {
+        "path": "native/macos/accessibility_contract_tests.swift",
+        "before": null,
+        "after": "50f76b80968c7fe8d0dbc3e94722e558b36370c2a51a05153d4bf3d8924894b9"
+      },
+      {
+        "path": "src/outline.ts",
+        "before": "4fbed9a94390b894a959b3bdf97aedca5d4a8d5b0b2fed8b0f77fb86eddf6367",
+        "after": "7e64f59de33b2e338d0d43ad95f752172db2bd3882c312397aa4df96155552cc"
+      },
+      {
+        "path": "src/platform/types.ts",
+        "before": "37676ae89be612d49a66885f003586d59e61e474d0c568d2761752b1a3c11ed4",
+        "after": "b7f087b854a66b5fa810a63401499e0f971a96f4402c544002217b9d686b02be"
+      }
+    ]
+  },
+  {
+    "package": "pi-web-access",
+    "version": "0.29.0",
+    "source": "https://www.npmjs.com/package/pi-web-access/v/0.29.0",
+    "license": "MIT",
+    "patch": "pi-web-access-0.29.0.patch",
+    "sha256": "4cbd0d7ebf7ee7c0e35f5bf7c1b98f2b2be30befa50ab284557973855046ec8c",
+    "files": [
+      {
+        "path": "brave.ts",
+        "before": "e7afb66ef2a502af66a65363d23fa66ee39eb07712656a9c231f9bec66c84ea2",
+        "after": "a49744b1a4e9a1aac6e568a51d249a9b89d0a62428653db9e6e5da010d606f90"
+      },
+      {
+        "path": "duckduckgo.ts",
+        "before": "d1d2a22d4f56ce98573638acd149ded0b3e5f379fcbf8620a9c41dd858eb667d",
+        "after": "60fd3bf1af25c8ddbf46af4582aa284f7e74ebc6709f51eac4e063b35cdb8398"
+      },
+      {
+        "path": "utils.ts",
+        "before": "2b73d3b07494ee26a7c301439b001c375d9380f98e33817895620b17e61b9e26",
+        "after": "7793b416e1f5a40ec7b6e77e4e3cdb1c20d48cc6b18ebaf5cb64660ca069afd3"
+      },
+      {
+        "path": "extract.ts",
+        "before": "034ab96f0725adf29eefc395d5519841e13c0b6e4b4d12012ed49942ea8692c6",
+        "after": "34c5a9b0292517cb7651d634518ee1d14e2fa40d1858fbe9129f69fe497d3ccf"
+      },
+      {
+        "path": "embedded.ts",
+        "before": null,
+        "after": "b7659b60fb02b21d2b3454af34738f93b20b081a1df7644c829b7a98829f7c32"
+      }
+    ]
+  },
+  {
+    "package": "image-size",
+    "version": "1.2.1",
+    "source": "https://www.npmjs.com/package/image-size/v/1.2.1",
+    "license": "MIT",
+    "patch": "image-size-1.2.1.patch",
+    "sha256": "af6ffb890342b17cd81849f317bd961851c708cd2198f7f80e1c6a4ea93d168c",
+    "files": [
+      {
+        "path": "dist/types/utils.js",
+        "before": "e9faf86abcc962a5fc2488a4c3c9d8dc915aa22a0dd6a7bad6556cd9a326c349",
+        "after": "571099a4c2dc71bb2af01bd3e72af378f43795860a539a7b83a9521ba2d71177"
+      },
+      {
+        "path": "dist/types/icns.js",
+        "before": "5e6a097fca237b0bb3b68a1be920e39a3846c0018d8917658b5ed88590a710e8",
+        "after": "1ce9480d8cf4433957edb828aa7b8e81653e0cb091e07f3d270afb96cee008d1"
+      }
+    ]
+  },
+  {
+    "package": "@earendil-works/pi-coding-agent",
+    "version": "1.1.0",
+    "source": "https://www.npmjs.com/package/@earendil-works/pi-coding-agent/v/1.1.0",
+    "license": "MIT",
+    "patch": "pi-coding-agent-1.1.0.patch",
+    "sha256": "c825ec93fb0f6567460748d838c368f459315cdcc8aad3a89392705d5ab9fed0",
+    "files": [
+      {
+        "path": "dist/index.js",
+        "before": "5482298b995db935f7b96f5d6056fa1c36ac6fc80456be594ef65b83c62b0d30",
+        "after": "cd228e7d74c66d54b40801ad0c81bf2cb7ec20386f9339875a985445949aae5c"
+      },
+      {
+        "path": "dist/index.d.ts",
+        "before": "b254e36846b1dcc64ce1a8ba72e23fb410df4aa4408ba8c23e69e5b3f934e3cc",
+        "after": "59961f33ffa61aa88cddd5e3856ed3d804de098db7b65462d5345cbd39cfe166"
+      },
+      {
+        "path": "dist/core/agent-session.js",
+        "before": "0ba5c847b4fd2fd838f71ea84885b9f3a4f15d9bf4b5493e2e88a41d1507e20b",
+        "after": "2256b06d3ec6835d9afcadf6a1ad7279efa809115ceaf784c94e7448283e14a6"
+      }
+    ]
+  },
+  {
+    "package": "@earendil-works/pi-ai",
+    "version": "1.1.0",
+    "source": "https://github.com/earendil-works/pi/tree/v1.1.0/packages/ai",
+    "license": "MIT",
+    "patch": "pi-ai-1.1.0.patch",
+    "sha256": "a48f8449ccc7983cee721ae2dee8a29ec5d5290fda7cefb7742a1fee326af37c",
+    "files": [
+      {
+        "path": "dist/auth/oauth/openai-chatgpt.js",
+        "before": "4cf9fc758a07ffe4ee022326404b5dcc86767ee4154945c0417c7f95eaecdcc2",
+        "after": "7baa1f343c9de65c4ef7e5a935fdaea88b11a6eda4453e10a7a7e1bb5a92a8ae"
+      }
+    ]
+  }
+]

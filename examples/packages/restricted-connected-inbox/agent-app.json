@@ -1,0 +1,86 @@
+{
+  "version": 2,
+  "id": "restricted-connected-inbox",
+  "title": "Connected inbox",
+  "description": "An interactive work-folder-bound inbox and local service console.",
+  "runtime": {
+    "kind": "sandboxed-web",
+    "entry": "index.html",
+    "worker": "worker.js"
+  },
+  "ui": {
+    "icon": "mail"
+  },
+  "tools": [
+    {
+      "name": "inbox_search",
+      "description": "Search messages in the connected inbox.",
+      "action": "search",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "maxLength": 500 }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object",
+        "properties": {
+          "count": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["count"],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "automations": [
+    {
+      "id": "refresh-inbox",
+      "title": "Refresh inbox",
+      "description": "Check the connected inbox and save the latest connection result.",
+      "handler": "refresh-inbox",
+      "trigger": {
+        "kind": "interval",
+        "intervalMinutes": 30
+      },
+      "permissions": {
+        "network": ["mail-api"],
+        "files": [],
+        "notifications": ["inbox-refresh-finished"]
+      },
+      "catchUp": "latest",
+      "overlap": "skip"
+    }
+  ],
+  "permissions": {
+    "network": [
+      {
+        "id": "mail-api",
+        "target": { "kind": "public-https", "origin": "https://mail.example.com" },
+        "methods": ["GET", "POST"],
+        "auth": [{ "kind": "api-key", "header": "x-api-key" }, { "kind": "bearer" }]
+      },
+      {
+        "id": "project-service",
+        "target": { "kind": "loopback-http", "host": "127.0.0.1", "port": 4317 },
+        "methods": ["GET", "POST"],
+        "auth": [{ "kind": "none" }]
+      }
+    ],
+    "files": [
+      {
+        "id": "exports",
+        "target": "directory",
+        "access": "read-write"
+      }
+    ],
+    "notifications": [
+      {
+        "id": "inbox-refresh-finished",
+        "title": "Inbox refresh finished",
+        "description": "The inbox refresh automation finished. Open work-fold to review the connection result."
+      }
+    ]
+  }
+}

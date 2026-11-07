@@ -1,0 +1,160 @@
+import { useEffect, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { applicationPalettes, builtInAppearancePresets, defaultApplicationAppearance, type ApplicationAppearance, type AppearancePreset } from "../../../../src/shared/application-appearance.js";
+import type { ApplicationAppearanceController } from "../../hooks/useApplicationAppearance";
+import { maximumAppearanceImportBytes } from "../../lib/application-appearance-store";
+import { useAppLayout, writeAppLayout, type AppLayout } from "../../lib/app-layout";
+import { typographyFontOptionsForPlatform } from "../../constants";
+import { desktopPlatform } from "../../lib/platform";
+import type { WorkFolderSummary } from "../../types";
+
+export function AppearanceSettingsPane({ appearance, workFolder, onCustomizeWorkFolder, interfaceExtra }: {
+  appearance: ApplicationAppearanceController;
+  workFolder: WorkFolderSummary | null;
+  onCustomizeWorkFolder?: (workFolderId: string) => void;
+  /** Extra rows at the end of the Interface section, such as the desktop close-button choice. */
+  interfaceExtra?: ReactNode;
+}) {
+  const { preferences: p, store } = appearance;
+  const layout = useAppLayout();
+  const [presetName, setPresetName] = useState("");
+  const [presetError, setPresetError] = useState<string | null>(null);
+  const [presetBusy, setPresetBusy] = useState(false);
+  const [accentDraft, setAccentDraft] = useState<string | null>(null);
+  const [accentError, setAccentError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const importRevision = useRef(0);
+  useEffect(() => () => { importRevision.current += 1; }, []);
+  useEffect(() => { setAccentDraft(null); setAccentError(null); }, [p.accent]);
+  const fontOptions = typographyFontOptionsForPlatform(desktopPlatform());
+  const atDefaults = JSON.stringify(p) === JSON.stringify(defaultApplicationAppearance);
+  const update = (patch: Partial<ApplicationAppearance>) => store.update(patch);
+  function runPreset(action: () => void) {
+    setPresetError(null);
+    try { action(); } catch (caught) { setPresetError(caught instanceof Error ? caught.message : "The preset could not be saved."); }
+  }
+  async function importFile(file: File | undefined) {
+    if (!file) return;
+    const revision = ++importRevision.current;
+    setPresetError(null); setPresetBusy(true);
+    try {
+      if (file.size > maximumAppearanceImportBytes) throw new Error("Choose an appearance preset smaller than 16 KB.");
+      const text = await file.text();
+      if (revision !== importRevision.current) return;
+      const preset = store.importPreset(text);
+      setPresetName(preset.name);
+    } catch (caught) {
+      if (revision === importRevision.current) setPresetError(caught instanceof Error ? caught.message : "The preset could not be imported.");
+    } finally { if (revision === importRevision.current) setPresetBusy(false); }
+  }
+  function exportPreset(preset: AppearancePreset) {
+    const url = URL.createObjectURL(new Blob([`${JSON.stringify(preset, null, 2)}\n`], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url; link.download = `${preset.name.replace(/[^\p{L}\p{N}_-]+/gu, "-") || "appearance"}.work-fold-appearance.json`;
+    link.click(); setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  }
+  return <div className="appearance-settings">
+    <section className="appearance-settings-section" aria-labelledby="appearance-preview-title">
+      <div className="appearance-settings-section-heading"><h3 id="appearance-preview-title">Preview</h3><div className="appearance-settings-actions"><button type="button" disabled={!appearance.canUndo} onClick={store.undo}>Undo</button><button type="button" disabled={atDefaults} onClick={store.reset}>Reset</button></div></div>
+      {appearance.error ? <p className="appearance-settings-error" role="alert">{appearance.error}</p> : null}
+      {layout === "file-manager" ? <FileManagerPreview /> : <div className="appearance-settings-preview" aria-label="Appearance preview">
+        <div className="appearance-preview-files"><span>Workshop</span><div>Notes.md</div><div>Next steps.pdf</div></div>
+        <div className="appearance-preview-chat"><p className="appearance-preview-user">Plan a workshop for 12 people.</p><div className="appearance-preview-answer"><p>Your plan is ready. The workshop starts at 10 AM, with a break at noon.</p><code>workshop-plan.md</code></div></div>
+      </div>}
+      <h3 className="appearance-settings-presets-heading" id="appearance-presets-title">Presets</h3>
+      <div className="appearance-settings-presets" role="group" aria-labelledby="appearance-presets-title">
+        {builtInAppearancePresets.map(({ name, ...patch }) => {
+          // In the file manager, Original is the design's own Finder colors.
+          const fileManagerOriginal = layout === "file-manager" && patch.palette === "original";
+          const grounds = fileManagerOriginal ? fileManagerOriginalGrounds[appearance.theme] : applicationPalettes[patch.palette][appearance.theme];
+          const accent = fileManagerOriginal ? fileManagerBlue : applicationPalettes[patch.palette].accent;
+          const active = p.palette === patch.palette;
+          return <button type="button" key={name} className={active ? "appearance-preset active" : "appearance-preset"} aria-label={`${name} Preset`} aria-pressed={active} onClick={() => store.applyPreset({ ...p, ...patch })}>
+            <span aria-hidden="true" className="appearance-preset-swatch" style={{ "--preset-canvas": grounds.canvas, "--preset-surface": grounds.surface, "--preset-text": grounds.text, "--preset-accent": accent } as CSSProperties}><span><i /><b /><b /></span></span><span>{name}</span>
+          </button>;
+        })}
+      </div>
+    </section>
+    <section className="appearance-settings-section" aria-labelledby="appearance-color-title">
+      <h3 id="appearance-color-title">Color</h3>
+      <Choice label="Color Mode" value={p.mode} onChange={(mode) => update({ mode })} options={[["system", "Device Setting"], ["light", "Light"], ["dark", "Dark"]]} />
+      <Choice label="Palette" value={p.palette} onChange={(palette) => update({ palette })} options={Object.entries(applicationPalettes).map(([value, palette]) => [value as ApplicationAppearance["palette"], palette.name])} />
+      <div className="appearance-settings-row"><div><span className="appearance-settings-label">Accent</span></div><div className="appearance-settings-accent">
+        <select aria-label="Accent Source" value={p.accent === "system" ? "system" : "custom"} onChange={(event) => { update({ accent: event.target.value === "system" ? "system" : applicationPalettes[p.palette].accent }); setAccentError(null); setAccentDraft(null); }}><option value="system">Device Accent</option><option value="custom">Custom Color</option></select>
+        {p.accent !== "system" ? <><input type="color" aria-label="Choose Accent Color" value={p.accent} onChange={(event) => { update({ accent: event.target.value }); setAccentDraft(null); setAccentError(null); }} /><input className="appearance-accent-hex" aria-label="Accent Hex Color" maxLength={7} value={accentDraft ?? p.accent} onChange={(event) => setAccentDraft(event.target.value)} onBlur={() => { if (accentDraft === null) return; if (/^#[0-9a-f]{6}$/i.test(accentDraft)) { update({ accent: accentDraft }); setAccentDraft(null); setAccentError(null); } else setAccentError("Use a color such as #397451."); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } }} /></> : null}
+      </div></div>
+      {accentError ? <p className="appearance-settings-error" role="alert">{accentError}</p> : null}
+    </section>
+    <section className="appearance-settings-section" aria-labelledby="appearance-interface-title">
+      <h3 id="appearance-interface-title">Interface</h3>
+      <Choice<AppLayout> label="Layout" value={layout} onChange={writeAppLayout} options={[["classic", "Classic"], ["file-manager", "File Manager"]]} />
+      <Choice label="App Font" value={p.font === "stable" && !fontOptions.some((option) => option.value === "stable") ? "default" : p.font} onChange={(font) => update({ font })} options={fontOptions.map((option) => [option.value, option.label])} />
+      <Choice label="Text Size" value={p.textSize} onChange={(textSize) => update({ textSize })} options={[["compact", "Compact · 14 px"], ["standard", "Standard · 15 px"], ["comfortable", "Comfortable · 16 px"], ["large", "Large · 18 px"]]} />
+      <Choice label="List Density" value={p.density} onChange={(density) => update({ density })} options={[["compact", "Compact"], ["standard", "Standard"], ["spacious", "Spacious"]]} />
+      {interfaceExtra}
+    </section>
+    <section className="appearance-settings-section" aria-labelledby="appearance-reading-title">
+      <h3 id="appearance-reading-title">Conversations</h3>
+      <Choice label="Reading Font" value={p.readingFont} onChange={(readingFont) => update({ readingFont })} options={[["app", "App Font"], ["serif", "Serif"], ["system", "System Font"]]} />
+      <Choice label="Reading Size" value={String(p.readingSize)} onChange={(size) => update({ readingSize: Number(size) })} options={Array.from({ length: 9 }, (_, i) => [String(i + 14), `${i + 14} px`])} />
+      <Choice label="Reading Width" value={p.measure} onChange={(measure) => update({ measure })} options={[["focused", "Focused"], ["standard", "Standard"], ["wide", "Wide"]]} />
+      <Choice label="Line Spacing" value={p.spacing} onChange={(spacing) => update({ spacing })} options={[["tight", "Tight"], ["standard", "Standard"], ["relaxed", "Relaxed"]]} />
+      <Choice label="Your Messages" value={p.messages} onChange={(messages) => update({ messages })} options={[["tinted", "Tinted"], ["quiet", "Quiet"]]} />
+      <Choice label="Worker Steps" detail="Shown while a Worker is working" value={p.chatSteps} onChange={(chatSteps) => update({ chatSteps })} options={[["every", "Show Every Step"], ["current", "Show the Current Step Only"]]} />
+      <Choice label="Code Font" value={p.codeFont} onChange={(codeFont) => update({ codeFont })} options={[["system", "System Monospace"], ["menlo", "Menlo"], ["consolas", "Consolas"]]} />
+    </section>
+    <section className="appearance-settings-section" aria-labelledby="appearance-accessibility-title">
+      <h3 id="appearance-accessibility-title">Accessibility</h3>
+      <Choice label="Contrast" detail={appearance.device.contrast ? "Enabled by your device" : undefined} value={p.contrast} onChange={(contrast) => update({ contrast })} options={[["system", "Device Setting"], ["more", "Higher Contrast"]]} />
+      <Choice label="Motion" detail={appearance.device.motion ? "Enabled by your device" : undefined} value={p.motion} onChange={(motion) => update({ motion })} options={[["system", "Device Setting"], ["reduce", "Reduce Motion"]]} />
+      <Choice label="Transparency" detail={appearance.device.transparency ? "Enabled by your device" : undefined} value={p.transparency} onChange={(transparency) => update({ transparency })} options={[["system", "Device Setting"], ["opaque", "Opaque Surfaces"]]} />
+    </section>
+    <section className="appearance-settings-section" aria-labelledby="appearance-saved-title">
+      <h3 id="appearance-saved-title">Saved Presets</h3>
+      <form className="appearance-settings-save" onSubmit={(event) => { event.preventDefault(); runPreset(() => { store.savePreset(presetName); setPresetName(""); }); }}>
+        <input aria-label="Preset Name" placeholder="Name this look" maxLength={60} value={presetName} onChange={(event) => setPresetName(event.target.value)} /><button type="submit" disabled={!presetName.trim() || presetBusy}>Save Preset</button><button type="button" disabled={presetBusy} onClick={() => fileRef.current?.click()}>{presetBusy ? "Importing…" : "Import"}</button>
+        <input ref={fileRef} hidden type="file" accept=".json,application/json" aria-label="Import Appearance Preset" onChange={(event) => { void importFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+      </form>
+      {appearance.presets.map((preset) => <div className="appearance-settings-saved" key={preset.name}><span>{preset.name}</span><div className="appearance-settings-actions"><button type="button" aria-label={`Apply ${preset.name}`} onClick={() => store.applyPreset(preset.preferences)}>Apply</button><button type="button" aria-label={`Export ${preset.name}`} onClick={() => runPreset(() => exportPreset(preset))}>Export</button><button type="button" aria-label={`Remove ${preset.name}`} onClick={() => runPreset(() => store.removePreset(preset.name))}>Remove</button></div></div>)}
+      {presetError || appearance.presetsError ? <p className="appearance-settings-error" role="alert">{presetError ?? appearance.presetsError}</p> : null}
+    </section>
+    {workFolder && onCustomizeWorkFolder ? <section className="appearance-settings-work-folder"><div><h3>{workFolder.name}</h3></div><button type="button" onClick={() => onCustomizeWorkFolder(workFolder.id)}>Customize This work-folder</button></section> : null}
+  </div>;
+}
+
+function Choice<T extends string>({ label, value, options, onChange, detail }: { label: string; value: T; options: readonly (readonly [T, string])[]; onChange: (value: T) => void; detail?: ReactNode }) {
+  return <label className="appearance-settings-row"><span><span className="appearance-settings-label">{label}</span>{detail ? <small>{detail}</small> : null}</span><select aria-label={label} value={value} onChange={(event) => onChange(event.target.value as T)}>{options.map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></label>;
+}
+
+/** The file manager's Original colors (file-manager.css), for its preset swatch. */
+const fileManagerOriginalGrounds = {
+  light: { canvas: "#f1f1f4", surface: "#ffffff", text: "#1d1d1f" },
+  dark: { canvas: "#19191c", surface: "#28282c", text: "#f1f1f4" },
+} as const;
+const fileManagerBlue = "#0a64d6";
+
+/**
+ * The preview in the file manager layout: a small file manager window drawn
+ * from the same tokens, so every choice on this page shows here as it will
+ * look: palette, accent, font, text size, density, contrast, and the Chat.
+ */
+function FileManagerPreview() {
+  return <div className="appearance-settings-preview fmp" aria-label="Appearance preview">
+    <div className="fmp-side">
+      <span className="fmp-head">work-folders</span>
+      <div className="fmp-item is-current"><span className="fm-ic fm-ic-folder is-tinted" style={{ "--fold-base": "#8e5bd8" } as CSSProperties} aria-hidden="true" /><span>Workshop</span></div>
+      <div className="fmp-item"><span className="fm-ic fm-ic-folder is-tinted" style={{ "--fold-base": "#30a46c" } as CSSProperties} aria-hidden="true" /><span>Garden</span></div>
+    </div>
+    <div className="fmp-main">
+      <div className="fmp-row fmp-cols"><span>Name</span><span>Date Modified</span></div>
+      <div className="fmp-row"><span><span className="fm-ic fm-ic-doc" aria-hidden="true" />Notes.md</span><span>Today at 9:41 AM</span></div>
+      <div className="fmp-row is-selected"><span><span className="fm-ic fm-ic-doc" aria-hidden="true" />Next steps.pdf</span><span>Yesterday</span></div>
+      <div className="fmp-row is-odd"><span><span className="fm-ic fm-ic-folder" aria-hidden="true" />Quotes</span><span>Monday</span></div>
+    </div>
+    <div className="fmp-panel">
+      <p className="fmp-you">Plan a workshop for 12 people.</p>
+      <p className="fmp-answer">Your plan is ready. The workshop starts at 10 AM, with a break at noon.</p>
+      <div className="fmp-field">Reply</div>
+    </div>
+  </div>;
+}

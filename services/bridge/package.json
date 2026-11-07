@@ -1,0 +1,23 @@
+{
+  "name": "@work-fold/bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Signed, encrypted browser-to-desktop relay for optional work-fold remote access.",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "dev:memory": "node scripts/dev-memory.mjs",
+    "test": "node --test server.test.mjs pages.test.mjs database-security.test.mjs metrics.test.mjs copy.test.mjs landing.test.mjs refresh.test.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.16.3",
+    "ws": "^8.21.2"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "pg-mem": "^3.0.5"
+  }
+}

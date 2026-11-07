@@ -1,0 +1,87 @@
+name: CI
+
+# Dormant: GitHub Actions is disabled in the canonical source repository.
+# Local verification is authoritative; re-enable only on explicit request.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# PR updates supersede old development runs. Every main run retains its own
+# evidence; release-tag.yml verifies it without repeating the full suite.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  types:
+    name: Repository & TypeScript
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+  tests:
+    name: Application tests (${{ matrix.shard }}/4)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm test -- --shard=${{ matrix.shard }}/4
+
+  bridge:
+    name: Web bridge tests
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: services/bridge/package-lock.json
+      - run: npm ci --prefix services/bridge
+      - run: npm test --prefix services/bridge
+
+  desktop:
+    name: Electron integration
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run desktop:prepare
+        env:
+          WORKFOLD_RESTRICTED_SMOKE_LOG: out/ci/restricted-app-smoke.log
+      - name: Save Electron failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-diagnostics-${{ github.run_attempt }}
+          path: out/ci/
+          if-no-files-found: ignore
+          retention-days: 14

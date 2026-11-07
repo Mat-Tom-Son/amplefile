@@ -1,0 +1,133 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createElement } from "react";
+import { createDomHarness } from "./support/dom.js";
+import { applicationAppearanceKey, defaultApplicationAppearance } from "../src/shared/application-appearance.js";
+import { ApplicationAppearanceStore } from "../web-local/src/lib/application-appearance-store.js";
+import type { WorkFolderSummary } from "../web-local/src/types.js";
+
+function mediaEnvironment(matches: Record<string,boolean> = {}) {
+  const callbacks = new Map<string,Set<() => void>>();
+  window.matchMedia = ((query: string) => ({ get matches() { return matches[query] ?? false; }, addEventListener(_name: string, callback: () => void) { if (!callbacks.has(query)) callbacks.set(query,new Set()); callbacks.get(query)!.add(callback); }, removeEventListener(_name: string, callback: () => void) { callbacks.get(query)?.delete(callback); } })) as typeof window.matchMedia;
+  return (query: string, value: boolean) => { matches[query] = value; for (const callback of callbacks.get(query) ?? []) callback(); };
+}
+function changeSelect(label: string, value: string) {
+  const select = document.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
+  select.value = value; select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+test("appearance controls affect the shared document, preserve explicit work-folder automation, and support undo", async (t) => {
+  const dom = await createDomHarness(); t.after(() => dom.cleanup()); mediaEnvironment();
+  const { useApplicationAppearance } = await import("../web-local/src/hooks/useApplicationAppearance.js");
+  const { AppearanceSettingsPane } = await import("../web-local/src/components/modals/AppearanceSettingsPane.js");
+  const store = new ApplicationAppearanceStore(null, true);
+  const routes: string[] = [];
+  function Screen() { const appearance = useApplicationAppearance({ store, fixtureMode: true }); return createElement(AppearanceSettingsPane, { appearance, workFolder: { id: "work-folder-owner", name: "Workshop" } as WorkFolderSummary, onCustomizeWorkFolder: (id) => routes.push(id) }); }
+  await dom.render(createElement(Screen));
+  assert.equal(document.querySelector(".appearance-settings")?.firstElementChild?.getAttribute("aria-labelledby"), "appearance-preview-title");
+  assert.equal(document.querySelector("#appearance-preview-title")?.textContent, "Preview");
+  assert.ok(document.querySelector(".appearance-settings-preview")!.compareDocumentPosition(document.querySelector(".appearance-settings-presets")!) & Node.DOCUMENT_POSITION_FOLLOWING);
+  await dom.act(() => document.querySelector<HTMLButtonElement>('[aria-label="Paper Preset"]')!.click());
+  assert.equal(document.querySelector(".appearance-settings-status-row"), null, "applying a preset does not reserve a notice strip above Preview");
+  assert.equal(document.documentElement.dataset.appearancePalette, "paper");
+  assert.match(document.documentElement.style.getPropertyValue("--work-fold-reading-font"), /Georgia/);
+  await dom.act(() => { changeSelect("Reading Size", "22"); changeSelect("List Density", "spacious"); changeSelect("Your Messages", "quiet"); });
+  assert.equal(document.documentElement.style.getPropertyValue("--work-fold-reading-size"), "22px");
+  assert.equal(document.documentElement.dataset.appearanceDensity, "spacious");
+  assert.equal(document.documentElement.dataset.appearanceMessages, "quiet");
+  await dom.act(() => Array.from(document.querySelectorAll("button")).find((button) => button.textContent === "Undo")!.click());
+  assert.equal(document.documentElement.dataset.appearanceMessages, "tinted");
+  await dom.act(() => Array.from(document.querySelectorAll("button")).find((button) => button.textContent === "Customize This work-folder")!.click());
+  assert.deepEqual(routes, ["work-folder-owner"]);
+});
+
+test("device accessibility follows changes even with an explicit app mode, and fixture never touches native theme", async (t) => {
+  const dom = await createDomHarness(); t.after(() => dom.cleanup());
+  const updateDevice = mediaEnvironment();
+  let nativeCalls = 0;
+  window.workFoldDesktop = { app: { platform: "darwin" }, window: { setTheme() { nativeCalls++; }, getAccentColor() { nativeCalls++; return Promise.resolve("#ffffff"); } } } as never;
+  const { useApplicationAppearance } = await import("../web-local/src/hooks/useApplicationAppearance.js");
+  const store = new ApplicationAppearanceStore(null, true);
+  function Screen() { useApplicationAppearance({ store, fixtureMode: true }); return null; }
+  await dom.render(createElement(Screen));
+  await dom.act(() => { updateDevice("(prefers-contrast: more)", true); updateDevice("(prefers-reduced-motion: reduce)", true); updateDevice("(prefers-reduced-transparency: reduce)", true); });
+  assert.equal(document.documentElement.dataset.appearanceMotion, "reduce");
+  assert.equal(document.documentElement.dataset.appearanceContrast, "more");
+  assert.equal(document.documentElement.dataset.appearanceTransparency, "opaque");
+  await dom.act(() => store.update({ mode: "dark", motion: "system", contrast: "system", transparency: "system" }));
+  assert.equal(document.documentElement.dataset.theme, "dark");
+  assert.equal(document.documentElement.dataset.appearanceMotion, "reduce");
+  assert.equal(nativeCalls, 0);
+});
+
+test("storage events update mounted consumers and late accent reads cannot overwrite a newer device event", async (t) => {
+  const dom = await createDomHarness(); t.after(() => dom.cleanup()); mediaEnvironment();
+  const data = new Map<string,string>();
+  const store = new ApplicationAppearanceStore({ getItem: (key) => data.get(key) ?? null, setItem: (key, value) => { data.set(key,value); } });
+  let finishRead!: (value: string) => void;
+  let accentEvent!: (value: string) => void;
+  window.workFoldDesktop = { app: { platform: "darwin" }, window: { setTheme() {}, getAccentColor: () => new Promise<string>((resolve) => { finishRead = resolve; }), onAccentColorChanged(callback: (value: string) => void) { accentEvent = callback; return () => {}; } } } as never;
+  const { useApplicationAppearance } = await import("../web-local/src/hooks/useApplicationAppearance.js");
+  function Screen() { useApplicationAppearance({ store }); return null; }
+  await dom.render(createElement(Screen));
+  await dom.act(() => accentEvent("#348743"));
+  const freshAccent = document.documentElement.style.getPropertyValue("--ui-accent-solid");
+  await dom.act(async () => { finishRead("#ed0011"); await Promise.resolve(); });
+  assert.equal(document.documentElement.style.getPropertyValue("--ui-accent-solid"), freshAccent);
+  data.set(applicationAppearanceKey, JSON.stringify({ ...defaultApplicationAppearance, mode: "light", palette: "ink", readingSize: 20 }));
+  await dom.act(() => window.dispatchEvent(new window.StorageEvent("storage", { key: applicationAppearanceKey })));
+  assert.equal(document.documentElement.dataset.theme, "light");
+  assert.equal(document.documentElement.dataset.appearancePalette, "ink");
+  assert.equal(document.documentElement.style.getPropertyValue("--work-fold-reading-size"), "20px");
+});
+
+test("a file import that completes after leaving Appearance cannot save into the closed form", async (t) => {
+  const dom = await createDomHarness(); t.after(() => dom.cleanup()); mediaEnvironment();
+  const { useApplicationAppearance } = await import("../web-local/src/hooks/useApplicationAppearance.js");
+  const { AppearanceSettingsPane } = await import("../web-local/src/components/modals/AppearanceSettingsPane.js");
+  const store = new ApplicationAppearanceStore(null, true);
+  let finishFile!: (text: string) => void;
+  function Screen() { const appearance = useApplicationAppearance({ store, fixtureMode: true }); return createElement(AppearanceSettingsPane, { appearance, workFolder: null }); }
+  await dom.render(createElement(Screen));
+  await dom.act(() => {
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, "files", { value: [{ size: 300, text: () => new Promise<string>((resolve) => { finishFile = resolve; }) }] });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await dom.render(null);
+  await dom.act(async () => { finishFile(JSON.stringify({ kind: "work-fold.appearance-preset", version: 1, name: "Late", preferences: defaultApplicationAppearance })); await Promise.resolve(); });
+  assert.equal(store.getSnapshot().presets.length, 0);
+});
+
+test("the Worker steps choice reaches the document, and Reset only offers itself away from the defaults", async (t) => {
+  const dom = await createDomHarness(); t.after(() => dom.cleanup()); mediaEnvironment();
+  const { useApplicationAppearance } = await import("../web-local/src/hooks/useApplicationAppearance.js");
+  const { AppearanceSettingsPane } = await import("../web-local/src/components/modals/AppearanceSettingsPane.js");
+  const store = new ApplicationAppearanceStore(null, true);
+  function Screen() { const appearance = useApplicationAppearance({ store, fixtureMode: true }); return createElement(AppearanceSettingsPane, { appearance, workFolder: null }); }
+  await dom.render(createElement(Screen));
+  const reset = () => Array.from(document.querySelectorAll("button")).find((button) => button.textContent === "Reset")!;
+  assert.equal(document.documentElement.dataset.appearanceChatSteps, "every");
+  await dom.act(() => changeSelect("Worker Steps", "current"));
+  assert.equal(document.documentElement.dataset.appearanceChatSteps, "current");
+  assert.equal(store.getSnapshot().preferences.chatSteps, "current");
+  assert.equal(reset().disabled, false);
+  await dom.act(() => reset().click());
+  assert.equal(document.documentElement.dataset.appearanceChatSteps, "every");
+  assert.equal(reset().disabled, true);
+  assert.equal(document.querySelector('[aria-label="Original Preset"]')?.getAttribute("aria-pressed"), "true");
+});
+
+test("the Interface section ends with any desktop row the Settings window passes in", async (t) => {
+  const dom = await createDomHarness(); t.after(() => dom.cleanup()); mediaEnvironment();
+  const { useApplicationAppearance } = await import("../web-local/src/hooks/useApplicationAppearance.js");
+  const { AppearanceSettingsPane } = await import("../web-local/src/components/modals/AppearanceSettingsPane.js");
+  const store = new ApplicationAppearanceStore(null, true);
+  function Screen() {
+    const appearance = useApplicationAppearance({ store, fixtureMode: true });
+    return createElement(AppearanceSettingsPane, { appearance, workFolder: null, interfaceExtra: createElement("div", { role: "radiogroup", "aria-label": "Closing the Window" }) });
+  }
+  await dom.render(createElement(Screen));
+  const section = document.querySelector('[aria-labelledby="appearance-interface-title"]')!;
+  assert.equal(section.lastElementChild?.getAttribute("aria-label"), "Closing the Window");
+});

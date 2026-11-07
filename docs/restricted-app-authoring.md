@@ -1,0 +1,1075 @@
+# Restricted app authoring
+
+> Request lifecycle consolidation: the [collaboration contract](collaboration-contract.md#completion-delivery-and-recovery)
+> governs completion across turns. Questions use `chat ask|answer` or `agent
+> ask|answer`; an accepted answer remains outstanding until linked. The work-fold agent,
+> work-folder and app owners receive bounded, recorded child-result deliveries.
+> App status/stop/usage follow the owned request, and task result reads expose
+> its selected envelope. Counts and transport sizes shown in Limits are fixed
+> in this build; the continuation switch is configurable.
+
+
+This is the canonical package and bridge reference for work-folder apps that run in
+work-fold's restricted web runtime. Read [Restricted app runtime](restricted-app-runtime.md)
+for the security architecture, lifecycle boundaries, and remaining host gaps.
+The App Studio and release-backed runtime behind this surface are documented in
+[App platform foundation](app-platform-foundation.md). A version-2 package is a
+reviewed Feature in either a Development preview or an immutable Release; its
+authoring and bridge contract does not change between those placements.
+
+Restricted apps are not native Pi Extensions. They are prebuilt HTML, CSS, and
+JavaScript packages that work-fold inspects without evaluation, pins to an
+exact content digest, and runs in separate sandboxed Chromium hosts. Never add
+`pi.extensions` or install one through Pi's package manager.
+
+The checked-in [Connected inbox](../examples/packages/restricted-connected-inbox/README.md)
+is the reference implementation. The separate
+[full-trust Connected inbox](../examples/packages/connected-inbox/README.md)
+shows the native Pi Extension lane and is intentionally not a sandbox example.
+
+## Normal creation and installation
+
+The normal product path begins in a Chat belonging to the target work-folder:
+
+1. Ask a Worker to build the app. It writes a complete package into an
+   ordinary visible folder inside that work-folder, usually starting from the
+   `start_work-folder_app` tool, which writes a small working app that already
+   follows the rules below (2026-10-11).
+2. The agent calls the host-owned `propose_work-folder_app` tool with only the
+   work-folder-relative package folder.
+3. work-fold inspects the package without running JavaScript, computes its
+   digest, records a receipt bound to the work-folder, Chat, source folder, and
+   exact bytes, and adds that revision as a **Local preview** in the work-folder's
+   Development Instance in the same call, with every declared destination,
+   directory permission (whole work-folder), notification category, and automation
+   on. Nothing collects a credential.
+4. The Chat and the receipt say what still needs you: a secret to connect, a
+   file to choose, or a Check to choose when the work-folder has more than one.
+5. Narrow the preview in **Settings → Apps**, which lists apps by work-folder. Network destinations,
+   file targets, notification categories, connections, and each named
+   automation are separate controls there.
+
+Settings → Apps deliberately shows no developer path. A completed package that is
+already inside the work-folder and was not proposed from a Chat is added with
+`work-fold apps install-preview --work-folder <id-or-name> --package <work-folder-path>`
+(a recovery and developer lane in the CLI's act family); it does not replace
+the Chat-bound proposal and review flow for agent-created apps.
+
+**Change this app** creates an exact installed-byte
+working copy and an unsent source-work-folder Chat draft. Edit that copy without changing
+its app/package identity and propose it normally. The host rejects an update if
+another edit changed the source preview in the meantime. See
+[Changing an installed app](app-changes.md) for provenance, recovery, and remaining
+workflow limits.
+
+## From preview to an installed App
+
+Use **Open App Studio** when the reviewed preview is ready to install as an App:
+
+1. Declare or edit the App Project title, description, and icon. These
+   fields and `projectId` are machine-local work-fold state; do not create or
+   depend on `.work-fold/app-project.json`.
+2. Prepare a Release with a display version. work-fold snapshots every reviewed
+   preview in that Development Instance, so use stable, unique Feature ids and
+   finish each package review first.
+3. Review the immutable digest and publish it as a separate local action. If any
+   preview changed since preparation, publishing fails and a new Release must be
+   prepared.
+4. Choose a registered target work-folder, prepare the install, then activate it. The
+   target may contain the same Project’s Development preview, with separate
+   data and controls. A different Project cannot contribute the same Feature id,
+   and only one installed instance of this Project can be attached to that work-folder.
+5. The Installed Release's declared destinations, file roots, notification
+   categories, Check slots, and named automations are on from install; connect
+   any secret-bearing destination and choose any exact file target in
+   Settings → Apps. Connections do not copy from the preview.
+
+The v2 Release is a closed local artifact: it contains the prebuilt package
+bytes and declarations rather than a source-folder pointer or ambient Pi
+dependency. “Publish” does not upload, host, sign, sync, or list it. Executable
+bytes, mutable data, grants, connections, schedules, operation journals, and
+receipts stay in work-fold application data even though the App is attached to
+the chosen work-folder for navigation and file-grant selection.
+
+App Studio can prepare an update or rollback to any other published Release from
+the same Project. Exact unchanged Features may keep eligible authority; a
+changed Feature keeps its installation and data namespace and, under the
+default "keep current choices" update, carries its grants, connections, and
+job states forward by declaration id; "use install defaults" resets them. The current local runtime rejects data schemas and
+migrations, so this package format must continue to rely on backward-compatible
+JSON storage until reviewed migration execution is implemented. Uninstall
+requires retaining or purging App data; retained namespaces are inactive. App data
+can also be exported; see [App data recovery](app-data-recovery.md).
+
+## Package layout
+
+A small package can remain dependency-free:
+
+```text
+my-work-folder-app/
+├── package.json
+├── agent-app.json
+├── index.html
+├── app.js
+├── styles.css
+└── worker.js       # required for tools, automations, or notifications
+```
+
+`package.json` identifies the data-only manifest and declares ESM:
+
+```json
+{
+  "name": "my-work-folder-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "agentApp": "agent-app.json"
+}
+```
+
+work-fold requires `name`, `version`, `type: "module"`, and `agentApp`. It
+rejects package `scripts`, `bin`, `workspaces`, `gypfile`, and `pi` fields.
+Dependency metadata may describe the toolchain that produced the assets, but
+work-fold never runs npm or installs those dependencies. Bundle every runtime
+asset into the reviewed directory before proposing it. Package roots and files
+must be ordinary files and directories, not links or junctions.
+
+The package limits are 100,000 files and 1 GiB total (one file may use all of
+it), a 16 MiB app manifest, and 24 directory levels. `package.json` is limited
+to 64 KiB. A package is held in memory whole while it is staged and running,
+so these bounds keep that finite rather than ration what an app may ship. A
+Release envelope still uses the App platform's own artifact bounds
+([App platform foundation](app-platform-foundation.md)), so a package larger
+than those can be previewed and installed but not yet published as a Release.
+
+## Complete manifest template
+
+For named agent work an app can start, see
+[App-requested agent work](app-assistant-tasks.md). Its `assistantActions`
+declarations are separate from `tools`: tools let the agent call an app;
+requests let the app hand a task to its work-folder's agent. For a bounded model
+call with no Chat, no tools, and no transcript, use `assistant.infer` from the
+same document. Neither needs a declaration beyond `assistantActions` for
+requests, and neither needs a grant beyond installation.
+
+`agent-app.json` is closed and versioned; unknown fields fail review. This
+template exercises every current section:
+
+```json
+{
+  "version": 2,
+  "id": "my-work-folder-app",
+  "title": "My work-folder app",
+  "description": "A work-folder-bound app with a connected service.",
+  "runtime": {
+    "kind": "sandboxed-web",
+    "entry": "index.html",
+    "worker": "worker.js"
+  },
+  "ui": {
+    "icon": "mail",
+    "cornerRadius": 12
+  },
+  "tools": [
+    {
+      "name": "search_records",
+      "description": "Search records in the connected service.",
+      "action": "search",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "maxLength": 500 }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object",
+        "properties": {
+          "count": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["count"],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "automations": [
+    {
+      "id": "refresh-records",
+      "title": "Refresh records",
+      "description": "Fetch and store the latest record summary.",
+      "handler": "refresh-records",
+      "trigger": {
+        "kind": "interval",
+        "intervalMinutes": 30
+      },
+      "permissions": {
+        "network": ["records-api"],
+        "files": [],
+        "notifications": ["refresh-finished"]
+      },
+      "catchUp": "latest",
+      "overlap": "skip"
+    }
+  ],
+  "permissions": {
+    "network": [
+      {
+        "id": "records-api",
+        "target": {
+          "kind": "public-https",
+          "origin": "https://api.example.com"
+        },
+        "methods": ["GET", "POST"],
+        "requestHeaders": ["x-api-version"],
+        "auth": [
+          { "kind": "api-key", "header": "x-api-key" },
+          { "kind": "bearer" }
+        ]
+      },
+      {
+        "id": "project-service",
+        "target": {
+          "kind": "loopback-http",
+          "host": "127.0.0.1",
+          "port": 4317
+        },
+        "methods": ["GET", "POST"],
+        "auth": [{ "kind": "none" }]
+      }
+    ],
+    "files": [
+      {
+        "id": "exports",
+        "target": "directory",
+        "access": "read-write"
+      }
+    ],
+    "notifications": [
+      {
+        "id": "refresh-finished",
+        "title": "Refresh finished",
+        "description": "The records refresh automation finished. Open work-fold to review the result."
+      }
+    ]
+  }
+}
+```
+
+`ui.icon` is optional presentation metadata naming an icon from the
+work-folder icon catalog (the names Customize work-folder offers, such as
+`mail`, `calendar`, or `briefcase`). The app's rail button shows it; a name the
+catalog does not know, or no name, shows the generic Apps glyph.
+
+`ui.cornerRadius` is optional presentation metadata. work-fold uses a rounded
+12px app canvas when it is omitted. Apps may request a whole-pixel radius from
+0 through 24; use `0` only when the app intentionally owns a square edge. The
+host applies the reviewed value to both the HTML placeholder and the native
+`WebContentsView`, so an app cannot accidentally paint square corners over a
+rounded shell. Omit the field when targeting older work-fold builds: older
+strict manifest parsers do not recognize presentation fields added later.
+
+Manifest ids use lowercase letters, numbers, and hyphens. `ui`, `tools`, and
+`automations` are required even when they are empty (`{}`, `[]`, and `[]`).
+`permissions.network` is also required and may be empty; `files` and
+`notifications` may be omitted and then normalize to empty arrays. Tool names
+may additionally use underscores.
+
+The supported tool-schema subset contains `object`, `array`, `string`,
+`number`, `integer`, `boolean`, and `null`, with closed properties, required
+keys, one `items` schema, scalar enums, and the declared string, number, and
+array bounds. Open-ended or executable schema features are rejected. A schema
+may nest 32 levels deep, with up to 1,024 properties per object and 1,024 enum
+values, `maxItems` up to 100,000, and `maxLength` up to 16,777,216; tool and
+schema descriptions may run to 16,384 characters, because they reach the
+model. A worker is required when `tools` is nonempty.
+
+A manifest may declare up to 256 each of tools, network destinations, file
+permissions, notification categories, Check-result slots, and automations.
+These counts keep a manifest finite; every declared power still has its own
+grant. Each automation has a unique id,
+reviewed title, optional description, handler id, an interval from 1 minute
+through 527,040 whole minutes (366 days), `catchUp` set to `none` or `latest`, and `overlap` set to
+`skip`. Its `permissions` object is required, all three arrays are required,
+and every id must reference an app-level declaration. This is an exact maximum
+for that job: launch-time authority is the intersection of this subset and the
+person's current grants. Automations require a worker. Every notification
+declaration must be referenced by at least one automation. Notification title
+and description are reviewed, bounded, plain single-line text.
+
+`viewer` is retired. It defined the read-only web view a paired browser
+opened; since Web Access was removed on 2026-11-07 nothing opens it. Older
+packages that declare it still parse, but new apps should leave it out.
+
+Network methods are limited to `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`.
+Public targets are exact HTTPS origins. Loopback targets are numeric
+`127.0.0.1` or `::1` addresses and cannot receive credentials or follow
+redirects. A public destination resolving to several addresses may try `GET`
+requests in resolver order, so a dual-stack service stays reachable from a
+single-stack network; every candidate has already passed the same
+public-address check. Mutating requests use one resolved address only because
+retrying after an ambiguous connection failure could apply the same operation
+twice.
+
+A request may always set `accept`, `content-type`, `if-modified-since`, and
+`if-none-match`. Anything else must be named in that destination's optional
+`requestHeaders` array, which is reviewed with the rest of the package. Header
+names are lowercase, at most 16 per destination, and may not be routing,
+hop-by-hop, or credential-bearing names such as `authorization`, `host`,
+`cookie`, `content-length`, `transfer-encoding`, or `x-forwarded-*`. A
+destination may not name the header its own `api-key` credential occupies, and
+a header reviewed for one destination grants nothing to another.
+
+## Visible UI and content policy
+
+The HTML entry runs with Node disabled and direct networking, navigation,
+popups, downloads, dialogs, permissions, workers, frames, service workers, and
+file selection denied, and files dragged or pasted in from the computer never
+reach the app. Scripts and fonts must come from reviewed same-origin files:
+inline `<script>` blocks, inline handlers such as `onclick=`, `eval`,
+`new Function`, and WebAssembly are blocked, and `fetch()` of a packaged file
+is blocked too, so ship data as a JavaScript module. Styles may be same-origin
+or inline; images may be same-origin or `data:`. Bundle browser libraries and assets into the package instead of using
+a CDN. Use the host bridge for network and work-folder files.
+
+The preload exposes one frozen global:
+
+```js
+const bridge = globalThis.workFoldRestrictedApp;
+```
+
+Bridge values and requests must be JSON-compatible and bounded. Do not pass
+functions, DOM nodes, cyclic objects, secrets, or host identity fields.
+
+### Context and placement
+
+```js
+let context = bridge.context.get();
+
+const unsubscribe = bridge.context.onChanged((next) => {
+  context = next;
+  document.documentElement.dataset.theme = next.theme;
+  render();
+});
+```
+
+Context contains host-owned `workFolderId`, `appId`, `digest`, and `mountId`,
+plus `placement` (`navigator` or `tab`), nullable `appTabId`, origin-relative
+`route`, JSON `state`, `theme` (`light` or `dark`), `active`, and nullable
+`openedFrom`. Treat identity
+as descriptive; the host derives authority from the sending renderer, never
+from values supplied back by app code. One UI entry can branch on placement and
+route to render a compact left navigator and full work-tab views. The left
+navigator is the app's home: its rail button always shows it, and it should
+work on its own at 280-640px wide.
+
+### Opened from a notification
+
+The rail button opens the left pane at `/` with `openedFrom: null`. A click on
+one of the app's notifications opens the same left pane — never a tab — at the
+route and state the worker named in `notifications.show` (2026-10-11), with
+`openedFrom` set to `{ kind: "notification", permissionId }`. When the left
+pane is already open, the same three values arrive through
+`context.onChanged`. Render from the route and state rather than assuming `/`:
+
+```js
+function render(next) {
+  const match = /^\/threads\/([^/?#]+)/.exec(next.route);
+  if (match) showThread(decodeURIComponent(match[1]), { highlight: next.openedFrom?.kind === "notification" });
+  else showInbox();
+}
+render(bridge.context.get());
+bridge.context.onChanged(render);
+```
+
+`openedFrom` says how the view was opened, not who may do what: it grants
+nothing, and the app should treat it as a hint for what to show first.
+
+### work-folder-owned tabs
+
+A tab opens only from the left-pane view, in response to the person's click or
+key press there, the way a file in Files opens its preview (2026-10-11). Call
+`tabs.open` from that click handler; a call at startup, from a timer, from a tab,
+or a second call from the same press is refused with `TAB_DENIED`.
+
+```js
+openButton.addEventListener("click", () => bridge.tabs.open({
+  tabId: "record:123",
+  title: "Record 123",
+  route: "/records/123",
+  state: { recordId: "123" },
+}));
+
+// These are valid only from the currently mounted app tab.
+await bridge.tabs.update({ title: "Record 123 · edited", route: "/records/123", state: { dirty: true } });
+await bridge.tabs.close();
+```
+
+`tabId` is app-local and stable; it may use lowercase letters, numbers,
+periods, underscores, colons, and hyphens. Routes must begin with one `/` and
+remain origin-relative. State is JSON-compatible and limited to 64 KiB. The
+app never supplies a work-folder id, digest, or shell tab id. Opening an existing
+app-local id activates or retargets its work-folder-owned tab.
+
+### Looking like work-fold
+
+work-fold puts its own look into every app view as CSS custom properties
+(2026-10-11): `--wf-font`, `--wf-font-size`, `--wf-canvas`, `--wf-surface`,
+`--wf-surface-subtle`, `--wf-surface-hover`, `--wf-text`, `--wf-text-muted`,
+`--wf-text-subtle`, `--wf-border`, `--wf-border-strong`, `--wf-accent`,
+`--wf-on-accent`, `--wf-accent-soft`, `--wf-accent-text`, `--wf-focus`,
+`--wf-success`, `--wf-danger`, `--wf-attention`, `--wf-radius-sm`,
+`--wf-radius-md`, `--wf-radius-lg`, `--wf-shadow`, plus `--wf-theme` and
+`--wf-color-scheme`. The trusted renderer reads them from its own live styles,
+so they follow light and dark, the work-folder's accent, and the person's
+appearance choices, and they change in place when any of those change. They
+are variables only: an app that never uses them looks exactly as before.
+`--wf-font` names Inter, which the view loads from its own origin.
+
+For ready-made controls, opt in to the kit:
+
+```html
+<link rel="stylesheet" href="/__work-fold/kit.css">
+<body class="wf-app">
+```
+
+The kit styles `wf-button` (with `wf-button-primary`, `wf-button-quiet`, and
+`wf-button-danger`), `wf-input`, `wf-select`, `wf-textarea`, `wf-field`,
+`wf-toolbar`, `wf-list` with `wf-row`, `wf-row-title`, and `wf-row-meta`,
+`wf-card`, `wf-badge` (with `wf-badge-accent`, `-success`, `-danger`, and
+`-attention`), `wf-empty`, `wf-divider`, `wf-spinner`, `wf-title`,
+`wf-heading`, `wf-muted`, and `wf-small`. Every kit selector uses `:where()`, so
+it carries no specificity and the app's own rules always win. `/__work-fold/`
+is host-owned: package files under that path are never served.
+
+### The rail dot
+
+```js
+await bridge.attention.set({ count: 3 }); // a dot on the app's rail button
+await bridge.attention.clear();
+```
+
+An app may put a dot on its own rail button to say something new is waiting,
+the same still green dot the Chats use for an unseen reply. A mounted view
+(shown or not) or the worker during an operation may set it; the count, a
+whole number up to 9,999, is read out to assistive technology. The app owns
+clearing it, usually once the person has seen what was new. Stopping or
+removing the app clears it.
+
+### Brokered network requests
+
+`bridge.request` and `bridge.network.request` are aliases:
+
+```js
+const response = await bridge.request({
+  destinationId: "records-api",
+  method: "POST",
+  path: "/v1/search",
+  headers: {
+    accept: "application/json",
+    "content-type": "application/json"
+  },
+  body: JSON.stringify({ query: "quarterly" }),
+});
+
+if (response.encoding !== "utf8") throw new Error("Expected text");
+const value = JSON.parse(response.body);
+```
+
+Requests name a reviewed destination, allowed method, and origin-relative
+path. `GET` and `DELETE` cannot include a body. Request bodies default to a
+16 MiB limit; responses default to 64 MiB and a 120-second deadline. App-set
+headers may use `accept`, `content-type`, `if-modified-since`, and
+`if-none-match`. A destination may also accept the exact additional names in
+its reviewed `requestHeaders` declaration. The response contains `status`, a
+small safe header map, `body`, and `encoding` (`utf8` for recognized text
+types, otherwise `base64`). The host injects credentials after validation; app
+code never sets or reads an authorization secret.
+
+### App storage
+
+Storage is machine-local and keyed by the host-owned Tenant and Data Namespace.
+A preview and installed Release have separate storage, even in the same work-folder:
+
+```js
+const usage = await bridge.storage.usage();
+const keys = await bridge.storage.keys("record:");
+const current = await bridge.storage.get("record:123"); // undefined when absent
+
+await bridge.storage.set("record:123", { title: "Quarterly" });
+await bridge.storage.delete("record:old");
+
+await bridge.storage.transaction({
+  expectedRevision: usage.revision,
+  set: [{ key: "record:123", value: { title: "Quarterly" } }],
+  delete: ["record:old"],
+});
+```
+
+`set`, `delete`, `clear`, and `transaction` return usage metadata plus
+`changed` and `changedKeys`. Transactions may use `expectedRevision` for
+optimistic concurrency and may also set `clear: true`. Values must be ordinary
+JSON. Default limits are 256 MiB per app, 65,536 keys, 16 MiB per value, and
+4,096 operations or 64 MiB per transaction. Storage is one document read and
+rewritten whole on every operation, which is why it stops well short of
+V8's maximum string length; keep bulk data in granted work-folder files.
+
+Only active visible UI receives invalidation hints:
+
+```js
+bridge.storage.onChanged(async (event) => {
+  if (!event.reset && !event.keys.includes("last-refresh")) return;
+  const latest = await bridge.storage.get("last-refresh");
+  renderRefresh(latest, event.revision);
+});
+```
+
+The event contains `revision`, bounded `keys`, and `reset`. Hints are
+coalesced, are not state themselves, and are never queued or replayed for an
+inactive, occluded, minimized, or worker view. Always re-read storage. Also
+read required state during startup because the view may have missed a hint.
+
+### Invalidation hints
+
+Four channels tell an app that something it can already read has moved
+([Collaboration contract](collaboration-contract.md), F30). Every one of them
+carries ids and an ordering `revision` and never content, is coalesced, and is
+dropped rather than queued when no eligible mount exists. Registration returns
+an unsubscribe function:
+
+```js
+const stopWatchingTasks = bridge.tasks.onChanged(async (event) => {
+  // event: { revision, taskIds, receiptIds }
+  renderTasks(await bridge.assistant.list());
+});
+
+bridge.checks.onChanged(async (event) => {
+  // event: { revision, permissionIds }
+  for (const permissionId of event.permissionIds) {
+    renderCheck(await bridge.checks.read({ permissionId }));
+  }
+});
+
+bridge.files.onChanged(async (event) => {
+  // event: { revision, permissionIds, truncated }
+  for (const grantId of event.permissionIds) {
+    renderFolder(await bridge.files.list({ grantId, path: "." }));
+  }
+});
+```
+
+| Channel | Fires for | Reaches |
+|---|---|---|
+| `storage.onChanged` | this installation's own app storage | active views |
+| `tasks.onChanged` | its own `assistant.request` tasks and `assistant.infer` receipts | active views, and a worker while it holds a tool action or automation run |
+| `checks.onChanged` | a selected Check whose result changed | active views only, because only an active view may read a Check result |
+| `files.onChanged` | files under a granted root, observed on a bounded metadata poll | active views, and a worker while it holds an operation |
+
+`permissionIds` on both `checks.onChanged` and `files.onChanged` are this app's
+own declaration ids — exactly the `permissionId` and `grantId` values it
+already passes to `checks.read` and `files.list/read/write`.
+
+`revision` increases for as long as this view is mounted. Use it to order
+hints, not to compare against anything stored: it counts hints work-fold
+actually delivered to this installation, and it starts again when the app's
+bytes or grants change, when the app is stopped, and when work-fold restarts.
+
+`tasks.onChanged` carries at most 64 task ids and 64 receipt ids per hint, and
+`files.onChanged` sets `truncated` when its bounded observation of the root hit
+one of its own limits. In both cases the app's own read is the authority.
+
+**Hints are not state; always re-read, and read what you need at startup
+because a view can miss a hint.** Nothing is replayed: a view that was
+inactive, occluded, or minimized while something changed is told nothing then
+and nothing extra when it comes back, a new mount starts with no backlog, and
+a machine that slept re-establishes its baseline instead of announcing what
+happened while it was asleep. A hint never starts a model turn.
+
+People can export and restore app-owned data from the app's details in Settings → Apps;
+see [App data recovery](app-data-recovery.md). This management operation adds no
+runtime bridge power and never restores connections or grants.
+
+### Granted work-folder files
+
+A manifest file declaration is only a maximum request. The person maps it to
+an ordinary relative file or directory in that app's work-folder before use:
+
+```js
+const listing = await bridge.files.list({ grantId: "exports", path: "." });
+const previous = await bridge.files.read({ grantId: "exports", path: "report.json", encoding: "utf8" });
+const written = await bridge.files.write({
+  grantId: "exports",
+  path: "report.json",
+  encoding: "utf8",
+  data: JSON.stringify({ ok: true }, null, 2),
+  mode: "replace",
+});
+```
+
+`list` returns `{ path, entries, truncated }`; entries contain `name`, `path`,
+`kind`, optional `sizeBytes`, and `modifiedAt`. `read` returns `{ path,
+encoding, data, sizeBytes, modifiedAt }`. `write` returns `{ path, sizeBytes,
+modifiedAt }` and requires explicit `create` or `replace` mode. Data may be
+`utf8` or `base64`. Default read and write limits are 64 MiB per whole file and
+listings return up to 10,000 entries. Every write is atomic and creates a targeted History
+checkpoint. Grant-relative paths cannot traverse links, metadata roots, or the
+selected work-folder target.
+
+For a declaration whose target is one exact `file`, use `path: "."` to read or
+replace that selected file. Exact-file grants cannot list children or create a
+different filename; `mode: "replace"` is the only permitted write mode.
+
+While an eligible mount is open, work-fold observes each granted root on a
+bounded metadata-only poll and calls `files.onChanged` when it settles; see
+[Invalidation hints](#invalidation-hints).
+
+### Selected Check results
+
+An optional `permissions.checks` array declares up to 256 named choices:
+
+```json
+"checks": [{ "id": "quote-review", "title": "Quote review" }]
+```
+
+The slot is granted on install. When the owning work-folder has exactly one Check,
+that Check is bound automatically; otherwise the slot is reported as still
+needing the person, who picks an exact Check revision in **Settings → Apps →
+Review access → Check results**. A selection includes status, finding details,
+work-folder-relative paths and quoted evidence from that Check. It grants no run,
+decision, correction, or general file authority, and does not enable or run
+the Check.
+
+```js
+try {
+  const result = await bridge.checks.read({ permissionId: "quote-review" });
+  renderCheck(result);
+} catch (error) {
+  showStatus(error.code === "CHECK_DENIED" ? "Choose a Check in Apps." : "Check unavailable. Review its selection in Apps.");
+}
+```
+
+Only an active visible desktop app view can read results. Workers and
+automations cannot. The app cannot supply a work-folder or Check id. The host
+re-verifies the selected Check's evidence locally, without a model request.
+States distinguish `never-run`, `running`, `stale`, `blocked`, `check-error`,
+`current-clear` and `needs-attention`; stale or unhealthy results carry no
+findings. Results include `checkId`, `declarationDigest`, `title`, `lastRunAt`,
+`findings` and `truncated`. Each finding has identity/fingerprint, title, optional
+detail/suggestion, path, severity, observation time and exact quotations.
+Results are bounded to 10,000 findings and 16 MiB — in practice every finding
+the Check holds; `truncated` must remain visible.
+Treat model findings as suggestions. A changed Check requires selecting it again.
+Changed app bytes reset these grants; an exact unchanged Release update can
+retain them through its reviewed continuity plan. Revocation fences in-flight
+reads before results reach the app.
+
+A settled Check run, an applied correction, and turning a Check off each call
+`checks.onChanged`; a result that merely drifts stale on the clock does not.
+See [Invalidation hints](#invalidation-hints).
+
+### Agent work and bounded inference
+
+Installation is the grant for both AI lanes
+([Receipts, not gates](receipts-not-gates.md), F22). `assistant.request`
+journals a declared `assistantActions` entry and starts a fresh ordinary Chat
+in the owning work-folder in the same call — titled with your app's title and the
+action's (`Inbox · Compare quotes`), its message labelled as coming from your
+app; `assistant.infer` asks the work-folder's
+configured model one bounded question with no tools, no files, and no
+transcript:
+
+```js
+const { text, truncated, model, usage } = await bridge.assistant
+  .infer({ instructions: "Name the cheapest quote.", input: quotesText });
+
+const { json } = await bridge.assistant.infer({
+  instructions: "Total the quotes.",
+  input: quotesText,
+  outputSchema: { type: "object", properties: { total: { type: "integer", minimum: 0 } },
+    required: ["total"], additionalProperties: false },
+});
+```
+
+`instructions` is the system prompt and `input` is delivered as untrusted
+data, so an app's own content cannot redirect the task. Without `outputSchema`
+the result is `{ text, truncated, receiptId }`; with one — the same closed JSON
+Schema subset tool declarations use — it is `{ json, receiptId }`, already
+validated. work-fold never cuts a reply: `truncated` means only that the model
+itself stopped at its output-token limit, and a reply over `maxOutputBytes` is
+refused with `INFER_OUTPUT_TOO_LARGE`. The call uses the work-folder's configured
+model and thinking level with the model's own output-token limit.
+`receiptId` matches the id a `tasks.onChanged` hint carries. Active
+views, workers holding a tool action, and named automation runs reach
+`assistant.request`; views and workers reach `assistant.infer`. Both leave
+receipts naming the effective model and its usage.
+
+An `assistantActions` entry may declare `outputSchema` beside its
+`inputSchema`, in the same closed subset. That is what lets a finished task
+come back with structured details:
+
+```json
+{
+  "id": "compare-quotes",
+  "title": "Compare quotes",
+  "instructions": "Compare the submitted quotes and write comparison.md.",
+  "inputSchema": { "type": "object", "properties": { "quotes": { "type": "string" } },
+    "required": ["quotes"], "additionalProperties": false },
+  "outputSchema": { "type": "object", "properties": { "cheapest": { "type": "string" } },
+    "required": ["cheapest"], "additionalProperties": false }
+}
+```
+
+A settled task carries one result shape
+([Collaboration contract](collaboration-contract.md), F29): `summary` (at most
+32 KiB), `outcome` (`succeeded`, `partial`, or `failed`), `truncated`,
+optional `data` matching the declared `outputSchema`, and optional `files`
+naming work-folder-relative deliverables with their fingerprint and size. Details
+that do not match the declared shape never reach the app: they are left out and
+the outcome says so. The full contract, bounds, and error codes are in
+[App-requested agent work](app-assistant-tasks.md).
+
+## Worker tools and automations
+
+The optional worker is a separate hidden sandbox. It has the same bridge name,
+Node denial, direct-network denial, and host-derived authority as visible UI.
+It cannot manipulate visible tabs. Export `handleAction` for declared tools and
+`handleAutomation` when the manifest declares one or more automations:
+
+```js
+export async function handleAction(action, input) {
+  if (action !== "search") throw new Error("Unknown action.");
+  const response = await globalThis.workFoldRestrictedApp.request({
+    destinationId: "records-api",
+    method: "GET",
+    path: `/v1/records?query=${encodeURIComponent(input.query)}`,
+    headers: { accept: "application/json" },
+  });
+  const value = JSON.parse(response.body);
+  return { count: Number.isInteger(value.count) ? value.count : 0 };
+}
+
+export async function handleAutomation(event) {
+  if (event.appAutomationId !== "refresh-records" || event.handler !== "refresh-records") {
+    throw new Error("Unknown automation.");
+  }
+  let network;
+  try {
+    const response = await globalThis.workFoldRestrictedApp.request({
+      destinationId: "records-api",
+      method: "GET",
+      path: "/v1/records?limit=20",
+      headers: { accept: "application/json" },
+    });
+    network = { ok: response.status >= 200 && response.status < 300, status: response.status };
+  } catch (error) {
+    network = { ok: false, code: error?.code || "NETWORK_FAILED" };
+  }
+
+  let notification;
+  try {
+    notification = await globalThis.workFoldRestrictedApp.notifications.show({
+      permissionId: "refresh-finished",
+      // Where a click opens the app's left pane; optional.
+      route: "/records?filter=new",
+      state: { since: event.scheduledAt },
+    });
+  } catch (error) {
+    notification = { status: "not-shown", code: error?.code || "NOTIFICATION_FAILED" };
+  }
+
+  await globalThis.workFoldRestrictedApp.storage.set("last-refresh", {
+    reason: event.reason,
+    scheduledAt: event.scheduledAt,
+    completedAt: new Date().toISOString(),
+    network,
+    notification,
+  });
+}
+```
+
+Tool inputs and results are checked against the manifest schemas and limited
+to 16 MiB. A worker invocation has a ten-minute hang guard that counts only
+time the worker spends in its own code: waiting on a network request, an
+agent request, or `assistant.infer` never counts. One worker runs one
+action or automation at a time; a second one queues and starts when the first
+finishes, instead of being refused. Error text a worker reports is kept up to
+16,384 characters, in an automation's run receipts and **Last error** too. Automation
+events contain `runId`, `appAutomationId`, `handler`, `reason` (`scheduled`,
+`manual`, or `resume`), and ISO `scheduledAt`. Treat `appAutomationId` and
+`handler` as the reviewed dispatch pair and reject unknown values.
+
+Every automation is on when the app is added, anchored at that moment so its
+first run is one interval later; the person can turn any off in Settings → Apps. A job
+runs only while work-fold is running. One scheduler is shared across all
+work-folders and apps, with 32 concurrent runs by default, FIFO admission, same-job
+non-overlap, and at most one staggered latest catch-up when requested. **Run
+now** is a one-off execution: it works while the schedule is off and does not
+move the recurring cadence. Every attempt receives a durable receipt visible in
+Settings → Apps.
+
+At launch, the worker sees only current app grants also named by that
+automation's `permissions` subset. `notifications.show({ permissionId })`
+works only inside an enabled automation invocation and only for a separately
+granted category included in that job. A manual run of a disabled automation
+therefore cannot notify. The method returns a
+status of `shown`, `rate-limited`, or `unsupported`. The host supplies the
+reviewed title and description; the worker cannot add dynamic text, actions,
+or URLs. It may name where a click opens the app: `route` is an
+origin-relative path inside the app of at most 2,048 characters (default
+`/`) and `state` is JSON of at most 64 KiB, checked exactly like a tab's; an
+invalid one is refused with `NOTIFICATION_DENIED` and nothing is shown. See
+[Opened from a notification](#opened-from-a-notification). Notification failure should not discard already completed work. Use
+copy such as “refresh finished” when the result may be either success or
+failure. Settings → Apps lists each call's outcome under the app's notification
+categories — shown, not shown because there were too many at once, or not shown
+because this computer cannot show notifications — so the category title is
+also how the person reads that history.
+
+## Authentication declarations
+
+Authentication describes what host-owned connection setup the destination
+accepts. It never contains a credential:
+
+| Kind | Manifest shape | Host behavior |
+|---|---|---|
+| None | `{ "kind": "none" }` | No connection is stored. It must be the destination's only auth declaration and is the only kind allowed for numeric loopback. |
+| API key | `{ "kind": "api-key", "header": "x-api-key" }` | Settings → Apps collects the value and the broker injects it through the reviewed non-sensitive header name. |
+| Bearer | `{ "kind": "bearer" }` | Settings → Apps stores the token and the broker writes `Authorization: Bearer …`. |
+| Basic | `{ "kind": "basic" }` | Settings → Apps stores username/password and the broker creates the Basic authorization header. |
+| OAuth PKCE | `{ "kind": "oauth2-pkce", "issuer": "https://identity.example.com", "clientId": "public-native-client", "scopes": ["records.read"] }` | work-fold performs public-issuer discovery, S256, system-browser authorization, one-shot loopback callback, encrypted storage, and refresh. |
+
+A public destination may accept multiple credential kinds, but `none` cannot
+be combined with another kind. OAuth requires a client id registered with a
+public HTTPS issuer that supports public clients without a client secret, plus
+scopes that exclude `openid`. work-fold cannot verify who owns that client
+registration. Client secrets and device-code flow are rejected. Connections are configured per
+exact Feature revision and reviewed destination in Settings → Apps. The host also
+binds each secret to its Tenant, Runtime Instance, Feature Installation,
+declaration digest, target identity, and current Runtime Instance owner. The
+portable contract reserves Principal-owned connection consent and job delegation
+for a future product path; version-2 local apps cannot request it. There is no
+connection or secret-reading bridge.
+
+### Locating the authorization server
+
+An `oauth2-pkce` declaration may add an optional `discovery` mode:
+
+| Mode | Metadata document | Use it when |
+|---|---|---|
+| `oauth-authorization-server` (default when omitted) | `https://issuer/.well-known/oauth-authorization-server` per RFC 8414 | The provider publishes RFC 8414 metadata. |
+| `openid-configuration` | `https://issuer/.well-known/openid-configuration` | The provider publishes only an OpenID Connect discovery document. |
+| `pinned` | none; the manifest supplies `authorizationEndpoint` and `tokenEndpoint` | The provider publishes neither document, or its metadata `issuer` does not match the URL you declared. |
+
+Both discovery documents are read with the same rules. Pinned endpoints must be
+exact public HTTPS URLs with no query string or fragment, **and must use the
+issuer's exact host**.
+
+That constraint is load-bearing, not stylistic. The issuer is the trust anchor
+and every endpoint has to be vouched for by it. Discovery does that indirectly:
+the endpoints are named by a document served over TLS from the issuer's own
+well-known path, which a package author cannot forge — which is why a
+*discovered* token endpoint may legitimately live on an unrelated origin, as
+Google's does. Pinning has no such document, so it establishes the same thing
+structurally instead. Without the rule, a package could declare a genuine issuer
+and authorization endpoint alongside an attacker-controlled token endpoint: the
+person would see a real provider consent screen, and work-fold would then post
+the authorization code and PKCE verifier to the attacker. PKCE cannot help once
+the verifier is handed over. work-fold renders the endpoints for transparency,
+but review is not treated as a substitute for enforcing their authority.
+
+Subdomains are deliberately refused as well, not only unrelated domains.
+Allowing them would infer authority from DNS structure, and the shorter the
+declared issuer host the more it would grant: an issuer of `https://com.` would
+make every `*.com.` host "owned", and an issuer of `https://us.auth0.com` would
+make every co-tenant `*.us.auth0.com` host owned. Telling a registrable domain
+apart from a public suffix needs a public-suffix list, and shared-tenant
+platforms defeat even that.
+
+The cost is real and worth stating: a provider that serves authorization from
+`www.example.com` and tokens from `api.example.com` cannot use pinned mode, and
+must publish discovery metadata instead — that document is how an issuer
+vouches for another host. Refusing a valid provider is recoverable; accepting an
+attacker's token endpoint is not. Supporting split-host providers would require
+a separately reviewed authority expansion beyond today's exact-host rule.
+Pinned mode is also weaker in one further respect: with no metadata
+document, work-fold cannot tell whether the provider supports RFC 9207, so the
+authorization-response `iss` check is not required in this mode.
+
+work-fold hard-fails only on assertions it cannot supply itself: the metadata
+`issuer` must equal the declared issuer, both endpoints must be public HTTPS, and
+an advertised `grant_types_supported` must include `authorization_code`.
+Under-declared *capabilities* are reported as durable connection diagnostics
+rather than refused, because work-fold always sends PKCE S256 and never holds a
+client secret. The connection management surface keeps those notes visible.
+This matters in practice: neither Google nor Microsoft advertises `none`
+in `token_endpoint_auth_methods_supported`, and Microsoft omits
+`code_challenge_methods_supported` entirely, yet both support PKCE public
+clients. A malformed value in those fields is still rejected.
+
+### Provider dialect parameters
+
+`authorizationParameters` is an optional list of up to eight reviewed
+`{ "name": ..., "value": ... }` pairs merged into the authorization request:
+
+```json
+{
+  "kind": "oauth2-pkce",
+  "issuer": "https://accounts.google.com",
+  "clientId": "…apps.googleusercontent.com",
+  "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
+  "authorizationParameters": [
+    { "name": "access_type", "value": "offline" },
+    { "name": "prompt", "value": "consent" }
+  ]
+}
+```
+
+Google issues a refresh token only when `access_type=offline` is present, so
+without this an unattended automation loses its connection after about an hour.
+Other providers need `audience` or `resource`. Names are lowercase
+`snake_case`, values are printable ASCII constants, and no runtime interpolation
+exists. Names the authorization request owns — `response_type`, `client_id`,
+`redirect_uri`, `scope`, `state`, `code_challenge`, `code_challenge_method`,
+`grant_type`, `code`, `code_verifier`, `refresh_token`, `client_secret`, and the
+`client_assertion` pair — are rejected at review, and the protocol layer
+overwrites every reviewed extra again when it builds the request.
+
+## Runtime limits
+
+`workFoldRestrictedApp.limits.get()` returns the host's effective bounds
+synchronously. The values are constant for the mount, arrive as a launch
+argument rather than an IPC call, and are available to the worker as well:
+
+```js
+const limits = globalThis.workFoldRestrictedApp.limits.get();
+const pageSize = Math.floor(limits.network.maxResponseBytes / 2_048);
+```
+
+It reports `network` (`maxRequestBytes`, `maxResponseBytes`, `timeoutMs`,
+`maxRedirects`), `storage` (`quotaBytes`, `maxKeys`, `maxKeyBytes`,
+`maxValueBytes`, `maxTransactionBytes`, `maxTransactionOperations`), `files`
+(`maxReadBytes`, `maxWriteBytes`), `automations`
+(`minimumIntervalMinutes`, `maximumIntervalMinutes`), `inference`
+(`instructionsBytes`, `inputBytes`, `schemaBytes`, `defaultOutputBytes`,
+`maxOutputBytes`, `runningPerInstallation`, `timeoutMs`), `assistant`
+(`instructionsBytes`, `inputBytes`, `resultBytes`, `summaryBytes`, `dataBytes`,
+`resultFiles`, `runningPerInstallation`), and `subscriptions`
+(`minHintIntervalMs`, `filePollIntervalMs`, `fileDebounceMs`,
+`fileMinHintIntervalMs`, `fileMaxFiles`).
+They are composed from the live brokers and the shared limit records, so a host
+running non-default bounds publishes the bounds it is actually enforcing.
+
+Design against these numbers instead of discovering them by failing. They
+keep one operation's memory finite rather than ration what an app may do, but
+app storage is still the wrong home for bulk data — it is one document read and
+rewritten whole on every operation: request a
+read-write directory permission and write large or long-lived records as
+ordinary work-folder files, which the person and the agent can also read with
+normal tools. Overruns report their own bound —
+`NETWORK_RESPONSE_TOO_LARGE`, `NETWORK_REQUEST_TOO_LARGE`, `FILE_TOO_LARGE`,
+`STORAGE_QUOTA`, `INFER_INPUT_TOO_LARGE`, `INFER_OUTPUT_TOO_LARGE`, and
+`INFER_BUSY` are distinct from the generic `NETWORK_FAILED`, `FILE_FAILED`,
+`STORAGE_FAILED`, and `INFER_FAILED` codes, and each message names the limit it
+hit.
+
+## Lifecycle, narrowing, and denial handling
+
+Adding a digest as a Development preview, or installing a published Release
+Feature, makes its UI available with every declared destination, directory
+permission (whole work-folder), notification category, and automation on, and with a
+Check slot bound when the work-folder has exactly one Check. No connection is stored:
+a secret is entered by the person once per destination, and a file-target
+permission waits for a chosen file. Storage is available without any grant.
+The person narrows any of this in Settings → Apps. A direct preview update preserves the
+Feature's Data Namespace and carries the person's granted or revoked state by
+declaration id, a chosen file root when the declaration is unchanged,
+automation state by id, run receipts, and connections whose destination
+declaration is byte-identical; a changed declaration needs its secret again. A
+Release update uses App Studio's persisted continuity plan with the same
+carry-forward under the default policy; **reset** starts over with the install
+defaults. Run receipts stay in the new revision's view labelled with the
+revision they ran under. New receipts bind the accepting Tenant, Runtime Instance, Feature
+Installation, canonical revision, Data Namespace, effective Principal,
+seven-domain authority, occurrence, and attempt. Legacy Workspace receipts are
+not imported. Removing a Development preview writes a complete data copy into Recently
+deleted, then purges its app storage and connections. Uninstalling a
+release-backed App Instance removes its connections and makes its data
+unreachable in the same registry transition, then either retains the detached
+namespace or — after the same recovery copy — queues its physical purge as
+explicitly chosen ([App data export and recovery](app-data-recovery.md)). Cleanup is idempotent after interruption and never deletes
+work-folder files. Source edits do not change preview or Release bytes; propose and
+review a new digest.
+
+Bridge promises reject an `Error`; host failures expose a stable enumerable
+`error.code`. Handle denial as visible product state rather than retrying or
+asking for secrets inside the app:
+
+```js
+try {
+  await bridge.request({ destinationId: "records-api", method: "GET", path: "/v1/records" });
+} catch (error) {
+  if (error?.code === "NETWORK_DENIED") showStatus("Allow this destination in Settings → Apps.");
+  else if (error?.code === "AUTH_REQUIRED") showStatus("Connect this destination in Settings → Apps.");
+  else showStatus(error?.message || "The connection is unavailable.");
+}
+```
+
+Common codes are:
+
+- network: `NETWORK_DENIED`, `AUTH_REQUIRED`, `NETWORK_FAILED`,
+  `NETWORK_REQUEST_TOO_LARGE`, `NETWORK_RESPONSE_TOO_LARGE`;
+- files: `FILE_DENIED`, `FILE_NOT_FOUND`, `FILE_CONFLICT`, `FILE_TOO_LARGE`,
+  `FILE_FAILED`;
+- storage: `STORAGE_INVALID`, `STORAGE_QUOTA`, `STORAGE_CONFLICT`,
+  `STORAGE_CORRUPT`, `STORAGE_UNSAFE`, `STORAGE_FAILED`;
+- selected Checks: `CHECK_DENIED`, `CHECK_UNAVAILABLE`;
+- notifications: `NOTIFICATION_DENIED`, `NOTIFICATION_FAILED`; and
+- worker/tool lifecycle: `ACTION_UNKNOWN`, `INPUT_INVALID`, `OUTPUT_INVALID`,
+  `APP_TIMEOUT`, `APP_CRASHED`, `APP_ERROR`, `APP_UNAVAILABLE`, and
+  `REVISION_CHANGED`.
+
+Do not repeatedly retry a denied power, infer that a declaration is a grant,
+or collect credentials in app UI or storage. Provide useful local or demo state
+when the external system is optional.
+
+## Run the checked-in local demo
+
+The Connected inbox package includes a project-service panel. To test it:
+
+1. Register this repository as a work-folder, or copy
+   `examples/packages/restricted-connected-inbox` into an ordinary folder in a
+   registered work-folder.
+2. Add that work-folder-relative package as a Local preview with
+   `work-fold apps install-preview --work-folder <id-or-name> --package examples/packages/restricted-connected-inbox`
+   (adjust the path if copied). It is added at once; Settings → Apps shows what
+   it can reach.
+3. From the repository root, start the companion process:
+
+   ```powershell
+   node examples/services/restricted-app-demo-service.mjs
+   ```
+
+4. Open the app from its rail button and click **Project service** in its left
+   pane. Installing turned the **project-service** destination on, so the tab
+   can use **Check health** or **Run refresh job** right away.
+
+The helper is an ordinary dependency-free developer process that binds only
+`127.0.0.1:4317`. work-fold and the sandboxed app do not execute, install,
+stop, or trust it. The loopback broker verifies the reviewed address and port,
+not which process owns the listener. See the
+[example README](../examples/packages/restricted-connected-inbox/README.md)
+for the storage-invalidation and static-notification walkthrough.
+
+## Verification and related contracts
+
+- Run `npm run check` and `npm test` after TypeScript or product behavior
+  changes.
+- Run `npm run desktop:prepare` after changing the sandbox host, preload,
+  brokers, Electron integration, or packaged runtime resources. Its real
+  Electron probe is a release boundary, not a substitute for Node-only tests.
+- Keep [Security](../SECURITY.md), [Privacy](../PRIVACY.md),
+  [Product model](product-model.md), [Skills & Extensions](skills-and-extensions.md),
+  and [Architecture](architecture.md) aligned when authority or lifecycle
+  changes.
+- Keep native Pi `surface.json` work in the separate
+  [Extension surfaces](extension-surfaces.md) contract.

@@ -1,0 +1,154 @@
+import assert from "node:assert/strict";
+import { createRequire, registerHooks } from "node:module";
+import test from "node:test";
+import { createElement, useState } from "react";
+import type { AgentStatus, WorkFolderSummary } from "../web-local/src/types.js";
+import { createDomHarness } from "./support/dom.js";
+
+// The real modal includes brand artwork. Node needs only the asset URL; the
+// browser visual pass checks the actual images and CSS.
+const iconNames = Object.keys(createRequire(import.meta.url)("@fluentui/react-icons")).filter((name) => /^[A-Za-z_$][\w$]*$/.test(name));
+const assets = registerHooks({
+  resolve(specifier, context, next) { return specifier === "@fluentui/react-icons" ? { url: "test:settings-icons", shortCircuit: true } : next(specifier, context); },
+  load(url, context, next) {
+  if (url === "test:settings-icons") return { format: "module", source: iconNames.map((name) => `export const ${name}=${name === "bundleIcon" ? "(filled)=>filled" : "()=>null"};`).join("\n"), shortCircuit: true };
+  if (/\.(png|svg)$/.test(url)) return { format: "module", source: `export default ${JSON.stringify(url)};`, shortCircuit: true };
+  return next(url, context);
+} });
+const { DesktopSettingsModal: SettingsModal } = await import("../web-local/src/components/modals/DesktopSettingsModal.js");
+assets.deregister();
+const { useApplicationAppearance } = await import("../web-local/src/hooks/useApplicationAppearance.js");
+function DesktopSettingsModal(props: Omit<Parameters<typeof SettingsModal>[0], "appearance">) {
+  const appearance = useApplicationAppearance({ fixtureMode: true });
+  return createElement(SettingsModal, { ...props, appearance });
+}
+
+const status: AgentStatus = { configured: true, ready: true, provider: "openrouter", model: "deepseek/deepseek-v4.1-flash", error: null, piVersion: "fixture" };
+const workFolder = { id: "settings-test", name: "Workshop", workFolderRoot: "/synthetic/workshop" } as WorkFolderSummary;
+
+test("Settings navigation preserves agent edits, isolates tab groups and restores focus on close", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+  HTMLElement.prototype.scrollIntoView = () => {};
+  window.matchMedia = (() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+  function Screen() {
+    const [open, setOpen] = useState(false);
+    return createElement("div", null,
+      createElement("button", { id: "settings-opener", onClick: () => setOpen(true) }, "Settings"),
+      open ? createElement(DesktopSettingsModal, {
+        workFolder, agentStatus: status, fixtureMode: true, updateStatus: null,
+        onAgentConfigured: () => {}, onClose: () => setOpen(false),
+      }) : null);
+  }
+  await dom.render(createElement(Screen));
+  const opener = document.getElementById("settings-opener")!;
+  opener.focus();
+  await dom.act(() => opener.click());
+  const click = async (id: string) => dom.act(() => document.getElementById(id)!.click());
+  const nav = document.querySelector('[aria-label="Settings sections"]')!;
+  assert.equal(nav.querySelectorAll('[tabindex="0"]').length, 1);
+  document.getElementById("settings-tab-appearance")!.focus();
+  await dom.press("ArrowDown");
+  assert.equal(document.activeElement?.id, "settings-tab-ai-models");
+  await dom.waitFor(() => Boolean(document.querySelector("textarea")));
+  await dom.act(() => {
+    const field = document.querySelector("textarea")!;
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!.call(field, "Unsaved workshop guidance");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("settings-tab-appearance");
+  assert.equal(document.getElementById("settings-panel-ai-models")?.hidden, true);
+  await click("settings-tab-ai-models");
+  assert.equal(document.querySelector("textarea")?.value, "Unsaved workshop guidance");
+  assert.equal(document.getElementById("settings-panel-ai-models")?.hidden, false);
+
+  const content = document.querySelector<HTMLElement>(".settings-content")!;
+  content.scrollTop = 250;
+  await click("settings-tab-shortcuts");
+  assert.equal(content.scrollTop, 0, "a newly selected settings page starts at its heading");
+  assert.equal(document.getElementById("settings-tab-shortcuts")?.getAttribute("aria-selected"), "true");
+  assert.equal(document.getElementById("settings-panel-shortcuts")?.getAttribute("aria-labelledby"), "settings-tab-shortcuts");
+
+  await dom.press("Escape");
+  await dom.settle();
+  assert.equal(document.querySelector('[role="dialog"]'), null);
+  assert.equal(document.activeElement, opener);
+});
+
+test("an accepted Settings save retains its owner across page navigation", async (t) => {
+  const dom = await createDomHarness();
+  const previousFetch = globalThis.fetch;
+  HTMLElement.prototype.scrollIntoView = () => {};
+  t.after(async () => { await dom.cleanup(); globalThis.fetch = previousFetch; });
+  window.matchMedia = (() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+  let reads = 0;
+  let writes = 0;
+  let finishSave!: (response: Response) => void;
+  globalThis.fetch = (async (input, init) => {
+    if (String(input).endsWith("/api/events")) return new Response(new ReadableStream({ start(controller) {
+      init?.signal?.addEventListener("abort", () => controller.close(), { once: true });
+    } }));
+    if (init?.method === "POST") {
+      writes += 1;
+      return new Promise<Response>((resolve) => { finishSave = resolve; });
+    }
+    if (!String(input).includes("scope=agent")) reads += 1; // the agent's scope is read ahead quietly
+    return Response.json({ status, models: [{ provider: "openrouter", providerName: "OpenRouter", id: status.model, name: "DeepSeek Flash", authConfigured: true }], catalogs: [], instructions: "Original" });
+  }) as typeof fetch;
+  await dom.render(createElement(DesktopSettingsModal, {
+    workFolder, agentStatus: status, initialPage: "ai-models", updateStatus: null,
+    onAgentConfigured: () => {}, onClose: () => {},
+  }));
+  await dom.waitFor(() => Boolean(document.querySelector("textarea")));
+  await dom.act(() => {
+    const field = document.querySelector("textarea")!;
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!.call(field, "Saved guidance");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const submit = () => document.querySelector('[aria-labelledby="worker-instructions-heading"] form')!
+    .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await dom.act(submit);
+  await dom.act(() => document.getElementById("settings-tab-appearance")!.click());
+  await dom.act(() => document.getElementById("settings-tab-ai-models")!.click());
+  await dom.act(submit);
+  assert.equal(writes, 1, "page navigation cannot admit a duplicate pending save");
+  assert.equal(reads, 1, "returning keeps the pending owner's form instead of starting a stale read");
+  assert.equal(document.querySelector("textarea")?.value, "Saved guidance");
+  await dom.act(() => finishSave(Response.json({ instructions: "Saved guidance" })));
+  await dom.waitFor(() => Boolean(document.querySelector('[aria-labelledby="worker-instructions-heading"]')?.textContent?.includes("Instructions saved")));
+});
+
+test("opening Settings from a model label focuses the loaded selector only once", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+  HTMLElement.prototype.scrollIntoView = () => {};
+  window.matchMedia = (() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+  await dom.render(createElement(DesktopSettingsModal, {
+    workFolder, agentStatus: status, fixtureMode: true, initialPage: "ai-models", focusAiModel: true,
+    updateStatus: null, onAgentConfigured: () => {}, onClose: () => {},
+  }));
+  await dom.waitFor(() => document.activeElement?.id === "ai-model");
+  await dom.act(() => { document.getElementById("settings-tab-appearance")!.focus(); document.getElementById("settings-tab-appearance")!.click(); });
+  await dom.press("ArrowDown");
+  assert.equal(document.activeElement?.id, "settings-tab-ai-models", "returning to agent does not reclaim focus");
+});
+
+
+test("Settings exposes Customize work-folder back navigation only for that entry path", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+  HTMLElement.prototype.scrollIntoView = () => {};
+  window.matchMedia = (() => ({ matches: false, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+  let returns = 0;
+  const props = { workFolder, agentStatus: status, fixtureMode: true, initialPage: "ai-models" as const,
+    updateStatus: null, onAgentConfigured: () => {}, onClose: () => {} };
+  await dom.render(createElement(DesktopSettingsModal, props));
+  assert.equal(document.querySelector('[aria-label="Back to Customize work-folder"]'), null);
+  await dom.render(createElement(DesktopSettingsModal, { ...props, onBackToCustomization: () => { returns += 1; } }));
+  const back = document.querySelector<HTMLButtonElement>('[aria-label="Back to Customize work-folder"]')!;
+  assert.equal(back.parentElement, document.getElementById('settings-title')!.parentElement!.parentElement, "the button sits beside the Settings title");
+  await dom.act(() => back.click());
+  assert.equal(returns, 1);
+  await dom.render(createElement(DesktopSettingsModal, props));
+  assert.equal(document.querySelector('[aria-label="Back to Customize work-folder"]'), null, "a later ordinary Settings entry has no back button");
+});

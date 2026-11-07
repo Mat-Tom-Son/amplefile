@@ -1,0 +1,483 @@
+import { randomUUID } from "node:crypto";
+import { open } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { parseTurnFileChanges, type WorkFoldTurnFileChanges } from "./turn-file-changes.js";
+
+export const workFoldTurnRecordSchema = "work-fold.turn.v1" as const;
+/** Recent terminal outcomes retained in addition to every unfinished turn. */
+export const maxDurableTurnRecords = 1_000;
+export const maxDurableTurnTextChars = 2_000_000;
+const turnJournalCompactBytes = 16 * 1024 * 1024;
+
+export type WorkFoldDurableTurnStatus =
+  | "accepted"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "aborted"
+  | "interrupted";
+
+/**
+ * What the turn actually spent: the provider and model id that ran it and the
+ * usage Pi reported for it. `inputTokens` counts every prompt token the
+ * provider processed, cache reads and writes included. `amountUsd` is present only when the effective
+ * model carries pricing work-fold can apply — a model without published rates
+ * leaves the cost unknown rather than zero.
+ */
+export interface WorkFoldDurableTurnUsage {
+  provider: string;
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  amountUsd?: number;
+}
+
+export interface WorkFoldDurableTurnRecord {
+  schema: typeof workFoldTurnRecordSchema;
+  turnId: string;
+  requestId: string;
+  requestDigest: string;
+  userMessageId: string;
+  userMessageCreatedAt: string;
+  workFolderId: string;
+  conversationId: string;
+  actorKind: "assistant" | "cli" | "renderer" | "system";
+  status: WorkFoldDurableTurnStatus;
+  userMessagePersisted: boolean;
+  acceptedAt: string;
+  updatedAt: string;
+  assistantText: string;
+  messageId?: string;
+  error?: string;
+  fileChanges?: WorkFoldTurnFileChanges;
+  usage?: WorkFoldDurableTurnUsage;
+  /** Read-only helpers this turn ran (helper-tool.ts). Counts, ids and paths only. */
+  helpers?: WorkFoldTurnHelperRun[];
+}
+
+export interface WorkFoldTurnHelperRun {
+  helperId: string;
+  taskId?: string;
+  startedAt: string;
+  settledAt: string;
+  outcome: "succeeded" | "partial" | "failed" | "stopped";
+  model: { provider: string; id: string };
+  modelCalls: number;
+  usage: { input: number; output: number; cacheRead: number; cacheWrite: number; costUsd: number };
+  activity: Array<{ tool: string; target?: string; refused?: boolean; error?: boolean }>;
+}
+
+export interface WorkFoldTurnStoreOptions {
+  stateRoot: string;
+  now?: () => Date;
+  /** Maximum terminal records; accepted and running turns are never evicted. */
+  maxRecords?: number;
+  compactBytes?: number;
+}
+
+/**
+ * Machine-local, append-only agent-turn journal. The portable transcript
+ * remains the content authority; this store owns request deduplication, live
+ * checkpoints, task-scoped outcomes, and honest restart recovery.
+ */
+export class WorkFoldTurnStore {
+  readonly path: string;
+  readonly #now: () => Date;
+  readonly #maxRecords: number;
+  readonly #compactBytes: number;
+  readonly #records = new Map<string, WorkFoldDurableTurnRecord>();
+  readonly #requests = new Map<string, string>();
+  #queue: Promise<unknown> = Promise.resolve();
+
+  private constructor(options: WorkFoldTurnStoreOptions) {
+    this.path = join(options.stateRoot, "turns", "turns.jsonl");
+    this.#now = options.now ?? (() => new Date());
+    this.#maxRecords = options.maxRecords ?? maxDurableTurnRecords;
+    this.#compactBytes = options.compactBytes ?? turnJournalCompactBytes;
+  }
+
+  static async create(options: WorkFoldTurnStoreOptions): Promise<WorkFoldTurnStore> {
+    const store = new WorkFoldTurnStore(options);
+    await store.#load();
+    return store;
+  }
+
+  get(turnId: string): WorkFoldDurableTurnRecord | null {
+    const record = this.#records.get(turnId);
+    return record ? copyRecord(record) : null;
+  }
+
+  findRequest(workFolderId: string, conversationId: string, requestId: string): WorkFoldDurableTurnRecord | null {
+    const turnId = this.#requests.get(requestKey(workFolderId, conversationId, requestId));
+    return turnId ? this.get(turnId) : null;
+  }
+
+  findScopeRequest(workFolderId: string, requestId: string): WorkFoldDurableTurnRecord | null {
+    for (const record of [...this.#records.values()].reverse()) {
+      if (record.workFolderId === workFolderId && record.requestId === requestId) return copyRecord(record);
+    }
+    return null;
+  }
+
+  list(): WorkFoldDurableTurnRecord[] {
+    return [...this.#records.values()].map(copyRecord);
+  }
+
+  active(): WorkFoldDurableTurnRecord[] {
+    return this.list().filter((record) => record.status === "accepted" || record.status === "running");
+  }
+
+  async accept(input: {
+    turnId?: string;
+    requestId: string;
+    requestDigest: string;
+    userMessageId: string;
+    userMessageCreatedAt: string;
+    workFolderId: string;
+    conversationId: string;
+    actorKind: WorkFoldDurableTurnRecord["actorKind"];
+  }): Promise<{ record: WorkFoldDurableTurnRecord; replayed: boolean }> {
+    return this.#run(async () => {
+      validateStableId(input.requestId, "request id");
+      validateStableId(input.userMessageId, "user message id");
+      validateStableId(input.workFolderId, "work-folder id");
+      validateStableId(input.conversationId, "conversation id");
+      if (!/^[a-f0-9]{64}$/.test(input.requestDigest)) throw new Error("Turn request digest is invalid.");
+      const existingId = this.#requests.get(requestKey(input.workFolderId, input.conversationId, input.requestId));
+      if (existingId) {
+        const existing = this.#records.get(existingId)!;
+        if (existing.requestDigest !== input.requestDigest) {
+          throw new WorkFoldTurnReplayConflictError("This turn request id was already used for different input.");
+        }
+        return { record: copyRecord(existing), replayed: true };
+      }
+      const at = this.#now().toISOString();
+      const record: WorkFoldDurableTurnRecord = {
+        schema: workFoldTurnRecordSchema,
+        turnId: input.turnId?.trim() || `turn-${randomUUID()}`,
+        requestId: input.requestId,
+        requestDigest: input.requestDigest,
+        userMessageId: input.userMessageId,
+        userMessageCreatedAt: input.userMessageCreatedAt,
+        workFolderId: input.workFolderId,
+        conversationId: input.conversationId,
+        actorKind: input.actorKind,
+        status: "accepted",
+        userMessagePersisted: false,
+        acceptedAt: at,
+        updatedAt: at,
+        assistantText: "",
+      };
+      validateStableId(record.turnId, "turn id");
+      await this.#append(record);
+      this.#remember(record);
+      await this.#compactIfNeeded(false);
+      return { record: copyRecord(record), replayed: false };
+    });
+  }
+
+  markRunning(turnId: string): Promise<WorkFoldDurableTurnRecord | null> {
+    return this.#update(turnId, (record) => ({ ...record, status: "running", userMessagePersisted: true }), { activeOnly: true });
+  }
+
+  /**
+   * Reopens a reservation only when its user message never reached the
+   * transcript. This is safe on an explicit retry because the Agent cannot
+   * start until after that append succeeds.
+   */
+  resumeUnpersisted(turnId: string): Promise<WorkFoldDurableTurnRecord | null> {
+    return this.#update(turnId, (record) => {
+      if (record.userMessagePersisted) return record;
+      const { error: _error, messageId: _messageId, fileChanges: _fileChanges, ...rest } = record;
+      return { ...rest, status: "accepted" };
+    }, { unpersistedOnly: true });
+  }
+
+  checkpoint(turnId: string, assistantText: string): Promise<WorkFoldDurableTurnRecord | null> {
+    return this.#update(turnId, (record) => ({
+      ...record,
+      assistantText: assistantText.slice(0, maxDurableTurnTextChars),
+    }), { activeOnly: true, skipUnchangedText: true });
+  }
+
+  settle(
+    turnId: string,
+    input: { status: Exclude<WorkFoldDurableTurnStatus, "accepted" | "running">; messageId?: string; error?: string; assistantText?: string; fileChanges?: WorkFoldTurnFileChanges; usage?: WorkFoldDurableTurnUsage; helpers?: WorkFoldTurnHelperRun[] },
+  ): Promise<WorkFoldDurableTurnRecord | null> {
+    return this.#update(turnId, (record) => ({
+      ...record,
+      status: input.status,
+      userMessagePersisted: record.userMessagePersisted,
+      assistantText: (input.assistantText ?? record.assistantText).slice(0, maxDurableTurnTextChars),
+      ...(input.messageId ? { messageId: input.messageId } : {}),
+      ...(input.error ? { error: input.error.slice(0, 2_048) } : {}),
+      ...(input.fileChanges ? { fileChanges: parseTurnFileChanges(input.fileChanges) } : {}),
+      // Attribution only: a settled turn's usage never changes what the turn did.
+      ...(input.usage ? { usage: parseTurnUsage(input.usage) } : {}),
+      ...(input.helpers?.length ? { helpers: parseTurnHelperRuns(input.helpers) } : {}),
+    }));
+  }
+
+  flush(): Promise<void> {
+    return this.#queue.then(() => undefined);
+  }
+
+  async #update(
+    turnId: string,
+    mutate: (record: WorkFoldDurableTurnRecord) => WorkFoldDurableTurnRecord,
+    options: { activeOnly?: boolean; unpersistedOnly?: boolean; skipUnchangedText?: boolean } = {},
+  ): Promise<WorkFoldDurableTurnRecord | null> {
+    return this.#run(async () => {
+      const current = this.#records.get(turnId);
+      if (!current) return null;
+      if (options.activeOnly && current.status !== "accepted" && current.status !== "running") return copyRecord(current);
+      if (options.unpersistedOnly && current.userMessagePersisted) return copyRecord(current);
+      const next = { ...mutate(current), updatedAt: this.#now().toISOString() };
+      if (options.skipUnchangedText && next.assistantText === current.assistantText) return copyRecord(current);
+      await this.#append(next);
+      this.#remember(next);
+      await this.#compactIfNeeded(false);
+      return copyRecord(next);
+    });
+  }
+
+  #run<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.#queue.catch(() => undefined).then(operation);
+    this.#queue = result;
+    return result;
+  }
+
+  async #load(): Promise<void> {
+    const text = await readFile(this.path, "utf8").catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+      throw error;
+    });
+    const lines = text.split("\n");
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index]!.trim();
+      if (!line) continue;
+      try {
+        this.#remember(parseRecord(JSON.parse(line)));
+      } catch (error) {
+        const isLastNonEmpty = lines.slice(index + 1).every((candidate) => !candidate.trim());
+        if (isLastNonEmpty) break;
+        throw new Error("work-fold could not read the durable turn journal.", { cause: error });
+      }
+    }
+    await this.#compactIfNeeded(true);
+  }
+
+  async #append(record: WorkFoldDurableTurnRecord): Promise<void> {
+    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+    await appendFile(this.path, `${JSON.stringify(record)}\n`, { encoding: "utf8", mode: 0o600, flush: true });
+  }
+
+  async #compactIfNeeded(forceRepair: boolean): Promise<void> {
+    // Bound terminal history on every write, even below the disk-compaction
+    // threshold. Loading calls this only after replaying every record's state.
+    this.#trimMemory();
+    const info = await stat(this.path).catch(() => null);
+    if (!info || (!forceRepair && info.size <= this.#compactBytes)) return;
+    const records = [...this.#records.values()].sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
+    const tempPath = `${this.path}.tmp-${randomUUID()}`;
+    await writeFile(tempPath, records.map((record) => JSON.stringify(record)).join("\n") + (records.length ? "\n" : ""), {
+      encoding: "utf8",
+      mode: 0o600,
+      flush: true,
+    });
+    await rename(tempPath, this.path);
+    await syncDirectory(dirname(this.path));
+  }
+
+  #remember(record: WorkFoldDurableTurnRecord): void {
+    this.#records.set(record.turnId, copyRecord(record));
+    this.#requests.set(requestKey(record.workFolderId, record.conversationId, record.requestId), record.turnId);
+  }
+
+  #trimMemory(): void {
+    if (this.#records.size <= this.#maxRecords) return;
+    // An unfinished turn still owns its acceptance, checkpoint, and replay
+    // identity. Only terminal outcomes compete for the history allowance.
+    const records = [...this.#records.values()]
+      .filter((record) => record.status !== "accepted" && record.status !== "running")
+      .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
+    for (const record of records.slice(0, Math.max(0, records.length - this.#maxRecords))) {
+      this.#records.delete(record.turnId);
+      const key = requestKey(record.workFolderId, record.conversationId, record.requestId);
+      // An expired request may have a newer acceptance later in the journal.
+      if (this.#requests.get(key) === record.turnId) this.#requests.delete(key);
+    }
+  }
+}
+
+export class WorkFoldTurnReplayConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkFoldTurnReplayConflictError";
+  }
+}
+
+/**
+ * Temp file, fsync, rename, then the directory; 0o600 like the other
+ * machine-local stores. A failure at any step removes the temp file.
+ */
+export async function writeFileAtomic(path: string, content: string): Promise<void> {
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    const handle = await open(temporary, "w", 0o600);
+    try {
+      await handle.writeFile(content, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close().catch(() => undefined);
+    }
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
+  await syncDirectory(dirname(path));
+}
+
+/** fsyncs a directory, tolerating only the platforms that cannot. */
+export async function syncDirectory(path: string): Promise<void> {
+  let directory: Awaited<ReturnType<typeof open>> | null = null;
+  try {
+    directory = await open(path, "r");
+    await directory.sync();
+  } catch (error) {
+    if (!directorySyncUnsupported(error)) throw error;
+  } finally {
+    await directory?.close().catch(() => undefined);
+  }
+}
+
+export function directorySyncUnsupported(error: unknown, platform = process.platform): boolean {
+  if (!error || typeof error !== "object" || !("code" in error)) return false;
+  const code = (error as NodeJS.ErrnoException).code ?? "";
+  if (["EINVAL", "ENOTSUP", "EISDIR", "EBADF"].includes(code)) return true;
+  return platform === "win32" && ["EPERM", "EACCES"].includes(code);
+}
+
+function parseRecord(value: unknown): WorkFoldDurableTurnRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Turn record must be an object.");
+  const record = value as Partial<WorkFoldDurableTurnRecord>;
+  if (record.schema !== workFoldTurnRecordSchema) throw new Error("Turn record schema is unsupported.");
+  for (const [label, candidate] of [
+    ["turn id", record.turnId], ["request id", record.requestId], ["user message id", record.userMessageId],
+    ["work-folder id", record.workFolderId], ["conversation id", record.conversationId],
+  ] as const) validateStableId(candidate, label);
+  if (typeof record.requestDigest !== "string" || !/^[a-f0-9]{64}$/.test(record.requestDigest)) throw new Error("Turn request digest is invalid.");
+  if (typeof record.userMessageCreatedAt !== "string" || !Number.isFinite(Date.parse(record.userMessageCreatedAt))) throw new Error("Turn message time is invalid.");
+  if (record.actorKind !== "assistant" && record.actorKind !== "cli" && record.actorKind !== "renderer" && record.actorKind !== "system") throw new Error("Turn actor is invalid.");
+  if (!isStatus(record.status)) throw new Error("Turn status is invalid.");
+  if (record.fileChanges !== undefined) {
+    if (record.status === "accepted" || record.status === "running") throw new Error("An active turn cannot claim completed file changes.");
+    record.fileChanges = parseTurnFileChanges(record.fileChanges);
+  }
+  if (typeof record.userMessagePersisted !== "boolean") throw new Error("Turn persistence state is invalid.");
+  if (typeof record.acceptedAt !== "string" || !Number.isFinite(Date.parse(record.acceptedAt))) throw new Error("Turn acceptance time is invalid.");
+  if (typeof record.updatedAt !== "string" || !Number.isFinite(Date.parse(record.updatedAt))) throw new Error("Turn update time is invalid.");
+  if (typeof record.assistantText !== "string" || record.assistantText.length > maxDurableTurnTextChars) throw new Error("Turn checkpoint is invalid.");
+  if (record.messageId !== undefined) validateStableId(record.messageId, "response message id");
+  if (record.error !== undefined && (typeof record.error !== "string" || record.error.length > 2_048)) throw new Error("Turn error is invalid.");
+  if (record.usage !== undefined) record.usage = parseTurnUsage(record.usage);
+  if (record.helpers !== undefined) record.helpers = parseTurnHelperRuns(record.helpers);
+  return record as WorkFoldDurableTurnRecord;
+}
+
+/** A helper record is attribution: ids, outcome, counts and the paths it touched, never file content. */
+export function parseTurnHelperRuns(value: unknown): WorkFoldTurnHelperRun[] {
+  if (!Array.isArray(value)) throw new Error("Turn helpers are invalid.");
+  const count = (input: unknown, label: string) => {
+    if (typeof input !== "number" || !Number.isFinite(input) || input < 0) throw new Error(`Turn helper ${label} is invalid.`);
+    return input;
+  };
+  const text = (input: unknown, label: string, max = 200) => {
+    if (typeof input !== "string" || !input.length || input.length > max) throw new Error(`Turn helper ${label} is invalid.`);
+    return input;
+  };
+  return value.slice(0, 1000).map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("Turn helper is invalid.");
+    const run = item as Record<string, unknown>;
+    const outcome = run.outcome;
+    if (outcome !== "succeeded" && outcome !== "partial" && outcome !== "failed" && outcome !== "stopped") throw new Error("Turn helper outcome is invalid.");
+    const model = (run.model ?? {}) as Record<string, unknown>;
+    const usage = (run.usage ?? {}) as Record<string, unknown>;
+    const activity = Array.isArray(run.activity) ? run.activity.slice(0, 200) : [];
+    return {
+      helperId: text(run.helperId, "id"),
+      ...(run.taskId !== undefined ? { taskId: text(run.taskId, "task id") } : {}),
+      startedAt: text(run.startedAt, "start time"),
+      settledAt: text(run.settledAt, "settle time"),
+      outcome,
+      model: { provider: text(model.provider, "provider"), id: text(model.id, "model") },
+      modelCalls: count(run.modelCalls, "model calls"),
+      usage: {
+        input: count(usage.input, "input tokens"), output: count(usage.output, "output tokens"),
+        cacheRead: count(usage.cacheRead, "cache reads"), cacheWrite: count(usage.cacheWrite, "cache writes"),
+        costUsd: count(usage.costUsd, "cost"),
+      },
+      activity: activity.map((entry) => {
+        const record = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+        return {
+          tool: text(record.tool, "activity tool", 64),
+          ...(typeof record.target === "string" && record.target.length ? { target: record.target.slice(0, 300) } : {}),
+          ...(record.refused === true ? { refused: true } : {}),
+          ...(record.error === true ? { error: true } : {}),
+        };
+      }),
+    };
+  });
+}
+
+/** A usage receipt records only counts and identifiers, never prompt or reply content. */
+export function parseTurnUsage(value: unknown): WorkFoldDurableTurnUsage {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Turn usage is invalid.");
+  const usage = value as Record<string, unknown>;
+  const allowed = ["provider", "modelId", "inputTokens", "outputTokens", "amountUsd"];
+  if (Object.keys(usage).some((key) => !allowed.includes(key))) throw new Error("Turn usage has invalid fields.");
+  for (const key of ["provider", "modelId"] as const) {
+    const text = usage[key];
+    if (typeof text !== "string" || !text.length || text.length > 200) throw new Error("Turn usage model is invalid.");
+  }
+  for (const key of ["inputTokens", "outputTokens"] as const) {
+    const count = usage[key];
+    if (typeof count !== "number" || !Number.isFinite(count) || count < 0) throw new Error("Turn usage token count is invalid.");
+  }
+  // Absent means unknown pricing. A cost is recorded only when one was reported.
+  if (usage.amountUsd !== undefined && (typeof usage.amountUsd !== "number" || !Number.isFinite(usage.amountUsd) || usage.amountUsd < 0)) {
+    throw new Error("Turn usage cost is invalid.");
+  }
+  return {
+    provider: usage.provider as string,
+    modelId: usage.modelId as string,
+    inputTokens: usage.inputTokens as number,
+    outputTokens: usage.outputTokens as number,
+    ...(usage.amountUsd === undefined ? {} : { amountUsd: usage.amountUsd as number }),
+  };
+}
+
+function validateStableId(value: unknown, label: string): asserts value is string {
+  if (typeof value !== "string" || value.length < 1 || value.length > 160 || !/^[A-Za-z0-9._:-]+$/.test(value)) {
+    throw new Error(`Turn ${label} is invalid.`);
+  }
+}
+
+function isStatus(value: unknown): value is WorkFoldDurableTurnStatus {
+  return value === "accepted" || value === "running" || value === "succeeded" || value === "failed" || value === "aborted" || value === "interrupted";
+}
+
+function requestKey(workFolderId: string, conversationId: string, requestId: string): string {
+  return `${workFolderId}\u0000${conversationId}\u0000${requestId}`;
+}
+
+function copyRecord(record: WorkFoldDurableTurnRecord): WorkFoldDurableTurnRecord {
+  return {
+    ...record,
+    ...(record.fileChanges ? { fileChanges: structuredClone(record.fileChanges) } : {}),
+    ...(record.usage ? { usage: { ...record.usage } } : {}),
+    ...(record.helpers ? { helpers: structuredClone(record.helpers) } : {}),
+  };
+}

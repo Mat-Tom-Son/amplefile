@@ -1,0 +1,1901 @@
+import type { CheckCorrectionRecord } from "../checks/check-corrections.js";
+/**
+ * In-process authority the act-lane executor calls to apply commands. The
+ * interactive local API implements this interface inside `startLocalApi`
+ * (where the chat runtime state lives) and exposes it on `LocalApiHandle`;
+ * the desktop CLI host receives it through a getter that answers null while
+ * the interactive app is not running. Methods throw `WorkFoldCliError` so
+ * exit codes map without translation.
+ */
+
+import type {
+  WorkFoldCheckDecision,
+  WorkFoldCheckDecisionKind,
+  WorkFoldCheckFinding,
+  WorkFoldCheckRunRecord,
+} from "../checks/check-types.js";
+import type { WorkFoldCliActLegacySurface, WorkFoldCliActSurface } from "./act-receipts.js";
+import type { WorkFoldOverviewSnapshot } from "../overview.js";
+import type { WorkFoldAgentAttachmentDisposition, WorkFoldAgentAttachmentRef } from "../work-fold-agent-attachments.js";
+import type {
+  WorkFoldRequestAction,
+  WorkFoldRequestKind,
+  WorkFoldRequestLimitHit,
+  WorkFoldRequestState,
+  WorkFoldRequestSurface,
+  WorkFoldRequestTurnState,
+  WorkFoldRequestUsage,
+  WorkFoldResultEnvelope,
+  WorkFoldResultOutcome,
+} from "../requests/request-records.js";
+import type { WorkFolderChatMatch, WorkFolderFileMatch, WorkFolderSearchCoverage } from "../search.js";
+import type { HistoryFileComparison, HistoryFileRead, HistoryFileReadOptions, HistoryPageOptions } from "../../shared/history-review.js";
+
+export interface WorkFoldActWorkFolderRef {
+  id: string;
+  name: string;
+  workFolderRoot: string;
+}
+
+/** One Recently deleted item, as the act lane reports it: identifiers and paths only. */
+export interface WorkFoldActRecentlyDeletedEntry {
+  id: string;
+  kind: "file" | "folder" | "work-folder" | "skill" | "app-storage" | "app-retained" | "app-release" | "app-studio";
+  reason:
+    | "files.delete"
+    | "agent.chat.delete"
+    | "chats.delete"
+    | "work-folders.delete"
+    | "skills.remove"
+    | "apps.remove"
+    | "apps.work-folder.removed"
+    | "apps.storage.clear"
+    | "apps.retained.purge"
+    | "apps.uninstall.purge"
+    | "apps.release.delete";
+  workFolderId: string;
+  workFolderName?: string;
+  /** skill only: the scope it goes back into. An Everywhere Skill names the work-fold agent's scope as its work-folder. */
+  scope?: "everywhere" | "work-folder";
+  /** work-folder-relative path, a deleted work-folder's original folder path, a Skill's path inside its scope's skills folder, `<appId>/<namespace>`, `<projectId>/<releaseDigest>`, or an App Project id (App Studio history). */
+  originalPath: string;
+  name: string;
+  sizeBytes: number;
+  sizeApproximate?: true;
+  deletedAt: string;
+  restoreBy: string;
+  receiptId: string | null;
+  uncovered?: Array<{ path: string; reason: "too_large" | "unreadable" | "symbolic_link" | "excluded" }>;
+  /** A tree holding records from the earlier Workspace product; work-fold never erases those. */
+  held?: { reason: "legacy-metadata" | "unreadable"; noticedAt: string };
+  /**
+   * `in-place` goes back where it came from; `save-only` can only be written
+   * out as a file with `--to` (app data whose app is gone); `blocked` cannot
+   * be brought back right now, and `note` says why.
+   */
+  restorable: "in-place" | "save-only" | "blocked";
+  note?: string;
+}
+
+/** The Recently deleted item a destroying verb produced. */
+export interface WorkFoldActRecentlyDeletedRef {
+  entryId: string;
+  restoreBy: string;
+}
+
+export interface WorkFoldActConversationRef {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+  snoozedUntil: string | null;
+}
+
+export type WorkFoldActChatState = "idle" | "running" | "compacting";
+
+/**
+ * Task-scoped view of one accepted agent turn. `unknown` means the id was
+ * never accepted here or has aged out of the bounded durable turn journal;
+ * transcripts remain the long-lived content authority.
+ */
+export type WorkFoldActTurnState = "running" | "succeeded" | "failed" | "aborted" | "unknown";
+
+export interface WorkFoldActTurnStatus {
+  taskId: string;
+  state: WorkFoldActTurnState;
+  conversationId: string | null;
+  messageId: string | null;
+  error: string | null;
+  endedAt: string | null;
+}
+
+export interface WorkFoldActChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  interrupted?: true;
+}
+
+/**
+ * Lifecycle position of a Chat before a lifecycle act ran. Receipts encode it
+ * as the act's undo reference so the inverse verb (re-archive, re-snooze,
+ * resume) can be chosen from the receipt alone.
+ */
+export interface WorkFoldActChatLifecycleState {
+  archivedAt: string | null;
+  snoozedUntil: string | null;
+}
+
+/**
+ * Bounded projection of one History restore point. The act lane deliberately
+ * returns manifest summaries here; explicit history read/diff commands select
+ * bounded file content separately.
+ */
+export interface WorkFoldActCheckpointSummary {
+  checkpointId: string;
+  createdAt: string;
+  label?: string;
+  reason: string;
+  scope: "full" | "targeted";
+  fileCount: number;
+  totalBytes: number;
+  skippedFileCount: number;
+}
+
+/** One captured version of a work-folder file, addressable by content hash. */
+export interface WorkFoldActFileVersionRef {
+  path: string;
+  hashSha256: string;
+  sizeBytes: number;
+  modifiedAt: string;
+  capturedAt: string;
+  checkpointId: string;
+  checkpointLabel?: string;
+}
+
+/**
+ * Phase of one request in the vocabulary `agent status` and the popover
+ * speak. `working` is the request's own turn; `handed_off` means that turn
+ * finished but a Worker turn it started is still running — "done" is
+ * never claimed while downstream work continues. `needs_you` is an open
+ * question, or a completed turn whose reply ends by asking the person one.
+ * The durable record's full state (docs/collaboration-contract.md, F25)
+ * travels beside it as `state`: `partial` reads here as `done` and `expired`
+ * as `stopped`.
+ */
+export type WorkFoldActAgentRequestPhase =
+  | "working"
+  | "needs_you"
+  | "handed_off"
+  | "done"
+  | "failed"
+  | "stopped";
+
+export interface WorkFoldActAgentChildStatus {
+  taskId: string;
+  workFolderId: string;
+  workFolderName: string;
+  conversationId: string;
+  state: WorkFoldActTurnState;
+  error: string | null;
+  /** Visible files observed changing between this turn's History captures. */
+  files?: string[];
+}
+
+/** One attachment's accounted outcome in a request view: `placed`, `registered`, or `unrecorded`. */
+export interface WorkFoldActAttachmentDisposition {
+  attachment: WorkFoldAgentAttachmentRef;
+  status: WorkFoldAgentAttachmentDisposition["status"];
+  workFolderId?: string;
+  workFolderName?: string;
+  copied?: string[];
+  checkpointId?: string | null;
+}
+
+export interface WorkFoldActAgentRequest {
+  /** The request's newest turn; a continued request names its latest turn here. */
+  taskId: string;
+  conversationId: string;
+  phase: WorkFoldActAgentRequestPhase;
+  startedAt: string;
+  endedAt: string | null;
+  error: string | null;
+  content: string;
+  attachments: WorkFoldAgentAttachmentRef[];
+  dispositions: WorkFoldActAttachmentDisposition[];
+  actions: WorkFoldRequestAction[];
+  children: WorkFoldActAgentChildStatus[];
+  reply: { messageId: string; content: string } | null;
+  // --- the durable request record beneath the phase (F25), additive.
+  requestId: string;
+  kind: WorkFoldRequestKind;
+  rootId: string;
+  state: WorkFoldRequestState;
+  deadline: string | null;
+  limitHit: WorkFoldRequestLimitHit | null;
+  /** Bounded: ids and states, never the question text. */
+  questions: Array<{
+    questionId: string;
+    taskId: string;
+    respondent: "person" | "parent";
+    state: "open" | "answered" | "expired" | "cancelled";
+    askedAt: string;
+    answeredAt: string | null;
+  }>;
+  /** Bounded: ids, outcomes, and file counts, never the summary or data. */
+  results: Array<{
+    resultId: string;
+    taskId: string;
+    outcome: WorkFoldResultOutcome;
+    recordedAt: string;
+    fileCount: number;
+  }>;
+}
+
+export interface WorkFoldActCheckTaskStatus {
+  taskId: string;
+  runId: string | null;
+  state: WorkFoldCheckRunRecord["state"] | "unknown";
+  startedAt: string | null;
+  endedAt: string | null;
+  error: string | null;
+}
+
+/**
+ * F27/F28 (docs/collaboration-contract.md): the request graph as the act lane
+ * shows it. A request ref is the compact form every collaboration verb returns
+ * beside its own result; the summary and detail forms are what `requests
+ * list|show` read. `--json` carries a result's summary and data whole; the
+ * human renderer clamps them. Nothing here reaches a work-folder transcript.
+ */
+export interface WorkFoldActRequestRef {
+  id: string;
+  rootId: string;
+  kind: WorkFoldRequestKind;
+  state: WorkFoldRequestState;
+  /** 0 for a root. */
+  depth: number;
+  /** Null exactly for the work-fold agent scope. */
+  workFolderId: string | null;
+  workFolderName: string | null;
+  conversationId: string;
+  deadline: string | null;
+  openQuestions: number;
+  children: number;
+  results: number;
+}
+
+export interface WorkFoldActQuestionRef {
+  asynchronous?: boolean;
+  questionId: string;
+  requestId: string;
+  /** The asking turn. */
+  taskId: string;
+  respondent: "person" | "parent";
+  text: string;
+  /** Suggested answers, when the question offered any. */
+  options?: string[];
+  state: "open" | "answered" | "expired" | "cancelled";
+  askedAt: string;
+  expiresAt: string | null;
+  answer: string | null;
+  answeredAt: string | null;
+  /** The one linked follow-up turn an answer started, once it has. */
+  continuationTaskId: string | null;
+}
+
+/**
+ * F28: the followed task is waiting on an answer. Absent when nothing is
+ * owed. This is a fact about the task's request, never a turn state — the
+ * turn may still be running or may already have ended.
+ */
+export interface WorkFoldActWaitingRef {
+  questionId: string;
+  requestId: string;
+  respondent: "person" | "parent";
+  question: string;
+  askedAt: string;
+  expiresAt: string | null;
+}
+
+export interface WorkFoldActRequestSummary extends WorkFoldActRequestRef {
+  surface: WorkFoldRequestSurface;
+  createdAt: string;
+  updatedAt: string;
+  settledAt: string | null;
+  /** The request's newest turn. */
+  taskId: string;
+  continuationCount: number;
+  limitHit: WorkFoldRequestLimitHit | null;
+}
+
+export interface WorkFoldActRequestResult {
+  resultId: string;
+  taskId: string;
+  recordedAt: string;
+  receiptId: string;
+  outcome: WorkFoldResultOutcome;
+  fileCount: number;
+  /** The whole envelope; null when its file could not be read back, with `damaged` saying why. */
+  envelope: WorkFoldResultEnvelope | null;
+  damaged?: string;
+}
+
+export interface WorkFoldActRequestDetail extends WorkFoldActRequestSummary {
+  parentRequestId: string | null;
+  parentTaskId: string | null;
+  content: string;
+  turns: Array<{
+    taskId: string;
+    role: "origin" | "continuation";
+    state: WorkFoldRequestTurnState;
+    acceptedAt: string;
+    settledAt: string | null;
+    error: string | null;
+  }>;
+  questions: WorkFoldActQuestionRef[];
+  resultRecords: WorkFoldActRequestResult[];
+  usage: WorkFoldRequestUsage;
+  stopRequestedAt: string | null;
+  reconciledAt: string | null;
+  /** Background jobs this request's turns started (docs/background-jobs.md). */
+  jobs: Array<{
+    jobId: string;
+    taskId: string;
+    name: string;
+    state: "running" | "exited" | "stopped" | "timed_out" | "failed" | "interrupted";
+    startedAt: string;
+    settledAt: string | null;
+    exitCode: number | null;
+  }>;
+  /** Every request directly below this one, each with its own subtree. */
+  childRequests: WorkFoldActRequestDetail[];
+}
+
+/**
+ * One background job (docs/background-jobs.md, F31). The command and its
+ * folder are the caller's own; output text arrives only from `jobs output`.
+ */
+export interface WorkFoldActJobRef {
+  interactive?: boolean;
+  service?: boolean;
+  jobId: string;
+  name: string;
+  command: string;
+  cwd: string;
+  state: "accepted" | "running" | "exited" | "stopped" | "timed_out" | "failed" | "interrupted";
+  /** The same plain sentence the tools and the follow-up turn use. */
+  status: string;
+  conversationId: string;
+  taskId: string;
+  requestId: string;
+  createdAt: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  exitCode: number | null;
+  signal: string | null;
+  stoppedBy: "agent" | "cli" | "request" | "quit" | "timeout" | null;
+  error: string | null;
+  timeoutSeconds: number | null;
+  output: { bytes: number; lines: number; droppedBytes: number; droppedLines: number };
+  history:
+    | { status: "pending" }
+    | { status: "captured"; checkpointId: string; fileCount: number; skippedFileCount: number; skippedByReason: Record<string, number> }
+    | { status: "unavailable" | "not_applicable"; reason: string }
+    | null;
+  delivery: { at: string; by: "read" | "turn_context" | "follow_up"; taskId: string | null } | null;
+}
+
+export interface WorkFoldActJobOutput {
+  text: string;
+  fromLine: number;
+  toLine: number;
+  totalLines: number;
+  totalBytes: number;
+  droppedLines: number;
+  truncated: boolean;
+  nextOffset: number;
+}
+
+/** Registered-work-folder storage kind, mirrored from the work-folder registry. */
+export type WorkFoldActWorkFolderStorage = "managed" | "linked";
+
+/**
+ * App Studio presentation values, exactly the pane's typed form: a title plus
+ * optional description and icon id. The act verb reads them from a typed JSON
+ * file resolved host-side, never from free-form argv.
+ */
+export interface WorkFoldActAppPresentation {
+  title: string;
+  description: string | null;
+  icon: string | null;
+}
+
+/** Bounded projection of one immutable content-addressed App Release record. */
+export interface WorkFoldActAppReleaseRef {
+  releaseDigest: string;
+  displayVersion: string;
+  state: "prepared" | "published";
+  preparedAt: string;
+  publishedAt: string | null;
+  featureCount: number;
+}
+
+/**
+ * Bounded projection of one prepared App Studio operation. `fromReleaseDigest`
+ * is present exactly for update plans, so a receipt can name the transition by
+ * content identity instead of inferring an update-versus-rollback label the
+ * service does not record.
+ */
+export interface WorkFoldActAppOperationRef {
+  operationId: string;
+  kind: "install" | "update";
+  releaseDigest: string;
+  runtimeInstanceId: string;
+  targetWorkFolderId: string;
+  preparedAt: string;
+  fromReleaseDigest?: string;
+  continuityPolicy?: "eligible" | "reset";
+}
+
+/** Bounded projection of one release-backed App Instance. */
+export interface WorkFoldActAppInstanceRef {
+  runtimeInstanceId: string;
+  workFolderId: string;
+  releaseDigest: string;
+  displayVersion: string;
+}
+
+/**
+ * Bounded projection of one Chat-bound restricted-app proposal receipt. The
+ * review's digest and package identity are the fields a staging or dismissal
+ * needs; the full review (manifest, permissions, file counts) stays on the
+ * desktop review dialog.
+ */
+export interface WorkFoldActAppProposalRef {
+  id: string;
+  status: "pending" | "installed" | "failed" | "dismissed" | "revision-changed";
+  sourcePath: string;
+  title: string;
+  packageName: string;
+  version: string;
+  digest: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One declared tool of an installed app, with the schemas a caller needs to invoke it. */
+export interface WorkFoldActAppToolRef {
+  name: string;
+  description: string;
+  action: string;
+  inputSchema: unknown;
+  resultSchema: unknown;
+}
+
+/**
+ * What one installed app can do, as the work-fold agent sees it before acting: its
+ * declared tools and Worker actions, the powers it holds, which
+ * destinations have a saved connection, and its named automations.
+ */
+export interface WorkFoldActAppListing {
+  appId: string;
+  featureInstallationId: string;
+  digest: string;
+  title: string;
+  description: string | null;
+  version: string;
+  kind: "preview" | "installed";
+  tools: WorkFoldActAppToolRef[];
+  assistantActions: Array<{ id: string; title: string }>;
+  grants: {
+    network: string[];
+    files: Array<{ declarationId: string; root: string; access: string }>;
+    notifications: string[];
+    checks: Array<{ permissionId: string; checkId: string }>;
+  };
+  connections: Array<{ destinationId: string; kind: string | null; configured: boolean }>;
+  automations: Array<{ id: string; title: string; enabled: boolean; nextRunAt: string | null; lastRunAt: string | null }>;
+}
+
+/**
+ * What an install turned on, and what still needs the person. F21 grants every
+ * declared destination, folder permission, notification category, and
+ * automation at install; a permission that names a single file, a Check slot
+ * in a work-folder with several Checks, and a destination whose secret the person
+ * types are the deliberate remainder. Both halves ride the result so the
+ * work-fold agent can say them the way a Worker Chat does.
+ */
+export interface WorkFoldActAppInstallOutcome {
+  granted: {
+    destinations: number;
+    wholeWorkFolderFolders: number;
+    notifications: number;
+    checks: number;
+    automations: number;
+  };
+  needs: {
+    /** Destinations whose declared credential the person still enters in Settings → Apps. */
+    connections: string[];
+    /** Permissions that name a single file the person still chooses. */
+    files: string[];
+    /** Check-result slots not bound to a Check. */
+    checks: string[];
+  };
+}
+
+/** Bounded projection of one named-automation run receipt. */
+export interface WorkFoldActAppAutomationRunRef {
+  runId: string;
+  outcome: "success" | "failure" | "skipped" | "cancelled" | "interrupted";
+  startedAt: string;
+  finishedAt: string;
+  error?: string;
+}
+
+/** Bounded projection of an automation's reviewed trigger (docs/automations.md). */
+export interface WorkFoldActAutomationTriggerRef {
+  kind: "manual" | "interval" | "at" | "on-settled" | "files-changed";
+  workFolderId?: string;
+  watch?: { kind: "tree"; path: string; recursive: boolean; extensions: string[] };
+  debounceSeconds?: number;
+  cooldownMinutes?: number;
+  intervalMinutes?: number;
+  at?: string;
+  ifMissed?: "run" | "skip";
+  source?: {
+    kind: "check-run" | "app-automation-run";
+    workFolderId: string;
+    checkId?: string;
+    appId?: string;
+    appAutomationId?: string;
+    outcomes: string[];
+  };
+}
+
+/**
+ * One enablement receipt in an automation's history; `requestId` is the enabling
+ * act's request id. A legacy surface appears only on grants an older build
+ * recorded.
+ */
+export interface WorkFoldActAutomationGrantRef {
+  digest: string;
+  requestId: string;
+  enabledAt: string;
+  surface: WorkFoldCliActSurface | WorkFoldCliActLegacySurface;
+  browserId?: string;
+}
+
+/**
+ * One-line projection of an automation for `automations list`. Content-bearing by
+ * design (titles, work-folder ids) and therefore act-lane only, per the Checks rule
+ * that keeps the content-free read lane aggregate.
+ */
+export interface WorkFoldActAutomationSummary {
+  automationId: string;
+  title: string;
+  health: "enabled" | "disabled" | "suspended" | "completed";
+  digest: string;
+  trigger: WorkFoldActAutomationTriggerRef;
+  stepCount: number;
+  referencedWorkFolderIds: string[];
+  /** When the live enablement receipt was written; absent unless enabled. */
+  enabledAt?: string;
+  disabledAt?: string;
+  suspension?: { at: string; missingWorkFolderIds: string[]; reRegisteredWorkFolderIds: string[] };
+  lastScheduledAt?: string;
+  nextScheduledAt?: string;
+  completedAt?: string;
+}
+
+/**
+ * An automation step as declared: ids resolved to current work-folder names
+ * where the work-folder is still registered, the chat- and agent-step message verbatim (with
+ * its placeholders unfilled — work-fold fills them when a run starts), and
+ * the files source exactly as declared.
+ */
+export type WorkFoldActAutomationStepView =
+  | { id: string; kind: "chat"; workFolderId: string; workFolderName?: string; message: string; model?: { provider: string; id: string } }
+  | {
+    id: string;
+    kind: "files";
+    fromWorkFolderId: string;
+    fromWorkFolderName?: string;
+    source:
+      | { kind: "paths"; paths: string[] }
+      | { kind: "tree"; path: string; recursive: boolean; extensions: string[] }
+      | { kind: "step-created-files"; step: string; extensions?: string[]; maxFiles: number; maxTotalBytes: number };
+    toWorkFolderId: string;
+    toWorkFolderName?: string;
+    to: string;
+  }
+  | { id: string; kind: "check"; workFolderId: string; workFolderName?: string; checkId?: string }
+  | { id: string; kind: "agent"; message: string; model?: { provider: string; id: string } };
+
+export interface WorkFoldActAutomationModel {
+  provider: string;
+  providerName: string;
+  id: string;
+  name: string;
+  seesImages: boolean;
+}
+
+/** The full review projection for `automations show`. */
+export interface WorkFoldActAutomationDetail extends WorkFoldActAutomationSummary {
+  steps: WorkFoldActAutomationStepView[];
+  grants: WorkFoldActAutomationGrantRef[];
+}
+
+/**
+ * Bounded projection of one automation receipts-journal line. Identifiers,
+ * digests, paths, and counts, plus the bounded text work-fold itself filled
+ * into a chat- or agent-step message — never file contents, and this
+ * projection adds nothing to the journal.
+ */
+export interface WorkFoldActAutomationReceipt {
+  at: string;
+  scope: "automation" | "run" | "hop";
+  outcome: string;
+  automationId: string;
+  runId?: string;
+  hopId?: string;
+  hopKind?: "chat" | "files" | "check" | "agent";
+  title?: string;
+  digest?: string;
+  detail?: string;
+  /** A succeeded hop or run whose Worker reported finishing only partly. */
+  partial?: true;
+  cause?: unknown;
+  workFolderId?: string;
+  fromWorkFolderId?: string;
+  toWorkFolderId?: string;
+  conversationId?: string;
+  taskId?: string;
+  checkpointIds?: string[];
+  restorePointId?: string;
+  sourcePaths?: string[];
+  copiedPaths?: string[];
+  fileCount?: number;
+  totalBytes?: number;
+  checkRunId?: string;
+  checkIds?: string[];
+  findingCount?: number;
+  admittedCount?: number;
+  failedHopId?: string;
+  stoppedHopTaskIds?: string[];
+  /** What work-fold filled into this hop's message. */
+  placeholders?: Array<{ name: string; text: string; bytes: number; truncated: boolean }>;
+  messageBytes?: number;
+  surface?: string;
+  /** Legacy field on receipts an older build wrote; never written now. */
+  decisionId?: string;
+  missingWorkFolderIds?: string[];
+  requestId?: string;
+  occurrenceId?: string;
+  scheduledRunId?: string;
+}
+
+/**
+ * `pages validate` (docs/pages.md, "For the Worker"): one page folder's
+ * problems and a summary. A stable `--json` shape; problem files are
+ * relative to the page folder, and "" means the page folder itself.
+ */
+export interface WorkFoldActPageValidation {
+  workFolder: WorkFoldActWorkFolderRef;
+  /** The page folder's work-folder-relative path. */
+  page: string;
+  /** True when no problem is an error. Warnings (such as unused .html files) don't make a page invalid. */
+  valid: boolean;
+  summary: {
+    title: string;
+    entry: string;
+    tables: Array<{ name: string; columns: string[]; visitors: string[]; limit: number }>;
+    files: number;
+    bytes: number;
+  };
+  problems: Array<{ file: string; message: string; severity: "error" | "warning" }>;
+}
+
+/** The exact installation an install verb produced. Never resolved by display name. */
+export interface WorkFoldActInstalledAppRef {
+  workFolderId: string;
+  appId: string;
+  featureInstallationId: string;
+  digest: string;
+  title: string;
+  version: string;
+}
+
+export interface WorkFoldActFacade {
+  workerShow(input: { workFolder: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    model: { provider: string; id: string } | null;
+    availableModels: Array<{ provider: string; id: string; name: string; reasoning: boolean }>;
+    instructions: string;
+  }>;
+  workerSetModel(input: { workFolder: string; provider: string; model: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    model: { provider: string; id: string };
+  }>;
+  workerSetInstructions(input: {
+    workFolder: string;
+    instructions: string;
+    /** Add `instructions` as one more line after the current ones instead of replacing them. */
+    append?: boolean;
+    parentTaskId?: string;
+  }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    instructions: string;
+    /** With `append`: false when that exact line was already there, so nothing changed. */
+    appended?: boolean;
+  }>;
+  createConversation(input: { workFolder: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef; conversation: WorkFoldActConversationRef }>;
+  listConversations(input: { workFolder: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef; conversations: WorkFoldActConversationRef[] }>;
+  sendMessage(input: {
+    workFolder: string;
+    conversationId?: string;
+    newConversation?: boolean;
+    content: string;
+    /** Act-envelope request id reused as the durable turn identity. */
+    requestId?: string;
+    /** Explicit active work-fold agent request that initiated this action. */
+    parentTaskId?: string;
+  }): Promise<{ workFolder: WorkFoldActWorkFolderRef; conversationId: string; messageId: string; taskId: string }>;
+  conversationStatus(input: { workFolder: string; conversationId: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    conversation: WorkFoldActConversationRef;
+    state: WorkFoldActChatState;
+  }>;
+  conversationResult(input: { workFolder: string; conversationId: string; messages?: number }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    conversationId: string;
+    state: WorkFoldActChatState;
+    total: number;
+    lastAssistant: string | null;
+    messages: WorkFoldActChatMessage[];
+  }>;
+  abortTurn(input: { workFolder: string; conversationId: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    conversationId: string;
+    aborted: boolean;
+  }>;
+  turnStatus(input: { workFolder: string; taskId: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    task: WorkFoldActTurnStatus;
+    /** F28: set while this task's request waits on an answer to a question this task asked. */
+    waiting: WorkFoldActWaitingRef | null;
+    request: WorkFoldActRequestRef | null;
+  }>;
+  turnResult(input: { workFolder: string; taskId: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    conversationId: string;
+    task: { taskId: string; state: "succeeded"; endedAt: string };
+    message: WorkFoldActChatMessage;
+    request: WorkFoldActRequestRef | null;
+    result: WorkFoldResultEnvelope | null;
+  }>;
+
+  /**
+   * The collaboration verbs (docs/collaboration-contract.md, F27). Each is
+   * journal-first and receipted; delivery is host-side, so none of them
+   * needs a work-fold agent turn. `--task` must name the caller's own turn —
+   * the newest, still-running turn of a request the named work-folder owns — checked
+   * the way `--parent-task` is checked.
+   */
+  chatReport(input: {
+    workFolder: string;
+    taskId: string;
+    summary: string;
+    /** Inline JSON already parsed by the CLI. */
+    data?: unknown;
+    /** `--data @<path>`: resolved host-side against `cwd`, bounded, parsed here. */
+    dataPath?: string;
+    cwd?: string;
+    /** work-folder-relative deliverables; each is fingerprinted and measured inside the work-folder. */
+    files: string[];
+    outcome: WorkFoldResultOutcome;
+    /** Act-envelope request id, recorded as the result's receipt id. */
+    requestId?: string;
+    parentTaskId?: string;
+  }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    taskId: string;
+    resultId: string;
+    result: WorkFoldResultEnvelope;
+    request: WorkFoldActRequestRef;
+  }>;
+  chatChildren(input: { workFolder: string; taskId: string }): Promise<{ children: Array<{ taskId: string; conversationId: string; workFolderId?: string; state: string; resultAvailable: boolean }> }>;
+  chatAsk(input: {
+    workFolder: string;
+    taskId: string;
+    question: string;
+    respondent: "person" | "parent";
+    /** Suggested answers shown as choices; the person can still write their own. */
+    options?: string[];
+    asynchronous?: boolean;
+    requestId?: string;
+    parentTaskId?: string;
+  }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    taskId: string;
+    question: WorkFoldActQuestionRef;
+    request: WorkFoldActRequestRef;
+    /** True when --to parent named a root with no parent, so the question went to the person. */
+    redirectedToPerson: boolean;
+  }>;
+  /**
+   * Exactly one answer, exactly one linked continuation turn in the same
+   * Chat. Refuses a second answer, an answer past the request's window, an
+   * answer from a work-folder that does not own the question, and an answer while
+   * that Chat's turn or compaction is still running (the question stays open
+   * and can be answered once the Chat is idle).
+   */
+  chatAnswer(input: {
+    workFolder: string;
+    questionId: string;
+    answer: string;
+    requestId?: string;
+    parentTaskId?: string;
+  }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    question: WorkFoldActQuestionRef;
+    continuation: { taskId: string; messageId: string; conversationId: string } | null;
+    queued?: boolean;
+    request: WorkFoldActRequestRef;
+  }>;
+  /**
+   * Copies the named files into the destination through the same additive,
+   * restore-pointed path as `files add`, then starts a new Chat there through
+   * ordinary acceptance as a child of the caller's request. The copy runs
+   * first so a refused copy never leaves a started Chat behind.
+   */
+  chatHandoff(input: {
+    workFolder: string;
+    taskId: string;
+    toWorkFolder: string;
+    /**
+     * Follow up in a Chat this Chat already handed work to, instead of
+     * starting a new one (2026-10-18). That Chat keeps its context.
+     */
+    toConversationId?: string;
+    message: string;
+    files: string[];
+    requestId?: string;
+    parentTaskId?: string;
+  }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    toWorkFolder: WorkFoldActWorkFolderRef;
+    conversationId: string;
+    messageId: string;
+    taskId: string;
+    copied: string[];
+    checkpointId: string | null;
+    request: WorkFoldActRequestRef;
+    /** True when the message went into an existing Chat rather than a new one. */
+    followUp?: boolean;
+  }>;
+  /**
+   * Redirects a Chat's running turn with one more message, delivered after
+   * its current step, exactly like typing into it on the desktop. With
+   * `taskId`, the caller is a Worker's own running turn and may redirect only
+   * a Chat its own Chat handed work to.
+   */
+  chatSteer(input: {
+    workFolder: string;
+    conversationId: string;
+    message: string;
+    taskId?: string;
+    requestId?: string;
+    parentTaskId?: string;
+  }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    conversationId: string;
+    /** The running turn the message joined. */
+    taskId: string;
+    messageId: string;
+    replayed: boolean;
+  }>;
+  /**
+   * Copies a Chat as of its last finished turn into a new Chat in the same
+   * work-folder, so a different direction can start with the same context.
+   * With `message`, the copy starts that work at once; with `taskId` (a
+   * Worker's own running turn) it becomes a child of that request and its
+   * result comes back like a handoff's.
+   */
+  chatCopy(input: {
+    workFolder: string;
+    conversationId: string;
+    message?: string;
+    title?: string;
+    taskId?: string;
+    requestId?: string;
+    parentTaskId?: string;
+  }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    conversation: WorkFoldActConversationRef;
+    copiedFromConversationId: string;
+    /** Visible messages carried into the copy. */
+    copiedMessages: number;
+    /** The copy's first turn, when `message` started one. */
+    taskId?: string;
+    request?: WorkFoldActRequestRef;
+  }>;
+  /**
+   * Reads of the request graph above all work-folders: recent roots, newest first.
+   * `cwd` is the caller's directory, which resolves its scope the way
+   * `context` does; a caller inside a registered work-folder is refused by name,
+   * because the graph carries other work-folders' results and the work-fold agent's own
+   * assignment text (docs/collaboration-contract.md, F26).
+   */
+  requestsList(input?: { cwd?: string }): Promise<{ requests: WorkFoldActRequestSummary[]; truncated: boolean }>;
+  requestsShow(input: { request: string; cwd?: string }): Promise<{ request: WorkFoldActRequestDetail }>;
+
+  /**
+   * Background jobs (docs/background-jobs.md). `jobsStart` runs a command
+   * for the caller's own running turn (`--task`, checked like `chat report`)
+   * and returns once it is running; its end wakes that turn's Chat once.
+   * Reads and stop name the job's work-folder. A read with `taskId` naming a
+   * running turn in the job's own Chat counts as its delivery.
+   */
+  jobsStart(input: {
+    interactive?: boolean;
+    service?: boolean;
+    workFolder: string;
+    taskId: string;
+    command: string;
+    name?: string;
+    /** Relative to the work-folder, or absolute; the work-folder by default. Never the caller's directory. */
+    cwd?: string;
+    timeoutSeconds?: number;
+    requestId?: string;
+  }): Promise<{ workFolder: WorkFoldActWorkFolderRef; job: WorkFoldActJobRef }>;
+  jobsList(input: { workFolder: string; conversationId?: string; running?: boolean }): Promise<{ workFolder: WorkFoldActWorkFolderRef; jobs: WorkFoldActJobRef[] }>;
+  jobsShow(input: { workFolder: string; jobId: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef; job: WorkFoldActJobRef }>;
+  jobsOutput(input: {
+    workFolder: string;
+    jobId: string;
+    offset?: number;
+    limit?: number;
+    waitSeconds?: number;
+    until?: string;
+    taskId?: string;
+  }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    job: WorkFoldActJobRef;
+    output: WorkFoldActJobOutput;
+    wait: { outcome: "ended" | "matched" | "timed_out" | "aborted"; line?: number; text?: string } | null;
+  }>;
+  jobsStop(input: { workFolder: string; jobId: string; parentTaskId?: string; requestId?: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef; job: WorkFoldActJobRef }>;
+  jobsInput(input: { workFolder: string; taskId: string; jobId: string; text: string; eof?: boolean }): Promise<{ workFolder: WorkFoldActWorkFolderRef; job: WorkFoldActJobRef }>;
+  worktreesManage(input: { workFolder: string; taskId: string; action: "create" | "list" | "archive" | "restore"; id?: string; ref?: string }): Promise<unknown>;
+
+  /**
+   * Chat lifecycle verbs (docs/act-ledger.md). Each performs exactly one
+   * lifecycle change through the same conversation internals as the desktop
+   * PATCH route — append-only lifecycle records in the Chat's portable log,
+   * refused while that Chat's turn or compaction runs — and returns
+   * the prior state so the act receipt can carry a typed undo reference.
+   */
+  chatRename(input: { workFolder: string; conversationId: string; title: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    conversation: WorkFoldActConversationRef;
+    priorTitle: string;
+  }>;
+  chatSnooze(input: { workFolder: string; conversationId: string; until: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    conversation: WorkFoldActConversationRef;
+    priorLifecycle: WorkFoldActChatLifecycleState;
+  }>;
+  chatArchive(input: { workFolder: string; conversationId: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    conversation: WorkFoldActConversationRef;
+    priorLifecycle: WorkFoldActChatLifecycleState;
+  }>;
+  chatResume(input: { workFolder: string; conversationId: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    conversation: WorkFoldActConversationRef;
+    priorLifecycle: WorkFoldActChatLifecycleState;
+  }>;
+  /**
+   * Compacts one Chat through the same internals as the composer's `/compact`:
+   * additive summarization, never deletion. It is refused while that Chat's
+   * turn or compaction runs and while a capability mutation is active, and it
+   * registers the same kernel `compaction` task as the renderer — started
+   * before the compaction and finished on every outcome — whose id is the
+   * receipt's task reference.
+   */
+  chatCompact(input: { workFolder: string; conversationId: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    conversationId: string;
+    compacted: true;
+    taskId: string;
+  }>;
+
+  /**
+   * History verbs (docs/act-ledger.md). Saving is additive and honestly
+   * reports when the work-folder already matches its latest restore point; both
+   * restore verbs record the safety restore point History itself created, so
+   * every History act is recoverable through History. Whole-work-folder restore is
+   * refused while Worker, compaction, or Check work is active in the
+   * work-folder, while a restricted-app automation run whose app holds a file
+   * grant into the work-folder is active, and while an automation run with a files hop
+   * targeting the work-folder is active (the kernel-checked rule) — a deliberate
+   * strengthening over the desktop's confirm dialog.
+   */
+  historyList(input: { workFolder: string } & HistoryPageOptions): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    checkpoints: WorkFoldActCheckpointSummary[];
+    total?: number; nextCursor?: string | null; sourceVersion?: string;
+  }>;
+  historySave(input: { workFolder: string; label?: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    checkpoint: WorkFoldActCheckpointSummary;
+    created: boolean;
+  }>;
+  historyRestore(input: { workFolder: string; checkpointId: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    restored: true;
+    checkpointId: string;
+    safetyCheckpointId: string;
+    restoredFileCount: number;
+    deletedFileCount: number;
+    movedEntryCount: number;
+    unchangedFileCount: number;
+    skippedLargeFileCount: number;
+  }>;
+  /**
+   * Checks one page folder (docs/pages.md): page.json, the entry, every
+   * reference, sizes, and nested pages. Read-only; the page tab shows the
+   * same problems.
+   */
+  pagesValidate(input: { workFolder: string; page: string }): Promise<WorkFoldActPageValidation>;
+  historyVersions(input: { workFolder: string; path: string } & HistoryPageOptions): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    path: string;
+    versions: WorkFoldActFileVersionRef[];
+    total?: number; nextCursor?: string | null; sourceVersion?: string;
+  }>;
+  /** Content-bearing, read-only review through the authenticated act lane. */
+  historyRead(input: { workFolder: string } & HistoryFileReadOptions): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    review: HistoryFileRead;
+  }>;
+  historyDiff(input: { workFolder: string; path: string; fromCheckpointId: string; toCheckpointId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    comparison: HistoryFileComparison;
+  }>;
+  historyRestoreFile(input: { workFolder: string; path: string; version: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    restored: true;
+    path: string;
+    hashSha256: string;
+    previousHashSha256: string | null;
+    safetyCheckpointId: string;
+  }>;
+
+  /**
+   * In-work-folder file verbs (docs/act-ledger.md): the same local-entry
+   * mutations as the desktop routes — same path policy (`.work-fold/`,
+   * `.pi/`, and `.workspace/` are never valid endpoints), same safety restore
+   * points. `filesDelete` never refuses for lack of coverage
+   * (docs/receipts-not-gates.md, F20): when the restore point could not keep
+   * a copy of every matched file (oversized, unreadable, a symbolic link, or
+   * History-excluded), the selected entry is moved into Recently deleted
+   * instead of erased and `recovery` names the Recently deleted entry. Creation verbs
+   * record the same pre-create restore point as the desktop routes, but their
+   * receipts carry the created path as the undo reference — the canonical
+   * inverse of creating is `files delete`, and creation destroys nothing.
+   */
+  filesMove(input: { workFolder: string; fromPath: string; toDir: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    fromPath: string;
+    path: string;
+    kind: "file" | "folder";
+    safetyCheckpointId: string;
+  }>;
+  filesRename(input: { workFolder: string; path: string; newName: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    fromPath: string;
+    path: string;
+    priorName: string;
+    kind: "file" | "folder";
+    safetyCheckpointId: string;
+  }>;
+  filesDelete(input: { workFolder: string; path: string; parentTaskId?: string; requestId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    deleted: true;
+    path: string;
+    kind: "file" | "folder";
+    safetyCheckpointId: string;
+    /**
+     * Where this delete can be undone from: History's restore point, or the
+     * Recently deleted entry the whole selected entry moved into because the
+     * restore point could not keep a copy of every matched file.
+     */
+    recovery:
+      | { kind: "history" }
+      | {
+        kind: "recently-deleted";
+        entryId: string;
+        restoreBy: string;
+        uncovered: Array<{ path: string; reason: "too_large" | "unreadable" | "symbolic_link" | "excluded" }>;
+      };
+  }>;
+  filesMkdir(input: { workFolder: string; path: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    created: true;
+    path: string;
+    kind: "folder";
+    safetyCheckpointId: string;
+  }>;
+  filesCreate(input: { workFolder: string; path: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    created: true;
+    path: string;
+    kind: "file";
+    safetyCheckpointId: string;
+  }>;
+
+  /**
+   * Content search over one work-folder's files and Chats — the same service as
+   * `/api/work-folders/:id/search`. It honours the person's ignore rules, skips
+   * binary files, and reports when a bound stopped the search
+   * rather than implying completeness. The act receipt records the scope
+   * only, never the query text.
+   */
+  search(input: { workFolder: string; query: string; scope?: "files" | "chats" | "all"; path?: string; cursor?: string; limit?: number }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    scope: "files" | "chats" | "all";
+    query: string;
+    files: WorkFolderFileMatch[];
+    chats: WorkFolderChatMatch[];
+    truncated: boolean;
+    scannedFiles: number;
+    nextCursor?: string | null; coverage?: WorkFolderSearchCoverage;
+  }>;
+
+  createWorkFolder(input: { name: string; parentTaskId?: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef }>;
+  registerWorkFolder(input: { workFolderRoot: string; parentTaskId?: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef }>;
+  addFiles(input: { workFolder: string; fromPaths: string[]; toDir?: string; cwd: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    copied: string[];
+    checkpointId: string | null;
+  }>;
+
+  /**
+   * work-folder lifecycle verbs (docs/act-ledger.md). Renaming refuses a name
+   * another registered work-folder already uses under the CLI selector's
+   * case-insensitive match — a duplicate exact name would make `--work-folder`
+   * selection ambiguous. Unregistering removes the registration and revokes
+   * work-fold's project-runtime authorization while the folder and its
+   * portable `.work-fold/` identity remain — for both storage kinds: a
+   * managed work-folder's registration removal records a preserve-disposition
+   * intent that provably holds no deletion authority. It runs the same App
+   * Studio impact checks and automation revocation cascades as the desktop
+   * removal path. Deleting a managed folder is
+   * `workFoldersDelete`, a direct receipted verb on the prepared-act path.
+   */
+  workFoldersRename(input: { workFolder: string; name: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    priorName: string;
+  }>;
+  workFoldersUnregister(input: { workFolder: string; parentTaskId?: string; requestId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    storage: WorkFoldActWorkFolderStorage;
+    removed: true;
+    cleanupPending: boolean;
+    /** One recoverable copy per preview app in the work-folder that held local data. */
+    appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
+    /** The work-folder's App Studio history, kept in Recently deleted; null when it had none. */
+    appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
+  }>;
+
+  /**
+   * work-folder appearance verbs. Apply accepts only the typed `work-folder-appearance`
+   * proposal file (the same validation as Customize work-folder; nothing else is
+   * accepted), and every mutation records the displaced customization so undo
+   * is one act. Refs are short content digests — identifiers for receipts,
+   * never the customization payload. Undo is refused with a typed error when
+   * no receipted appearance act recorded a prior customization for the work-folder
+   * in this app run, or when the current appearance was last changed outside
+   * the act lane (for example on the desktop), because the recorded prior
+   * state then no longer describes what would be displaced.
+   */
+  workFoldersAppearanceApply(input: {
+    workFolder: string;
+    /** A typed proposal that replaces the whole appearance… */
+    proposalPath?: string;
+    /** …or just these parts, keeping the rest. The image path resolves against `cwd`. */
+    parts?: { bannerImagePath?: string; icon?: string; color?: string };
+    cwd: string;
+    parentTaskId?: string;
+  }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    applied: true;
+    proposalName: string;
+    appearanceRef: string | null;
+    priorAppearanceRef: string | null;
+  }>;
+  workFoldersAppearanceReset(input: { workFolder: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    reset: true;
+    changed: boolean;
+    priorAppearanceRef: string | null;
+  }>;
+  workFoldersAppearanceUndo(input: { workFolder: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    restored: true;
+    restoredAppearanceRef: string | null;
+    displacedAppearanceRef: string | null;
+  }>;
+
+  /**
+   * Skills & Extensions removal. Installs, updates, and skill imports make
+   * bytes runnable and run through the prepared-act path (`toolsInstall`,
+   * `toolsUpdate`, `toolsImportSkill`). Everywhere scope mutates the same
+   * personal Pi settings every work-folder runtime loads (resolved through the
+   * app-owned work-fold agent root, exactly like the work-fold agent's own
+   * runtime) and is fenced against all running work; work-folder scope
+   * requires the explicit work-folder and its project trust. Both reuse the desktop's capability-mutation
+   * fencing unchanged. A source that is not installed reports `removed:
+   * false` honestly.
+   */
+  toolsRemove(input: { scope: "everywhere" | "work-folder"; workFolder?: string; source: string; parentTaskId?: string }): Promise<{
+    scope: "everywhere" | "work-folder";
+    workFolder?: WorkFoldActWorkFolderRef;
+    source: string;
+    removed: boolean;
+  }>;
+
+  /**
+   * work-folder-app authority direct verbs (docs/act-ledger.md): the
+   * narrowing and neutral side of restricted-app authority, reusing the
+   * exact desktop route internals with their capability fencing. Widening —
+   * installs, grants, connections, automation enablement — runs through the
+   * prepared-act methods below. Verbs that name an app
+   * without a digest resolve the installed revision host-side and pin it for
+   * the mutation, so a revision change between lookup and act fails instead
+   * of acting on different bytes.
+   */
+  /**
+   * Act read: what is installed in one work-folder and what each app can do —
+   * tools with their schemas, named Worker actions, grants, connection
+   * state, and automations (docs/receipts-not-gates.md, work-folder apps). Reads
+   * carry no lineage and write no action record.
+   */
+  appsList(input: { workFolder: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    apps: WorkFoldActAppListing[];
+    truncated: boolean;
+  }>;
+  /**
+   * Runs one declared tool through the app's own runtime, with the installed
+   * revision pinned at lookup so a code change between lookup and call fails
+   * instead of running different bytes. The tool's own effects are the app's,
+   * bounded by the powers it holds; the receipt names the app and the tool.
+   */
+  appsInvoke(input: { workFolder: string; app: string; tool: string; input: unknown; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    appId: string;
+    featureInstallationId: string;
+    digest: string;
+    tool: string;
+    action: string;
+    result: unknown;
+  }>;
+  appsProposalsList(input: { workFolder: string; conversationId: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    conversationId: string;
+    proposals: WorkFoldActAppProposalRef[];
+  }>;
+  /** Dismissal is not denial-of-review: nothing runnable existed, and the Worker may propose again. */
+  appsProposalsDismiss(input: { workFolder: string; conversationId: string; proposal: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    proposalId: string;
+    dismissed: boolean;
+  }>;
+  /** Removes a reviewed development app; release-backed Instances take `appsUninstall`. Reinstalling is a fresh receipted act. */
+  appsRemove(input: { workFolder: string; app: string; parentTaskId?: string; requestId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    appId: string;
+    digest: string;
+    removed: boolean;
+    /** A removed preview takes its data with it, so a copy lands in Recently deleted first. */
+    recentlyDeleted: WorkFoldActRecentlyDeletedRef | null;
+  }>;
+  /**
+   * Revokes one granted declaration on the exact reviewed digest. Revocation
+   * stops stale launches before the authority change reads as complete
+   * (service-side), and `revoked: false` honestly reports a declaration that
+   * was not granted. Re-granting is a fresh receipted act.
+   */
+  appsRevoke(input: {
+    workFolder: string;
+    app: string;
+    digest: string;
+    kind: "network" | "files" | "notifications";
+    declaration: string;
+    parentTaskId?: string;
+  }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    appId: string;
+    grantKind: "network" | "files" | "notifications";
+    declaration: string;
+    revoked: boolean;
+  }>;
+  /**
+   * Removes one saved connection's local record. Deleting the local record
+   * does not revoke the credential at its provider — the receipt says so.
+   */
+  appsDisconnect(input: { workFolder: string; app: string; destination: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    appId: string;
+    destination: string;
+    disconnected: boolean;
+  }>;
+  appsAutomationDisable(input: { workFolder: string; app: string; automation: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    appId: string;
+    appAutomationId: string;
+    disabled: true;
+    wasEnabled: boolean;
+  }>;
+  /**
+   * Run-now for an enabled named automation, under the machine-wide
+   * scheduler's admission rules (32 slots by default, same-job non-overlap). The run's
+   * durable, authority-captured receipt is the result; a run the scheduler
+   * skipped reports its skipped outcome honestly.
+   */
+  appsAutomationRun(input: { workFolder: string; app: string; automation: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    appId: string;
+    appAutomationId: string;
+    run: WorkFoldActAppAutomationRunRef;
+  }>;
+
+  /**
+   * App Studio's authority-neutral spine (docs/act-ledger.md): these
+   * verbs change which local records exist, never what may run with which
+   * powers — powers arrive through the receipted grant verbs. Every method
+   * reuses the exact desktop route internals, including the App Studio
+   * guards: referenced Releases cannot be deleted, prepared operations
+   * recheck at activation, digest identity beats display versions, and
+   * install activation turns on every declared power (docs/receipts-not-gates.md, F21).
+   */
+  appsProjectDeclare(input: { workFolder: string; presentationPath: string; cwd: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    project: { projectId: string; presentation: WorkFoldActAppPresentation };
+    priorPresentation: WorkFoldActAppPresentation | null;
+    priorPresentationRef: string | null;
+  }>;
+  appsReleasePrepare(input: { workFolder: string; version: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    release: WorkFoldActAppReleaseRef;
+  }>;
+  appsReleasePublish(input: { workFolder: string; release: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    release: WorkFoldActAppReleaseRef;
+  }>;
+  /**
+   * Deletes one unused Release. Its record and verified envelope go to
+   * Recently deleted first (docs/receipts-not-gates.md, F20), so
+   * `recently-deleted restore` puts it back in the state it was deleted in.
+   */
+  appsReleaseDelete(input: { workFolder: string; release: string; parentTaskId?: string; requestId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    releaseDigest: string;
+    deleted: boolean;
+    cleanupPending: boolean;
+    /** The Recently deleted item holding the Release; null when nothing was deleted. */
+    recentlyDeleted: WorkFoldActRecentlyDeletedRef | null;
+  }>;
+  appsInstallPrepare(input: { workFolder: string; release: string; targetWorkFolder: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    targetWorkFolder: WorkFoldActWorkFolderRef;
+    operation: WorkFoldActAppOperationRef;
+  }>;
+  appsUpdatePrepare(input: { workFolder: string; instance: string; release: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    targetWorkFolder: WorkFoldActWorkFolderRef;
+    operation: WorkFoldActAppOperationRef;
+  }>;
+  appsOperationActivate(input: { workFolder: string; operation: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    operationId: string;
+    operationKind: "install" | "update";
+    instance: WorkFoldActAppInstanceRef;
+  }>;
+  appsOperationCancel(input: { workFolder: string; operation: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    operationId: string;
+    cancelled: boolean;
+  }>;
+  /**
+   * Uninstall with the retain-data disposition only; `--purge-data` is
+   * `appsUninstallPurge`, which runs through the prepared-act path. Retained
+   * namespaces do not remain runnable, and reinstalling creates a new
+   * Instance.
+   */
+  appsUninstall(input: { workFolder: string; instance: string; parentTaskId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    runtimeInstanceId: string;
+    removed: boolean;
+    retainedNamespaceIds: string[];
+    cleanupPending: boolean;
+  }>;
+
+  /**
+   * The verbs that install code, widen a power, or destroy data
+   * (docs/act-ledger.md; docs/receipts-not-gates.md, F19). Each method
+   * composes the act's typed parameters and pins from live state — never
+   * from model prose — and runs it at once through the prepared-act path:
+   * pin recheck inside the capability fence, one internal kernel task, the
+   * same domain internals the desktop uses. The result is the effect the
+   * verb produced; the receipt is in the act journal under `requestId`, the
+   * act request's journal id. Nothing waits on a person.
+   */
+  /**
+   * Moves a managed work-folder's folder into Recently deleted and unregisters it,
+   * after the same impact checks as unregister. `recentlyDeleted` names the entry that
+   * puts the folder — and the work-folder's Chats and History — back.
+   */
+  workFoldersDelete(input: { workFolder: string; parentTaskId?: string; requestId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    storage: "managed";
+    removed: true;
+    cleanupPending: boolean;
+    recentlyDeleted: { entryId: string; restoreBy: string } | null;
+    /** One recoverable copy per preview app in the work-folder that held local data. */
+    appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
+    /** The work-folder's App Studio history, kept in Recently deleted; null when it had none. */
+    appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
+  }>;
+  /** Imports one skill bundle, pinning the exact inspected bytes. */
+  toolsImportSkill(input: {
+    scope: "everywhere" | "work-folder";
+    workFolder?: string;
+    from: string;
+    cwd: string;
+    parentTaskId?: string;
+    requestId?: string;
+  }): Promise<{
+    scope: "everywhere" | "work-folder";
+    workFolder?: WorkFoldActWorkFolderRef;
+    source: string;
+    contentDigest: string;
+    skillNames: string[];
+    bundlePath: string;
+  }>;
+  /**
+   * Installs one Pi package or Extension (or an official catalog skill
+   * bundle, which runs as a skills import). Pins the package id, the exact
+   * inspected version, and the inspected resource summary; a source whose
+   * exact version cannot be pinned is refused honestly.
+   */
+  toolsInstall(input: {
+    scope: "everywhere" | "work-folder";
+    workFolder?: string;
+    catalogId?: string;
+    source?: string;
+    parentTaskId?: string;
+    requestId?: string;
+  }): Promise<{
+    scope: "everywhere" | "work-folder";
+    workFolder?: WorkFoldActWorkFolderRef;
+    source: string;
+    packageId?: string;
+    version?: string;
+    resourceSummary?: string;
+    installed?: true;
+    contentDigest?: string;
+    skillNames?: string[];
+    bundlePath?: string;
+  }>;
+  toolsSetEnabled(input: {
+    scope: "everywhere" | "work-folder"; workFolder?: string; path: string;
+    kind: "extensions" | "skills" | "prompts" | "themes"; enabled: boolean;
+    parentTaskId?: string; requestId?: string;
+  }): Promise<{ scope: "everywhere" | "work-folder"; workFolder?: WorkFoldActWorkFolderRef; path: string; enabled: boolean }>;
+  /** Updates a Pi package to the exact inspected next version. */
+  toolsUpdate(input: {
+    scope: "everywhere" | "work-folder";
+    workFolder?: string;
+    source: string;
+    parentTaskId?: string;
+    requestId?: string;
+  }): Promise<{
+    scope: "everywhere" | "work-folder";
+    workFolder?: WorkFoldActWorkFolderRef;
+    source: string;
+    packageId: string;
+    version: string;
+    resourceSummary: string;
+    updated: true;
+  }>;
+  /** Installs one pending Chat app review at its reviewed digest. */
+  appsInstallProposal(input: {
+    workFolder: string;
+    conversationId: string;
+    proposal: string;
+    parentTaskId?: string;
+    requestId?: string;
+  }): Promise<WorkFoldActAppInstallOutcome & {
+    workFolder: WorkFoldActWorkFolderRef;
+    proposalId: string;
+    digest: string;
+    app: WorkFoldActInstalledAppRef;
+  }>;
+  /**
+   * The ledger's "Add / update local preview" row: the host inspects the
+   * named work-folder-relative package folder, records the same host-owned review
+   * the Chat proposal path produces — work-fold owning every review field
+   * and the digest — and installs it through the same digest-checked path.
+   */
+  appsInstallPreview(input: {
+    workFolder: string;
+    packagePath: string;
+    parentTaskId?: string;
+    requestId?: string;
+  }): Promise<WorkFoldActAppInstallOutcome & {
+    workFolder: WorkFoldActWorkFolderRef;
+    proposalId: string;
+    digest: string;
+    title: string;
+    packageName: string;
+    version: string;
+    /**
+     * True when a Local preview of the same app id at a different revision was
+     * already in the work-folder: the install replaced it, carrying forward
+     * grants and automation states by declaration id, run receipts, and
+     * connections whose destination declaration is byte-identical
+     * (`carryForwardInstallation`). Re-adding the installed revision is false.
+     */
+    replacesInstalled: boolean;
+    app: WorkFoldActInstalledAppRef;
+  }>;
+  /**
+   * Grants one exact reviewed declaration on the exact installed digest. A
+   * folder permission covers the whole work-folder; a permission that names a
+   * single file binds to the work-folder-relative file given as `path`, which must
+   * already exist inside the work-folder and outside its reserved metadata.
+   */
+  appsGrant(input: {
+    workFolder: string;
+    app: string;
+    digest: string;
+    kind: "network" | "files" | "notifications";
+    declaration: string;
+    path?: string;
+    parentTaskId?: string;
+    requestId?: string;
+  }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    appId: string;
+    grantKind: "network" | "files" | "notifications";
+    declaration: string;
+    granted: true;
+    root?: string;
+  }>;
+  /** Connects through the browser sign-in flow; a destination that takes a typed secret is refused and connected from Settings → Apps. */
+  appsConnect(input: { workFolder: string; app: string; destination: string; parentTaskId?: string; requestId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    appId: string;
+    destination: string;
+    target: string;
+    adapterKind: string;
+    connection: { destinationId: string; kind: string | null; configured: boolean };
+  }>;
+  /** Enables one reviewed named job, pinning its digest and schedule summary. */
+  appsAutomationEnable(input: { workFolder: string; app: string; automation: string; parentTaskId?: string; requestId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    appId: string;
+    appAutomationId: string;
+    scheduleSummary: string;
+    enabled: true;
+  }>;
+  /**
+   * Clears one installed app's live storage; the observed byte count is
+   * pinned and a change before the effect is a conflict. A complete copy of
+   * the data lands in Recently deleted first, unless the app held nothing
+   * (docs/receipts-not-gates.md, F20).
+   */
+  appsStorageClear(input: { workFolder: string; app: string; parentTaskId?: string; requestId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    appId: string;
+    clearedBytes: number;
+    remainingBytes: number;
+    recentlyDeleted: WorkFoldActRecentlyDeletedRef | null;
+  }>;
+  /** Purges one retained App data record, after a copy of it lands in Recently deleted. */
+  appsRetainedPurge(input: { workFolder: string; retained: string; parentTaskId?: string; requestId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    retainedDataId: string;
+    dataNamespaceIds: string[];
+    purged: true;
+    cleanupPending: boolean;
+    recentlyDeleted: WorkFoldActRecentlyDeletedRef[];
+  }>;
+  /** The purge disposition of `apps uninstall --purge-data`; every affected namespace is copied into Recently deleted first. */
+  appsUninstallPurge(input: { workFolder: string; instance: string; parentTaskId?: string; requestId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    runtimeInstanceId: string;
+    purgedNamespaceIds: string[];
+    removed: true;
+    cleanupPending: boolean;
+    recentlyDeleted: WorkFoldActRecentlyDeletedRef[];
+  }>;
+  /**
+   * Recently deleted (docs/receipts-not-gates.md, F20). It sits above
+   * work-folders, like automations, so neither verb takes
+   * `--work-folder`; each entry names the work-folder it came from. Listing is content-free: ids, kinds,
+   * paths, sizes, and dates, never file contents. Nothing empties the store —
+   * only its retention window does, and that lives in Settings.
+   */
+  recentlyDeletedList(): Promise<{
+    entries: WorkFoldActRecentlyDeletedEntry[];
+    retentionDays: number;
+    damagedCount: number;
+  }>;
+  /**
+   * Puts one item back. A file or folder returns to its work-folder at its original
+   * path, renamed when something else took the name; a deleted work-folder's
+   * folder returns and is re-registered with its portable identity; a removed
+   * Skill returns to the same scope and path and loads with the next turn,
+   * unless a Skill of the same name is installed there now; app data goes back into
+   * the same installation at the same revision; a Release goes back into the
+   * App Project it came from; a removed work-folder's App Studio history goes
+   * back once that work-folder is registered again, bringing its previews'
+   * data along. App data whose app is gone can only be saved as a file, which
+   * is what `--to` does.
+   */
+  recentlyDeletedRestore(input: { entry: string; toPath?: string; parentTaskId?: string; requestId?: string }): Promise<{
+    entry: WorkFoldActRecentlyDeletedEntry | null;
+    restored:
+      /** `safetyCheckpointId` is null when the restore succeeded but History could not record an undo point for it. */
+      | { kind: "file" | "folder"; workFolder: WorkFoldActWorkFolderRef; path: string; renamed: boolean; safetyCheckpointId: string | null }
+      | { kind: "work-folder"; workFolder: WorkFoldActWorkFolderRef; workFolderRoot: string; renamed: boolean }
+      /** `workFolder` only for the work-folder scope; `path` is the restored Skill folder. */
+      | { kind: "skill"; scope: "everywhere" | "work-folder"; workFolder?: WorkFoldActWorkFolderRef; name: string; path: string }
+      | { kind: "app-storage"; workFolder: WorkFoldActWorkFolderRef; appId: string; usage: { revision: number; usageBytes: number } }
+      | { kind: "app-release"; workFolder: WorkFoldActWorkFolderRef; releaseDigest: string; displayVersion: string }
+      | {
+        kind: "app-studio";
+        workFolder: WorkFoldActWorkFolderRef;
+        projectTitle: string | null;
+        previewCount: number;
+        releaseCount: number;
+        operationCount: number;
+        /** Prepared operations whose Release, target, or App Instance changed since the removal. */
+        droppedOperationCount: number;
+        /** The Recently deleted items holding the previews' data that went back with them. */
+        appDataEntryIds: string[];
+      }
+      | { kind: "saved-copy"; path: string };
+  }>;
+  /**
+   * Enables one declared automation from its inert typed proposal file, or a
+   * full declaration (docs/automations.md): direct, receipted, and
+   * digest-pinned. Every referenced work-folder must be registered, a one-time
+   * trigger must be in the future (at most ten years ahead), and enabling an identical
+   * already-enabled declaration is a no-op that leaves any active run alone.
+   * Automations are above work-folders: no `--work-folder` exists on this verb.
+   */
+  automationsEnable(input: { proposalPath: string; cwd: string; parentTaskId?: string; requestId?: string }): Promise<{
+    automationId: string;
+    declarationDigest: string;
+    title: string;
+    referencedWorkFolderIds: string[];
+    health: "enabled";
+    enabledAt: string;
+    alreadyEnabled: boolean;
+    stoppedRunId: string | null;
+  }>;
+
+  /**
+   * Automation management verbs (docs/automations.md). Automations are above
+   * work-folders: none of these takes a work-folder, like the agent group. Listing,
+   * showing, and receipts are content-bearing act reads (titles, work-folder names,
+   * the chat message a person reviewed); run-now is a direct verb on an
+   * enabled automation only; stop and disable are narrowing and never need a
+   * click; delete removes a disabled, suspended, or completed declaration while the
+   * receipts journal is retained — audit records survive the object.
+   * Enabling is `automationsEnable`, a direct receipted verb.
+   */
+  automationsList(): Promise<{ automations: WorkFoldActAutomationSummary[] }>;
+  /**
+   * The models a chat or agent step may name in its `model` field: only
+   * models whose provider is connected, each with whether it accepts images,
+   * so an automation that looks at pictures can pick one that sees them.
+   */
+  automationsModels(): Promise<{ models: WorkFoldActAutomationModel[] }>;
+  automationsShow(input: { automation: string }): Promise<{ automation: WorkFoldActAutomationDetail }>;
+  /**
+   * Manual run-now for an enabled automation: receipted, never a schedule
+   * mutation, refused for proposed/disabled/suspended health. The result is
+   * the settled scheduler run — the executor's own journal keeps the per-hop
+   * evidence, inspectable through `automationsReceipts`.
+   */
+  automationsRun(input: { automation: string; parentTaskId?: string; requestId?: string }): Promise<{
+    automationId: string;
+    title: string;
+    run: WorkFoldActAppAutomationRunRef;
+  }>;
+  /** Stops this automation's active run; an automation with no active run refuses with its settled truth. */
+  automationsStop(input: { automation: string; parentTaskId?: string }): Promise<{
+    automationId: string;
+    stopped: true;
+    runId: string;
+  }>;
+  /**
+   * Disable narrows standing behavior on the layered-authority order: the
+   * disabled intent persists first, pending admissions are cancelled, and the
+   * active run (if any) is stopped — the result names what it stopped.
+   * Re-enabling is a fresh receipted act.
+   */
+  automationsDisable(input: { automation: string; parentTaskId?: string }): Promise<{
+    automationId: string;
+    disabled: true;
+    digest: string;
+    stoppedRunId: string | null;
+  }>;
+  /** Deletes a disabled, suspended, or completed automation; an enabled one must be disabled first so revocation stops stale work. */
+  automationsDelete(input: { automation: string; parentTaskId?: string }): Promise<{
+    automationId: string;
+    deleted: true;
+    digest: string;
+    finalHealth: "disabled" | "suspended" | "completed";
+  }>;
+  /** Bounded read of the automation receipts journal, optionally scoped to one automation id. */
+  automationsReceipts(input: { automation?: string }): Promise<{
+    receipts: WorkFoldActAutomationReceipt[];
+    truncated: boolean;
+    damagedLineCount: number;
+  }>;
+
+  /**
+   * Experimental Checks act surface. All methods resolve an explicit work-folder;
+   * declarations remain inert until `checksEnable` imports one proposal, and
+   * runs remain task-scoped so polling and abort never depend on ambient UI
+   * state.
+   */
+  checksEnable(input: { workFolder: string; proposalPath: string; cwd: string; proposeOnly?: boolean }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    check: {
+      id: string;
+      title: string;
+      severity: WorkFoldCheckFinding["severity"];
+      sensorId: string;
+      sensorRevision: number;
+      targetCount: number;
+      trigger: "manual";
+      targets: Array<{
+        kind: "file" | "tree";
+        role: "primary" | "reference";
+        path: string;
+        recursive?: boolean;
+        extensions?: string[];
+      }>;
+    };
+    declarationDigest: string;
+  }>;
+  checksProposeFix(input: { workFolder: string; proposalPath: string; cwd: string }): Promise<{ workFolder: WorkFoldActWorkFolderRef; correction: CheckCorrectionRecord }>;
+  checksDisable(input: { workFolder: string; checkId: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    checkId: string;
+    disabled: boolean;
+  }>;
+  checksRun(input: { workFolder: string; checkId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    taskId: string;
+    runId: string;
+    checkIds: string[];
+  }>;
+  checksTask(input: { workFolder: string; taskId: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    task: WorkFoldActCheckTaskStatus;
+  }>;
+  checksResult(input: { workFolder: string; taskId: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    run: WorkFoldCheckRunRecord;
+  }>;
+  checksAbort(input: { workFolder: string; taskId: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    taskId: string;
+    aborted: boolean;
+  }>;
+  checksProblems(input: { workFolder: string; checkId?: string }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    checkId?: string;
+    findings: WorkFoldCheckFinding[];
+    invalidated: number;
+    healthErrors: string[];
+    truncated: boolean;
+  }>;
+  checksDecide(input: {
+    workFolder: string;
+    findingId: string;
+    decision: WorkFoldCheckDecisionKind;
+    deferUntil?: string;
+  }): Promise<{
+    workFolder: WorkFoldActWorkFolderRef;
+    findingId: string;
+    decision: WorkFoldCheckDecision;
+  }>;
+
+  /**
+   * The work-fold agent: the conversation above all work-folders. It reuses
+   * the same turn orchestration and Pi runtime as Worker Chats, but its
+   * transcript is machine-local application state, it carries no user
+   * work-folder's project configuration (only work-fold's two app-owned
+   * work-fold agent resources), and its cross-work-folder hands are these same
+   * act commands. Omitting conversationId targets the default (most recent
+   * active) work-fold agent chat, creating it on first send.
+   */
+  agentList(): Promise<{ conversations: WorkFoldActConversationRef[] }>;
+  agentAsk(input: Omit<Parameters<WorkFoldActFacade["chatAsk"]>[0], "workFolder" | "respondent">): Promise<Omit<Awaited<ReturnType<WorkFoldActFacade["chatAsk"]>>, "workFolder">>;
+  agentAnswer(input: Omit<Parameters<WorkFoldActFacade["chatAnswer"]>[0], "workFolder">): Promise<Omit<Awaited<ReturnType<WorkFoldActFacade["chatAnswer"]>>, "workFolder">>;
+  agentSend(input: {
+    conversationId?: string;
+    newConversation?: boolean;
+    content: string;
+    /** Act-envelope request id reused as the durable turn identity. */
+    requestId?: string;
+    /** Raw --attach values: absolute or cwd-relative paths, or http(s) links. */
+    attachments?: string[];
+    cwd?: string;
+  }): Promise<{
+    conversationId: string;
+    messageId: string;
+    taskId: string;
+    attachments: WorkFoldAgentAttachmentRef[];
+  }>;
+  agentConversationStatus(input: { conversationId?: string }): Promise<{
+    conversation: WorkFoldActConversationRef;
+    state: WorkFoldActChatState;
+  }>;
+  agentTurnStatus(input: { taskId: string }): Promise<{
+    task: WorkFoldActTurnStatus;
+    /** The shipped attachment-and-actions projection (`agent status` keeps it, F25). */
+    request: WorkFoldActAgentRequest | null;
+    /** F28: set while this task's request waits on an answer to a question this task asked. */
+    waiting: WorkFoldActWaitingRef | null;
+    /**
+     * The F25 graph ref, named apart from `request` so the shipped field keeps
+     * its shape for the popover and the human renderer.
+     */
+    requestGraph: WorkFoldActRequestRef | null;
+  }>;
+  /** Request-level stop: aborts the work-fold agent turn and every recorded child turn still running. */
+  agentStop(input: { taskId: string }): Promise<{
+    taskId: string;
+    workFoldAgentAborted: boolean;
+    children: Array<{ taskId: string; conversationId: string; workFolderId: string; aborted: boolean }>;
+  }>;
+  agentConversationResult(input: { conversationId?: string; messages?: number }): Promise<{
+    conversationId: string;
+    state: WorkFoldActChatState;
+    total: number;
+    lastAssistant: string | null;
+    messages: WorkFoldActChatMessage[];
+  }>;
+  agentTurnResult(input: { taskId: string }): Promise<{
+    conversationId: string;
+    task: { taskId: string; state: "succeeded"; endedAt: string };
+    message: WorkFoldActChatMessage;
+    request: WorkFoldActRequestRef | null;
+    result: WorkFoldResultEnvelope | null;
+  }>;
+  agentAbort(input: { conversationId?: string }): Promise<{ conversationId: string; aborted: boolean }>;
+  /**
+   * The overview (docs/work-fold-agent-overview.md): the kernel's
+   * deterministic digest of recorded state above all work-folders — running
+   * work, needs-you items, changes, and per-work-folder Check rows, with the
+   * per-surface seen markers included as data. Read-only: the act lane renders
+   * markers, it never advances one, and this method deliberately does not
+   * require the work-fold agent to be ready — the digest reads recorded
+   * state, not the model.
+   */
+  agentOverview(): Promise<WorkFoldOverviewSnapshot>;
+}

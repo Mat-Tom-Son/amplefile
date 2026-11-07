@@ -1,0 +1,106 @@
+import { includedNativeMcpOptions } from "./included-mcp-setup.js";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createCodemodeExtension, createToolSearchExtension, createEventBus, DefaultPackageManager, SettingsManager } from "@earendil-works/pi-coding-agent";
+import type { ResolvedPiRuntime } from "./pi-runtime-config.js";
+import type { NativeResource } from "./resource-lifecycle.js";
+
+import { includedToolDefinitions } from "../../shared/included-tools.js";
+import type { IncludedChromeConnectionHost } from "./included-chrome-connection.js";
+import type { DocumentEngineSearch } from "../../../resources/included-tools/readiness.js";
+import { beginIncludedToolObservation } from "./included-tool-observations.js";
+import { toolInputFeedbackExtension } from "./tool-input-feedback.js";
+import { reservedPathSearchExtension } from "./reserved-path-search.js";
+import { workFoldRolePreambleExtension, type WorkFoldSessionRole } from "./role-preamble.js";
+export { includedToolDefinitions, type IncludedToolId } from "../../shared/included-tools.js";
+export interface IncludedToolsConfiguration {
+  rootPath: string;
+  stateRoot: string;
+  helperAppPath?: string;
+  prepareComputerHelper?: () => Promise<void>;
+  repairComputerHelper?: (beforeReplace: () => Promise<void>) => Promise<void>;
+  chromeConnection?: IncludedChromeConnectionHost;
+  /** Where Documents looks for LibreOffice and Tesseract; defaults to this computer's usual install locations. */
+  documentEngineSearch?: DocumentEngineSearch;
+}
+
+export function includedToolsRoot(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  while (dirname(dir) !== dir) {
+    const manifest = join(dir, "package.json");
+    if (existsSync(manifest)) {
+      try { if (JSON.parse(readFileSync(manifest, "utf8")).name === "work-fold-desktop") return join(dir, "resources", "included-tools"); } catch { /* Keep walking to the host package. */ }
+    }
+    dir = dirname(dir);
+  }
+  throw new Error("The included Skills & Extensions could not be located.");
+}
+
+/** Pi itself evaluates the same exact +path/-path filters used for user-added resources. */
+export async function resolveIncludedResources(cwd: string, runtime: ResolvedPiRuntime): Promise<NativeResource[]> {
+  const config = runtime.config.includedTools;
+  if (!config) return [];
+  const paths = includedToolDefinitions.map((item) => join(config.rootPath, item.id, "index.ts"));
+  const skillRoot = join(config.rootPath, "documents", "skills");
+  // Skills work-fold itself ships, such as Set up for me, belong to no single included tool.
+  const bundledSkillRoot = join(config.rootPath, "skills");
+  const bundledSkills = existsSync(bundledSkillRoot) ? [bundledSkillRoot] : [];
+  const global = runtime.settingsManager.getGlobalSettings();
+  const settings = SettingsManager.inMemory({ extensions: [...paths, ...(global.extensions ?? [])], skills: [skillRoot, ...bundledSkills, ...(global.skills ?? [])] }, { projectTrusted: false });
+  const manager = new DefaultPackageManager({ cwd, agentDir: runtime.agentDir, settingsManager: settings });
+  const native = await manager.resolve(async () => "skip");
+  return [
+    ...native.extensions.filter((item) => paths.includes(item.path)).map((item) => ({ ...item, kind: "extensions" as const, included: includedToolDefinitions.find((definition) => join(config.rootPath, definition.id, "index.ts") === item.path), metadata: { ...item.metadata, source: "Included with work-fold", scope: "user" as const } })),
+    ...native.skills.filter((item) => item.path.startsWith(`${skillRoot}/`)).map((item) => ({ ...item, kind: "skills" as const, included: includedToolDefinitions.find((definition) => definition.id === "documents"), metadata: { ...item.metadata, source: "Included with work-fold", scope: "user" as const } })),
+    ...native.skills.filter((item) => bundledSkills.length > 0 && item.path.startsWith(`${bundledSkillRoot}/`)).map((item) => ({ ...item, kind: "skills" as const, bundled: true as const, metadata: { ...item.metadata, source: "Included with work-fold", scope: "user" as const } })),
+  ];
+}
+
+/**
+ * A per-runtime native event bus; no process-global current Chat or renderer capability.
+ * A Chat session names its role, which opens each request with that role instead of Pi's coding preamble.
+ */
+export async function includedResourceOptions(cwd: string, runtime: ResolvedPiRuntime, mode: "catalog" | "session", role?: WorkFoldSessionRole) {
+  const config = runtime.config.includedTools;
+  const extensionFactories = [
+    { name: "tool_input_feedback", builtin: true, factory: toolInputFeedbackExtension },
+    { name: "work_fold_reserved_path_search", builtin: true, factory: reservedPathSearchExtension },
+    ...(role ? [{ name: "work_fold_role", builtin: true, factory: workFoldRolePreambleExtension(role) }] : []),
+    { name: "codemode", builtin: true, replaceable: true, factory: createCodemodeExtension() },
+    { name: "tool_search", builtin: true, replaceable: true, factory: createToolSearchExtension() },
+  ];
+  if (!config) return { extensionFactories };
+  const resources = await resolveIncludedResources(cwd, runtime);
+  const eventBus = createEventBus();
+  const mcpOptions = await includedNativeMcpOptions({ agentDir: runtime.agentDir, mcpCredentialBackend: runtime.config.mcpCredentialBackend, ...(runtime.projectTrust.trusted ? { cwd: resolve(cwd) } : {}) }, runtime.credentials, mode);
+  eventBus.on("work-fold:extension-host:v1", (value) => {
+    if (!value || typeof value !== "object" || Reflect.get(value, "version") !== 1) return;
+    Reflect.set(value, "context", {
+      version: 1, mode, cwd: resolve(cwd), agentDir: runtime.agentDir, stateRoot: config.stateRoot,
+      helperAppPath: config.helperAppPath,
+      ...(config.documentEngineSearch ? { documentEngineSearch: config.documentEngineSearch } : {}),
+      prepareComputerHelper: config.prepareComputerHelper,
+      ...(mode === "session" ? { beginIncludedToolObservation: (id: "computer" | "documents") => beginIncludedToolObservation(runtime, id) } : {}),
+      companionPath: join(config.stateRoot, "chrome-companion"),
+      ...(config.chromeConnection ? {
+        getChromeConnection: config.chromeConnection.getChromeConnection,
+        onChromeConnectionRevoked: config.chromeConnection.onChromeConnectionRevoked,
+        reportChromeConnectionObservation: config.chromeConnection.reportChromeConnectionObservation,
+        beginChromeWork: config.chromeConnection.beginChromeWork,
+      } : {}),
+      getMcpOptions: () => mcpOptions,
+      // Credentials are read only when an operation actually needs them.
+      getSearchConfig: async () => {
+        const credential = await runtime.credentials.read("work-fold:web:brave");
+        return credential?.type === "api_key" ? { provider: "brave", apiKey: credential.key } : { provider: "duckduckgo" };
+      },
+    });
+  });
+  return {
+    eventBus,
+    extensionFactories,
+    additionalExtensionPaths: [...resources.filter((item) => item.kind === "extensions" && item.enabled).map((item) => item.path), ...(runtime.config.additionalExtensionPaths ?? [])],
+    additionalSkillPaths: [...resources.filter((item) => item.kind === "skills" && item.enabled).map((item) => item.path), ...(runtime.config.additionalSkillPaths ?? [])],
+  };
+}

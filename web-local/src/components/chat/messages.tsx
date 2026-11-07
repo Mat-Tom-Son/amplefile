@@ -1,0 +1,589 @@
+import { Children, cloneElement, isValidElement, memo, useEffect, useState, type ReactElement, type ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Checkmark20Regular, Copy20Regular, Sparkle20Regular } from "@fluentui/react-icons";
+
+import { safeExternalHref } from "../../lib/api";
+import { browserTabsAvailable, localServerHref, requestBrowserTab } from "../../lib/browser-links";
+import { copyToClipboard } from "../../lib/clipboard";
+import { requestConnectAi } from "../../lib/connect-ai";
+import { formatDateTime } from "../../lib/format";
+import { resolveMessageImageSource } from "../../lib/message-images";
+import { assistantTurnView, savedWorkTrailPreviews } from "../../lib/chat-work-trail";
+import { rehypeSingleLineBreaks } from "../../lib/markdown-line-breaks";
+import { collectWorkFolderPathCandidates, findWorkFolderPathMentions, workFolderPathCandidate } from "../../lib/work-folder-path-links";
+import type { ChatMessage, ChatMessageLanding, RuntimePreviewEntry } from "../../types";
+import { FluentGlyph } from "../chrome/common";
+import { FileTypeIcon } from "../tree/FileTree";
+import { RuntimeContextPreview, turnChangedFiles, type TurnChangedFile, type WorkFolderPathLinkResolver } from "./activity";
+import { GeneratedImages, turnGeneratedImages } from "./GeneratedImages";
+
+export type { WorkFolderPathLinkResolver };
+
+const assistantMessageWorkFolderPathCache = new Map<string, {
+  content: string;
+  resolved: Map<string, string>;
+  promise: Promise<Map<string, string>> | null;
+}>();
+
+interface ChatMessageRowProps {
+  message: ChatMessage;
+  copied: boolean;
+  showLanding: boolean;
+  suppressEnterAnimation: boolean;
+  showRuntimePreview: boolean;
+  runtimePreviews: RuntimePreviewEntry[];
+  workFolderId: string;
+  workFolderRoot: string;
+  onOpenWorkFolderFile?: (path: string) => void;
+  resolveWorkFolderPathLinks?: WorkFolderPathLinkResolver;
+  onCopyMessage: (messageId: string, content: string) => void | Promise<void>;
+  /** Present only on the Chat's last message while nothing runs: an interrupted reply can be continued. */
+  onContinue?: () => void;
+}
+
+export const ChatMessageRow = memo(function ChatMessageRow({
+  message,
+  copied,
+  showLanding,
+  suppressEnterAnimation,
+  showRuntimePreview,
+  runtimePreviews,
+  workFolderId,
+  workFolderRoot,
+  onOpenWorkFolderFile,
+  resolveWorkFolderPathLinks,
+  onCopyMessage,
+  onContinue,
+}: ChatMessageRowProps) {
+  const [workFolderLinkVersion, setWorkFolderLinkVersion] = useState(0);
+  const workFolderLinkCacheKey = `${workFolderId}:${message.id}`;
+  const cachedWorkFolderLinks = assistantMessageWorkFolderPathCache.get(workFolderLinkCacheKey);
+  const workFolderLinks = cachedWorkFolderLinks?.content === message.content ? cachedWorkFolderLinks.resolved : null;
+  const messageTime = message.createdAt ? formatDateTime(message.createdAt) : "";
+  const savedRuntimePreviews = savedWorkTrailPreviews(message);
+  const visibleRuntimePreviews = showRuntimePreview && runtimePreviews.length
+    ? runtimePreviews
+    : savedRuntimePreviews;
+  const turnView = assistantTurnView(message.content, message.role === "assistant" ? message.assistantPresentation : undefined, visibleRuntimePreviews);
+  const generatedImages = message.role === "assistant" ? turnGeneratedImages(visibleRuntimePreviews) : [];
+  const changedFiles = message.role === "assistant" && onOpenWorkFolderFile && resolveWorkFolderPathLinks
+    ? turnChangedFiles(visibleRuntimePreviews, workFolderRoot)
+    : [];
+
+  useEffect(() => {
+    if (message.role !== "assistant" || !resolveWorkFolderPathLinks || !onOpenWorkFolderFile) return;
+    const candidates = collectWorkFolderPathCandidates(message.content);
+    if (!candidates.length) return;
+    let cancelled = false;
+    void resolveMessageWorkFolderLinks(workFolderLinkCacheKey, message.content, candidates, resolveWorkFolderPathLinks)
+      .then(() => {
+        if (!cancelled) setWorkFolderLinkVersion((current) => current + 1);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [message.content, message.id, message.role, onOpenWorkFolderFile, resolveWorkFolderPathLinks, workFolderLinkCacheKey]);
+
+  if (message.kind === "assistant_continuation") return <p className="work-continuation" role="note">Continuing with the results from delegated work.</p>;
+  if (message.kind === "context_compaction") return <p className="work-continuation" role="note">{message.content}</p>;
+
+  // An app's request is not the person's message: it gets its own quiet
+  // treatment and says which app asked, instead of the person's bubble.
+  const fromApp = message.role === "user" && message.source === "app" && message.appTitle?.trim() ? message.appTitle.trim() : null;
+  const sender = fromApp ? "app-request" : message.role;
+
+  return (
+    <article className={`message ${sender}${suppressEnterAnimation ? " settled" : ""}`}>
+      {fromApp ? <p className="message-sender">From {fromApp}</p> : null}
+      {message.role === "user" && message.attachments?.length ? <SentAttachments attachments={message.attachments} onOpenWorkFolderFile={onOpenWorkFolderFile} /> : null}
+      <div className="message-surface">
+        {turnView.steps.length ? (
+          <RuntimeContextPreview
+            entries={turnView.steps}
+            workFolderRoot={workFolderRoot}
+            onOpenWorkFolderFile={message.role === "assistant" ? onOpenWorkFolderFile : undefined}
+            resolveWorkFolderPathLinks={message.role === "assistant" ? resolveWorkFolderPathLinks : undefined}
+            renderText={(content, links) => <MarkdownMessage content={content} workFolderLinks={links} onOpenWorkFolderFile={onOpenWorkFolderFile} />}
+          />
+        ) : null}
+        {turnView.answer ? <MarkdownMessage
+          content={turnView.answer}
+          workFolderLinks={message.role === "assistant" ? workFolderLinks : null}
+          onOpenWorkFolderFile={message.role === "assistant" ? onOpenWorkFolderFile : undefined}
+          key={workFolderLinkVersion}
+        /> : null}
+        {generatedImages.length ? <GeneratedImages images={generatedImages} workFolderId={workFolderId} onOpenWorkFolderFile={onOpenWorkFolderFile} /> : null}
+        {changedFiles.length && onOpenWorkFolderFile && resolveWorkFolderPathLinks
+          ? <TurnFiles files={changedFiles} resolveWorkFolderPathLinks={resolveWorkFolderPathLinks} onOpenWorkFolderFile={onOpenWorkFolderFile} />
+          : null}
+        {message.role === "assistant" && showLanding && message.landing ? <TurnLanding landing={message.landing} /> : null}
+        {message.role === "assistant" && message.interruption ? <InterruptedTurn interruption={message.interruption} onContinue={onContinue} /> : null}
+      </div>
+      <footer className="message-footer">
+        <span className="message-footer-meta">
+          <MessageActions
+            copied={copied}
+            onCopy={() => void onCopyMessage(message.id, message.content)}
+          />
+          {message.createdAt && messageTime ? (
+            <time className="message-time" dateTime={message.createdAt} title={formatDateTime(message.createdAt)}>
+              {messageTime}
+            </time>
+          ) : null}
+          {message.role === "user" && message.delivery === "steer" ? (
+            <span className="message-delivery" title="Sent while the Worker was working; it applied after the step in progress.">Sent Mid-Turn</span>
+          ) : null}
+        </span>
+      </footer>
+    </article>
+  );
+}, areChatMessageRowPropsEqual);
+
+function areChatMessageRowPropsEqual(previous: ChatMessageRowProps, next: ChatMessageRowProps): boolean {
+  const previousMessage = previous.message;
+  const nextMessage = next.message;
+  const sameMessage = previousMessage === nextMessage || (
+    previousMessage.id === nextMessage.id
+    && previousMessage.role === nextMessage.role
+    && previousMessage.content === nextMessage.content
+    && previousMessage.createdAt === nextMessage.createdAt
+    && previousMessage.kind === nextMessage.kind
+    && previousMessage.landing === nextMessage.landing
+    && previousMessage.workTrail === nextMessage.workTrail
+    && previousMessage.assistantPresentation === nextMessage.assistantPresentation
+    && previousMessage.interruption === nextMessage.interruption
+    && previousMessage.attachments === nextMessage.attachments
+    && previousMessage.delivery === nextMessage.delivery
+    && previousMessage.source === nextMessage.source
+    && previousMessage.appTitle === nextMessage.appTitle
+  );
+  const sameRuntimePreview = !previous.showRuntimePreview && !next.showRuntimePreview
+    ? true
+    : previous.runtimePreviews === next.runtimePreviews;
+  return sameMessage
+    && previous.copied === next.copied
+    && previous.showLanding === next.showLanding
+    && previous.suppressEnterAnimation === next.suppressEnterAnimation
+    && previous.showRuntimePreview === next.showRuntimePreview
+    && sameRuntimePreview
+    && previous.workFolderId === next.workFolderId
+    && previous.workFolderRoot === next.workFolderRoot
+    && previous.onOpenWorkFolderFile === next.onOpenWorkFolderFile
+    && previous.resolveWorkFolderPathLinks === next.resolveWorkFolderPathLinks
+    && previous.onCopyMessage === next.onCopyMessage
+    && previous.onContinue === next.onContinue;
+}
+
+/** How many changed files a reply lists before "Show all". */
+const turnFilesShownAtFirst = 5;
+
+/**
+ * The files a reply wrote or edited, listed at its end so the result is one
+ * click away (2026-10-27). A file that no longer exists is left out.
+ */
+function TurnFiles({ files, resolveWorkFolderPathLinks, onOpenWorkFolderFile }: {
+  files: TurnChangedFile[];
+  resolveWorkFolderPathLinks: WorkFolderPathLinkResolver;
+  onOpenWorkFolderFile: (path: string) => void;
+}) {
+  const key = files.map((file) => file.path).join("\n");
+  const [existing, setExisting] = useState<Map<string, string> | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void resolveWorkFolderPathLinks(key.split("\n"))
+      .then((resolved) => { if (!cancelled) setExisting(resolved); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [key, resolveWorkFolderPathLinks]);
+  if (!existing) return null;
+  const present = files.flatMap((file) => {
+    const path = existing.get(file.path);
+    return path ? [{ ...file, path }] : [];
+  });
+  if (!present.length) return null;
+  const shown = showAll ? present : present.slice(0, turnFilesShownAtFirst);
+  return (
+    <ul className="turn-files" aria-label="Files from this reply">
+      {shown.map((file) => {
+        const slash = file.path.lastIndexOf("/");
+        const folder = slash > 0 ? file.path.slice(0, slash) : "";
+        return (
+          <li key={file.path}>
+            <button type="button" onClick={() => onOpenWorkFolderFile(file.path)} title={file.path}>
+              <FileTypeIcon path={file.path} />
+              <span className="turn-file-copy">
+                <span className="turn-file-name">{slash >= 0 ? file.path.slice(slash + 1) : file.path}</span>
+                <span className="turn-file-detail">{file.change === "saved" ? "Saved" : "Edited"}{folder ? ` · ${folder}` : ""}</span>
+              </span>
+              <span className="turn-file-open" aria-hidden="true">Open</span>
+            </button>
+          </li>
+        );
+      })}
+      {present.length > shown.length ? (
+        <li>
+          <button className="turn-files-more" type="button" onClick={() => setShowAll(true)}>Show All {present.length} Files</button>
+        </li>
+      ) : null}
+    </ul>
+  );
+}
+
+/** The files that went out with a message, drawn like the composer's chips; each opens its file. */
+function SentAttachments({ attachments, onOpenWorkFolderFile }: {
+  attachments: NonNullable<ChatMessage["attachments"]>;
+  onOpenWorkFolderFile?: (path: string) => void;
+}) {
+  return (
+    <ul className="message-attachments" aria-label="Attached files">
+      {attachments.map((attachment) => {
+        const content = <span className="context-chip-main"><FileTypeIcon path={attachment.target} /><span className="context-chip-name">{attachment.name}</span></span>;
+        return (
+          <li key={`${attachment.kind}:${attachment.target}`}>
+            {onOpenWorkFolderFile && attachment.kind === "file"
+              ? <button className="context-chip message-attachment" type="button" title={attachment.target} onClick={() => onOpenWorkFolderFile(attachment.target)}>{content}</button>
+              : <span className="context-chip message-attachment" title={attachment.target}>{content}</span>}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+export function MessageActions({ copied, onCopy }: { copied: boolean; onCopy: () => void }) {
+  return (
+    <div className="message-actions">
+      <button
+        className={copied ? "message-copy-button is-copied" : "message-copy-button"}
+        type="button"
+        onClick={onCopy}
+        aria-label={copied ? "Copied Message" : "Copy Message"}
+        title={copied ? "Copied" : "Copy Message"}
+      >
+        {copied ? <FluentGlyph icon={Checkmark20Regular} size={14} /> : <FluentGlyph icon={Copy20Regular} size={14} />}
+      </button>
+    </div>
+  );
+}
+
+export function TurnLanding({ landing }: { landing: ChatMessageLanding }) {
+  return (
+    <section className="turn-landing" aria-label="Turn Summary">
+      <div className="turn-landing-heading">
+        <span>
+          <FluentGlyph icon={Sparkle20Regular} size={15} />
+          Turn Summary
+        </span>
+      </div>
+      <p>{landing.summary}</p>
+      {landing.nextActions.length ? (
+        <ul>
+          {landing.nextActions.map((action) => <li key={action}>{action}</li>)}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+/** The message a Continue click sends: the person's own words, shown in the Chat like any message. */
+export const continueInterruptedTurnMessage = "Continue where you left off.";
+
+function ContinueButton({ onContinue }: { onContinue?: () => void }) {
+  if (!onContinue) return null;
+  return <button className="ui-control turn-interruption-continue" type="button" onClick={onContinue}>Continue</button>;
+}
+
+function InterruptedTurn({ interruption, onContinue }: { interruption: NonNullable<ChatMessage["interruption"]>; onContinue?: () => void }) {
+  if (interruption.reason === "setup_error") {
+    return (
+      <section className="turn-interruption turn-interruption--setup" role="status" aria-label="Worker setup needed">
+        <strong>Connect Your AI to Continue</strong>
+        <span>Sign in with ChatGPT, Claude, or OpenRouter, or paste an API key.</span>
+        <button className="ui-control ui-control--primary" type="button" onClick={() => requestConnectAi()}>Connect AI</button>
+      </section>
+    );
+  }
+  if (interruption.reason === "assistant_error") {
+    return (
+      <section className="turn-interruption" role="status" aria-label="Failed Worker response">
+        <strong>Request Stopped</strong>
+        <span>work-fold saved this result with your Chat. You can try again whenever you’re ready.</span>
+        <ContinueButton onContinue={onContinue} />
+      </section>
+    );
+  }
+  if (interruption.reason === "cancelled") {
+    return (
+      <section className="turn-interruption" role="status" aria-label="Stopped Worker response">
+        <strong>Response Stopped</strong>
+        <span>work-fold saved the response produced before you stopped the Worker.</span>
+      </section>
+    );
+  }
+  if (interruption.reason === "app_interrupted") {
+    return (
+      <section className="turn-interruption" role="status" aria-label="Worker response interrupted by app close">
+        <strong>App Interrupted This Response</strong>
+        <span>work-fold saved the partial response and did not rerun the turn because tools may already have changed something.</span>
+        <ContinueButton onContinue={onContinue} />
+      </section>
+    );
+  }
+  const retryText = interruption.retryAttempts > 0
+    ? interruption.retryAttempts === 1 ? "1 automatic retry was attempted." : `${interruption.retryAttempts} automatic retries were attempted.`
+    : "The provider did not identify this as safely retryable.";
+  return (
+    <section className="turn-interruption" role="status" aria-label="Interrupted Worker response">
+      <strong>Response Interrupted</strong>
+      <span>work-fold preserved the partial response. {retryText}</span>
+      <ContinueButton onContinue={onContinue} />
+    </section>
+  );
+}
+
+export function MarkdownMessage({
+  content,
+  workFolderLinks = null,
+  onOpenWorkFolderFile,
+}: {
+  content: string;
+  workFolderLinks?: Map<string, string> | null;
+  onOpenWorkFolderFile?: (path: string) => void;
+}) {
+  const linkChildren = (children: ReactNode) => linkWorkFolderPathText(children, workFolderLinks, onOpenWorkFolderFile);
+  return (
+    <div className="message-body">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeSingleLineBreaks]}
+        components={{
+          p: ({ children }) => <p>{linkChildren(children)}</p>,
+          li: ({ children, className }) => <li className={className}>{linkChildren(children)}</li>,
+          td: ({ children }) => <td>{linkChildren(children)}</td>,
+          th: ({ children }) => <th>{linkChildren(children)}</th>,
+          table: ({ children }) => <div className="message-table-scroll"><table>{children}</table></div>,
+          pre: ({ children }) => <MarkdownCodeBlock>{children}</MarkdownCodeBlock>,
+          code: ({ children, className }) => {
+            const text = reactNodeText(children);
+            if (className || text.includes("\n")) return <code className={className}>{children}</code>;
+            const normalizedPath = workFolderPathCandidate(text, { allowWorkFolders: true });
+            const resolvedPath = normalizedPath ? workFolderLinks?.get(normalizedPath) ?? null : null;
+            if (!resolvedPath || !onOpenWorkFolderFile) return <code>{children}</code>;
+            return (
+              <button
+                className="work-folder-file-link work-folder-file-link-code"
+                type="button"
+                onClick={() => onOpenWorkFolderFile(resolvedPath)}
+                title={resolvedPath}
+              >
+                {text}
+              </button>
+            );
+          },
+          a: ({ href, children }) => {
+            const workFolderPath = workFolderPathCandidate(href ?? "", { allowWorkFolders: true });
+            const resolvedPath = workFolderPath ? workFolderLinks?.get(workFolderPath) ?? null : null;
+            if (resolvedPath && onOpenWorkFolderFile) {
+              return <button className="work-folder-file-link" type="button" onClick={() => onOpenWorkFolderFile(resolvedPath)} title={resolvedPath}>{children}</button>;
+            }
+            // A server on this computer, such as a Worker's dev server, opens as a browser tab.
+            const localServer = localServerHref(href);
+            if (localServer && browserTabsAvailable()) {
+              return <button className="message-external-link message-browser-link" type="button" onClick={() => requestBrowserTab(localServer)} title={`Open ${localServer} in a browser tab`}>{children}</button>;
+            }
+            const safeHref = safeExternalHref(href);
+            return safeHref ? <a className="message-external-link" href={safeHref} target="_blank" rel="noreferrer">{children}</a> : <>{children}</>;
+          },
+          img: ({ src, alt }) => {
+            const workFolderPath = workFolderPathCandidate(src ?? "", { allowWorkFolders: true });
+            const resolvedPath = workFolderPath ? workFolderLinks?.get(workFolderPath) ?? null : null;
+            if (resolvedPath && onOpenWorkFolderFile) {
+              return <button className="message-image-file" type="button" onClick={() => onOpenWorkFolderFile(resolvedPath)} title={resolvedPath}>{alt || resolvedPath.split("/").pop() || "Open Image"}</button>;
+            }
+            const resolution = resolveMessageImageSource(src, window.location.href);
+            if (resolution.kind === "embed") return <img className="message-image" src={resolution.src} alt={alt ?? ""} loading="lazy" referrerPolicy="no-referrer" />;
+            if (resolution.kind === "external-link") {
+              return <a className="message-image-external" href={resolution.href} target="_blank" rel="noreferrer">{alt ? `Open Image: ${alt}` : "Open External Image"}</a>;
+            }
+            return <span className="message-image-unavailable">{alt ? `${alt} (image unavailable)` : "Image Unavailable"}</span>;
+          },
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function MarkdownCodeBlock({ children }: { children: ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const text = reactNodeText(children).replace(/\n$/, "");
+  const codeElement = Children.toArray(children).find((child) => isValidElement(child)) as ReactElement<{ className?: string }> | undefined;
+  const language = codeElement?.props.className?.match(/(?:^|\s)language-([\w-]+)/)?.[1] ?? "";
+  const label = language ? codeLanguageName(language) : "Code";
+  // Prose wraps; code keeps its lines.
+  const wraps = /^(text|txt|plaintext|md|markdown)$/i.test(language);
+
+  async function copyCode() {
+    try {
+      await copyToClipboard({ text });
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className={`message-code-block${wraps ? " wraps" : ""}`}>
+      <div className="message-code-toolbar">
+        <span>{label}</span>
+        <button className={copied ? "is-copied" : undefined} type="button" onClick={() => void copyCode()} aria-label={copied ? "Copied Code" : "Copy Code"} title={copied ? "Copied" : "Copy Code"}>
+          <FluentGlyph icon={copied ? Checkmark20Regular : Copy20Regular} size={13} />
+          <span>{copied ? "Copied" : "Copy"}</span>
+        </button>
+      </div>
+      <pre>{children}</pre>
+    </div>
+  );
+}
+
+async function resolveMessageWorkFolderLinks(
+  cacheKey: string,
+  content: string,
+  candidates: string[],
+  resolver: WorkFolderPathLinkResolver,
+): Promise<Map<string, string>> {
+  const cached = assistantMessageWorkFolderPathCache.get(cacheKey);
+  if (cached?.content === content) {
+    if (cached.promise) return cached.promise;
+    return cached.resolved;
+  }
+  const promise = resolver(candidates)
+    .then((resolved) => {
+      // Empty results are not cached: the tree (fixture mode) or the API may simply
+      // not be ready yet, and a poisoned empty entry would never be retried.
+      if (resolved.size) assistantMessageWorkFolderPathCache.set(cacheKey, { content, resolved, promise: null });
+      else assistantMessageWorkFolderPathCache.delete(cacheKey);
+      return resolved;
+    })
+    .catch(() => {
+      assistantMessageWorkFolderPathCache.delete(cacheKey);
+      return new Map<string, string>();
+    });
+  assistantMessageWorkFolderPathCache.set(cacheKey, { content, resolved: new Map(), promise });
+  return promise;
+}
+
+function linkWorkFolderPathText(
+  children: ReactNode,
+  workFolderLinks: Map<string, string> | null | undefined,
+  onOpenWorkFolderFile: ((path: string) => void) | undefined,
+): ReactNode {
+  if (!workFolderLinks?.size || !onOpenWorkFolderFile) return children;
+  return Children.map(children, (child) => {
+    if (typeof child === "string") return linkWorkFolderPathString(child, workFolderLinks, onOpenWorkFolderFile);
+    if (!isValidElement(child) || child.type === "a" || child.type === "code" || child.type === "button") return child;
+    const element = child as ReactElement<{ children?: ReactNode }>;
+    if (element.props.children === undefined) return child;
+    return cloneElement(element, undefined, linkWorkFolderPathText(element.props.children, workFolderLinks, onOpenWorkFolderFile));
+  });
+}
+
+function linkWorkFolderPathString(
+  text: string,
+  workFolderLinks: Map<string, string>,
+  onOpenWorkFolderFile: (path: string) => void,
+): ReactNode {
+  const mentions = findWorkFolderPathMentions(text).filter((mention) => workFolderLinks.has(mention.normalizedPath));
+  if (!mentions.length) return text;
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  mentions.forEach((mention, index) => {
+    const resolvedPath = workFolderLinks.get(mention.normalizedPath);
+    if (!resolvedPath) return;
+    if (mention.start > cursor) parts.push(text.slice(cursor, mention.start));
+    parts.push(
+      <button
+        className="work-folder-file-link"
+        type="button"
+        onClick={() => onOpenWorkFolderFile(resolvedPath)}
+        title={resolvedPath}
+        key={`${mention.start}:${mention.normalizedPath}:${index}`}
+      >
+        {mention.text}
+      </button>,
+    );
+    cursor = mention.end;
+  });
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return parts;
+}
+
+function reactNodeText(children: ReactNode): string {
+  return Children.toArray(children).map((child) => {
+    if (typeof child === "string" || typeof child === "number") return String(child);
+    if (!isValidElement(child)) return "";
+    return reactNodeText((child as ReactElement<{ children?: ReactNode }>).props.children);
+  }).join("");
+}
+
+export async function copyMarkdownToClipboard(content: string): Promise<void> {
+  await copyToClipboard({ text: content, html: markdownToClipboardHtml(content) });
+}
+
+function markdownToClipboardHtml(markdown: string): string {
+  const blocks = markdown.trim().split(/\n{2,}/).filter((block) => block.trim());
+  const html = blocks.map((block) => {
+    const trimmed = block.trim();
+    const codeFence = /^```[^\n]*\n([\s\S]*?)\n```$/.exec(trimmed);
+    if (codeFence) return `<pre><code>${escapeHtml(codeFence[1] ?? "")}</code></pre>`;
+    const heading = /^(#{1,3})\s+(.+)$/.exec(trimmed);
+    if (heading) {
+      const level = Math.min(3, heading[1]?.length ?? 1);
+      return `<h${level}>${inlineMarkdownToHtml(heading[2] ?? "")}</h${level}>`;
+    }
+    const lines = trimmed.split(/\r?\n/);
+    if (lines.every((line) => /^[-*]\s+/.test(line.trim()))) {
+      return `<ul>${lines.map((line) => `<li>${inlineMarkdownToHtml(line.trim().replace(/^[-*]\s+/, ""))}</li>`).join("")}</ul>`;
+    }
+    if (lines.every((line) => /^\d+[.)]\s+/.test(line.trim()))) {
+      return `<ol>${lines.map((line) => `<li>${inlineMarkdownToHtml(line.trim().replace(/^\d+[.)]\s+/, ""))}</li>`).join("")}</ol>`;
+    }
+    return `<p>${inlineMarkdownToHtml(lines.join("\n"))}</p>`;
+  }).join("");
+  return `<div>${html}</div>`;
+}
+
+function inlineMarkdownToHtml(value: string): string {
+  return escapeHtml(value)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\n/g, "<br>");
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+const codeLanguageNames: Record<string, string> = {
+  text: "Plain Text", txt: "Plain Text", plaintext: "Plain Text", md: "Markdown", markdown: "Markdown",
+  js: "JavaScript", jsx: "JavaScript", javascript: "JavaScript", mjs: "JavaScript", cjs: "JavaScript",
+  ts: "TypeScript", tsx: "TypeScript", typescript: "TypeScript", py: "Python", python: "Python",
+  sh: "Shell", bash: "Shell", zsh: "Shell", shell: "Shell", console: "Shell", ps1: "PowerShell", powershell: "PowerShell",
+  json: "JSON", jsonc: "JSON", yaml: "YAML", yml: "YAML", toml: "TOML", xml: "XML", html: "HTML", css: "CSS", scss: "SCSS",
+  sql: "SQL", csv: "CSV", diff: "Diff", go: "Go", rs: "Rust", rust: "Rust", rb: "Ruby", ruby: "Ruby", java: "Java",
+  kt: "Kotlin", swift: "Swift", c: "C", cpp: "C++", cs: "C#", php: "PHP", r: "R",
+};
+
+/** A code block's language as people name it ("Python", "Plain Text"), not shouted in capitals. */
+export function codeLanguageName(language: string): string {
+  const key = language.trim().toLowerCase();
+  return codeLanguageNames[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
+}

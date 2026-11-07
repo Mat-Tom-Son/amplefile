@@ -1,0 +1,172 @@
+{
+  "name": "work-fold-desktop",
+  "version": "0.15.3",
+  "private": true,
+  "type": "module",
+  "description": "A local-first desktop app powered by Pi.",
+  "author": "Mat-Tom-Son",
+  "license": "MIT",
+  "homepage": "https://work-fold.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mat-Tom-Son/work-fold.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Mat-Tom-Son/work-fold/issues"
+  },
+  "main": "dist/desktop/desktop/src/main.js",
+  "productName": "work-fold",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "postinstall": "node scripts/normalize-pi-dependencies.mjs && node scripts/prepare-included-tools.mjs",
+    "build": "npm run desktop:prepare",
+    "check": "npm run repo:check && npm run local:check && npm run desktop:check && npm run harness:check && npm run pages:check",
+    "repo:check": "node scripts/check-repository.mjs",
+    "test": "node scripts/run-tests.mjs",
+    "local:api": "tsx src/local/server-dev.ts",
+    "harness:eval": "tsx scripts/harness-eval/run.ts",
+    "harness:autonomous": "tsx scripts/harness-eval/autonomous.ts",
+    "harness:repeat": "tsx scripts/harness-eval/repeat.ts",
+    "harness:check": "tsc --noEmit -p tsconfig.harness-eval.json",
+    "work-fold:drive": "tsx scripts/work-fold-drive.ts",
+    "work-fold:appearance": "tsx scripts/work-fold-appearance.ts",
+    "work-fold:checks": "tsx scripts/work-fold-checks.ts",
+    "railway:install": "node scripts/install-railway-cli.mjs",
+    "railway": "node --env-file-if-exists=.env.railway.local scripts/run-railway-cli.mjs",
+    "pages:build": "node services/pages/build.mjs",
+    "pages:check": "tsc --noEmit -p services/pages/tsconfig.json",
+    "local:dev": "concurrently -k -n api,ui -c cyan,green \"npm run local:api\" \"vite --config vite.local.config.ts\"",
+    "local:check": "tsc --noEmit -p tsconfig.web.json",
+    "local:build": "vite build --config vite.local.config.ts",
+    "desktop:icons": "node scripts/generate-desktop-icons.mjs && node scripts/generate-dmg-background.mjs",
+    "desktop:check": "tsc --noEmit -p tsconfig.desktop.json",
+    "desktop:compile": "node scripts/clean-desktop-dist.mjs && tsc -p tsconfig.desktop.json && node scripts/stage-restricted-app-kit.mjs",
+    "desktop:prepare": "npm run desktop:computer-helper && npm run desktop:chrome-native-host && npm run desktop:icons && npm run local:build && npm run desktop:compile && npm run desktop:preload:smoke && npm run desktop:restricted-app:smoke && npm run desktop:browser:smoke && npm run desktop:preflight",
+    "desktop:package": "npm run desktop:prepare && electron-forge package && node scripts/verify-packaged-app-assets.mjs --package-dir out/work-fold-win32-x64",
+    "desktop:package:smoke": "npm run desktop:prepare && electron-builder --config electron-builder.desktop.cjs --win --x64 --dir --publish never && npm run desktop:verify:packaged-assets -- --package-dir out/builder/win-unpacked",
+    "desktop:make": "npm run desktop:prepare && electron-builder --config electron-builder.desktop.cjs --win nsis --x64 --publish never && npm run desktop:verify:release",
+    "desktop:make:mac": "node scripts/build-mac-desktop.mjs --unsigned-smoke",
+    "desktop:rc:mac": "node scripts/build-mac-release-candidate.mjs",
+    "desktop:make:mac:release": "node scripts/build-mac-desktop.mjs --release",
+    "desktop:make:mac:release:resume": "node scripts/build-mac-desktop.mjs --release --resume",
+    "desktop:release:mac:status": "node scripts/mac-release-status.mjs",
+    "desktop:release:mac:ci": "node scripts/verify-release-ci.mjs",
+    "desktop:release:mac:check": "node scripts/check-local-release.mjs",
+    "desktop:publish:mac": "node scripts/publish-mac-release.mjs",
+    "desktop:release:mac": "npm run desktop:make:mac:release && npm run desktop:publish:mac",
+    "desktop:release:mac:resume": "npm run desktop:make:mac:release:resume && npm run desktop:publish:mac",
+    "desktop:finalize:release:mac": "node scripts/finalize-mac-release-artifacts.mjs",
+    "desktop:manifest:release:mac": "node scripts/write-mac-release-manifest.mjs",
+    "desktop:reset:mac-safe-storage": "node scripts/reset-mac-safe-storage.mjs",
+    "desktop:verify:installed:mac": "node scripts/verify-installed-mac-app.mjs",
+    "desktop:make:zip": "npm run desktop:prepare && node scripts/make-desktop.mjs && npm run desktop:verify:packaged-assets",
+    "desktop:smoke": "npm run desktop:prepare && electron dist/desktop/desktop/src/main.js",
+    "desktop:preflight": "node scripts/desktop-preflight.mjs",
+    "desktop:restricted-app:smoke": "electron scripts/restricted-app-electron-smoke.mjs",
+    "desktop:preload:smoke": "electron scripts/desktop-preload-electron-smoke.mjs",
+    "desktop:browser:smoke": "electron scripts/browser-electron-smoke.mjs",
+    "desktop:verify:packaged-assets": "node scripts/verify-packaged-app-assets.mjs",
+    "desktop:verify:release": "node scripts/verify-windows-release.mjs",
+    "desktop:verify:release:mac": "node scripts/verify-mac-release.mjs",
+    "desktop:computer-helper": "node scripts/build-computer-helper.mjs",
+    "desktop:chrome-native-host": "node scripts/build-chrome-native-host.mjs",
+    "chrome:build": "node scripts/build-chrome-store.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@injaneity/pi-computer-use": "0.5.1",
+    "@napi-rs/canvas": "1.0.9",
+    "acorn": "8.16.0",
+    "brace-expansion": "5.0.12",
+    "docx": "9.7.1",
+    "electron-updater": "6.8.9",
+    "exceljs": "4.4.0",
+    "jiti": "2.7.0",
+    "jszip": "^3.10.1",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.3.289",
+    "pi-chrome": "0.15.51",
+    "pi-web-access": "0.29.0",
+    "pptxgenjs": "4.0.1",
+    "protobufjs": "7.6.5",
+    "saxes": "6.0.0",
+    "undici-pi-reviewed": "npm:undici@8.12.3",
+    "ws": "^8.21.2"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-zip": "^7.11.2",
+    "@electron-forge/plugin-fuses": "^7.11.2",
+    "@electron/asar": "^4.0.2",
+    "@electron/fuses": "^1.8.0",
+    "@fluentui/react-icons": "^2.0.331",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource/poppins": "^5.3.0",
+    "@types/jsdom": "^28.0.3",
+    "@types/node": "^24.9.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.3",
+    "electron": "^42.11.18",
+    "electron-builder": "^26.15.3",
+    "jsdom": "^29.1.1",
+    "lucide-react": "^1.8.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "sharp": "^0.35.5",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.6"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.12",
+    "extract-zip": "npm:@electron-internal/extract-zip@1.0.5",
+    "fast-uri": "3.1.8",
+    "ip-address": "10.7.1",
+    "js-yaml": "4.3.2",
+    "nanoid": "3.3.18",
+    "postcss": "8.5.26",
+    "protobufjs": "7.6.5",
+    "tar": "7.5.22",
+    "tmp": "0.2.7",
+    "form-data": "4.0.6",
+    "shell-quote": "1.12.0",
+    "esbuild": "0.28.1",
+    "@electron/get": {
+      "undici": "7.30.1"
+    },
+    "node-gyp": {
+      "undici": "6.29.1"
+    },
+    "jsdom": {
+      "undici": "7.30.1"
+    },
+    "smol-toml": "1.7.1",
+    "exceljs": {
+      "uuid": "11.1.1"
+    },
+    "@earendil-works/pi-coding-agent": {
+      "undici": "8.12.3"
+    }
+  },
+  "config": {
+    "forge": "./desktop/forge.config.cjs"
+  },
+  "allowScripts": {
+    "@injaneity/pi-computer-use": false
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "version": ">=11.16.0",
+      "onFail": "error"
+    }
+  }
+}

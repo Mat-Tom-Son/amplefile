@@ -1,0 +1,281 @@
+# macOS release runbook
+
+This runbook publishes the active Apple silicon work-fold desktop release to the separate public feed at [`Mat-Tom-Son/work-fold-mac-releases`](https://github.com/Mat-Tom-Son/work-fold-mac-releases). Windows distribution is inactive: it has no CI package gate, tag workflow, or public-release prerequisite.
+
+## One-time workstation setup
+
+1. Install the `Developer ID Application: James Thompson (464JD5K8DC)` certificate and private key in the login Keychain.
+2. Store notarization credentials with `xcrun notarytool store-credentials`. The existing local profile is `kai-workspace-notary`; profile names are not product-scoped and using it does not import legacy product data.
+3. Create ignored `.env.macos.local` using the non-secret variable template in [macOS build and release lane](macos-build.md).
+4. Confirm `gh auth status` uses the `Mat-Tom-Son` account and that the Mac feed repository is public.
+
+Do not export or commit the certificate, private key, app-specific password, or notary credentials.
+
+## Release workflow and checkpoints
+
+Use `npm run desktop:rc:mac` for ordinary packaged interaction testing. It
+Developer ID-signs and notarizes only the app under `out/mac-rc`, avoiding DMG
+and ZIP compression, the second Apple notarization wait, and publication. It is
+not updater evidence because unpacked Electron Builder output does not contain
+the release updater metadata.
+
+The full distribution lane records these timed stages under ignored `out/`:
+
+1. desktop preparation;
+2. app packaging, Developer ID signing, app notarization, DMG/ZIP creation;
+3. packaged-asset verification;
+4. DMG signing, notarization, stapling, and updater-metadata refresh;
+5. release-manifest generation;
+6. strict application, DMG, updater, manifest, and checksum verification.
+
+The build checkpoint is a recovery aid. Resume validates its source/configuration
+fingerprint, non-secret release environment, signed app, and artifact receipts.
+The separate local verification receipt records a successful full check of the
+exact release SHA. Publication requires both, along with canonical pushed
+`main` and its matching annotated source tag, before upload and again immediately
+before publishing the draft. It independently runs strict artifact verification.
+These requirements also apply to direct publisher invocation. Never commit or
+hand-edit either receipt.
+
+For a routine release, finish review, fixes, versioning, and release notes,
+merge to `main`, and run local verification on the final exact commit before
+building. An identical tree at a different SHA does not inherit the local
+check receipt. Do not edit source or run dependency installs during packaging.
+The full signed build requires successful local verification before starting.
+Only a compatible `:resume` checkpoint from after the current receipt completed
+may preserve signing and notarization. A fresh check reinstalls dependencies
+and requires a subsequent fresh distribution build. The same Node/npm versions
+and dependency state must remain in place; hidden lockfile hashes detect
+ordinary dependency changes. A shared per-worktree lock serializes local
+checks, all macOS builds, and publication to prevent preparation or installs
+from racing packaging. The app-only RC lane needs no receipt, but holds the same lock for preparation.
+This is a record from a trusted release workstation, not a tamper-resistant
+attestation: hidden lockfiles detect ordinary npm installation drift, not manual
+edits to installed package files. Do not edit installed dependencies between
+verification and packaging.
+GitHub Actions is disabled in the canonical source repository; publication uses
+the local receipt and checks source identity directly. Release-tooling-only changes need
+focused regression tests and normal local checks, not a version bump or an
+Apple submission.
+
+## First work-fold release
+
+The first public work-fold release is `0.1.0`. The repository retained `0.8.0`
+as a development holdover until the complete clean-break candidate was ready,
+then reset the package version immediately before the release commit and tag.
+The signed candidate must use `com.work-fold.desktop`, the `work-fold`
+application-data profile, and only the `Mat-Tom-Son/work-fold-mac-releases`
+feed. It must start empty and must not open, import, migrate, mutate, wipe, or
+delete the legacy Workspace profile, `.workspace/` data, app platform state, or
+updater cache.
+
+Before that candidate, publish and install the final legacy containment release
+from the last legacy source line. It must keep `.work-fold/` hidden and inert
+and refuse managed recursive deletion when `.work-fold/` exists. Freeze both
+legacy repositories after that release and retain its signed/notarized evidence.
+
+Workspace is not an updater predecessor. The signed, notarized, and stapled
+`0.1.0` Mac artifacts were published and installed on August 1, 2026. That real
+first launch exposed a sandboxed-preload module-load defect before onboarding,
+so the release was retained immutably and marked superseded. `0.1.1` is the
+corrective release and must prove the full installed update from `0.1.0` as
+well as a clean onboarding launch. The legacy source and Mac-release
+repositories are frozen after that proof and must never receive work-fold tags,
+artifacts, or metadata.
+
+## Release procedure
+
+1. Complete review, fixes, versioning, and release notes, then merge and push
+   the final release commit to canonical `main` in `Mat-Tom-Son/work-fold`.
+   Check both local and remote tags before selecting a version: a checkout can
+   retain frozen legacy tags absent from the active remote. Never push an
+   existing tag merely because creation failed; choose a higher version unused
+   locally and remotely.
+2. On an Apple-silicon Mac with Node 24, supported npm, and Google Chrome
+   installed for real CSS tests, run the complete local release check from that
+   clean committed checkout:
+
+   ```bash
+   npm run desktop:release:mac:check
+   ```
+
+   It executes these stages in order:
+
+   - `npm ci`;
+   - `npm ci --prefix services/bridge`;
+   - `npm run check`;
+   - the complete unsharded `npm test`;
+   - `npm test --prefix services/bridge`;
+   - `npm run desktop:prepare`.
+
+   Success writes ignored `out/release-checks/local-verification.json` with the
+   exact SHA, tree, build-input fingerprint, Node/npm versions, dependency
+   lockfile hashes, and every successful stage. The install stages explicitly
+   use `--ignore-scripts=false --dry-run=false --include=dev` with `/bin/sh`;
+   test-filter environment flags are cleared so the full suite runs. Starting
+   a new run invalidates any old receipt; failure or a source change during
+   the checks cannot leave valid success evidence. A local
+   failure before tagging means fix the cause, commit, and rerun the check;
+   it does not by itself consume a version. Inspect a saved receipt read-only:
+
+   ```bash
+   npm run desktop:release:mac:check -- --status
+   ```
+
+   Run local verification again after any commit change, including a merge
+   whose tree is identical. Do not copy or hand-edit a receipt to qualify a
+   different commit. GitHub Actions results are not substitutes for this
+   receipt and are not a publication dependency.
+3. After the check succeeds, build the complete signed/notarized distribution
+   candidate under the same Node/npm toolchain, keeping source and dependencies
+   unchanged during packaging:
+
+   ```bash
+   npm run desktop:make:mac:release
+   ```
+
+   Exercise the candidate's required native QA. If fixes change the source,
+   commit them, run local verification again, and build a fresh candidate
+   before tagging. Review dependency audit results separately with
+   `npm audit --audit-level=high` as part of release review.
+4. Create and push the annotated source tag for the checked release commit:
+
+   ```bash
+   git tag -a v<version> -m "work-fold <version>" &&
+     git push origin refs/tags/v<version>:refs/tags/v<version>
+   ```
+
+   GitHub Actions is disabled, so pushing the tag starts no remote workflow.
+   Publication verifies the package version, annotated tag, and canonical source
+   identity directly. `npm run desktop:release:mac:ci` remains an optional
+   diagnostic for historical Actions evidence.
+5. Confirm the build checkpoint and local receipt still match, then publish
+   through the resume lane without repeating completed Apple work:
+
+   ```bash
+   npm run desktop:release:mac:status
+   npm run desktop:release:mac:check -- --status
+   npm run desktop:release:mac:resume
+   ```
+
+   For a fresh build-and-publish after local verification and tagging, use
+   `npm run desktop:release:mac` instead. If a build or pre-publication check is
+   interrupted, inspect status before retrying. Changed source, version,
+   architecture, Node runtime, signing identity, feed, or artifact bytes require
+   a fresh build. Changed source, Node/npm, or dependencies also requires
+   fresh local verification. Every
+   fresh local check requires a subsequent fresh build. A draft already
+   created on GitHub is intentionally not overwritten by resume; apply the
+   failed-draft recovery rule below before retrying publication.
+6. Confirm the command reports a public, non-draft `v<version>` release with
+   the DMG, ZIP, both blockmaps, `latest-mac.yml`, checksums, and both manifests.
+7. When installation is authorized, install or update the app and verify it:
+
+   ```bash
+   npm run desktop:verify:installed:mac
+   ```
+
+8. Open work-fold normally and check **Settings > About** and
+   **work-fold > Check for Updates...**. If the person reserved the update
+   click, verify the installed predecessor offers the new version and leave
+   installation to them; do not report the new version as installed.
+
+The publisher refuses a dirty/unpushed source tree, a mismatched annotated
+source tag, a private source repository or Mac feed, an existing Mac tag,
+missing or stale local verification, changed Node/npm or dependency state, an
+incompatible signed artifact checkpoint or one begun before local checks passed,
+an unsigned manifest, a missing asset, or any remote size/digest mismatch.
+It does not inspect or require GitHub Actions status, Windows artifacts, or a
+source-repository GitHub Release. Installer-only artwork is generated under
+ignored `out/` build output so the release build cannot dirty its own checkout.
+The publisher uploads a draft first and verifies every asset's GitHub SHA-256
+against the local file. Immediately before making it public, it rechecks the
+local receipt, canonical source identity, and signed artifact evidence. Direct
+publisher invocation has the same checks.
+
+## Updater evidence
+
+Repeat a lower-version-to-current installed update whenever updater code, Electron, Electron Builder, signing identity, bundle id, feed, artifact names, or Squirrel.Mac behavior changes.
+
+The accepted proof must show:
+
+- the lower app is Developer ID-signed, notarized, stapled, and installed under `/Applications`;
+- `Contents/Resources/app-update.yml` names `Mat-Tom-Son/work-fold-mac-releases`;
+- the lower app's **work-fold > Check for Updates...** command offers the expected higher version and the Settings update surface reports the same state;
+- the cached ZIP SHA-256 equals the published GitHub asset digest;
+- work-fold shuts down, replaces the app, and relaunches at the higher version;
+- `npm run desktop:verify:installed:mac` passes;
+- a full quit and reopen does not ask for repeated Keychain passwords.
+
+### work-fold 0.1.0 to 0.1.1
+
+The first work-fold update passed this proof on August 1, 2026. Installed 0.1.0
+discovered the public `work-fold-0.1.1-mac-arm64.zip`; an explicit user click on
+**Download and Install** completed the Squirrel.Mac shutdown, replacement, and
+relaunch under a new 0.1.1 process. Both updater-cache ZIP copies matched the
+published GitHub SHA-256
+`c01eb4a9a881efe6da54fe4e59d3a5a654736c979181b83a90d61f7ffc100fa9`.
+Installed verification passed with bundle id `com.work-fold.desktop`, Team ID
+`464JD5K8DC`, the `Mat-Tom-Son/work-fold-mac-releases` feed, a valid
+notarization staple, and Gatekeeper acceptance without reading Keychain secret
+data. A cold installed launch reached onboarding with no renderer errors; the
+menu-bar popover loaded its narrow bridge; close/reopen and full quit/cold
+launch passed. The new profile remained at zero Spaces, and a deterministic
+manifest covering all 1,939 legacy Workspace profile files was unchanged.
+
+### Preserved legacy Workspace updater evidence
+
+The records below are historical proof for the predecessor product only. They
+do not establish work-fold identity or authorize either product to consume the
+other's profile, metadata, artifacts, or update feed.
+
+Workspace 0.2.8 to 0.2.9 and 0.2.9 to 0.2.10 passed this proof on July 15, 2026. For 0.2.10, the installed 0.2.9 app discovered the public release, cached the final updater ZIP with SHA-256 `35f359e4042a0feaccd75feaca18ab0064d1c85b2500ee99295fdab773c62234`, replaced and relaunched `/Applications/Workspace.app`, passed installed-bundle verification, preserved the empty Space registry, survived last-window close/reopen in one process, and completed a full quit/reopen without a SecurityAgent or Keychain dialog. `updateNow()` intentionally downloads and restarts from one user action.
+
+Workspace 0.2.10 to 0.2.11 passed the same proof on July 15, 2026. The installed 0.2.10 app offered 0.2.11 from **Workspace > Check for Updates...**, downloaded a ZIP whose SHA-256 matched the published GitHub digest `adeb9fac93452443d72364b85e2bc7ef07b2f0f1b09025aaa8dd302c0b3da6b7`, replaced itself, and relaunched as 0.2.11. Installed-bundle verification passed, the registered Space retained the same identity, application-menu Quit and Command-Q exited on their first request, the Dock/system termination path exited, and closing then reopening the last window reused the same process. No SecurityAgent or Keychain dialog appeared.
+
+Workspace 0.2.11 to 0.3.0 passed the same proof on July 16, 2026. The installed 0.2.11 app offered 0.3.0 from **Workspace > Check for Updates...**, downloaded a ZIP whose SHA-256 matched the published GitHub digest `d8bb801498c2823f54b10340395b0ee2428b3154c33c0b4b49658106c269bcea`, replaced itself, and relaunched as 0.3.0. Installed-bundle verification passed; the registered Space retained the same identity and its 25-capability projection remained unchanged. Native About reported 0.3.0, the update command reported the app current, application-menu Quit, Command-Q, and the Dock/system termination path exited, and closing then reopening the last window reused the same process. No SecurityAgent or Keychain dialog appeared.
+
+Workspace 0.4.0 to 0.4.1 passed the same proof on July 25, 2026. The installed, Developer ID-signed and notarized 0.4.0 app exposed a visible frontend button labeled **Download Workspace 0.4.1**. One click advanced through live download progress, entered the updater shutdown handoff, replaced `/Applications/Workspace.app`, and relaunched as 0.4.1. Both cached updater ZIPs and the local release ZIP matched the published GitHub digest `b2735c92f0a1cf73fb7e6abef8a413beeea7fd45c19d2e188d9de5b656396044`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, and Gatekeeper acceptance. A full quit and normal reopen kept 0.4.1 running and produced no SecurityAgent or Keychain dialog.
+
+Workspace 0.4.1 to 0.4.2 passed the same proof on July 25, 2026. The installed, Developer ID-signed and notarized 0.4.1 app reported 0.4.2 available after **Settings > Desktop > Check for updates**, then exposed the visible frontend **Download update** button. Clicking that button entered the updater shutdown handoff, replaced `/Applications/Workspace.app`, and relaunched under a new process as 0.4.2. Both cached updater ZIPs and the local release ZIP matched the published GitHub digest `76aafcceaeb68836c21a81959705934bad53a263b8a8c220df04e308ab05cd7c`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, Gatekeeper acceptance, and no Keychain secret access. Settings > About reported 0.4.2, the registered Space reopened, and a full Command-Q exit followed by a normal cold launch produced a fresh 0.4.2 process with no SecurityAgent or Keychain dialog.
+
+Workspace 0.4.2 to 0.4.3 passed the same proof on July 25, 2026. The installed, Developer ID-signed and notarized 0.4.2 app discovered the public Mac feed at launch and exposed the visible frontend **Download Workspace 0.4.3** button. Clicking that button closed the renderer for the updater handoff, replaced `/Applications/Workspace.app`, and relaunched under a new process as 0.4.3. Both cached updater ZIPs and the local release ZIP matched the published GitHub digest `767ee2b0483a249452fb0b7888d5e3061a875b391c0ade796bfc7e11bc8425c2`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, notarized Developer ID Gatekeeper acceptance, and no Keychain secret access. Settings > About reported 0.4.3, Settings > Desktop reported the app current, and the registered Space, Chats, provider selection, imported Skill, and restricted-app preview remained available. A full quit and normal cold launch produced a fresh 0.4.3 process with no SecurityAgent process or Keychain dialog.
+
+Workspace 0.4.3 to 0.4.4 passed the same proof on July 25, 2026. The installed, Developer ID-signed and notarized 0.4.3 app reported 0.4.4 available after **Settings > Desktop > Check for updates**, then exposed the visible frontend **Download update** button. Clicking that button showed live download progress, entered the updater shutdown handoff, replaced `/Applications/Workspace.app`, and relaunched under a new process as 0.4.4. Both cached updater ZIPs and the local release ZIP matched the published GitHub digest `072301488814d79dc176ad5f2935a663a635cfee7899252c3bb3b40bcc428702`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, notarized Developer ID Gatekeeper acceptance, and no Keychain secret access. Settings > About reported 0.4.4, the registered Space and open tabs were restored, and the redesigned rail loaded without the former standalone Capabilities entry. A full quit and normal cold launch produced a fresh 0.4.4 process with no SecurityAgent process or Keychain dialog.
+
+Workspace 0.4.4 to 0.4.5 passed the same proof on July 25, 2026. The installed, Developer ID-signed and notarized 0.4.4 app reported 0.4.5 available after **Settings > Desktop > Check for updates**, then exposed the visible frontend **Download update** button. Clicking that button showed live download progress, entered the updater shutdown handoff, replaced `/Applications/Workspace.app`, and relaunched under a new process as 0.4.5. Both cached updater ZIPs and the local release ZIP matched the published GitHub digest `0e8f75d8cb08a230ee788f861e7cd3b0e8a43c31374d4d1937d0037703499a1e`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, a valid notarization staple, notarized Developer ID Gatekeeper acceptance, and no Keychain secret access. Settings > About reported 0.4.5; the registered Space and open tabs were restored; Library appeared as one Space-owned tab backed by the shared personal collection; the permanent Library rail destination was gone; and reopening Library from **Add or manage** reused the existing tab. A full Command-Q exit followed by a normal cold launch produced a fresh 0.4.5 process, restored the Library tab, and produced no SecurityAgent process or Keychain dialog.
+
+Workspace 0.4.5 to 0.4.6 passed the same proof on July 25, 2026. The installed, Developer ID-signed and notarized 0.4.5 app reported 0.4.6 available after **Settings > Desktop > Check for updates**, then exposed the visible frontend **Download update** button. Clicking that button showed live download progress, entered the updater shutdown handoff, replaced `/Applications/Workspace.app`, and relaunched under a new process as 0.4.6. Both cached updater ZIPs and the local release ZIP matched the published GitHub digest `792ba3d2f130d3dddd4aae4ff07c85c16bc8172b9e74efc9e967cdbf1f71ad47`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, a valid notarization staple, notarized Developer ID Gatekeeper acceptance, and no Keychain secret access. Settings > About reported 0.4.6 and Settings > Desktop reported the app current. The registered Space, Space-owned Library and Assistant tools tabs, restricted QA Checklist tab and local state, and completed Chats all survived the update and cold launch. Real Assistant turns from both an existing Chat and a fresh draft completed in the background without taking focus from Library or Assistant tools, while the Chat tabs exposed working and finished states and persisted their correct file-backed results. A full Command-Q exit followed by a normal cold launch restored the tabs and restricted-app state under a fresh 0.4.6 process with no SecurityAgent process or Keychain dialog.
+
+Workspace 0.4.6 to 0.4.7 passed the same proof on July 26, 2026. The installed, Developer ID-signed and notarized 0.4.6 app discovered the public Mac feed and exposed the visible frontend **Download Workspace 0.4.7** button. Clicking that button downloaded the published update, entered the updater shutdown handoff, replaced `/Applications/Workspace.app`, and relaunched under a new process as 0.4.7. Both cached updater ZIPs and the local release ZIP matched the published GitHub digest `da4c3d48d04c06d540a5c1106b83a4ba27aa0027232f24baa0337c79fe2b6f19`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, a valid notarization staple, notarized Developer ID Gatekeeper acceptance, and no Keychain secret access. Settings > About reported 0.4.7 and Settings > Desktop reported the app current. The registered Spaces, files, open Chats, provider selection, Space-owned Library and Assistant tools tabs, personal and Space Skills, and restricted QA Checklist app and local state all survived. The installed release loaded the 262-entry Discover catalog, exercised the redesigned Installed view, applied and undid a Space color preset and searched icon, and completed a real provider-backed Assistant turn with the expected result. A full application-menu Quit followed by a normal cold launch produced a fresh 0.4.7 process, restored the tabs, completed Chat, and restricted-app state, and produced no SecurityAgent process or Keychain dialog.
+
+Workspace 0.4.7 to 0.4.8 passed the same proof on July 26, 2026. The installed, Developer ID-signed and notarized 0.4.7 app reported 0.4.8 available after **Settings > Desktop > Check for updates**, then exposed the visible frontend **Download update** button. Clicking that button showed live download progress, replaced `/Applications/Workspace.app`, and relaunched from process 89538 under process 14162 as 0.4.8. Both cached updater ZIPs and the local release ZIP matched the published GitHub digest `df31dd870324a931a3da118a27660bf255e3037e2a4938b38dd8212d9c16f199`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, a valid notarization staple, notarized Developer ID Gatekeeper acceptance, and no Keychain secret access. Settings > About reported 0.4.8 and Settings > Desktop reported the app current. The installed release verified the streamlined rail and compact Space menu on ordinary, management, appearance, and restricted-app tabs; light and dark message readability; the hover-only icon Copy control and clipboard result; all eight curated Looks and Harbor persistence; active-Space-first Chats with a collapsed, expandable other-Space group; preserved QA Checklist local state; and a real provider-backed QA Space turn returning `qa-work-folder-048-smoke`. Two full quit and normal cold-launch cycles produced fresh 0.4.8 processes, restored open tabs and restricted-app state, and produced no SecurityAgent process or Keychain dialog.
+
+Workspace 0.4.8 to 0.4.9 passed the same proof on July 26, 2026. The installed, Developer ID-signed and notarized 0.4.8 app reported 0.4.9 available after **Settings > Desktop > Check for updates**, then exposed the visible frontend **Download update** button. Clicking that button showed live download progress, replaced `/Applications/Workspace.app`, and relaunched from process 15685 under process 35093 as 0.4.9. The cached updater ZIP and local release ZIP matched the published GitHub digest `90d91519eec50227887ec3b89f61bc8345f60e2716b0557ccdc5740dac07272c`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, a valid notarization staple, notarized Developer ID Gatekeeper acceptance, and no Keychain secret access. Settings > About reported 0.4.9 and Settings > Desktop reported the app current. The registered Spaces, files, Chats, open tabs, provider selection, and restricted-app state survived. The installed renderer repeatedly switched existing Chats without replacing their canonical titles, copied a completed response through the message footer, grouped and restored tabs across two Spaces, kept five adaptive tabs non-overlapping, exposed immediate whole-row Chat and File selection, and preserved readable footer roles in dark mode. A final full quit and normal cold launch produced fresh process 35351 without remote debugging, restored the active Chat and open tabs, and produced no SecurityAgent process or Keychain dialog.
+
+Workspace 0.4.9 to 0.4.10 passed the same proof on July 26, 2026. The installed, Developer ID-signed and notarized 0.4.9 app reported 0.4.10 available after **Settings > Desktop > Check for updates**, then exposed the visible frontend **Download update** button. Clicking that button showed live download progress, replaced `/Applications/Workspace.app`, and relaunched from process 35351 under process 97241 as 0.4.10. The cached updater ZIP and local release ZIP matched the published GitHub digest `389396943e80673ab704e033853bb79286f0dbde919ea1ef27e2f1aaf0acc013`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, a valid notarization staple, notarized Developer ID Gatekeeper acceptance, and no Keychain secret access. Settings > About reported 0.4.10 and Settings > Desktop reported the app current. The registered Spaces, files, Chats, open tabs, provider selection, appearance, and restricted-app state survived. In the installed release, a disposable OAuth app review exposed its issuer, public client id, scopes, pinned authorize and exchange endpoints, and static parameters; installation kept every grant and schedule off; the same details remained visible in access management; and a one-off automation produced a durable receipt. Cross-Space Chats remained collapsed until requested, canonical titles survived Space and tab switching, the footer Copy action confirmed successfully, dark-mode messages remained readable, and Files retained whole-row selection. A final full quit and normal cold launch produced fresh process 97552, restored the active Space-owned Assistant tools tab and disposable app state, and produced no SecurityAgent process or Keychain dialog.
+
+Workspace 0.4.10 to 0.4.11 passed the same proof on July 26, 2026. The installed, Developer ID-signed and notarized 0.4.10 app exposed the visible frontend **Download Workspace 0.4.11** button. Clicking that button entered the updater handoff, replaced `/Applications/Workspace.app`, and relaunched as 0.4.11. The published updater ZIP had GitHub SHA-256 digest `840bbdadf16c81cbf65bd988d95dab8b1fa829a79e70e603170de7ecfb788687`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, a valid notarization staple, notarized Developer ID Gatekeeper acceptance, and no Keychain secret access. A real provider-backed turn returned `title-persistence-smoke-0411`, persisted the generated title **Reply with exactly: title-persistence-smoke-0411**, and displayed it in both Chats and its Space-owned tab. The registered Spaces, named Chats, files, tabs, provider selection, appearance, and restricted-app state survived.
+
+Workspace 0.4.11 to 0.4.12 passed the same proof on July 27, 2026. The installed 0.4.11 app reported **Workspace 0.4.12 is available** after **Settings > Desktop > Check for updates** and exposed the visible frontend **Download update** button. Clicking that button displayed **Downloading update...**, closed the renderer for updater handoff, replaced `/Applications/Workspace.app`, and relaunched under process 81598 as 0.4.12. The published updater ZIP had GitHub SHA-256 digest `2d3b3baa4f454a2b84c85a008befb1c5fa647ea3a652be23d9de62658d75bec0`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, a valid notarization staple, notarized Developer ID Gatekeeper acceptance, and no Keychain secret access. Settings > About reported 0.4.12. A full quit and cold launch restored the generated 0.4.11 smoke title; switching to another Chat and back left it unchanged. The installed renderer measured the Other Spaces identity slot at 18 by 18 pixels and its glyph at 14 by 14 pixels with zero center delta on both axes. Computed light- and dark-mode styles reported a transparent background, no border, and no shadow; the original device-theme preference was restored after testing.
+
+Workspace 0.4.12 to 0.4.13 passed the same proof on July 27, 2026. The installed 0.4.12 app discovered 0.4.13 through **Settings > Desktop > Check for updates** and completed the visible frontend download, shutdown, replacement, and relaunch flow. The published updater ZIP had GitHub SHA-256 digest `dada425ab672b545026879b3e465103f664c33b0a2defe8347258f26bcb7d49a`. Installed-bundle verification passed with the production bundle id, Team ID, public feed, notarization staple, and Gatekeeper acceptance intact. Installed-app QA measured the host-owned 12-pixel contributed-app inset, verified the default rounded canvas and an explicit 24-pixel app radius on navigator and app-owned tabs, and confirmed that the persistent Space menu remained usable above a contributed app.
+
+Workspace 0.4.13 to 0.4.14 passed the same proof on July 27, 2026. The installed 0.4.13 app reported **Workspace 0.4.14 is available** after **Settings > Desktop > Check for updates** and exposed the visible frontend **Download update** button. One click showed live progress through 95%, entered **Restarting to install update...**, closed the renderer, replaced `/Applications/Workspace.app`, and relaunched as 0.4.14. The published updater ZIP had GitHub SHA-256 digest `6eca3a5c19ee7bb09a0f8ad2bec43212499e0e301ab61fb670819474b4788b23`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, a valid notarization staple, notarized Developer ID Gatekeeper acceptance, and no Keychain secret access. A full quit and cold launch restored all six dogfood Spaces, Chats, app-owned tabs, app state, grants, and enabled automations. Installed-app QA then atomically replaced Reading Room's individually granted `reading-list.md`, removed Trip Studio tabs owned by an obsolete app digest once that Space's catalog loaded, ran Weather Window's scheduled worker on demand, completed a fresh Assistant turn with one live app-tool action, and reported all three Service Deck probes healthy.
+
+Workspace 0.4.14 to 0.4.15 passed the same proof on July 27, 2026. Invoking the installed 0.4.14 app's native **Workspace > Check for Updates...** action entered the public updater flow, downloaded the published `Workspace-0.4.15-mac-arm64.zip`, replaced `/Applications/Workspace.app`, and relaunched Workspace as 0.4.15. Both updater-cache copies of the ZIP matched the published GitHub SHA-256 digest `a00d1834e697529796cf1e67d8b5db0e2d36f285d2de39949d9b18374fea26a7`. Installed-bundle verification passed with bundle id `io.github.mattomson.workspace`, Team ID `464JD5K8DC`, the public Mac feed, a valid notarization staple, notarized Developer ID Gatekeeper acceptance, and no Keychain secret access. The native About window reported **Version 0.4.15 (0.4.15)**, and the registered Spaces plus the Chat that exposed the provider failure remained available after relaunch.
+
+## Recovery rules
+
+- Never replace assets in a published release. Correct a bad release with a higher shared version.
+- Never move, reuse, or delete a failed candidate's pushed source tag. It is immutable evidence even when no Mac-feed draft or public release exists; a correction to tagged source requires a higher version, release commit, and tag. Before tagging, fix an ordinary local-check failure, commit, and rerun verification without consuming a version. GitHub Actions status does not determine publication eligibility.
+- A failed draft may be deleted only after confirming it was never published or consumed by an installed app.
+- Inspect `npm run desktop:release:mac:check -- --status` for the exact-commit local receipt and `npm run desktop:release:mac:status` for the build before retrying. If its checkpoint is compatible, use the matching `:resume` build/release command instead of rebuilding the app and repeating notarization.
+- If a build fails inside DMG finalization before its checkpoint is written, the resumable lane reruns the finalizer. It detects an already valid signed/stapled DMG and refreshes only updater metadata.
+- Never rename or install `work-fold Local Smoke.app` over the production app. A user-data override does not isolate Keychain; use the signed candidate or a disposable macOS account for interactive testing.
+- If repeated Keychain prompts occur after replacing an old ad hoc build, quit work-fold and run `npm run desktop:reset:mac-safe-storage -- --yes --reopen`. Do not read the secret with `security ... -g`.
+- The current public lane is arm64 only. Do not publish x64 until an Intel Mac passes launch and updater smoke.
+
+## Release ownership
+
+The source repository owns code, exact release tags, issues, and documentation. `work-fold-mac-releases` is the active desktop artifact feed only. Do not develop or hand-edit release metadata in the feed repository, and do not add a competing tag publisher. Windows distribution remains dormant until it is deliberately redesigned, documented, and reactivated.

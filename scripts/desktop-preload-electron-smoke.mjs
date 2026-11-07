@@ -1,0 +1,213 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { app, BrowserWindow, ipcMain } from "electron";
+import { writeDesktopClipboard } from "../dist/desktop/desktop/src/clipboard.js";
+
+const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const productIdentity = JSON.parse(await readFile(join(rootDir, "src", "shared", "product-identity.json"), "utf8"));
+const expected = {
+  apiBaseUrl: "http://127.0.0.1:43123",
+  appVersion: "preload-smoke",
+  productName: productIdentity.productName,
+  internalProtocol: productIdentity.internalProtocol,
+};
+
+app.on("window-all-closed", () => {});
+
+let failed = false;
+void app.whenReady()
+  .then(runSmoke)
+  .then(() => console.log("Desktop preload Electron sandbox smoke passed."))
+  .catch((error) => {
+    failed = true;
+    console.error(error);
+  })
+  .finally(() => app.exit(failed ? 1 : 0));
+
+async function runSmoke() {
+  await verifyPreload("preload.cjs", false);
+  await verifyPreload("work-fold-agent-popover-preload.cjs", true);
+  await verifyDiagnosticPreload();
+}
+
+async function verifyDiagnosticPreload() {
+  const requests = [];
+  let closed = false;
+  const errors = [];
+  const window = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      preload: join(rootDir, "dist", "desktop", "desktop", "src", "model-context-preload.cjs"),
+      contextIsolation: true, nodeIntegration: false, sandbox: true,
+    },
+  });
+  ipcMain.handle("work-fold:diagnostics:request", (event, input) => {
+    assert.equal(event.sender, window.webContents);
+    requests.push(input);
+    return { enabled: false, records: [] };
+  });
+  ipcMain.handle("work-fold:diagnostics:close", () => { closed = true; });
+  window.webContents.on("console-message", (details) => {
+    if (details.level === "warning" || details.level === "error") errors.push(details.message);
+  });
+  try {
+    await window.loadURL(`data:text/html,${encodeURIComponent('<meta http-equiv="Content-Security-Policy" content="default-src \'none\'">')}`);
+    assert.deepEqual(await window.webContents.executeJavaScript(`({
+      keys: Object.keys(window.workFoldDiagnostics).sort(),
+      desktop: typeof window.workFoldDesktop,
+      node: typeof window.require,
+      process: typeof window.process,
+    })`), { keys: ["clipboard", "close", "request"], desktop: "undefined", node: "undefined", process: "undefined" });
+    await verifyClipboardBridge(window, "workFoldDiagnostics");
+    assert.deepEqual(requests, [], "loading the developer preload must not enable recording");
+    assert.deepEqual(await window.webContents.executeJavaScript('window.workFoldDiagnostics.request({path:"/api/model-context"})'), { enabled: false, records: [] });
+    assert.deepEqual(requests, [{ path: "/api/model-context" }]);
+    await window.webContents.executeJavaScript("window.workFoldDiagnostics.close()");
+    assert.equal(closed, true);
+    assert.deepEqual(errors, []);
+  } finally {
+    ipcMain.removeHandler("work-fold:diagnostics:request");
+    ipcMain.removeHandler("work-fold:diagnostics:close");
+    window.destroy();
+  }
+}
+
+async function verifyPreload(filename, workFoldAgentOnly) {
+  const errors = [];
+  const openWithRequests = [];
+  const automationRequests = [];
+  const proposalPath = "/temporary work-fold agent/hourly.work-fold-automation.json";
+  const pendingProposals = { proposals: [{ valid: true, path: proposalPath, title: "Hourly hello" }], truncated: false };
+  const window = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      preload: join(rootDir, "dist", "desktop", "desktop", "src", filename),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      additionalArguments: [
+        rendererArgument("product-name", expected.productName),
+        rendererArgument("internal-protocol", expected.internalProtocol),
+        rendererArgument("api-base-url", expected.apiBaseUrl),
+        rendererArgument("app-version", expected.appVersion),
+        rendererArgument("window-material", "vibrancy"),
+      ],
+    },
+  });
+  window.webContents.on("console-message", (details) => {
+    if (details.level === "warning" || details.level === "error") errors.push(details.message);
+  });
+  if (!workFoldAgentOnly) {
+    ipcMain.handle("work-fold:work-folder:open-path-with", (event, request) => {
+      assert.equal(event.sender, window.webContents);
+      openWithRequests.push(request);
+      return { opened: false, canceled: true, appName: null };
+    });
+    ipcMain.handle("work-fold:automations:proposals", (event, ...args) => {
+      assert.equal(event.sender, window.webContents);
+      automationRequests.push({ command: "proposals", args });
+      return pendingProposals;
+    });
+    ipcMain.handle("work-fold:automations:enable-proposal", (event, path) => {
+      assert.equal(event.sender, window.webContents);
+      automationRequests.push({ command: "enable-proposal", path });
+      return { automationId: "automation-smoke-test", enabled: true, alreadyEnabled: false };
+    });
+  }
+  try {
+    const document = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'">'
+      + "<title>preload smoke</title>";
+    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(document)}`);
+    const bridge = await window.webContents.executeJavaScript(`(() => {
+      const value = window.workFoldDesktop;
+      return {
+        desktop: value?.desktop,
+        apiBaseUrl: value?.api?.baseUrl,
+        hasSessionHeaders: typeof value?.api?.getSessionHeaders === "function",
+        name: value?.app?.name,
+        version: value?.app?.version,
+        platform: value?.app?.platform,
+        iconUrl: value?.app?.iconUrl,
+        material: value?.window?.material,
+        hasWorkFoldAgent: Boolean(value?.workFoldAgent),
+        hasWorkFolder: Boolean(value?.workFolder),
+        hasOpenWith: typeof value?.workFolder?.openPathWith === "function",
+        hasAutomations: Boolean(value?.automations),
+        hasAutomationProposals: typeof value?.automations?.proposals === "function",
+        hasAutomationEnableProposal: typeof value?.automations?.enableProposal === "function",
+        hasShell: Boolean(value?.shell),
+        hasBrowser: typeof value?.browser?.mount === "function",
+      };
+    })()`);
+
+    assert.deepEqual(errors, [], `${filename} must load without sandbox console errors`);
+    assert.deepEqual(bridge, {
+      desktop: true,
+      apiBaseUrl: expected.apiBaseUrl,
+      hasSessionHeaders: true,
+      name: expected.productName,
+      version: expected.appVersion,
+      platform: process.platform,
+      iconUrl: `${expected.internalProtocol}://app/_desktop-assets/icon-32.png`,
+      material: "vibrancy",
+      hasWorkFoldAgent: workFoldAgentOnly,
+      hasWorkFolder: !workFoldAgentOnly,
+      hasOpenWith: !workFoldAgentOnly,
+      hasAutomations: !workFoldAgentOnly,
+      hasAutomationProposals: !workFoldAgentOnly,
+      hasAutomationEnableProposal: !workFoldAgentOnly,
+      hasShell: !workFoldAgentOnly,
+      // The built-in browser's tabs belong to the main window only.
+      hasBrowser: !workFoldAgentOnly,
+    });
+    await verifyClipboardBridge(window, "workFoldDesktop");
+    if (!workFoldAgentOnly) {
+      assert.deepEqual(automationRequests, [], "loading the preload must not read or enable a proposal");
+      assert.deepEqual(await window.webContents.executeJavaScript("window.workFoldDesktop.automations.proposals()"), pendingProposals);
+      assert.deepEqual(await window.webContents.executeJavaScript(`window.workFoldDesktop.automations.enableProposal(${JSON.stringify(proposalPath)})`), {
+        automationId: "automation-smoke-test", enabled: true, alreadyEnabled: false,
+      });
+      assert.deepEqual(automationRequests, [{ command: "proposals", args: [] }, { command: "enable-proposal", path: proposalPath }]);
+      assert.deepEqual(await window.webContents.executeJavaScript('window.workFoldDesktop.workFolder.openPathWith("work-folder-fixture", "files/a b.pdf")'), {
+        opened: false, canceled: true, appName: null,
+      });
+      assert.deepEqual(openWithRequests, [{ workFolderId: "work-folder-fixture", path: "files/a b.pdf" }]);
+    }
+  } finally {
+    if (!workFoldAgentOnly) {
+      ipcMain.removeHandler("work-fold:work-folder:open-path-with");
+      ipcMain.removeHandler("work-fold:automations:proposals");
+      ipcMain.removeHandler("work-fold:automations:enable-proposal");
+    }
+    window.destroy();
+  }
+}
+
+async function verifyClipboardBridge(window, namespace) {
+  const writes = [];
+  ipcMain.handle("work-fold:clipboard:write", (event, content) => {
+    assert.equal(event.sender, window.webContents);
+    assert.equal(event.senderFrame.routingId, window.webContents.mainFrame.routingId);
+    writeDesktopClipboard(content, (value) => writes.push(value));
+  });
+  try {
+    assert.equal(await window.webContents.executeJavaScript("document.hasFocus()"), false,
+      "the regression must exercise an unfocused renderer");
+    const content = { text: "Progress.\n\nFinal — 你好 🌍", html: "<p>Progress.</p><p>Final — 你好 🌍</p>" };
+    await window.webContents.executeJavaScript(`window.${namespace}.clipboard.write(${JSON.stringify(content)})`);
+    await window.webContents.executeJavaScript(`window.${namespace}.clipboard.write({text:'/Folder with spaces/file.txt'})`);
+    assert.deepEqual(writes, [content, { text: "/Folder with spaces/file.txt" }]);
+    assert.deepEqual(await window.webContents.executeJavaScript(`Object.keys(window.${namespace}.clipboard)`), ["write"],
+      "the renderer receives no clipboard read, raw-format or clear operation");
+    await assert.rejects(window.webContents.executeJavaScript(`window.${namespace}.clipboard.write({text:42})`), /Invalid clipboard content/);
+    assert.equal(writes.length, 2, "invalid data must not touch the clipboard");
+  } finally {
+    ipcMain.removeHandler("work-fold:clipboard:write");
+  }
+}
+
+function rendererArgument(name, value) {
+  return `--work-fold-${name}=${encodeURIComponent(value)}`;
+}

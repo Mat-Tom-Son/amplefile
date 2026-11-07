@@ -1,0 +1,212 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createElement, StrictMode, useRef, type ReactElement } from "react";
+
+import { useModalDialog } from "../web-local/src/hooks/useModalDialog.js";
+import { ConfirmDialogHost, requestConfirm, showToast, ToastHost } from "../web-local/src/ui/feedback.js";
+import { createDomHarness } from "./support/dom.js";
+
+/**
+ * Behavioural coverage for the shared dialog contract. The keyboard and
+ * background-isolation rules here were previously asserted by matching regular
+ * expressions against component source, which passes whether or not the
+ * behaviour survives.
+ */
+
+interface DialogProps {
+  onClose: () => void;
+  blocked?: boolean;
+  focusLast?: boolean;
+}
+
+function Dialog({ onClose, blocked, focusLast }: DialogProps): ReactElement {
+  const lastRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useModalDialog({ onClose, blocked, ...(focusLast ? { initialFocusRef: lastRef } : {}) });
+  return createElement(
+    "div",
+    { ref: dialogRef, tabIndex: -1, role: "dialog", "aria-modal": true },
+    createElement("button", { type: "button", id: "first" }, "First"),
+    createElement("button", { type: "button", id: "last", ref: lastRef }, "Last"),
+  );
+}
+
+function Screen(props: DialogProps & { open: boolean }): ReactElement {
+  const { open, ...dialog } = props;
+  return createElement(
+    "div",
+    null,
+    createElement("div", { id: "background" }, createElement("button", { type: "button", id: "opener" }, "Open")),
+    open ? createElement(Dialog, dialog) : null,
+  );
+}
+
+test("an open dialog takes focus, contains Tab, and honours a requested entry point", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+
+  await dom.render(createElement(Screen, { open: true, onClose: () => {} }));
+  assert.equal(document.activeElement?.id, "first", "focus enters the dialog on open");
+
+  // Tab off the last control wraps to the first rather than escaping to the
+  // background, and shift+Tab wraps the other way.
+  document.getElementById("last")?.focus();
+  await dom.press("Tab");
+  assert.equal(document.activeElement?.id, "first", "Tab wraps forward inside the dialog");
+  await dom.press("Tab", { shiftKey: true });
+  assert.equal(document.activeElement?.id, "last", "Tab wraps backward inside the dialog");
+
+  // Focus leaking to the background is pulled back into the dialog.
+  const opener = document.getElementById("opener");
+  opener?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+  assert.ok(document.getElementById("last")?.contains(document.activeElement)
+    || document.querySelector("[role=dialog]")?.contains(document.activeElement), "focus is contained");
+
+  await dom.cleanup();
+  const withRequestedFocus = await createDomHarness();
+  t.after(() => withRequestedFocus.cleanup());
+  await withRequestedFocus.render(createElement(Screen, { open: true, onClose: () => {}, focusLast: true }));
+  assert.equal(document.activeElement?.id, "last", "an explicit initial focus target wins");
+});
+
+test("Escape closes an idle dialog and is ignored while the dialog is blocked", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+
+  let closes = 0;
+  await dom.render(createElement(Screen, { open: true, onClose: () => { closes += 1; } }));
+  await dom.press("Escape");
+  assert.equal(closes, 1, "Escape closes an idle dialog");
+
+  await dom.render(createElement(Screen, { open: true, blocked: true, onClose: () => { closes += 1; } }));
+  await dom.press("Escape");
+  assert.equal(closes, 1, "Escape cannot abandon a dialog that is mid-operation");
+});
+
+test("focus wrap skips disabled radios with explicit tabIndex and inert descendants", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+  function PendingSettings() {
+    const ref = useModalDialog({ onClose: () => {} });
+    return createElement("section", { ref, role: "dialog", tabIndex: -1 },
+      createElement("button", { id: "close-settings" }, "Close"),
+      createElement("button", { id: "settings-nav" }, "Desktop"),
+      createElement("button", { role: "radio", disabled: true, tabIndex: 0 }, "Saving"),
+      createElement("fieldset", { disabled: true }, createElement("input", { tabIndex: 0 })),
+      createElement("div", { inert: true }, createElement("button", { tabIndex: 0 }, "Unavailable")));
+  }
+  await dom.render(createElement(PendingSettings));
+  await dom.press("Tab", { shiftKey: true });
+  assert.equal(document.activeElement?.id, "settings-nav");
+  await dom.press("Tab");
+  assert.equal(document.activeElement?.id, "close-settings");
+});
+
+test("an open dialog hides the background and restores it on close", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+
+  await dom.render(createElement(Screen, { open: false, onClose: () => {} }));
+  const opener = document.getElementById("opener");
+  opener?.focus();
+  assert.equal(document.getElementById("background")?.getAttribute("aria-hidden"), null);
+  // jsdom does not implement inert natively, so the value it starts at is not
+  // a browser's false. What matters here is that the hook restores whatever it
+  // found rather than inventing a value.
+  const inertBeforeOpen = document.getElementById("background")?.inert;
+
+  await dom.render(createElement(Screen, { open: true, onClose: () => {} }));
+  const background = document.getElementById("background");
+  assert.equal(background?.getAttribute("aria-hidden"), "true", "the background is hidden from assistive technology");
+  assert.equal(background?.inert, true, "the background stops taking input");
+
+  await dom.render(createElement(Screen, { open: false, onClose: () => {} }));
+  assert.equal(document.getElementById("background")?.getAttribute("aria-hidden"), null, "closing restores the background exactly");
+  assert.equal(document.getElementById("background")?.inert, inertBeforeOpen, "inert is restored to its prior value");
+
+  await dom.settle();
+  assert.equal(document.activeElement?.id, "opener", "focus returns to the control that opened the dialog");
+});
+
+test("an action toast raised from inside an open dialog stays reachable", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+  let undone = 0;
+  let closes = 0;
+
+  await dom.render(createElement("div", null,
+    createElement(Screen, { open: true, onClose: () => { closes += 1; } }),
+    createElement(ToastHost)));
+  await dom.act(() => {
+    showToast({ text: "Moved \"notes\" to Recently Deleted", tone: "success", actionLabel: "Undo", onAction: () => { undone += 1; } });
+  });
+  const stack = document.querySelector<HTMLElement>(".toast-stack");
+  assert.equal(document.getElementById("background")?.inert, true, "the rest of the background still stops taking input");
+  assert.notEqual(stack?.inert, true, "the toast stack is drawn above modals, so it keeps taking input");
+  assert.equal(stack?.getAttribute("aria-hidden"), null, "and stays announced");
+  await dom.act(() => { document.querySelector<HTMLButtonElement>(".toast-action")!.click(); });
+  assert.equal(undone, 1);
+  assert.equal(closes, 0, "using the toast does not close the dialog");
+});
+
+test("a hovered toast stays open while other toasts arrive", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+  const closed: string[] = [];
+
+  await dom.render(createElement(ToastHost));
+  await dom.act(() => { showToast({ text: "First", durationMs: 100, onClose: (reason) => { closed.push(reason); } }); });
+  const first = document.querySelector<HTMLElement>(".toast")!;
+  // React derives enter/leave from over/out events whose other end is outside its tree.
+  await dom.act(() => { first.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, relatedTarget: document.body })); });
+  // A sibling toast re-renders the host; the paused toast must not re-arm its timer.
+  await dom.act(() => { showToast({ text: "Second", durationMs: 60_000 }); });
+  await dom.act(() => new Promise((resolve) => setTimeout(resolve, 600)));
+  assert.equal(document.querySelectorAll(".toast").length, 2, "the hovered toast is still shown");
+  assert.deepEqual(closed, []);
+
+  await dom.act(() => { first.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: document.body })); });
+  await dom.waitFor(() => closed.length === 1);
+  assert.deepEqual(closed, ["timeout"], "leaving resumes the countdown");
+});
+
+test("focus restoration survives React Strict Mode effect replay", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+
+  await dom.render(createElement(StrictMode, null, createElement(Screen, { open: false, onClose: () => {} })));
+  document.getElementById("opener")?.focus();
+  await dom.render(createElement(StrictMode, null, createElement(Screen, { open: true, onClose: () => {} })));
+  await dom.render(createElement(StrictMode, null, createElement(Screen, { open: false, onClose: () => {} })));
+  await dom.settle();
+
+  assert.equal(document.activeElement?.id, "opener");
+});
+
+test("a confirmation above an app details dialog owns focus and restores the parent on cancel", async (t) => {
+  const dom = await createDomHarness();
+  t.after(() => dom.cleanup());
+  let parentCloses = 0;
+  let result: boolean | undefined;
+  function Parent() {
+    const ref = useModalDialog({ onClose: () => { parentCloses += 1; } });
+    return createElement("section", { ref, role: "dialog", tabIndex: -1, id: "parent" },
+      createElement("button", { id: "confirm-opener", onClick: () => {
+        void requestConfirm({ title: "Clear app data?", confirmLabel: "Clear data", tone: "danger" }).then((value) => { result = value; });
+      } }, "Clear"));
+  }
+  await dom.render(createElement("div", null, createElement(Parent), createElement(ConfirmDialogHost)));
+  await dom.act(() => { document.getElementById("confirm-opener")!.click(); });
+  await dom.settle();
+  assert.equal(document.activeElement?.textContent, "Cancel", "danger confirmations default to Cancel");
+  assert.equal(document.activeElement?.closest('[aria-hidden="true"]'), null, "the active confirmation remains accessible");
+  assert.equal(document.getElementById("parent")?.inert, true);
+  await dom.press("Tab", { shiftKey: true });
+  assert.equal(document.activeElement?.textContent, "Clear data", "focus wraps within the confirmation");
+  await dom.press("Escape");
+  await dom.settle();
+  assert.equal(result, false);
+  assert.equal(parentCloses, 0, "Escape must not close both dialogs");
+  assert.equal(document.getElementById("parent")?.getAttribute("aria-hidden"), null);
+  assert.notEqual(document.getElementById("parent")?.inert, true);
+  assert.equal(document.activeElement?.id, "confirm-opener");
+});

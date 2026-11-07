@@ -1,0 +1,1566 @@
+import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
+import { isIP } from "node:net";
+import { dirname, extname, join, resolve, sep } from "node:path";
+import { pipeline } from "node:stream/promises";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+import WebSocket, { WebSocketServer } from "ws";
+
+import {
+  BridgeDatabase,
+  BridgeDatabaseError,
+  canonicalizeJson,
+  isReservedPagesSlug,
+  isValidSlug,
+  normalizeSlug,
+  verifyP1363,
+} from "./database.mjs";
+import { createBridgeMetrics } from "./metrics.mjs";
+import {
+  isValidPageId,
+  maximumPagePublishBytes,
+  normalizePagesConfiguration,
+  pageProxyError,
+  pageServiceErrorView,
+  pageServicePath,
+  pagesConfigurationFromEnvironment,
+  pagesUnavailableMessage,
+  pagesUnreachableMessage,
+  passthroughPageHeaders,
+  readBoundedBody,
+  sendPageServiceRequest,
+} from "./pages-proxy.mjs";
+
+const defaultHost = "0.0.0.0";
+const defaultPort = 3000;
+const defaultDomain = "work-fold.com";
+const maximumJsonBodyBytes = 96 * 1024;
+// Remote uploads stay inside the signed application-encrypted envelope. The
+// browser client caps decoded files at 8 MiB total; JSON/base64 and AEAD
+// overhead need a little more room on the browser-to-bridge-to-device path.
+const maximumEnvelopeBytes = 12 * 1024 * 1024;
+const maximumOperationBodyBytes = 18 * 1024 * 1024;
+const maximumDeviceMessageBytes = 14 * 1024 * 1024;
+const maximumRoutineEnvelopeBytes = 2 * 1024 * 1024;
+const maximumResponseEnvelopeBytes = 3 * 1024 * 1024;
+const maximumOperationEventBytes = 32 * 1024 * 1024;
+const maximumOperationEventRecords = 256;
+const maximumSseClients = 128;
+const maximumSseClientsPerGrant = 3;
+// A maximum-sized response envelope expands to a little over 4 MiB once its
+// base64url ciphertext is wrapped in JSON/SSE. Keep one such event plus normal
+// follow-up traffic bounded per slow client without treating write(false) as a
+// disconnect signal.
+const maximumSseClientQueuedBytes = 8 * 1024 * 1024;
+const maximumDeviceProtocolErrors = 2;
+const maximumRateLimitBuckets = 10_000;
+const loginAttemptsPerIp = 24;
+const loginAttemptWindowMs = 15 * 60_000;
+const maximumLoginIpBuckets = 4_096;
+const maximumConcurrentPasswordChecks = 3;
+const maximumConcurrentPasswordChecksPerIp = 1;
+const maximumQueuedPasswordChecks = 24;
+const maximumQueuedPasswordChecksPerIp = 2;
+// Online pages (docs/pages.md, "Publishing (stage 2)"). The list response is
+// parsed so the bridge can add the pages origin; everything else streams.
+const maximumPageServiceListBytes = 8 * 1024 * 1024;
+const maximumPageServiceErrorBytes = 64 * 1024;
+// Matches the page service, so a large delete or restore and a long-text edit fit.
+const maximumPageDataChangeBytes = 8 * 1024 * 1024;
+const sessionCookieName = "__Host-work_fold_session";
+const localSessionCookieName = "work_fold_session";
+const macReleaseApiUrl = "https://api.github.com/repos/Mat-Tom-Son/work-fold-mac-releases/releases/latest";
+const macReleaseFallbackUrl = "https://github.com/Mat-Tom-Son/work-fold-mac-releases/releases/latest";
+const releaseDownloadCacheMs = 15 * 60 * 1_000;
+const publicDir = join(dirname(fileURLToPath(import.meta.url)), "public");
+// The management operation allowlist. Unknown operation names stay rejected.
+// The work-fold agent's overview operations ride the same signed envelopes: the bridge
+// relays ciphertext and persists no digest content (docs/work-fold-agent-overview.md).
+const allowedOperations = new Set([
+  "management.summary",
+  "management.chats",
+  "management.transcript",
+  "management.rename",
+  "management.delete",
+  "management.send",
+  "management.request",
+  "management.work",
+  "management.answer",
+  "management.extensionAnswer",
+  "management.continue",
+  "management.stop",
+  "management.watch",
+  "management.glance",
+  "management.glanceSeen",
+  "work-folders.list",
+  "work-folders.tree",
+  "work-folders.filePreview",
+  "apps.list",
+  "apps.read",
+  "apps.actions.request",
+  "apps.actions.get",
+  "apps.actions.list",
+  "apps.actions.cancel",
+]);
+
+export async function startBridgeServer({
+  host = process.env.HOST || defaultHost,
+  port = parsePort(process.env.PORT),
+  baseDomain = process.env.WORKFOLD_BRIDGE_DOMAIN || defaultDomain,
+  database = new BridgeDatabase(),
+  publicEnrollment = process.env.WORKFOLD_ALLOW_PUBLIC_ENROLLMENT === "1",
+  trustProxy = process.env.WORKFOLD_TRUST_PROXY === "1",
+  releaseFetcher = fetch,
+  passwordVerifier = (slug, password) => database.authenticatePassword(slug, password),
+  loginProtection,
+  metrics,
+  // Online pages: `{ internalUrl, secret, publicOrigin }`, or null for off.
+  // Omitted, the WORKFOLD_PAGES_* environment settings apply.
+  pages,
+} = {}) {
+  const state = createState({
+    database,
+    baseDomain: normalizeDomain(baseDomain),
+    publicEnrollment,
+    trustProxy,
+    releaseFetcher,
+    passwordVerifier,
+    loginProtection,
+    metrics,
+    pages: pages === undefined ? pagesConfigurationFromEnvironment() : normalizePagesConfiguration(pages),
+  });
+  await database.initialize();
+  const server = createServer(async (request, response) => {
+    state.metrics.recordHttpRequest();
+    try {
+      await handleRequest(state, request, response);
+    } catch (error) {
+      writeApiError(response, error, state, request);
+    }
+  });
+  server.headersTimeout = 15_000;
+  // A full 8 MB attachment set is about 12 MB of JSON; slow uplinks need time.
+  server.requestTimeout = 180_000;
+  const webSocketServer = new WebSocketServer({ noServer: true, maxPayload: maximumDeviceMessageBytes });
+  state.webSocketServer = webSocketServer;
+  server.on("upgrade", (request, socket, head) => {
+    // Node drops its own socket error listener before emitting `upgrade`, and
+    // the device lookup below awaits the database. A reset in that gap would
+    // otherwise be an unhandled 'error' event that ends the process.
+    socket.on("error", () => socket.destroy());
+    void handleUpgrade(state, request, socket, head).catch(() => socket.destroy());
+  });
+  const heartbeat = setInterval(() => heartbeatDevices(state), 15_000);
+  heartbeat.unref();
+  const cleanup = setInterval(() => {
+    pruneTransientState(state);
+    void database.cleanup().catch((error) => {
+      console.warn(`work-fold bridge cleanup failed: ${publicErrorMessage(error)}`);
+    });
+  }, 60_000);
+  cleanup.unref();
+
+  await new Promise((resolveListen, rejectListen) => {
+    const onError = (error) => rejectListen(error);
+    server.once("error", onError);
+    server.listen({ host, port }, () => {
+      server.off("error", onError);
+      resolveListen();
+    });
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    clearInterval(heartbeat);
+    await closeServer(server);
+    throw new Error("Bridge service did not bind a TCP address.");
+  }
+  state.metrics.start();
+  return Object.freeze({
+    host,
+    port: address.port,
+    metrics: state.metrics,
+    close: async () => {
+      state.metrics.stop();
+      clearInterval(heartbeat);
+      clearInterval(cleanup);
+      for (const client of state.sseClients.values()) for (const response of client) response.end();
+      for (const connection of state.devices.values()) connection.socket.close(1001, "Bridge shutting down");
+      await closeServer(server);
+      webSocketServer.close();
+      await database.close();
+    },
+  });
+}
+
+function createState({ database, baseDomain, publicEnrollment, trustProxy, releaseFetcher, passwordVerifier, loginProtection, metrics, pages }) {
+  const protection = normalizedLoginProtection(loginProtection);
+  const state = {
+    database,
+    pages,
+    baseDomain,
+    publicEnrollment,
+    trustProxy,
+    releaseFetcher,
+    latestMacDownload: null,
+    webSocketServer: null,
+    devices: new Map(),
+    sseClients: new Map(),
+    operationEvents: new Map(),
+    operationEventBytes: 0,
+    rateLimits: new Map(),
+    loginRateLimits: new Map(),
+    loginRateLimitMaximumBuckets: protection.maximumIpBuckets,
+    loginAttemptsPerIp: protection.attemptsPerIp,
+    loginAttemptWindowMs: protection.attemptWindowMs,
+    passwordVerifier,
+    passwordChecks: createPasswordCheckQueue(protection),
+  };
+  const metricOptions = metrics && typeof metrics === "object" ? metrics : {};
+  state.metrics = createBridgeMetrics({
+    ...metricOptions,
+    enabled: metrics !== false && metricOptions.enabled !== false,
+    gauges: () => bridgeMetricGauges(state),
+  });
+  return state;
+}
+
+function bridgeMetricGauges(state) {
+  let sseClientsCurrent = 0;
+  for (const clients of state.sseClients.values()) {
+    for (const response of clients) {
+      if (!response.destroyed && !response.writableEnded) sseClientsCurrent += 1;
+    }
+  }
+  return {
+    publicEnrollment: state.publicEnrollment,
+    devicesCurrent: state.devices.size,
+    sseClientsCurrent,
+    passwordChecks: state.passwordChecks.snapshot(),
+  };
+}
+
+async function handleRequest(state, request, response) {
+  const url = requestUrl(request);
+  const method = request.method || "GET";
+
+  // The reserved pages and pages-* labels serve nothing. They are answered
+  // before any personal-slug resolution so the management client, its
+  // sign-in, its cookies, and paired-browser keys never exist on such a host.
+  if (isReservedPagesHost(state, request)) return writeNotFound(response, method, state, request);
+
+  if (url.pathname === "/health") {
+    if (method !== "GET" && method !== "HEAD") return methodNotAllowed(response, "GET, HEAD", state, request);
+    return writeJson(response, 200, { ok: true, service: "work-fold-bridge", status: "ready" }, method, state, request);
+  }
+
+  if (url.pathname === "/download/macos") {
+    if (method !== "GET" && method !== "HEAD") return methodNotAllowed(response, "GET, HEAD", state, request);
+    const location = await latestMacDownload(state);
+    response.writeHead(302, {
+      location,
+      "cache-control": "no-store",
+      ...securityHeaders(state, request),
+    });
+    return response.end();
+  }
+
+  if (url.pathname === "/api/public/context" && method === "GET") {
+    const requestedSlug = requestSlug(state, request, url);
+    const personalSlug = requestedSlug && requestedSlug !== "www" ? requestedSlug : null;
+    const account = personalSlug ? await state.database.accountBySlug(personalSlug) : null;
+    const session = account ? await browserSession(state, request, account) : null;
+    return writeJson(response, 200, {
+      domain: state.baseDomain,
+      slug: personalSlug,
+      // Do not turn this unauthenticated endpoint into an address-enumeration
+      // oracle. A syntactically personal host gets the same sign-in surface
+      // whether or not an account currently exists.
+      addressAvailable: Boolean(personalSlug),
+      authenticated: Boolean(session),
+      paired: Boolean(validPairedSession(session)),
+      ...(session ? { desktopOnline: state.devices.has(account.id) } : {}),
+    }, method, state, request);
+  }
+
+  if (url.pathname === "/api/auth/login" && method === "POST") {
+    assertSameOrigin(state, request);
+    const body = await readJsonBody(request, maximumJsonBodyBytes);
+    const slug = requestSlug(state, request, url, body.slug);
+    if (!slug) throw httpError(404, "Open your personal work-fold address to sign in.");
+    const ip = clientIp(state, request);
+    enforceRateLimit(
+      state.loginRateLimits,
+      ip,
+      state.loginAttemptsPerIp,
+      state.loginAttemptWindowMs,
+      state.loginRateLimitMaximumBuckets,
+    );
+    if (!isValidSlug(slug)) throw invalidCredentialsError();
+    const account = await state.passwordChecks.run(ip, () => state.passwordVerifier(slug, body.password));
+    // Account-wide failure state must never become a pre-verification lockout:
+    // a distributed attacker who knows an address cannot prevent its owner from
+    // proving the correct password. Resource admission is instead IP-scoped and
+    // globally bounded by the fair password-check queue.
+    if (!account) throw invalidCredentialsError();
+    const session = await state.database.createSession(account);
+    response.setHeader("set-cookie", sessionCookie(state, request, session.token));
+    return writeJson(response, 200, {
+      authenticated: true,
+      paired: false,
+      csrfToken: session.csrfToken,
+      challenge: session.challenge,
+      slug: account.slug,
+      desktopOnline: state.devices.has(account.id),
+      deviceSigningPublicJwk: account.deviceSigningPublicJwk,
+      deviceEncryptionPublicJwk: account.deviceEncryptionPublicJwk,
+      grantGeneration: account.grantGeneration,
+    }, method, state, request);
+  }
+
+  if (url.pathname === "/api/auth/session" && method === "GET") {
+    const account = await requestedAccount(state, request, url);
+    const { token, session } = await requireBrowserSession(state, request, account);
+    const csrfToken = await state.database.issueSessionCsrf(token);
+    if (!csrfToken) throw httpError(401, "Sign in to continue.");
+    return writeJson(response, 200, { ...sessionView(state, account, session), csrfToken }, method, state, request);
+  }
+
+  if (url.pathname === "/api/auth/bind" && method === "POST") {
+    assertSameOrigin(state, request);
+    const account = await requestedAccount(state, request, url);
+    const { token, session } = await requireBrowserSession(state, request, account);
+    await state.database.assertCsrf(session, request.headers["x-work-fold-csrf"]);
+    const body = await readJsonBody(request, maximumJsonBodyBytes);
+    const grant = await state.database.bindSessionToBrowser(token, { browserId: body.browserId, signature: body.signature });
+    const bound = await state.database.session(token);
+    return writeJson(response, 200, {
+      ...sessionView(state, account, bound),
+      grant: publicGrant(grant),
+    }, method, state, request);
+  }
+
+  if (url.pathname === "/api/auth/session" && method === "DELETE") {
+    assertSameOrigin(state, request);
+    const account = await requestedAccount(state, request, url);
+    const { token, session } = await requireBrowserSession(state, request, account);
+    await state.database.assertCsrf(session, request.headers["x-work-fold-csrf"]);
+    await state.database.deleteSession(token);
+    // A signed-out tab stops receiving this browser's live events.
+    closeSseClients(state, session.browserGrantId);
+    response.setHeader("set-cookie", clearSessionCookie(state, request));
+    return writeJson(response, 200, { signedOut: true }, method, state, request);
+  }
+
+  if (url.pathname === "/api/pairings" && method === "POST") {
+    assertSameOrigin(state, request);
+    const account = await requestedAccount(state, request, url);
+    const { token, session } = await requireBrowserSession(state, request, account);
+    await state.database.assertCsrf(session, request.headers["x-work-fold-csrf"]);
+    enforceRateLimit(state.rateLimits, `pairing:${session.accountId}`, 12, 15 * 60_000);
+    enforceRateLimit(state.rateLimits, `pair:${account.id}:${clientIp(state, request)}`, 10, 60 * 60_000);
+    if (!state.devices.has(account.id)) throw httpError(409, "Your work-fold desktop must be online to pair this browser.");
+    const body = await readJsonBody(request, maximumJsonBodyBytes);
+    const pairing = await state.database.createPairing(token, body);
+    const device = state.devices.get(account.id);
+    if (!device || !sendDevice(device.socket, { type: "pairing.request", pairing: devicePairingView(pairing) })) {
+      throw httpError(409, "Your work-fold desktop disconnected before it received the pairing request.");
+    }
+    return writeJson(response, 202, { pairing: browserPairingView(pairing) }, method, state, request);
+  }
+
+  const pairingMatch = url.pathname.match(/^\/api\/pairings\/([^/]+)$/);
+  if (pairingMatch && method === "GET") {
+    const account = await requestedAccount(state, request, url);
+    const { token } = await requireBrowserSession(state, request, account);
+    const pairing = await state.database.pairingForSession(token, pairingMatch[1]);
+    if (!pairing) throw httpError(404, "That browser pairing is no longer available.");
+    return writeJson(response, 200, { pairing: browserPairingView(pairing) }, method, state, request);
+  }
+
+  if (url.pathname === "/api/events" && method === "GET") {
+    const account = await requestedAccount(state, request, url);
+    const { session } = await requireBrowserSession(state, request, account);
+    if (!validPairedSession(session)) throw httpError(403, "Pair this browser from the work-fold desktop app.");
+    return openEventStream(state, request, response, session.browserGrantId, account.id);
+  }
+
+  if (url.pathname === "/api/operations" && method === "POST") {
+    assertSameOrigin(state, request);
+    const account = await requestedAccount(state, request, url);
+    const { session } = await requireBrowserSession(state, request, account);
+    await state.database.assertCsrf(session, request.headers["x-work-fold-csrf"]);
+    if (!validPairedSession(session)) throw httpError(403, "Pair this browser from the work-fold desktop app.");
+    // One person's session at the hosted client's decimated refresh cadence
+    // peaks near half this budget; the rest is headroom for sends, uploads,
+    // decisions, resume bursts, and a second open tab sharing the session.
+    enforceRateLimit(state.rateLimits, `operation:${session.id}`, 60, 60_000);
+    if (!state.devices.has(account.id)) throw httpError(409, "Your work-fold desktop is offline.");
+    const body = await readJsonBody(request, maximumOperationBodyBytes);
+    if (Object.keys(body).some((key) => key !== "envelope" && key !== "recover")
+      || (body.recover !== undefined && typeof body.recover !== "boolean")) {
+      throw httpError(400, "Remote operation request is invalid.");
+    }
+    const envelope = assertBrowserEnvelope(account, session, body.envelope);
+    const recover = body.recover === true;
+    const operation = await state.database.acceptOperation(session, envelope.header, { recover });
+    if (operation.state === "accepted") {
+      const claimed = await state.database.claimOperationDelivery(account.id, operation.id);
+      if (!claimed) {
+        const current = await state.database.operationForSession(session, operation.id);
+        return writeJson(response, 200, { operation: current ?? operation }, method, state, request);
+      }
+      const device = state.devices.get(account.id);
+      if (!device || !sendDevice(device.socket, { type: "operation.request", operation: claimed, envelope })) {
+        await state.database.setOperationState(account.id, operation.id, "lost");
+        throw httpError(409, "Your work-fold desktop disconnected before it accepted the request.");
+      }
+      return writeJson(response, 202, { operation: claimed }, method, state, request);
+    }
+    return writeJson(response, 200, { operation }, method, state, request);
+  }
+
+  const operationMatch = url.pathname.match(/^\/api\/operations\/([^/]+)$/);
+  if (operationMatch && method === "GET") {
+    const account = await requestedAccount(state, request, url);
+    const { session } = await requireBrowserSession(state, request, account);
+    const operation = await state.database.operationForSession(session, operationMatch[1]);
+    if (!operation) throw httpError(404, "That remote request is no longer available.");
+    return writeJson(response, 200, {
+      operation,
+      desktopOnline: state.devices.has(account.id),
+      events: state.operationEvents.get(operation.id)?.events ?? [],
+    }, method, state, request);
+  }
+
+  if (url.pathname === "/api/device/enroll" && method === "POST") {
+    requirePublicEnrollment(state);
+    enforceRateLimit(state.rateLimits, "enroll:global", 250, 60 * 60_000);
+    enforceRateLimit(state.rateLimits, `enroll:${clientIp(state, request)}`, 5, 60 * 60_000);
+    const body = await readJsonBody(request, maximumJsonBodyBytes);
+    const result = await state.database.enroll(body);
+    return writeJson(response, 201, {
+      account: publicAccount(result.account),
+      deviceToken: result.deviceToken,
+      url: `https://${result.account.slug}.${state.baseDomain}`,
+    }, method, state, request);
+  }
+
+  if (url.pathname === "/api/device/account" && method === "GET") {
+    const account = await requireDevice(state, request);
+    return writeJson(response, 200, deviceAccountView(state, account), method, state, request);
+  }
+
+  if (url.pathname === "/api/device/account" && method === "PUT") {
+    const account = await requireDevice(state, request);
+    const body = await readJsonBody(request, maximumJsonBodyBytes);
+    const updated = await state.database.updateAccount(account.id, body);
+    // A new password or address signs every browser out; their live event streams end with their sessions.
+    if (body && (body.password !== undefined || body.slug !== undefined)) {
+      for (const grant of await state.database.listGrants(account.id)) closeSseClients(state, grant.id);
+    }
+    return writeJson(response, 200, deviceAccountView(state, updated), method, state, request);
+  }
+
+  if (url.pathname === "/api/device/account" && method === "DELETE") {
+    const account = await requireDevice(state, request);
+    const grants = await state.database.listGrants(account.id);
+    state.devices.get(account.id)?.socket.close(4001, "Remote access removed");
+    const removed = await state.database.removeAccount(account.id);
+    for (const grant of grants) closeSseClients(state, grant.id);
+    discardOperationEventsForAccount(state, account.id);
+    return writeJson(response, 200, { removed }, method, state, request);
+  }
+
+  if (url.pathname === "/api/device/grants" && method === "GET") {
+    const account = await requireDevice(state, request);
+    const grants = await state.database.listGrants(account.id);
+    return writeJson(response, 200, { grants: grants.map(publicGrant) }, method, state, request);
+  }
+
+  if (url.pathname === "/api/device/grants/revoke-all" && method === "POST") {
+    const account = await requireDevice(state, request);
+    const grants = await state.database.listGrants(account.id);
+    const revoked = await state.database.revokeAllGrants(account.id);
+    for (const grant of grants) closeSseClients(state, grant.id);
+    discardOperationEventsForAccount(state, account.id);
+    return writeJson(response, 200, { revoked }, method, state, request);
+  }
+
+  const grantMatch = url.pathname.match(/^\/api\/device\/grants\/([^/]+)$/);
+  if (grantMatch && method === "DELETE") {
+    const account = await requireDevice(state, request);
+    const revoked = await state.database.revokeGrant(account.id, grantMatch[1]);
+    if (revoked) closeSseClients(state, grantMatch[1]);
+    return writeJson(response, 200, { revoked }, method, state, request);
+  }
+
+  if (url.pathname === "/api/device/pages" || url.pathname.startsWith("/api/device/pages/")) {
+    return handleDevicePagesRequest(state, request, response, url, method);
+  }
+  if (url.pathname === "/api/pages" || url.pathname.startsWith("/api/pages/")) {
+    return handleOwnerPagesRequest(state, request, response, url, method);
+  }
+
+  if (url.pathname.startsWith("/api/")) throw httpError(404, "Not found.");
+  if (method !== "GET" && method !== "HEAD") return methodNotAllowed(response, "GET, HEAD", state, request);
+  return servePublicFile(state, request, url.pathname, response, method);
+}
+
+// --- Online pages ---------------------------------------------------------
+// The desktop publishes, unpublishes, checks in, and changes online entries
+// with its device token. The owner's browser needs only a signed-in session
+// for that account (not a paired browser), so it works with the desktop off.
+// Both reach the page service's internal API with the account id in the path.
+
+async function handleDevicePagesRequest(state, request, response, url, method) {
+  const match = url.pathname.match(/^\/api\/device\/pages(?:\/([^/]+)(\/data\.sqlite|\/data\/(?:update|delete|restore))?)?$/);
+  if (!match) throw httpError(404, "Not found.");
+  const [, pageId, suffix = ""] = match;
+  const allowed = pageId === undefined ? method === "GET"
+    : suffix === "" ? method === "PUT" || method === "DELETE"
+      : suffix === "/data.sqlite" ? method === "GET" : method === "POST";
+  if (!allowed) throw httpError(404, "Not found.");
+  const account = await requireDevice(state, request);
+  const pages = requirePagesConfiguration(state);
+  if (pageId !== undefined && !isValidPageId(pageId)) throw invalidPageIdError();
+  if (method === "PUT") pageRateLimit(state, `device-page-publish:${account.id}`, 120, 10 * 60_000);
+  else pageRateLimit(state, `device-pages:${account.id}`, 600, 60_000);
+
+  if (pageId === undefined) {
+    return relayPageService(state, request, response, {
+      method: "GET",
+      path: pageServicePath(account.id),
+      decorate: (body) => pageListView(pages, body),
+    });
+  }
+  if (method === "PUT") return relayPagePublish(state, request, response, account, pageId);
+  if (method === "DELETE") {
+    return relayPageService(state, request, response, { method: "DELETE", path: pageServicePath(account.id, pageId) });
+  }
+  if (suffix === "/data.sqlite") {
+    return relayPageService(state, request, response, { method: "GET", path: pageServicePath(account.id, pageId, suffix) });
+  }
+  const body = await readPageJsonBody(request, maximumPageDataChangeBytes);
+  return relayPageService(state, request, response, { method: "POST", path: pageServicePath(account.id, pageId, suffix), json: body });
+}
+
+async function relayPagePublish(state, request, response, account, pageId) {
+  // A declared oversized upload is refused before the page service is called;
+  // an undeclared one is counted while it streams and stopped at the bound.
+  // Either way Node discards the rest, so the desktop can read the refusal.
+  const declared = request.headers["content-length"];
+  let contentLength;
+  if (declared !== undefined) {
+    if (!/^\d{1,15}$/.test(declared)) throw pageProxyError(400, "INVALID", "The upload's length is invalid.");
+    contentLength = Number(declared);
+    if (contentLength > maximumPagePublishBytes) throw pageProxyError(413, "TOO_LARGE", "This page is too large to publish.");
+  }
+  return relayPageService(state, request, response, {
+    method: "PUT",
+    path: pageServicePath(account.id, pageId),
+    stream: request,
+    maximumBytes: maximumPagePublishBytes,
+    contentLength,
+    // The answer is `{ page }`; the origin lets the desktop show the link at once.
+    decorate: (body) => ({ ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}), pagesOrigin: state.pages.publicOrigin }),
+  });
+}
+
+async function handleOwnerPagesRequest(state, request, response, url, method) {
+  const match = url.pathname.match(/^\/api\/pages(?:\/([^/]+)\/(data|data\/export|unpublish))?$/);
+  if (!match) throw httpError(404, "Not found.");
+  const [, pageId, action] = match;
+  if (method !== (action === "unpublish" ? "POST" : "GET")) throw httpError(404, "Not found.");
+  const changing = action === "unpublish";
+  if (changing) assertSameOrigin(state, request);
+  const account = await requestedAccount(state, request, url);
+  const { session } = await requireBrowserSession(state, request, account);
+  if (changing) await state.database.assertCsrf(session, request.headers["x-work-fold-csrf"]);
+  const pages = requirePagesConfiguration(state);
+  if (pageId !== undefined && !isValidPageId(pageId)) throw invalidPageIdError();
+  // A person reading entries makes a handful of requests per page; exports
+  // and unpublishing are deliberate and rarer.
+  if (action === "data/export") pageRateLimit(state, `owner-page-export:${account.id}`, 30, 15 * 60_000);
+  else if (changing) pageRateLimit(state, `owner-page-unpublish:${account.id}`, 30, 15 * 60_000);
+  else pageRateLimit(state, `owner-pages:${account.id}`, 180, 60_000);
+
+  if (pageId === undefined) {
+    return relayPageService(state, request, response, {
+      method: "GET",
+      path: pageServicePath(account.id),
+      decorate: (body) => pageListView(pages, body),
+    });
+  }
+  if (changing) {
+    // The body carries nothing; it is bounded like any other change.
+    await readPageJsonBody(request, maximumJsonBodyBytes);
+    return relayPageService(state, request, response, { method: "DELETE", path: pageServicePath(account.id, pageId) });
+  }
+  const query = [];
+  const table = url.searchParams.get("table");
+  if (table !== null && table.length <= 64) query.push(["table", table]);
+  const deleted = url.searchParams.get("deleted");
+  if (action === "data" && deleted !== null && /^(?:1|0|true|false)$/i.test(deleted)) query.push(["deleted", deleted]);
+  return relayPageService(state, request, response, {
+    method: "GET",
+    path: pageServicePath(account.id, pageId, action === "data" ? "/data" : "/data/export"),
+    query,
+  });
+}
+
+/**
+ * One call to the page service, answered with its status. Successful bodies
+ * stream through (snapshots and spreadsheets are never held whole); refusals
+ * keep only `{ error, code, message, field }`; a network failure is a 502.
+ */
+async function relayPageService(state, request, response, options) {
+  const incoming = await sendPageServiceRequest(state.pages, options);
+  const status = incoming.statusCode ?? 502;
+  if (status < 200 || (status >= 300 && status < 400)) {
+    incoming.resume();
+    throw pageProxyError(502, "UNAVAILABLE", pagesUnreachableMessage);
+  }
+  if (status === 401) {
+    // The page service refused the bridge's own secret. Passing 401 on would
+    // read as the desktop's token or the owner's session failing.
+    incoming.resume();
+    warnPageServiceSecret(state);
+    throw pageProxyError(502, "UNAVAILABLE", pagesUnreachableMessage);
+  }
+  if (status >= 400) {
+    const text = await readBoundedBody(incoming, maximumPageServiceErrorBytes).catch(() => "");
+    const view = pageServiceErrorView(status, text);
+    return writeJson(response, view.status, view.body, "GET", state, request);
+  }
+  if (options.decorate) {
+    const text = await readBoundedBody(incoming, maximumPageServiceListBytes);
+    let body;
+    try { body = JSON.parse(text); } catch { throw pageProxyError(502, "UNAVAILABLE", pagesUnreachableMessage); }
+    return writeJson(response, status, options.decorate(body), "GET", state, request);
+  }
+  response.writeHead(status, {
+    ...passthroughPageHeaders(incoming.headers),
+    "cache-control": "no-store",
+    ...securityHeaders(state, request),
+  });
+  try {
+    await pipeline(incoming, response);
+  } catch {
+    // The caller or the page service went away part-way; the stream already
+    // ended for both sides.
+  }
+}
+
+function pageListView(pages, body) {
+  return { pages: Array.isArray(body?.pages) ? body.pages : [], pagesOrigin: pages.publicOrigin };
+}
+
+function warnPageServiceSecret(state) {
+  const now = Date.now();
+  if (now - (state.pageSecretWarnedAt ?? 0) < 60_000) return;
+  state.pageSecretWarnedAt = now;
+  console.warn("work-fold bridge: the page service refused the internal secret; check WORKFOLD_PAGES_INTERNAL_SECRET on both services.");
+}
+
+/** The ordinary bridge limits, answered with the page API's code. */
+function pageRateLimit(state, key, maximum, windowMs) {
+  try {
+    enforceRateLimit(state.rateLimits, key, maximum, windowMs);
+  } catch (error) {
+    throw pageProxyError(429, "UNAVAILABLE", publicErrorMessage(error));
+  }
+}
+
+async function readPageJsonBody(request, maximumBytes) {
+  try {
+    return await readJsonBody(request, maximumBytes);
+  } catch (error) {
+    if (error?.status === 413) throw pageProxyError(413, "TOO_LARGE", "This change is too large. Send fewer entries at a time.");
+    if (error?.status === 400) throw pageProxyError(400, "INVALID", publicErrorMessage(error));
+    throw error;
+  }
+}
+
+function requirePagesConfiguration(state) {
+  if (!state.pages) throw pageProxyError(503, "UNAVAILABLE", pagesUnavailableMessage);
+  return state.pages;
+}
+
+function invalidPageIdError() {
+  return pageProxyError(400, "INVALID", "That page id isn't valid.");
+}
+
+async function handleUpgrade(state, request, socket, head) {
+  const url = requestUrl(request);
+  if (isReservedPagesHost(state, request)) return rejectUpgrade(socket, 404, "Not found");
+  if (url.pathname !== "/api/device/connect") return rejectUpgrade(socket, 404, "Not found");
+  try {
+    enforceRateLimit(state.rateLimits, `device-connect:${clientIp(state, request)}`, 30, 60_000);
+  } catch {
+    return rejectUpgrade(socket, 429, "Too Many Requests");
+  }
+  const account = await state.database.authenticateDevice(deviceToken(request));
+  if (!account) return rejectUpgrade(socket, 401, "Unauthorized");
+  state.webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+    const existing = state.devices.get(account.id);
+    if (existing) {
+      existing.displaced = true;
+      existing.socket.close(4000, "A newer desktop connection replaced this one");
+    }
+    const connection = {
+      socket: webSocket,
+      account,
+      alive: true,
+      displaced: false,
+      terminal: false,
+      protocolErrors: 0,
+      connectedAt: new Date().toISOString(),
+      messageQueue: Promise.resolve(),
+    };
+    state.devices.set(account.id, connection);
+    void broadcastAccountPresence(state, account.id, true).catch(() => undefined);
+    webSocket.on("pong", () => {
+      if (isCurrentDeviceConnection(state, connection)) connection.alive = true;
+    });
+    webSocket.on("message", (data) => {
+      state.metrics.recordDeviceWebSocketFrame();
+      if (!isCurrentDeviceConnection(state, connection)) return;
+      connection.messageQueue = connection.messageQueue.catch(() => undefined).then(async () => {
+        if (!isCurrentDeviceConnection(state, connection)) return;
+        try {
+          await handleDeviceMessage(state, connection, data);
+        } catch (error) {
+          handleDeviceProtocolFailure(state, connection, error);
+        }
+      });
+    });
+    webSocket.on("close", () => {
+      if (state.devices.get(account.id)?.socket === webSocket) {
+        state.devices.delete(account.id);
+        void state.database.markActiveOperationsLost(account.id).catch(() => undefined);
+        void broadcastAccountPresence(state, account.id, false).catch(() => undefined);
+      }
+    });
+    webSocket.on("error", () => undefined);
+    void state.database.pendingPairings(account.id).then((pairings) => {
+      if (!isCurrentDeviceConnection(state, connection)) return;
+      sendDevice(webSocket, {
+        type: "device.ready",
+        account: publicAccount(account),
+        pendingPairings: pairings.map(devicePairingView),
+      });
+    }).catch(() => {
+      if (isCurrentDeviceConnection(state, connection)) webSocket.close(1011, "Could not initialize device connection");
+    });
+  });
+}
+
+async function handleDeviceMessage(state, connection, raw) {
+  if (!isCurrentDeviceConnection(state, connection)) return;
+  let message;
+  try { message = JSON.parse(raw.toString()); } catch { throw new Error("Device messages must be JSON."); }
+  if (!message || typeof message !== "object" || Array.isArray(message) || typeof message.type !== "string") {
+    throw new Error("Device message is invalid.");
+  }
+  if (message.type === "protocol.error") {
+    // A peer reporting that it cannot understand us is terminal for this
+    // transport generation. Never answer protocol.error with protocol.error.
+    connection.terminal = true;
+    connection.socket.close(1002, "Device reported a protocol error");
+    return;
+  }
+  if (message.type === "device.heartbeat") {
+    connection.alive = true;
+    return sendDevice(connection.socket, { type: "device.heartbeat", at: new Date().toISOString() });
+  }
+  if (message.type === "pairing.decision") {
+    const currentAccount = await state.database.accountById(connection.account.id);
+    if (!isCurrentDeviceConnection(state, connection)) return;
+    if (!currentAccount) throw new Error("Remote access is no longer registered.");
+    connection.account = currentAccount;
+    // A dialog answered after its pairing stopped waiting (it expired, the
+    // browser asked again, or a reconnect showed it twice) is an ordinary
+    // late answer, not a protocol fault: the desktop treats any protocol
+    // error as terminal and would stop reconnecting.
+    const decision = await state.database.decidePairing(currentAccount, message).catch((error) => {
+      if (error instanceof BridgeDatabaseError && error.code === "not_found") return { status: "expired" };
+      throw error;
+    });
+    if (!isCurrentDeviceConnection(state, connection)) return;
+    sendDevice(connection.socket, { type: "pairing.settled", pairingId: message.pairingId, ...decision });
+    return;
+  }
+  if (message.type === "operation.event" || message.type === "operation.complete") {
+    const envelope = assertDeviceEnvelope(connection.account, message.envelope);
+    if (envelope.header.eventKind !== message.type) throw new Error("Signed response kind does not match its message.");
+    const operation = await state.database.operationForDevice(connection.account.id, envelope.header.operationId);
+    if (!isCurrentDeviceConnection(state, connection)) return;
+    if (!operation || operation.browserGrantId !== envelope.header.grantId
+      || operation.requestId !== envelope.header.requestId || operation.generation !== envelope.header.generation) {
+      throw new Error("Response envelope does not match an accepted operation.");
+    }
+    const events = state.operationEvents.get(operation.id)?.events ?? [];
+    const previousSequence = events.at(-1)?.envelope?.header?.sequence ?? 0;
+    if (!Number.isInteger(envelope.header.sequence) || envelope.header.sequence <= previousSequence) {
+      // A desktop that recovers a still-running operation re-sends the exact
+      // result it already sent. That repeat is dropped, never relayed twice;
+      // any other non-increasing envelope is still a protocol error.
+      const relayed = events.find((event) => event.envelope?.header?.sequence === envelope.header.sequence);
+      if (relayed && JSON.stringify(relayed.envelope) === JSON.stringify(envelope)) return;
+      throw new Error("Response event sequence must increase.");
+    }
+    let transitioned;
+    if (message.type === "operation.complete") {
+      transitioned = await state.database.setOperationState(connection.account.id, operation.id, envelope.header.ok ? "done" : "failed");
+    } else {
+      transitioned = await state.database.setOperationState(connection.account.id, operation.id, "running");
+    }
+    if (!isCurrentDeviceConnection(state, connection) || !transitioned) return;
+    const event = { envelope, at: new Date().toISOString() };
+    rememberOperationEvent(state, operation.id, event);
+    broadcastGrant(state, operation.browserGrantId, {
+      type: message.type,
+      operationId: operation.id,
+      envelope,
+    });
+    return;
+  }
+  // New desktop versions may add device-to-bridge notifications. A
+  // well-formed frame with an unknown type is forward-compatible and inert.
+}
+
+function isCurrentDeviceConnection(state, connection) {
+  return !connection.displaced
+    && !connection.terminal
+    && state.devices.get(connection.account.id) === connection
+    && connection.socket.readyState === WebSocket.OPEN;
+}
+
+function handleDeviceProtocolFailure(state, connection, error) {
+  if (!isCurrentDeviceConnection(state, connection)) return;
+  connection.protocolErrors += 1;
+  if (connection.protocolErrors > maximumDeviceProtocolErrors) {
+    connection.terminal = true;
+    connection.socket.close(1002, "Too many invalid device messages");
+    return;
+  }
+  sendDevice(connection.socket, { type: "protocol.error", error: publicErrorMessage(error) });
+}
+
+function assertBrowserEnvelope(account, session, value) {
+  const envelope = assertEnvelopeShape(value);
+  const header = envelope.header;
+  const expected = {
+    type: "work-fold.remote-request.v1",
+    accountId: account.id,
+    deviceId: account.id,
+    grantId: session.browserGrantId,
+    generation: session.grantGeneration,
+    requestId: header.requestId,
+    operation: header.operation,
+    createdAt: header.createdAt,
+  };
+  if (!allowedOperations.has(header.operation) || canonicalizeJson(header) !== canonicalizeJson(expected)) {
+    throw httpError(400, "Remote request envelope is invalid.");
+  }
+  if (header.operation !== "management.send"
+    && envelope.ciphertext.length > maximumRoutineEnvelopeBytes * 1.4) {
+    throw httpError(413, "Remote request envelope is too large for this operation.");
+  }
+  assertFreshTimestamp(header.createdAt);
+  if (!verifyP1363(session.browserSigningPublicJwk, envelopeSignedText(envelope), envelope.signature)) {
+    throw httpError(403, "Remote request signature is invalid.");
+  }
+  return envelope;
+}
+
+function assertDeviceEnvelope(account, value) {
+  const envelope = assertEnvelopeShape(value, maximumResponseEnvelopeBytes);
+  const header = envelope.header;
+  if (header.type !== "work-fold.remote-response.v1" || header.accountId !== account.id || header.deviceId !== account.id
+    || typeof header.grantId !== "string" || typeof header.operationId !== "string" || typeof header.requestId !== "string"
+    || !Number.isInteger(header.generation) || !Number.isInteger(header.sequence) || typeof header.ok !== "boolean"
+    || !new Set(["operation.event", "operation.complete"]).has(header.eventKind)) {
+    throw new Error("Remote response envelope is invalid.");
+  }
+  assertFreshTimestamp(header.createdAt);
+  if (!verifyP1363(account.deviceSigningPublicJwk, envelopeSignedText(envelope), envelope.signature)) {
+    throw new Error("Remote response signature is invalid.");
+  }
+  return envelope;
+}
+
+function assertEnvelopeShape(value, maximumBytes = maximumEnvelopeBytes) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !value.header || typeof value.header !== "object"
+    || typeof value.iv !== "string" || !/^[A-Za-z0-9_-]{16}$/.test(value.iv)
+    || typeof value.ciphertext !== "string" || value.ciphertext.length > maximumBytes * 1.4
+    || typeof value.signature !== "string" || value.signature.length > 256) {
+    throw httpError(400, "Remote envelope is invalid.");
+  }
+  return { header: value.header, iv: value.iv, ciphertext: value.ciphertext, signature: value.signature };
+}
+
+function envelopeSignedText(envelope) {
+  return `${canonicalizeJson(envelope.header)}.${envelope.iv}.${envelope.ciphertext}`;
+}
+
+function assertFreshTimestamp(value) {
+  const time = typeof value === "string" ? Date.parse(value) : NaN;
+  if (!Number.isFinite(time) || Math.abs(Date.now() - time) > 5 * 60_000) throw httpError(400, "Remote envelope timestamp is stale.");
+}
+
+function openEventStream(state, request, response, grantId, accountId) {
+  pruneClosedSseClients(state);
+  const clients = state.sseClients.get(grantId) ?? new Set();
+  const totalClients = [...state.sseClients.values()].reduce((total, set) => total + set.size, 0);
+  if (clients.size >= maximumSseClientsPerGrant || totalClients >= maximumSseClients) {
+    throw httpError(429, "Too many browser event streams are open. Close another tab and try again.");
+  }
+  response.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-store",
+    connection: "keep-alive",
+    ...securityHeaders(state, request),
+  });
+  clients.add(response);
+  state.sseClients.set(grantId, clients);
+  writeSseClient(state, grantId, response, `event: ready\ndata: ${JSON.stringify({ desktopOnline: state.devices.has(accountId) })}\n\n`);
+  const heartbeat = setInterval(() => writeSseClient(state, grantId, response, ": keepalive\n\n"), 20_000);
+  const close = () => {
+    clearInterval(heartbeat);
+    removeSseClient(state, grantId, response);
+  };
+  request.once("close", close);
+  response.once("close", close);
+  response.once("finish", close);
+  response.once("error", close);
+}
+
+function broadcastGrant(state, grantId, event) {
+  const data = `event: remote\ndata: ${JSON.stringify(event)}\n\n`;
+  for (const response of state.sseClients.get(grantId) ?? []) writeSseClient(state, grantId, response, data);
+}
+
+async function broadcastAccountPresence(state, accountId, desktopOnline) {
+  const grants = await state.database.listGrants(accountId);
+  for (const grant of grants) {
+    if (grant.status === "approved") broadcastGrant(state, grant.id, { type: "presence", desktopOnline });
+  }
+}
+
+function closeSseClients(state, grantId) {
+  const clients = state.sseClients.get(grantId) ?? [];
+  state.sseClients.delete(grantId);
+  for (const response of clients) response.end();
+}
+
+function writeSseClient(state, grantId, response, data) {
+  if (response.destroyed || response.writableEnded) {
+    removeSseClient(state, grantId, response);
+    return false;
+  }
+  const bytes = Buffer.byteLength(data, "utf8");
+  if (response.writableLength + bytes > maximumSseClientQueuedBytes) {
+    removeSseClient(state, grantId, response);
+    response.destroy();
+    return false;
+  }
+  try {
+    // false means Node has crossed its high-water mark, not that this client
+    // failed. The bounded writableLength check above owns slow-client policy.
+    response.write(data);
+    return true;
+  } catch {
+    removeSseClient(state, grantId, response);
+    response.destroy();
+    return false;
+  }
+}
+
+function removeSseClient(state, grantId, response) {
+  const clients = state.sseClients.get(grantId);
+  if (!clients) return;
+  clients.delete(response);
+  if (!clients.size) state.sseClients.delete(grantId);
+}
+
+function pruneClosedSseClients(state) {
+  for (const [grantId, clients] of state.sseClients) {
+    for (const response of clients) {
+      if (response.destroyed || response.writableEnded) clients.delete(response);
+    }
+    if (!clients.size) state.sseClients.delete(grantId);
+  }
+}
+
+function discardOperationEventsForAccount(state, accountId) {
+  for (const [operationId, record] of state.operationEvents) {
+    if (record.events.some((event) => event.envelope?.header?.accountId === accountId)) {
+      state.operationEventBytes -= record.bytes;
+      state.operationEvents.delete(operationId);
+    }
+  }
+}
+
+function heartbeatDevices(state) {
+  for (const connection of state.devices.values()) {
+    if (!connection.alive) {
+      connection.socket.terminate();
+      continue;
+    }
+    connection.alive = false;
+    connection.socket.ping();
+  }
+}
+
+async function requestedAccount(state, request, url) {
+  const slug = requestSlug(state, request, url);
+  return slug ? state.database.accountBySlug(slug) : null;
+}
+
+async function requireBrowserSession(state, request, account) {
+  const token = cookies(request)[cookieName(state, request)] ?? "";
+  const session = account ? await state.database.session(token) : null;
+  if (!account || !session || session.accountId !== account.id) throw httpError(401, "Sign in to continue.");
+  return { token, session };
+}
+
+async function browserSession(state, request, account) {
+  const token = cookies(request)[cookieName(state, request)] ?? "";
+  const session = await state.database.session(token);
+  return session?.accountId === account.id ? session : null;
+}
+
+function validPairedSession(session) {
+  return Boolean(session?.browserGrantId && session.grantStatus === "approved"
+    && session.browserGrantGeneration === session.grantGeneration);
+}
+
+async function requireDevice(state, request) {
+  const account = await state.database.authenticateDevice(deviceToken(request));
+  if (!account) throw httpError(401, "This desktop is not authorized for remote access.");
+  return account;
+}
+
+function deviceToken(request) {
+  const authorization = request.headers.authorization;
+  return typeof authorization === "string" && authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+}
+
+function requirePublicEnrollment(state) {
+  if (!state.publicEnrollment) throw httpError(503, "New remote-access enrollment is currently closed.");
+}
+
+function requestSlug(state, request, url, bodySlug) {
+  const host = requestHostname(state, request);
+  const suffix = `.${state.baseDomain}`;
+  if (host.endsWith(suffix)) {
+    const candidate = host.slice(0, -suffix.length);
+    if (candidate && !candidate.includes(".")) {
+      // A reserved pages label never resolves to a personal management
+      // account, even if a legacy pages-* address row still exists.
+      return isReservedPagesSlug(candidate) ? null : normalizeSlug(candidate);
+    }
+  }
+  if (isLocalHost(host)) return normalizeSlug(bodySlug ?? url.searchParams.get("slug"));
+  return null;
+}
+
+// Whether the request host is a reserved pages or pages-* label under the base
+// domain. Such hosts never resolve to a personal address.
+function isReservedPagesHost(state, request) {
+  const host = requestHostname(state, request);
+  const suffix = `.${state.baseDomain}`;
+  if (!host.endsWith(suffix)) return false;
+  const label = host.slice(0, -suffix.length);
+  return Boolean(label) && !label.includes(".") && isReservedPagesSlug(label);
+}
+
+// Routing reads only the path and query; the host is resolved separately by
+// requestHostname. A fixed base keeps a malformed Host header from turning
+// into a 500 before any route runs.
+function requestUrl(request) {
+  try {
+    return new URL(request.url || "/", "http://localhost");
+  } catch {
+    throw httpError(400, "Malformed request path.");
+  }
+}
+
+function requestHostname(state, request) {
+  const forwarded = state.trustProxy ? String(request.headers["x-forwarded-host"] || "").split(",")[0].trim() : "";
+  const raw = forwarded || String(request.headers.host || "");
+  try { return new URL(`http://${raw}`).hostname.toLowerCase(); } catch { return ""; }
+}
+
+function clientIp(state, request) {
+  if (state.trustProxy) {
+    const forwarded = String(request.headers["x-real-ip"] || "").trim();
+    if (isIP(forwarded)) return forwarded;
+  }
+  return String(request.socket.remoteAddress || "unknown").slice(0, 128);
+}
+
+function assertSameOrigin(state, request) {
+  const origin = request.headers.origin;
+  if (!origin) throw httpError(403, "A browser origin is required.");
+  let parsed;
+  try { parsed = new URL(origin); } catch { throw httpError(403, "Request origin is not allowed."); }
+  if (parsed.hostname.toLowerCase() !== requestHostname(state, request) || (!isLocalHost(parsed.hostname) && parsed.protocol !== "https:")) {
+    throw httpError(403, "Request origin is not allowed.");
+  }
+}
+
+function enforceRateLimit(rateLimits, key, maximum, windowMs, maximumBuckets = maximumRateLimitBuckets) {
+  const now = Date.now();
+  const current = rateLimits.get(key);
+  if (!current && rateLimits.size >= maximumBuckets) {
+    for (const [candidate, item] of rateLimits) if (item.resetAt <= now) rateLimits.delete(candidate);
+    if (rateLimits.size >= maximumBuckets) throw tooManyRequestsError();
+  }
+  const record = !current || current.resetAt <= now ? { count: 0, resetAt: now + windowMs } : current;
+  record.count += 1;
+  rateLimits.set(key, record);
+  if (record.count > maximum) throw tooManyRequestsError();
+}
+
+export function createPasswordCheckQueue({
+  maximumConcurrentChecks,
+  maximumConcurrentChecksPerIp,
+  maximumQueuedChecks,
+  maximumQueuedChecksPerIp,
+}) {
+  let active = 0;
+  let queued = 0;
+  const activeByIp = new Map();
+  const queuesByIp = new Map();
+  const rotation = [];
+
+  const drain = () => {
+    while (active < maximumConcurrentChecks && queued > 0 && rotation.length > 0) {
+      let selected = null;
+      const candidates = rotation.length;
+      for (let index = 0; index < candidates; index += 1) {
+        const ip = rotation.shift();
+        const queue = queuesByIp.get(ip);
+        if (!queue?.length) {
+          queuesByIp.delete(ip);
+          continue;
+        }
+        rotation.push(ip);
+        if ((activeByIp.get(ip) ?? 0) < maximumConcurrentChecksPerIp) {
+          selected = ip;
+          break;
+        }
+      }
+      if (!selected) return;
+
+      const queue = queuesByIp.get(selected);
+      const job = queue.shift();
+      queued -= 1;
+      if (queue.length === 0) {
+        queuesByIp.delete(selected);
+        const index = rotation.indexOf(selected);
+        if (index >= 0) rotation.splice(index, 1);
+      }
+      active += 1;
+      activeByIp.set(selected, (activeByIp.get(selected) ?? 0) + 1);
+      void Promise.resolve().then(job.operation).then(job.resolve, job.reject).finally(() => {
+        active -= 1;
+        const remaining = (activeByIp.get(selected) ?? 1) - 1;
+        if (remaining > 0) activeByIp.set(selected, remaining);
+        else activeByIp.delete(selected);
+        drain();
+      });
+    }
+  };
+
+  return Object.freeze({
+    run(ip, operation) {
+      if (queued >= maximumQueuedChecks) return Promise.reject(tooManyRequestsError());
+      const queue = queuesByIp.get(ip) ?? [];
+      if (queue.length >= maximumQueuedChecksPerIp) return Promise.reject(tooManyRequestsError());
+      return new Promise((resolveRun, rejectRun) => {
+        if (!queuesByIp.has(ip)) {
+          queuesByIp.set(ip, queue);
+          rotation.push(ip);
+        }
+        queue.push({ operation, resolve: resolveRun, reject: rejectRun });
+        queued += 1;
+        drain();
+      });
+    },
+    snapshot() {
+      return Object.freeze({
+        active,
+        queued,
+        maximumActive: maximumConcurrentChecks,
+        maximumQueued: maximumQueuedChecks,
+      });
+    },
+  });
+}
+
+function normalizedLoginProtection(value) {
+  const options = value && typeof value === "object" ? value : {};
+  return Object.freeze({
+    attemptsPerIp: positiveInteger(options.attemptsPerIp, loginAttemptsPerIp),
+    attemptWindowMs: positiveInteger(options.attemptWindowMs, loginAttemptWindowMs),
+    maximumIpBuckets: positiveInteger(options.maximumIpBuckets, maximumLoginIpBuckets),
+    maximumConcurrentChecks: positiveInteger(options.maximumConcurrentChecks, maximumConcurrentPasswordChecks),
+    maximumConcurrentChecksPerIp: positiveInteger(options.maximumConcurrentChecksPerIp, maximumConcurrentPasswordChecksPerIp),
+    maximumQueuedChecks: positiveInteger(options.maximumQueuedChecks, maximumQueuedPasswordChecks),
+    maximumQueuedChecksPerIp: positiveInteger(options.maximumQueuedChecksPerIp, maximumQueuedPasswordChecksPerIp),
+  });
+}
+
+function positiveInteger(value, fallback) {
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function invalidCredentialsError() {
+  return httpError(401, "The address or password is incorrect.");
+}
+
+function tooManyRequestsError() {
+  return httpError(429, "Too many requests. Wait a little while and try again.");
+}
+
+function rememberOperationEvent(state, operationId, event) {
+  const eventBytes = Buffer.byteLength(JSON.stringify(event), "utf8");
+  const current = state.operationEvents.get(operationId);
+  if (current) {
+    state.operationEventBytes -= current.bytes;
+    state.operationEvents.delete(operationId);
+  }
+  const events = [...(current?.events ?? []), event].slice(-4);
+  const bytes = events.reduce((total, item) => total + Buffer.byteLength(JSON.stringify(item), "utf8"), 0);
+  state.operationEvents.set(operationId, { events, bytes, expiresAt: Date.now() + 2 * 60_000 });
+  state.operationEventBytes += bytes;
+  while (state.operationEvents.size > maximumOperationEventRecords || state.operationEventBytes > maximumOperationEventBytes) {
+    const oldestId = state.operationEvents.keys().next().value;
+    if (!oldestId) break;
+    const oldest = state.operationEvents.get(oldestId);
+    state.operationEventBytes -= oldest?.bytes ?? 0;
+    state.operationEvents.delete(oldestId);
+  }
+}
+
+function pruneTransientState(state) {
+  const now = Date.now();
+  for (const [key, record] of state.rateLimits) if (record.resetAt <= now) state.rateLimits.delete(key);
+  for (const [key, record] of state.loginRateLimits) if (record.resetAt <= now) state.loginRateLimits.delete(key);
+  for (const [operationId, record] of state.operationEvents) {
+    if (record.expiresAt > now) continue;
+    state.operationEventBytes -= record.bytes;
+    state.operationEvents.delete(operationId);
+  }
+}
+
+function sessionView(state, account, session) {
+  return {
+    authenticated: true,
+    paired: validPairedSession(session),
+    slug: account.slug,
+    desktopOnline: state.devices.has(account.id),
+    challenge: session.loginChallenge,
+    deviceSigningPublicJwk: account.deviceSigningPublicJwk,
+    deviceEncryptionPublicJwk: account.deviceEncryptionPublicJwk,
+    grantGeneration: account.grantGeneration,
+    ...(validPairedSession(session) ? {
+      grant: {
+        id: session.browserGrantId,
+        browserId: session.browserId,
+        generation: session.browserGrantGeneration,
+      },
+    } : {}),
+  };
+}
+
+function deviceAccountView(state, account) {
+  return {
+    account: publicAccount(account),
+    url: `https://${account.slug}.${state.baseDomain}`,
+    desktopConnected: state.devices.has(account.id),
+  };
+}
+
+function publicAccount(account) {
+  return { id: account.id, slug: account.slug, grantGeneration: account.grantGeneration, createdAt: account.createdAt, updatedAt: account.updatedAt };
+}
+
+function publicGrant(grant) {
+  return { id: grant.id, browserId: grant.browserId, label: grant.label, generation: grant.generation, status: grant.status, approvedAt: grant.approvedAt, revokedAt: grant.revokedAt };
+}
+
+function devicePairingView(pairing) {
+  return {
+    id: pairing.id,
+    browserId: pairing.browserId,
+    label: pairing.label,
+    signingPublicJwk: pairing.signingPublicJwk,
+    encryptionPublicJwk: pairing.encryptionPublicJwk,
+    code: pairing.code,
+    createdAt: pairing.createdAt,
+    expiresAt: pairing.expiresAt,
+  };
+}
+
+function browserPairingView(pairing) {
+  return {
+    id: pairing.id,
+    browserId: pairing.browserId,
+    label: pairing.label,
+    code: pairing.code,
+    status: pairing.status,
+    approvalCertificate: pairing.approvalCertificate,
+    approvalSignature: pairing.approvalSignature,
+    expiresAt: pairing.expiresAt,
+  };
+}
+
+function sendDevice(socket, value) {
+  if (socket.readyState !== WebSocket.OPEN) return false;
+  socket.send(JSON.stringify(value));
+  return true;
+}
+
+function rejectUpgrade(socket, status, message) {
+  socket.write(`HTTP/1.1 ${status} ${message}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+  socket.destroy();
+}
+
+async function readJsonBody(request, maximumBytes) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > maximumBytes) throw httpError(413, "Request body is too large.");
+    chunks.push(chunk);
+  }
+  if (!chunks.length) return {};
+  try {
+    const value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("object required");
+    return value;
+  } catch {
+    throw httpError(400, "Request body must be a JSON object.");
+  }
+}
+
+async function servePublicFile(state, request, pathname, response, method) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    throw httpError(400, "Malformed request path.");
+  }
+  const requested = pathname === "/" ? "index.html" : decoded.replace(/^\/+/, "");
+  const candidate = resolve(publicDir, requested);
+  if (candidate !== publicDir && !candidate.startsWith(`${publicDir}${sep}`)) throw httpError(404, "Not found.");
+  try {
+    const body = await readFile(candidate);
+    response.writeHead(200, {
+      "content-type": contentType(candidate),
+      "content-length": body.length,
+      // These private-alpha assets are not fingerprinted. Revalidate them so a
+      // bridge rollout cannot leave a paired browser on stale client code.
+      "cache-control": candidate.endsWith("index.html") ? "no-store" : "no-cache",
+      ...securityHeaders(state, request),
+      ...(requested === "browser-app-frame.html" ? {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline' blob:; style-src 'unsafe-inline' blob:; img-src blob: data:; media-src blob: data:; font-src blob: data:; connect-src 'none'; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'; sandbox allow-scripts",
+        "x-frame-options": "SAMEORIGIN",
+      } : {}),
+    });
+    response.end(method === "HEAD" ? undefined : body);
+  } catch (error) {
+    if (error?.code === "ENOENT" && !extname(requested)) return servePublicFile(state, request, "/", response, method);
+    if (error?.code === "ENOENT") throw httpError(404, "Not found.");
+    throw error;
+  }
+}
+
+async function latestMacDownload(state) {
+  if (state.latestMacDownload?.expiresAt > Date.now()) return state.latestMacDownload.url;
+  // Concurrent requests share one lookup, and a failed lookup is remembered
+  // briefly, so callers cannot spend the GitHub quota or pile up on a slow API.
+  state.latestMacDownloadLookup ??= resolveLatestMacDownload(state).finally(() => { state.latestMacDownloadLookup = null; });
+  return state.latestMacDownloadLookup;
+}
+
+async function resolveLatestMacDownload(state) {
+  try {
+    const response = await state.releaseFetcher(macReleaseApiUrl, {
+      signal: AbortSignal.timeout(5_000),
+      headers: {
+        accept: "application/vnd.github+json",
+        "user-agent": "work-fold-bridge",
+        "x-github-api-version": "2022-11-28",
+      },
+    });
+    if (!response.ok) throw new Error(`GitHub returned ${response.status}.`);
+    const release = await response.json();
+    const asset = Array.isArray(release?.assets)
+      ? release.assets.find((candidate) => /^work-fold-[0-9][0-9A-Za-z.-]*-mac-arm64\.dmg$/.test(candidate?.name))
+      : null;
+    const url = new URL(asset?.browser_download_url || "");
+    if (url.protocol !== "https:" || url.hostname !== "github.com") throw new Error("The latest macOS installer is unavailable.");
+    state.latestMacDownload = { url: url.href, expiresAt: Date.now() + releaseDownloadCacheMs };
+    return url.href;
+  } catch (error) {
+    console.warn(`work-fold could not resolve the latest macOS download: ${publicErrorMessage(error)}`);
+    state.latestMacDownload = { url: macReleaseFallbackUrl, expiresAt: Date.now() + 60_000 };
+    return macReleaseFallbackUrl;
+  }
+}
+
+function contentType(path) {
+  if (path.endsWith(".html")) return "text/html; charset=utf-8";
+  if (path.endsWith(".css")) return "text/css; charset=utf-8";
+  if (path.endsWith(".js")) return "text/javascript; charset=utf-8";
+  if (path.endsWith(".svg")) return "image/svg+xml; charset=utf-8";
+  if (path.endsWith(".png")) return "image/png";
+  if (/\.jpe?g$/.test(path)) return "image/jpeg";
+  if (path.endsWith(".webp")) return "image/webp";
+  if (path.endsWith(".webmanifest")) return "application/manifest+json; charset=utf-8";
+  if (path.endsWith(".woff2")) return "font/woff2";
+  if (path.endsWith(".ico")) return "image/vnd.microsoft.icon";
+  return "application/octet-stream";
+}
+
+function methodNotAllowed(response, allow, state, request) {
+  response.setHeader("allow", allow);
+  return writeJson(response, 405, { ok: false, error: "Method not allowed." }, "GET", state, request);
+}
+
+function writeApiError(response, error, state, request) {
+  if (response.headersSent) return response.end();
+  let status = error?.status ?? 500;
+  let message = publicErrorMessage(error);
+  let code;
+  if (typeof error?.publicCode === "string" && error?.status) {
+    // Online page refusals keep the page API's `{ error, code, message }` shape.
+    code = error.publicCode;
+  } else if (error instanceof BridgeDatabaseError) {
+    code = error.code;
+    status = new Map([
+      ["unauthorized", 401], ["csrf", 403], ["pairing_required", 403], ["invalid_signature", 403],
+      ["not_found", 404], ["slug_taken", 409], ["invalid_slug", 400], ["invalid_password", 400],
+      ["invalid_input", 400], ["invalid_key", 400], ["invalid_certificate", 400],
+      ["credentials_changed", 409], ["request_conflict", 409], ["pairing_limit", 429], ["operation_limit", 429],
+    ]).get(error.code) ?? 400;
+  } else if (!error?.status) {
+    console.error(`work-fold bridge request failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+    message = "The bridge could not complete this request.";
+  }
+  const body = JSON.stringify({ ok: false, error: message, ...(code ? { code } : {}), ...(error?.publicCode ? { message } : {}) });
+  response.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": Buffer.byteLength(body),
+    "cache-control": "no-store",
+    ...securityHeaders(state, request),
+  });
+  response.end(body);
+}
+
+function publicErrorMessage(error) {
+  return error instanceof Error ? error.message : "The bridge could not complete this request.";
+}
+
+function writeNotFound(response, method, state, request) {
+  const body = Buffer.from("Not found.\n", "utf8");
+  response.writeHead(404, {
+    "content-type": "text/plain; charset=utf-8",
+    "content-length": body.length,
+    "cache-control": "no-store",
+    ...securityHeaders(state, request),
+  });
+  response.end(method === "HEAD" ? undefined : body);
+}
+
+function writeJson(response, status, value, method = "GET", state, request) {
+  const body = JSON.stringify(value);
+  response.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": Buffer.byteLength(body),
+    "cache-control": "no-store",
+    ...securityHeaders(state, request),
+  });
+  response.end(method === "HEAD" ? undefined : body);
+}
+
+function securityHeaders(state, request) {
+  return {
+    "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    ...(request && !isLocalHost(requestHostname(state, request)) ? { "strict-transport-security": "max-age=31536000; includeSubDomains" } : {}),
+  };
+}
+
+function sessionCookie(state, request, token) {
+  return `${cookieName(state, request)}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${12 * 60 * 60}${isLocalHost(requestHostname(state, request)) ? "" : "; Secure"}`;
+}
+
+function clearSessionCookie(state, request) {
+  return `${cookieName(state, request)}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${isLocalHost(requestHostname(state, request)) ? "" : "; Secure"}`;
+}
+
+function cookieName(state, request) {
+  return isLocalHost(requestHostname(state, request)) ? localSessionCookieName : sessionCookieName;
+}
+
+function cookies(request) {
+  return Object.fromEntries(String(request.headers.cookie || "").split(";").map((part) => {
+    const index = part.indexOf("=");
+    return index < 0 ? ["", ""] : [part.slice(0, index).trim(), part.slice(index + 1).trim()];
+  }).filter(([name]) => name));
+}
+
+function isLocalHost(host) {
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function httpError(status, message) {
+  return Object.assign(new Error(message), { status });
+}
+
+function normalizeDomain(value) {
+  const domain = String(value || "").trim().toLowerCase().replace(/^\.+|\.+$/g, "");
+  if (!domain || !/^[a-z0-9.-]+$/.test(domain)) throw new Error("WORKFOLD_BRIDGE_DOMAIN is invalid.");
+  return domain;
+}
+
+function parsePort(value) {
+  if (value === undefined || value === "") return defaultPort;
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) throw new TypeError("PORT must be an integer from 0 through 65535.");
+  return port;
+}
+
+function closeServer(server) {
+  return new Promise((resolveClose, rejectClose) => {
+    server.close((error) => error ? rejectClose(error) : resolveClose());
+  });
+}
+
+async function run() {
+  const service = await startBridgeServer();
+  console.log(`work-fold bridge listening on ${service.host}:${service.port}`);
+  const stop = async () => {
+    await service.close();
+    process.exit(0);
+  };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  run().catch((error) => {
+    console.error(error instanceof Error ? error.message : "Could not start the work-fold bridge.");
+    process.exitCode = 1;
+  });
+}

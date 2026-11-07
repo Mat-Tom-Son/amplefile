@@ -1,0 +1,36 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { contributedSurfaces, resolveSurfaceForKey, surfaceMatchesTab } from "../web-local/src/lib/capability-surfaces.js";
+import type { AgentExtensionSurface, WorkFolderSurfaceTab } from "../web-local/src/types.js";
+
+const piSurface: AgentExtensionSurface = {
+  id: "inbox",
+  title: "Pi inbox",
+  extensionPath: ".pi/extensions/inbox.ts",
+  manifestPath: ".pi/extensions/surface.json",
+  source: "project",
+  scope: "project",
+  views: [{ id: "overview", title: "Overview", blocks: [] }],
+};
+
+test("Pi surfaces remain in their native full-trust manifest lane", () => {
+  const surfaces = contributedSurfaces("work-folder-1", [piSurface]);
+  assert.deepEqual(surfaces.map((surface) => [surface.key, surface.execution]), [["pi:work-folder-1:inbox", "full-trust-pi"]]);
+  assert.equal(resolveSurfaceForKey(surfaces, "inbox")?.execution, "full-trust-pi");
+});
+
+test("Pi surface tabs resolve against the namespaced work-folder surface", () => {
+  const surface = contributedSurfaces("work-folder-1", [piSurface])[0]!;
+  const tab: WorkFolderSurfaceTab = {
+    id: `extension:work-folder-1:${surface.key}:overview`,
+    kind: "extension",
+    workFolderId: "work-folder-1",
+    surfaceId: surface.key,
+    surfaceExecution: "full-trust-pi",
+    viewId: "overview",
+    title: "Overview",
+  };
+  assert.equal(surfaceMatchesTab(surface, tab), true);
+  assert.equal(surfaceMatchesTab({ ...surface, key: "pi:work-folder-2:inbox" }, tab), false);
+});

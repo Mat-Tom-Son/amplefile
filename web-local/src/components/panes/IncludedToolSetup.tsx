@@ -1,0 +1,94 @@
+import { IncludedMcpSetup } from "./IncludedMcpSetup";
+import { IncludedChromeSetup } from "./IncludedChromeSetup";
+import { IncludedComputerSetup } from "./IncludedComputerSetup";
+import { DocumentsEngineSetup } from "./IncludedDocumentsSetup";
+import { useEffect, useRef, useState } from "react";
+import type { IncludedToolDefinition, IncludedToolStatus } from "../../../../src/shared/included-tools";
+import { api, errorText } from "../../lib/api";
+import { includedToolReadiness } from "../../lib/included-tool-readiness";
+import "./included-tool-setup.css";
+
+type Result = { status: IncludedToolStatus };
+
+type SetupProps = { workFolderId: string; tool: IncludedToolDefinition; enabled: boolean; onStatusChange?: (status: IncludedToolStatus | null) => void };
+
+export function IncludedToolSetup(props: SetupProps) {
+  if (props.tool.id === "chrome") return <IncludedChromeSetup workFolderId={props.workFolderId} enabled={props.enabled} onStatusChange={props.onStatusChange} />;
+  if (props.tool.id === "computer") return <IncludedComputerSetup key={props.workFolderId} workFolderId={props.workFolderId} enabled={props.enabled} onStatusChange={props.onStatusChange} />;
+  return <IncludedToolSetupSession key={`${props.workFolderId}:${props.tool.id}`} {...props} />;
+}
+
+function IncludedToolSetupSession({ workFolderId, tool, enabled, onStatusChange }: SetupProps) {
+  const [status, setStatus] = useState<IncludedToolStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<{ source: "read" | "action"; message: string } | null>(null);
+  const [secret, setSecret] = useState("");
+  const alive = useRef(true);
+  const request = useRef<AbortController | null>(null);
+  const statusRevision = useRef(0);
+  const statusListener = useRef(onStatusChange);
+  statusListener.current = onStatusChange;
+  useEffect(() => {
+    alive.current = true;
+    const controller = new AbortController();
+    let cancelled = false;
+    let readRevision = 0;
+    const refresh = () => {
+      if (cancelled || request.current || document.visibilityState === "hidden") return;
+      const revision = statusRevision.current;
+      const read = ++readRevision;
+      void api<{ tools: IncludedToolStatus[] }>(`/api/agent/included-tools?workFolderId=${encodeURIComponent(workFolderId)}`, { signal: controller.signal })
+      .then(({ tools }) => {
+        if (cancelled || read !== readRevision || statusRevision.current !== revision) return;
+        const next = tools.find((item) => item.id === tool.id) ?? null;
+        setStatus(next);
+        setError((current) => current?.source === "read" ? null : current);
+        if (next) statusListener.current?.(next);
+      })
+      .catch((caught) => { if (!cancelled && read === readRevision && statusRevision.current === revision) { setStatus(null); statusListener.current?.(null); setError({ source: "read", message: errorText(caught) }); } });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 5_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { cancelled = true; alive.current = false; controller.abort(); request.current?.abort(); window.clearInterval(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
+  }, [workFolderId, tool.id]);
+
+  async function act(action: string) {
+    if (request.current) return;
+    const controller = new AbortController();
+    request.current = controller;
+    statusRevision.current += 1;
+    setStatus(null); statusListener.current?.(null);
+    setBusy(true); setError(null);
+    try {
+      const result = await api<Result>("/api/agent/included-tools/setup", { method: "POST", signal: controller.signal, body: { workFolderId, id: tool.id, action, ...(action === "connect-brave" ? { secret } : {}) } });
+      if (alive.current && !controller.signal.aborted) { setStatus(result.status); statusListener.current?.(result.status); setSecret(""); }
+    } catch (caught) {
+      if (alive.current && !controller.signal.aborted) {
+        setError({ source: "action", message: errorText(caught) });
+        // A failed check must not keep a previously successful badge. Read the
+        // host's remaining evidence; transport errors alone prove no readiness.
+        try {
+          const { tools } = await api<{ tools: IncludedToolStatus[] }>(`/api/agent/included-tools?workFolderId=${encodeURIComponent(workFolderId)}`, { signal: controller.signal });
+          if (alive.current && !controller.signal.aborted) {
+            const next = tools.find((item) => item.id === tool.id) ?? null;
+            setStatus(next); statusListener.current?.(next);
+          }
+        } catch { /* The original actionable error stays visible. */ }
+      }
+    }
+    finally { if (request.current === controller) request.current = null; if (alive.current && !controller.signal.aborted) setBusy(false); }
+  }
+  const label = !enabled ? "Turned Off" : includedToolReadiness(status ?? undefined).label;
+  const requirement = tool.id !== "mcp" && enabled && status && ["setup_required", "unavailable"].includes(status.state) ? status.detail : null;
+  return <section className="included-tool-setup" aria-label={`${tool.title} setup`} aria-busy={busy}>
+    {tool.id !== "mcp" || !enabled ? <div className="included-tool-status"><strong role="status">{label}</strong>{tool.id !== "mcp" ? <button type="button" className="ui-control" disabled={busy || !enabled} onClick={() => void act("check")}>{busy ? "Checking…" : "Check"}</button> : null}</div> : null}
+    {requirement ? <p>{requirement}</p> : null}
+    {enabled && status?.stale && status.state === "ready" ? <p>Last verified {new Date(status.checkedAt).toLocaleString()}. This is an earlier successful check, not a live connection. Readiness refreshes when you use this tool.</p> : null}
+    {error ? <p className="included-tool-error" role="alert">{error.message}</p> : null}
+    {tool.id === "web" ? <details className="included-tool-optional"><summary>Brave Search</summary><form onSubmit={(event) => { event.preventDefault(); void act("connect-brave"); }}><label>API Key<input type="password" autoComplete="off" value={secret} onChange={(event) => setSecret(event.target.value)} disabled={busy} /></label><div className="included-tool-actions"><button type="submit" className="ui-control ui-control--primary" disabled={busy || !enabled || !secret.trim()}>Connect</button><button type="button" className="ui-control" disabled={busy} onClick={() => void act("disconnect-brave")}>Use DuckDuckGo</button></div></form></details> : null}
+    {tool.id === "documents" ? <DocumentsEngineSetup status={status} enabled={enabled} /> : null}
+    {tool.id === "mcp" ? <IncludedMcpSetup workFolderId={workFolderId} enabled={enabled} /> : null}
+  </section>;
+}

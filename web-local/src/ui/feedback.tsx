@@ -1,0 +1,248 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CheckmarkCircle16Filled, ErrorCircle16Filled, Info16Filled } from "@fluentui/react-icons";
+import { X } from "../components/chrome/icons";
+import { useModalDialog } from "../hooks/useModalDialog";
+
+export type ConfirmTone = "default" | "danger";
+
+export interface ConfirmDialogOptions {
+  title: string;
+  body?: string;
+  confirmLabel: string;
+  tone?: ConfirmTone;
+}
+
+export interface ConfirmDialogRequest extends ConfirmDialogOptions {
+  id: number;
+  resolve: (confirmed: boolean) => void;
+  returnFocusTo: HTMLElement | null;
+}
+
+export type ToastTone = "info" | "success" | "error";
+
+export type ToastCloseReason = "action" | "dismiss" | "timeout";
+
+export interface ToastOptions {
+  text: string;
+  tone?: ToastTone;
+  actionLabel?: string;
+  onAction?: () => void;
+  durationMs?: number;
+  onClose?: (reason: ToastCloseReason) => void;
+}
+
+export interface ToastEntry extends ToastOptions {
+  id: number;
+  tone: ToastTone;
+}
+
+let confirmDialogDispatch: ((request: ConfirmDialogRequest) => void) | null = null;
+let confirmDialogRequestId = 0;
+let toastDispatch: ((toast: ToastEntry) => void) | null = null;
+let toastId = 0;
+
+export function requestConfirm(options: ConfirmDialogOptions): Promise<boolean> {
+  return new Promise((resolve) => {
+    const returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const request: ConfirmDialogRequest = {
+      ...options,
+      id: ++confirmDialogRequestId,
+      resolve,
+      returnFocusTo,
+    };
+    if (!confirmDialogDispatch) {
+      resolve(false);
+      return;
+    }
+    confirmDialogDispatch(request);
+  });
+}
+
+export function showToast(options: ToastOptions): void {
+  toastDispatch?.({
+    ...options,
+    id: ++toastId,
+    tone: options.tone ?? "info",
+  });
+}
+
+export function ConfirmDialogHost() {
+  const [queue, setQueue] = useState<ConfirmDialogRequest[]>([]);
+  const activeRequest = queue[0] ?? null;
+
+  useEffect(() => {
+    confirmDialogDispatch = (request) => setQueue((current) => [...current, request]);
+    return () => {
+      confirmDialogDispatch = null;
+    };
+  }, []);
+
+  function settleConfirmRequest(request: ConfirmDialogRequest, confirmed: boolean): void {
+    const returnFocus = queue.length <= 1 ? request.returnFocusTo : null;
+    request.resolve(confirmed);
+    setQueue((current) => current[0]?.id === request.id ? current.slice(1) : current.filter((item) => item.id !== request.id));
+    if (returnFocus) {
+      window.requestAnimationFrame(() => {
+        if (returnFocus.isConnected) returnFocus.focus();
+      });
+    }
+  }
+
+  return activeRequest ? <ConfirmationDialog key={activeRequest.id} request={activeRequest} onSettle={(confirmed) => settleConfirmRequest(activeRequest, confirmed)} /> : null;
+}
+
+function ConfirmationDialog({ request: activeRequest, onSettle }: { request: ConfirmDialogRequest; onSettle: (confirmed: boolean) => void }) {
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const confirmButtonRef = useRef<HTMLButtonElement | null>(null);
+  const danger = activeRequest.tone === "danger";
+  const dialogRef = useModalDialog({ onClose: () => onSettle(false), initialFocusRef: danger ? cancelButtonRef : confirmButtonRef, restoreFocus: false });
+
+  const titleId = `confirm-dialog-title-${activeRequest.id}`;
+
+  return (
+    <div className="modal-backdrop confirm-dialog-backdrop" role="presentation" onMouseDown={() => onSettle(false)}>
+      <section
+        ref={dialogRef}
+        tabIndex={-1}
+        className={danger ? "confirm-dialog confirm-dialog-danger" : "confirm-dialog"}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="modal-title confirm-dialog-title">
+          <div>
+            <h2 id={titleId}>{activeRequest.title}</h2>
+            {activeRequest.body ? <p>{activeRequest.body}</p> : null}
+          </div>
+        </div>
+        <div className="confirm-dialog-footer">
+          <button ref={cancelButtonRef} className="ui-control" type="button" onClick={() => onSettle(false)}>
+            Cancel
+          </button>
+          <button
+            ref={confirmButtonRef}
+            className={danger ? "ui-control danger" : "ui-control ui-control--primary"}
+            type="button"
+            onClick={() => onSettle(true)}
+          >
+            {activeRequest.confirmLabel}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export function ToastHost() {
+  const [toasts, setToasts] = useState<ToastEntry[]>([]);
+
+  useEffect(() => {
+    toastDispatch = (toast) => setToasts((current) => {
+      const next = [...current, toast];
+      if (next.length <= 4) return next;
+      // Capacity evicts plain notices before action-bearing toasts: dropping
+      // an Undo toast settles its contract early and silently shortens the
+      // promised undo window. Evicted toasts still settle their onClose
+      // contract (must stay idempotent: StrictMode can run this twice).
+      const keep = [...next];
+      const evicted: ToastEntry[] = [];
+      for (const candidate of next) {
+        if (keep.length <= 4) break;
+        if (candidate.actionLabel && candidate.onAction) continue;
+        evicted.push(candidate);
+        keep.splice(keep.indexOf(candidate), 1);
+      }
+      while (keep.length > 4) {
+        const oldest = keep.shift();
+        if (oldest) evicted.push(oldest);
+      }
+      for (const dropped of evicted) {
+        queueMicrotask(() => dropped.onClose?.("timeout"));
+      }
+      return keep;
+    });
+    return () => {
+      toastDispatch = null;
+    };
+  }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+
+  return (
+    <div className="toast-stack" data-above-modals="" aria-live="polite" aria-atomic="false">
+      {toasts.map((toast) => (
+        <ToastItem key={toast.id} toast={toast} onDismiss={() => dismissToast(toast.id)} />
+      ))}
+    </div>
+  );
+}
+
+export function ToastItem({ toast, onDismiss }: { toast: ToastEntry; onDismiss: () => void }) {
+  // An error stays long enough to read; anything else leaves after four and a half seconds unless it says otherwise.
+  const remainingMsRef = useRef(toast.durationMs ?? (toast.tone === "error" ? 9000 : 4500));
+  const startedAtRef = useRef(0);
+  const timerRef = useRef<number | null>(null);
+  const closedRef = useRef(false);
+  // The host re-renders whenever any toast arrives or leaves. Reading the
+  // latest props through a ref keeps this toast's timer from restarting
+  // then — including while it is paused under the pointer.
+  const latestRef = useRef({ toast, onDismiss });
+  latestRef.current = { toast, onDismiss };
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }, []);
+
+  const closeToast = useCallback((reason: ToastCloseReason) => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    clearTimer();
+    latestRef.current.toast.onClose?.(reason);
+    latestRef.current.onDismiss();
+  }, [clearTimer]);
+
+  const startTimer = useCallback(() => {
+    clearTimer();
+    startedAtRef.current = Date.now();
+    timerRef.current = window.setTimeout(() => closeToast("timeout"), remainingMsRef.current);
+  }, [clearTimer, closeToast]);
+
+  const pauseTimer = useCallback(() => {
+    if (timerRef.current === null) return;
+    window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    remainingMsRef.current = Math.max(400, remainingMsRef.current - (Date.now() - startedAtRef.current));
+  }, []);
+
+  useEffect(() => {
+    startTimer();
+    return clearTimer;
+  }, [clearTimer, startTimer]);
+
+  return (
+    <div className={`toast toast-${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"} onMouseEnter={pauseTimer} onMouseLeave={startTimer}>
+      {/* What kind of notice this is, at a glance: done, worth knowing, or went wrong. */}
+      <span className="toast-icon" aria-hidden="true">{toast.tone === "success" ? <CheckmarkCircle16Filled /> : toast.tone === "error" ? <ErrorCircle16Filled /> : <Info16Filled />}</span>
+      <span className="toast-text">{toast.text}</span>
+      {toast.actionLabel && toast.onAction ? (
+        <button
+          className="toast-action"
+          type="button"
+          onClick={() => {
+            toast.onAction?.();
+            closeToast("action");
+          }}
+        >
+          {toast.actionLabel}
+        </button>
+      ) : null}
+      <button className="toast-dismiss" type="button" onClick={() => closeToast("dismiss")} aria-label="Dismiss Notification" title="Dismiss">
+        <X size={14} />
+      </button>
+    </div>
+  );
+}

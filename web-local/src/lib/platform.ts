@@ -1,0 +1,46 @@
+import type { AppTypographyFont } from "../types";
+
+type DesktopPlatform = NodeJS.Platform | undefined;
+
+function desktopPlatform(): DesktopPlatform {
+  if (typeof window === "undefined") return undefined;
+  return window.workFoldDesktop?.app?.platform ?? previewPlatform();
+}
+
+/**
+ * The inert UI previews (`/?fixture=work-folder`, `/popover.html?fixture=agent`)
+ * draw the Mac app, the active desktop lane: Mac words, key glyphs, and window
+ * chrome. `&platform=browser` shows the plain browser rendering instead.
+ */
+function previewPlatform(): DesktopPlatform {
+  if (typeof window === "undefined" || window.workFoldDesktop) return undefined;
+  const params = new URLSearchParams(window.location.search);
+  const fixture = params.get("fixture");
+  if (fixture !== "work-folder" && fixture !== "agent") return undefined;
+  return params.get("platform") === "browser" ? undefined : "darwin";
+}
+
+function isMacOS(platform: DesktopPlatform = desktopPlatform()): boolean {
+  return platform === "darwin";
+}
+
+function typographyFontForPlatform(font: AppTypographyFont, platform: DesktopPlatform = desktopPlatform()): AppTypographyFont {
+  return isMacOS(platform) && font === "stable" ? "default" : font;
+}
+
+function desktopFileDragHint(path: string, platform: DesktopPlatform = desktopPlatform()): string {
+  if (platform === "darwin") return `${path} — drag to move, Option-drag to Finder`;
+  if (platform === "win32") return `${path} — drag to move, Alt+drag to File Explorer`;
+  return `${path} — drag to move`;
+}
+
+function workFolderEntryNativePath(rootPath: string, relativePath: string, platform: DesktopPlatform = desktopPlatform()): string {
+  if (!relativePath) return rootPath;
+  const separator = platform === "win32" ? "\\" : "/";
+  const root = rootPath.replace(/[\\/]+$/, "");
+  const segments = relativePath.split(/[\\/]+/).filter(Boolean);
+  return [root, ...segments].join(separator);
+}
+
+export { desktopFileDragHint, desktopPlatform, isMacOS, previewPlatform, typographyFontForPlatform, workFolderEntryNativePath };
+export type { DesktopPlatform };
