@@ -5,8 +5,8 @@
 > folder with its own Worker is a **Connected Folder**. This repository
 > started from work-fold's `bd420081` and `scripts/rebrand/rename.mjs` made
 > the rename; this plan keeps the old spellings on purpose as the record of
-> what changed. Still to do: the `.work-fold/` import, the app alias
-> decision, and the release setup (Order of work, steps 5 and 7).
+> what changed. Still to do: publish the AmpleFile build of the Chrome
+> extension, and the release setup (Order of work, steps 5 and 7).
 
 ## Decided names (2026-11-07)
 
@@ -263,12 +263,16 @@ The new repository should start from the finished file-manager tree without:
    Done 2026-11-07 with `scripts/rebrand/rename.mjs`, followed by hand fixes
    where code and prose meet (command names in help text and prompts, test
    regexes, and labels built from ids).
-5. Build the `.work-fold/` import and decide the app alias question.
-   Regenerate the reviewed pi-chrome patch
-   (`patches/included-tools/pi-chrome-0.15.51.patch`) so it reads
-   `globalThis.ampleFileChrome` and says "AmpleFile extension"; until then
-   the Chrome bootstrap keeps `globalThis.workFoldChrome`. The Chrome Web
-   Store id and key in the distribution are still work-fold's listing.
+5. Owner decision 2026-11-07: existing folders don't come along, so there
+   is no `.work-fold/` import and no alias for the old app globals.
+   The reviewed pi-chrome patch was regenerated the same day: it reads
+   `globalThis.ampleFileChrome` and says "AmpleFile extension", and the
+   extension version is 1.0.3. The extension people install comes from the
+   Chrome Web Store, and the published 1.0.2 still reaches the desktop
+   through `com.work_fold.chrome`, so the Chrome tool connects only after an
+   AmpleFile build is published (`npm run chrome:build`). The distribution
+   still names work-fold's listing (`src/shared/chrome-distribution.json`);
+   a new listing means a new store id and public key there.
 6. Run `npm run check`, `npm test`, and `inventory.mjs --check`. Done
    2026-11-07, with `npm run desktop:prepare`.
 7. Set up the new release repository, signing, and notarization profile, and

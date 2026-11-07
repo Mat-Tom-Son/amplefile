@@ -28,7 +28,7 @@ function fixture(saved: Record<string, unknown> = {}) {
     }, tabs: { async create(value: unknown) { tabs.push(value); } } },
   };
   vm.runInNewContext(source, sandbox);
-  return { saved, calls, tabs, access, api: (sandbox as any).workFoldChrome,
+  return { saved, calls, tabs, access, api: (sandbox as any).ampleFileChrome,
     respondWith(fn: typeof native) { native = fn; }, installed: (reason: string) => onInstalled({ reason }),
     send(action: string, sender = { id, url: origin + "popup.html" }) {
       return new Promise<any>(resolve => { const accepted = onMessage({ type: "amplefile.connection", action }, sender, resolve); if (!accepted) resolve(undefined); });

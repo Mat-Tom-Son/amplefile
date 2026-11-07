@@ -149,7 +149,7 @@ index 8ba0e2d..609e34c 100644
  const BRIDGE_URL = "http://127.0.0.1:17318";
 +let companionConfig;
 +function loadCompanionConfig() {
-+  if (globalThis.workFoldChrome) return globalThis.workFoldChrome.config();
++  if (globalThis.ampleFileChrome) return globalThis.ampleFileChrome.config();
 +  return companionConfig ??= fetch(chrome.runtime.getURL("host-config.json"))
 +  .then(async response => {
 +    if (!response.ok) throw new Error("Missing Chrome companion configuration. Reload the matching companion.");
@@ -165,7 +165,7 @@ index 8ba0e2d..609e34c 100644
 +}
  const CLIENT_NAME = `Pi Chrome Connector ${chrome.runtime.id}`;
  const POLL_ERROR_BACKOFF_MS = 2000;
-+const BRIDGE_PROTOCOL_VERSION = globalThis.workFoldChrome?.protocol.major ?? 2;
++const BRIDGE_PROTOCOL_VERSION = globalThis.ampleFileChrome?.protocol.major ?? 2;
 +let activeCommand;
 +
 +function assertCommandActive() {
@@ -601,7 +601,7 @@ index 8ba0e2d..609e34c 100644
  
  chrome.runtime.onInstalled.addListener(() => {
 -  chrome.action.setBadgeText({ text: "pi" });
-+  chrome.action.setBadgeText({ text: globalThis.workFoldChrome ? "" : "pi" });
++  chrome.action.setBadgeText({ text: globalThis.ampleFileChrome ? "" : "pi" });
    chrome.action.setBadgeBackgroundColor({ color: "#4f46e5" });
    armKeepaliveAlarm();
    void pollLoop();
@@ -622,7 +622,7 @@ index 8ba0e2d..609e34c 100644
 -      }
 -      const payload = await response.json();
 +      const headers = await companionHeaders();
-+      const compatibility = globalThis.workFoldChrome?.protocol;
++      const compatibility = globalThis.ampleFileChrome?.protocol;
 +      const suffix = compatibility ? `&minor=${compatibility.minor}&capabilities=${encodeURIComponent(JSON.stringify(compatibility.capabilities))}` : "";
 +      // A half-open socket must not pin `polling` forever after sleep/wake.
 +      // This deadline owns only the long poll and its body, never a command.
@@ -633,7 +633,7 @@ index 8ba0e2d..609e34c 100644
 +        const response = await fetch(`${BRIDGE_URL}/next-v2?name=${encodeURIComponent(CLIENT_NAME)}&protocol=${BRIDGE_PROTOCOL_VERSION}&version=${encodeURIComponent(chrome.runtime.getManifest().version)}${suffix}`, {
 +          cache: "no-store", headers, signal: controller.signal,
 +        });
-+        await globalThis.workFoldChrome?.response(response, headers["x-pi-chrome-connection"]);
++        await globalThis.ampleFileChrome?.response(response, headers["x-pi-chrome-connection"]);
 +        if (!response.ok) throw new Error(`bridge /next HTTP ${response.status}`);
 +        payload = await response.json();
 +      } finally { clearTimeout(timer); }
@@ -1371,7 +1371,7 @@ index 1917956..c964cc4 100644
 -			return `Timed out after ${timeoutMs}ms: the Chrome extension received the command but never returned a result. The action may be long-running, or the result post failed. Run /chrome doctor; if it persists, reload 'Pi Chrome Connector' at chrome://extensions.`;
 +			return `Timed out after ${timeoutMs}ms: the Chrome extension received the command but never returned a result. ${UNCERTAIN_EFFECT} Run /chrome doctor to check connectivity.`;
  		}
-+        if (this.connection && (pollAgeMs === undefined || pollAgeMs > 60_000)) return "Chrome is not connected. Open Chrome and check its work-fold extension.";
++        if (this.connection && (pollAgeMs === undefined || pollAgeMs > 60_000)) return "Chrome is not connected. Open Chrome and check its AmpleFile extension.";
  		if (pollAgeMs === undefined || pollAgeMs > 60_000) {
  			return `Timed out after ${timeoutMs}ms: the Chrome extension is not polling (last seen ${pollAgeMs === undefined ? "never" : Math.round(pollAgeMs / 1000) + "s ago"}). Run /chrome onboard, then load the bundled browser-extension folder in your normal Chrome profile and keep that Chrome window open.`;
  		}

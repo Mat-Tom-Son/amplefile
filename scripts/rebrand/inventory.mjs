@@ -122,8 +122,6 @@ export function collect() {
         // website and hosted services, and the builds that used them.
         // A quoted old name ("work-folder") is a dated quotation.
         const after = region.value.slice(match.index + token.length);
-        // The reviewed pi-chrome patch still reads globalThis.workFoldChrome.
-        if (token === "workFoldChrome") continue;
         if (/^work-fold\.com$/i.test(token) || (/^work-fold$/i.test(token) && /^(?: repositor|'s (?:Web Access|page service)| builds)/.test(after))) continue;
         if (region.value[match.index - 1] === '"' && after[0] === '"' && region.cls === "doc") continue;
         const parts = wordParts(token);

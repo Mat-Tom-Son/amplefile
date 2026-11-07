@@ -1,10 +1,13 @@
 # Chrome extension distribution
 
-Status: published in the Chrome Web Store as
-[AmpleFile](https://chromewebstore.google.com/detail/ophmjbphcjmjcpcdpmfehbldiomkepgk)
-(item `ophmjbphcjmjcpcdpmfehbldiomkepgk`), which the desktop setup and the
-website's **Add AmpleFile to Chrome** link open. Each extension update goes
-through Google's review before Chrome delivers it.
+Status: the Chrome Web Store item
+[`ophmjbphcjmjcpcdpmfehbldiomkepgk`](https://chromewebstore.google.com/detail/ophmjbphcjmjcpcdpmfehbldiomkepgk)
+is still work-fold's companion, version 1.0.2, which reaches the desktop
+through the native host `com.work_fold.chrome`. AmpleFile pins the AmpleFile
+build, 1.0.3 (`com.amplefile.chrome`), so the Chrome tool connects only after
+1.0.3 is published, to this item or to a new AmpleFile listing whose id and
+public key replace the ones in `src/shared/chrome-distribution.json`. Each
+extension update goes through Google's review before Chrome delivers it.
 
 ## Installation and updates
 
@@ -87,7 +90,7 @@ desktop observes compatible polls, accepted results and active-command
 heartbeats rather than mistaking a long operation for a lost connection.
 Desktop status refreshes do
 not upgrade an installed extension. A companion-side fix ships as a new Store
-version (the app currently pins companion 1.0.2 in
+version (the app currently pins companion 1.0.3 in
 `src/shared/chrome-distribution.json`); after Google approves it, Chrome
 updates installed copies on its own schedule, and the bridge version check
 asks for **Update Chrome extension** when an older companion lacks a required

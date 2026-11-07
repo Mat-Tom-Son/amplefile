@@ -5,7 +5,7 @@
     "source": "https://github.com/tianrendong/pi-chrome/tree/4811ee616d2bbd5ead669a7e2f33a0bb14bd43ef",
     "license": "MIT",
     "patch": "pi-chrome-0.15.51.patch",
-    "sha256": "ebe9d71f6131de73e264b6030f9f701dea7879c051521e8f75ed6c1134bdb9fe",
+    "sha256": "8d7c260381879be00b8f29673e0bb1fc9fc5e8a94401d31e11e8e50aa6b0ba39",
     "files": [
       {
         "path": "docs/EMBEDDED-HOST.md",
@@ -25,7 +25,7 @@
       {
         "path": "extensions/chrome-profile-bridge/browser-extension/service_worker.js",
         "before": "ac1e346d88aaa684d1998b17f899c4b50077d27f01eeb1a3393649013643ee3f",
-        "after": "2f1d0bcb813812458378766678b64f2054ac4d8cc12018b9f593a2f7e3a2a973"
+        "after": "f12a08df45a1493cd052cd8861a38566dfb68238ac218c14a7ae1cd6c3a24b68"
       },
       {
         "path": "extensions/chrome-profile-bridge/browser-extension/snapshot_injected.js",
@@ -35,7 +35,7 @@
       {
         "path": "extensions/chrome-profile-bridge/index.ts",
         "before": "fc38900ea5f9d8e7bb8b1988ff6e172d49c24e50213f9c8905d689187728d187",
-        "after": "38cb7226db4352804389764f74bb4fbbc75afe37f96e9e02bd5ce7dcbfd4484b"
+        "after": "a524c545b731c7d048b139ae19985ebe7095621dc8532b76717eadcffacbc33f"
       },
       {
         "path": "package.json",

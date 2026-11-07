@@ -78,9 +78,7 @@ importScripts("connection-config.js");
     if (!lease) throw new Error("Chrome is not connected.");
     return lease;
   }
-  // The reviewed pi-chrome patch reads this global by its old name until
-  // that patch is regenerated (docs/rebrand-plan.md).
-  globalThis.workFoldChrome = {
+  globalThis.ampleFileChrome = {
     protocol: config.bridge,
     async config() {
       const active = await connection();
