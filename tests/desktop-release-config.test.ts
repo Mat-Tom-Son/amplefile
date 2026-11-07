@@ -132,7 +132,7 @@ test("background CI tests every PR/main file in four shards and verifies source 
       return step.run;
     });
   });
-  for (const gate of ["npm run check", "npm test -- --shard=${{ matrix.shard }}/4", "npm test --prefix services/bridge", "npm run desktop:prepare"]) {
+  for (const gate of ["npm run check", "npm test -- --shard=${{ matrix.shard }}/4", "npm run desktop:prepare"]) {
     assert.ok(commands.includes(gate), `${gate} remains a required gate`);
   }
   assert.deepEqual(workflow.jobs.tests.strategy.matrix.shard, [1, 2, 3, 4]);

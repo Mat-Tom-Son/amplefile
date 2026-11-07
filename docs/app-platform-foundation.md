@@ -156,7 +156,7 @@ The complete definitions and journey tests live in
     CLI protocol v1 remains read-only; the separately authenticated act lane
     owns receipted management operations. Web Access, with its paired-browser
     app views and browser-requested app actions, was removed from the desktop
-    on 2026-11-07 ([archived contract](archive/browser-apps.md)); no browser
+    on 2026-11-07 (the contract is archived in the work-fold repository); no browser
     surface reaches installed apps.
 15. **Legacy product state is outside the platform.** work-fold does not import,
     migrate, parse, mutate, or delete the legacy Workspace profile, portable
@@ -351,9 +351,9 @@ policy migrations instead of pretending to support them.
 ## Evidence gates
 
 The four semantic paper gates are accepted as the design contract. The required
-lease, cadence/clock, and offline-expiry experiments have also passed; see
-[App platform runtime spike evidence](archive/app-platform-runtime-spike-evidence.md)
-for the demonstrated invariants and honest limits.
+lease, cadence/clock, and offline-expiry experiments have also passed; App
+platform runtime spike evidence (archived in the work-fold repository) records the
+demonstrated invariants and honest limits.
 
 - **Gate 1:** ontology, identities, ownership, local no-account forms, and the
   eleven journeys;

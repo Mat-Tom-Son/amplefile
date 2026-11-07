@@ -3,7 +3,7 @@
 > **Status:** Contract, 2026-11-05; Publish removed 2026-11-07. Pages are
 > built, previewed, and their entries explored inside work-fold, on this
 > computer. Nothing in this document uploads anything. The earlier plan to put
-> pages online is [archived](archive/online-pages-plan.md).
+> pages online is archived in the work-fold repository.
 
 A **page** is a small interactive web page kept in a folder: an announcement,
 an RSVP form, a sign-up sheet, a poll. It runs in its page tab on this
@@ -226,9 +226,7 @@ the declaration) or delete rows.
 - The rules engine (declaration parsing, validation of values, rule checks,
   additive schema updates, row operations) is plain TypeScript over a small
   SQL interface (`exec`, `run`, `all`, `get` with bound parameters). It lives
-  under `src/shared/pages/`. The separately deployed page service in
-  `services/pages/` still bundles it; the desktop never connects to that
-  service. The Node adapter uses the built-in `node:sqlite`
+  under `src/shared/pages/`. The Node adapter uses the built-in `node:sqlite`
   (`DatabaseSync`), available in Node 24 and Electron 42.
 - Work-fold's own columns on every table: `_id` (text), `_visitor` (text),
   `_created`, `_updated`, `_deleted` (ISO timestamps; `_deleted` null when

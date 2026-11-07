@@ -49,20 +49,6 @@ jobs:
       - run: npm ci
       - run: npm test -- --shard=${{ matrix.shard }}/4
 
-  bridge:
-    name: Web bridge tests
-    runs-on: macos-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: services/bridge/package-lock.json
-      - run: npm ci --prefix services/bridge
-      - run: npm test --prefix services/bridge
-
   desktop:
     name: Electron integration
     runs-on: macos-latest

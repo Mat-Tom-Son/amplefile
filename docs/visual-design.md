@@ -4,10 +4,10 @@ work-fold uses a quiet desktop-tool aesthetic. The interface should feel native,
 
 ## Brand
 
-- The mark ships from the designer icon pack in `desktop/assets/brand/pack/`: one vector master with an optically simplified small-size variant, exported per platform (tiled macOS/Windows app icons, bare-cube transparents, monochrome ladders, and the tab-ready menu-bar template). Lockups are the provided horizontal artwork as single images — black on light themes, white on dark — never stitched from separate cube and wordmark pieces. The installers (`npm run desktop:icons`, `node scripts/generate-bridge-web-icons.mjs`, `node scripts/sync-bridge-fonts.mjs`) are copy-and-verify; no surface keeps a private or redrawn copy of the mark.
+- The mark ships from the designer icon pack in `desktop/assets/brand/pack/`: one vector master with an optically simplified small-size variant, exported per platform (tiled macOS/Windows app icons, bare-cube transparents, monochrome ladders, and the tab-ready menu-bar template). Lockups are the provided horizontal artwork as single images — black on light themes, white on dark — never stitched from separate cube and wordmark pieces. The installer (`npm run desktop:icons`) is copy-and-verify; no surface keeps a private or redrawn copy of the mark.
 - The palette pairs deep navy ink (`#0e386c` brand navy, `#1c2530` body ink) with the bright blue interactive accent (`#0b6fd6` on light fields, `#1ea0ff` on dark), and reserves the cube's teal `#22cfc6`, green `#46d586`, and gold `#f6b516` for semantic and illustrative moments. The Original light palette builds on the `#e9eae6` neutral field; the Original dark palette builds on charcoal (`#202425` canvas). Filled accent controls use the paired contrast color, never white-on-bright-blue.
 - In-app lockups pair the mark with the product name set in Poppins — the bubble wordmark art is reserved for marketing surfaces (the landing page, the OG image, the DMG background).
-- Tokens live in `web-local/src/brand.css` and `web-local/src/styles.css` (desktop shell), `web-local/src/popover/popover.css` (the work-fold agent popover), and `services/bridge/public/app.css` (the separately deployed web client, which the desktop no longer connects to); `tests/work-fold-brand.test.ts` guards the contract.
+- Tokens live in `web-local/src/brand.css` and `web-local/src/styles.css` (desktop shell) and `web-local/src/popover/popover.css` (the work-fold agent popover); `tests/work-fold-brand.test.ts` guards the contract.
 
 ## Information hierarchy
 

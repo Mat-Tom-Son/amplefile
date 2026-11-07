@@ -15,7 +15,7 @@ const kebab = (name: string) => name.replace(/[A-Z]/g, (letter) => `-${letter.to
 // A rename that changes `dataset.someId` but not the `data-some-id` attribute
 // leaves the reader with undefined and the control silently dead. Each tree is
 // its own page, so an attribute in one never satisfies a reader in the other.
-for (const [tree, pattern] of [["services/bridge/public", /\.(?:js|html)$/], ["web-local/src", /\.(?:tsx?|html)$/]] as const) {
+for (const [tree, pattern] of [["web-local/src", /\.(?:tsx?|html)$/]] as const) {
   test(`every dataset value read in ${tree} is written as a data attribute there`, async () => {
     const files = await sourceFiles(tree, pattern);
     const sources = await Promise.all(files.map(async (file) => [file, await readFile(file, "utf8")] as const));

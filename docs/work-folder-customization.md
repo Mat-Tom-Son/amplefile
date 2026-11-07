@@ -5,8 +5,9 @@ smaller than a CSS theme engine: people and agents may choose bounded identity v
 continues to own navigation, permission UI, native chrome, hit targets, accessibility, and layout
 integrity.
 
-Read [the historical role inventory](archive/customization-role-inventory.md) for the original CSS audit and
-[the visual system](visual-design.md) for the invariant shell rules.
+Read [the visual system](visual-design.md) for the invariant shell rules. The
+historical role inventory with the original CSS audit is archived in the
+work-fold repository.
 
 ## Person-facing experience
 

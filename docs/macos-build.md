@@ -247,8 +247,8 @@ npm run desktop:release:mac:check
 npm run desktop:release:mac:check -- --status
 ```
 
-The first command runs fresh root and bridge `npm ci`, `npm run check`, the
-complete `npm test`, bridge tests, and `npm run desktop:prepare`. Fresh installs
+The first command runs a fresh `npm ci`, `npm run check`, the complete
+`npm test`, and `npm run desktop:prepare`. Fresh installs
 explicitly enable permitted scripts and development dependencies, reject dry-run
 behavior, and use `/bin/sh`; the check also clears test-filter environment flags.
 Only success writes `out/release-checks/local-verification.json`, binding the

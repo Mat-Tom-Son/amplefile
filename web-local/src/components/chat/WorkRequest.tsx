@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from "react";
-import { readQuestionDraft, writeQuestionDraft, clearQuestionDraft } from "../../../../services/bridge/public/question-drafts.js";
+import { readQuestionDraft, writeQuestionDraft, clearQuestionDraft } from "../../lib/question-drafts.js";
 import type { WorkQuestionView, WorkRequestView } from "../../../../src/shared/request-presentation";
 import { useWorkRequest } from "../../hooks/useWorkRequest";
 

@@ -8,10 +8,8 @@ import { computeReleaseFingerprint } from "./mac-release-state.mjs";
 
 export const LOCAL_VERIFICATION_STAGES = Object.freeze([
   { id: "dependencies", args: ["ci", "--ignore-scripts=false", "--dry-run=false", "--include=dev"] },
-  { id: "bridge-dependencies", args: ["ci", "--prefix", "services/bridge", "--ignore-scripts=false", "--dry-run=false", "--include=dev"] },
   { id: "check", args: ["run", "check"] },
   { id: "test", args: ["test"] },
-  { id: "bridge-test", args: ["test", "--prefix", "services/bridge"] },
   { id: "desktop", args: ["run", "desktop:prepare"] },
 ]);
 
@@ -156,7 +154,7 @@ export function assertVerifiedBuildOrder(state, receipt) {
 }
 
 async function dependencyReceipts(rootDir) {
-  return Promise.all(["node_modules/.package-lock.json", "services/bridge/node_modules/.package-lock.json"].map(path => fileReceipt(rootDir, join(rootDir, path))));
+  return Promise.all(["node_modules/.package-lock.json"].map(path => fileReceipt(rootDir, join(rootDir, path))));
 }
 
 async function fileReceipt(rootDir, path) {

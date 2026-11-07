@@ -17,7 +17,7 @@ import {
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "work-fold-local-verification-"));
-  for (const directory of ["node_modules", "services/bridge/node_modules"]) {
+  for (const directory of ["node_modules"]) {
     await mkdir(join(root, directory), { recursive: true });
     await writeFile(join(root, directory, ".package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }));
   }
@@ -148,7 +148,7 @@ test("missing, partial, reordered, non-successful, and changed-command receipts 
 });
 
 test("changing either installed dependency lock or any stage log invalidates local evidence", async (t) => {
-  for (const dependency of ["node_modules/.package-lock.json", "services/bridge/node_modules/.package-lock.json"]) {
+  for (const dependency of ["node_modules/.package-lock.json"]) {
     const f = await fixture();
     t.after(f.close);
     await runLocalReleaseVerification(f.root, f.options);

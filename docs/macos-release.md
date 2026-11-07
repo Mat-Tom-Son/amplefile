@@ -102,10 +102,8 @@ artifacts, or metadata.
    It executes these stages in order:
 
    - `npm ci`;
-   - `npm ci --prefix services/bridge`;
    - `npm run check`;
    - the complete unsharded `npm test`;
-   - `npm test --prefix services/bridge`;
    - `npm run desktop:prepare`.
 
    Success writes ignored `out/release-checks/local-verification.json` with the

@@ -34,9 +34,7 @@ written to the pack and installed asset locations (`tests/work-fold-brand.test.t
 enforces both contracts):
 
 ```
-npm run desktop:icons                        # desktop icons + DMG background
-node scripts/generate-bridge-web-icons.mjs   # bridge web icons, lockups, og-image
-node scripts/sync-bridge-fonts.mjs           # bridge webfonts from @fontsource
+npm run desktop:icons   # desktop icons + DMG background
 ```
 
 The Electron `web-local/index.html` and `popover.html` favicons are base64

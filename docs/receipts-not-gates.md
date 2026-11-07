@@ -11,7 +11,7 @@
 > **Retired 2026-11-05 (owner decision):** desktop-served sharing — the
 > `pages` share verbs this record made direct, Settings → Shared pages, and
 > the viewers they served — was removed, so no outward exposure exists today.
-> The [Online pages plan](archive/online-pages-plan.md) proposed its replacement.
+> The Online pages plan (archived in the work-fold repository) proposed its replacement.
 >
 > **Removed 2026-11-07 (owner decision):** Web Access and Publish left the
 > desktop. The paired web client, browser pairing, remote address enrollment,
@@ -235,7 +235,7 @@ never says staged, card, approve, policy, or mode.
 
 ## The collaboration primitives, amended
 
-[assistant-collaboration-plan.md](archive/assistant-collaboration-plan.md) remains the
+The assistant collaboration plan (archived in the work-fold repository) remains the
 design for durable requests, typed results, questions, and declared
 actions. Under this record it is amended as follows and built as the second
 wave:

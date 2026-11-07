@@ -489,10 +489,9 @@ surfaces; restricted app bridges receive no new access.
 Web Access was removed from the desktop on 2026-11-07. There is no address
 enrollment, browser pairing, browser grant, relay client, remote management
 facade, remote file preview, remote upload staging, or browser-requested app
-action. The bridge in `services/bridge` is still in the repository and deployed
-separately; the desktop never connects to it. The archived
-[browser app views](archive/browser-apps.md) and
-[file previews](archive/browser-file-previews.md) record the earlier contract.
+action. The hosted bridge stayed with the work-fold repository; the desktop
+never connects to it. The browser app views and file previews contracts,
+archived in the work-fold repository, record the earlier design.
 
 ### Act command behavior
 
@@ -619,7 +618,7 @@ Automation declaration version 3 adds `files-changed` with an explicit folder, r
 
 *Amended 2026-10-11 (owner decision):* declaration version 5 adds an optional `"ifMissed": "run"` to `files-changed`. Such an automation keeps a machine-local metadata snapshot under `automations/folder-snapshots/` and, after work-fold was closed, the computer slept, the automation was off, or the folder could not be watched, starts one coalesced run for the files added or changed in that gap — never a backlog. Its run cause adds `catchUp: {reason, count}` to the existing `files-changed` shape (`automations receipts --json`), `automations show` and the trigger ref in `automations list|show --json` carry `ifMissed`, and Settings reports the waiting and last catch-up. Edits made while an automation runs are still never replayed. `work-fold help automations` now shows a version-5 example. Versions 1–4 parse unchanged, with unchanged digests.
 
-Desktop and CLI History restores reserve affected work-folder work through completion and consult the same automation/app-automation blockers. Provider setup/removal uses the global capability fence, so changing a provider cannot silently stop accepted Chats or Checks. CI includes the hosted bridge's own test suite as well as root tests and desktop preparation.
+Desktop and CLI History restores reserve affected work-folder work through completion and consult the same automation/app-automation blockers. Provider setup/removal uses the global capability fence, so changing a provider cannot silently stop accepted Chats or Checks.
 
 ### Receipts, not gates (2026-09-10)
 

@@ -8,7 +8,6 @@ const root = process.cwd();
 const asset = (name: string) => join(root, "desktop", "assets", name);
 const brandAsset = (name: string) => join(root, "desktop", "assets", "brand", name);
 const packAsset = (name: string) => join(root, "desktop", "assets", "brand", "pack", name);
-const bridgeAsset = (name: string) => join(root, "services", "bridge", "public", name);
 const rendererAsset = (name: string) => join(root, "web-local", "src", "assets", "brand", name);
 const read = (path: string) => readFile(join(root, path), "utf8");
 
@@ -41,15 +40,10 @@ test("the canonical brand sources are the designer icon pack and lockups", async
     assert.ok(summary.width > summary.height * 2.4, `the ${tone} lockup must keep its horizontal geometry`);
   }
 
-  const [generator, bridgeGenerator] = await Promise.all([
-    read("scripts/generate-desktop-icons.mjs"),
-    read("scripts/generate-bridge-web-icons.mjs"),
-  ]);
+  const generator = await read("scripts/generate-desktop-icons.mjs");
   assert.match(generator, /WorkFold\.icns/);
   assert.match(generator, /WorkFold\.ico/);
   assert.match(generator, /WorkFoldTemplate-source\.png/);
-  assert.match(bridgeGenerator, /favicon-32x32\.png/);
-  assert.match(bridgeGenerator, /lockup-horizontal-black/);
 
   // Neither redrawn marks nor the pre-pack raster cuts may linger as second
   // sources of truth.
@@ -60,9 +54,6 @@ test("the canonical brand sources are the designer icon pack and lockups", async
     brandAsset("wordmark-color.png"),
     brandAsset("lockup-stacked-color.png"),
     asset("work-fold-icon-source.svg"),
-    bridgeAsset("work-fold-icon.svg"),
-    bridgeAsset("work-fold-mark.svg"),
-    bridgeAsset("brand-wordmark.png"),
   ]) {
     await assert.rejects(access(retired));
   }
@@ -108,64 +99,6 @@ test("installed desktop icons are byte-for-byte pack exports", async () => {
     const components = await opaqueComponentSizes(asset(name));
     assert.equal(components.length, 3, `${name} must keep all three fold faces visually separated`);
     assert.ok(components.every((componentSize) => componentSize >= (size === 18 ? 30 : 120)), `${name} must not contain stray opaque fragments`);
-  }
-});
-
-test("the web surfaces ship the same pack exports", async () => {
-  for (const [installed, packSource] of [
-    ["icon-192.png", "web/icon-192.png"],
-    ["icon-512.png", "web/icon-512.png"],
-    ["icon-maskable-512.png", "web/icon-maskable-512.png"],
-    ["apple-touch-icon.png", "web/apple-touch-icon.png"],
-    ["favicon-32.png", "web/favicon-32x32.png"],
-    ["favicon.ico", "web/favicon.ico"],
-    ["brand-mark.png", "png/transparent/work-fold-icon-256.png"],
-  ] as const) {
-    await assertBytesEqual(bridgeAsset(installed), packAsset(packSource), `${installed} must be the pack export exactly`);
-  }
-
-  // The bridge and the desktop renderer bundle identical lockup bytes.
-  for (const tone of ["black", "white"] as const) {
-    await assertBytesEqual(
-      bridgeAsset(`brand-lockup-${tone}.png`),
-      rendererAsset(`work-fold-lockup-${tone}.png`),
-      `the ${tone} lockup must be identical on both surfaces`,
-    );
-    const metadata = await sharp(bridgeAsset(`brand-lockup-${tone}.png`)).metadata();
-    assert.equal(metadata.height, 192, `the ${tone} lockup ships at the shared 192px height`);
-  }
-
-  const og = await sharp(bridgeAsset("og-image.png")).metadata();
-  assert.equal(og.width, 1200);
-  assert.equal(og.height, 630);
-
-  const [indexHtml, manifest, appCss] = await Promise.all([
-    read("services/bridge/public/index.html"),
-    read("services/bridge/public/manifest.webmanifest"),
-    read("services/bridge/public/app.css"),
-  ]);
-  assert.match(indexHtml, /name="theme-color" media="\(prefers-color-scheme: light\)" content="#ffffff"/);
-  assert.match(indexHtml, /name="theme-color" media="\(prefers-color-scheme: dark\)" content="#212121"/);
-  assert.match(indexHtml, /<link rel="icon" href="\/favicon-32\.png" type="image\/png" sizes="32x32" \/>/);
-  assert.match(indexHtml, /property="og:image" content="https:\/\/www\.work-fold\.com\/og-image\.png"/);
-  assert.match(indexHtml, /name="twitter:card" content="summary_large_image"/);
-  assert.match(manifest, /"background_color": "#ffffff"/);
-  assert.match(manifest, /"theme_color": "#ffffff"/);
-
-  // Brand typography is self-hosted: Inter Variable for text, Poppins for
-  // display headings, declared in app.css and committed under /fonts.
-  assert.match(appCss, /font-family: "Inter Variable";/);
-  assert.match(appCss, /font-family: "Poppins";/);
-  assert.match(appCss, /--accent: #0b6fd6;/);
-  assert.match(appCss, /--accent: #1ea0ff;/);
-  assert.match(appCss, /--font-display: "Poppins"/);
-  for (const font of [
-    "inter-latin-wght-normal.woff2",
-    "inter-latin-wght-italic.woff2",
-    "poppins-latin-600-normal.woff2",
-  ]) {
-    await access(join(root, "services", "bridge", "public", "fonts", font));
-    assert.match(appCss, new RegExp(font.replace(/[.-]/g, (c) => `\\${c}`)));
   }
 });
 

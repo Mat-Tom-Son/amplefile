@@ -18,7 +18,7 @@ rail), [the work-fold agent and CLI](work-fold-agent-and-cli.md) (the verificati
 canon does not carry: the trigger vocabulary and its exclusions, the
 declaration and step contracts, the executor's failure semantics, the
 lifecycle and five-questions record, and the bounds. The promotion record is
-[Fold integration](archive/fold-integration.md).
+Fold integration (archived in the work-fold repository).
 
 **Amended 2026-09-10** by [Receipts, not gates](receipts-not-gates.md) (F23):
 enablement is one receipted call, `chat` and `fold` messages accept a closed
@@ -509,7 +509,7 @@ records — after durable persistence, fire-and-forget, failure-isolated —
 through the settle-signal seam (`src/local/automations/settle-signal.ts`)
 attached at the Check service's terminal-persistence funnel and the
 restricted-app `onResult` funnel; the seam has one owner (reconciliation 8
-in [Fold integration](archive/fold-integration.md)). Settle records carry lineage,
+in Fold integration, archived in the work-fold repository). Settle records carry lineage,
 so automation-caused runs are dropped at evaluation; settles during suspension
 are not queued. Automation runs register as the experimental kernel task kind
 `automation_run`, excluded from stable protocol-v1 task projections like
@@ -682,7 +682,7 @@ The plan items shipped as follows:
 7. Enablement wiring (superseded by 12) — the original gated enablement path; `tests/work-fold-automation-service.test.ts`.
 8. work-fold agent instruction teaching — `src/local/work-fold-agent-instructions.ts`; `tests/work-fold-agent-conversation.test.ts`.
 9. Settings surface and overview projection — `web-local/`; `tests/automations-settings-ui.test.ts`, `tests/automations-settings-api.test.ts`, `tests/web-ui-contract.test.ts`, `tests/frontend-interaction-contract.test.ts`.
-10. Docs promotion — recorded in [Fold integration](archive/fold-integration.md).
+10. Docs promotion — recorded in Fold integration (archived in the work-fold repository).
 11. Version-2 one-time scheduling and schema migration — `src/local/agent/work-fold-scheduler-service.ts`, `src/local/automations/`; `tests/work-fold-scheduler-service.test.ts`, `tests/work-fold-automation-declarations.test.ts`, `tests/work-fold-automation-store.test.ts`, `tests/work-fold-automation-service.test.ts`.
 12. Receipts-not-gates: direct `automations enable`, version-4 placeholders and the `fold` step (now `agent`), raised defaults — `src/local/automations/`, `src/local/server.ts`; `tests/work-fold-automation-*.test.ts`, `tests/automations-settings-api.test.ts`, `tests/automations-settings-ui.test.ts`.
 13. Pending proposals in Settings and the work-folder filter (2026-09-24) — `src/local/automations/automation-proposal-scan.ts`, the `automationSettings` facade in `src/local/server.ts`, `work-fold:automations:proposals` and `work-fold:automations:enable-proposal` in `desktop/src/`, `web-local/src/components/modals/AutomationsPane.tsx`; `tests/work-fold-automation-proposal-scan.test.ts`, `tests/automations-settings-api.test.ts`, `tests/automations-settings-ui.test.ts`.

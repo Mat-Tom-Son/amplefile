@@ -168,7 +168,7 @@ test("matching workflow runs and required jobs are fully paginated", async () =>
   );
   await verifyReleaseCi({ ...options, api: f.api });
   assert.ok(f.calls.some((path) => path.includes("/7/runs?") && path.endsWith("page=2")));
-  assert.ok(f.calls.some((path) => path.includes("/11/attempts/1/jobs?") && path.endsWith("page=4")));
+  assert.ok(f.calls.some((path) => path.includes("/11/attempts/1/jobs?") && path.endsWith(`page=${Math.ceil(MAIN_CI_JOBS.length / 2)}`)));
 });
 
 test("a fresh successful push cannot erase a previous failed candidate with the same commit and tag", async () => {

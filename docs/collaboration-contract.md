@@ -6,7 +6,7 @@ technical `work-folder`, `fold`, and `automation` record and command names.
 
 > **Status:** Accepted 2026-09-11 (owner decision) as the wave B build
 > specification under [Receipts, not gates](receipts-not-gates.md). It turns
-> the design in [agent collaboration and app AI primitives](archive/assistant-collaboration-plan.md)
+> the design in agent collaboration and app AI primitives (archived in the work-fold repository)
 > into concrete verbs, records, and defaults. Where this document and that
 > plan differ, this document governs; where this document and the receipts
 > record differ, the receipts record governs.
@@ -160,7 +160,7 @@ graph, receipts, and Stop above.
   to recover applicable completed evidence first, then recheck changed sources,
   dynamic state, missing coverage and unresolved concerns. Compaction alone
   does not invalidate completed verification. Nothing is written to the
-  session (docs/archive/helper-tool-experiment.md).
+  session (helper tool experiment, archived in the work-fold repository).
 
 - **Progress and evidence recovery.** `progress` retains bounded completed-tool
   observations and agent-authored findings in the existing machine-local Pi

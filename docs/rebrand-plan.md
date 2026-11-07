@@ -230,14 +230,17 @@ hand work to its children without the agent above.
 
 The new repository should start from the finished file-manager tree without:
 
-- `services/bridge` and `services/pages`, which the desktop no longer uses.
-  They stay deployed from this repository until someone decides to turn them
+- `services/bridge` and `services/pages`, which the desktop no longer uses,
+  with the Railway helpers that deployed them. Done 2026-11-07: they stay
+  deployed from the work-fold repository until someone decides to turn them
   off.
 - The October migrations for the older Workspace and "Space" names
   (`src/local/vocabulary-migration*`, `web-local/src/lib/storage-migration.ts`)
   and the read-only tolerance for retired record shapes. A new app has no such
   state.
-- The inactive Windows lanes, `docs/archive/`, and `docs/releases/`.
+- `docs/archive/` and `docs/releases/`. Done 2026-11-07: they stay in the
+  work-fold repository.
+- The inactive Windows lanes.
 - Decide separately: the classic layout, App Studio and apps, and page folders,
   which the file manager leaves out today.
 

@@ -9,7 +9,7 @@ promoted on 2026-08-11 into [the work-fold agent decision register](work-fold-ag
 (surface placement). This document retains what canon does not carry: the
 closed source inventory, the section and ordering rules, the marker
 contract, and the non-goals. The promotion record is
-[Fold integration](archive/fold-integration.md).
+Fold integration (archived in the work-fold repository).
 
 **Amended 2026-09-10** by [Receipts, not gates](receipts-not-gates.md) (F24):
 **Needs you** carries recorded questions, due snoozes, and requests waiting
@@ -249,8 +249,8 @@ The plan items shipped as follows:
 7. Shared renderer — removed; `web-local/src/popover/OverviewSection.tsx` was unmounted on 2026-09-23 and deleted on 2026-10-10, and `tests/work-fold-agent-popover-refresh.test.ts` pins its absence.
 8. Remote surface — shipped, then removed with Web Access on 2026-11-07.
 9. Main-window panel — shipped, then removed on 2026-09-23; `tests/frontend-interaction-contract.test.ts` pins its absence.
-10. Documentation promotion — recorded in [Fold integration](archive/fold-integration.md).
-11. Receipts-not-gates (2026-09-10, F24) — needs-you reduced to questions and due snoozes, the removed source and its change kind dropped, the remote screen's allow controls removed — `src/local/overview.ts`, `services/bridge/`; `tests/work-fold-overview.test.ts`, the bridge suite.
+10. Documentation promotion — recorded in Fold integration (archived in the work-fold repository).
+11. Receipts-not-gates (2026-09-10, F24) — needs-you reduced to questions and due snoozes, the removed source and its change kind dropped, the remote screen's allow controls removed — `src/local/overview.ts`; `tests/work-fold-overview.test.ts`.
 12. Collaboration contract (2026-09-11, F25/F27/F28) — the request source read from the durable request store, running items folded from the request and the turns it started, one needs-you item per open question the person owns, and settled items covering `partial` and `expired` — `src/local/overview.ts`; `tests/work-fold-overview.test.ts`.
 
 ## Deliberately not in this design

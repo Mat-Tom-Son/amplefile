@@ -14,8 +14,6 @@
   <a href="docs/README.md">Docs</a>
 </p>
 
-![A work-fold work-folder: project files beside a Worker comparing vendor estimates](services/bridge/public/screens/desktop-work-folder.jpg)
-
 work-fold is an open-source Mac app that brings your files, AI conversations, and project tools together. Open a folder, tell its Worker what you need, and work on the actual files. Research, writing, planning, code—whatever belongs in that folder.
 
 For example: open a folder of vendor quotes, ask for a comparison, and have the Worker write a decision brief beside the originals. Come back tomorrow and pick up the same conversation.

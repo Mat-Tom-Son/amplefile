@@ -124,8 +124,7 @@ test("the popover composer behaves like every other work-fold composer", async (
   const popover = await readFile(resolve(rootDir, "web-local/src/popover/PopoverApp.tsx"), "utf8");
   const css = await readFile(resolve(rootDir, "web-local/src/popover/popover.css"), "utf8");
   // Enter sends, Shift+Enter keeps the newline, and a mid-IME-composition
-  // Enter never sends — the same contract as the main window and the web
-  // client's composer (services/bridge/public/composer.js).
+  // Enter never sends — the same contract as the main window's composer.
   assert.match(popover, /event\.key === "Enter" && !event\.shiftKey && !event\.nativeEvent\.isComposing/);
   // Escape never dismisses the surface mid-IME-composition.
   assert.match(popover, /if \(event\.isComposing\) return;/);

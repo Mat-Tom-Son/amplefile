@@ -11,8 +11,8 @@ const read = async (relativePath: string) => await readFile(join(repositoryRoot,
  * docs/receipts-not-gates.md acceptance, last bullet: no user-facing copy
  * contains "staged", "approve", "policy", "Reviewed", or "Unrestricted"
  * outside history notes. This sweep pins the surfaces that speak to a person:
- * the public documents, the work-fold agent's materialized instructions, the desktop's
- * copy contract, and the remote client's shipped modules.
+ * the public documents, the work-fold agent's materialized instructions, and the
+ * desktop's copy contract.
  *
  * "Reviewed" and "Unrestricted" are matched case-sensitively because they are
  * the retired authority-setting names; an ordinary sentence about a person
@@ -100,25 +100,14 @@ test("App Studio's Release deletion says where the Release goes instead of promi
   assert.doesNotMatch(studio, /permanently/i);
 });
 
-test("the desktop copy contract and the remote client never say approve or staged", async () => {
+test("the desktop copy contract never says approve or staged", async () => {
   for (const source of [
     "web-local/src/ui-contract.ts",
     "web-local/src/components/modals/SettingsAppsPane.tsx",
-    "services/bridge/public/app.js",
-    "services/bridge/public/landing.js",
-    "services/bridge/public/browser-app-actions.js",
-    "services/bridge/public/request-results.js",
-    "services/bridge/public/fixtures.js",
   ]) {
     const text = speakableSource(await read(source));
     assert.doesNotMatch(text, retiredGateWords, `${source} still carries gate vocabulary`);
     assert.doesNotMatch(text, retiredAuthorityNames, `${source} still names a retired authority setting`);
     assert.doesNotMatch(text, /access stays off until you allow it/i, `${source} still describes the retired installation defaults`);
   }
-
-  // Pairing copy names identity, not permission to work.
-  const client = await read("services/bridge/public/app.js");
-  assert.ok(client.includes('eyebrow: "Confirm this browser once"'));
-  assert.ok(client.includes("Confirm that the same six digits appear in the desktop prompt."));
-  assert.ok(client.includes('throw new Error("This browser is not paired.");'));
 });

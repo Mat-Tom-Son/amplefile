@@ -2,12 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { JSDOM } from "jsdom";
 import type { WorkRequestView } from "../src/shared/request-presentation.js";
 import { WorkRequest } from "../web-local/src/components/chat/WorkRequest.js";
-// The paired browser deliberately ships plain JavaScript.
-// @ts-expect-error browser adapter has no TypeScript declaration
-import { renderWorkRequest } from "../services/bridge/public/work-request.js";
 
 function view(): WorkRequestView {
   return { version: 1, requestId: "request-one", taskId: "task-one", owner: { conversationId: "chat-one" }, state: "waiting", label: "Needs Your Answer", detail: null, canStop: true, canContinue: false,
@@ -33,49 +29,7 @@ test("the desktop work presentation shows the question, origin, whole-work Stop 
   assert.match(recovery, /Continue with Saved Answer/);
 });
 
-test("paired questions preserve focus and draft across refresh, failure and retry; double submit delivers once", async () => {
-  const dom = new JSDOM('<div id="work"></div>', { url: "https://example.test" });
-  const prior = Object.getOwnPropertyDescriptor(globalThis, "document");
-  Object.defineProperty(globalThis, "document", { value: dom.window.document, configurable: true });
-  try {
-    const container = dom.window.document.getElementById("work")!;
-    let calls = 0;
-    let finish: (result: unknown) => void = () => {};
-    const act = async () => { calls++; if (calls === 1) throw new Error("Connection lost"); return new Promise((resolve) => { finish = resolve; }); };
-    const work = view();
-    renderWorkRequest(container, work, { act });
-    let input = container.querySelector("textarea")!;
-    input.value = "Canadian dollars"; input.dispatchEvent(new dom.window.Event("input", { bubbles: true })); input.focus(); input.setSelectionRange(4, 9);
-    renderWorkRequest(container, { ...work, children: [] }, { act });
-    input = container.querySelector("textarea")!;
-    assert.equal(dom.window.document.activeElement, input); assert.equal(input.value, "Canadian dollars"); assert.equal(input.selectionStart, 4);
-    container.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.match(container.textContent!, /Connection lost/); assert.equal(container.querySelector("textarea")!.value, "Canadian dollars");
-    const form = container.querySelector("form")!;
-    form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
-    form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
-    assert.equal(calls, 2);
-    finish({ work: { ...work, state: "working", label: "Working", questions: [], questionCount: 0 } });
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(container.querySelector("textarea"), null); assert.match(container.textContent!, /Working/);
-    const saved = { ...work, questions: [{ ...work.questions[0], state: "recorded", answer: "Canadian dollars" }] };
-    renderWorkRequest(container, saved, { act });
-    assert.equal(container.querySelector('[aria-label="Your saved answer"]')?.textContent, "Canadian dollars");
-    assert.equal(container.querySelector("textarea"), null, "recovery previews the saved answer instead of collecting another one");
-    renderWorkRequest(container, { ...work, questions: [], questionCount: 0, result: { summary: "Comparison ready", files: [{ workFolderId: "quotes", workFolderName: "Quotes", path: "comparison.md" }] } }, {
-      act, openFile: async () => { throw new Error("This file moved. Open its work-folder to find it."); },
-    });
-    (container.querySelector(".work-file-button") as HTMLButtonElement).click();
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.match(container.querySelector('[role="alert"]')?.textContent ?? "", /This file moved/);
-  } finally {
-    if (prior) Object.defineProperty(globalThis, "document", prior); else delete (globalThis as any).document;
-    dom.window.close();
-  }
-});
-
-test("a question's choices render as buttons on the desktop and in the paired browser, and a click sends that choice", async () => {
+test("a question's choices render as buttons on the desktop", async () => {
   const withChoices = view();
   withChoices.questions[0] = { ...withChoices.questions[0], options: ["US dollars", "Canadian <b>dollars</b>"] };
   const html = renderToStaticMarkup(React.createElement(WorkRequest, { work: withChoices, error: null, busy: false, act: async () => true, refresh: async () => {} }));
@@ -85,27 +39,9 @@ test("a question's choices render as buttons on the desktop and in the paired br
   assert.match(html, /Or write your own answer/);
   const plain = renderToStaticMarkup(React.createElement(WorkRequest, { work: view(), error: null, busy: false, act: async () => true, refresh: async () => {} }));
   assert.doesNotMatch(plain, /work-choice-button/);
-
-  const dom = new JSDOM('<div id="work"></div>', { url: "https://example.test" });
-  const prior = Object.getOwnPropertyDescriptor(globalThis, "document");
-  Object.defineProperty(globalThis, "document", { value: dom.window.document, configurable: true });
-  try {
-    const container = dom.window.document.getElementById("work")!;
-    const sent: Array<{ action: string; body: unknown }> = [];
-    renderWorkRequest(container, withChoices, { act: async (action: string, body: unknown) => { sent.push({ action, body }); return { work: withChoices }; } });
-    const choices = [...container.querySelectorAll("button.work-choice-button")].map((button) => button.textContent);
-    assert.deepEqual(choices, ["US dollars", "Canadian <b>dollars</b>"], "each choice shows as plain text");
-    (container.querySelector("button.work-choice-button") as HTMLButtonElement).click();
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.deepEqual(sent, [{ action: "answer", body: { questionId: "question-one", answer: "US dollars" } }]);
-    assert.equal((container.querySelector("textarea") as HTMLTextAreaElement).placeholder, "Or write your own answer");
-  } finally {
-    if (prior) Object.defineProperty(globalThis, "document", prior);
-    else delete (globalThis as { document?: unknown }).document;
-  }
 });
 
-test("the checklist an agent keeps shows on the desktop and in the paired browser", () => {
+test("the checklist an agent keeps shows on the desktop", () => {
   const working = { ...view(), state: "working" as const, label: "Working", questions: [], questionCount: 0, children: [],
     checklist: [{ text: "Read the quotes", status: "done" as const }, { text: "Compare <totals>", status: "doing" as const }, { text: "Write the summary", status: "todo" as const }] };
   const html = renderToStaticMarkup(React.createElement(WorkRequest, { work: working, error: null, busy: false, act: async () => true, refresh: async () => {} }));
@@ -113,17 +49,4 @@ test("the checklist an agent keeps shows on the desktop and in the paired browse
   assert.match(html, /class="work-checklist-item is-done"/);
   assert.match(html, /Compare &lt;totals&gt;/);
   assert.match(html, /\(in progress\)/);
-  const dom = new JSDOM('<div id="work"></div>', { url: "https://example.test" });
-  const prior = Object.getOwnPropertyDescriptor(globalThis, "document");
-  Object.defineProperty(globalThis, "document", { value: dom.window.document, configurable: true });
-  try {
-    const container = dom.window.document.getElementById("work")!;
-    renderWorkRequest(container, working, { act: async () => ({ work: working }) });
-    const rows = [...container.querySelectorAll(".work-checklist li")].map((row) => row.className);
-    assert.deepEqual(rows, ["work-checklist-item is-done", "work-checklist-item is-doing", "work-checklist-item is-todo"]);
-    assert.equal(container.querySelector(".work-checklist")?.getAttribute("aria-label"), "Checklist, 1 of 3 done");
-  } finally {
-    if (prior) Object.defineProperty(globalThis, "document", prior);
-    else delete (globalThis as { document?: unknown }).document;
-  }
 });

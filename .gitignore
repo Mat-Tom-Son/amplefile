@@ -2,8 +2,6 @@ node_modules/
 .env
 .env.*
 !.env.example
-.railway/
-.tools/railway/
 .codex/
 .agent/
 AGENTS.override.md

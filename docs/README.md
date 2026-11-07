@@ -11,9 +11,8 @@ Library. Since the 2026-10-10 domain migration these words are also the code's:
 identifiers, HTTP routes, CLI verbs and flags, JSON keys, schemas, and storage
 paths use them, with the exceptions listed in [the vocabulary
 glossary](../scripts/vocabulary/GLOSSARY.md) (for example the app-state
-`management/` folder). Historical
-release notes, dated evidence, quoted copy, and archived documents retain the
-names they recorded.
+`management/` folder). Dated evidence and quoted copy retain the names they
+recorded.
 
 For a first checkout, start with [Contributing](../CONTRIBUTING.md) and
 [Development](development.md). Read [the product model](product-model.md) for product scope and
@@ -32,7 +31,7 @@ instruction to implement its contents.
 | Restricted work-folder apps | [Authoring](restricted-app-authoring.md), [Runtime](restricted-app-runtime.md), [App platform foundation](app-platform-foundation.md) |
 | Pages | [Pages (page folders, preview, entries)](pages.md) |
 | Desktop interaction and appearance | [Desktop parity](ui-parity.md), [Collaboration experience](collaboration-experience.md), [Visual system](visual-design.md), [Application appearance](application-appearance.md), [work-folder customization](work-folder-customization.md), [Image generation](image-generation.md) |
-| Mac distribution | [Build lanes](macos-build.md), [Release procedure](macos-release.md), [Release notes and candidate history](releases/README.md) |
+| Mac distribution | [Build lanes](macos-build.md), [Release procedure](macos-release.md) |
 
 The App platform's [ontology](app-platform-ontology.md),
 [publication/data contracts](app-platform-publication-data.md), and
@@ -77,13 +76,13 @@ hosted-runtime semantics do not imply a deployed cloud runtime.
 | [Rebrand plan](rebrand-plan.md) | Proposed 2026-11-07: every place the work-fold names appear, the contract decisions, what must come along, and the order of work for the new name and repository |
 | [Windows build](windows-build.md), [Windows releases](windows-release.md) | Inactive platform references; no Windows gate on Mac releases |
 
-Finished plans, superseded designs, and dated evidence live in the
-[archive](archive/README.md).
+Finished plans, superseded designs, dated evidence, and release notes stay in
+the work-fold repository.
 
 ## Keep the map accurate
 
 Update the owning contract when behavior changes, and reconcile proposals that
-would otherwise contradict it. Preserve dated release and exploration records
-as history rather than globally replacing old names or version numbers. Run `npm run repo:check` after documentation maintenance to check relative
+would otherwise contradict it. Preserve dated records as history rather than
+globally replacing old names or version numbers. Run `npm run repo:check` after documentation maintenance to check relative
 links, current npm commands, ignore rules, and all shared Skill symlinks. Use the
 usual behavior and release gates only when those surfaces actually change.

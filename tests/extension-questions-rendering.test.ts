@@ -46,29 +46,3 @@ test("inline extension questions keep drafts and focus through refresh, retain f
   assert.equal(dom.container.querySelector("input"), null);
   assert.match(dom.container.textContent!, /Which colour/);
 });
-
-test("paired-browser extension questions preserve typed input, reject secret prompts and ignore stale completions after navigation", async (t) => {
-  const dom = await createDomHarness(); t.after(() => dom.cleanup());
-  // @ts-expect-error the standalone paired browser deliberately uses plain JS
-  const { renderExtensionQuestions } = await import("../services/bridge/public/extension-questions.js");
-  let calls = 0;
-  let finish!: () => void;
-  const answer = async () => { calls++; if (calls === 1) throw new Error("Offline"); await new Promise<void>((resolve) => { finish = resolve; }); };
-  const render = (scope = "browser-chat", prompts = requests) => renderExtensionQuestions(dom.container, { scope, requests: prompts, answer });
-  render();
-  const input = dom.container.querySelector("input")!;
-  input.value = "Personal account"; input.dispatchEvent(new Event("input", { bubbles: true })); input.focus(); input.setSelectionRange(2, 5);
-  render();
-  assert.equal(document.activeElement, input); assert.equal(input.selectionStart, 2);
-  const submit = () => dom.container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-  submit(); await dom.settle();
-  assert.match(dom.container.textContent!, /Offline/); assert.equal(input.value, "Personal account");
-  submit(); submit(); assert.equal(calls, 2);
-  render("different-chat", [{ id: "secret", method: "input", secret: true, title: "Must remain on desktop" }]);
-  assert.equal(dom.container.children.length, 0);
-  finish(); await dom.settle();
-  assert.equal(dom.container.children.length, 0, "a late answer never populates the new Chat");
-  render("browser-chat", [requests[1]]);
-  assert.equal(dom.container.querySelector("input"), null);
-  assert.equal(dom.container.querySelector("script"), null);
-});

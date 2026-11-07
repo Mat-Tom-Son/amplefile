@@ -32,7 +32,7 @@ installing dependencies and running the automated checks need no provider key.
 
 For the native app, run `npm run desktop:smoke` instead. See
 [Development](docs/development.md) for the source map, separate development
-state, isolated test profiles, bridge setup, and focused test commands.
+state, isolated test profiles, and focused test commands.
 
 ## Bring your coding agent
 
@@ -62,7 +62,6 @@ your change; `AGENTS.md` identifies the required ones.
 | Checks or cross-work-folder work | [Checks](docs/checks.md), [Automations](docs/automations.md) |
 | Worker-built work-folder apps | [App foundation](docs/app-platform-foundation.md), [Authoring](docs/restricted-app-authoring.md), [Runtime](docs/restricted-app-runtime.md) |
 | Native desktop behavior | `desktop/src/`, [macOS builds](docs/macos-build.md) |
-| Landing page or web client | `services/bridge/public/`, [Bridge guide](services/bridge/README.md) |
 
 ## Verify and submit
 
@@ -75,13 +74,11 @@ npm test
 
 `check` includes the fast, offline `repo:check`: shared Skill parity, local-state
 ignore rules, repository links and heading anchors, and current documented npm
-commands. It checks files and paths, not exact marketing wording. Historical
-release commands stay historical.
+commands. It checks files and paths, not exact marketing wording.
 
-For bridge changes, also run `npm ci --prefix services/bridge` and
-`npm test --prefix services/bridge`. For Electron, packaging, or runtime-resource
-changes, run `npm run desktop:prepare`; that includes real Electron sandbox
-probes. See [verification lanes](docs/development.md#verification) for details.
+For Electron, packaging, or runtime-resource changes, run
+`npm run desktop:prepare`; that includes real Electron sandbox probes. See
+[verification lanes](docs/development.md#verification) for details.
 
 Open a **draft pull request** with the local validation results. GitHub Actions
 is disabled in the source repository; pushes, PRs, and release tags do not run

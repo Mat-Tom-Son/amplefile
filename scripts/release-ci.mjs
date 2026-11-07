@@ -7,7 +7,6 @@ export const MAIN_CI_JOBS = Object.freeze([
   "Application tests (2/4)",
   "Application tests (3/4)",
   "Application tests (4/4)",
-  "Web bridge tests",
   "Electron integration",
 ]);
 export const TAG_CI_JOBS = Object.freeze(["Release tag verification"]);

@@ -9,14 +9,13 @@ Run commands from the repository root with Node 24 (`.nvmrc`) and npm 11.16.0
 or newer. The install requirement and dependency-script policy are explained
 in [Contributing](../CONTRIBUTING.md#first-run). `npm ci` uses the
 committed lockfile. Git, Node, and npm are enough to run the repository checks;
-model credentials, Apple signing credentials, and Railway access are separate.
+model credentials and Apple signing credentials are separate.
 
 | Surface | Command | What to expect |
 |---|---|---|
 | Browser UI + local API | `npm run local:dev` | Vite at `http://localhost:5173`, local API at `http://127.0.0.1:4327`; live renderer updates |
 | Inert UI preview | `npm run local:dev`, then open `http://localhost:5173/?fixture=work-folder` | Sample work-folders drawn as the Mac app shows them; no API or model needed |
 | Native, unpackaged Electron | `npm run desktop:smoke` | Builds and verifies the desktop, then opens Electron; restart after native changes |
-| Optional hosted relay | See [Bridge development](../services/bridge/README.md#local-development) | Separate dependencies and local PostgreSQL; unnecessary for ordinary desktop work |
 | Packaged Mac candidate | See [Mac build lanes](macos-build.md) | Packaging, signing, and publication are separate from everyday development |
 
 The inert UI preview is the fastest loop for layout and styling. It reads
@@ -121,8 +120,7 @@ for capture stages, coverage and bounds.
 | [Kernel](../src/local/work-fold-kernel.ts), [CLI](../src/local/cli/), [adapter](../src/local/work-fold-cli-adapter.ts) | Shared context, tasks, and control-plane contracts |
 | `src/shared/` | Shared types and the product identity contract |
 | `desktop/src/` | Electron windows, lifecycle, preloads, native app hosts, and updater |
-| `services/bridge/` | Relay, database, public website, and browser client |
-| `tests/`, `services/bridge/*.test.mjs` | Application and bridge regression tests |
+| `tests/` | Application regression tests |
 | `scripts/` | Shared development, validation, and release commands |
 | `docs/`, `.agents/skills/` | Product contracts and task-specific contributor workflows |
 
@@ -153,9 +151,6 @@ extra repository instruction source.
   it fails the run and names the test file if anything still changes the real
   folder. Running a test file directly with `node --import tsx --test` skips
   that isolation; use `npm test -- <file>` instead.
-- `npm ci --prefix services/bridge` and `npm test --prefix services/bridge` run
-  the bridge suite. It uses an in-memory test database; a live PostgreSQL server
-  or Railway account is not required for those tests.
 - `npm run desktop:prepare` verifies desktop resources, compiled code, native
   preloads, the real restricted-app sandbox, and the built-in browser. After a
   compiled native change, `npm run desktop:restricted-app:smoke` is the focused
@@ -169,11 +164,10 @@ and do not re-enable Actions unless explicitly requested.
 
 Public Mac releases use `npm run desktop:release:mac:check` on the final clean,
 committed release SHA with Node 24, supported npm, and Google Chrome on an
-Apple-silicon Mac. Chrome runs the real CSS tests. This performs fresh
-root and bridge installs, `check`, the complete unsharded `npm test`, bridge
-tests, and `desktop:prepare`, then saves an ignored receipt at
-`out/release-checks/local-verification.json`. It records the exact source SHA,
-tree, build-input fingerprint, runtime, and successful stages; starting or
+Apple-silicon Mac. Chrome runs the real CSS tests. This performs a fresh
+install, `check`, the complete unsharded `npm test`, and `desktop:prepare`,
+then saves an ignored receipt at `out/release-checks/local-verification.json`.
+It records the exact source SHA, tree, build-input fingerprint, runtime, and successful stages; starting or
 failing a run invalidates the old receipt, and source changes during the run
 fail verification. `npm run desktop:release:mac:check -- --status` checks that
 receipt without running the stages. A receipt cannot carry across a merge or
