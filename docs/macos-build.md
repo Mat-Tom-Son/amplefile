@@ -224,15 +224,12 @@ a new version or an Apple submission.
 
 The active public desktop release is the signed, notarized Apple-silicon Mac build. The source repository carries the exact source tag, while the separate Mac feed owns only the distribution artifacts:
 
-The first public AmpleFile version is `0.1.0`. The repository used `0.8.0` as a
-development holdover and reset it only when the first release commit and tag
-were ready. Its Developer ID-signed, notarized, and stapled Mac artifacts were
-installed on August 1, 2026; real first-launch QA then found a sandboxed-preload
-module-load defect before onboarding. The published assets remain immutable
-and superseded. `0.1.1` repairs that boundary and is the first higher release
-used to prove the new `Mat-Tom-Son/amplefile-mac-releases` updater path from
-installed `0.1.0`. Neither version is an update from Workspace. The frozen
-legacy release repository must never receive these artifacts.
+The first public AmpleFile version is `0.1.0`; the repository carried its
+predecessor's `0.15.3` until the first release commit reset it. The first
+higher release proves the `Mat-Tom-Son/amplefile-mac-releases` updater path
+from an installed `0.1.0`. No AmpleFile version is an update from a
+predecessor ("work-fold" or Workspace), and the frozen legacy release
+repositories must never receive these artifacts.
 
 ```bash
 npm run desktop:release:mac

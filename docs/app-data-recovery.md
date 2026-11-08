@@ -1,7 +1,5 @@
 # App data export and recovery
 
-Implemented and verified in AmpleFile 0.4.23.
-
 In **Settings → Apps**, open the app's details. **Export data** downloads its complete
 instance-owned JSON data. **Restore…** accepts a backup of the same installation
 and exact app revision. **Undo data change** recovers the state before the most

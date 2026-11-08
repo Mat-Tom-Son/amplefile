@@ -1,6 +1,6 @@
 # Changing an installed app
 
-Implemented in AmpleFile 0.4.23. An app's entry in Settings → Apps has
+An app's entry in Settings → Apps has
 **Change this app**, which creates a working copy and opens an unsent Chat draft
 in the App Project's source Connected Folder. The person adds the requested change and sends
 it. This does not invoke a model, install code, or grant authority by itself.
