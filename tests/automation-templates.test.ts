@@ -51,7 +51,16 @@ test("only version 6 watches a Connected Folder's top level, and never recursive
 
 test("a top-level watch sees only the files directly in the Connected Folder", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "top-level-watch-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const state = await mkdtemp(join(tmpdir(), "top-level-watch-state-"));
+  // Registering must land in this test's own app data, never the real profile.
+  const priorState = process.env.AMPLEFILE_STATE_DIR;
+  process.env.AMPLEFILE_STATE_DIR = state;
+  t.after(async () => {
+    if (priorState === undefined) delete process.env.AMPLEFILE_STATE_DIR;
+    else process.env.AMPLEFILE_STATE_DIR = priorState;
+    await rm(root, { recursive: true, force: true });
+    await rm(state, { recursive: true, force: true });
+  });
   const connectedFolder = await registerLinkedConnectedFolder(root);
   await writeFile(join(root, "receipt.pdf"), "pdf");
   await writeFile(join(root, "notes.txt"), "not watched: .txt is not in this list");

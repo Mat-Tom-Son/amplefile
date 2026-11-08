@@ -72,13 +72,19 @@ const realPiDirs = [...new Set([
 ].filter(Boolean).map((path) => resolve(path.replace(/^~(?=$|[\\/])/, homedir()))))];
 const testPiRoot = await mkdtemp(join(tmpdir(), "amplefile-test-pi-"));
 const realPiWriteLog = join(testPiRoot, "real-pi-writes.jsonl");
+// Likewise, AmpleFile's own app data (Connected Folder registrations,
+// Recently deleted, app state) defaults to a temporary folder, so a test that
+// forgets to choose one cannot write into the developer's real profile.
 const env = {
   ...process.env,
   PI_CODING_AGENT_DIR: join(testPiRoot, "agent"),
+  AMPLEFILE_STATE_DIR: join(testPiRoot, "amplefile-state"),
+  AMPLEFILE_DESKTOP_STATE_DIR: join(testPiRoot, "amplefile-desktop-state"),
   AMPLEFILE_TEST_REAL_PI_DIRS: realPiDirs.join(delimiter),
   AMPLEFILE_TEST_REAL_PI_WRITE_LOG: realPiWriteLog,
 };
 delete env.AMPLEFILE_AGENT_DIR;
+delete env.AMPLEFILE_CONTENT_DIR;
 delete env.PI_CODING_AGENT_SESSION_DIR;
 
 const child = spawn(process.execPath, [tsxCli, "--import", realPiGuard, "--import", fluentIcons, "--test", ...files], {
