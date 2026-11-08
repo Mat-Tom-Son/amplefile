@@ -111,11 +111,6 @@ flowchart LR
 
 Domain services still own writes. The kernel does not bypass folder grants, registered Connected Folder authorization, capability-mutation locks, History behavior, or any other mutation policy.
 
-The desktop's early-created Check service shares the interactive API's bounded,
-serialized fold-model reviewer through an in-process callback. This transport
-is resolved only for an authorized Check run; it adds no read-protocol, HTTP,
-or act-lane verb.
-
 The dotted restricted-app edge is a boundary, not a data flow into the kernel. Connected Folder apps have their own reviewed package, grant, encrypted connection, storage, named-automation, notification, and sandbox-host state. Protocol v1 and `amplefile.capabilities` intentionally do not list or mutate that state. The machine-wide automation scheduler is an in-process execution coordinator for that domain, not a management-protocol mutation surface. Future app inventory belongs in a deliberately versioned kernel snapshot only after its content and authorization contract are designed.
 
 ## Kernel contract
@@ -393,7 +388,7 @@ selected report and files, or its failure/no-report status; older successes
 remain historical, and partial or failed graph outcomes take precedence.
 
 File deletion and Connected Folder removal use the same desktop/CLI reservation against
-active turns, compaction, Checks, app jobs with file access, and automation file
+active turns, compaction, app jobs with file access, and automation file
 work. Unfinished requests, waiting questions, and accepted continuations also refuse deletion;
 after Stop, accepted turns must drain first. Managed parent deletion requires
 removing nested registrations first. A refused delete changes no content and
@@ -463,7 +458,7 @@ archived in the work-fold repository, record the earlier design.
 
 connected-folder-targeted act commands never resolve a Connected Folder from the working directory — every write names its Connected Folder explicitly. `recently-deleted list --json` and `recently-deleted restore --entry <id>` are Connected Folder–free act verbs over the machine-local trash; `apps list --connected-folder <id> --json` and `apps invoke --connected-folder <id> --app <id> --tool <name> --input <json>` let the AmpleFile agent see and call an installed app's declared tools with lineage and receipts. `connected-folders worker show` is a content-bearing act read that returns the current default, only already-connected model choices, and instruction text; `connected-folders worker model` saves the default for new Chats, while `connected-folders worker instructions` changes subsequent turns. Both setters reserve the existing Connected Folder–scoped agent mutation fence across validation, write, and client invalidation, and their receipts contain model identifiers or an instruction character count, never instruction text. Provider credentials and connection setup have no act verb. `chat send` accepts a CLI-initiated agent turn through the exact same acceptance path as the renderer (conflict checks, stable request identity, durable acceptance before transcript append, kernel task record with a `cli` actor, portable transcript persistence, pre/post-turn History checkpoints) and returns a task id. The act-envelope request id is the turn's idempotency key, so an uncertain delivery cannot create a second agent run. Terminal failures and explicit stops append a typed, sanitized agent result before the task settles, including setup failures that occur before a provider can answer; that same durable rule covers the machine-local AmpleFile agent transcript and menu-bar popover, while raw provider diagnostics stay host-side. That task id is how a caller follows exactly its own turn: AmpleFile keeps recent terminal outcomes (`succeeded`, `failed`, or `aborted`, with the persisted response message id or failure message) in a bounded machine-local journal across app restarts. `chat status --task`/`chat result --task` read it, and `chat wait --task` is a shim-side poll that finishes with that turn's own result — a failed or aborted turn exits non-zero instead of presenting an older transcript message as success (wait timeout exit code 7). On startup, an accepted turn that reached its transcript but never settled is recorded as interrupted and is not automatically rerun, because completed tools may already have changed something. Quitting AmpleFile mid-turn records the turn the same way (interrupted, reported as failed), never as a Stop the person asked for. The Chat's last interrupted reply offers **Continue**, which sends the ordinary visible message "Continue where you left off." as a new turn, without the files staged for the person's draft; nothing is replayed. A tool call that never recorded a result reaches the model as an honest error saying it may have partly happened and its effects should be checked, instead of Pi's bare "No result provided" (2026-10-27). `chat status|result --conversation` remain the transcript-scoped views. `files add` copies outside material in with a targeted restore point that succeeds or fails together with the placement, and `connected-folders create`/`connected-folders register` grant the same registered Connected Folder runtime authorization as the desktop actions. Content-bearing chat and agent-preference reads (`chat status|result`, `chats list`, `connected-folders worker show`) belong to the act lane too, so the read lane keeps its content-free property. When the interactive app is not running, act commands fail fast with "Open AmpleFile…" and exit code 6.
 
-Optional Checks reuse this split instead of creating another management plane. `checks status` is the only read-lane Check command and emits aggregate counts/state only. Its experimental summary distinguishes enabled Checks that have `neverRun` from previously computed results whose inputs are `stale`; either keeps the Connected Folder–level state stale until a requested run establishes current evidence. `checks enable|disable|run|task|result|abort|problems|decide` use the act lane, require an explicit Connected Folder, and receive the same journal-first at-most-once receipts. `checks wait` is a shim-side task poll like Chat wait. Portable `.amplefile/checks/*.json` declarations are inert and registration never enables them; authority is an exact-digest machine record. Every run starts an internal kernel `check_run` task and participates in capability-mutation fencing, but the experimental task kind is deliberately filtered from stable `amplefile tasks` protocol v1 until its compatibility contract is promoted. Runs are explicitly requested or invoked by a separately enabled automation, bounded across all selected Checks, and receive a host-resolved closed input projection rather than ambient filesystem authority. Status computes freshness from runner-owned input identities and never executes sensor/provider logic. See [Checks](checks.md).
+There is no `checks` command family (removed on 2026-11-07): the read lane has no Check status command, protocol v1 no longer lists the `checks.status` command or the `amplefile.checks.experimental` capability, the kernel has no Check task kind, and the overview has no Check rows. What an earlier build stored for Checks, machine-local or under `.amplefile/checks/`, stays on disk unread.
 
 ## Desktop handoff
 
@@ -576,13 +571,11 @@ See [Architecture](architecture.md) for the surrounding process boundaries, [Pro
 
 ### September 2026 contract expansion
 
-Checks retain protocol-v1 content-free status and the authenticated act lane. Their experimental snapshot payload is now version 1; machine Check state is version 2 and reads version 1. The built-in `amplefile.text-review` sensor adds quoted text evidence and hashes every designated primary/reference input. Its bounded request uses the AmpleFile agent's model and never includes the AmpleFile agent transcript. Opening status performs no provider request. Check runs serialize their native model requests machine-wide; the connected-folder-app inference lane reuses the same transport under its own separate limiter. The desktop New Check form, enable/disable controls, and installed CLI use the same Check service; re-enabling existing definitions pins the reviewed declaration digest.
-
 Automation declaration version 3 adds `files-changed` with an explicit folder, recursion, extensions, debounce, and cooldown. Versions 1 and 2 remain readable. Its bounded metadata observer carries no content into Chat: only the fixed, reviewed step message is dispatched. Trigger receipts retain snapshot digest/change count, and Settings reports observer health. Global pause/baseline behavior avoids automation feedback and deliberately does not replay changes while automation work runs or the app is asleep/quit. See [Automations](automations.md).
 
 *Amended 2026-10-11 (owner decision):* declaration version 5 adds an optional `"ifMissed": "run"` to `files-changed`. Such an automation keeps a machine-local metadata snapshot under `automations/folder-snapshots/` and, after AmpleFile was closed, the computer slept, the automation was off, or the folder could not be watched, starts one coalesced run for the files added or changed in that gap — never a backlog. Its run cause adds `catchUp: {reason, count}` to the existing `files-changed` shape (`automations receipts --json`), `automations show` and the trigger ref in `automations list|show --json` carry `ifMissed`, and Settings reports the waiting and last catch-up. Edits made while an automation runs are still never replayed. `amplefile help automations` now shows a version-5 example. Versions 1–4 parse unchanged, with unchanged digests.
 
-Desktop and CLI History restores reserve affected Connected Folder work through completion and consult the same automation/app-automation blockers. Provider setup/removal uses the global capability fence, so changing a provider cannot silently stop accepted Chats or Checks.
+Desktop and CLI History restores reserve affected Connected Folder work through completion and consult the same automation/app-automation blockers. Provider setup/removal uses the global capability fence, so changing a provider cannot silently stop accepted Chats.
 
 ### Receipts, not gates (2026-09-10)
 
@@ -591,7 +584,7 @@ Desktop and CLI History restores reserve affected Connected Folder work through 
 - The act protocol envelope advanced to version 3 (`src/local/cli/act-protocol.ts`). An older shim is refused with the typed version error rather than handed a differently shaped result. Receipts written at version 3 carry no `decisionId` or `policyId`, and the surface vocabulary shrank to `cli`, `popover`, `main-window`, and `remote_web`; readers still accept the retired `policy` and `unrestricted` surfaces on older lines.
 - The remote operation vocabulary lost `decisions.list` and `decisions.decide`. A web client that still asks for them gets the ordinary unknown-operation refusal, and the shipped client no longer asks.
 - New act verbs: `recently-deleted list|restore` over Recently deleted, `apps list|invoke` so the AmpleFile agent can see and call an installed app's declared tools, and `automations enable` in place of the old staging token. `files destroy` and the `staged list|show|cancel` family are gone.
-- `assistant.request` journals and dispatches a Connected Folder Chat in one call with no review state, and `assistant.infer` performs a bounded, tool-free model call on the same transport the Check reviewer uses under its own limiter. Installation is the grant for both ([App-requested agent work](app-assistant-tasks.md)).
+- `assistant.request` journals and dispatches a Connected Folder Chat in one call with no review state, and `assistant.infer` performs a bounded, tool-free model call on the native model transport under its own limiter. Installation is the grant for both ([App-requested agent work](app-assistant-tasks.md)).
 - Settings → General gained **Recently deleted**: the entry list, Restore, Save a copy, Delete now, and the retention window (default 30 days). The Authority selector and the standing-rules section are gone from every surface.
 
 ### Collaboration contract (2026-09-11)
@@ -632,15 +625,6 @@ observe:
 - Apps subscribe to their own work changing through `bridge.tasks.onChanged`,
   `bridge.checks.onChanged`, and `bridge.files.onChanged`, and a finished app
   agent task returns the same result envelope every other result uses.
-
-## Fold-led Checks
-
-Checks authoring uses the AmpleFile agent, with an unsent draft from the Connected Folder–owned Checks tab. `checks propose` and `checks propose-fix` are authenticated, receipted, explicitly Connected Folder–scoped inert proposal operations; neither enables a Check nor edits a target. Trials and human-reviewed corrections use the same Check service and reservations. The AmpleFile agent popover stays focused on conversations and has no separate Checks disclosure. Findings prepare unsent help drafts in fresh Connected Folder Chats; no model turn starts merely because a finding appears. See [Checks](checks.md) for the exact review, History, freshness, and trial-isolation contract.
-
-Check help drafts name their Connected Folder–scoped CLI operations. `help checks` documents
-the full correction JSON, and `help automations` provides a validated complete
-folder-change proposal. These are authoring aids; they add no authority or
-new protocol fields and keep implementation details out of the Checks panel.
 
 ## Observed turn files and app result links
 

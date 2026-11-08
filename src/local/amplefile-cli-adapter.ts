@@ -2,16 +2,11 @@ import {
   AmpleFileCliError,
   type AmpleFileCliActor,
   type AmpleFileCliCapabilitySummary,
-  type AmpleFileCliCheckStatusSummary,
   type AmpleFileCliContextSnapshot,
   type AmpleFileCliKernel,
   type AmpleFileCliConnectedFolderSummary,
   type AmpleFileCliTaskSummary,
 } from "./cli/protocol.js";
-import {
-  ampleFileCheckExperimentalSnapshotVersion,
-  type AmpleFileCheckStatusSnapshot,
-} from "./checks/check-types.js";
 import {
   AmpleFileContextRequiredError,
   type AmpleFileActor,
@@ -25,29 +20,12 @@ interface AmpleFileCliOptions {
   connectedFolder?: string;
 }
 
-export interface AmpleFileCliCheckStatusProviderInput {
-  connectedFolderId: string;
-  connectedFolderRoot: string;
-}
-
-export type AmpleFileCliCheckStatusProvider = (
-  input: AmpleFileCliCheckStatusProviderInput,
-) => Promise<AmpleFileCheckStatusSnapshot>;
-
-export interface AmpleFileCliKernelAdapterOptions {
-  checksStatusProvider?: AmpleFileCliCheckStatusProvider;
-}
-
 /**
  * Thin CLI projection over the shared AmpleFileKernel. The adapter owns CLI
  * selection rules and deliberately emits only compact, content-free summaries.
  */
 export class AmpleFileCliKernelAdapter implements AmpleFileCliKernel {
-  readonly #checksStatusProvider?: AmpleFileCliCheckStatusProvider;
-
-  constructor(readonly kernel: AmpleFileKernel, options: AmpleFileCliKernelAdapterOptions = {}) {
-    this.#checksStatusProvider = options.checksStatusProvider;
-  }
+  constructor(readonly kernel: AmpleFileKernel) {}
 
   async getContext(
     actor: AmpleFileCliActor,
@@ -172,107 +150,12 @@ export class AmpleFileCliKernelAdapter implements AmpleFileCliKernel {
     }
   }
 
-  async getChecksStatus(
-    actor: AmpleFileCliActor,
-    options: AmpleFileCliOptions,
-  ): Promise<AmpleFileCliCheckStatusSummary> {
-    const selected = await this.#selectConnectedFolder(actor, options.connectedFolder);
-    const context = await this.kernel.getContext(selected ? scopedActor(actor, selected.id) : actor);
-    if (!context.connectedFolder) {
-      throw new AmpleFileCliError(
-        "notFound",
-        "No Connected Folder contains the current working directory. Select one with --connected-folder <id-or-name>.",
-      );
-    }
-    const unavailable = unavailableChecksStatus(context.connectedFolder.id);
-    if (!this.#checksStatusProvider) return unavailable;
-    try {
-      const snapshot = await this.#checksStatusProvider({
-        connectedFolderId: context.connectedFolder.id,
-        connectedFolderRoot: context.connectedFolder.connectedFolderRoot,
-      });
-      return projectChecksStatus(snapshot, context.connectedFolder.id) ?? unavailable;
-    } catch {
-      // Provider failures may contain file paths or Check error details. The
-      // read lane exposes only the fact that aggregate status is unavailable.
-      return unavailable;
-    }
-  }
-
   async #selectConnectedFolder(actor: AmpleFileCliActor, selector: string | undefined): Promise<AmpleFileConnectedFolderSnapshot | undefined> {
     if (selector === undefined) return undefined;
     return resolveAmpleFileCliConnectedFolderSelector((await this.kernel.getConnectedFolders(actor)).connectedFolders, selector);
   }
 }
 
-const checkStates = new Set([
-  "not-configured",
-  "current-clear",
-  "needs-attention",
-  "stale",
-  "blocked",
-  "check-error",
-]);
-
-function projectChecksStatus(snapshot: AmpleFileCheckStatusSnapshot, connectedFolderId: string): AmpleFileCliCheckStatusSummary | null {
-  if (!snapshot || snapshot.kind !== "amplefile.checks.experimental" || snapshot.version !== ampleFileCheckExperimentalSnapshotVersion) return null;
-  if (snapshot.connectedFolderId !== connectedFolderId || !checkStates.has(snapshot.state)) return null;
-  const counts = [
-    snapshot.configured,
-    snapshot.proposed,
-    snapshot.enabled,
-    snapshot.current,
-    snapshot.neverRun,
-    snapshot.stale,
-    snapshot.blocked,
-    snapshot.errors,
-    snapshot.needsAttention,
-    snapshot.running,
-  ];
-  if (counts.some((count) => !Number.isSafeInteger(count) || count < 0)) return null;
-  if (snapshot.current + snapshot.neverRun + snapshot.stale > snapshot.enabled) return null;
-  if (snapshot.proposed + snapshot.enabled + snapshot.blocked > snapshot.configured) return null;
-  if (snapshot.lastRunAt !== null && (typeof snapshot.lastRunAt !== "string" || !Number.isFinite(Date.parse(snapshot.lastRunAt)))) return null;
-  return {
-    kind: "amplefile.checks.experimental",
-    version: ampleFileCheckExperimentalSnapshotVersion,
-    available: true,
-    connectedFolderId,
-    state: snapshot.state,
-    configured: snapshot.configured,
-    proposed: snapshot.proposed,
-    enabled: snapshot.enabled,
-    current: snapshot.current,
-    neverRun: snapshot.neverRun,
-    stale: snapshot.stale,
-    blocked: snapshot.blocked,
-    errors: snapshot.errors,
-    needsAttention: snapshot.needsAttention,
-    running: snapshot.running,
-    lastRunAt: snapshot.lastRunAt === null ? null : new Date(snapshot.lastRunAt).toISOString(),
-  };
-}
-
-function unavailableChecksStatus(connectedFolderId: string): AmpleFileCliCheckStatusSummary {
-  return {
-    kind: "amplefile.checks.experimental",
-    version: ampleFileCheckExperimentalSnapshotVersion,
-    available: false,
-    connectedFolderId,
-    state: "unavailable",
-    configured: 0,
-    proposed: 0,
-    enabled: 0,
-    current: 0,
-    neverRun: 0,
-    stale: 0,
-    blocked: 0,
-    errors: 0,
-    needsAttention: 0,
-    running: 0,
-    lastRunAt: null,
-  };
-}
 
 /**
  * Shared "--connected-folder <id-or-exact-name>" selection: an id match wins, a unique

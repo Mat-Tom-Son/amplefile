@@ -30,7 +30,7 @@ Type `@` in a Chat or the AmpleFile agent's composer to address a Worker.
 The local `amplefile connected-folders list --json` projection includes `parentConnectedFolderId`
 for a nested Connected Folder; see [the AmpleFile agent and CLI guide](docs/amplefile-agent-and-cli.md).
 
-As a project grows, ask for a custom **app** in its sidebar, add **Checks** to review chosen files, or set up an **Automation** to run fixed steps on a schedule or after selected files change. Automations are deterministic app-run steps, not a second kind of Worker or an open-ended agent scheduler. These are optional; start with a Connected Folder and a conversation.
+As a project grows, ask for a custom **app** in its sidebar or set up an **Automation** to run fixed steps on a schedule or after selected files change. Automations are deterministic app-run steps, not a second kind of Worker or an open-ended agent scheduler. These are optional; start with a Connected Folder and a conversation.
 
 The [built-in browser](docs/built-in-browser.md) shares its tabs with the
 AmpleFile agent and every Worker. They can read and use pages, inspect screenshots,

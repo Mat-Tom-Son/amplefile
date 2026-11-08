@@ -130,7 +130,6 @@ test("the worker bridge can request agent work while it holds an operation lease
   assert.match(desktopHost, /jsonEnvelope\(value, maxAssistantEnvelopeBytes, "Worker request"\)/);
   assert.match(restrictedAppPreload, /\{ operation: "request", request \}, maximumAssistantEnvelopeBytes/);
   assert.match(restrictedAppPreload, /nestedPositiveInteger\(limits, "assistant", "inputBytes", 4 \* 1024 \* 1024\) \* 6/);
-  assert.match(desktopMain, /listChecks,/);
 });
 
 test("bounded inference reaches app views and workers over its own channel", async () => {
@@ -173,7 +172,8 @@ test("bounded inference reaches app views and workers over its own channel", asy
   assert.match(piClient, /from an app view or from the app's worker module/);
   assert.match(piClient, /INFER_BUSY/);
   assert.match(piClient, /assistantActions \(up to 8|The optional top-level assistantActions array/);
-  assert.match(piClient, /permissions\.checks declares Check-result slots/);
+  // Checks were removed (2026-11-07): new apps are never taught to declare Check-result slots.
+  assert.doesNotMatch(piClient, /permissions\.checks declares Check-result slots/);
 });
 
 test("host-bridge wait time never counts against the worker invocation deadline", async () => {

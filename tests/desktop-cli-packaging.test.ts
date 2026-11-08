@@ -97,16 +97,16 @@ test("desktop agent shells inherit the exact running profile in development and 
 /**
  * Act-lane contract the macOS shim must keep: automation that never
  * lets a content-bearing act command fall through to protocol v1 — every
- * ledger family plus the two read-lane exceptions (`connected-folders list`,
- * `checks status`) — the per-launch token file, the bounded message payload
+ * ledger family plus the read-lane exception (`connected-folders list`) —
+ * the per-launch token file, the bounded message payload
  * rewrite, the shim-side wait loop, and the fail-fast unavailable path.
  */
 function assertActLaneShimContract(shim: string): void {
   const routedFamilies = [
-    "chat", "chats", "files", "agent", "checks", "connected-folders", "history", "search",
+    "chat", "chats", "files", "agent", "connected-folders", "history", "search",
     "tools", "apps", "automations", "recently-deleted", "requests", "jobs",
   ];
-  for (const routed of [...routedFamilies, "list", "status", "wait", "task", "result"]) {
+  for (const routed of [...routedFamilies, "list", "status", "wait", "result"]) {
     assert.match(shim, new RegExp(`["']${routed}["']`), `act routing must reference ${routed}`);
   }
   // F28: the wait loop settles on a task that is waiting on an answer, not

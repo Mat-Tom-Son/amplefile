@@ -1211,8 +1211,8 @@ test("app inference runs on the Connected Folder's configured model with no Chat
   }
 });
 
-test("desktop Check selection composes the canonical Check service with exact app controls", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-app-selected-check-api-"));
+test("an app that declares a Check-result slot still installs now that Checks are gone, with no way to bind one", async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-app-retired-check-api-"));
   const api = await startLocalApi({ port: 0, stateBase: join(sandbox, "state"), connectedFolderBase: join(sandbox, "connected-folders"), loadEnv: false });
   try {
     const { connectedFolder } = await request<{ connectedFolder: { id: string; connectedFolderRoot: string } }>(api.origin, "/api/connected-folders", { method: "POST", body: { name: "Check access" } });
@@ -1224,23 +1224,13 @@ test("desktop Check selection composes the canonical Check service with exact ap
     await writeFile(manifestPath, JSON.stringify(manifest));
     await api.actFacade.appsInstallPreview({ connectedFolder: connectedFolder.id, packagePath: "app" });
     const app = (await request<{ apps: RestrictedAppInstalled[] }>(api.origin, `${base}/restricted-apps`)).apps.find((item) => item.manifest.id === "mail-app")!;
-    const check = await request<{ declaration: { id: string }; digest: string }>(api.origin, `${base}/checks/configure`, { method: "POST", body: { proposal: {
-      kind: "amplefile.check-proposal", version: 1, name: "Handoff", createdBy: "human", createdAt: "2026-09-06T00:00:00.000Z",
-      check: { title: "Handoff exists", severity: "error", trigger: "manual", sensor: { id: "amplefile.file-presence", revision: 1, parameters: { expect: "present" } }, targets: [{ kind: "file", role: "primary", path: "handoff.txt" }] },
-    } } });
-    const path = `${base}/restricted-apps/mail-app/permissions/checks/review`;
-    const body = { featureInstallationId: app.featureInstallationId, expectedDigest: app.digest, checkId: check.declaration.id, declarationDigest: check.digest };
-    const allowed = await request<{ app: RestrictedAppInstalled }>(api.origin, path, { method: "PUT", body });
-    assert.equal(allowed.app.checkGrants?.[0]?.checkId, check.declaration.id);
-    const { overview } = await request<{ overview: { status: { enabled: number; running: number }; findings: unknown[] } }>(api.origin, `${base}/checks/overview`, { method: "POST", body: {} });
-    assert.equal(overview.status.enabled, 0, "selecting results does not enable the Check");
-    assert.equal(overview.status.running, 0);
-    assert.deepEqual(overview.findings, []);
-    for (const invalid of [{ ...body, featureInstallationId: undefined }, { ...body, declarationDigest: "0".repeat(64) }, { ...body, checkId: "foreign" }]) {
-      const response = await fetch(`${api.origin}${path}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(invalid) });
-      assert.equal(response.ok, false);
-    }
-    const revoked = await request<{ app: RestrictedAppInstalled }>(api.origin, path, { method: "DELETE", body });
-    assert.deepEqual(revoked.app.checkGrants ?? [], []);
+    assert.ok(app, "the app installs");
+    assert.deepEqual(app.checkGrants ?? [], []);
+    const response = await fetch(`${api.origin}${base}/restricted-apps/mail-app/permissions/checks/review`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ featureInstallationId: app.featureInstallationId, expectedDigest: app.digest, checkId: "gone", declarationDigest: "0".repeat(64) }),
+    });
+    assert.equal(response.status, 404, "the Check selection route was removed with Checks");
   } finally { await api.close(); await rm(sandbox, { recursive: true, force: true }); }
 });

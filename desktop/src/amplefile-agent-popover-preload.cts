@@ -40,7 +40,6 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
   },
   ampleFileAgent: {
     openResultFile: (connectedFolderId: string, path: string) => ipcRenderer.invoke("amplefile:connected-folder:open-path", { connectedFolderId, path, action: "open" }),
-    openChecks: (connectedFolderId: string) => ipcRenderer.invoke("amplefile:agent:open-checks", connectedFolderId),
     getPathForFile: (file: File): string => {
       try {
         return webUtils.getPathForFile(file) ?? "";

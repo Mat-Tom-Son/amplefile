@@ -12,12 +12,10 @@ import {
   type RestrictedAppRuntimeAuthority,
   type RestrictedAppRuntimeHost,
 } from "../src/local/agent/restricted-app-service.js";
-import { AmpleFileCheckService } from "../src/local/checks/check-service.js";
 import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
-import { configureAmpleFileStateRoot, connectedFolderCheckStateFile, connectedFolderRegistryFile, connectedFolderStateDir } from "../src/local/state-paths.js";
+import { ampleFileStateRoot, configureAmpleFileStateRoot, connectedFolderRegistryFile, connectedFolderStateDir } from "../src/local/state-paths.js";
 import { createConnectedFolderCheckpoint, listConnectedFolderCheckpoints } from "../src/local/history.js";
 import { AmpleFileRecentlyDeletedStore } from "../src/local/recently-deleted-store.js";
-import { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
 import {
   beginConnectedFolderRemoval,
   createManagedConnectedFolder,
@@ -125,7 +123,7 @@ test("managed-folder deletion failure returns committed removal and startup reco
   }
 });
 
-test("startup removal recovery purges damaged Check authority before finalizing the intent", async () => {
+test("startup removal recovery finalizes the intent and leaves state a Checks build left behind unread", async () => {
   const sandbox = await mkdtemp(join(tmpdir(), "connected-folder-removal-check-state-api-"));
   const stateBase = join(sandbox, "state");
   const connectedFolderBase = join(sandbox, "connected-folders");
@@ -139,13 +137,14 @@ test("startup removal recovery purges damaged Check authority before finalizing 
       loadEnv: false,
       restrictedAppService: service,
     });
-    const connectedFolder = await createAppProject(api, "Damaged Check state");
+    const connectedFolder = await createAppProject(api, "Leftover Check state");
     const intent = await beginConnectedFolderRemoval(connectedFolder.id, connectedFolderBase);
     assert.equal(intent.phase, "requested");
-    const checkState = connectedFolderCheckStateFile(connectedFolder.id);
+    // Checks were removed (2026-11-07): their machine-local state is neither
+    // read, required, nor deleted.
+    const checkState = join(ampleFileStateRoot(), "checks", "connected-folders", "leftover-0123456789abcdef.json");
     await mkdir(dirname(checkState), { recursive: true });
     await writeFile(checkState, "{damaged current state", "utf8");
-    await writeFile(`${checkState}.bak`, JSON.stringify({ version: 999, authorizations: { unsafe: true } }), "utf8");
 
     await api.close();
     api = null;
@@ -157,157 +156,9 @@ test("startup removal recovery purges damaged Check authority before finalizing 
       loadEnv: false,
       restrictedAppService: recoveredService,
     });
-    assert.equal(existsSync(checkState), false);
-    assert.equal(existsSync(`${checkState}.bak`), false);
+    assert.equal(await readFile(checkState, "utf8"), "{damaged current state");
     assert.deepEqual(await listPendingConnectedFolderRemovals(), []);
     assert.equal(existsSync(connectedFolder.connectedFolderRoot), false);
-  } finally {
-    await api?.close();
-    await rm(sandbox, { recursive: true, force: true });
-  }
-});
-
-test("post-intent Check cleanup failure returns committed pending removal and recovers", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "connected-folder-removal-check-retry-api-"));
-  const stateBase = join(sandbox, "state");
-  const connectedFolderBase = join(sandbox, "connected-folders");
-  let api: LocalApiHandle | null = null;
-  try {
-    const service = await RestrictedAppService.create({ rootPath: join(stateBase, "restricted-apps") });
-    const checks = new AmpleFileCheckService({ kernel: new AmpleFileKernel() });
-    checks.removeConnectedFolder = async () => { throw new Error("simulated Check cleanup failure"); };
-    api = await startLocalApi({
-      port: 0,
-      stateBase,
-      connectedFolderBase,
-      loadEnv: false,
-      restrictedAppService: service,
-      checkService: checks,
-    });
-    const connectedFolder = await createAppProject(api, "Check cleanup retry");
-    const removal = await request<{ removed: true; deleted: boolean; cleanupPending: boolean; recentlyDeleted: unknown }>(
-      api,
-      `/api/connected-folders/${connectedFolder.id}`,
-      { method: "DELETE" },
-    );
-    assert.deepEqual(removal, { removed: true, deleted: false, connectedFolderRoot: connectedFolder.connectedFolderRoot, cleanupPending: true, recentlyDeleted: null, appRecentlyDeletedEntries: [], appStudioRecentlyDeleted: null });
-    assert.equal((await listPendingConnectedFolderRemovals())[0]?.phase, "requested");
-    assert.deepEqual((await request<{ connectedFolders: unknown[] }>(api, "/api/bootstrap")).connectedFolders, []);
-
-    await api.close();
-    api = null;
-    const recoveredService = await RestrictedAppService.create({ rootPath: join(stateBase, "restricted-apps") });
-    api = await startLocalApi({
-      port: 0,
-      stateBase,
-      connectedFolderBase,
-      loadEnv: false,
-      restrictedAppService: recoveredService,
-    });
-    assert.deepEqual(await listPendingConnectedFolderRemovals(), []);
-    assert.equal(existsSync(connectedFolder.connectedFolderRoot), false);
-  } finally {
-    await api?.close();
-    await rm(sandbox, { recursive: true, force: true });
-  }
-});
-
-test("Check leases close removal and nested-connected-folder registration races before registry mutation", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "connected-folder-check-registry-leases-api-"));
-  const stateBase = join(sandbox, "state");
-  const connectedFolderBase = join(sandbox, "connected-folders");
-  let api: LocalApiHandle | null = null;
-  try {
-    const initialService = await RestrictedAppService.create({ rootPath: join(stateBase, "restricted-apps") });
-    api = await startLocalApi({
-      port: 0,
-      stateBase,
-      connectedFolderBase,
-      loadEnv: false,
-      restrictedAppService: initialService,
-    });
-    const connectedFolder = await createAppProject(api, "Check lease source");
-    await api.close();
-    api = null;
-
-    let statusGate: Promise<void> | null = null;
-    let signalStatusStarted: (() => void) | null = null;
-    const checks = new AmpleFileCheckService({
-      kernel: new AmpleFileKernel(),
-      listConnectedFolders: async () => {
-        signalStatusStarted?.();
-        if (statusGate) await statusGate;
-        return [{
-          id: connectedFolder.id,
-          name: "Check lease source",
-          connectedFolderRoot: connectedFolder.connectedFolderRoot,
-          location: { kind: "local", storage: "managed" },
-          createdAt: "2026-08-01T00:00:00.000Z",
-          updatedAt: "2026-08-01T00:00:00.000Z",
-        }];
-      },
-    });
-    let releaseRevalidation!: () => void;
-    const revalidationGate = new Promise<void>((resolvePromise) => { releaseRevalidation = resolvePromise; });
-    let signalRevalidationStarted!: () => void;
-    const revalidationStarted = new Promise<void>((resolvePromise) => { signalRevalidationStarted = resolvePromise; });
-    const service = await RestrictedAppService.create({ rootPath: join(stateBase, "restricted-apps") });
-    api = await startLocalApi({
-      port: 0,
-      stateBase,
-      connectedFolderBase,
-      loadEnv: false,
-      restrictedAppService: service,
-      checkService: checks,
-      beforeRestrictedAppConnectedFolderRevalidation: async () => {
-        signalRevalidationStarted();
-        await revalidationGate;
-      },
-    });
-
-    const removalResponsePromise = fetch(`${api.origin}/api/connected-folders/${connectedFolder.id}`, { method: "DELETE" });
-    await revalidationStarted;
-    let releaseStatus!: () => void;
-    statusGate = new Promise<void>((resolvePromise) => { releaseStatus = resolvePromise; });
-    let signalFirstStatus!: () => void;
-    const firstStatusStarted = new Promise<void>((resolvePromise) => { signalFirstStatus = resolvePromise; });
-    signalStatusStarted = signalFirstStatus;
-    const firstStatus = checks.status({ id: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot });
-    await firstStatusStarted;
-    releaseRevalidation();
-    const removalResponse = await removalResponsePromise;
-    assert.equal(removalResponse.status, 409, "removal must refuse before committing an intent when late Check work owns the lease");
-    assert.deepEqual(await listPendingConnectedFolderRemovals(), []);
-    releaseStatus();
-    statusGate = null;
-    signalStatusStarted = null;
-    await firstStatus;
-
-    let releaseSecondStatus!: () => void;
-    statusGate = new Promise<void>((resolvePromise) => { releaseSecondStatus = resolvePromise; });
-    let signalSecondStatus!: () => void;
-    const secondStatusStarted = new Promise<void>((resolvePromise) => { signalSecondStatus = resolvePromise; });
-    signalStatusStarted = signalSecondStatus;
-    const secondStatus = checks.status({ id: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot });
-    await secondStatusStarted;
-    const childRoot = join(connectedFolder.connectedFolderRoot, "Nested");
-    await mkdir(childRoot);
-    const registrationResponse = await fetch(`${api.origin}/api/connected-folders/local-folder`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ connectedFolderRoot: childRoot }),
-    });
-    assert.equal(registrationResponse.status, 409, "registration cannot establish a nested boundary during evidence work");
-    releaseSecondStatus();
-    statusGate = null;
-    signalStatusStarted = null;
-    await secondStatus;
-
-    const registered = await request<{ connectedFolder: { connectedFolderRoot: string } }>(api, "/api/connected-folders/local-folder", {
-      method: "POST",
-      body: { connectedFolderRoot: childRoot },
-    });
-    assert.equal(registered.connectedFolder.connectedFolderRoot, childRoot);
   } finally {
     await api?.close();
     await rm(sandbox, { recursive: true, force: true });

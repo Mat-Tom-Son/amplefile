@@ -150,7 +150,7 @@ an import is built on purpose.
 
 The installed command is how Claude Code, Codex, or any shell-capable agent
 drives the product. Keep its whole shape: a content-free read lane (`context`,
-`work-folders list`, `tasks list`, `capabilities list`, `checks status`) and the
+`work-folders list`, `tasks list`, `capabilities list`) and the
 act lane, where every verb runs at once, leaves a receipt, and takes `--json`:
 
 - `chat`, `chats`: start, follow, and wait on a Worker's Chat.
@@ -159,7 +159,7 @@ act lane, where every verb runs at once, leaves a receipt, and takes `--json`:
 - `agent`: the agent above every work-folder.
 - `requests list|show`: follow one piece of work across work-folders.
 - `automations`: enable, run, stop, and read receipts.
-- `files`, `history`, `search`, `work-folders`, `tools`, `apps`, `checks`,
+- `files`, `history`, `search`, `work-folders`, `tools`, `apps`,
   `jobs`, `worktrees`, `recently-deleted`, `pages validate`.
 
 The tests that hold it are `tests/work-fold-cli-*.test.ts`,
@@ -203,16 +203,16 @@ overview, and runs Automation `agent` steps. Its parts:
 - **Handoffs** copy named files into another work-folder's Chat through the
   restore-pointed path.
 - **@-mentioning a Worker** in a message addresses another work-folder.
-- **Automations**: declared `chat`, `agent`, and `check` steps, run in order
+- **Automations**: declared `chat`, `files`, and `agent` steps, run in order
   so one step can hand its result to the next, on an interval or a
   folder-change trigger, including the ready-made ones.
-- **Background jobs**, **worktrees**, **Checks**, **History**, and
+- **Background jobs**, **worktrees**, **History**, and
   **Recently deleted** all keep their receipts and limits.
 
 ### Sub work-folders
 
 A work-folder can be registered inside another. The host treats each one as
-separately owned: its own History, Search, Checks, Automations, and Chats.
+separately owned: its own History, Search, Automations, and Chats.
 Today:
 
 - `src/shared/folder-nesting.ts` gives one reading of the shape (the parent is
@@ -251,6 +251,7 @@ The new repository should start from the finished file-manager tree without:
   runtime code stays.
 - Decided 2026-11-07 (owner decision): the classic layout, App Studio and
   apps, page folders, and Checks are removed; the built-in browser stays.
+  Checks: done 2026-11-07.
 
 ## Order of work
 

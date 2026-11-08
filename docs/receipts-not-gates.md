@@ -18,6 +18,12 @@
 > the remote operations, and the browser-requested app actions described below
 > no longer exist, and online pages went with them. Entering a secret is the
 > remaining human-only setup surface.
+>
+> **Removed 2026-11-07 (owner decision):** Checks left the product. The
+> text-review Check, an app's Check-result slots, the automation `check`
+> step, and the `check-run` trigger source described below no longer exist,
+> and neither does the
+> `{{trigger.findings}}` placeholder.
 
 ## The principle
 

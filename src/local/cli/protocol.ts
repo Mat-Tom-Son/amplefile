@@ -30,7 +30,7 @@ export const AmpleFileCliExitCode = {
 export type AmpleFileCliExitCode = typeof AmpleFileCliExitCode[keyof typeof AmpleFileCliExitCode];
 export type AmpleFileCliErrorCode = Exclude<keyof typeof AmpleFileCliExitCode, "success">;
 export type AmpleFileCliOutputMode = "human" | "json";
-export type AmpleFileCliCommandName = "help" | "version" | "skill" | "context" | "connected-folders.list" | "tasks.list" | "capabilities.list" | "checks.status";
+export type AmpleFileCliCommandName = "help" | "version" | "skill" | "context" | "connected-folders.list" | "tasks.list" | "capabilities.list";
 
 export type AmpleFileCliJson =
   | null
@@ -105,35 +105,6 @@ export interface AmpleFileCliCapabilitySummary {
   source?: string;
 }
 
-export type AmpleFileCliCheckAggregateState =
-  | "unavailable"
-  | "not-configured"
-  | "current-clear"
-  | "needs-attention"
-  | "stale"
-  | "blocked"
-  | "check-error";
-
-/** Experimental, aggregate-only Check status. It never carries content. */
-export interface AmpleFileCliCheckStatusSummary {
-  kind: "amplefile.checks.experimental";
-  version: 1;
-  available: boolean;
-  connectedFolderId: string;
-  state: AmpleFileCliCheckAggregateState;
-  configured: number;
-  proposed: number;
-  enabled: number;
-  current: number;
-  neverRun: number;
-  stale: number;
-  blocked: number;
-  errors: number;
-  needsAttention: number;
-  running: number;
-  lastRunAt: string | null;
-}
-
 /**
  * The deliberately narrow adapter needed by the CLI executor. AmpleFileKernel
  * satisfies this interface through a compact projection without importing
@@ -144,7 +115,6 @@ export interface AmpleFileCliKernel {
   listConnectedFolders(actor: AmpleFileCliActor, options: { connectedFolder?: string }): Promise<AmpleFileCliConnectedFolderSummary[]>;
   listTasks(actor: AmpleFileCliActor, options: { connectedFolder?: string }): Promise<AmpleFileCliTaskSummary[]>;
   listCapabilities(actor: AmpleFileCliActor, options: { connectedFolder?: string }): Promise<AmpleFileCliCapabilitySummary[]>;
-  getChecksStatus?(actor: AmpleFileCliActor, options: { connectedFolder?: string }): Promise<AmpleFileCliCheckStatusSummary>;
 }
 
 export class AmpleFileCliError extends Error {

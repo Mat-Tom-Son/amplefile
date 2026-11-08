@@ -68,22 +68,6 @@ export function connectedFolderStateDir(connectedFolderRoot: string): string {
   return join(ampleFileStateRoot(), "state", "connected-folders", key);
 }
 
-/**
- * Machine-local Check authority and private run state, keyed by stable
- * Connected Folder identity rather than the folder path. Moving a registered
- * Connected Folder therefore preserves its state, while removal can explicitly
- * revoke the one identity.
- */
-export function connectedFolderCheckStateFile(connectedFolderId: string): string {
-  const normalized = connectedFolderId.trim();
-  if (!normalized || normalized.length > 160 || /[^\x20-\x7e]/.test(normalized)) {
-    throw new Error("A valid Connected Folder id is required for Check state.");
-  }
-  const readable = safeSegment(normalized).slice(0, 48) || "space";
-  const hash = createHash("sha256").update(normalized).digest("hex").slice(0, 16);
-  return join(ampleFileStateRoot(), "checks", "connected-folders", `${readable}-${hash}.json`);
-}
-
 export function connectedFolderMetadataDir(connectedFolderRoot: string): string {
   return portableMetadataPath(join(resolve(connectedFolderRoot), ".amplefile"), "Connected Folder metadata directory");
 }
@@ -102,11 +86,6 @@ export function connectedFolderManifestFile(connectedFolderRoot: string): string
 
 export function connectedFolderConversationDir(connectedFolderRoot: string): string {
   return portableMetadataPath(join(connectedFolderMetadataDir(connectedFolderRoot), "conversations"), "Connected Folder conversation directory");
-}
-
-/** Portable, inert Check declarations. Local enablement remains in app state. */
-export function connectedFolderCheckDeclarationDir(connectedFolderRoot: string): string {
-  return portableMetadataPath(join(connectedFolderMetadataDir(connectedFolderRoot), "checks"), "Connected Folder Check declaration directory");
 }
 
 export function connectedFolderHistoryRoot(connectedFolderRoot: string): string {

@@ -57,46 +57,6 @@ test("the act facade drives Connected Folder, conversation, and file-addition li
     assert.equal(registered.connectedFolder.connectedFolderRoot, registeredRoot);
     await assert.rejects(() => facade.registerConnectedFolder({ connectedFolderRoot: "relative/path" }), /absolute folder path/);
 
-    // Checks remain inert until an explicit enable act, operate over the exact
-    // designated file, and use their own task-scoped result lifecycle.
-    const checkProposalPath = join(sandbox, "required-delivery.amplefile-check.json");
-    await writeFile(checkProposalPath, JSON.stringify({
-      kind: "amplefile.check-proposal",
-      version: 1,
-      name: "Required delivery",
-      createdBy: "human",
-      createdAt: "2026-08-01T00:00:00.000Z",
-      check: {
-        title: "The signed delivery exists",
-        severity: "error",
-        trigger: "manual",
-        sensor: { id: "amplefile.file-presence", revision: 1, parameters: { expect: "present" } },
-        targets: [{ kind: "file", role: "primary", path: "Delivery/signed.pdf" }],
-      },
-    }), "utf8");
-    const check = await facade.checksEnable({
-      connectedFolder: createdConnectedFolder.connectedFolder.id,
-      proposalPath: checkProposalPath,
-      cwd: sandbox,
-    });
-    assert.equal(check.check.targetCount, 1);
-    const checkRun = await facade.checksRun({ connectedFolder: createdConnectedFolder.connectedFolder.id, checkId: check.check.id });
-    await waitForAsync(async () => {
-      const status = await facade.checksTask({ connectedFolder: createdConnectedFolder.connectedFolder.id, taskId: checkRun.taskId });
-      return status.task.state !== "accepted" && status.task.state !== "running";
-    });
-    const checkResult = await facade.checksResult({ connectedFolder: createdConnectedFolder.connectedFolder.id, taskId: checkRun.taskId });
-    assert.equal(checkResult.run.state, "succeeded");
-    assert.equal(checkResult.run.findings.length, 1);
-    const checkProblems = await facade.checksProblems({ connectedFolder: createdConnectedFolder.connectedFolder.id, checkId: check.check.id });
-    assert.equal(checkProblems.findings.length, 1);
-    await facade.checksDecide({
-      connectedFolder: createdConnectedFolder.connectedFolder.id,
-      findingId: checkProblems.findings[0]!.id,
-      decision: "reject",
-    });
-    assert.equal((await facade.checksProblems({ connectedFolder: createdConnectedFolder.connectedFolder.id })).findings.length, 0);
-
     const conversation = await facade.createConversation({ connectedFolder: createdConnectedFolder.connectedFolder.id });
     await assert.rejects(
       () => facade.sendMessage({ connectedFolder: createdConnectedFolder.connectedFolder.id, content: "hello" }),

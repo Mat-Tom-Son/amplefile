@@ -6,26 +6,24 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { RestrictedAppService } from "../src/local/agent/restricted-app-service.js";
-import { AmpleFileCheckService } from "../src/local/checks/check-service.js";
-import { AmpleFileCheckStore } from "../src/local/checks/check-store.js";
 import {
   AmpleFileSettleSignal,
   type AmpleFileAppAutomationRunSettleRecord,
-  type AmpleFileCheckRunSettleRecord,
   type AmpleFileAutomationHopLineage,
   type AmpleFileSettleRecord,
 } from "../src/local/automations/settle-signal.js";
-import { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
 
-const checkRunRecord: AmpleFileCheckRunSettleRecord = {
-  kind: "check-run",
+const firstAppAutomationRunRecord: AmpleFileAppAutomationRunSettleRecord = {
+  kind: "app-automation-run",
   connectedFolderId: "connected-folder-shape",
-  runId: "check-run-1",
-  taskId: "check-task-1",
-  checkIds: ["check-1"],
-  state: "succeeded",
-  startedAt: "2026-08-10T17:00:00.000Z",
-  endedAt: "2026-08-10T17:00:01.000Z",
+  appId: "connected-inbox",
+  appAutomationId: "file-mail",
+  runId: "app-automation-run-0",
+  outcome: "success",
+  reason: "scheduled",
+  scheduledAt: "2026-08-10T17:00:00.000Z",
+  startedAt: "2026-08-10T17:00:00.100Z",
+  finishedAt: "2026-08-10T17:00:01.000Z",
 };
 
 const appAutomationRunRecord: AmpleFileAppAutomationRunSettleRecord = {
@@ -53,32 +51,32 @@ test("settle records reach listeners in publication order as isolated copies", (
   const deliveries: string[] = [];
   signal.subscribe((record) => {
     deliveries.push(`one:${record.runId}`);
-    if (record.kind === "check-run") {
-      record.checkIds.push("mutant");
-      record.state = "failed";
+    if (record.runId === "app-automation-run-0") {
+      record.appAutomationId = "mutant";
+      record.outcome = "failure";
     }
   });
   signal.subscribe((record) => {
     deliveries.push(`two:${record.runId}`);
-    if (record.kind === "check-run") {
-      assert.deepEqual(record.checkIds, ["check-1"], "one listener's mutation must not reach another");
-      assert.equal(record.state, "succeeded");
+    if (record.runId === "app-automation-run-0") {
+      assert.equal(record.appAutomationId, "file-mail", "one listener's mutation must not reach another");
+      assert.equal(record.outcome, "success");
       assert.deepEqual(record.lineage, lineage);
     }
   });
 
-  const published = structuredClone(checkRunRecord);
+  const published = structuredClone(firstAppAutomationRunRecord);
   published.lineage = structuredClone(lineage);
   signal.publish(published);
   signal.publish(appAutomationRunRecord);
 
   assert.deepEqual(deliveries, [
-    "one:check-run-1",
-    "two:check-run-1",
+    "one:app-automation-run-0",
+    "two:app-automation-run-0",
     "one:app-automation-run-1",
     "two:app-automation-run-1",
   ]);
-  assert.deepEqual(published.checkIds, ["check-1"], "listeners must not mutate the publisher's record");
+  assert.equal(published.appAutomationId, "file-mail", "listeners must not mutate the publisher's record");
   assert.equal("lineage" in appAutomationRunRecord, false, "publication must not decorate the caller's record");
   assert.deepEqual(signal.listListenerErrors(), []);
 });
@@ -99,12 +97,12 @@ test("listener failures are bounded diagnostics, never a publisher error", async
     received.push(record.runId);
   });
 
-  signal.publish(checkRunRecord);
+  signal.publish(firstAppAutomationRunRecord);
   await waitForCondition(() => signal.listListenerErrors().length === 2);
-  assert.deepEqual(received, ["check-run-1"], "a failing listener never blocks delivery to the rest");
+  assert.deepEqual(received, ["app-automation-run-0"], "a failing listener never blocks delivery to the rest");
   const [syncError, asyncError] = signal.listListenerErrors();
-  assert.equal(syncError?.recordKind, "check-run");
-  assert.equal(syncError?.runId, "check-run-1");
+  assert.equal(syncError?.recordKind, "app-automation-run");
+  assert.equal(syncError?.runId, "app-automation-run-0");
   assert.equal(syncError?.occurredAt, "2026-08-10T18:00:00.000Z");
   assert.equal(syncError?.error.length, 300, "listener error text is bounded");
   assert.equal(syncError?.error.endsWith("…"), true);
@@ -136,162 +134,11 @@ test("subscription capacity is bounded and unsubscribe is idempotent", () => {
   unsubscribe();
   unsubscribe();
   assert.equal(signal.listenerCount, 0);
-  signal.publish(checkRunRecord);
+  signal.publish(firstAppAutomationRunRecord);
   assert.deepEqual(received, [], "an unsubscribed listener receives nothing");
   const replacement = signal.subscribe(() => undefined);
   assert.equal(signal.listenerCount, 1, "released capacity is reusable");
   replacement();
-});
-
-test("Check settles publish after durable terminal persistence, carry lineage, and survive listener bugs", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-settle-check-"));
-  const root = join(sandbox, "connected-folder");
-  await mkdir(root);
-  const proposalPath = join(sandbox, "proposal.json");
-  await writeFile(proposalPath, JSON.stringify(absenceProposal()));
-  const statePath = join(sandbox, "connected-folder-settle.json");
-  const signal = new AmpleFileSettleSignal();
-  const service = new AmpleFileCheckService({
-    kernel: new AmpleFileKernel(),
-    storeFactory: (connectedFolderId) => AmpleFileCheckStore.create(connectedFolderId, { path: statePath }),
-    listConnectedFolders: async () => [connectedFolderSummary("connected-folder-settle", root)],
-    settleSignal: signal,
-  });
-  t.after(() => service.close());
-  const connectedFolder = { id: "connected-folder-settle", connectedFolderRoot: root };
-  const enabled = await service.enable({ connectedFolder, proposalPath, actor: "human" });
-
-  const received: AmpleFileSettleRecord[] = [];
-  const durableAtPublication: boolean[] = [];
-  signal.subscribe(() => {
-    throw new Error("automation listener bug");
-  });
-  signal.subscribe((record) => {
-    if (record.kind !== "check-run") return;
-    const persisted = JSON.parse(readFileSync(statePath, "utf8")) as { runs: Array<{ id: string; state: string }> };
-    durableAtPublication.push(persisted.runs.some((run) => run.id === record.runId && run.state === record.state));
-    received.push(record);
-  });
-
-  const accepted = await service.run({
-    connectedFolder,
-    checkId: enabled.declaration.id,
-    actor: { kind: "cli", connectedFolderId: connectedFolder.id },
-    lineage,
-  });
-  const run = await waitForTerminal(service, connectedFolder.id, accepted.taskId);
-  assert.equal(run.state, "succeeded", "a listener bug must never fail the Check run");
-  await waitForCondition(() => received.length === 1);
-  assert.deepEqual(received, [{
-    kind: "check-run",
-    connectedFolderId: connectedFolder.id,
-    runId: accepted.runId,
-    taskId: accepted.taskId,
-    checkIds: [enabled.declaration.id],
-    state: "succeeded",
-    startedAt: run.startedAt,
-    endedAt: run.endedAt,
-    lineage,
-  }]);
-  assert.deepEqual(durableAtPublication, [true], "publication happens only after the exact terminal record is durable");
-  assert.equal(signal.listListenerErrors().length, 1, "the failing listener is isolated into diagnostics");
-
-  const second = await service.run({ connectedFolder, checkId: enabled.declaration.id, actor: { kind: "renderer", connectedFolderId: connectedFolder.id } });
-  await waitForTerminal(service, connectedFolder.id, second.taskId);
-  await waitForCondition(() => received.length === 2);
-  assert.equal(received[1]?.runId, second.runId);
-  assert.equal("lineage" in received[1]!, false, "a person-caused run settles without automation lineage");
-});
-
-test("a Check run refused at admission still settles exactly once as durably failed", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-settle-check-admission-"));
-  const root = join(sandbox, "connected-folder");
-  await mkdir(root);
-  const proposalPath = join(sandbox, "proposal.json");
-  await writeFile(proposalPath, JSON.stringify(absenceProposal()));
-  const statePath = join(sandbox, "state.json");
-  const store = await AmpleFileCheckStore.create("connected-folder-admission", { path: statePath });
-  store.markRunRunning = async () => {
-    throw new Error("injected admission failure");
-  };
-  const signal = new AmpleFileSettleSignal();
-  const received: AmpleFileSettleRecord[] = [];
-  const durableAtPublication: boolean[] = [];
-  signal.subscribe((record) => {
-    if (record.kind !== "check-run") return;
-    const persisted = JSON.parse(readFileSync(statePath, "utf8")) as { runs: Array<{ id: string; state: string }> };
-    durableAtPublication.push(persisted.runs.some((run) => run.id === record.runId && run.state === record.state));
-    received.push(record);
-  });
-  const service = new AmpleFileCheckService({
-    kernel: new AmpleFileKernel(),
-    storeFactory: async () => store,
-    listConnectedFolders: async () => [connectedFolderSummary("connected-folder-admission", root)],
-    settleSignal: signal,
-  });
-  t.after(() => service.close());
-  const connectedFolder = { id: "connected-folder-admission", connectedFolderRoot: root };
-  const enabled = await service.enable({ connectedFolder, proposalPath, actor: "human" });
-
-  await assert.rejects(
-    () => service.run({ connectedFolder, checkId: enabled.declaration.id, actor: { kind: "cli" } }),
-    /injected admission failure/,
-  );
-  assert.equal(received.length, 1);
-  assert.equal(received[0]?.kind, "check-run");
-  assert.equal(received[0]?.state, "failed");
-  assert.equal(received[0]?.connectedFolderId, connectedFolder.id);
-  assert.equal("lineage" in received[0]!, false);
-  assert.deepEqual(durableAtPublication, [true]);
-});
-
-test("a settle waits out terminal persistence failure and publishes exactly once after recovery", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-settle-check-recovery-"));
-  const root = join(sandbox, "connected-folder");
-  await mkdir(root);
-  const proposalPath = join(sandbox, "proposal.json");
-  await writeFile(proposalPath, JSON.stringify(absenceProposal()));
-  const store = await AmpleFileCheckStore.create("connected-folder-recovery", { path: join(sandbox, "state.json") });
-  const finishRun = store.finishRun.bind(store);
-  let injectedFailures = 0;
-  store.finishRun = async (run) => {
-    if (run.state === "succeeded" && injectedFailures++ === 0) throw new Error("injected terminal write failure");
-    return finishRun(run);
-  };
-  const signal = new AmpleFileSettleSignal();
-  const received: AmpleFileSettleRecord[] = [];
-  signal.subscribe((record) => {
-    received.push(record);
-  });
-  const service = new AmpleFileCheckService({
-    kernel: new AmpleFileKernel(),
-    storeFactory: async () => store,
-    listConnectedFolders: async () => [connectedFolderSummary("connected-folder-recovery", root)],
-    settleSignal: signal,
-  });
-  t.after(() => service.close());
-  const connectedFolder = { id: "connected-folder-recovery", connectedFolderRoot: root };
-  const enabled = await service.enable({ connectedFolder, proposalPath, actor: "human" });
-  const accepted = await service.run({
-    connectedFolder,
-    checkId: enabled.declaration.id,
-    actor: { kind: "cli" },
-    lineage,
-  });
-  await waitForCondition(() => injectedFailures > 0);
-  assert.equal(received.length, 0, "no settle may be published before its terminal record is durable");
-
-  const status = await service.taskStatus(connectedFolder.id, accepted.taskId);
-  assert.equal(status.state, "succeeded");
-  assert.equal(received.length, 1, "recovery publishes the deferred settle");
-  const recovered = received[0];
-  assert.ok(recovered && recovered.kind === "check-run");
-  assert.equal(recovered.runId, accepted.runId);
-  assert.deepEqual(recovered.lineage, lineage);
-
-  await service.taskStatus(connectedFolder.id, accepted.taskId);
-  await service.taskResult(connectedFolder.id, accepted.taskId);
-  assert.equal(received.length, 1, "repeated polls never republish a settled run");
 });
 
 test("automation settles publish once after the durable receipt and never fail the run", async () => {
@@ -372,23 +219,6 @@ test("automation settles publish once after the durable receipt and never fail t
   }
 });
 
-function absenceProposal() {
-  return {
-    kind: "amplefile.check-proposal",
-    version: 1,
-    name: "Stray export",
-    createdBy: "human",
-    createdAt: "2026-08-01T00:00:00.000Z",
-    check: {
-      title: "The stray export stays absent",
-      severity: "error",
-      trigger: "manual",
-      sensor: { id: "amplefile.file-presence", revision: 1, parameters: { expect: "absent" } },
-      targets: [{ kind: "file", role: "primary", path: "Delivery/stray.tmp" }],
-    },
-  } as const;
-}
-
 async function writeAppAutomationPackage(root: string): Promise<void> {
   await mkdir(root, { recursive: true });
   await writeFile(join(root, "package.json"), JSON.stringify({
@@ -449,27 +279,6 @@ async function writeAppAutomationPackage(root: string): Promise<void> {
     "// This code must remain inert during review and installation.\nexport async function handleAction() { return { count: 0 }; }\nexport async function handleAutomation() {}\n",
     "utf8",
   );
-}
-
-async function waitForTerminal(service: AmpleFileCheckService, connectedFolderId: string, taskId: string) {
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    const status = await service.taskStatus(connectedFolderId, taskId);
-    if (status.state !== "accepted" && status.state !== "running") return service.taskResult(connectedFolderId, taskId);
-    await new Promise<void>((resolve) => setTimeout(resolve, 5));
-  }
-  throw new Error("Timed out waiting for Check task.");
-}
-
-function connectedFolderSummary(id: string, connectedFolderRoot: string) {
-  return {
-    id,
-    name: id,
-    connectedFolderRoot,
-    location: { kind: "local" as const, storage: "linked" as const },
-    createdAt: "2026-08-01T00:00:00.000Z",
-    updatedAt: "2026-08-01T00:00:00.000Z",
-  };
 }
 
 async function waitForCondition(predicate: () => boolean): Promise<void> {

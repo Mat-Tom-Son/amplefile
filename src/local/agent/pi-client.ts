@@ -1,5 +1,3 @@
-import { modelReviewSubmissionSchema, modelReviewSystemPrompt, type AmpleFileModelCheckRequest, type AmpleFileModelCheckResponse } from "../checks/model-review-sensor.js";
-import { modelCheckLimits } from "../checks/check-text.js";
 import { createHash, randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -343,17 +341,12 @@ export class PiConversationClient extends EventEmitter {
   ) {
     super();
     // Attribute auxiliary calls without changing their transport implementations.
-    // In particular, the Check request body is source-pinned sensor authority:
-    // diagnostics must neither change its bytes nor require re-enablement.
     const title = this.generateConversationTitle;
     this.generateConversationTitle = (request, response) => this.modelCall.run(
       { purpose: "title" }, () => title.call(this, request, response));
     const infer = this.infer;
     this.infer = (request) => this.modelCall.run(
       { purpose: "app_inference" }, () => infer.call(this, request));
-    const review = this.reviewCheck;
-    this.reviewCheck = (input) => this.modelCall.run(
-      { purpose: "check" }, () => review.call(this, input));
   }
 
   /** Sends the user's exact text to Pi; /skill and extension commands stay raw. */
@@ -704,31 +697,6 @@ export class PiConversationClient extends EventEmitter {
     }
   }
 
-  /** Uses the native configured transport, but no conversation messages,
-   * extensions' tools, or tool-execution loop enter the review request. */
-  async reviewCheck(input: AmpleFileModelCheckRequest): Promise<AmpleFileModelCheckResponse> {
-    const session = await this.ensureSession();
-    const model = session.model;
-    if (!model) throw new Error("Choose a model for the AmpleFile agent in Settings → AI Models before running model-backed Checks.");
-    const reviewReasoning = session.getAvailableThinkingLevels().find((level) => level !== "off");
-    const payload = JSON.stringify({ criteria: input.criteria, files: input.files.map(({ path, text, roles }) => ({ path, text, roles })) });
-    const reviewOutputTokens = model.maxTokens > 0 ? model.maxTokens : 32_768;
-    // About four characters per token for prose; the provider remains the authority.
-    if (payload.length / 4 + Math.min(reviewOutputTokens, model.contextWindow / 4) > model.contextWindow) throw new Error("These Check inputs exceed the selected model's context window. Narrow the targets or select a larger-context model for the AmpleFile agent.");
-    const stream = await session.agent.streamFunction(model, normalizeContext({
-      systemPrompt: modelReviewSystemPrompt,
-      messages: [{ role: "user", content: payload, timestamp: Date.now() }],
-      tools: [{ name: "submit_review", description: "Submit the completed review once. Quotes must exactly and uniquely match primary text.", parameters: modelReviewSubmissionSchema }],
-    }), { maxTokens: reviewOutputTokens, maxRetries: 2, timeoutMs: modelCheckLimits.timeoutMs, signal: input.signal, ...(reviewReasoning ? { reasoning: reviewReasoning } : {}) });
-    const result = await stream.result();
-    if (result.stopReason === "length") throw new Error("The model review exceeded its output limit. Narrow the Check criteria or selected files, then run again. No findings were admitted.");
-    if (result.stopReason === "aborted") throw new Error("The model review was interrupted. No findings were admitted.");
-    if (result.stopReason === "error") throw new Error("The model review did not complete. Check the AmpleFile agent's provider connection or narrow the selected files, then run again.");
-    const calls = result.content.filter((part) => part.type === "toolCall");
-    if (calls.length !== 1 || calls[0]?.name !== "submit_review") throw new Error("The model did not return the required complete review submission. No findings were admitted.");
-    return { submission: calls[0].arguments, cost: { model: `${model.provider}/${model.id}`, inputTokens: result.usage.input, outputTokens: result.usage.output, amountUsd: result.usage.cost.total } };
-  }
-
   /** A bounded, settled copy of the thinking and tool trail shown for this turn. */
   getTurnWorkTrail(): PiTurnWorkTrailEntry[] {
     return [...this.turnWorkTrail.values()]
@@ -1036,7 +1004,7 @@ export class PiConversationClient extends EventEmitter {
       runtime: { cwd: this.connectedFolderRoot, agentDir: this.resolvedRuntime?.agentDir },
       dispatch: describeModelContextDispatch(context),
       // These describe the loaded session, not inputs necessarily used by this
-      // call. Bounded inference, titles and Checks assemble separate contexts.
+      // call. Bounded inference and titles assemble separate contexts.
       loadedSessionResources: {
         contextFiles: session.resourceLoader.getAgentsFiles().agentsFiles.map((file) => ({
           path: file.path, sha256: createHash("sha256").update(file.content).digest("hex"), bytes: Buffer.byteLength(file.content),
@@ -1741,11 +1709,10 @@ export function createRestrictedAppProposalTool(input: {
       "App storage calls take positional arguments: await bridge.storage.get(key) returns the saved JSON value or undefined; await bridge.storage.set(key,value) saves JSON; await bridge.storage.delete(key) removes it; await bridge.storage.keys(prefix?) lists matching keys. For an atomic update, await bridge.storage.transaction({expectedRevision,set:[{key,value}],delete:[key]}) uses the revision from await bridge.storage.usage(). Here bridge is globalThis.ampleFileRestrictedApp. Load saved state once at startup and explicitly save successful changes; storage methods are asynchronous.",
       "A declared worker is a browser ES module. Export handleAction(action,input) for tools and handleAutomation(event) for named automations; the event includes runId, appAutomationId (the automation's declared id), handler, reason, and scheduledAt; dispatch on event.appAutomationId or event.handler. Only handleAutomation can call notifications.show({permissionId, route?, state?}). The person sees only the category's static copy; route (an origin-relative path such as '/threads/42', at most 2,048 characters, default '/') and state (JSON, at most 64 KiB) say where a click opens the app: always its left-pane view, never a tab, with context.get().route and state set to them and context.get().openedFrom set to {kind:'notification', permissionId}; a left pane that is already open gets them through context.onChanged. Name a route that shows what the notification is about. Tool input/result schemas use the bounded closed JSON-Schema subset and object schemas set additionalProperties:false. A run can use only the intersection of its declared permission subsets and the app's current grants, which start on and stay on until the person narrows them in Settings → Apps. Notifications are narrower: only an enabled automation may select one of its declared static categories. Manual Run now remains available while a schedule is off, but notifications stay unavailable. Treat optional powers as optional and catch denied notification or connection calls without failing unrelated work.",
       "Always give the app a short human-readable title, a one-sentence description, and a ui.icon chosen from AmpleFile's icon catalog (for example apps, mail, calendar, notebook, table, chart, checklist, tasks, clipboard-data, globe, people-team, star, rocket). AmpleFile shows exactly those three as the app's name, description, and rail icon, so never leave title or description as placeholders like Untitled or TODO.",
-      "Installed apps come up with every declared destination, directory permission (whole Connected Folder), notification, and automation on; the person can turn each off in Settings → Apps. A file-target permission needs the person to choose a file and a Check slot binds only when the Connected Folder has exactly one Check; both are reported as still needing them. Design for a destination to be unconnected and say so in the UI.",
+      "Installed apps come up with every declared destination, directory permission (whole Connected Folder), notification, and automation on; the person can turn each off in Settings → Apps. A file-target permission needs the person to choose a file and is reported as still needing them. Design for a destination to be unconnected and say so in the UI.",
       `The optional top-level assistantActions array declares named requests the app can hand to this Connected Folder's Worker: each has id, a single-line title (80 characters), static instructions, an inputSchema in the same closed JSON-Schema subset, and an optional outputSchema in that same subset. From an app view, the app's worker module, or an automation, call globalThis.ampleFileRestrictedApp.assistant.request({ requestId, requestedAt, actionId, input }) with a fresh UUID and canonical UTC timestamp; it starts an ordinary Worker Chat in the owning Connected Folder immediately and returns the task. Input is at most ${restrictedAppLimitSize(restrictedAppAssistantLimits.inputBytes)} and up to ${restrictedAppAssistantLimits.runningPerInstallation} requests may run at once per installation; a refusal names the bound it hit. Save the envelope in app storage and replay the same envelope after an uncertain response; assistant.list, assistant.get(requestId), and assistant.cancel(requestId) cover the rest. A settled task carries one result shape: result.summary (at most ${restrictedAppLimitSize(restrictedAppAssistantLimits.summaryBytes)}), result.outcome (succeeded, partial, or failed), result.truncated, result.data only when the action declared outputSchema and the reported value matches it, and result.files naming Connected Folder–relative deliverables with sha256 and sizeBytes. Declare outputSchema whenever the app needs structured details back rather than prose. Subscribe with tasks.onChanged to learn a task moved instead of polling.`,
       `assistant.infer({ instructions, input, outputSchema?, maxOutputBytes? }), from an app view or from the app's worker module while it holds an action or automation run, performs one bounded model call on the Connected Folder's configured model with no tools, files, or conversation history. It returns { text, truncated, receiptId } or, when outputSchema (the same closed JSON-Schema subset as tool schemas) is given, { json, receiptId } already validated against it; both carry the model and its usage, receiptId matches the id a tasks.onChanged hint carries, and every call leaves a receipt under the app in Settings → Apps. Put the task in instructions and treat input as data. Input is at most ${restrictedAppLimitSize(restrictedAppInferenceLimits.inputBytes)}; output is at most ${restrictedAppLimitSize(restrictedAppInferenceLimits.defaultOutputBytes)} unless maxOutputBytes sets another cap (at most ${restrictedAppInferenceLimits.maxOutputBytes} bytes); and up to ${restrictedAppInferenceLimits.runningPerInstallation} calls run at once per installation while more wait their turn. Each refusal names the bound it hit — INFER_INPUT_TOO_LARGE, INFER_OUTPUT_TOO_LARGE, INFER_BUSY, INFER_OUTPUT_INVALID, INFER_MODEL_UNAVAILABLE. Use assistant.request when the work needs tools or files and assistant.infer when a single answer over supplied text is enough.`,
-      "permissions.checks declares Check-result slots as {id,title}; the app reads the bound Check with globalThis.ampleFileRestrictedApp.checks.read({ permissionId }) from an active view only. A slot binds automatically only when the Connected Folder has exactly one Check; otherwise the person chooses one in Settings → Apps. checks.onChanged tells an active view that a selected result moved, naming the app's own permission ids.",
-      "When propose_connected_folder_app returns installed, the app is added and working; tell the person what still needs them (a secret to connect, a file or Check to choose) and where (Settings → Apps, under the app). If it returns failed, fix the package and propose again.",
+      "When propose_connected_folder_app returns installed, the app is added and working; tell the person what still needs them (a secret to connect or a file to choose) and where (Settings → Apps, under the app). If it returns failed, fix the package and propose again.",
     ],
     parameters: {
       type: "object",

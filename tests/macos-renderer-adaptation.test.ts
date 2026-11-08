@@ -85,7 +85,7 @@ test("macOS vibrancy is confined to navigation with an opaque work surface and s
 
 test("desktop Connected Folder state and Finder-open automation are wired in the renderer", () => {
   assert.match(app, /connectedFolder\.setActiveConnectedFolder\?\.\(activeConnectedFolder\?\.id \?\? null\)/);
-  assert.match(app, /desktopConnectedFolder\.onOpenConnectedFolder\(\(connectedFolderId, view\)/);
+  assert.match(app, /desktopConnectedFolder\.onOpenConnectedFolder\(\(connectedFolderId\) =>/);
   assert.match(app, /function refreshOnReturn\(\)[\s\S]*?void refreshBootstrap\(\)/);
   assert.match(app, /window\.addEventListener\("focus", refreshOnReturn\)/);
   assert.match(app, /document\.addEventListener\("visibilitychange", refreshOnReturn\)/);

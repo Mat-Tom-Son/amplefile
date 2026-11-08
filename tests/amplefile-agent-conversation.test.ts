@@ -66,10 +66,8 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     // The identity line names the AmpleFile agent while keeping "AmpleFile agent"
     // as the contract phrase in the same sentence.
     assert.match(ampleFileAgentContext, /You are the AmpleFile agent — the agent above all Connected Folders in this computer's AmpleFile app\./);
-    assert.match(ampleFileAgentContext, /Checks are optional, manual expectations/);
-    assert.match(ampleFileAgentContext, /Never turn an ordinary request.*standing behavior/);
-    assert.match(ampleFileAgentContext, /not-configured.*unknown, not clear/);
-    assert.match(ampleFileAgentContext, /Only after an explicit enable instruction/);
+    // Checks were removed (2026-11-07): nothing teaches the agent a Check verb.
+    assert.doesNotMatch(ampleFileAgentContext, /\bchecks (status|run|propose|enable)\b|## Checks/);
     // The teaching pass (docs/act-ledger.md): the instructions name the
     // complete landed verb surface, family by family, with the ledger's
     // command shapes.
@@ -119,9 +117,8 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /Connected Folder apps come up able to work\./);
     assert.match(ampleFileAgentContext, /grant each declared folder permission over the whole Connected Folder/);
     // What the installer actually does not grant: the AmpleFile agent must relay it
-    // rather than report a Check slot or a chosen file as already granted.
+    // rather than report a chosen file as already granted.
     assert.match(ampleFileAgentContext, /a permission that names a single file/);
-    assert.match(ampleFileAgentContext, /a Check-result slot when the Connected Folder has more than one Check/);
     assert.match(ampleFileAgentContext, /Relay that list; do not report those as granted\./);
     assert.match(ampleFileAgentContext, /apps list --connected-folder <id> --json/);
     assert.match(ampleFileAgentContext, /apps invoke --connected-folder <id> --app <id> --tool <name> --input/);
@@ -148,7 +145,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /automations enable --proposal/);
     assert.match(ampleFileAgentContext, /enabling the same declaration again changes nothing/);
     assert.match(ampleFileAgentContext, /Use version 4 for placeholders or an agent step/);
-    assert.match(ampleFileAgentContext, /[Oo]rdered steps use four kinds/);
+    assert.match(ampleFileAgentContext, /[Oo]rdered steps use three kinds/);
     assert.match(ampleFileAgentContext, /\{\{trigger\.summary\}\}/);
     assert.match(ampleFileAgentContext, /a message into a new thread of your own/);
     assert.match(ampleFileAgentContext, /Anything else inside `\{\{ \}\}` is refused when you enable/);
@@ -229,8 +226,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(skillContent, /## Tools and apps/);
     assert.match(skillContent, /Connected Folder apps come up able to work/);
     assert.match(skillContent, /grant each declared folder permission over the whole Connected Folder/);
-    assert.match(skillContent, /bind a Check-result slot when the Connected Folder has exactly one Check/);
-    assert.match(skillContent, /still need the person in Settings → Apps/);
+    assert.match(skillContent, /A single-file permission still needs the person in Settings → Apps/);
     assert.match(skillContent, /apps invoke --connected-folder <id> --app <id> --tool <name> --input <json>/);
     assert.match(skillContent, /leave a copy in Recently deleted first/);
     assert.match(skillContent, /recently-deleted restore --entry <id>/);
@@ -242,7 +238,8 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(skillContent, /any future time up to ten years ahead/);
     assert.match(skillContent, /automations enable --proposal/);
     assert.match(skillContent, /Version 4 adds the closed placeholder set and the `agent` step/);
-    assert.match(skillContent, /`chat`, `files`, `check`, or `agent`/);
+    assert.match(skillContent, /`chat`, `files`, or `agent`/);
+    assert.doesNotMatch(skillContent, /Optional Checks|checks (status|run)/);
     assert.match(skillContent, /automations list\|show\|run\|stop\|disable\|delete\|receipts/);
     assert.match(skillContent, /A pure reminder does no future Worker work/);
     assert.match(skillContent, /Deferred work uses a version-2 `at` automation/);

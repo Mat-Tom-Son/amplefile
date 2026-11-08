@@ -94,7 +94,7 @@ not start) | `interrupted` (AmpleFile closed or restarted first).
   an unwritable journal refuses. The command runs through Pi's own shell
   configuration and environment with stdin closed, in its own process group,
   with `AMPLEFILE_JOB_ID` set. A kernel task record (`job`, experimental like
-  `check_run`, outside the stable `amplefile.tasks` v1 projection) lives while it runs.
+  `automation_run`, outside the stable `amplefile.tasks` v1 projection) lives while it runs.
 - **Turn end.** The starting turn ends normally; the job keeps running. The
   turn's post-turn History checkpoint covers what the job wrote by then.
 - **Shell exit.** On macOS and other POSIX hosts, remaining processes in the

@@ -74,18 +74,18 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       }) => ipcRenderer.invoke("amplefile:connected-folder:popup-header-menu", request),
     } : {}),
     setActiveConnectedFolder: (connectedFolderId: string | null) => ipcRenderer.invoke("amplefile:connected-folder:set-active-connected-folder", connectedFolderId),
-    onOpenConnectedFolder: (callback: (connectedFolderId: string, view?: "checks") => void) => {
+    onOpenConnectedFolder: (callback: (connectedFolderId: string) => void) => {
       let disposed = false;
       const deliveredTokens = new Set<string>();
       const deliver = (value: unknown) => {
         if (disposed || !value || typeof value !== "object" || Array.isArray(value)) return;
-        const request = value as { token?: unknown; connectedFolderId?: unknown; view?: unknown };
+        const request = value as { token?: unknown; connectedFolderId?: unknown };
         if (typeof request.token !== "string" || !request.token || request.token.length > 128
           || typeof request.connectedFolderId !== "string" || !request.connectedFolderId || request.connectedFolderId.length > 512) return;
         if (deliveredTokens.has(request.token)) return;
         deliveredTokens.add(request.token);
         if (deliveredTokens.size > 32) deliveredTokens.delete(deliveredTokens.values().next().value as string);
-        callback(request.connectedFolderId, request.view === "checks" ? "checks" : undefined);
+        callback(request.connectedFolderId);
         ipcRenderer.send("amplefile:connected-folder:ack-open-connected-folder", request.token);
       };
       const listener = (_event: unknown, value: unknown) => deliver(value);
@@ -127,7 +127,6 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
       }
     },
     openAmpleFileAgentDraft: (text: string) => ipcRenderer.invoke("amplefile:agent:open-agent-draft", text),
-    openChecks: (connectedFolderId: string) => ipcRenderer.invoke("amplefile:agent:open-checks", connectedFolderId),
     onOpenSettings: (callback: (scope?: "agent") => void) => {
       const listener = (_event: unknown, scope: unknown) => callback(scope === "agent" ? "agent" : undefined);
       ipcRenderer.on("amplefile:agent:open-settings", listener);

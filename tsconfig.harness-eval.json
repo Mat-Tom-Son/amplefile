@@ -5,8 +5,7 @@
     "scripts/helper-eval/**/*.ts",
     "scripts/document-eval/**/*.ts",
     "scripts/amplefile-drive.ts",
-    "scripts/amplefile-appearance.ts",
-    "scripts/amplefile-checks.ts"
+    "scripts/amplefile-appearance.ts"
   ],
   "exclude": []
 }

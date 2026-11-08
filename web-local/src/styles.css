@@ -12507,7 +12507,7 @@ textarea:focus-visible,
 }
 
 :root[data-theme] .app-shell :is(.ui-control:not(.ui-control--primary),.connected-folder-rail-button:not(.active):not([aria-current="page"]),.connected-folder-rail-account-button,.surface-tab-action,.composer-command-trigger,.chat-connected-folder-row-actions,.message-copy-button,
-  .chat-actions-menu > button,.chat-actions-back,.chat-rename-actions button:not(.primary),.checks-manual-button,.connected-folder-name-save,.connected-folders-pane-done,.connected-folder-banner-upload-button,.model-catalog-trigger,.model-catalog-option,.composer-menu button,.context-menu button,.connected-folder-header-switcher button,.command-palette-option,.composer-command-menu button,.composer-mention-menu button,.surface-tab-connected-folder-menu button:not([aria-checked="true"])):hover:not(:disabled) {
+  .chat-actions-menu > button,.chat-actions-back,.chat-rename-actions button:not(.primary),.connected-folder-name-save,.connected-folders-pane-done,.connected-folder-banner-upload-button,.model-catalog-trigger,.model-catalog-option,.composer-menu button,.context-menu button,.connected-folder-header-switcher button,.command-palette-option,.composer-command-menu button,.composer-mention-menu button,.surface-tab-connected-folder-menu button:not([aria-checked="true"])):hover:not(:disabled) {
   background: var(--ui-control-hover,var(--ui-surface-hover));
   color: var(--ui-control-foreground,var(--ui-text));
   box-shadow: none;
@@ -12521,7 +12521,7 @@ textarea:focus-visible,
 }
 
 :root[data-theme] .app-shell :is(.ui-control:not(.ui-control--primary),.connected-folder-rail-button:not(.active):not([aria-current="page"]),.connected-folder-rail-account-button,.surface-tab-action,.composer-command-trigger,.chat-connected-folder-row-actions,.message-copy-button,
-  .chat-actions-menu > button,.chat-actions-back,.chat-rename-actions button:not(.primary),.checks-manual-button,.connected-folder-name-save,.connected-folders-pane-done,.connected-folder-banner-upload-button,.model-catalog-trigger,.model-catalog-option,.composer-menu button,.context-menu button,.connected-folder-header-switcher button,.command-palette-option,.composer-command-menu button,.composer-mention-menu button,.surface-tab-connected-folder-menu button:not([aria-checked="true"])):active:not(:disabled) {
+  .chat-actions-menu > button,.chat-actions-back,.chat-rename-actions button:not(.primary),.connected-folder-name-save,.connected-folders-pane-done,.connected-folder-banner-upload-button,.model-catalog-trigger,.model-catalog-option,.composer-menu button,.context-menu button,.connected-folder-header-switcher button,.command-palette-option,.composer-command-menu button,.composer-mention-menu button,.surface-tab-connected-folder-menu button:not([aria-checked="true"])):active:not(:disabled) {
   background: var(--ui-control-pressed);
 }
 
@@ -12561,7 +12561,7 @@ textarea:focus-visible,
 }
 /* Editable boundaries remain clear; menus and toolbars use the same neutral ground. */
 
-:root[data-theme] .app-shell :is(.professional-field,.settings-field,.appearance-settings,.checks-setup,.history-file-picker,.chat-rename-popover,.recently-deleted-retention) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),select,textarea) {
+:root[data-theme] .app-shell :is(.professional-field,.settings-field,.appearance-settings,.history-file-picker,.chat-rename-popover,.recently-deleted-retention) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),select,textarea) {
   background: var(--ui-surface-subtle);
   color: var(--ui-text);
   border: 1px solid var(--ui-border);
@@ -13843,8 +13843,7 @@ textarea:focus-visible,
   .connected-folder-customize-worker button,
   .appearance-settings-actions button,
   .appearance-settings-save button,
-  .composer-command-menu > button.composer-context-compact,
-  .checks-manual-button
+  .composer-command-menu > button.composer-context-compact
 ) {
   color: var(--ui-text);
   background: var(--ui-button-fill);
@@ -13865,8 +13864,7 @@ textarea:focus-visible,
   .connected-folder-customize-worker button,
   .appearance-settings-actions button,
   .appearance-settings-save button,
-  .composer-command-menu > button.composer-context-compact,
-  .checks-manual-button
+  .composer-command-menu > button.composer-context-compact
 ):hover:not(:disabled) {
   color: var(--ui-text);
   background: var(--ui-control-hover, var(--ui-surface-hover));
@@ -13886,8 +13884,7 @@ textarea:focus-visible,
   .connected-folder-customize-worker button,
   .appearance-settings-actions button,
   .appearance-settings-save button,
-  .composer-command-menu > button.composer-context-compact,
-  .checks-manual-button
+  .composer-command-menu > button.composer-context-compact
 ):active:not(:disabled) {
   background: var(--ui-control-pressed);
 }
@@ -13905,8 +13902,7 @@ textarea:focus-visible,
   .connected-folder-customize-worker button,
   .appearance-settings-actions button,
   .appearance-settings-save button,
-  .composer-command-menu > button.composer-context-compact,
-  .checks-manual-button
+  .composer-command-menu > button.composer-context-compact
 ):disabled {
   color: color-mix(in srgb, var(--ui-text-muted) 80%, var(--ui-surface));
   background: var(--ui-button-fill);

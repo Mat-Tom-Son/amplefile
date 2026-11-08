@@ -80,11 +80,6 @@ test("CLI argv parser supports every foundation command with global flags in eit
     output: "human",
     connectedFolder: "space-aaaaaaaaaaaaaaaa",
   });
-  assert.deepEqual(parseAmpleFileCliArgv(["checks", "status", "--connected-folder", "space-aaaaaaaaaaaaaaaa", "--json"]), {
-    name: "checks.status",
-    output: "json",
-    connectedFolder: "space-aaaaaaaaaaaaaaaa",
-  });
   assert.deepEqual(parseAmpleFileCliArgv(["version", "--json"]), { name: "version", output: "json" });
   assert.deepEqual(parseAmpleFileCliArgv(["--version", "--json"]), { name: "version", output: "json" });
   assert.deepEqual(parseAmpleFileCliArgv(["help", "tasks", "--json"]), { name: "help", output: "json", topic: "tasks" });
@@ -100,6 +95,7 @@ test("CLI argv parser produces stable usage errors", () => {
     ["context", "--connected-folder"],
     ["context", "--connected-folder", "one", "--connected-folder", "two"],
     ["version", "--connected-folder", "one"],
+    ["checks", "status"],
   ]) {
     assert.throws(
       () => parseAmpleFileCliArgv(argv),
@@ -120,7 +116,6 @@ test("CLI help covers every landed act family and is honest about what it runs",
     ],
     chats: ["list"],
     agent: ["send", "status", "result", "wait", "stop", "abort", "list", "overview"],
-    checks: ["status", "enable", "disable", "run", "task", "result", "wait", "abort", "problems", "decide"],
     history: ["list", "save", "restore", "versions", "restore-file"],
     search: [""],
     files: ["add", "move", "rename", "delete", "mkdir", "create"],
@@ -195,7 +190,6 @@ test("CLI executor passes actor cwd and Connected Folder scope through the narro
     ["connected-folders", "list", "--connected-folder", "space-aaaaaaaaaaaaaaaa"],
     ["tasks", "list", "--connected-folder", "space-aaaaaaaaaaaaaaaa"],
     ["capabilities", "list", "--connected-folder", "space-aaaaaaaaaaaaaaaa"],
-    ["checks", "status", "--connected-folder", "space-aaaaaaaaaaaaaaaa"],
   ];
   for (const argv of commands) {
     const response = await executeAmpleFileCliRequest(
@@ -212,57 +206,7 @@ test("CLI executor passes actor cwd and Connected Folder scope through the narro
     { method: "connected-folders", actor: { kind: "cli", cwd }, connectedFolder: "space-aaaaaaaaaaaaaaaa" },
     { method: "tasks", actor: { kind: "cli", cwd }, connectedFolder: "space-aaaaaaaaaaaaaaaa" },
     { method: "capabilities", actor: { kind: "cli", cwd }, connectedFolder: "space-aaaaaaaaaaaaaaaa" },
-    { method: "checks", actor: { kind: "cli", cwd }, connectedFolder: "space-aaaaaaaaaaaaaaaa" },
   ]);
-});
-
-test("CLI Checks status emits aggregate-only JSON and human output", async () => {
-  const kernel = fixtureKernel([]);
-  const cwd = resolve("test-connected-folder");
-  const json = await executeAmpleFileCliRequest(
-    createAmpleFileCliRequest({ id: randomUUID(), argv: ["checks", "status", "--connected-folder", "space-aaaaaaaaaaaaaaaa", "--json"], cwd }),
-    kernel,
-    { version: "1.2.3" },
-  );
-  assert.equal(json.exitCode, 0);
-  assert.deepEqual(JSON.parse(json.stdout), {
-    ok: true,
-    command: "checks.status",
-    data: {
-      kind: "amplefile.checks.experimental",
-      version: 1,
-      available: true,
-      connectedFolderId: "space-aaaaaaaaaaaaaaaa",
-      state: "needs-attention",
-      configured: 3,
-      proposed: 1,
-      enabled: 2,
-      current: 1,
-      neverRun: 1,
-      stale: 0,
-      blocked: 0,
-      errors: 0,
-      needsAttention: 2,
-      running: 0,
-      lastRunAt: "2026-08-01T12:00:00.000Z",
-    },
-  });
-  const serialized = JSON.stringify(JSON.parse(json.stdout));
-  for (const forbidden of ["title", "path", "evidence", "decision", "sensor", "parameter", "errorText"]) {
-    assert.equal(serialized.includes(forbidden), false, forbidden);
-  }
-
-  const human = await executeAmpleFileCliRequest(
-    createAmpleFileCliRequest({ id: randomUUID(), argv: ["checks", "status", "--connected-folder", "space-aaaaaaaaaaaaaaaa"], cwd }),
-    kernel,
-    { version: "1.2.3" },
-  );
-  assert.match(human.stdout, /^Checks: needs attention/m);
-  assert.match(human.stdout, /Configured: 3 \(2 enabled, 1 proposed\)/);
-  assert.match(human.stdout, /Never run: 1/);
-  assert.match(human.stdout, /Stale: 0/);
-  assert.match(human.stdout, /Needs attention: 2/);
-  assert.doesNotMatch(human.stdout, /title|path|evidence|decision|sensor|parameter|error text/i);
 });
 
 test("CLI executor emits useful human output and a stable JSON envelope", async () => {
@@ -308,16 +252,9 @@ test("CLI human output neutralizes terminal control sequences from host metadata
     async listCapabilities() {
       return [{ id: hostile, name: hostile, kind: "other", scope: hostile, status: hostile, source: hostile }];
     },
-    async getChecksStatus() {
-      return {
-        kind: "amplefile.checks.experimental", version: 1, available: true, connectedFolderId: hostile,
-        state: "current-clear", configured: 1, proposed: 0, enabled: 1, current: 1, neverRun: 0,
-        stale: 0, blocked: 0, errors: 0, needsAttention: 0, running: 0, lastRunAt: null,
-      };
-    },
   };
   const cwd = resolve(".");
-  for (const argv of [["context"], ["connected-folders", "list"], ["tasks", "list"], ["capabilities", "list"], ["checks", "status"]]) {
+  for (const argv of [["context"], ["connected-folders", "list"], ["tasks", "list"], ["capabilities", "list"]]) {
     const response = await executeAmpleFileCliRequest(createAmpleFileCliRequest({ id: randomUUID(), argv, cwd }), kernel, { version: "1.2.3" });
     assert.equal(response.exitCode, 0);
     assert.doesNotMatch(response.stdout, /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/);
@@ -343,7 +280,7 @@ test("Automation help's complete authoring example passes the real proposal vali
   assert.equal(proposal.automation.trigger.kind, "files-changed");
   // The example teaches the version-5 catch-up (docs/automations.md, 2026-10-11).
   assert.equal(proposal.automation.trigger.kind === "files-changed" && proposal.automation.trigger.ifMissed, "run");
-  assert.deepEqual(proposal.automation.steps.map((step) => step.kind), ["files", "chat", "check", "agent"]);
+  assert.deepEqual(proposal.automation.steps.map((step) => step.kind), ["files", "chat", "agent"]);
   // The example teaches the closed placeholder set, so it must itself be
   // something the parser accepts and the executor can fill in.
   const adopt = proposal.automation.steps[1] as { message: string };
@@ -351,7 +288,7 @@ test("Automation help's complete authoring example passes the real proposal vali
     ampleFileAutomationMessagePlaceholders(adopt.message).map((entry) => entry.name),
     ["trigger.changedFiles"],
   );
-  const report = proposal.automation.steps[3] as { message: string };
+  const report = proposal.automation.steps[2] as { message: string };
   assert.deepEqual(
     ampleFileAutomationMessagePlaceholders(report.message).map((entry) => entry.name),
     ["trigger.summary", "steps.adopt.createdFiles"],
@@ -581,7 +518,6 @@ test("CLI help/version avoid kernel work and kernel failures map to stable exit 
     async listConnectedFolders() { called = true; return []; },
     async listTasks() { called = true; return []; },
     async listCapabilities() { called = true; return []; },
-    async getChecksStatus() { called = true; throw new AmpleFileCliError("permissionDenied", "Not allowed."); },
   };
   const cwd = resolve(".");
   const version = await executeAmpleFileCliRequest(createAmpleFileCliRequest({ id: randomUUID(), argv: ["--version"], cwd }), kernel, { version: "1.2.3" });
@@ -625,27 +561,6 @@ function fixtureKernel(calls: Array<{ method: string; actor: AmpleFileCliActor; 
     async listCapabilities(actor, options) {
       calls.push({ method: "capabilities", actor, connectedFolder: options.connectedFolder });
       return [{ id: "skill-a", name: "Example Skill", kind: "skill", scope: "connected-folder", status: "loaded", source: ".pi/skills/example" }];
-    },
-    async getChecksStatus(actor, options) {
-      calls.push({ method: "checks", actor, connectedFolder: options.connectedFolder });
-      return {
-        kind: "amplefile.checks.experimental",
-        version: 1,
-        available: true,
-        connectedFolderId: "space-aaaaaaaaaaaaaaaa",
-        state: "needs-attention",
-        configured: 3,
-        proposed: 1,
-        enabled: 2,
-        current: 1,
-        neverRun: 1,
-        stale: 0,
-        blocked: 0,
-        errors: 0,
-        needsAttention: 2,
-        running: 0,
-        lastRunAt: "2026-08-01T12:00:00.000Z",
-      };
     },
   };
 }

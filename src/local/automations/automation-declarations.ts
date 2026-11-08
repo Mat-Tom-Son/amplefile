@@ -3,11 +3,11 @@ import { constants, type Stats } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { normalizeAmpleFileCheckTargetPath } from "../../shared/checks.js";
+import { normalizeFolderTargetPath } from "../../shared/folder-target-path.js";
 import { ampleFileAutomationDeclarationBounds } from "../../shared/amplefile-limits.js";
 import { folderAutomationRoles, type FolderAutomationRole } from "../../shared/automation-presentation.js";
 import { restrictedAppAutomationIntervalMinutes } from "../agent/restricted-app-manifest.js";
-import { ampleFileCheckDigest } from "../checks/check-integrity.js";
+import { stableJsonDigest } from "./stable-json-digest.js";
 
 /**
  * Automation declarations are closed, typed, machine-local data: a declared
@@ -41,8 +41,8 @@ export const ampleFileAutomationProposalFileSuffix = ".amplefile-automation.json
  * than invented here: the interval reuses the restricted-app automation
  * cadence, exact source paths mirror the act lane's `files add` bound
  * (`maxActFromPaths` in src/local/cli/act-commands.ts), and created-files
- * handoffs may tighten but never widen the Check target resolver's hard
- * limits.
+ * handoffs may tighten but never widen the folder target resolver's hard
+ * limits (src/local/automations/folder-targets.ts).
  */
 export const ampleFileAutomationBounds = Object.freeze({
   ...ampleFileAutomationDeclarationBounds,
@@ -53,27 +53,12 @@ export const ampleFileAutomationBounds = Object.freeze({
 });
 
 /**
- * Check-run settles an on-settled trigger may admit. `interrupted` is never
- * admissible — it records a crashed run, not a result.
- */
-export const ampleFileAutomationCheckRunOutcomes = ["aborted", "failed", "succeeded"] as const;
-export type AmpleFileAutomationCheckRunOutcome = (typeof ampleFileAutomationCheckRunOutcomes)[number];
-
-/**
  * Automation-run settles an on-settled trigger may admit. `skipped` and
  * `cancelled` are never admissible — they are lifecycle artifacts of
  * non-overlap, suspension, and revocation, and chaining on them oscillates.
  */
 export const ampleFileAutomationAppAutomationRunOutcomes = ["failure", "success"] as const;
 export type AmpleFileAutomationAppAutomationRunOutcome = (typeof ampleFileAutomationAppAutomationRunOutcomes)[number];
-
-export interface AmpleFileAutomationCheckRunSettleSource {
-  kind: "check-run";
-  connectedFolder: string;
-  /** Absent: any Check in the Connected Folder. */
-  check?: string;
-  outcomes: AmpleFileAutomationCheckRunOutcome[];
-}
 
 export interface AmpleFileAutomationAppAutomationRunSettleSource {
   kind: "app-automation-run";
@@ -83,9 +68,7 @@ export interface AmpleFileAutomationAppAutomationRunSettleSource {
   outcomes: AmpleFileAutomationAppAutomationRunOutcome[];
 }
 
-export type AmpleFileAutomationSettleSource =
-  | AmpleFileAutomationCheckRunSettleSource
-  | AmpleFileAutomationAppAutomationRunSettleSource;
+export type AmpleFileAutomationSettleSource = AmpleFileAutomationAppAutomationRunSettleSource;
 
 /** Run-now only; every enabled automation additionally accepts manual run-now. */
 export interface AmpleFileAutomationManualTrigger {
@@ -160,7 +143,7 @@ export interface AmpleFileAutomationExactPathsSource {
   paths: string[];
 }
 
-/** The bounded tree selector, reusing the Check target contract and resolver discipline. */
+/** The bounded tree selector, resolved by the folder target resolver (src/local/automations/folder-targets.ts). */
 export interface AmpleFileAutomationTreeSource {
   kind: "tree";
   path: string;
@@ -196,14 +179,6 @@ export interface AmpleFileAutomationFilesStep {
   to: string;
 }
 
-export interface AmpleFileAutomationCheckStep {
-  id: string;
-  kind: "check";
-  connectedFolder: string;
-  /** Absent: run all enabled Checks in the Connected Folder. */
-  check?: string;
-}
-
 /**
  * Starts a new AmpleFile agent chat with exactly this message, so a person
  * can put the AmpleFile agent on a cadence deliberately. It names no
@@ -220,14 +195,12 @@ export interface AmpleFileAutomationAgentStep {
 export type AmpleFileAutomationStep =
   | AmpleFileAutomationChatStep
   | AmpleFileAutomationFilesStep
-  | AmpleFileAutomationCheckStep
   | AmpleFileAutomationAgentStep;
 
 /** The closed set of trigger placeholders a version-4 message may carry. */
 export const ampleFileAutomationTriggerPlaceholders = [
   "trigger.summary",
   "trigger.changedFiles",
-  "trigger.findings",
 ] as const;
 export type AmpleFileAutomationTriggerPlaceholder = (typeof ampleFileAutomationTriggerPlaceholders)[number];
 
@@ -266,7 +239,7 @@ export function ampleFileAutomationMessagePlaceholders(
     }
     throw new Error(
       `${label} message uses an unknown placeholder ${match[0]}. The placeholders are `
-        + "{{trigger.summary}}, {{trigger.changedFiles}}, {{trigger.findings}}, and {{steps.<id>.createdFiles}}.",
+        + "{{trigger.summary}}, {{trigger.changedFiles}}, and {{steps.<id>.createdFiles}}.",
     );
   }
   return placeholders;
@@ -303,8 +276,6 @@ export const ampleFileAutomationDocumentMaxBytes = 64 * 1024 * 1024;
 // CLI may resolve an exact name for convenience, but the stored declaration
 // records ids only.
 const connectedFolderIdPattern = /^space-[a-f0-9]{16}$/;
-// Mirrors the Check id rule in src/shared/checks.ts.
-const checkIdPattern = /^check-[a-z0-9][a-z0-9-]{7,154}$/;
 const automationIdPattern = /^automation-[a-z0-9][a-z0-9-]{7,154}$/;
 // Mirrors the restricted-app manifest id rule for app and automation ids.
 const restrictedAppIdPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -401,11 +372,54 @@ export function contentAddressedAmpleFileAutomationDeclaration(
 /**
  * The digest that pins an automation: enablement records an exact-authority grant
  * over it, receipts carry it, and any edit changes it — an edited automation
- * never coasts on a stale approval. Canonicalization is the same stable JSON
- * used for Check digests, so field order can never change authority.
+ * never coasts on a stale approval. Canonicalization is stable JSON
+ * (src/local/automations/stable-json-digest.ts), so field order can never
+ * change authority. Stored automations are re-verified against it on load:
+ * its output must never change.
  */
 export function ampleFileAutomationDigest(value: unknown): string {
-  return ampleFileCheckDigest(value);
+  return stableJsonDigest(value);
+}
+
+/**
+ * Features a stored automation may still name from before they were removed
+ * (Checks, 2026-11-07). The parser refuses them; the automation store drops a
+ * stored automation that uses one on its own instead of treating the whole
+ * store as damaged (src/local/automations/automation-store.ts).
+ */
+const retiredAutomationFeatureReasons = Object.freeze({
+  checkStep: "it runs a Check, and AmpleFile no longer has Checks",
+  checkRunTrigger: "it waits for a Check run, and AmpleFile no longer has Checks",
+  findingsPlaceholder: "its message fills in {{trigger.findings}} from a Check run, and AmpleFile no longer has Checks",
+});
+
+/**
+ * Why a stored declaration names a retired feature, or null. It reads the
+ * raw stored JSON and validates nothing else, so a declaration that is
+ * invalid for any other reason still reports as invalid. Versions 1–3 send
+ * their messages as literal text, so only version 4 and later can carry the
+ * retired placeholder.
+ */
+export function ampleFileAutomationRetiredFeature(value: unknown): string | null {
+  if (!isJsonObject(value)) return null;
+  const trigger = value.trigger;
+  if (isJsonObject(trigger) && trigger.kind === "on-settled" && isJsonObject(trigger.source) && trigger.source.kind === "check-run") {
+    return retiredAutomationFeatureReasons.checkRunTrigger;
+  }
+  const steps = Array.isArray(value.steps) ? value.steps.filter(isJsonObject) : [];
+  if (steps.some((step) => step.kind === "check")) return retiredAutomationFeatureReasons.checkStep;
+  if (typeof value.version !== "number" || value.version < 4) return null;
+  for (const step of steps) {
+    if ((step.kind !== "chat" && step.kind !== "agent") || typeof step.message !== "string") continue;
+    for (const match of step.message.matchAll(placeholderOccurrencePattern)) {
+      if ((match[1] ?? "").trim() === "trigger.findings") return retiredAutomationFeatureReasons.findingsPlaceholder;
+    }
+  }
+  return null;
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 /**
@@ -428,7 +442,7 @@ export function ampleFileAutomationReferencedConnectedFolderIds(definition: Ampl
     if (step.kind === "files") {
       ids.add(step.fromConnectedFolder);
       ids.add(step.toConnectedFolder);
-    } else if (step.kind === "chat" || step.kind === "check") {
+    } else if (step.kind === "chat") {
       ids.add(step.connectedFolder);
     }
     // An agent step names no work-folder: the work-fold agent sits above them.
@@ -438,9 +452,9 @@ export function ampleFileAutomationReferencedConnectedFolderIds(definition: Ampl
 
 /**
  * What this automation does in one Connected Folder, derived from the declaration alone:
- * the trigger watches it (a folder change, or a Check or app automation
- * settling there), a files step copies into or out of it, a chat step starts
- * a conversation there, a check step runs Checks there. Empty exactly when
+ * the trigger watches it (a folder change, or an app automation settling
+ * there), a files step copies into or out of it, a chat step starts a
+ * conversation there. Empty exactly when
  * `ampleFileAutomationReferencedConnectedFolderIds` does not name the Connected Folder.
  */
 export function ampleFileAutomationConnectedFolderRoles(definition: AmpleFileAutomationDefinition, connectedFolderId: string): FolderAutomationRole[] {
@@ -453,8 +467,6 @@ export function ampleFileAutomationConnectedFolderRoles(definition: AmpleFileAut
       if (step.fromConnectedFolder === connectedFolderId) roles.add("copies-from");
     } else if (step.kind === "chat" && step.connectedFolder === connectedFolderId) {
       roles.add("chats-here");
-    } else if (step.kind === "check" && step.connectedFolder === connectedFolderId) {
-      roles.add("checks-here");
     }
   }
   return folderAutomationRoles.filter((role) => roles.has(role));
@@ -536,10 +548,6 @@ function assertPlaceholdersResolvable(
       if (placeholder.name === "trigger.changedFiles" && trigger.kind !== "files-changed") {
         throw new Error(`${label} uses {{trigger.changedFiles}}, but the trigger is not a folder-change trigger.`);
       }
-      if (placeholder.name === "trigger.findings"
-        && !(trigger.kind === "on-settled" && trigger.source.kind === "check-run")) {
-        throw new Error(`${label} uses {{trigger.findings}}, but the trigger is not a Check-run trigger.`);
-      }
       if (placeholder.step === undefined) continue;
       const sourceIndex = positions.get(placeholder.step);
       const source = sourceIndex === undefined ? undefined : steps[sourceIndex];
@@ -611,13 +619,7 @@ function normalizeTrigger(value: unknown, version: AmpleFileAutomationContractVe
 function normalizeSettleSource(value: unknown): AmpleFileAutomationSettleSource {
   const record = objectRecord(value, "Automation trigger source must be a JSON object.");
   if (record.kind === "check-run") {
-    assertKeys(record, ["kind", "connectedFolder"], ["check", "outcomes"], "Automation check-run trigger source");
-    return {
-      kind: "check-run",
-      connectedFolder: connectedFolderId(record.connectedFolder, "Automation check-run trigger source Connected Folder"),
-      ...(record.check !== undefined ? { check: checkRef(record.check, "Automation check-run trigger source check") } : {}),
-      outcomes: normalizeOutcomes(record.outcomes, "Automation check-run trigger source", ampleFileAutomationCheckRunOutcomes, ["succeeded"]),
-    };
+    throw new Error(`Automation trigger source kind check-run is retired: ${retiredAutomationFeatureReasons.checkRunTrigger}.`);
   }
   if (record.kind === "app-automation-run") {
     assertKeys(record, ["kind", "connectedFolder", "appId", "appAutomationId"], ["outcomes"], "Automation app-automation-run trigger source");
@@ -629,7 +631,7 @@ function normalizeSettleSource(value: unknown): AmpleFileAutomationSettleSource 
       outcomes: normalizeOutcomes(record.outcomes, "Automation app-automation-run trigger source", ampleFileAutomationAppAutomationRunOutcomes, ["success"]),
     };
   }
-  throw new Error("Automation trigger source kind must be check-run or app-automation-run.");
+  throw new Error("Automation trigger source kind must be app-automation-run.");
 }
 
 function normalizeStep(value: unknown, index: number, version: AmpleFileAutomationContractVersion): AmpleFileAutomationStep {
@@ -653,17 +655,11 @@ function normalizeStep(value: unknown, index: number, version: AmpleFileAutomati
       fromConnectedFolder: connectedFolderId(record.fromConnectedFolder, `${label} fromConnectedFolder`),
       from: normalizeFilesSource(record.from, label),
       toConnectedFolder: connectedFolderId(record.toConnectedFolder, `${label} toConnectedFolder`),
-      to: normalizeAmpleFileCheckTargetPath(record.to, `${label} destination`),
+      to: normalizeFolderTargetPath(record.to, `${label} destination`),
     };
   }
   if (record.kind === "check") {
-    assertKeys(record, ["id", "kind", "connectedFolder"], ["check"], label);
-    return {
-      id: stepId(record.id, `${label} id`),
-      kind: "check",
-      connectedFolder: connectedFolderId(record.connectedFolder, `${label} Connected Folder`),
-      ...(record.check !== undefined ? { check: checkRef(record.check, `${label} check`) } : {}),
-    };
+    throw new Error(`${label} kind check is retired: ${retiredAutomationFeatureReasons.checkStep}.`);
   }
   if (record.kind === "agent") {
     if (version < 4) throw new Error("Agent steps require contract version 4.");
@@ -676,8 +672,8 @@ function normalizeStep(value: unknown, index: number, version: AmpleFileAutomati
     };
   }
   throw new Error(version >= 4
-    ? `${label} kind must be chat, files, check, or agent.`
-    : `${label} kind must be chat, files, or check.`);
+    ? `${label} kind must be chat, files, or agent.`
+    : `${label} kind must be chat or files.`);
 }
 
 function stepModel(value: unknown, label: string): AmpleFileAutomationStepModel {
@@ -716,7 +712,7 @@ function normalizeFilesSource(value: unknown, stepLabel: string): AmpleFileAutom
     if (!Array.isArray(record.paths) || record.paths.length < 1) {
       throw new Error(`${label} paths must contain at least one exact file path.`);
     }
-    const paths = record.paths.map((path, pathIndex) => normalizeAmpleFileCheckTargetPath(path, `${label} path ${pathIndex + 1}`));
+    const paths = record.paths.map((path, pathIndex) => normalizeFolderTargetPath(path, `${label} path ${pathIndex + 1}`));
     if (new Set(paths).size !== paths.length) throw new Error(`${label} paths repeat a path.`);
     return { kind: "paths", paths };
   }
@@ -725,7 +721,7 @@ function normalizeFilesSource(value: unknown, stepLabel: string): AmpleFileAutom
     if (record.recursive !== true && record.recursive !== false) throw new Error(`${label} recursive must be a boolean.`);
     return {
       kind: "tree",
-      path: normalizeAmpleFileCheckTargetPath(record.path, `${label} path`),
+      path: normalizeFolderTargetPath(record.path, `${label} path`),
       recursive: record.recursive,
       extensions: normalizeExtensions(record.extensions, label),
     };
@@ -771,7 +767,7 @@ function normalizeExtensions(value: unknown, label: string): string[] {
   }
   const extensions = value.map((item) => {
     const raw = boundedText(item, `${label} extension`, 24).toLocaleLowerCase("en-US");
-    // Canonicalize to the dotted Check contract form: a bare "md" filter would
+    // Canonicalize to the dotted folder target form: a bare "md" filter would
     // otherwise match any suffix ending in those letters at resolution time.
     const extension = raw.startsWith(".") ? raw : `.${raw}`;
     if (!extensionPattern.test(extension)) throw new Error(`${label} contains an invalid extension.`);
@@ -798,12 +794,6 @@ function connectedFolderId(value: unknown, label: string): string {
     throw new Error(`${label} must be a stable registered Connected Folder id, not a name or path.`);
   }
   return value;
-}
-
-function checkRef(value: unknown, label: string): string {
-  const id = boundedText(value, label, 160).toLocaleLowerCase("en-US");
-  if (!checkIdPattern.test(id)) throw new Error(`${label} must be a Check id.`);
-  return id;
 }
 
 function automationId(value: unknown): string {

@@ -52,8 +52,6 @@ import { configureAmpleFileStateRoot, managedConnectedFolderRoot, ampleFileAgent
 import { getConnectedFolder, listConnectedFolders } from "../../src/local/connected-folder.js";
 import { AmpleFileCliKernelAdapter } from "../../src/local/amplefile-cli-adapter.js";
 import { AmpleFileKernel } from "../../src/local/amplefile-kernel.js";
-import { AmpleFileCheckService } from "../../src/local/checks/check-service.js";
-import { createDesktopCheckService } from "./desktop-checks.js";
 import { AmpleFileSettleSignal } from "../../src/local/automations/settle-signal.js";
 import { RestrictedAppService } from "../../src/local/agent/restricted-app-service.js";
 import { FileRestrictedAppStorage } from "../../src/local/agent/restricted-app-storage.js";
@@ -244,7 +242,7 @@ let interactiveRequested = false;
 let cliRequestGeneration = 0;
 let activeNativeConnectedFolder: { id: string; name: string; connectedFolderRoot: string } | null = null;
 let activeNativeConnectedFolderGeneration = 0;
-let pendingOpenConnectedFolderRequest: { token: string; connectedFolderId: string; view?: "checks" } | null = null;
+let pendingOpenConnectedFolderRequest: { token: string; connectedFolderId: string } | null = null;
 const pendingMacOpenPaths: string[] = [];
 let macOpenPathDrainPromise: Promise<void> | null = null;
 const quitCoordinator = new GracefulQuitCoordinator({
@@ -409,7 +407,6 @@ interface DesktopHost {
   runtimeProvider: PiRuntimeProvider;
   connectedFolderTrustAuthority: RegisteredConnectedFolderTrustAuthority;
   kernel: AmpleFileKernel;
-  checks: AmpleFileCheckService;
   cli: AmpleFileDesktopCliHost;
   restrictedApps: RestrictedAppService;
   restrictedAppHost: RestrictedAppHost;
@@ -417,8 +414,8 @@ interface DesktopHost {
   restrictedAppNotificationRecord: RestrictedAppNotificationRecord;
   chromeConnection: IncludedChromeConnectionService;
   /**
-   * The one in-process settle seam (docs/automations.md): the host's Check
-   * and restricted-app services publish into this exact instance, and the
+   * The one in-process settle seam (docs/automations.md): the host's
+   * restricted-app service publishes into this exact instance, and the
    * interactive local API consumes it for automation triggers — one signal for
    * the whole desktop, or settles silently never reach enabled automations.
    */
@@ -469,29 +466,14 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
         },
       },
     });
-    // One settle signal for the whole desktop host: the Check service and the
-    // restricted-app service publish durable settles into it, and the local
-    // API's automation executor subscribes to the same instance.
+    // One settle signal for the whole desktop host: the restricted-app service
+    // publishes durable settles into it, and the local API's automation
+    // executor subscribes to the same instance.
     const settleSignal = new AmpleFileSettleSignal();
     let restrictedApps!: RestrictedAppService;
-    let checks!: AmpleFileCheckService;
-    const readCheckResult = async (connectedFolderId: string, checkId: string, declarationDigest: string) => {
-      const connectedFolder = (await listConnectedFolders()).find((item) => item.id === connectedFolderId);
-      if (!connectedFolder || !checks) throw new Error("The Check's Connected Folder is unavailable.");
-      return checks.selectedResult(connectedFolder, checkId, declarationDigest);
-    };
-    // An install binds a declared Check slot only when the Connected Folder has exactly one Check.
-    const listChecks = async (connectedFolderId: string) => {
-      const connectedFolder = (await listConnectedFolders()).find((item) => item.id === connectedFolderId);
-      if (!connectedFolder || !checks) throw new Error("The Check's Connected Folder is unavailable.");
-      return (await checks.overview(connectedFolder)).checks
-        .filter((item): item is typeof item & { digest: string } => typeof item.digest === "string")
-        .map((item) => ({ checkId: item.id, declarationDigest: item.digest, title: item.title }));
-    };
     const restrictedRuntime = new RestrictedAppHost({
       assistantTasks: async () => (await ensureInteractiveLocalApi()).appAssistantTasks,
     assistantInference: async () => (await ensureInteractiveLocalApi()).appInference,
-      readCheckResult,
       connections: restrictedConnections,
       oauth: restrictedOAuth,
       storage: restrictedStorage,
@@ -530,8 +512,6 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
     try {
       restrictedApps = await RestrictedAppService.create({
         rootPath: restrictedAppRoot(),
-        readCheckResult,
-        listChecks,
         runtimeHost: restrictedRuntime,
         connections: restrictedConnections,
         oauth: restrictedOAuth,
@@ -600,19 +580,9 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
       const connectedFolderTrustAuthority = new RegisteredConnectedFolderTrustAuthority((await listConnectedFolders()).map((connectedFolder) => connectedFolder.connectedFolderRoot));
       const runtimeProvider = new RegisteredConnectedFolderRuntimeProvider(runtime, connectedFolderTrustAuthority);
       const kernel = new AmpleFileKernel({ runtimeProvider });
-      checks = createDesktopCheckService({
-        kernel,
-        settleSignal,
-        getLocalApi: ensureInteractiveLocalApi,
-        // Views that read a selected Check learn it moved; ids only, and a
-        // failure here never fails the Check operation.
-        onResultChanged: (event) => restrictedRuntime.publishCheckResultsChanged(event),
-      });
       const cli = new AmpleFileDesktopCliHost({
       stateRoot: userData,
-      kernel: new AmpleFileCliKernelAdapter(kernel, {
-        checksStatusProvider: ({ connectedFolderId, connectedFolderRoot }) => checks.status({ id: connectedFolderId, connectedFolderRoot: connectedFolderRoot }),
-      }),
+      kernel: new AmpleFileCliKernelAdapter(kernel),
       version: applicationVersion,
       productName,
       getActFacade: () => (actFacade && actToken ? { facade: actFacade, token: actToken } : null),
@@ -622,7 +592,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
       secureSettings = settings;
       piRuntime = runtime;
       return {
-        settings, extensionUi, runtime, runtimeProvider, connectedFolderTrustAuthority, kernel, checks, cli, restrictedApps,
+        settings, extensionUi, runtime, runtimeProvider, connectedFolderTrustAuthority, kernel, cli, restrictedApps,
         restrictedAppHost: restrictedRuntime, restrictedAppNotificationRecord: restrictedNotificationRecord, settleSignal, chromeConnection,
       };
     } catch (error) {
@@ -679,7 +649,6 @@ async function quitAfterCliRequest(): Promise<void> {
   }
   await host.restrictedApps.close();
   await host.chromeConnection.close();
-  await host.checks.close();
   // A headless boot proves no interactive app holds the single-instance lock,
   // so any act-token file on disk is stale crash residue; removing it lets
   // shims fail fast instead of booting another headless host per attempt.
@@ -769,9 +738,8 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
       connectedFolderTrustAuthority: host.connectedFolderTrustAuthority,
       extensionUiBridge: host.extensionUi,
       kernel: host.kernel,
-      checkService: host.checks,
-      // The exact instance the injected Check and restricted-app services
-      // publish into, so desktop settles reach automation triggers; and the CLI
+      // The exact instance the injected restricted-app service publishes
+      // into, so desktop settles reach automation triggers; and the CLI
       // host's own act-receipts journal, so Settings acts and CLI acts share
       // one ledger file and one at-most-once gate.
       settleSignal: host.settleSignal,
@@ -1303,17 +1271,6 @@ function registerIpc(): void {
     assertTrustedMainRenderer(event);
     if (typeof value !== "string" || !value.trim() || value.length > 4096) throw new Error("A bounded AmpleFile agent draft is required.");
     await openAmpleFileAgentPopoverWithItems([{ kind: "text", value }]);
-    return true;
-  });
-  ipcMain.handle("amplefile:agent:open-checks", async (event, value: unknown) => {
-    assertTrustedRenderer(event);
-    if (typeof value !== "string" || !(await listConnectedFolders()).some((connectedFolder) => connectedFolder.id === value)) throw new Error("A registered Connected Folder is required.");
-    const request = { token: randomUUID(), connectedFolderId: value, view: "checks" as const };
-    pendingOpenConnectedFolderRequest = request;
-    ampleFileAgentPopover?.hide();
-    await ensureMainWindow();
-    showWindow();
-    mainWindow?.webContents.send("amplefile:connected-folder:open-connected-folder", request);
     return true;
   });
   ipcMain.on("amplefile:agent:hide", (event) => {
@@ -2241,14 +2198,12 @@ async function shutdown(): Promise<void> {
   const runtime = piRuntime;
   piRuntime = null;
   const restrictedApps = desktopHostPromise?.then((host) => host.restrictedApps.close()) ?? Promise.resolve();
-  const checks = desktopHostPromise?.then((host) => host.checks.close()) ?? Promise.resolve();
   const chrome = desktopHostPromise?.then((host) => host.chromeConnection.close()) ?? Promise.resolve();
   shutdownPromise = (async () => {
     const outcomes = await Promise.allSettled([
       withShutdownTimeout(localApiLifetime.close(), "local API"),
       withShutdownTimeout(runtime?.flush() ?? Promise.resolve(), "Pi state"),
       withShutdownTimeout(restrictedApps, "restricted apps"),
-      withShutdownTimeout(checks, "Checks"),
       withShutdownTimeout(chrome, "Chrome connection"),
       withShutdownTimeout(removeAmpleFileCliActTokenFile(app.getPath("userData")), "CLI act token"),
     ]);

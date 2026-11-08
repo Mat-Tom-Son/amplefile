@@ -47,12 +47,6 @@ export type AutomationStepView =
   }
   | {
     id: string;
-    kind: "check";
-    connectedFolder: AutomationConnectedFolderRef;
-    checkId?: string;
-  }
-  | {
-    id: string;
     kind: "agent";
     message: string;
     model?: { provider: string; id: string };
@@ -105,7 +99,7 @@ export interface AutomationDetailView extends AutomationSummaryView {
 
 export interface AutomationHistoryHopView {
   hopId: string;
-  kind: "chat" | "files" | "check" | "agent";
+  kind: "chat" | "files" | "agent";
   outcome: AutomationsPaneOutcome;
   partial?: true;
   connectedFolderName?: string;
@@ -785,19 +779,11 @@ function AutomationStep({ step }: { step: AutomationStepView }) {
       </li>
     );
   }
-  if (step.kind === "agent") {
-    return (
-      <li>
-        <div className="automation-step-heading"><strong>Message AmpleFile agent</strong><span>Starts a new chat</span></div>
-        <blockquote>{step.message}</blockquote>
-        {step.model ? <p className="automation-step-model">Uses {step.model.id} ({step.model.provider}) for this step</p> : null}
-      </li>
-    );
-  }
   return (
     <li>
-      <div className="automation-step-heading"><strong>Run Checks</strong><span>{connectedFolderLabel(step.connectedFolder)}</span></div>
-      <p>{step.checkId ? `Check ${step.checkId}` : "All enabled Checks"}</p>
+      <div className="automation-step-heading"><strong>Message AmpleFile agent</strong><span>Starts a new chat</span></div>
+      <blockquote>{step.message}</blockquote>
+      {step.model ? <p className="automation-step-model">Uses {step.model.id} ({step.model.provider}) for this step</p> : null}
     </li>
   );
 }
@@ -879,7 +865,7 @@ function watchStateLabel(state: "starting" | "watching" | "paused" | "error" | u
 function hopLabel(kind: AutomationHistoryHopView["kind"]): string {
   if (kind === "chat") return "Chat";
   if (kind === "files") return "Copy Files";
-  return kind === "agent" ? "Message AmpleFile agent" : "Run Checks";
+  return "Message AmpleFile agent";
 }
 
 function sameProposals(left: AutomationProposalView[], right: AutomationProposalView[]): boolean {

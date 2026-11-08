@@ -16,7 +16,9 @@ import {
   ampleFileAutomationMessagePlaceholders,
   ampleFileAutomationProposalFileSuffix,
   ampleFileAutomationReferencedConnectedFolderIds,
+  ampleFileAutomationRetiredFeature,
   ampleFileAutomationTriggerCatchesUp,
+  contentAddressedAmpleFileAutomationDeclaration,
 } from "../src/local/automations/automation-declarations.js";
 
 const manuscriptConnectedFolder = "space-0123456789abcdef";
@@ -49,9 +51,9 @@ const proposalValue = {
       },
       {
         id: "verify",
-        kind: "check",
+        kind: "chat",
         connectedFolder: publisherConnectedFolder,
-        check: "check-12345678",
+        message: "Confirm the incoming notes read cleanly.",
       },
     ],
   },
@@ -80,7 +82,7 @@ test("automation proposals canonicalize the documented example into an exact rev
   const handoff = normalized.automation.steps[1];
   assert.equal(handoff?.kind, "files");
   if (handoff?.kind !== "files" || handoff.from.kind !== "step-created-files") assert.fail("handoff shape");
-  assert.deepEqual(handoff.from.extensions, [".md"], "bare extensions canonicalize to the dotted Check contract form");
+  assert.deepEqual(handoff.from.extensions, [".md"], "bare extensions canonicalize to the dotted folder target form");
 
   const declaration = declarationFromAmpleFileAutomationProposal(normalized, "automation-12345678");
   assert.equal(declaration.kind, "amplefile.automation");
@@ -99,13 +101,51 @@ test("automation proposals canonicalize the documented example into an exact rev
     value.automation.trigger = { kind: "manual" };
   }));
   assert.deepEqual(manual.automation.trigger, { kind: "manual" });
+});
 
-  const allChecks = normalizeAmpleFileAutomationProposal(mutated((value) => {
-    delete value.automation.steps[2].check;
-  }));
-  const checkStep = allChecks.automation.steps[2];
-  if (checkStep?.kind !== "check") assert.fail("check shape");
-  assert.equal("check" in checkStep, false, "an absent check id means every enabled Check in the Connected Folder");
+// Stored automations are re-verified against this digest on every load, so
+// its canonical JSON and hash must never change. These values were computed
+// on 2026-11-07 before the digest moved out of the retired Checks module.
+test("the automation digest is pinned to known values", () => {
+  const proposal = normalizeAmpleFileAutomationProposal({
+    kind: "amplefile.automation-proposal",
+    version: 6,
+    name: "Pinned digest",
+    createdBy: "assistant",
+    createdAt: "2026-11-07T12:00:00Z",
+    automation: {
+      title: "Sort new scans into Receipts",
+      trigger: {
+        kind: "files-changed",
+        connectedFolder: "space-0123456789abcdef",
+        watch: { kind: "tree", path: "", recursive: false, extensions: ["PDF", ".png"] },
+        debounceSeconds: 30,
+        cooldownMinutes: 5,
+        ifMissed: "run",
+      },
+      steps: [
+        { id: "sort", kind: "chat", connectedFolder: "space-0123456789abcdef", message: "Sort these:\n{{trigger.changedFiles}}", model: { provider: "anthropic", id: "claude-opus" } },
+        {
+          id: "copy",
+          kind: "files",
+          fromConnectedFolder: "space-0123456789abcdef",
+          from: { kind: "step-created-files", step: "sort", extensions: ["md"], maxFiles: 10, maxTotalBytes: 1048576 },
+          toConnectedFolder: "space-fedcba9876543210",
+          to: "Incoming/Résumés",
+        },
+        { id: "tell", kind: "agent", message: "Done: {{trigger.summary}}" },
+      ],
+    },
+  });
+  assert.equal(ampleFileAutomationDigest(proposal), "04726ac4d5f8d63aac5b7f9cbeceea9a140a991c8b630e0039e3349100d8230f");
+  const { declaration, digest } = contentAddressedAmpleFileAutomationDeclaration(proposal);
+  assert.equal(declaration.id, "automation-04726ac4d5f8d63a");
+  assert.equal(digest, "daa2e21fcc261281e434fbe94eb70dbfd52b67e02d439a84d117a54bf21bfdad");
+  // Key order is locale-aware and undefined fields are left out.
+  assert.equal(
+    ampleFileAutomationDigest({ b: 1, B: [true, null, "é"], a: { Z1: 2.5, _x: "y", z: undefined }, "10": -0, "2": 1e21 }),
+    "961750e3f24c03ede08f90902d7b87cd55a21fc50507e486b748cad868d22e9e",
+  );
 });
 
 test("digests pin the exact declaration independent of field order", () => {
@@ -121,24 +161,15 @@ test("digests pin the exact declaration independent of field order", () => {
 });
 
 test("on-settled triggers admit only recorded settle outcomes with fail-closed defaults", () => {
-  const checkRun = normalizeAmpleFileAutomationProposal(mutated((value) => {
-    value.automation.trigger = { kind: "on-settled", source: { kind: "check-run", connectedFolder: collectorConnectedFolder } };
-  }));
-  assert.deepEqual(checkRun.automation.trigger, {
-    kind: "on-settled",
-    source: { kind: "check-run", connectedFolder: collectorConnectedFolder, outcomes: ["succeeded"] },
-  });
-  assert.deepEqual(ampleFileAutomationReferencedConnectedFolderIds(checkRun.automation), [collectorConnectedFolder, manuscriptConnectedFolder, publisherConnectedFolder].sort());
-
   const explicit = normalizeAmpleFileAutomationProposal(mutated((value) => {
     value.automation.trigger = {
       kind: "on-settled",
-      source: { kind: "check-run", connectedFolder: collectorConnectedFolder, check: "check-12345678", outcomes: ["failed", "aborted"] },
+      source: { kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect", outcomes: ["success", "failure"] },
     };
   }));
-  if (explicit.automation.trigger.kind !== "on-settled" || explicit.automation.trigger.source.kind !== "check-run") assert.fail("trigger shape");
-  assert.deepEqual(explicit.automation.trigger.source.outcomes, ["aborted", "failed"], "outcomes canonicalize sorted");
-  assert.equal(explicit.automation.trigger.source.check, "check-12345678");
+  if (explicit.automation.trigger.kind !== "on-settled") assert.fail("trigger shape");
+  assert.deepEqual(explicit.automation.trigger.source.outcomes, ["failure", "success"], "outcomes canonicalize sorted");
+  assert.deepEqual(ampleFileAutomationReferencedConnectedFolderIds(explicit.automation), [collectorConnectedFolder, manuscriptConnectedFolder, publisherConnectedFolder].sort());
 
   const automation = normalizeAmpleFileAutomationProposal(mutated((value) => {
     value.automation.trigger = {
@@ -158,9 +189,12 @@ test("on-settled triggers admit only recorded settle outcomes with fail-closed d
   const settled = (source: Record<string, unknown>) => mutated((value) => {
     value.automation.trigger = { kind: "on-settled", source };
   });
-  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "check-run", connectedFolder: collectorConnectedFolder, outcomes: ["interrupted"] })), /cannot admit outcome "interrupted"/);
-  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "check-run", connectedFolder: collectorConnectedFolder, outcomes: ["succeeded", "succeeded"] })), /repeat/);
-  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "check-run", connectedFolder: collectorConnectedFolder, outcomes: [] })), /at least one/);
+  const app = { kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect" };
+  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ ...app, outcomes: ["interrupted"] })), /cannot admit outcome "interrupted"/);
+  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ ...app, outcomes: ["success", "success"] })), /repeat/);
+  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ ...app, outcomes: [] })), /at least one/);
+  // Checks were removed (2026-11-07): their settle source is refused by name.
+  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "check-run", connectedFolder: collectorConnectedFolder })), /check-run is retired/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect", outcomes: ["skipped"] })), /cannot admit outcome "skipped"/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect", outcomes: ["cancelled"] })), /cannot admit outcome "cancelled"/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect", outcomes: ["exploded"] })), /must be among/);
@@ -294,7 +328,11 @@ test("step graphs refuse duplicate ids and cyclic, forward, non-chat, or cross-c
     value.automation.steps[1].from.step = "missing";
   })), /unknown source step "missing"/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
-    value.automation.steps = [value.automation.steps[2], { ...value.automation.steps[1], from: { ...value.automation.steps[1].from, step: "verify" } }];
+    const handoff = value.automation.steps[1];
+    value.automation.steps = [
+      { ...handoff, id: "first", from: { kind: "paths", paths: ["Notes/a.md"] } },
+      { ...handoff, from: { ...handoff.from, step: "first" } },
+    ];
   })), /earlier chat step/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
     value.automation.steps[1].fromConnectedFolder = publisherConnectedFolder;
@@ -319,23 +357,23 @@ test("unknown kinds, versions, fields, and unpinned references fail closed", () 
   })), /unsupported field: intervalMinutes/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
     value.automation.trigger = { kind: "on-settled", source: { kind: "assistant-turn", connectedFolder: manuscriptConnectedFolder } };
-  })), /check-run or app-automation-run/);
+  })), /must be app-automation-run/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
     value.automation.steps[0] = { id: "run", kind: "shell", connectedFolder: manuscriptConnectedFolder, command: "rm -rf /" };
-  })), /chat, files, or check/);
+  })), /chat or files/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
     value.version = 4;
     value.automation.steps[0] = { id: "run", kind: "shell", connectedFolder: manuscriptConnectedFolder, command: "rm -rf /" };
-  })), /chat, files, check, or agent/);
+  })), /chat, files, or agent/);
+  assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
+    value.automation.steps[2] = { id: "verify", kind: "check", connectedFolder: publisherConnectedFolder, check: "check-12345678" };
+  })), /kind check is retired/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
     value.automation.steps[1].from = { kind: "glob", pattern: "**/*.md" };
   })), /paths, tree, or step-created-files/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
     value.automation.steps[0].connectedFolder = "Manuscript";
   })), /stable registered Connected Folder id/);
-  assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
-    value.automation.steps[2].check = "weekly";
-  })), /must be a Check id/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
     value.automation.steps[1].to = "/tmp/out";
   })), /relative to the Connected Folder/);
@@ -435,7 +473,7 @@ test("version 4 admits the closed placeholder set and the agent step, and refuse
   })), /unknown placeholder \{\{foo\}\}\. The placeholders are/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(version4((value) => {
     value.automation.steps[0].message = "{{trigger.findings}}";
-  })), /is not a Check-run trigger/);
+  })), /unknown placeholder \{\{trigger\.findings\}\}/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(version4((value) => {
     value.automation.trigger = { kind: "interval", intervalMinutes: 60 };
   })), /is not a folder-change trigger/);
@@ -446,7 +484,14 @@ test("version 4 admits the closed placeholder set and the agent step, and refuse
     value.automation.steps[1].message = "{{steps.report.createdFiles}}";
   })), /"report" is not an earlier chat step/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(version4((value) => {
-    value.automation.steps.splice(1, 0, { id: "verify", kind: "check", connectedFolder: publisherConnectedFolder });
+    value.automation.steps.splice(1, 0, {
+      id: "verify",
+      kind: "files",
+      fromConnectedFolder: publisherConnectedFolder,
+      from: { kind: "paths", paths: ["Ready/brief.md"] },
+      toConnectedFolder: manuscriptConnectedFolder,
+      to: "Incoming",
+    });
     value.automation.steps[2].message = "{{steps.verify.createdFiles}}";
   })), /"verify" is not an earlier chat step/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(version4((value) => {
@@ -460,17 +505,44 @@ test("version 4 admits the closed placeholder set and the agent step, and refuse
   assert.equal(literal.automation.steps[0]!.message, "Say {{trigger.summary}} and {{whatever}} verbatim.");
 });
 
-test("a Check-run trigger admits {{trigger.findings}} and a fold-only automation names no Connected Folder", () => {
+test("an agent-step-only automation names only the Connected Folder its trigger watches", () => {
   const ampleFileAgentStepOnly = normalizeAmpleFileAutomationProposal({
     ...version4Proposal,
     automation: {
       title: "Nightly digest",
-      trigger: { kind: "on-settled", source: { kind: "check-run", connectedFolder: collectorConnectedFolder, outcomes: ["failed"] } },
-      steps: [{ id: "digest", kind: "agent", message: "{{trigger.summary}}\n{{trigger.findings}}" }],
+      trigger: { kind: "on-settled", source: { kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect", outcomes: ["failure"] } },
+      steps: [{ id: "digest", kind: "agent", message: "{{trigger.summary}}" }],
     },
   });
   assert.deepEqual(ampleFileAutomationReferencedConnectedFolderIds(ampleFileAgentStepOnly.automation), [collectorConnectedFolder]);
   assert.equal(ampleFileAgentStepOnly.automation.steps.length, 1);
+});
+
+test("a stored declaration that names a retired Check feature is recognized without parsing anything else", () => {
+  const stored = (overrides: Record<string, unknown>) => ({
+    kind: "amplefile.automation",
+    version: 1,
+    id: "automation-12345678",
+    title: "Stored",
+    createdBy: "assistant",
+    createdAt: "2026-08-10T17:00:00.000Z",
+    trigger: { kind: "manual" },
+    steps: [{ id: "notify", kind: "chat", connectedFolder: manuscriptConnectedFolder, message: "Mention {{trigger.findings}} literally." }],
+    ...overrides,
+  });
+  assert.equal(ampleFileAutomationRetiredFeature(stored({})), null, "versions 1-3 send messages as literal text");
+  assert.equal(ampleFileAutomationRetiredFeature(stored({ version: 3, steps: "damaged" })), null, "other damage is not mistaken for a retired feature");
+  assert.match(ampleFileAutomationRetiredFeature(stored({
+    steps: [{ id: "verify", kind: "check", connectedFolder: manuscriptConnectedFolder }],
+  })) ?? "", /runs a Check/);
+  assert.match(ampleFileAutomationRetiredFeature(stored({
+    trigger: { kind: "on-settled", source: { kind: "check-run", connectedFolder: manuscriptConnectedFolder } },
+  })) ?? "", /waits for a Check run/);
+  assert.match(ampleFileAutomationRetiredFeature(stored({
+    version: 4,
+    steps: [{ id: "tell", kind: "agent", message: "{{ trigger.findings }}" }],
+  })) ?? "", /trigger\.findings/);
+  assert.equal(ampleFileAutomationRetiredFeature(null), null);
 });
 
 // Version 5 (docs/automations.md, 2026-10-11 amendment): a folder-change

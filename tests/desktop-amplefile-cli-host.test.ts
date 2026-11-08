@@ -238,7 +238,7 @@ test("desktop main wires one settle seam, one receipts ledger, and automation sl
   const main = await readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8");
 
   // One AmpleFileSettleSignal per desktop host: constructed once, published
-  // into by the host's Check and restricted-app services, consumed by the
+  // into by the host's restricted-app service, consumed by the
   // local API's automation executor. Anything else silently drops settles.
   const hostStart = main.indexOf("async function ensureDesktopHost");
   assert.ok(hostStart >= 0);
@@ -247,17 +247,8 @@ test("desktop main wires one settle seam, one receipts ledger, and automation sl
   assert.equal([...hostBody.matchAll(/\bnew AmpleFileSettleSignal\(/g)].length, 1, "the desktop host constructs exactly one settle authority");
   const restrictedCreate = hostBody.slice(hostBody.indexOf("RestrictedAppService.create({"), hostBody.indexOf("})", hostBody.indexOf("RestrictedAppService.create({")));
   assert.match(restrictedCreate, /settleSignal,/, "the restricted-app service publishes into the shared signal");
-  // The shared Check service takes the kernel, the same settle signal, and
-  // the AmpleFile agent model transport; its result-change hint reaches app views only
-  // through the restricted-app host (F30), never through the settle signal.
-  const checkCreateStart = hostBody.indexOf("createDesktopCheckService({");
-  assert.ok(checkCreateStart >= 0, "desktop main creates the shared Check service");
-  const checkCreate = hostBody.slice(checkCreateStart, hostBody.indexOf("});", checkCreateStart));
-  assert.match(checkCreate, /\bkernel,/, "the Check service reads Connected Folders through the kernel");
-  assert.match(checkCreate, /\bsettleSignal,/, "the Check service publishes into the shared signal");
-  assert.match(checkCreate, /getLocalApi: ensureInteractiveLocalApi,/, "the shared Check service uses the AmpleFile agent model transport");
-  assert.match(checkCreate, /onResultChanged: \(event\) => restrictedRuntime\.publishCheckResultsChanged\(event\),/, "Check result changes reach app views as ids-only hints");
-  assert.doesNotMatch(checkCreate, /onResultChanged:[^\n]*settleSignal/, "the hint never routes through the settle signal");
+  // Checks were removed (2026-11-07): the desktop host no longer creates a Check service.
+  assert.doesNotMatch(hostBody, /CheckService|createDesktopCheckService/);
   // Inspect the returned value, not property order: adding another host service
   // must not weaken the assertion that consumers receive this exact signal.
   const { default: ts } = await import("typescript");
@@ -271,7 +262,7 @@ test("desktop main wires one settle seam, one receipts ledger, and automation sl
   visit(source);
   assert.equal(returnedHosts.length, 1, "one desktop host value exposes the runtime and services");
   const signalProperty = returnedHosts[0]!.properties.find(property => property.name && ts.isIdentifier(property.name) && property.name.text === "settleSignal");
-  assert.ok(signalProperty && ts.isShorthandPropertyAssignment(signalProperty), "the returned host retains the same settleSignal binding shared by Checks and apps");
+  assert.ok(signalProperty && ts.isShorthandPropertyAssignment(signalProperty), "the returned host retains the same settleSignal binding the apps publish into");
 
   const apiStart = main.indexOf("function ensureInteractiveLocalApi");
   const apiEnd = main.indexOf("\nasync function createMainWindow", apiStart);

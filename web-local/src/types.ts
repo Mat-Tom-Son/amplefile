@@ -1,6 +1,5 @@
 import type { RestrictedAppCheckGrant, RestrictedAppCheckPermission } from "../../src/shared/restricted-app-checks";
 import type { AccentIdentity, ConnectedFolderAppearanceState } from "../../src/shared/connected-folder-appearance";
-import type { AmpleFileCheckRendererOverview } from "../../src/local/checks/check-types";
 export type AppTheme = "light" | "dark";
 export type AppThemePreference = AppTheme | "system";
 export type AppTypographyFont = "default" | "stable" | "verdana" | "aptos";
@@ -188,7 +187,6 @@ export interface ConnectedFolderFixtureConversation extends ConversationSummary 
 }
 
 export type SkillsExtensionsView = "installed" | "discover";
-export type ChecksOverview = AmpleFileCheckRendererOverview;
 
 export interface AgentStatus {
   ready: boolean;

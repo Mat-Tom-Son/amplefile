@@ -172,8 +172,7 @@ test("first run keeps the App's folder registration contract and the dark defaul
   assert.equal(defaultApplicationAppearance.mode, "dark");
   assert.match(app, /useApplicationAppearance/);
   assert.match(app, /body:\s*\{ connectedFolderRoot: selected\.path, folderGrantId: selected\.folderGrantId \}/);
-  assert.match(app, /await checksControl\?\.suspend\(\);[\s\S]*?\/api\/connected-folders\/local-folder/);
-  assert.match(app, /finally \{ void checksControl\?\.resume\(\); \}/);
+  assert.match(app, /const selected = await picker\.chooseFolder\(\); if \(!selected\) return;[\s\S]*?\/api\/connected-folders\/local-folder/);
   // Set up for me waits for an AI connection instead of sending a turn that cannot start.
   const fileManager = await read("web-local/src/components/file-manager/FileManagerView.tsx");
   assert.match(fileManager, /function setUp\(target: ConnectedFolderSummary, mode: ConnectedFolderSetUpMode\) \{\s*withAi\(\(\) => sendSetUp\(target, mode\)\);/);

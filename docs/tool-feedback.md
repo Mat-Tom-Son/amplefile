@@ -121,7 +121,7 @@ semantic correctness, and successful execution are distinct. After a relevant
 change, inspect the affected properties again; earlier evidence supports only
 its actual version and scope. Reviewing three
 pages does not establish that a whole report was reviewed, and a model's visual
-judgment does not become a deterministic Check result.
+judgment does not become a deterministic verification result.
 
 Finish when the requested outcome has supporting evidence. If useful progress
 stops, report what remains or ask for missing information through the existing
@@ -196,7 +196,7 @@ callbacks as well as deleting retained records. Restart begins with recording
 off and no captured records.
 
 Use one diagnostic observer at the bound Pi session's `agent.streamFunction`, shared
-by normal turns and the host's title, Check, app inference and compaction calls.
+by normal turns and the host's title, app inference and compaction calls.
 Capture a detached bounded **Assembled model context** with the effective
 model and canonical transcript. Replay its system/tool deltas for dispatch
 digests and tool names; never infer these from the current session state.
@@ -221,7 +221,7 @@ Provenance separates the actual dispatch's system-prompt digest and tool names
 from loaded session resources: Pi version, runtime paths, context-file paths
 and loaded-content digests, appended instruction digests, Skill/Extension
 origins and session-active tool sources. Loaded resources are not proof that
-an auxiliary request used them; bounded app inference, titles and Checks
+an auxiliary request used them; bounded app inference and titles
 assemble separate contexts. It never reconstructs past context from files that
 may since have changed. Image metadata records
 available identity and bounded digests of encoded content without retaining
@@ -258,8 +258,7 @@ request, built-in image reads, provider conversion and `blockImages` behavior.
 A concise shared prompt appendix teaches useful verification across AmpleFile
 agent and Worker sessions. A stopped tool may drain, but late UI events cannot revive its
 turn or permit overlapping reuse. The local inspector observes Chat-turn,
-title, Check, app inference and compaction calls without changing their hooks
-or source-pinned Check authority.
+title, app inference and compaction calls without changing their hooks.
 
 Included Computer, Chrome and Web tools use native observations and source
 identities. Documents adds ordinary bundled libraries and a cancellable

@@ -12,7 +12,6 @@ import {
   ampleFileAutomationBounds,
   ampleFileAutomationDigest,
   type AmpleFileAutomationChatStep,
-  type AmpleFileAutomationCheckStep,
   type AmpleFileAutomationFilesStep,
   type AmpleFileAutomationAgentStep,
 } from "../src/local/automations/automation-declarations.js";
@@ -21,8 +20,6 @@ import {
   AmpleFileAutomationServiceError,
   ampleFileAutomationMaxConcurrentRuns,
   type AmpleFileAutomationChatHopResult,
-  type AmpleFileAutomationCheckHopResult,
-  type AmpleFileAutomationCheckRunFindings,
   type AmpleFileAutomationCheckpointManifest,
   type AmpleFileAutomationFilesHopResult,
   type AmpleFileAutomationAgentHopResult,
@@ -36,7 +33,7 @@ import {
   type AmpleFileAutomationReceiptV1,
   type AmpleFileAutomationRecord,
 } from "../src/local/automations/automation-store.js";
-import { AmpleFileSettleSignal, type AmpleFileCheckRunSettleRecord } from "../src/local/automations/settle-signal.js";
+import { AmpleFileSettleSignal, type AmpleFileAppAutomationRunSettleRecord } from "../src/local/automations/settle-signal.js";
 
 const startTime = Date.parse("2026-07-14T12:00:00.000Z");
 const minute = 60_000;
@@ -45,7 +42,7 @@ const connectedFolderB = "space-bbbbbbbbbbbbbbbb";
 const connectedFolderC = "space-cccccccccccccccc";
 
 interface RecordedPortCall {
-  kind: "chat" | "files" | "check" | "agent";
+  kind: "chat" | "files" | "agent";
   hopId: string;
   runId: string;
   automationId: string;
@@ -58,7 +55,6 @@ interface RecordedPortCall {
 class FakePorts implements AmpleFileAutomationHopPorts {
   readonly calls: RecordedPortCall[] = [];
   readonly manifests = new Map<string, AmpleFileAutomationCheckpointManifest>();
-  readonly findingsByTask = new Map<string, AmpleFileAutomationCheckRunFindings | null>();
   chatImpl: (step: AmpleFileAutomationChatStep, context: AmpleFileAutomationHopContext) => Promise<AmpleFileAutomationChatHopResult>;
   ampleFileAgentImpl: (step: AmpleFileAutomationAgentStep, context: AmpleFileAutomationHopContext) => Promise<AmpleFileAutomationAgentHopResult>;
   filesImpl: (
@@ -66,7 +62,6 @@ class FakePorts implements AmpleFileAutomationHopPorts {
     source: AmpleFileAutomationResolvedFilesSource,
     context: AmpleFileAutomationHopContext,
   ) => Promise<AmpleFileAutomationFilesHopResult>;
-  checkImpl: (step: AmpleFileAutomationCheckStep, context: AmpleFileAutomationHopContext) => Promise<AmpleFileAutomationCheckHopResult>;
 
   constructor() {
     this.chatImpl = this.defaultChat;
@@ -80,14 +75,6 @@ class FakePorts implements AmpleFileAutomationHopPorts {
       copiedPaths: source.kind === "paths" ? [...source.paths] : ["resolved/tree.md"],
       fileCount: source.kind === "paths" ? source.paths.length : 1,
       totalBytes: 64,
-    });
-    this.checkImpl = async (_step, context) => ({
-      runId: `check-run-${context.hopId}`,
-      taskId: `check-task-${context.hopId}`,
-      state: "succeeded",
-      checkIds: ["check-quality-gate"],
-      findingCount: 2,
-      admittedCount: 2,
     });
   }
 
@@ -148,10 +135,6 @@ class FakePorts implements AmpleFileAutomationHopPorts {
     return this.ampleFileAgentImpl(step, context);
   }
 
-  async checkRunFindings(_connectedFolderId: string, taskId: string): Promise<AmpleFileAutomationCheckRunFindings | null> {
-    return this.findingsByTask.get(taskId) ?? null;
-  }
-
   async files(
     step: AmpleFileAutomationFilesStep,
     source: AmpleFileAutomationResolvedFilesSource,
@@ -159,11 +142,6 @@ class FakePorts implements AmpleFileAutomationHopPorts {
   ): Promise<AmpleFileAutomationFilesHopResult> {
     this.calls.push({ kind: "files", hopId: context.hopId, runId: context.runId, automationId: context.automationId, lineage: context.lineage, source });
     return this.filesImpl(step, source, context);
-  }
-
-  async check(step: AmpleFileAutomationCheckStep, context: AmpleFileAutomationHopContext): Promise<AmpleFileAutomationCheckHopResult> {
-    this.calls.push({ kind: "check", hopId: context.hopId, runId: context.runId, automationId: context.automationId, lineage: context.lineage });
-    return this.checkImpl(step, context);
   }
 
   async checkpointManifest(connectedFolderId: string, checkpointId: string): Promise<AmpleFileAutomationCheckpointManifest | null> {
@@ -308,19 +286,25 @@ function declarationInput(id: string, overrides: Record<string, unknown> = {}): 
 const pipelineSteps = [
   { id: "review", kind: "chat", connectedFolder: connectedFolderA, message: "Review chapters for unresolved notes." },
   { id: "handoff", kind: "files", fromConnectedFolder: connectedFolderA, from: { kind: "paths", paths: ["reports/weekly.md"] }, toConnectedFolder: connectedFolderB, to: "Incoming" },
-  { id: "verify", kind: "check", connectedFolder: connectedFolderB },
+  { id: "verify", kind: "chat", connectedFolder: connectedFolderB, message: "Confirm the handoff reads cleanly." },
 ];
 
-const checkSettle: AmpleFileCheckRunSettleRecord = {
-  kind: "check-run",
+const appSettle: AmpleFileAppAutomationRunSettleRecord = {
+  kind: "app-automation-run",
   connectedFolderId: connectedFolderA,
-  runId: "settled-check-run-1",
-  taskId: "settled-check-task-1",
-  checkIds: ["check-quality-gate"],
-  state: "succeeded",
+  appId: "collector",
+  appAutomationId: "collect",
+  runId: "settled-app-run-1",
+  outcome: "success",
+  reason: "scheduled",
+  scheduledAt: "2026-07-14T11:59:00.000Z",
   startedAt: "2026-07-14T11:59:00.000Z",
-  endedAt: "2026-07-14T11:59:30.000Z",
+  finishedAt: "2026-07-14T11:59:30.000Z",
 };
+
+function appSettledTrigger(connectedFolder: string): Record<string, unknown> {
+  return { kind: "on-settled", source: { kind: "app-automation-run", connectedFolder, appId: "collector", appAutomationId: "collect", outcomes: ["success"] } };
+}
 
 async function waitForCondition(predicate: () => Promise<boolean> | boolean, label: string): Promise<void> {
   for (let attempt = 0; attempt < 400; attempt += 1) {
@@ -381,11 +365,11 @@ test("a scheduled run executes hops strictly in order with journal-first receipt
   assert.deepEqual(filesDone?.copiedPaths, ["reports/weekly.md"]);
   assert.equal(filesDone?.restorePointId, "restore-handoff");
 
-  const checkDone = lines.find((line) => line.hopId === "verify" && line.outcome === "succeeded");
-  assert.equal(checkDone?.checkRunId, "check-run-verify");
-  assert.equal(checkDone?.findingCount, 2, "a succeeded Check hop succeeds even when it admits findings; glue is not a gate");
+  const verifyDone = lines.find((line) => line.hopId === "verify" && line.outcome === "succeeded");
+  assert.equal(verifyDone?.connectedFolderId, connectedFolderB);
+  assert.equal(verifyDone?.conversationId, "conversation-verify");
 
-  assert.deepEqual(harness.ports.calls.map((call) => call.kind), ["chat", "files", "check"]);
+  assert.deepEqual(harness.ports.calls.map((call) => call.kind), ["chat", "files", "chat"]);
   const runId = accepted?.runId ?? "";
   assert.deepEqual(
     harness.ports.calls[2]?.lineage,
@@ -878,11 +862,11 @@ test("restart catch-up runs or skips a missed one-time occurrence exactly as dec
 test("an on-settled trigger admits matching settles only, and automation-caused settles never fire triggers", async (t) => {
   const harness = await createHarness(t);
   await harness.enable(declarationInput("automation-on-settle", {
-    trigger: { kind: "on-settled", source: { kind: "check-run", connectedFolder: connectedFolderA, outcomes: ["succeeded"] } },
-    steps: [{ id: "verify", kind: "check", connectedFolder: connectedFolderB }],
+    trigger: appSettledTrigger(connectedFolderA),
+    steps: [{ id: "verify", kind: "chat", connectedFolder: connectedFolderB, message: "Read the collected mail." }],
   }));
 
-  harness.signal.publish(checkSettle);
+  harness.signal.publish(appSettle);
   await waitForCondition(
     async () => (await harness.journal()).some((line) => line.scope === "run" && line.outcome === "succeeded"),
     "the settle-admitted run to settle",
@@ -891,22 +875,22 @@ test("an on-settled trigger admits matching settles only, and automation-caused 
   assert.deepEqual(accepted?.cause, {
     kind: "on-settled",
     source: {
-      kind: "check-run",
+      kind: "app-automation-run",
       connectedFolderId: connectedFolderA,
-      runId: "settled-check-run-1",
-      state: "succeeded",
-      checkIds: ["check-quality-gate"],
-      // The Check task id is how {{trigger.findings}} reads the settled run back.
-      taskId: "settled-check-task-1",
+      appId: "collector",
+      appAutomationId: "collect",
+      runId: "settled-app-run-1",
+      outcome: "success",
     },
   }, "the run receipt names the settled source exactly");
   assert.equal(harness.ports.calls[0]?.lineage.automationId, "automation-on-settle");
 
-  harness.signal.publish({ ...checkSettle, runId: "settled-check-run-2", state: "failed" });
-  harness.signal.publish({ ...checkSettle, runId: "settled-check-run-3", connectedFolderId: connectedFolderB });
+  harness.signal.publish({ ...appSettle, runId: "settled-app-run-2", outcome: "failure" });
+  harness.signal.publish({ ...appSettle, runId: "settled-app-run-3", connectedFolderId: connectedFolderB });
+  harness.signal.publish({ ...appSettle, runId: "settled-app-run-5", appAutomationId: "other" });
   harness.signal.publish({
-    ...checkSettle,
-    runId: "settled-check-run-4",
+    ...appSettle,
+    runId: "settled-app-run-4",
     lineage: { kind: "automation-hop", automationId: "automation-on-settle", automationRunId: "some-run", hopId: "verify" },
   });
   await new Promise<void>((resolve) => setTimeout(resolve, 50));
@@ -1270,7 +1254,7 @@ test("Connected Folder removal stops the active run, suspends durably, disarms e
     trigger: { kind: "interval", intervalMinutes: 60 },
   }), "decision-alpha");
   await harness.enable(declarationInput("automation-beta-standby", {
-    trigger: { kind: "on-settled", source: { kind: "check-run", connectedFolder: connectedFolderC, outcomes: ["succeeded"] } },
+    trigger: appSettledTrigger(connectedFolderC),
     steps: [{ id: "tidy", kind: "chat", connectedFolder: connectedFolderC, message: "Tidy the inbox." }],
   }), "decision-beta");
   harness.ports.chatImpl = (step, context) => step.connectedFolder === connectedFolderA
@@ -1299,7 +1283,7 @@ test("Connected Folder removal stops the active run, suspends durably, disarms e
   await new Promise<void>((resolve) => setTimeout(resolve, 50));
   assert.equal(await acceptedForAlpha(), alphaRunsAfterSuspension, "a suspended automation never fires on its schedule");
 
-  harness.signal.publish({ ...checkSettle, connectedFolderId: connectedFolderC, runId: "settled-check-run-beta" });
+  harness.signal.publish({ ...appSettle, connectedFolderId: connectedFolderC, runId: "settled-app-run-beta" });
   await waitForCondition(
     async () => (await harness.journal()).some((line) => line.scope === "run" && line.outcome === "succeeded" && line.automationId === "automation-beta-standby"),
     "automation-beta-standby to keep working",
@@ -1391,7 +1375,7 @@ test("folder changes debounce into one receipted cross-connected-folder sequence
   harness.clock.advance(2000);
   await harness.service.pollFileChanges();
   await waitForCondition(async () => (await harness.journal()).some((line) => line.scope === "run" && line.outcome === "succeeded"), "folder handoff");
-  assert.deepEqual(harness.ports.calls.map(({ kind }) => kind), ["chat", "files", "check"]);
+  assert.deepEqual(harness.ports.calls.map(({ kind }) => kind), ["chat", "files", "chat"]);
   const accepted = (await harness.journal()).find((line) => line.scope === "run" && line.outcome === "accepted");
   assert.deepEqual(accepted?.cause, {
     kind: "files-changed",
@@ -1601,7 +1585,7 @@ test("a filled-in list names the limit that cut it, and a too-large message fail
     steps: [
       { id: "review", kind: "chat", connectedFolder: connectedFolderA, message: "Write the weekly summary." },
       { id: "flood", kind: "chat", connectedFolder: connectedFolderB, message: chatMessage },
-      { id: "after", kind: "check", connectedFolder: connectedFolderB },
+      { id: "after", kind: "chat", connectedFolder: connectedFolderB, message: "Wrap up." },
     ],
   }), "request-message-bound");
   const wide = "x".repeat(4_000);
@@ -1623,43 +1607,6 @@ test("a filled-in list names the limit that cut it, and a too-large message fail
     "a resolution that cannot be proven fails the hop closed and later hops are skipped",
   );
   assert.equal(harness.ports.calls.filter((call) => call.hopId === "flood").length, 0, "nothing was sent");
-});
-
-test("{{trigger.findings}} reads the settled Check run through the port and fails closed when it cannot", async (t) => {
-  const harness = await createHarness(t);
-  await harness.enable(declarationInput("automation-findings", {
-    version: 4,
-    trigger: { kind: "on-settled", source: { kind: "check-run", connectedFolder: connectedFolderA, outcomes: ["succeeded"] } },
-    steps: [{ id: "triage", kind: "chat", connectedFolder: connectedFolderB, message: "Triage these:\n{{trigger.findings}}" }],
-  }));
-  harness.ports.findingsByTask.set("settled-check-task-1", {
-    findings: [
-      { checkId: "check-quality-gate", title: "Stale link", targetPath: "docs/a.md", severity: "warning" },
-      { checkId: "check-quality-gate", title: "Missing owner", targetPath: "docs/b.md", severity: "notice" },
-    ],
-  });
-
-  harness.signal.publish(checkSettle);
-  await waitForCondition(
-    async () => (await harness.journal()).some((line) => line.scope === "run" && line.outcome === "succeeded"),
-    "the settle-admitted run to settle",
-  );
-  assert.equal(
-    harness.ports.calls.find((call) => call.kind === "chat")?.message,
-    "Triage these:\n- [warning] Stale link — docs/a.md (check-quality-gate)\n- [notice] Missing owner — docs/b.md (check-quality-gate)",
-  );
-
-  await waitForCondition(() => harness.service.status().activeRunCount === 0, "the first run to release its slot");
-  harness.ports.findingsByTask.delete("settled-check-task-1");
-  harness.ports.calls.length = 0;
-  harness.signal.publish({ ...checkSettle, runId: "settled-check-run-2" });
-  await waitForCondition(
-    async () => (await harness.journal()).some((line) => line.hopId === "triage" && line.outcome === "failed"),
-    "the unreadable findings to fail the hop",
-  );
-  const failed = (await harness.journal()).find((line) => line.hopId === "triage" && line.outcome === "failed");
-  assert.match(failed?.detail ?? "", /could not be read/);
-  assert.equal(harness.ports.calls.length, 0, "nothing was sent on an unprovable resolution");
 });
 
 test("a fold hop starts an AmpleFile agent turn, stops honestly, and never fires another trigger", async (t) => {

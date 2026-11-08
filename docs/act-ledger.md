@@ -111,8 +111,8 @@ rules, which mirror the desktop's.
 | Reset appearance | Customize Connected Folder → Reset | none | direct verb | `connected-folders appearance reset --connected-folder <id>` | prior customization ref | `connected-folders appearance undo` | — |
 | Undo appearance | — (the desktop re-imports or resets instead) | none | direct verb | `connected-folders appearance undo --connected-folder <id>` | restored and displaced customization refs | apply the displaced ref again — undo is its own inverse | refused with a typed error when the receipt chain records no prior customization ref for that Connected Folder, including when the current appearance was last changed on the desktop rather than through a receipted act |
 | Inspect Worker preferences | Settings → AI Models | none | direct verb (content-bearing act read) | `connected-folders worker show --connected-folder <id>` | — | n/a | returns only connected model choices plus the current model and instruction text; provider credentials never enter the result |
-| Set the default model for new Chats | Settings → AI Models | none | direct verb | `connected-folders worker model --connected-folder <id> --provider <id> --model <id>` | provider and model ids | choose the prior model again | selected model must exist and already have configured auth; fenced against active agent, compaction, or Check work; existing Chat sessions keep their session model |
-| Set or clear Connected Folder instructions | Settings → AI Models | none | direct verb | `connected-folders worker instructions --connected-folder <id> (--instructions <text> \| --clear)` | updated character count or cleared marker — never text | set the prior text again or clear | bounded validated text; fenced against active agent, compaction, or Check work; applies to subsequent turns after scoped client invalidation |
+| Set the default model for new Chats | Settings → AI Models | none | direct verb | `connected-folders worker model --connected-folder <id> --provider <id> --model <id>` | provider and model ids | choose the prior model again | selected model must exist and already have configured auth; fenced against active agent or compaction work; existing Chat sessions keep their session model |
+| Set or clear Connected Folder instructions | Settings → AI Models | none | direct verb | `connected-folders worker instructions --connected-folder <id> (--instructions <text> \| --clear)` | updated character count or cleared marker — never text | set the prior text again or clear | bounded validated text; fenced against active agent or compaction work; applies to subsequent turns after scoped client invalidation |
 
 The desktop couples managed Connected Folder removal with folder deletion in one
 confirm dialog; the ledger splits them. Unregistration is recoverable and
@@ -196,7 +196,7 @@ stay renderer conveniences — the verb takes an explicit `--until`.
 |---|---|---|---|---|---|---|---|
 | List restore points | History pane | none | direct verb (content-bearing act read) | `history list --connected-folder <id>` | — | n/a | — |
 | Save restore point | History pane, palette | none | direct verb | `history save --connected-folder <id> [--label <t>]` | checkpointId, `created` flag | none needed (additive) | unchanged files → honest "already matches" result, not a new checkpoint |
-| Restore a restore point | History pane → Restore | none | direct verb | `history restore --connected-folder <id> --checkpoint <id>` | restored checkpointId + pre-restore safety checkpointId | restore the safety checkpoint the act itself recorded | **refused while any agent turn, compaction, or Check run is active in that Connected Folder, while a restricted-app automation run whose app holds a file grant into that Connected Folder is active, or while an automation run with a files hop targeting that Connected Folder is active** — shared with desktop recovery |
+| Restore a restore point | History pane → Restore | none | direct verb | `history restore --connected-folder <id> --checkpoint <id>` | restored checkpointId + pre-restore safety checkpointId | restore the safety checkpoint the act itself recorded | **refused while any agent turn or compaction is active in that Connected Folder, while a restricted-app automation run whose app holds a file grant into that Connected Folder is active, or while an automation run with a files hop targeting that Connected Folder is active** — shared with desktop recovery |
 | List file versions | File version history modal | none | direct verb (content-bearing act read) | `history versions --connected-folder <id> --path <p>` | — | n/a | — |
 | Restore file version | File version history modal | none | direct verb | `history restore-file --connected-folder <id> --path <p> --version <sha256>` | safety checkpointId | restore the safety checkpoint (the modal's own Undo does the same) | missing version → not-found; folder at path → refused |
 
@@ -269,14 +269,11 @@ The desktop Library went on 2026-09-25 and the `library` act family, its
 verbs; an app-state `resources/` folder from an earlier build is left
 untouched.
 
-### Checks
+### Checks (removed)
 
-Previously shipped act-lane family, unchanged by the AmpleFile agent:
-`checks status` (read lane), `checks enable|disable|run|task|result|abort|problems|decide`
-(act lane). Check enablement was always direct and stays so: the shipped
-trigger is `manual`, so enablement creates no standing or scheduled
-behavior, and `checks decide` is a fingerprint-scoped finding decision, not
-an authority act.
+Checks went on 2026-11-07, with the whole `checks` act family and its
+read-lane status command. There are no Check verbs; Check data an earlier
+build stored is left on disk unread.
 
 ### Skills & Extensions
 
@@ -407,7 +404,7 @@ Consolidated, so implementations and tests can point at one list:
    existing 409s). One lifecycle change per act.
 2. A send into an archived or future-snoozed Chat is refused until the Chat
    is resumed — resuming is its own receipted act, never a side effect.
-3. Capability mutations (`tools …`, and Check enablement's fencing) are
+3. Capability mutations (`tools …`) are
    blocked while affected work is active; a catalog reload can never
    silently terminate a background turn.
 4. Connected Folder unregistration and managed-folder deletion run the App Studio
@@ -421,8 +418,8 @@ Consolidated, so implementations and tests can point at one list:
 6. App Studio guards hold: referenced Releases cannot be deleted, prepared
    operations recheck at activation, digest identity beats display
    versions, uninstall requires an explicit retain-or-purge disposition.
-7. Whole–Connected Folder History restore is refused while any agent turn,
-   compaction, or Check run is active in that Connected Folder, while a restricted-app
+7. Whole–Connected Folder History restore is refused while any agent turn
+   or compaction is active in that Connected Folder, while a restricted-app
    automation run whose app holds a file grant into that Connected Folder is active,
    or while an automation run with a files hop targeting that Connected Folder is active
    (the desktop uses the same reservation and refusal).

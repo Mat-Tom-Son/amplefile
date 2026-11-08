@@ -17,9 +17,6 @@ import {
 import { restrictedAppFilePermissionLimit, type RestrictedAppAssistantAction } from "../src/local/agent/restricted-app-manifest.js";
 import { restrictedAppCheckLimits } from "../src/shared/restricted-app-checks.js";
 import type { AmpleFileDurableTurnRecord } from "../src/local/agent/turn-store.js";
-import { AmpleFileCheckService } from "../src/local/checks/check-service.js";
-import { AmpleFileCheckStore } from "../src/local/checks/check-store.js";
-import { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
 import { restrictedAppSubscriptionLimits } from "../src/shared/restricted-app-tasks.js";
 
 const root = process.cwd();
@@ -118,74 +115,6 @@ test("an inference receipt marks only its terminal line as something an app can 
   assert.ok(seen.every((item) => item.featureInstallationId === "feature-one"));
 });
 
-test("a Check settle and a disable each tell the host once, and a failing listener never fails the operation", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-check-hint-"));
-  t.after(() => rm(sandbox, { recursive: true, force: true }));
-  const connectedFolderRoot = join(sandbox, "connected-folder");
-  const machine = join(sandbox, "machine");
-  await mkdir(join(connectedFolderRoot, "Delivery"), { recursive: true });
-  await mkdir(machine, { recursive: true });
-  const proposalPath = join(sandbox, "handoff.amplefile-check.json");
-  await writeFile(proposalPath, JSON.stringify({
-    kind: "amplefile.check-proposal",
-    version: 1,
-    name: "Required handoff",
-    createdBy: "human",
-    createdAt: "2026-08-01T00:00:00.000Z",
-    check: {
-      title: "The signed handoff exists",
-      severity: "error",
-      trigger: "manual",
-      sensor: { id: "amplefile.file-presence", revision: 1, parameters: { expect: "present" } },
-      targets: [{ kind: "file", role: "primary", path: "Delivery/signed.pdf" }],
-    },
-  }));
-
-  const changed: Array<{ connectedFolderId: string; checkIds: string[] }> = [];
-  let listenerThrows = false;
-  const service = new AmpleFileCheckService({
-    kernel: new AmpleFileKernel(),
-    storeFactory: (connectedFolderId) => AmpleFileCheckStore.create(connectedFolderId, { path: join(machine, `${connectedFolderId}.json`) }),
-    listConnectedFolders: async () => [{
-      id: "connected-folder-delivery", name: "connected-folder-delivery", connectedFolderRoot,
-      location: { kind: "local" as const, storage: "linked" as const },
-      createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-08-01T00:00:00.000Z",
-    }],
-    onResultChanged: (event) => {
-      changed.push({ connectedFolderId: event.connectedFolderId, checkIds: [...event.checkIds] });
-      if (listenerThrows) throw new Error("a view listener exploded");
-    },
-  });
-  t.after(() => service.close());
-  const connectedFolder = { id: "connected-folder-delivery", connectedFolderRoot };
-
-  const enabled = await service.enable({ connectedFolder, proposalPath, actor: "human" });
-  assert.deepEqual(changed, [], "enabling a Check is not a result change");
-  await service.status(connectedFolder);
-  assert.deepEqual(changed, [], "a read never produces a hint");
-
-  listenerThrows = true;
-  const accepted = await service.run({ connectedFolder, checkId: enabled.declaration.id, actor: { kind: "cli", connectedFolderId: connectedFolder.id } });
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    const status = await service.taskStatus(connectedFolder.id, accepted.taskId);
-    if (status.state !== "accepted" && status.state !== "running") break;
-    await new Promise<void>((resolve) => setTimeout(resolve, 5));
-  }
-  assert.equal((await service.taskStatus(connectedFolder.id, accepted.taskId)).state, "succeeded",
-    "a listener that throws never fails the Check run");
-  assert.deepEqual(changed, [{ connectedFolderId: "connected-folder-delivery", checkIds: [enabled.declaration.id] }],
-    "one settled run is exactly one hint");
-
-  listenerThrows = false;
-  changed.length = 0;
-  assert.equal(await service.disable(connectedFolder, enabled.declaration.id), true);
-  assert.deepEqual(changed, [{ connectedFolderId: "connected-folder-delivery", checkIds: [enabled.declaration.id] }]);
-  changed.length = 0;
-  assert.equal(await service.disable(connectedFolder, enabled.declaration.id), false);
-  assert.deepEqual(changed, [], "disabling what is already gone changes nothing");
-});
-
 test("the host pushes the three hints on their own channels, to the mounts each read lane admits", () => {
   for (const channel of ["tasks-changed", "checks-changed", "files-changed"]) {
     assert.ok(host.includes(`"amplefile:restricted-app:${channel}"`), `${channel} is a host channel`);
@@ -250,7 +179,6 @@ test("the host pushes the three hints on their own channels, to the mounts each 
   assert.match(host, /publishAssistantActivity\(event: RestrictedAppAssistantActivity\): void/);
   assert.match(host, /publishCheckResultsChanged\(event: \{ connectedFolderId: string; checkIds: readonly string\[\] \}\): void/);
   assert.match(main, /onAppAssistantActivity: \(activity\) => host\.restrictedAppHost\.publishAssistantActivity\(activity\)/);
-  assert.match(main, /onResultChanged: \(event\) => restrictedRuntime\.publishCheckResultsChanged\(event\)/);
 
   // The internal settle signal keeps exactly one consumer (F30).
   assert.ok(!host.includes("settleSignal"), "the app host never subscribes to the settle signal");

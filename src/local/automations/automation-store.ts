@@ -17,6 +17,7 @@ import {
   ampleFileAutomationBounds,
   ampleFileAutomationDigest,
   ampleFileAutomationReferencedConnectedFolderIds,
+  ampleFileAutomationRetiredFeature,
   type AmpleFileAutomationDeclaration,
 } from "./automation-declarations.js";
 
@@ -102,15 +103,15 @@ export type AmpleFileAutomationRunCause =
   | { kind: "run-now"; requestId?: string; surface?: AmpleFileCliActSurface }
   | {
       kind: "on-settled";
-      source:
-        | { kind: "check-run"; connectedFolderId: string; runId: string; state: string; checkIds: string[]; taskId?: string }
-        | { kind: "app-automation-run"; connectedFolderId: string; appId: string; appAutomationId: string; runId: string; outcome: string };
+      source: { kind: "app-automation-run"; connectedFolderId: string; appId: string; appAutomationId: string; runId: string; outcome: string };
     };
 
 /**
  * One journal line. Lines are written at version 1 and read tolerantly:
  * unknown fields are ignored by readers (the overview destructures only what it
- * knows), and every text field is scrubbed before it is written. Receipts
+ * knows), and every text field is scrubbed before it is written. Lines written
+ * before Checks were removed (2026-11-07) may still carry a `check` hop kind,
+ * a Check-run cause, and Check run fields; readers skip what they do not know. Receipts
  * carry identifiers, digests, paths, and counts — never file contents or
  * secrets. The one bounded exception is `placeholders`: the text AmpleFile
  * itself filled into a chat- or agent-step message, so a person can see what
@@ -127,7 +128,7 @@ export interface AmpleFileAutomationReceiptV1 {
   /** Present on every run- and hop-scoped record; absent on lifecycle records. */
   runId?: string;
   hopId?: string;
-  hopKind?: "chat" | "files" | "check" | "agent";
+  hopKind?: "chat" | "files" | "agent";
   title?: string;
   digest?: string;
   cause?: AmpleFileAutomationRunCause;
@@ -142,7 +143,7 @@ export interface AmpleFileAutomationReceiptV1 {
   fromConnectedFolderId?: string;
   toConnectedFolderId?: string;
   conversationId?: string;
-  /** Turn task id (chat hops) or Check task id (check hops). */
+  /** Turn task id of a chat or agent hop. */
   taskId?: string;
   /** Pre- and post-turn History checkpoint ids of a chat hop. */
   checkpointIds?: string[];
@@ -151,10 +152,6 @@ export interface AmpleFileAutomationReceiptV1 {
   copiedPaths?: string[];
   fileCount?: number;
   totalBytes?: number;
-  checkRunId?: string;
-  checkIds?: string[];
-  findingCount?: number;
-  admittedCount?: number;
   /** Names the failing hop on a failed run and on the skipped hops after it. */
   failedHopId?: string;
   /** Hop task ids a stop aborted, exactly as `agent stop` names child turns. */
@@ -472,6 +469,19 @@ export interface AmpleFileAutomationStoreStatus {
   damageReason?: string;
   automationCount: number;
   enabledCount: number;
+  /** Stored automations left out on load because they use a retired feature. */
+  retiredAutomations?: AmpleFileRetiredAutomation[];
+}
+
+/**
+ * A stored automation that names a feature AmpleFile no longer has (Checks,
+ * removed 2026-11-07). It is left out on load, on its own: the rest of the
+ * store loads and keeps running, and the next write leaves it out of the file.
+ */
+export interface AmpleFileRetiredAutomation {
+  id: string;
+  title?: string;
+  reason: string;
 }
 
 export interface AmpleFileAutomationStoreOptions {
@@ -504,6 +514,7 @@ export class AmpleFileAutomationStore {
   readonly receipts: AmpleFileAutomationReceipts;
   readonly #now: () => Date;
   readonly #damageReason: string | null;
+  readonly #retired: AmpleFileRetiredAutomation[];
   #file: AutomationStoreFileShape;
   #queue: Promise<unknown> = Promise.resolve();
 
@@ -513,12 +524,14 @@ export class AmpleFileAutomationStore {
     now: () => Date,
     file: AutomationStoreFileShape,
     damageReason: string | null,
+    retired: AmpleFileRetiredAutomation[],
   ) {
     this.path = path;
     this.receipts = receipts;
     this.#now = now;
     this.#file = file;
     this.#damageReason = damageReason;
+    this.#retired = retired;
   }
 
   static async create(options: AmpleFileAutomationStoreOptions = {}): Promise<AmpleFileAutomationStore> {
@@ -526,7 +539,10 @@ export class AmpleFileAutomationStore {
     const now = options.now ?? (() => new Date());
     const receipts = options.receipts ?? new AmpleFileAutomationReceipts({ now });
     const loaded = await loadAutomationStoreFile(path);
-    return new AmpleFileAutomationStore(path, receipts, now, loaded.file, loaded.damageReason);
+    for (const retired of loaded.retired) {
+      console.warn(`AmpleFile left out the stored automation ${retired.id}${retired.title ? ` ("${retired.title}")` : ""}: ${retired.reason}.`);
+    }
+    return new AmpleFileAutomationStore(path, receipts, now, loaded.file, loaded.damageReason, loaded.retired);
   }
 
   status(): AmpleFileAutomationStoreStatus {
@@ -537,6 +553,7 @@ export class AmpleFileAutomationStore {
       damaged: false,
       automationCount: this.#file.automations.length,
       enabledCount: this.#file.automations.filter((automation) => automation.health === "enabled").length,
+      ...(this.#retired.length ? { retiredAutomations: this.#retired.map((retired) => ({ ...retired })) } : {}),
     };
   }
 
@@ -968,10 +985,11 @@ function emptyFile(): AutomationStoreFileShape {
 
 async function loadAutomationStoreFile(
   path: string,
-): Promise<{ file: AutomationStoreFileShape; damageReason: string | null }> {
+): Promise<{ file: AutomationStoreFileShape; damageReason: string | null; retired: AmpleFileRetiredAutomation[] }> {
   const damaged = (reason: string) => ({
     file: emptyFile(),
     damageReason: `The automation store at ${path} ${reason}.`,
+    retired: [],
   });
   let text: string;
   try {
@@ -980,7 +998,7 @@ async function loadAutomationStoreFile(
     text = await readFile(path, "utf8");
   } catch (caught) {
     if ((caught as NodeJS.ErrnoException)?.code === "ENOENT") {
-      return { file: emptyFile(), damageReason: null };
+      return { file: emptyFile(), damageReason: null, retired: [] };
     }
     return damaged(`could not be read (${caught instanceof Error ? caught.message : String(caught)})`);
   }
@@ -1002,9 +1020,17 @@ async function loadAutomationStoreFile(
   const legacyGrants = record.schemaVersion !== AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION;
   if (!Array.isArray(record.automations)) return damaged("does not list its automations");
   const automations: AmpleFileAutomationRecord[] = [];
+  const retired: AmpleFileRetiredAutomation[] = [];
   const ids = new Set<string>();
   for (const [index, candidate] of record.automations.entries()) {
     const converted = legacyGrants ? convertLegacyGrants(candidate) : candidate;
+    // A record whose declaration names a retired feature is left out on its
+    // own; one such record never takes the other automations down with it.
+    const retiredAutomation = retiredAutomationRecord(converted);
+    if (retiredAutomation) {
+      retired.push(retiredAutomation);
+      continue;
+    }
     const issue = automationRecordIssue(converted);
     if (issue) return damaged(`holds an invalid automation at index ${index}: ${issue}`);
     const automation = converted as AmpleFileAutomationRecord;
@@ -1012,7 +1038,20 @@ async function loadAutomationStoreFile(
     ids.add(automation.declaration.id);
     automations.push(structuredClone(automation));
   }
-  return { file: { schemaVersion: AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION, automations }, damageReason: null };
+  return { file: { schemaVersion: AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION, automations }, damageReason: null, retired };
+}
+
+function retiredAutomationRecord(candidate: unknown): AmpleFileRetiredAutomation | null {
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
+  const declaration = (candidate as Record<string, unknown>).declaration;
+  const reason = ampleFileAutomationRetiredFeature(declaration);
+  if (reason === null) return null;
+  const fields = declaration as Record<string, unknown>;
+  const text = (value: unknown) => typeof value === "string" && value.trim()
+    ? scrubText(value.trim().slice(0, 160))
+    : undefined;
+  const title = text(fields.title);
+  return { id: text(fields.id) ?? "(unnamed automation)", ...(title ? { title } : {}), reason };
 }
 
 const AUTOMATION_RECORD_KEYS = [

@@ -5,7 +5,6 @@ import {
   createAmpleFileCliResponse,
   type AmpleFileCliActor,
   type AmpleFileCliCapabilitySummary,
-  type AmpleFileCliCheckStatusSummary,
   type AmpleFileCliCommandName,
   type AmpleFileCliContextSnapshot,
   type AmpleFileCliJson,
@@ -35,7 +34,6 @@ const commandPatterns: Array<{ tokens: string[]; name: AmpleFileCliCommandName }
   { tokens: ["connected-folders", "list"], name: "connected-folders.list" },
   { tokens: ["tasks", "list"], name: "tasks.list" },
   { tokens: ["capabilities", "list"], name: "capabilities.list" },
-  { tokens: ["checks", "status"], name: "checks.status" },
 ];
 
 export function parseAmpleFileCliArgv(argv: readonly string[]): AmpleFileCliParsedCommand {
@@ -88,7 +86,7 @@ export function parseAmpleFileCliArgv(argv: readonly string[]): AmpleFileCliPars
     return { name: "version", output };
   }
   if (!positional.length) {
-    if (connectedFolder !== undefined) throw usageError("--connected-folder must be used with context, connected-folders list, tasks list, capabilities list, or checks status.");
+    if (connectedFolder !== undefined) throw usageError("--connected-folder must be used with context, connected-folders list, tasks list, or capabilities list.");
     return { name: "help", output };
   }
   if (positional[0] === "help") {
@@ -150,39 +148,6 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
   if (normalizedTopic === "context") return `${header}\n\nUsage: ${executable} context [--connected-folder <id-or-name>] [--json]\n\nShow the resolved Connected Folder and host context for this working directory.\n`;
   if (normalizedTopic === "tasks" || normalizedTopic === "tasks list") return `${header}\n\nUsage: ${executable} tasks list [--connected-folder <id-or-name>] [--json]\n\nList host-managed tasks, optionally for one Connected Folder.\n`;
   if (normalizedTopic === "capabilities" || normalizedTopic === "capabilities list") return `${header}\n\nUsage: ${executable} capabilities list [--connected-folder <id-or-name>] [--json]\n\nList Skills & Extensions, everywhere and for one Connected Folder.\n`;
-  if (normalizedTopic === "checks" || normalizedTopic?.startsWith("checks ")) {
-    return [
-      header,
-      "",
-      `Usage: ${executable} checks status [--connected-folder <id-or-name>] [--json]`,
-      `       ${executable} checks propose --connected-folder <id-or-name> --proposal <path> [--json]`,
-      `       ${executable} checks enable --connected-folder <id-or-name> --proposal <path> [--json]`,
-      `       ${executable} checks propose-fix --connected-folder <id-or-name> --proposal <path> [--json]`,
-      `       ${executable} checks disable --connected-folder <id-or-name> --check <id> [--json]`,
-      `       ${executable} checks run --connected-folder <id-or-name> [--check <id>] [--json]`,
-      `       ${executable} checks task --connected-folder <id-or-name> --task <id> [--json]`,
-      `       ${executable} checks result --connected-folder <id-or-name> --task <id> [--json]`,
-      `       ${executable} checks wait --connected-folder <id-or-name> --task <id> [--timeout <seconds>] [--json]`,
-      `       ${executable} checks abort --connected-folder <id-or-name> --task <id> [--json]`,
-      `       ${executable} checks problems --connected-folder <id-or-name> [--check <id>] [--json]`,
-      `       ${executable} checks decide --connected-folder <id-or-name> --finding <id> --decision <accept|reject|resolve|defer> [--until <ISO-time>] [--json]`,
-      "",
-      "Checks are optional expectations over explicitly designated files or",
-      "bounded file sets. Status is content-free. Every mutation, run, and",
-      "contentful result uses the authenticated act lane and an explicit Connected Folder.",
-      "Nothing watches a Connected Folder or enables a portable declaration automatically.",
-      "",
-      "To prepare a correction, read checks problems for the current finding and",
-      "its evidence. Save this JSON in a temporary file and pass it to propose-fix:",
-      '{"kind":"amplefile.check-correction","version":1,"findingId":"<finding id>","fingerprint":"<finding fingerprint>","path":"<primary file>","beforeHash":"<evidence SHA-256>","replacement":"<complete corrected UTF-8 text>"}',
-      "The beforeHash must match the primary file's current evidence and bytes.",
-      "One correction covers one existing primary file, at most 128 KiB.",
-      "Leave the original unchanged. Submission creates a pending review; the",
-      "person applies it in Checks, with History preservation and a fresh recheck.",
-      "Do not write Check findings or correction records directly into .amplefile.",
-      "",
-    ].join("\n");
-  }
   if (normalizedTopic === "chat" || normalizedTopic?.startsWith("chat ")) {
     return [
       header,
@@ -413,7 +378,7 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
       "request's attachments, actions, delegated turns, and phase, and agent",
       "stop --task stops the request plus every recorded delegated turn still",
       "running. agent overview prints the deterministic digest of recorded",
-      "state — running work, needs-you items, what changed, and Check rows —",
+      "state — running work, needs-you items, and what changed —",
       "composed by app code, never by the model. Needs the AmpleFile app",
       "running.",
       "",
@@ -614,8 +579,8 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
       "narrow standing behavior and run immediately. receipts lists per-run",
       "receipts. Needs the AmpleFile app running.",
       "",
-      "folder-change proposal example (replace the sample Connected Folder and Check",
-      "ids, paths, messages, and timestamp with your own values):",
+      "folder-change proposal example (replace the sample Connected Folder ids,",
+      "paths, messages, and timestamp with your own values):",
       JSON.stringify({
         kind: "amplefile.automation-proposal", version: 5, name: "Brief handoff",
         createdBy: "assistant", createdAt: "2026-01-01T00:00:00.000Z",
@@ -625,14 +590,12 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
           steps: [
             { id: "copy", kind: "files", fromConnectedFolder: "space-0000000000000001", from: { kind: "paths", paths: ["Ready/brief.md"] }, toConnectedFolder: "space-0000000000000002", to: "Incoming" },
             { id: "adopt", kind: "chat", connectedFolder: "space-0000000000000002", message: "Adopt the newest Incoming/brief*.md copy into reference/brief.md. Preserve the draft and other files. Changed files this run:\n{{trigger.changedFiles}}" },
-            { id: "review", kind: "check", connectedFolder: "space-0000000000000002", check: "check-example1" },
             { id: "report", kind: "agent", message: "{{trigger.summary}} The brief handoff finished. Files the adopt step created:\n{{steps.adopt.createdFiles}}" },
           ],
         },
       }),
       "Keep title, trigger, and steps inside the automation object. Copies are",
-      "additive and collision-renamed; a Check step completing does not mean its",
-      "findings are clear. Observers pause during automation runs and take a",
+      "additive and collision-renamed. Observers pause during automation runs and take a",
       "fresh baseline afterward, so a run's own edits never start another run.",
       "Without ifMissed, a folder trigger also starts fresh after a restart,",
       "wake, or Turn on. \"ifMissed\": \"run\" (version 5, as above) catches up",
@@ -641,9 +604,9 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
       "{{trigger.changedFiles}} — never a backlog of missed events.",
       "",
       "Messages in chat and agent steps may use {{trigger.summary}},",
-      "{{trigger.changedFiles}} (folder-change triggers), {{trigger.findings}}",
-      "(Check-run triggers), and {{steps.<id>.createdFiles}} (an earlier chat",
-      "step). AmpleFile fills them in when the run starts, keeps each under",
+      "{{trigger.changedFiles}} (folder-change triggers), and",
+      "{{steps.<id>.createdFiles}} (an earlier chat step). AmpleFile fills them",
+      "in when the run starts, keeps each under",
       "1 MiB, and records what it filled in on the hop receipt; anything else",
       "inside {{ }} is refused when you enable. An agent step starts a new",
       "AmpleFile agent chat.",
@@ -690,7 +653,6 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
     "                      List Connected Folders",
     "  tasks list          List host-managed tasks",
     "  capabilities list   List Skills & Extensions, everywhere and per Connected Folder",
-    "  checks status       Show aggregate Check status for one Connected Folder",
     "  version             Show the installed AmpleFile version",
     "  skill               Print the skill file that teaches another AI agent this command",
     "  help [command]      Show command help",
@@ -703,8 +665,6 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
     "  chats list          List a Connected Folder's Chats",
     "  agent send|ask|answer|status|result|wait|stop|abort|list|overview",
     "                      Talk to the AmpleFile agent above all Connected Folders",
-    "  checks propose|propose-fix|enable|disable|run|task|result|wait|abort|problems|decide",
-    "                      Operate optional, explicitly scoped Connected Folder Checks",
     "  history list|save|restore|versions|read|diff|restore-file",
     "                      Save and restore Connected Folder History",
     "  search              Search one Connected Folder's files and Chats (--query)",
@@ -778,10 +738,6 @@ async function runCommand(
       return { command: command.name, data: tasksJson(await kernel.listTasks(actor, { connectedFolder: command.connectedFolder })) };
     case "capabilities.list":
       return { command: command.name, data: capabilitiesJson(await kernel.listCapabilities(actor, { connectedFolder: command.connectedFolder })) };
-    case "checks.status": {
-      if (!kernel.getChecksStatus) throw new AmpleFileCliError("unavailable", "Checks status is unavailable in this AmpleFile host.");
-      return { command: command.name, data: checksStatusJson(await kernel.getChecksStatus(actor, { connectedFolder: command.connectedFolder })) };
-    }
   }
 }
 
@@ -803,8 +759,6 @@ function humanOutput(result: AmpleFileCliCommandResult, options: AmpleFileCliExe
       return humanTasks((result.data as unknown as { tasks: AmpleFileCliTaskSummary[] }).tasks);
     case "capabilities.list":
       return humanCapabilities((result.data as unknown as { capabilities: AmpleFileCliCapabilitySummary[] }).capabilities);
-    case "checks.status":
-      return humanChecksStatus(result.data as unknown as AmpleFileCliCheckStatusSummary);
     default:
       return `${options.productName ?? "AmpleFile"}\n`;
   }
@@ -850,27 +804,6 @@ function capabilitiesJson(values: AmpleFileCliCapabilitySummary[]): AmpleFileCli
   };
 }
 
-function checksStatusJson(value: AmpleFileCliCheckStatusSummary): AmpleFileCliJson {
-  return {
-    kind: value.kind,
-    version: value.version,
-    available: value.available,
-    connectedFolderId: value.connectedFolderId,
-    state: value.state,
-    configured: value.configured,
-    proposed: value.proposed,
-    enabled: value.enabled,
-    current: value.current,
-    neverRun: value.neverRun,
-    stale: value.stale,
-    blocked: value.blocked,
-    errors: value.errors,
-    needsAttention: value.needsAttention,
-    running: value.running,
-    lastRunAt: value.lastRunAt,
-  };
-}
-
 function connectedFolderJson(value: AmpleFileCliConnectedFolderSummary): AmpleFileCliJson {
   return {
     id: value.id,
@@ -907,33 +840,6 @@ function humanTasks(values: AmpleFileCliTaskSummary[]): string {
 function humanCapabilities(values: AmpleFileCliCapabilitySummary[]): string {
   if (!values.length) return "No capabilities found.\n";
   return `${values.map((item) => `- ${terminalText(item.name)} [${terminalText(item.kind)}, ${terminalText(item.scope)}${item.status ? `, ${terminalText(item.status)}` : ""}]${item.source ? ` — ${terminalText(item.source)}` : ""}`).join("\n")}\n`;
-}
-
-function humanChecksStatus(value: AmpleFileCliCheckStatusSummary): string {
-  if (!value.available) return `Checks: unavailable\nConnected Folder: ${terminalText(value.connectedFolderId)}\n`;
-  const labels: Record<Exclude<AmpleFileCliCheckStatusSummary["state"], "unavailable">, string> = {
-    "not-configured": "not configured",
-    "current-clear": "current, no findings",
-    "needs-attention": "needs attention",
-    stale: "stale",
-    blocked: "blocked",
-    "check-error": "check error",
-  };
-  const state = value.state === "unavailable" ? "unavailable" : labels[value.state];
-  return [
-    `Checks: ${state}`,
-    `Connected Folder: ${terminalText(value.connectedFolderId)}`,
-    `Configured: ${value.configured} (${value.enabled} enabled, ${value.proposed} proposed)`,
-    `Current: ${value.current}`,
-    `Never run: ${value.neverRun}`,
-    `Needs attention: ${value.needsAttention}`,
-    `Stale: ${value.stale}`,
-    `Blocked: ${value.blocked}`,
-    `Errors: ${value.errors}`,
-    `Running: ${value.running}`,
-    `Last run: ${value.lastRunAt ? terminalText(value.lastRunAt) : "never"}`,
-    "",
-  ].join("\n");
 }
 
 function terminalText(value: unknown): string {

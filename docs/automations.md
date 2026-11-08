@@ -85,6 +85,15 @@ set and the `agent` step (then named `fold`), shipped with the
 receipts-not-gates build; version 5 adds the optional `ifMissed` field on a
 folder-change trigger (2026-10-11); version 6 adds the Connected Folder's top
 level as a watched folder (2026-11-07).
+
+*Amended 2026-11-07 (owner decision):* Checks were removed, and with them
+the `check` step, the `check-run` on-settled trigger source, and the
+`{{trigger.findings}}` placeholder. A stored automation that uses any of the
+three is dropped on its own when the automation store loads — logged and
+reported in the store status as a retired automation — instead of marking
+the whole store damaged, so every other automation keeps working. Versions
+1–6 otherwise read exactly as before, and their digests do not change.
+
 **Settings → Automations** is the desktop management surface. The
 store schema is version 3; version-1 and version-2 records load and are
 rewritten as version 3 on the next mutation, converting the grants an older
@@ -93,7 +102,7 @@ build wrote, while newer schemas still fail closed.
 An **Automation** is a machine-local, inert-until-enabled declaration of
 deterministic steps that move work between Connected Folders: start a Worker Chat
 with a fixed message, copy files from one Connected Folder into another with a
-History restore point, run a Check, or message the AmpleFile agent. It is
+History restore point, or message the AmpleFile agent. It is
 executed by app code on the shared scheduler discipline, never by an
 open-ended Worker conversation, and it is the only thing above Connected Folders
 that runs unattended. An
@@ -101,8 +110,7 @@ Automation is not a workflow
 language: no conditions, no branching, no retries, no loops, no expression
 templating, and no model deciding which step runs next. Agentic work happens
 inside a Chat step, run by that Connected Folder's own Worker with that
-Connected Folder's own authority. A Check step may separately use the bounded text reviewer
-through the Check service; the executor itself remains deterministic.
+Connected Folder's own authority; the executor itself remains deterministic.
 
 ## The rule this design enforces
 
@@ -146,7 +154,7 @@ on its own and runs only through run-now below.
 
 By default (no `ifMissed`, or `"ifMissed": "skip"`), a fresh enable, restart, wake, or recovered observer error first establishes a baseline without firing. Changes must settle for the declared 1–3600 seconds, with 0–10080 minutes between firings. Bursts coalesce into the latest snapshot, not a queue of events. An accepted run records its source Connected Folder, snapshot digest, and change count before any hop. Every launch rechecks the exact declaration grant; revocation invalidates in-flight scans. The observer reports starting/watching/paused/error state and errors in Settings → Automations.
 
-All folder observers pause while any automation executes and establish fresh baselines afterward. This deliberately absorbs automation-generated edits and prevents cross-automation file loops. Changes made during that pause are **never replayed**. Changes made while asleep or quit are not replayed either, unless the trigger opts into one catch-up (below). Either way this is an awake-app convenience trigger, not a durable filesystem event bus. Keep a complete cross–Connected Folder sequence in one automation: wait for A's Chat, copy its created files, then run B's Chat or Check. There is no transcript relay or ambient context injection. Stop, disable, removal, shutdown, journaling, non-overlap, and FIFO limits use the existing executor paths.
+All folder observers pause while any automation executes and establish fresh baselines afterward. This deliberately absorbs automation-generated edits and prevents cross-automation file loops. Changes made during that pause are **never replayed**. Changes made while asleep or quit are not replayed either, unless the trigger opts into one catch-up (below). Either way this is an awake-app convenience trigger, not a durable filesystem event bus. Keep a complete cross–Connected Folder sequence in one automation: wait for A's Chat, copy its created files, then run B's Chat. There is no transcript relay or ambient context injection. Stop, disable, removal, shutdown, journaling, non-overlap, and FIFO limits use the existing executor paths.
 
 #### Catching up after a gap (version 5)
 
@@ -223,12 +231,9 @@ observer bounds, symlink refusal, and nested Connected Folder refusal apply to a
 catch-up exactly as to a live change: a catch-up is admitted through the same
 dispatch and launch-boundary recheck.
 
-**Admitted on-settled sources** (both durable and already receipted):
+**Admitted on-settled source** (durable and already receipted; the
+`check-run` source was retired with Checks on 2026-11-07):
 
-- **`check-run`**: a named Connected Folder's Check run reached a terminal state —
-  optionally scoped to one Check id, filtered by outcome (default
-  `succeeded`; `failed` and `aborted` may be named explicitly;
-  `interrupted` is never admissible — it marks a crash, not a result).
 - **`app-automation-run`**: a named Connected Folder's restricted-app named automation
   run settled — scoped to app id and automation id, filtered by outcome
   (default `success`; `failure` may be named explicitly; `skipped` and
@@ -244,7 +249,7 @@ settles (no recorded outcome), and AmpleFile agent request settles (on the
 AmpleFile agent's side, in-memory, and glue firing from AmpleFile agent chat
 activity would blur interactive work with the agent into unattended behavior).
 
-**Automation-caused settles never fire triggers.** A Check run or automation
+**Automation-caused settles never fire triggers.** An app automation
 run whose lineage records an automation hop is dropped at trigger evaluation,
 making automation chains structurally impossible — no cycles, no fan-out.
 Composition happens inside one automation's ordered steps; chains would
@@ -295,7 +300,7 @@ proposal and enablement.
 
 ## The declaration
 
-Authoring follows the Check-proposal pattern: the AmpleFile agent writes an inert,
+Authoring follows the inert-proposal pattern: the AmpleFile agent writes an inert,
 typed, kind/version JSON file (`amplefile.automation-proposal`, version 1, 2, 3,
 or 4, `.amplefile-automation.json` suffix) at the top level of its own
 working folder —
@@ -305,8 +310,7 @@ schema authority. Connected Folders are pinned by stable Connected Folder id; du
 rejected as ambiguous, and `automations show` resolves ids to current names and
 folders so the declaration reads as something a person can check.
 
-Declarations are closed, typed data under the same discipline as Check
-declarations: no prompts beyond the literal Chat- and agent-step message plus
+Declarations are closed, typed data: no prompts beyond the literal Chat- and agent-step message plus
 the closed placeholder set below, no instructions, no source code, no shell
 commands, no model names, no credentials, no connection data, no expressions.
 The Chat- and agent-step `message` is bounded (4 MiB) and is data addressed to
@@ -315,7 +319,8 @@ placeholder set.
 
 ### Steps
 
-Steps execute strictly in declaration order. Four kinds:
+Steps execute strictly in declaration order. Three kinds (a fourth, `check`,
+was retired with Checks on 2026-11-07):
 
 - **`chat`** — start a **new** conversation in the named Connected Folder with the
   fixed message, through the same acceptance path as
@@ -330,18 +335,14 @@ Steps execute strictly in declaration order. Four kinds:
   names, and a targeted restore point that succeeds or fails together with
   the placement. Copy only — an automation never moves, renames, or deletes
   anything in the source Connected Folder. The source is an explicit list of exact
-  Connected Folder–relative paths, one bounded tree selector reusing the
-  Check target contract and resolver discipline (tighten-only hard limits;
+  Connected Folder–relative paths, one bounded tree selector resolved by the
+  folder target resolver (`src/local/automations/folder-targets.ts`;
+  tighten-only hard limits;
   symbolic links, `.amplefile/`, `.pi/`, preserved `.workspace/`, and
   nested registered Connected Folders rejected), or the declared created-files handoff
   below. Free glob or regex patterns were rejected: the bounded tree
   selector is the already-hardened enumeration primitive with review
   semantics a person can actually read.
-- **`check`** — run one named Check (or all enabled Checks) in the named
-  Connected Folder through the same path as `amplefile checks run`. The hop succeeds
-  when the run settles `succeeded` — **including when it admits findings**:
-  findings are content state for the person; glue is not a gate. `failed`,
-  `aborted`, or `interrupted` fails the hop.
 - **`agent`** (version 4; named `fold` before 2026-10-10) — start a **new**
   AmpleFile agent chat with the message, through the same acceptance path as
   `amplefile agent send --new`. It names no Connected Folder: the AmpleFile agent sits above
@@ -382,15 +383,14 @@ a Worker already received.
 |---|---|---|
 | `{{trigger.summary}}` | The run's own cause, in one sentence (a catch-up says so) | Valid with every trigger |
 | `{{trigger.changedFiles}}` | The changed paths the folder observer recorded, including a catch-up's | Requires a folder-change trigger |
-| `{{trigger.findings}}` | The settled Check run's active findings, read back from the host | Requires a Check-run `on-settled` trigger |
 | `{{steps.<id>.createdFiles}}` | The manifest diff of that chat hop's own pre/post checkpoints | Must name an earlier `chat` step in the same automation |
 
 Resolution happens in the executor, after the hop's `accepted` receipt and
 before the port is called, and it reads the **run's cause**, never the
 declared trigger. A run-now on a folder-change automation therefore says
 `(no changed files: this run was started by hand)` instead of pretending
-files changed. A resolution that cannot be proven — a Check run whose
-findings cannot be read, a created-files gap — fails the hop closed with a
+files changed. A resolution that cannot be proven — a created-files gap —
+fails the hop closed with a
 typed reason and skips the later hops; nothing is sent.
 
 Bounds, each named in the text it produces: 1 MiB per filled-in placeholder,
@@ -454,7 +454,7 @@ carrying the underlying domain evidence (chat hop: conversation id, turn
 task id, outcome, checkpoint ids, and the summary and `partial` mark its
 Worker reported; files hop: source and destination Connected Folder
 ids, resolved and copied paths with collision renames, counts, restore-point
-id; check hop: Check ids, run id, terminal state, finding counts). The run's
+id). The run's
 terminal record names the trigger cause exactly — scheduled slot, run-now
 request id, or the settled source — plus the declaration digest in force.
 
@@ -504,16 +504,14 @@ run-now rides the act lane's request-id at-most-once gate. The journal-first
 `accepted` gate plus startup `interrupted` recovery means a crash can
 interrupt a run but never execute it twice under one run id.
 
-**Trigger delivery.** The two admitted settle families publish typed settle
+**Trigger delivery.** The admitted settle family publishes typed settle
 records — after durable persistence, fire-and-forget, failure-isolated —
 through the settle-signal seam (`src/local/automations/settle-signal.ts`)
-attached at the Check service's terminal-persistence funnel and the
-restricted-app `onResult` funnel; the seam has one owner (reconciliation 8
+attached at the restricted-app `onResult` funnel; the seam has one owner (reconciliation 8
 in Fold integration, archived in the work-fold repository). Settle records carry lineage,
 so automation-caused runs are dropped at evaluation; settles during suspension
 are not queued. Automation runs register as the experimental kernel task kind
-`automation_run`, excluded from stable protocol-v1 task projections like
-`check_run`.
+`automation_run`, excluded from stable protocol-v1 task projections.
 
 ## Lifecycle and authority
 
@@ -548,7 +546,7 @@ are not queued. Automation runs register as the experimental kernel task kind
    automation: removes the declaration, enablement history, and cadence
    anchor. An active or claimed-but-unfinished one-time run must settle or be
    stopped first. The receipts journal is retained — audit records survive
-   the object, as with Checks.
+   the object.
 
 The five questions, per mutation:
 
@@ -615,7 +613,7 @@ tabs still restore. The pane falls back to Files once nothing in the
 Connected Folder is automated. Each tab carries the title, one state word (On, Off,
 Running, Suspended, or Done), the trigger summary Settings shows, what the
 automation does in this Connected Folder (Watches this Connected Folder, Copies files here,
-Copies files from here, Starts a Chat here, Runs a Check here), and the last
+Copies files from here, Starts a Chat here), and the last
 run time, with **Run now** (only while On), **Turn on**, and **Turn off**.
 Those three call `POST /api/connected-folders/:id/automations/:automationId/(run|enable|disable)`,
 which runs the exact Settings facade methods — same prepared-act path, same
@@ -636,8 +634,8 @@ The CLI act-lane group is `amplefile automations enable|list|show|run|stop|
 disable|delete|receipts` — per-launch token, journal-first, and like the
 `agent` group automations are above Connected Folders and take no `--connected-folder`.
 `list`/`show`/`receipts` are content-bearing (Connected Folder names, paths, messages)
-and therefore act-lane, matching the Checks rule that only aggregate status
-lives in the content-free read lane; a content-free automation status
+and therefore act-lane, because only content-free summaries live in the
+read lane; a content-free automation status
 projection for read-lane protocol v1 remains a separate deliberate
 decision, not assumed.
 
@@ -660,7 +658,7 @@ machine-wide count, step-count, or exact-path-count quota.
 | Folder catch-up (`"ifMissed": "run"`) | One coalesced run per gap, never a backlog; the saved snapshot and owed set hold at most the observer's 50,000 files, and a read admits at most 256 MiB | `src/local/automations/automation-file-snapshots.ts` |
 | Changed paths recorded per run cause | 10,000 (the count stays exact) | `ampleFileAutomationDeclarationBounds` |
 | Concurrent automation runs | 64, FIFO, machine-wide | `ampleFileAutomationMaxConcurrentRuns`; a generous default, not a cap |
-| Tree selector resolution | The Check target resolver's hard limits; tighten-only | `src/local/checks/target-resolver.ts` |
+| Tree selector resolution | The folder target resolver's hard limits; tighten-only | `src/local/automations/folder-targets.ts` |
 | Created-files handoff | `maxFiles` and `maxTotalBytes` mandatory in the declaration, at most 100,000 files and 64 GiB | `ampleFileAutomationBounds` |
 | Chat and agent step message | 4 MiB | The model's context window is the practical bound |
 | One filled-in placeholder | 1 MiB | A resource guard; the cut names the limit |
@@ -726,19 +724,19 @@ The plan items shipped as follows:
 - **Hosted or remote execution.** Automations run only on this desktop while
   the app runs, and no automation step can publish anything.
 - **A general job system.** 64 run slots by default, generous bounds,
-  four step kinds. If a flow does not fit, it belongs to a Connected Folder app's named
-  automations, a Check, or a person.
+  three step kinds. If a flow does not fit, it belongs to a Connected Folder app's named
+  automations or a person.
 
 ## Authoring guidance
 
 `amplefile help automations` includes a complete version-5 folder-change proposal
-that catches up (`"ifMissed": "run"`), with file-copy, Chat, Check, and agent
+that catches up (`"ifMissed": "run"`), with file-copy, Chat, and agent
 steps and two placeholders. The AmpleFile agent is instructed to consult it
 before authoring, to offer the catch-up when a person wants files that arrive
 while AmpleFile is closed handled too, and to leave it out otherwise. The
 example is checked against the real proposal validator;
-it documents the nested `automation` envelope, additive copies, observer pauses,
-and the distinction between a completed Check run and clear findings.
+it documents the nested `automation` envelope, additive copies, and observer
+pauses.
 
 
 A Chat or agent hop follows its durable request through answer and synthesis

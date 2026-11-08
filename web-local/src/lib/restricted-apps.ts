@@ -217,13 +217,6 @@ export async function listRestrictedAppNotificationRecord(app: RestrictedAppInst
   )).receipts;
 }
 
-export async function setRestrictedAppCheckGrant(app: RestrictedAppInstalled, permissionId: string, selection: { checkId: string; declarationDigest: string } | null): Promise<RestrictedAppInstalled> {
-  return (await api<{ app: RestrictedAppInstalled }>(`${appPath(app.connectedFolderId, app.manifest.id)}/permissions/checks/${encodeURIComponent(permissionId)}`, {
-    method: selection ? "PUT" : "DELETE",
-    body: { featureInstallationId: app.featureInstallationId, expectedDigest: app.digest, ...selection },
-  })).app;
-}
-
 export async function setRestrictedAppNotificationGrant(
   app: RestrictedAppInstalled,
   permissionId: string,

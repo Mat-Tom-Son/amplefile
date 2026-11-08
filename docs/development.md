@@ -93,7 +93,7 @@ During browser development, open the local renderer with `?dev-context`
 This is a developer diagnostic route, with no normal Chat, AmpleFile agent or
 Settings entry. Enable **Record model context**, reproduce the behavior in the
 app, then refresh and choose the request. The all-request view includes Worker
-and AmpleFile agent turns, titles, Checks, app inference and compaction. Search or copy assembled context, compare
+and AmpleFile agent turns, titles, app inference and compaction. Search or copy assembled context, compare
 provider payloads where the adapter exposes them, and inspect provenance from
 the loaded runtime: source paths, instruction digests, Skills, Extensions and
 tools. These facts are captured at dispatch, not reconstructed from later file
@@ -115,7 +115,7 @@ for capture stages, coverage and bounds.
 | `src/local/server.ts` | Local API routes and domain-service composition |
 | `src/local/agent/` | Pi integration, Chat turns, app services, and brokers |
 | `src/local/connected-folder*.ts` | Connected Folder registration, path policy, ignore rules, watching, and appearance |
-| `src/local/checks/`, `src/local/automations/`, `src/local/requests/` | Checks, Automations, and durable request records |
+| `src/local/automations/`, `src/local/requests/` | Automations (including their folder target resolver) and durable request records |
 | `src/local/overview.ts`, `src/local/amplefile-agent-*.ts` | The AmpleFile agent's overview, attachments, and instructions |
 | [Kernel](../src/local/amplefile-kernel.ts), [CLI](../src/local/cli/), [adapter](../src/local/amplefile-cli-adapter.ts) | Shared context, tasks, and control-plane contracts |
 | `src/shared/` | Shared types and the product identity contract |

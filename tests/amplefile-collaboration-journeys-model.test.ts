@@ -503,10 +503,10 @@ test("journey: a fresh Connected Folder turn receives the operations guide, its 
     }
     assert.match(system, /Read and change this Connected Folder's folder only/);
     assert.match(system, /Never write cross-connected-folder context into this Chat: it travels with the folder\./);
-    // Discover and build: the agent and Check bridges are reachable from
-    // what it was told, without reading this repository.
+    // Discover and build: the app bridge is reachable from what it was told,
+    // without reading this repository.
     assert.match(system, /apps list --connected-folder <id> --json/);
-    assert.match(system, /checks status --connected-folder <id> --json/);
+    assert.doesNotMatch(system, /checks (status|run)/);
     const tools = (parseBody(raw).tools ?? []).map((tool) => tool.function?.name ?? tool.name);
     assert.ok(tools.includes("propose_connected_folder_app"), "the app-authoring path is offered as a tool, not documented elsewhere");
 

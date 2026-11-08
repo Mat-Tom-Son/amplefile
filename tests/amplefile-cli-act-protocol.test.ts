@@ -117,169 +117,30 @@ test("act command parsing rejects misplaced repeatable and duplicate boolean fla
   );
 });
 
-test("experimental Checks act commands require explicit Connected Folders and strict command-specific options", () => {
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["checks", "enable", "--connected-folder", "connected-folder-1", "--proposal", "proposals/tax.check.json"]),
-    {
-      name: "checks.enable",
-      output: "human",
-      connectedFolder: "connected-folder-1",
-      proposalPath: "proposals/tax.check.json",
-    },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["checks", "disable", "--connected-folder", "connected-folder-1", "--check", "check-tax"]),
-    { name: "checks.disable", output: "human", connectedFolder: "connected-folder-1", check: "check-tax" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["checks", "run", "--connected-folder", "connected-folder-1"]),
-    { name: "checks.run", output: "human", connectedFolder: "connected-folder-1" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["checks", "run", "--connected-folder", "connected-folder-1", "--check", "check-tax"]),
-    { name: "checks.run", output: "human", connectedFolder: "connected-folder-1", check: "check-tax" },
-  );
-  for (const command of ["task", "result", "abort"] as const) {
-    assert.deepEqual(
-      parseAmpleFileCliActArgv(["checks", command, "--connected-folder", "connected-folder-1", "--task", "check-task-1"]),
-      { name: `checks.${command}`, output: "human", connectedFolder: "connected-folder-1", task: "check-task-1" },
-    );
-  }
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["checks", "problems", "--connected-folder", "connected-folder-1", "--check", "check-tax", "--json"]),
-    { name: "checks.problems", output: "json", connectedFolder: "connected-folder-1", check: "check-tax" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv([
-      "checks",
-      "decide",
-      "--connected-folder",
-      "connected-folder-1",
-      "--finding",
-      "finding-1",
-      "--decision",
-      "defer",
-      "--until",
-      "2026-08-03T10:30:00-04:00",
-    ]),
-    {
-      name: "checks.decide",
-      output: "human",
-      connectedFolder: "connected-folder-1",
-      finding: "finding-1",
-      decision: "defer",
-      until: "2026-08-03T14:30:00.000Z",
-    },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv([
-      "checks",
-      "decide",
-      "--connected-folder",
-      "connected-folder-1",
-      "--finding",
-      "finding-1",
-      "--decision",
-      "resolve",
-    ]),
-    {
-      name: "checks.decide",
-      output: "human",
-      connectedFolder: "connected-folder-1",
-      finding: "finding-1",
-      decision: "resolve",
-    },
-  );
-
+test("the retired checks family is not an act command", () => {
   for (const argv of [
-    ["checks", "enable", "--proposal", "proposal.json"],
-    ["checks", "disable", "--check", "check-1"],
-    ["checks", "run"],
-    ["checks", "task", "--task", "task-1"],
-    ["checks", "result", "--task", "task-1"],
-    ["checks", "abort", "--task", "task-1"],
-    ["checks", "problems"],
-    ["checks", "decide", "--finding", "finding-1", "--decision", "accept"],
+    ["checks", "run", "--connected-folder", "connected-folder-1"],
+    ["checks", "wait", "--connected-folder", "connected-folder-1", "--task", "task-1"],
+    ["checks", "propose", "--connected-folder", "connected-folder-1", "--proposal", "review.json"],
   ]) {
-    assert.throws(() => parseAmpleFileCliActArgv(argv), /explicit --connected-folder/);
+    assert.throws(() => parseAmpleFileCliActArgv(argv), /Unknown command: checks /);
   }
-  assert.throws(
-    () => parseAmpleFileCliActArgv(["checks", "wait", "--connected-folder", "connected-folder-1", "--task", "task-1"]),
-    /runs inside the AmpleFile shim/,
-  );
-  assert.throws(
-    () => parseAmpleFileCliActArgv(["checks", "decide", "--connected-folder", "connected-folder-1", "--finding", "f", "--decision", "maybe"]),
-    /must be accept, reject, resolve, or defer/,
-  );
-  assert.throws(
-    () => parseAmpleFileCliActArgv(["checks", "decide", "--connected-folder", "connected-folder-1", "--finding", "f", "--decision", "defer"]),
-    /requires --until/,
-  );
-  assert.throws(
-    () => parseAmpleFileCliActArgv(["checks", "decide", "--connected-folder", "connected-folder-1", "--finding", "f", "--decision", "accept", "--until", createdAt]),
-    /only with --decision defer/,
-  );
-  assert.throws(
-    () => parseAmpleFileCliActArgv(["checks", "decide", "--connected-folder", "connected-folder-1", "--finding", "f", "--decision", "defer", "--until", "tomorrow"]),
-    /must be an ISO timestamp/,
-  );
-  assert.throws(
-    () => parseAmpleFileCliActArgv(["checks", "run", "--connected-folder", "connected-folder-1", "--proposal", "proposal.json"]),
-    /--proposal cannot be used/,
-  );
   assert.throws(
     () => parseAmpleFileCliActArgv(["connected-folders", "create", "--name", "Home", "--check", "check-1"]),
-    /--check cannot be used/,
+    /Unknown option: --check/,
   );
 });
 
-test("Checks act execution bounds and terminal-scrubs structured and human output", async () => {
-  const findings = Array.from({ length: 105 }, (_, index) => ({
-    id: `finding-${index}`,
-    fingerprint: `fingerprint-${index}`,
-    checkId: "check-tax",
-    declarationDigest: "d".repeat(64),
-    sensorId: "path.exists",
-    sensorRevision: 1,
-    severity: "warning" as const,
-    observedAt: createdAt,
-    status: "active" as const,
-    title: `Missing\u001b receipt ${index}`,
-    targetPath: `receipts/${index}.pdf`,
-    evidence: [{
-      kind: "path-state" as const,
-      path: `receipts/${index}.pdf`,
-      expected: "file" as const,
-      observed: "missing" as const,
-      identity: { checkId: "check-tax", path: `receipts/${index}.pdf`, state: "missing" as const },
-    }],
+test("act results are terminal-scrubbed in structured and human output without being shortened", async () => {
+  const requests = Array.from({ length: 105 }, (_, index) => ({
+    requestId: `request-${index}`,
+    title: `Quarterly\u001b plan ${index}`,
   }));
   const calls: unknown[] = [];
   const facade = {
-    checksProblems: async (input: unknown) => {
+    requestsList: async (input: unknown) => {
       calls.push(input);
-      return {
-        connectedFolder: { id: "connected-folder-1", name: "Taxes", connectedFolderRoot: "/tmp/taxes" },
-        checkId: "check-tax",
-        findings,
-        invalidated: 2,
-        truncated: true,
-        healthErrors: Array.from({ length: 22 }, (_, index) => `Health\u202e error ${index}`),
-      };
-    },
-    checksTask: async (input: unknown) => {
-      calls.push(input);
-      return {
-        connectedFolder: { id: "connected-folder-1", name: "Taxes", connectedFolderRoot: "/tmp/taxes" },
-        task: {
-          taskId: "check-task-1",
-          runId: "check-run-1",
-          state: "failed" as const,
-          startedAt: createdAt,
-          endedAt: createdAt,
-          error: "Provider\u001b failed",
-        },
-      };
+      return { requests, note: "Provider\u202e failed" };
     },
   } as unknown as AmpleFileActFacade;
   const outcomes: string[] = [];
@@ -298,37 +159,15 @@ test("Checks act execution bounds and terminal-scrubs structured and human outpu
     },
   );
 
-  const response = await execute(["checks", "problems", "--connected-folder", "connected-folder-1", "--check", "check-tax", "--json"]);
+  const response = await execute(["requests", "list", "--json"]);
   assert.equal(response.exitCode, 0);
-  const json = JSON.parse(response.stdout) as {
-    data: {
-      findings: Array<{ title: string }>;
-      findingCount: number;
-      findingsReturned: number;
-      findingsTruncated: boolean;
-      sourceTruncated: boolean;
-      healthErrors: string[];
-      healthErrorCount: number;
-      healthErrorsTruncated: boolean;
-    };
-  };
-  // Every finding and health error comes back; only the source's own flag says the store stopped early.
-  assert.equal(json.data.findingCount, 105);
-  assert.equal(json.data.findingsReturned, 105);
-  assert.equal(json.data.findingsTruncated, true);
-  assert.equal(json.data.sourceTruncated, true);
-  assert.equal(json.data.healthErrorCount, 22);
-  assert.equal(json.data.healthErrors.length, 22);
-  assert.equal(json.data.healthErrorsTruncated, false);
-  assert.equal(json.data.findings[0]?.title, "Missing� receipt 0");
-  assert.equal(json.data.healthErrors[0], "Health� error 0");
-  assert.deepEqual(calls[0], { connectedFolder: "connected-folder-1", checkId: "check-tax" });
-
-  const human = await execute(["checks", "task", "--connected-folder", "connected-folder-1", "--task", "check-task-1"]);
-  assert.match(human.stdout, /Provider� failed/);
-  assert.doesNotMatch(human.stdout, /\u001b/);
-  assert.deepEqual(calls[1], { connectedFolder: "connected-folder-1", taskId: "check-task-1" });
-  assert.deepEqual(outcomes, ["accepted", "ok", "accepted", "ok"]);
+  assert.doesNotMatch(response.stdout, /\\u001b|\\u202e/);
+  const json = JSON.parse(response.stdout) as { data: { requests: Array<{ title: string }>; note: string } };
+  assert.equal(json.data.requests.length, 105, "content is never shortened");
+  assert.equal(json.data.requests[0]?.title, "Quarterly\uFFFD plan 0");
+  assert.equal(json.data.note, "Provider\uFFFD failed");
+  assert.deepEqual(calls[0], { cwd });
+  assert.deepEqual(outcomes, ["accepted", "ok"]);
 });
 
 test("ledger Chat, History, file, search, and Connected Folder commands parse with strict shapes", () => {
@@ -685,8 +524,8 @@ test("ledger command flag validation refuses malformed and misplaced shapes", ()
     /--release cannot be used with 'connected-folders create'/,
   );
   assert.throws(
-    () => parseAmpleFileCliActArgv(["chat", "rename", "--connected-folder", "s", "--conversation", "c", "--title", "t", "--check", "x"]),
-    /--check cannot be used with 'chat rename'/,
+    () => parseAmpleFileCliActArgv(["chat", "rename", "--connected-folder", "s", "--conversation", "c", "--title", "t", "--parent", "x"]),
+    /Unknown option: --parent/,
   );
   assert.throws(
     () => parseAmpleFileCliActArgv(["files", "mkdir", "--connected-folder", "s", "--path", "dir", "--message", "x"]),
@@ -1013,9 +852,8 @@ test("agent overview parses strictly, dispatches to the facade, journals, and re
     running: [{ id: "kernel-tasks:task-2", at: createdAt, kind: "assistant-turn", connectedFolderName: "Fold Connected Folder", headline: "Turn running" }],
     needsYou: [{ id: "chats:chat-3:question", at: createdAt, kind: "chat-question", connectedFolderName: "Fold Connected Folder", headline: "\"Quarterly plan\" is waiting on your reply" }],
     changes: [{ id: "settled-turns:task-1", at: createdAt, kind: "turn-settled", connectedFolderName: "Fold Connected Folder", headline: "Turn succeeded" }],
-    checks: [{ connectedFolderId: "connected-folder-1", connectedFolderName: "Fold Connected Folder", state: "needs-attention", needsAttention: 2, neverRun: 0, stale: 0, blocked: 0, errors: 0, lastRunAt: createdAt }],
     seen: {},
-    truncated: { running: false, needsYou: false, changes: true, checks: false },
+    truncated: { running: false, needsYou: false, changes: true },
     unavailable: ["automation-runs"],
   };
   const calls: string[] = [];
@@ -1052,7 +890,6 @@ test("agent overview parses strictly, dispatches to the facade, journals, and re
   assert.match(human.stdout, /Running:\n- Turn running \(Fold Connected Folder\)/);
   assert.match(human.stdout, /Needs you:\n- .*"Quarterly plan" is waiting on your reply/);
   assert.match(human.stdout, /Since you last looked \(more omitted\):/);
-  assert.match(human.stdout, /- Fold Connected Folder: needs-attention — 2 findings need attention/);
   assert.match(human.stdout, /Unavailable sources this composition: automation-runs\./);
 
   assert.equal(calls.length, 2);
@@ -2067,17 +1904,6 @@ test("the ledger families ride the act protocol v3 envelope", () => {
     /unsupported field: decisionId/,
   );
 });
-
-test("Check and correction proposals use explicit inert act verbs", () => {
-  for (const verb of ["propose", "propose-fix"]) {
-    assert.deepEqual(parseAmpleFileCliActArgv(["checks", verb, "--connected-folder", "connected-folder-1", "--proposal", "review.json", "--json"]), {
-      name: `checks.${verb}`, connectedFolder: "connected-folder-1", proposalPath: "review.json", output: "json",
-    });
-    assert.throws(() => parseAmpleFileCliActArgv(["checks", verb, "--proposal", "review.json"]), /connected-folder/i);
-    assert.throws(() => parseAmpleFileCliActArgv(["checks", verb, "--connected-folder", "connected-folder-1", "--proposal", "review.json", "--enable"]), /flag|option/i);
-  }
-});
-
 
 test("resource enablement verbs require exact scope, kind and path", () => {
   const args = ["--scope", "everywhere", "--kind", "extensions", "--path", "/tools/example.ts"];

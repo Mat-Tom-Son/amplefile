@@ -29,7 +29,6 @@ import {
   ampleFileAutomationMessagePlaceholders,
   ampleFileAutomationTriggerCatchesUp,
   type AmpleFileAutomationChatStep,
-  type AmpleFileAutomationCheckStep,
   type AmpleFileAutomationDeclaration,
   type AmpleFileAutomationFilesChangedTrigger,
   type AmpleFileAutomationFilesStep,
@@ -50,6 +49,7 @@ import {
   type AmpleFileAutomationRecord,
   type AmpleFileAutomationRunCause,
   type AmpleFileAutomationStore,
+  type AmpleFileRetiredAutomation,
   ampleFileAutomationAtOccurrenceId,
 } from "./automation-store.js";
 import type {
@@ -119,27 +119,12 @@ export type AmpleFileAutomationAgentHopResult = Pick<
   "conversationId" | "turnTaskId" | "outcome" | "error" | "result" | "reported"
 >;
 
-/** The active findings of a settled Check run, for `{{trigger.findings}}`. */
-export interface AmpleFileAutomationCheckRunFindings {
-  findings: Array<{ checkId: string; title: string; targetPath: string; severity: string }>;
-}
-
 export interface AmpleFileAutomationFilesHopResult {
   restorePointId?: string;
   /** Destination-relative placed paths, including collision renames. */
   copiedPaths: string[];
   fileCount: number;
   totalBytes: number;
-}
-
-export interface AmpleFileAutomationCheckHopResult {
-  runId: string;
-  taskId: string;
-  state: "succeeded" | "failed" | "aborted" | "interrupted";
-  checkIds: string[];
-  findingCount: number;
-  admittedCount: number;
-  error?: string;
 }
 
 export interface AmpleFileAutomationCheckpointManifestEntry {
@@ -166,7 +151,7 @@ export type AmpleFileAutomationResolvedFilesSource =
 
 /**
  * The hop ports are the seam to the same in-process route internals the act
- * facade uses (turn acceptance, `files add`, Check runs). They perform the
+ * facade uses (turn acceptance, `files add`). They perform the
  * mutations and honor the abort signal through their own domain's abort
  * paths; a files port is not interruptible mid-copy — the copy either
  * completes with its restore point or fails as one unit. Ports return
@@ -189,14 +174,11 @@ export interface AmpleFileAutomationHopPorts {
     message: string,
     context: AmpleFileAutomationHopContext,
   ): Promise<AmpleFileAutomationAgentHopResult>;
-  /** The settled Check run's active findings; null when the run cannot be read. */
-  checkRunFindings(connectedFolderId: string, taskId: string): Promise<AmpleFileAutomationCheckRunFindings | null>;
   files(
     step: AmpleFileAutomationFilesStep,
     source: AmpleFileAutomationResolvedFilesSource,
     context: AmpleFileAutomationHopContext,
   ): Promise<AmpleFileAutomationFilesHopResult>;
-  check(step: AmpleFileAutomationCheckStep, context: AmpleFileAutomationHopContext): Promise<AmpleFileAutomationCheckHopResult>;
   /** Reads one checkpoint's manifest from the named Connected Folder's History; null when missing. */
   checkpointManifest(connectedFolderId: string, checkpointId: string): Promise<AmpleFileAutomationCheckpointManifest | null>;
   /**
@@ -211,8 +193,8 @@ export interface AmpleFileAutomationHopPorts {
 }
 
 /**
- * Optional seam to the kernel's experimental `automation_run` task kind (the
- * `check_run` precedent): observability only, deliberately excluded from
+ * Optional seam to the kernel's experimental `automation_run` task kind:
+ * observability only, deliberately excluded from
  * stable task projections, and a port failure never affects the run.
  */
 export interface AmpleFileAutomationRunTaskPort {
@@ -251,6 +233,8 @@ export interface AmpleFileAutomationServiceStatus {
   activeRunCount: number;
   /** Runs found accepted-without-terminal at startup and recorded interrupted, never replayed. */
   recoveredInterruptedRunIds: string[];
+  /** Stored automations left out on load because they use a retired feature (Checks, 2026-11-07). */
+  retiredAutomations?: AmpleFileRetiredAutomation[];
 }
 
 export interface AmpleFileAutomationServiceOptions {
@@ -389,6 +373,7 @@ export class AmpleFileAutomationService {
       armedAutomationCount: this.#armed.size,
       activeRunCount: this.#activeRuns.size,
       recoveredInterruptedRunIds: [...this.#recoveredRunIds],
+      ...(store.retiredAutomations ? { retiredAutomations: store.retiredAutomations } : {}),
     };
   }
 
@@ -653,7 +638,7 @@ export class AmpleFileAutomationService {
   }
 
   /**
-   * Crash recovery on the Check runner's honesty rule: record, never replay.
+   * Crash recovery on the honesty rule: record, never replay.
    * A run with an `accepted` record and no terminal record gets a terminal
    * `interrupted` record (and so does its in-flight hop); the completed hops
    * keep their receipts, and the schedule then resumes from the durable
@@ -1318,7 +1303,7 @@ export class AmpleFileAutomationService {
             });
             failure = { hopId: step.id, error };
           }
-        } else if (step.kind === "files") {
+        } else {
           const resolved = await this.#resolveFilesSource(step, chatResults);
           if (resolved.kind === "empty") {
             await this.#receipts.append({
@@ -1353,34 +1338,6 @@ export class AmpleFileAutomationService {
               ...(result.restorePointId !== undefined ? { restorePointId: result.restorePointId } : {}),
             });
           }
-        } else {
-          const result = await this.#ports.check(step, hopContext);
-          const evidence = {
-            connectedFolderId: step.connectedFolder,
-            checkRunId: result.runId,
-            taskId: result.taskId,
-            checkIds: [...result.checkIds],
-            findingCount: result.findingCount,
-            admittedCount: result.admittedCount,
-          };
-          if (result.state === "succeeded") {
-            // Findings are content state for the person; glue is not a gate.
-            await this.#receipts.append({
-              scope: "hop", outcome: "succeeded", automationId, runId, hopId: step.id, hopKind: step.kind, ...evidence,
-            });
-          } else if (result.state === "aborted" && active.stopRequested) {
-            active.stoppedHopTaskIds.push(result.taskId);
-            await this.#receipts.append({
-              scope: "hop", outcome: "stopped", automationId, runId, hopId: step.id, hopKind: step.kind, ...evidence,
-            });
-            halted = { kind: "stopped" };
-          } else {
-            const error = result.error ?? `The Check run settled ${result.state}.`;
-            await this.#receipts.append({
-              scope: "hop", outcome: "failed", automationId, runId, hopId: step.id, hopKind: step.kind, ...evidence, detail: error,
-            });
-            failure = { hopId: step.id, error };
-          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1396,7 +1353,7 @@ export class AmpleFileAutomationService {
           halted = { kind: "interrupted", detail: message };
         } else {
           // Infrastructure refusals inside a hop — a capability mutation
-          // fence, a Check reservation conflict — fail the hop with the
+          // fence, a Connected Folder lock conflict — fail the hop with the
           // typed reason; they are glue health, never silently skipped work.
           await this.#receipts.append({
             scope: "hop", outcome: "failed", automationId, runId, hopId: step.id, hopKind: step.kind, ...hopConnectedFolderFields(step), detail: message,
@@ -1461,9 +1418,8 @@ export class AmpleFileAutomationService {
 
   /**
    * One placeholder's text. Nothing here parses model output: the summary and
-   * changed paths come from the run cause the host recorded, findings come
-   * from the settled Check run's own record, and created files come from the
-   * source chat hop's History checkpoint pair.
+   * changed paths come from the run cause the host recorded, and created
+   * files come from the source chat hop's History checkpoint pair.
    */
   async #placeholderText(
     placeholder: AmpleFileAutomationPlaceholder,
@@ -1480,25 +1436,6 @@ export class AmpleFileAutomationService {
       }
       const paths = cause.changedPaths ?? [];
       return paths.length ? boundedPlaceholderList(paths) : { text: "(no changed files)", truncated: false };
-    }
-    if (placeholder.name === "trigger.findings") {
-      if (cause.kind !== "on-settled" || cause.source.kind !== "check-run") {
-        return { text: "(no findings: this run was not started by a Check run)", truncated: false };
-      }
-      const unreadable = "The Check run's findings could not be read, so {{trigger.findings}} cannot be filled in.";
-      const taskId = cause.source.taskId;
-      if (taskId === undefined) throw new Error(unreadable);
-      let read: AmpleFileAutomationCheckRunFindings | null;
-      try {
-        read = await this.#ports.checkRunFindings(cause.source.connectedFolderId, taskId);
-      } catch (error) {
-        throw new Error(unreadable, { cause: error });
-      }
-      if (!read) throw new Error(unreadable);
-      if (!read.findings.length) return { text: "(no findings)", truncated: false };
-      return boundedPlaceholderList(read.findings.map(
-        (finding) => `- [${finding.severity}] ${finding.title} — ${finding.targetPath} (${finding.checkId})`,
-      ));
     }
     const sourceStepId = placeholder.step!;
     const source = declaration.steps.find((candidate) => candidate.id === sourceStepId);
@@ -1714,12 +1651,6 @@ function hopConnectedFolderFields(
 }
 
 function settleMatchesSource(source: AmpleFileAutomationSettleSource, record: AmpleFileSettleRecord): boolean {
-  if (source.kind === "check-run") {
-    return record.kind === "check-run"
-      && record.connectedFolderId === source.connectedFolder
-      && (source.check === undefined || record.checkIds.includes(source.check))
-      && (source.outcomes as readonly string[]).includes(record.state);
-  }
   return record.kind === "app-automation-run"
     && record.connectedFolderId === source.connectedFolder
     && record.appId === source.appId
@@ -1728,21 +1659,6 @@ function settleMatchesSource(source: AmpleFileAutomationSettleSource, record: Am
 }
 
 function settleCause(record: AmpleFileSettleRecord): AmpleFileAutomationRunCause {
-  if (record.kind === "check-run") {
-    return {
-      kind: "on-settled",
-      source: {
-        kind: "check-run",
-        connectedFolderId: record.connectedFolderId,
-        runId: record.runId,
-        state: record.state,
-        checkIds: [...record.checkIds],
-        // The Check task id is how `{{trigger.findings}}` reads the settled
-        // run's own findings back from the host.
-        taskId: record.taskId,
-      },
-    };
-  }
   return {
     kind: "on-settled",
     source: {
@@ -1830,11 +1746,8 @@ function causeSummary(cause: AmpleFileAutomationRunCause, declaration: AmpleFile
       return `${cause.changedCount} file(s) changed ${watched ? `under "${watched}"` : "at the top level"} in Connected Folder ${cause.connectedFolderId}.`;
     }
     default:
-      return cause.source.kind === "check-run"
-        ? `Check run ${cause.source.runId} in Connected Folder ${cause.source.connectedFolderId} settled ${cause.source.state}`
-          + ` (Checks: ${cause.source.checkIds.join(", ")}).`
-        : `App automation ${cause.source.appId}/${cause.source.appAutomationId} in Connected Folder ${cause.source.connectedFolderId}`
-          + ` settled ${cause.source.outcome}.`;
+      return `App automation ${cause.source.appId}/${cause.source.appAutomationId} in Connected Folder ${cause.source.connectedFolderId}`
+        + ` settled ${cause.source.outcome}.`;
   }
 }
 

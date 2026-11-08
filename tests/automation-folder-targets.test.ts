@@ -4,14 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import type { AmpleFileCheckTarget } from "../src/shared/checks.js";
+import type { FolderTarget } from "../src/shared/folder-target-path.js";
 import {
-  resolveAmpleFileCheckTargets,
-  AmpleFileCheckTargetResolutionError,
-  type AmpleFileCheckTargetResolutionErrorCode,
-} from "../src/local/checks/target-resolver.js";
+  resolveFolderTargets,
+  FolderTargetResolutionError,
+  type FolderTargetResolutionErrorCode,
+} from "../src/local/automations/folder-targets.js";
 
-function file(path: string, role: "primary" | "reference" = "primary"): AmpleFileCheckTarget {
+function file(path: string, role: "primary" | "reference" = "primary"): FolderTarget {
   return { kind: "file", role, path };
 }
 
@@ -19,7 +19,7 @@ function tree(
   path: string,
   extensions: string[],
   options: { recursive?: boolean; role?: "primary" | "reference" } = {},
-): AmpleFileCheckTarget {
+): FolderTarget {
   return {
     kind: "tree",
     role: options.role ?? "primary",
@@ -29,17 +29,17 @@ function tree(
   };
 }
 
-function resolutionError(code: AmpleFileCheckTargetResolutionErrorCode): (error: unknown) => boolean {
-  return (error) => error instanceof AmpleFileCheckTargetResolutionError && error.code === code;
+function resolutionError(code: FolderTargetResolutionErrorCode): (error: unknown) => boolean {
+  return (error) => error instanceof FolderTargetResolutionError && error.code === code;
 }
 
 async function temporaryConnectedFolder(t: test.TestContext): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "amplefile checks targets "));
+  const root = await mkdtemp(join(tmpdir(), "amplefile folder targets "));
   t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }
 
-test("Check targets resolve exact files and explicitly filtered trees in deterministic order", async (t) => {
+test("folder targets resolve exact files and explicitly filtered trees in deterministic order", async (t) => {
   const root = await temporaryConnectedFolder(t);
   await mkdir(join(root, "Trip", "nested"), { recursive: true });
   await writeFile(join(root, "Trip", "z.txt"), "zz", "utf8");
@@ -47,7 +47,7 @@ test("Check targets resolve exact files and explicitly filtered trees in determi
   await writeFile(join(root, "Trip", "ignored.pdf"), "pdf", "utf8");
   await writeFile(join(root, "Trip", "nested", "c.md"), "ccc", "utf8");
 
-  const result = await resolveAmpleFileCheckTargets(root, [
+  const result = await resolveFolderTargets(root, [
     file("Trip/z.txt", "reference"),
     tree("Trip", [".txt", ".MD"], { recursive: true }),
   ]);
@@ -60,7 +60,7 @@ test("Check targets resolve exact files and explicitly filtered trees in determi
   assert.equal(result.totalBytes, 6);
   assert.deepEqual(result.missingExactTargets, []);
 
-  const again = await resolveAmpleFileCheckTargets(root, [
+  const again = await resolveFolderTargets(root, [
     file("Trip/z.txt", "reference"),
     tree("Trip", [".MD", ".txt"], { recursive: true }),
   ]);
@@ -74,22 +74,22 @@ test("tree recursion and extension membership are always explicit", async (t) =>
   await writeFile(join(root, "Data", "top.txt"), "ignored", "utf8");
   await writeFile(join(root, "Data", "nested", "child.csv"), "child", "utf8");
 
-  const shallow = await resolveAmpleFileCheckTargets(root, [tree("Data", [".csv"])]);
+  const shallow = await resolveFolderTargets(root, [tree("Data", [".csv"])]);
   assert.deepEqual(shallow.files.map((item) => item.path), ["Data/top.csv"]);
-  const recursive = await resolveAmpleFileCheckTargets(root, [tree("Data", [".csv"], { recursive: true })]);
+  const recursive = await resolveFolderTargets(root, [tree("Data", [".csv"], { recursive: true })]);
   assert.deepEqual(recursive.files.map((item) => item.path), ["Data/nested/child.csv", "Data/top.csv"]);
 
   await assert.rejects(
-    resolveAmpleFileCheckTargets(root, [tree("Data", [])]),
+    resolveFolderTargets(root, [tree("Data", [])]),
     resolutionError("INVALID_SELECTOR"),
   );
   await assert.rejects(
-    resolveAmpleFileCheckTargets(root, [tree("Data", ["*"])]),
+    resolveFolderTargets(root, [tree("Data", ["*"])]),
     resolutionError("INVALID_SELECTOR"),
   );
 });
 
-test("the resolver refuses the Connected Folder root, path escapes, and reserved Check material", async (t) => {
+test("the resolver refuses the Connected Folder root, path escapes, and reserved AmpleFile and Pi material", async (t) => {
   const root = await temporaryConnectedFolder(t);
   const targets = [
     tree(".", [".md"]),
@@ -109,8 +109,8 @@ test("the resolver refuses the Connected Folder root, path escapes, and reserved
 
   for (const target of targets) {
     await assert.rejects(
-      resolveAmpleFileCheckTargets(root, [target]),
-      (error: unknown) => error instanceof AmpleFileCheckTargetResolutionError
+      resolveFolderTargets(root, [target]),
+      (error: unknown) => error instanceof FolderTargetResolutionError
         && (error.code === "UNSAFE_PATH" || error.code === "RESERVED_PATH"),
     );
   }
@@ -126,7 +126,7 @@ test("reserved metadata nested below an explicit tree is never resolved", async 
   await writeFile(join(root, "Docs", ".workspace", "hidden.md"), "hidden", "utf8");
   await writeFile(join(root, "Docs", ".pi", "executable.md"), "executable", "utf8");
 
-  const result = await resolveAmpleFileCheckTargets(root, [tree("Docs", [".md"], { recursive: true })]);
+  const result = await resolveFolderTargets(root, [tree("Docs", [".md"], { recursive: true })]);
   assert.deepEqual(result.files.map((item) => item.path), ["Docs/visible.md"]);
 });
 
@@ -135,7 +135,7 @@ test("exact missing files are data while missing trees and type mismatches are r
   await mkdir(join(root, "Expected"));
   await writeFile(join(root, "Expected", "not-a-directory.txt"), "file", "utf8");
 
-  const missing = await resolveAmpleFileCheckTargets(root, [
+  const missing = await resolveFolderTargets(root, [
     file("Expected/missing.md"),
     file("Absent/future.txt", "reference"),
   ]);
@@ -146,21 +146,21 @@ test("exact missing files are data while missing trees and type mismatches are r
   ]);
 
   await assert.rejects(
-    resolveAmpleFileCheckTargets(root, [tree("Missing", [".md"])]),
+    resolveFolderTargets(root, [tree("Missing", [".md"])]),
     resolutionError("TARGET_NOT_FOUND"),
   );
   await assert.rejects(
-    resolveAmpleFileCheckTargets(root, [tree("Expected/not-a-directory.txt", [".txt"])]),
+    resolveFolderTargets(root, [tree("Expected/not-a-directory.txt", [".txt"])]),
     resolutionError("TYPE_MISMATCH"),
   );
   await assert.rejects(
-    resolveAmpleFileCheckTargets(root, [file("Expected")]),
+    resolveFolderTargets(root, [file("Expected")]),
     resolutionError("TYPE_MISMATCH"),
   );
 });
 
 test("exact and tree targets reject symbolic links and junctions", async (t) => {
-  const sandbox = await mkdtemp(join(tmpdir(), "amplefile checks links "));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile folder target links "));
   const root = join(sandbox, "connected-folder");
   const outside = join(sandbox, "outside");
   await mkdir(root);
@@ -180,18 +180,18 @@ test("exact and tree targets reject symbolic links and junctions", async (t) => 
   }
 
   await assert.rejects(
-    resolveAmpleFileCheckTargets(root, [file("linked.md")]),
+    resolveFolderTargets(root, [file("linked.md")]),
     resolutionError("SYMLINK"),
   );
   await assert.rejects(
-    resolveAmpleFileCheckTargets(root, [tree("linked-tree", [".md"], { recursive: true })]),
+    resolveFolderTargets(root, [tree("linked-tree", [".md"], { recursive: true })]),
     resolutionError("SYMLINK"),
   );
 
   const linkedRoot = join(sandbox, "linked-root");
   await symlink(root, linkedRoot, process.platform === "win32" ? "junction" : "dir");
   await assert.rejects(
-    resolveAmpleFileCheckTargets(linkedRoot, [file("anything.md")]),
+    resolveFolderTargets(linkedRoot, [file("anything.md")]),
     resolutionError("SYMLINK"),
   );
 });
@@ -204,19 +204,19 @@ test("file-count and byte bounds fail closed without returning a partial target 
   await writeFile(join(root, "Files", "large.txt"), "12345", "utf8");
 
   await assert.rejects(
-    resolveAmpleFileCheckTargets(root, [tree("Files", [".txt"])], { limits: { maxFiles: 2 } }),
+    resolveFolderTargets(root, [tree("Files", [".txt"])], { limits: { maxFiles: 2 } }),
     resolutionError("LIMIT_EXCEEDED"),
   );
   await assert.rejects(
-    resolveAmpleFileCheckTargets(root, [file("Files/large.txt")], { limits: { maxFileBytes: 4 } }),
+    resolveFolderTargets(root, [file("Files/large.txt")], { limits: { maxFileBytes: 4 } }),
     resolutionError("LIMIT_EXCEEDED"),
   );
   await assert.rejects(
-    resolveAmpleFileCheckTargets(root, [file("Files/a.txt"), file("Files/b.txt")], { limits: { maxTotalBytes: 5 } }),
+    resolveFolderTargets(root, [file("Files/a.txt"), file("Files/b.txt")], { limits: { maxTotalBytes: 5 } }),
     resolutionError("LIMIT_EXCEEDED"),
   );
   await assert.rejects(
-    resolveAmpleFileCheckTargets(root, [tree("Files", [".no-match"])], { limits: { maxVisitedEntries: 2 } }),
+    resolveFolderTargets(root, [tree("Files", [".no-match"])], { limits: { maxVisitedEntries: 2 } }),
     resolutionError("LIMIT_EXCEEDED"),
   );
 });

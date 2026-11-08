@@ -19,7 +19,7 @@
 /**
  * The declaration bounds that are pure numbers. `ampleFileAutomationBounds` in
  * src/local/automations/automation-declarations.ts spreads these and adds the
- * bounds it inherits from the automation cadence and the Check target
+ * bounds it inherits from the automation cadence and the folder target
  * resolver, so parsing and the Limits pane can never disagree.
  */
 export const ampleFileAutomationDeclarationBounds = Object.freeze({

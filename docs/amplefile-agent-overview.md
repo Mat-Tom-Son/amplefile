@@ -27,11 +27,9 @@ changes.
 
 The overview is a small digest a person reads in a few seconds: what is
 running right now, what is waiting on them, what changed since they last
-looked, and where Checks stand. It is composed by app code from state the
+looked. It is composed by app code from state the
 product already records. No model call composes it and it adds no watcher.
-Its Check-status reader may re-read and hash explicitly designated text to
-verify freshness; it does not scan unconfigured Connected Folders or include that text
-in the digest. The overview is a projection, not a store: every item points back at
+The overview is a projection, not a store: every item points back at
 a durable or task-scoped record that exists for its own reasons, the digest
 can always be recomputed, and it is never itself the authority for
 anything. The only state this design added is the per-surface last-seen
@@ -46,12 +44,11 @@ product keeps for its own sake. The overview never causes a record to exist.
 
 | Source | Module | Durability | The overview reads |
 |---|---|---|---|
-| Running task registry | `AmpleFileKernel` in `src/local/amplefile-kernel.ts` | In-memory, app run | Running `assistant_turn` and `compaction` tasks (stable v1) plus experimental `check_run` and `automation_run` tasks, with Connected Folder id, actor, `startedAt` |
+| Running task registry | `AmpleFileKernel` in `src/local/amplefile-kernel.ts` | In-memory, app run | Running `assistant_turn` and `compaction` tasks (stable v1) plus the experimental `automation_run` task, with Connected Folder id, actor, `startedAt` |
 | Settled turn outcomes | `SettledTurnRecord` in `src/local/server.ts` | In-memory, app run | Task-scoped `succeeded`/`failed`/`aborted` results with `endedAt` |
 | Requests and questions | The durable request store under the state root's `requests/` directory (F25) | Durable machine-local app state, reconciled against the turn journal after a restart, never replayed | Requests in `working`/`handed_off` (running) with the child task ids they started, open questions whose respondent is the person (needs you), and settled requests with their outcome |
 | Chat lifecycle and titles | `src/local/agent/chat-store.ts` | Durable — append-only portable transcripts with a rebuildable machine-local summary index | `conversation_lifecycle` events, title changes, `snoozedUntil` due times, and the newest assistant `landing.followUpPrompt` |
 | History checkpoints | `listConnectedFolderCheckpoints` in `src/local/history.ts` | Durable machine-local app state | `checkpointId`, `createdAt`, `label`, `reason`, `scope` |
-| Check status | `AmpleFileCheckService.status()` in `src/local/checks/check-service.ts` | Durable machine-local Check state, locally re-verified designated inputs | Per–Connected Folder aggregate state and counts; text freshness reads/hashes designated files locally without executing a sensor or calling a model |
 | Act receipts | `AmpleFileCliActReceipts` journal (`src/local/cli/act-receipts.ts`) | Durable, rotation-bounded | Terminal `ok`/`error` records: command name, Connected Folder id, outcome, checkpoint id, parent task id |
 | App automation run receipts | `RestrictedAppAutomationRunReceipt` in `src/local/agent/restricted-app-service.ts` | Durable registry state | Named job, App Instance, outcome, timestamps; the app's and automation's titles are read from the installation |
 | App automation scheduler state | `AmpleFileSchedulerService` | In-memory, app run | Active and pending named jobs, feeding "Running now" |
@@ -82,7 +79,7 @@ succeeded`) (2026-10-11). Every section carries a `truncated` flag; bounds
 are disclosure, not curation.
 
 **Running now** — everything the product knows is executing: assistant
-turns and compactions, Check runs, app automation runs, and Automation runs.
+turns and compactions, app automation runs, and Automation runs.
 Running work above a single turn is request-derived: a request in `working`
 or `handed_off` is one item that carries the turns it started, wherever
 those turns run, so a delegated request and its Connected Folder turns are never
@@ -119,7 +116,7 @@ revocation removes it.
 that outcome, and the item's `ref` carries the request id so a surface can
 read the results handed back through `requests show` — a result's summary,
 structured data, and files are never in the digest), `chat-lifecycle`,
-`chat-renamed`, `check-run-settled`, `act-performed` (every receipted verb,
+`chat-renamed`, `act-performed` (every receipted verb,
 including the ones that install code, widen a power, or delete),
 `app-automation-run-settled`, and `automation-run-settled`. An answered question adds
 no kind of its own: it simply leaves **Needs you**, and the request's own
@@ -130,16 +127,9 @@ own marker as new and older items quieter, and a **Show earlier**
 affordance reveals the bounded tail regardless of the marker, so marking
 seen loses nothing.
 
-**Checks** — one row per registered Connected Folder with configured Checks, projected
-from the same aggregate snapshot as `checks status`: state, counts,
-`lastRunAt`. Ordered `needs-attention`, `check-error`, `blocked`, `stale`,
-`current-clear`, then by Connected Folder name; cap 512. The epistemic rules of the
-[Checks register](checks.md) apply unchanged: unconfigured means unknown,
-`neverRun` and `stale` stay distinct, a blocked or erroring Check is
-health, never a content claim, and composing this section never runs a
-sensor or calls a model. Designated text may be read and hashed locally
-for freshness. Aggregate rows only — finding titles, paths,
-and evidence stay in the Connected Folder's Checks work tab.
+*Amended 2026-11-07 (owner decision):* the **Checks** section — one
+aggregate row per Connected Folder with configured Checks — was removed with
+Checks, along with its change kind and truncation flag.
 
 ## Last-seen markers
 
@@ -209,7 +199,7 @@ summary. Narration never advances a marker; the
 digest's `seen` table lets the AmpleFile agent say "since you last looked at the
 popover" honestly, but only a person viewing a surface marks seen.
 
-## Non-goals, in the Checks epistemic style
+## Non-goals
 
 1. **No model composes the digest.** Composition is app code over typed
    records; a model touches the overview only when a person asks the AmpleFile agent to
@@ -220,21 +210,19 @@ popover" honestly, but only a person viewing a surface marks seen.
 3. **Nothing ambient.** No watcher, no schedule, no background
    recomputation. The digest exists while a surface is asking for it and is
    garbage the moment it is rendered.
-4. **Unconfigured means unknown.** A Connected Folder without Checks is absent from
-   the Checks section, not clear. An empty digest means nothing is
+4. **Unrecorded means unknown.** An empty digest means nothing is
    recorded, not that nothing happened. A source that cannot be read is
    reported as unavailable in that section, never rendered as quiet.
 5. **The overview is not a store.** No durable activity feed, no event log of
    its own, no retention policy. The one persisted record is the
    seen-marker file, and it is disposable preference.
 6. **The overview is not protocol v1.** The read lane stays content-free. The
-   snapshot ships at experimental version 0 like the Checks snapshot;
+   snapshot ships at experimental version 0;
    promotion into the stable kernel and installed-CLI contracts is a later
    deliberate version decision.
 7. **The overview does not notify.** No OS notifications, no badge counts, no
    dock or tray numbers. It is where a person looks when they choose to
-   look — the same posture as the quiet Check markers, and the reason
-   looking at it never destroys information.
+   look, and the reason looking at it never destroys information.
 
 ## Implementation record
 
@@ -272,7 +260,3 @@ The plan items shipped as follows:
   applies to reads as well as work.
 - **Model summarization of the digest into the digest.** Narration renders
   facts already present; it never writes back.
-
-## Checks navigation refinement
-
-The popover has no Checks disclosure and does not read or acknowledge the overview. The shared renderer's Check rows offer Review, opening the owning Connected Folder’s Checks tab. No sensor or model turn starts from a digest. Trial runs are excluded from settled Check changes and live status.

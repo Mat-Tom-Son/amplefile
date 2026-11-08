@@ -30,7 +30,6 @@ import {
   AmpleFileAutomationService,
   type AmpleFileAutomationAgentHopResult,
   type AmpleFileAutomationChatHopResult,
-  type AmpleFileAutomationCheckHopResult,
   type AmpleFileAutomationFilesHopResult,
   type AmpleFileAutomationHopContext,
   type AmpleFileAutomationHopPorts,
@@ -147,16 +146,8 @@ class FakePorts implements AmpleFileAutomationHopPorts {
     return { conversationId: "agent-conversation", turnTaskId: "agent-turn", outcome: "succeeded" };
   }
 
-  async checkRunFindings(): Promise<null> {
-    return null;
-  }
-
   async files(): Promise<AmpleFileAutomationFilesHopResult> {
     return { copiedPaths: [], fileCount: 0, totalBytes: 0 };
-  }
-
-  async check(): Promise<AmpleFileAutomationCheckHopResult> {
-    return { runId: "check-run", taskId: "check-task", state: "succeeded", checkIds: [], findingCount: 0, admittedCount: 0 };
   }
 
   async checkpointManifest(): Promise<null> {

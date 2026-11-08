@@ -1,4 +1,3 @@
-import type { CheckCorrectionRecord } from "../checks/check-corrections.js";
 /**
  * In-process authority the act-lane executor calls to apply commands. The
  * interactive local API implements this interface inside `startLocalApi`
@@ -8,12 +7,6 @@ import type { CheckCorrectionRecord } from "../checks/check-corrections.js";
  * exit codes map without translation.
  */
 
-import type {
-  AmpleFileCheckDecision,
-  AmpleFileCheckDecisionKind,
-  AmpleFileCheckFinding,
-  AmpleFileCheckRunRecord,
-} from "../checks/check-types.js";
 import type { AmpleFileCliActLegacySurface, AmpleFileCliActSurface } from "./act-receipts.js";
 import type { AmpleFileOverviewSnapshot } from "../overview.js";
 import type { AmpleFileAgentAttachmentDisposition, AmpleFileAgentAttachmentRef } from "../amplefile-agent-attachments.js";
@@ -232,15 +225,6 @@ export interface AmpleFileActAgentRequest {
     recordedAt: string;
     fileCount: number;
   }>;
-}
-
-export interface AmpleFileActCheckTaskStatus {
-  taskId: string;
-  runId: string | null;
-  state: AmpleFileCheckRunRecord["state"] | "unknown";
-  startedAt: string | null;
-  endedAt: string | null;
-  error: string | null;
 }
 
 /**
@@ -546,9 +530,8 @@ export interface AmpleFileActAutomationTriggerRef {
   at?: string;
   ifMissed?: "run" | "skip";
   source?: {
-    kind: "check-run" | "app-automation-run";
+    kind: "app-automation-run";
     connectedFolderId: string;
-    checkId?: string;
     appId?: string;
     appAutomationId?: string;
     outcomes: string[];
@@ -570,8 +553,8 @@ export interface AmpleFileActAutomationGrantRef {
 
 /**
  * One-line projection of an automation for `automations list`. Content-bearing by
- * design (titles, Connected Folder ids) and therefore act-lane only, per the Checks rule
- * that keeps the content-free read lane aggregate.
+ * design (titles, Connected Folder ids) and therefore act-lane only: the
+ * content-free read lane stays aggregate.
  */
 export interface AmpleFileActAutomationSummary {
   automationId: string;
@@ -611,7 +594,6 @@ export type AmpleFileActAutomationStepView =
     toConnectedFolderName?: string;
     to: string;
   }
-  | { id: string; kind: "check"; connectedFolderId: string; connectedFolderName?: string; checkId?: string }
   | { id: string; kind: "agent"; message: string; model?: { provider: string; id: string } };
 
 export interface AmpleFileActAutomationModel {
@@ -641,7 +623,7 @@ export interface AmpleFileActAutomationReceipt {
   automationId: string;
   runId?: string;
   hopId?: string;
-  hopKind?: "chat" | "files" | "check" | "agent";
+  hopKind?: "chat" | "files" | "agent";
   title?: string;
   digest?: string;
   detail?: string;
@@ -659,10 +641,6 @@ export interface AmpleFileActAutomationReceipt {
   copiedPaths?: string[];
   fileCount?: number;
   totalBytes?: number;
-  checkRunId?: string;
-  checkIds?: string[];
-  findingCount?: number;
-  admittedCount?: number;
   failedHopId?: string;
   stoppedHopTaskIds?: string[];
   /** What AmpleFile filled into this hop's message. */
@@ -997,7 +975,7 @@ export interface AmpleFileActFacade {
    * reports when the Connected Folder already matches its latest restore point; both
    * restore verbs record the safety restore point History itself created, so
    * every History act is recoverable through History. Whole–Connected Folder restore is
-   * refused while Worker, compaction, or Check work is active in the
+   * refused while Worker or compaction work is active in the
    * Connected Folder, while a restricted-app automation run whose app holds a file
    * grant into the Connected Folder is active, and while an automation run with a files hop
    * targeting the Connected Folder is active (the kernel-checked rule) — a deliberate
@@ -1728,76 +1706,6 @@ export interface AmpleFileActFacade {
   }>;
 
   /**
-   * Experimental Checks act surface. All methods resolve an explicit Connected Folder;
-   * declarations remain inert until `checksEnable` imports one proposal, and
-   * runs remain task-scoped so polling and abort never depend on ambient UI
-   * state.
-   */
-  checksEnable(input: { connectedFolder: string; proposalPath: string; cwd: string; proposeOnly?: boolean }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    check: {
-      id: string;
-      title: string;
-      severity: AmpleFileCheckFinding["severity"];
-      sensorId: string;
-      sensorRevision: number;
-      targetCount: number;
-      trigger: "manual";
-      targets: Array<{
-        kind: "file" | "tree";
-        role: "primary" | "reference";
-        path: string;
-        recursive?: boolean;
-        extensions?: string[];
-      }>;
-    };
-    declarationDigest: string;
-  }>;
-  checksProposeFix(input: { connectedFolder: string; proposalPath: string; cwd: string }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef; correction: CheckCorrectionRecord }>;
-  checksDisable(input: { connectedFolder: string; checkId: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    checkId: string;
-    disabled: boolean;
-  }>;
-  checksRun(input: { connectedFolder: string; checkId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    taskId: string;
-    runId: string;
-    checkIds: string[];
-  }>;
-  checksTask(input: { connectedFolder: string; taskId: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    task: AmpleFileActCheckTaskStatus;
-  }>;
-  checksResult(input: { connectedFolder: string; taskId: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    run: AmpleFileCheckRunRecord;
-  }>;
-  checksAbort(input: { connectedFolder: string; taskId: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    taskId: string;
-    aborted: boolean;
-  }>;
-  checksProblems(input: { connectedFolder: string; checkId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    checkId?: string;
-    findings: AmpleFileCheckFinding[];
-    invalidated: number;
-    healthErrors: string[];
-    truncated: boolean;
-  }>;
-  checksDecide(input: {
-    connectedFolder: string;
-    findingId: string;
-    decision: AmpleFileCheckDecisionKind;
-    deferUntil?: string;
-  }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    findingId: string;
-    decision: AmpleFileCheckDecision;
-  }>;
-
-  /**
    * The AmpleFile agent: the conversation above all Connected Folders. It reuses
    * the same turn orchestration and Pi runtime as Worker Chats, but its
    * transcript is machine-local application state, it carries no user
@@ -1864,7 +1772,7 @@ export interface AmpleFileActFacade {
   /**
    * The overview (docs/amplefile-agent-overview.md): the kernel's
    * deterministic digest of recorded state above all Connected Folders — running
-   * work, needs-you items, changes, and per–Connected Folder Check rows, with the
+   * work, needs-you items, and changes, with the
    * per-surface seen markers included as data. Read-only: the act lane renders
    * markers, it never advances one, and this method deliberately does not
    * require the AmpleFile agent to be ready — the digest reads recorded

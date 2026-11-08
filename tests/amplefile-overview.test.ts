@@ -1,19 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import type { ChatMessage, ConversationSummary } from "../src/local/agent/chat-store.js";
 import { AmpleFileCliActReceipts, type AmpleFileCliActReceipt } from "../src/local/cli/act-receipts.js";
-import type { AmpleFileCheckStatusSnapshot } from "../src/local/checks/check-types.js";
 import {
   composeAmpleFileOverview,
   createAmpleFileOverviewAutomationRunReader,
   ampleFileOverviewChatRecordFromMessages,
   ampleFileOverviewChangesPerKindCap,
   ampleFileOverviewChangesTotalCap,
-  ampleFileOverviewChecksCap,
   ampleFileOverviewNeedsYouCap,
   ampleFileOverviewRunningCap,
   type AmpleFileOverviewChatRecord,
@@ -47,7 +45,7 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
   assert.equal(first.kind, "amplefile.overview.experimental");
   assert.equal(first.version, 0);
   assert.equal(first.composedAt, composedAtIso);
-  assert.deepEqual(first.truncated, { running: false, needsYou: false, changes: false, checks: false });
+  assert.deepEqual(first.truncated, { running: false, needsYou: false, changes: false });
   assert.deepEqual(first.unavailable, []);
 
   // Running: longest-running first, one item per AmpleFile agent request, the
@@ -56,7 +54,6 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
     "agent-requests:req-mgmt",
     "kernel-tasks:task-turn",
     "kernel-tasks:task-compact",
-    "kernel-tasks:task-check",
     "app-automation-schedule:auto-run-1",
     "automation-runs:rr-1",
   ]);
@@ -65,9 +62,8 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
   assert.equal(first.running[1].connectedFolderName, "Alpha");
   assert.equal(first.running[1].kind, "assistant-turn", "a plain Connected Folder turn's own root never replaces its kernel task");
   assert.ok(!first.running.some((item) => item.id === "agent-requests:req-wait"), "a waiting request is not running");
-  assert.equal(first.running[3].kind, "check-run");
-  assert.equal(first.running[4].headline, 'Inbox automation "Collect new mail" running', "an app automation names the app and its title, not its id");
-  assert.equal(first.running[5].headline, 'Automation "Weekly handoff" running');
+  assert.equal(first.running[3].headline, 'Inbox automation "Collect new mail" running', "an app automation names the app and its title, not its id");
+  assert.equal(first.running[4].headline, 'Automation "Weekly handoff" running');
 
   // Needs you: questions and due snoozes only, newest first. Nothing here is
   // an approval (docs/receipts-not-gates.md, F24).
@@ -92,7 +88,6 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
     "history-checkpoints:connected-folder-a:cp-1",
     "act-receipts:req-2",
     "app-automation-receipts:ar-1",
-    "checks:connected-folder-a:run-1",
     "automation-runs:rr-0",
     "agent-requests:req-done",
     "agent-requests:req-expired",
@@ -102,9 +97,9 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
     "chats:chat-x:msg-arch",
     "chats:chat-x:msg-ren",
   ]);
-  assert.equal(first.changes[6].headline, "Request done");
-  assert.equal(first.changes[7].headline, "Request ran out of time");
-  assert.deepEqual(first.changes[7].ref, { taskId: "task-expired", conversationId: "mgmt-1", requestId: "req-expired" });
+  assert.equal(first.changes[5].headline, "Request done");
+  assert.equal(first.changes[6].headline, "Request ran out of time");
+  assert.deepEqual(first.changes[6].ref, { taskId: "task-expired", conversationId: "mgmt-1", requestId: "req-expired" });
   assert.ok(!first.changes.some((item) => item.id === "agent-requests:req-plain-old"), "a plain Connected Folder turn's settle is its turn-settled item, not a second request item");
   assert.equal(first.cursor, "2026-08-10T10:50:00.000Z/act-receipts:req-1");
   const actItem = first.changes[0];
@@ -113,22 +108,9 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
   assert.deepEqual(actItem.ref, { checkpointId: "cp-9", requestId: "req-1" });
   assert.equal(first.changes[2].headline, "chat.rename failed");
   assert.equal(first.changes[3].headline, 'Inbox automation "Collect new mail" succeeded');
-  assert.equal(first.changes[4].headline, "Check run failed — 2 findings admitted");
-  assert.equal(first.changes[5].headline, 'Automation "Weekly handoff" failed — 1/3 steps completed');
-  assert.equal(first.changes[10].headline, '"Waiting" snoozed until 2026-08-10T11:30:00.000Z');
-
-  // Checks: one row per Connected Folder with configured Checks; unconfigured is absent.
-  assert.deepEqual(first.checks, [{
-    connectedFolderId: "connected-folder-a",
-    connectedFolderName: "Alpha",
-    state: "needs-attention",
-    needsAttention: 1,
-    neverRun: 0,
-    stale: 1,
-    blocked: 0,
-    errors: 0,
-    lastRunAt: "2026-08-10T10:00:00.000Z",
-  }]);
+  assert.equal(first.changes[4].headline, 'Automation "Weekly handoff" failed — 1/3 steps completed');
+  assert.equal(first.changes[9].headline, '"Waiting" snoozed until 2026-08-10T11:30:00.000Z');
+  assert.equal("checks" in first, false, "Checks were removed (2026-11-07): the digest has no Check rows");
 
   // Seen markers pass through with sorted surface keys.
   assert.deepEqual(Object.keys(first.seen), ["popover", "remote:grant-1"]);
@@ -304,27 +286,6 @@ test("changes are bounded per kind and in total, newest first", async () => {
     !snapshot.changes.some((item) => item.at === stamp(0)),
     "the per-kind cut drops the oldest records",
   );
-});
-
-test("checks rows order by state severity and respect the row cap", async () => {
-  const connectedFolders = Array.from({ length: ampleFileOverviewChecksCap + 2 }, (_item, index) => ({
-    id: `connected-folder-${String(index).padStart(2, "0")}`,
-    name: `Connected Folder ${String(index).padStart(2, "0")}`,
-    connectedFolderRoot: `/connected-folders/${index}`,
-  }));
-  const snapshot = await composeAmpleFileOverview({
-    now: new Date(composedAtIso),
-    connectedFolders,
-    sources: {
-      checks: async (connectedFolder) => ({
-        status: checkStatus(connectedFolder.id, connectedFolder.id === "connected-folder-01" ? "needs-attention" : "current-clear"),
-        settledRuns: [],
-      }),
-    },
-  });
-  assert.equal(snapshot.checks.length, ampleFileOverviewChecksCap);
-  assert.equal(snapshot.truncated.checks, true);
-  assert.equal(snapshot.checks[0].connectedFolderId, "connected-folder-01", "needs-attention must sort before current-clear");
 });
 
 test("restart honesty: absent readers render their kinds absent, not unavailable", async () => {
@@ -536,7 +497,6 @@ function fullFixtureSources(): AmpleFileOverviewSourceReaders {
     runningTasks: async () => [
       { id: "task-turn", kind: "assistant_turn", connectedFolderId: "connected-folder-a", conversationId: "chat-busy", startedAt: "2026-08-10T11:00:00.000Z" },
       { id: "task-compact", kind: "compaction", connectedFolderId: "connected-folder-b", conversationId: "chat-c2", startedAt: "2026-08-10T11:05:00.000Z" },
-      { id: "task-check", kind: "check_run", connectedFolderId: "connected-folder-a", startedAt: "2026-08-10T11:10:00.000Z" },
       { id: "task-child", kind: "assistant_turn", connectedFolderId: "connected-folder-b", conversationId: "chat-child", startedAt: "2026-08-10T11:15:00.000Z" },
       { id: "task-mgmt", kind: "assistant_turn", connectedFolderId: "amplefile-agent", conversationId: "mgmt-1", startedAt: "2026-08-10T10:59:00.000Z" },
     ],
@@ -607,19 +567,6 @@ function fullFixtureSources(): AmpleFileOverviewSourceReaders {
       { checkpointId: "cp-1", createdAt: "2026-08-10T10:45:00.000Z", label: "Before cleanup", reason: "manual", scope: "full" },
       { checkpointId: "cp-2", createdAt: "2026-08-10T06:30:00.000Z", reason: "mutation", scope: "targeted" },
     ] : [],
-    checks: async (connectedFolder) => connectedFolder.id === "connected-folder-a"
-      ? {
-        status: {
-          ...checkStatus("connected-folder-a", "needs-attention"),
-          needsAttention: 1,
-          stale: 1,
-          lastRunAt: "2026-08-10T10:00:00.000Z",
-        },
-        settledRuns: [
-          { runId: "run-1", taskId: "task-cr", state: "failed", startedAt: "2026-08-10T09:50:00.000Z", endedAt: "2026-08-10T09:55:00.000Z", admittedCount: 2 },
-        ],
-      }
-      : { status: checkStatus("connected-folder-b", "not-configured"), settledRuns: [] },
     actReceipts: async (): Promise<AmpleFileCliActReceipt[]> => [
       { v: 2, at: "2026-08-10T10:50:00.000Z", requestId: "req-1", command: "files.add", connectedFolderId: "connected-folder-gone", outcome: "ok", checkpointId: "cp-9" },
       { v: 1, at: "2026-08-10T10:20:00.000Z", requestId: "req-2", command: "chat.rename", connectedFolderId: "connected-folder-a", outcome: "error", errorCode: "conflict" },
@@ -650,27 +597,6 @@ function fullFixtureSources(): AmpleFileOverviewSourceReaders {
   };
 }
 
-function checkStatus(connectedFolderId: string, state: AmpleFileCheckStatusSnapshot["state"]): AmpleFileCheckStatusSnapshot {
-  return {
-    kind: "amplefile.checks.experimental",
-    version: 0,
-    connectedFolderId,
-    state,
-    configured: state === "not-configured" ? 0 : 2,
-    proposed: 0,
-    enabled: state === "not-configured" ? 0 : 2,
-    current: state === "current-clear" ? 2 : 0,
-    neverRun: 0,
-    stale: 0,
-    blocked: 0,
-    errors: 0,
-    needsAttention: 0,
-    running: 0,
-    lastRunAt: null,
-  };
-}
-
-
 test("the local API wires the overview's live-registry readers end to end", async () => {
   const sandbox = await mkdtemp(join(tmpdir(), "amplefile-overview-server-"));
   await mkdir(join(sandbox, "agent", "extensions"), { recursive: true });
@@ -699,6 +625,14 @@ test("the local API wires the overview's live-registry readers end to end", asyn
     detail: "publish.viewer.expose; source notes.md; publication pub-old",
     undoRef: { kind: "publicationId", value: "pub-old" },
   });
+  // Likewise what a build with Checks left behind (removed 2026-11-07): its
+  // machine-local Check state stays on disk unread, and its act receipts are
+  // ordinary ledger history.
+  const oldCheckState = join(stateRoot, "checks", "connected-folders", "space-old-0123456789abcdef.json");
+  await mkdir(join(stateRoot, "checks", "connected-folders"), { recursive: true });
+  await writeFile(oldCheckState, "{\"schemaVersion\":1,\"declarations\":[]}", "utf8");
+  await oldReceipts.append({ requestId: "req-old-check", command: "checks.run", outcome: "accepted" });
+  await oldReceipts.append({ requestId: "req-old-check", command: "checks.run", outcome: "ok", surface: "cli", detail: "check run accepted" });
   const api = await startLocalApi({
     port: 0,
     stateBase: stateRoot,
@@ -722,30 +656,8 @@ test("the local API wires the overview's live-registry readers end to end", asyn
     await facade.chatRename({ connectedFolder: connectedFolder.connectedFolder.id, conversationId: chat.conversation.id, title: "Renamed by hand" });
     await facade.chatArchive({ connectedFolder: connectedFolder.connectedFolder.id, conversationId: chat.conversation.id });
 
-    // History and Checks leave recorded state behind.
+    // History leaves recorded state behind.
     const saved = await facade.historySave({ connectedFolder: connectedFolder.connectedFolder.id, label: "Milestone" });
-    const proposalPath = join(sandbox, "presence.amplefile-check.json");
-    await writeFile(proposalPath, JSON.stringify({
-      kind: "amplefile.check-proposal",
-      version: 1,
-      name: "Required delivery",
-      createdBy: "human",
-      createdAt: "2026-08-01T00:00:00.000Z",
-      check: {
-        title: "The signed delivery exists",
-        severity: "error",
-        trigger: "manual",
-        sensor: { id: "amplefile.file-presence", revision: 1, parameters: { expect: "present" } },
-        targets: [{ kind: "file", role: "primary", path: "Delivery/signed.pdf" }],
-      },
-    }), "utf8");
-    const check = await facade.checksEnable({ connectedFolder: connectedFolder.connectedFolder.id, proposalPath, cwd: sandbox });
-    const checkRun = await facade.checksRun({ connectedFolder: connectedFolder.connectedFolder.id, checkId: check.check.id });
-    await waitForCondition(async () => {
-      const status = await facade.checksTask({ connectedFolder: connectedFolder.connectedFolder.id, taskId: checkRun.taskId });
-      return status.task.state !== "accepted" && status.task.state !== "running";
-    });
-
     const pending = await api.kernel.getOverview({ kind: "system" });
     assert.equal(pending.kind, "amplefile.overview.experimental");
     assert.deepEqual(pending.unavailable, [], "every wired source reads cleanly");
@@ -753,16 +665,12 @@ test("the local API wires the overview's live-registry readers end to end", asyn
       pending.needsYou.every((item) => item.kind === "request-question" || item.kind === "chat-question" || item.kind === "due-snooze"),
       "needs-you carries questions and due snoozes only",
     );
-    const checkRow = pending.checks.find((row) => row.connectedFolderId === connectedFolder.connectedFolder.id);
-    assert.equal(checkRow?.connectedFolderName, "Glanced");
-    assert.equal(checkRow?.state, "needs-attention", "the missing delivery is a Check finding");
     const changeKinds = new Set(pending.changes.map((item) => item.kind));
     for (const expected of [
       "checkpoint-saved",
       "turn-settled",
       "chat-renamed",
       "chat-lifecycle",
-      "check-run-settled",
       "act-performed",
     ] as const) {
       assert.ok(changeKinds.has(expected), `changes include ${expected}`);
@@ -770,9 +678,6 @@ test("the local API wires the overview's live-registry readers end to end", asyn
     const checkpointItem = pending.changes.find((item) =>
       item.kind === "checkpoint-saved" && item.ref?.checkpointId === saved.checkpoint.checkpointId);
     assert.equal(checkpointItem?.connectedFolderName, "Glanced", "Connected Folder names resolve on per-connected-folder items");
-    const settledRunItem = pending.changes.find((item) => item.kind === "check-run-settled");
-    assert.equal(settledRunItem?.ref?.runId, checkRun.runId, "the content-free settled-run accessor names the run");
-    assert.match(settledRunItem?.headline ?? "", /1 finding admitted/);
 
     // The act-receipts ledger reader surfaces the older build's share
     // receipt as ordinary history; its leftover publication store adds nothing.
@@ -781,12 +686,17 @@ test("the local API wires the overview's live-registry readers end to end", asyn
       "a receipt for a removed verb still reads as a performed act",
     );
     assert.ok(
+      pending.changes.some((item) => item.kind === "act-performed" && item.ref?.requestId === "req-old-check"),
+      "a receipt for a removed Check verb still reads as a performed act",
+    );
+    assert.ok(
       !pending.changes.some((item) => item.id.startsWith("viewer-grants:")),
       "a leftover publication store is never read",
     );
     assert.ok(pending.cursor, "recorded changes produce a cursor for seen markers");
   } finally {
     await api.close();
+    assert.equal(await readFile(oldCheckState, "utf8"), "{\"schemaVersion\":1,\"declarations\":[]}", "old Check state is left on disk untouched");
     await rm(sandbox, { recursive: true, force: true });
   }
 });

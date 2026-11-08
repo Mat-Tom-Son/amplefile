@@ -89,7 +89,6 @@ export const folderAutomations = {
     "copies-to": "Copies files here",
     "copies-from": "Copies files from here",
     "chats-here": "Starts a Chat here",
-    "checks-here": "Runs a Check here",
   },
   runNow: "Run Now",
   turnOn: "Turn On",

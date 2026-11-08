@@ -36,23 +36,22 @@ test("an automation's roles in a Connected Folder come from its trigger and the 
     steps: [
       { id: "adopt", kind: "chat", connectedFolder: trip, message: "Adopt the newest brief." },
       { id: "copy", kind: "files", fromConnectedFolder: home, from: { kind: "paths", paths: ["Ready/brief.md"] }, toConnectedFolder: trip, to: "Incoming" },
-      { id: "verify", kind: "check", connectedFolder: trip },
       { id: "report", kind: "agent", message: "Done." },
     ],
   });
   assert.deepEqual(ampleFileAutomationConnectedFolderRoles(declaration, home), ["watches", "copies-from"]);
-  assert.deepEqual(ampleFileAutomationConnectedFolderRoles(declaration, trip), ["copies-to", "chats-here", "checks-here"]);
+  assert.deepEqual(ampleFileAutomationConnectedFolderRoles(declaration, trip), ["copies-to", "chats-here"]);
   assert.deepEqual(ampleFileAutomationConnectedFolderRoles(declaration, other), [], "an agent step names no Connected Folder");
 
   const settled = normalizeAmpleFileAutomationDeclaration({
     kind: "amplefile.automation",
     version: 1,
-    id: "automation-after-a-check",
-    title: "After a Check",
+    id: "automation-after-an-app",
+    title: "After an app automation",
     createdBy: "human",
     createdAt: "2026-09-24T12:00:00.000Z",
-    trigger: { kind: "on-settled", source: { kind: "check-run", connectedFolder: other } },
-    steps: [{ id: "tell", kind: "chat", connectedFolder: home, message: "A Check settled." }],
+    trigger: { kind: "on-settled", source: { kind: "app-automation-run", connectedFolder: other, appId: "collector", appAutomationId: "collect" } },
+    steps: [{ id: "tell", kind: "chat", connectedFolder: home, message: "The collector settled." }],
   });
   assert.deepEqual(ampleFileAutomationConnectedFolderRoles(settled, other), ["watches"]);
   assert.deepEqual(ampleFileAutomationConnectedFolderRoles(settled, home), ["chats-here"]);
@@ -63,8 +62,8 @@ test("the shared trigger summary is the one Settings and the Connected Folder vi
   assert.equal(automationTriggerSummary({ kind: "interval", intervalMinutes: 30 }), "Every 30 minutes");
   assert.equal(automationTriggerSummary({ kind: "interval", intervalMinutes: 120 }), "Every 2 hours");
   assert.equal(
-    automationTriggerSummary({ kind: "on-settled", source: { kind: "check-run", connectedFolderId: home, connectedFolderName: "Home projects" } }),
-    "After a Check settles in Home projects",
+    automationTriggerSummary({ kind: "on-settled", source: { kind: "app-automation-run", connectedFolderId: home, connectedFolderName: "Home projects", appId: "collector", appAutomationId: "collect" } }),
+    "After collector · collect settles in Home projects",
   );
   const folderTrigger = {
     kind: "files-changed" as const,
@@ -124,9 +123,9 @@ test("GET /api/connected-folders/:id/automations lists only automations naming t
       steps: [{ id: "ask", kind: "chat", connectedFolder: c.id, message: "Summarize the week." }],
     },
     {
-      kind: "amplefile.automation", version: 1, id: "automation-after-b-check", title: "After a Check in B",
+      kind: "amplefile.automation", version: 1, id: "automation-after-b-app", title: "After an app in B",
       createdBy: "human", createdAt: "2026-09-24T12:00:00.000Z",
-      trigger: { kind: "on-settled", source: { kind: "check-run", connectedFolder: b.id } },
+      trigger: { kind: "on-settled", source: { kind: "app-automation-run", connectedFolder: b.id, appId: "collector", appAutomationId: "collect" } },
       steps: [{ id: "forward", kind: "files", fromConnectedFolder: b.id, from: { kind: "paths", paths: ["Incoming/notes.txt"] }, toConnectedFolder: c.id, to: "From B" }],
     },
   ].map((value) => normalizeAmpleFileAutomationDeclaration(value));
@@ -152,16 +151,16 @@ test("GET /api/connected-folders/:id/automations lists only automations naming t
   const inB = await get(b.id);
   assert.deepEqual(inB.automations.map((item) => [item.automationId, item.roles]).sort(), [
     ["automation-a-to-b-handoff", ["copies-to"]],
-    ["automation-after-b-check", ["watches", "copies-from"]],
+    ["automation-after-b-app", ["watches", "copies-from"]],
   ]);
   assert.equal(
-    inB.automations.find((item) => item.automationId === "automation-after-b-check")?.triggerSummary,
-    "After a Check settles in Folder B",
+    inB.automations.find((item) => item.automationId === "automation-after-b-app")?.triggerSummary,
+    "After collector · collect settles in Folder B",
     "the settled source is named by its Connected Folder name",
   );
   const inC = await get(c.id);
   assert.deepEqual(inC.automations.map((item) => [item.automationId, item.roles]).sort(), [
-    ["automation-after-b-check", ["copies-to"]],
+    ["automation-after-b-app", ["copies-to"]],
     ["automation-chat-in-c", ["chats-here"]],
   ]);
   assert.deepEqual(await get(d.id), { automations: [] }, "an untouched Connected Folder gets an empty list");

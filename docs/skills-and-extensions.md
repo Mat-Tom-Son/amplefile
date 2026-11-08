@@ -100,7 +100,7 @@ Workers are taught to create `.worker/<task-id>/` lazily for drafts, scripts,
 intermediate data and renders, then deliver requested files outside that folder.
 Existing project files are edited in place. `.worker/` is ordinary content:
 the Files tab mutes its top-level folder name and icon without disabling
-selection, expansion, menus or dragging. Search, History, attachments, Checks
+selection, expansion, menus or dragging. Search, History, attachments,
 and file grants use their normal policies, including explicit ignore settings.
 It is neither hidden metadata nor a private or automatically cleaned area.
 Registration never creates it, and the AmpleFile agent has no Connected Folder
@@ -120,7 +120,7 @@ The local `?dev-context` developer route opens **Inspect context**; normal
 Chats, the AmpleFile agent and Settings have no inspector entry. Enable **Record model
 context** before the request to capture assembled instructions, messages and
 tools, provider payloads where Pi exposes them, and loaded-source provenance.
-The view includes host title, Check, app inference and compaction calls with
+The view includes host title, app inference and compaction calls with
 their own attribution. Independent transports inside third-party Extensions
 are outside this recorder. Images appear as metadata. Recording is off by
 default, bounded and memory-only; clearing, disabling and restart remove

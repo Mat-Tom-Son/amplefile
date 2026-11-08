@@ -205,7 +205,7 @@ declare global {
         /** The Connected Folder header's right-click menu (macOS). */
         popupHeaderMenu?: (request: AmpleFileDesktopHeaderMenuRequest) => Promise<AmpleFileDesktopHeaderMenuCommand | null>;
         setActiveConnectedFolder: (connectedFolderId: string | null) => Promise<void>;
-        onOpenConnectedFolder: (listener: (connectedFolderId: string, view?: "checks") => void) => () => void;
+        onOpenConnectedFolder: (listener: (connectedFolderId: string) => void) => () => void;
         onOpenFolder: (listener: () => void) => () => void;
       };
       /** Standard Folders in the file manager (absent in older desktop builds). */
@@ -235,7 +235,6 @@ declare global {
         /** The local path of a file dropped on the AmpleFile agent panel. */
         getPathForFile?: (file: File) => string;
         openAmpleFileAgentDraft?: (text: string) => Promise<boolean>;
-        openChecks?: (connectedFolderId: string) => Promise<boolean>;
         onOpenSettings: (listener: (scope?: "agent") => void) => () => void;
       };
       /** Main-window-only automation management; absent from the popover preload. */
@@ -256,7 +255,6 @@ declare global {
         delete: (automationId: string) => Promise<unknown>;
       };
       ampleFileAgent?: {
-        openChecks?: (connectedFolderId: string) => Promise<boolean>;
         openResultFile?: (connectedFolderId: string, path: string) => Promise<void>;
         getPathForFile: (file: File) => string;
         hide: () => void;

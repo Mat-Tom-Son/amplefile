@@ -108,14 +108,14 @@
 /* Buttons answer a press. Their color timings are restated so scale can join them. */
 
 :root[data-theme] .app-shell :is(.ui-control, .send-button, .connected-folder-rail-button, .connected-folder-rail-account-button, .surface-tab-action,
-  .composer-command-trigger, .message-copy-button, .model-catalog-trigger, .checks-manual-button, .connected-folder-banner-upload-button,
+  .composer-command-trigger, .message-copy-button, .model-catalog-trigger, .connected-folder-banner-upload-button,
   .message-code-toolbar button, .generated-image-actions button) {
   transition: background-color 110ms ease-out, color 110ms ease-out, border-color 110ms ease-out, box-shadow 110ms ease-out,
     opacity 110ms ease-out, filter 110ms ease-out, scale 160ms var(--amplefile-ease-smooth);
 }
 
 :root[data-theme] .app-shell :is(.ui-control, .send-button, .connected-folder-rail-button, .connected-folder-rail-account-button, .surface-tab-action,
-  .composer-command-trigger, .message-copy-button, .model-catalog-trigger, .checks-manual-button, .connected-folder-banner-upload-button,
+  .composer-command-trigger, .message-copy-button, .model-catalog-trigger, .connected-folder-banner-upload-button,
   .message-code-toolbar button, .generated-image-actions button):active:not(:disabled) {
   scale: 0.96;
   transition-duration: 110ms, 110ms, 110ms, 110ms, 110ms, 110ms, 70ms;

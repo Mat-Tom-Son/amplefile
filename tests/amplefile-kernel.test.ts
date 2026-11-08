@@ -95,50 +95,6 @@ test("AmpleFileKernel tracks and scopes running Worker tasks", async () => {
   assert.deepEqual((await kernel.getTasks({ kind: "cli", connectedFolderId: rootId })).tasks, []);
 });
 
-test("AmpleFileKernel tracks experimental Check runs internally without changing amplefile.tasks v1", async () => {
-  const root = join(process.cwd(), "kernel-check-tasks", "root");
-  const connectedFolderSummary = connectedFolder("space-5555555555555555", "Root", root);
-  const kernel = new AmpleFileKernel({
-    ...connectedFolderDependencies([connectedFolderSummary]),
-    now: () => new Date("2026-08-01T12:00:00.000Z"),
-    createTaskId: () => "task-generated",
-  });
-  const actor = { kind: "system" as const, connectedFolderId: connectedFolderSummary.id };
-  const before = JSON.stringify(await kernel.getTasks(actor));
-
-  const task = kernel.startExperimentalCheckRunTask({
-    id: "task-check-run",
-    connectedFolderId: connectedFolderSummary.id,
-    actor,
-  });
-  assert.deepEqual(task, {
-    id: "task-check-run",
-    kind: "check_run",
-    status: "running",
-    connectedFolderId: connectedFolderSummary.id,
-    actor,
-    startedAt: "2026-08-01T12:00:00.000Z",
-  });
-  assert.equal(
-    JSON.stringify(await kernel.getTasks(actor)),
-    before,
-    "an internal check_run must be byte-invisible to the stable amplefile.tasks v1 snapshot",
-  );
-  assert.throws(
-    () => kernel.startTask({
-      id: task.id,
-      kind: "assistant_turn",
-      connectedFolderId: connectedFolderSummary.id,
-      actor: { kind: "assistant", connectedFolderId: connectedFolderSummary.id },
-    }),
-    /already running/,
-    "experimental and stable tasks must share lifecycle id ownership",
-  );
-  assert.equal(kernel.finishTask(task.id), true);
-  assert.equal(kernel.finishTask(task.id), false);
-  assert.equal(JSON.stringify(await kernel.getTasks(actor)), before);
-});
-
 test("AmpleFileKernel capability queries expose the shared stable catalog snapshot", async () => {
   const root = join(process.cwd(), "kernel-capabilities", "root");
   const connectedFolderSummary = connectedFolder("space-6666666666666666", "Capabilities", root);
@@ -226,7 +182,7 @@ test("AmpleFileKernel capability queries expose the shared stable catalog snapsh
 test("AmpleFileKernel getGlance composes the actor-independent experimental digest", async () => {
   const root = join(process.cwd(), "kernel-overview", "root");
   const connectedFolderSummary = connectedFolder("space-7777777777777777", "Glance", root);
-  const taskClock = [new Date("2026-08-10T11:00:00.000Z"), new Date("2026-08-10T11:05:00.000Z")];
+  const taskClock = [new Date("2026-08-10T11:00:00.000Z")];
   const kernel = new AmpleFileKernel({
     ...connectedFolderDependencies([connectedFolderSummary]),
     now: () => taskClock.shift() ?? new Date("2026-08-10T12:00:00.000Z"),
@@ -265,11 +221,6 @@ test("AmpleFileKernel getGlance composes the actor-independent experimental dige
     conversationId: "chat-live",
     actor: { kind: "assistant", connectedFolderId: connectedFolderSummary.id, conversationId: "chat-live" },
   });
-  kernel.startExperimentalCheckRunTask({
-    id: "task-check",
-    connectedFolderId: connectedFolderSummary.id,
-    actor: { kind: "system", connectedFolderId: connectedFolderSummary.id },
-  });
   const tasksBefore = JSON.stringify(await kernel.getTasks({ kind: "system" }));
 
   const overview = await kernel.getOverview({ kind: "cli", connectedFolderId: `  ${connectedFolderSummary.id}  `, cwd: "  .  " });
@@ -278,8 +229,8 @@ test("AmpleFileKernel getGlance composes the actor-independent experimental dige
   assert.equal(overview.composedAt, "2026-08-10T12:00:00.000Z");
   assert.deepEqual(
     overview.running.map((item) => [item.id, item.kind]),
-    [["kernel-tasks:task-turn", "assistant-turn"], ["kernel-tasks:task-check", "check-run"]],
-    "the kernel's own registry feeds Running now, including the experimental check_run kind",
+    [["kernel-tasks:task-turn", "assistant-turn"]],
+    "the kernel's own registry feeds Running now",
   );
   assert.equal(overview.running[0].connectedFolderName, "Glance");
   assert.deepEqual(overview.changes.map((item) => item.id), [
@@ -304,7 +255,6 @@ test("AmpleFileKernel getGlance composes the actor-independent experimental dige
   );
 
   kernel.finishTask("task-turn");
-  kernel.finishTask("task-check");
   const settled = await kernel.getOverview({ kind: "system" });
   assert.deepEqual(settled.running, [], "finished tasks leave Running now");
 });

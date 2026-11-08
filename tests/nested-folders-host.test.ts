@@ -7,7 +7,6 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 import {
-  AmpleFileCliError,
   createAmpleFileCliRequest,
   executeAmpleFileCliRequest,
   type AmpleFileCliKernel,
@@ -32,7 +31,6 @@ test("connected-folders list --json names a nested Connected Folder's parent and
     },
     async listTasks() { return []; },
     async listCapabilities() { return []; },
-    async getChecksStatus() { throw new AmpleFileCliError("unavailable", "unavailable"); },
   };
   const result = await executeAmpleFileCliRequest(
     createAmpleFileCliRequest({ id: randomUUID(), argv: ["connected-folders", "list", "--json"], cwd: resolve(".") }),

@@ -89,30 +89,11 @@ export interface AmpleFileTaskInput {
 }
 
 /**
- * Experimental internal task shape for Checks dogfooding. It is deliberately
- * separate from AmpleFileTaskKind and must not enter the stable `amplefile.tasks` v1 projection.
- */
-export interface AmpleFileExperimentalCheckRunTaskInput {
-  id?: string;
-  connectedFolderId: string;
-  actor: AmpleFileActor;
-}
-
-export interface AmpleFileExperimentalCheckRunTask {
-  id: string;
-  kind: "check_run";
-  status: "running";
-  connectedFolderId: string;
-  actor: AmpleFileActor;
-  startedAt: string;
-}
-
-/**
  * Experimental internal task shape for one prepared-act execution: the
  * mutation a receipted verb that installs code, widens a power, or destroys
  * data performs through the prepared-act path (src/local/prepared-acts.ts,
- * docs/receipts-not-gates.md). Following the `check_run` precedent it is
- * deliberately separate from AmpleFileTaskKind and must not enter the stable
+ * docs/receipts-not-gates.md). It is deliberately separate from
+ * AmpleFileTaskKind and must not enter the stable
  * `amplefile.tasks` v1 projection. A Connected Folder id is present only when the
  * execution mutates one Connected Folder; Everywhere-scope and machine-scope
  * executions carry none.
@@ -140,7 +121,7 @@ export interface AmpleFileExperimentalPreparedActTask {
 
 /**
  * Experimental internal task shape for one automation run (docs/automations.md).
- * Following the `check_run` precedent it is deliberately separate from
+ * Like `prepared_act`, it is deliberately separate from
  * AmpleFileTaskKind and must not enter the stable `amplefile.tasks` v1
  * projection. An automation run is cross–Connected Folder glue, so it carries no
  * Connected Folder id; the overview
@@ -165,8 +146,8 @@ export interface AmpleFileExperimentalAutomationRunTask {
 
 /**
  * Experimental internal task shape for one running background job
- * (docs/background-jobs.md, F31). Following the `check_run` precedent it is
- * deliberately separate from AmpleFileTaskKind and must not enter the stable
+ * (docs/background-jobs.md, F31). Like `prepared_act`, it is deliberately
+ * separate from AmpleFileTaskKind and must not enter the stable
  * `amplefile.tasks` v1 projection; `jobs list` is its public read. The id is
  * the job id. A Connected Folder id is absent for the AmpleFile agent's own jobs.
  */
@@ -428,7 +409,6 @@ export class AmpleFileKernel {
   readonly #tasks = new Map<
     string,
     | AmpleFileTaskSnapshot
-    | AmpleFileExperimentalCheckRunTask
     | AmpleFileExperimentalPreparedActTask
     | AmpleFileExperimentalAutomationRunTask
     | AmpleFileExperimentalJobTask
@@ -501,7 +481,7 @@ export class AmpleFileKernel {
     const connectedFolderId = context?.connectedFolder?.id ?? null;
     const tasks = [...this.#tasks.values()]
       // Only the stable kinds enter the `work-fold.tasks` v1 projection; the
-      // experimental check_run and fold_act lifecycles stay internal.
+      // experimental prepared-act, automation-run, and job lifecycles stay internal.
       .filter((task): task is AmpleFileTaskSnapshot => task.kind === "assistant_turn" || task.kind === "compaction")
       .filter((task) => !scoped || task.connectedFolderId === connectedFolderId)
       .sort((left, right) => left.startedAt.localeCompare(right.startedAt) || left.id.localeCompare(right.id))
@@ -538,7 +518,7 @@ export class AmpleFileKernel {
    * with one clock reading. The digest sits above all Connected Folders: it never varies
    * by actor, and the actor is normalized only for interface consistency. The
    * experimental snapshot stays out of the stable `amplefile.tasks`/protocol
-   * v1 projections, following the `check_run` precedent, and the kernel stays
+   * v1 projections like the experimental task kinds, and the kernel stays
    * read-only here — it reads seen markers and never writes one.
    */
   async getOverview(actor: AmpleFileActor): Promise<AmpleFileOverviewSnapshot> {
@@ -610,9 +590,9 @@ export class AmpleFileKernel {
    *   there is no recorded evidence of such runs anywhere in-process, and
    *   this half of the rule stays honestly inactive.
    *
-   * The experimental method follows the `check_run` precedent: it is not part
-   * of the stable snapshot surface, and turn/compaction/Check-run
-   * fencing stays with the act facade's own live route state.
+   * The experimental method is not part of the stable snapshot surface, and
+   * turn and compaction fencing stays with the act facade's own live route
+   * state.
    */
   async listExperimentalHistoryRestoreBlockers(connectedFolderId: string): Promise<string[]> {
     const targetConnectedFolderId = connectedFolderId.trim();
@@ -663,20 +643,20 @@ export class AmpleFileKernel {
 
   #overviewTaskRecords(): AmpleFileOverviewTaskRecord[] {
     // The overview's running-task vocabulary is closed (assistant_turn,
-    // compaction, check_run). A running fold_act execution is deliberately
+    // compaction). A running fold_act execution is deliberately
     // not projected: the act's receipt reaches the overview through the
     // act-receipts source, and the execution itself is a short internal step
     // between the accepted and terminal lines. A routing_run task is likewise
     // excluded: automation runs reach the overview through their own receipts
     // source, and this internal task carries no Connected Folder id to render.
     return [...this.#tasks.values()]
-      .filter((task): task is AmpleFileTaskSnapshot | AmpleFileExperimentalCheckRunTask =>
-        task.kind === "assistant_turn" || task.kind === "compaction" || task.kind === "check_run")
+      .filter((task): task is AmpleFileTaskSnapshot =>
+        task.kind === "assistant_turn" || task.kind === "compaction")
       .map((task) => ({
         id: task.id,
         kind: task.kind,
         connectedFolderId: task.connectedFolderId,
-        ...(task.kind !== "check_run" && task.conversationId ? { conversationId: task.conversationId } : {}),
+        ...(task.conversationId ? { conversationId: task.conversationId } : {}),
         startedAt: task.startedAt,
       }));
   }
@@ -698,28 +678,6 @@ export class AmpleFileKernel {
     };
     this.#tasks.set(task.id, task);
     return copyTask(task);
-  }
-
-  /**
-   * Starts a Check run in the shared internal lifecycle without promoting the
-   * experimental kind into the stable `amplefile.tasks` v1 projection.
-   */
-  startExperimentalCheckRunTask(input: AmpleFileExperimentalCheckRunTaskInput): AmpleFileExperimentalCheckRunTask {
-    const id = input.id?.trim() || this.#createTaskId();
-    if (!id) throw new Error("A task id is required.");
-    if (this.#tasks.has(id)) throw new Error(`A task with this id is already running: ${id}`);
-    const connectedFolderId = input.connectedFolderId.trim();
-    if (!connectedFolderId) throw new Error("A task needs a Connected Folder id.");
-    const task: AmpleFileExperimentalCheckRunTask = {
-      id,
-      kind: "check_run",
-      status: "running",
-      connectedFolderId,
-      actor: normalizeActor(input.actor),
-      startedAt: this.#now().toISOString(),
-    };
-    this.#tasks.set(task.id, task);
-    return copyExperimentalCheckRunTask(task);
   }
 
   /**
@@ -1018,10 +976,6 @@ function withParentConnectedFolderIds(connectedFolders: AmpleFileConnectedFolder
 }
 
 function copyTask(task: AmpleFileTaskSnapshot): AmpleFileTaskSnapshot {
-  return { ...task, actor: { ...task.actor } };
-}
-
-function copyExperimentalCheckRunTask(task: AmpleFileExperimentalCheckRunTask): AmpleFileExperimentalCheckRunTask {
   return { ...task, actor: { ...task.actor } };
 }
 

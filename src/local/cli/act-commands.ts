@@ -6,17 +6,11 @@ import type { HistoryFileComparison, HistoryFileRead } from "../../shared/histor
 import type {
   AmpleFileActChatLifecycleState,
   AmpleFileActChatMessage,
-  AmpleFileActCheckTaskStatus,
   AmpleFileActCheckpointSummary,
   AmpleFileActConversationRef,
   AmpleFileActFacade,
   AmpleFileActFileVersionRef,
 } from "./act-facade.js";
-import type {
-  AmpleFileCheckDecisionKind,
-  AmpleFileCheckEvidence,
-  AmpleFileCheckFinding,
-} from "../checks/check-types.js";
 import type { AmpleFileCliActRequest } from "./act-protocol.js";
 import type { AmpleFileCliActReceipts, AmpleFileCliActUndoRef } from "./act-receipts.js";
 import { maximumWorkerInstructionsLength } from "../agent/model-preferences.js";
@@ -68,16 +62,6 @@ export type AmpleFileCliActCommandName =
   | "agent.stop"
   | "agent.list"
   | "agent.overview"
-  | "checks.propose-fix"
-  | "checks.propose"
-  | "checks.enable"
-  | "checks.disable"
-  | "checks.run"
-  | "checks.task"
-  | "checks.result"
-  | "checks.abort"
-  | "checks.problems"
-  | "checks.decide"
   | "history.list"
   | "history.save"
   | "history.restore"
@@ -181,9 +165,6 @@ export interface AmpleFileCliActParsedCommand {
   proposalPath?: string;
   /** `connected-folders appearance apply` without a proposal: just these parts change. */
   appearanceParts?: { bannerImagePath?: string; icon?: string; color?: string };
-  check?: string;
-  finding?: string;
-  decision?: AmpleFileCheckDecisionKind;
   until?: string;
   /** New Chat title for chat.rename. */
   title?: string;
@@ -212,7 +193,7 @@ export interface AmpleFileCliActParsedCommand {
   resourceKind?: "extensions" | "skills" | "prompts" | "themes";
   catalogId?: string;
   source?: string;
-  /** Restricted-app proposal id (apps.* commands; checks enable carries proposalPath instead). */
+  /** Restricted-app proposal id (apps.* commands). */
   proposal?: string;
   /** Connected Folder–relative packaged-app path for apps.install-preview. */
   packagePath?: string;
@@ -321,12 +302,11 @@ const maxActResultMessages = 100_000;
 const maxActPathLength = 4_096;
 /** Mirrors `maxQueryLength` in src/local/search.ts so parse and service refuse together. */
 const maxActSearchQueryLength = 64 * 1024;
-const maxChecksCliIdLength = 256;
+const maxActIdLength = 256;
 /** Matches the app runtime's own invocation bound (desktop/src/restricted-app-host.ts). */
 const maxActToolInputBytes = 16 * 1024 * 1024;
 /** Terminal output stays readable; --json always carries the whole result. */
 const maxHumanToolResultLength = 4_096;
-const maxChecksProposalPathLength = 4_096;
 
 const cliControlCharacters = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u;
 
@@ -372,9 +352,6 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     "--attach",
     "--to",
     "--proposal",
-    "--check",
-    "--finding",
-    "--decision",
     "--until",
     "--title",
     "--label",
@@ -567,7 +544,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
       if (!allowed.has(name)) throw usageError(`${name} cannot be used with '${command}'.`);
     }
   };
-  const requireBoundedFlag = (name: string, label: string, maximumLength = maxChecksCliIdLength): string => {
+  const requireBoundedFlag = (name: string, label: string, maximumLength = maxActIdLength): string => {
     const value = stringFlag(name)?.trim();
     if (!value) throw usageError(`Provide ${name} <${label}>.`);
     if (value.length > maximumLength) throw usageError(`${name} must be at most ${maximumLength} characters.`);
@@ -576,7 +553,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     }
     return value;
   };
-  const optionalBoundedFlag = (name: string, label: string, maximumLength = maxChecksCliIdLength): string | undefined =>
+  const optionalBoundedFlag = (name: string, label: string, maximumLength = maxActIdLength): string | undefined =>
     stringFlag(name) === undefined ? undefined : requireBoundedFlag(name, label, maximumLength);
   const optionalInteger = (name: string, minimum: number, maximum: number): number | undefined => {
     const text = stringFlag(name); if (text === undefined) return undefined;
@@ -642,7 +619,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
   /**
    * `--data` is either inline JSON or `@<path>`. The file form defers the
    * read to the host, which resolves it against the directory the command ran
-   * in — the same shape as `checks enable --proposal`. It is not a
+   * in — the same shape as `automations enable --proposal`. It is not a
    * convenience: one act argument caps well below the envelope's own data
    * limit, so anything sizeable has to arrive as a file.
    */
@@ -1021,106 +998,10 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     }
     case "chat wait":
     case "agent wait":
-    case "checks wait":
       // The wait is a shim-side poll on purpose: a host-side blocking wait
       // would hold the broker request open past its timeout. The current
       // shim also settles when the task is waiting on an answer (F28).
       throw usageError(`${command} runs inside the AmpleFile shim; update the installed AmpleFile CLI (it now settles on a waiting task too).`);
-    case "checks propose-fix":
-    case "checks propose":
-    case "checks enable":
-      allowOnlyFlags("--connected-folder", "--proposal");
-      return {
-        name: command === "checks propose-fix" ? "checks.propose-fix" : command === "checks propose" ? "checks.propose" : "checks.enable",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        proposalPath: requireBoundedFlag("--proposal", "proposal-path", maxChecksProposalPathLength),
-      };
-    case "checks disable":
-      allowOnlyFlags("--connected-folder", "--check");
-      return {
-        name: "checks.disable",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        check: requireBoundedFlag("--check", "check-id"),
-      };
-    case "checks run": {
-      allowOnlyFlags("--connected-folder", "--check");
-      const check = stringFlag("--check") === undefined
-        ? undefined
-        : requireBoundedFlag("--check", "check-id");
-      return {
-        name: "checks.run",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        ...(check ? { check } : {}),
-      };
-    }
-    case "checks task":
-      allowOnlyFlags("--connected-folder", "--task");
-      return {
-        name: "checks.task",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        task: requireBoundedFlag("--task", "task-id"),
-      };
-    case "checks result":
-      allowOnlyFlags("--connected-folder", "--task");
-      return {
-        name: "checks.result",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        task: requireBoundedFlag("--task", "task-id"),
-      };
-    case "checks abort":
-      allowOnlyFlags("--connected-folder", "--task");
-      return {
-        name: "checks.abort",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        task: requireBoundedFlag("--task", "task-id"),
-      };
-    case "checks problems": {
-      allowOnlyFlags("--connected-folder", "--check");
-      const check = stringFlag("--check") === undefined
-        ? undefined
-        : requireBoundedFlag("--check", "check-id");
-      return {
-        name: "checks.problems",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        ...(check ? { check } : {}),
-      };
-    }
-    case "checks decide": {
-      allowOnlyFlags("--connected-folder", "--finding", "--decision", "--until");
-      const finding = requireBoundedFlag("--finding", "finding-id");
-      const rawDecision = requireBoundedFlag("--decision", "accept|reject|resolve|defer");
-      if (!(["accept", "reject", "resolve", "defer"] as const).includes(rawDecision as AmpleFileCheckDecisionKind)) {
-        throw usageError("--decision must be accept, reject, resolve, or defer.");
-      }
-      const decision = rawDecision as AmpleFileCheckDecisionKind;
-      const rawUntil = stringFlag("--until")?.trim();
-      if (decision !== "defer" && rawUntil !== undefined) {
-        throw usageError("--until may be used only with --decision defer.");
-      }
-      if (decision === "defer" && !rawUntil) {
-        throw usageError("--decision defer requires --until <ISO-timestamp>.");
-      }
-      let until: string | undefined;
-      if (rawUntil !== undefined) {
-        if (!Number.isFinite(Date.parse(rawUntil))) throw usageError("--until must be an ISO timestamp.");
-        until = new Date(rawUntil).toISOString();
-      }
-      return {
-        name: "checks.decide",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        finding,
-        decision,
-        ...(until ? { until } : {}),
-      };
-    }
     case "agent send": {
       allowOnlyFlags("--conversation", "--new", "--message", "--message-from-payload");
       const newConversation = flags.get("--new") === true;
@@ -1319,7 +1200,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
       };
     case "connected-folders appearance apply": {
       // File-borne input: the typed proposal passes as a path resolved
-      // host-side, the same pattern as `checks enable --proposal`. Or name
+      // host-side, the same pattern as `automations enable --proposal`. Or name
       // just the parts to change; the image is read and encoded host-side.
       allowOnlyFlags("--connected-folder", "--proposal", "--banner-image", "--icon", "--color", "--parent-task");
       const proposalPath = optionalBoundedFlag("--proposal", "proposal-path", maxActPathLength);
@@ -1654,7 +1535,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "apps project declare":
-      // Same file-borne pattern as `checks enable --proposal`: the typed
+      // Same file-borne pattern as `automations enable --proposal`: the typed
       // presentation file passes as a path resolved host-side.
       allowOnlyFlags("--connected-folder", "--presentation", "--parent-task");
       return {
@@ -1732,7 +1613,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     case "automations enable":
       // Automations are above Connected Folders (docs/automations.md): no
       // --connected-folder, like the agent group. The inert typed proposal passes as
-      // a path resolved host-side, the same pattern as `checks enable --proposal`.
+      // a path resolved host-side, the same pattern as `connected-folders appearance apply --proposal`.
       allowOnlyFlags("--proposal", "--parent-task");
       return {
         name: "automations.enable",
@@ -2097,7 +1978,7 @@ async function runActCommand(
         : toJson(await facade.conversationStatus({ connectedFolder: command.connectedFolder!, conversationId: command.conversation! }));
     case "chat.result":
       return command.task
-        ? toChecksJson(await facade.turnResult({ connectedFolder: command.connectedFolder!, taskId: command.task }))
+        ? toTerminalSafeJson(await facade.turnResult({ connectedFolder: command.connectedFolder!, taskId: command.task }))
         : toJson(await facade.conversationResult({
             connectedFolder: command.connectedFolder!,
             conversationId: command.conversation!,
@@ -2109,7 +1990,7 @@ async function runActCommand(
     // Their results carry person content — summaries, questions, answers —
     // so they pass through the same bounding sanitizer as the overview.
     case "chat.report":
-      return toChecksJson(await facade.chatReport({
+      return toTerminalSafeJson(await facade.chatReport({
         connectedFolder: command.connectedFolder!,
         taskId: command.task!,
         summary: command.summary!,
@@ -2121,7 +2002,7 @@ async function runActCommand(
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "agent.ask":
-      return toChecksJson(await facade.agentAsk({
+      return toTerminalSafeJson(await facade.agentAsk({
         taskId: command.task!,
         question: command.question!,
         ...(command.options?.length ? { options: command.options } : {}),
@@ -2130,16 +2011,16 @@ async function runActCommand(
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "agent.answer":
-      return toChecksJson(await facade.agentAnswer({
+      return toTerminalSafeJson(await facade.agentAnswer({
         questionId: command.questionId!,
         answer: command.answer!,
         requestId: request.id,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "chat.children":
-      return toChecksJson(await facade.chatChildren({ connectedFolder: command.connectedFolder!, taskId: command.task! }));
+      return toTerminalSafeJson(await facade.chatChildren({ connectedFolder: command.connectedFolder!, taskId: command.task! }));
     case "chat.ask":
-      return toChecksJson(await facade.chatAsk({
+      return toTerminalSafeJson(await facade.chatAsk({
         connectedFolder: command.connectedFolder!,
         taskId: command.task!,
         question: command.question!,
@@ -2150,7 +2031,7 @@ async function runActCommand(
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "chat.answer":
-      return toChecksJson(await facade.chatAnswer({
+      return toTerminalSafeJson(await facade.chatAnswer({
         connectedFolder: command.connectedFolder!,
         questionId: command.questionId!,
         answer: command.answer!,
@@ -2159,7 +2040,7 @@ async function runActCommand(
       }));
     case "chat.handoff": {
       const content = command.messageFromPayload ? request.payload?.messageFile ?? "" : command.message ?? "";
-      return toChecksJson(await facade.chatHandoff({
+      return toTerminalSafeJson(await facade.chatHandoff({
         connectedFolder: command.connectedFolder!,
         taskId: command.task!,
         toConnectedFolder: command.toConnectedFolder!,
@@ -2172,7 +2053,7 @@ async function runActCommand(
     }
     case "chat.steer": {
       const content = command.messageFromPayload ? request.payload?.messageFile ?? "" : command.message ?? "";
-      return toChecksJson(await facade.chatSteer({
+      return toTerminalSafeJson(await facade.chatSteer({
         connectedFolder: command.connectedFolder!,
         conversationId: command.conversation!,
         message: content,
@@ -2183,7 +2064,7 @@ async function runActCommand(
     }
     case "chat.copy": {
       const content = command.messageFromPayload ? request.payload?.messageFile ?? "" : command.message;
-      return toChecksJson(await facade.chatCopy({
+      return toTerminalSafeJson(await facade.chatCopy({
         connectedFolder: command.connectedFolder!,
         conversationId: command.conversation!,
         ...(content !== undefined ? { message: content } : {}),
@@ -2194,12 +2075,12 @@ async function runActCommand(
       }));
     }
     case "requests.list":
-      return toChecksJson(await facade.requestsList({ cwd: request.cwd }));
+      return toTerminalSafeJson(await facade.requestsList({ cwd: request.cwd }));
     case "requests.show":
-      return toChecksJson(await facade.requestsShow({ request: command.request!, cwd: request.cwd }));
+      return toTerminalSafeJson(await facade.requestsShow({ request: command.request!, cwd: request.cwd }));
     // Background jobs carry commands and output text: the content sanitizer applies.
     case "jobs.start":
-      return toChecksJson(await facade.jobsStart({
+      return toTerminalSafeJson(await facade.jobsStart({
         connectedFolder: command.connectedFolder!,
         taskId: command.task!,
         command: command.jobCommand ?? "",
@@ -2211,15 +2092,15 @@ async function runActCommand(
         requestId: request.id,
       }));
     case "jobs.list":
-      return toChecksJson(await facade.jobsList({
+      return toTerminalSafeJson(await facade.jobsList({
         connectedFolder: command.connectedFolder!,
         ...(command.conversation ? { conversationId: command.conversation } : {}),
         ...(command.running ? { running: true } : {}),
       }));
     case "jobs.show":
-      return toChecksJson(await facade.jobsShow({ connectedFolder: command.connectedFolder!, jobId: command.job! }));
+      return toTerminalSafeJson(await facade.jobsShow({ connectedFolder: command.connectedFolder!, jobId: command.job! }));
     case "jobs.output":
-      return toChecksJson(await facade.jobsOutput({
+      return toTerminalSafeJson(await facade.jobsOutput({
         connectedFolder: command.connectedFolder!,
         jobId: command.job!,
         ...(command.offset !== undefined ? { offset: command.offset } : {}),
@@ -2229,11 +2110,11 @@ async function runActCommand(
         ...(command.task ? { taskId: command.task } : {}),
       }));
     case "worktrees.manage":
-      return toChecksJson(await facade.worktreesManage({ connectedFolder: command.connectedFolder!, taskId: command.task!, action: command.worktreeAction!, ...(command.worktreeId ? { id: command.worktreeId } : {}), ...(command.worktreeRef ? { ref: command.worktreeRef } : {}) }));
+      return toTerminalSafeJson(await facade.worktreesManage({ connectedFolder: command.connectedFolder!, taskId: command.task!, action: command.worktreeAction!, ...(command.worktreeId ? { id: command.worktreeId } : {}), ...(command.worktreeRef ? { ref: command.worktreeRef } : {}) }));
     case "jobs.input":
-      return toChecksJson(await facade.jobsInput({ connectedFolder: command.connectedFolder!, taskId: command.task!, jobId: command.job!, text: command.terminalText!, ...(command.eof ? { eof: true } : {}) }));
+      return toTerminalSafeJson(await facade.jobsInput({ connectedFolder: command.connectedFolder!, taskId: command.task!, jobId: command.job!, text: command.terminalText!, ...(command.eof ? { eof: true } : {}) }));
     case "jobs.stop":
-      return toChecksJson(await facade.jobsStop({
+      return toTerminalSafeJson(await facade.jobsStop({
         connectedFolder: command.connectedFolder!,
         jobId: command.job!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
@@ -2261,7 +2142,7 @@ async function runActCommand(
           }));
     case "agent.result":
       return command.task
-        ? toChecksJson(await facade.agentTurnResult({ taskId: command.task }))
+        ? toTerminalSafeJson(await facade.agentTurnResult({ taskId: command.task }))
         : toJson(await facade.agentConversationResult({
             ...(command.conversation ? { conversationId: command.conversation } : {}),
             ...(command.messages !== undefined ? { messages: command.messages } : {}),
@@ -2274,56 +2155,9 @@ async function runActCommand(
       return toJson(await facade.agentList());
     case "agent.overview":
       // The overview headlines carry person content (chat titles, labels), so
-      // the snapshot passes through the same bounding sanitizer as Check
-      // output before it reaches a terminal.
-      return toChecksJson(await facade.agentOverview());
-    case "checks.propose-fix":
-      return toChecksJson(await facade.checksProposeFix({ connectedFolder: command.connectedFolder!, proposalPath: command.proposalPath!, cwd: request.cwd }));
-    case "checks.propose":
-    case "checks.enable":
-      return toChecksJson(await facade.checksEnable({
-        connectedFolder: command.connectedFolder!,
-        proposalPath: command.proposalPath!,
-        cwd: request.cwd,
-        ...(command.name === "checks.propose" ? { proposeOnly: true } : {}),
-      }));
-    case "checks.disable":
-      return toChecksJson(await facade.checksDisable({
-        connectedFolder: command.connectedFolder!,
-        checkId: command.check!,
-      }));
-    case "checks.run":
-      return toChecksJson(await facade.checksRun({
-        connectedFolder: command.connectedFolder!,
-        ...(command.check ? { checkId: command.check } : {}),
-      }));
-    case "checks.task":
-      return toChecksJson(await facade.checksTask({
-        connectedFolder: command.connectedFolder!,
-        taskId: command.task!,
-      }));
-    case "checks.result":
-      return projectChecksResult(await facade.checksResult({
-        connectedFolder: command.connectedFolder!,
-        taskId: command.task!,
-      }));
-    case "checks.abort":
-      return toChecksJson(await facade.checksAbort({
-        connectedFolder: command.connectedFolder!,
-        taskId: command.task!,
-      }));
-    case "checks.problems":
-      return projectChecksProblems(await facade.checksProblems({
-        connectedFolder: command.connectedFolder!,
-        ...(command.check ? { checkId: command.check } : {}),
-      }));
-    case "checks.decide":
-      return toChecksJson(await facade.checksDecide({
-        connectedFolder: command.connectedFolder!,
-        findingId: command.finding!,
-        decision: command.decision!,
-        ...(command.until ? { deferUntil: command.until } : {}),
-      }));
+      // the snapshot passes through the terminal-safe sanitizer before it
+      // reaches a terminal.
+      return toTerminalSafeJson(await facade.agentOverview());
     case "connected-folders.create":
       return toJson(await facade.createConnectedFolder({
         name: command.connectedFolderName!,
@@ -2595,7 +2429,7 @@ async function runActCommand(
       // purge through the prepared-act path and never reaches the
       // retain-only uninstall method.
       if (command.disposition === "purge-data") {
-        return toChecksJson(await facade.appsUninstallPurge({
+        return toTerminalSafeJson(await facade.appsUninstallPurge({
           connectedFolder: command.connectedFolder!,
           instance: command.instance!,
           ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
@@ -2614,13 +2448,13 @@ async function runActCommand(
     // titles, names). `request.id` is the journaled identity the act runs
     // under.
     case "connected-folders.delete":
-      return toChecksJson(await facade.connectedFoldersDelete({
+      return toTerminalSafeJson(await facade.connectedFoldersDelete({
         connectedFolder: command.connectedFolder!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
     case "tools.import-skill":
-      return toChecksJson(await facade.toolsImportSkill({
+      return toTerminalSafeJson(await facade.toolsImportSkill({
         scope: command.toolsScope!,
         ...(command.connectedFolder ? { connectedFolder: command.connectedFolder } : {}),
         from: command.fromPaths![0]!,
@@ -2629,7 +2463,7 @@ async function runActCommand(
         requestId: request.id,
       }));
     case "tools.install":
-      return toChecksJson(await facade.toolsInstall({
+      return toTerminalSafeJson(await facade.toolsInstall({
         scope: command.toolsScope!,
         ...(command.connectedFolder ? { connectedFolder: command.connectedFolder } : {}),
         ...(command.catalogId !== undefined ? { catalogId: command.catalogId } : {}),
@@ -2639,13 +2473,13 @@ async function runActCommand(
       }));
     case "tools.enable":
     case "tools.disable":
-      return toChecksJson(await facade.toolsSetEnabled({
+      return toTerminalSafeJson(await facade.toolsSetEnabled({
         scope: command.toolsScope!, ...(command.connectedFolder ? { connectedFolder: command.connectedFolder } : {}),
         path: command.path!, kind: command.resourceKind!, enabled: command.name === "tools.enable",
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}), requestId: request.id,
       }));
     case "tools.update":
-      return toChecksJson(await facade.toolsUpdate({
+      return toTerminalSafeJson(await facade.toolsUpdate({
         scope: command.toolsScope!,
         ...(command.connectedFolder ? { connectedFolder: command.connectedFolder } : {}),
         source: command.source!,
@@ -2653,7 +2487,7 @@ async function runActCommand(
         requestId: request.id,
       }));
     case "apps.install-proposal":
-      return toChecksJson(await facade.appsInstallProposal({
+      return toTerminalSafeJson(await facade.appsInstallProposal({
         connectedFolder: command.connectedFolder!,
         conversationId: command.conversation!,
         proposal: command.proposal!,
@@ -2661,7 +2495,7 @@ async function runActCommand(
         requestId: request.id,
       }));
     case "apps.grant":
-      return toChecksJson(await facade.appsGrant({
+      return toTerminalSafeJson(await facade.appsGrant({
         connectedFolder: command.connectedFolder!,
         app: command.app!,
         digest: command.digest!,
@@ -2672,7 +2506,7 @@ async function runActCommand(
         requestId: request.id,
       }));
     case "apps.connect":
-      return toChecksJson(await facade.appsConnect({
+      return toTerminalSafeJson(await facade.appsConnect({
         connectedFolder: command.connectedFolder!,
         app: command.app!,
         destination: command.destination!,
@@ -2680,7 +2514,7 @@ async function runActCommand(
         requestId: request.id,
       }));
     case "apps.automation.enable":
-      return toChecksJson(await facade.appsAutomationEnable({
+      return toTerminalSafeJson(await facade.appsAutomationEnable({
         connectedFolder: command.connectedFolder!,
         app: command.app!,
         automation: command.automation!,
@@ -2688,21 +2522,21 @@ async function runActCommand(
         requestId: request.id,
       }));
     case "apps.storage.clear":
-      return toChecksJson(await facade.appsStorageClear({
+      return toTerminalSafeJson(await facade.appsStorageClear({
         connectedFolder: command.connectedFolder!,
         app: command.app!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
     case "apps.retained.purge":
-      return toChecksJson(await facade.appsRetainedPurge({
+      return toTerminalSafeJson(await facade.appsRetainedPurge({
         connectedFolder: command.connectedFolder!,
         retained: command.retained!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
     case "automations.enable":
-      return toChecksJson(await facade.automationsEnable({
+      return toTerminalSafeJson(await facade.automationsEnable({
         proposalPath: command.proposalPath!,
         cwd: request.cwd,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
@@ -2712,7 +2546,7 @@ async function runActCommand(
       // The host creates the review record over the named package and installs
       // it through the same `app.review.install` kind a Chat proposal uses —
       // the closed act vocabulary gains nothing.
-      return toChecksJson(await facade.appsInstallPreview({
+      return toTerminalSafeJson(await facade.appsInstallPreview({
         connectedFolder: command.connectedFolder!,
         packagePath: command.packagePath!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
@@ -2722,125 +2556,46 @@ async function runActCommand(
     // content-bearing results pass the bounding sanitizer. Run-now carries the
     // act request id into the run's own journal as its trigger cause.
     case "recently-deleted.list":
-      return toChecksJson(await facade.recentlyDeletedList());
+      return toTerminalSafeJson(await facade.recentlyDeletedList());
     case "recently-deleted.restore":
-      return toChecksJson(await facade.recentlyDeletedRestore({
+      return toTerminalSafeJson(await facade.recentlyDeletedRestore({
         entry: command.entry!,
         ...(command.toPath ? { toPath: command.toPath } : {}),
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
     case "automations.list":
-      return toChecksJson(await facade.automationsList());
+      return toTerminalSafeJson(await facade.automationsList());
     case "automations.models":
-      return toChecksJson(await facade.automationsModels());
+      return toTerminalSafeJson(await facade.automationsModels());
     case "automations.show":
-      return toChecksJson(await facade.automationsShow({ automation: command.automation! }));
+      return toTerminalSafeJson(await facade.automationsShow({ automation: command.automation! }));
     case "automations.run":
-      return toChecksJson(await facade.automationsRun({
+      return toTerminalSafeJson(await facade.automationsRun({
         automation: command.automation!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
     case "automations.stop":
-      return toChecksJson(await facade.automationsStop({
+      return toTerminalSafeJson(await facade.automationsStop({
         automation: command.automation!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "automations.disable":
-      return toChecksJson(await facade.automationsDisable({
+      return toTerminalSafeJson(await facade.automationsDisable({
         automation: command.automation!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "automations.delete":
-      return toChecksJson(await facade.automationsDelete({
+      return toTerminalSafeJson(await facade.automationsDelete({
         automation: command.automation!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     case "automations.receipts":
-      return toChecksJson(await facade.automationsReceipts({
+      return toTerminalSafeJson(await facade.automationsReceipts({
         ...(command.automation ? { automation: command.automation } : {}),
       }));
   }
-}
-
-function projectChecksResult(
-  value: Awaited<ReturnType<AmpleFileActFacade["checksResult"]>>,
-): AmpleFileCliJson {
-  const { run } = value;
-  const findings = run.findings.map(projectCheckFinding);
-  return toChecksJson({
-    connectedFolder: value.connectedFolder,
-    run: {
-      id: run.id,
-      taskId: run.taskId,
-      checkIds: run.checkIds,
-      startedAt: run.startedAt,
-      ...(run.endedAt ? { endedAt: run.endedAt } : {}),
-      state: run.state,
-      authorities: run.authorities,
-      limits: run.limits,
-      inputs: run.inputs,
-      findings,
-      findingCount: run.findings.length,
-      findingsReturned: findings.length,
-      findingsTruncated: run.findings.length > findings.length,
-      admittedCount: run.admittedCount,
-      discardedCount: run.discardedCount,
-      skippedCount: run.skippedCount,
-      ...(run.error ? { error: run.error } : {}),
-      ...(run.cost ? { cost: run.cost } : {}),
-    },
-  });
-}
-
-function projectChecksProblems(
-  value: Awaited<ReturnType<AmpleFileActFacade["checksProblems"]>>,
-): AmpleFileCliJson {
-  const findings = value.findings.map(projectCheckFinding);
-  const healthErrors = value.healthErrors;
-  return toChecksJson({
-    connectedFolder: value.connectedFolder,
-    ...(value.checkId ? { checkId: value.checkId } : {}),
-    findings,
-    findingCount: value.findings.length,
-    findingsReturned: findings.length,
-    findingsTruncated: value.truncated || value.findings.length > findings.length,
-    sourceTruncated: value.truncated,
-    invalidated: value.invalidated,
-    healthErrors,
-    healthErrorCount: value.healthErrors.length,
-    healthErrorsTruncated: value.healthErrors.length > healthErrors.length,
-  });
-}
-
-function projectCheckFinding(finding: AmpleFileCheckFinding): Record<string, unknown> {
-  return {
-    id: finding.id,
-    fingerprint: finding.fingerprint,
-    checkId: finding.checkId,
-    declarationDigest: finding.declarationDigest,
-    sensorId: finding.sensorId,
-    sensorRevision: finding.sensorRevision,
-    severity: finding.severity,
-    observedAt: finding.observedAt,
-    status: finding.status,
-    title: finding.title,
-    targetPath: finding.targetPath,
-    evidence: finding.evidence.slice(0, 16).map(projectCheckEvidence),
-    ...(finding.detail ? { detail: finding.detail } : {}),
-    ...(finding.remediation ? { remediation: finding.remediation } : {}),
-    ...(finding.invalidatedAt ? { invalidatedAt: finding.invalidatedAt } : {}),
-    ...(finding.invalidationReason ? { invalidationReason: finding.invalidationReason } : {}),
-  };
-}
-
-function projectCheckEvidence(evidence: AmpleFileCheckEvidence): AmpleFileCliJson {
-  return sanitizeChecksJson(evidence);
-}
-
-function toChecksJson(value: unknown): AmpleFileCliJson {
-  return sanitizeChecksJson(value);
 }
 
 /**
@@ -2850,17 +2605,17 @@ function toChecksJson(value: unknown): AmpleFileCliJson {
  * agent reading a result gets all of it. The depth guard only stops a cyclic
  * or pathological structure from recursing without end.
  */
-function sanitizeChecksJson(value: unknown, depth = 0): AmpleFileCliJson {
+function toTerminalSafeJson(value: unknown, depth = 0): AmpleFileCliJson {
   if (value === null || typeof value === "boolean") return value;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value === "string") return terminalText(value);
   if (depth >= 256) return "[nested output omitted]";
-  if (Array.isArray(value)) return value.map((item) => sanitizeChecksJson(item, depth + 1));
+  if (Array.isArray(value)) return value.map((item) => toTerminalSafeJson(item, depth + 1));
   if (typeof value === "object") {
     const output: Record<string, AmpleFileCliJson> = {};
     for (const [key, item] of Object.entries(value)) {
       if (item === undefined || typeof item === "function" || typeof item === "symbol") continue;
-      output[terminalText(key)] = sanitizeChecksJson(item, depth + 1);
+      output[terminalText(key)] = toTerminalSafeJson(item, depth + 1);
     }
     return output;
   }
@@ -2881,7 +2636,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
     conversation?: AmpleFileActConversationRef;
     conversations?: AmpleFileActConversationRef[];
     messages?: AmpleFileActChatMessage[];
-    task?: AmpleFileActCheckTaskStatus;
+    task?: { taskId?: string };
   };
   const connectedFolderLabel = record.connectedFolder ? `${terminalText(record.connectedFolder.name)} [${terminalText(record.connectedFolder.id)}]` : "";
   switch (agentRenderAliases[name] ?? name) {
@@ -3022,8 +2777,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
         running?: Array<{ headline?: string; connectedFolderName?: string }>;
         needsYou?: Array<{ headline?: string; connectedFolderName?: string }>;
         changes?: Array<{ headline?: string; connectedFolderName?: string }>;
-        checks?: Array<{ connectedFolderName?: string; state?: string; needsAttention?: number }>;
-        truncated?: { running?: boolean; needsYou?: boolean; changes?: boolean; checks?: boolean };
+        truncated?: { running?: boolean; needsYou?: boolean; changes?: boolean };
         unavailable?: string[];
       };
       const item = (entry: { headline?: string; connectedFolderName?: string }): string =>
@@ -3042,16 +2796,6 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
         ...section("Needs you", snapshot.needsYou, snapshot.truncated?.needsYou, "nothing waiting on you"),
         ...section("Since you last looked", snapshot.changes, snapshot.truncated?.changes, "no recorded changes"),
       ];
-      const checks = snapshot.checks ?? [];
-      if (checks.length) {
-        lines.push(`Checks${snapshot.truncated?.checks ? " (more omitted)" : ""}:`);
-        for (const row of checks) {
-          const attention = typeof row.needsAttention === "number" && row.needsAttention > 0
-            ? ` — ${row.needsAttention} finding${row.needsAttention === 1 ? "" : "s"} need attention`
-            : "";
-          lines.push(`- ${terminalText(row.connectedFolderName)}: ${terminalText(row.state)}${attention}`);
-        }
-      }
       const unavailable = snapshot.unavailable ?? [];
       if (unavailable.length) {
         lines.push(`Unavailable sources this composition: ${unavailable.map(terminalText).join(", ")}.`);
@@ -3075,84 +2819,6 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
         const lifecycle = item.archivedAt ? " (archived)" : item.snoozedUntil ? " (snoozed)" : "";
         return `- ${terminalText(item.title)} [${terminalText(item.id)}]${lifecycle}`;
       }).join("\n")}\n`;
-    }
-    case "checks.propose":
-    case "checks.enable": {
-      const check = record.check as { id?: string; title?: string; trigger?: string; targets?: Array<Record<string, AmpleFileCliJson>> } | undefined;
-      const targets = check?.targets ?? [];
-      const scope = targets.slice(0, 64).map((target) => {
-        const membership = target.kind === "tree"
-          ? ` (${target.recursive ? "recursive" : "one level"}; ${(Array.isArray(target.extensions) ? target.extensions : []).map(terminalText).join(", ")})`
-          : "";
-        return `- ${terminalText(target.role)} ${terminalText(target.kind)}: ${terminalText(target.path)}${membership}`;
-      });
-      return `${name === "checks.propose" ? "Proposed" : "Enabled"} Check ${terminalText(check?.title)} [${terminalText(check?.id)}] in ${connectedFolderLabel}.\nTrigger: ${terminalText(check?.trigger)}\n${scope.join("\n")}\n`;
-    }
-    case "checks.disable":
-      return record.disabled
-        ? `Disabled Check ${terminalText(record.checkId)} in ${connectedFolderLabel}.\n`
-        : `Check ${terminalText(record.checkId)} was not enabled in ${connectedFolderLabel}.\n`;
-    case "checks.run": {
-      const checkIds = Array.isArray(record.checkIds) ? record.checkIds : [];
-      return `Accepted Check run ${terminalText(record.runId)}, task ${terminalText(record.taskId)} (${checkIds.length} Check${checkIds.length === 1 ? "" : "s"}) in ${connectedFolderLabel}.\n`;
-    }
-    case "checks.task": {
-      const task = record.task;
-      const run = task?.runId ? ` — run ${terminalText(task.runId)}` : "";
-      const error = task?.error ? `\n${terminalText(task.error)}` : "";
-      return `Check task ${terminalText(task?.taskId)} — ${terminalText(task?.state)}${run}${error}\n`;
-    }
-    case "checks.result": {
-      const run = record.run as {
-        id?: string;
-        taskId?: string;
-        state?: string;
-        admittedCount?: number;
-        discardedCount?: number;
-        skippedCount?: number;
-        findingCount?: number;
-        findingsTruncated?: boolean;
-        error?: string;
-      } | undefined;
-      const truncated = run?.findingsTruncated ? " (output bounded)" : "";
-      const error = run?.error ? `\n${terminalText(run.error)}` : "";
-      return `Check run ${terminalText(run?.id)} — ${terminalText(run?.state)}\n${terminalText(run?.findingCount ?? 0)} finding(s) admitted; ${terminalText(run?.discardedCount ?? 0)} discarded; ${terminalText(run?.skippedCount ?? 0)} skipped${truncated}.${error}\n`;
-    }
-    case "checks.abort":
-      return record.aborted
-        ? `Aborted Check task ${terminalText(record.taskId)}.\n`
-        : `Check task ${terminalText(record.taskId)} was not running in ${connectedFolderLabel}.\n`;
-    case "checks.problems": {
-      const findings = (Array.isArray(record.findings) ? record.findings : []) as Array<{
-        id?: string;
-        severity?: string;
-        title?: string;
-        targetPath?: string;
-        evidence?: AmpleFileCliJson[];
-      }>;
-      const shown = findings.slice(0, 20);
-      const total = typeof record.findingCount === "number" ? record.findingCount : findings.length;
-      const sourceTruncated = record.sourceTruncated === true;
-      const healthErrors = (Array.isArray(record.healthErrors) ? record.healthErrors : []).slice(0, 5);
-      const lines = shown.map((finding) => {
-        const evidence = finding.evidence?.[0];
-        const proof = evidence ? `\n  Evidence: ${humanCheckEvidence(evidence)}` : "";
-        return `- [${terminalText(finding.severity)}] ${terminalText(finding.title)} — ${terminalText(finding.targetPath)} [${terminalText(finding.id)}]${proof}`;
-      });
-      const omitted = sourceTruncated
-        ? "\nAdditional findings were omitted by the bounded service result; use a narrower --check query."
-        : total > shown.length ? `\n${total - shown.length} more finding(s) omitted from human output; use --json for the bounded structured result.` : "";
-      const health = healthErrors.length
-        ? `\nCheck health errors:\n${healthErrors.map((item) => `- ${terminalText(item)}`).join("\n")}`
-        : "";
-      if (!lines.length && !sourceTruncated) return `No active Check problems in ${connectedFolderLabel}.${health}\n`;
-      const countLabel = sourceTruncated ? `At least ${total}` : String(total);
-      return `${countLabel} active Check problem${total === 1 && !sourceTruncated ? "" : "s"} in ${connectedFolderLabel}:\n${lines.join("\n")}${omitted}${health}\n`;
-    }
-    case "checks.decide": {
-      const decision = record.decision as { decision?: string; deferUntil?: string } | undefined;
-      const until = decision?.deferUntil ? ` until ${terminalText(decision.deferUntil)}` : "";
-      return `Recorded ${terminalText(decision?.decision)}${until} for finding ${terminalText(record.findingId)}.\n`;
     }
     case "connected-folders.create":
     case "connected-folders.register":
@@ -3726,10 +3392,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
               : `files created by step ${terminalText(source.step)} (max ${terminalText(source.maxFiles)} files, ${terminalText(source.maxTotalBytes)} bytes)`;
           return `- ${terminalText(step.id)}: files from ${connectedFolderRef(step.fromConnectedFolderId, step.fromConnectedFolderName)} — ${sourceLabel} → ${connectedFolderRef(step.toConnectedFolderId, step.toConnectedFolderName)}:${terminalText(step.to)}`;
         }
-        if (step.kind === "agent") {
-          return `- ${terminalText(step.id)}: message to the AmpleFile agent${stepModelText(step.model)} (verbatim, becomes AmpleFile agent transcript content): ${terminalText(step.message)}`;
-        }
-        return `- ${terminalText(step.id)}: check in ${connectedFolderRef(step.connectedFolderId, step.connectedFolderName)} — ${typeof step.checkId === "string" ? terminalText(step.checkId) : "all enabled Checks"}`;
+        return `- ${terminalText(step.id)}: message to the AmpleFile agent${stepModelText(step.model)} (verbatim, becomes AmpleFile agent transcript content): ${terminalText(step.message)}`;
       });
       const trigger = automation.trigger?.kind === "interval"
         ? `interval, every ${terminalText(automation.trigger.intervalMinutes)} minutes`
@@ -3841,16 +3504,6 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
 
 function skillNameList(names: unknown): string {
   return Array.isArray(names) ? names.map((name) => terminalText(name)).join(", ") : terminalText(names);
-}
-
-function humanCheckEvidence(value: AmpleFileCliJson): string {
-  const evidence = value as Record<string, AmpleFileCliJson>;
-  switch (evidence.kind) {
-    case "path-state":
-      return `${terminalText(evidence.path)} expected ${terminalText(evidence.expected)}, observed ${terminalText(evidence.observed)}`;
-    default:
-      return terminalText(evidence.kind ?? "verified evidence");
-  }
 }
 
 /** The entry id a destroying verb's `recentlyDeleted` result names, if it names one. */

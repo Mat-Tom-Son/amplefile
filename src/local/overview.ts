@@ -5,10 +5,6 @@ import type { ChatMessage, ConversationSummary } from "./agent/chat-store.js";
 import type { AmpleFileActAgentRequestPhase } from "./cli/act-facade.js";
 import type { AmpleFileRequestKind, AmpleFileRequestState } from "./requests/request-records.js";
 import type { AmpleFileCliActReceipt } from "./cli/act-receipts.js";
-import type {
-  AmpleFileCheckAggregateState,
-  AmpleFileCheckStatusSnapshot,
-} from "./checks/check-types.js";
 import { ampleFileStateRoot } from "./state-paths.js";
 
 /**
@@ -16,9 +12,7 @@ import { ampleFileStateRoot } from "./state-paths.js";
  * product already records. It is a projection, not a store — every item points
  * back at a record that exists for its own reasons, the digest can always be
  * recomputed, and it is never the authority for anything. No model composes
- * it and no watcher exists just to feed it. Source readers may re-verify
- * explicitly designated Check inputs locally; the digest contains only their
- * aggregate status, never those file bytes.
+ * it and no watcher exists just to feed it.
  *
  * The source inventory is closed: one typed reader per row of the inventory
  * table in docs/amplefile-agent-overview.md. An absent reader renders its
@@ -36,7 +30,6 @@ export const AMPLEFILE_OVERVIEW_SOURCES = [
   "agent-requests",
   "chats",
   "history-checkpoints",
-  "checks",
   "act-receipts",
   "app-automation-receipts",
   "app-automation-schedule",
@@ -50,7 +43,6 @@ export type AmpleFileOverviewItemKind =
   | "assistant-turn"
   | "compaction"
   | "agent-request"
-  | "check-run"
   | "app-automation-run"
   | "automation-run"
   // Needs you: questions and due snoozes only (docs/receipts-not-gates.md,
@@ -64,7 +56,6 @@ export type AmpleFileOverviewItemKind =
   | "request-settled"
   | "chat-lifecycle"
   | "chat-renamed"
-  | "check-run-settled"
   | "act-performed"
   | "app-automation-run-settled"
   | "automation-run-settled";
@@ -95,18 +86,6 @@ export interface AmpleFileOverviewItem {
   ref?: AmpleFileOverviewItemRef;
 }
 
-export interface AmpleFileOverviewCheckRow {
-  connectedFolderId: string;
-  connectedFolderName: string;
-  state: AmpleFileCheckAggregateState;
-  needsAttention: number;
-  neverRun: number;
-  stale: number;
-  blocked: number;
-  errors: number;
-  lastRunAt: string | null;
-}
-
 export interface AmpleFileOverviewSnapshot {
   kind: "amplefile.overview.experimental";
   version: typeof ampleFileOverviewExperimentalSnapshotVersion;
@@ -117,10 +96,9 @@ export interface AmpleFileOverviewSnapshot {
   running: AmpleFileOverviewItem[];
   needsYou: AmpleFileOverviewItem[];
   changes: AmpleFileOverviewItem[];
-  checks: AmpleFileOverviewCheckRow[];
   /** surfaceId -> acknowledged cursor, from the seen-marker store. */
   seen: Record<string, string>;
-  truncated: { running: boolean; needsYou: boolean; changes: boolean; checks: boolean };
+  truncated: { running: boolean; needsYou: boolean; changes: boolean };
   /**
    * Sources that exist but could not be read this composition. Their kinds are
    * omitted, and the omission is disclosed instead of rendered as quiet.
@@ -134,7 +112,6 @@ export const ampleFileOverviewRunningCap = 256;
 export const ampleFileOverviewNeedsYouCap = 256;
 export const ampleFileOverviewChangesPerKindCap = 128;
 export const ampleFileOverviewChangesTotalCap = 512;
-export const ampleFileOverviewChecksCap = 512;
 
 const maxHeadlineLength = 200;
 const maxTitleInHeadline = 80;
@@ -154,7 +131,7 @@ export interface AmpleFileOverviewConnectedFolderRef {
 
 export interface AmpleFileOverviewTaskRecord {
   id: string;
-  kind: "assistant_turn" | "compaction" | "check_run";
+  kind: "assistant_turn" | "compaction";
   connectedFolderId: string;
   conversationId?: string;
   startedAt: string;
@@ -252,20 +229,6 @@ export interface AmpleFileOverviewCheckpointRecord {
   scope: "full" | "targeted";
 }
 
-export interface AmpleFileOverviewCheckRunRecord {
-  runId: string;
-  taskId?: string;
-  state: "succeeded" | "failed" | "aborted" | "interrupted";
-  startedAt: string;
-  endedAt?: string;
-  admittedCount: number;
-}
-
-export interface AmpleFileOverviewCheckSource {
-  status: AmpleFileCheckStatusSnapshot;
-  settledRuns: AmpleFileOverviewCheckRunRecord[];
-}
-
 export interface AmpleFileOverviewAppAutomationRunRecord {
   runId: string;
   appAutomationId: string;
@@ -325,7 +288,6 @@ export interface AmpleFileOverviewSourceReaders {
   ampleFileAgentRequests?(): Promise<AmpleFileOverviewAgentRequestRecord[]>;
   chats?(connectedFolder: AmpleFileOverviewConnectedFolderRef): Promise<AmpleFileOverviewChatRecord[]>;
   checkpoints?(connectedFolder: AmpleFileOverviewConnectedFolderRef): Promise<AmpleFileOverviewCheckpointRecord[]>;
-  checks?(connectedFolder: AmpleFileOverviewConnectedFolderRef): Promise<AmpleFileOverviewCheckSource | null>;
   actReceipts?(): Promise<AmpleFileCliActReceipt[]>;
   appAutomationRunReceipts?(): Promise<AmpleFileOverviewAppAutomationReceiptRecord[]>;
   appAutomationRuns?(): Promise<AmpleFileOverviewAppAutomationRunRecord[]>;
@@ -377,7 +339,6 @@ export async function composeAmpleFileOverview(input: AmpleFileOverviewComposeIn
   const requests = await readSource("agent-requests", sources.ampleFileAgentRequests, unavailable);
   const chats = await readConnectedFolderSource("chats", connectedFolders, sources.chats, unavailable);
   const checkpoints = await readConnectedFolderSource("history-checkpoints", connectedFolders, sources.checkpoints, unavailable);
-  const checks = await readConnectedFolderSource("checks", connectedFolders, sources.checks, unavailable);
   const actReceipts = await readSource("act-receipts", sources.actReceipts, unavailable);
   const appAutomationReceipts = await readSource("app-automation-receipts", sources.appAutomationRunReceipts, unavailable);
   const appAutomationRuns = await readSource("app-automation-schedule", sources.appAutomationRuns, unavailable);
@@ -421,13 +382,11 @@ export async function composeAmpleFileOverview(input: AmpleFileOverviewComposeIn
     requests: requests ?? [],
     chats,
     checkpoints,
-    checks,
     actReceipts: actReceipts ?? [],
     appAutomationReceipts: appAutomationReceipts ?? [],
     automationRuns: automationRuns ?? [],
     connectedFolderNames,
   });
-  const checkRows = composeCheckRows(checks);
 
   const seen: Record<string, string> = {};
   const seenInput = input.seen ?? {};
@@ -442,13 +401,11 @@ export async function composeAmpleFileOverview(input: AmpleFileOverviewComposeIn
     running: running.items,
     needsYou: needsYou.items,
     changes: changes.items,
-    checks: checkRows.rows,
     seen,
     truncated: {
       running: running.truncated,
       needsYou: needsYou.truncated,
       changes: changes.truncated,
-      checks: checkRows.truncated,
     },
     unavailable: [...unavailable].sort(compareStrings),
   };
@@ -485,15 +442,9 @@ function composeRunning(input: {
       ? "assistant-turn" as const
       : task.kind === "compaction"
         ? "compaction" as const
-        : task.kind === "check_run"
-          ? "check-run" as const
-          : null;
+        : null;
     if (!kind) continue;
-    const headline = kind === "assistant-turn"
-      ? "Worker turn running"
-      : kind === "compaction"
-        ? "Chat compaction running"
-        : "Check run in progress";
+    const headline = kind === "assistant-turn" ? "Worker turn running" : "Chat compaction running";
     items.push(overviewItem({
       id: `kernel-tasks:${task.id}`,
       at: task.startedAt,
@@ -637,7 +588,6 @@ function composeChanges(input: {
   requests: AmpleFileOverviewAgentRequestRecord[];
   chats: Array<{ connectedFolder: AmpleFileOverviewConnectedFolderRef; records: AmpleFileOverviewChatRecord[] }>;
   checkpoints: Array<{ connectedFolder: AmpleFileOverviewConnectedFolderRef; records: AmpleFileOverviewCheckpointRecord[] }>;
-  checks: Array<{ connectedFolder: AmpleFileOverviewConnectedFolderRef; records: AmpleFileOverviewCheckSource | null }>;
   actReceipts: AmpleFileCliActReceipt[];
   appAutomationReceipts: AmpleFileOverviewAppAutomationReceiptRecord[];
   automationRuns: AmpleFileOverviewAutomationRunRecord[];
@@ -716,20 +666,6 @@ function composeChanges(input: {
       }
     }
   }
-  for (const { connectedFolder, records } of input.checks) {
-    if (!records) continue;
-    for (const run of records.settledRuns.slice(0, maxSourceRecords)) {
-      add(overviewItem({
-        id: `checks:${connectedFolder.id}:${run.runId}`,
-        at: run.endedAt ?? run.startedAt,
-        kind: "check-run-settled",
-        connectedFolderId: connectedFolder.id,
-        connectedFolderNames: input.connectedFolderNames,
-        headline: `Check run ${run.state} — ${run.admittedCount} finding${run.admittedCount === 1 ? "" : "s"} admitted`,
-        ref: { ...(run.taskId ? { taskId: run.taskId } : {}), runId: run.runId },
-      }));
-    }
-  }
   for (const receipt of input.actReceipts.slice(0, maxSourceRecords)) {
     // Terminal records only: `accepted` without a terminal line is the honest
     // interrupted signal, and `rejected` refusals never performed anything.
@@ -787,38 +723,6 @@ function composeChanges(input: {
   merged.sort(newestFirst);
   if (merged.length > ampleFileOverviewChangesTotalCap) truncated = true;
   return { items: merged.slice(0, ampleFileOverviewChangesTotalCap), truncated };
-}
-
-function composeCheckRows(
-  checks: Array<{ connectedFolder: AmpleFileOverviewConnectedFolderRef; records: AmpleFileOverviewCheckSource | null }>,
-): { rows: AmpleFileOverviewCheckRow[]; truncated: boolean } {
-  const rows: AmpleFileOverviewCheckRow[] = [];
-  for (const { connectedFolder, records } of checks) {
-    if (!records) continue;
-    const status = records.status;
-    // Unconfigured means unknown: a Connected Folder with no configured Checks is absent,
-    // never implied healthy.
-    if (status.state === "not-configured") continue;
-    rows.push({
-      connectedFolderId: connectedFolder.id,
-      connectedFolderName: connectedFolder.name,
-      state: status.state,
-      needsAttention: status.needsAttention,
-      neverRun: status.neverRun,
-      stale: status.stale,
-      blocked: status.blocked,
-      errors: status.errors,
-      lastRunAt: status.lastRunAt,
-    });
-  }
-  rows.sort((left, right) =>
-    checkStatePriority(left.state) - checkStatePriority(right.state)
-    || compareStrings(left.connectedFolderName, right.connectedFolderName)
-    || compareStrings(left.connectedFolderId, right.connectedFolderId));
-  return {
-    rows: rows.slice(0, ampleFileOverviewChecksCap),
-    truncated: rows.length > ampleFileOverviewChecksCap,
-  };
 }
 
 // --- Chat record derivation ---
@@ -1033,15 +937,6 @@ function appAutomationOutcomeLabel(outcome: AmpleFileOverviewAppAutomationOutcom
   if (outcome === "success") return "succeeded";
   if (outcome === "failure") return "failed";
   return outcome;
-}
-
-function checkStatePriority(state: AmpleFileCheckAggregateState): number {
-  if (state === "needs-attention") return 0;
-  if (state === "check-error") return 1;
-  if (state === "blocked") return 2;
-  if (state === "stale") return 3;
-  if (state === "current-clear") return 4;
-  return 5;
 }
 
 function isAtOrBefore(timestamp: string, referenceMs: number): boolean {

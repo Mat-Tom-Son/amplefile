@@ -1,4 +1,3 @@
-import { RestrictedAppCheckAccess } from "./RestrictedAppCheckAccess";
 import { openWorkFile } from "../chat/WorkRequest";
 import { RestrictedAppAssistantTasks } from "./RestrictedAppAssistantTasks";
 import { RestrictedAppInferenceReceipts } from "./RestrictedAppInferenceReceipts";
@@ -494,7 +493,6 @@ function RestrictedAppDetailsDialog({ app, busy, fixtureMode, onAppChanged, onRe
             onChange={(root, granted) => void changeFileGrant(permission, root, granted)}
           />)}
         </section> : null}
-        {app.manifest.permissions.checks?.length ? <RestrictedAppCheckAccess key={`${app.featureInstallationId}:${app.digest}`} app={app} busy={Boolean(actionBusy) || busy || fixtureMode} onAppChanged={onAppChanged} onError={onError} /> : null}
         {app.manifest.permissions.notifications.length ? <section className="restricted-app-connections" aria-labelledby="restricted-app-notifications-title">
           <div className="restricted-app-connections-heading"><div><Alert20Regular aria-hidden="true" /><h3 id="restricted-app-notifications-title">Notifications</h3></div></div>
           {app.manifest.permissions.notifications.map((permission) => {

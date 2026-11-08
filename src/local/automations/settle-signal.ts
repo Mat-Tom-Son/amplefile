@@ -2,7 +2,6 @@ import type {
   AmpleFileSchedulerRunOutcome,
   AmpleFileSchedulerRunReason,
 } from "../agent/amplefile-scheduler-service.js";
-import type { AmpleFileCheckRunState } from "../checks/check-types.js";
 
 const defaultMaxListeners = 8;
 const defaultMaxListenerErrors = 500;
@@ -21,27 +20,6 @@ export interface AmpleFileAutomationHopLineage {
 }
 
 export type AmpleFileSettleLineage = AmpleFileAutomationHopLineage;
-
-/** Terminal Check-run states; a settle record never carries pending work. */
-export type AmpleFileCheckRunSettleState = Exclude<AmpleFileCheckRunState, "accepted" | "running">;
-
-/**
- * A named Connected Folder's Check run reached a durable terminal state. Published by the
- * Check service's terminal-persistence funnel only after the exact terminal
- * run record is durable; startup `interrupted` reconciliation is recorded by
- * the store before any listener exists and is deliberately never published.
- */
-export interface AmpleFileCheckRunSettleRecord {
-  kind: "check-run";
-  connectedFolderId: string;
-  runId: string;
-  taskId: string;
-  checkIds: string[];
-  state: AmpleFileCheckRunSettleState;
-  startedAt: string;
-  endedAt: string;
-  lineage?: AmpleFileSettleLineage;
-}
 
 /**
  * A named Connected Folder's restricted-app named-automation run settled and its
@@ -64,7 +42,7 @@ export interface AmpleFileAppAutomationRunSettleRecord {
   lineage?: AmpleFileSettleLineage;
 }
 
-export type AmpleFileSettleRecord = AmpleFileCheckRunSettleRecord | AmpleFileAppAutomationRunSettleRecord;
+export type AmpleFileSettleRecord = AmpleFileAppAutomationRunSettleRecord;
 
 export type AmpleFileSettleListener = (record: AmpleFileSettleRecord) => void | Promise<void>;
 
@@ -82,16 +60,16 @@ export interface AmpleFileSettleSignalOptions {
 }
 
 /**
- * The one narrow in-process seam between the two admitted settlement funnels
- * — the Check service's terminal-persistence funnel and the restricted-app
- * automation result funnel — and the automation service that consumes them.
+ * The one narrow in-process seam between the admitted settlement funnel — the
+ * restricted-app automation result funnel — and the automation service that
+ * consumes it. (The Check-run funnel was removed with Checks on 2026-11-07.)
  *
  * Publishers call `publish` only after the settlement fact is durable, so a
  * listener observes nothing that a crash could un-record. `publish` is
  * fire-and-forget and never throws: a listener error is captured in a bounded
  * diagnostic history instead of failing the owning service's run or receipt.
  * Listeners are invoked synchronously in subscription order with their own
- * copies, so delivery order matches persistence order at each funnel and no
+ * copies, so delivery order matches persistence order at the funnel and no
  * listener can mutate what another sees. Settles are in-process facts:
  * nothing here is persisted, queued across restarts, or reachable from any
  * external channel.

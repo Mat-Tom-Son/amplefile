@@ -389,6 +389,75 @@ test("schema 1 and 2 stores load into the version 3 writer, converting the grant
   assert.equal(oldest.status().damaged, false);
 });
 
+test("a stored automation that uses a retired Check feature is left out on its own; the rest of the store loads", async (t) => {
+  const { sandbox, store, statePath, receipts } = await createSandbox("amplefile-automation-store-retired-");
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+  await store.enable(enableInput(declarationInput("automation-keeps-working"), "request-valid"));
+  // A version 1-3 message is literal text, braces included, so this one stays valid.
+  await store.enable(enableInput(declarationInput("automation-literal-braces", {
+    steps: [{ id: "notify", kind: "chat", connectedFolder: connectedFolderA, message: "Mention {{trigger.findings}} literally." }],
+  }), "request-literal"));
+  const persisted = JSON.parse(await readFile(statePath, "utf8")) as {
+    schemaVersion: number;
+    automations: Array<Record<string, unknown> & { grants: Array<Record<string, unknown>> }>;
+  };
+  // Exactly what a build with Checks stored: digest-pinned, enabled records
+  // whose declarations the current parser refuses.
+  const retired = (declaration: Record<string, unknown>) => {
+    const digest = ampleFileAutomationDigest(declaration);
+    return {
+      declaration,
+      digest,
+      health: "enabled",
+      grants: [{ digest, requestId: `request-${String(declaration.id)}`, enabledAt: fixedNow.toISOString(), surface: "popover" }],
+    };
+  };
+  persisted.automations.unshift(retired(declarationInput("automation-runs-a-check", {
+    steps: [
+      { id: "notify", kind: "chat", connectedFolder: connectedFolderA, message: "Review the queue." },
+      { id: "verify", kind: "check", connectedFolder: connectedFolderA, check: "check-12345678" },
+    ],
+  }) as Record<string, unknown>));
+  persisted.automations.push(retired(declarationInput("automation-after-a-check", {
+    trigger: { kind: "on-settled", source: { kind: "check-run", connectedFolder: connectedFolderA, outcomes: ["succeeded"] } },
+  }) as Record<string, unknown>));
+  persisted.automations.push(retired(declarationInput("automation-reads-findings", {
+    version: 4,
+    trigger: { kind: "manual" },
+    steps: [{ id: "tell", kind: "agent", message: "New findings:\n{{ trigger.findings }}" }],
+  }) as Record<string, unknown>));
+  await writeFile(statePath, `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
+
+  const reloaded = await AmpleFileAutomationStore.create({ path: statePath, receipts, now: () => fixedNow });
+  const status = reloaded.status();
+  assert.equal(status.damaged, false, "one retired record never marks the whole store damaged");
+  assert.equal(status.automationCount, 2);
+  assert.equal(status.enabledCount, 2);
+  assert.deepEqual(status.retiredAutomations?.map((automation) => automation.id), [
+    "automation-runs-a-check",
+    "automation-after-a-check",
+    "automation-reads-findings",
+  ]);
+  assert.equal(status.retiredAutomations?.[0]?.title, "Automation automation-runs-a-check");
+  assert.match(status.retiredAutomations?.[0]?.reason ?? "", /runs a Check/);
+  assert.match(status.retiredAutomations?.[1]?.reason ?? "", /waits for a Check run/);
+  assert.match(status.retiredAutomations?.[2]?.reason ?? "", /\{\{trigger\.findings\}\}/);
+  assert.deepEqual((await reloaded.list()).map((record) => record.declaration.id), [
+    "automation-keeps-working",
+    "automation-literal-braces",
+  ]);
+
+  // The next write leaves the retired records out of the file; the valid ones keep their grants.
+  await reloaded.disable("automation-literal-braces");
+  const rewritten = JSON.parse(await readFile(statePath, "utf8")) as { automations: Array<{ declaration: { id: string }; health: string }> };
+  assert.deepEqual(rewritten.automations.map((record) => [record.declaration.id, record.health]), [
+    ["automation-keeps-working", "enabled"],
+    ["automation-literal-braces", "disabled"],
+  ]);
+  const again = await AmpleFileAutomationStore.create({ path: statePath, receipts, now: () => fixedNow });
+  assert.equal(again.status().retiredAutomations, undefined);
+});
+
 test("damaged or tampered state disables the store and is never overwritten", async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), "amplefile-automation-store-damage-"));
   t.after(() => rm(sandbox, { recursive: true, force: true }));

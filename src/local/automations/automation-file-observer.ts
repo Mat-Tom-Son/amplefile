@@ -4,7 +4,7 @@ import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { isAlwaysHiddenConnectedFolderEntry } from "../connected-folder-ignore.js";
 import type { AutomationCatchUpReason } from "../../shared/automation-presentation.js";
 import { listConnectedFolders, resolveConnectedFolderPath } from "../connected-folder.js";
-import { resolveAmpleFileCheckTargets } from "../checks/target-resolver.js";
+import { resolveFolderTargets } from "./folder-targets.js";
 import { ampleFileAutomationBounds, type AmpleFileAutomationFilesChangedTrigger } from "./automation-declarations.js";
 
 export type { AutomationCatchUpReason as AmpleFileAutomationCatchUpReason } from "../../shared/automation-presentation.js";
@@ -43,7 +43,7 @@ export const observeAmpleFileAutomationFiles: AmpleFileAutomationFileObserver = 
   }
   const folderBefore = await lstat(watched);
   if (!folderBefore.isDirectory() || folderBefore.isSymbolicLink()) throw new Error("The watched folder must be an ordinary directory.");
-  const resolution = await resolveAmpleFileCheckTargets(connectedFolder.connectedFolderRoot, [{ ...trigger.watch, role: "primary" }], {
+  const resolution = await resolveFolderTargets(connectedFolder.connectedFolderRoot, [{ ...trigger.watch, role: "primary" }], {
     limits: { ...ampleFileAutomationFileObserverBounds },
   });
   const entries: Record<string, string> = Object.create(null);

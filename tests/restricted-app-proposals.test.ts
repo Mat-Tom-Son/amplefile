@@ -48,7 +48,7 @@ test("propose_space_app exposes only a Connected Folder–relative path and repo
   assert.match(guidance, /assistantActions/);
   assert.match(guidance, /assistant\.request/);
   assert.match(guidance, /assistant\.infer/);
-  assert.match(guidance, /permissions\.checks/);
+  assert.doesNotMatch(guidance, /permissions\.checks/, "Checks were removed (2026-11-07): new apps are not taught Check-result slots");
   // The automation event field is the one the host sends, and the rules a
   // Worker cannot discover by trial are stated up front.
   assert.match(guidance, /appAutomationId \(the automation's declared id\)/);

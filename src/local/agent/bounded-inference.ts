@@ -5,7 +5,7 @@
  * output schema, and nothing is persisted to any transcript.
  *
  * It runs on the Connected Folder's own Pi session through `session.agent.streamFunction`, the
- * same configured path the Check reviewer and Chat naming use, so the saved
+ * same configured path Chat naming uses, so the saved
  * model, provider auth, custom base URLs, request headers, proxy settings, and
  * transport policy all apply without a second resolution. The session is only
  * ever streamed, never prompted, so it stays at zero messages.

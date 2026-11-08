@@ -68,10 +68,6 @@ test("a mis-routed overview request answers usage and never touches the kernel",
       calls.push("capabilities");
       return [];
     },
-    async getChecksStatus() {
-      calls.push("checks");
-      throw new AmpleFileCliError("unavailable", "Checks status is unavailable in this AmpleFile host.");
-    },
   };
   const cwd = resolve(".");
 
@@ -114,10 +110,9 @@ test("protocol v1's stable command surface stays overview-free", () => {
     "connected-folders.list": ["connected-folders", "list"],
     "tasks.list": ["tasks", "list"],
     "capabilities.list": ["capabilities", "list"],
-    "checks.status": ["checks", "status"],
   } as const satisfies Record<AmpleFileCliCommandName, readonly string[]>;
   const names = Object.keys(stableReadCommands) as AmpleFileCliCommandName[];
-  assert.equal(names.length, 7);
+  assert.equal(names.length, 6);
   for (const name of names) {
     assert.doesNotMatch(name, /overview/i, name);
     assert.equal(parseAmpleFileCliArgv(stableReadCommands[name]).name, name);

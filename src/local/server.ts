@@ -256,10 +256,7 @@ import {
   type ConnectedFolderAppearanceProposal,
 } from "../shared/connected-folder-appearance.js";
 import type { AppReleasePresentation } from "./agent/app-platform-release.js";
-import { AmpleFileCheckOperationConflictError, AmpleFileCheckService } from "./checks/check-service.js";
-import type { AmpleFileCheckDecisionKind } from "./checks/check-types.js";
-import { purgeAmpleFileCheckState } from "./checks/check-store.js";
-import { resolveAmpleFileCheckTargets } from "./checks/target-resolver.js";
+import { resolveFolderTargets } from "./automations/folder-targets.js";
 import {
   PreparedActError,
   PreparedActExecutor,
@@ -278,7 +275,6 @@ import {
   ampleFileOverviewChatRecordFromMessages,
   type AmpleFileOverviewAppAutomationReceiptRecord,
   type AmpleFileOverviewAppAutomationRunRecord,
-  type AmpleFileOverviewCheckSource,
   type AmpleFileOverviewAgentRequestRecord,
   type AmpleFileOverviewSettledTurnRecord,
   type AmpleFileOverviewSourceReaders,
@@ -454,14 +450,11 @@ export interface LocalApiOptions {
   appearanceStore?: ConnectedFolderAppearanceStore;
   /** A supplied kernel must use a provider wrapped by the same spaceTrustAuthority. */
   kernel?: AmpleFileKernel;
-  /** Shared with the desktop read CLI and interactive act facade. */
-  checkService?: AmpleFileCheckService;
   /**
-   * The one in-process settle seam between the Check and restricted-app
-   * settlement funnels and the automation executor. Supply the same instance to
-   * an injected checkService/restrictedAppService so their settles reach
-   * automation triggers; when absent, the API creates one for the services it
-   * constructs itself.
+   * The one in-process settle seam between the restricted-app settlement
+   * funnel and the automation executor. Supply the same instance to an
+   * injected restrictedAppService so its settles reach automation triggers;
+   * when absent, the API creates one for the services it constructs itself.
    */
   settleSignal?: AmpleFileSettleSignal;
   /**
@@ -559,7 +552,7 @@ export interface AmpleFileAutomationSettingsRunView {
   partial?: true;
   hops: Array<{
     hopId: string;
-    kind: "chat" | "files" | "check" | "agent";
+    kind: "chat" | "files" | "agent";
     outcome: AmpleFileAutomationSettingsOutcome;
     partial?: true;
     connectedFolderName?: string;
@@ -628,7 +621,6 @@ export interface AmpleFileAutomationSettingsFacade {
           to: string;
           source: ReturnType<typeof toActAutomationFilesSource>;
         }
-        | { id: string; kind: "check"; connectedFolder: AmpleFileAutomationSettingsConnectedFolderRef; checkId?: string }
         | { id: string; kind: "agent"; message: string; model?: { provider: string; id: string } }
       >;
       completedAt?: string;
@@ -668,8 +660,6 @@ export interface LocalApiHandle {
   origin: string;
   port: number;
   kernel: AmpleFileKernel;
-  /** In-process bounded model transport for the desktop's shared Check service. */
-  reviewCheck: import("./checks/model-review-sensor.js").AmpleFileModelCheckReviewer;
   /** In-process authority for CLI act-lane commands; see cli/act-facade.ts. */
   actFacade: AmpleFileActFacade;
   /** Validates an explicitly named AmpleFile agent parent while its turn is active. */
@@ -709,7 +699,6 @@ interface LocalApiState {
   restrictedAppProposals: RoutedRestrictedAppProposalHost;
   appearance: ConnectedFolderAppearanceStore;
   kernel: AmpleFileKernel;
-  checks: AmpleFileCheckService;
   settleSignal: AmpleFileSettleSignal;
   actReceipts: AmpleFileCliActReceipts;
   turnStore: AmpleFileTurnStore;
@@ -797,7 +786,6 @@ interface LocalApiState {
   generatedImages: GeneratedImageStore;
   /** The desktop's built-in browser, shared by every Worker and the AmpleFile agent. */
   browser?: BrowserToolHost;
-  checkRunReservations: Set<string>;
   connectedFolderIdsByRoot: Map<string, string>;
   extensionRequests: Map<string, PiExtensionUiRequest>;
   fileStreams: Map<() => void, string>;
@@ -905,11 +893,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   };
   const restrictedApps = options.restrictedAppService ?? await RestrictedAppService.create({
     rootPath: restrictedAppRoot(),
-    readCheckResult: async (connectedFolderId, checkId, digest) => checks.selectedResult(await getConnectedFolder(connectedFolderId), checkId, digest),
-    // An install binds a declared Check slot only when the Connected Folder has exactly one Check.
-    listChecks: async (connectedFolderId) => (await checks.overview(await getConnectedFolder(connectedFolderId))).checks
-      .filter((item): item is typeof item & { digest: string } => typeof item.digest === "string")
-      .map((item) => ({ checkId: item.id, declarationDigest: item.digest, title: item.title })),
     deferAppAutomationStart: true,
   });
   if (options.restrictedAppService?.appAutomationsStarted) {
@@ -963,27 +946,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   const runtimeProvider = new RegisteredConnectedFolderRuntimeProvider(extensionRuntimeProvider, connectedFolderTrustAuthority);
   const kernel = options.kernel ?? new AmpleFileKernel({ runtimeProvider });
   const settleSignal = options.settleSignal ?? new AmpleFileSettleSignal();
-  // Model reviews run side by side up to a provider-friendly ceiling; the rest wait their turn.
-  const maxConcurrentModelReviews = 8;
-  let activeModelReviews = 0;
-  const waitingModelReviews: Array<() => void> = [];
-  const reviewCheck: LocalApiHandle["reviewCheck"] = async (request) => {
-    // A finishing review hands its slot straight to the next waiter, so the
-    // count never overshoots the ceiling.
-    if (activeModelReviews < maxConcurrentModelReviews) activeModelReviews += 1;
-    else await new Promise<void>((resolve) => { waitingModelReviews.push(resolve); });
-    try {
-      request.signal.throwIfAborted();
-      if (!state.acceptingTurns) throw new Error("The Check runtime is closing.");
-      const client = await getClient(state, ampleFileAgentScopeId, ampleFileAgentRoot(), "check-review");
-      return await client.reviewCheck(request);
-    } finally {
-      const next = waitingModelReviews.shift();
-      if (next) next();
-      else activeModelReviews -= 1;
-    }
-  };
-  const checks = options.checkService ?? new AmpleFileCheckService({ kernel, settleSignal, reviewModel: reviewCheck });
   // The AmpleFile agent's one ledger: the same act-receipts journal the desktop CLI host
   // appends. Both instances write the identical state-root path, so prepared
   // acts land in the journal the act lane already audits.
@@ -1021,7 +983,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     restrictedAppProposals,
     appearance,
     kernel,
-    checks,
     settleSignal,
     actReceipts,
     turnStore,
@@ -1075,7 +1036,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     clientsToRefresh: new Set(),
     imageModelPreference: new ImageModelPreference(imageModelPreferencePath(ampleFileStateRoot())),
     generatedImages: new GeneratedImageStore(join(ampleFileStateRoot(), "generated-images")),
-    checkRunReservations: new Set(),
     connectedFolderIdsByRoot: new Map(),
     extensionRequests: new Map(),
     fileStreams: new Map(),
@@ -1349,7 +1309,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     origin: `http://${host}:${address.port}`,
     port: address.port,
     kernel,
-    reviewCheck,
     appAssistantTasks: state.appAssistantTasks,
     appInference: state.appInference,
     actFacade: createAmpleFileActFacade(state),
@@ -1401,7 +1360,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
       await state.requestSettleChain.catch(() => undefined);
       await flushAllTurnCheckpoints(state);
       await state.turnStore.flush();
-      await state.checks.close();
       await state.appearance.flush();
       await state.appAssistantTasks.flush();
       await state.appInference.flush();
@@ -1494,171 +1452,9 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const checksStatusMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/status$/);
-  if (checksStatusMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(checksStatusMatch[1]);
-    sendJson(res, { status: await state.checks.status(connectedFolder) });
-    return;
-  }
-
-  const checksDecorationsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/decorations$/);
-  if (checksDecorationsMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(checksDecorationsMatch[1]);
-    sendJson(res, { decorations: await state.checks.decorations(connectedFolder) });
-    return;
-  }
-
-  const checksOverviewMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/overview$/);
-  if (checksOverviewMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(checksOverviewMatch[1]);
-    await readJsonBody<Record<string, never>>(state, req);
-    const overview = await runReservedCheckOperation(
-      state,
-      connectedFolder.id,
-      () => state.checks.overview(connectedFolder),
-    );
-    sendJson(res, { overview });
-    return;
-  }
-
-  const checksConfigureMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/configure$/);
-  if (checksConfigureMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(checksConfigureMatch[1]);
-    const body = await readJsonBody<{ proposal?: unknown }>(state, req);
-    const enabled = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.enable({ connectedFolder, proposal: body.proposal, actor: "human", proposeOnly: true }));
-    sendJson(res, enabled);
-    return;
-  }
-  const checksTrialMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/([^/]+)\/try$/);
-  if (checksTrialMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(checksTrialMatch[1]);
-    const body = await readJsonBody<{ expectedDigest?: unknown }>(state, req);
-    if (typeof body.expectedDigest !== "string") throw badRequest("Review the proposal before trying it.");
-    const task = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.run({
-      connectedFolder, checkId: checksTrialMatch[2], trialDigest: body.expectedDigest as string,
-      actor: { kind: "renderer", cwd: connectedFolder.connectedFolderRoot, connectedFolderId: connectedFolder.id },
-    }));
-    sendJson(res, { task }, 202);
-    return;
-  }
-  const checksResultMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/tasks\/([^/]+)\/result$/);
-  if (checksResultMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(checksResultMatch[1]);
-    sendJson(res, { run: await state.checks.taskResult(connectedFolder.id, checksResultMatch[2]) });
-    return;
-  }
-  const checksEnableMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/([^/]+)\/enable$/);
-  if (checksEnableMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(checksEnableMatch[1]);
-    const body = await readJsonBody<{ expectedDigest?: string }>(state, req);
-    const enabled = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.enable({ connectedFolder, checkId: checksEnableMatch[2], expectedDigest: body.expectedDigest, actor: "human" }));
-    sendJson(res, enabled);
-    return;
-  }
-  const checksDisableMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/([^/]+)\/disable$/);
-  if (checksDisableMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(checksDisableMatch[1]);
-    await readJsonBody<Record<string, never>>(state, req);
-    const disabled = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.disable(connectedFolder, checksDisableMatch[2]));
-    sendJson(res, { disabled });
-    return;
-  }
-
-  const checksRunMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/run$/);
-  if (checksRunMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(checksRunMatch[1]);
-    const body = await readJsonBody<{ checkId?: string }>(state, req);
-    if (body.checkId !== undefined && typeof body.checkId !== "string") throw badRequest("Check id must be a string.");
-    const checkId = body.checkId?.trim();
-    const accepted = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.run({
-      connectedFolder: connectedFolder,
-      ...(checkId ? { checkId } : {}),
-      actor: { kind: "renderer", cwd: connectedFolder.connectedFolderRoot, connectedFolderId: connectedFolder.id },
-    }));
-    sendJson(res, { task: accepted }, 202);
-    return;
-  }
-
-  const checksTaskMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/tasks\/([^/]+)$/);
-  if (checksTaskMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(checksTaskMatch[1]);
-    sendJson(res, { task: await state.checks.taskStatus(connectedFolder.id, checksTaskMatch[2]) });
-    return;
-  }
-
-  const checksAbortMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/tasks\/([^/]+)\/abort$/);
-  if (checksAbortMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(checksAbortMatch[1]);
-    await readJsonBody<Record<string, never>>(state, req);
-    const aborted = await runReservedCheckOperation(
-      state,
-      connectedFolder.id,
-      () => state.checks.abort(connectedFolder.id, checksAbortMatch[2]),
-    );
-    sendJson(res, { taskId: checksAbortMatch[2], aborted });
-    return;
-  }
-
-  const checksCorrectionMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/corrections\/([^/]+)\/(review|apply|dismiss)$/);
-  if (checksCorrectionMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(checksCorrectionMatch[1]);
-    await readJsonBody<Record<string, never>>(state, req);
-    const id = checksCorrectionMatch[2]!;
-    if (checksCorrectionMatch[3] === "review") {
-      sendJson(res, await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.reviewCorrection(connectedFolder, id)));
-    } else if (checksCorrectionMatch[3] === "dismiss") {
-      await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.dismissCorrection(connectedFolder, id));
-      sendJson(res, { dismissed: true });
-    } else {
-      const result = await runHistoryRestore(state, connectedFolder.id, () => state.checks.applyCorrection(connectedFolder, id));
-      // Applying is durable before a separate Check task starts. A provider or
-      // launch error must never make the correction look unapplied or clear.
-      let task: Awaited<ReturnType<AmpleFileCheckService["run"]>> | undefined;
-      let rerunError: string | undefined;
-      try { task = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.run({ connectedFolder, checkId: result.checkId, actor: { kind: "renderer", cwd: connectedFolder.connectedFolderRoot, connectedFolderId: connectedFolder.id } })); }
-      catch (error) { rerunError = errorMessage(error); }
-      sendJson(res, { ...result, task, rerunError });
-    }
-    return;
-  }
-  const checksHelpMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/findings\/([^/]+)\/help$/);
-  if (checksHelpMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(checksHelpMatch[1]);
-    const body = await readJsonBody<{ fingerprint?: string }>(state, req);
-    const overview = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.overview(connectedFolder));
-    const finding = overview.findings.find((item) => item.id === checksHelpMatch[2] && item.fingerprint === body.fingerprint);
-    if (!finding) throw new AmpleFileCheckOperationConflictError("This finding changed or is no longer current. Refresh Checks before asking for help.");
-    const nextStep = finding.evidence.some((item) => item.kind === "text-span")
-      ? `Prepare a correction for review in Checks; leave the original unchanged. Read \`amplefile help checks\` for the correction format, then use \`amplefile checks problems --connected-folder ${connectedFolder.id} --json\` and \`amplefile checks propose-fix --connected-folder ${connectedFolder.id} --proposal <absolute-json-path> --json\`.`
-      : "Explain what is needed and propose a next step. We can rerun the Check afterward.";
-    const draft = `Help me review ${JSON.stringify(finding.title)} in ${JSON.stringify(finding.targetPath)}. ${nextStep}\n\nFinding reference: ${finding.id}\nFingerprint: ${finding.fingerprint}\n\n${finding.detail ?? ""}`;
-    sendJson(res, { draft });
-    return;
-  }
-  const checksDecisionMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/checks\/findings\/([^/]+)\/decision$/);
-  if (checksDecisionMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(checksDecisionMatch[1]);
-    const body = await readJsonBody<{ decision?: AmpleFileCheckDecisionKind; deferUntil?: string }>(state, req);
-    const decisionKind = body.decision;
-    if (!isAmpleFileCheckDecisionKind(decisionKind)) throw badRequest("Choose a valid Check decision.");
-    if (body.deferUntil !== undefined && typeof body.deferUntil !== "string") throw badRequest("Check deferUntil must be a timestamp.");
-    const decision = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.decide({
-      connectedFolderId: connectedFolder.id,
-      findingId: checksDecisionMatch[2],
-      decision: decisionKind,
-      actor: "renderer",
-      ...(body.deferUntil ? { deferUntil: body.deferUntil } : {}),
-    }));
-    sendJson(res, { findingId: checksDecisionMatch[2], decision });
-    return;
-  }
-
   if (method === "POST" && url.pathname === "/api/connected-folders") {
     const body = await readJsonBody<{ name?: string }>(state, req);
-    const connectedFolder = await runCheckConnectedFolderRegistryMutation(
-      state,
-      () => createConnectedFolderInternal(state, body.name ?? "Personal Connected Folder"),
-    );
+    const connectedFolder = await createConnectedFolderInternal(state, body.name ?? "Personal Connected Folder");
     sendJson(res, { connectedFolder }, 201);
     return;
   }
@@ -1673,10 +1469,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     } else if (state.appMode === "desktop") {
       throw forbidden("A folder must be selected in the desktop app before it can become a Connected Folder.");
     }
-    const connectedFolder = await runCheckConnectedFolderRegistryMutation(
-      state,
-      () => registerConnectedFolderInternal(state, body.connectedFolderRoot!, body.providerHint),
-    );
+    const connectedFolder = await registerConnectedFolderInternal(state, body.connectedFolderRoot!, body.providerHint);
     sendJson(res, { connectedFolder }, 201);
     return;
   }
@@ -1692,7 +1485,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const body = await readJsonBody<{ path?: unknown }>(state, req);
     if (typeof body.path !== "string" || !body.path.trim()) throw badRequest("Choose a folder inside this Connected Folder.");
     const target = await resolveNestableFolderPath(parent.connectedFolderRoot, body.path);
-    const connectedFolder = await runCheckConnectedFolderRegistryMutation(state, () => registerConnectedFolderInternal(state, target));
+    const connectedFolder = await registerConnectedFolderInternal(state, target);
     sendJson(res, { connectedFolder }, 201);
     return;
   }
@@ -2220,20 +2013,6 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  const restrictedCheckGrantMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/permissions\/checks\/([^/]+)$/);
-  if (restrictedCheckGrantMatch && (method === "PUT" || method === "DELETE")) {
-    const connectedFolder = await getConnectedFolder(restrictedCheckGrantMatch[1]);
-    const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string; checkId?: string; declarationDigest?: string }>(state, req);
-    if (typeof body.featureInstallationId !== "string" || typeof body.expectedDigest !== "string") throw badRequest("An exact app installation and revision are required.");
-    if (method === "PUT" && (typeof body.checkId !== "string" || typeof body.declarationDigest !== "string")) throw badRequest("Choose an exact Check revision.");
-    const app = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.setCheckGrant({
-      connectedFolderId: connectedFolder.id, appId: restrictedCheckGrantMatch[2], featureInstallationId: body.featureInstallationId!, expectedDigest: body.expectedDigest!,
-      permissionId: restrictedCheckGrantMatch[3], selection: method === "PUT" ? { checkId: body.checkId!, declarationDigest: body.declarationDigest! } : null,
-    }));
-    sendJson(res, { app });
-    return;
-  }
-
   const restrictedNotificationGrantMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/permissions\/notifications\/([^/]+)$/);
   if (restrictedNotificationGrantMatch && (method === "PUT" || method === "DELETE")) {
     const connectedFolder = await getConnectedFolder(restrictedNotificationGrantMatch[1]);
@@ -2502,7 +2281,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       const body = await readJsonBody<{ path?: unknown }>(state, req);
       if (body.path !== undefined && typeof body.path !== "string") throw badRequest("Choose a folder.");
       const target = await standardFolderRegistrationTarget(standardFolderId, body.path ?? "");
-      const connectedFolder = await runCheckConnectedFolderRegistryMutation(state, () => registerConnectedFolderInternal(state, target));
+      const connectedFolder = await registerConnectedFolderInternal(state, target);
       sendJson(res, { connectedFolder }, 201);
       return;
     }
@@ -5366,8 +5145,6 @@ async function removeConnectedFolderRegistrationInternal(
     };
   };
   return runRestrictedAppMutations(state, affectedConnectedFolderIds, () => runSettledConnectedFolderDeletion(state, connectedFolder.id, async () => {
-    const releaseCheckRemoval = state.checks.tryReserveConnectedFolderRemoval(connectedFolder.id);
-    if (!releaseCheckRemoval) throw httpError(409, "Wait for the current Check operation before removing this Connected Folder.");
     try {
       const impact = await state.restrictedApps.connectedFolderRemovalImpact(connectedFolder.id);
       if (impact.activeSourceInstanceCount > 0 || impact.activeTargetInstanceCount > 0) {
@@ -5389,13 +5166,8 @@ async function removeConnectedFolderRegistrationInternal(
         state.extensionUi.cancel(request.id);
         state.extensionRequests.delete(request.id);
       }
-      try {
-        await state.checks.removeConnectedFolder(connectedFolder.id);
-      } catch {
-        return withRecentlyDeleted(await connectedFolderRemovalPendingResult(intent));
-      }
-      // The same revocation moment as Check authority: enabled automations
-      // referencing this Connected Folder suspend (their active runs stop). Suspension
+      // Enabled automations referencing this Connected Folder suspend (their
+      // active runs stop) at the same revocation moment. Suspension
       // failing leaves the durable intent pending — startup retries the
       // cascade.
       try {
@@ -5427,7 +5199,6 @@ async function removeConnectedFolderRegistrationInternal(
       if (!result.cleanupPending) state.restrictedApps.releaseConnectedFolderRemovalFence(connectedFolder.id);
       return withRecentlyDeleted(result);
     } finally {
-      releaseCheckRemoval();
       publishControlHint(state, "connected-folders");
     }
   }), { requiredConnectedFolderIds: [connectedFolder.id] });
@@ -5701,7 +5472,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
    * Whole–Connected Folder restore replaces the working set running work may be reading,
    * so the act lane refuses concurrency the desktop still leaves to a confirm
    * dialog (docs/act-ledger.md, conflict rule 7). The live route state
-   * covers turns, compactions, and Check work; the kernel's
+   * covers turns and compactions; the kernel's
    * experimental fence covers active automation runs with files hops into the
    * Connected Folder and — once its reader exists — restricted-app automation runs whose
    * apps hold file grants into it (the ledger's item 4).
@@ -5713,9 +5484,6 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
     }
     if ([...state.compactingConversations].some((key) => key.startsWith(prefix))) {
       throw new AmpleFileCliError("conflict", "Wait for the running Chat compaction in this Connected Folder to finish before restoring.");
-    }
-    if (state.checkRunReservations.has(connectedFolderId) || state.checks.hasActiveRun(connectedFolderId)) {
-      throw new AmpleFileCliError("conflict", "Wait for the running Check work in this Connected Folder to finish before restoring.");
     }
     const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
     if (blockers.length) throw new AmpleFileCliError("conflict", blockers[0]!);
@@ -6552,7 +6320,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const name = input.name.trim();
       if (!name) throw new AmpleFileCliError("usage", "A Connected Folder name is required.");
-      const connectedFolder = await runActOperation(() => runCheckConnectedFolderRegistryMutation(state, () => createConnectedFolderInternal(state, name)));
+      const connectedFolder = await runActOperation(() => createConnectedFolderInternal(state, name));
       await state.requests.recordAction(input.parentTaskId, {
         command: "connected-folders.create",
         at: new Date().toISOString(),
@@ -6568,7 +6336,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       if (!rootPath || !isAbsolute(rootPath)) {
         throw new AmpleFileCliError("usage", "Provide an absolute folder path to register.");
       }
-      const connectedFolder = await runActOperation(() => runCheckConnectedFolderRegistryMutation(state, () => registerConnectedFolderInternal(state, rootPath)));
+      const connectedFolder = await runActOperation(() => registerConnectedFolderInternal(state, rootPath));
       await state.requests.recordAction(input.parentTaskId, {
         command: "connected-folders.register",
         at: new Date().toISOString(),
@@ -6763,8 +6531,8 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       // Everywhere scope mutates the user-scope Pi settings every
       // Connected Folder runtime loads. The app-owned management root is the resolution
       // context — the same root the AmpleFile agent's own runtime
-      // uses — and the global capability fence refuses while any agent,
-      // compaction, or Check work is active anywhere.
+      // uses — and the global capability fence refuses while any agent
+      // or compaction work is active anywhere.
       const ampleFileAgentRootScope = { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot() };
       const removed = await runActOperation(() => runCapabilityMutation(state, ampleFileAgentRootScope, "global", () =>
         removePiPackage(ampleFileAgentRootScope.connectedFolderRoot, source, {
@@ -7817,9 +7585,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
                 ...(connectedFolderNames.has(step.toConnectedFolder) ? { toConnectedFolderName: connectedFolderNames.get(step.toConnectedFolder)! } : {}),
                 to: step.to,
               }
-              : step.kind === "check"
-                ? { id: step.id, kind: "check" as const, connectedFolderId: step.connectedFolder, ...named(step.connectedFolder), ...(step.check ? { checkId: step.check } : {}) }
-                : { id: step.id, kind: "agent" as const, message: step.message, ...(step.model ? { model: step.model } : {}) }),
+              : { id: step.id, kind: "agent" as const, message: step.message, ...(step.model ? { model: step.model } : {}) }),
           grants: projection.grants.map((grant) => ({
             digest: grant.digest,
             requestId: grant.requestId,
@@ -7882,109 +7648,6 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
     async automationsReceipts(input) {
       const projection = await readAutomationReceiptProjection(input.automation?.trim());
       return { ...projection, receipts: [...projection.receipts].reverse() };
-    },
-    async checksEnable(input) {
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      return runReservedCheckOperation(state, connectedFolder.id, async () => {
-        const proposalPath = isAbsolute(input.proposalPath)
-          ? resolve(input.proposalPath)
-          : resolve(input.cwd, input.proposalPath);
-        const enabled = await runActOperation(() => state.checks.enable({
-          connectedFolder: connectedFolder,
-          proposalPath,
-          actor: "cli",
-          ...(input.proposeOnly ? { proposeOnly: true } : {}),
-        }));
-        return {
-          connectedFolder: toActConnectedFolderRef(connectedFolder),
-          check: {
-            id: enabled.declaration.id,
-            title: enabled.declaration.title,
-            severity: enabled.declaration.severity,
-            sensorId: enabled.declaration.sensor.id,
-            sensorRevision: enabled.declaration.sensor.revision,
-            targetCount: enabled.declaration.targets.length,
-            trigger: enabled.declaration.trigger,
-            targets: enabled.declaration.targets.map((target) => ({ ...target })),
-          },
-          declarationDigest: enabled.digest,
-        };
-      });
-    },
-    async checksProposeFix(input) {
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const proposalPath = isAbsolute(input.proposalPath) ? resolve(input.proposalPath) : resolve(input.cwd, input.proposalPath);
-      const correction = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.proposeCorrection({ connectedFolder, proposalPath }));
-      return { connectedFolder: toActConnectedFolderRef(connectedFolder), correction };
-    },
-    async checksDisable(input) {
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      return runReservedCheckOperation(state, connectedFolder.id, async () => ({
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        checkId: input.checkId,
-        disabled: await runActOperation(() => state.checks.disable(connectedFolder, input.checkId)),
-      }));
-    },
-    async checksRun(input) {
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      return runReservedCheckOperation(state, connectedFolder.id, async () => {
-        const accepted = await runActOperation(() => state.checks.run({
-          connectedFolder: connectedFolder,
-          ...(input.checkId ? { checkId: input.checkId } : {}),
-          actor: { kind: "cli", cwd: connectedFolder.connectedFolderRoot, connectedFolderId: connectedFolder.id },
-        }));
-        return { connectedFolder: toActConnectedFolderRef(connectedFolder), ...accepted };
-      });
-    },
-    async checksTask(input) {
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      return runReservedCheckOperation(state, connectedFolder.id, async () => ({
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        task: await state.checks.taskStatus(connectedFolder.id, input.taskId),
-      }));
-    },
-    async checksResult(input) {
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      return runReservedCheckOperation(state, connectedFolder.id, async () => {
-        const run = await runActOperation(() => state.checks.taskResult(connectedFolder.id, input.taskId));
-        if (run.state === "aborted" || run.state === "interrupted") {
-          throw new AmpleFileCliError("conflict", run.error ?? "The Check run did not finish.");
-        }
-        if (run.state === "failed") throw new AmpleFileCliError("failure", run.error ?? "The Check run failed.");
-        return { connectedFolder: toActConnectedFolderRef(connectedFolder), run };
-      });
-    },
-    async checksAbort(input) {
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      return runReservedCheckOperation(state, connectedFolder.id, async () => ({
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        taskId: input.taskId,
-        aborted: await state.checks.abort(connectedFolder.id, input.taskId),
-      }));
-    },
-    async checksProblems(input) {
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      return runReservedCheckOperation(state, connectedFolder.id, async () => {
-        const result = await runActOperation(() => state.checks.problems(connectedFolder, input.checkId));
-        return {
-          connectedFolder: toActConnectedFolderRef(connectedFolder),
-          ...(input.checkId ? { checkId: input.checkId } : {}),
-          ...result,
-        };
-      });
-    },
-    async checksDecide(input) {
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      return runReservedCheckOperation(state, connectedFolder.id, async () => {
-        const decision = await runActOperation(() => state.checks.decide({
-          connectedFolderId: connectedFolder.id,
-          findingId: input.findingId,
-          decision: input.decision,
-          actor: "cli",
-          ...(input.deferUntil ? { deferUntil: input.deferUntil } : {}),
-        }));
-        return { connectedFolder: toActConnectedFolderRef(connectedFolder), findingId: input.findingId, decision };
-      });
     },
     async agentList() {
       const scope = ampleFileAgentScope(state);
@@ -9323,7 +8986,7 @@ const maxActPresentationFileBytes = 65_536;
 /**
  * Reads and validates one typed `connected-folder-appearance` proposal file, resolved
  * host-side against the caller's working directory — the same file-borne
- * input pattern as `checks enable --proposal`. Nothing but the typed proposal
+ * input pattern as `automations enable --proposal`. Nothing but the typed proposal
  * is accepted: no free-form argv colors, no other JSON shapes.
  */
 async function readConnectedFolderAppearanceProposalFile(rawPath: string, cwd: string): Promise<ConnectedFolderAppearanceProposal> {
@@ -9476,17 +9139,6 @@ function toActAutomationTriggerRef(trigger: AmpleFileAutomationDeclaration["trig
   if (trigger.kind === "at") return { kind: "at", at: trigger.at, ifMissed: trigger.ifMissed };
   if (trigger.kind === "on-settled") {
     const source = trigger.source;
-    if (source.kind === "check-run") {
-      return {
-        kind: "on-settled",
-        source: {
-          kind: "check-run",
-          connectedFolderId: source.connectedFolder,
-          ...(source.check ? { checkId: source.check } : {}),
-          outcomes: [...source.outcomes],
-        },
-      };
-    }
     return {
       kind: "on-settled",
       source: {
@@ -9637,7 +9289,8 @@ function projectAutomationReceipt(value: unknown): AmpleFileActAutomationReceipt
   };
   addText("runId", receipt.runId);
   addText("hopId", receipt.hopId);
-  if (receipt.hopKind === "chat" || receipt.hopKind === "files" || receipt.hopKind === "check" || receipt.hopKind === "agent") {
+  // Lines written before Checks were removed may name a `check` hop; it is not projected.
+  if (receipt.hopKind === "chat" || receipt.hopKind === "files" || receipt.hopKind === "agent") {
     projected.hopKind = receipt.hopKind;
   }
   addText("title", receipt.title);
@@ -9652,7 +9305,6 @@ function projectAutomationReceipt(value: unknown): AmpleFileActAutomationReceipt
   addText("conversationId", receipt.conversationId);
   addText("taskId", receipt.taskId);
   addText("restorePointId", receipt.restorePointId);
-  addText("checkRunId", receipt.checkRunId);
   addText("failedHopId", receipt.failedHopId);
   addText("surface", receipt.surface);
   addText("decisionId", receipt.decisionId);
@@ -9666,7 +9318,6 @@ function projectAutomationReceipt(value: unknown): AmpleFileActAutomationReceipt
   addList("checkpointIds", receipt.checkpointIds);
   addList("sourcePaths", receipt.sourcePaths);
   addList("copiedPaths", receipt.copiedPaths);
-  addList("checkIds", receipt.checkIds);
   addList("stoppedHopTaskIds", receipt.stoppedHopTaskIds);
   addList("missingConnectedFolderIds", receipt.missingConnectedFolderIds);
   const addCount = (key: keyof AmpleFileActAutomationReceipt, candidate: unknown) => {
@@ -9676,8 +9327,6 @@ function projectAutomationReceipt(value: unknown): AmpleFileActAutomationReceipt
   };
   addCount("fileCount", receipt.fileCount);
   addCount("totalBytes", receipt.totalBytes);
-  addCount("findingCount", receipt.findingCount);
-  addCount("admittedCount", receipt.admittedCount);
   addCount("messageBytes", receipt.messageBytes);
   const placeholders = projectAutomationReceiptPlaceholders(receipt.placeholders);
   if (placeholders) projected.placeholders = placeholders;
@@ -9750,25 +9399,9 @@ function projectAutomationReceiptCause(value: unknown): unknown {
   const source = cause.source as Record<string, unknown>;
   const connectedFolderId = automationReceiptText(source.connectedFolderId);
   const runId = automationReceiptText(source.runId);
-  // A Check-run settle records `state`; an app-automation settle records
-  // `outcome`. Both read as the settled result here.
-  const outcome = automationReceiptText(source.outcome) ?? automationReceiptText(source.state);
+  const outcome = automationReceiptText(source.outcome);
   if (!connectedFolderId || !runId || !outcome) return undefined;
-  if (source.kind === "check-run") {
-    const checkIds = automationReceiptTextList(source.checkIds);
-    return {
-      kind: "on-settled",
-      source: {
-        kind: "check-run",
-        connectedFolderId,
-        runId,
-        outcome,
-        ...(automationReceiptText(source.taskId) ? { taskId: automationReceiptText(source.taskId) } : {}),
-        ...(checkIds?.length ? { checkIds } : {}),
-        ...(automationReceiptText(source.checkId) ? { checkId: automationReceiptText(source.checkId) } : {}),
-      },
-    };
-  }
+  // A Check-run cause from before Checks were removed is not projected.
   if (source.kind === "app-automation-run") {
     const appId = automationReceiptText(source.appId);
     const appAutomationId = automationReceiptText(source.appAutomationId);
@@ -9912,14 +9545,7 @@ function createAmpleFileAutomationSettingsFacade(state: LocalApiState): AmpleFil
                 to: step.to,
                 source: toActAutomationFilesSource(step.from),
               }
-              : step.kind === "check"
-                ? {
-                  id: step.id,
-                  kind: "check" as const,
-                  connectedFolder: named(step.connectedFolder),
-                  ...(step.check ? { checkId: step.check } : {}),
-                }
-                : { id: step.id, kind: "agent" as const, message: step.message, ...(step.model ? { model: step.model } : {}) }),
+              : { id: step.id, kind: "agent" as const, message: step.message, ...(step.model ? { model: step.model } : {}) }),
           ...(projection.atOccurrence?.finishedAt
             ? { completedAt: projection.atOccurrence.finishedAt }
             : projection.atOccurrence?.consumedAt
@@ -10312,7 +9938,7 @@ function automationSettingsCause(value: unknown): string | undefined {
   }
   if (cause.kind === "on-settled" && cause.source && typeof cause.source === "object" && !Array.isArray(cause.source)) {
     const source = cause.source as Record<string, unknown>;
-    return source.kind === "check-run" ? "After a Check run" : "After an app automation run";
+    return source.kind === "app-automation-run" ? "After an app automation run" : "After a settled run";
   }
   return undefined;
 }
@@ -10325,10 +9951,6 @@ function automationSettingsEvidence(receipt: AmpleFileActAutomationReceipt): Arr
   if (receipt.restorePointId) evidence.push({ label: "Restore point", value: receipt.restorePointId });
   if (receipt.fileCount !== undefined) evidence.push({ label: "Files", value: String(receipt.fileCount) });
   if (receipt.totalBytes !== undefined) evidence.push({ label: "Bytes", value: String(receipt.totalBytes) });
-  if (receipt.checkRunId) evidence.push({ label: "Check run", value: receipt.checkRunId });
-  if (receipt.checkIds?.length) evidence.push({ label: "Checks", value: receipt.checkIds.join(", ") });
-  if (receipt.findingCount !== undefined) evidence.push({ label: "Findings", value: String(receipt.findingCount) });
-  if (receipt.admittedCount !== undefined) evidence.push({ label: "Admitted", value: String(receipt.admittedCount) });
   if (receipt.placeholders?.length) {
     evidence.push({ label: "Filled in", value: receipt.placeholders.map((placeholder) => placeholder.name).join(", ") });
   }
@@ -12571,9 +12193,6 @@ async function recoverPendingConnectedFolderRemovals(
         await restrictedAppProposals.removeConnectedFolder(intent.connectedFolderId);
         intent = await markConnectedFolderRemovalAppStateRemoved(intent.connectedFolderId, removalIo.io);
       }
-      // The durable removal intent must remain until Check authority is gone.
-      // This removal-only path never parses possibly damaged/future state.
-      await purgeAmpleFileCheckState(intent.connectedFolderId);
       await finalizeConnectedFolderRemoval(intent.connectedFolderId, removalIo.io);
     } catch {
       // The durable intent keeps this work-folder hidden and untrusted. Recovery of
@@ -12635,7 +12254,7 @@ function reserveCapabilityMutation(
   if (mutationConflict) throw httpError(409, "Wait for the current capability change to finish.");
 
   const runningConflict = scope === "global"
-    ? state.runningTurns.size > 0 || state.compactingConversations.size > 0 || state.checkRunReservations.size > 0 || state.checks.hasActiveRun()
+    ? state.runningTurns.size > 0 || state.compactingConversations.size > 0
     : hasActiveCapabilityWorkForConnectedFolder(state, connectedFolderId);
   if (runningConflict) {
     throw httpError(409, "Wait for affected agent work to finish before changing capabilities.");
@@ -12649,48 +12268,9 @@ function assertNoCapabilityMutationForTurn(state: LocalApiState, connectedFolder
   }
 }
 
-function assertNoCapabilityMutationForCheck(state: LocalApiState, connectedFolderId: string): void {
-  if (state.capabilityMutations.has(globalCapabilityMutationKey) || state.capabilityMutations.has(connectedFolderId)) {
-    throw new AmpleFileCliError("conflict", "Wait for the current capability change to finish before running or changing Checks.");
-  }
-}
-
-function reserveCheckOperation(state: LocalApiState, connectedFolderId: string): void {
-  assertNoCapabilityMutationForCheck(state, connectedFolderId);
-  if (state.checkRunReservations.has(connectedFolderId)) {
-    throw new AmpleFileCliError("conflict", "Wait for the current Check operation to finish.");
-  }
-  state.checkRunReservations.add(connectedFolderId);
-}
-
-async function runReservedCheckOperation<T>(
-  state: LocalApiState,
-  connectedFolderId: string,
-  operation: () => Promise<T>,
-): Promise<T> {
-  reserveCheckOperation(state, connectedFolderId);
-  try {
-    return await operation();
-  } finally {
-    state.checkRunReservations.delete(connectedFolderId);
-  }
-}
-
-async function runCheckConnectedFolderRegistryMutation<T>(state: LocalApiState, operation: () => Promise<T>): Promise<T> {
-  const release = state.checks.tryReserveConnectedFolderRegistryMutation();
-  if (!release) throw httpError(409, "Wait for current Check work to finish before changing registered Connected Folders.");
-  try {
-    return await operation();
-  } finally {
-    release();
-  }
-}
-
 function hasActiveCapabilityWorkForConnectedFolder(state: LocalApiState, connectedFolderId: string, exceptTurnKey?: string): boolean {
   const prefix = `${connectedFolderId}:`;
-  return [...state.runningTurns, ...state.compactingConversations].some((key) => key.startsWith(prefix) && key !== exceptTurnKey)
-    || state.checkRunReservations.has(connectedFolderId)
-    || state.checks.hasActiveRun(connectedFolderId);
+  return [...state.runningTurns, ...state.compactingConversations].some((key) => key.startsWith(prefix) && key !== exceptTurnKey);
 }
 
 // ---------------------------------------------------------------------------
@@ -13590,7 +13170,7 @@ function createAutomationEnableAdapter(state: LocalApiState): PreparedActAdapter
  * the registered identity and canonical root; the `.workspace/` fail-closed
  * rule and managed-root identity claims are re-checked by the removal
  * machinery itself at execution. The complete desktop removal orchestration
- * — impact checks, Check, automation, and app-state revocation, claim-verified
+ * — impact checks, automation and app-state revocation, claim-verified
  * managed deletion — is shared with DELETE /api/connected-folders/:id and `connected-folders
  * unregister`. It reserves its own capability fences across every affected
  * Connected Folder, so the adapter's null fenceScope keeps the executor from reserving
@@ -13631,8 +13211,8 @@ function createManagedConnectedFolderDeletionAdapter(
 /**
  * The automation executor's hop ports: the same in-process internals the act
  * facade uses — turn acceptance in a fresh Chat, a new thread of the
- * AmpleFile agent, the files-add copy with its restore point,
- * reserved Check runs — honoring aborts through each domain's own abort path,
+ * AmpleFile agent, and the files-add copy with its restore point — honoring
+ * aborts through each domain's own abort path,
  * and returning identifiers and counts only. The executor fills every
  * placeholder before it calls a message port, so `message` is exactly what
  * the hop sends.
@@ -13709,26 +13289,6 @@ function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomationHopP
       if (!known.configured) return `${known.name} needs ${known.providerName} connected in Settings → AI Models first.`;
       return null;
     },
-    async checkRunFindings(connectedFolderId, taskId) {
-      const connectedFolder = await getConnectedFolder(connectedFolderId).catch(() => null);
-      if (!connectedFolder) return null;
-      let run: Awaited<ReturnType<typeof state.checks.taskResult>>;
-      try {
-        run = await state.checks.taskResult(connectedFolder.id, taskId);
-      } catch {
-        return null;
-      }
-      return {
-        findings: run.findings
-          .filter((finding) => finding.status === "active")
-          .map((finding) => ({
-            checkId: finding.checkId,
-            title: finding.title,
-            targetPath: finding.targetPath,
-            severity: finding.severity,
-          })),
-      };
-    },
     async files(step, source, context) {
       const reserved: string[] = [];
       try {
@@ -13768,45 +13328,6 @@ function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomationHopP
         };
       } finally { for (const id of reserved) state.capabilityMutations.delete(id); }
     },
-    async check(step, context) {
-      const connectedFolder = await getConnectedFolder(step.connectedFolder);
-      const accepted = await runReservedCheckOperation(state, connectedFolder.id, () => state.checks.run({
-        connectedFolder,
-        ...(step.check !== undefined ? { checkId: step.check } : {}),
-        actor: { kind: "system", connectedFolderId: connectedFolder.id },
-        // Lineage stamps the settle record so automation-caused runs never fire
-        // on-settled triggers — chains stay structurally impossible.
-        lineage: context.lineage,
-      }));
-      const requestAbort = (): void => {
-        void state.checks.abort(connectedFolder.id, accepted.taskId).catch(() => undefined);
-      };
-      if (context.signal.aborted) requestAbort();
-      context.signal.addEventListener("abort", requestAbort, { once: true });
-      try {
-        for (;;) {
-          const status = await state.checks.taskStatus(connectedFolder.id, accepted.taskId);
-          if (status.state === "unknown") throw new Error("AmpleFile lost track of this Check run.");
-          if (status.state !== "accepted" && status.state !== "running") break;
-          await settleDelay(50);
-        }
-        const run = await state.checks.taskResult(connectedFolder.id, accepted.taskId);
-        if (run.state === "accepted" || run.state === "running") {
-          throw new Error("The Check run has not settled.");
-        }
-        return {
-          runId: run.id,
-          taskId: accepted.taskId,
-          state: run.state,
-          checkIds: [...run.checkIds],
-          findingCount: run.findings.length,
-          admittedCount: run.admittedCount,
-          ...(run.error !== undefined ? { error: run.error } : {}),
-        };
-      } finally {
-        context.signal.removeEventListener("abort", requestAbort);
-      }
-    },
     async checkpointManifest(connectedFolderId, checkpointId) {
       const connectedFolder = await getConnectedFolder(connectedFolderId).catch(() => null);
       if (!connectedFolder) return null;
@@ -13827,7 +13348,7 @@ function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomationHopP
 /**
  * Resolves an automation files hop's source selection inside the source Connected Folder:
  * exact paths under the ordinary Connected Folder path policy (no symbolic links, no
- * reserved segments), or the bounded tree selector through the Check target
+ * reserved segments), or the bounded tree selector through the folder target
  * resolver's discipline and the automation handoff bounds.
  */
 async function resolveAutomationFilesSources(
@@ -13850,7 +13371,7 @@ async function resolveAutomationFilesSources(
     }
     return absolute;
   }
-  const resolution = await resolveAmpleFileCheckTargets(fromConnectedFolderRoot, [{
+  const resolution = await resolveFolderTargets(fromConnectedFolderRoot, [{
     kind: "tree",
     role: "primary",
     path: source.path,
@@ -13959,8 +13480,7 @@ const maxOverviewAppAutomationReceipts = 2_048;
  * The overview's live-registry source readers (docs/amplefile-agent-overview.md): recorded
  * state only — the settled-turn records, the durable request graph
  * (docs/collaboration-contract.md, F25), the
- * chat store and History per registered Connected Folder, the Check service's status and
- * content-free settled runs, the act-receipts ledger, the automation receipts
+ * chat store and History per registered Connected Folder, the act-receipts ledger, the automation receipts
  * journal, and the restricted-app registry's machine-wide automation ledgers
  * (active accepted runs and settled receipts). The kernel's own task registry supplies running
  * tasks.
@@ -13995,20 +13515,6 @@ function createServerOverviewSources(state: LocalApiState): AmpleFileOverviewSou
         reason: checkpoint.reason,
         scope: checkpoint.scope,
       })),
-    checks: async (connectedFolder): Promise<AmpleFileOverviewCheckSource | null> => {
-      const ref = { id: connectedFolder.id, connectedFolderRoot: connectedFolder.connectedFolderRoot };
-      return {
-        status: await state.checks.status(ref),
-        settledRuns: (await state.checks.settledRuns(ref)).map((run) => ({
-          runId: run.runId,
-          taskId: run.taskId,
-          state: run.state,
-          startedAt: run.startedAt,
-          ...(run.endedAt !== undefined ? { endedAt: run.endedAt } : {}),
-          admittedCount: run.admittedCount,
-        })),
-      };
-    },
     actReceipts: () => readActReceiptJournal(state),
     // The restricted-app registry's machine-wide ledgers: accepted-but-not-
     // settled runs render as running work, durable settled receipts as
@@ -14876,7 +14382,6 @@ function sendError(res: ServerResponse, error: unknown): void {
   const explicit = typeof (error as { statusCode?: unknown })?.statusCode === "number" ? (error as { statusCode: number }).statusCode : null;
   const status = explicit
     ?? ampleFileCliErrorStatus(error)
-    ?? (error instanceof AmpleFileCheckOperationConflictError ? 409 : null)
     ?? (error instanceof RestrictedAppTaskError ? ({ TASK_DENIED: 403, TASK_INVALID: 400, TASK_CONFLICT: 409, TASK_UNAVAILABLE: 503 }[error.code]) : null)
     ?? automationErrorStatus(error)
     ?? restrictedAppErrorStatus(error)
@@ -14980,10 +14485,6 @@ function notFound(message: string): Error { return httpError(404, message); }
 function tooLarge(message: string): Error { return httpError(413, message); }
 function unavailable(message: string): Error { return httpError(503, message); }
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
-
-function isAmpleFileCheckDecisionKind(value: unknown): value is AmpleFileCheckDecisionKind {
-  return value === "accept" || value === "reject" || value === "resolve" || value === "defer";
-}
 
 function match(path: string, pattern: RegExp): string[] | null {
   const result = pattern.exec(path);

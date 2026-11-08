@@ -14,10 +14,9 @@ export type AutomationTriggerView =
     kind: "on-settled";
     summary?: string;
     source: {
-      kind: "check-run" | "app-automation-run";
+      kind: "app-automation-run";
       connectedFolderId: string;
       connectedFolderName?: string;
-      checkId?: string;
       appId?: string;
       appAutomationId?: string;
       outcomes?: string[];
@@ -64,7 +63,6 @@ export function automationTriggerSummary(trigger: AutomationTriggerView): string
   if (trigger.kind === "at") return `Once · ${formatAutomationDateTime(trigger.at)}`;
   const source = trigger.source;
   const connectedFolder = source.connectedFolderName ?? source.connectedFolderId;
-  if (source.kind === "check-run") return `After a Check settles in ${connectedFolder}`;
   return `After ${source.appId} · ${source.appAutomationId} settles in ${connectedFolder}`;
 }
 
@@ -81,12 +79,12 @@ export function formatAutomationDateTime(value: string): string {
 
 /**
  * What an automation does in one Connected Folder, from its declaration: its trigger
- * watches the Connected Folder (a folder change, or a Check or app automation settling
- * there), a files step copies into or out of it, a chat step starts a Chat
- * there, or a check step runs a Check there.
+ * watches the Connected Folder (a folder change, or an app automation settling
+ * there), a files step copies into or out of it, or a chat step starts a Chat
+ * there.
  */
-export type FolderAutomationRole = "watches" | "copies-to" | "copies-from" | "chats-here" | "checks-here";
-export const folderAutomationRoles: readonly FolderAutomationRole[] = ["watches", "copies-to", "copies-from", "chats-here", "checks-here"];
+export type FolderAutomationRole = "watches" | "copies-to" | "copies-from" | "chats-here";
+export const folderAutomationRoles: readonly FolderAutomationRole[] = ["watches", "copies-to", "copies-from", "chats-here"];
 
 /** One state word per row; `completed` is a one-time automation that already ran. */
 export type FolderAutomationState = "on" | "off" | "running" | "suspended" | "completed";

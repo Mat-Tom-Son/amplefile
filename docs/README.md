@@ -26,7 +26,7 @@ instruction to implement its contents.
 |---|---|
 | Product and contributor workflow | [Product model](product-model.md), [Contributing](../CONTRIBUTING.md), [Development](development.md), [Architecture](architecture.md) |
 | The AmpleFile agent and receipts | [Decision register](amplefile-agent-decisions.md), [Receipts, not gates](receipts-not-gates.md), [Collaboration contract](collaboration-contract.md), [Background jobs](background-jobs.md), [Worker tools](worker-tools.md), [Built-in browser](built-in-browser.md), [The AmpleFile agent and CLI](amplefile-agent-and-cli.md), [Act ledger](act-ledger.md) |
-| Checks and Automations | [Checks](checks.md), [Automations (technical automation contract)](automations.md), [The overview](amplefile-agent-overview.md) |
+| Automations | [Automations (technical automation contract)](automations.md), [The overview](amplefile-agent-overview.md) |
 | Native agent capabilities | [Skills, Extensions, packages, and scopes](skills-and-extensions.md), [Pi resources](pi-resources.md), [Declarative Extension surfaces](extension-surfaces.md) |
 | Restricted Connected Folder apps | [Authoring](restricted-app-authoring.md), [Runtime](restricted-app-runtime.md), [App platform foundation](app-platform-foundation.md) |
 | Desktop interaction and appearance | [Desktop parity](ui-parity.md), [Collaboration experience](collaboration-experience.md), [Visual system](visual-design.md), [Application appearance](application-appearance.md), [Connected Folder customization](connected-folder-customization.md), [Image generation](image-generation.md) |

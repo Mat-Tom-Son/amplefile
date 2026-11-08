@@ -29,8 +29,6 @@ test("every desktop app management helper retains its exact installation and rev
   await apps.setRestrictedAppNetworkGrant(app, "api", false);
   await apps.setRestrictedAppFileGrant(app, "quotes", true, "quotes");
   await apps.setRestrictedAppFileGrant(app, "quotes", false);
-  await apps.setRestrictedAppCheckGrant(app, "review", { checkId: "selected", declarationDigest: "b".repeat(64) });
-  await apps.setRestrictedAppCheckGrant(app, "review", null);
   await apps.setRestrictedAppNotificationGrant(app, "ready", true);
   await apps.setRestrictedAppNotificationGrant(app, "ready", false);
   await apps.setRestrictedAppAutomationEnabled(app, "refresh", true);
@@ -50,6 +48,6 @@ test("every desktop app management helper retains its exact installation and rev
   await apps.listRestrictedAppAssistantTasks(app);
   await apps.readRestrictedAppAssistantTask(app, "request-one");
   await apps.cancelRestrictedAppAssistantTask(app, "request-one");
-  assert.equal(requests.length, 27);
+  assert.equal(requests.length, 25);
   assert.ok(requests.includes("POST /api/connected-folders/source/restricted-apps/quotes/assistant-tasks/request-one/cancel"));
 });

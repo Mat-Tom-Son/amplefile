@@ -28,12 +28,7 @@ const fixtureRequested = new URLSearchParams(window.location.search).get("fixtur
 
 type DesktopActionCommand = "toggle-sidebar" | "toggle-agent-panel" | "new-chat" | "reload-connected-folder-state" | "open-capabilities" | "open-skills" | "open-extensions" | "open-command-palette" | "close-tab" | "customize-connected-folder" | "app-change-chat" | "open-app-build-chat" | "open-app-result-file" | "open-app-studio";
 /** A cross-cutting request handled by the open Connected Folder view; app navigation from Settings carries the app or Chat it names. */
-type DesktopAction = { id: number; command: DesktopActionCommand | "open-checks"; connectedFolderId?: string; app?: RestrictedAppInstalled; conversationId?: string; runtimeInstanceId?: string; path?: string; title?: string };
-interface ConnectedFolderChecksControl {
-  connectedFolderId: string;
-  suspend: () => Promise<void>;
-  resume: () => Promise<void>;
-}
+type DesktopAction = { id: number; command: DesktopActionCommand; connectedFolderId?: string; app?: RestrictedAppInstalled; conversationId?: string; runtimeInstanceId?: string; path?: string; title?: string };
 
 export function App() {
   const appearance = useApplicationAppearance({ fixtureMode: fixtureRequested });
@@ -80,8 +75,7 @@ export function App() {
   const [settingsBackAction, setSettingsBackAction] = useState<(() => void) | null>(null);
   const settingsReturnFocusRef = useRef<HTMLElement | null>(null);
   const [modelConfigurationRevision, modelConfigurationChanged] = useModelConfigurationRevision(!fixtureRequested);
-  const activeChecksControlRef = useRef<ConnectedFolderChecksControl | null>(null);
-  const [pendingConnectedFolderOpen, setPendingConnectedFolderOpen] = useState<{ id: number; connectedFolderId: string; view?: "checks" } | null>(null);
+  const [pendingConnectedFolderOpen, setPendingConnectedFolderOpen] = useState<{ id: number; connectedFolderId: string } | null>(null);
   const [desktopAction, setDesktopAction] = useState<DesktopAction | null>(null);
   const [updateStatus, setUpdateStatus] = useState<DesktopUpdateStatus | null>(null);
   const handleRestrictedAppError = useCallback((caught: unknown) => setError(errorText(caught)), []);
@@ -108,11 +102,6 @@ export function App() {
     const target = settingsReturnFocusRef.current;
     window.requestAnimationFrame(() => { if (target?.isConnected && !target.inert) target.focus(); });
   }, []);
-  const updateActiveChecksControl = useCallback((control: ConnectedFolderChecksControl | null) => {
-    if (control || activeChecksControlRef.current?.connectedFolderId === activeConnectedFolderId) {
-      activeChecksControlRef.current = control;
-    }
-  }, [activeConnectedFolderId]);
 
   useScrollbarActivity();
 
@@ -177,15 +166,14 @@ export function App() {
   useEffect(() => {
     const desktopConnectedFolder = window.ampleFileDesktop?.connectedFolder;
     if (!desktopConnectedFolder?.onOpenConnectedFolder || !boot) return;
-    return desktopConnectedFolder.onOpenConnectedFolder((connectedFolderId, view) => {
-      setPendingConnectedFolderOpen({ id: Date.now(), connectedFolderId, view });
+    return desktopConnectedFolder.onOpenConnectedFolder((connectedFolderId) => {
+      setPendingConnectedFolderOpen({ id: Date.now(), connectedFolderId });
       if (!boot.connectedFolders.some((connectedFolder) => connectedFolder.id === connectedFolderId)) void refreshBootstrap();
     });
   }, [boot?.connectedFolders, refreshBootstrap]);
   useEffect(() => {
     if (!pendingConnectedFolderOpen || !boot?.connectedFolders.some((connectedFolder) => connectedFolder.id === pendingConnectedFolderOpen.connectedFolderId)) return;
     setActiveConnectedFolderId(pendingConnectedFolderOpen.connectedFolderId);
-    if (pendingConnectedFolderOpen.view === "checks") setDesktopAction({ id: pendingConnectedFolderOpen.id, command: "open-checks" });
     setPendingConnectedFolderOpen(null);
   }, [pendingConnectedFolderOpen, boot?.connectedFolders]);
   useEffect(() => {
@@ -232,30 +220,20 @@ export function App() {
 
   async function createConnectedFolder(name: string) {
     if (fixtureRequested) { setCreateConnectedFolderOpen(false); showToast({ text: "Connected Folder creation is disabled in the preview", tone: "info" }); return; }
-    const checksControl = activeChecksControlRef.current;
-    try {
-      await checksControl?.suspend();
-      const result = await api<{ connectedFolder: ConnectedFolderSummary }>("/api/connected-folders", { method: "POST", body: { name } });
-      await refreshBootstrap(); setActiveConnectedFolderId(result.connectedFolder.id); setCreateConnectedFolderOpen(false);
-      changeSetUpOffers((current) => [...current.filter((id) => id !== result.connectedFolder.id), result.connectedFolder.id]);
-    } finally {
-      void checksControl?.resume();
-    }
+    const result = await api<{ connectedFolder: ConnectedFolderSummary }>("/api/connected-folders", { method: "POST", body: { name } });
+    await refreshBootstrap(); setActiveConnectedFolderId(result.connectedFolder.id); setCreateConnectedFolderOpen(false);
+    changeSetUpOffers((current) => [...current.filter((id) => id !== result.connectedFolder.id), result.connectedFolder.id]);
   }
 
   async function openFolder() {
     const picker = window.ampleFileDesktop?.connectedFolder;
     if (!picker) return setError("Folder selection is available in the desktop app.");
-    let checksControl: ConnectedFolderChecksControl | null = null;
     try {
       const selected = await picker.chooseFolder(); if (!selected) return;
-      checksControl = activeChecksControlRef.current;
-      await checksControl?.suspend();
       const result = await api<{ connectedFolder: ConnectedFolderSummary }>("/api/connected-folders/local-folder", { method: "POST", body: { connectedFolderRoot: selected.path, folderGrantId: selected.folderGrantId } });
       await refreshBootstrap(); setActiveConnectedFolderId(result.connectedFolder.id);
       changeSetUpOffers((current) => [...current.filter((id) => id !== result.connectedFolder.id), result.connectedFolder.id]);
     } catch (caught) { setError(errorText(caught)); }
-    finally { void checksControl?.resume(); }
   }
 
   async function checkForUpdates() {

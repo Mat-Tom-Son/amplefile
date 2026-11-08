@@ -77,14 +77,13 @@ function isActCommand(argumentsList) {
   const group = positional[0] || "";
   const actGroups = ["chat", "chats", "files", "agent", "history", "search", "tools", "apps", "automations", "recently-deleted", "requests", "jobs", "worktrees"];
   if (actGroups.includes(group)) return true;
-  if (group === "checks") return positional[1] !== "status";
   return group === "connected-folders" && positional[1] !== "list";
 }
 
 function parseWaitCommand(argumentsList) {
   const positional = argumentsList.filter((token) => token !== "--json");
   const group = positional[0];
-  if ((group !== "chat" && group !== "agent" && group !== "checks") || positional[1] !== "wait") return null;
+  if ((group !== "chat" && group !== "agent") || positional[1] !== "wait") return null;
   const json = argumentsList.includes("--json");
   let connectedFolder = "";
   let task = "";
@@ -105,9 +104,9 @@ function parseWaitCommand(argumentsList) {
       throw usageFailure(`Unknown option for ${group} wait: ${token}`);
     }
   }
-  if ((group === "chat" || group === "checks") && !connectedFolder) throw usageFailure("Act commands require an explicit --connected-folder <id-or-name>.");
+  if (group === "chat" && !connectedFolder) throw usageFailure("Act commands require an explicit --connected-folder <id-or-name>.");
   if (group === "agent" && connectedFolder) throw usageFailure("The AmpleFile agent sits above Connected Folders, so 'agent wait' takes no --connected-folder.");
-  if (!task) throw usageFailure(`Provide --task <id> from ${group === "checks" ? "checks run" : `${group} send`}.`);
+  if (!task) throw usageFailure(`Provide --task <id> from ${group} send.`);
   return { group, connectedFolder, task, timeoutSeconds, json };
 }
 
@@ -118,8 +117,8 @@ function runWaitLoop(context, plan, actToken) {
   // terminal state (then the result is printed), or the task is waiting on
   // an answer (then the status document with its `waiting` field is
   // printed, exit 0). A parent never sits on a child's question.
-  const scopeArgv = plan.group === "chat" || plan.group === "checks" ? ["--connected-folder", plan.connectedFolder] : [];
-  const statusArgv = [plan.group, plan.group === "checks" ? "task" : "status"].concat(scopeArgv, ["--task", plan.task, "--json"]);
+  const scopeArgv = plan.group === "chat" ? ["--connected-folder", plan.connectedFolder] : [];
+  const statusArgv = [plan.group, "status"].concat(scopeArgv, ["--task", plan.task, "--json"]);
   const deadline = Date.now() + plan.timeoutSeconds * 1000;
   for (;;) {
     const status = performRequest(context, statusArgv, actToken, null);
