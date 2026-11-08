@@ -164,7 +164,7 @@ This contract belongs only to AmpleFile's new profile and `.amplefile/` data. Th
 
 ## AmpleFile CLI
 
-The Windows installer places `amplefile.cmd`, an extensionless `amplefile` shim, and the private `amplefile-cli.ps1` helper in `<install>\bin`, then adds that directory to the current user's `PATH`. The Mac bundle places the extensionless shim and `amplefile-cli.jxa.js` under `AmpleFile.app/Contents/bin`; AmpleFile adds that directory to child-process `PATH` for Pi shell tools without editing a person's Terminal profile.
+The Mac bundle places the extensionless `amplefile` shim and `amplefile-cli.jxa.js` under `AmpleFile.app/Contents/bin`; AmpleFile adds that directory to child-process `PATH` for Pi shell tools without editing a person's Terminal profile.
 
 ### Other AI agents (Settings → Command Line)
 
@@ -469,8 +469,8 @@ Optional Checks reuse this split instead of creating another management plane. `
 
 The public command does not run Electron as Node; the `RunAsNode` fuse remains disabled. Instead it uses a bounded protocol-v1 file handoff:
 
-1. The shim writes an atomic UUID-named request beneath the owning app's platform profile containing the arguments, current working directory, protocol version, and timestamp. An installed production app uses `%APPDATA%\AmpleFile\cli\requests` on Windows or `~/Library/Application Support/AmpleFile/cli/requests` on macOS. An uninstalled Windows package uses `%APPDATA%\AmpleFile Development\cli\requests`, and the separately identified Mac smoke app uses its own product directory. Packaged child commands receive that exact root through the CLI-only `AMPLEFILE_CLI_STATE_DIR`; desktop state selection never reads it.
-2. It starts or contacts the exact installed Windows executable or Mac app executable with that request id. Electron's single-instance handoff routes the request to the existing desktop host when the app is already open.
+1. The shim writes an atomic UUID-named request beneath the owning app's platform profile containing the arguments, current working directory, protocol version, and timestamp. An installed production app uses `~/Library/Application Support/AmpleFile/cli/requests`, and the separately identified Mac smoke app uses its own product directory. Packaged child commands receive that exact root through the CLI-only `AMPLEFILE_CLI_STATE_DIR`; desktop state selection never reads it.
+2. It starts or contacts the exact installed Mac app executable with that request id. Electron's single-instance handoff routes the request to the existing desktop host when the app is already open.
 3. The desktop host claims and serializes the request, executes it through `AmpleFileCliKernelAdapter`, and atomically writes stdout, stderr, structured result, and exit code beneath `responses`.
 4. The shim returns that output and removes its request and response files. The broker also removes stale bounded files during initialization.
 
@@ -556,7 +556,7 @@ the trusted Settings → Apps page offers Details, Open Chat and Stop. See
 | Act facade over route internals | `src/local/server.ts`, `src/local/cli/act-facade.ts` | `tests/amplefile-act-facade.test.ts` |
 | Atomic bounded file broker | `src/local/cli/broker.ts` | `tests/amplefile-cli-broker.test.ts` |
 | Electron single-instance host | `desktop/src/amplefile-cli-host.ts`, `desktop/src/main.ts` | `tests/desktop-amplefile-cli-host.test.ts` |
-| Installer shims and PATH integration | `desktop/cli/`, `desktop/nsis/cli-path.nsh` | `tests/desktop-cli-packaging.test.ts` |
+| CLI shims and child-process PATH | `desktop/cli/`, `desktop/src/main.ts` | `tests/desktop-cli-packaging.test.ts` |
 | Real Pi turn driver | `scripts/amplefile-drive.ts` | Exercised against the local API when provider credentials are available. |
 | Restricted app review, grants, lifecycle, and storage | `src/local/agent/restricted-app-*.ts` | `tests/restricted-app-*.test.ts` |
 | Machine-wide restricted-app automation scheduling | `src/local/agent/amplefile-scheduler-service.ts` | `tests/amplefile-scheduler-service.test.ts` plus restricted-app service/API tests |
@@ -571,7 +571,7 @@ the trusted Settings → Apps page offers Details, Open Chat and Stop. See
 | Glance composition and seen markers | `src/local/overview.ts`, `src/local/overview-seen-store.ts` | `tests/amplefile-overview.test.ts`, `tests/amplefile-overview-seen-store.test.ts` |
 | Visible and worker sandbox hosts | `desktop/src/restricted-app-host.ts`, `desktop/src/restricted-app-preload.cts` | `npm run desktop:restricted-app:smoke` plus focused host/broker tests. |
 
-See [Architecture](architecture.md) for the surrounding process boundaries, [Product model](product-model.md) for the user-facing mental model, and [Windows build](windows-build.md) for packaging and release verification.
+See [Architecture](architecture.md) for the surrounding process boundaries, [Product model](product-model.md) for the user-facing mental model, and [macOS build and release lane](macos-build.md) for packaging and release verification.
 
 
 ### September 2026 contract expansion

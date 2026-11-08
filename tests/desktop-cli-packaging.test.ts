@@ -1,23 +1,20 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { basename, join, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const require = createRequire(import.meta.url);
 const builder = require(join(rootDir, "electron-builder.desktop.cjs"));
-const forge = require(join(rootDir, "desktop", "forge.config.cjs"));
 
-test("Electron Builder packages executable CLI shims outside ASAR and includes PATH hooks", () => {
+test("Electron Builder packages the macOS CLI shims outside ASAR", () => {
   assert.deepEqual(builder.extraFiles, [{
     from: "desktop/cli",
     to: "bin",
-    filter: ["amplefile", "amplefile.cmd", "amplefile-cli.ps1", "amplefile-cli.jxa.js"],
+    filter: ["amplefile", "amplefile-cli.jxa.js"],
   }]);
-  assert.equal(basename(builder.nsis.include), "cli-path.nsh");
   assert.equal(builder.asar, true);
   assert.equal(builder.electronFuses.runAsNode, false);
 });
@@ -38,31 +35,15 @@ test("macOS DMG artwork keeps the tracked source and generated packaging artifac
   assert.match(preflight, /out\/generated-assets\/dmg-background\.png/);
 });
 
-test("retained Forge packaging mirrors the package-root CLI bin layout", async () => {
-  const hooks = forge.packagerConfig.afterComplete;
-  assert.equal(Array.isArray(hooks), true);
-  assert.equal(hooks.length, 1);
-  const packageRoot = await mkdtemp(join(tmpdir(), "amplefile-forge-cli-"));
-  try {
-    await hooks[0](packageRoot);
-    for (const name of ["amplefile", "amplefile.cmd", "amplefile-cli.ps1", "amplefile-cli.jxa.js"]) {
-      assert.equal(
-        await readFile(join(packageRoot, "bin", name), "utf8"),
-        await readFile(join(rootDir, "desktop", "cli", name), "utf8"),
-      );
-    }
-  } finally {
-    await rm(packageRoot, { recursive: true, force: true });
-  }
-});
-
-test("macOS CLI shim uses the same atomic bounded protocol-v1 handoff", async () => {
+test("macOS CLI shim uses an atomic bounded protocol-v1 handoff", async () => {
   const [shellShim, jxaHelper] = await Promise.all([
     read("desktop/cli/amplefile"),
     read("desktop/cli/amplefile-cli.jxa.js"),
   ]);
+  assert.match(shellShim, /^#!\/usr\/bin\/env sh/);
   assert.match(shellShim, /uname -s/);
   assert.match(shellShim, /osascript -l JavaScript/);
+  assert.match(shellShim, /runs only on macOS/);
   for (const field of ["protocolVersion", "id", "argv", "cwd", "createdAt"]) {
     assert.match(jxaHelper, new RegExp(`\\b${field}:`), `request must include ${field}`);
   }
@@ -78,66 +59,6 @@ test("macOS CLI shim uses the same atomic bounded protocol-v1 handoff", async ()
   assert.match(jxaHelper, /\$\.exit\(exitCode\)/);
   assertActLaneShimContract(jxaHelper);
   assert.doesNotMatch(jxaHelper, /WORKSPACE_CLI_|Workspace\.app|Workspace Local Smoke|--workspace-cli-request/);
-});
-
-test("Windows CLI shim uses an atomic bounded protocol-v1 handoff", async () => {
-  const [shellShim, commandShim, powerShellShim] = await Promise.all([
-    read("desktop/cli/amplefile"),
-    read("desktop/cli/amplefile.cmd"),
-    read("desktop/cli/amplefile-cli.ps1"),
-  ]);
-  assert.match(shellShim, /^#!\/usr\/bin\/env sh/);
-  assert.match(shellShim, /exec "\$script_dir\/amplefile\.cmd" "\$@"/);
-  assert.match(commandShim, /-NoProfile\s+-NonInteractive/);
-  assert.match(commandShim, /amplefile-cli\.ps1"\s+%\*/);
-  assert.match(commandShim, /exit \/b %ERRORLEVEL%/);
-
-  for (const field of ["protocolVersion", "id", "argv", "cwd", "createdAt"]) {
-    assert.match(powerShellShim, new RegExp(`\\b${field}\\s*=`), `request must include ${field}`);
-  }
-  assert.match(powerShellShim, /\$script:AmpleFileCliRoot\s*=\s*Join-Path\s+\$stateDirectory\s+'cli'/);
-  assert.match(powerShellShim, /'requests'/);
-  assert.match(powerShellShim, /'responses'/);
-  assert.match(powerShellShim, /CurrentFileSystemLocation\.ProviderPath/);
-  assert.doesNotMatch(powerShellShim, /GetCurrentDirectory/);
-  assert.match(powerShellShim, /\[IO\.FileMode\]::CreateNew/);
-  assert.match(powerShellShim, /\$requestStream\.Flush\(\$true\)/);
-  assert.doesNotMatch(powerShellShim, /\$requestId\.\$PID\.tmp/);
-  assert.match(powerShellShim, /\[IO\.File\]::Move\(\$temporaryRequestPath,\s*\$requestPath\)/);
-  assert.match(powerShellShim, /Start-Process[\s\S]*?'--amplefile-cli-request'[\s\S]*?-WindowStyle Hidden/);
-  assert.match(powerShellShim, /AMPLEFILE_CLI_APP/);
-  assert.match(powerShellShim, /AMPLEFILE_CLI_STATE_DIR/);
-  assert.match(powerShellShim, /Uninstall AmpleFile\.exe/);
-  assert.match(powerShellShim, /AmpleFile Development/);
-  assert.match(powerShellShim, /AMPLEFILE_CLI_TIMEOUT_MS/);
-  assert.match(powerShellShim, /ElapsedMilliseconds\s+-ge\s+\$script:AmpleFileCliTimeoutMs/);
-  assert.match(powerShellShim, /\[Console\]::Out\.Write\(\[string\]\$Outcome\.Stdout\)/);
-  assert.match(powerShellShim, /\[Console\]::Error\.Write\(\[string\]\$Outcome\.Stderr\)/);
-  assert.match(powerShellShim, /ExitCode\s*=\s*\[Convert\]::ToInt32\(\$response\.exitCode/);
-  assert.match(powerShellShim, /Remove-Item -LiteralPath \$path -Force/);
-  assertActLaneShimContract(powerShellShim);
-  assert.doesNotMatch(powerShellShim, /WORKSPACE_CLI_|Workspace\.exe|Workspace Development|--workspace-cli-request/);
-});
-
-test("NSIS manages only the current-user PATH and broadcasts changes", async () => {
-  const [nsis, powerShellShim] = await Promise.all([
-    read("desktop/nsis/cli-path.nsh"),
-    read("desktop/cli/amplefile-cli.ps1"),
-  ]);
-  assert.match(nsis, /!macro customInstall/);
-  assert.match(nsis, /!macro customUnInstall/);
-  assert.match(nsis, /\$INSTDIR\\bin/);
-  assert.match(nsis, /nsExec::ExecToStack/);
-  assert.match(nsis, /-NoProfile\s+-NonInteractive/);
-  assert.match(nsis, /--amplefile-installer-manage-user-path \$\{ACTION\}/);
-  assert.match(nsis, /\$\{HWND_BROADCAST\}\s+\$\{WM_SETTINGCHANGE\}/);
-  assert.doesNotMatch(nsis, /HKLM|\$PROFILE|Documents\\PowerShell/i);
-
-  assert.match(powerShellShim, /Microsoft\.Win32\.Registry\]::CurrentUser/);
-  assert.match(powerShellShim, /RegistryValueOptions\]::DoNotExpandEnvironmentNames/);
-  assert.match(powerShellShim, /RegistryValueKind\]::ExpandString/);
-  assert.match(powerShellShim, /StringComparison\]::OrdinalIgnoreCase/);
-  assert.match(powerShellShim, /DeleteValue\('Path',\s*\$false\)/);
 });
 
 test("packaged asset verification requires external CLI shims", async () => {
@@ -174,7 +95,7 @@ test("desktop agent shells inherit the exact running profile in development and 
 });
 
 /**
- * Shared act-lane contract both platform shims must keep: automation that never
+ * Act-lane contract the macOS shim must keep: automation that never
  * lets a content-bearing act command fall through to protocol v1 — every
  * ledger family plus the two read-lane exceptions (`connected-folders list`,
  * `checks status`) — the per-launch token file, the bounded message payload

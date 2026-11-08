@@ -579,8 +579,7 @@ When a design is ambiguous, prefer the option that best preserves these properti
   revocation—before public discovery, an App Store, or generalized sync.
 - Verify and document supported provider OAuth flows account tier by account tier in packaged desktop releases; do not turn Pi's generic OAuth hook support into a blanket compatibility claim.
 - Add direct cloud-storage integrations behind a provider-neutral model with stable remote IDs, offline behavior, explicit conflicts, and no surprise deletion.
-- Reactivate Windows distribution only as a deliberate future product decision with a publicly trusted code-signing identity, platform-native CI/package evidence, an updater proof, and revised release authority that does not silently gate the Mac lane.
-- Consider Windows architectures only after that release lane is deliberately restored and x64 is stable.
+- Bring Windows distribution back only as a deliberate future product decision: the Windows build and release lanes were removed on 2026-11-07, so a new one needs a publicly trusted code-signing identity, platform-native package evidence, an updater proof, and release authority that does not gate the Mac lane.
 
 Roadmap wording must distinguish shipped behavior from direction. Update this section when a capability moves between layers.
 

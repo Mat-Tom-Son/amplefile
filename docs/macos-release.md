@@ -1,6 +1,6 @@
 # macOS release runbook
 
-This runbook publishes the active Apple silicon AmpleFile desktop release to the separate public feed at [`Mat-Tom-Son/amplefile-mac-releases`](https://github.com/Mat-Tom-Son/amplefile-mac-releases). Windows distribution is inactive: it has no CI package gate, tag workflow, or public-release prerequisite.
+This runbook publishes the active Apple silicon AmpleFile desktop release to the separate public feed at [`Mat-Tom-Son/amplefile-mac-releases`](https://github.com/Mat-Tom-Son/amplefile-mac-releases). AmpleFile has no Windows build or release lane.
 
 ## One-time workstation setup
 
@@ -173,7 +173,7 @@ source tag, a private source repository or Mac feed, an existing Mac tag,
 missing or stale local verification, changed Node/npm or dependency state, an
 incompatible signed artifact checkpoint or one begun before local checks passed,
 an unsigned manifest, a missing asset, or any remote size/digest mismatch.
-It does not inspect or require GitHub Actions status, Windows artifacts, or a
+It does not inspect or require GitHub Actions status or a
 source-repository GitHub Release. Installer-only artwork is generated under
 ignored `out/` build output so the release build cannot dirty its own checkout.
 The publisher uploads a draft first and verifies every asset's GitHub SHA-256
@@ -212,4 +212,4 @@ compatibility; record AmpleFile's proofs here as they pass.
 
 ## Release ownership
 
-The source repository owns code, exact release tags, issues, and documentation. `amplefile-mac-releases` is the active desktop artifact feed only. Do not develop or hand-edit release metadata in the feed repository, and do not add a competing tag publisher. Windows distribution remains dormant until it is deliberately redesigned, documented, and reactivated.
+The source repository owns code, exact release tags, issues, and documentation. `amplefile-mac-releases` is the active desktop artifact feed only. Do not develop or hand-edit release metadata in the feed repository, and do not add a competing tag publisher.
