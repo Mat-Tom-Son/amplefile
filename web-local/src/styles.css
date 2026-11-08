@@ -500,6 +500,69 @@ body:has(> #root > .desktop-chrome-shell) {
   font-size: var(--amplefile-type-sm);
 }
 
+/* A provider sign-in waiting on the browser: one line with Paste Link and Cancel, then the link's field. */
+.provider-sign-in {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+}
+
+.provider-sign-in-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-sign-in-row > svg {
+  flex: none;
+  color: var(--ui-accent);
+}
+
+.provider-sign-in-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-text-muted);
+  font-size: var(--amplefile-type-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.provider-sign-in-row .ui-control,
+.provider-sign-in-paste-row .ui-control {
+  flex: none;
+  white-space: nowrap;
+}
+
+.provider-sign-in-paste {
+  display: grid;
+  gap: 6px;
+}
+
+.provider-sign-in-paste-row {
+  display: flex;
+  gap: 8px;
+}
+
+.provider-sign-in-paste-row input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  color: var(--ui-text);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 8px;
+  font: inherit;
+  font-size: var(--amplefile-type-sm);
+}
+
+.provider-sign-in-paste-row input:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+
 .connect-ai-search {
   position: relative;
   display: block;

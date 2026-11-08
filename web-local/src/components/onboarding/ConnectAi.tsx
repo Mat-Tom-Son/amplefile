@@ -4,6 +4,7 @@ import { Check, ChevronRight, KeyRound, Loader2, Search } from "../chrome/icons"
 import { api, errorText } from "../../lib/api";
 import type { AgentModel, AgentProvider, AgentStatus } from "../../types";
 import { FOUNDRY_PROVIDERS } from "../../../../src/shared/foundry";
+import { ProviderSignInWaiting } from "./ProviderSignInWaiting";
 
 /**
  * Connect your AI: the one place a person connects a model
@@ -57,6 +58,9 @@ export function ConnectAi({ onConnected, onOpenSettings, providers: knownProvide
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The provider whose browser sign-in is under way, and whether its Cancel was chosen. */
+  const [signingIn, setSigningIn] = useState<{ provider: string; name: string } | null>(null);
+  const signInCancelled = useRef(false);
   const keyField = useRef<HTMLInputElement>(null);
   const live = useRef(true);
   useEffect(() => () => { live.current = false; }, []);
@@ -87,6 +91,8 @@ export function ConnectAi({ onConnected, onOpenSettings, providers: knownProvide
     if (busy) return;
     setBusy(provider.id);
     setError(null);
+    signInCancelled.current = false;
+    if (method === "oauth" && !fixtureMode) setSigningIn({ provider: provider.id, name: featuredProviders.find((item) => item.provider === provider.id)?.title ?? provider.name });
     try {
       const result = fixtureMode
         ? { status: { ready: true, configured: true, provider: provider.id, model: "fixture-model", piVersion: null, error: null } }
@@ -98,9 +104,9 @@ export function ConnectAi({ onConnected, onOpenSettings, providers: knownProvide
       const model = result.models?.find((item) => item.provider === result.status.provider && item.id === result.status.model);
       onConnected({ status: result.status, providerName: provider.name, modelName: model?.name ?? result.status.model });
     } catch (caught) {
-      if (live.current) setError(errorText(caught));
+      if (live.current && !(method === "oauth" && signInCancelled.current)) setError(errorText(caught));
     } finally {
-      if (live.current) setBusy(null);
+      if (live.current) { setBusy(null); setSigningIn(null); }
     }
   }
 
@@ -115,6 +121,8 @@ export function ConnectAi({ onConnected, onOpenSettings, providers: knownProvide
     if (provider.oauthAvailable) void connect(provider, "oauth");
     else setMode("key");
   }
+
+  const waiting = signingIn ? <ProviderSignInWaiting key={signingIn.provider} providerName={signingIn.name} fixtureMode={fixtureMode} onCancelRequested={() => { signInCancelled.current = true; }} /> : null;
 
   function submitKey(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -145,13 +153,13 @@ export function ConnectAi({ onConnected, onOpenSettings, providers: knownProvide
             {chosenFeatured ? <> <a href={chosenFeatured.keyUrl} target="_blank" rel="noreferrer">Get a {chosenProvider.name} Key</a></> : null}
           </p>
           {error ? <p className="connect-ai-error" role="alert">{error}</p> : null}
-          <div className="connect-ai-key-actions">
+          {waiting ?? <div className="connect-ai-key-actions">
             <button className="ui-control" type="button" disabled={Boolean(busy)} onClick={() => { setMode("pick"); setError(null); }}>Back</button>
             {chosenProvider.oauthAvailable ? <button className="ui-control" type="button" disabled={Boolean(busy)} onClick={() => void connect(chosenProvider, "oauth")}>{chosenProvider.oauthLabel ?? "Sign In Instead"}</button> : null}
             <button className="ui-control ui-control--primary" type="submit" disabled={Boolean(busy) || !apiKey.trim()}>
               {busy ? <Loader2 className="spin" size={16} aria-hidden="true" /> : null}Connect
             </button>
-          </div>
+          </div>}
         </form>
       </div>
     );
@@ -181,10 +189,11 @@ export function ConnectAi({ onConnected, onOpenSettings, providers: knownProvide
           ))}
           {!others.length ? <li className="connect-ai-hint">No provider matches “{query.trim()}”.</li> : null}
         </ul>
+        {waiting}
         {error ? <p className="connect-ai-error" role="alert">{error}</p> : null}
-        <div className="connect-ai-key-actions">
+        {waiting ? null : <div className="connect-ai-key-actions">
           <button className="ui-control" type="button" onClick={() => { setMode("pick"); setChosen(null); setError(null); setQuery(""); }}>Back</button>
-        </div>
+        </div>}
       </div>
     );
   }
@@ -195,13 +204,13 @@ export function ConnectAi({ onConnected, onOpenSettings, providers: knownProvide
         {featuredProviders.map((item) => {
           const provider = byId.get(item.provider);
           if (!provider) return null;
-          const waiting = busy === item.provider;
+          const connecting = busy === item.provider;
           return (
-            <button key={item.provider} className="connect-ai-card" type="button" disabled={Boolean(busy)} aria-busy={waiting ? "true" : undefined} onClick={() => choose(item.provider)}>
+            <button key={item.provider} className="connect-ai-card" type="button" disabled={Boolean(busy)} aria-busy={connecting ? "true" : undefined} onClick={() => choose(item.provider)}>
               <strong>{item.title}</strong>
-              <span>{waiting ? "Finish signing in, then come back here" : provider.oauthAvailable ? item.detail : `Paste your ${provider.name} API key`}</span>
+              <span>{connecting ? "Signing in…" : provider.oauthAvailable ? item.detail : `Paste your ${provider.name} API key`}</span>
               {provider.configured ? <span className="connect-ai-connected"><Check size={14} aria-hidden="true" />Connected</span> : null}
-              {waiting ? <Loader2 className="spin connect-ai-card-spinner" size={16} aria-hidden="true" /> : null}
+              {connecting && !signingIn ? <Loader2 className="spin connect-ai-card-spinner" size={16} aria-hidden="true" /> : null}
             </button>
           );
         })}
@@ -210,6 +219,7 @@ export function ConnectAi({ onConnected, onOpenSettings, providers: knownProvide
           <span>Google, xAI, Mistral, GitHub Copilot, and more</span>
         </button>
       </div>
+      {waiting}
       {error ? <p className="connect-ai-error" role="alert">{error}</p> : null}
     </div>
   );

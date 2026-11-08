@@ -455,7 +455,13 @@ sign-in methods and labels. Providers with no chat models can connect
 without changing the Worker's model. Guided setup runs Pi's native
 credential prompts, including provider-specific configuration and cloud
 credential choices. ChatGPT sign-in uses the installation UUID Pi saves in
-global settings, never a project identity. Connections keep the complete
+global settings, never a project identity. A browser sign-in (in AI Models or
+Connect Your AI) opens the provider's page and completes on its own when the
+browser returns to this Mac; while it waits, the place that started it says
+**Finish signing in to … in your browser** with **Cancel**, and **Paste Link**
+for the rare browser that cannot return the sign-in. No dialog asks for the
+callback link, and where Pi offers a choice of sign-in method the app takes
+browser sign-in. Starting another sign-in cancels one left waiting. Connections keep the complete
 credential in encrypted machine-local storage; only non-secret connection
 status and model metadata reach Settings. Settings also offers **OpenAI
 (Codex subscription)** as a distinct connection for Codex models and account

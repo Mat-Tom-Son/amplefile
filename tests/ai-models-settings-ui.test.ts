@@ -41,6 +41,8 @@ async function setup(t: TestContext) {
         init.signal?.addEventListener("abort", () => { eventStreams.clear(); controller.close(); }, { once: true });
       },
     })));
+    // The sign-in panel's status reads answer at once and stay out of the request log.
+    if (String(input) === "/api/agent/oauth/pending") return Promise.resolve(Response.json({ acceptsPaste: false }));
     return new Promise<Response>((resolve) => {
     requests.push({ path: String(input), init, body: init.body ? JSON.parse(String(init.body)) : null,
       finish: (body, responseStatus = 200) => resolve(new Response(JSON.stringify(body), { status: responseStatus, headers: { "content-type": "application/json" } })),
@@ -203,8 +205,11 @@ test("Codex is a distinct available connection and signing in preserves a workin
   const request = ui.requests.at(-1)!;
   assert.equal(request.path, "/api/agent/oauth");
   assert.equal(request.body?.provider, "openai-codex");
+  assert.equal(ui.dom.container.querySelector(".provider-sign-in-text")?.textContent, "Finish signing in to OpenAI in your browser");
+  assert.ok(ui.button("Cancel"), "a sign-in waiting on the browser can be cancelled here");
   await ui.finish(request, { status, models, providers: providers.map(provider => provider.id === "openai-codex" ? { ...provider, configured: true, authType: "oauth", authSource: "stored" } : provider) });
   assert.equal(selectedModel(ui.dom), "model-a");
+  assert.equal(ui.dom.container.querySelector(".provider-sign-in"), null);
 });
 
 test("obsolete scope reads and Strict Mode replay cannot overwrite the current target or request a missing Connected Folder", async (t) => {
