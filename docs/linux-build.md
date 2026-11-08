@@ -1,10 +1,15 @@
 # Linux builds
 
 AmpleFile has a Linux x64 preview lane producing DEB, RPM and AppImage
-packages. [Linux test preview 0.1.2](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.2)
+packages. [Linux test preview 0.1.3](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.3)
 uses a separate prerelease tag in the source repository. The public Mac release
 and updater remain separate; Linux previews have no automatic update feed.
 The build command itself never publishes.
+
+The window fits its own display’s work area on startup and after display-scale
+changes, including when restoring a placement from a larger screen. The Linux
+menu bar appears with Alt; the sidebar does not reserve space for Mac window
+buttons. First-run setup uses the Linux Computer Control surface.
 
 ## Build and run
 

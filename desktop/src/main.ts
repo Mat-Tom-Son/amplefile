@@ -1,3 +1,4 @@
+import { fitWindowToWorkArea } from "./window-bounds.js";
 import { ComputerSessionService } from "../../src/local/agent/computer-session.js";
 import { NativeWaylandTransport } from "../../src/local/agent/wayland-transport.js";
 import { createEncryptedMcpCredentialBackend } from "./pi-mcp-credentials.js";
@@ -630,14 +631,17 @@ async function createMainWindow(): Promise<void> {
   const api = await ensureInteractiveLocalApi();
 
   const state = visibleWindowState(readWindowState());
-  const initialState = state ?? defaultWindowState;
+  const primaryWorkArea = screen.getPrimaryDisplay().workArea;
+  const initialState = state ?? fitWindowToWorkArea({ ...defaultWindowState, x: primaryWorkArea.x, y: primaryWorkArea.y, isMaximized: false }, primaryWorkArea, minimumWindowState);
+  const workArea = screen.getDisplayMatching(initialState).workArea;
   mainWindow = new BrowserWindow({
     ...initialState,
-    minWidth: minimumWindowState.width,
-    minHeight: minimumWindowState.height,
+    minWidth: Math.min(minimumWindowState.width, workArea.width),
+    minHeight: Math.min(minimumWindowState.height, workArea.height),
     title: productName,
     icon: resolveWindowIcon(),
-    autoHideMenuBar: process.platform === "win32",
+    autoHideMenuBar: process.platform !== "darwin",
+    ...(process.platform === "linux" ? { darkTheme: nativeTheme.shouldUseDarkColors } : {}),
     ...(process.platform === "win32" ? {
       ...(micaSupported ? { backgroundMaterial: "mica" as const } : {}),
       titleBarStyle: "hidden",
@@ -695,6 +699,23 @@ async function createMainWindow(): Promise<void> {
     applyNativeActiveConnectedFolderToWindow(mainWindow);
   });
   configureWindowStatePersistence(mainWindow);
+  const window = mainWindow;
+  const refreshDisplayBounds = () => {
+    if (window.isDestroyed()) return;
+    const bounds = window.getBounds();
+    const workArea = screen.getDisplayMatching(bounds).workArea;
+    // Recreate X11 size hints after a scale change; stale pixel hints can make
+    // a tiled window larger than the entire display and impossible to shrink.
+    window.setMinimumSize(0, 0);
+    window.setMinimumSize(Math.min(minimumWindowState.width, workArea.width), Math.min(minimumWindowState.height, workArea.height));
+    if (!window.isMaximized() && !window.isFullScreen()) window.setBounds(fitWindowToWorkArea(bounds, workArea, minimumWindowState));
+  };
+  screen.on("display-metrics-changed", refreshDisplayBounds);
+  screen.on("display-removed", refreshDisplayBounds);
+  window.once("closed", () => {
+    screen.removeListener("display-metrics-changed", refreshDisplayBounds);
+    screen.removeListener("display-removed", refreshDisplayBounds);
+  });
   if (state?.isMaximized) mainWindow.maximize();
   // First reveal only: renderer recoveries can re-emit ready-to-show, and a
   // window the person hid (Windows close-to-tray, minimize) must not
@@ -2618,8 +2639,8 @@ function readWindowState(): WindowState | null {
     return {
       x: Math.round(value.x as number),
       y: Math.round(value.y as number),
-      width: Math.max(minimumWindowState.width, Math.round(value.width as number)),
-      height: Math.max(minimumWindowState.height, Math.round(value.height as number)),
+      width: Math.max(1, Math.round(value.width as number)),
+      height: Math.max(1, Math.round(value.height as number)),
       isMaximized: value.isMaximized === true,
     };
   } catch {
@@ -2629,15 +2650,7 @@ function readWindowState(): WindowState | null {
 
 function visibleWindowState(state: WindowState | null): WindowState | null {
   if (!state || !screen.getAllDisplays().some((display) => intersects(state, display.bounds))) return null;
-  const largestWorkArea = screen.getAllDisplays().reduce(
-    (best, display) => display.workArea.width * display.workArea.height > best.width * best.height ? display.workArea : best,
-    { x: 0, y: 0, width: minimumWindowState.width, height: minimumWindowState.height },
-  );
-  return {
-    ...state,
-    width: Math.min(state.width, largestWorkArea.width),
-    height: Math.min(state.height, largestWorkArea.height),
-  };
+  return fitWindowToWorkArea(state, screen.getDisplayMatching(state).workArea, minimumWindowState);
 }
 
 function saveWindowState(window: BrowserWindow): void {

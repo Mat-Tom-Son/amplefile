@@ -67,6 +67,10 @@
   -webkit-app-region: drag;
 }
 
+:root[data-platform="linux"] .fm-sidebar-inset {
+  height: 12px;
+}
+
 .fm-sidebar-scroll {
   flex: 1;
   min-height: 0;
@@ -2446,7 +2450,7 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  place-items: center;
+  place-items: safe center;
   padding: 24px;
   overflow: auto;
 }

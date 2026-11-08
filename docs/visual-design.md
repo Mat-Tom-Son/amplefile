@@ -75,6 +75,13 @@ Motion confirms what happened and where things went; it never decorates. Entranc
 - Use the macOS system accent color, shortcut glyphs, and native overlay scrollbars without changing the shared interaction contract.
 - Support Finder-oriented file behavior: Show in Finder, Quick Look, represented Connected Folders, and recent Connected Folder documents. Keep all host actions path-confined to the owning Connected Folder.
 
+## Linux chrome
+
+- Use the native frame and an Alt-accessible application menu without a second permanent menu strip.
+- Keep the sidebar’s top inset small; Linux does not need space for Mac traffic lights.
+- Fit new and restored windows to their own display’s work area, and refresh minimum-size hints after display scaling changes.
+- Center first-run steps when they fit; taller setup panels scroll from a reachable top edge.
+
 ## Visual acceptance
 
 Before a handoff, exercise every primary surface and every Settings section in light and dark themes at 1440×900, 1280×800, and a tall/narrow desktop window. Reject the candidate for:

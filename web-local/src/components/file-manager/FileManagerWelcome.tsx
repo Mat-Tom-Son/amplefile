@@ -12,6 +12,7 @@ import { IncludedComputerSetup } from "../panes/IncludedComputerSetup";
 import { CommandLinePane } from "../modals/CommandLinePane";
 import { productIdentity } from "../../../../src/shared/product-identity";
 import { StandardFolderGlyph } from "./file-manager-glyphs";
+import { isMacOS } from "../../lib/platform";
 import { useStandardFolders } from "./useFileManagerPlaces";
 
 type Step = "welcome" | "connect" | "tools" | "folder";
@@ -45,6 +46,8 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
   const [openTool, setOpenTool] = useState<MacTool | "command-line" | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const macTools = useMacTools(fixtureMode);
+  const computerName = isMacOS() ? "Mac" : "Computer";
+  const computerNoun = isMacOS() ? "Mac" : "computer";
   const standard = useStandardFolders(fixtureMode);
   const startable = ["downloads", "documents", "desktop", "pictures"]
     .map((id) => standard.folders.find((folder) => folder.id === id && !folder.connectedFolderId))
@@ -84,7 +87,7 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
 
     <section className="fm-main fm-welcome-main" aria-label="Welcome">
       <header className="fm-toolbar fm-welcome-toolbar">
-        <h1 className="fm-title"><span className="fm-title-text">{step === "welcome" ? "Welcome" : step === "connect" ? "Connect Your AI" : step === "tools" ? "Your Mac" : "Your First Folder"}</span></h1>
+        <h1 className="fm-title"><span className="fm-title-text">{step === "welcome" ? "Welcome" : step === "connect" ? "Connect Your AI" : step === "tools" ? `Your ${computerName}` : "Your First Folder"}</span></h1>
       </header>
 
       <div className="fm-welcome-stage">
@@ -97,7 +100,7 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
           {step === "welcome" ? <>
             <AmpleFileLockup className="fm-welcome-lockup" />
             <h2>Put your folders to work</h2>
-            <p>AmpleFile gives any folder on your Mac its own AI Worker. Ask it to sort, write, research, or build, right where your files live.</p>
+            <p>AmpleFile gives any folder on your {computerNoun} its own AI Worker. Ask it to sort, write, research, or build, right where your files live.</p>
           </> : null}
 
           {step === "connect" ? <>
@@ -114,8 +117,8 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
           </> : null}
 
           {step === "tools" ? <>
-            <h2>Let Your Worker Use Your Mac</h2>
-            <p>Optional. When you ask, your Worker can browse with your own Chrome and use apps on your Mac, and other AI agents can use {productIdentity.productName} too. You can set these up later in Skills &amp; Extensions and Settings → Command Line.</p>
+            <h2>Let Your Worker Use Your {computerName}</h2>
+            <p>Optional. When you ask, your Worker can browse with your own Chrome and use apps on your {computerNoun}, and other AI agents can use {productIdentity.productName} too. You can set these up later in Skills &amp; Extensions and Settings → Command Line.</p>
             <div className="fm-welcome-list">
               {macTools.map((tool) => <div key={tool} className={`fm-welcome-tool${openTool === tool ? " is-open" : ""}`}>
                 <button type="button" className="fm-welcome-row" aria-expanded={openTool === tool} onClick={() => setOpenTool((current) => current === tool ? null : tool)}>
@@ -148,7 +151,7 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
               </button>)}
               <button type="button" className="fm-welcome-row" disabled={busy !== null} onClick={onOpenFolder}>
                 <span className="fm-welcome-row-icon"><FolderOpen20Regular /></span>
-                <span className="fm-welcome-row-text"><strong>Connect Folder…</strong><span>A folder you already have, anywhere on your Mac</span></span>
+                <span className="fm-welcome-row-text"><strong>Connect Folder…</strong><span>A folder you already have, anywhere on your {computerNoun}</span></span>
                 <ChevronRight16Regular className="fm-welcome-chev" aria-hidden="true" />
               </button>
               <button type="button" className="fm-welcome-row" disabled={busy !== null} onClick={onCreateConnectedFolder}>

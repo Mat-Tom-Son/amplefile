@@ -168,23 +168,26 @@ test("a failed status read clears once the next read succeeds", async (t) => {
   await dom.waitFor(() => !document.querySelector(".included-tool-error"));
 });
 
-test("first run offers Chrome and Computer Control when the app includes them", async (t) => {
-  const dom = await createDomHarness();
-  t.after(() => dom.cleanup());
-  stubSetup(t, () => ({ id: "computer", state: "setup_required", detail: "", checkedAt: "" }), () => [
-    { id: "chrome", state: "setup_required", detail: "", checkedAt: "", chrome: { state: "not_connected", checkedAt: "", hasSelection: false }, chromeSetup: { browserInstalled: true, extensionSeen: false } },
-    { id: "computer", state: "unknown", detail: "", checkedAt: "" },
-  ]);
-  await dom.render(createElement(FileManagerWelcome, { agentConfigured: true, fixtureMode: false, onAiConnected: () => {}, onPutToWork: async () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {} }));
-  const button = (text: RegExp) => [...document.querySelectorAll("button")].find((item) => text.test(item.textContent ?? ""));
-  const heading = () => document.querySelector(".fm-welcome-step h2")?.textContent;
-  await dom.act(() => button(/^Get Started$/)!.click());
-  await dom.waitFor(() => heading() === "Let Your Worker Use Your Mac");
-  assert.equal(document.querySelector(".fm-welcome-dots")?.getAttribute("aria-label"), "Step 2 of 3");
-  await dom.act(() => button(/^Chrome/)!.click());
-  await dom.waitFor(() => /Add the AmpleFile Extension/.test(document.body.textContent!));
-  await dom.act(() => button(/^Computer Control/)!.click());
-  await dom.waitFor(() => Boolean(button(/^Allow Computer Control$/)));
-  await dom.act(() => button(/^Continue$/)!.click());
-  assert.equal(heading(), "Pick a Folder to Start With");
-});
+for (const platform of ["darwin", "linux"] as const) {
+  test(`first run offers Chrome and Computer Control on ${platform}`, async (t) => {
+    const dom = await createDomHarness();
+    t.after(() => dom.cleanup());
+    stubSetup(t, () => ({ id: "computer", state: "setup_required", detail: "", checkedAt: "" }), () => [
+      { id: "chrome", state: "setup_required", detail: "", checkedAt: "", chrome: { state: "not_connected", checkedAt: "", hasSelection: false }, chromeSetup: { browserInstalled: true, extensionSeen: false } },
+      { id: "computer", state: "unknown", detail: "", checkedAt: "" },
+    ]);
+    Object.defineProperty(window, "ampleFileDesktop", { value: { app: { platform }, api: {} }, configurable: true });
+    await dom.render(createElement(FileManagerWelcome, { agentConfigured: true, fixtureMode: false, onAiConnected: () => {}, onPutToWork: async () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {} }));
+    const button = (text: RegExp) => [...document.querySelectorAll("button")].find((item) => text.test(item.textContent ?? ""));
+    const heading = () => document.querySelector(".fm-welcome-step h2")?.textContent;
+    await dom.act(() => button(/^Get Started$/)!.click());
+    await dom.waitFor(() => heading() === `Let Your Worker Use Your ${platform === "darwin" ? "Mac" : "Computer"}`);
+    assert.equal(document.querySelector(".fm-welcome-dots")?.getAttribute("aria-label"), "Step 2 of 3");
+    await dom.act(() => button(/^Chrome/)!.click());
+    await dom.waitFor(() => /Add the AmpleFile Extension/.test(document.body.textContent!));
+    await dom.act(() => button(/^Computer Control/)!.click());
+    await dom.waitFor(() => Boolean(button(platform === "darwin" ? /^Allow Computer Control$/ : /^Start and Check$/)));
+    await dom.act(() => button(/^Continue$/)!.click());
+    assert.equal(heading(), "Pick a Folder to Start With");
+  });
+}

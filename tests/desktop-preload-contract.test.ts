@@ -36,7 +36,7 @@ test("main passes centralized product identity into both sandboxed preloads", ()
 
 test("desktop preparation runs the real sandboxed preload smoke", () => {
   assert.match(packageJson.scripts["desktop:prepare"], /desktop:preload:smoke/);
-  assert.equal(packageJson.scripts["desktop:preload:smoke"], "electron scripts/desktop-preload-electron-smoke.mjs");
+  assert.equal(packageJson.scripts["desktop:preload:smoke"], "node scripts/run-electron.mjs scripts/desktop-preload-electron-smoke.mjs");
 });
 
 test("native clipboard writes require a trusted top-level sender and expose no reads", async () => {
