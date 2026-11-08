@@ -774,6 +774,9 @@ async function runSmoke() {
       openedFrom: { kind: "notification", permissionId: "automation-update" },
     });
     await waitFor(async () => Boolean(await storage.get(peerOwner, "ui-ready")), "the sibling installation did not create its own view");
+    // The click below must reach the sibling's view, so wait until the
+    // original view has left the window rather than racing its teardown.
+    await waitFor(() => originalContents.isDestroyed() && !parent.contentView.children.some((child) => child.webContents === originalContents), "the original installation's view did not leave the window");
     assert.deepEqual(await storage.get(peerOwner, "initial-navigation"), {
       route: "/updates/7?from=smoke",
       openedFrom: { kind: "notification", permissionId: "automation-update" },
