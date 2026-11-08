@@ -37,6 +37,7 @@
     "local:build": "vite build --config vite.local.config.ts",
     "desktop:icons": "node scripts/generate-desktop-icons.mjs && node scripts/generate-dmg-background.mjs",
     "brand:icon": "node scripts/export-brand-icon.mjs",
+    "site:build": "node site/build.mjs",
     "desktop:check": "tsc --noEmit -p tsconfig.desktop.json",
     "desktop:compile": "node scripts/clean-desktop-dist.mjs && tsc -p tsconfig.desktop.json",
     "desktop:prepare": "npm run desktop:computer-helper && npm run desktop:chrome-native-host && npm run desktop:icons && npm run local:build && npm run desktop:compile && npm run desktop:preload:smoke && npm run desktop:browser:smoke && npm run desktop:preflight",

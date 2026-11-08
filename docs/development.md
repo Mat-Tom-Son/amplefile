@@ -122,6 +122,7 @@ for capture stages, coverage and bounds.
 | `desktop/src/` | Electron windows, lifecycle, preloads, the built-in browser, and updater |
 | `tests/` | Application regression tests |
 | `scripts/` | Shared development, validation, and release commands |
+| `site/` | The amplefile.com page and its build ([Website](website.md)) |
 | `docs/`, `.agents/skills/` | Product contracts and task-specific contributor workflows |
 
 Use the [docs map](README.md) to find the document that owns an area. Files
