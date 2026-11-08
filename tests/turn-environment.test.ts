@@ -7,7 +7,7 @@ import { currentTurnEnvironment, describeTurnEnvironment } from "../src/local/ag
 
 /**
  * Every turn context names the host's local time with its UTC offset, its
- * IANA time zone, and its platform, so a Worker or the AmpleFile agent can
+ * IANA time zone, and its platform, so a Worker or the AmpleFile Agent can
  * resolve "tomorrow at 9" into the absolute time `chat snooze --until` and
  * `at` Automations take.
  */
@@ -39,7 +39,7 @@ test("the host reads its own clock, zone, and platform", () => {
   assert.equal(environment.platform, process.platform);
 });
 
-test("Worker and AmpleFile agent turn contexts lead with the environment line", () => {
+test("Worker and AmpleFile Agent turn contexts lead with the environment line", () => {
   const environment = { now, timeZone: "America/Los_Angeles", platform: "darwin" as const };
   const line = describeTurnEnvironment(environment);
   const worker = buildTurnContextMessage({

@@ -101,7 +101,7 @@ class FakePorts implements AmpleFileAutomationHopPorts {
     else context.signal.addEventListener("abort", settle, { once: true });
   });
 
-  /** An AmpleFile agent turn that runs until its abort path settles it, like a real turn abort. */
+  /** An AmpleFile Agent turn that runs until its abort path settles it, like a real turn abort. */
   readonly abortableAmpleFileAgent = (
     _step: AmpleFileAutomationAgentStep,
     context: AmpleFileAutomationHopContext,
@@ -1544,7 +1544,7 @@ test("a filled-in list names the limit that cut it, and a too-large message fail
   assert.equal(harness.ports.calls.filter((call) => call.hopId === "flood").length, 0, "nothing was sent");
 });
 
-test("a fold hop starts an AmpleFile agent turn, stops honestly, and never fires another trigger", async (t) => {
+test("a fold hop starts an AmpleFile Agent turn, stops honestly, and never fires another trigger", async (t) => {
   const harness = await createHarness(t);
   await harness.enable(declarationInput("automation-agent-only", {
     version: 4,
@@ -1558,17 +1558,17 @@ test("a fold hop starts an AmpleFile agent turn, stops honestly, and never fires
   assert.equal(hop?.hopKind, "agent");
   assert.equal(hop?.conversationId, "agent-conversation-digest");
   assert.equal(hop?.taskId, "agent-turn-task-digest");
-  assert.equal(hop?.connectedFolderId, undefined, "the AmpleFile agent names no Connected Folder: it sits above them");
+  assert.equal(hop?.connectedFolderId, undefined, "the AmpleFile Agent names no Connected Folder: it sits above them");
 
   harness.ports.ampleFileAgentImpl = harness.ports.abortableAmpleFileAgent;
   const stoppable = harness.service.runNow("automation-agent-only", { requestId: "request-2" });
-  await waitForCondition(() => harness.ports.calls.filter((call) => call.kind === "agent").length === 2, "the AmpleFile agent turn to start");
+  await waitForCondition(() => harness.ports.calls.filter((call) => call.kind === "agent").length === 2, "the AmpleFile Agent turn to start");
   assert.deepEqual(harness.service.stopRun("automation-agent-only", { requestId: "request-stop", surface: "cli" }), { runId: "run-2" });
   assert.equal((await stoppable).outcome, "failure");
   const stopped = (await harness.journal()).find((line) => line.scope === "hop" && line.outcome === "stopped");
   assert.equal(stopped?.hopId, "digest");
   const stoppedRun = (await harness.journal()).find((line) => line.scope === "run" && line.outcome === "stopped");
-  assert.deepEqual(stoppedRun?.stoppedHopTaskIds, ["agent-turn-task-digest"], "stop names the AmpleFile agent turn it aborted");
+  assert.deepEqual(stoppedRun?.stoppedHopTaskIds, ["agent-turn-task-digest"], "stop names the AmpleFile Agent turn it aborted");
 });
 
 test("enabling an identical declaration again changes nothing and leaves the active run alone", async (t) => {

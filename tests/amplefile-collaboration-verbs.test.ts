@@ -22,7 +22,7 @@ import { ampleFileAgentScopeId } from "../src/local/state-paths.js";
  * local API: a question puts the task in `waiting` without suspending its
  * turn; exactly one answer starts exactly one linked continuation; an answer
  * from the wrong Connected Folder, past the window, after a stop, or a second time is
- * refused by name; the host brings settled results back to the AmpleFile agent once per
+ * refused by name; the host brings settled results back to the AmpleFile Agent once per
  * settle batch, within the request's limits, off when the setting says so,
  * never after a root Stop, and never on a restart.
  *
@@ -351,7 +351,7 @@ test("the checklist a turn keeps shows in its Chat's work view", async (t) => {
   }
 });
 
-for (const reader of ["worker", "AmpleFile agent"] as const) {
+for (const reader of ["worker", "AmpleFile Agent"] as const) {
   test(`a child result the ${reader} read mid-turn through chat wait is not repeated in a follow-up turn`, async (t) => {
     const h = await collaborationHarness(t);
     const api = await h.open();
@@ -476,7 +476,7 @@ test("file and Connected Folder deletion refuse running, waiting, and stopped-bu
   }
 });
 
-test("chat ask puts the task in waiting without suspending its turn, and chat answer continues it exactly once and brings the result back to the AmpleFile agent", async (t) => {
+test("chat ask puts the task in waiting without suspending its turn, and chat answer continues it exactly once and brings the result back to the AmpleFile Agent", async (t) => {
   const h = await collaborationHarness(t);
   const api = await h.open();
   h.held.add(ampleFileAgentScopeId);
@@ -486,7 +486,7 @@ test("chat ask puts the task in waiting without suspending its turn, and chat an
     h.held.add(drafts.connectedFolder.id);
     await writeFile(join(drafts.connectedFolder.connectedFolderRoot, "draft.md"), "# Draft\n", "utf8");
 
-    // The AmpleFile agent hands work to Drafts while its own turn runs.
+    // The AmpleFile Agent hands work to Drafts while its own turn runs.
     const root = await api.actFacade.agentSend({ content: "/hold" });
     const child = await api.actFacade.sendMessage({ connectedFolder: drafts.connectedFolder.id, newConversation: true, content: "/hold", parentTaskId: root.taskId });
     const rootRecord = api.requests.byTaskId(root.taskId)!;
@@ -527,8 +527,8 @@ test("chat ask puts the task in waiting without suspending its turn, and chat an
     assert.equal(foreign.request, null);
     assert.equal(foreign.waiting, null, "another Connected Folder's open question never reaches this caller");
     const parentView = await api.actFacade.agentTurnStatus({ taskId: root.taskId });
-    assert.equal(parentView.waiting, null, "the AmpleFile agent asked nothing itself");
-    assert.equal(parentView.requestGraph?.state, "working", "the AmpleFile agent's own turn is still running, so it is working, not waiting");
+    assert.equal(parentView.waiting, null, "the AmpleFile Agent asked nothing itself");
+    assert.equal(parentView.requestGraph?.state, "working", "the AmpleFile Agent's own turn is still running, so it is working, not waiting");
 
     const handed = await api.actFacade.chatHandoff({
       connectedFolder: drafts.connectedFolder.id,
@@ -539,9 +539,9 @@ test("chat ask puts the task in waiting without suspending its turn, and chat an
     });
     assert.deepEqual(handed.copied, ["draft.md"]);
     assert.ok(handed.checkpointId, "the copy landed with a restore point in the destination");
-    // The handoff IS a child of the AmpleFile agent's root, but a Connected Folder–scoped verb never
+    // The handoff IS a child of the AmpleFile Agent's root, but a Connected Folder–scoped verb never
     // hands that id back: `requests show` reads a request by id, so the real
-    // root id would put the AmpleFile agent's own content and every Connected Folder's result one
+    // root id would put the AmpleFile Agent's own content and every Connected Folder's result one
     // taught command away. It is projected through the same opaque handle the
     // Connected Folder turn context uses, which no verb accepts.
     assert.equal(api.requests.byTaskId(handed.taskId)!.rootId, rootRecord.requestId, "the handoff is a child of the caller's root");
@@ -563,7 +563,7 @@ test("chat ask puts the task in waiting without suspending its turn, and chat an
       conflict(/another Connected Folder's turn/),
     );
 
-    // The AmpleFile agent's own turn ends first. Its request now reads the descendant's
+    // The AmpleFile Agent's own turn ends first. Its request now reads the descendant's
     // open question as waiting, while the child's turn is still running.
     await h.release(root.taskId);
     await settled(api, ampleFileAgentScopeId, root.taskId);
@@ -589,9 +589,9 @@ test("chat ask puts the task in waiting without suspending its turn, and chat an
     assert.ok(listed.requests.some((request) => request.id === rootRecord.requestId));
     assert.ok(listed.requests.every((request) => request.id === request.rootId), "list shows roots only");
 
-    // Every child has settled after the AmpleFile agent's own turn ended: the host
+    // Every child has settled after the AmpleFile Agent's own turn ended: the host
     // brings the batch back exactly once, including the question the child
-    // put to the AmpleFile agent and how to answer it.
+    // put to the AmpleFile Agent and how to answer it.
     await waitFor(async () => api.requests.get(rootRecord.requestId)!.turns.length === 2);
     const continued = api.requests.get(rootRecord.requestId)!;
     assert.equal(continued.continuationCount, 1);
@@ -639,7 +639,7 @@ test("chat ask puts the task in waiting without suspending its turn, and chat an
     assert.equal(api.requests.byTaskId(answered.continuation.taskId)!.requestId, api.requests.byTaskId(child.taskId)!.requestId, "the continuation joined the child's request");
     assert.equal((await api.actFacade.turnStatus({ connectedFolder: drafts.connectedFolder.id, taskId: child.taskId })).waiting, null, "an answered question is not owed");
 
-    // The answered child's continuation settles after the AmpleFile agent's last turn
+    // The answered child's continuation settles after the AmpleFile Agent's last turn
     // ended: a second batch, a second continuation, no open question in it.
     await h.release(answered.continuation.taskId);
     await settled(api, drafts.connectedFolder.id, answered.continuation.taskId);
@@ -651,7 +651,7 @@ test("chat ask puts the task in waiting without suspending its turn, and chat an
     assert.ok(second);
     assert.match(second!.content, new RegExp(`Drafts \\[[^\\]]+\\] — Chat ${child.conversationId}, task ${answered.continuation.taskId}`));
     assert.doesNotMatch(second!.content, /waiting on/, "the answered question is not owed any more");
-    assert.doesNotMatch(second!.content, /Reviews \[/, "a child that settled before the AmpleFile agent's last turn ended is not narrated again");
+    assert.doesNotMatch(second!.content, /Reviews \[/, "a child that settled before the AmpleFile Agent's last turn ended is not narrated again");
     await h.release(api.requests.get(rootRecord.requestId)!.turns[2]!.taskId);
     await settled(api, ampleFileAgentScopeId, api.requests.get(rootRecord.requestId)!.turns[2]!.taskId);
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -747,7 +747,7 @@ test("a stop on a mid-graph request closes everything it handed on, not only its
     h.held.add(middle.connectedFolder.id);
     h.held.add(leaf.connectedFolder.id);
 
-    // AmpleFile agent -> Middle -> Leaf. `agent stop` takes any task id, and a request
+    // AmpleFile Agent -> Middle -> Leaf. `agent stop` takes any task id, and a request
     // below a root records the ROOT's id, never its parent's, so a stop that
     // only looked at the root's own family would close Middle and leave Leaf
     // running with its question still open.
@@ -782,7 +782,7 @@ test("a stop on a mid-graph request closes everything it handed on, not only its
     await settled(api, middle.connectedFolder.id, child.taskId);
     assert.equal(api.requests.get(childRequestId)!.state, "stopped");
     assert.equal(api.requests.get(leafRequestId)!.state, "stopped");
-    // Only the named request and the graph below it are stopped: the AmpleFile agent's
+    // Only the named request and the graph below it are stopped: the AmpleFile Agent's
     // own turn above it is untouched.
     assert.equal((await api.actFacade.agentTurnStatus({ taskId: root.taskId })).task.state, "running");
     assert.equal(api.requests.byTaskId(root.taskId)!.stopRequestedAt, null);
@@ -809,7 +809,7 @@ test("continuations can be turned off, the settle is still recorded, and a resta
     const child = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.connectedFolder.id, newConversation: true, content: "/hold", parentTaskId: root.taskId });
     rootRequestId = api.requests.byTaskId(root.taskId)!.requestId;
     await api.actFacade.chatReport({ connectedFolder: connectedFolder.connectedFolder.id, taskId: child.taskId, summary: "Done quietly.", files: [], outcome: "succeeded" });
-    // The AmpleFile agent's turn ends first, then the child settles: a settle batch the
+    // The AmpleFile Agent's turn ends first, then the child settles: a settle batch the
     // host would narrate, except the setting says not to.
     await h.release(root.taskId);
     await settled(api, ampleFileAgentScopeId, root.taskId);
@@ -866,7 +866,7 @@ test("continuations can be turned off, the settle is still recorded, and a resta
     assert.equal(api.requests.get(rootRequestId)!.continuationCount, 0);
 
     // Fresh work in this run is narrated: a new root, a child that settles
-    // after the AmpleFile agent's turn ended, one continuation.
+    // after the AmpleFile Agent's turn ended, one continuation.
     h.held.add(ampleFileAgentScopeId);
     h.held.add(connectedFolderId);
     const root = await api.actFacade.agentSend({ content: "/hold", newConversation: true });
@@ -891,7 +891,7 @@ test("continuations can be turned off, the settle is still recorded, and a resta
   }
 });
 
-test("the AmpleFile agent continues after more than four settle batches", async (t) => {
+test("the AmpleFile Agent continues after more than four settle batches", async (t) => {
   const h = await collaborationHarness(t);
   const api = await h.open();
   h.held.add(ampleFileAgentScopeId);
@@ -973,7 +973,7 @@ test("the request graph is a management-scope read and is refused from inside a 
     await settled(api, connectedFolder.connectedFolder.id, own.taskId);
     const requestId = api.requests.byTaskId(own.taskId)!.requestId;
 
-    // The AmpleFile agent and an outside harness read the graph; a caller whose own
+    // The AmpleFile Agent and an outside harness read the graph; a caller whose own
     // directory is a registered Connected Folder is inside that Connected Folder's scope, and the
     // graph carries every Connected Folder's results, which never enter a
     // Connected Folder Chat (docs/collaboration-contract.md).
@@ -1025,7 +1025,7 @@ test("an answered continuation keeps its delegated assignment in host context", 
 
 
 
-test("the AmpleFile agent asks and receives one durable answer through the same lifecycle", async (t) => {
+test("the AmpleFile Agent asks and receives one durable answer through the same lifecycle", async (t) => {
   const h = await collaborationHarness(t); const api = await h.open();
   h.held.add(ampleFileAgentScopeId);
   try {

@@ -1,6 +1,6 @@
 # Image generation
 
-Workers and the AmpleFile agent can make pictures with a connected image model:
+Workers and the AmpleFile Agent can make pictures with a connected image model:
 banners, illustrations, backgrounds, and anything else a person asks for. In a
 Worker Chat the picture shows under the reply, and it becomes a file in the
 folder only when the person adds it or asked the Worker to save it there.
@@ -49,7 +49,7 @@ is. Hovering one offers:
 
 The routes are `GET /api/generated-images/:id` (the bytes) and
 `GET`/`POST /api/connected-folders/:connectedFolderId/generated-images/:id[/add]`.
-The AmpleFile agent's popover does not show pictures, so its tool keeps them
+The AmpleFile Agent's popover does not show pictures, so its tool keeps them
 in temporary space and does not say they appear in the Chat.
 
 ## Models and providers
@@ -80,7 +80,7 @@ for that provider. A ChatGPT account sign-in (`openai-codex`) is a different
 provider and has no image models here.
 
 **Choosing the model.** Settings → AI Models → **Image model** holds one
-machine-wide choice for every Worker and the AmpleFile agent, saved as soon as
+machine-wide choice for every Worker and the AmpleFile Agent, saved as soon as
 it is picked (`image-model.json` in AmpleFile's app state, never in a
 Connected Folder). Its first entry, **Automatic**, shows the model Automatic would
 use right now. A chosen model whose provider is later disconnected falls back

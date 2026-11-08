@@ -1,6 +1,6 @@
 /**
  * The host's clock, time zone, and platform at the start of a turn. Every
- * Worker and AmpleFile agent turn context carries one line of it, so the model
+ * Worker and AmpleFile Agent turn context carries one line of it, so the model
  * can resolve "tomorrow at 9" into the absolute times `chat snooze --until`
  * and `at` Automations need. It rides the per-turn context rather than the
  * system prompt, which keeps it current and leaves the cached prompt prefix

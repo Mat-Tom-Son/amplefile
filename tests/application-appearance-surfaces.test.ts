@@ -10,7 +10,7 @@ import { applicationAppearanceVariables, applicationPalettes, defaultApplication
 import { accentIdentityFromHex, resolveConnectedFolderAppearance, wcagContrast } from "../src/shared/connected-folder-appearance.js";
 
 const desktopSheets = ["brand.css", "styles.css", "components/chat/work-steps.css", "application-appearance.css"];
-const popoverSheets = ["brand.css", "popover/popover.css", "popover/popover-document.css", "components/chat/work-steps.css", "application-appearance.css"];
+const popoverSheets = ["brand.css", "components/file-manager/file-manager-tokens.css", "popover/popover.css", "popover/popover-document.css", "components/chat/work-steps.css", "application-appearance.css"];
 const exec = promisify(execFile);
 
 test("actual desktop and popover CSS honor appearance roles, reading, density and accessibility", { timeout: 60_000 }, async (t) => {
@@ -33,7 +33,7 @@ test("actual desktop and popover CSS honor appearance roles, reading, density an
       return { palette, mode, variables: applicationAppearanceVariables(preferences, mode, null, true), identity };
     }));
     const desktopBody = `<div class="app-shell"><div class="fm-chat"><section class="chat-panel"><div class="message-list"><article class="message assistant"><div class="message-body"><h2>Workshop plan</h2><p>Readable paragraphs wrap naturally.</p><p>A second paragraph.</p><div class="message-code-block"><pre><code>const budget = 1200;</code></pre></div></div></article><article class="message user"><div class="message-surface"><div class="message-body"><p>Please update the plan.</p></div></div><footer class="message-footer"><span class="message-footer-meta"><div class="message-actions"><button class="message-copy-button" aria-label="Copy message">Copy</button></div><time class="message-time">Today</time></span></footer></article></div><form class="composer"><div class="composer-input-shell"><textarea>Plan a workshop</textarea><button class="send-button">Send</button></div></form><section class="work-steps running open"><div class="work-steps-rows"><div class="work-steps-list"><div class="work-step tool complete">Read</div><div class="work-step tool running active">Reading</div></div></div></section></section></div><section class="settings-modal settings-window"><button class="settings-tab active">Appearance</button><button class="ui-control ui-control--primary">Save</button><button class="ui-control ui-control--primary">Install</button><div class="settings-field"><input value="Example"></div></section><form class="history-file-picker"><label>Compare a file <input placeholder="notes.txt"></label></form></div>`;
-    const popoverBody = `<div class="popover"><header><button class="popover-new-chat">New Chat</button></header><div class="popover-transcript"><article class="popover-message assistant"><div class="popover-message-body"><p>Workshop ready.</p><pre><code>const budget = 1200;</code></pre></div></article><article class="popover-message user"><div class="popover-message-body">Plan a workshop</div></article></div><form class="composer"><textarea>My draft</textarea><button class="primary">Send</button></form><p class="error-line">Example error</p></div>`;
+    const popoverBody = `<div class="popover"><header><button class="popover-new-chat">New Chat</button></header><button class="agent-chat-row">Workshop plan</button><div class="popover-transcript"><article class="popover-message assistant"><div class="popover-message-body"><p>Workshop ready.</p><pre><code>const budget = 1200;</code></pre></div></article><article class="popover-message user"><div class="popover-message-body">Plan a workshop</div></article></div><form class="composer"><textarea>My draft</textarea><button class="primary">Send</button></form><p class="error-line">Example error</p></div>`;
     // Attribute selectors have the same specificity as these pseudo-classes;
     // this makes each hover/focus cascade deterministic in headless Chromium.
     // Native pointer and keyboard behavior is checked in the dev app too.
@@ -94,10 +94,10 @@ test("actual desktop and popover CSS honor appearance roles, reading, density an
         const p = fixture(payload.popoverCss, payload.popoverBody, scenario);
         result.popoverPrimary = [p('button.primary').backgroundColor,p('button.primary').color];
         result.popoverReading = [p('.popover-message-body').fontSize,p('.popover-message-body').fontFamily]; result.popoverCode = p('code').fontFamily;
-        result.popoverRow = p('.popover-new-chat').minHeight; result.surfaces.push(p('body').backgroundColor);
+        result.popoverRow = p('.agent-chat-row').minHeight; result.surfaces.push(p('body').backgroundColor);
         const popoverQuiet = fixture(payload.popoverCss, payload.popoverBody, spaciousScenario);
         result.quiet.push(popoverQuiet('.popover-message.user').backgroundColor,popoverQuiet('.popover-message.user').color);
-        result.spacious.push(popoverQuiet('.popover-new-chat').minHeight);
+        result.spacious.push(popoverQuiet('.agent-chat-row').minHeight);
         const feedbackBody = '<div class="app-shell"><button id="neutral" class="ui-control">Open</button><button id="primary" class="ui-control ui-control--primary">Save</button><button id="icon" class="ui-control ui-control--icon">Icon</button><button id="disabled" class="ui-control" disabled>Disabled</button><button id="danger" class="ui-control danger">Delete</button><button id="commands" class="composer-command-trigger">Commands</button><div class="context-menu"><button id="menu">Rename</button></div><button id="nameSave" class="connected-folder-name-save">Save</button><button id="upload" class="connected-folder-banner-upload-button">Upload</button><button id="modelTrigger" class="model-catalog-trigger">Model</button><button id="modelOption" class="model-catalog-option">Model option</button><div class="composer-menu"><button id="composerOption">Reasoning</button></div><button id="send" class="send-button">Send</button><div class="composer-command-menu"><button id="model">Model</button></div><button id="copy" class="message-copy-button">Copy</button><button id="included" class="capabilities-included-tile">Tool</button><button id="resource" class="capabilities-resource-card">Skill</button><button id="automation" class="automation-list-row">Automation</button><section class="settings-window"><button id="settingsTab" class="settings-tab">Appearance</button></section></div>';
         const feedback = fixture(payload.chatStateCss,feedbackBody,scenario);
         result.includedBoundary=[feedback('.capabilities-included-tile').borderTopWidth,feedback('.capabilities-included-tile').borderTopColor,color('var(--ui-border-strong)')];
@@ -135,7 +135,8 @@ test("actual desktop and popover CSS honor appearance roles, reading, density an
       assert.deepEqual(item.popoverPrimary, [expected["--ui-accent-solid"], expected["--ui-on-accent"]], item.name + " send uses matched solid/text roles");
       assert.equal(item.bodySize, "18px");
       assert.equal(item.reading[0], "22px"); assert.match(item.reading[1], /Georgia/); assert.equal(Number.parseFloat(item.reading[2]), 40.7);
-      assert.equal(item.popoverReading[0], "22px"); assert.match(item.popoverReading[1], /Georgia/);
+      // The popover reads like the file manager's narrow panel Chat: two pixels under the chosen size.
+      assert.equal(item.popoverReading[0], "20px"); assert.match(item.popoverReading[1], /Georgia/);
       assert.match(item.code, /Consolas/); assert.match(item.popoverCode, /Consolas/);
       assert.equal(item.settingsRow, "28px"); assert.equal(item.popoverRow, "28px");
       assert.equal(item.measure, "600px"); assert.equal(Number.parseFloat(item.paragraph), 26.4);

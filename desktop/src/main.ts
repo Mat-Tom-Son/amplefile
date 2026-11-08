@@ -579,7 +579,7 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
       // acts share one ledger file and one at-most-once gate.
       actReceipts: host.cli.receipts,
       localFolderGrantProvider: { consumeLocalFolderGrant },
-      // Every Worker and the AmpleFile agent can use the browser tabs the person sees.
+      // Every Worker and the AmpleFile Agent can use the browser tabs the person sees.
       browser: ensureBuiltInBrowser().toolHost,
       onAgentTurnActivity: updateAgentPowerState,
     });
@@ -1094,7 +1094,7 @@ function registerIpc(): void {
   });
   ipcMain.handle("amplefile:agent:open-agent-draft", async (event, value: unknown) => {
     assertTrustedMainRenderer(event);
-    if (typeof value !== "string" || !value.trim() || value.length > 4096) throw new Error("A bounded AmpleFile agent draft is required.");
+    if (typeof value !== "string" || !value.trim() || value.length > 4096) throw new Error("A bounded AmpleFile Agent draft is required.");
     await openAmpleFileAgentPopoverWithItems([{ kind: "text", value }]);
     return true;
   });
@@ -1391,7 +1391,7 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
       { label: "Command Palette...", accelerator: "CommandOrControl+K", click: () => sendRendererMenuCommand("open-command-palette") },
       { type: "separator" },
       { id: "toggle-sidebar", label: "Toggle Sidebar", accelerator: "CommandOrControl+B", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-sidebar") },
-      { id: "toggle-agent-panel", label: "Toggle AmpleFile agent", accelerator: "CommandOrControl+J", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-agent-panel") },
+      { id: "toggle-agent-panel", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-agent-panel") },
       { type: "separator" },
       { role: "resetZoom" },
       { role: "zoomIn" },
@@ -1629,7 +1629,7 @@ function configureStableUserDataPath(): void {
 }
 
 function configureCliEnvironment(): void {
-  // Every shell a Worker or the AmpleFile agent opens must address the same
+  // Every shell a Worker or the AmpleFile Agent opens must address the same
   // profile as the desktop process that launched it. Development and
   // installed builds intentionally use different userData roots, so leaving
   // this unset can expose a different Connected Folder registry through an
@@ -2091,7 +2091,7 @@ function createTrayIfSupported(): void {
   }
   tray = new Tray(icon);
   const menu = Menu.buildFromTemplate([
-    { label: "AmpleFile agent", click: () => { void toggleAmpleFileAgentPopover(); } },
+    { label: "AmpleFile Agent", click: () => { void toggleAmpleFileAgentPopover(); } },
     { label: `Open ${productName}`, click: showWindow },
     { type: "separator" },
     { label: "Check for Updates...", click: () => sendRendererMenuCommand("check-for-updates") },
@@ -2100,7 +2100,7 @@ function createTrayIfSupported(): void {
   ]);
   if (process.platform === "darwin") {
     // No persistent context menu on macOS: setContextMenu would swallow the
-    // left click. Click opens the AmpleFile agent popover, right-click the menu,
+    // left click. Click opens the AmpleFile Agent popover, right-click the menu,
     // and material dropped on the icon lands in the popover as staged context.
     tray.on("click", () => { void toggleAmpleFileAgentPopover(); });
     tray.on("right-click", () => tray?.popUpContextMenu(menu));
@@ -2118,7 +2118,7 @@ function createTrayIfSupported(): void {
   updateTrayTooltip();
   updateTrayPulse();
   // Warm the hidden popover renderer off the startup critical path so the
-  // first AmpleFile agent summon paints the ready surface immediately.
+  // first AmpleFile Agent summon paints the ready surface immediately.
   setTimeout(() => {
     void ensureAmpleFileAgentPopover().then((popover) => popover.warm()).catch(() => {});
   }, 2_500);
@@ -2170,7 +2170,7 @@ function trayPulseFrameImages(): Electron.NativeImage[] {
 
 /**
  * The menu-bar dot pulses while work is running, the way the brand's dot
- * means a Worker or the AmpleFile agent at work. Reduce Motion keeps it still.
+ * means a Worker or the AmpleFile Agent at work. Reduce Motion keeps it still.
  */
 function updateTrayPulse(): void {
   const pulse = tray !== null
@@ -2227,7 +2227,7 @@ async function ensureAmpleFileAgentPopover(): Promise<AmpleFileAgentPopover> {
     vibrancy: process.platform === "darwin" && macVibrancySupported,
     devTools: !app.isPackaged,
     configureNavigation: configureWindowNavigation,
-    onError: (message) => console.warn(`${productName} AmpleFile agent popover failed to load: ${message}`),
+    onError: (message) => console.warn(`${productName} AmpleFile Agent popover failed to load: ${message}`),
   });
   return ampleFileAgentPopover;
 }
@@ -2237,7 +2237,7 @@ async function toggleAmpleFileAgentPopover(): Promise<void> {
     const popover = await ensureAmpleFileAgentPopover();
     await popover.toggle(tray?.getBounds() ?? null);
   } catch (error) {
-    console.warn(`${productName} could not open the AmpleFile agent popover: ${errorMessage(error)}`);
+    console.warn(`${productName} could not open the AmpleFile Agent popover: ${errorMessage(error)}`);
   }
 }
 
@@ -2263,12 +2263,12 @@ function maybeShowTrayNotice(): void {
   if (!Notification.isSupported()) return;
   new Notification({
     title: `${productName} is still running`,
-    body: "Your Workers and the AmpleFile agent can keep working in the background. Use the tray icon to reopen or quit AmpleFile, or change this in Settings.",
+    body: "Your Workers and the AmpleFile Agent can keep working in the background. Use the tray icon to reopen or quit AmpleFile, or change this in Settings.",
   }).show();
 }
 
 function closeToTrayStatus(): { supported: boolean; enabled: boolean } {
-  // A macOS menu-bar item opens the AmpleFile agent, not close-to-tray support:
+  // A macOS menu-bar item opens the AmpleFile Agent, not close-to-tray support:
   // closing the last macOS window already keeps the app alive via the Dock.
   return { supported: process.platform === "win32" && tray !== null, enabled: desktopPreferences.closeToTray };
 }

@@ -4,7 +4,8 @@ import { useApplicationAppearance } from "../hooks/useApplicationAppearance";
 import { useWorkRequest } from "../hooks/useWorkRequest";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, File, Folder, History, Link2, MoreHorizontal, Search, Square, SquarePen, X } from "../components/chrome/icons";
+import { Chat16Regular } from "@fluentui/react-icons";
+import { ArrowDown, ArrowLeft, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, File, Folder, History, Link2, MoreHorizontal, Search, Square, SquarePen, X } from "../components/chrome/icons";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -101,10 +102,13 @@ interface AmpleFileAgentChat {
   needsAnswer?: boolean;
 }
 
+// The preview's sample chats, dated relative to now so they group the way real ones do.
+const fixtureHoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
 const fixtureChats: AmpleFileAgentChat[] = [
-  { id: "fixture-agent", title: "Catch up on my Connected Folders", updatedAt: "2026-09-11T19:30:00Z", requestState: "done" },
-  { id: "fixture-plan", title: "Plan next week’s workshop", updatedAt: "2026-09-10T16:00:00Z", requestState: "waiting", needsAnswer: true },
-  { id: "fixture-notes", title: "Organize the field notes", updatedAt: "2026-09-09T15:00:00Z", requestState: "done" },
+  { id: "fixture-agent", title: "What did my folders get done today?", updatedAt: fixtureHoursAgo(0.2), requestState: "done" },
+  { id: "fixture-plan", title: "Gather the tax documents", updatedAt: fixtureHoursAgo(3), requestState: "waiting", needsAnswer: true },
+  { id: "fixture-notes", title: "File the Downloads screenshots", updatedAt: fixtureHoursAgo(30), requestState: "done" },
+  { id: "fixture-quotes", title: "Compare the contractor quotes", updatedAt: fixtureHoursAgo(75), requestState: "done" },
 ];
 
 const activePhases = new Set(["working", "handed_off"]);
@@ -117,21 +121,22 @@ const popoverFixtureMessages: AmpleFileAgentMessage[] = [
   {
     id: "fixture-user-1",
     role: "user",
-    content: "What changed while I was away?",
-    createdAt: "2026-09-02T13:30:00.000Z",
+    content: "What did my folders get done today?",
+    createdAt: fixtureHoursAgo(0.25),
   },
   {
     id: "fixture-assistant-1",
     role: "assistant",
     content: [
-      "Two Connected Folders moved forward:",
+      "Three Connected Folders moved forward today:",
       "",
-      "- **Launch plan** — the draft is ready and its Check passed.",
-      "- **Field notes** — three duplicates need your choice.",
+      "- **Downloads**: Organize New Files filed 6 new files into their folders.",
+      "- **Home Renovation**: the Worker compared three quotes and wrote Quote Comparison.docx.",
+      "- **Taxes 2026**: the Worker renamed two statements and has a question for you about a missing 1099-DIV.",
       "",
-      "I can open either one or hand off the next step.",
+      "Want me to open Taxes 2026?",
     ].join("\n"),
-    createdAt: "2026-09-02T13:31:00.000Z",
+    createdAt: fixtureHoursAgo(0.2),
   },
 ];
 
@@ -155,14 +160,14 @@ export interface AmpleFileAgentChatProps {
   controlsTarget?: HTMLElement | null;
   /** Panel only: the panel is showing (it stays mounted while closed). */
   visible?: boolean;
-  /** Panel only: opens Settings → AI Models for the AmpleFile agent. */
+  /** Panel only: opens Settings → AI Models for the AmpleFile Agent. */
   onOpenModelSettings?: () => void;
   /** Panel only: text another surface handed over, added to the message box like a tray drop. */
   draftRequest?: { id: number; text: string } | null;
 }
 
 /**
- * The AmpleFile agent's chat. The menu-bar popover and the main window's
+ * The AmpleFile Agent's chat. The menu-bar popover and the main window's
  * panel render this same component, so both show one conversation the same
  * way, including each turn's thinking and tool steps as they happen.
  */
@@ -177,7 +182,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
   const [messages, setMessages] = useState<AmpleFileAgentMessage[]>(popoverFixtureRequested ? popoverFixtureMessages : []);
   const [staged, setStaged] = useState<StagedItem[]>([]);
   const [text, setText] = useState("");
-  // Connected Folder Workers the AmpleFile agent can be told to involve with @,
+  // Connected Folder Workers the AmpleFile Agent can be told to involve with @,
   // in the same nested order as the Connected Folder switcher.
   const [mentionFolders, setMentionFolders] = useState<MentionFolderOption[]>([]);
   const [composerCaret, setComposerCaret] = useState(0);
@@ -726,7 +731,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
     }
   }, [text, staged, sending, loadingChat, stopping, refreshConversation, replaceStreamingAssistant, clearLiveSteps, mentionFolders, followLatest]);
 
-  // Enter while the AmpleFile agent is working reaches its running turn after
+  // Enter while the AmpleFile Agent is working reaches its running turn after
   // its current step, the way a Connected Folder Chat steers.
   const steer = useCallback(async () => {
     const content = text.trim();
@@ -970,10 +975,10 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
     return (
       <div className="popover">
         <header className="popover-header">
-          <h1 className="popover-chat-title">AmpleFile agent</h1>
+          <h1 className="popover-chat-title">AmpleFile Agent</h1>
         </header>
         <div className="card">
-          <p>The AmpleFile agent is unavailable.</p>
+          <p>The AmpleFile Agent is unavailable.</p>
           {unavailableReason ? <p className="muted small">{unavailableReason}</p> : null}
         </div>
       </div>
@@ -997,6 +1002,11 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
   const filteredChats = chats.filter((chat) => chat.title.toLocaleLowerCase().includes(historyQuery.trim().toLocaleLowerCase()));
   const chatsByRecency = groupChatsByRecency(filteredChats);
   const navigationBusy = sending || stopping || workState.busy || savingChat;
+
+  const closeHistory = () => {
+    setHistoryOpen(false);
+    window.setTimeout(() => composerRef.current?.focus(), 0);
+  };
 
   const changeThinkingLevel = async (level: string) => {
     if (requestRunning || loadingChat || level === composerThinking?.thinkingLevel) return;
@@ -1042,21 +1052,23 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
         </>,
         controlsTarget,
       ) : null) : <header className="popover-header">
-        <h1 className="popover-chat-title">{chatTitle}</h1>
+        {/* As a Chat in the file manager's panel: a back button and the title, icon buttons at the end. */}
+        {historyOpen ? <button type="button" className="popover-capbtn" aria-label="Back to Chat" title="Back" onClick={closeHistory}><ChevronLeft aria-hidden="true" /></button> : null}
+        <h1 className="popover-chat-title" title={historyOpen ? undefined : chatTitle}>{historyOpen ? "Chats" : chatTitle}</h1>
         <div className="popover-header-actions">
-          <button className="popover-new-chat" type="button" aria-expanded={historyOpen} aria-controls="agent-chat-history"
-            onClick={() => { setHistoryOpen((open) => !open); void refreshConversation(); }}>
-            <History aria-hidden="true" /><span>Previous</span>
-          </button>
+          {historyOpen ? null : <button className="popover-capbtn" type="button" aria-label="Chats" title="Chats" aria-expanded={historyOpen} aria-controls="agent-chat-history"
+            onClick={() => { setHistoryOpen(true); void refreshConversation(); }}>
+            <History aria-hidden="true" />
+          </button>}
           <button
-            className="popover-new-chat"
+            className="popover-capbtn popover-new-chat"
             type="button"
             aria-label="New Chat"
+            title="New Chat"
             onClick={startNewChat}
             disabled={navigationBusy}
           >
             <SquarePen aria-hidden="true" />
-            <span>New Chat</span>
           </button>
         </div>
       </header>}
@@ -1064,45 +1076,63 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
       {visibleBanner ? (
         <div className="agent-banner" role="alert">
           <span className="agent-banner-text">{visibleBanner}</span>
-          <button className="agent-banner-dismiss" type="button" aria-label="Dismiss" onClick={() => setBanner("")}><X aria-hidden="true" /></button>
+          <button className="agent-banner-dismiss" type="button" aria-label="Dismiss" onClick={() => setBanner("")}><X aria-hidden="true" size={13} /></button>
         </div>
       ) : null}
 
       {historyOpen ? (
-        <section className="agent-chat-history" id="agent-chat-history" aria-label="Saved AmpleFile agent chats">
-          <div className="agent-history-heading">
-            <button type="button" className="agent-back" aria-label="Back to Chat" onClick={() => { setHistoryOpen(false); window.setTimeout(() => composerRef.current?.focus(), 0); }}><ArrowLeft aria-hidden="true" /></button>
+        <section className="agent-chat-history" id="agent-chat-history" aria-label="Saved AmpleFile Agent chats">
+          {host === "panel" ? <div className="agent-history-heading">
+            <button type="button" className="agent-back" aria-label="Back to Chat" onClick={closeHistory}><ArrowLeft aria-hidden="true" /></button>
             <h1>Chats</h1>
-          </div>
-          <label className="agent-chat-search"><Search aria-hidden="true" /><input ref={searchRef} type="search" aria-label="Search chats" placeholder="Search chats" value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} /></label>
+          </div> : null}
+          <label className="agent-chat-search"><Search aria-hidden="true" size={14} /><input ref={searchRef} type="search" aria-label="Search chats" placeholder="Search Chats" value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} /></label>
           {historyError ? <p className="error-line" role="alert">{historyError} <button type="button" onClick={() => void refreshConversation()}>Try Again</button></p> : null}
           <div className="agent-chat-list">
-            {draftsRef.current.get("new")?.text || draftsRef.current.get("new")?.staged.length ? <button className="agent-chat-row" type="button" disabled={navigationBusy} onClick={startNewChat}><span>New Chat</span><small>Draft</small></button> : null}
+            {draftsRef.current.get("new")?.text || draftsRef.current.get("new")?.staged.length ? <div className="agent-chat-card">
+              <div className="agent-chat-item">
+                <button className="agent-chat-row" type="button" disabled={navigationBusy} onClick={startNewChat}>
+                  <span className="agent-chat-glyph" aria-hidden="true"><Chat16Regular /></span>
+                  <span className="agent-chat-text"><span>New Chat</span><small>Draft</small></span>
+                </button>
+              </div>
+            </div> : null}
             {chatsByRecency.map(([label, groupedChats]) => <section className="agent-chat-group" key={label} aria-label={label}>
               <h2>{label}</h2>
-              {groupedChats.map((chat) => (
+              <div className="agent-chat-card">
+              {groupedChats.map((chat) => {
+                const working = chat.requestState === "working" || chat.requestState === "handed_off";
+                const status = chat.needsAnswer ? "Needs Your Answer" : working ? "Working" : chat.archivedAt ? "Archived" : chat.snoozedUntil && Date.parse(chat.snoozedUntil) > now ? "Snoozed" : draftsRef.current.get(chat.id)?.text || draftsRef.current.get(chat.id)?.staged.length ? "Draft" : null;
+                return (
                 <div key={chat.id} className="agent-chat-item">
                 <button className="agent-chat-row" type="button" aria-current={chat.id === conversationId ? "page" : undefined} disabled={navigationBusy} onClick={() => selectChat(chat.id)}>
-                  <span>{chat.title || "Untitled chat"}</span>
-                  <small><time dateTime={chat.updatedAt}>{chatDateLabel(chat.updatedAt)}</time>{chat.needsAnswer ? <em>Needs Your Answer</em> : chat.requestState === "working" || chat.requestState === "handed_off" ? <em>Working</em> : chat.archivedAt ? <em>Archived</em> : chat.snoozedUntil && Date.parse(chat.snoozedUntil) > now ? <em>Snoozed</em> : draftsRef.current.get(chat.id)?.text || draftsRef.current.get(chat.id)?.staged.length ? <em>Draft</em> : null}</small>
+                  <span className="agent-chat-glyph" aria-hidden="true"><Chat16Regular /></span>
+                  <span className="agent-chat-text">
+                    <span title={chat.title || "Untitled chat"}>{chat.title || "Untitled chat"}</span>
+                    <small><time dateTime={chat.updatedAt}>{chatDateLabel(chat.updatedAt)}</time>{status ? <em>{` · ${status}`}</em> : null}</small>
+                  </span>
+                  {/* The file manager's activity dots: pulsing while it works, green when it needs you. */}
+                  {working ? <span className="popover-dot is-run" aria-hidden="true" /> : chat.needsAnswer ? <span className="popover-dot is-done" aria-hidden="true" /> : null}
                 </button>
-                <button className="agent-chat-options" data-chat-actions={chat.id} type="button" aria-label={`Actions for ${chat.title}`} aria-expanded={chatAction?.id === chat.id} disabled={navigationBusy || chat.requestState === "working" || chat.requestState === "handed_off"} onClick={() => setChatAction(chatAction?.id === chat.id ? null : { id: chat.id, mode: "menu", title: chat.title })}><MoreHorizontal aria-hidden="true" /></button>
+                <button className="agent-chat-options" data-chat-actions={chat.id} type="button" aria-label={`Actions for ${chat.title}`} aria-expanded={chatAction?.id === chat.id} disabled={navigationBusy || working} onClick={() => setChatAction(chatAction?.id === chat.id ? null : { id: chat.id, mode: "menu", title: chat.title })}><MoreHorizontal aria-hidden="true" /></button>
                 {chatAction?.id === chat.id ? <div className="agent-chat-actions">
                   {chatAction.mode === "rename" ? <form onSubmit={(event) => { event.preventDefault(); void changeChat("rename"); }}>
                     <input aria-label="Chat Title" autoFocus maxLength={80} value={chatAction.title} disabled={savingChat} onChange={(event) => setChatAction({ ...chatAction, title: event.target.value })} />
-                    <button type="submit" disabled={savingChat || !chatAction.title.trim()}>Save</button>
+                    <button type="submit" className="is-primary" disabled={savingChat || !chatAction.title.trim()}>Save</button>
                     <button type="button" disabled={savingChat} onClick={() => setChatAction(null)}>Cancel</button>
                   </form> : <><button type="button" onClick={() => setChatAction({ ...chatAction, mode: "rename" })}>Rename</button><button type="button" onClick={() => void changeChat("delete")}>Delete</button></>}
                 </div> : null}
                 </div>
-              ))}
+                );
+              })}
+              </div>
             </section>)}
             {!filteredChats.length ? <p className="agent-history-empty">{historyQuery ? "No chats match your search." : "Your chats will appear here after you send a message."}</p> : null}
           </div>
         </section>
       ) : null}
 
-      {backgroundChats.length ? <button type="button" className="agent-background-work" onClick={() => selectChat(backgroundChats[0].id)} disabled={navigationBusy}><span className="spinner" aria-hidden="true" /><span>{backgroundChats.length === 1 ? backgroundChats[0].title : `${backgroundChats.length} chats`} · Working</span><ChevronRight aria-hidden="true" /></button> : null}
+      {backgroundChats.length ? <button type="button" className="agent-background-work" onClick={() => selectChat(backgroundChats[0].id)} disabled={navigationBusy}><span className="popover-dot is-run" aria-hidden="true" /><span>{backgroundChats.length === 1 ? backgroundChats[0].title : `${backgroundChats.length} chats`} · Working</span><ChevronRight aria-hidden="true" size={14} /></button> : null}
 
       <div className="popover-chat" hidden={historyOpen}>
       <section className="agent-section agent-section-conversation">
@@ -1110,7 +1140,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
           className="popover-transcript"
           id="popover-conversation"
           ref={attachTranscript}
-          aria-label="AmpleFile agent chat" aria-live="polite"
+          aria-label="AmpleFile Agent chat" aria-live="polite"
           tabIndex={-1}
           onScroll={(event) => {
             const target = event.currentTarget;
@@ -1120,7 +1150,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
             if (pinned !== transcriptPinnedRef.current) setTranscriptPinned(pinned);
           }}
         >
-          {loadingChat ? <p className="muted small" role="status">Loading chat…</p> : !messages.length && !streamingAssistant && !request ? <div className="agent-chat-empty"><p>What would you like to work on?</p><span>Pick up a saved chat, or start here.</span></div> : null}
+          {loadingChat ? <p className="agent-chat-loading" role="status">Loading chat…</p> : !messages.length && !streamingAssistant && !request ? <div className="agent-chat-empty"><p>What would you like to work on?</p><span>Pick up a saved chat, or start here.</span></div> : null}
           {messages.map((message) => (
             <article
               className={message.kind === "assistant_continuation" || message.kind === "context_compaction" ? "work-continuation" : `popover-message ${message.role}`}
@@ -1150,7 +1180,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
               <ul className="trail">
                 {request.children.map((child) => (
                   <li key={child.taskId}>
-                    {child.state === "running" ? <span className="spinner" aria-hidden="true" /> : <Tick state={child.state} />}
+                    {child.state === "running" ? <span className="popover-dot is-run" aria-hidden="true" /> : <Tick state={child.state} />}
                     <span>{child.connectedFolderName}: {childStateLabel(child.state)}</span>
                   </li>
                 ))}
@@ -1167,7 +1197,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
           }} /> : null}
           <WorkRequest {...workState} showProgress={request?.phase !== "working"} showStop={request?.phase === "needs_you"} />
           {!transcriptPinned ? (
-            <button className="agent-jump-latest" type="button" onClick={() => followLatest("smooth")}><ArrowDown aria-hidden="true" />Latest</button>
+            <button className="agent-jump-latest" type="button" onClick={() => followLatest("smooth")}><ArrowDown aria-hidden="true" size={13} />Latest</button>
           ) : null}
         </section>
           {request && activePhases.has(request.phase) ? (
@@ -1176,7 +1206,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
                 // The steps above show what is happening; this line keeps the time.
                 elapsedLabel ? <p className="working-line" role="status" aria-live="polite"><span className="working-elapsed">{elapsedLabel}</span></p> : null
               ) : !workState.work ? (
-                <p className="working-line" role="status" aria-live="polite"><span className="spinner" aria-hidden="true" /><span className="working-copy">Working in {request.children.filter((child) => child.state === "running").length === 1 ? "a Connected Folder" : "Connected Folders"}…</span></p>
+                <p className="working-line" role="status" aria-live="polite"><span className="popover-dot is-run" aria-hidden="true" /><span className="working-copy">Working in {request.children.filter((child) => child.state === "running").length === 1 ? "a Connected Folder" : "Connected Folders"}…</span></p>
               ) : null}
             </div>
           ) : null}
@@ -1188,9 +1218,9 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
         <ul className="chips">
           {staged.map((item) => (
             <li key={item.value} className="chip" title={item.value}>
-              <span className="chip-kind" aria-hidden="true">{item.isLink ? <Link2 /> : <File />}</span>
+              <span className="chip-kind" aria-hidden="true">{item.isLink ? <Link2 size={13} /> : <File size={13} />}</span>
               <span className="chip-label">{item.label}</span>
-              <button className="chip-remove" aria-label={`Remove ${item.label}`} onClick={() => removeStaged(item.value)}><X /></button>
+              <button className="chip-remove" aria-label={`Remove ${item.label}`} onClick={() => removeStaged(item.value)}><X size={10} /></button>
             </li>
           ))}
         </ul>
@@ -1245,37 +1275,43 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
                 }
               }}
             />
-            <div className="composer-controls">
-              <button
-                className="composer-model"
-                type="button"
-                onClick={() => { if (host === "panel") onOpenModelSettings?.(); else void bridge?.ampleFileAgent?.openAiModelsSettings(); }}
-                aria-label={`Change the model used by the AmpleFile agent. Current model: ${ampleFileAgentModelLabel}`}
-              >
-                <span>{ampleFileAgentModelLabel}</span>
-              </button>
-              {thinkingLevels.length >= 2 && composerThinking ? (
-                <select
-                  className="composer-thinking"
-                  value={composerThinking.thinkingLevel}
-                  disabled={requestRunning}
-                  onChange={(event) => { void changeThinkingLevel(event.target.value); }}
-                  aria-label={`Reasoning level for this AmpleFile agent chat: ${composerThinking.thinkingLevel}`}
-                >
-                  {thinkingLevels.map((level) => <option key={level} value={level}>{formatThinkingLevel(level)}</option>)}
-                </select>
-              ) : null}
-              <button
-                className={`composer-action${requestRunning ? " composer-stop" : " primary"}`}
-                type="button"
-                onClick={() => { if (requestRunning) void stop(); else void send(); }}
-                disabled={requestRunning ? stopping : sending || loadingChat || available === false || !text.trim()}
-                aria-label={requestRunning ? (stopping ? "Stopping" : "Stop") : (sending ? "Sending" : "Send Message")}
-              >
-                {requestRunning ? <Square aria-hidden="true" /> : <ArrowUp aria-hidden="true" />}
-              </button>
-            </div>
           </div>
+          {/* Send sits inside the field, as in the file manager's message box; it becomes Stop while the agent works. */}
+          <button
+            className={`composer-action${requestRunning ? " composer-stop" : text.trim() ? " primary is-ready" : " primary"}`}
+            type="button"
+            onClick={() => { if (requestRunning) void stop(); else void send(); }}
+            disabled={requestRunning ? stopping : sending || loadingChat || available === false || !text.trim()}
+            aria-label={requestRunning ? (stopping ? "Stopping" : "Stop") : (sending ? "Sending" : "Send Message")}
+          >
+            {requestRunning ? <Square aria-hidden="true" size={10} /> : <ArrowUp aria-hidden="true" size={14} />}
+          </button>
+        </div>
+        {/* The small row under the field: the model, then its reasoning level as a quiet second word. */}
+        <div className="composer-controls">
+          <button
+            className="composer-model"
+            type="button"
+            onClick={() => { if (host === "panel") onOpenModelSettings?.(); else void bridge?.ampleFileAgent?.openAiModelsSettings(); }}
+            title="Change the AmpleFile Agent's model in AI Models"
+            aria-label={`Change the model used by the AmpleFile Agent. Current model: ${ampleFileAgentModelLabel}`}
+          >
+            <span>{ampleFileAgentModelLabel}</span>
+          </button>
+          {thinkingLevels.length >= 2 && composerThinking ? (
+            <span className="composer-thinking-control">
+              <select
+                className="composer-thinking"
+                value={composerThinking.thinkingLevel}
+                disabled={requestRunning}
+                onChange={(event) => { void changeThinkingLevel(event.target.value); }}
+                aria-label={`Reasoning level for this AmpleFile Agent chat: ${composerThinking.thinkingLevel}`}
+              >
+                {thinkingLevels.map((level) => <option key={level} value={level}>{formatThinkingLevel(level)}</option>)}
+              </select>
+              <ChevronDown aria-hidden="true" size={12} />
+            </span>
+          ) : null}
         </div>
       </section>
       </div>
@@ -1295,9 +1331,15 @@ function renderStepText(text: string) {
   return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSingleLineBreaks]}>{text}</ReactMarkdown>;
 }
 
+/** Today's and yesterday's chats show their time, since the group already names the day; older ones their date. */
 function chatDateLabel(value: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(date.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) });
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const dayStart = (when: Date) => new Date(when.getFullYear(), when.getMonth(), when.getDate()).getTime();
+  const daysAgo = Math.round((dayStart(now) - dayStart(date)) / 86_400_000);
+  if (daysAgo === 0 || daysAgo === 1) return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
 }
 
 /**
@@ -1351,7 +1393,7 @@ function DispositionTrail({ request }: { request: AmpleFileAgentRequestView }) {
         const state = child?.state ?? "succeeded";
         return (
           <li key={`${action.command}:${action.taskId ?? action.rootPath ?? index}`}>
-            {state === "running" ? <span className="spinner" aria-hidden="true" /> : <Tick state={state} />}
+            {state === "running" ? <span className="popover-dot is-run" aria-hidden="true" /> : <Tick state={state} />}
             <span>
               {action.command === "chat.send"
                 ? <>Work in {action.connectedFolderName}: {childStateLabel(state)}</>

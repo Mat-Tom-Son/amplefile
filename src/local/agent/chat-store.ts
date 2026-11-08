@@ -34,7 +34,7 @@ export interface ChatMessage {
 
 /**
  * Reference-style attachment metadata persisted with a user message. The
- * AmpleFile agent records absolute paths and links here; a Connected Folder Chat
+ * AmpleFile Agent records absolute paths and links here; a Connected Folder Chat
  * records its attached files as Connected Folder–relative paths. The content
  * itself is never copied into the transcript.
  */

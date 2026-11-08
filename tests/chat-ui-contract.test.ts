@@ -208,7 +208,7 @@ test("Chat composer model and reasoning controls are truthful, scoped, and funct
   // Model Settings.
   assert.match(chatPanel, /runtime\.model\?\.name\s*\n\s*\?\? runtime\.model\?\.id/);
   assert.match(chatPanel, /displayModelLabel\(status\.provider \?\? "", status\.model \?\? ""\)/);
-  assert.doesNotMatch(modelDisplay, /AmpleFile agent/i);
+  assert.doesNotMatch(modelDisplay, /AmpleFile Agent/i);
   assert.match(chatPanel, /`\/api\/agent\/models\?\$\{params\.toString\(\)\}`/);
   assert.match(chatPanel, /\.filter\(\(model\) => model\.authConfigured\)/);
   assert.match(chatPanel, /"\/api\/agent\/configure", \{\s*method: "POST",\s*body: \{ scope: "connected-folder", connectedFolderId, provider: model\.provider, model: model\.id \}/);

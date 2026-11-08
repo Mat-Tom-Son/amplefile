@@ -153,7 +153,7 @@ test("automations enable is direct and an agent step opens a new management thre
   });
   t.after(async () => {
     await api.close();
-    // The AmpleFile agent hop's own turn may still be flushing a best-effort receipt as
+    // The AmpleFile Agent hop's own turn may still be flushing a best-effort receipt as
     // the API closes; retry so a racing write never fails the test.
     for (let attempt = 0; attempt < 20; attempt += 1) {
       try {
@@ -192,13 +192,13 @@ test("automations enable is direct and an agent step opens a new management thre
   assert.equal((await api.automations.getAutomation(enabled.automationId))?.grants.length, 1);
 
   await api.automationSettings.run(enabled.automationId);
-  // An agent hop opens a real AmpleFile agent Chat and starts a real Pi turn
+  // An agent hop opens a real AmpleFile Agent Chat and starts a real Pi turn
   // against it. The budget is generous on purpose: it bounds a hang, not a
   // slow start while the rest of the suite shares the machine.
   await waitFor(async () => {
     const history = await api.automationSettings.history(enabled.automationId);
     return history.runs[0]?.hops[0]?.outcome !== undefined && history.runs[0]?.hops[0]?.outcome !== "accepted";
-  }, "the AmpleFile agent hop to settle", 120_000);
+  }, "the AmpleFile Agent hop to settle", 120_000);
   const hop = (await api.automationSettings.history(enabled.automationId)).runs[0]?.hops[0];
   assert.equal(hop?.kind, "agent");
 
@@ -287,7 +287,7 @@ test("Settings lists pending proposal files and turns one on by path through the
   // Only a proposal file directly inside the agent's working folder is admitted.
   const outside = join(sandbox, "outside.amplefile-automation.json");
   await writeFile(outside, proposal("Outside", alpha.connectedFolder.id), "utf8");
-  await assert.rejects(() => api.automationSettings.enableProposal(outside), /Only automation files in the AmpleFile agent's folder/);
+  await assert.rejects(() => api.automationSettings.enableProposal(outside), /Only automation files in the AmpleFile Agent's folder/);
   await assert.rejects(() => api.automationSettings.enableProposal(join(root, "..", "outside.amplefile-automation.json")), /Only automation files/);
   await assert.rejects(() => api.automationSettings.enableProposal("hourly.amplefile-automation.json"), /absolute automation file path/);
   await assert.rejects(() => api.automationSettings.enableProposal(join(root, "broken.amplefile-automation.json")), /not readable JSON/);

@@ -2,13 +2,13 @@
  * The operations guide every Worker turn carries in its system prompt
  * (docs/collaboration-contract.md). It is appended after the person's
  * Worker instructions, exactly the way those are appended, and it exists only
- * for Connected Folder scopes: the AmpleFile agent has its own taught text in
+ * for Connected Folder scopes: the AmpleFile Agent has its own taught text in
  * amplefile-agent-instructions.ts and never receives this one.
  *
  * The guide describes the verbs a Worker uses to report, ask,
  * answer, and hand work off, and the one rule that cross–Connected Folder work goes
  * through them. It names nothing about any other Connected Folder, the registry, or the
- * AmpleFile agent's conversation — those never enter a Worker turn.
+ * AmpleFile Agent's conversation — those never enter a Worker turn.
  *
  * Nothing here is written into the Connected Folder: a system-prompt appendix
  * lives in the Pi session, not in `.pi/` or `.amplefile/`.
@@ -28,7 +28,7 @@ export function ampleFileConnectedFolderOperationsGuide(executable = "amplefile"
   return [
     ampleFileConnectedFolderOperationsGuideHeading,
     "",
-    "You are this Connected Folder's Worker. This Chat lives in the Connected Folder's folder and travels with it. The interface and the CLI use the same names — Connected Folder, Worker, AmpleFile agent, automation — so use them in replies.",
+    "You are this Connected Folder's Worker. This Chat lives in the Connected Folder's folder and travels with it. The interface and the CLI use the same names — Connected Folder, Worker, AmpleFile Agent, automation — so use them in replies.",
     "",
     `Use native Pi read/edit/write/bash and installed Skills & Extensions for content work: editing, documents, calculations and scripts. Use \`${cmd}\` for product operations and collaboration; it carries restore points, receipts and conflict rules. Every verb runs on the first call. Read \`${cmd} help <family>\` before improvising flags, and \`${cmd} help collaborate\` for these verbs. If a command says "Open AmpleFile to run this command", report that instead of working around it.`,
     "",
@@ -62,7 +62,7 @@ export function ampleFileConnectedFolderOperationsGuide(executable = "amplefile"
     "",
     "### Stay inside this Connected Folder",
     "",
-    "Read and change this Connected Folder's folder only. Another Connected Folder's folder, the AmpleFile agent's own conversation, the list of Connected Folders on this computer, and other Connected Folders' results are not yours to read, even when a path on this computer would reach them. When work belongs in another Connected Folder, hand it off, or ask and let the person or the request that asked decide.",
+    "Read and change this Connected Folder's folder only. Another Connected Folder's folder, the AmpleFile Agent's own conversation, the list of Connected Folders on this computer, and other Connected Folders' results are not yours to read, even when a path on this computer would reach them. When work belongs in another Connected Folder, hand it off, or ask and let the person or the request that asked decide.",
     "",
     "`.amplefile/` holds this Connected Folder's identity and its Chats' transcripts. It is not the person's content: grep and find leave it out, and you don't read it to answer a question, including transcripts of the Chat that handed you work.",
     "",
@@ -84,12 +84,12 @@ export function ampleFileConnectedFolderOperationsGuide(executable = "amplefile"
   ].join("\n");
 }
 
-/** The guide for a Connected Folder scope; `undefined` for the AmpleFile agent scope, which never receives it. */
+/** The guide for a Connected Folder scope; `undefined` for the AmpleFile Agent scope, which never receives it. */
 export function connectedFolderOperationsGuideForScope(connectedFolderId: string, executable = "amplefile"): string | undefined {
   return connectedFolderId === ampleFileAgentScopeId ? undefined : ampleFileConnectedFolderOperationsGuide(executable);
 }
 
-/** Worker-only appendices; the AmpleFile agent does not own a Connected Folder scratch directory. */
+/** Worker-only appendices; the AmpleFile Agent does not own a Connected Folder scratch directory. */
 export function appendConnectedFolderOperationsGuide(base: string[], guide: string | undefined): string[] {
   const value = guide?.trim();
   return value ? [...base, value, ampleFileWorkerWorkingFilesGuide] : base;

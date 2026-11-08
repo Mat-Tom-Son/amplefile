@@ -1,21 +1,21 @@
-# The AmpleFile agent and CLI
+# The AmpleFile Agent and CLI
 
-The **AmpleFile agent** is the agent above all Connected Folders. In the
+The **AmpleFile Agent** is the agent above all Connected Folders. In the
 product, people see **Connected Folders**, **Workers**, and **Automations**;
 technical contracts, commands, paths, schemas, and code identifiers use
 `amplefile-agent`, `agent`, `management/`, `connected-folder`, and
 `automation`.
 
 This document covers the shared read authority (`AmpleFileKernel`), the
-installed `amplefile` command and its act lane, the AmpleFile agent, durable
+installed `amplefile` command and its act lane, the AmpleFile Agent, durable
 requests, and the renderer transport. Per-verb classification, receipts, and
 Recently Deleted are in [the act ledger](act-ledger.md); completion across
 turns is governed by
 [the collaboration contract](collaboration-contract.md#completion-delivery-and-recovery).
 
-## What the AmpleFile agent is
+## What the AmpleFile Agent is
 
-The AmpleFile agent is one conversation scope above all Connected Folders,
+The AmpleFile Agent is one conversation scope above all Connected Folders,
 reached through the menu-bar popover and `amplefile agent …`. It is the door
 to every Connected Folder: material comes in through it (drops, attachments,
 `files add`), what a person asks for gets done with a receipt, and nothing it
@@ -25,7 +25,7 @@ does is permanent at the moment it happens.
   application state under the app profile's `management/` root and never
   travels with a folder. It has no Files or History of its own.
 - **It is not a second persona.** It is the place and the conversation's
-  name. Copy writes "the AmpleFile agent", with "agent" lowercase and an
+  name. Copy writes "the AmpleFile Agent", with "agent" lowercase and an
   article or possessive, never plural.
 - **Its contract terms are fixed:** the CLI group `agent`, the
   `amplefile-agent` scope id, the `/api/amplefile-agent/*` routes, and the
@@ -35,7 +35,7 @@ does is permanent at the moment it happens.
   tool-restricted management agent would be a separate, deliberate design.
 - **It runs only when asked.** A continuation turn belongs to a request a
   person started and happens once per settle batch, within that request's
-  limits. The only scheduled AmpleFile agent turn is a declared Automation's
+  limits. The only scheduled AmpleFile Agent turn is a declared Automation's
   `agent` step ([Automations](automations.md)). It is not a schedule, a
   watcher, or an event bus.
 
@@ -173,7 +173,7 @@ The kernel and its adapters read only AmpleFile's own profile and
 ## Renderer transport
 
 The desktop and local browser renderer share one authenticated
-`POST /api/events` SSE connection per renderer across Chat, AmpleFile agent
+`POST /api/events` SSE connection per renderer across Chat, AmpleFile Agent
 Chat, Connected Folder file-monitoring, and control subscriptions. The
 request carries at most 128 uniquely identified subscriptions to exact
 supported local stream paths, within a 64 KiB body. Each Chat consumer keeps
@@ -262,7 +262,7 @@ has two parts, and nothing changes until the person clicks:
 The Skill (`src/shared/outside-agent-skill.ts`) is short on purpose: the
 rules (`--json`, an explicit `--connected-folder`, receipts over raw edits,
 no secrets, no polling), how to look around, handing work to a Worker and
-waiting for its result, asking the AmpleFile agent to work across Connected
+waiting for its result, asking the AmpleFile Agent to work across Connected
 Folders, files and undo, and Automations, with `amplefile help <command>` for
 the rest. Its product name, command, and folder come from
 `src/shared/product-identity.json`, and `tests/outside-agent-skill.test.ts`
@@ -360,12 +360,12 @@ beside the turn state. See
 
 `amplefile jobs …` drives **background jobs** ([Background jobs](background-jobs.md))
 with the same service and records as the `job_start`, `job_output`, and
-`job_stop` tools every Worker and the AmpleFile agent carry. `jobs start` runs
+`job_stop` tools every Worker and the AmpleFile Agent carry. `jobs start` runs
 a shell command for the caller's own running turn (`--task`, checked like
 `chat report`) in its own process group, journaled before it spawns and never
 re-run; the job joins that turn's request, which reads `working` while it
 runs. Every verb names the job's Connected Folder, so a Worker reaches only
-its own Connected Folder's jobs; the AmpleFile agent's own jobs are reached
+its own Connected Folder's jobs; the AmpleFile Agent's own jobs are reached
 through its tools and listed by `requests show`. `jobs output` reads the end
 of the output or a page from `--offset`, can `--wait` for the end or
 `--until` a line matches, and with `--task` naming a running turn in the
@@ -387,7 +387,7 @@ content-free: ids, kinds, paths, sizes, and dates. `recently-deleted restore`
 puts one item back where it came from, renaming it when something else took
 the name; a Skill goes back to the same scope and path and loads with the
 next turn, and is refused while a Skill of the same name is installed there;
-an Everywhere Skill names the AmpleFile agent's scope id as its Connected
+an Everywhere Skill names the AmpleFile Agent's scope id as its Connected
 Folder. Nothing empties the store but the retention window set in
 Settings → Recently Deleted.
 
@@ -412,7 +412,7 @@ It returns a task id. The act envelope's request id is the turn's idempotency
 key, so an uncertain delivery cannot create a second agent run. Terminal
 failures and explicit stops append a typed, sanitized agent result before
 the task settles, including setup failures that happen before a provider can
-answer; the same rule covers the machine-local AmpleFile agent transcript and
+answer; the same rule covers the machine-local AmpleFile Agent transcript and
 the popover, while raw provider diagnostics stay in the host.
 
 That task id is how a caller follows exactly its own turn. AmpleFile keeps
@@ -448,9 +448,9 @@ Deleting a Worker Chat moves its portable transcript into Recently Deleted
 and records the Connected Folder, Chat, and Recently Deleted entry identities
 in its receipt.
 
-## The AmpleFile agent conversation
+## The AmpleFile Agent conversation
 
-`amplefile agent …` talks to the AmpleFile agent. It reuses the same
+`amplefile agent …` talks to the AmpleFile Agent. It reuses the same
 acceptance path, Pi runtime, kernel task records, and task-scoped outcome
 semantics as Connected Folder Chats, under the scope id `amplefile-agent`
 instead of a Connected Folder id. Its transcript lives under the app
@@ -463,11 +463,11 @@ History checkpoints (History belongs to Connected Folders).
 
 Those two app-owned resources are required. If AmpleFile cannot write them
 safely, ordinary Connected Folders and the window may still start, but
-AmpleFile agent commands fail closed until its folder can be prepared;
+AmpleFile Agent commands fail closed until its folder can be prepared;
 AmpleFile never runs this full-trust scope as an unidentified, uninstructed
 agent.
 
-Its authority, precisely: the AmpleFile agent is **full trust, taught rather
+Its authority, precisely: the AmpleFile Agent is **full trust, taught rather
 than caged**. Like every agent in AmpleFile it keeps Pi's ordinary read,
 bash, edit, and write tools, which accept absolute paths anywhere this user
 can reach. Its instructions teach it to prefer the `amplefile` read and act
@@ -476,12 +476,12 @@ trust grants, restore points, receipts, and conflict rules. That preference
 is instruction, not an enforced boundary.
 
 Without `--conversation`, agent commands target the most recent active
-AmpleFile agent Chat, `agent send` creates it on first use, and `--new`
-starts another thread; AmpleFile agent turns appear in `amplefile tasks list`
+AmpleFile Agent Chat, `agent send` creates it on first use, and `--new`
+starts another thread; AmpleFile Agent turns appear in `amplefile tasks list`
 under its scope id. The popover offers the same choice as **New Chat**: the
 view becomes a clean slate at once, the first send creates the new
 machine-local transcript, and the previous transcript stays saved. A person
-can rename or delete an idle AmpleFile agent Chat there; deletion moves its
+can rename or delete an idle AmpleFile Agent Chat there; deletion moves its
 transcript into Recently Deleted under its Chat title, and restoring it keeps
 that Chat identity. Running, compacting, or unsettled Chats refuse deletion.
 
@@ -491,7 +491,7 @@ that Chat identity. Running, compacting, or unsettled Chats refuse deletion.
 **references, not copies**: absolute or working-directory-relative file and
 folder paths, or http(s) links. A Connected Folder Chat stages dropped
 material inside the Connected Folder because its transcripts travel with the
-folder; the AmpleFile agent's transcript is machine-local, so its attachments
+folder; the AmpleFile Agent's transcript is machine-local, so its attachments
 carry absolute paths, missing sources are refused at send time, and the only
 copy in the flow is the restore-pointed `files add` into a destination
 Connected Folder. Readable files are inlined into the turn within the shared
@@ -500,7 +500,7 @@ references; links arrive as a typed list, never as fake files. The typed
 references persist on the user message, and `--attach` rides in ordinary act
 argv.
 
-Every accepted AmpleFile agent turn is a **request**. Its hidden turn context
+Every accepted AmpleFile Agent turn is a **request**. Its hidden turn context
 supplies that request's task id and, like every Worker turn's, the host's
 local time, time zone, and platform. Its instructions require
 `--parent-task <id>` on `chat.send`, `files.add`, `connected-folders.create`,
@@ -508,8 +508,8 @@ and `connected-folders.register`. The act host checks that the named parent
 is active before journaling or running the action; attributed actions become
 the request's action trail, delegated turns become its children, and act
 receipts gain the same `parentTaskId`. An unrelated CLI action is therefore
-never credited merely because an AmpleFile agent turn happens to be running,
-and concurrent AmpleFile agent turns stay unambiguous. This is lineage, not
+never credited merely because an AmpleFile Agent turn happens to be running,
+and concurrent AmpleFile Agent turns stay unambiguous. This is lineage, not
 caller authentication.
 
 `agent status --task` reports a `request` object beside the turn:
@@ -517,17 +517,17 @@ per-attachment **dispositions** computed from recorded actions (`placed`,
 `registered`, or honestly `unrecorded`), recorded actions with restore-point
 ids, child turns with their own states, the reply, and a **phase**:
 `working`, `needs_you` (an open question, or a reply whose final line asks
-one), `handed_off` (the AmpleFile agent turn finished but a delegated
+one), `handed_off` (the AmpleFile Agent turn finished but a delegated
 Connected Folder turn still runs), `done`, `failed`, or `stopped`. The
 record's own `state` travels beside the phase (`partial` reads as `done`
 there), with the request id, root id, kind, and
-bounded question and result references. Done requires the AmpleFile agent
+bounded question and result references. Done requires the AmpleFile Agent
 turn and every child to succeed; a failed or lost child fails the request,
 and an aborted child or an accepted request-level Stop stays stopped. A
 popover reply to `needs_you` joins the same request as a further turn,
 carrying the prior attachments and action trail without replaying them into
 model context, and it is recorded as the answer to any open question waiting
-on the person. `agent stop --task` aborts the AmpleFile agent turn and every
+on the person. `agent stop --task` aborts the AmpleFile Agent turn and every
 turn still running under that request, withdraws its open questions, and
 names each turn it touched.
 
@@ -544,8 +544,8 @@ respects deliberate scrollback. The header shows the current Chat title with
 `turn_snapshot`, incremental `assistant_delta`, and final
 `assistant_message` text in place; when the request settles, the persisted
 transcript replaces that projection. The model label opens
-**Settings → AI Models** scoped to **AmpleFile agent**; the reasoning
-selector is filled from the AmpleFile agent's selected model before the first
+**Settings → AI Models** scoped to **AmpleFile Agent**; the reasoning
+selector is filled from the AmpleFile Agent's selected model before the first
 send, saves Pi's default for a future session, and changes the live Pi
 session once the conversation has one. The send action becomes **Stop** while
 the request is active, and the text area stays available for drafting; one
@@ -556,14 +556,14 @@ has a dedicated preload exposing only the local API session, dropped-file
 path resolution, hide and show of the main window, opening AI Models settings
 (`openAiModelsSettings`), and window-material actions.
 
-The authenticated renderer lists saved AmpleFile agent Chats at
+The authenticated renderer lists saved AmpleFile Agent Chats at
 `GET /api/amplefile-agent/conversations` and pins
 `GET /api/amplefile-agent/summary?conversationId=<id>` to a selected Chat. The
 transcript and latest request always come from that same id.
 
-The AmpleFile agent has one machine-local provider and model preference,
+The AmpleFile Agent has one machine-local provider and model preference,
 separate from every Connected Folder's. Settings → AI Models labels that
-scope **AmpleFile agent**. Each registered Connected Folder may also keep
+scope **AmpleFile Agent**. Each registered Connected Folder may also keep
 bounded machine-local **Worker instructions**, keyed by its portable identity
 and appended to subsequent Pi turns without changing portable `.amplefile/`
 or `.pi/` content. Saving them never waits on or interrupts work: idle Chats
@@ -574,8 +574,8 @@ credentials are machine-wide Pi auth storage records.
 ## Durable requests, questions, and continuation
 
 [The collaboration contract](collaboration-contract.md) makes the request an
-owned record. Every accepted turn (AmpleFile agent, Connected Folder, CLI, or
-Automation hop) joins one. An AmpleFile agent turn creates a root;
+owned record. Every accepted turn (AmpleFile Agent, Connected Folder, CLI, or
+Automation hop) joins one. An AmpleFile Agent turn creates a root;
 `chat send --parent-task` creates a child under it; a Connected Folder turn
 with no parent is its own root; a person's reply to a request waiting on
 their answer joins that record. Records live under the state root's
@@ -605,7 +605,7 @@ fingerprint and size, and an `outcome` of `succeeded`, `partial`, or
 `requests list` and `requests show --request <id>` read that graph. Like
 `recently-deleted` and `automations` they sit above Connected Folders and
 refuse `--connected-folder`. The graph carries every Connected Folder's
-results and the AmpleFile agent's own assignment text, so a caller whose
+results and the AmpleFile Agent's own assignment text, so a caller whose
 directory resolves to a registered Connected Folder (a Worker, or a harness
 working inside one) is refused by name; a Connected Folder follows its own
 work with `chat status`, `chat wait`, and `chat report`.
@@ -621,7 +621,7 @@ Chat are each refused by name. `chat handoff` copies the named files through
 the same additive, restore-pointed path as `files add`, starts the
 destination Chat through the ordinary acceptance path, and links it as a
 child of the caller's root so its report flows back there. Delivery is the
-host's job throughout: no AmpleFile agent model turn is needed to move a
+host's job throughout: no AmpleFile Agent model turn is needed to move a
 report, an answer, or a handoff.
 
 Waiting is a host state. `chat wait` and `agent wait` settle when the
@@ -655,12 +655,12 @@ and History moves.
 
 Only the assignment text, answer text, released report summaries, and copied
 files ever enter a Connected Folder Chat. The request graph itself, other
-Connected Folders' results, and the AmpleFile agent's transcript stay above
+Connected Folders' results, and the AmpleFile Agent's transcript stay above
 Connected Folders.
 
 Requests have no lifetime, child-count, delegation-depth, or
 continuation-count quota. One Chat runs one turn or compaction at a time;
-different Chats and Connected Folders, including AmpleFile agent Chats, can
+different Chats and Connected Folders, including AmpleFile Agent Chats, can
 run at the same time. Delegated children have no separate slot limit or
 waiting queue.
 
@@ -714,7 +714,7 @@ linked turn.
 The optional `fileChanges` field in `amplefile.turn.v1` records full pre- and
 post-turn History checkpoint ids and at most 64 changed or new file paths,
 hashes, and sizes. It contains no file bytes and is admitted only on terminal
-turns. AmpleFile agent requests project at most 12 currently visible
+turns. AmpleFile Agent requests project at most 12 currently visible
 child-file paths. The request trail is bounded by the same per-request limits
 and 30-day retention as the rest of the record; turn metadata alone does not
 reconstruct a request that retention removed.
@@ -793,7 +793,7 @@ service and request cancellation.
 A Connected Folder turn's hidden context includes the actual pre-turn History
 capture: checkpoint id (including deduplicated reuse), captured file count,
 and skipped counts by reason, or an unavailable status. It does not claim
-skipped bytes are backed up. AmpleFile agent turns do not imply a checkpoint
+skipped bytes are backed up. AmpleFile Agent turns do not imply a checkpoint
 covers arbitrary external files or every Connected Folder. The instructions
 distinguish ordinary native Pi content work from managed product operations,
 and keep explicit History saves for useful intermediate milestones.
@@ -931,7 +931,7 @@ This layer does **not** provide:
 - Chat-scoped or individually revocable authorization beyond the per-launch
   act token;
 - a tool-restricted or independently permissioned agent above Connected
-  Folders beyond the full-trust, taught AmpleFile agent;
+  Folders beyond the full-trust, taught AmpleFile Agent;
 - event subscriptions for all state changes;
 - imperative APIs for Extensions to create or change window surfaces;
 - a verified registry that binds a Connected Folder–local service to a

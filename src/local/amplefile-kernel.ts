@@ -149,7 +149,7 @@ export interface AmpleFileExperimentalAutomationRunTask {
  * (docs/background-jobs.md). Like `prepared_act`, it is deliberately
  * separate from AmpleFileTaskKind and must not enter the stable
  * `amplefile.tasks` v1 projection; `jobs list` is its public read. The id is
- * the job id. A Connected Folder id is absent for the AmpleFile agent's own jobs.
+ * the job id. A Connected Folder id is absent for the AmpleFile Agent's own jobs.
  */
 export interface AmpleFileExperimentalJobTaskInput {
   jobId: string;

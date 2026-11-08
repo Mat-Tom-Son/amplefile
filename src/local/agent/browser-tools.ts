@@ -1,6 +1,6 @@
 /**
  * browser_*: the built-in browser's tools, carried by every Worker and the
- * AmpleFile agent in the desktop app (docs/built-in-browser.md). The browser
+ * AmpleFile Agent in the desktop app (docs/built-in-browser.md). The browser
  * is shared with the person: its tabs sit in their tab strip, a tab a Worker
  * opens appears there too, and a Worker can read and use the tab the person
  * is looking at. The desktop host behind these tools drives each page through

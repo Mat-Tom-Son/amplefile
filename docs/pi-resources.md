@@ -4,7 +4,7 @@ AmpleFile exposes Pi resources directly instead of maintaining a parallel agent 
 
 Start with [Skills & Extensions](skills-and-extensions.md) for the product concepts, safety model, scopes, and package boundary. This page is the compact compatibility reference for implementation and verification.
 
-The [AmpleFile agent and CLI](amplefile-agent-and-cli.md) reports this same native catalog through versioned read snapshots and the installed `amplefile capabilities list --json` command. That projection includes tools, packages, prompts, themes, commands, trust, scope, provenance, and diagnostics; it is not a second discovery path or an install/activation surface.
+The [AmpleFile Agent and CLI](amplefile-agent-and-cli.md) reports this same native catalog through versioned read snapshots and the installed `amplefile capabilities list --json` command. That projection includes tools, packages, prompts, themes, commands, trust, scope, provenance, and diagnostics; it is not a second discovery path or an install/activation surface.
 
 In the product, the **Skills & Extensions** popup — opened from the toolbar's **Action** (⋯) menu or a Connected Folder's right-click menu, and pinned to the Connected Folder it was opened from — is the single Connected Folder–aware surface for Skills and Extensions. A Skill describes a reusable way of working; an Extension adds an executable capability or connection. Installed and Discover views retain the item type, source, scope, load state, diagnostics, and package lifecycle. Provider and model setup lives under **Settings → AI Models**.
 

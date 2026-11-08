@@ -11,7 +11,7 @@ semantics, the lifecycle record, and the bounds.
 An Automation is a machine-local, inert-until-enabled declaration of
 deterministic steps that move work between Connected Folders: start a Worker
 Chat with a fixed message, copy files from one Connected Folder into another
-with a History restore point, or message the AmpleFile agent. App code executes
+with a History restore point, or message the AmpleFile Agent. App code executes
 it on the shared scheduler discipline, never an open-ended Worker conversation,
 and it is the only thing above Connected Folders that runs unattended. An
 Automation is not a workflow language: no conditions, no branching, no
@@ -177,7 +177,7 @@ person finishing a Chat would be ambient watching of their conversation
 activity, and those records are in-memory only — the real need, "after the
 Worker finishes, move its output," is served inside a run, where the Chat step
 waits for its own turn), compaction settles (no recorded outcome), and
-AmpleFile agent request settles (in-memory, and steps firing from AmpleFile
+AmpleFile Agent request settles (in-memory, and steps firing from AmpleFile
 agent Chat activity would blur interactive work with the agent into unattended
 behavior).
 
@@ -227,7 +227,7 @@ refuses run-now; another occurrence is a new proposal and enablement.
 
 ## The declaration
 
-Authoring follows the inert-proposal pattern: the AmpleFile agent writes an
+Authoring follows the inert-proposal pattern: the AmpleFile Agent writes an
 inert, typed JSON file (`amplefile.automation-proposal`, carrying the
 declaration's contract version, with the `.amplefile-automation.json` suffix)
 at the top level of its own working folder — never inside a Connected Folder,
@@ -254,7 +254,7 @@ agent-step message plus the closed placeholder set below, no instructions, no
 source code, no shell commands, no credentials, no connection data, no
 expressions. The only model a declaration names is a step's optional model
 (below). The Chat- and agent-step `message` is bounded (4 MiB) and is data
-addressed to one Connected Folder's Worker or to the AmpleFile agent; from
+addressed to one Connected Folder's Worker or to the AmpleFile Agent; from
 version 4 it may carry the closed placeholder set.
 
 ### Steps
@@ -281,27 +281,27 @@ Steps execute strictly in declaration order. Three kinds:
   handoff below. There are no free glob or regex patterns: the bounded tree
   selector is the hardened enumeration primitive, with review semantics a
   person can actually read.
-- **`agent`** (version 4) — start a **new** AmpleFile agent Chat with the
+- **`agent`** (version 4) — start a **new** AmpleFile Agent Chat with the
   message, through the same acceptance path as `amplefile agent send --new`.
-  It names no Connected Folder: the AmpleFile agent sits above them. Always a
-  new Chat, so standing behavior never entangles a live AmpleFile agent Chat
+  It names no Connected Folder: the AmpleFile Agent sits above them. Always a
+  new Chat, so standing behavior never entangles a live AmpleFile Agent Chat
   and turn-conflict rejection stays exact. The hop waits for its own turn's
   terminal outcome and `automations stop` aborts it like a Chat hop. This is
-  the one way the AmpleFile agent runs unattended, so a person can put the
-  AmpleFile agent on a cadence deliberately. An agent hop records no History
+  the one way the AmpleFile Agent runs unattended, so a person can put the
+  AmpleFile Agent on a cadence deliberately. An agent hop records no History
   checkpoints and is never a created-files source.
 
 **Per-step model.** A `chat` or `agent` step may name its own model,
 `"model": {"provider": "<provider>", "id": "<model id>"}`, in any declaration
 version. It applies only to the new Chat that step starts: the host sets it on
 that session before the first turn, so the Chat's later answers and
-continuations keep it, and no Connected Folder's, the AmpleFile agent's, or
+continuations keep it, and no Connected Folder's, the AmpleFile Agent's, or
 Pi's default model changes. A step without one uses the Connected Folder's (or
-the AmpleFile agent's) model. Enabling refuses a step whose model AmpleFile does
+the AmpleFile Agent's) model. Enabling refuses a step whose model AmpleFile does
 not know or whose provider is not connected, naming the step, so an unattended
 run never meets that first. `amplefile automations models` lists the connected
 models and whether each accepts images, so an automation that looks at
-screenshots, photos, or scans can name one that sees them. The AmpleFile agent
+screenshots, photos, or scans can name one that sees them. The AmpleFile Agent
 is told to check this and to ask the person when the choice matters. Settings
 → Automations and `automations show` say which model a step uses.
 
@@ -317,7 +317,7 @@ A reported `partial` keeps the step and the run `succeeded` but marks both
 receipt's detail. A turn that ends with only a reply keeps the turn's own
 outcome, so a Worker that answers with a question instead of doing the work
 does not read as done. An `agent` step gets the same unattended framing; the
-AmpleFile agent has no report verb, so its final reply is the record.
+AmpleFile Agent has no report verb, so its final reply is the record.
 
 ### Placeholders and the created-files handoff
 
@@ -400,7 +400,7 @@ the same Automation, and Settings → Automations lists it like any other.
 
 | Record | Location | Reason |
 |---|---|---|
-| Inert automation proposal | Ordinary file in the AmpleFile agent's working folder | Reviewable and revisable without authority; never placed in the folder of a Connected Folder it names |
+| Inert automation proposal | Ordinary file in the AmpleFile Agent's working folder | Reviewable and revisable without authority; never placed in the folder of a Connected Folder it names |
 | Enabled declaration, exact-digest grant, cadence/occurrence claim, health state | AmpleFile application state (`automations/` under the state root; store schema version 3) | References multiple Connected Folders; must never travel with any folder |
 | Automation-run and hop receipts | AmpleFile application state, append-only journal with rotation | Contains Connected Folder names, paths, and ids across Connected Folders |
 | Saved folder snapshot and running marker (`"ifMissed": "run"` only) | AmpleFile application state (`automations/folder-snapshots/`), one file per automation | File metadata from a Connected Folder, kept so a catch-up has something to compare with; never portable and never file contents |
@@ -479,7 +479,7 @@ execute it twice under one run id.
 
 ## Lifecycle and authority
 
-1. **Propose.** The AmpleFile agent (or a person, by hand) writes the inert
+1. **Propose.** The AmpleFile Agent (or a person, by hand) writes the inert
    typed proposal. Nothing is registered, armed, or scheduled; proposals are
    ordinary files with no authority.
 2. **Enable.** `amplefile automations enable --proposal <path>` — or **Turn
@@ -531,7 +531,7 @@ history, and valid actions; **Turn On** is one click that enables the
 automation and writes its receipt.
 
 Pending proposal files appear there too. Settings scans the top level of the
-AmpleFile agent's working folder — no subfolders, at most 1,000
+AmpleFile Agent's working folder — no subfolders, at most 1,000
 `*.amplefile-automation.json` files of at most 64 MiB each — validates each
 with the proposal schema, and lists the ones not already stored at the same
 digest under **Ready to Turn On**, each with its title, trigger, and a **Turn
@@ -540,7 +540,7 @@ Folder, or has a one-time instant outside the enablement horizon shows only its
 file name, with the problem as a tooltip and no button; when every file is
 invalid the section is titled **Automation Files** so the repair reason stays
 visible. Turn On re-reads that exact file — the path must resolve directly
-inside the AmpleFile agent's working folder. Reads reject symbolic links and
+inside the AmpleFile Agent's working folder. Reads reject symbolic links and
 files that change while being read, and never admit more than 64 MiB. The
 action takes the same enable path as `automations enable --proposal`
 (content-derived id, digest pinned at that moment, journaled prepared act),
@@ -569,7 +569,7 @@ Connected Folder. Nothing is authored, edited, or deleted from a Connected
 Folder; automations are declared, stored, and receipted above Connected
 Folders.
 
-The AmpleFile agent narrates run history on demand, and only an automation's
+The AmpleFile Agent narrates run history on demand, and only an automation's
 own `agent` step ever puts it on a cadence. An automation's effects stay
 visible where they land: the copied files and restore point in the destination
 Connected Folder's files and History, the new conversation in the source
@@ -618,7 +618,7 @@ machine-wide count, step-count, or exact-path-count quota.
 - Scheduling, including one-time triggers — `src/local/agent/amplefile-scheduler-service.ts`; `tests/amplefile-scheduler-service.test.ts`.
 - Revocation when a Connected Folder is removed — `src/local/connected-folder.ts`; `tests/local-connected-folder.test.ts`.
 - Act-lane verbs — `src/local/cli/act-commands.ts`, `src/local/cli/act-facade.ts`; `tests/amplefile-cli-act-protocol.test.ts`, `tests/amplefile-act-facade.test.ts`, `tests/amplefile-cli-automations-show.test.ts`.
-- AmpleFile agent instruction teaching — `src/local/amplefile-agent-instructions.ts`; `tests/amplefile-agent-conversation.test.ts`.
+- AmpleFile Agent instruction teaching — `src/local/amplefile-agent-instructions.ts`; `tests/amplefile-agent-conversation.test.ts`.
 - Settings surface and pending proposals — `src/local/automations/automation-proposal-scan.ts`, the `automationSettings` facade in `src/local/server.ts`, the `amplefile:automations:*` channels in `desktop/src/`, `web-local/src/components/modals/AutomationsPane.tsx`; `tests/amplefile-automation-proposal-scan.test.ts`, `tests/automations-settings-api.test.ts`, `tests/automations-settings-ui.test.ts`.
 - Per–Connected Folder view and trigger summaries — `src/shared/automation-presentation.ts` (the one trigger summary Settings, the Info panel, and the route share), `ampleFileAutomationConnectedFolderRoles` in `src/local/automations/automation-declarations.ts`, the `/api/connected-folders/:id/automations` routes in `src/local/server.ts`, `web-local/src/hooks/useFolderAutomations.ts`, `web-local/src/components/file-manager/file-manager-automations.ts`; `tests/folder-automations.test.ts`.
 - Ready-made Automations — `src/shared/automation-templates.ts`, `src/local/automations/automation-templates.ts`.
@@ -629,7 +629,7 @@ machine-wide count, step-count, or exact-path-count quota.
 - **Automation chains.** Automation-caused settles never fire triggers;
   multi-hop behavior across automations is excluded structurally, not merely
   bounded.
-- **Worker-turn, compaction, and AmpleFile agent request triggers**, for the
+- **Worker-turn, compaction, and AmpleFile Agent request triggers**, for the
   reasons given under Triggers.
 - **Ambient or durable file watching.** Only the explicitly reviewed, bounded
   folder observation above is admitted; it never watches an unselected
@@ -668,7 +668,7 @@ machine-wide count, step-count, or exact-path-count quota.
 
 `amplefile help automations` includes a complete version-5 folder-change
 proposal that catches up (`"ifMissed": "run"`), with file-copy, Chat, and agent
-steps and two placeholders. The AmpleFile agent is instructed to consult it
+steps and two placeholders. The AmpleFile Agent is instructed to consult it
 before authoring, to offer the catch-up when a person wants files that arrive
 while AmpleFile is closed handled too, and to leave it out otherwise. The
 example is checked against the real proposal validator; it documents the

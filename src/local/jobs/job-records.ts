@@ -2,7 +2,7 @@
  * Background job records (docs/background-jobs.md): the types, the
  * closed-shape parser, and the pure rules the store and the service share.
  *
- * A job is one shell command a running Worker or AmpleFile agent turn started
+ * A job is one shell command a running Worker or AmpleFile Agent turn started
  * to keep running after the tool call returns. Its record is machine-local
  * attribution and recovery: it is journaled before the process starts, it is
  * never re-run, and its output lives beside it under the state root, never in
@@ -44,7 +44,7 @@ export type AmpleFileJobSurface = "tool" | "cli";
 
 /**
  * What History kept after the job ended. `pending` while the capture runs;
- * `not_applicable` for the AmpleFile agent, which has no History of its own.
+ * `not_applicable` for the AmpleFile Agent, which has no History of its own.
  */
 export type AmpleFileJobHistory =
   | { status: "pending" }
@@ -79,7 +79,7 @@ export interface AmpleFileJobOutputCounters {
 export interface AmpleFileJobRecord {
   schema: typeof ampleFileJobRecordSchema;
   jobId: string;
-  /** Absent exactly for the AmpleFile agent's own jobs. */
+  /** Absent exactly for the AmpleFile Agent's own jobs. */
   connectedFolderId?: string;
   connectedFolderName?: string;
   conversationId: string;

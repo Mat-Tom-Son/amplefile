@@ -53,10 +53,10 @@ test("Skills & Extensions opens as a popup from the Add button", () => {
   assert.doesNotMatch(appSource, /startAppBuildChat|onBuildApp=|<ConnectedFolderAppsPane|openConnectedFolderAppsSurfaceTab|openAssistantToolsSurfaceTab/);
   assert.match(capabilitiesSource, /<h1>Skills &amp; Extensions<\/h1>/);
   // Where a tool lives is one explicit decision in the review step, shown as
-  // the AmpleFile agent above folders hierarchy rather than a bare Personal/This folder toggle.
+  // the AmpleFile Agent above folders hierarchy rather than a bare Personal/This folder toggle.
   assert.match(capabilitiesSource, /Where should it live\?/);
   assert.match(capabilitiesSource, /function ScopeHierarchyGlyph/);
-  assert.match(capabilitiesSource, /"AmpleFile agent"[\s\S]*"Here"/);
+  assert.match(capabilitiesSource, /"AmpleFile Agent"[\s\S]*"Here"/);
   assert.match(capabilitiesSource, /"Everywhere"[\s\S]*This Connected Folder only/);
   assert.doesNotMatch(capabilitiesSource, /Personal · everywhere|"Personal"/);
   // Discover is text-only; installed rows use a neutral type glyph.

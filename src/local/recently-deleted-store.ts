@@ -94,7 +94,7 @@ export type AmpleFileRecentlyDeletedKind = "file" | "folder" | "connected-folder
 
 export type AmpleFileRecentlyDeletedReason =
   | "files.delete"
-  /** Deleting an AmpleFile agent Chat keeps its transcript recoverable. */
+  /** Deleting an AmpleFile Agent Chat keeps its transcript recoverable. */
   | "agent.chat.delete"
   /** Deleting a Worker Chat keeps its portable transcript recoverable. */
   | "chats.delete"

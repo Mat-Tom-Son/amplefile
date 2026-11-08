@@ -59,7 +59,7 @@ import {
  * declared hops by default strictly in order, and writes journal-first
  * receipts for every run and hop. There is no model call anywhere in this
  * module: agentic work happens only inside a chat hop or an agent hop, run
- * by that Connected Folder's own Worker or by the AmpleFile agent through the
+ * by that Connected Folder's own Worker or by the AmpleFile Agent through the
  * injected ports. The executor appends no ambient context to anything it
  * dispatches — the only text it adds is the closed placeholder set, filled in
  * host-side from the run's own cause and its earlier hops' host records.
@@ -78,7 +78,7 @@ export { ampleFileAutomationMaxConcurrentRuns };
 
 export interface AmpleFileAutomationHopContext {
   automationId: string;
-  /** The automation's title, so the Chat or AmpleFile agent turn it starts knows who sent it. */
+  /** The automation's title, so the Chat or AmpleFile Agent turn it starts knows who sent it. */
   title: string;
   runId: string;
   hopId: string;
@@ -102,7 +102,7 @@ export interface AmpleFileAutomationChatHopResult {
   postCheckpointId?: string;
 }
 
-/** An agent hop's own AmpleFile agent turn; it records no checkpoints and names no Connected Folder. */
+/** An agent hop's own AmpleFile Agent turn; it records no checkpoints and names no Connected Folder. */
 export type AmpleFileAutomationAgentHopResult = Pick<
   AmpleFileAutomationChatHopResult,
   "conversationId" | "turnTaskId" | "outcome" | "error" | "result" | "reported"
@@ -157,7 +157,7 @@ export interface AmpleFileAutomationHopPorts {
     message: string,
     context: AmpleFileAutomationHopContext,
   ): Promise<AmpleFileAutomationChatHopResult>;
-  /** Starts a new AmpleFile agent chat and waits for its turn. */
+  /** Starts a new AmpleFile Agent chat and waits for its turn. */
   ampleFileAgent(
     step: AmpleFileAutomationAgentStep,
     message: string,
@@ -1234,7 +1234,7 @@ export class AmpleFileAutomationService {
           if (reported?.outcome === "failed") {
             const error = reported.summary.trim() || (step.kind === "chat"
               ? "The Worker reported that it could not do this step."
-              : "The AmpleFile agent reported that it could not do this step.");
+              : "The AmpleFile Agent reported that it could not do this step.");
             await this.#receipts.append({
               scope: "hop", outcome: "failed", automationId, runId, hopId: step.id, hopKind: step.kind, ...evidence, ...filled, detail: error,
             });
@@ -1260,7 +1260,7 @@ export class AmpleFileAutomationService {
           } else {
             const error = result.error ?? (step.kind === "chat"
               ? `The Worker turn settled ${result.outcome}.`
-              : `The AmpleFile agent's turn settled ${result.outcome}.`);
+              : `The AmpleFile Agent's turn settled ${result.outcome}.`);
             await this.#receipts.append({
               scope: "hop", outcome: "failed", automationId, runId, hopId: step.id, hopKind: step.kind, ...evidence, ...filled, detail: error,
             });
@@ -1609,7 +1609,7 @@ function hopConnectedFolderFields(
   step: AmpleFileAutomationStep,
 ): { connectedFolderId: string } | { fromConnectedFolderId: string; toConnectedFolderId: string } | Record<string, never> {
   if (step.kind === "files") return { fromConnectedFolderId: step.fromConnectedFolder, toConnectedFolderId: step.toConnectedFolder };
-  // An agent hop names no Connected Folder: the AmpleFile agent sits above them.
+  // An agent hop names no Connected Folder: the AmpleFile Agent sits above them.
   return step.kind === "agent" ? {} : { connectedFolderId: step.connectedFolder };
 }
 

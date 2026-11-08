@@ -170,7 +170,7 @@ test("the empty-folder actions, loading, About, and the popover loading state ke
   assert.match(settings, /<AmpleFileLockup className="about-amplefile-brand"/);
   assert.match(popover, /<AmpleFileLockup className="popover-loading-brand" animated/);
   assert.doesNotMatch(popover, /<AmpleFileLockup className="popover-brand"/);
-  assert.match(popover, /<h1 className="popover-chat-title">\{chatTitle\}<\/h1>/);
+  assert.match(popover, /<h1 className="popover-chat-title" title=\{historyOpen \? undefined : chatTitle\}>\{historyOpen \? "Chats" : chatTitle\}<\/h1>/);
 
   // Brand fonts ship with the renderer bundle.
   assert.match(mainEntry, /@fontsource-variable\/inter/);
@@ -178,27 +178,27 @@ test("the empty-folder actions, loading, About, and the popover loading state ke
   assert.match(constants, /detail: "Inter"/);
 
   assert.match(indexHtml, /<title>AmpleFile<\/title>/);
-  assert.match(popoverHtml, /<title>AmpleFile agent<\/title>/);
+  assert.match(popoverHtml, /<title>AmpleFile Agent<\/title>/);
   for (const html of [indexHtml, popoverHtml]) {
     assert.match(html, /data:image\/png;base64,/, "the favicon must be the 32 px mark as a data URI");
     assert.doesNotMatch(html, /data:image\/svg/, "no redrawn vector favicons");
   }
 });
 
-test("the AmpleFile agent names the popover surface, tray entry, and two-state capture button", async () => {
+test("the AmpleFile Agent names the popover surface, tray entry, and two-state capture button", async () => {
   const [popover, desktopMain] = await Promise.all([
     read("web-local/src/popover/PopoverApp.tsx"),
     read("desktop/src/main.ts"),
   ]);
 
-  assert.match(popover, /The AmpleFile agent is unavailable\./);
-  assert.match(popover, /aria-label="AmpleFile agent chat"/);
+  assert.match(popover, /The AmpleFile Agent is unavailable\./);
+  assert.match(popover, /aria-label="AmpleFile Agent chat"/);
   assert.match(popover, /aria-label=\{requestRunning \? \(stopping \? "Stopping" : "Stop"\)/);
   // AmpleFile stays the actor: imperative composer copy keeps the product as addressee.
   assert.match(popover, /Tell AmpleFile what to do/);
   assert.match(popover, /Reply to AmpleFile/);
 
-  assert.match(desktopMain, /\{ label: "AmpleFile agent", click: \(\) => \{ void toggleAmpleFileAgentPopover\(\); \} \}/);
+  assert.match(desktopMain, /\{ label: "AmpleFile Agent", click: \(\) => \{ void toggleAmpleFileAgentPopover\(\); \} \}/);
   assert.match(desktopMain, /label: `Open \$\{productName\}`/);
   assert.match(desktopMain, /label: `Quit \$\{productName\}`/);
 

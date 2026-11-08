@@ -256,7 +256,7 @@ test("Workers get the browser tools in every session", async () => {
   const piClient = await readFile("src/local/agent/pi-client.ts", "utf8");
   assert.match(piClient, /this\.options\.browser \? createBrowserTools\(\{ host: this\.options\.browser, \.\.\.\(this\.options\.browserOwner \? \{ owner: this\.options\.browserOwner \} : \{\}\) \}\)/);
   const server = await readFile("src/local/server.ts", "utf8");
-  assert.match(server, /\.\.\.\(state\.browser \? \{ browser: state\.browser, browserOwner: `\$\{connectedFolderId\}\/\$\{conversationId\}` \} : \{\}\)/, "every scope, the AmpleFile agent included, gets the browser, with its own Chat identity");
+  assert.match(server, /\.\.\.\(state\.browser \? \{ browser: state\.browser, browserOwner: `\$\{connectedFolderId\}\/\$\{conversationId\}` \} : \{\}\)/, "every scope, the AmpleFile Agent included, gets the browser, with its own Chat identity");
   const main = await readFile("desktop/src/main.ts", "utf8");
   assert.match(main, /browser: ensureBuiltInBrowser\(\)\.toolHost/);
   // Pages never receive the app's preload or desktop powers.

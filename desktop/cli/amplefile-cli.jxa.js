@@ -105,7 +105,7 @@ function parseWaitCommand(argumentsList) {
     }
   }
   if (group === "chat" && !connectedFolder) throw usageFailure("Act commands require an explicit --connected-folder <id-or-name>.");
-  if (group === "agent" && connectedFolder) throw usageFailure("The AmpleFile agent sits above Connected Folders, so 'agent wait' takes no --connected-folder.");
+  if (group === "agent" && connectedFolder) throw usageFailure("The AmpleFile Agent sits above Connected Folders, so 'agent wait' takes no --connected-folder.");
   if (!task) throw usageFailure(`Provide --task <id> from ${group} send.`);
   return { group, connectedFolder, task, timeoutSeconds, json };
 }

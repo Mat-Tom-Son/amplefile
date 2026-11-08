@@ -5,7 +5,7 @@
 authority.
 
 AmpleFile's desktop process hosts a browser of its own: Chromium pages in one
-persistent profile, driven by Workers and the AmpleFile agent through the
+persistent profile, driven by Workers and the AmpleFile Agent through the
 `browser_*` tools. The file manager window does not show browser pages, so the
 person cannot see or use them directly; the pages run in the background for the
 agents that open them.
@@ -55,7 +55,7 @@ way**).
 
 ## Workers
 
-Every Worker and the AmpleFile agent in the desktop app carry the browser
+Every Worker and the AmpleFile Agent in the desktop app carry the browser
 tools, registered beside the background job tools. They are part of the app,
 not one of the five included tools, so the Skills & Extensions strip does not
 list them and there is nothing to set up. A development API without Electron

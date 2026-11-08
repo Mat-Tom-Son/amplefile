@@ -46,7 +46,7 @@ const executablePath = packagedPlatform === "darwin"
 assertPath(executablePath, `${identity.productName} executable`);
 assertPath(asarPath, "app.asar");
 assertPath(join(resourcesDir, "web-local", "index.html"), "renderer index");
-assertPath(join(resourcesDir, "web-local", "popover.html"), "AmpleFile agent popover renderer");
+assertPath(join(resourcesDir, "web-local", "popover.html"), "AmpleFile Agent popover renderer");
 assertPath(join(resourcesDir, "assets", "icon.png"), "desktop icon");
 assertPath(join(resourcesDir, "assets", "iconTemplate.png"), "menu-bar template icon");
 assertPath(join(resourcesDir, "assets", "iconTemplate@2x.png"), "menu-bar template icon (2x)");

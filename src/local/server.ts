@@ -405,7 +405,7 @@ export interface LocalApiOptions {
   /** A supplied kernel must use a provider wrapped by the same spaceTrustAuthority. */
   kernel?: AmpleFileKernel;
   /**
-   * The act lane's durable receipts journal (the AmpleFile agent's one ledger). Supply
+   * The act lane's durable receipts journal (the AmpleFile Agent's one ledger). Supply
    * the desktop CLI host's instance so decisions, Settings acts, and CLI acts
    * share one file and one at-most-once gate; when absent, the API constructs
    * one over the same state-root path the host uses.
@@ -426,7 +426,7 @@ export interface LocalApiOptions {
   recentlyDeletedStore?: AmpleFileRecentlyDeletedStore;
   /**
    * The desktop's built-in browser (docs/built-in-browser.md). With it, every
-   * Worker and the AmpleFile agent carry the browser_* tools; a development API
+   * Worker and the AmpleFile Agent carry the browser_* tools; a development API
    * without Electron has none.
    */
   browser?: BrowserToolHost;
@@ -589,11 +589,11 @@ export interface LocalApiHandle {
   kernel: AmpleFileKernel;
   /** In-process authority for CLI act-lane commands; see cli/act-facade.ts. */
   actFacade: AmpleFileActFacade;
-  /** Validates an explicitly named AmpleFile agent parent while its turn is active. */
+  /** Validates an explicitly named AmpleFile Agent parent while its turn is active. */
   resolveAmpleFileAgentLineageParent: (taskId: string) => { taskId: string } | null;
   /** The durable request graph every accepted turn belongs to (docs/collaboration-contract.md). */
   requests: AmpleFileRequestStore;
-  /** Background jobs Workers and the AmpleFile agent started (docs/background-jobs.md). */
+  /** Background jobs Workers and the AmpleFile Agent started (docs/background-jobs.md). */
   jobs: AmpleFileJobService;
   /** The automation executor (docs/automations.md), for the desktop surfaces and lifecycle wiring. */
   automations: AmpleFileAutomationService;
@@ -705,7 +705,7 @@ interface LocalApiState {
   imageModelPreference: ImageModelPreference;
   /** Pictures generate_image made, kept outside every Connected Folder for Chats to show. */
   generatedImages: GeneratedImageStore;
-  /** The desktop's built-in browser, shared by every Worker and the AmpleFile agent. */
+  /** The desktop's built-in browser, shared by every Worker and the AmpleFile Agent. */
   browser?: BrowserToolHost;
   connectedFolderIdsByRoot: Map<string, string>;
   extensionRequests: Map<string, PiExtensionUiRequest>;
@@ -824,10 +824,10 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   const connectedFolderTrustAuthority = options.connectedFolderTrustAuthority
     ?? new RegisteredConnectedFolderTrustAuthority((await listConnectedFolders()).map((connectedFolder) => connectedFolder.connectedFolderRoot));
   for (const rootPath of recoveredConnectedFolderRoots) connectedFolderTrustAuthority.revoke(rootPath);
-  // The AmpleFile agent scope's root is app-owned state, so authorizing its
+  // The AmpleFile Agent scope's root is app-owned state, so authorizing its
   // runtime is an application decision rather than a registration ceremony.
   // The only project configuration under it is what AmpleFile itself
-  // materializes here: the AmpleFile agent's AGENTS.md context file and the
+  // materializes here: the AmpleFile Agent's AGENTS.md context file and the
   // manage-connected-folders Skill.
   connectedFolderTrustAuthority.grant(ampleFileAgentRoot());
   let ampleFileAgentInstructionsError: string | null = null;
@@ -835,11 +835,11 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     await ensureAmpleFileAgentInstructions();
   } catch (error) {
     ampleFileAgentInstructionsError = errorMessage(error);
-    console.warn(`AmpleFile could not materialize the AmpleFile agent instructions; the AmpleFile agent is unavailable: ${ampleFileAgentInstructionsError}`);
+    console.warn(`AmpleFile could not materialize the AmpleFile Agent instructions; the AmpleFile Agent is unavailable: ${ampleFileAgentInstructionsError}`);
   }
   const runtimeProvider = new RegisteredConnectedFolderRuntimeProvider(extensionRuntimeProvider, connectedFolderTrustAuthority);
   const kernel = options.kernel ?? new AmpleFileKernel({ runtimeProvider });
-  // The AmpleFile agent's one ledger: the same act-receipts journal the desktop CLI host
+  // The AmpleFile Agent's one ledger: the same act-receipts journal the desktop CLI host
   // appends. Both instances write the identical state-root path, so prepared
   // acts land in the journal the act lane already audits.
   const actReceipts = options.actReceipts ?? new AmpleFileCliActReceipts({ stateRoot: ampleFileStateRoot() });
@@ -1786,8 +1786,8 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   }
 
   // Settings → AI Models → Image model: one choice for every Worker
-  // and the AmpleFile agent; null is Automatic. Credentials are machine-wide, so
-  // the AmpleFile agent's runtime lists what every scope can use.
+  // and the AmpleFile Agent; null is Automatic. Credentials are machine-wide, so
+  // the AmpleFile Agent's runtime lists what every scope can use.
   if (method === "GET" && url.pathname === "/api/agent/image-models") {
     sendJson(res, await imageModelSettings(state));
     return;
@@ -2458,7 +2458,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   }
   // Management conversation surface: the same acceptance path, task records,
   // and event stream as Connected Folder Chats, exposed for renderer clients (the
-  // menu-bar popover) under the AmpleFile agent scope id instead of a Connected Folder id.
+  // menu-bar popover) under the AmpleFile Agent scope id instead of a Connected Folder id.
   if (url.pathname === "/api/amplefile-agent/summary" && method === "GET") {
     if (state.ampleFileAgentInstructionsError) {
       sendJson(res, { available: false, reason: state.ampleFileAgentInstructionsError, conversation: null, state: "idle", latestRequest: null });
@@ -2468,9 +2468,9 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const conversation = selectedId
       ? (await listConversations(ampleFileAgentRoot())).find((item) => item.id === selectedId)
       : await resolveAmpleFileAgentConversation(false).catch(() => null);
-    if (selectedId && !conversation) throw notFound("This AmpleFile agent chat is no longer available.");
+    if (selectedId && !conversation) throw notFound("This AmpleFile Agent chat is no longer available.");
     // The selected transcript and its request must describe the same work,
-    // even when another surface has started a newer AmpleFile agent.
+    // even when another surface has started a newer AmpleFile Agent.
     const latest = conversation ? state.requests.latestForConversation(conversation.id) : null;
     sendJson(res, {
       available: true,
@@ -2549,7 +2549,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const scope = ampleFileAgentScopeForRoutes(state);
     const priorAcceptance = requestId ? state.turnStore.findScopeRequest(scope.id, requestId) : null;
     if (priorAcceptance && conversationIdInput && priorAcceptance.conversationId !== conversationIdInput) {
-      throw httpError(409, "This turn request id was already accepted in another AmpleFile agent Chat.");
+      throw httpError(409, "This turn request id was already accepted in another AmpleFile Agent Chat.");
     }
     const conversationId = priorAcceptance?.conversationId
       ?? (body.newConversation === true
@@ -2558,7 +2558,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (continuationTaskId) {
       const previous = await ampleFileAgentRequestView(state, continuationTaskId);
       if (!previous || previous.conversationId !== conversationId || previous.phase !== "needs_you") {
-        throw httpError(409, "That AmpleFile agent request is no longer waiting for a reply.");
+        throw httpError(409, "That AmpleFile Agent request is no longer waiting for a reply.");
       }
       const combinedAttachmentCount = new Set(
         [...previous.attachments, ...attachments].map((attachment) => `${attachment.kind}:${attachment.target}`),
@@ -2649,7 +2649,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const body = await readJsonBody<{ level?: unknown }>(state, req);
     if (typeof body.level !== "string" || !body.level.trim()) throw badRequest("A thinking level is required.");
     const key = clientKey(ampleFileAgentScopeId, conversationId);
-    if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current AmpleFile agent turn to finish before changing the thinking level.");
+    if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current AmpleFile Agent turn to finish before changing the thinking level.");
     const client = await getClient(state, ampleFileAgentScopeId, ampleFileAgentRoot(), conversationId);
     let result: { level: string; available: string[] };
     try {
@@ -3138,9 +3138,9 @@ function requestRefusal(error: unknown): unknown {
  * Creates or joins the durable request record for one accepted turn. Kind
  * and surface default from the scope and actor when the caller names none:
  *
- *   AmpleFile agent scope, renderer                    → management / popover
- *   AmpleFile agent scope, cli                         → management / cli
- *   AmpleFile agent scope, system (automation agent hop)   → automation / system
+ *   AmpleFile Agent scope, renderer                    → management / popover
+ *   AmpleFile Agent scope, cli                         → management / cli
+ *   AmpleFile Agent scope, system (automation agent hop)   → automation / system
  *   Connected Folder scope, system (automation chat hop)        → automation / system
  *   Connected Folder scope, cli                              → cli / cli
  *   Connected Folder scope, assistant (renderer Connected Folder Chat)  → Connected Folder / renderer
@@ -3652,7 +3652,7 @@ async function restoreAmpleFileAgentConversationRecentlyDeletedEntry(
   const root = ampleFileAgentRoot();
   const destination = resolve(root, entry.originalPath);
   if (!pathContainsPath(root, destination)) {
-    throw new AmpleFileCliError("failure", "This AmpleFile agent Chat recovery item has an invalid destination.");
+    throw new AmpleFileCliError("failure", "This AmpleFile Agent Chat recovery item has an invalid destination.");
   }
   // A transcript filename is the Chat identity. Unlike ordinary Connected Folder files,
   // collision-renaming it would create an invalid or different conversation,
@@ -3666,7 +3666,7 @@ async function restoreAmpleFileAgentConversationRecentlyDeletedEntry(
   return {
     kind: "file",
     entryId: entry.id,
-    connectedFolder: { id: ampleFileAgentScopeId, name: "AmpleFile agent", connectedFolderRoot: root },
+    connectedFolder: { id: ampleFileAgentScopeId, name: "AmpleFile Agent", connectedFolderRoot: root },
     path: `.amplefile/conversations/${basename(restored.restoredPath)}`,
     renamed: restored.renamed,
     // Management Chats are machine-local and never belong to Connected Folder History.
@@ -3680,7 +3680,7 @@ async function restoreAmpleFileAgentConversationRecentlyDeletedEntry(
  * folder moves there with its scope and its path inside that scope's skills
  * folder, under the same capability fence and client reload as an install.
  * An Everywhere Skill belongs to no Connected Folder; its entry is kept under the
- * AmpleFile agent's scope id, like that agent's Chats.
+ * AmpleFile Agent's scope id, like that agent's Chats.
  */
 async function removeImportedSkill(
   state: LocalApiState,
@@ -4091,7 +4091,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
         throw new AmpleFileCliError("conflict", requestLimitRefusalMessage("questionLifetime"));
       }
       if ((record.owner.connectedFolderId ?? ampleFileAgentScopeId) !== connectedFolder.id) {
-        const owner = record.owner.connectedFolderName ?? record.owner.connectedFolderId ?? "the AmpleFile agent";
+        const owner = record.owner.connectedFolderName ?? record.owner.connectedFolderId ?? "the AmpleFile Agent";
         throw new AmpleFileCliError("conflict", `Question ${questionId} belongs to ${owner}; answer it there.`);
       }
       const root = state.requests.get(record.rootId) ?? record;
@@ -4442,12 +4442,12 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
     async chatAnswer(input) { return chatAnswer(await resolveConnectedFolder(input.connectedFolder), input); },
     async agentAsk(input) {
       const scope = ampleFileAgentScope(state);
-      const { connectedFolder: _connectedFolder, ...result } = await chatAsk({ id: scope.id, connectedFolderRoot: scope.rootPath, name: "AmpleFile agent" }, { ...input, respondent: "person" });
+      const { connectedFolder: _connectedFolder, ...result } = await chatAsk({ id: scope.id, connectedFolderRoot: scope.rootPath, name: "AmpleFile Agent" }, { ...input, respondent: "person" });
       return result;
     },
     async agentAnswer(input) {
       const scope = ampleFileAgentScope(state);
-      const { connectedFolder: _connectedFolder, ...result } = await chatAnswer({ id: scope.id, connectedFolderRoot: scope.rootPath, name: "AmpleFile agent" }, input);
+      const { connectedFolder: _connectedFolder, ...result } = await chatAnswer({ id: scope.id, connectedFolderRoot: scope.rootPath, name: "AmpleFile Agent" }, input);
       return result;
     },
     async chatHandoff(input) {
@@ -5257,7 +5257,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       }
       // Everywhere scope mutates the user-scope Pi settings every
       // Connected Folder runtime loads. The app-owned management root is the resolution
-      // context — the same root the AmpleFile agent's own runtime
+      // context — the same root the AmpleFile Agent's own runtime
       // uses — and the global capability fence refuses while any agent
       // or compaction work is active anywhere.
       const ampleFileAgentRootScope = { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot() };
@@ -5690,7 +5690,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       if (!conversation) {
         throw new AmpleFileCliError(
           "notFound",
-          input.conversationId ? "Conversation not found." : "No AmpleFile agent exists yet. Send a message to start one.",
+          input.conversationId ? "Conversation not found." : "No AmpleFile Agent exists yet. Send a message to start one.",
         );
       }
       return {
@@ -5721,7 +5721,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       const conversationId = input.conversationId
         ?? (await runActOperation(() => resolveAmpleFileAgentConversation(false).catch(() => null)))?.id;
       if (!conversationId) {
-        throw new AmpleFileCliError("notFound", "No AmpleFile agent exists yet. Send a message to start one.");
+        throw new AmpleFileCliError("notFound", "No AmpleFile Agent exists yet. Send a message to start one.");
       }
       return conversationResultForScope(state, scope.id, scope.rootPath, conversationId, input.messages);
     },
@@ -5737,7 +5737,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       const conversationId = input.conversationId
         ?? (await runActOperation(() => resolveAmpleFileAgentConversation(false).catch(() => null)))?.id;
       if (!conversationId) {
-        throw new AmpleFileCliError("notFound", "No AmpleFile agent exists yet. Send a message to start one.");
+        throw new AmpleFileCliError("notFound", "No AmpleFile Agent exists yet. Send a message to start one.");
       }
       const client = state.clients.get(clientKey(scope.id, conversationId));
       return { conversationId, aborted: client ? await client.abort() : false };
@@ -5745,13 +5745,13 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
     async agentOverview() {
       // Deliberately no management-readiness gate: the overview reads recorded
       // state through the kernel, never the agent, and stays available
-      // while the AmpleFile agent is not.
+      // while the AmpleFile Agent is not.
       return runActOperation(() => state.kernel.getOverview({ kind: "cli" }));
     },
   };
 }
 
-/** The AmpleFile agent scope shaped like the Connected Folder refs the turn internals take. */
+/** The AmpleFile Agent scope shaped like the Connected Folder refs the turn internals take. */
 function ampleFileAgentScope(state?: LocalApiState): { id: string; rootPath: string } {
   if (state) assertAmpleFileAgentInstructionsReady(state);
   return { id: ampleFileAgentScopeId, rootPath: ampleFileAgentRoot() };
@@ -5761,14 +5761,14 @@ function assertAmpleFileAgentInstructionsReady(state: LocalApiState): void {
   if (!state.ampleFileAgentInstructionsError) return;
   throw new AmpleFileCliError(
     "unavailable",
-    "The AmpleFile agent is unavailable because AmpleFile could not prepare its required instructions. Restart AmpleFile; if this continues, check the app-data AmpleFile agent folder.",
+    "The AmpleFile Agent is unavailable because AmpleFile could not prepare its required instructions. Restart AmpleFile; if this continues, check the app-data AmpleFile Agent folder.",
   );
 }
 
 /** HTTP mirror of the fail-closed instructions gate: 503 instead of a CLI error. */
 function assertAmpleFileAgentReadyForRoutes(state: LocalApiState): void {
   if (!state.ampleFileAgentInstructionsError) return;
-  throw httpError(503, "The AmpleFile agent is unavailable because Connected Folder could not prepare its required instructions. Restart Connected Folder; if this continues, check the app-data AmpleFile agent folder.");
+  throw httpError(503, "The AmpleFile Agent is unavailable because Connected Folder could not prepare its required instructions. Restart Connected Folder; if this continues, check the app-data AmpleFile Agent folder.");
 }
 
 function ampleFileAgentScopeForRoutes(state: LocalApiState): { id: string; rootPath: string } {
@@ -5777,8 +5777,8 @@ function ampleFileAgentScopeForRoutes(state: LocalApiState): { id: string; rootP
 }
 
 /**
- * The default AmpleFile agent is the most recent active one; the
- * AmpleFile agent surface is "one conversation" unless the caller asks for more.
+ * The default AmpleFile Agent is the most recent active one; the
+ * AmpleFile Agent surface is "one conversation" unless the caller asks for more.
  */
 async function resolveAmpleFileAgentConversation(create: boolean): Promise<ConversationSummary> {
   const scope = ampleFileAgentScope();
@@ -5786,12 +5786,12 @@ async function resolveAmpleFileAgentConversation(create: boolean): Promise<Conve
   const active = conversations.find((item) =>
     !item.archivedAt && (!item.snoozedUntil || Date.parse(item.snoozedUntil) <= Date.now()));
   if (active) return active;
-  if (!create) throw new AmpleFileCliError("notFound", "No AmpleFile agent exists yet. Send a message to start one.");
+  if (!create) throw new AmpleFileCliError("notFound", "No AmpleFile Agent exists yet. Send a message to start one.");
   return createConversation(scope.rootPath);
 }
 
 /**
- * The AmpleFile agent transcript lives outside every Connected Folder, so it has no History
+ * The AmpleFile Agent transcript lives outside every Connected Folder, so it has no History
  * checkpoint to hold it. Its only deletion path moves the exact validated
  * transcript into Recently deleted. It deliberately never accepts a path.
  */
@@ -5833,7 +5833,7 @@ async function deleteAmpleFileAgentConversation(
         reason: "agent.chat.delete",
         sourcePath,
         connectedFolderId: ampleFileAgentScopeId,
-        connectedFolderName: "AmpleFile agent",
+        connectedFolderName: "AmpleFile Agent",
         displayName: summary.title,
         originalPath: relativePath,
         receiptId: context.receiptId,
@@ -6009,7 +6009,7 @@ async function ampleFileAgentRequestView(
     return {
       taskId: childTurn.taskId,
       connectedFolderId: child.owner.connectedFolderId ?? ampleFileAgentScopeId,
-      connectedFolderName: child.owner.connectedFolderName ?? child.owner.connectedFolderId ?? "the AmpleFile agent",
+      connectedFolderName: child.owner.connectedFolderName ?? child.owner.connectedFolderId ?? "the AmpleFile Agent",
       conversationId: child.owner.conversationId,
       state: childState,
       error: live?.error ?? childTurn.error,
@@ -6172,7 +6172,7 @@ async function stopAmpleFileAgentRequest(
 function assertAmpleFileAgentParentAccepting(state: LocalApiState, parentTaskId: string | undefined): void {
   if (!parentTaskId) return;
   if (!state.requests.isAccepting(parentTaskId)) {
-    throw new AmpleFileCliError("conflict", "The AmpleFile agent request is stopping or has already finished.");
+    throw new AmpleFileCliError("conflict", "The AmpleFile Agent request is stopping or has already finished.");
   }
 }
 
@@ -7148,7 +7148,7 @@ function createAmpleFileAutomationSettingsFacade(state: LocalApiState): AmpleFil
       if (projection.health === "completed") {
         throw new AmpleFileCliError(
           "conflict",
-          "This one-time automation is complete. Ask the AmpleFile agent to set up a new automation for another time.",
+          "This one-time automation is complete. Ask the AmpleFile Agent to set up a new automation for another time.",
         );
       }
       const result = await runDesktopSettingsAct(state, "automations.enable", async (requestId) => {
@@ -7765,9 +7765,9 @@ function waitingRefForTask(state: LocalApiState, taskId: string): AmpleFileActWa
  * The request reference a Connected Folder–scoped verb hands back to the caller.
  *
  * Identical to `toActRequestRef` except for one field: a delegated Connected Folder
- * request's `rootId` is usually the AmpleFile agent's root request id, and
+ * request's `rootId` is usually the AmpleFile Agent's root request id, and
  * `requests show` reads a request by id. Handing that id into a Connected Folder turn
- * would put the AmpleFile agent's own content and other Connected Folders' results one taught
+ * would put the AmpleFile Agent's own content and other Connected Folders' results one taught
  * command away — the same leak `connected-folder-turn-context.ts` withholds the parent
  * request id to avoid — so it is projected through the same opaque handle no
  * verb accepts. A Connected Folder's own root still names itself.
@@ -7828,7 +7828,7 @@ function requestSummaryView(state: LocalApiState, record: AmpleFileRequestRecord
 
 /**
  * `requests list` and `requests show` are management-scope reads: the whole
- * graph, including the AmpleFile agent's own assignment text and every Connected Folder's result
+ * graph, including the AmpleFile Agent's own assignment text and every Connected Folder's result
  * envelope. A caller working inside a registered Connected Folder is inside that Connected Folder's
  * scope, and what may reach a Connected Folder is its assignment, answers to its own
  * questions, and payloads released to it — never the graph
@@ -8105,7 +8105,7 @@ async function requestPresentation(state: LocalApiState, record: AmpleFileReques
       } else detail = "The selected result could not be read. Its receipt remains; try again or open the Chat.";
     }
   }
-  // Direct-child reports are deliberately released deliverables. AmpleFile agent
+  // Direct-child reports are deliberately released deliverables. AmpleFile Agent
   // requests have no Connected Folder file root of their own; retain each file's origin.
   if (isAmpleFileRequestTerminalState(record.state) && record.state !== "stopped" && record.state !== "expired") {
     const files = result?.files ?? [];
@@ -8350,7 +8350,7 @@ function requestJobState(jobState: AmpleFileJobRecord["state"]): Exclude<AmpleFi
 
 /** The turn's own checkpoint came before the job ended; this one covers its later writes. */
 async function captureBackgroundJobHistory(job: AmpleFileJobRecord): Promise<AmpleFileJobHistory> {
-  if (!job.connectedFolderId) return { status: "not_applicable", reason: "the AmpleFile agent's working folder has no History." };
+  if (!job.connectedFolderId) return { status: "not_applicable", reason: "the AmpleFile Agent's working folder has no History." };
   let connectedFolder: ConnectedFolderSummary;
   try {
     connectedFolder = await getConnectedFolder(job.connectedFolderId);
@@ -8587,7 +8587,7 @@ function createBackgroundJobToolHost(state: LocalApiState, scopeId: string, conv
     if (!job || (job.connectedFolderId ?? null) !== (connectedFolderId ?? null)) {
       throw new AmpleFileJobNotFoundError(connectedFolderId
         ? "That background job is not on record in this Connected Folder."
-        : "That background job is not one of the AmpleFile agent's.");
+        : "That background job is not one of the AmpleFile Agent's.");
     }
     return job;
   };
@@ -8768,7 +8768,7 @@ async function runAgentTurn(
       return connectedFolder ? [{ connectedFolderId: connectedFolder.id, name: connectedFolder.name }] : [];
     });
     // A Connected Folder turn's own identity: its ids, and when delegated, an
-    // opaque handle for the request that asked. Never for the AmpleFile agent
+    // opaque handle for the request that asked. Never for the AmpleFile Agent
     // scope, which carries the registry snapshot instead.
     const connectedFolderTurn = connectedFolderId === ampleFileAgentScopeId
       ? undefined
@@ -8990,7 +8990,7 @@ async function runAgentTurn(
     } else if (queued && !queued.held) void sendQueuedMessage(state, connectedFolderId, connectedFolderRoot, conversationId, queued);
     else if (settledStatus === "succeeded") scheduleBackgroundCompaction(state, connectedFolderId, connectedFolderRoot, conversationId);
     // Once this turn's own settlement is fully visible, the request
-    // graph above it may owe the AmpleFile agent one continuation turn. Fire-and-forget
+    // graph above it may owe the AmpleFile Agent one continuation turn. Fire-and-forget
     // with its own catch, the way activeTurnPromises are: a settle never
     // fails because a continuation could not start.
     queueRequestGraphSettle(state, taskId);
@@ -9440,13 +9440,13 @@ async function getClient(
   rememberConnectedFolderRoot(state, connectedFolderId, connectedFolderRoot);
   const existing = state.clients.get(key);
   if (existing) return existing;
-  // The AmpleFile agent scope loads personal Pi capabilities and its two app-owned
+  // The AmpleFile Agent scope loads personal Pi capabilities and its two app-owned
   // project instructions. It belongs to no Connected Folder.
   const hostCapabilities = connectedFolderId === ampleFileAgentScopeId
     ? undefined
     : { connectedFolderId };
   // Connected Folder scopes carry the compact operations guide after their own Connected Folder
-  // instructions; the AmpleFile agent scope has its own taught text.
+  // instructions; the AmpleFile Agent scope has its own taught text.
   const operationsGuide = connectedFolderOperationsGuideForScope(connectedFolderId);
   const client = new PiConversationClient(conversationId, connectedFolderRoot, state.runtimeProvider, hostCapabilities, {
     role: connectedFolderId === ampleFileAgentScopeId ? "amplefile-agent" : "worker",
@@ -9461,7 +9461,7 @@ async function getClient(
     },
     ...(operationsGuide ? { operationsGuide } : {}),
     imageModel: () => state.imageModelPreference.get(),
-    // A Worker Chat shows its pictures inline; the AmpleFile agent's panel does not yet.
+    // A Worker Chat shows its pictures inline; the AmpleFile Agent's panel does not yet.
     ...(connectedFolderId === ampleFileAgentScopeId ? {} : { imageStore: state.generatedImages }),
     backgroundJobs: createBackgroundJobToolHost(state, connectedFolderId, conversationId),
     ...(state.browser ? { browser: state.browser, browserOwner: `${connectedFolderId}/${conversationId}` } : {}),
@@ -9776,7 +9776,7 @@ function hasActiveCapabilityWorkForConnectedFolder(state: LocalApiState, connect
 }
 
 // ---------------------------------------------------------------------------
-// AmpleFile agent wiring: the prepared-act fence and adapters, the automation executor's
+// AmpleFile Agent wiring: the prepared-act fence and adapters, the automation executor's
 // hop ports, and the overview's live-registry source readers. All of it is
 // constructed by startLocalApi over the same shared state (and the same
 // fences) the HTTP routes and the act facade use.
@@ -10316,7 +10316,7 @@ function createManagedConnectedFolderDeletionAdapter(
 /**
  * The automation executor's hop ports: the same in-process internals the act
  * facade uses — turn acceptance in a fresh Chat, a new thread of the
- * AmpleFile agent, and the files-add copy with its restore point — honoring
+ * AmpleFile Agent, and the files-add copy with its restore point — honoring
  * aborts through each domain's own abort path,
  * and returning identifiers and counts only. The executor fills every
  * placeholder before it calls a message port, so `message` is exactly what
@@ -10366,7 +10366,7 @@ function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomationHopP
     // The acceptance shape is byte-for-byte the one `agent send` uses.
     async ampleFileAgent(step, message, context) {
       if (state.ampleFileAgentInstructionsError) {
-        throw new Error("The AmpleFile agent is unavailable because AmpleFile could not prepare its instructions.");
+        throw new Error("The AmpleFile Agent is unavailable because AmpleFile could not prepare its instructions.");
       }
       const scope = ampleFileAgentScopeForRoutes(state);
       const conversation = await createConversation(scope.rootPath);
@@ -10593,7 +10593,7 @@ function createServerOverviewSources(state: LocalApiState): AmpleFileOverviewSou
     settledTurns: async (): Promise<AmpleFileOverviewSettledTurnRecord[]> =>
       [...state.settledTurns.values()].map((turn) => ({
         taskId: turn.taskId,
-        // The AmpleFile agent scope is not a Connected Folder; its settled turns carry no
+        // The AmpleFile Agent scope is not a Connected Folder; its settled turns carry no
         // Connected Folder id instead of rendering as a removed Connected Folder.
         ...(turn.connectedFolderId === ampleFileAgentScopeId ? {} : { connectedFolderId: turn.connectedFolderId }),
         conversationId: turn.conversationId,
@@ -10850,7 +10850,7 @@ async function safeAgentStatus(connectedFolderRoot: string, provider: PiRuntimeP
   }
 }
 
-/** A Connected Folder when one is named; otherwise the AmpleFile agent's scope (first run, no Connected Folder yet). */
+/** A Connected Folder when one is named; otherwise the AmpleFile Agent's scope (first run, no Connected Folder yet). */
 async function includedToolScope(connectedFolderId: string | null | undefined): Promise<{ id: string; connectedFolderRoot: string }> {
   if (connectedFolderId) return getConnectedFolder(connectedFolderId);
   return { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot() };
@@ -10864,7 +10864,7 @@ interface ModelScope {
 
 async function modelScope(scope: string | null | undefined, connectedFolderId?: string | null): Promise<ModelScope> {
   if (scope === "agent") {
-    return { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot(), label: "the AmpleFile agent" };
+    return { id: ampleFileAgentScopeId, connectedFolderRoot: ampleFileAgentRoot(), label: "the AmpleFile Agent" };
   }
   if (scope && scope !== "connected-folder") throw badRequest("agent scope must be Connected Folder or management.");
   if (!connectedFolderId) throw badRequest("Connected Folder id is required.");
@@ -11094,7 +11094,7 @@ async function captureTurnCheckpointSafe(
   conversationId: string,
   reason: "pre_turn" | "post_turn",
 ): Promise<import("./history.js").ConnectedFolderCheckpoint | null> {
-  // History is a Connected Folder concept. The AmpleFile agent scope's root holds only
+  // History is a Connected Folder concept. The AmpleFile Agent scope's root holds only
   // conversation records in app state, so turn checkpoints do not apply.
   if (connectedFolderId === ampleFileAgentScopeId) return null;
   try {

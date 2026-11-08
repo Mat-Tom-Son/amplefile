@@ -4,7 +4,7 @@ import { trayPopoverToggleAction } from "./tray-popover-toggle.js";
 
 /**
  * The menu-bar/tray popover: a small always-available surface for the
- * AmpleFile agent. It is deliberately its own window, not a child of
+ * AmpleFile Agent. It is deliberately its own window, not a child of
  * the main window, because its whole point on macOS is to keep working after
  * the last window closes — AmpleFile stays alive in the menu bar and the
  * person can still hand it material and instructions.

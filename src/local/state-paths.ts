@@ -46,13 +46,13 @@ export function ampleFileJobsRoot(): string {
 }
 
 /**
- * Scope id for the AmpleFile agent that sits above all Connected Folders. It is
+ * Scope id for the AmpleFile Agent that sits above all Connected Folders. It is
  * a distinct conversation scope, not a Connected Folder: its records describe this
  * machine's Connected Folder registry, so they are machine-local application state.
  */
 export const ampleFileAgentScopeId = "amplefile-agent";
 
-/** Machine-local root holding the AmpleFile agent scope's conversation records. */
+/** Machine-local root holding the AmpleFile Agent scope's conversation records. */
 export function ampleFileAgentRoot(): string {
   return join(ampleFileStateRoot(), "management");
 }

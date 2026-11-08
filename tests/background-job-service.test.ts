@@ -439,7 +439,7 @@ test("a Stop that lands while a job is starting stops it as soon as it runs", as
   assert.equal(ended.stoppedBy, "request");
 });
 
-test("the AmpleFile agent's jobs say History does not apply to them", async (t) => {
+test("the AmpleFile Agent's jobs say History does not apply to them", async (t) => {
   const h = await harness(t);
   const job = await h.service.start({
     owner: { conversationId: "agent-chat" }, taskId: "turn-a", requestId: "req-20261018000000-bbbbbbbb",

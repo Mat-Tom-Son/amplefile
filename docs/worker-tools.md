@@ -6,7 +6,7 @@ available to every shell-capable agent.
 
 ## Progress and evidence recovery
 
-Workers and the AmpleFile agent carry `progress` with a typed `input` object:
+Workers and the AmpleFile Agent carry `progress` with a typed `input` object:
 `{ action: "list" }`, `{ action: "read", id }`, or
 `{ action: "save", summary, evidence?, files? }`. The native schema requires
 the fields each action needs. Completed native tool results, including nested calls, receive stable
@@ -126,7 +126,7 @@ stops it. End services explicitly when the task no longer needs them.
 
 ## The built-in browser
 
-Every Worker and the AmpleFile agent in the desktop app carry the `browser_*`
+Every Worker and the AmpleFile Agent in the desktop app carry the `browser_*`
 tools over AmpleFile's [built-in browser](built-in-browser.md): list the open
 pages, open or load an address, read a page's structure, text, or console, take
 screenshots, click with mouse buttons and modifiers, hover, drag, attach local

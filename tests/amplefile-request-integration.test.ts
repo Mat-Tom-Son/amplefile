@@ -17,7 +17,7 @@ import { ampleFileAgentScopeId } from "../src/local/state-paths.js";
  * Durable requests through the local API (docs/collaboration-contract.md):
  * every accepted turn creates or joins a request record, a Connected Folder turn
  * with no parent is its own root, a delegated send is a child under the
- * AmpleFile agent request, a person's reply joins the request that was waiting on
+ * AmpleFile Agent request, a person's reply joins the request that was waiting on
  * it, and the records survive a restart — reconciled against the turn
  * journal, never replayed.
  */
@@ -99,7 +99,7 @@ test("every accepted turn creates or joins a request record, and a Connected Fol
     assert.equal(cliRoot.surface, "cli");
     assert.equal(cliRoot.rootId, cliRoot.requestId);
 
-    // `chat send --parent-task`: a child under the AmpleFile agent request's root.
+    // `chat send --parent-task`: a child under the AmpleFile Agent request's root.
     await waitFor(async () => (await api.actFacade.agentTurnStatus({ taskId: agent.taskId })).task.state !== "running");
     const held = await api.actFacade.agentSend({ content: "/hold", newConversation: true });
     const child = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "/hold", parentTaskId: held.taskId });
@@ -112,9 +112,9 @@ test("every accepted turn creates or joins a request record, and a Connected Fol
     assert.deepEqual(api.requests.get(parentRecord.requestId)!.childRequestIds, [childRecord.requestId]);
     assert.equal((await api.actFacade.agentTurnStatus({ taskId: held.taskId })).request!.children[0]!.taskId, child.taskId);
 
-    // The overview reads the same records: the AmpleFile agent's request is running work.
+    // The overview reads the same records: the AmpleFile Agent's request is running work.
     const overview = await api.kernel.getOverview({ kind: "system" });
-    assert.ok(overview.running.some((item) => item.id === `agent-requests:${parentRecord.requestId}`), "an AmpleFile agent request is one running item");
+    assert.ok(overview.running.some((item) => item.id === `agent-requests:${parentRecord.requestId}`), "an AmpleFile Agent request is one running item");
     assert.ok(!overview.running.some((item) => item.id === `agent-requests:${cliRoot.requestId}`), "a plain Connected Folder turn's root is not a second running item");
     await waitFor(async () => (await api.actFacade.agentTurnStatus({ taskId: held.taskId })).request!.children.every((item) => item.state !== "running"));
   } finally {
@@ -301,7 +301,7 @@ test("requests survive a restart: settled ones keep their projection and an orph
 
   const restarted = await open();
   try {
-    // The settled AmpleFile agent request is still there, with the same id and projection.
+    // The settled AmpleFile Agent request is still there, with the same id and projection.
     const status = await restarted.actFacade.agentTurnStatus({ taskId: doneTaskId });
     assert.equal(status.task.state, "succeeded");
     assert.equal(status.request?.requestId, doneRequestId);

@@ -1,5 +1,5 @@
 /**
- * generate_image: a Worker or AmpleFile agent tool that makes a picture with a
+ * generate_image: a Worker or AmpleFile Agent tool that makes a picture with a
  * connected image model through Pi's own image API (`ModelRuntime.generateImages`)
  * and saves it as an ordinary file in the folder the session works in, where
  * History captures it like any other change (docs/image-generation.md).

@@ -450,7 +450,7 @@ export class AmpleFileJobService {
       history: live.skipHistory
         ? { status: "unavailable", reason: "AmpleFile was closing." }
         : isAgentScope(record)
-          ? { status: "not_applicable", reason: "the AmpleFile agent's working folder has no History; take a checkpoint with history save in a Connected Folder this job changed." }
+          ? { status: "not_applicable", reason: "the AmpleFile Agent's working folder has no History; take a checkpoint with history save in a Connected Folder this job changed." }
           : { status: "pending" },
     })).catch(() => this.store.get(live.jobId)!);
     if (ended.history?.status === "pending") {

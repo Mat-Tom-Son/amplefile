@@ -22,24 +22,24 @@ For example: open a folder of vendor quotes, ask for a comparison, and have the 
 
 Each **Connected Folder** has its own **Worker** and conversations. Your files stay ordinary files, accessible in Finder and your existing tools. A Connected Folder is an ordinary folder you choose to work in; it is never converted into a proprietary container.
 
-The **AmpleFile agent** is the agent above your Connected Folders. Ask it what needs attention or have it coordinate work between projects from the Mac menu bar. Hand a piece of work to one Connected Folder's Worker and it reports back here; if it needs something first it asks, and your answer picks the work up where it stopped.
+The **AmpleFile Agent** is the agent above your Connected Folders. Ask it what needs attention or have it coordinate work between projects from the Mac menu bar. Hand a piece of work to one Connected Folder's Worker and it reports back here; if it needs something first it asks, and your answer picks the work up where it stopped.
 
 You can register Connected Folders inside another Connected Folder. The sidebar
 shows each nested Connected Folder under its parent, and opening one shows it
-with its own Worker. Type `@` in a Chat or the AmpleFile agent's message box to
+with its own Worker. Type `@` in a Chat or the AmpleFile Agent's message box to
 address a Worker.
 The local `amplefile connected-folders list --json` projection includes `parentConnectedFolderId`
-for a nested Connected Folder; see [the AmpleFile agent and CLI guide](docs/amplefile-agent-and-cli.md).
+for a nested Connected Folder; see [the AmpleFile Agent and CLI guide](docs/amplefile-agent-and-cli.md).
 
 As a project grows, set up an **Automation** to run fixed steps on a schedule or after selected files change. Automations are deterministic app-run steps, not a second kind of Worker or an open-ended agent scheduler. They are optional; start with a Connected Folder and a conversation.
 
-Workers and the AmpleFile agent can also use AmpleFile's
+Workers and the AmpleFile Agent can also use AmpleFile's
 [built-in browser](docs/built-in-browser.md). They can read and use pages,
 inspect screenshots, hover and drag, work inside scrolling panels, attach local
 files to file inputs, and find completed downloads. Its sign-ins belong to
 AmpleFile's own profile, separate from Chrome.
 
-What a Worker or the AmpleFile agent does happens right away and leaves a record you can read in the app. Nothing it deletes is gone for good: **History** keeps versions of your files, and anything History cannot keep waits in **Recently Deleted** for 30 days. Anything running on a schedule can be turned off afterwards.
+What a Worker or the AmpleFile Agent does happens right away and leaves a record you can read in the app. Nothing it deletes is gone for good: **History** keeps versions of your files, and anything History cannot keep waits in **Recently Deleted** for 30 days. Anything running on a schedule can be turned off afterwards.
 
 Use **Compare** in a file's **Version History** to read saved text beside the current file before restoring. Binary, oversized, uncaptured, and incomplete comparisons explain their limits. The authenticated CLI offers paged `history list`/`versions`, verified `history read --offset-bytes 0` ranges for large saved text, and streaming `search` with `--path` narrowing and `--cursor` continuation; see `amplefile help history` and `amplefile help search`.
 
@@ -67,14 +67,14 @@ See the
 [collaboration contract](docs/collaboration-contract.md#completion-delivery-and-recovery)
 for stop, expiry, and restart behavior, and the
 [collaboration experience](docs/collaboration-experience.md) for how progress,
-questions, and result files appear in Chats and the AmpleFile agent.
+questions, and result files appear in Chats and the AmpleFile Agent.
 
 Claude Code, Codex, and other AI agents can use AmpleFile too: **Settings →
 Command Line** adds the `amplefile` command to Terminal and adds a short skill
 that teaches an agent to hand work to your Workers, follow it, and run
 Automations. See [the CLI guide](docs/amplefile-agent-and-cli.md).
 
-Long work runs in the background: a Worker or the AmpleFile agent starts an
+Long work runs in the background: a Worker or the AmpleFile Agent starts an
 export, build, install, or server as a background job, keeps working or ends
 its turn, and is brought back to the same Chat once with the result when the
 command finishes. History captures what the job changed, its output stays on
@@ -83,11 +83,11 @@ this computer, and Stop or quitting ends it. See
 
 Workers also have structured collaboration tools, asynchronous questions,
 interactive terminal input, managed Git working copies, and focused read-only
-helpers. Workers and the AmpleFile agent can recover completed tool evidence
+helpers. Workers and the AmpleFile Agent can recover completed tool evidence
 and saved findings after compaction with `progress`, including file freshness
 checks. See [Worker tools](docs/worker-tools.md) for their lifecycle and limits.
 
-The AmpleFile agent's menu-bar popover has a **Chats** view that reopens saved
+The AmpleFile Agent's menu-bar popover has a **Chats** view that reopens saved
 conversations and keeps unsent drafts while you switch.
 
 **Skills & Extensions** manages native Pi resources, package updates and

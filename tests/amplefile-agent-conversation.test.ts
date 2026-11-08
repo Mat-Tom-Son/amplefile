@@ -14,7 +14,7 @@ import { AmpleFileCliError } from "../src/local/cli/index.js";
 import { startLocalApi } from "../src/local/server.js";
 import { ampleFileAgentRoot, ampleFileAgentScopeId } from "../src/local/state-paths.js";
 
-test("the AmpleFile agent runs above all Connected Folders on the shared turn machinery", async () => {
+test("the AmpleFile Agent runs above all Connected Folders on the shared turn machinery", async () => {
   const sandbox = await mkdtemp(join(tmpdir(), "amplefile-agent-test-"));
   await mkdir(join(sandbox, "agent", "extensions"), { recursive: true });
   await writeFile(join(sandbox, "agent", "extensions", "hold.ts"), `export default function (pi) {
@@ -37,7 +37,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
   try {
     const facade = api.actFacade;
 
-    // Starting the API materializes the AmpleFile agent scope's app-owned Pi
+    // Starting the API materializes the AmpleFile Agent scope's app-owned Pi
     // configuration, and Pi's own loader picks both resources up: the
     // AGENTS.md context file stays in the session context, and the
     // manage-connected-folders Skill is a project-scope skill of the management
@@ -58,14 +58,14 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     const ampleFileAgentSkill = catalog.skills.find((skill) => skill.name === "manage-connected-folders");
     assert.equal(ampleFileAgentSkill?.source.scope, "project", "the management skill must load at project scope");
     assert.equal(
-      catalog.contextFiles.some((file) => file.path.endsWith("AGENTS.md") && file.content.includes("AmpleFile agent")),
+      catalog.contextFiles.some((file) => file.path.endsWith("AGENTS.md") && file.content.includes("AmpleFile Agent")),
       true,
       "the management AGENTS.md must load as a Pi context file",
     );
     const ampleFileAgentContext = catalog.contextFiles.find((file) => file.path.endsWith("AGENTS.md"))?.content ?? "";
-    // The identity line names the AmpleFile agent while keeping "AmpleFile agent"
+    // The identity line names the AmpleFile Agent while keeping "AmpleFile Agent"
     // as the contract phrase in the same sentence.
-    assert.match(ampleFileAgentContext, /You are the AmpleFile agent — the agent above all Connected Folders in this computer's AmpleFile app\./);
+    assert.match(ampleFileAgentContext, /You are the AmpleFile Agent — the agent above all Connected Folders in this computer's AmpleFile app\./);
     // Nothing teaches the agent a Check verb.
     assert.doesNotMatch(ampleFileAgentContext, /\bchecks (status|run|propose|enable)\b|## Checks/);
     // The teaching pass (docs/act-ledger.md): the instructions name the
@@ -85,7 +85,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /tools import-skill --scope everywhere\|connected-folder/);
     // Nothing teaches Connected Folder app or App Studio verbs.
     assert.doesNotMatch(ampleFileAgentContext, /\bapps (list|invoke|install|grant|revoke|release|uninstall)\b|App Studio|Settings → Apps/);
-    // The AmpleFile agent is never taught desktop-served sharing verbs or a
+    // The AmpleFile Agent is never taught desktop-served sharing verbs or a
     // Shared pages surface.
     assert.doesNotMatch(ampleFileAgentContext, /\bpages (share|share-app|list|status|revoke|narrow|widen|snapshot-off)\b|help pages|Shared pages/);
     // Nothing teaches pages.
@@ -160,7 +160,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /Narration is on demand only\./);
     // Needs-you is a question list, never work waiting to be let through.
     assert.match(ampleFileAgentContext, /needs-you items \(questions, due snoozes, and requests waiting on the person's answer\)/);
-    // Delegation under the collaboration contract: the AmpleFile agent reads
+    // Delegation under the collaboration contract: the AmpleFile Agent reads
     // the request graph, a wait that comes back waiting is not a failure, a
     // waiting or running child never holds this turn open, the follow-up turn
     // is bounded and ordinary, a child's question is answered with one
@@ -199,13 +199,13 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /say whether History or Recently deleted holds it/);
     assert.match(ampleFileAgentContext, /Account for every attached item by name/);
     assert.match(ampleFileAgentContext, /record a question with `agent ask`/);
-    // The AmpleFile agent is never taught a gate vocabulary (docs/act-ledger.md
+    // The AmpleFile Agent is never taught a gate vocabulary (docs/act-ledger.md
     // acceptance: no user-facing copy says staged, approve, policy, Reviewed,
     // or Unrestricted).
     assert.doesNotMatch(
       ampleFileAgentContext,
       /\bstaged\b|\bstaging\b|standing polic|\bpolic(y|ies)\b|\bReviewed\b|\bUnrestricted\b|approv|\bdenial\b|\bdenied\b|decision id|autoApproval|needs-you card|\bcards?\b/i,
-      "the AmpleFile agent is never taught a gate vocabulary",
+      "the AmpleFile Agent is never taught a gate vocabulary",
     );
 
     // The manage-connected-folders Skill teaches the same surface and etiquette.
@@ -275,7 +275,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
       (error: unknown) => error instanceof AmpleFileCliError && error.code === "notFound",
     );
 
-    // The first send creates the default AmpleFile agent and runs a
+    // The first send creates the default AmpleFile Agent and runs a
     // real turn through the personal-scope /hold extension — proving the
     // management client loads personal Pi capabilities without any Connected Folder.
     const send = await facade.agentSend({ content: "/hold" });
@@ -283,7 +283,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.ok(send.taskId);
     const running = await api.kernel.getTasks({ kind: "system" });
     const ampleFileAgentTask = running.tasks.find((task) => task.id === send.taskId);
-    assert.equal(ampleFileAgentTask?.connectedFolderId, ampleFileAgentScopeId, "AmpleFile agent turns must be tracked under the AmpleFile agent scope id");
+    assert.equal(ampleFileAgentTask?.connectedFolderId, ampleFileAgentScopeId, "AmpleFile Agent turns must be tracked under the AmpleFile Agent scope id");
     assert.equal(ampleFileAgentTask?.actor.kind, "cli");
 
     await waitForAsync(async () => (await facade.agentTurnStatus({ taskId: send.taskId })).task.state !== "running");
@@ -299,7 +299,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.equal(ampleFileAgentRootPath.startsWith(join(sandbox, "state")), true, "management records live under the app state root");
     const transcripts = await readdir(join(ampleFileAgentRootPath, ".amplefile", "conversations"));
     assert.equal(transcripts.some((file) => file === `${send.conversationId}.jsonl`), true);
-    assert.equal(existsSync(join(sandbox, "content", "management")), false, "no Connected Folder is created for the AmpleFile agent scope");
+    assert.equal(existsSync(join(sandbox, "content", "management")), false, "no Connected Folder is created for the AmpleFile Agent scope");
 
     // Selector-free commands keep targeting the same default conversation.
     const second = await facade.agentSend({ content: "/hold" });
@@ -315,7 +315,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.equal((await facade.agentList()).conversations.length, 1);
     assert.equal((await facade.agentAbort({})).aborted, false);
 
-    // --new starts a separate AmpleFile agent on request.
+    // --new starts a separate AmpleFile Agent on request.
     const fresh = await facade.agentSend({ content: "/hold", newConversation: true });
     assert.notEqual(fresh.conversationId, send.conversationId);
     await waitForAsync(async () => (await facade.agentTurnStatus({ taskId: fresh.taskId })).task.state !== "running");
@@ -326,7 +326,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
   }
 });
 
-test("the AmpleFile agent fails closed when its required instructions cannot be prepared", async () => {
+test("the AmpleFile Agent fails closed when its required instructions cannot be prepared", async () => {
   const sandbox = await mkdtemp(join(tmpdir(), "amplefile-agent-fail-closed-test-"));
   const stateBase = join(sandbox, "state");
   await mkdir(stateBase, { recursive: true });

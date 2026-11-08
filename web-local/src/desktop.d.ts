@@ -177,7 +177,7 @@ declare global {
         }) => Promise<{ mode: string; written: string[]; restorePoints: Array<{ connectedFolderId: string; checkpointId: string }>; copiedInstead?: boolean; moves?: Array<{ from: string; to: string }>; nothing?: boolean; fromHere?: boolean; count?: number }>;
       };
       agent: {
-        /** The local path of a file dropped on the AmpleFile agent panel. */
+        /** The local path of a file dropped on the AmpleFile Agent panel. */
         getPathForFile?: (file: File) => string;
         openAmpleFileAgentDraft?: (text: string) => Promise<boolean>;
         onOpenSettings: (listener: (scope?: "agent") => void) => () => void;
@@ -185,7 +185,7 @@ declare global {
       /** Main-window-only automation management; absent from the popover preload. */
       automations?: {
         list: () => Promise<AutomationsResponse>;
-        /** Pending `*.amplefile-automation.json` files in the AmpleFile agent's working folder. */
+        /** Pending `*.amplefile-automation.json` files in the AmpleFile Agent's working folder. */
         proposals: () => Promise<AutomationProposalsResponse>;
         /** Turns on one pending file by absolute path, through the same enable path as the CLI. */
         enableProposal: (path: string) => Promise<AutomationEnableProposalResponse>;

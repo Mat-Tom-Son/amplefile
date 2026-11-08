@@ -26,11 +26,11 @@ organizing metaphor.
 | **Files** | The ordinary folder contents shown for a Connected Folder. | Files are not a separate container or proprietary format. |
 | **Chats** | Conversations grounded in one Connected Folder. | A Chat does not automatically receive every file in the Connected Folder. |
 | **History** | Restore points and recoverable changes for a Connected Folder. | It is distinct from Chat history. |
-| **Worker** | The Pi-powered helper in a Connected Folder. | Provider connections are configured in Settings and stay machine-local; model choices are saved separately for each Connected Folder and for the AmpleFile agent, apart from Connected Folder content. |
-| **Skills & Extensions** | One dialog, opened from the Action menu, to discover and manage what the Workers and the AmpleFile agent can do. | It groups Skills and Extensions and is pinned to the Connected Folder it was opened from. |
+| **Worker** | The Pi-powered helper in a Connected Folder. | Provider connections are configured in Settings and stay machine-local; model choices are saved separately for each Connected Folder and for the AmpleFile Agent, apart from Connected Folder content. |
+| **Skills & Extensions** | One dialog, opened from the Action menu, to discover and manage what the Workers and the AmpleFile Agent can do. | It groups Skills and Extensions and is pinned to the Connected Folder it was opened from. |
 | **Skill** | A reusable way of working that helps the agent approach a task. | A Skill may contain executable scripts and is not merely a document. |
 | **Extension** | An executable capability or connection available to the agent. | It has a stronger trust implication than an ordinary file. |
-| **AmpleFile agent** | The agent above all Connected Folders: one conversation scope, shown in the menu-bar popover. | It is not a Connected Folder or a second Worker ([what it is](amplefile-agent-and-cli.md#what-the-amplefile-agent-is)). |
+| **AmpleFile Agent** | The agent above all Connected Folders: one conversation scope, shown in the menu-bar popover. | It is not a Connected Folder or a second Worker ([what it is](amplefile-agent-and-cli.md#what-the-amplefile-agent-is)). |
 | **Automation** | A declared, inert-until-enabled set of deterministic steps that move work between Connected Folders on a reviewed trigger. | App code runs it, never a Worker conversation, and nothing Automation-shaped is written into any Connected Folder. |
 | **Recently Deleted** | The machine-local holding place for anything AmpleFile removed that History could not restore (files, folders, a managed Connected Folder's folder, a deleted Chat, and a removed imported Skill), kept for a retention window and restorable from Settings or the CLI. | It is not a Connected Folder, not portable, not a backup, and never empties on a verb; only retention purges it. |
 
@@ -338,10 +338,10 @@ sent); no later turn sends a held message, and Cancel hands it back to the
 composer. The app numbers every queue change, and a window applies only a
 change newer than any it has applied or made, so an echo can neither erase
 newer text nor restore a cancelled message. Quitting AmpleFile drops it. The
-AmpleFile agent's running turn takes steering the same way in the popover;
+AmpleFile Agent's running turn takes steering the same way in the popover;
 attachments wait for the next message.
 
-**Addressing Workers.** Typing `@` in a Chat or in the AmpleFile agent's
+**Addressing Workers.** Typing `@` in a Chat or in the AmpleFile Agent's
 popover offers Connected Folder Workers (nested Connected Folders first) and
 addresses each one named. See
 [the collaboration contract](collaboration-contract.md) for what each Worker
@@ -419,7 +419,7 @@ Claude Code or Codex, so other AI agents can use AmpleFile
 
 **AI Models** separates model defaults, shared provider connections, and
 Worker instructions. Its scope is chosen with two large buttons, **This
-Worker**, naming the Connected Folder, and **AmpleFile agent**. The model is a
+Worker**, naming the Connected Folder, and **AmpleFile Agent**. The model is a
 dropdown: closed, it shows the chosen model; open, it starts with a search
 box and groups every connected provider's chat models by provider and vendor
 (for OpenRouter, the vendor prefix of the model name), and choosing a model
@@ -431,18 +431,18 @@ credentials are not cached across scope changes. Accepted saves keep their
 completion if Settings closes, so reopening waits for their result. External
 settings changes refresh clean forms and offer an explicit reload when
 drafts are present. An **Image Model** section holds one machine-wide choice
-for every Worker and the AmpleFile agent, with **Automatic** first
+for every Worker and the AmpleFile Agent, with **Automatic** first
 ([Image generation](image-generation.md)).
 
 Credentials are shared machine-wide, while model choices and Worker
 instructions are machine-local preferences keyed by portable Connected Folder
-identity; the AmpleFile agent has its own model choice but no editable Worker
+identity; the AmpleFile Agent has its own model choice but no editable Worker
 instructions. A model change becomes the default for new Chats, because a
 live Pi session keeps its session model. A Worker-instruction change reloads
 that Connected Folder's idle clients and applies to subsequent turns,
 including existing Chats. Worker instructions are also where a Worker
 remembers: when the person states a lasting preference about working in that
-folder, the Worker or the AmpleFile agent adds it as one line with
+folder, the Worker or the AmpleFile Agent adds it as one line with
 `connected-folders worker instructions --append`, which keeps what is already
 there and skips an exact repeat, and says what it saved. OpenRouter has an
 explicit live refresh backed by its tool-capable text-model API; the last
@@ -476,7 +476,7 @@ remain available for models outside the base-model picker. A base-model id
 missing from the catalog makes only that deployment unavailable; Settings
 stays usable to repair or remove it. Pi owns provider auth, streaming, and
 tool-call parsing. One deployment is selected separately for each Connected
-Folder and the AmpleFile agent. Resource or full inference URLs normalize to
+Folder and the AmpleFile Agent. Resource or full inference URLs normalize to
 `/openai/v1` or `/anthropic` for the selected connection. Saving configures
 existing chat deployments; it does not test inference, sign in to Azure, or
 discover deployments. This setup uses API keys; Microsoft Entra ID
@@ -529,7 +529,7 @@ connections stay separate:
 | Delete a file or folder | AmpleFile records a safety restore point; anything the restore point cannot cover moves into Recently Deleted with a manifest naming its Connected Folder, path, size, deleted-at, restore-by, and receipt. | Nothing is permanent at the moment it happens; `.amplefile/` and `.pi/` are never valid endpoints. |
 | Restore from Recently Deleted | AmpleFile puts the entry back at its recorded path, or registers a deleted managed Connected Folder again, and receipts the restore. | Only the retention clock empties Recently Deleted; no agent or CLI verb does. |
 | Enable an Automation | AmpleFile records an exact-digest grant over one reviewed declaration in a single receipted call. | Proposing, registering, and running once never enable standing behavior; an edited declaration returns to proposed. |
-| Run an Automation | App code runs the reviewed steps in order with per-hop receipts inside the shared scheduler bounds. A declared `agent` step may message the AmpleFile agent, and a closed set of host-resolved placeholders may fill a step's message. | No model composes the steps, an Automation never moves or deletes source files, and no Connected Folder's folder learns another Connected Folder exists. |
+| Run an Automation | App code runs the reviewed steps in order with per-hop receipts inside the shared scheduler bounds. A declared `agent` step may message the AmpleFile Agent, and a closed set of host-resolved placeholders may fill a step's message. | No model composes the steps, an Automation never moves or deletes source files, and no Connected Folder's folder learns another Connected Folder exists. |
 
 "Available", "in this Connected Folder", "in this Chat", and "allowed to
 execute" must never collapse into one invisible state.
@@ -544,7 +544,7 @@ folder selection, the registered Connected Folder authorization override,
 Extension UI bridges, and clear execution and permission explanations.
 
 Native Extension questions stay inline in their owning Chat, including the
-AmpleFile agent's, with transient reconnect recovery and Stop. They are live
+AmpleFile Agent's, with transient reconnect recovery and Stop. They are live
 Pi callbacks rather than durable agent questions. Included capabilities use
 the same native Extension path; inclusion describes AmpleFile's maintenance
 responsibility, not another trust or runtime tier. See
@@ -557,7 +557,7 @@ developer-only local diagnostic, outside ordinary Chats and Settings.
 
 There are two capability scopes:
 
-- **Everywhere** (everywhere scope): available to the AmpleFile agent and
+- **Everywhere** (everywhere scope): available to the AmpleFile Agent and
   every Connected Folder from the person's Pi agent directory.
 - **This Connected Folder only** (project scope): portable configuration
   stored under the Connected Folder's `.pi/` directory and authorized while
@@ -613,7 +613,7 @@ page 1 of a Word file and any slide of a deck with Quick Look. A Worker
 installs an engine only when the person asks. See
 [Document verification](document-verification.md).
 
-**Built-in browser.** Every Worker and the AmpleFile agent can use AmpleFile's
+**Built-in browser.** Every Worker and the AmpleFile Agent can use AmpleFile's
 own browser through the `browser_*` tools, with one persistent machine-local
 profile apart from Chrome and from every Connected Folder. The tools come
 with the app and are not one of the five included tools. See
@@ -638,34 +638,40 @@ running: Connected Folder lifecycle and appearance, per–Connected Folder
 model defaults and instructions, Chats and their lifecycle, History restore
 points and restores, restore-pointed file operations, content search,
 Recently Deleted, background jobs, the collaboration verbs and request reads,
-and the AmpleFile agent itself. Act commands reuse the same trust, conflict,
+and the AmpleFile Agent itself. Act commands reuse the same trust, conflict,
 History, and task rules as the window. Acts that make bytes runnable, widen a
 standing power, or destroy run immediately through the same prepare, pin,
 journal-first, fenced execution path and return a receipt; destruction is
 reversible through History or Recently Deleted. Provider credentials, window
 state, and other application settings stay outside it. See
 [the act ledger](act-ledger.md) and
-[the AmpleFile agent and CLI](amplefile-agent-and-cli.md).
+[the AmpleFile Agent and CLI](amplefile-agent-and-cli.md).
 
-The **AmpleFile agent** is one conversation scope above all Connected
+The **AmpleFile Agent** is one conversation scope above all Connected
 Folders and the door through which material enters them. Its transcript is
 machine-local, and its Pi session loads Everywhere capabilities plus two
 app-materialized instructions. It is a full-trust agent with ordinary local
 tools, taught to prefer receipted `amplefile` commands for work that touches
 Connected Folders. It is reached through `amplefile agent …` and the
-menu-bar popover. The popover is a compact conversation: the person's
-messages are colored bubbles on the right and agent replies are unboxed on
-the left. Its header shows the current Chat title, **Previous**, and **New
-Chat**. **New Chat** makes a clean slate, creates a saved transcript on first
-send, and never deletes a prior transcript. Dragging files, folders, or links
-over it stages inert reference chips; the person adds an instruction, and
-sending stays the explicit act. Its model label opens **Settings → AI
-Models** scoped to the AmpleFile agent. While a turn runs, the send action
-becomes **Stop** and the draft stays usable. A request whose delegated
+menu-bar popover. The popover is drawn as a Chat in the file manager's
+panel, in the same design tokens, so Settings → Appearance restyles both:
+the person's messages are solid accent bubbles on the right and agent
+replies are unboxed on the left. Its header shows the current Chat title
+over a hairline, with icon buttons for **Chats** and **New Chat**; **Chats**
+replaces the title with a back button and lists saved Chats by day in
+grouped cards, with the file manager's pulsing dot for a working Chat and
+its green dot for one that needs an answer. **New Chat** makes a clean
+slate, creates a saved transcript on first send, and never deletes a prior
+transcript. The message box is the file manager's: a rounded field with
+Send inside, and the model and reasoning level in a small row beneath it.
+Dragging files, folders, or links over it stages inert reference chips; the
+person adds an instruction, and sending stays the explicit act. Its model
+label opens **Settings → AI Models** scoped to the AmpleFile Agent. While a
+turn runs, the send action becomes **Stop** and the draft stays usable. A request whose delegated
 Connected Folder turn is still running shows **handed off**, never done; a
 failed child fails the request, Stop names every recorded child it aborts,
 and every attachment receives a final disposition. The popover can rename
-and delete idle AmpleFile agent Chats; a deleted one goes to Recently
+and delete idle AmpleFile Agent Chats; a deleted one goes to Recently
 Deleted.
 
 A person's ask is a **request**: one durable, machine-local record that owns
@@ -686,7 +692,7 @@ that Chat with the message and copies of the named files through the
 ordinary restore-pointed path; no model turn is needed to move a result.
 What crosses into a Connected Folder Chat is only its assignment, payloads
 someone deliberately released to it, and answers to its own questions. The
-same verbs serve the AmpleFile agent, a Worker, and any shell-capable agent
+same verbs serve the AmpleFile Agent, a Worker, and any shell-capable agent
 on the CLI, with the same receipts and the same named limits.
 
 ## Desktop shell
@@ -697,8 +703,8 @@ on the CLI, with the same receipts and the same named limits.
 - Closing the last window keeps AmpleFile running; the Dock icon brings the
   window back. **Quit** exits cleanly. Closing the window never stops an
   accepted turn.
-- The menu-bar item opens the AmpleFile agent popover on click; a right
-  click opens a menu with **AmpleFile agent**, **Open AmpleFile**, **Check
+- The menu-bar item opens the AmpleFile Agent popover on click; a right
+  click opens a menu with **AmpleFile Agent**, **Open AmpleFile**, **Check
   for Updates...**, and **Quit AmpleFile**. Files or links dropped on the
   icon become reference chips. The popover works with the main window
   closed, holds drops without sending, and its Stop names the AmpleFile
@@ -749,7 +755,7 @@ properties:
 11. **Agency on a cadence lives in Connected Folders:** above Connected
     Folders, only declared deterministic Automations run unattended;
     enabling one is a single receipted call that pins the declaration
-    digest; an Automation may message the AmpleFile agent only through its
+    digest; an Automation may message the AmpleFile Agent only through its
     declared `agent` step; work across Connected Folders never runs inside a
     Connected Folder Chat, because Connected Folder transcripts travel. The
     one bounded exception is a person-started request's follow-up turn: when
@@ -814,7 +820,7 @@ not a complete or transactional backup.
   tasks, and Pi capabilities through `AmpleFileKernel` and the `amplefile`
   read lane, and operate the product from any shell-capable agent through
   the act lane while the app is running.
-- Talk to the AmpleFile agent through `amplefile agent …` and the menu-bar
+- Talk to the AmpleFile Agent through `amplefile agent …` and the menu-bar
   popover, with reference attachments, an explicit request and child action
   trail, and machine-local saved transcripts.
 - Steer a running turn, queue one follow-up message, choose the reasoning
@@ -858,7 +864,7 @@ not a complete or transactional backup.
   ever outgrows the per-launch single-user token.
 - Extend Automation triggers only through deliberate contracts for any new
   event source, handoff condition, or recovery behavior. Coordination across
-  Connected Folders stays with the AmpleFile agent; Connected Folder Chats
+  Connected Folders stays with the AmpleFile Agent; Connected Folder Chats
   stay local to their own work.
 - Offer Chrome and Computer Control setup in a Chat the first time a Worker
   needs them; deepen accessibility, renderer interaction tests, recovery,

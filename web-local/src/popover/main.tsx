@@ -7,6 +7,8 @@ import "@fontsource/poppins/500.css";
 import "@fontsource/poppins/600.css";
 import "@fontsource/poppins/700.css";
 import "../brand.css";
+// The file manager's tokens: the popover is drawn as a Chat in its panel.
+import "../components/file-manager/file-manager-tokens.css";
 import "./popover.css";
 import "./popover-document.css";
 import "../components/chat/work-steps.css";

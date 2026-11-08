@@ -31,7 +31,7 @@ export const ampleFileAutomationContractVersion = 6 as const;
 export const ampleFileAutomationSupportedContractVersions = [1, 2, 3, 4, 5, ampleFileAutomationContractVersion] as const;
 export type AmpleFileAutomationContractVersion = (typeof ampleFileAutomationSupportedContractVersions)[number];
 
-/** Filename convention for inert automation proposals in the AmpleFile agent's working folder. */
+/** Filename convention for inert automation proposals in the AmpleFile Agent's working folder. */
 export const ampleFileAutomationProposalFileSuffix = ".amplefile-automation.json" as const;
 
 /**
@@ -155,15 +155,15 @@ export interface AmpleFileAutomationFilesStep {
 }
 
 /**
- * Starts a new AmpleFile agent chat with exactly this message, so a person
- * can put the AmpleFile agent on a cadence deliberately. It names no
- * Connected Folder: the AmpleFile agent sits above them. Version 4 only.
+ * Starts a new AmpleFile Agent chat with exactly this message, so a person
+ * can put the AmpleFile Agent on a cadence deliberately. It names no
+ * Connected Folder: the AmpleFile Agent sits above them. Version 4 only.
  */
 export interface AmpleFileAutomationAgentStep {
   id: string;
   kind: "agent";
   message: string;
-  /** The model this step's new AmpleFile agent chat uses, instead of the agent's own. */
+  /** The model this step's new AmpleFile Agent chat uses, instead of the agent's own. */
   model?: AmpleFileAutomationStepModel;
 }
 
@@ -417,7 +417,7 @@ export function ampleFileAutomationReferencedConnectedFolderIds(definition: Ampl
     } else if (step.kind === "chat") {
       ids.add(step.connectedFolder);
     }
-    // An agent step names no Connected Folder: the AmpleFile agent sits above them.
+    // An agent step names no Connected Folder: the AmpleFile Agent sits above them.
   }
   return [...ids].sort();
 }

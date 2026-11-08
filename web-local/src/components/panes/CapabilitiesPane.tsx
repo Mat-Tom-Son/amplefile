@@ -678,7 +678,7 @@ function CapabilityToolbar({
 }
 
 /**
- * One of the two homes a tool can have: Everywhere serves the AmpleFile agent
+ * One of the two homes a tool can have: Everywhere serves the AmpleFile Agent
  * and every Worker; This Connected Folder only lives in the Connected Folder and travels with it.
  */
 function ScopeGroup({ scope, connectedFolderName, items, hiddenByQuery, onSelect }: {
@@ -695,7 +695,7 @@ function ScopeGroup({ scope, connectedFolderName, items, hiddenByQuery, onSelect
       <div className="capabilities-scope-heading">
         <div>
           <h3 id={titleId}>{everywhere ? "Everywhere" : "This Connected Folder only"}</h3>
-          <p>{everywhere ? "AmpleFile agent and all Workers" : connectedFolderName}</p>
+          <p>{everywhere ? "AmpleFile Agent and all Workers" : connectedFolderName}</p>
         </div>
         <span className="capabilities-scope-count">{items.length}</span>
       </div>
@@ -758,7 +758,7 @@ function includedToolState(item: InstalledCapability, readiness: IncludedToolSta
   return { label: state.label, tone: state.setup ? "attention" : state.tone === "enabled" ? "enabled" : state.tone === "error" ? "error" : "neutral", setup: state.setup };
 }
 
-/** The AmpleFile agent above, Connected Folders below; filled pills show where a tool is available. */
+/** The AmpleFile Agent above, Connected Folders below; filled pills show where a tool is available. */
 function ScopeHierarchyGlyph({ scope }: { scope: AgentCapabilityScope }) {
   const everywhere = scope === "global";
   const pill = (x: number, y: number, w: number, label: string, active: boolean, key: string) => (
@@ -774,7 +774,7 @@ function ScopeHierarchyGlyph({ scope }: { scope: AgentCapabilityScope }) {
         <path d="M85 22 L85 38" />
         <path d="M85 22 L85 30 L143 30 L143 38" />
       </g>
-      {pill(35, 4, 100, "AmpleFile agent", everywhere, "agent")}
+      {pill(35, 4, 100, "AmpleFile Agent", everywhere, "agent")}
       {pill(4, 38, 46, "Folder", everywhere, "a")}
       {pill(62, 38, 46, "Folder", everywhere, "b")}
       {pill(120, 38, 46, "Here", true, "here")}
@@ -790,7 +790,7 @@ function ScopeChooser({ value, connectedFolderName, disabled, onChange }: {
   onChange: (value: AgentCapabilityScope) => void;
 }) {
   const options: Array<{ scope: AgentCapabilityScope; title: string; detail: string }> = [
-    { scope: "global", title: "Everywhere", detail: "AmpleFile agent and all Workers" },
+    { scope: "global", title: "Everywhere", detail: "AmpleFile Agent and all Workers" },
     { scope: "project", title: "This Connected Folder only", detail: connectedFolderName },
   ];
   return (
@@ -1251,7 +1251,7 @@ export function canRemoveSkill(item: InstalledCapability): boolean {
   return item.kind === "skill" && item.origin !== "package" && !item.included && !item.bundled;
 }
 
-/** The two rungs of the hierarchy as people see them: Everywhere (AmpleFile agent and every Worker) or This Connected Folder only. */
+/** The two rungs of the hierarchy as people see them: Everywhere (AmpleFile Agent and every Worker) or This Connected Folder only. */
 function scopeLabel(scope: AgentCapabilityScope): string {
   return scope === "project" ? "This Connected Folder only" : "Everywhere";
 }

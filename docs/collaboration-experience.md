@@ -1,6 +1,6 @@
 # Collaboration experience
 
-The person asks for work in a Chat or the AmpleFile agent. That remains one
+The person asks for work in a Chat or the AmpleFile Agent. That remains one
 piece of work while agents divide it, ask questions, and combine results.
 The interface follows the durable request, while streamed text and tool
 activity still follow the current turn.
@@ -58,7 +58,7 @@ answer.
 
 ## Surfaces and boundaries
 
-Connected Folder Chats in the file manager's panel and the AmpleFile agent
+Connected Folder Chats in the file manager's panel and the AmpleFile Agent
 popover share the same React work presentation. Each Chat keeps its own
 Connected Folder.
 
@@ -86,8 +86,8 @@ Electron and signed-release verification are separate release work.
 
 ## Conversation navigation in the popover
 
-The AmpleFile agent popover has a searchable **Chats** view over saved machine-local
-AmpleFile agent conversations, with titles, dates, and quiet working/answer indicators. Selecting
+The AmpleFile Agent popover has a searchable **Chats** view over saved machine-local
+AmpleFile Agent conversations, with titles, dates, and quiet working/answer indicators. Selecting
 a chat pins its transcript, request, model state, and next message to that id;
 background refresh never switches the selection. New chat opens a clean draft
 without a success alert or confirmation. Text and attachment drafts remain with

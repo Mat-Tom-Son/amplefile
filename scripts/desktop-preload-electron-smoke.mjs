@@ -78,7 +78,7 @@ async function verifyPreload(filename, ampleFileAgentOnly) {
   const errors = [];
   const openWithRequests = [];
   const automationRequests = [];
-  const proposalPath = "/temporary AmpleFile agent/hourly.amplefile-automation.json";
+  const proposalPath = "/temporary AmpleFile Agent/hourly.amplefile-automation.json";
   const pendingProposals = { proposals: [{ valid: true, path: proposalPath, title: "Hourly hello" }], truncated: false };
   const window = new BrowserWindow({
     show: false,

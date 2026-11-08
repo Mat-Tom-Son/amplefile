@@ -223,7 +223,7 @@ test("obsolete scope reads and Strict Mode replay cannot overwrite the current t
   assert.doesNotMatch(ui.dom.container.textContent!, /Connected Folder id is required|Connected Folder not found/);
   assert.ok(ui.requests.every((request) => !request.path.endsWith("scope=connected-folder")));
   assert.equal(ui.dom.container.querySelectorAll('input[name="ai-model-scope"]').length, 0);
-  assert.match(ui.dom.container.textContent!, /AmpleFile agent/);
+  assert.match(ui.dom.container.textContent!, /AmpleFile Agent/);
 });
 
 test("model writes submit once, remain bound to the original Connected Folder and cannot finish into a replacement form", async (t) => {
@@ -236,7 +236,7 @@ test("model writes submit once, remain bound to the original Connected Folder an
   assert.equal(ui.requests.filter((item) => item.path === "/api/agent/configure").length, 1);
   assert.deepEqual(write.body, { scope: "connected-folder", connectedFolderId: "a", provider: "openrouter", model: "model-b" });
   assert.equal(ui.dom.container.querySelector<HTMLSelectElement>('select[aria-label="Provider"]')?.disabled, true);
-  // The AmpleFile agent's scope is read alongside so switching scopes never reloads; count only this Connected Folder's reads.
+  // The AmpleFile Agent's scope is read alongside so switching scopes never reloads; count only this Connected Folder's reads.
   const connectedFolderReads = () => ui.requests.filter((item) => /scope=connected-folder/.test(item.path));
   await ui.render(connectedFolder("b"));
   assert.equal(connectedFolderReads().length, 1, "replacement read waits for the accepted write to settle");
@@ -722,7 +722,7 @@ test("closing and reopening Settings waits for an accepted write before loading 
   const accepted = ui.requests.at(-1)!;
   await ui.dom.render(null);
   await ui.render(connectedFolder("a"));
-  // The AmpleFile agent's scope is read ahead once a form has loaded; only this Connected Folder's reads count here.
+  // The AmpleFile Agent's scope is read ahead once a form has loaded; only this Connected Folder's reads count here.
   const own = () => ui.requests.filter((item) => !/scope=agent/.test(item.path));
   assert.equal(own().length, 2, "the new dialog still owns the previous accepted operation's completion");
   await ui.finish(accepted, { status: { ...status, model: "model-b" } });

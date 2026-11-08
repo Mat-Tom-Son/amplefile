@@ -145,7 +145,7 @@ export function AmpleFileLimitsPane({ onOpenRecentlyDeleted, fixtureMode = false
       <LimitRows
         rows={[
           ["Model spending for one request", requests.providerBudgetUsd === null ? "No limit" : `$${formatNumber(requests.providerBudgetUsd)}`],
-          ["A question a Worker or the AmpleFile agent asks", kib(requests.maxQuestionTextBytes)],
+          ["A question a Worker or the AmpleFile Agent asks", kib(requests.maxQuestionTextBytes)],
           ["An answer you give", kib(requests.maxAnswerTextBytes)],
           ["A result summary", kib(requests.maxResultSummaryBytes)],
           ["Result Details", kib(requests.maxResultDataBytes)],

@@ -1,4 +1,4 @@
-# The overview — the AmpleFile agent's deterministic digest
+# The overview — the AmpleFile Agent's deterministic digest
 
 The overview is a small digest a person reads in a few seconds: what is
 running right now, what is waiting on them, what changed since they last
@@ -68,7 +68,7 @@ turn must not be hidden by churn.
   respondent is the person, not one item per request phase. A request with two
   open questions contributes two items, and a question addressed to its parent
   request belongs to that parent and never appears here. A **settled
-  AmpleFile agent request** whose own closing reply ends in a question mark
+  AmpleFile Agent request** whose own closing reply ends in a question mark
   also contributes one item, with no question id, because that question was
   asked in prose and never recorded.
 - `chat-question`: a Connected Folder Chat whose newest transcript message
@@ -109,7 +109,7 @@ current surface fetches the digest or advances either marker. Markers are
 presentation preference exactly as the product model defines for Chat
 attention state: machine-local, disposable, never portable, never authority. A
 marker advances only when a person viewing a surface acknowledges a rendered
-digest; fetching never advances a marker, and the AmpleFile agent narrating
+digest; fetching never advances a marker, and the AmpleFile Agent narrating
 the overview never advances one either.
 
 Marker advance is the overview's only mutation, and its standard answers:
@@ -127,7 +127,7 @@ Marker advance is the overview's only mutation, and its standard answers:
 
 ## Surfaces
 
-`amplefile agent overview --json` and the AmpleFile agent's narration read the
+`amplefile agent overview --json` and the AmpleFile Agent's narration read the
 digest on request. No surface receives push: the digest is pulled on request
 and never recomputed in the background for nobody.
 
@@ -138,20 +138,20 @@ server routes and the seen-marker store are there for a surface that does.
 
 ## Narration on demand
 
-The AmpleFile agent can say the overview out loud, grounded in the same
+The AmpleFile Agent can say the overview out loud, grounded in the same
 digest, never in ambient re-inspection. `amplefile agent overview --json`
-returns the digest through the act lane (scoped to the AmpleFile agent, no
+returns the digest through the act lane (scoped to the AmpleFile Agent, no
 `--connected-folder`, journal-first receipted like every act command). It
 mutates nothing; it is act-lane rather than read-lane because the digest is
-content-bearing, the same split `chat status` follows. The AmpleFile agent's
+content-bearing, the same split `chat status` follows. The AmpleFile Agent's
 instructions teach it to run the command when asked what is happening, narrate
 from its fields, and never present a truncated section as complete — the
 `truncated` flags are part of the answer. Narration is interactive only,
-inside an AmpleFile agent Chat, whose transcript is machine-local. The product
+inside an AmpleFile Agent Chat, whose transcript is machine-local. The product
 never starts narration on its own — only a person's message or an Automation's
-declared `agent` step starts an AmpleFile agent turn — and there is no
+declared `agent` step starts an AmpleFile Agent turn — and there is no
 scheduled digest, wrap-up, or morning summary. Narration never advances a
-marker; the digest's `seen` table lets the AmpleFile agent say "since you last
+marker; the digest's `seen` table lets the AmpleFile Agent say "since you last
 looked at the popover" honestly, but only a person viewing a surface marks
 seen.
 
@@ -182,7 +182,7 @@ seen.
 Also deliberately not part of it:
 
 - **Scheduled or proactive narration** — no morning summary, no idle-time
-  digest turn, no notification that "the AmpleFile agent has news." Agency on a
+  digest turn, no notification that "the AmpleFile Agent has news." Agency on a
   schedule lives in Connected Folders; above Connected Folders only declared
   deterministic Automations run unattended, and narration is neither.
 - **Marker sync across machines.** Markers are machine-local like every other
@@ -204,7 +204,7 @@ Also deliberately not part of it:
 - Overview types and composer — `src/local/overview.ts`; `tests/amplefile-overview.test.ts` (byte-identical determinism, ordering, caps, truncation, restart honesty, unavailable sources).
 - Seen-marker store — `src/local/overview-seen-store.ts`; `tests/amplefile-overview-seen-store.test.ts`.
 - Kernel query (`getOverview`) with the v1-exclusion guard — `src/local/amplefile-kernel.ts`; `tests/amplefile-kernel.test.ts`.
-- Local API routes (`/api/amplefile-agent/overview`, `/overview/seen`, served without AmpleFile agent readiness) — `src/local/server.ts`; `tests/amplefile-agent-api.test.ts`, `tests/local-server.test.ts`.
+- Local API routes (`/api/amplefile-agent/overview`, `/overview/seen`, served without AmpleFile Agent readiness) — `src/local/server.ts`; `tests/amplefile-agent-api.test.ts`, `tests/local-server.test.ts`.
 - CLI act command (`agent overview`) — `src/local/cli/act-commands.ts`, `src/local/cli/act-facade.ts`; `tests/amplefile-cli-act-protocol.test.ts`, `tests/amplefile-cli-commands.test.ts` (read-lane guard).
-- Narration teaching in the AmpleFile agent's instructions — `src/local/amplefile-agent-instructions.ts`; `tests/amplefile-agent-conversation.test.ts`.
+- Narration teaching in the AmpleFile Agent's instructions — `src/local/amplefile-agent-instructions.ts`; `tests/amplefile-agent-conversation.test.ts`.
 - `tests/amplefile-agent-popover-refresh.test.ts` and `tests/frontend-interaction-contract.test.ts` check that the popover and the main window do not render the digest.

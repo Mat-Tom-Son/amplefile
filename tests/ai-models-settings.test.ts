@@ -11,7 +11,7 @@ import { OpenRouterModelCatalog, parseOpenRouterModels } from "../src/local/agen
 import { appendWorkerInstructions, type PiPreferredModel, type PiRuntimeProvider } from "../src/local/agent/pi-runtime-config.js";
 import { startLocalApi } from "../src/local/server.js";
 
-test("Model preferences follow portable Connected Folder ids and keep the AmpleFile agent separate", async (t) => {
+test("Model preferences follow portable Connected Folder ids and keep the AmpleFile Agent separate", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "amplefile-model-preferences-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const firstConnectedFolderRoot = join(root, "first-location");

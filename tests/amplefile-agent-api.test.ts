@@ -123,7 +123,7 @@ test("the act executor forwards attachments to the facade and stamps lineage on 
   assert.equal(sendReceipts.some((entry) => "parentTaskId" in entry && entry.parentTaskId !== undefined), false, "no lineage parent means no stamped parent");
 });
 
-test("AmpleFile agent requests carry attachments, record lineage, and expose honest phases over the local API", async () => {
+test("AmpleFile Agent requests carry attachments, record lineage, and expose honest phases over the local API", async () => {
   const sandbox = await mkdtemp(join(tmpdir(), "amplefile-agent-api-test-"));
   let heldConversationId: string | null = null;
   let changedConversationId: string | null = null;
@@ -172,7 +172,7 @@ test("AmpleFile agent requests carry attachments, record lineage, and expose hon
   try {
     const facade = api.actFacade;
     // This test pins attachments, lineage, and phases. Its delegated child
-    // settles after the AmpleFile agent's turn ends, which is exactly when the host would
+    // settles after the AmpleFile Agent's turn ends, which is exactly when the host would
     // bring the result back as a continuation turn and make that turn the
     // request's newest; tests/amplefile-collaboration-verbs.test.ts covers
     // that path, so here the setting is off and the projection stays put.
@@ -197,7 +197,7 @@ test("AmpleFile agent requests carry attachments, record lineage, and expose hon
       cwd: sandbox,
     });
     assert.deepEqual(send.attachments.map((ref) => ref.kind), ["file", "folder", "file", "url"]);
-    assert.equal(api.resolveAmpleFileAgentLineageParent(send.taskId)?.taskId, send.taskId, "an active AmpleFile agent turn validates its explicit lineage id");
+    assert.equal(api.resolveAmpleFileAgentLineageParent(send.taskId)?.taskId, send.taskId, "an active AmpleFile Agent turn validates its explicit lineage id");
 
     // Only acts carrying the explicit parent id attribute to this request.
     const added = await facade.addFiles({
@@ -222,11 +222,11 @@ test("AmpleFile agent requests carry attachments, record lineage, and expose hon
 
     await waitForAsync(async () =>
       (await facade.agentTurnStatus({ taskId: send.taskId })).task.state !== "running");
-    assert.equal(api.resolveAmpleFileAgentLineageParent(send.taskId), null, "a settled AmpleFile agent turn no longer validates as a lineage parent");
+    assert.equal(api.resolveAmpleFileAgentLineageParent(send.taskId), null, "a settled AmpleFile Agent turn no longer validates as a lineage parent");
 
     const afterParent = await facade.agentTurnStatus({ taskId: send.taskId });
     assert.equal(afterParent.task.state, "succeeded");
-    assert.ok(afterParent.request, "an AmpleFile agent turn always has a request record");
+    assert.ok(afterParent.request, "an AmpleFile Agent turn always has a request record");
     const request = afterParent.request!;
     assert.equal(request.children.length, 1);
     assert.equal(request.children[0]!.taskId, childSend.taskId);
@@ -234,13 +234,13 @@ test("AmpleFile agent requests carry attachments, record lineage, and expose hon
     // The durable record beneath the phase (docs/collaboration-contract.md).
     assert.match(request.requestId, /^req-/);
     assert.equal(request.kind, "agent");
-    assert.equal(request.rootId, request.requestId, "an AmpleFile agent turn is its own root");
+    assert.equal(request.rootId, request.requestId, "an AmpleFile Agent turn is its own root");
     assert.ok(["working", "handed_off", "done"].includes(request.state));
     assert.deepEqual(request.questions, []);
     assert.deepEqual(request.results, []);
     const childRecord = api.requests.byTaskId(childSend.taskId);
     assert.ok(childRecord, "a delegated chat send is a child request");
-    assert.equal(childRecord!.rootId, request.requestId, "the child keeps the AmpleFile agent request's root");
+    assert.equal(childRecord!.rootId, request.requestId, "the child keeps the AmpleFile Agent request's root");
     assert.equal(childRecord!.depth, 1);
     assert.equal(childRecord!.parentTaskId, send.taskId);
     assert.equal(childRecord!.kind, "cli");
@@ -277,10 +277,10 @@ test("AmpleFile agent requests carry attachments, record lineage, and expose hon
     const transcript = await getJson(api.origin, `/api/amplefile-agent/conversations/${send.conversationId}`);
     const userMessage = (transcript.messages as Array<{ role: string; attachments?: Array<{ kind: string }> }>)
       .find((message) => message.role === "user" && message.attachments);
-    assert.ok(userMessage, "the AmpleFile agent transcript persists attachment references");
+    assert.ok(userMessage, "the AmpleFile Agent transcript persists attachment references");
     assert.deepEqual(userMessage!.attachments!.map((item) => item.kind), ["file", "folder", "file", "url"]);
 
-    // The AmpleFile agent composer reads and changes the same real Pi thinking state as
+    // The AmpleFile Agent composer reads and changes the same real Pi thinking state as
     // a Connected Folder Chat. Unsupported decorative values are refused.
     const ampleFileAgentRuntime = await getJson(api.origin, `/api/amplefile-agent/conversations/${send.conversationId}/runtime`);
     const ampleFileAgentRuntimeView = ampleFileAgentRuntime.runtime as { thinkingLevel: string; thinkingLevels: string[] };

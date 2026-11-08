@@ -1,4 +1,4 @@
-/* The steps a Worker or the AmpleFile agent takes in one turn (RuntimeContextPreview
+/* The steps a Worker or the AmpleFile Agent takes in one turn (RuntimeContextPreview
    in components/chat/activity.tsx). Shared by the main window and the menu-bar popover. */
 
 .work-steps {

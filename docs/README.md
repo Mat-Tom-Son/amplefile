@@ -4,7 +4,7 @@
 
 The docs use **Connected Folder** (always capitalized) for the working
 context backed by one ordinary folder, **Worker** for its AI helper,
-**AmpleFile agent** for the agent above all Connected Folders, **Automation**
+**AmpleFile Agent** for the agent above all Connected Folders, **Automation**
 for deterministic steps between Connected Folders, **Skills & Extensions**
 for capability management, and **Recently Deleted** for reversible deletion.
 These words are also the code's: identifiers, HTTP routes, CLI verbs and
@@ -21,7 +21,7 @@ for product scope and [AGENTS.md](../AGENTS.md) for contributor rules.
 | Area | Read |
 |---|---|
 | Product and contributor workflow | [Product model](product-model.md), [Contributing](../CONTRIBUTING.md), [Development](development.md), [Architecture](architecture.md) |
-| The AmpleFile agent, the CLI, and receipts | [The AmpleFile agent and CLI](amplefile-agent-and-cli.md), [Act ledger](act-ledger.md), [Collaboration contract](collaboration-contract.md), [Background jobs](background-jobs.md), [Worker tools](worker-tools.md), [Feedback during Worker work](tool-feedback.md) |
+| The AmpleFile Agent, the CLI, and receipts | [The AmpleFile Agent and CLI](amplefile-agent-and-cli.md), [Act ledger](act-ledger.md), [Collaboration contract](collaboration-contract.md), [Background jobs](background-jobs.md), [Worker tools](worker-tools.md), [Feedback during Worker work](tool-feedback.md) |
 | Automations | [Automations](automations.md), [The overview](amplefile-agent-overview.md) |
 | Native agent capabilities | [Skills & Extensions](skills-and-extensions.md), [Pi resources](pi-resources.md), [Extensions and computer work](extension-foundation.md), [Declarative Extension surfaces](extension-surfaces.md), [Built-in browser](built-in-browser.md), [Document verification](document-verification.md), [Image generation](image-generation.md) |
 | Desktop interaction and appearance | [Collaboration experience](collaboration-experience.md), [Visual system](visual-design.md), [Application appearance](application-appearance.md), [Connected Folder customization](connected-folder-customization.md) |
@@ -34,14 +34,14 @@ for product scope and [AGENTS.md](../AGENTS.md) for contributor rules.
   lives under `.agents/skills/`; `.claude/skills/ship-macos-release` is a
   tracked symlink to that exact directory. Other `.claude/` and `.codex/`
   content is ignored machine-local state.
-- The AmpleFile agent's runtime instructions and `manage-connected-folders`
+- The AmpleFile Agent's runtime instructions and `manage-connected-folders`
   Skill are generated from `src/local/amplefile-agent-instructions.ts`, and
   the compact operations guide every Connected Folder turn receives is
   generated from `src/local/agent/connected-folder-operations-guide.ts`. They
   are app resources, not copies of the repository's contributor contract.
 - The [filing Skill](reference-skills/organize-dropped-material/SKILL.md) is a
   reference example, not an automatically installed project Skill. Its work
-  across Connected Folders belongs to the AmpleFile agent.
+  across Connected Folders belongs to the AmpleFile Agent.
 - [Connected inbox](../examples/packages/connected-inbox/README.md) is a
   full-trust Pi Extension. It is not an installed account integration merely
   because its source is checked in.

@@ -1,7 +1,7 @@
 # Feedback during Worker work
 
 This extends [Extensions and computer work](extension-foundation.md). It
-applies to every kind of work a Worker or the AmpleFile agent does, including
+applies to every kind of work a Worker or the AmpleFile Agent does, including
 text, calculations, service operations, files, generated artifacts, browsers,
 and desktop applications. Exact-build release acceptance is separate from
 implementation and fixture evidence.
@@ -186,7 +186,7 @@ window has a sandboxed, diagnostics-only preload: the local API credential
 stays in the host, and ordinary desktop/settings IPC is unavailable. Opening
 the inspector does not enable recording. **Close** or Escape closes only that
 window; it does not turn recording off. Disable recording before closing when
-capture is no longer needed. Normal Chats, the AmpleFile agent and Settings have no
+capture is no longer needed. Normal Chats, the AmpleFile Agent and Settings have no
 inspector entry. Changing models remains a separate action.
 Recording is explicitly enabled for the current app run and starts with the
 next model call; inspection itself only reads retained records. It never
@@ -346,7 +346,7 @@ write the same file.
 
 Worker Chat file attachments are references to the originals, inspected with
 native file and document tools rather than eagerly extracted into the prompt.
-The bounded Office text reader used by AmpleFile agent attachments remains available:
+The bounded Office text reader used by AmpleFile Agent attachments remains available:
 PowerPoint and spreadsheet extractions follow their package manifest relationship
 order. A reader that cannot resolve all declared parts returns the existing
 path-only reference with a reason, rather than claiming partial extraction is full.
@@ -384,7 +384,7 @@ changes live in the reviewed native patches, not a parallel tool implementation.
 
 Search streams ordinary text without a per-file size exclusion, exposes scope and
 coverage, and continues through page budgets. History lists and verified text ranges
-continue through the same CLI/HTTP domain services. See [the AmpleFile agent and CLI](amplefile-agent-and-cli.md) for
+continue through the same CLI/HTTP domain services. See [the AmpleFile Agent and CLI](amplefile-agent-and-cli.md) for
 version, cursor, and consistency details.
 
 Attachment bodies are loaded after the live model is resolved. Admission accounts

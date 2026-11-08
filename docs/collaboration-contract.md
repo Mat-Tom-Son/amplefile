@@ -1,6 +1,6 @@
 # Collaboration contract
 
-A person asks the AmpleFile agent or a Worker for an outcome. The AmpleFile
+A person asks the AmpleFile Agent or a Worker for an outcome. The AmpleFile
 agent and the Workers of Connected Folders divide the work, hand each other
 selected results, ask each other and the person questions, and continue
 exactly once when an answer arrives. Any shell-capable agent on the CLI gets
@@ -10,7 +10,7 @@ Record and command names use `connected-folder`, `agent`, and `automation`.
 
 The person-facing presentation is in [Collaboration experience](collaboration-experience.md):
 request-wide progress and Stop, addressed questions, selected files, and explicit recovery
-across Chats and the AmpleFile agent.
+across Chats and the AmpleFile Agent.
 
 Native Pi Extension dialogs are a separate mechanism: the
 [Extension UI adapter](skills-and-extensions.md#live-extension-questions)
@@ -29,7 +29,7 @@ starts its single continuation only when the Chat is idle.
 ## The rules
 
 - **Durable requests.** Every accepted agent turn belongs to a machine-local
-  request record. An AmpleFile agent turn creates a root request; a
+  request record. An AmpleFile Agent turn creates a root request; a
   `chat send --parent-task` creates a child request under it; a Connected
   Folder turn with no parent creates its own root. Records live under the state
   root (`requests/`), survive restart, are reconciled against the turn journal,
@@ -41,18 +41,18 @@ starts its single continuation only when the Chat is idle.
   an opaque parent handle and the assignment text. A compact operations guide
   is appended to the system prompt the way Connected Folder instructions are.
   It describes the verbs below and the rule that cross–Connected Folder work
-  goes through them. The AmpleFile agent transcript, the Connected Folder
+  goes through them. The AmpleFile Agent transcript, the Connected Folder
   registry, and unselected results from other Connected Folders never enter a
   Connected Folder turn. Nothing is written into the Connected Folder's folder;
   `.pi/` and `.amplefile/` are untouched.
 - **Report, ask, answer, handoff.** Connected Folder–scoped collaboration verbs
-  and the AmpleFile agent's `agent ask|answer` are receipted and journal-first.
+  and the AmpleFile Agent's `agent ask|answer` are receipted and journal-first.
   `chat report` attaches a result envelope to the caller's task; `chat ask`
   records a question and puts the task in `waiting`; `chat answer` and
   `agent answer` durably reserve one answer delivery and start exactly one
   linked continuation turn; `chat handoff` asks the host to start a new Chat in
   another Connected Folder with a message and copies of named files. Delivery
-  is host-side: no AmpleFile agent model turn is needed to move a report, an
+  is host-side: no AmpleFile Agent model turn is needed to move a report, an
   answer, or a handoff. The person's free-text Chat reply is still a way to
   answer. Automations are the only unattended cross–Connected Folder work on a
   trigger.
@@ -62,10 +62,10 @@ starts its single continuation only when the Chat is idle.
   reports the request as `waiting`. When an owning Chat is idle and its
   children have settled or asked questions, the host can start one
   continuation carrying undelivered direct-child reports. This applies to
-  AmpleFile agent, Connected Folder, CLI, and automation requests. Delivery is
+  AmpleFile Agent, Connected Folder, CLI, and automation requests. Delivery is
   recorded by child turn identity, never inferred from relative settle times.
   A continuation belongs to an explicit request; a declared automation `agent`
-  step is the only trigger-driven way into the AmpleFile agent.
+  step is the only trigger-driven way into the AmpleFile Agent.
 - **One result shape.** A result envelope is `summary` (text, at most 4 MiB),
   optional `data` (JSON, at most 16 MiB, validated against a schema when the
   request declared one), optional `files` (Connected Folder–relative paths with
@@ -93,7 +93,7 @@ from the registry:
   dropped, and the ids stay out of the request digest so a retry still
   replays). The host resolves them to id and name in that turn's context only.
   A Connected Folder Worker hands each its part with `chat handoff`; the
-  AmpleFile agent sends each its part with `chat send --parent-task`. The
+  AmpleFile Agent sends each its part with `chat send --parent-task`. The
   `@Name` text stays ordinary message text. A message steered into a running
   turn carries no addressed Workers; the composer queues a message that
   mentions one until the turn ends.
@@ -101,23 +101,23 @@ from the registry:
   move, or rename a folder that holds a nested Connected Folder, or anything
   inside one; that content is changed from the nested Connected Folder itself.
 
-The Connected Folder registry, the AmpleFile agent's transcript, and other
+The Connected Folder registry, the AmpleFile Agent's transcript, and other
 Connected Folders' results still never enter a Connected Folder turn.
-`amplefile connected-folders list --json` and the AmpleFile agent turn's
+`amplefile connected-folders list --json` and the AmpleFile Agent turn's
 registry snapshot carry `parentConnectedFolderId` for a nested Connected
-Folder, so the AmpleFile agent can split a request by owner.
+Folder, so the AmpleFile Agent can split a request by owner.
 
 ## Host environment and role
 
-- **Host environment.** Every Worker and AmpleFile agent turn context opens
+- **Host environment.** Every Worker and AmpleFile Agent turn context opens
   with one host-owned line: the weekday and the host's local time in ISO 8601
   with its UTC offset, the IANA time zone, and the platform. The host reads it
   when the turn starts and sends it in the per-turn context, not the system
   prompt, so it stays current and the cached prompt prefix is unchanged. The
-  AmpleFile agent resolves the absolute times `at` Automations and
+  AmpleFile Agent resolves the absolute times `at` Automations and
   `chat snooze --until` take from it.
 - **Role.** Each request opens with the session's role — this Connected
-  Folder's Worker, or the AmpleFile agent — in place of Pi's coding-assistant
+  Folder's Worker, or the AmpleFile Agent — in place of Pi's coding-assistant
   sentence. Only that sentence changes, and only in the request: Pi's tool
   list, tool rules, and docs section stay as Pi renders them, the transcript
   keeps Pi's recorded sections, and a person's own `SYSTEM.md` is left as
@@ -129,7 +129,7 @@ Folder, so the AmpleFile agent can split a request by owner.
 this contract without a new lifecycle:
 
 - **A job is outstanding work of its request.** A shell command a running
-  Worker or AmpleFile agent turn starts with `job_start` or `jobs start` joins
+  Worker or AmpleFile Agent turn starts with `job_start` or `jobs start` joins
   that turn's request, which reads `working` while it runs and `failed` if a
   restart interrupted it. Stop on the request, or any ancestor, stops it;
   settled deletion waits for it.
@@ -151,7 +151,7 @@ above.
 - **Follow up.** `chat handoff --to-conversation <id>` sends the next message
   into a Chat the caller's Chat already handed work to, so that Worker keeps
   its context. It becomes a new child of the caller's request, and it is
-  refused while that Chat is working. The AmpleFile agent follows up with
+  refused while that Chat is working. The AmpleFile Agent follows up with
   `chat send --conversation`.
 - **Redirect.** `chat steer --conversation <id> --message <text>` adds one
   message to a Chat's running turn, delivered after its current step through
@@ -167,7 +167,7 @@ above.
   context; that work is a child of its request and reports back like a
   handoff. This is a host-owned copy, not Pi's session switching, which is not
   offered.
-- **Checklist.** A Worker or the AmpleFile agent can keep a short checklist
+- **Checklist.** A Worker or the AmpleFile Agent can keep a short checklist
   for its request with the `checklist` tool, sending the whole list each time.
   The host keeps it on the request record, shows it in the Chat's work view,
   and hands it back at the start of every later turn of that request: an
@@ -206,8 +206,8 @@ affected.
 ## Verbs
 
 All are act-lane and receipted; `chat` verbs name a Connected Folder and
-`agent` verbs own the AmpleFile agent's questions. They are available to the
-AmpleFile agent, a Worker, and an outside harness alike. `help collaborate`
+`agent` verbs own the AmpleFile Agent's questions. They are available to the
+AmpleFile Agent, a Worker, and an outside harness alike. `help collaborate`
 documents them with examples that the tests validate.
 
 ```
@@ -318,7 +318,7 @@ Requests, questions, reports, and continuations have no built-in lifetime,
 delegation-depth, or count quota. They remain explicit, durable records until
 they settle, are stopped, or retention removes settled data. Each Chat runs one
 turn or compaction at a time. Different Chats and Connected Folders, including
-AmpleFile agent Chats, can run at the same time; delegated children have no
+AmpleFile Agent Chats, can run at the same time; delegated children have no
 separate slot limit or waiting queue. Transport fields keep resource guards
 sized so ordinary work never meets them.
 
@@ -336,8 +336,8 @@ sized so ordinary work never meets them.
 - Every verb runs on the call that asks for it and leaves a receipt
   ([receipts, not gates](act-ledger.md#receipts-not-gates)). History, restore
   points, and Undo work as they do everywhere else.
-- The AmpleFile agent has no ambient scheduler of its own. A declared
-  automation `agent` step may start an AmpleFile agent request; its
+- The AmpleFile Agent has no ambient scheduler of its own. A declared
+  automation `agent` step may start an AmpleFile Agent request; its
   continuations keep the same durable identity and Stop behavior.
 - Connected Folder Chats stay portable and carry no cross–Connected Folder
   state.

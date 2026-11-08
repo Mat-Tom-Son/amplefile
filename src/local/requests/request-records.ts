@@ -3,7 +3,7 @@
  * and limit refusals behind durable requests (docs/collaboration-contract.md).
  *
  * A request is the machine-local record of one thing a person asked for and
- * everything the AmpleFile agent, a Worker, an app, an automation, or an
+ * everything the AmpleFile Agent, a Worker, an app, an automation, or an
  * outside harness on the CLI did about it: the accepted turns, the questions
  * they asked, the results they reported, and the child requests they started. It
  * is attribution and recovery machinery, never a gate — nothing here waits
@@ -92,7 +92,7 @@ export type AmpleFileRequestTurnState =
 export type AmpleFileResultOutcome = "succeeded" | "partial" | "failed";
 
 export interface AmpleFileRequestOwner {
-  /** Absent exactly for the AmpleFile agent scope; present for every Connected Folder–owned request. */
+  /** Absent exactly for the AmpleFile Agent scope; present for every Connected Folder–owned request. */
   connectedFolderId?: string;
   /** Display snapshot, so an unregistered Connected Folder still renders its name. */
   connectedFolderName?: string;

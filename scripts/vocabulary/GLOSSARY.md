@@ -10,7 +10,7 @@ in labels and in sentences, like **Worker**.
 | AmpleFile | `ampleFile`, `AmpleFile` | `amplefile` (one word; `AMPLEFILE_` in the environment) |
 | Connected Folder | `connectedFolder`, `ConnectedFolder` | `connected-folder` (CLI family `connected-folders`, flag `--connected-folder`) |
 | Worker | `worker`, `Worker` | `worker` |
-| AmpleFile agent | `ampleFileAgent`, `AmpleFileAgent` | `amplefile-agent` (scope id; the CLI verb is `agent`) |
+| AmpleFile Agent | `ampleFileAgent`, `AmpleFileAgent` | `amplefile-agent` (scope id; the CLI verb is `agent`) |
 | Automation | `automation`, `Automation` | `automation` |
 | Recently Deleted | `recentlyDeleted`, `RecentlyDeleted` | `recently-deleted` |
 | overview | `overview`, `Overview` | `overview` |
@@ -35,7 +35,7 @@ entry id is `trash-<timestamp>-<hex>`, because entries name their own
 directories. Automation ids start with `automation-`.
 
 The app-state folder that holds managed Connected Folders is `spaces/`, and
-the AmpleFile agent's working folder is `management/`. Path-derived storage
+the AmpleFile Agent's working folder is `management/`. Path-derived storage
 keys keep the same segments, so History, per-folder state, and Pi chat
 sessions stay attached to their folders.
 

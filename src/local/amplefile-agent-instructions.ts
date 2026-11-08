@@ -3,13 +3,13 @@ import { join } from "node:path";
 
 import { ampleFileAgentRoot } from "./state-paths.js";
 
-const ampleFileAgentAgentsMd = `# AmpleFile agent
+const ampleFileAgentAgentsMd = `# AmpleFile Agent
 
-You are the AmpleFile agent — the agent above all Connected Folders in this computer's AmpleFile app. You coordinate registered Connected Folders: your working folder is AmpleFile application state, not user content, and your transcript never travels with any Connected Folder.
+You are the AmpleFile Agent — the agent above all Connected Folders in this computer's AmpleFile app. You coordinate registered Connected Folders: your working folder is AmpleFile application state, not user content, and your transcript never travels with any Connected Folder.
 
-The interface and the \`amplefile\` command use the same names — Connected Folder, Worker (a Connected Folder's AI assistant), AmpleFile agent (you), automation, Recently deleted, and Skills & Extensions — so use them when speaking to the person. Model settings are in Settings → AI Models; Automations and their Limits are in Settings → Automations; Recently deleted is in Settings → Recently deleted.
+The interface and the \`amplefile\` command use the same names — Connected Folder, Worker (a Connected Folder's AI assistant), AmpleFile Agent (you), automation, Recently deleted, and Skills & Extensions — so use them when speaking to the person. Model settings are in Settings → AI Models; Automations and their Limits are in Settings → Automations; Recently deleted is in Settings → Recently deleted.
 
-You run with the same full local authority as any Worker — your file and shell tools can reach whatever this user can. What makes you the AmpleFile agent is how you work, not a cage: use native Pi tools for ordinary content work and the \`amplefile\` command for product operations and collaboration, because it carries the product's History restore points, receipts, and conflict rules, and it keeps every action attributable. The \`amplefile\` command covers nearly everything a person can do in the app, so when a verb exists for an action, use it instead of raw file or shell tools — and when a verb refuses (a conflict, work still running, a bound, or a setup-only action), report the refusal honestly instead of working around it.
+You run with the same full local authority as any Worker — your file and shell tools can reach whatever this user can. What makes you the AmpleFile Agent is how you work, not a cage: use native Pi tools for ordinary content work and the \`amplefile\` command for product operations and collaboration, because it carries the product's History restore points, receipts, and conflict rules, and it keeps every action attributable. The \`amplefile\` command covers nearly everything a person can do in the app, so when a verb exists for an action, use it instead of raw file or shell tools — and when a verb refuses (a conflict, work still running, a bound, or a setup-only action), report the refusal honestly instead of working around it.
 
 ## See
 
@@ -182,12 +182,12 @@ Summarize outcomes, useful file links, verification, and material limits in plai
 `;
 
 /**
- * Materializes the AmpleFile agent scope's app-owned Pi configuration: an AGENTS.md
+ * Materializes the AmpleFile Agent scope's app-owned Pi configuration: an AGENTS.md
  * context file that Pi keeps in the session context, plus the
  * `manage-connected-folders` Skill. These are the only project resources AmpleFile
- * places in the AmpleFile agent's root, and they are rewritten on every start so app
+ * places in the AmpleFile Agent's root, and they are rewritten on every start so app
  * updates refresh them. The desktop may still start if this fails, but the
- * AmpleFile agent must remain unavailable rather than running without
+ * AmpleFile Agent must remain unavailable rather than running without
  * the identity and operating rules that define this privileged scope.
  */
 export async function ensureAmpleFileAgentInstructions(): Promise<void> {
@@ -213,7 +213,7 @@ async function ensureAppOwnedDirectory(path: string, recursive = false): Promise
   }
   const info = await lstat(path);
   if (!info.isDirectory() || info.isSymbolicLink()) {
-    throw new Error("The AmpleFile agent's instructions require safe app-owned directories.");
+    throw new Error("The AmpleFile Agent's instructions require safe app-owned directories.");
   }
 }
 
@@ -223,7 +223,7 @@ async function writeAppOwnedFile(path: string, content: string): Promise<void> {
     throw error;
   });
   if (existing && (!existing.isFile() || existing.isSymbolicLink())) {
-    throw new Error("The AmpleFile agent's instructions require safe app-owned files.");
+    throw new Error("The AmpleFile Agent's instructions require safe app-owned files.");
   }
   await writeFile(path, content, { encoding: "utf8", mode: 0o600 });
 }

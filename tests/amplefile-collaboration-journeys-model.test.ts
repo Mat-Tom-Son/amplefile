@@ -26,7 +26,7 @@ import { ampleFileAgentScopeId } from "../src/local/state-paths.js";
  * - **Discover.** What a fresh Worker actually receives:
  *   the operations guide in its system prompt beside the person's Connected Folder
  *   instructions, a hidden context naming this turn's own ids, and none of the
- *   AmpleFile agent's conversation, the Connected Folder registry, or any other
+ *   AmpleFile Agent's conversation, the Connected Folder registry, or any other
  *   Connected Folder.
  *
  * The journeys that need no model (delegate and clarify, request help from a
@@ -275,7 +275,7 @@ function turnContextOf(raw: string): string {
   return blocks[0]!;
 }
 
-test("journey: a fresh Connected Folder turn receives the operations guide, its own ids, and nothing from the AmpleFile agent or the Connected Folder registry", { timeout: 60_000 }, async () => {
+test("journey: a fresh Connected Folder turn receives the operations guide, its own ids, and nothing from the AmpleFile Agent or the Connected Folder registry", { timeout: 60_000 }, async () => {
   const j = await startModelJourney("discover", {
     workerInstructions: "Prefer short answers.",
     script: () => ({ kind: "text", text: "I can work on files in this Connected Folder." }),
@@ -329,7 +329,7 @@ test("journey: a fresh Connected Folder turn receives the operations guide, its 
       ["another Connected Folder's id", elsewhere.id],
       ["another Connected Folder's name", "Elsewhere"],
       ["another Connected Folder's folder", elsewhere.connectedFolderRoot],
-      ["the AmpleFile agent scope", ampleFileAgentScopeId],
+      ["the AmpleFile Agent scope", ampleFileAgentScopeId],
     ] as const) {
       assert.equal(raw.includes(marker), false, `a Connected Folder turn must not carry ${label}`);
     }
@@ -338,9 +338,9 @@ test("journey: a fresh Connected Folder turn receives the operations guide, its 
   }
 });
 
-test("journey: a delegated Connected Folder turn sees an opaque handle and its assignment, never the AmpleFile agent's task id or conversation", { timeout: 60_000 }, async () => {
+test("journey: a delegated Connected Folder turn sees an opaque handle and its assignment, never the AmpleFile Agent's task id or conversation", { timeout: 60_000 }, async () => {
   const j = await startModelJourney("delegated", {
-    // The AmpleFile agent's own turn is held open so the delegation happens inside it.
+    // The AmpleFile Agent's own turn is held open so the delegation happens inside it.
     script: (body) => (/AmpleFile profile snapshot/.test(body) ? { kind: "hold" } : { kind: "text", text: "Comparing." }),
   });
   try {
@@ -350,7 +350,7 @@ test("journey: a delegated Connected Folder turn sees an opaque handle and its a
     ]);
     await j.provider.waitForHolds(1);
     const ampleFileAgentBody = j.provider.bodies[0]!;
-    assert.ok(ampleFileAgentBody.includes("Current AmpleFile profile snapshot"), "the AmpleFile agent's own turn is the one that sees the registry");
+    assert.ok(ampleFileAgentBody.includes("Current AmpleFile profile snapshot"), "the AmpleFile Agent's own turn is the one that sees the registry");
 
     const assignment = "Compare the North and South quotes and report the winner.";
     const child = await j.ok<{ conversationId: string; taskId: string }>([
@@ -366,8 +366,8 @@ test("journey: a delegated Connected Folder turn sees an opaque handle and its a
     assert.ok(messagesOf(raw, "user").includes(assignment), "the assignment is the message it was sent");
     for (const [label, marker] of [
       ["the parent's real task id", root.taskId],
-      ["the AmpleFile agent's conversation", root.conversationId],
-      ["the AmpleFile agent's own prompt", "Have Quotes compare the vendor quotes"],
+      ["the AmpleFile Agent's conversation", root.conversationId],
+      ["the AmpleFile Agent's own prompt", "Have Quotes compare the vendor quotes"],
       ["the Connected Folder registry snapshot", "Current AmpleFile profile snapshot"],
     ] as const) {
       assert.equal(raw.includes(marker), false, `a delegated Connected Folder turn must not carry ${label}`);

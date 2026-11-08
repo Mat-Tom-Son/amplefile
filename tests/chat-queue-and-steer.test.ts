@@ -12,7 +12,7 @@ import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
 /**
  * Queue and steer from every window: a Chat's queued message is
  * held by the app, so every window shows it and it is sent when the turn ends
- * (never after a Stop); and the AmpleFile agent's running turn takes a
+ * (never after a Stop); and the AmpleFile Agent's running turn takes a
  * steering message from the menu-bar panel.
  */
 
@@ -166,7 +166,7 @@ test("a queued message keeps the Workers it addresses with @", { timeout: 60_000
   assert.ok(JSON.stringify(h.requests[1]).includes(research.id), "the addressed Worker's id reaches the model with the message");
 });
 
-test("the AmpleFile agent's running turn takes a steering message from the panel", { timeout: 60_000 }, async (t) => {
+test("the AmpleFile Agent's running turn takes a steering message from the panel", { timeout: 60_000 }, async (t) => {
   const h = await startHarness(t);
   h.reply("Working on it.", { held: true });
   h.reply("Adjusted.");

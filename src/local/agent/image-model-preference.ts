@@ -1,6 +1,6 @@
 /**
  * The image model a person picked in Settings → AI Models. One
- * machine-wide choice for every Worker and the AmpleFile agent; no choice
+ * machine-wide choice for every Worker and the AmpleFile Agent; no choice
  * means Automatic (docs/image-generation.md). Machine-local app state, never
  * in a Connected Folder.
  */

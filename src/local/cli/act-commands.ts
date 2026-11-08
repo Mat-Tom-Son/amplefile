@@ -44,7 +44,7 @@ export type AmpleFileCliActCommandName =
   | "chat.resume"
   | "chat.compact"
   // The Connected Folder-scoped collaboration verbs (docs/collaboration-contract.md).
-  // Delivery is host-side: no AmpleFile agent turn moves a report, an answer,
+  // Delivery is host-side: no AmpleFile Agent turn moves a report, an answer,
   // or a handoff.
   | "chat.report"
   | "agent.ask"
@@ -125,7 +125,7 @@ export interface AmpleFileCliActParsedCommand {
   connectedFolder?: string;
   conversation?: string;
   task?: string;
-  /** Explicit AmpleFile agent request lineage for downstream mutation commands. */
+  /** Explicit AmpleFile Agent request lineage for downstream mutation commands. */
   parentTaskId?: string;
   newConversation?: boolean;
   message?: string;
@@ -239,7 +239,7 @@ export interface AmpleFileCliActExecutorOptions {
   now?: () => Date;
   getActFacade: () => AmpleFileCliActAuthority | null;
   receipts: Pick<AmpleFileCliActReceipts, "append" | "hasAccepted">;
-  /** Validates an explicitly named AmpleFile agent parent while its turn is active. */
+  /** Validates an explicitly named AmpleFile Agent parent while its turn is active. */
   resolveLineageParent?: (taskId: string) => { taskId: string } | null;
 }
 
@@ -597,7 +597,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     return { toolsScope: rawScope, ...(connectedFolder ? { connectedFolder } : {}) };
   };
   const rawParentTaskId = stringFlag("--parent-task");
-  // Every mutation family accepts explicit AmpleFile agent lineage; content-bearing
+  // Every mutation family accepts explicit AmpleFile Agent lineage; content-bearing
   // act reads (status, result, list, versions, search) deliberately do not.
   const lineageCommands = new Set([
     "chat send",
@@ -1504,12 +1504,12 @@ export async function executeAmpleFileCliActRequest(
         errorCode: "conflict",
         surface: "cli",
         parentTaskId: command.parentTaskId,
-        detail: "inactive AmpleFile agent parent",
+        detail: "inactive AmpleFile Agent parent",
       });
-      throw new AmpleFileCliError("conflict", "The AmpleFile agent request named by --parent-task is no longer active.");
+      throw new AmpleFileCliError("conflict", "The AmpleFile Agent request named by --parent-task is no longer active.");
     }
     receiptParentTaskId = lineageParent?.taskId;
-    // Lineage on receipts: the AmpleFile agent parent.
+    // Lineage on receipts: the AmpleFile Agent parent.
     const lineage = receiptParentTaskId ? { parentTaskId: receiptParentTaskId } : {};
     receiptLineage = lineage;
     const acceptedRecorded = await options.receipts.append({
@@ -2140,7 +2140,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
       if (task) {
         const error = typeof task.error === "string" && task.error ? `\n${terminalText(task.error)}` : "";
         const conversation = task.conversationId ? ` — Chat ${terminalText(task.conversationId)}` : "";
-        // `agent status --task` carries the AmpleFile agent projection (a phase
+        // `agent status --task` carries the AmpleFile Agent projection (a phase
         // and delegated children); `chat status --task` carries the request
         // graph ref (a state and counts). Both render, each in its own shape.
         const request = record.request as {
@@ -2296,8 +2296,8 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
     case "agent.stop": {
       const children = (Array.isArray(record.children) ? record.children : []) as Array<{ taskId?: string; connectedFolderId?: string; aborted?: boolean }>;
       const ampleFileAgentLine = record.ampleFileAgentAborted
-        ? "Stopped the AmpleFile agent turn."
-        : "The AmpleFile agent turn was not running.";
+        ? "Stopped the AmpleFile Agent turn."
+        : "The AmpleFile Agent turn was not running.";
       if (!children.length) return `${ampleFileAgentLine}\nNo delegated Connected Folder turns were running.\n`;
       const childLines = children.map((child) =>
         `- ${child.aborted ? "Stopped" : "Could not stop"} task ${terminalText(child.taskId)} in Connected Folder ${terminalText(child.connectedFolderId)}`);
@@ -2658,7 +2658,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
               : `files created by step ${terminalText(source.step)} (max ${terminalText(source.maxFiles)} files, ${terminalText(source.maxTotalBytes)} bytes)`;
           return `- ${terminalText(step.id)}: files from ${connectedFolderRef(step.fromConnectedFolderId, step.fromConnectedFolderName)} — ${sourceLabel} → ${connectedFolderRef(step.toConnectedFolderId, step.toConnectedFolderName)}:${terminalText(step.to)}`;
         }
-        return `- ${terminalText(step.id)}: message to the AmpleFile agent${stepModelText(step.model)} (verbatim, becomes AmpleFile agent transcript content): ${terminalText(step.message)}`;
+        return `- ${terminalText(step.id)}: message to the AmpleFile Agent${stepModelText(step.model)} (verbatim, becomes AmpleFile Agent transcript content): ${terminalText(step.message)}`;
       });
       const trigger = automation.trigger?.kind === "interval"
         ? `interval, every ${terminalText(automation.trigger.intervalMinutes)} minutes`
@@ -3235,7 +3235,7 @@ function renderRequestDetail(request: Record<string, AmpleFileCliJson> | null | 
     resultId?: string; taskId?: string; outcome?: string; fileCount?: number; envelope?: { summary?: string } | null; damaged?: string;
   }>;
   const children = (Array.isArray(request.childRequests) ? request.childRequests : []) as Array<Record<string, AmpleFileCliJson>>;
-  const where = request.connectedFolderName ? `${terminalText(request.connectedFolderName)} [${terminalText(request.connectedFolderId)}]` : "the AmpleFile agent";
+  const where = request.connectedFolderName ? `${terminalText(request.connectedFolderName)} [${terminalText(request.connectedFolderId)}]` : "the AmpleFile Agent";
   const lines = [
     `${pad}Request ${terminalText(request.id)} — ${terminalText(request.kind)}, ${terminalText(request.state)} — ${where}, Chat ${terminalText(request.conversationId)}`,
     `${pad}  started ${terminalText(request.createdAt)}${request.deadline ? `, open until ${terminalText(request.deadline)}` : ""}${request.settledAt ? `, settled ${terminalText(request.settledAt)}` : ""}${request.stopRequestedAt ? `, stopped ${terminalText(request.stopRequestedAt)}` : ""}`,

@@ -11,9 +11,9 @@ import {
 import { containsReservedConnectedFolderPathSegment } from "./connected-folder-path-policy.js";
 
 /**
- * AmpleFile agent attachments are references, not copies. A Worker Chat
+ * AmpleFile Agent attachments are references, not copies. A Worker Chat
  * stages dropped material inside the Connected Folder because its transcript is
- * portable data; the AmpleFile agent transcript is deliberately machine-local,
+ * portable data; the AmpleFile Agent transcript is deliberately machine-local,
  * so its attachments carry absolute local paths (or links) and the only copy
  * in the flow stays the restore-pointed `files add` into a destination
  * Connected Folder.
@@ -130,7 +130,7 @@ export interface AmpleFileAgentAttachmentActionRef {
 /**
  * Accounts for every attachment against the recorded actions. Nothing may
  * silently disappear from the story: an attachment with no mechanically
- * matched action is reported as `unrecorded`, and the AmpleFile agent's own
+ * matched action is reported as `unrecorded`, and the AmpleFile Agent's own
  * report remains the narrative for it.
  */
 export function ampleFileAgentAttachmentDispositions(input: {
@@ -175,7 +175,7 @@ export function ampleFileAgentAttachmentLinks(refs: readonly AmpleFileAgentAttac
  * Loads file and folder references for one turn with the same degrade ladder
  * as Worker Chat context: readable files inline within the shared token
  * budget, folders and unreadable or oversized files stay honest path-only
- * references the AmpleFile agent inspects with its own tools.
+ * references the AmpleFile Agent inspects with its own tools.
  */
 export async function loadAmpleFileAgentAttachmentsForTurn(
   refs: readonly AmpleFileAgentAttachmentRef[],
