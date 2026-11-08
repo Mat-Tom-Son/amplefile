@@ -172,7 +172,11 @@ async function verifyDmg() {
     if (!existsSync(join(mountPoint, "Applications")) || !lstatSync(join(mountPoint, "Applications")).isSymbolicLink()) {
       failures.push("DMG does not contain the Applications link.");
     }
-    if (!existsSync(join(mountPoint, ".background.png"))) failures.push("DMG does not contain the custom background.");
+    // A Retina background (dmg-background@2x.png beside the 1x file) is
+    // packed as a multi-resolution TIFF; a 1x-only background stays a PNG.
+    if (![".background.tiff", ".background.png"].some((name) => existsSync(join(mountPoint, name)))) {
+      failures.push("DMG does not contain the custom background.");
+    }
   } catch (error) {
     failures.push(`DMG inspection failed: ${errorMessage(error)}.`);
   } finally {
