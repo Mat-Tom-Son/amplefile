@@ -8,7 +8,6 @@ const macSignIdentity = process.env.AMPLEFILE_MAC_SIGN_IDENTITY?.trim();
 const electronBuilderMacIdentity = macSignIdentity?.replace(/^Developer ID Application:\s*/i, "");
 const macReleaseOwner = process.env.AMPLEFILE_MAC_RELEASE_OWNER?.trim() || identity.sourceRepositoryOwner;
 const macReleaseRepo = process.env.AMPLEFILE_MAC_RELEASE_REPO?.trim() || identity.macReleaseRepositoryName;
-const macFeedBuild = process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM === "darwin";
 const outputDirectory = process.env.AMPLEFILE_DESKTOP_OUTPUT_DIR?.trim() || "out/builder";
 
 module.exports = {
@@ -25,8 +24,8 @@ module.exports = {
   publish: [
     {
       provider: "github",
-      owner: macFeedBuild ? macReleaseOwner : identity.sourceRepositoryOwner,
-      repo: macFeedBuild ? macReleaseRepo : identity.sourceRepositoryName,
+      owner: macReleaseOwner,
+      repo: macReleaseRepo,
       releaseType: "release",
     },
   ],
@@ -49,7 +48,7 @@ module.exports = {
     {
       from: "desktop/cli",
       to: "bin",
-      filter: [identity.cliCommand, `${identity.cliCommand}.cmd`, `${identity.cliCommand}-cli.ps1`, `${identity.cliCommand}-cli.jxa.js`],
+      filter: [identity.cliCommand, `${identity.cliCommand}-cli.jxa.js`],
     },
   ],
   extraResources: [
@@ -72,24 +71,6 @@ module.exports = {
   asarUnpack: ["resources/included-tools/documents/worker.mjs", "node_modules/@napi-rs/**/*.node"],
   compression: "normal",
   npmRebuild: false,
-  win: {
-    target: [
-      {
-        target: "nsis",
-        arch: ["x64"],
-      },
-    ],
-    icon: path.join(root, "desktop", "assets", "icon.ico"),
-    executableName: identity.productName,
-    // A self-signed certificate is useful for personal artifact continuity but
-    // is not a public trust anchor. Enable updater Authenticode enforcement only
-    // after a CA-backed publisher identity has been configured and tested.
-    verifyUpdateCodeSignature: process.env.AMPLEFILE_TRUSTED_CODE_SIGNING === "1",
-    signtoolOptions: {
-      signingHashAlgorithms: ["sha256"],
-      rfc3161TimeStampServer: "http://timestamp.digicert.com",
-    },
-  },
   mac: {
     extraResources: [{ from: "out/included-tools/computer-helper", to: "computer-helper" }, { from: "out/included-tools/chrome-native-host", to: "chrome-native-host" }],
     // The afterPack hook signs this Swift app without Electron JIT entitlements.
@@ -143,18 +124,5 @@ module.exports = {
         path: "/Applications",
       },
     ],
-  },
-  nsis: {
-    include: path.join(root, "desktop", "nsis", "cli-path.nsh"),
-    artifactName: `${identity.productName}-Setup-\${version}.\${ext}`,
-    uninstallDisplayName: identity.productName,
-    shortcutName: identity.productName,
-    oneClick: false,
-    perMachine: false,
-    allowToChangeInstallationDirectory: true,
-    createDesktopShortcut: "always",
-    createStartMenuShortcut: true,
-    deleteAppDataOnUninstall: false,
-    differentialPackage: true,
   },
 };

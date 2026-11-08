@@ -55,8 +55,7 @@ that proves the requested behavior.
 - Use `npm run desktop:make:mac:release` for a fresh complete DMG/ZIP candidate
   without publication.
 - Use `npm run desktop:release:mac` only when the user explicitly requests the
-  guarded public Mac release. Windows is not an active release lane or a Mac
-  publication prerequisite.
+  guarded public Mac release.
 
 Do not use a signed or packaged lane to check ordinary UI copy or styling.
 Release-tooling-only changes need focused and normal local checks, not a new

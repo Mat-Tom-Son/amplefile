@@ -151,9 +151,7 @@ test("a folder that isn't a page, or a path outside the Connected Folder, is ref
   assert.notEqual(unknownConnectedFolder.exitCode, 0);
 });
 
-test("both platform shims route pages validate to the act lane", async () => {
+test("the macOS shim routes pages validate to the act lane", async () => {
   const jxa = await readFile(join(rootDir, "desktop", "cli", "amplefile-cli.jxa.js"), "utf8");
   assert.match(jxa, /if \(group === "pages"\) return \["validate"\]\.includes\(positional\[1\]\);/u);
-  const powershell = await readFile(join(rootDir, "desktop", "cli", "amplefile-cli.ps1"), "utf8");
-  assert.match(powershell, /\$group -ceq 'pages'.*@\('validate'\) -ccontains/u);
 });

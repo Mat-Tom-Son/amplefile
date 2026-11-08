@@ -98,7 +98,6 @@ followed by a signed build under the same Node/npm and dependency state. The
 local lane needs Node 24 and Google Chrome on an Apple-silicon Mac. GitHub
 Actions is disabled and does not gate publication. Use the
 [release runbook](docs/macos-release.md).
-Windows packaging remains inactive and does not gate Mac work.
 
 ## Bugs, security, and license
 

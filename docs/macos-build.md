@@ -1,6 +1,6 @@
 # macOS build and release lane
 
-AmpleFile retains one Electron, React, local API, Pi, AmpleFile kernel, restricted-app, and versioning codebase with cross-platform seams, but Apple-silicon macOS is the only active CI packaging and public distribution lane. Windows build code is dormant future work, not a Mac release gate.
+AmpleFile retains one Electron, React, local API, Pi, AmpleFile kernel, restricted-app, and versioning codebase with cross-platform seams, but Apple-silicon macOS is the only packaging and public distribution lane. The Windows build and release lanes were removed on 2026-11-07.
 
 ## Legacy Workspace baseline evidence
 
@@ -267,8 +267,8 @@ check completed, before upload and immediately before publication. It requires a
 source and feed repositories, and an unused `v<version>` in the feed. Direct
 publisher invocation has the same requirements. It verifies the local release,
 uploads all assets as a draft, checks remote names, sizes, and GitHub digests,
-then publishes as latest. No source-repository GitHub Release or Windows
-artifact is required. Never hand-edit the local receipt or build checkpoint.
+then publishes as latest. No source-repository GitHub Release is required.
+Never hand-edit the local receipt or build checkpoint.
 
 A failure before tagging is corrected by fixing, committing, and rerunning the
 local checks. Once pushed, a candidate tag is immutable: retain a failed tag and

@@ -39,11 +39,9 @@ const resourcesDir = packagedPlatform === "darwin"
   : join(appDir, "resources");
 const binDir = packagedPlatform === "darwin" ? join(appDir, "Contents", "bin") : join(appDir, "bin");
 const asarPath = join(resourcesDir, "app.asar");
-const executablePath = packagedPlatform === "win32"
-  ? join(appDir, `${identity.productName}.exe`)
-  : packagedPlatform === "darwin"
-    ? join(appDir, "Contents", "MacOS", macExecutableName)
-    : join(appDir, identity.productName);
+const executablePath = packagedPlatform === "darwin"
+  ? join(appDir, "Contents", "MacOS", macExecutableName)
+  : join(appDir, identity.productName);
 
 assertPath(executablePath, `${identity.productName} executable`);
 assertPath(asarPath, "app.asar");
@@ -53,10 +51,7 @@ assertPath(join(resourcesDir, "assets", "icon.png"), "desktop icon");
 assertPath(join(resourcesDir, "assets", "iconTemplate.png"), "menu-bar template icon");
 assertPath(join(resourcesDir, "assets", "iconTemplate@2x.png"), "menu-bar template icon (2x)");
 assertPath(join(binDir, identity.cliCommand), `${identity.productName} CLI shell shim`);
-if (packagedPlatform === "win32") {
-  assertPath(join(binDir, `${identity.cliCommand}.cmd`), `${identity.productName} CLI command shim`);
-  assertPath(join(binDir, `${identity.cliCommand}-cli.ps1`), `${identity.productName} CLI PowerShell helper`);
-} else if (packagedPlatform === "darwin") {
+if (packagedPlatform === "darwin") {
   assertPath(join(binDir, `${identity.cliCommand}-cli.jxa.js`), `${identity.productName} CLI macOS helper`);
   assertPath(join(resourcesDir, "icon.icns"), "macOS application icon");
   const computerHelper = join(resourcesDir, "computer-helper", "AmpleFile Computer.app", "Contents");
@@ -111,11 +106,11 @@ if (packagedPlatform === "win32") {
     failures.push(`${identity.productName} CLI shell shim is not executable.`);
   }
 }
-for (const oldShim of ["workspace", "workspace.cmd", "workspace-cli.ps1", "workspace-cli.jxa.js"]) {
+for (const oldShim of ["workspace", "workspace-cli.jxa.js"]) {
   if (existsSync(join(binDir, oldShim))) failures.push(`Legacy CLI shim must not be packaged: ${oldShim}.`);
 }
 
-if (existsSync(executablePath) && (packagedPlatform === "win32" || packagedPlatform === "darwin")) {
+if (existsSync(executablePath) && packagedPlatform === "darwin") {
   try {
     const wire = await getCurrentFuseWire(executablePath);
     const expectedFuses = new Map([
@@ -180,13 +175,9 @@ if (existsSync(asarPath)) {
     if (!entries.has(required)) failures.push(`app.asar is missing ${required}.`);
   }
   for (const externalOnly of [
-    `/bin/${identity.cliCommand}.cmd`,
     `/bin/${identity.cliCommand}`,
-    `/bin/${identity.cliCommand}-cli.ps1`,
     `/bin/${identity.cliCommand}-cli.jxa.js`,
-    `/desktop/cli/${identity.cliCommand}.cmd`,
     `/desktop/cli/${identity.cliCommand}`,
-    `/desktop/cli/${identity.cliCommand}-cli.ps1`,
     `/desktop/cli/${identity.cliCommand}-cli.jxa.js`,
   ]) {
     if (entries.has(externalOnly)) failures.push(`CLI shim must remain outside app.asar: ${externalOnly}.`);
@@ -214,23 +205,16 @@ if (failures.length) {
 console.log(`Verified packaged ${identity.productName} app at ${packageDir}.`);
 
 function findPackageDir() {
-  if (!existsSync(outDir)) return null;
   const builderDir = join(outDir, "builder");
-  const builderCandidates = existsSync(builderDir)
-    ? readdirSync(builderDir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && (entry.name === "win-unpacked" || /^mac(?:-|$)/.test(entry.name)))
-      .map((entry) => join(builderDir, entry.name))
-    : [];
-  const candidates = [...builderCandidates, ...readdirSync(outDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && new RegExp(`^${escapeRegExp(identity.productName)}-(?:win32|darwin|linux)-`).test(entry.name))
-    .map((entry) => join(outDir, entry.name))]
-    .filter((candidate) => existsSync(candidate));
+  if (!existsSync(builderDir)) return null;
+  const candidates = readdirSync(builderDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^mac(?:-|$)/.test(entry.name))
+    .map((entry) => join(builderDir, entry.name));
   return candidates[0] ?? null;
 }
 
 function inferPackagedPlatform(packagePath) {
   if (packagePath.endsWith(".app") || existsSync(join(packagePath, `${identity.productName}.app`)) || existsSync(join(packagePath, `${identity.macSmokeProductName}.app`))) return "darwin";
-  if (existsSync(join(packagePath, `${identity.productName}.exe`))) return "win32";
   return process.platform;
 }
 
@@ -250,8 +234,4 @@ function normalizeAsarPath(path) {
 
 function formatError(error) {
   return error instanceof Error ? error.message : String(error);
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

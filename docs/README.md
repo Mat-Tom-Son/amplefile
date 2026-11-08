@@ -74,7 +74,6 @@ hosted-runtime semantics do not imply a deployed cloud runtime.
 | [Collaboration contract](collaboration-contract.md) | The built wave B specification (accepted 2026-09-11): durable requests, Connected Folder turn context, report/ask/answer/handoff, one result shape, app change hints — also listed under current contracts |
 | [Receipts, not gates](receipts-not-gates.md) | Accepted 2026-09-10 direction and the specification the canonical documents now follow: one authority mode, reversible destruction, apps that come up able to work; supersedes F3–F7 and F17, narrows F8, F9, F18 |
 | [Rebrand plan](rebrand-plan.md) | Proposed 2026-11-07: every place the AmpleFile names appear, the contract decisions, what must come along, and the order of work for the new name and repository |
-| [Windows build](windows-build.md), [Windows releases](windows-release.md) | Inactive platform references; no Windows gate on Mac releases |
 
 Finished plans, superseded designs, dated evidence, and release notes stay in
 the work-fold repository.

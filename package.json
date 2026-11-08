@@ -41,9 +41,6 @@
     "desktop:check": "tsc --noEmit -p tsconfig.desktop.json",
     "desktop:compile": "node scripts/clean-desktop-dist.mjs && tsc -p tsconfig.desktop.json && node scripts/stage-restricted-app-kit.mjs",
     "desktop:prepare": "npm run desktop:computer-helper && npm run desktop:chrome-native-host && npm run desktop:icons && npm run local:build && npm run desktop:compile && npm run desktop:preload:smoke && npm run desktop:restricted-app:smoke && npm run desktop:browser:smoke && npm run desktop:preflight",
-    "desktop:package": "npm run desktop:prepare && electron-forge package && node scripts/verify-packaged-app-assets.mjs --package-dir out/amplefile-win32-x64",
-    "desktop:package:smoke": "npm run desktop:prepare && electron-builder --config electron-builder.desktop.cjs --win --x64 --dir --publish never && npm run desktop:verify:packaged-assets -- --package-dir out/builder/win-unpacked",
-    "desktop:make": "npm run desktop:prepare && electron-builder --config electron-builder.desktop.cjs --win nsis --x64 --publish never && npm run desktop:verify:release",
     "desktop:make:mac": "node scripts/build-mac-desktop.mjs --unsigned-smoke",
     "desktop:rc:mac": "node scripts/build-mac-release-candidate.mjs",
     "desktop:make:mac:release": "node scripts/build-mac-desktop.mjs --release",
@@ -58,14 +55,12 @@
     "desktop:manifest:release:mac": "node scripts/write-mac-release-manifest.mjs",
     "desktop:reset:mac-safe-storage": "node scripts/reset-mac-safe-storage.mjs",
     "desktop:verify:installed:mac": "node scripts/verify-installed-mac-app.mjs",
-    "desktop:make:zip": "npm run desktop:prepare && node scripts/make-desktop.mjs && npm run desktop:verify:packaged-assets",
     "desktop:smoke": "npm run desktop:prepare && electron dist/desktop/desktop/src/main.js",
     "desktop:preflight": "node scripts/desktop-preflight.mjs",
     "desktop:restricted-app:smoke": "electron scripts/restricted-app-electron-smoke.mjs",
     "desktop:preload:smoke": "electron scripts/desktop-preload-electron-smoke.mjs",
     "desktop:browser:smoke": "electron scripts/browser-electron-smoke.mjs",
     "desktop:verify:packaged-assets": "node scripts/verify-packaged-app-assets.mjs",
-    "desktop:verify:release": "node scripts/verify-windows-release.mjs",
     "desktop:verify:release:mac": "node scripts/verify-mac-release.mjs",
     "desktop:computer-helper": "node scripts/build-computer-helper.mjs",
     "desktop:chrome-native-host": "node scripts/build-chrome-native-host.mjs",
@@ -152,9 +147,6 @@
     "@earendil-works/pi-coding-agent": {
       "undici": "8.12.3"
     }
-  },
-  "config": {
-    "forge": "./desktop/forge.config.cjs"
   },
   "allowScripts": {
     "@injaneity/pi-computer-use": false

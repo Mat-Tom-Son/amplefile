@@ -17,7 +17,9 @@ test("desktop release configuration uses the isolated AmpleFile identities and f
   const previousRepo = process.env.AMPLEFILE_MAC_RELEASE_REPO;
   const previousUnsignedMac = process.env.AMPLEFILE_ALLOW_UNSIGNED_MAC_BUILD;
   const previousOutput = process.env.AMPLEFILE_DESKTOP_OUTPUT_DIR;
-  process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM = "win32";
+  delete process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM;
+  delete process.env.AMPLEFILE_MAC_RELEASE_REPO;
+  delete require.cache[require.resolve(builderPath)];
   const builder = require(builderPath);
   process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM = "darwin";
   process.env.AMPLEFILE_MAC_RELEASE_REPO = identity.macReleaseRepositoryName;
@@ -43,16 +45,13 @@ test("desktop release configuration uses the isolated AmpleFile identities and f
   assert.equal(packageJson.productName, identity.productName);
   assert.equal(packageJson.repository.url, "https://github.com/Mat-Tom-Son/amplefile.git");
   assert.equal(packageJson.dependencies["electron-updater"], "6.8.9");
-  assert.match(packageJson.scripts["desktop:make"], /electron-builder/);
-  assert.match(packageJson.scripts["desktop:make"], /--win nsis --x64/, "the NSIS target and x64 architecture must use Electron Builder's supported argument order");
-  assert.match(packageJson.scripts["desktop:make"], /--x64/, "the Windows release candidate must not inherit the build host architecture");
-  assert.doesNotMatch(packageJson.scripts["desktop:make"], /prepackaged/);
-  assert.deepEqual(builder.publish, [{
-    provider: "github",
-    owner: "Mat-Tom-Son",
-    repo: "amplefile",
-    releaseType: "release",
-  }]);
+  for (const removed of ["desktop:make", "desktop:make:zip", "desktop:package", "desktop:package:smoke", "desktop:verify:release"]) {
+    assert.equal(packageJson.scripts[removed], undefined, `${removed} was a Windows lane and stays removed`);
+  }
+  assert.equal(packageJson.config?.forge, undefined);
+  assert.equal(builder.win, undefined);
+  assert.equal(builder.nsis, undefined);
+  assert.deepEqual(builder.publish, macBuilder.publish, "every package build points its updater at the Mac feed");
   assert.deepEqual(macBuilder.publish, [{
     provider: "github",
     owner: "Mat-Tom-Son",
@@ -71,14 +70,8 @@ test("desktop release configuration uses the isolated AmpleFile identities and f
   assert.equal(macCandidateBuilder.directories.output, "out/mac-rc");
   assert.equal(builder.artifactName, "AmpleFile-${version}-${os}-${arch}.${ext}");
   assert.equal(builder.dmg.artifactName, "AmpleFile-${version}-mac-${arch}.${ext}");
-  assert.equal(builder.nsis.artifactName, "AmpleFile-Setup-${version}.${ext}");
-  assert.equal(builder.nsis.uninstallDisplayName, identity.productName);
-  assert.equal(builder.nsis.shortcutName, identity.productName);
-  assert.equal(builder.nsis.deleteAppDataOnUninstall, false);
   assert.equal(builder.electronFuses.runAsNode, false);
   assert.equal(builder.electronFuses.onlyLoadAppFromAsar, true);
-  assert.equal(builder.win.verifyUpdateCodeSignature, false);
-  assert.equal(builder.nsis.differentialPackage, true);
   assert.deepEqual(builder.mac.target, ["dmg", "zip"]);
   assert.equal(builder.mac.category, "public.app-category.productivity");
   assert.match(packageJson.scripts["desktop:make:mac"], /build-mac-desktop\.mjs/);
