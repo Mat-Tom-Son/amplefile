@@ -68,9 +68,13 @@ Apple submission.
   application-data profile, and only the `Mat-Tom-Son/amplefile-mac-releases`
   feed. A new install starts with an empty profile and is installed from its
   DMG.
-- The first in-place update to prove is from an installed `0.1.0` to the next
-  release. Record it under [Updater evidence](#updater-evidence) when it
-  passes.
+- **0.1.1** was published to `Mat-Tom-Son/amplefile-mac-releases` on
+  November 8, 2026, from the annotated source tag `v0.1.1` (commit
+  `bd8f4e1`). It is the fresh-start release: the file manager is the only
+  window layout, and the earlier apps, pages, Checks, Windows lanes, and
+  older-product compatibility are gone. It carries the same assets as 0.1.0.
+- The first in-place update, installed `0.1.0` to `0.1.1`, passed on
+  November 8, 2026. See [Updater evidence](#updater-evidence).
 
 ## Release procedure
 
@@ -194,8 +198,27 @@ The accepted proof must show:
 - `npm run desktop:verify:installed:mac` passes;
 - a full quit and reopen does not ask for repeated Keychain passwords.
 
-No in-place AmpleFile update has been proven yet; record each proof here as it
-passes, with the two versions and the date.
+Record each proof here as it passes, with the two versions and the date.
+
+**0.1.0 → 0.1.1, November 8, 2026**
+
+- The installed `0.1.0` was Developer ID-signed for team `464JD5K8DC`,
+  stapled, installed under `/Applications`, and its `app-update.yml` named
+  `Mat-Tom-Son/amplefile-mac-releases`.
+- The anonymous feed served `latest-mac.yml` at version `0.1.1` from a public,
+  non-draft release with all eight assets.
+- **AmpleFile > Check for Updates...** in the installed `0.1.0` offered
+  `0.1.1`, and the owner accepted it.
+- Both the cached `pending/AmpleFile-0.1.1-mac-arm64.zip` and `update.zip`
+  hashed to SHA-256 `17b398cd2e621ed4c02257875c738ce8488ab9e8070a366a4c51f3a85c26a253`,
+  the published asset digest.
+- ShipIt logged `Installation completed successfully` and relaunched
+  `/Applications/AmpleFile.app`, which reported `0.1.1`. The existing profile
+  and its registered Connected Folder were kept.
+- `npm run desktop:verify:installed:mac` passed without requesting Keychain
+  secret data.
+- Not observed in this proof: the Settings update surface during the update,
+  and a later full quit and reopen.
 
 ## Recovery rules
 
