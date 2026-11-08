@@ -67,7 +67,8 @@ html.js .page { flex:1; min-height:0; width:100%; overflow-y:auto; overflow-x:cl
   .shot.p-panel { --cx:960; --cy:0; --cw:320; --ch:620; }
   .shot.p-chat { --cx:960; --cy:0; --cw:320; --ch:540; }
   .shot.p-chat, .shot.p-panel { max-width:320px; }
-  .shot.p-live { --cx:224; --cy:0; --cw:256; --ch:400; max-width:256px; }
+  /* The whole window, so a phone sees what the app is before the close-ups. */
+  .shot.p-live, .shot.p-full { overflow:visible; border-radius:0; }
 }
 `;
 
@@ -129,6 +130,9 @@ const SCRIPT = `
       const n = delays.length;
       const cur = mw.querySelector(".mw-cursor");
       const box = mw.closest(".shot") || mw;
+      // A view in the folder's pinned top stays on screen while the front slides over it, so only the uncovered part counts.
+      const under = !!mw.closest(".mn-head");
+      const area = (under && mw.closest(".mn-paper")) || box;
       // state: idle (at the start), playing, or done (resting on the finished state)
       const st = { token: 0, vis: false, state: "idle", wait: 0, ticks: [] };
       const home = () => { if (!cur) return; const [x, y] = (mw.dataset.cursor || "50,90").split(",").map(Number); cur.style.left = x + "%"; cur.style.top = y + "%"; };
@@ -213,7 +217,7 @@ const SCRIPT = `
       }
       reset();
       const feel = (src, f) => { fr[src] = f; seen(Math.max(fr.io, fr.hook)); };
-      return { box, feel };
+      return { box, feel, under, area };
     });
     const byBox = new Map(scenes.map((s) => [s.box, s]));
     if ("IntersectionObserver" in window) {
@@ -223,14 +227,18 @@ const SCRIPT = `
         const h = Math.min(e.boundingClientRect.height, vh);
         s.feel("io", e.isIntersecting && h > 0 ? e.intersectionRect.height / h : 0);
       }), { threshold: [0, 0.03, 0.06, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1] });
-      scenes.forEach((s) => io.observe(s.box));
+      scenes.forEach((s) => { if (!s.under) io.observe(s.box); });
     }
-    addHook((pr) => scenes.forEach((s) => {
-      const r = s.box.getBoundingClientRect();
-      const top = Math.max(r.top, pr.top, 0), bot = Math.min(r.bottom, pr.bottom, innerHeight);
-      const h = Math.min(r.height, pr.height, innerHeight);
-      s.feel("hook", h > 0 ? Math.max(0, bot - top) / h : 0);
-    }));
+    const front = page.querySelector(".mn-front");
+    addHook((pr) => {
+      const cover = front.getBoundingClientRect().top;
+      scenes.forEach((s) => {
+        const r = s.area.getBoundingClientRect();
+        const top = Math.max(r.top, pr.top, 0), bot = Math.min(r.bottom, pr.bottom, innerHeight, s.under ? cover : Infinity);
+        const h = Math.min(r.height, pr.height, innerHeight);
+        s.feel("hook", h > 0 ? Math.max(0, bot - top) / h : 0);
+      });
+    });
   }
 
   // The menu bar arrives when the folder's front reaches the top; its icon opens the AmpleFile Agent popover.
