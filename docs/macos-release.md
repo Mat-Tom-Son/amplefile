@@ -75,6 +75,9 @@ Apple submission.
   older-product compatibility are gone. It carries the same assets as 0.1.0.
 - The first in-place update, installed `0.1.0` to `0.1.1`, passed on
   November 8, 2026. See [Updater evidence](#updater-evidence).
+- **0.1.2** was published to `Mat-Tom-Son/amplefile-mac-releases` on
+  November 8, 2026, from the annotated source tag `v0.1.2` (commit
+  `999292f`): the AmpleFile Agent name and the redrawn menu-bar chat.
 
 ## Release procedure
 
