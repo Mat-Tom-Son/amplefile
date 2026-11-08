@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="desktop/assets/brand/lockup-horizontal-white.png" />
-    <img src="desktop/assets/brand/lockup-horizontal-black.png" alt="AmpleFile" width="420" />
+    <source media="(prefers-color-scheme: dark)" srcset="desktop/assets/brand/amplefile-lockup-dark.svg" />
+    <img src="desktop/assets/brand/amplefile-lockup.svg" alt="AmpleFile" width="420" />
   </picture>
 </p>
 

@@ -16,7 +16,7 @@ test("management history renames the selected chat and handles deletion failure 
     },
     load(url, context, next) {
       if (url === "test:agent-icons") return { format: "module", source: iconNames.map((name) => `export const ${name}=${name === "bundleIcon" ? "(filled)=>filled" : "()=>null"};`).join("\n"), shortCircuit: true };
-      return url.endsWith(".png") ? { format: "module", source: `export default ${JSON.stringify(url)};`, shortCircuit: true } : next(url, context);
+      return /\.(png|svg)$/.test(url) ? { format: "module", source: `export default ${JSON.stringify(url)};`, shortCircuit: true } : next(url, context);
     },
   });
   t.after(async () => { await dom.cleanup(); globalThis.fetch = originalFetch; assets.deregister(); });

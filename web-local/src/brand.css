@@ -1,11 +1,11 @@
 :root {
-  /* The AmpleFile brand palette: deep navy ink, bright blue accents, and the
-     teal/green/gold folder-cube family on a light neutral field. */
-  --amplefile-navy: #0e386c;
-  --amplefile-blue-bright: #1ea0ff;
-  --amplefile-teal: #22cfc6;
-  --amplefile-green: #46d586;
-  --amplefile-gold: #f6b516;
+  /* The Manila brand palette (desktop/assets/brand): the folder's two
+     manila tones, Ink lettering, and the Signal dot. These are for the mark
+     and launch moments; the interface keeps its own --ui-* colors. */
+  --amplefile-manila: #efcb7e;
+  --amplefile-manila-deep: #d4a14f;
+  --amplefile-brand-ink: #16202b;
+  --amplefile-signal: #1f63d6;
   --amplefile-ink: #1c2530;
   --amplefile-ink-soft: #3d4756;
   --amplefile-paper: #f2f4ef;
@@ -13,8 +13,6 @@
   --amplefile-accent: #0b6fd6;
   --amplefile-accent-bright: #1ea0ff;
   --amplefile-accent-soft: #e3f0fd;
-  --amplefile-brand-gradient: linear-gradient(118deg, #0b6fd6, #22cfc6 44%, #46d586 70%, #f6b516);
-  --amplefile-brand-shadow: 0 9px 24px rgba(14, 56, 108, 0.14), 0 1px 2px rgba(14, 56, 108, 0.12);
   /* The one type scale. Every interface font size is one of these steps, in
      rem so the whole interface follows Settings → Appearance → Text Size.
      Pixel values are at Standard (15px). Nothing reads smaller than 2xs. */
@@ -40,14 +38,13 @@
   --amplefile-accent: #1ea0ff;
   --amplefile-accent-bright: #4db5ff;
   --amplefile-accent-soft: rgba(30, 160, 255, 0.16);
-  --amplefile-brand-shadow: 0 10px 28px rgba(0, 0, 0, 0.34), 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-/* Lockups are the provided horizontal artwork as one image; the knob sizes
-   the cube (which spans the art's full height), so per-context overrides set
-   a single custom property. Black carries light themes, white carries dark. */
+/* The lockup is the outlined brand artwork as one image, sized by its
+   height (it is about 5.4 times as wide). Ink lettering carries light themes;
+   light lettering carries dark themes. */
 .amplefile-lockup {
-  --amplefile-lockup-mark: 48px;
+  --amplefile-lockup-height: 28px;
   display: inline-flex;
   align-items: center;
   color: var(--amplefile-ink);
@@ -55,21 +52,21 @@
 
 .amplefile-lockup-art {
   display: block;
-  height: var(--amplefile-lockup-mark);
+  height: var(--amplefile-lockup-height);
   width: auto;
   -webkit-user-drag: none;
   user-select: none;
 }
 
-.amplefile-lockup-art-white {
+.amplefile-lockup-art-on-dark {
   display: none;
 }
 
-:root[data-theme="dark"] .amplefile-lockup-art-black {
+:root[data-theme="dark"] .amplefile-lockup-art-on-light {
   display: none;
 }
 
-:root[data-theme="dark"] .amplefile-lockup-art-white {
+:root[data-theme="dark"] .amplefile-lockup-art-on-dark {
   display: block;
 }
 
@@ -90,7 +87,7 @@
 }
 
 .amplefile-loading-lockup {
-  --amplefile-lockup-mark: 84px;
+  --amplefile-lockup-height: 40px;
 }
 
 .amplefile-loading-state p {
@@ -117,14 +114,13 @@
     --amplefile-accent: #1ea0ff;
     --amplefile-accent-bright: #4db5ff;
     --amplefile-accent-soft: rgba(30, 160, 255, 0.16);
-    --amplefile-brand-shadow: 0 10px 28px rgba(0, 0, 0, 0.34), 0 1px 2px rgba(0, 0, 0, 0.3);
   }
 
-  :root:not([data-theme="light"]) .amplefile-lockup-art-black {
+  :root:not([data-theme="light"]) .amplefile-lockup-art-on-light {
     display: none;
   }
 
-  :root:not([data-theme="light"]) .amplefile-lockup-art-white {
+  :root:not([data-theme="light"]) .amplefile-lockup-art-on-dark {
     display: block;
   }
 }

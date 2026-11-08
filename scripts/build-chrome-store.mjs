@@ -59,7 +59,7 @@ export async function buildChromeStore({ root = repository, output, distribution
   for (const name of ["bootstrap.js", "popup.html", "popup.css", "popup.js"]) files.set(name, await readFile(join(owned, name)));
   files.set("welcome.html", files.get("popup.html"));
   files.set("LICENSE", await readFile(join(upstreamRoot, "LICENSE")));
-  for (const size of [16, 32, 48, 128]) files.set(`icons/${size}.png`, await readFile(join(root, `desktop/assets/brand/pack/png/transparent/amplefile-icon-${size}.png`)));
+  for (const size of [16, 32, 48, 128]) files.set(`icons/${size}.png`, await readFile(join(root, `desktop/assets/brand/png/amplefile-mark-${size}.png`)));
   const zip = new JSZip();
   for (const [path, bytes] of [...files].sort(([a], [b]) => a.localeCompare(b, "en"))) zip.file(path, bytes, { date: new Date("1980-01-01T00:00:00Z"), createFolders: false, unixPermissions: 0o100644 });
   const bytes = await zip.generateAsync({ type: "nodebuffer", platform: "UNIX", compression: "DEFLATE", compressionOptions: { level: 9 } });

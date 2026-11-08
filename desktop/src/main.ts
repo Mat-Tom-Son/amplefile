@@ -221,6 +221,8 @@ let automationPowerLifecycle: { suspend: () => void; resume: () => Promise<void>
 let quitting = false;
 let quittingForUpdate = false;
 let activeAgentTurns = 0;
+let trayPulseTimer: NodeJS.Timeout | null = null;
+let trayPulseFrames: Electron.NativeImage[] | null = null;
 let powerBlockerId: number | null = null;
 let desktopUpdater: DesktopUpdater | null = null;
 let startupRecoveryPromise: Promise<void> | null = null;
@@ -2190,6 +2192,7 @@ function assertPathInsideRoot(connectedFolderRoot: string, candidate: string): v
 function updateAgentPowerState(activeTurns: number): void {
   activeAgentTurns = Math.max(0, activeTurns);
   updateTrayTooltip();
+  updateTrayPulse();
   if (activeTurns > 0 && powerBlockerId === null) {
     powerBlockerId = powerSaveBlocker.start("prevent-app-suspension");
   } else if (activeTurns <= 0 && powerBlockerId !== null) {
@@ -2366,6 +2369,7 @@ function createTrayIfSupported(): void {
     tray.on("double-click", showWindow);
   }
   updateTrayTooltip();
+  updateTrayPulse();
   // Warm the hidden popover renderer off the startup critical path so the
   // first AmpleFile agent summon paints the ready surface immediately.
   setTimeout(() => {
@@ -2386,21 +2390,74 @@ function ampleFileMenuIcon(): { icon?: Electron.NativeImage } {
 }
 
 function resolveTrayIcon(): Electron.NativeImage | string | null {
-  if (process.platform === "darwin") {
-    // Monochrome template image so macOS recolors the menu-bar item for
-    // light/dark menu bars; createFromPath also loads the @2x variant.
-    const path = join(resolveDesktopAssetsDir(), "iconTemplate.png");
-    if (!existsSync(path)) return null;
-    const image = nativeImage.createFromPath(path);
-    if (image.isEmpty()) return null;
-    image.setTemplateImage(true);
-    return image;
-  }
+  if (process.platform === "darwin") return loadTrayTemplate("iconTemplate");
   const iconPath = resolveWindowIcon();
   return existsSync(iconPath) ? iconPath : null;
 }
 
+/**
+ * A monochrome template image, so macOS recolors the menu-bar item for light
+ * and dark menu bars; createFromPath also loads the @2x variant.
+ */
+function loadTrayTemplate(name: string): Electron.NativeImage | null {
+  const path = join(resolveDesktopAssetsDir(), `${name}.png`);
+  if (!existsSync(path)) return null;
+  const image = nativeImage.createFromPath(path);
+  if (image.isEmpty()) return null;
+  image.setTemplateImage(true);
+  return image;
+}
+
+/** The resting icon, then the frames in which the dot fades and returns. */
+function trayPulseFrameImages(): Electron.NativeImage[] {
+  if (trayPulseFrames) return trayPulseFrames;
+  const frames: Electron.NativeImage[] = [];
+  for (let frame = 0; ; frame += 1) {
+    const image = loadTrayTemplate(frame === 0 ? "iconTemplate" : `iconTemplateWorking${frame}`);
+    if (!image) break;
+    frames.push(image);
+  }
+  trayPulseFrames = frames;
+  return frames;
+}
+
+/**
+ * The menu-bar dot pulses while work is running, the way the brand's dot
+ * means a Worker or the AmpleFile agent at work. Reduce Motion keeps it still.
+ */
+function updateTrayPulse(): void {
+  const pulse = tray !== null
+    && process.platform === "darwin"
+    && activeAgentTurns > 0
+    && !systemPreferences.getAnimationSettings().prefersReducedMotion;
+  if (!pulse) {
+    stopTrayPulse();
+    return;
+  }
+  if (trayPulseTimer) return;
+  const frames = trayPulseFrameImages();
+  if (frames.length < 2) return;
+  let frame = 0;
+  trayPulseTimer = setInterval(() => {
+    if (!tray) {
+      stopTrayPulse();
+      return;
+    }
+    frame = (frame + 1) % frames.length;
+    tray.setImage(frames[frame]!);
+  }, 200);
+}
+
+function stopTrayPulse(): void {
+  if (!trayPulseTimer) return;
+  clearInterval(trayPulseTimer);
+  trayPulseTimer = null;
+  const resting = trayPulseFrames?.[0];
+  if (tray && resting) tray.setImage(resting);
+}
+
 function destroyTray(): void {
+  stopTrayPulse();
   tray?.destroy();
   tray = null;
   ampleFileAgentPopover?.destroy();

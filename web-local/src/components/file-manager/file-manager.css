@@ -2681,14 +2681,9 @@
 }
 
 .fm-welcome-lockup {
+  --amplefile-lockup-height: 30px;
   align-self: center;
-  height: 44px;
   margin: 6px 0 18px;
-}
-
-.fm-welcome-lockup img {
-  height: 100%;
-  width: auto;
 }
 
 .fm-welcome-list {

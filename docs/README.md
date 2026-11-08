@@ -61,9 +61,9 @@ hosted-runtime semantics do not imply a deployed cloud runtime.
   full-trust Pi Extension. [Restricted Connected inbox](../examples/packages/restricted-connected-inbox/README.md)
   is the separate sandboxed-app example. Neither is an installed account
   integration merely because its source is checked in.
-- [Brand assets](../desktop/assets/brand/README.md) and the
-  [designer pack](../desktop/assets/brand/pack/README.md) describe asset
-  provenance and generation, not another product policy.
+- [Brand assets](../desktop/assets/brand/README.md) describe the Manila
+  artwork's provenance and how every icon is generated from it, not another
+  product policy.
 
 ## Rationale, proposals, and historical records
 

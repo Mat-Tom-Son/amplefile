@@ -50,7 +50,7 @@ test("Store ZIP is reproducible, contains real icons/native bootstrap, and exclu
     assert.match(await zip.file("service_worker.js")!.async("string"), /^importScripts\("bootstrap\.js"\);/);
     for (const size of [16, 32, 48, 128]) {
       const actual = await zip.file(`icons/${size}.png`)!.async("nodebuffer");
-      const source = await readFile(new URL(`../desktop/assets/brand/pack/png/transparent/amplefile-icon-${size}.png`, import.meta.url));
+      const source = await readFile(new URL(`../desktop/assets/brand/png/amplefile-mark-${size}.png`, import.meta.url));
       assert.deepEqual(actual, source); assert.equal(actual.readUInt32BE(16), size); assert.equal(actual.readUInt32BE(20), size);
     }
     assert.match(await zip.file("LICENSE")!.async("string"), /MIT/);

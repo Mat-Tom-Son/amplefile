@@ -508,7 +508,7 @@ body:has(> #root > .desktop-chrome-shell) {
 }
 
 .onboarding-lockup {
-  --amplefile-lockup-mark: 48px;
+  --amplefile-lockup-height: 30px;
   margin-bottom: 10px;
 }
 
@@ -8476,7 +8476,7 @@ to {
 }
 
 .about-amplefile-brand {
-  --amplefile-lockup-mark: 56px;
+  --amplefile-lockup-height: 32px;
 }
 
 .connected-folder-pane-content {
@@ -17704,15 +17704,15 @@ to {
 }
 
 /* The menu-bar mark beside "Connect This Folder", drawn in the menu's text
-   color so it matches both themes. */
+   color so it matches both themes (desktop/assets/brand/amplefile-menubar.svg). */
 
 .app-shell .context-menu-brand-mark {
   width: 15px;
   height: 15px;
   flex: 0 0 15px;
   background: currentColor;
-  -webkit-mask: url("./assets/brand/amplefile-menu-mark.png") center / contain no-repeat;
-  mask: url("./assets/brand/amplefile-menu-mark.png") center / contain no-repeat;
+  -webkit-mask: url("../../desktop/assets/brand/amplefile-menubar.svg") center / contain no-repeat;
+  mask: url("../../desktop/assets/brand/amplefile-menubar.svg") center / contain no-repeat;
 }
 
 /* Settings is a preferences window, with one navigation rail and content surface. */

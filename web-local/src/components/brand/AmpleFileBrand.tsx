@@ -1,10 +1,10 @@
 import type * as React from "react";
 import { productName } from "../../constants";
-import lockupBlackUrl from "../../assets/brand/amplefile-lockup-black.png";
-import lockupWhiteUrl from "../../assets/brand/amplefile-lockup-white.png";
+import lockupUrl from "../../../../desktop/assets/brand/amplefile-lockup.svg";
+import lockupDarkUrl from "../../../../desktop/assets/brand/amplefile-lockup-dark.svg";
 export function AmpleFileLockup({ className = "", animated = false }: { className?: string; animated?: boolean }) {
-  // The provided horizontal lockups are single images: black carries light
-  // themes, white carries dark themes.
+  // The brand lockups are single outlined images: Ink lettering on light
+  // themes, light lettering on dark themes. The folder and dot keep their color.
   return (
     <div
       className={["amplefile-lockup", className].filter(Boolean).join(" ")}
@@ -12,8 +12,8 @@ export function AmpleFileLockup({ className = "", animated = false }: { classNam
       role="img"
       aria-label={productName}
     >
-      <img className="amplefile-lockup-art amplefile-lockup-art-black" src={lockupBlackUrl} alt="" draggable={false} />
-      <img className="amplefile-lockup-art amplefile-lockup-art-white" src={lockupWhiteUrl} alt="" draggable={false} />
+      <img className="amplefile-lockup-art amplefile-lockup-art-on-light" src={lockupUrl} alt="" draggable={false} />
+      <img className="amplefile-lockup-art amplefile-lockup-art-on-dark" src={lockupDarkUrl} alt="" draggable={false} />
     </div>
   );
 }

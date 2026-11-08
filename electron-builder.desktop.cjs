@@ -60,6 +60,9 @@ module.exports = {
     {
       from: "desktop/assets",
       to: "assets",
+      // The brand sources (desktop/assets/brand) build the icons; the app
+      // itself never reads them.
+      filter: ["**/*", "!brand/**"],
     },
   ],
   afterPack: require("./scripts/sign-computer-helper.cjs"),

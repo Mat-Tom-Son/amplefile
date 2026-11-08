@@ -98,7 +98,7 @@
   gap: 16px;
   text-align: center;
 }
-.popover-loading-brand { --amplefile-lockup-mark: 64px; flex-direction: column; gap: 12px; }
+.popover-loading-brand { --amplefile-lockup-height: 30px; }
 :scope.popover-loading p { margin: 0; }
 
 .agent-banner {

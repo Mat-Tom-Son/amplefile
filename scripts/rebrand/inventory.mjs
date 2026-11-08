@@ -119,10 +119,12 @@ export function collect() {
       for (const match of region.value.matchAll(tokenPattern)) {
         const token = match[0];
         // Notes that name the old product on purpose: its repository, its
-        // website and hosted services, and the builds that used them.
+        // website and hosted services, the builds that used them, and its
+        // published Chrome companion with that companion's native host.
         // A quoted old name ("work-folder") is a dated quotation.
         const after = region.value.slice(match.index + token.length);
-        if (/^work-fold\.com$/i.test(token) || (/^work-fold$/i.test(token) && /^(?: repositor|'s (?:Web Access|page service)| builds)/.test(after))) continue;
+        if (/^work-fold\.com$/i.test(token) || (/^work-fold$/i.test(token) && /^(?: repositor|'s (?:Web Access|page service|companion)| builds)/.test(after))) continue;
+        if (region.cls === "doc" && token === "com.work_fold.chrome") continue;
         if (region.value[match.index - 1] === '"' && after[0] === '"' && region.cls === "doc") continue;
         const parts = wordParts(token);
         let concept = concepts.find((candidate) => candidate.test(parts, token));

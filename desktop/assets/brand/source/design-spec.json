@@ -1,0 +1,78 @@
+{
+  "brand": "AmpleFile",
+  "colors": {
+    "Manila": "#EFCB7E",
+    "Manila Deep": "#D4A14F",
+    "Ink": "#16202B",
+    "Signal Blue": "#1F63D6",
+    "Light background": "#F4F5F6"
+  },
+  "mark": {
+    "canvas": [
+      1024,
+      1024
+    ],
+    "bounds": [
+      60,
+      192,
+      964,
+      832
+    ],
+    "dot": {
+      "cx": 760,
+      "cy": 656,
+      "r": 80
+    }
+  },
+  "smallMark": {
+    "canvas": [
+      32,
+      32
+    ],
+    "bounds": [
+      2,
+      6,
+      30,
+      26
+    ],
+    "dot": {
+      "cx": 24,
+      "cy": 20,
+      "r": 3
+    }
+  },
+  "menuBar": {
+    "canvas": [
+      18,
+      18
+    ],
+    "outline": 1.5,
+    "dot": {
+      "cx": 12.5,
+      "cy": 11.25,
+      "r": 1.25
+    }
+  },
+  "wordmark": {
+    "font": "Plus Jakarta Sans",
+    "weight": 800,
+    "outlines": true,
+    "kerning": "HarfBuzz",
+    "blueDot": "independent circle replacing i tittle"
+  },
+  "icon": {
+    "canvas": [
+      1024,
+      1024
+    ],
+    "markScale": 0.74,
+    "layers": [
+      "Background",
+      "Folder Back",
+      "Folder Front",
+      "Dot"
+    ],
+    "target": "macOS",
+    "designGeneration": 26
+  }
+}

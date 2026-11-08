@@ -1,0 +1,119 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : {
+        "solid" : "srgb:0.95686,0.96078,0.96471,1.00000"
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "solid" : "srgb:0.08627,0.12549,0.16863,1.00000"
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "blur-material" : 0,
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "Dot.svg",
+          "name" : "Dot"
+        }
+      ],
+      "lighting" : "individual",
+      "name" : "Dot",
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 0
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0
+      }
+    },
+    {
+      "blur-material" : 0,
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "Folder Front.svg",
+          "name" : "Folder Front"
+        }
+      ],
+      "lighting" : "individual",
+      "name" : "Folder Front",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.12
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0
+      }
+    },
+    {
+      "blur-material" : 0,
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "Folder Back.svg",
+          "name" : "Folder Back"
+        }
+      ],
+      "lighting" : "individual",
+      "name" : "Folder Back",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.08
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0
+      }
+    },
+    {
+      "blur-material" : 0,
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "solid" : "srgb:0.95686,0.96078,0.96471,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:0.08627,0.12549,0.16863,1.00000"
+              }
+            }
+          ],
+          "glass" : false,
+          "image-name" : "Background.svg",
+          "name" : "Background"
+        }
+      ],
+      "lighting" : "individual",
+      "name" : "Background",
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 0
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}
