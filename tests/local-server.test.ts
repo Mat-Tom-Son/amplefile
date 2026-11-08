@@ -1089,7 +1089,7 @@ test("terminal provider failures persist partial output and leave the Chat resum
   }
 });
 
-test("automatic titles and later manual renames persist for Connected Folder and AmpleFile agent Chats", async () => {
+test("automatic titles and later manual renames persist for Connected Folder and AmpleFile Agent Chats", async () => {
   const sandbox = await mkdtemp(join(tmpdir(), "amplefile-chat-title-settlement-test-"));
   const stateBase = join(sandbox, "state");
   const connectedFolderBase = join(sandbox, "content");
@@ -1151,7 +1151,7 @@ test("automatic titles and later manual renames persist for Connected Folder and
     assert.equal(folderRenamed.conversation.title, "Folder manual title");
 
     const ampleFileAgentAccepted = await json(`${api.origin}/api/amplefile-agent/messages`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "Name this AmpleFile agent Chat.", newConversation: true }),
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: "Name this AmpleFile Agent Chat.", newConversation: true }),
     }) as { conversationId: string; taskId: string };
     const ampleFileAgentUrl = `${api.origin}/api/amplefile-agent/conversations/${ampleFileAgentAccepted.conversationId}`;
     await waitForAsync(async () => (await json(ampleFileAgentUrl) as { messages: Array<{ titleSource?: string; content: string }> }).messages

@@ -51,7 +51,7 @@ export interface PackagedPiRuntimeOptions {
   modelPreferencesPath?: string;
   /** Machine-local cache of OpenRouter's live model catalog. */
   openRouterCatalogPath?: string;
-  /** App-owned root for the AmpleFile agent's own model preference. */
+  /** App-owned root for the AmpleFile Agent's own model preference. */
   ampleFileAgentRootPath?: string;
   /** Shared HTTP/SSE or IPC bridge used by all extension sessions. */
   extensionUi?: PiExtensionUiBridge;

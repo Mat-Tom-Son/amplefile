@@ -1,13 +1,13 @@
 # Skills & Extensions
 
 Product copy calls a Connected Folder's AI helper a **Worker**, the agent above all
-Connected Folders the **AmpleFile agent**, and the model/provider settings page
+Connected Folders the **AmpleFile Agent**, and the model/provider settings page
 **AI Models**. Pi's own terms — Skill, Extension, package, and the `global` and
 `project` scopes — keep their names.
 
 AmpleFile uses Pi's native capability system for full-trust Skills and Extensions. This guide explains how Skills, Extensions, packages, scopes, and authorization fit the product without confusing them with ordinary files.
 
-**Skills & Extensions…** in the toolbar's **Action** (⋯) menu, or in a Connected Folder's right-click menu in the sidebar, opens the **Skills & Extensions** popup: a dialog like Settings, pinned to the Connected Folder it was opened from. Its **Installed** view answers what is present, where it came from, which scope owns it, and whether Pi loaded it. It starts with an **Included with AmpleFile** strip holding exactly the five included tools — Chrome, Computer Control, Web, Documents, and Service Connections — each with one concise Title Case status (Ready, Setup Needed, Unavailable, Not Checked, or Turned Off; Computer Control evidence older than five minutes says Last Check Passed, Service Connections says No Connections or Configured, and Chrome shows Connected or Not Connected) and a **Set Up** pointer only when a person can act. Below the strip, **Everywhere** (the AmpleFile agent and every Connected Folder) and **This Connected Folder only** (stored in the Connected Folder's folder) sit side by side and stack on narrow widths; a row opens its details on click, and the groups have no Add buttons. Its **Discover** view searches first-party/reference sources and community Pi packages. Skills and Extensions remain distinct item types inside both views because their behavior and risk are different.
+**Skills & Extensions…** in the toolbar's **Action** (⋯) menu, or in a Connected Folder's right-click menu in the sidebar, opens the **Skills & Extensions** popup: a dialog like Settings, pinned to the Connected Folder it was opened from. Its **Installed** view answers what is present, where it came from, which scope owns it, and whether Pi loaded it. It starts with an **Included with AmpleFile** strip holding exactly the five included tools — Chrome, Computer Control, Web, Documents, and Service Connections — each with one concise Title Case status (Ready, Setup Needed, Unavailable, Not Checked, or Turned Off; Computer Control evidence older than five minutes says Last Check Passed, Service Connections says No Connections or Configured, and Chrome shows Connected or Not Connected) and a **Set Up** pointer only when a person can act. Below the strip, **Everywhere** (the AmpleFile Agent and every Connected Folder) and **This Connected Folder only** (stored in the Connected Folder's folder) sit side by side and stack on narrow widths; a row opens its details on click, and the groups have no Add buttons. Its **Discover** view searches first-party/reference sources and community Pi packages. Skills and Extensions remain distinct item types inside both views because their behavior and risk are different.
 
 Installed and Discover use a compact segmented tab control beside **+ Add Custom**, which opens the
 scope-first import and package-source dialog. Search, type filters, and sorting
@@ -24,7 +24,7 @@ appearance's surface, text, border, and accent variables.
 amplefile capabilities list --connected-folder "Everywhere connected-folder" --json
 ```
 
-The CLI projection is intentionally compact and content-free. Capability writes continue through Pi's package/import operations and AmpleFile's trust and concurrency policies. See [AmpleFile agent and CLI](amplefile-agent-and-cli.md) for the snapshot and protocol boundary.
+The CLI projection is intentionally compact and content-free. Capability writes continue through Pi's package/import operations and AmpleFile's trust and concurrency policies. See [AmpleFile Agent and CLI](amplefile-agent-and-cli.md) for the snapshot and protocol boundary.
 
 ## Ordinary files are not Pi resources
 
@@ -101,13 +101,13 @@ Existing project files are edited in place. `.worker/` is ordinary content:
 it shows in the folder list like any other folder, and Search, History, and
 attachments use their normal policies, including explicit ignore settings.
 It is neither hidden metadata nor a private or automatically cleaned area.
-Registration never creates it, and the AmpleFile agent has no Connected Folder
+Registration never creates it, and the AmpleFile Agent has no Connected Folder
 scratch appendix. Existing contents and conflicting file/link/registered-folder
 paths must be respected.
 
 ### Feedback and context inspection (development)
 
-The AmpleFile agent and Workers share concise guidance for inspecting the outcome
+The AmpleFile Agent and Workers share concise guidance for inspecting the outcome
 of their work using native tools and Skills. Text, data and image observations
 follow Pi's existing tool-result path; native image settings and provider
 conversion remain authoritative. A stopped native tool may still be draining:
@@ -115,7 +115,7 @@ its late activity is hidden and this Chat refuses overlapping work until Pi
 settles, while other Chats continue.
 
 The local `?dev-context` developer route opens **Inspect context**; normal
-Chats, the AmpleFile agent and Settings have no inspector entry. Enable **Record model
+Chats, the AmpleFile Agent and Settings have no inspector entry. Enable **Record model
 context** before the request to capture assembled instructions, messages and
 tools, provider payloads where Pi exposes them, and loaded-source provenance.
 The view includes host title, bounded inference, and compaction calls with
@@ -128,7 +128,7 @@ contract](tool-feedback.md) for fidelity and coverage limits.
 ### Live Extension questions
 
 Ordinary Pi selection, confirmation, text input, and editor requests appear
-inline in their owning Connected Folder Chat or AmpleFile agent Chat. Multiple questions remain
+inline in their owning Connected Folder Chat or AmpleFile Agent Chat. Multiple questions remain
 separate; switching Chats and reconnecting restores the current pending set.
 Typed responses are validated before the callback settles. A failed send keeps
 the field available for retry.
@@ -212,12 +212,12 @@ A surface does not reduce the trust level of its owning Extension. Extension cod
 
 | Product label | Pi scope | Typical location | Availability |
 |---|---|---|---|
-| **Everywhere** | User/global | The configured Pi agent directory, normally `~/.pi/agent` | Available to the AmpleFile agent and every Connected Folder. |
+| **Everywhere** | User/global | The configured Pi agent directory, normally `~/.pi/agent` | Available to the AmpleFile Agent and every Connected Folder. |
 | **This Connected Folder only** | Project/local | `.pi/` inside the Connected Folder's folder | Portable with that folder and authorized while it is registered as a Connected Folder. |
 
 Everywhere Skills commonly live below `~/.pi/agent/skills`; Everywhere Extensions below `~/.pi/agent/extensions`. Connected Folder–scoped equivalents live below `.pi/skills` and `.pi/extensions` in the Connected Folder. Pi also discovers global and project `.agents/skills` locations, packages, and paths added through settings. The Pi catalog is therefore the authority rather than a hard-coded directory scan in the renderer.
 
-Everywhere scope (Pi's user scope) is for capabilities a person wants in every Connected Folder — it is what the AmpleFile agent loads, too. This Connected Folder only scope is appropriate when a capability belongs with one activity or should travel with that folder. The Add dialog asks **Where should it live?** first, and a Discover details dialog asks it in the same review, with the same two-card chooser illustrated as the AmpleFile agent above a row of Connected Folders so the reach of each option is visible before confirming. Scope does not indicate safety: personal executable code still deserves inspection.
+Everywhere scope (Pi's user scope) is for capabilities a person wants in every Connected Folder — it is what the AmpleFile Agent loads, too. This Connected Folder only scope is appropriate when a capability belongs with one activity or should travel with that folder. The Add dialog asks **Where should it live?** first, and a Discover details dialog asks it in the same review, with the same two-card chooser illustrated as the AmpleFile Agent above a row of Connected Folders so the reach of each option is visible before confirming. Scope does not indicate safety: personal executable code still deserves inspection.
 
 ## Registered Connected Folder authorization
 
@@ -287,7 +287,7 @@ In **Settings → AI Models**, Microsoft Foundry accepts an endpoint, an API key
 and **Deployment names**, separated by commas or new lines. Copy the Name
 under Deployment info in Azure. These names become the Azure model choices;
 there is no prerequisite catalog-model selection or user-written mapping.
-Choose the deployment this Worker or the AmpleFile agent uses in the model
+Choose the deployment this Worker or the AmpleFile Agent uses in the model
 picker after saving the connection. Three independently saved Pi providers can
 coexist: **Microsoft Foundry / Azure (OpenAI)** (`azure`, preserving existing
 connections), **Microsoft Foundry (Chat Completions)** (`azure-chat-completions`),
@@ -334,7 +334,7 @@ Settings persist in the provider credential's Pi `env` values:
 `AMPLEFILE_FOUNDRY_MODEL_IDS`. Identity mappings in
 `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` keep ambient aliases from redirecting the
 entered names. The desktop uses its existing encrypted CredentialStore host;
-these settings are shared across Connected Folders and the AmpleFile agent. Saving
+these settings are shared across Connected Folders and the AmpleFile Agent. Saving
 with a blank key preserves the current key or Azure API-key environment
 reference. The encrypted host store delegates key-reference resolution to Pi's
 native in-memory CredentialStore for `$ENV` references. API-key text starting
@@ -382,7 +382,7 @@ Endpoint and API-key requirements were checked against Microsoft's
 and [Claude deployment guide](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-claude),
 and Anthropic's [Claude in Foundry guide](https://platform.claude.com/docs/en/build-with-claude/claude-in-microsoft-foundry).
 
-Model-provider credentials belong to **Settings → AI Models** and application/Pi storage, never to a Connected Folder. They are machine-wide connections. The selected provider/model pair is a separate machine-local preference keyed by portable Connected Folder identity, with one additional preference for the AmpleFile agent; each Connected Folder may also keep bounded machine-local **Connected Folder instructions** under that same identity. Instructions are appended through Pi's native system-prompt override after AmpleFile's required prompt, never written into `.amplefile/` or `.pi/`, and sent to the selected provider with every subsequent turn in that Connected Folder. The AmpleFile agent may inspect and change a Connected Folder's model default and instructions through `connected-folders worker`, but it cannot enter, replace, remove, or inspect provider credentials. The desktop path supports API-key setup and exposes Pi's provider OAuth flows when a provider advertises one. AmpleFile opens the provider URL in the system browser, handles device-code and manual-code prompts in native desktop UI, and persists the result through its existing encrypted Pi CredentialStore host. OpenRouter's tool-capable text-model list can be refreshed explicitly from its live API; normalized model metadata and the last successful response are cached in app state without the credential and injected into each fresh cwd-specific Pi registry so display and execution use the same catalog. A failed refresh keeps the previous live cache or Pi's built-in catalog. Support must still be described provider by provider: the presence of a Pi OAuth implementation is not proof that every account tier, billing policy, or packaged release flow has been verified.
+Model-provider credentials belong to **Settings → AI Models** and application/Pi storage, never to a Connected Folder. They are machine-wide connections. The selected provider/model pair is a separate machine-local preference keyed by portable Connected Folder identity, with one additional preference for the AmpleFile Agent; each Connected Folder may also keep bounded machine-local **Connected Folder instructions** under that same identity. Instructions are appended through Pi's native system-prompt override after AmpleFile's required prompt, never written into `.amplefile/` or `.pi/`, and sent to the selected provider with every subsequent turn in that Connected Folder. The AmpleFile Agent may inspect and change a Connected Folder's model default and instructions through `connected-folders worker`, but it cannot enter, replace, remove, or inspect provider credentials. The desktop path supports API-key setup and exposes Pi's provider OAuth flows when a provider advertises one. AmpleFile opens the provider URL in the system browser, handles device-code and manual-code prompts in native desktop UI, and persists the result through its existing encrypted Pi CredentialStore host. OpenRouter's tool-capable text-model list can be refreshed explicitly from its live API; normalized model metadata and the last successful response are cached in app state without the credential and injected into each fresh cwd-specific Pi registry so display and execution use the same catalog. A failed refresh keeps the previous live cache or Pi's built-in catalog. Support must still be described provider by provider: the presence of a Pi OAuth implementation is not proof that every account tier, billing policy, or packaged release flow has been verified.
 
 Likewise, an Extension can implement an external connection, but that does not make the core app a native integration with that service. Google Drive currently works by registering a folder synchronized through Google Drive for desktop. Direct Drive API synchronization remains future provider-adapter work.
 

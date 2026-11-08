@@ -140,7 +140,7 @@ CLI is read-only. The receipted application path is the act lane's
 `amplefile connected-folders appearance apply|reset|undo`, which accepts only the same typed proposal
 file, journals before mutating, records the prior customization for one-act undo, and requires the
 running app's per-launch act token — the authenticated, scoped, replay-protected, receipted transport
-defined in [the AmpleFile agent and CLI](amplefile-agent-and-cli.md). The npm-script primitive stays
+defined in [the AmpleFile Agent and CLI](amplefile-agent-and-cli.md). The npm-script primitive stays
 inert and import-only.
 
 `amplefile connected-folders appearance apply` can also change just the parts named instead of importing

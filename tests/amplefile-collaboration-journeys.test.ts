@@ -17,19 +17,19 @@ import { ampleFileAgentScopeId } from "../src/local/state-paths.js";
  * The acceptance journeys of docs/collaboration-contract.md, end to end: the
  * installed act lane (argv → executor → the real facade inside
  * startLocalApi) driving the same verbs an outside harness, a Connected Folder
- * Agent, and the AmpleFile agent all get, over the durable request store.
+ * Agent, and the AmpleFile Agent all get, over the durable request store.
  *
  * This file owns the two journeys that need no model:
  *
- * - **Delegate and clarify.** The AmpleFile agent hands work to a Connected Folder, the Connected Folder asks
+ * - **Delegate and clarify.** The AmpleFile Agent hands work to a Connected Folder, the Connected Folder asks
  *   for the missing input and its turn ends, one answer continues it exactly
- *   once, it reports JSON plus a file, and the AmpleFile agent is brought back with the
+ *   once, it reports JSON plus a file, and the AmpleFile Agent is brought back with the
  *   result. A restart in the middle preserves attribution and replays
  *   nothing; a replayed act request id and a second answer are both refused.
  * - **Request help from a Connected Folder.** Work that started in a Connected Folder with no
  *   parent owns its own root, reaches the person with a question, hands off
  *   to another Connected Folder with copies of its files, and that Connected Folder's report comes
- *   back to the first Connected Folder's root — with no AmpleFile agent request anywhere,
+ *   back to the first Connected Folder's root — with no AmpleFile Agent request anywhere,
  *   and nothing of the first Connected Folder inside the second Connected Folder's portable
  *   transcript.
  *
@@ -274,7 +274,7 @@ function assertResultEnvelope(envelope: ResultEnvelope, expected: {
   }
 }
 
-test("journey: the AmpleFile agent delegates to a Connected Folder, the Connected Folder asks once, one answer continues it, and the report comes back without an AmpleFile agent turn to carry it", async () => {
+test("journey: the AmpleFile Agent delegates to a Connected Folder, the Connected Folder asks once, one answer continues it, and the report comes back without an AmpleFile Agent turn to carry it", async () => {
   const j = await startJourney("delegate");
   try {
     const quotes = (await j.api.actFacade.createConnectedFolder({ name: "Quotes" })).connectedFolder;
@@ -282,7 +282,7 @@ test("journey: the AmpleFile agent delegates to a Connected Folder, the Connecte
     j.held.add(ampleFileAgentScopeId);
     j.held.add(quotes.id);
 
-    // 1. The AmpleFile agent's own turn opens the root request.
+    // 1. The AmpleFile Agent's own turn opens the root request.
     const root = await j.ok<{ conversationId: string; taskId: string }>([
       "agent", "send", "--new", "--message", "/hold", "--json",
     ]);
@@ -294,7 +294,7 @@ test("journey: the AmpleFile agent delegates to a Connected Folder, the Connecte
     assert.equal(opened.request.parentTaskId, null);
     assert.deepEqual(opened.request.childRequests, []);
 
-    // 2. The AmpleFile agent delegates while its own turn runs. The child is a request
+    // 2. The AmpleFile Agent delegates while its own turn runs. The child is a request
     //    under the root, with the Connected Folder and Chat it lives in named on it.
     j.records.length = 0;
     // `/hold` runs as a registered extension command, so a turn needs no model
@@ -304,7 +304,7 @@ test("journey: the AmpleFile agent delegates to a Connected Folder, the Connecte
       "chat", "send", "--connected-folder", quotes.id, "--new", "--message", assignment, "--parent-task", root.taskId, "--json",
     ]);
     assert.deepEqual(j.outcomes(), ["accepted", "ok"]);
-    assert.equal(j.lastOk().parentTaskId, root.taskId, "the receipt carries the AmpleFile agent's lineage");
+    assert.equal(j.lastOk().parentTaskId, root.taskId, "the receipt carries the AmpleFile Agent's lineage");
     assert.equal(gateFields(j.lastOk()).length, 0, "nothing was decided ahead of this; it simply ran");
     const childRequestId = j.api.requests.byTaskId(child.taskId)!.requestId;
     const delegated = (await j.ok<{ request: RequestDetail }>(["requests", "show", "--request", childRequestId, "--json"])).request;
@@ -314,7 +314,7 @@ test("journey: the AmpleFile agent delegates to a Connected Folder, the Connecte
     assert.equal(delegated.connectedFolderId, quotes.id);
     assert.equal(delegated.connectedFolderName, "Quotes");
     assert.equal(delegated.conversationId, child.conversationId);
-    assert.equal(delegated.kind, "cli", "the surface that sent it names the kind; the lineage names the AmpleFile agent");
+    assert.equal(delegated.kind, "cli", "the surface that sent it names the kind; the lineage names the AmpleFile Agent");
 
     // 3. The Connected Folder asks for the missing input. Its task is waiting, the root
     //    is waiting with it, and the turn is not suspended.
@@ -355,7 +355,7 @@ test("journey: the AmpleFile agent delegates to a Connected Folder, the Connecte
     assert.match(item!.headline, /waiting on your answer/);
     assert.doesNotMatch(JSON.stringify(overview), /currency/i, "the overview names the question, never its text");
 
-    // 6. Both turns end. The AmpleFile agent's turn never blocked on the child, and the
+    // 6. Both turns end. The AmpleFile Agent's turn never blocked on the child, and the
     //    request it left behind reports the open question honestly.
     await j.release(child.taskId);
     await j.settled(quotes.id, child.taskId);
@@ -367,7 +367,7 @@ test("journey: the AmpleFile agent delegates to a Connected Folder, the Connecte
     await j.release(questionDelivery.taskId);
     await j.settled(ampleFileAgentScopeId, questionDelivery.taskId);
     const parked = await j.api.actFacade.agentTurnStatus({ taskId: root.taskId });
-    assert.equal(parked.task.state, "succeeded", "the AmpleFile agent's own turn finished instead of waiting");
+    assert.equal(parked.task.state, "succeeded", "the AmpleFile Agent's own turn finished instead of waiting");
     assert.equal(parked.requestGraph?.state, "waiting");
     assert.equal(parked.request?.phase, "needs_you", "agent status keeps its projection over the new store");
     const settledStatus = await j.ok<{ task: { state: string }; waiting: { questionId: string } | null }>([
@@ -436,11 +436,11 @@ test("journey: the AmpleFile agent delegates to a Connected Folder, the Connecte
     assert.equal(j.prompts.length, promptsBefore, "no turn ran to move the result");
     assert.equal(j.api.requests.get(rootRequestId)!.turns.length, 2);
 
-    // 10. Every child has now settled after the AmpleFile agent's own turn ended, so the
-    //     host brings the AmpleFile agent back exactly once with what came in.
+    // 10. Every child has now settled after the AmpleFile Agent's own turn ended, so the
+    //     host brings the AmpleFile Agent back exactly once with what came in.
     await j.release(answered.continuation.taskId);
     await j.settled(quotes.id, answered.continuation.taskId);
-    await waitFor(() => j.api.requests.get(rootRequestId)!.turns.length === 3, "the AmpleFile agent to be brought back");
+    await waitFor(() => j.api.requests.get(rootRequestId)!.turns.length === 3, "the AmpleFile Agent to be brought back");
     const continuation = j.api.requests.get(rootRequestId)!;
     assert.equal(continuation.continuationCount, 2);
     assert.equal(continuation.turns[2]!.role, "continuation");
@@ -448,7 +448,7 @@ test("journey: the AmpleFile agent delegates to a Connected Folder, the Connecte
     // reaches the transcript, so wait for the message itself.
     const followUpMessages = async () => (await ampleFileAgentTranscript(j.api, root.conversationId))
       .filter((message) => message.role === "user" && message.requestId === `continuation-${rootRequestId}-2`);
-    await waitFor(async () => (await followUpMessages()).length > 0, "the follow-up message in the AmpleFile agent's transcript");
+    await waitFor(async () => (await followUpMessages()).length > 0, "the follow-up message in the AmpleFile Agent's transcript");
     const brought = await followUpMessages();
     assert.equal(brought.length, 1, "one continuation turn for the whole settle batch");
     assert.match(brought[0]!.content, /Nobody typed this message/);
@@ -589,7 +589,7 @@ test("journey: a Connected Folder asks for help with no request above it, hands 
     const draftBytes = "# Renewal\nDue in November.\n";
     await writeFile(join(drafts.connectedFolderRoot, "drafts", "renewal.md"), draftBytes, "utf8");
 
-    // 1. Work that starts in a Connected Folder owns its own root: no parent, no AmpleFile agent.
+    // 1. Work that starts in a Connected Folder owns its own root: no parent, no AmpleFile Agent.
     const own = await j.ok<{ conversationId: string; taskId: string }>([
       "chat", "send", "--connected-folder", drafts.id, "--new", "--message", "/hold Draft the renewal note.", "--json",
     ]);
@@ -651,7 +651,7 @@ test("journey: a Connected Folder asks for help with no request above it, hands 
     }
 
     // 6. The destination reports, and the result lands under the origin's
-    //    root — with no AmpleFile agent request in this journey at all.
+    //    root — with no AmpleFile Agent request in this journey at all.
     const reviewBytes = "# Review\nTone is fine.\n";
     await writeFile(join(reviews.connectedFolderRoot, "review.md"), reviewBytes, "utf8");
     const reported = await j.ok<{ result: ResultEnvelope; request: RequestRef }>([
@@ -670,7 +670,7 @@ test("journey: a Connected Folder asks for help with no request above it, hands 
     assert.equal(
       j.prompts.filter((prompt) => prompt.connectedFolderId === ampleFileAgentScopeId).length,
       0,
-      "no AmpleFile agent turn ran anywhere in this journey, let alone to carry a result",
+      "no AmpleFile Agent turn ran anywhere in this journey, let alone to carry a result",
     );
     const whole = (await j.ok<{ request: RequestDetail }>(["requests", "show", "--request", rootRequestId, "--json"])).request;
     assert.equal(whole.childRequests.length, 1);
@@ -679,7 +679,7 @@ test("journey: a Connected Folder asks for help with no request above it, hands 
     assert.equal(
       (await j.ok<{ requests: Array<{ kind: string }> }>(["requests", "list", "--json"])).requests.some((request) => request.kind === "agent"),
       false,
-      "nothing in this journey needed the AmpleFile agent",
+      "nothing in this journey needed the AmpleFile Agent",
     );
 
     // 7. Cross–Connected Folder reasoning stays machine-local: neither Connected Folder's folder

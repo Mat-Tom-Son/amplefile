@@ -139,7 +139,7 @@ export interface AutomationHistoryResponse {
   damagedLineCount: number;
 }
 
-/** A `*.amplefile-automation.json` file the AmpleFile agent wrote that is not stored yet. */
+/** A `*.amplefile-automation.json` file the AmpleFile Agent wrote that is not stored yet. */
 export type AutomationProposalView =
   | {
     valid: true;
@@ -464,7 +464,7 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
         </section>
       ) : null}
       {data && !allAutomations.length ? (
-        <div className="automations-empty">No automations yet. To set one up, ask the AmpleFile agent in the menu bar. Say what should happen, when, and in which Connected Folders.</div>
+        <div className="automations-empty">No automations yet. To set one up, ask the AmpleFile Agent in the menu bar. Say what should happen, when, and in which Connected Folders.</div>
       ) : null}
       {showFolderFilter ? (
         <div className="capabilities-type-chips automation-folder-filter" role="group" aria-label="Connected Folder">
@@ -534,7 +534,7 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
                       running={Boolean(selectedSummary.activeRun)}
                       starting={Boolean(runWatches[selectedSummary.automationId]) && !selectedSummary.activeRun}
                     />
-                    <button className="ui-control" type="button" onClick={() => void openAutomationDraft(detail)} disabled={drafting}>Edit with AmpleFile agent</button>
+                    <button className="ui-control" type="button" onClick={() => void openAutomationDraft(detail)} disabled={drafting}>Edit with AmpleFile Agent</button>
                   </div>
                 </header>
 
@@ -780,7 +780,7 @@ function AutomationStep({ step }: { step: AutomationStepView }) {
   }
   return (
     <li>
-      <div className="automation-step-heading"><strong>Message AmpleFile agent</strong><span>Starts a new chat</span></div>
+      <div className="automation-step-heading"><strong>Message AmpleFile Agent</strong><span>Starts a new chat</span></div>
       <blockquote>{step.message}</blockquote>
       {step.model ? <p className="automation-step-model">Uses {step.model.id} ({step.model.provider}) for this step</p> : null}
     </li>
@@ -864,7 +864,7 @@ function watchStateLabel(state: "starting" | "watching" | "paused" | "error" | u
 function hopLabel(kind: AutomationHistoryHopView["kind"]): string {
   if (kind === "chat") return "Chat";
   if (kind === "files") return "Copy Files";
-  return "Message AmpleFile agent";
+  return "Message AmpleFile Agent";
 }
 
 function sameProposals(left: AutomationProposalView[], right: AutomationProposalView[]): boolean {

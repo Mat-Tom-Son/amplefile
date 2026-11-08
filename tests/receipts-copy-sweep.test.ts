@@ -11,7 +11,7 @@ const read = async (relativePath: string) => await readFile(join(repositoryRoot,
  * docs/act-ledger.md, "Receipts, not gates": no user-facing copy
  * contains "staged", "approve", "policy", "Reviewed", or "Unrestricted".
  * This sweep pins the surfaces that speak to a person:
- * the public documents, the AmpleFile agent's materialized instructions, and the
+ * the public documents, the AmpleFile Agent's materialized instructions, and the
  * desktop's copy contract.
  *
  * "Reviewed" and "Unrestricted" are matched case-sensitively because they
@@ -62,7 +62,7 @@ test("public documents promise receipts and undo instead of gates", async () => 
   assert.match(privacy, /runs at once and leaves a receipt; nothing waits for a further click/);
 });
 
-test("shared Skills and the AmpleFile agent's materialized instructions stay gate-free", async () => {
+test("shared Skills and the AmpleFile Agent's materialized instructions stay gate-free", async () => {
   for (const skill of [".agents/skills/ship-macos-release/SKILL.md"]) {
     const text = await read(skill);
     assert.doesNotMatch(text, retiredGateWords, `${skill} still carries gate vocabulary`);

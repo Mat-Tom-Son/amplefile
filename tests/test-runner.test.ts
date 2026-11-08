@@ -84,7 +84,7 @@ test("the suite runs with a temporary Pi folder, never the developer's real one"
   assert.equal(isolated === realPi || isolated.startsWith(`${realPi}${sep}`), false);
   assert.equal(getAgentDir(), isolated);
   assert.equal(defaultAgentSdkDir(), isolated);
-  assert.equal(process.env.AMPLEFILE_AGENT_DIR, undefined, "a developer's own AmpleFile agent override cannot reach tests");
+  assert.equal(process.env.AMPLEFILE_AGENT_DIR, undefined, "a developer's own AmpleFile Agent override cannot reach tests");
   assert.ok(process.env.AMPLEFILE_TEST_REAL_PI_DIRS?.split(delimiter).includes(realPi));
 });
 

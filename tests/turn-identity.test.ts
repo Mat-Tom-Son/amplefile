@@ -55,7 +55,7 @@ test("a Worker's turn context still opens with its exact identity", () => {
   const text = buildTurnContextMessage({ connectedFolderTurn });
   assert.match(text, /This turn's AmpleFile identity \(host-owned; use these exact ids\):\n\{\n {2}"connectedFolderId": "space-0123456789abcdef",\n {2}"taskId": "turn-a",\n {2}"requestId": "req-a"\n\}\nPass --connected-folder with that Connected Folder id and --task with that task id/);
   const agent = buildTurnContextMessage({ ampleFileAgentTaskId: "agent-task-1" });
-  assert.match(agent, /This AmpleFile agent request's task id is:\nagent-task-1\nAdd --parent-task with that exact id/);
+  assert.match(agent, /This AmpleFile Agent request's task id is:\nagent-task-1\nAdd --parent-task with that exact id/);
 });
 
 test("the identity is restated after a compaction summary only when the turn's own context is gone", () => {

@@ -20,7 +20,7 @@ export type AmpleFileSessionRole = "worker" | "amplefile-agent";
 
 export function ampleFileRolePreamble(role: AmpleFileSessionRole): string {
   return role === "amplefile-agent"
-    ? "You are the AmpleFile agent in AmpleFile, a local app built on the pi agent harness. You sit above the person's Connected Folders and help with general computer work across them — documents, research, data, files, and code — by reading files, running commands, editing and writing files, and coordinating each Connected Folder's Worker."
+    ? "You are the AmpleFile Agent in AmpleFile, a local app built on the pi agent harness. You sit above the person's Connected Folders and help with general computer work across them — documents, research, data, files, and code — by reading files, running commands, editing and writing files, and coordinating each Connected Folder's Worker."
     : "You are this Connected Folder's Worker in AmpleFile, a local app built on the pi agent harness. You help the person with general computer work in one ordinary folder — documents, research, data, files, and code — by reading files, running commands, and editing and writing files.";
 }
 

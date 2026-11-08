@@ -5,7 +5,7 @@ AmpleFile has three runtime layers and one shared in-process management plane:
 1. The React renderer draws the file manager window (sidebar, toolbar,
    contents, path bar, and the right panel with Info, History, and the Chat),
    the Skills & Extensions and Settings dialogs, and, as a separate renderer,
-   the AmpleFile agent's menu-bar popover.
+   the AmpleFile Agent's menu-bar popover.
 2. The local Node host owns filesystem access, conversations, resource
    import, Pi sessions, and the domain services that authorize changes.
 3. Electron supplies native windows, menus, dialogs, secure storage,
@@ -65,7 +65,7 @@ protocol-v1 request and response files live under
 handoff lets a command contact the running app or start a headless host. The
 channel is bounded and same-user, but not authenticated, so it stays
 read-only; changes go through the separately authenticated act lane. See
-[the AmpleFile agent and CLI](amplefile-agent-and-cli.md) for the full
+[the AmpleFile Agent and CLI](amplefile-agent-and-cli.md) for the full
 snapshot, adapter, CLI, and security contracts.
 
 ## Product model and navigation
@@ -108,13 +108,13 @@ Event-stream reconnects use the server's turn-state snapshots and the saved
 transcript, so renderer sleep, window recreation, or wake does not lose the
 result.
 
-The AmpleFile agent popover is a small separate frameless window
+The AmpleFile Agent popover is a small separate frameless window
 (`popover.html`, its own lean renderer entry) owned by the menu-bar
 integration. It loads through the same app protocol, session-authenticated
 local API, and navigation guards as the main renderer, but has its own narrow
 preload bridge rather than the main renderer's desktop powers. It keeps the
-AmpleFile agent reachable when no main window exists. The same local API
-serves the AmpleFile agent's renderer-only needs-you routes (agent questions
+AmpleFile Agent reachable when no main window exists. The same local API
+serves the AmpleFile Agent's renderer-only needs-you routes (agent questions
 and due snoozes, which the CLI act facade does not expose) and the
 app-composed overview digest.
 

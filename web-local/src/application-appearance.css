@@ -50,7 +50,7 @@
 
 /* A text accent is not a button fill: its companion foreground was solved
    specifically against the solid role, including arbitrary custom accents. */
-:root[data-appearance-palette] .popover button.primary,
+:root[data-appearance-palette] .popover button.primary:not(:disabled),
 :root[data-appearance-palette] :is(.app-shell, .popover) :is(.work-primary-button, .extension-answer) {
   color: var(--ui-on-accent);
   background: var(--ui-accent-solid);
@@ -113,8 +113,9 @@
   line-height: var(--amplefile-reading-leading);
 }
 :root[data-appearance-palette] .app-shell .chat-panel .message-body,
-:root[data-appearance-palette] .app-shell .chat-panel .message-body :is(h1, h2, h3, h4, h5, h6),
-:root[data-appearance-palette] .popover .popover-message.assistant { color: var(--ui-text); }
+:root[data-appearance-palette] .app-shell .chat-panel .message-body :is(h1, h2, h3, h4, h5, h6) { color: var(--ui-text); }
+/* The popover is drawn as the file manager's panel Chat, in its tokens. */
+:root[data-appearance-palette] .popover .popover-message.assistant { color: var(--fm-text); }
 :root[data-appearance-palette] .app-shell .chat-panel .message-body h1 { font-size: 1.4em; }
 :root[data-appearance-palette] .app-shell .chat-panel .message-body h2 { font-size: 1.25em; }
 :root[data-appearance-palette] .app-shell .chat-panel .message-body h3 { font-size: 1.12em; }
@@ -138,8 +139,7 @@
 :root[data-appearance-palette] .app-shell .chat-panel .message-code-toolbar > button { color: var(--ui-text-muted); }
 :root[data-appearance-palette] .app-shell .chat-panel .message-body .message-code-block pre { color: var(--ui-text); background: var(--ui-canvas); }
 :root[data-appearance-palette] .app-shell .chat-panel .message-body .message-code-block pre code { color: inherit; background: transparent; }
-:root[data-appearance-palette] .app-shell .composer textarea,
-:root[data-appearance-palette] .popover .agent-composer textarea {
+:root[data-appearance-palette] .app-shell .composer textarea {
   font-family: var(--amplefile-ui-font);
   font-size: var(--amplefile-reading-size);
   line-height: var(--amplefile-reading-leading);
@@ -155,12 +155,13 @@
 :root[data-appearance-palette] .app-shell .chat-panel .message.user .message-body,
 :root[data-appearance-palette] .app-shell .chat-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, a, code, .connected-folder-file-link),
 :root[data-appearance-palette] .app-shell .message.user :is(.message-image-external, .message-image-unavailable) { color: var(--connected-folder-accent-text-body, var(--ui-accent)); }
-:root[data-appearance-palette] .popover .popover-message.user { background: var(--ui-accent-soft); color: var(--ui-accent); }
 :root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .message.user .message-surface,
 :root[data-appearance-palette][data-appearance-messages="quiet"] .popover .popover-message.user {
   background: var(--ui-surface-subtle);
   color: var(--ui-text);
 }
+/* On the popover's panel ground a quiet message keeps a hairline edge, as the file manager's card does. */
+:root[data-appearance-palette][data-appearance-messages="quiet"] .popover .popover-message.user { box-shadow: 0 0 0 0.5px var(--fm-card-line); }
 :root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .chat-panel .message.user .message-body,
 :root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .chat-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, a, code, .connected-folder-file-link),
 :root[data-appearance-palette][data-appearance-messages="quiet"] .app-shell .message.user :is(.message-image-external, .message-image-unavailable) { color: var(--ui-text); }
@@ -168,15 +169,13 @@
 /* Density changes row padding, not glyph scale or content hierarchy. */
 :root[data-appearance-palette] .app-shell :is(.file-row, .chat-connected-folder-row-shell),
 :root[data-appearance-palette] .app-shell .settings-window .settings-tab,
-:root[data-appearance-palette] .popover :is(.popover-new-chat, .agent-chat-row) {
+:root[data-appearance-palette] .popover .agent-chat-row {
   min-height: var(--amplefile-list-height);
   padding-block: var(--amplefile-list-padding);
 }
 :root[data-appearance-palette] .app-shell .chat-connected-folder-row-title { color: var(--ui-text); }
 :root[data-appearance-palette] .app-shell .chat-connected-folder-row-time { color: var(--ui-text-muted); }
 :root[data-appearance-palette] .app-shell .settings-window :is(.settings-tab, .settings-field input, .settings-field select, .settings-section p, .context-meta-grid dt, .context-meta-grid dd) { font-size: var(--amplefile-type-sm); }
-:root[data-appearance-palette] .popover :is(.popover-new-chat, .agent-chat-row) { font-size: var(--amplefile-type-sm); }
-:root[data-appearance-palette] .popover :is(.composer-model, .composer-thinking) { font-size: var(--amplefile-type-xs); }
 
 :root[data-appearance-palette] .app-shell .send-button:not(.stop-send-button):not(:disabled) {
   background: var(--connected-folder-accent-solid, var(--ui-accent-solid));
@@ -205,8 +204,8 @@
 :root[data-appearance-transparency="opaque"],
 :root[data-appearance-transparency="opaque"] :is(body, #root),
 :root[data-appearance-transparency="opaque"] .app-shell { background: var(--ui-canvas); }
-:root[data-appearance-transparency="opaque"] .desktop-titlebar,
-:root[data-appearance-transparency="opaque"] .popover { background: var(--ui-surface); }
+:root[data-appearance-transparency="opaque"] .desktop-titlebar { background: var(--ui-surface); }
+:root[data-appearance-transparency="opaque"] .popover { background: var(--fm-panel); }
 :root[data-appearance-transparency="opaque"] :is(.context-menu, .composer-command-menu, .drop-overlay) { backdrop-filter: none; background: var(--ui-surface); }
 
 :root[data-appearance-contrast="more"] .app-shell :is(.message-time, .message-copy-button, .chat-connected-folder-row-actions),
@@ -241,5 +240,5 @@
 @media (pointer: coarse) {
   :root[data-appearance-palette] .app-shell :is(.file-row, .chat-connected-folder-row-shell),
   :root[data-appearance-palette] .app-shell .settings-window .settings-tab,
-  :root[data-appearance-palette] .popover :is(.popover-new-chat, .agent-chat-row) { min-height: max(44px, var(--amplefile-list-height)); }
+  :root[data-appearance-palette] .popover .agent-chat-row { min-height: max(44px, var(--amplefile-list-height)); }
 }

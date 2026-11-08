@@ -38,7 +38,7 @@ async function directVerbHarness(prefix: string): Promise<{
   records: ReceiptEntry[];
   execute: (argv: string[]) => ReturnType<typeof executeAmpleFileCliActRequest>;
   lastOk: () => ReceiptEntry;
-  /** Connected Folder ids (the AmpleFile agent scope id included) whose turns wait at the prompt gate until released. */
+  /** Connected Folder ids (the AmpleFile Agent scope id included) whose turns wait at the prompt gate until released. */
   held: Set<string>;
   release: (taskId: string) => Promise<void>;
   close: () => Promise<void>;
@@ -188,7 +188,7 @@ test("connected-folders delete deletes a managed folder on the first call, refus
     assert.deepEqual(h.records.map((record) => record.outcome), ["accepted", "error"]);
     assert.equal(existsSync(linkedRoot), true);
 
-    // An inactive AmpleFile agent parent is refused before anything is accepted,
+    // An inactive AmpleFile Agent parent is refused before anything is accepted,
     // and nothing executes.
     const other = await h.api.actFacade.createConnectedFolder({ name: "Other" });
     h.records.length = 0;

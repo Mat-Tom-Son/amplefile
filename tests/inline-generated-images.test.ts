@@ -84,7 +84,7 @@ test("a picture made without a path shows in the Chat and stays out of the folde
   assert.deepEqual(await readFile(join(folder, "Images", "banner.png")), pictureBytes);
   assert.equal(parseChatToolImage(saved.details)?.path, "Images/banner.png");
 
-  // Without a store (the AmpleFile agent today), nothing claims the Chat shows it.
+  // Without a store (the AmpleFile Agent today), nothing claims the Chat shows it.
   const plain = createImageGenerationTool({ root: folder, models: source });
   assert.doesNotMatch(plain.description, /shows in the Chat/);
   const unstored = await plain.execute("call-3", { prompt: "A quick sketch" }, undefined, undefined, { model: { input: ["text"] } } as never);

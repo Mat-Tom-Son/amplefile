@@ -69,7 +69,7 @@ test("the request store attributes actions only to an explicit management task",
   assert.equal(store.isAccepting("task-1"), false);
   assert.equal(store.byTaskId("task-1")?.state, "stopped");
   assert.ok(store.byTaskId("task-1")?.settledAt);
-  assert.equal(store.list({ kind: "agent", limit: 1 })[0]?.requestId, second.requestId, "the newest AmpleFile agent request is the popover's latest");
+  assert.equal(store.list({ kind: "agent", limit: 1 })[0]?.requestId, second.requestId, "the newest AmpleFile Agent request is the popover's latest");
 
   // Settling twice never overwrites the first recorded outcome.
   await store.settleTurn("task-1", { status: "succeeded" });
@@ -120,7 +120,7 @@ test("--task names the caller's own running turn, checked the way --parent-task 
   // The Connected Folder's own running turn passes and returns its record.
   assert.equal(store.assertOwnAcceptingTurn("task-audits", { connectedFolderId: "connected-folder-audits" }).requestId, child.requestId);
   assert.equal(store.assertOwnAcceptingTurn("task-agent", {}).requestId, root.requestId);
-  // Another Connected Folder, the AmpleFile agent's turn from a Connected Folder, an unknown id: refused by name.
+  // Another Connected Folder, the AmpleFile Agent's turn from a Connected Folder, an unknown id: refused by name.
   assert.throws(() => store.assertOwnAcceptingTurn("task-audits", { connectedFolderId: "connected-folder-other" }), /another Connected Folder's turn/);
   assert.throws(() => store.assertOwnAcceptingTurn("task-agent", { connectedFolderId: "connected-folder-audits" }), /another Connected Folder's turn/);
   assert.throws(() => store.assertOwnAcceptingTurn("task-missing", { connectedFolderId: "connected-folder-audits" }), /not belong to a request on record/);

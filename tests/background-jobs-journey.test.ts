@@ -296,7 +296,7 @@ test("quitting interrupts a running job; after a restart it is recorded failed a
   assert.equal(j.api.requests.byTaskId(taskId)!.turns.length, 1, "a restart never replays");
 });
 
-test("the AmpleFile agent's own job wakes its own Chat, and its tools reach only its own jobs", async (t) => {
+test("the AmpleFile Agent's own job wakes its own Chat, and its tools reach only its own jobs", async (t) => {
   const j = await startJourney(t);
   // A Worker job first, so the agent has something it must not reach.
   j.script([
@@ -324,7 +324,7 @@ test("the AmpleFile agent's own job wakes its own Chat, and its tools reach only
   const sent = await j.api.actFacade.agentSend({ newConversation: true, content: "Tidy my downloads." });
   await waitFor(async () => (await j.api.actFacade.agentTurnStatus({ taskId: sent.taskId })).task.state !== "running", "the agent turn to settle");
   const toolResults = JSON.stringify(j.requests.find((request) => JSON.stringify(request).includes("read-worker") && request.some((message) => message.role === "toolResult")));
-  assert.match(toolResults, /not one of the AmpleFile agent's/);
+  assert.match(toolResults, /not one of the AmpleFile Agent's/);
 
   await waitFor(() => j.api.requests.byTaskId(sent.taskId)?.state === "done", "the agent's follow-up");
   const record = j.api.requests.byTaskId(sent.taskId)!;
@@ -335,7 +335,7 @@ test("the AmpleFile agent's own job wakes its own Chat, and its tools reach only
   assert.equal(job.history?.status, "not_applicable");
   assert.equal(job.delivery?.by, "follow_up");
   assert.match(userTexts(wake!), /tidied/);
-  assert.match(userTexts(wake!), /AmpleFile agent's working folder has no History/);
+  assert.match(userTexts(wake!), /AmpleFile Agent's working folder has no History/);
   // The Worker's job is untouched by any of this.
   assert.equal(j.api.jobs.get(workerJobId)?.state, "running");
   await j.api.jobs.stop(workerJobId, "cli");

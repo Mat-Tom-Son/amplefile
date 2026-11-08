@@ -16,7 +16,7 @@ import { listPendingConnectedFolderRemovals, scanConnectedFolderTree } from "../
 
 /**
  * Connected Folders inside Connected Folders on the host: the CLI and routes the
- * AmpleFile agent and the renderer read, and the boundary a parent Connected Folder's
+ * AmpleFile Agent and the renderer read, and the boundary a parent Connected Folder's
  * file operations stop at.
  */
 

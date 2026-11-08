@@ -109,7 +109,7 @@ test("current request transport bounds and the optional budget have rows in Limi
   const limits = ampleFileRequestLimits;
   const rows: Partial<Record<AmpleFileRequestLimitName, string>> = {
     providerBudget: "Model spending for one requestNo limit",
-    questionText: `A question a Worker or the AmpleFile agent asks${sizeText(limits.maxQuestionTextBytes)}`,
+    questionText: `A question a Worker or the AmpleFile Agent asks${sizeText(limits.maxQuestionTextBytes)}`,
     answerText: `An answer you give${sizeText(limits.maxAnswerTextBytes)}`,
     resultSummary: `A result summary${sizeText(limits.maxResultSummaryBytes)}`,
     resultData: `Result Details${sizeText(limits.maxResultDataBytes)}`,

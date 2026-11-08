@@ -1,20 +1,20 @@
 ---
 name: organize-dropped-material
-description: Organize explicitly supplied material through the AmpleFile agent using the AmpleFile CLI, with receipted placement and optional delegation to a destination Connected Folder. Use for filing requests in the AmpleFile agent; keep Connected Folder Chat work within its own Connected Folder.
+description: Organize explicitly supplied material through the AmpleFile Agent using the AmpleFile CLI, with receipted placement and optional delegation to a destination Connected Folder. Use for filing requests in the AmpleFile Agent; keep Connected Folder Chat work within its own Connected Folder.
 ---
 
 # Organize dropped material
 
-Coordinate across Connected Folders only in the AmpleFile agent's machine-local management
+Coordinate across Connected Folders only in the AmpleFile Agent's machine-local management
 conversation. Connected Folder transcripts travel with their folders. If this Skill is
 loaded in a Connected Folder Chat, organize only within that Connected Folder; direct a request to
-choose another Connected Folder to the AmpleFile agent without enumerating other Connected Folders, relaying
+choose another Connected Folder to the AmpleFile Agent without enumerating other Connected Folders, relaying
 transcripts, or launching cross–Connected Folder work from the portable Chat.
 
-In the AmpleFile agent, attachments are references, not uploads into a Connected Folder. Consult
+In the AmpleFile Agent, attachments are references, not uploads into a Connected Folder. Consult
 `amplefile help files`, `amplefile help connected-folders`, and `amplefile help chat` for
 the installed command contracts. Use the current request task id supplied by
-the AmpleFile agent's turn context as `--parent-task` on mutations and child dispatches;
+the AmpleFile Agent's turn context as `--parent-task` on mutations and child dispatches;
 never infer it from another running task.
 
 ## Choose and place
@@ -37,7 +37,7 @@ raw cross–Connected Folder moves or automatically delete a staging source.
 ## Delegate when requested
 
 Send only the destination's task and its received Connected Folder–relative paths to its
-own agent. Keep other Connected Folder names, the AmpleFile agent transcript, and source context
+own agent. Keep other Connected Folder names, the AmpleFile Agent transcript, and source context
 out of that portable message unless they are explicitly authorized material.
 
 ```bash

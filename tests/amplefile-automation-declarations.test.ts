@@ -435,7 +435,7 @@ test("version 4 admits the closed placeholder set and the agent step, and refuse
     ampleFileAutomationMessagePlaceholders((normalized.automation.steps[1] as { message: string }).message),
     [{ name: "steps.adopt.createdFiles", step: "adopt" }],
   );
-  // A agent step names no Connected Folder; the AmpleFile agent sits above them.
+  // A agent step names no Connected Folder; the AmpleFile Agent sits above them.
   assert.deepEqual(ampleFileAutomationReferencedConnectedFolderIds(normalized.automation), [manuscriptConnectedFolder, publisherConnectedFolder].sort());
 
   assert.throws(() => normalizeAmpleFileAutomationProposal(version4((value) => {

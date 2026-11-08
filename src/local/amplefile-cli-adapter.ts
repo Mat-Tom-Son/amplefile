@@ -65,7 +65,7 @@ export class AmpleFileCliKernelAdapter implements AmpleFileCliKernel {
       id: task.id,
       label: task.kind !== "assistant_turn"
         ? "Chat compaction"
-        : task.connectedFolderId === ampleFileAgentScopeId ? "AmpleFile agent turn" : "Worker turn",
+        : task.connectedFolderId === ampleFileAgentScopeId ? "AmpleFile Agent turn" : "Worker turn",
       status: task.status,
       connectedFolderId: task.connectedFolderId,
       updatedAt: task.startedAt,

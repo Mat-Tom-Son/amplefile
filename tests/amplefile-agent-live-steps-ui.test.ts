@@ -60,7 +60,7 @@ async function agentHarness(t: TestContext, transcript: unknown[] = [{ id: "ask"
   return { dom, emit, controls };
 }
 
-test("the AmpleFile agent shows its thinking and tool steps as they stream, then folds them under the reply", async (t) => {
+test("the AmpleFile Agent shows its thinking and tool steps as they stream, then folds them under the reply", async (t) => {
   const { dom, emit } = await agentHarness(t);
   await emit({ type: "turn_state", running: true, turnId: "turn-1" });
   await emit({ type: "assistant_thinking", turnId: "turn-1", thinkingPhase: "start", workTrailId: "thinking:1", order: 0 });

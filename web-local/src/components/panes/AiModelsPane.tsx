@@ -134,9 +134,9 @@ export function AiModelsPane(props: AiModelsProps & {
         </label>
         <label className={scope === "agent" ? "active" : ""}>
           <input type="radio" name="ai-model-scope" value="agent" checked={scope === "agent"} onChange={() => changeScope("agent")} />
-          <span>AmpleFile agent</span>
+          <span>AmpleFile Agent</span>
         </label>
-      </fieldset> : <div className="ai-models-singleton-scope">AmpleFile agent</div>}
+      </fieldset> : <div className="ai-models-singleton-scope">AmpleFile Agent</div>}
       <AiModelsScopeSettings
         {...props}
         key={JSON.stringify([scope, scope === "connected-folder" ? connectedFolder?.id : null])}

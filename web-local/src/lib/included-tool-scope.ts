@@ -1,6 +1,6 @@
 /**
  * The included tools are machine-wide: their setup reads and acts
- * through a Connected Folder when one is open, and the AmpleFile agent's scope
+ * through a Connected Folder when one is open, and the AmpleFile Agent's scope
  * otherwise, as on first run.
  */
 export function includedToolsPath(connectedFolderId?: string): string {

@@ -1,7 +1,7 @@
 /**
  * The built-in browser (docs/built-in-browser.md): one set of browser tabs
  * that belongs to no Connected Folder. Every Connected Folder's tab strip shows them,
- * and every Worker and the AmpleFile agent can use them. These are the shapes
+ * and every Worker and the AmpleFile Agent can use them. These are the shapes
  * the desktop host, the renderer, and the agent tools share.
  */
 

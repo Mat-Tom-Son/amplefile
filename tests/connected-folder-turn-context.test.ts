@@ -20,7 +20,7 @@ import { ampleFileAgentScopeId } from "../src/local/state-paths.js";
  * Connected Folder turns get their own context (docs/collaboration-contract.md):
  * this Connected Folder's id, this turn's task id, its request id, and — when another
  * request delegated the work — an opaque handle plus the assignment. Never
- * another Connected Folder, the registry, the AmpleFile agent's conversation, or the parent's real
+ * another Connected Folder, the registry, the AmpleFile Agent's conversation, or the parent's real
  * task id.
  */
 
@@ -141,7 +141,7 @@ test("the operations guide names the verbs and the rules, stays bounded, and fol
   assert.equal(ampleFileConnectedFolderOperationsGuide("wf").includes("`wf help collaborate`"), true, "the executable name substitutes");
 });
 
-test("the local API composes a Connected Folder turn's context from acceptance, never from the AmpleFile agent's registry", async (t) => {
+test("the local API composes a Connected Folder turn's context from acceptance, never from the AmpleFile Agent's registry", async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), "amplefile-connected-folder-turn-context-"));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
   await mkdir(join(sandbox, "agent", "extensions"), { recursive: true });
@@ -232,7 +232,7 @@ test("the local API composes a Connected Folder turn's context from acceptance, 
     assert.equal(undelegatedEvent.connectedFolderTurn!.answeredQuestionId, undefined, "an ordinary turn answers nothing");
 
     const ampleFileAgentEvent = events.find((event) => event.taskId === parent.taskId)!;
-    assert.equal(ampleFileAgentEvent.connectedFolderTurn, undefined, "the AmpleFile agent's own turn carries no Connected Folder identity block");
+    assert.equal(ampleFileAgentEvent.connectedFolderTurn, undefined, "the AmpleFile Agent's own turn carries no Connected Folder identity block");
   } finally {
     holdConnectedFolderTurns = false;
     for (const turn of heldConnectedFolderTurns.splice(0)) turn.release();

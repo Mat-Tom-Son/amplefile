@@ -20,7 +20,7 @@ interface ModelPreferencesFile {
 
 /**
  * Machine-local model choices for each portable Connected Folder identity and for the
- * AmpleFile agent. Provider credentials remain in Pi's shared AuthStorage.
+ * AmpleFile Agent. Provider credentials remain in Pi's shared AuthStorage.
  */
 export class ModelPreferenceStore {
   readonly #filePath: string;

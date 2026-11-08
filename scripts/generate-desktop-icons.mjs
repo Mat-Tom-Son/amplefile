@@ -12,7 +12,7 @@ import sharp from "sharp";
 //   masters: the optically redrawn small master up to 32 px, the full master
 //   above that.
 // - The menu-bar template pair renders amplefile-menubar.svg at 18 and 36 px,
-//   plus the frames of the pulse the dot makes while the AmpleFile agent works.
+//   plus the frames of the pulse the dot makes while the AmpleFile Agent works.
 // - The dark-theme lockup is the Ink lockup with light lettering.
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -161,7 +161,7 @@ async function writeDarkLockup() {
 }
 
 // The renderer's favicon is the 32 px flat mark as a data URI, so the
-// window and the AmpleFile agent popover load no separate icon file.
+// window and the AmpleFile Agent popover load no separate icon file.
 async function writeFavicons(marks) {
   const dataUri = `data:image/png;base64,${marks.get(32).toString("base64")}`;
   for (const page of ["index.html", "popover.html"]) {

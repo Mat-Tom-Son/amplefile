@@ -155,7 +155,7 @@ export interface AmpleFileOverviewAgentRequestRecord {
   /** The request's newest turn. */
   taskId: string;
   conversationId: string;
-  /** Absent exactly for the AmpleFile agent scope. */
+  /** Absent exactly for the AmpleFile Agent scope. */
   connectedFolderId?: string;
   phase: AmpleFileActAgentRequestPhase;
   startedAt: string;
@@ -169,7 +169,7 @@ export interface AmpleFileOverviewAgentRequestRecord {
 }
 
 /**
- * Work above a single turn: the AmpleFile agent's own requests, and any
+ * Work above a single turn: the AmpleFile Agent's own requests, and any
  * request that delegated, asked, or reported. A plain Worker turn is one
  * kernel task and one settled turn already; rendering its root request as
  * well would list the same work twice.
@@ -473,8 +473,8 @@ function composeNeedsYou(input: {
         ref: { taskId: request.taskId, conversationId: request.conversationId, requestId: request.requestId, questionId: question.questionId },
       }));
     }
-    // The closing-question heuristic on a FINISHED AmpleFile agent reply, and
-    // nothing else. Only an AmpleFile agent request's phase comes from that
+    // The closing-question heuristic on a FINISHED AmpleFile Agent reply, and
+    // nothing else. Only an AmpleFile Agent request's phase comes from that
     // heuristic; every other kind derives `needs_you` straight from state
     // `waiting`, which a request also reaches on a question addressed to its
     // parent agent — a question that belongs to that parent and never to the

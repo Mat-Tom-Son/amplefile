@@ -56,7 +56,7 @@ export const ampleFileRecentlyDeletedMaxRetentionDays = 365;
 
 /**
  * Durable request bounds (docs/collaboration-contract.md, "Execution and
- * transport bounds"; docs/act-ledger.md). Every request the AmpleFile agent, a
+ * transport bounds"; docs/act-ledger.md). Every request the AmpleFile Agent, a
  * Worker, an automation, or an outside harness starts is one
  * record with these bounds, and every refusal names the number plus
  * "Settings → Automations → Limits".

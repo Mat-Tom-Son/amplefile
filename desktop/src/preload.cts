@@ -118,7 +118,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     paste: (request: { target: { place: { kind: "connected-folder" | "standard"; id: string }; path: string }; mode: "copy" | "move"; internal: { place: { kind: "connected-folder" | "standard"; id: string }; paths: string[]; nativePaths: string[] } | null }) => ipcRenderer.invoke("amplefile:file-clipboard:paste", request),
   },
   agent: {
-    // A file dropped on the AmpleFile agent panel becomes a path reference, as in the popover.
+    // A file dropped on the AmpleFile Agent panel becomes a path reference, as in the popover.
     getPathForFile: (file: File): string => {
       try {
         return webUtils.getPathForFile(file) ?? "";

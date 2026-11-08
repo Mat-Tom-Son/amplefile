@@ -61,7 +61,7 @@ override does **not** isolate macOS Keychain. A signed Mac candidate uses the
 production identity by default—follow the [candidate guidance](macos-build.md#interactive-packaged-smoke)
 before launching one.
 
-Real Worker and AmpleFile agent turns need a model provider and may incur
+Real Worker and AmpleFile Agent turns need a model provider and may incur
 charges. The browser development host and unpackaged desktop load the root
 `.env` when present; already-exported variables win. Copy [the optional template](../.env.example)
 only if you need it, and uncomment only the settings you intend to use.
@@ -74,7 +74,7 @@ chosen agent directory; it is not an offline unit test. `--follow-ups <n>` keeps
 its local API running for n more turns AmpleFile starts in the same Chat, such as
 a [background job](background-jobs.md)'s wake-up, and reports each with the
 message that started it. See
-[the AmpleFile agent and CLI](amplefile-agent-and-cli.md) before driving real work.
+[the AmpleFile Agent and CLI](amplefile-agent-and-cli.md) before driving real work.
 
 ## Inspect a model request
 
@@ -90,10 +90,10 @@ recording automatically. Close or Escape closes just the inspector window;
 turn recording off explicitly when finished, or quit AmpleFile to discard it.
 During browser development, open the local renderer with `?dev-context`
 (for example, `http://localhost:5173/?dev-context` at Vite's default port).
-This is a developer diagnostic route, with no normal Chat, AmpleFile agent or
+This is a developer diagnostic route, with no normal Chat, AmpleFile Agent or
 Settings entry. Enable **Record model context**, reproduce the behavior in the
 app, then refresh and choose the request. The all-request view includes Worker
-and AmpleFile agent turns, titles, bounded inference, and compaction. Search or copy assembled context, compare
+and AmpleFile Agent turns, titles, bounded inference, and compaction. Search or copy assembled context, compare
 provider payloads where the adapter exposes them, and inspect provenance from
 the loaded runtime: source paths, instruction digests, Skills, Extensions and
 tools. These facts are captured at dispatch, not reconstructed from later file
@@ -116,7 +116,7 @@ for capture stages, coverage and bounds.
 | `src/local/agent/` | Pi integration, Chat turns, and agent services |
 | `src/local/connected-folder*.ts` | Connected Folder registration, path policy, ignore rules, watching, and appearance |
 | `src/local/automations/`, `src/local/requests/` | Automations (including their folder target resolver) and durable request records |
-| `src/local/overview.ts`, `src/local/amplefile-agent-*.ts` | The AmpleFile agent's overview, attachments, and instructions |
+| `src/local/overview.ts`, `src/local/amplefile-agent-*.ts` | The AmpleFile Agent's overview, attachments, and instructions |
 | [Kernel](../src/local/amplefile-kernel.ts), [CLI](../src/local/cli/), [adapter](../src/local/amplefile-cli-adapter.ts) | Shared context, tasks, and control-plane contracts |
 | `src/shared/` | Shared types and the product identity contract |
 | `desktop/src/` | Electron windows, lifecycle, preloads, the built-in browser, and updater |
@@ -125,7 +125,7 @@ for capture stages, coverage and bounds.
 | `docs/`, `.agents/skills/` | Product contracts and task-specific contributor workflows |
 
 Use the [docs map](README.md) to find the document that owns an area. Files
-in `docs/reference-skills/` are examples; app-generated AmpleFile agent instructions are runtime resources. Neither is an
+in `docs/reference-skills/` are examples; app-generated AmpleFile Agent instructions are runtime resources. Neither is an
 extra repository instruction source.
 
 ## Verification

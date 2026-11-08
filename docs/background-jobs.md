@@ -1,6 +1,6 @@
 # Background jobs
 
-A Worker or the AmpleFile agent starts a shell command, keeps working or ends
+A Worker or the AmpleFile Agent starts a shell command, keeps working or ends
 its turn, and is woken with the result when the command exits. Exports,
 conversions, installs, builds, test suites, and servers do not hold a turn
 open, and a Chat does not go quiet while something long runs.
@@ -22,7 +22,7 @@ path.
 ## Rules
 
 - **A background job belongs to the turn that started it.** A job is one shell
-  command started by a running Worker or AmpleFile agent turn. It joins that
+  command started by a running Worker or AmpleFile Agent turn. It joins that
   turn's request: while it runs, the request reads `working`, so `chat wait`,
   the work line, the overview, Stop, and settled deletion treat it as
   outstanding work. A job record is journaled before the process starts,
@@ -51,7 +51,7 @@ refusals, and receipts.
 ### Tools in every Chat
 
 Three Pi custom tools, registered beside `generate_image` in
-`src/local/agent/pi-client.ts`, for Workers and the AmpleFile agent alike. The
+`src/local/agent/pi-client.ts`, for Workers and the AmpleFile Agent alike. The
 tool knows its own turn, Connected Folder, and Chat, so it needs no ids or flags.
 
 | Tool | Parameters | Returns |
@@ -71,7 +71,7 @@ control characters removed.
 ### `amplefile jobs` on the CLI
 
 The same operations as act-lane verbs, so codemode, a Worker's shell, and the
-AmpleFile agent can drive Workers' jobs with receipts:
+AmpleFile Agent can drive Workers' jobs with receipts:
 
 ```
 amplefile jobs start  --connected-folder <id> --task <own-task-id> (--command "<cmd>" | --command-file <path>) [--name "<label>"] [--cwd <path>] [--timeout <s>] --json
@@ -88,8 +88,8 @@ amplefile jobs stop   --connected-folder <id> --job <id> [--parent-task <id>] --
   its own Connected Folder. A read counts as delivery only when `--task` names
   the reader's running turn in the job's own Chat; `jobs stop` takes no
   `--task`, so a job stopped from the CLI still wakes its Chat once.
-- The AmpleFile agent reaches its own jobs through the tools; `requests show`
-  lists them. The AmpleFile agent can read and stop any Worker's job through
+- The AmpleFile Agent reaches its own jobs through the tools; `requests show`
+  lists them. The AmpleFile Agent can read and stop any Worker's job through
   `--connected-folder`.
 - The tool path writes the same job journal and request action, so both
   surfaces leave the same record.
@@ -97,7 +97,7 @@ amplefile jobs stop   --connected-folder <id> --job <id> [--parent-task <id>] --
 ## Lifecycle
 
 A job record carries its id (`job-<yyyymmddhhmmss>-<8 hex>`), Connected Folder
-(absent for the AmpleFile agent), Chat, starting task, request, name, command,
+(absent for the AmpleFile Agent), Chat, starting task, request, name, command,
 folder, start and end times, process id, exit code or signal, output size,
 History coverage, delivery, and state:
 
@@ -191,8 +191,8 @@ host attempts a full History capture of that Connected Folder (label
 checkpoint id, files kept, and files skipped by reason, or why no capture was
 possible. Identical content reuses the existing checkpoint. The follow-up
 message, `job_output`, and `jobs show` report that coverage as it is. Jobs of
-the AmpleFile agent have no History of their own; their record says so, and
-the AmpleFile agent's instructions say to take `history save` in a Connected
+the AmpleFile Agent have no History of their own; their record says so, and
+the AmpleFile Agent's instructions say to take `history save` in a Connected
 Folder it changed through a job.
 
 ## Storage and bounds
@@ -221,7 +221,7 @@ their slots, and a live process group holds its slot until it drains.
 
 ## Teaching
 
-The Worker operations guide and the AmpleFile agent instructions carry one
+The Worker operations guide and the AmpleFile Agent instructions carry one
 rule, stated once: *use `job_start` for anything that may take more than a
 couple of minutes, or whose partial output decides the next step; use `bash`
 for everything else.* Around it they say: after starting a job, keep working
@@ -254,7 +254,7 @@ with Tcl 8 and 9. UTF-8 decoding belongs to the job output reader; the relay
 does not transcode input or output.
 
 Jobs send no notification when they end and have no panel of their own. The
-CLI does not reach the AmpleFile agent's own jobs; it uses the tools.
+CLI does not reach the AmpleFile Agent's own jobs; it uses the tools.
 
 ## Verification
 

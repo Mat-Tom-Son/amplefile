@@ -30,7 +30,7 @@ export interface AmpleFileCliActReceiptV3 {
   errorCode?: AmpleFileCliErrorCode;
   checkpointId?: string;
   taskId?: string;
-  /** Kernel task id of the AmpleFile agent turn this act was performed for, when one was running. */
+  /** Kernel task id of the AmpleFile Agent turn this act was performed for, when one was running. */
   parentTaskId?: string;
   detail?: string;
   surface?: AmpleFileCliActSurface;

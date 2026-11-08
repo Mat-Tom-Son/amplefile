@@ -54,7 +54,7 @@ export interface AmpleFileActRecentlyDeletedEntry {
     | "apps.release.delete";
   connectedFolderId: string;
   connectedFolderName?: string;
-  /** skill only: the scope it goes back into. An Everywhere Skill names the AmpleFile agent's scope as its Connected Folder. */
+  /** skill only: the scope it goes back into. An Everywhere Skill names the AmpleFile Agent's scope as its Connected Folder. */
   scope?: "everywhere" | "connected-folder";
   /** Connected Folder–relative path, a deleted Connected Folder's original folder path, a Skill's path inside its scope's skills folder, or what an earlier build's app item named. */
   originalPath: string;
@@ -246,7 +246,7 @@ export interface AmpleFileActRequestRef {
   state: AmpleFileRequestState;
   /** 0 for a root. */
   depth: number;
-  /** Null exactly for the AmpleFile agent scope. */
+  /** Null exactly for the AmpleFile Agent scope. */
   connectedFolderId: string | null;
   connectedFolderName: string | null;
   conversationId: string;
@@ -557,7 +557,7 @@ export interface AmpleFileActFacade {
     content: string;
     /** Act-envelope request id reused as the durable turn identity. */
     requestId?: string;
-    /** Explicit active AmpleFile agent request that initiated this action. */
+    /** Explicit active AmpleFile Agent request that initiated this action. */
     parentTaskId?: string;
   }): Promise<{ connectedFolder: AmpleFileActConnectedFolderRef; conversationId: string; messageId: string; taskId: string }>;
   conversationStatus(input: { connectedFolder: string; conversationId: string }): Promise<{
@@ -597,7 +597,7 @@ export interface AmpleFileActFacade {
   /**
    * The collaboration verbs (docs/collaboration-contract.md). Each is
    * journal-first and receipted; delivery is host-side, so none of them
-   * needs an AmpleFile agent turn. `--task` must name the caller's own turn —
+   * needs an AmpleFile Agent turn. `--task` must name the caller's own turn —
    * the newest, still-running turn of a request the named Connected Folder owns — checked
    * the way `--parent-task` is checked.
    */
@@ -743,7 +743,7 @@ export interface AmpleFileActFacade {
    * Reads of the request graph above all Connected Folders: recent roots, newest first.
    * `cwd` is the caller's directory, which resolves its scope the way
    * `context` does; a caller inside a registered Connected Folder is refused by name,
-   * because the graph carries other Connected Folders' results and the AmpleFile agent's own
+   * because the graph carries other Connected Folders' results and the AmpleFile Agent's own
    * assignment text (docs/collaboration-contract.md).
    */
   requestsList(input?: { cwd?: string }): Promise<{ requests: AmpleFileActRequestSummary[]; truncated: boolean }>;
@@ -1042,7 +1042,7 @@ export interface AmpleFileActFacade {
    * bytes runnable and run through the prepared-act path (`toolsInstall`,
    * `toolsUpdate`, `toolsImportSkill`). Everywhere scope mutates the same
    * personal Pi settings every Connected Folder runtime loads (resolved through the
-   * app-owned AmpleFile agent root, exactly like the AmpleFile agent's own
+   * app-owned AmpleFile Agent root, exactly like the AmpleFile Agent's own
    * runtime) and is fenced against all running work; Connected Folder scope
    * requires the explicit Connected Folder and its project trust. Both reuse the desktop's capability-mutation
    * fencing unchanged. A source that is not installed reports `removed:
@@ -1250,13 +1250,13 @@ export interface AmpleFileActFacade {
   }>;
 
   /**
-   * The AmpleFile agent: the conversation above all Connected Folders. It reuses
+   * The AmpleFile Agent: the conversation above all Connected Folders. It reuses
    * the same turn orchestration and Pi runtime as Worker Chats, but its
    * transcript is machine-local application state, it carries no user
    * Connected Folder's project configuration (only AmpleFile's two app-owned
-   * AmpleFile agent resources), and its cross–Connected Folder hands are these same
+   * AmpleFile Agent resources), and its cross–Connected Folder hands are these same
    * act commands. Omitting conversationId targets the default (most recent
-   * active) AmpleFile agent chat, creating it on first send.
+   * active) AmpleFile Agent chat, creating it on first send.
    */
   agentList(): Promise<{ conversations: AmpleFileActConversationRef[] }>;
   agentAsk(input: Omit<Parameters<AmpleFileActFacade["chatAsk"]>[0], "connectedFolder" | "respondent">): Promise<Omit<Awaited<ReturnType<AmpleFileActFacade["chatAsk"]>>, "connectedFolder">>;
@@ -1292,7 +1292,7 @@ export interface AmpleFileActFacade {
      */
     requestGraph: AmpleFileActRequestRef | null;
   }>;
-  /** Request-level stop: aborts the AmpleFile agent turn and every recorded child turn still running. */
+  /** Request-level stop: aborts the AmpleFile Agent turn and every recorded child turn still running. */
   agentStop(input: { taskId: string }): Promise<{
     taskId: string;
     ampleFileAgentAborted: boolean;
@@ -1319,7 +1319,7 @@ export interface AmpleFileActFacade {
    * work, needs-you items, and changes, with the
    * per-surface seen markers included as data. Read-only: the act lane renders
    * markers, it never advances one, and this method deliberately does not
-   * require the AmpleFile agent to be ready — the digest reads recorded
+   * require the AmpleFile Agent to be ready — the digest reads recorded
    * state, not the model.
    */
   agentOverview(): Promise<AmpleFileOverviewSnapshot>;

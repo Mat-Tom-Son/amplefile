@@ -159,9 +159,9 @@ export interface PiTurnContext {
   loadContextAttachments?: (budgetTokens: number) => Promise<LoadedConversationContextAttachment[]>;
   /** Links the person attached to this turn (http/https only). Data, not instructions. */
   attachedLinks?: string[];
-  /** Active AmpleFile agent request id used to attribute downstream act commands. */
+  /** Active AmpleFile Agent request id used to attribute downstream act commands. */
   ampleFileAgentTaskId?: string;
-  /** Exact host-owned Connected Folder registry at the start of this AmpleFile agent turn. */
+  /** Exact host-owned Connected Folder registry at the start of this AmpleFile Agent turn. */
   ampleFileAgentConnectedFolders?: Array<{ id: string; name: string; connectedFolderRoot: string; parentConnectedFolderId?: string }>;
   /**
    * Workers the person addressed with @ in this message,
@@ -170,8 +170,8 @@ export interface PiTurnContext {
   addressedFolders?: Array<{ connectedFolderId: string; name: string }>;
   /**
    * Host-owned identity of this Connected Folder turn (docs/collaboration-contract.md).
-   * Set only for Connected Folder scopes; the two AmpleFile agent fields above are set
-   * only for the AmpleFile agent scope, so a context never carries both.
+   * Set only for Connected Folder scopes; the two AmpleFile Agent fields above are set
+   * only for the AmpleFile Agent scope, so a context never carries both.
    */
   connectedFolderTurn?: PiConnectedFolderTurnContext;
   /** Set when an Automation's step sent this turn's message; nobody is watching it run. */
@@ -192,7 +192,7 @@ export interface PiConversationClientOptions {
   onContextCompacted?: () => Promise<void>;
   /** Which role opens each request in place of Pi's coding preamble; a Worker unless set. */
   role?: AmpleFileSessionRole;
-  /** Appended after this Connected Folder's instructions; absent for the AmpleFile agent scope. */
+  /** Appended after this Connected Folder's instructions; absent for the AmpleFile Agent scope. */
   operationsGuide?: string;
   /** The image model chosen in Settings → AI Models, read when a picture is made. */
   imageModel?: () => Promise<{ provider: string; id: string } | undefined>;
@@ -401,7 +401,7 @@ export class PiConversationClient extends EventEmitter {
       }
 
       this.throwIfCancellationRequested();
-      this.emitEvent({ type: "status", message: context.ampleFileAgentTaskId ? "The AmpleFile agent is working." : "The Worker is working." });
+      this.emitEvent({ type: "status", message: context.ampleFileAgentTaskId ? "The AmpleFile Agent is working." : "The Worker is working." });
       const messagesBefore = session.messages.length;
       await this.promptWithTimeout(session, message, turnImages(context));
       if (this.turnError) throw this.turnError;
@@ -1782,7 +1782,7 @@ export function buildTurnContextMessage(context: PiTurnContext): string {
       );
     }
     lines.push(
-      "Work only in this Connected Folder. Other Connected Folders' folders, unselected results and the AmpleFile agent's conversation are not yours to read. Read selected child results through chat result; hand off or ask for other help.",
+      "Work only in this Connected Folder. Other Connected Folders' folders, unselected results and the AmpleFile Agent's conversation are not yours to read. Read selected child results through chat result; hand off or ask for other help.",
     );
   }
   if (context.ampleFileAgentConnectedFolders) {

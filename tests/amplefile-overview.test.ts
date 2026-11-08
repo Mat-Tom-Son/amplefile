@@ -48,7 +48,7 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
   assert.deepEqual(first.truncated, { running: false, needsYou: false, changes: false });
   assert.deepEqual(first.unavailable, []);
 
-  // Running: longest-running first, one item per AmpleFile agent request, the
+  // Running: longest-running first, one item per AmpleFile Agent request, the
   // request's own turn and its running child folded into the headline count.
   assert.deepEqual(first.running.map((item) => item.id), [
     "agent-requests:req-mgmt",
@@ -502,7 +502,7 @@ function fullFixtureSources(): AmpleFileOverviewSourceReaders {
     settledTurns: async () => [
       { taskId: "task-old", connectedFolderId: "connected-folder-a", conversationId: "chat-q", outcome: "succeeded", endedAt: "2026-08-10T07:00:00.000Z" },
     ],
-    // Durable requests: the AmpleFile agent's own requests plus Connected Folder–owned ones.
+    // Durable requests: the AmpleFile Agent's own requests plus Connected Folder–owned ones.
     // A request is keyed by its id, which is stable across continuations.
     ampleFileAgentRequests: async () => [
       { requestId: "req-mgmt", kind: "agent", state: "working", taskId: "task-mgmt", conversationId: "mgmt-1", phase: "working", startedAt: "2026-08-10T10:59:00.000Z", endedAt: null, childTaskIds: ["task-child"], openQuestions: [], questionCount: 0, resultCount: 0 },

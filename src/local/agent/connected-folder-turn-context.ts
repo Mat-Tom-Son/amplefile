@@ -6,8 +6,8 @@
  * assignment it sent.
  *
  * The parent handle is derived, never the parent's real task or request id.
- * The parent is usually an AmpleFile agent turn: handing a Worker
- * the raw parent task id would let it act with the AmpleFile agent's lineage through
+ * The parent is usually an AmpleFile Agent turn: handing a Worker
+ * the raw parent task id would let it act with the AmpleFile Agent's lineage through
  * `--parent-task`, and handing it the parent request id would let it read the
  * request graph a management-scope verb exposes. Either would leak
  * cross–Connected Folder context into the Worker one command away, so the

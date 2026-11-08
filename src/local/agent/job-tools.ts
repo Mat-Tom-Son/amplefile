@@ -1,6 +1,6 @@
 /**
  * job_start, job_output, job_stop: the background job tools every Worker and
- * the AmpleFile agent carry (docs/background-jobs.md). They sit beside Pi's
+ * the AmpleFile Agent carry (docs/background-jobs.md). They sit beside Pi's
  * `bash`, which stays the tool for short commands. The tools know their own
  * turn, Connected Folder, and Chat, so they take no ids or flags; the host behind
  * them is the same job service the `amplefile jobs` verbs use, so both leave

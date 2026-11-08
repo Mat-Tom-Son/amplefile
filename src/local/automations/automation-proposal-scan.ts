@@ -13,7 +13,7 @@ import {
 
 /**
  * Pending automation proposals (docs/automations.md, "Where automations live
- * in the product"): the AmpleFile agent writes inert
+ * in the product"): the AmpleFile Agent writes inert
  * `*.amplefile-automation.json` files at the top level of its working
  * folder, and Settings → Automations lists them so a person can turn one on
  * without the terminal.
@@ -75,7 +75,7 @@ export async function scanAmpleFileAutomationProposals(
 
 /**
  * Admits only an absolute path naming a proposal file directly inside the
- * AmpleFile agent's working folder; anything else is refused before it is read.
+ * AmpleFile Agent's working folder; anything else is refused before it is read.
  */
 export function resolveAmpleFileAutomationProposalPath(folder: string, path: unknown): string {
   if (typeof path !== "string" || !path || !isAbsolute(path)) {
@@ -83,7 +83,7 @@ export function resolveAmpleFileAutomationProposalPath(folder: string, path: unk
   }
   const resolved = resolve(path);
   if (dirname(resolved) !== resolve(folder) || !isProposalFileName(basename(resolved))) {
-    throw new Error("Only automation files in the AmpleFile agent's folder can be turned on here.");
+    throw new Error("Only automation files in the AmpleFile Agent's folder can be turned on here.");
   }
   return resolved;
 }

@@ -1,12 +1,12 @@
 /**
  * The durable request graph (docs/collaboration-contract.md).
  *
- * Every accepted Worker or AmpleFile agent turn belongs to exactly one
- * machine-local request record. An AmpleFile agent turn creates a root;
+ * Every accepted Worker or AmpleFile Agent turn belongs to exactly one
+ * machine-local request record. An AmpleFile Agent turn creates a root;
  * `chat send --parent-task` creates a child under it; a Worker turn with no
  * parent is its own root. Records survive restart, are reconciled against the
  * turn journal, and are never replayed. This store replaces the in-memory
- * AmpleFile agent request registry, so it also carries the assignment text,
+ * AmpleFile Agent request registry, so it also carries the assignment text,
  * the attachment references, and the attributed action trail that
  * `agent status` projects.
  *
@@ -249,7 +249,7 @@ export class AmpleFileRequestStore {
    * The newest request on one Chat, within one owner scope. The conversation
    * id alone is not identity: a Chat log travels with its folder, so a copied
    * Connected Folder can hold the same conversation id under a different owner.
-   * Pass the Connected Folder that is asking (or nothing for the AmpleFile agent
+   * Pass the Connected Folder that is asking (or nothing for the AmpleFile Agent
    * scope) so a reply can never join another Connected Folder's request.
    */
   latestForConversation(conversationId: string, owner: { connectedFolderId?: string } = {}): AmpleFileRequestRecord | null {

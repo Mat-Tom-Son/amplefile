@@ -567,7 +567,7 @@ test("the act facade drives file and search families with ledger safety rules", 
       (error: unknown) => error instanceof AmpleFileCliError && error.code === "usage",
     );
 
-    // Mutation verbs refuse a named AmpleFile agent parent that is not active.
+    // Mutation verbs refuse a named AmpleFile Agent parent that is not active.
     await assert.rejects(
       () => facade.filesMkdir({ connectedFolder: connectedFolder.id, path: "orphan", parentTaskId: "task-gone" }),
       (error: unknown) => error instanceof AmpleFileCliError && error.code === "conflict",

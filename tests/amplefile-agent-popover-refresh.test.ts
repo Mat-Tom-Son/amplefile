@@ -60,7 +60,7 @@ test("the popover accounts for every attachment outcome", async () => {
   assert.match(popover, /no recorded placement — see the reply below/);
 });
 
-test("the AmpleFile agent streams its steps and keeps one compact line for delegated work", async () => {
+test("the AmpleFile Agent streams its steps and keeps one compact line for delegated work", async () => {
   const popover = await readFile(resolve(rootDir, "web-local/src/popover/PopoverApp.tsx"), "utf8");
   // The working line follows the always-visible transcript while a request is
   // active without taking a second status panel's worth of vertical Connected Folder.
@@ -77,7 +77,8 @@ test("the AmpleFile agent streams its steps and keeps one compact line for deleg
   assert.doesNotMatch(popover, /You can close your fold|item\$\{request\.attachments\.length/);
   assert.doesNotMatch(popover, /popover-message-role/);
   const css = await readFile(resolve(rootDir, "web-local/src/popover/popover.css"), "utf8");
-  assert.match(css, /\.popover-message\.user \{[\s\S]*?align-self: flex-end;[\s\S]*?background: var\(--pop-accent\);/);
+  // The person's message is a solid accent bubble, as in the file manager's panel Chat.
+  assert.match(css, /\.popover-message\.user \{[\s\S]*?align-self: flex-end;[\s\S]*?background: var\(--fm-accent\);/);
   assert.match(css, /\.popover-message\.assistant \{[\s\S]*?align-self: flex-start;/);
   assert.doesNotMatch(css, /\.popover-message \+ \.popover-message \{ border-top:/);
   // The handed-off per-child trail and the settled result render inside the
@@ -114,9 +115,9 @@ test("the compact popover leaves the overview to the main window and approved we
   assert.doesNotMatch(popover, /\/api\/amplefile-agent\/overview/);
 });
 
-test("Escape still hides the popover and the AmpleFile agent region stays live", async () => {
+test("Escape still hides the popover and the AmpleFile Agent region stays live", async () => {
   const popover = await readFile(resolve(rootDir, "web-local/src/popover/PopoverApp.tsx"), "utf8");
-  assert.match(popover, /aria-label="AmpleFile agent chat" aria-live="polite"/);
+  assert.match(popover, /aria-label="AmpleFile Agent chat" aria-live="polite"/);
   assert.match(popover, /if \(event\.key === "Escape"\) \{[\s\S]*?else bridge\?\.ampleFileAgent\?\.hide\(\);/);
 });
 
@@ -130,11 +131,13 @@ test("the popover composer behaves like every other AmpleFile composer", async (
   assert.match(popover, /if \(event\.isComposing\) return;/);
   // The draft box grows with its content instead of scrolling in a fixed slit.
   assert.match(css, /field-sizing: content/);
-  // The compact circular action lives in the centered model/reasoning row.
-  assert.match(popover, /className="composer-field"[\s\S]*rows=\{1\}[\s\S]*className=\{`composer-action\$\{requestRunning \? " composer-stop" : " primary"\}`\}/);
+  // Send is a small circle inside the rounded field, as in the file manager's
+  // message box; the model and reasoning sit in the small row beneath it.
+  assert.match(popover, /className="composer-field"[\s\S]*rows=\{1\}[\s\S]*className=\{`composer-action\$\{requestRunning \? " composer-stop" : text\.trim\(\) \? " primary is-ready" : " primary"\}`\}[\s\S]*className="composer-controls"/);
   assert.match(css, /\.composer-controls \{[\s\S]*align-items: center;/);
-  assert.match(css, /\.composer-action \{[\s\S]*width: var\(--amplefile-control-md\);[\s\S]*height: var\(--amplefile-control-md\);/);
-  assert.doesNotMatch(css, /\.composer-action \{[\s\S]*position: absolute;/);
+  assert.match(css, /\.composer-field \{[\s\S]*?border-radius: 18px;/);
+  assert.match(css, /\.composer-action \{[\s\S]*width: 28px;[\s\S]*height: 28px;/);
+  assert.doesNotMatch(css, /\.composer-action \{[^}]*position: absolute;/);
   assert.doesNotMatch(popover, /composer-footer/);
   // The same action becomes Stop while work is active; the composer remains
   // mounted as a safe draft area and sending is refused until the turn settles.
@@ -193,16 +196,19 @@ test("the fold composer names its model and exposes real text-only reasoning con
   assert.match(popover, /setConversationRuntime\(result\.runtime\)/);
   const css = await readFile(resolve(rootDir, "web-local/src/popover/popover.css"), "utf8");
   assert.match(css, /\.composer-thinking \{\s*flex: none;[\s\S]*?field-sizing: content;[\s\S]*?\}/);
-  assert.match(css, /\.composer-thinking \{\s*flex: none;[\s\S]*?padding: 1px 14px 1px 6px;/);
+  assert.match(css, /\.composer-thinking \{\s*flex: none;[\s\S]*?padding: 0 18px 0 4px;/);
 });
 
 test("the header exposes the active chat title and New chat directly", async () => {
   const source = await readFile(resolve(rootDir, "web-local/src/popover/PopoverApp.tsx"), "utf8");
-  assert.match(source, /<h1 className="popover-chat-title">\{chatTitle\}<\/h1>/);
+  // As a Chat in the file manager's panel: the title, or Chats with a back button, and icon buttons.
+  assert.match(source, /<h1 className="popover-chat-title" title=\{historyOpen \? undefined : chatTitle\}>\{historyOpen \? "Chats" : chatTitle\}<\/h1>/);
+  assert.match(source, /\{historyOpen \? <button type="button" className="popover-capbtn" aria-label="Back to Chat"/);
   assert.doesNotMatch(source, /<AmpleFileLockup className="popover-brand"/);
-  assert.match(source, /className="popover-new-chat"/);
-  assert.match(source, /aria-label="New Chat"/);
-  assert.match(source, />\s*<SquarePen aria-hidden="true" \/>\s*<span>New Chat<\/span>/);
+  assert.match(source, /className="popover-capbtn popover-new-chat"/);
+  assert.match(source, /aria-label="New Chat"\s*title="New Chat"/);
+  assert.match(source, /aria-label="Chats" title="Chats"[^>]*aria-controls="agent-chat-history"/);
+  assert.doesNotMatch(source, /<span>Previous<\/span>|<SquarePen aria-hidden="true" \/>\s*<span>New Chat<\/span>/);
   assert.doesNotMatch(source, /popover-overflow-menu|aria-haspopup="menu"|Ellipsis|role="menuitem"/);
   assert.match(source, /startingNewChatRef\.current = id === null/);
   assert.match(source, /body\.newConversation = true/);

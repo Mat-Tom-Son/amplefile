@@ -64,10 +64,10 @@ export function connectedFolderTurnIdentityLines(turn: { connectedFolderId: stri
   ];
 }
 
-/** The lines that give an AmpleFile agent request its own task id. */
+/** The lines that give an AmpleFile Agent request its own task id. */
 export function ampleFileAgentTaskLines(taskId: string): string[] {
   return [
-    "This AmpleFile agent request's task id is:",
+    "This AmpleFile Agent request's task id is:",
     taskId,
     "Add --parent-task with that exact id to each chat send, connected-folders create/register, or files add command you run for this request. Do not reuse it in a later request.",
   ];

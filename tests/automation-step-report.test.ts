@@ -20,7 +20,7 @@ test("an Automation's turn is told nobody is watching and how to report; a perso
   const agent = buildTurnContextMessage({ ampleFileAgentTaskId: "agent-task-1", automation: { title: "Weekly digest" } });
   assert.match(agent, /The Automation "Weekly digest" sent the message in this turn/);
   assert.match(agent, /Your final reply is this step's record in the Automation's run history/);
-  assert.doesNotMatch(agent, /chat report/, "the AmpleFile agent has no report verb; its final reply is the record");
+  assert.doesNotMatch(agent, /chat report/, "the AmpleFile Agent has no report verb; its final reply is the record");
 
   assert.doesNotMatch(buildTurnContextMessage({ connectedFolderTurn }), /Nobody is watching/, "a person's own turn is unchanged");
 });

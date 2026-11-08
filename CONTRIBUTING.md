@@ -58,7 +58,7 @@ your change; `AGENTS.md` identifies the required ones.
 |---|---|
 | Files, Chats, navigation, or UI | `web-local/src/`, [Product model](docs/product-model.md), [Visual system](docs/visual-design.md) |
 | Filesystem, Worker, or domain services | `src/local/`, [Architecture](docs/architecture.md) |
-| The AmpleFile agent, CLI, or shared task state | [Kernel](src/local/amplefile-kernel.ts), [CLI](src/local/cli/), [AmpleFile agent and CLI](docs/amplefile-agent-and-cli.md) |
+| The AmpleFile Agent, CLI, or shared task state | [Kernel](src/local/amplefile-kernel.ts), [CLI](src/local/cli/), [AmpleFile Agent and CLI](docs/amplefile-agent-and-cli.md) |
 | Cross–Connected Folder work | [Automations](docs/automations.md) |
 | Native desktop behavior | `desktop/src/`, [macOS builds](docs/macos-build.md) |
 

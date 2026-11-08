@@ -1,13 +1,13 @@
 # The act ledger
 
-Every product verb AmpleFile offers to the AmpleFile agent, a Worker, or a
+Every product verb AmpleFile offers to the AmpleFile Agent, a Worker, or a
 shell-capable agent on the CLI, with its classification, command shape,
 receipt additions, undo path, and conflict rules. `src/local/cli/act-commands.ts`,
 `src/local/cli/act-facade.ts`, and their suites are the implementation
 authority. Automation and overview verbs are owned by
 [Automations](automations.md) and [the overview](amplefile-agent-overview.md);
 the CLI, kernel, and request contracts by
-[the AmpleFile agent and CLI](amplefile-agent-and-cli.md).
+[the AmpleFile Agent and CLI](amplefile-agent-and-cli.md).
 
 ## Receipts, not gates
 
@@ -38,7 +38,7 @@ without being a security boundary. So the product works on these rules:
    cancellation boundaries keep the runtime reliable. Requests and
    declarations have no lifetime or count quota. Every enforced bound names
    the field or scheduler state that applies.
-7. **One shape for everyone.** The AmpleFile agent, a Worker, an Automation,
+7. **One shape for everyone.** The AmpleFile Agent, a Worker, an Automation,
    and an outside harness on the CLI use the same verbs, the same receipts,
    and the same result and question shapes.
 
@@ -53,7 +53,7 @@ policy, mode, Reviewed, or Unrestricted.
 | **direct verb** | Performed through the act lane: explicit selection, journal-first receipt, at-most-once execution, the desktop's conflict rules. |
 | **prepared verb** | A direct verb whose execution shape is prepare → pin → journal-first → fenced execute → receipt, run on the call that asks. Covers Pi package and skill-bundle install, update, and enable/disable, Automation enablement, and managed Connected Folder deletion. |
 | **reversible deletion** | A delete whose undo is a History restore point or a Recently Deleted entry (`recently-deleted restore`). No product verb destroys permanently; retention does. |
-| **setup-only boundary** | Neither the AmpleFile agent nor the CLI can perform or request it: act-token machinery, provider credentials, and settings administration. |
+| **setup-only boundary** | Neither the AmpleFile Agent nor the CLI can perform or request it: act-token machinery, provider credentials, and settings administration. |
 | **deliberately absent** | Not a product verb: desktop-session mechanics, machine-local UI preference, or a surface whose meaning does not survive leaving the desktop. Listed so absence is a decision, not a gap. |
 
 ## Rules every verb inherits
@@ -71,7 +71,7 @@ record only per-verb additions.
 2. **What the receipt contains.** Baseline: version, timestamp, request id,
    command, outcome (`accepted`/`ok`/`error`/`rejected`), error code,
    Connected Folder and conversation ids, checkpoint id, kernel task id, and
-   AmpleFile agent `parentTaskId` lineage, plus the fields under
+   AmpleFile Agent `parentTaskId` lineage, plus the fields under
    [Receipt schema](#receipt-schema). Receipts stay content-light:
    identifiers, digests, and names, never file contents, message text,
    search queries, or credentials.
@@ -99,7 +99,7 @@ Act-protocol conventions: the versioned act envelope
 (`src/local/cli/act-protocol.ts`), the per-launch act token, explicit
 `--connected-folder` on every Connected Folder–scoped write (never
 working-directory resolution), `--parent-task` lineage validated against an
-active AmpleFile agent request, and `--json` output. Prepared verbs use the
+active AmpleFile Agent request, and `--json` output. Prepared verbs use the
 same grammar and return the receipt of their immediate execution.
 
 ## The ledger
@@ -136,7 +136,7 @@ impersonation (an injected instruction restyling one Connected Folder to look
 like another), and the mitigations are structural: the verb accepts only the
 typed proposal, the receipt captures the prior customization for one-step
 undo, the change shows in [the overview](amplefile-agent-overview.md)'s
-"what changed" list, and appearance cannot touch the AmpleFile agent's own
+"what changed" list, and appearance cannot touch the AmpleFile Agent's own
 chrome, Settings, or any trust surface.
 
 ### Chats
@@ -166,7 +166,7 @@ lifecycle store. Snooze verbs take an explicit `--until`.
 `chat wait` and `agent wait` are polls in the CLI shim and settle on either a
 terminal turn or a task that is waiting on an answer, printing the status
 document with `waiting` set in the second case (exit 0). When a root
-AmpleFile agent request's handed-out work settles after its turn ended, the
+AmpleFile Agent request's handed-out work settles after its turn ended, the
 host starts one `system`-actor continuation joined to that request under
 `continuation-<request-id>-<n>`; never after a root Stop and never because of
 a restart.
@@ -249,7 +249,7 @@ What goes there:
 - `files delete` of an item the safety checkpoint could not fully cover;
 - `connected-folders delete`: the managed folder, together with its
   machine-local History;
-- deleting a Worker Chat or an AmpleFile agent Chat: its transcript;
+- deleting a Worker Chat or an AmpleFile Agent Chat: its transcript;
 - removing an imported Skill in Skills & Extensions: its whole folder, with
   its scope (Everywhere or the Connected Folder) and its path inside that
   scope's skills folder, because `.pi/` and Pi's own folder are outside
@@ -312,10 +312,10 @@ source.
 | Remove an imported Skill | Installed → Skill details → Remove Skill | window only (journaled `skills.remove`, `main-window` surface; no act verb) | — | scope, Skill name, the Recently Deleted entry id | the toast's **Undo**, Settings → Recently Deleted, or `recently-deleted restore --entry <id>` | only Skills in AmpleFile's own import roots; the whole folder moves to Recently Deleted; blocked while affected work is active |
 
 Scope is authority: `--scope everywhere` makes bytes runnable inside the
-AmpleFile agent's own runtime on its next start, and the receipt names that
+AmpleFile Agent's own runtime on its next start, and the receipt names that
 scope.
 
-### The AmpleFile agent itself
+### The AmpleFile Agent itself
 
 `agent send|ask|answer|status|result|wait|stop|abort|list` are direct verbs,
 joined by `agent overview` ([the overview](amplefile-agent-overview.md)). The
@@ -324,7 +324,7 @@ CLI group is `agent`. Automation verbs are in [Automations](automations.md);
 
 ### The setup-only boundary
 
-No command shapes. Neither the AmpleFile agent nor the CLI can perform or
+No command shapes. Neither the AmpleFile Agent nor the CLI can perform or
 request these; the act lane never grows a verb for them, and a request that
 would amount to one is refused at parse time.
 
@@ -341,7 +341,7 @@ would amount to one is refused at parse time.
   Quick Look, copy a native path, drag out. They act on this desktop's
   windowing session; a receipt for one would mean nothing elsewhere.
 - **Navigation and window state:** which folder is shown, the selection,
-  panel and sidebar sizes. The AmpleFile agent reads state through
+  panel and sidebar sizes. The AmpleFile Agent reads state through
   [the overview](amplefile-agent-overview.md) instead of driving the
   person's screen.
 - **UI preferences:** theme, typography, text size, collapsed folders.
@@ -354,7 +354,7 @@ would amount to one is refused at parse time.
 - **Composer slash commands:** `/compact` is a real verb above; the rest are
   conversational conveniences inside a turn.
 - **Batch or transactional multi-verb acts:** one request id, one verb, one
-  receipt. Composition lives in the AmpleFile agent's conversation or in a
+  receipt. Composition lives in the AmpleFile Agent's conversation or in a
   declared Automation, never in the protocol.
 - **A headless act lane:** every verb needs the running interactive app;
   "Open AmpleFile…" with exit code 6 is the honest failure.
@@ -412,4 +412,4 @@ update the implementation, help, tests, and these docs together.
 | Surface attribution | `src/local/requests/request-store.ts` | `tests/agent-requests.test.ts`, `tests/amplefile-agent-api.test.ts` |
 | Desktop host and shims | `desktop/src/amplefile-cli-host.ts`, `desktop/cli/` | `tests/desktop-amplefile-cli-host.test.ts`, `tests/desktop-cli-packaging.test.ts` |
 | Help and read-lane text | `src/local/cli/commands.ts` | `tests/amplefile-cli-protocol.test.ts` |
-| The AmpleFile agent's taught behavior | `src/local/amplefile-agent-instructions.ts` | `tests/amplefile-agent-conversation.test.ts` |
+| The AmpleFile Agent's taught behavior | `src/local/amplefile-agent-instructions.ts` | `tests/amplefile-agent-conversation.test.ts` |

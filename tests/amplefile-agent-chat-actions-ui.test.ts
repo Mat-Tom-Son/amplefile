@@ -58,7 +58,8 @@ test("management history renames the selected chat and handles deletion failure 
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await click('.agent-chat-actions button[type="submit"]');
-  await dom.waitFor(() => dom.container.querySelector(".popover-chat-title")?.textContent === "Workshop plan");
+  // While Chats is open the header says Chats; the renamed row shows the new title.
+  await dom.waitFor(() => [...dom.container.querySelectorAll(".agent-chat-row")].some((row) => row.textContent?.includes("Workshop plan")));
   await click('[aria-label="Actions for Workshop plan"]');
   const deleteButton = () => [...dom.container.querySelectorAll<HTMLButtonElement>(".agent-chat-actions button")].find((el) => el.textContent === "Delete")!;
   await dom.act(() => deleteButton().click());
@@ -67,6 +68,7 @@ test("management history renames the selected chat and handles deletion failure 
   failDelete = false;
   await dom.act(() => deleteButton().click());
   await dom.waitFor(() => dom.container.querySelectorAll(".agent-chat-item").length === 0);
+  await click('[aria-label="Back to Chat"]');
   assert.equal(dom.container.querySelector(".popover-chat-title")?.textContent, "New Chat");
   assert.deepEqual(mutations, ["rename", "delete", "delete"]);
 });

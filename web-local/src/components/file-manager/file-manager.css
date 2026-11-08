@@ -2,44 +2,10 @@
    neutral macOS surfaces, an inset sidebar, rounded toolbar groups, and
    Finder-shaped icons. The accent is the app's own. */
 
+@import "./file-manager-tokens.css";
+
 :root[data-platform="darwin"] .app-shell.layout-file-manager::before {
   display: none;
-}
-
-/*
- * The file manager's colors, sizes, and font. They sit on the app shell (not
- * .fm-shell) so Settings and the other dialogs over the file manager share
- * them, and Settings → Appearance restyles all of it: these are the design's
- * own values, which the Original palette keeps; the rules at the end of this
- * file map the other palettes, a chosen accent, font, text size, density,
- * contrast, and transparency onto them.
- */
-.app-shell.layout-file-manager {
-  --fm-window: #ffffff;
-  --fm-side-solid: #f1f1f4;
-  --fm-side-opacity: 94%;
-  --fm-side: color-mix(in srgb, var(--fm-side-solid) var(--fm-side-opacity), transparent);
-  --fm-side-line: rgba(0, 0, 0, 0.07);
-  --fm-text: #1d1d1f;
-  --fm-text2: #5d5d62;
-  --fm-text3: #66666c;
-  --fm-line: rgba(0, 0, 0, 0.08);
-  --fm-stripe: #f6f6f8;
-  --fm-hover: rgba(0, 0, 0, 0.05);
-  --fm-cap: rgba(0, 0, 0, 0.055);
-  --fm-cap2: rgba(0, 0, 0, 0.09);
-  --fm-seg: #ffffff;
-  /* The design's accent: Finder's solid blue with white text, in both themes. */
-  --fm-accent: #0a64d6;
-  --fm-accent-soft: color-mix(in srgb, var(--fm-accent) 14%, transparent);
-  --fm-link: var(--fm-accent);
-  --fm-on-accent: #ffffff;
-  --fm-columns: minmax(0, 1fr) 196px 96px 172px;
-  --fm-toolbar-height: 56px;
-  --fm-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-  /* Text size scales type and rows; density scales rows. */
-  --fm-scale: 1;
-  --fm-density: 1;
 }
 
 .fm-shell {
@@ -54,23 +20,6 @@
   -webkit-font-smoothing: antialiased;
   -webkit-user-select: none;
   user-select: none;
-}
-
-:root[data-theme="dark"] .app-shell.layout-file-manager {
-  --fm-window: #1e1e21;
-  --fm-side-solid: #28282c;
-  --fm-side-line: rgba(255, 255, 255, 0.06);
-  --fm-text: #f1f1f4;
-  --fm-text2: #adadb4;
-  --fm-text3: #a2a2a9;
-  --fm-line: rgba(255, 255, 255, 0.09);
-  --fm-stripe: rgba(255, 255, 255, 0.035);
-  --fm-hover: rgba(255, 255, 255, 0.06);
-  --fm-cap: rgba(255, 255, 255, 0.08);
-  --fm-cap2: rgba(255, 255, 255, 0.14);
-  --fm-seg: #4a4a50;
-  --fm-accent: #0a64d6;
-  --fm-link: #4c9bff;
 }
 
 /* Under the Mac window material the window itself is see-through; the
@@ -691,30 +640,6 @@
 }
 
 /* The right panel: Info and History in grouped cards, as in the mockup. */
-
-.app-shell.layout-file-manager {
-  /* The panel is narrow: its Chat reads two pixels under the Reading Size chosen in Appearance (15 → 13). */
-  --fm-reading-size: calc(var(--amplefile-reading-size, 15px) - 2px);
-  --fm-panel: #f5f5f7;
-  --fm-field: #ffffff;
-  --fm-field-line: rgba(0, 0, 0, 0.14);
-  --fm-card: #ffffff;
-  --fm-card-line: rgba(0, 0, 0, 0.08);
-  --fm-btn: #ffffff;
-  --fm-btn-hover: #f6f6f8;
-  --fm-btn-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.14), 0 1px 0 rgba(0, 0, 0, 0.04);
-}
-
-:root[data-theme="dark"] .app-shell.layout-file-manager {
-  --fm-panel: #19191c;
-  --fm-field: #28282c;
-  --fm-field-line: rgba(255, 255, 255, 0.14);
-  --fm-card: #28282c;
-  --fm-card-line: rgba(255, 255, 255, 0.07);
-  --fm-btn: #3c3c41;
-  --fm-btn-hover: #47474c;
-  --fm-btn-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
-}
 
 .fm-panel {
   display: flex;
@@ -1694,15 +1619,7 @@
   display: none;
 }
 
-/* The design's activity dots: pulsing while a Worker runs, green for a new reply. */
-.app-shell.layout-file-manager {
-  --fm-green: #1e9e4a;
-}
-
-:root[data-theme="dark"] .app-shell.layout-file-manager {
-  --fm-green: #34c262;
-}
-
+/* The design's activity dots (their colors are in file-manager-tokens.css): pulsing while a Worker runs, green for a new reply. */
 .fm-dot {
   flex: none;
   width: 7px;
@@ -2057,84 +1974,6 @@
   font-weight: 600;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-/*
- * Settings → Appearance restyles the file manager.
- * Original keeps the design's Finder colors above; every other palette maps
- * its grounds, text, and lines onto the same tokens, in light and dark. A
- * chosen accent replaces the design's blue, and the app font, text size, list
- * density, contrast, transparency, and message style apply here too.
- */
-:root:not([data-appearance-palette="original"]) .app-shell.layout-file-manager {
-  --fm-window: var(--ui-surface);
-  --fm-side-solid: var(--ui-canvas);
-  --fm-side-line: var(--ui-border);
-  --fm-text: var(--ui-text);
-  --fm-text2: var(--ui-text-muted);
-  --fm-text3: var(--ui-text-subtle);
-  --fm-line: var(--ui-border);
-  --fm-stripe: var(--ui-surface-subtle);
-  --fm-hover: color-mix(in srgb, var(--ui-text) 6%, transparent);
-  --fm-cap: color-mix(in srgb, var(--ui-text) 6%, transparent);
-  --fm-cap2: color-mix(in srgb, var(--ui-text) 11%, transparent);
-  --fm-seg: var(--ui-surface);
-  --fm-panel: var(--ui-surface-subtle);
-  --fm-field: var(--ui-surface);
-  --fm-field-line: var(--ui-border-strong);
-  --fm-card: var(--ui-surface);
-  --fm-card-line: var(--ui-border);
-  --fm-btn: var(--ui-surface);
-  --fm-btn-hover: var(--ui-surface-hover);
-}
-
-:root[data-theme="dark"]:not([data-appearance-palette="original"]) .app-shell.layout-file-manager {
-  --fm-side-solid: var(--ui-surface-subtle);
-  --fm-stripe: color-mix(in srgb, var(--ui-text) 3.5%, transparent);
-  --fm-seg: var(--ui-surface-hover);
-  --fm-panel: var(--ui-canvas);
-  --fm-field: var(--ui-surface-subtle);
-  --fm-card: var(--ui-surface-subtle);
-  --fm-btn: var(--ui-surface-hover);
-  --fm-btn-hover: color-mix(in srgb, var(--ui-surface-hover) 88%, var(--ui-text));
-}
-
-/*
- * A chosen accent (the presets choose one) replaces the design's blue: the
- * color itself fills selection and buttons in both themes, as Finder fills
- * them with the system accent, with white or near-black text, whichever reads.
- */
-:root[data-appearance-accent="custom"] .app-shell.layout-file-manager {
-  --fm-accent: var(--ui-accent-chosen);
-  --fm-on-accent: var(--ui-on-accent-chosen);
-  --fm-link: var(--ui-accent);
-}
-
-/* App Font: Default is the Mac's own, as Finder uses; the others are the app's choices. */
-:root[data-amplefile-font]:not([data-amplefile-font="default"]) .app-shell.layout-file-manager {
-  --fm-font: var(--amplefile-ui-font), system-ui, sans-serif;
-}
-
-:root[data-amplefile-text-size="compact"] .app-shell.layout-file-manager { --fm-scale: 0.92; }
-:root[data-amplefile-text-size="comfortable"] .app-shell.layout-file-manager { --fm-scale: 1.08; }
-:root[data-amplefile-text-size="large"] .app-shell.layout-file-manager { --fm-scale: 1.2; }
-
-:root[data-appearance-density="compact"] .app-shell.layout-file-manager { --fm-density: 0.86; }
-:root[data-appearance-density="spacious"] .app-shell.layout-file-manager { --fm-density: 1.2; }
-
-/* Higher Contrast: secondary text reads as body text and every line darkens. */
-:root[data-appearance-contrast="more"] .app-shell.layout-file-manager {
-  --fm-text2: var(--fm-text);
-  --fm-text3: color-mix(in srgb, var(--fm-text) 82%, transparent);
-  --fm-line: color-mix(in srgb, var(--fm-text) 32%, transparent);
-  --fm-side-line: color-mix(in srgb, var(--fm-text) 32%, transparent);
-  --fm-card-line: color-mix(in srgb, var(--fm-text) 32%, transparent);
-  --fm-field-line: color-mix(in srgb, var(--fm-text) 50%, transparent);
-}
-
-/* Opaque Surfaces: the sidebar and window stop letting the desktop show through. */
-:root[data-appearance-transparency="opaque"] .app-shell.layout-file-manager {
-  --fm-side-opacity: 100%;
 }
 
 :root[data-appearance-transparency="opaque"] .fm-shell {

@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * amplefile-drive: programmatic test driver for the AmpleFile agent harness.
+ * amplefile-drive: programmatic test driver for the AmpleFile Agent harness.
  *
  * Runs one real agent turn through the local API (same code path as the
  * desktop app: native Pi runtime, built-in tools, skills, and extensions) and emits

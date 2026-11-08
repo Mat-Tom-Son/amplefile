@@ -84,8 +84,8 @@ test("Automation actions are gated by enabled, disabled, suspended, and complete
     for (const label of expectation.hidden) assert.ok(!labels.includes(label), `${expectation.health} hides ${label}`);
     assert.ok(
       [...dom.container.querySelectorAll(".automation-step-heading strong")]
-        .some((heading) => heading.textContent?.trim() === "Message AmpleFile agent"),
-      "a management step reads as a message to the AmpleFile agent",
+        .some((heading) => heading.textContent?.trim() === "Message AmpleFile Agent"),
+      "a management step reads as a message to the AmpleFile Agent",
     );
 
     await dom.cleanup();
@@ -149,7 +149,7 @@ test("Automations has no New automation button; the empty state says where to as
   await dom.settle();
   assert.equal([...dom.container.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent?.trim() === "New automation"), false);
   const empty = dom.container.querySelector(".automations-empty");
-  if (empty) assert.match(empty.textContent ?? "", /ask the AmpleFile agent/);
+  if (empty) assert.match(empty.textContent ?? "", /ask the AmpleFile Agent/);
   assert.equal(drafts.length, 0);
   assert.equal(calls.run, 0);
 });

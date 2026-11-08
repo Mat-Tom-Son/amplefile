@@ -122,7 +122,7 @@ const trip: AutomationConnectedFolderRef = { connectedFolderId: "fixture-trip", 
  * Settings → Automations, matching the Connected Folder Automations tab's sample
  * (`buildFixtureFolderAutomations`): "Send kitchen ideas to the trip folder"
  * is on and watches Home projects, and "Budget check-in" is off and has not
- * run. One file the AmpleFile agent wrote is ready to turn on.
+ * run. One file the AmpleFile Agent wrote is ready to turn on.
  */
 export interface FixtureAutomationReads {
   list: () => Promise<AutomationsResponse>;
