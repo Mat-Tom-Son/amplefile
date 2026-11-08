@@ -23,10 +23,10 @@ generated: change the sources, then rebuild.
 npm run site:build
 ```
 
-The build links Download to the DMG of the version in `package.json`. When
-the page loads, it asks GitHub for the latest release in
-`Mat-Tom-Son/amplefile-mac-releases` and points every Download link at that
-release's DMG, so a new release needs no rebuild.
+Download links open the latest release in
+`Mat-Tom-Son/amplefile-mac-releases`. When the page loads, it asks GitHub for
+that release and points every Download link straight at its DMG, so a new
+release needs no rebuild and an unpublished version is never linked.
 
 To preview, serve the folder over HTTP and open http://127.0.0.1:8080:
 

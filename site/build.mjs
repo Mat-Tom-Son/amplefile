@@ -15,10 +15,9 @@ const brand = join(root, "desktop", "assets", "brand");
 
 const ORIGIN = "https://www.amplefile.com";
 const RELEASES = "Mat-Tom-Son/amplefile-mac-releases";
-// The DMG of the version in package.json. When the page loads, a script asks GitHub
-// for the latest release and points every Download link at that release's DMG instead.
-const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-const DL = `https://github.com/${RELEASES}/releases/download/v${version}/AmpleFile-${version}-mac-arm64.dmg`;
+// Download opens the latest release, which is always published. When the page loads, a script
+// asks GitHub for that release and points every Download link straight at its DMG.
+const DL = `https://github.com/${RELEASES}/releases/latest`;
 const SRC = "https://github.com/Mat-Tom-Son/amplefile";
 const REL = `https://github.com/${RELEASES}/releases`;
 const PRIV = `${SRC}/blob/main/PRIVACY.md`;
@@ -284,14 +283,14 @@ const SCRIPT = `
   update();
   requestAnimationFrame(update);
 
-  // Download links follow the latest release; without an answer they keep the DMG they were built with.
+  // Download links go straight to the latest release's DMG; without an answer they open that release's page.
   (async () => {
     try {
       const r = await fetch("https://api.github.com/repos/${RELEASES}/releases/latest", { headers: { Accept: "application/vnd.github+json" } });
       if (!r.ok) return;
       const asset = ((await r.json()).assets || []).find((x) => /-mac-arm64\\.dmg$/.test(x.name));
       if (!asset) return;
-      document.querySelectorAll('a[href$="-mac-arm64.dmg"]').forEach((el) => { el.href = asset.browser_download_url; });
+      document.querySelectorAll('a[href="${DL}"]').forEach((el) => { el.href = asset.browser_download_url; });
     } catch {}
   })();
 })();
@@ -346,4 +345,4 @@ copyFileSync(join(brand, "amplefile-mark-small.svg"), join(out, "favicon.svg"));
 copyFileSync(join(brand, "png", "amplefile-mark-32.png"), join(out, "favicon-32.png"));
 copyFileSync(join(brand, "AmpleFile.iconset", "icon_128x128@2x.png"), join(out, "apple-touch-icon.png"));
 writeFileSync(join(out, "robots.txt"), "User-agent: *\nAllow: /\n");
-console.log(`Built ${out} (index.html ${Math.round(Buffer.byteLength(html) / 1024)} KB, Download v${version})`);
+console.log(`Built ${out} (index.html ${Math.round(Buffer.byteLength(html) / 1024)} KB)`);
