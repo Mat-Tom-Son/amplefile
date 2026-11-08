@@ -1,5 +1,0 @@
-@import "fonts.css";
-body { font-family: "Display", sans-serif; }
-.logo { width: 4rem; }
-.hero { background: url("../images/bg.svg"); }
-/* url(images/ignored-in-a-comment.png) */

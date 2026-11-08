@@ -40,8 +40,6 @@ export function buildConnectedFolderFixture(): ConnectedFolderUiFixture {
         { name: "Kitchen refresh", path: "Kitchen refresh", kind: "folder", hasChildren: true, children: [{ name: "ideas.md", path: "Kitchen refresh/ideas.md", kind: "file", sizeBytes: 5240, updatedAt: now }, { name: "budget.xlsx", path: "Kitchen refresh/budget.xlsx", kind: "file", sizeBytes: 48200, updatedAt: now }] },
         { name: "Bathroom remodel", path: "Bathroom remodel", kind: "folder", hasChildren: true, nestedFolder: true, children: [] },
         { name: "Garden", path: "Garden", kind: "folder", hasChildren: true, children: [{ name: "ideas.md", path: "Garden/ideas.md", kind: "file", sizeBytes: 1180, updatedAt: now }, { name: "planting-plan.pdf", path: "Garden/planting-plan.pdf", kind: "file", sizeBytes: 812000, updatedAt: now }] },
-        // A page folder (docs/pages.md); its page lives in fixtures/pages-fixture.ts.
-        { name: "Garden Party RSVP", path: "Garden Party RSVP", kind: "folder", hasChildren: true, children: [{ name: "index.html", path: "Garden Party RSVP/index.html", kind: "file", sizeBytes: 2410, updatedAt: now }, { name: "page.json", path: "Garden Party RSVP/page.json", kind: "file", sizeBytes: 602, updatedAt: now }, { name: "notes.html", path: "Garden Party RSVP/notes.html", kind: "file", sizeBytes: 1800, updatedAt: now }] },
         { name: "weekend checklist.md", path: "weekend checklist.md", kind: "file", sizeBytes: 2120, updatedAt: now },
       ],
       [bathroom.id]: [{ name: "tile-options.md", path: "tile-options.md", kind: "file", sizeBytes: 3120, updatedAt: now }, { name: "quote.pdf", path: "quote.pdf", kind: "file", sizeBytes: 154000, updatedAt: now }],

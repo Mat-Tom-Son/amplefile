@@ -45,7 +45,6 @@ import {
   SpinnerIos16Regular, SpinnerIos20Regular,
   Square16Regular, Square20Regular,
   Warning16Regular, Warning20Regular,
-  WebAsset16Regular, WebAsset20Regular,
   Window16Regular, Window20Regular,
   type FluentIcon,
 } from "@fluentui/react-icons";
@@ -114,8 +113,6 @@ export const Link2 = icon("Link2", Link16Regular, Link20Regular);
 export const Loader2 = icon("Loader2", SpinnerIos16Regular, SpinnerIos20Regular);
 export const MoreHorizontal = icon("MoreHorizontal", MoreHorizontal16Regular, MoreHorizontal20Regular);
 export const MousePointerClick = icon("MousePointerClick", CursorClick20Regular);
-/** A page (docs/pages.md): Files' page folders and the page tab. */
-export const PageIcon = icon("PageIcon", WebAsset16Regular, WebAsset20Regular);
 export const Pencil = icon("Pencil", Edit16Regular, Edit20Regular);
 export const PencilLine = icon("PencilLine", Edit16Regular, Edit20Regular);
 export const RefreshCw = icon("RefreshCw", ArrowClockwise16Regular, ArrowClockwise20Regular);

@@ -453,7 +453,7 @@ The **AmpleFile agent** is the first in-product consumer of that layer: one conv
 
 A person's ask is a **request**: one durable, machine-local record that owns the outcome across however many turns and Connected Folders it takes ([the collaboration contract](collaboration-contract.md)). The AmpleFile agent hands a piece of it to a Connected Folder's own agent, that agent hands one result shape back — a plain-language summary, optional structured details, the files it chose, and whether it finished, finished partly, or failed — and either side can ask a question instead of guessing. A question stops that task rather than the person's day: the turn ends, the request says it is waiting, and one accepted answer starts exactly one continuation turn carrying it. A parent turn never sits on a waiting child; it finishes and says what is outstanding, and when the work it handed out settles, AmpleFile starts at most one follow-up turn in the AmpleFile agent carrying the collected reports, within that request's bounds and switchable off in Settings → Automations → Limits. A Connected Folder that needs another Connected Folder asks for a handoff, and AmpleFile starts that Chat with the message and copies of the named files through the ordinary restore-pointed path; no model turn is needed to move a result. What crosses into a Connected Folder Chat is only its assignment, payloads someone deliberately released to it, and answers to its own questions — the request graph, other Connected Folders' results, and the AmpleFile agent's transcript stay above Connected Folders. The same verbs are available to the AmpleFile agent, to a Worker, to an app's requested task, and to any shell-capable agent on the CLI, with the same receipts and the same named limits.
 
-**Web Access and Publish were removed (2026-11-07, owner decision).** The desktop no longer offers a paired-browser surface at `<name>.work-fold.com`, enrolls an address, relays work through the bridge, or puts page folders online; it makes no connection to the work-fold.com bridge or page service, which stayed with the work-fold repository. Core Connected Folder use stays local and account-free. Records older builds wrote with paired-browser provenance (`remote_web`) still load as history.
+**Web Access and Publish were removed (2026-11-07, owner decision).** The desktop no longer offers a paired-browser surface at `<name>.work-fold.com`, enrolls an address, relays work through the bridge, or puts pages online; it makes no connection to the work-fold.com bridge or page service, which stayed with the work-fold repository. Pages themselves (`page.json` folders run in a page tab, with their Data view and `pages validate`) were removed the same day as part of AmpleFile's fresh start. Core Connected Folder use stays local and account-free. Records older builds wrote with paired-browser provenance (`remote_web`) still load as history.
 
 This is infrastructure over the existing nouns, not a new user-facing concept. A future cross-Worker and controlled Connected Folder runtimes should build on the same typed actor, scope, task, and capability contracts instead of scraping renderer state or bypassing domain policy. See [AmpleFile agent and CLI](amplefile-agent-and-cli.md) for the exact contract and security boundary.
 
@@ -771,8 +771,8 @@ so a native front end could later sit on the same server.
   Automation on. They are plain fallbacks for now ("What’s in
   here?", "Summarize"); the owner wants them written by a model from the
   folder's context and its earlier Chats (2026-11-07).
-- **Left out for now:** the built-in browser, page tabs, apps, and full-width
-  Chats.
+- **Left out for now:** the built-in browser, apps, and full-width Chats.
+  Page tabs went with pages on 2026-11-07.
 
 ### 2026-09-25 information architecture amendment
 

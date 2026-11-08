@@ -92,10 +92,8 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     // The AmpleFile agent is never taught the retired desktop-served sharing
     // verbs or a Shared pages surface.
     assert.doesNotMatch(ampleFileAgentContext, /\bpages (share|share-app|list|status|revoke|narrow|widen|snapshot-off)\b|help pages|Shared pages/);
-    // Pages (docs/pages.md) are Worker work, delegated like any other; they
-    // run in their page tab on this computer and are never published.
-    assert.match(ampleFileAgentContext, /\*\*Pages and apps are built by Workers\.\*\* A page is a small interactive page that runs in its page tab on this computer/);
-    assert.match(ampleFileAgentContext, /delegate building one to that Connected Folder's Worker\. Pages are not published to the web\./);
+    // Pages were removed on 2026-11-07: nothing teaches them.
+    assert.doesNotMatch(ampleFileAgentContext, /page tab|page\.json|pages validate/i);
     assert.match(ampleFileAgentContext, /agent overview --json/);
     // Receipts, not gates (docs/receipts-not-gates.md, F19–F24): every verb
     // runs on the first call and returns a receipt, destruction is reversible
@@ -254,7 +252,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(skillContent, /an automation's `agent` step is the only way you are ever scheduled/);
     assert.match(skillContent, /Run-now is a copy that does not consume the one-time slot/);
     assert.doesNotMatch(skillContent, /\bpages (share|share-app|list|status|revoke|narrow|widen|snapshot-off)\b|Shared pages/);
-    assert.match(skillContent, /are built by a Connected Folder's Worker: delegate them\. Pages are not published to the web\./);
+    assert.doesNotMatch(skillContent, /page tab|page\.json|pages validate/i);
     assert.match(skillContent, /agent overview --json/);
     assert.match(skillContent, /files move --connected-folder <id>/);
     assert.match(skillContent, /Read each receipt: executed is done, failed or refused is not/);

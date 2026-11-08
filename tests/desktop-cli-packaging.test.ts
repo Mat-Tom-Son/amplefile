@@ -183,7 +183,7 @@ test("desktop agent shells inherit the exact running profile in development and 
 function assertActLaneShimContract(shim: string): void {
   const routedFamilies = [
     "chat", "chats", "files", "agent", "checks", "connected-folders", "history", "search",
-    "tools", "apps", "automations", "pages", "recently-deleted", "requests", "jobs",
+    "tools", "apps", "automations", "recently-deleted", "requests", "jobs",
   ];
   for (const routed of [...routedFamilies, "list", "status", "wait", "task", "result"]) {
     assert.match(shim, new RegExp(`["']${routed}["']`), `act routing must reference ${routed}`);

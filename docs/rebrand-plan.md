@@ -247,8 +247,9 @@ The new repository should start from the finished file-manager tree without:
 - `docs/archive/` and `docs/releases/`. Done 2026-11-07: they stay in the
   work-fold repository.
 - The inactive Windows lanes.
-- Decide separately: the classic layout, App Studio and apps, and page folders,
-  which the file manager leaves out today.
+- Decide separately: the classic layout, App Studio and apps, and pages,
+  which the file manager leaves out today. Pages: removed 2026-11-07 (owner
+  decision).
 
 ## Order of work
 

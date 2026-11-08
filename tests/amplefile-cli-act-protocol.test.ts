@@ -799,15 +799,16 @@ test("direct verbs parse with strict shapes", () => {
   );
 
   // The pending-decision family, permanent deletion, the retired holding
-  // spellings of the automation and outward-exposure verbs, and the retired
-  // desktop-served sharing verbs are gone from the vocabulary
-  // (docs/receipts-not-gates.md, F19/F20): unknown commands, not refusals
-  // with a story.
+  // spellings of the automation and outward-exposure verbs, the retired
+  // desktop-served sharing verbs, and the pages family (removed 2026-11-07) are
+  // gone from the vocabulary (docs/receipts-not-gates.md, F19/F20): unknown
+  // commands, not refusals with a story.
   for (const argv of [
     ["staged", "list"], ["staged", "show"], ["staged", "cancel"],
     ["automations", "stage"], ["pages", "stage"],
     ["pages", "share"], ["pages", "share-app"], ["pages", "status"],
     ["pages", "revoke"], ["pages", "narrow"], ["pages", "widen"], ["pages", "snapshot-off"],
+    ["pages", "validate"], ["pages", "publish"], ["pages", "unpublish"], ["pages", "list"],
   ]) {
     assert.throws(() => parseAmpleFileCliActArgv(argv), /Unknown command/, `expected an unknown command for '${argv.join(" ")}'`);
   }

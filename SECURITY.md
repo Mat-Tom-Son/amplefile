@@ -225,6 +225,8 @@ no longer pairs browsers, enrolls a work-fold.com address, holds a device
 credential, or opens a connection to the bridge or page service; there is no
 remote semantic adapter over the local API. Settings an earlier build stored for
 Web Access are dropped the next time the encrypted settings file is saved.
+Pages were removed the same day: the local API serves no page frame or page
+routes, and nothing runs a page's code.
 
 The installed `amplefile` command uses a separate protocol-v1 file broker under the platform application-data directory (`%APPDATA%\AmpleFile\cli` on Windows and `~/Library/Application Support/AmpleFile/cli` on macOS). Requests and responses are UUID-named, atomic, size- and age-bounded, path-confined, and rejected when they are symbolic links or unsafe file types. Electron's single-instance host serializes accepted requests and cleans stale files.
 
@@ -241,19 +243,6 @@ The only human-only surface establishes secrets: entering a provider or app secr
 Automations are the one thing above Connected Folders that runs unattended. An automation is a machine-local, closed, typed declaration — no code, no credentials, no expressions, and only the literal declared message plus a closed set of host-resolved placeholders — enabled by one receipted `automations enable` act that pins the exact declaration. The executor is app code on the shared scheduler discipline with its own bounded budget; every run and hop is journal-first receipted; a failed hop fails the run rather than being smoothed over; disable and Connected Folder removal stop the active run before the authority change reads as complete, and a suspended automation never retargets or resumes without a fresh enable. Unknown placeholders are refused at enable time; resolved text is bounded and recorded on the hop receipt, and a `fold` step reaches the AmpleFile agent through the same acceptance path as any other message. Nothing automation-shaped is written into any Connected Folder's folder, and automation-caused settles never trigger other automations. The trusted renderer can also list the automations that name a Connected Folder and turn them on or off or run them through the session-authenticated local API (`/api/connected-folders/:id/automations`); those calls run the same facade methods and receipts as Settings, and refuse an automation that does not name that Connected Folder.
 
 Checks do not treat portable data as authority. `.amplefile/checks/` may contain only strict code-free declarations; registration discovers but never enables them. Enablement binds a local grant to the exact declaration digest, installed sensor revision, and implementation/source digest. The runner rejects root, metadata, Pi configuration, nested Connected Folder, link/junction, special-file, path-escape, Windows device/ADS, target-count, byte, depth, finding, and duration hazards. Sensors receive a host-created closed projection of designated inputs, not filesystem paths, and findings surface only after independent host re-verification; that boundary is checked again before an old finding is shown, so a target that later falls under another registered Connected Folder becomes blocked. Infrastructure, admission, skipped-input, persistence, timeout, and damaged-state failures fail closed as health errors. The Files tree fetches aggregate status first and receives only exact current target paths when a decoration is necessary; titles, details, evidence, decisions, runs, and aborts stay behind the trusted renderer's per-launch session token and allowed-origin local API boundary. Check operations reserve their Connected Folder before asynchronous work and participate in the same removal/capability fence until completion. Removal acquires its Check-cleanup lease before committing an intent, while Connected Folder creation and registration acquire an exclusive registry-mutation lease before changing target ownership; neither can interleave with evidence work. Run acceptance and terminal state are durable, incomplete startup state becomes `interrupted` without replay, and a terminal-write failure retains the same-process task/capability fence for retry instead of releasing a ghost run. Connected Folder removal keeps its durable intent until primary and backup Check state have been purged without parsing potentially damaged or future-version bytes; backup recovery strips enablement rather than resurrecting older authority. See [Checks](docs/checks.md).
-
-### Pages
-
-A page's code is untrusted. In the desktop preview it
-runs in an opaque-origin sandboxed frame (`allow-scripts allow-forms`, never
-`allow-same-origin`) under content security rules that deny network access,
-form navigation, nested frames, and remote resources; it reaches nothing but the
-`ampleFilePage` calls relayed by a trusted host over a per-view channel. No
-content security rule covers WebRTC, so a page could still reach a STUN server; that gap is
-known and open. Pages are not published to the web.
-
-Every page call is checked by the rules engine: declared tables, column types,
-visitor permissions, limits, and uniqueness, with bound SQL parameters only.
 
 ## Release integrity
 

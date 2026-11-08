@@ -696,7 +696,7 @@ test("a damaged journal line degrades the view instead of keeping the app from s
   await reopened.flush();
 });
 
-test("a record written while page sharing existed still loads, without its retired sharing actions", async (t) => {
+test("a record written while page sharing and publishing existed still loads, without those retired actions", async (t) => {
   const root = await temporaryRoot(t);
   const clock = clockFrom("2026-09-11T09:00:00.000Z");
   const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
@@ -704,14 +704,17 @@ test("a record written while page sharing existed still loads, without its retir
   await store.recordAction("task-1", { command: "files.add", at: clock.now().toISOString(), connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits", copied: ["report.md"] });
   await store.flush();
 
-  // An older build recorded `pages share` and `pages share-app` in the same
-  // action trail; those verbs no longer exist.
+  // Older builds recorded `pages share`, `pages share-app`, `pages publish`,
+  // and `pages unpublish` in the same action trail; those verbs no longer
+  // exist (pages were removed on 2026-11-07).
   const journalPath = join(root, "requests.jsonl");
   const lines = (await readFile(journalPath, "utf8")).trim().split("\n").map((line) => {
     const record = JSON.parse(line) as { actions: Array<Record<string, unknown>> };
     record.actions.push(
       { command: "pages.share", at: "2026-09-11T09:01:00.000Z", connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" },
       { command: "pages.share-app", at: "2026-09-11T09:02:00.000Z", connectedFolderId: "connected-folder-audits" },
+      { command: "pages.publish", at: "2026-09-11T09:03:00.000Z", connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" },
+      { command: "pages.unpublish", at: "2026-09-11T09:04:00.000Z", connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" },
     );
     return JSON.stringify(record);
   });

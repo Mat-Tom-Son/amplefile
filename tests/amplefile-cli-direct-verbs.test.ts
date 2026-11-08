@@ -131,12 +131,14 @@ test("retired verbs are unknown commands that leave no receipt", async () => {
   const h = await directVerbHarness("retired");
   try {
     // The pending-decision family, permanent deletion, the retired holding
-    // spellings, and the retired desktop-served sharing verbs.
+    // spellings, the retired desktop-served sharing verbs, and the pages
+    // family (removed 2026-11-07).
     for (const argv of [
       ["staged", "list"], ["staged", "show"], ["files", "destroy"],
       ["automations", "stage"], ["pages", "stage"],
       ["pages", "share"], ["pages", "share-app"], ["pages", "status"],
       ["pages", "revoke"], ["pages", "narrow"], ["pages", "widen"], ["pages", "snapshot-off"],
+      ["pages", "validate"],
     ]) {
       h.records.length = 0;
       const unknown = await h.execute(argv);

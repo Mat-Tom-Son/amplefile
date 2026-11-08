@@ -252,19 +252,15 @@ producers are `files delete` for uncoverable paths, `connected-folders delete`,
 --purge-data`; the last three write a recovery export into the trash before
 removing live data.
 
-### Pages
+### Pages (removed)
 
-A page is a folder in a Connected Folder that contains `page.json`
-([Pages](pages.md)) and runs in its page tab on this computer. Publish, the
-`page.publish` prepared act, and `pages publish|unpublish|list` were removed
-on 2026-11-07 with online pages.
-
-| Verb | Human surface | Fold today | Target | Command shape | Receipt adds | Undo / revocation | Conflicts |
-|---|---|---|---|---|---|---|---|
-| Check a page folder | the page tab's problem list | none | direct verb (content-bearing act read) | `pages validate --connected-folder <id> --page <path>` | page path and `valid` or the error count | n/a — it changes nothing | a folder without `page.json` is `notFound`; a path that leaves the Connected Folder, names hidden or reserved folders, or crosses a link is `usage`; a nested registered Connected Folder's page is `notFound` |
-
-Test entries made in a page's preview and the Data view's edits are local-API
-operations on machine-local preview databases, not act verbs.
+Pages (`page.json` folders run in a page tab), their Data view, and the
+`pages validate` verb were removed on 2026-11-07, the same day as Publish,
+the `page.publish` prepared act, and `pages publish|unpublish|list`. There
+are no `pages` verbs. A request record that names `pages.share`,
+`pages.share-app`, `pages.publish`, or `pages.unpublish` still loads with
+that action skipped, and an app-state `pages/` folder from an earlier build
+is left untouched.
 
 ### Library (removed)
 

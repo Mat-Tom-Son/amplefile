@@ -240,16 +240,17 @@ Runtime data, credentials, grants, target files, and Chat content are excluded.
 The initial draft is unsent; model use begins only when the person sends it.
 See [Changing an installed app](docs/app-changes.md).
 
-### Web Access and published pages (removed)
+### Web Access, published pages, and pages (removed)
 
 Earlier work-fold builds could relay a paired browser through the work-fold.com
-bridge and publish page folders to work-fold's page service. Both were removed on
+bridge and publish pages to work-fold's page service. Both were removed on
 2026-11-07. This build never connects to either service, and the next time it
 saves its encrypted settings it drops the Web Access address, device token, and
 keys an earlier build stored. Records an earlier build kept on the hosted
-services are not deleted by this build. Page folders still run in their page
-tab; the entries made in Preview stay in AmpleFile's own storage on this
-computer.
+services are not deleted by this build. Pages themselves were removed the same
+day: this build has no page tab and never reads the test entries an earlier
+build saved under its own storage, and it leaves them on this computer
+untouched.
 
 ### Model providers
 

@@ -158,9 +158,7 @@ export type AmpleFileCliActCommandName =
   | "jobs.stop"
   | "chat.children"
   | "jobs.input"
-  | "worktrees.manage"
-  // Page folders (docs/pages.md): a read-only check of one page.
-  | "pages.validate";
+  | "worktrees.manage";
 
 export interface AmpleFileCliActParsedCommand {
   name: AmpleFileCliActCommandName;
@@ -298,8 +296,6 @@ export interface AmpleFileCliActParsedCommand {
   waitSeconds?: number;
   /** jobs.list: only jobs still running. */
   running?: boolean;
-  /** pages.validate: the page folder's Connected Folder–relative path. */
-  page?: string;
 }
 
 /** The running interactive app's act authority: the facade plus this run's token. */
@@ -439,7 +435,6 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     "--text",
     "--action",
     "--ref",
-    "--page",
   ]);
   const booleanFlags = new Set(["--new", "--message-from-payload", "--retain-data", "--purge-data", "--clear", "--running", "--asynchronous", "--interactive", "--service", "--eof"]);
 
@@ -1885,14 +1880,6 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
       allowOnlyFlags("--connected-folder", "--task", "--job", "--text", "--eof");
       if (stringFlag("--text") === undefined) throw usageError("--text is required (it may be empty).");
       return { name: "jobs.input", output, connectedFolder: requireConnectedFolder(), task: requireBoundedFlag("--task", "task-id"), job: requireBoundedFlag("--job", "job-id"), terminalText: stringFlag("--text")!, ...(flags.has("--eof") ? { eof: true } : {}) };
-    case "pages validate":
-      allowOnlyFlags("--connected-folder", "--page");
-      return {
-        name: "pages.validate",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        page: boundedActPath("--page", stringFlag("--page") ?? "", "page-folder-path"),
-      };
     case "jobs stop":
       allowOnlyFlags("--connected-folder", "--job", "--parent-task");
       return {
@@ -2401,8 +2388,6 @@ async function runActCommand(
         checkpointId: command.checkpoint!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
-    case "pages.validate":
-      return toJson(await facade.pagesValidate({ connectedFolder: command.connectedFolder!, page: command.page! }));
     case "history.versions":
       return toJson(await facade.historyVersions({ connectedFolder: command.connectedFolder!, path: command.path!, ...(command.cursor ? { cursor: command.cursor } : {}), ...(command.limit ? { limit: command.limit } : {}) }));
     case "history.read":
@@ -3800,24 +3785,6 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
       return `Automation "${terminalText(record.title)}" [${terminalText(record.automationId)}] ran with outcome ${terminalText(run?.outcome)} (run ${terminalText(run?.runId)}). `
         + `Run-now never shifts the schedule; per-hop receipts are in 'automations receipts'.${error}\n`;
     }
-    case "pages.validate": {
-      const summary = (record.summary ?? {}) as { title?: unknown; entry?: unknown; files?: unknown; bytes?: unknown; tables?: unknown };
-      const problems = (Array.isArray(record.problems) ? record.problems : []) as Array<{ file?: unknown; message?: unknown; severity?: unknown }>;
-      const errors = problems.filter((problem) => problem.severity === "error").length;
-      const warnings = problems.length - errors;
-      const verdict = errors
-        ? `${errors} error${errors === 1 ? "" : "s"}${warnings ? ` and ${warnings} warning${warnings === 1 ? "" : "s"}` : ""} to fix`
-        : warnings ? `ready, with ${warnings} warning${warnings === 1 ? "" : "s"}` : "ready";
-      const lines = problems.map((problem) =>
-        `- ${problem.severity === "error" ? "error" : "warning"}: ${problem.file ? `${terminalText(problem.file)}: ` : ""}${terminalText(problem.message)}`);
-      const tables = (Array.isArray(summary.tables) ? summary.tables : []) as Array<{ name?: unknown; columns?: unknown }>;
-      const tableText = tables.length
-        ? tables.map((table) => `${terminalText(table.name)} (${Array.isArray(table.columns) ? table.columns.map(terminalText).join(", ") : ""})`).join("; ")
-        : "none";
-      return `${terminalText(summary.title)} [${terminalText(record.page)}] in ${connectedFolderLabel}: ${verdict}.\n`
-        + (lines.length ? `${lines.join("\n")}\n` : "")
-        + `Entry ${terminalText(summary.entry)}; ${terminalText(summary.files)} file${summary.files === 1 ? "" : "s"}, ${terminalText(summary.bytes)} bytes; tables: ${tableText}.\n`;
-    }
     case "automations.stop":
       return `Stopped the active run ${terminalText(record.runId)} of automation [${terminalText(record.automationId)}]. `
         + `The current hop was aborted through its own domain, later hops are recorded skipped, and the run settles stopped.\n`;
@@ -4142,13 +4109,6 @@ function actReceiptDetail(
     case "chat.copy": {
       const copy = record as { copiedFromConversationId?: unknown; copiedMessages?: unknown; taskId?: unknown };
       return `copy of ${typeof copy.copiedFromConversationId === "string" ? copy.copiedFromConversationId : "unknown"}; ${typeof copy.copiedMessages === "number" ? copy.copiedMessages : 0} messages${typeof copy.taskId === "string" ? `; task ${copy.taskId}` : ""}`;
-    }
-    case "pages.validate": {
-      const validation = record as { page?: unknown; valid?: unknown; problems?: unknown };
-      const errors = Array.isArray(validation.problems)
-        ? validation.problems.filter((problem) => (problem as { severity?: unknown })?.severity === "error").length
-        : 0;
-      return `page ${typeof validation.page === "string" ? validation.page : "unknown"}; ${validation.valid === true ? "valid" : `${errors} error${errors === 1 ? "" : "s"}`}`;
     }
     // Ids and states only; a receipt never carries the command text.
     case "jobs.start":

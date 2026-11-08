@@ -280,20 +280,18 @@ export const ampleFileRequestActionCommands = [
   "worktrees.archive",
   "worktrees.restore",
   "recently-deleted.restore",
-  // Read only: older builds recorded these while pages could be published.
-  "pages.publish",
-  "pages.unpublish",
 ] as const;
 
 export type AmpleFileRequestActionCommand = (typeof ampleFileRequestActionCommands)[number];
 
 /**
  * Commands older builds recorded for verbs AmpleFile no longer has: the
- * desktop-served page and app sharing verbs (retired 2026-11-05). A record
- * that names one still loads; that action is skipped, so the rest of the
- * request's story survives instead of the whole record reading as damaged.
+ * desktop-served page and app sharing verbs (retired 2026-11-05) and page
+ * publishing (removed with pages on 2026-11-07). A record that names
+ * one still loads; that action is skipped, so the rest of the request's story
+ * survives instead of the whole record reading as damaged.
  */
-const retiredAmpleFileRequestActionCommands: ReadonlySet<string> = new Set(["pages.share", "pages.share-app"]);
+const retiredAmpleFileRequestActionCommands: ReadonlySet<string> = new Set(["pages.share", "pages.share-app", "pages.publish", "pages.unpublish"]);
 
 function isRetiredAmpleFileRequestAction(value: unknown): boolean {
   return typeof value === "object" && value !== null

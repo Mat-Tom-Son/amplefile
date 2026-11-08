@@ -11,7 +11,6 @@ import {
   ampleFileConnectedFolderOperationsGuide,
   ampleFileConnectedFolderOperationsGuideHeading,
   ampleFileWorkerWorkingFilesGuide,
-  connectedFolderPagesGuide,
 } from "../src/local/agent/connected-folder-operations-guide.js";
 
 /**
@@ -82,77 +81,15 @@ test("the guide teaches the two rules the host actually enforces", () => {
 });
 
 /**
- * Pages (docs/pages.md) are taught in the Worker's guide: what makes a page
- * rather than an app, the page folder and page.json, the calls and the form
- * helper, the no-network rule, the recipes, and the validate verb a Worker
- * finishes with. Pages run in their page tab on this computer; publishing to
- * the web and the retired single-file sharing are gone.
+ * Pages were removed on 2026-11-07 (a fresh start for AmpleFile): the
+ * Worker's guide no longer teaches page.json, the page script API, or the
+ * validate verb, and never mentions publishing.
  */
-test("the guide teaches pages: page.json, ampleFilePage, the form helper, no network, pages validate, and local-only pages", () => {
+test("the guide does not teach pages", () => {
   const guide = ampleFileConnectedFolderOperationsGuide();
-  const section = connectedFolderPagesGuide().join("\n");
-  assert.ok(guide.includes(section), "the operations guide carries the pages section");
-  assert.ok(section.startsWith("### Pages\n"));
-
-  // When to make a page, and when an app.
-  assert.match(section, /A page is a small interactive page that runs in its page tab on this computer: a form, sign-up sheet, RSVP, poll, or announcement, with entries saved as the page declares\./);
-  assert.match(section, /An app is a tool for the person inside AmpleFile that uses their files, a Worker, notifications, or connections\./);
-
-  // The folder, page.json, and its compact example.
-  assert.match(section, /`format` is exactly `amplefile\.page\/1`/);
-  const example = section.match(/`page\.json`, for example: `(\{.*?\})`\./)?.[1];
-  assert.ok(example, "the guide carries one compact page.json example");
-  const parsed = JSON.parse(example) as { format: string; title: string; tables: Record<string, { columns: object; visitors: string[]; limit: number }> };
-  assert.equal(parsed.format, "amplefile.page/1");
-  assert.deepEqual(Object.keys(parsed.tables), ["signups"]);
-  assert.deepEqual(parsed.tables.signups!.visitors, ["add", "see-own"]);
-  for (const type of ["text", "long-text", "number", "boolean", "date", "email", "url", "choice"]) {
-    assert.ok(section.includes(`\`${type}\``), `the guide names the ${type} column type`);
-  }
-  for (const permission of ["add", "see-own", "see-all", "edit-own", "delete-own"]) {
-    assert.ok(section.includes(`\`${permission}\``), `the guide names the ${permission} visitor permission`);
-  }
-  assert.match(section, /Keep drafts and source documents out of the page folder; draft in `\.worker\/`\./);
-  assert.match(section, /never one inside another/);
-
-  // The calls, the refusal codes, and the form helper.
-  assert.match(section, /Page scripts use `window\.ampleFilePage`; every call returns a promise/);
-  for (const call of ["add(table, values)", "mine(table)", "list(table, {limit, newestFirst})", "count(table, where?)", "update(table, id, values)", "remove(table, id)", "isOwner()", "onChange(callback)"]) {
-    assert.ok(section.includes(`\`${call}\``), `the guide names ${call}`);
-  }
-  for (const code of ["NOT_ALLOWED", "INVALID", "DUPLICATE", "LIMIT_REACHED", "NOT_FOUND", "TOO_LARGE", "UNAVAILABLE"]) {
-    assert.ok(section.includes(`\`${code}\``), `the guide names the ${code} refusal`);
-  }
-  assert.match(section, /`<form data-page-table="signups">` saves itself on submit/);
-  assert.match(section, /`data-page-state` becomes `sending`, then `sent` or `error`/);
-  assert.match(section, /`data-page-message` shows the error/);
-  assert.match(section, /`page:sent` \(detail: the new row\) or `page:error`/);
-
-  // What a page cannot do.
-  assert.match(section, /No network: never load a script, style, font, or image from an `http:`, `https:`, or `\/\/` address\./);
-  assert.match(section, /Save any library, font, or image into the page folder/);
-  assert.match(section, /`fetch` reaches nothing, the page's own files included/);
-  assert.match(section, /Only the entry HTML is a page/);
-  assert.match(section, /Save data only through declared tables/);
-
-  // The recipes.
-  assert.match(section, /RSVP with a guest cap: set the table's `limit`, show `count\(table\)`/);
-  assert.match(section, /Sign-up sheet, one slot per person/);
-  assert.match(section, /Poll with live counts: a `choice` column, `count\(table, \{answer: option\}\)`/);
-  assert.match(section, /Announcement: a `page\.json` with just `format` and `title`, no tables/);
-
-  // Finish with validate, then point the person at the page tab.
-  assert.match(section, /Finish by running `amplefile pages validate --connected-folder <id> --page <path> --json`/);
-  assert.match(section, /fixing every problem it reports/);
-  assert.match(section, /open the page from Files to try it: Preview runs it, Viewing as switches between Visitor, Owner, and New visitor, and the Data view shows the entries, which stay on this computer\./);
-  assert.ok(ampleFileConnectedFolderOperationsGuide("wf").includes("`wf pages validate --connected-folder <id>"), "the executable name substitutes");
-
-  // Pages stay on this computer: no publishing verbs, Web Access, or
-  // downloaded entries database.
-  assert.match(section, /Pages are not published to the web\./);
-  assert.doesNotMatch(section, /pages publish|pages unpublish|pages list|Web Access|data\.sqlite|on the web:|Anyone with the link/);
+  assert.doesNotMatch(guide, /### Pages|page\.json|data-page-|pages validate|page tab/);
   assert.doesNotMatch(guide, /pages publish|pages unpublish|Web Access/);
-  // The retired single-file sharing is gone.
+  // The retired single-file sharing is gone too.
   assert.doesNotMatch(guide, /Pages the person may share|shareable HTML|sharing pages|shares it from the file's tab/);
 });
 

@@ -222,7 +222,6 @@ amplefile tools disable --path <resource-path> --kind extensions --scope everywh
 amplefile tools enable --path <resource-path> --kind extensions --scope connected-folder --connected-folder "Home" --json
 amplefile recently-deleted list --json
 amplefile recently-deleted restore --entry <recently-deleted-id> --json
-amplefile pages validate --connected-folder "Home" --page "Garden Party RSVP" --json
 ```
 
 `tools enable|disable` uses Pi's resource filters for `extensions`, `skills`,
@@ -274,42 +273,9 @@ Output lives under the state root's `jobs/` directory and follows the request
 retention window. Deletion, registration removal, and whole–Connected Folder
 History restore wait for running jobs; Skills & Extensions changes do not.
 
-`amplefile pages validate --connected-folder <id> --page <path> [--json]` checks one
-page folder ([Pages](pages.md)) exactly as its page tab does: `page.json`,
-the entry file, every file the page refers to (nothing may load from the
-internet or from outside the folder), the file limits (500 files, 10 MiB each,
-25 MiB in all), and page folders nested inside it. `--page` is the page
-folder's Connected Folder–relative path. It changes nothing, records an ordinary
-act receipt (`page <path>; valid` or `page <path>; <n> errors`), and exits 0
-whenever it could check the page; a folder without `page.json` is `notFound`
-and a path that leaves the Connected Folder is `usage`. The `--json` result is a
-stable shape:
-
-```json
-{
-  "connectedFolder": { "id": "space-…", "name": "Home", "connectedFolderRoot": "/…" },
-  "page": "Garden Party RSVP",
-  "valid": false,
-  "summary": {
-    "title": "Garden Party RSVP",
-    "entry": "index.html",
-    "tables": [{ "name": "rsvps", "columns": ["name", "email"], "visitors": ["add", "see-own"], "limit": 50 }],
-    "files": 4,
-    "bytes": 18211
-  },
-  "problems": [{ "file": "index.html", "message": "Loads \"https://…\" from the internet. …", "severity": "error" }]
-}
-```
-
-`valid` is true when no problem is an error; warnings (such as an unused
-`.html` file) never make a page invalid. Problem files are relative to the
-page folder, and `""` means the page folder itself. `summary.tables` is empty
-while `page.json` has errors. Test entries and the Data view live behind the
-local API's `/api/connected-folders/:id/pages` routes, not the act lane.
-
-`pages validate` is the only `pages` verb. `pages publish`, `pages unpublish`,
-`pages list`, and the `page.publish` prepared act were removed on 2026-11-07
-with online pages; pages run in their page tab on this computer.
+There is no `pages` family: pages (`page.json` folders run in a page tab),
+`pages validate`, `pages publish|unpublish|list`, and the `page.publish`
+prepared act were removed on 2026-11-07.
 
 `amplefile recently-deleted …` reads and restores **Recently deleted**, the machine-local
 store under the state root that holds what a delete could not leave to History:
@@ -595,8 +561,6 @@ the trusted Settings → Apps page offers Details, Open Chat and Stop. See
 | Restricted app review, grants, lifecycle, and storage | `src/local/agent/restricted-app-*.ts` | `tests/restricted-app-*.test.ts` |
 | Machine-wide restricted-app automation scheduling | `src/local/agent/amplefile-scheduler-service.ts` | `tests/amplefile-scheduler-service.test.ts` plus restricted-app service/API tests |
 | Prepared acts (prepare, pin, journal, execute) | `src/local/prepared-acts.ts` | `tests/prepared-acts.test.ts`, `tests/amplefile-cli-act-receipts.test.ts` |
-| Pages: page.json, rules engine, schema, and Data view | `src/shared/pages/` | `tests/page-declaration.test.ts`, `tests/page-rules-engine.test.ts` |
-| Page folders, assembly, preview databases, routes, and `pages validate` | `src/local/pages/` | `tests/page-folders.test.ts`, `tests/page-routes.test.ts`, `tests/amplefile-cli-pages-verbs.test.ts` |
 | Recently deleted (trash store, retention, restore) | `src/local/recently-deleted-store.ts` | `tests/amplefile-recently-deleted-store.test.ts`, `tests/amplefile-cli-recently-deleted-verbs.test.ts`, `tests/recently-deleted-settings.test.ts` |
 | Durable requests (records, store, reconciliation, retention) | `src/local/requests/request-records.ts`, `src/local/requests/request-store.ts` | `tests/amplefile-request-store.test.ts`, `tests/agent-requests.test.ts`, `tests/amplefile-request-integration.test.ts` |
 | Connected Folder turn context and operations guide | `src/local/agent/connected-folder-turn-context.ts`, `src/local/agent/connected-folder-operations-guide.ts` | `tests/connected-folder-turn-context.test.ts`, `tests/connected-folder-operations-guide-prompt.test.ts`, `tests/amplefile-agent-turn-context.test.ts` |

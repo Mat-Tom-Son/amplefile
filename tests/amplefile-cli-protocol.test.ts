@@ -138,7 +138,6 @@ test("CLI help covers every landed act family and is honest about what it runs",
       "operation activate", "operation cancel", "uninstall",
     ],
     automations: ["enable", "list", "show", "run", "stop", "disable", "delete", "receipts"],
-    pages: ["validate"],
     "recently-deleted": ["list", "restore"],
     requests: ["list", "show"],
     jobs: ["start", "list", "show", "output", "stop"],
@@ -163,6 +162,9 @@ test("CLI help covers every landed act family and is honest about what it runs",
     assert.doesNotMatch(topic, /[Ss]taged|pending decision|decision card|needs-you card|approv|Reviewed mode|Unrestricted|polic/, `help ${family} must not describe a gate`);
   }
   assert.doesNotMatch(overview, /[Ss]taged|decision|approv|Reviewed|Unrestricted|polic/);
+  // Pages were removed on 2026-11-07: no family, no topic.
+  assert.doesNotMatch(overview, /pages validate/);
+  assert.equal(ampleFileCliHelp("AmpleFile", "pages"), overview);
   assert.match(ampleFileCliHelp("AmpleFile", "tools"), /immediately with a receipt/);
   assert.match(ampleFileCliHelp("AmpleFile", "apps"), /--purge-data/);
   // A single-file permission is granted by naming its file; a folder
