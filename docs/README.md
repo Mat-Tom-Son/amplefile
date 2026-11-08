@@ -26,6 +26,7 @@ for product scope and [AGENTS.md](../AGENTS.md) for contributor rules.
 | Native agent capabilities | [Skills & Extensions](skills-and-extensions.md), [Pi resources](pi-resources.md), [Extensions and computer work](extension-foundation.md), [Declarative Extension surfaces](extension-surfaces.md), [Built-in browser](built-in-browser.md), [Document verification](document-verification.md), [Image generation](image-generation.md) |
 | Desktop interaction and appearance | [Collaboration experience](collaboration-experience.md), [Visual system](visual-design.md), [Application appearance](application-appearance.md), [Connected Folder customization](connected-folder-customization.md) |
 | Mac distribution | [Build lanes](macos-build.md), [Release procedure](macos-release.md), [Chrome extension distribution](chrome-extension-distribution.md) |
+| amplefile.com | [Website](website.md) |
 
 ## Harness and example boundaries
 
