@@ -70,6 +70,10 @@ export const MN_CSS = `
 
 /* The page folder: the tab carries the wordmark, the window is the paper inside. */
 .mn-folder { position:relative; max-width:1320px; margin-inline:auto; padding-top:calc(var(--tab-h) + var(--band)); }
+/* The folder's top stays put while the front slides up over it, closing the folder on the window. */
+.mn > .mn-folder { padding-top:0; }
+.mn-head { position:sticky; top:var(--top); z-index:0; padding-top:calc(var(--tab-h) + var(--band)); }
+.mn-head > .mn-back { bottom:calc(-1 * var(--r)); }
 .mn-back { position:absolute; inset:var(--tab-h) 0 0 0; background:var(--mn-back); border-radius:0 var(--r) var(--r) var(--r); }
 .mn-tab { --pad:clamp(20px, 4.4cqi, 64px); position:absolute; top:0; left:0; width:calc(222px + 2 * var(--pad)); height:calc(var(--tab-h) + 1px); display:flex; align-items:center; justify-content:center; background:var(--mn-back); border-radius:var(--r) 0 0 0; }
 .mn-tab::after { content:""; position:absolute; top:0; right:-67px; width:68px; height:100%; background:var(--mn-back); clip-path:path("M0 0 C 23 0 32 7 43 27 L 52 46 C 57 57 62 65 68 65 L 0 65 Z"); }
@@ -91,7 +95,7 @@ export const MN_CSS = `
 .mn { --shot-w:1200px; }
 .mn-paper { position:relative; width:min(calc(100% - 24px), var(--shot-w)); margin-inline:auto; aspect-ratio:1280 / 304; clip-path:inset(-32px -32px 0 -32px); }
 .mn-paper .shot { position:absolute; inset:0 0 auto 0; }
-.mn-front { position:relative; background:var(--mn-front); border-radius:var(--r); box-shadow:inset 0 1px 0 var(--mn-hi); padding:clamp(40px, 5cqi, 64px) clamp(20px, 4.4cqi, 64px) clamp(64px, 8cqi, 112px); }
+.mn-front { position:relative; z-index:1; background:var(--mn-front); border-radius:var(--r); box-shadow:inset 0 1px 0 var(--mn-hi); padding:clamp(40px, 5cqi, 64px) clamp(20px, 4.4cqi, 64px) clamp(64px, 8cqi, 112px); }
 .mn-hero { display:flex; flex-direction:column; align-items:center; text-align:center; }
 .mn-hero h1 { max-width:none; }
 .mn-lede { margin-top:24px; max-width:50rem; font-size:clamp(18px, 1.6cqi, 21px); line-height:1.5; color:var(--mn-ink2); text-wrap:balance; }
@@ -151,9 +155,10 @@ export const MN_CSS = `
   .mn-wm { transform:translateY(3px); }
   .mn-wm .wm { height:36px; }
   .mn > .mn-folder { margin-top:48px; }
+  .mn-head { top:48px; }
   .mn-nav { top:-48px; height:40px; }
   .mn-mb .clock, .mn-mb .hide-s { display:none; }
-  .mn-paper { width:min(calc(100% - 24px), 256px); aspect-ratio:256 / 200; }
+  .mn-paper { width:min(calc(100% - 24px), 400px); aspect-ratio:1280 / 620; }
   .mn-front { padding:28px 20px 64px; }
   .mn-req { white-space:normal; }
   .mn-end-folder { --tab-h:40px; --band:20px; }
@@ -186,13 +191,15 @@ export function mnMarkup({ shot, dlBtn, MENUBAR_ICON, SRC, DL, REL, PRIV, ext, A
 <div class="mn-pop" id="mn-pop" hidden>${shot("agent", "v-agent in nofx", viewAgent())}</div>
 <div class="mn-note" aria-hidden="true"><svg class="mn-note-arrow" viewBox="0 0 300 150"><path class="stem" pathLength="1" d="M236 50 C 238 37, 250 30, 259 35 C 268 40, 263 50, 255 46 C 246 41, 255 26, 271 19 C 280 15, 287 11, 290 5"/><path class="head" pathLength="1" d="M282 12.5 L290.5 3.5 L296.5 13.5"/></svg><div class="mn-card" role="button" tabindex="-1" title="Put away"><span class="mn-tape"></span><svg class="x" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 5l6 6M11 5l-6 6"/></svg><span class="mn-note-text"><span>The menu bar Agent</span><span>can reach all your Workers</span></span></div></div></header>
 <div class="mn-folder">
+<div class="mn-head">
 <div class="mn-back" aria-hidden="true"></div>
 <div class="mn-tab"><a class="mn-wm" href="#top" data-top aria-label="AmpleFile, back to the top">${WORDMARK}</a></div>
 <nav class="mn-nav" aria-label="AmpleFile">${gh("mn-gh")}${dlBtn("mn-btn sm")}</nav>
 <div class="mn-paper">${shot("live", "p-live nofx", viewOrganizeLive())}</div>
+</div>
 <main class="mn-front">
 <section class="mn-hero"><h1>A Smart File Explorer</h1><p class="mn-lede">Every folder you connect gets its own dedicated&nbsp;AI&nbsp;agent, called a&nbsp;Worker.</p></section>
-<section class="mn-sec"><div class="copy"><h2>Where Your Files Already Live</h2><p><span class="ln">Pick any folder on your Mac.</span> <span class="ln">Nothing&nbsp;moves, and it stays a normal folder in Finder.</span></p></div>${shot("connect", "p-chat", viewConnect({ h: 680 }), ' style="--ch:680"')}</section>
+<section class="mn-sec"><div class="copy"><h2>Where Your Files Already Live</h2><p><span class="ln">Pick any folder on your Mac.</span> <span class="ln">Nothing&nbsp;moves, and it stays a normal folder in Finder.</span></p></div>${shot("connect", "p-full", viewConnect({ h: 680 }), ' style="--ch:680"')}</section>
 <section class="mn-sec"><div class="copy"><h2>Runs on Its Own</h2><p><span class="ln">Turn on a ready-made Automation,</span> <span class="ln">or tell your Worker to set up a custom one for&nbsp;you.</span></p></div>${shot("automation", "p-chat", viewAutomationRun({ h: 720 }), ' style="--ch:720"')}</section>
 <section class="mn-sec"><div class="copy"><h2>Or With Your Prompts</h2><p><span class="ln">Workers run on a full AI agent harness.</span> <span class="ln">They organize, research, draft documents, write code,</span> <span class="ln">and take on anything else you can think&nbsp;of.</span></p></div>${shot("ask", "p-chat", viewAsk({ h: 620 }), ' style="--ch:620"')}</section>
 <section class="mn-sec"><div class="copy"><h2>Changes Are Tracked</h2><p><span class="ln">Anything you or your Worker change in AmpleFile</span> <span class="ln">can be undone with one&nbsp;click.</span></p></div>${shot("history", "p-chat", viewHistory({ h: 600 }), ' style="--ch:600"')}</section>
