@@ -24,7 +24,7 @@ const turnReasons = new Set(["pre_turn", "before_turn"]);
 const freshForMs = 24 * 60 * 60 * 1_000;
 
 /**
- * Change markers and the Worker's receipt (owner request, 2026-11-07): after
+ * Change markers and the Worker's receipt: after
  * a Worker reply or an Automation run, the files it added, moved, or changed
  * are marked in the list and summed up in Info, with Undo (History's restore)
  * and Done (the receipt and markers go away, and stay away for that reply).

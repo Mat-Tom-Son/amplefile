@@ -1,8 +1,6 @@
 # Extensions and computer work
 
-Status: implemented in the development tree, 2026-09-11; public release
-acceptance is tracked separately. This extends
-[Skills & Extensions](skills-and-extensions.md). Pi remains the runtime,
+This extends [Skills & Extensions](skills-and-extensions.md). Pi remains the runtime,
 package format, resource loader, and capability catalog.
 
 ## Product contract
@@ -21,11 +19,12 @@ wrapper format or tool registry. Full-trust native code retains full-user
 authority; host facilities cannot sandbox arbitrary shell access.
 
 **Skills & Extensions** owns discovery, installation, source, scope,
-configuration, diagnostics, update, enable/disable and removal. Since
-2026-09-25 it is a popup dialog opened by the rail's Add button and pinned to
-the Connected Folder it was opened from. Its Installed view starts with an **Included
-with AmpleFile** strip holding the five included tools; **Everywhere** and
-**This folder only** remain the scope groups below it, side by side. Account and OS setup stays on a trusted local surface.
+configuration, diagnostics, update, enable/disable and removal. It is a popup
+dialog opened from the toolbar's **Action** (⋯) menu or a Connected Folder's
+right-click menu, pinned to the Connected Folder it was opened from. Its
+Installed view starts with an **Included with AmpleFile** strip holding the five
+included tools; **Everywhere** and **This Connected Folder only** are the scope
+groups below it, side by side. Account and OS setup stays on a trusted local surface.
 
 ## Responsibilities
 
@@ -50,12 +49,12 @@ compatibility are defined in [Chrome extension distribution](chrome-extension-di
 ## Live Extension interactions
 
 Native Pi `select`, `confirm`, `input` and `editor` calls appear inline in their
-owning Chat. Questions queue independently, survive tab switches and reconnect,
+owning Chat. Questions queue independently, survive switching Chats and reconnect,
 and validate typed answers before one callback settles. Wrong-owner,
 duplicate, expired or invalid replies cannot advance them. Failed delivery
 keeps the field available for retry; Stop and the composer remain reachable.
 
-These are transient callbacks, not durable F27 questions. Stop, timeout,
+These are transient callbacks, not durable collaboration questions. Stop, timeout,
 session disposal and shutdown cancel them. Restart does not reconstruct or
 auto-answer them. A question that ends its turn and resumes after an answer
 uses the existing collaboration verbs. Native third-party confirmations keep
@@ -68,7 +67,7 @@ retain session ownership. Stop cancels pending questions and rejects callbacks
 while that native prompt drains. Once it drains, a surviving transport may ask
 a new Chat-owned question; session disposal permanently cancels its UI access.
 Unattributed questions remain local to their Chat.
-Legacy MCP stdio elicitation does not identify its originating `tools/call`;
+MCP stdio elicitation does not identify its originating `tools/call`;
 the host must not guess its task from whichever turn is currently running.
 
 The UI adapter bounds pending questions and text, scopes editor state by root
@@ -87,7 +86,7 @@ is not rendered as a desktop component.
 | Chrome | `pi-chrome` 0.15.51; shared transport with independent Chat targets and embedded-host ownership | Install AmpleFile from the Chrome Web Store and choose Connect in the selected profile. Native bootstrap and authenticated protocol/capability checks precede use. Signed-in account effects use that profile's authority; cleanup preserves user tabs. |
 | Web | `pi-web-access` 0.29.0 pure search and readable-page functions through an additive native factory | DuckDuckGo search needs no key; optional Brave key is entered in tool setup. Explicit HTTP(S) reading, bounded output and cancellation. No automatic cookie/profile import, media service, global fetch replacement or hidden model call. Challenges and rate limits remain visible failures. |
 | Documents | Ordinary JavaScript worker, maintained document libraries and a standard document-work Skill | DOCX/XLSX/PPTX/PDF creation, spreadsheet read/write, PDF text extraction and selected page rendering using bundled dependencies. No separate Node/Python required. The separate `document_engine` tool detects installed LibreOffice for Office rendering/XLSX recalculation and Tesseract for page-image OCR. These optional engines are not bundled; missing setup is explicit. Built-in PDF text extraction itself is not OCR. |
-| Service Connections | Pi 1.1.0 `createMcpExtension` using native MCP transport, discovery, schemas and cancellation | Configure HTTP or stdio servers in native Pi files. Trusted setup supports bearer credentials and loopback PKCE OAuth. Stdio commands need their own installed executable/runtime. Native MCP currently has no elicitation or sampling path. No automatic imports from other applications. |
+| Service Connections | Pi 1.1.0 `createMcpExtension` using native MCP transport, discovery, schemas and cancellation | Configure HTTP or stdio servers in native Pi files. Trusted setup supports bearer credentials and loopback PKCE OAuth. Stdio commands need their own installed executable/runtime. Native MCP has no elicitation or sampling path. No automatic imports from other applications. |
 
 Email, calendars, databases and project services remain user-selected
 connections. Included does not mean every account is connected or every server
@@ -97,7 +96,7 @@ requested execution or an explicit health check.
 
 The packaged Computer helper runs from a private, versioned directory outside
 the enclosing AmpleFile app bundle so macOS attributes its Screen Recording
-permission to `amplefile Computer`. On first requested setup or tool execution,
+permission to `AmpleFile Computer`. On first requested setup or tool execution,
 the host copies the exact signed bundle, verifies its bytes and signature, and
 preserves its identity and icon. Catalog reads create no helper copy or process.
 An update creates a new version without replacing a running helper; the host
@@ -155,21 +154,21 @@ load state stays in Technical details and never establishes readiness.
 
 Chrome uses recent authenticated contacts from the selected profile: compatible
 polls, active-command heartbeats and accepted results. A lease alone is
-Connecting; a selected profile with no recent contact says Not connected and
+Connecting; a selected profile with no recent contact says Not Connected and
 reconnects when Chrome opens. Transport startup failures show a bounded diagnosis.
 Computer Control records actual helper and permission evidence after use or an
 explicit **Check**. Use coalesces no-launch permission observations for thirty
 seconds without delaying tool results. After five minutes a successful observation becomes neutral **Last
 Check Passed**, preserving its timestamp, until another observation replaces it.
 An idle helper is unverified rather than unavailable. **Check** never repairs the
-helper or disposes Chat sessions. Setup (2026-10-11) is one **Allow Computer
+helper or disposes Chat sessions. Setup is one **Allow Computer
 Control** button: it asks macOS for both permissions, then watches every two
 seconds for up to five minutes, with a checklist that shows each permission and
 opens its System Settings pane, and the one sentence that names **AmpleFile
 Computer** as what to turn on. Once macOS reports Screen Recording allowed but
 the running helper cannot capture yet, setup restarts the helper once, because
 macOS applies the permission only after a restart. Allow finishes at once when
-both are already allowed, so a Not checked Computer Control offers **Set up**.
+both are already allowed, so a Not Checked Computer Control offers **Set Up**.
 **Restart helper** under Technical details is the explicit repair, under the
 existing capability mutation fence.
 
@@ -180,7 +179,7 @@ starts unverified. Service Connections says **No Connections** or **Configured**
 from the native configuration, without equating configuration with server health.
 Individual connection details own their bounded native checks.
 
-**Set up** appears only when a person can act. Explicit checks invalidate previous
+**Set Up** appears only when a person can act. Explicit checks invalidate previous
 evidence before work starts. Runtime-bound observation ordering prevents an older
 probe from replacing a newer check; renderer reads cannot cross Connected Folders,
 overwrite newer results, or survive a closed owner. Setup and failures remain in
@@ -235,7 +234,7 @@ settle window, and a field that still lacks its text stops the batch. Readable
 successor values that show a lost or reverted write override a claimed success;
 password values are never read into evidence. Incomplete trees and failed reads
 remain incomplete through scoped observations and cannot establish that a
-condition disappeared, while number-valued controls no longer count as failed
+condition disappeared, while number-valued controls do not count as failed
 reads. The shared Pi tools and helper protocol continue to own observations and
 effects.
 
@@ -289,10 +288,10 @@ artifact, and concurrent Chat/Stop tests must preserve unrelated work.
 `document_engine status` detects executable availability without launching applications.
 The same detection (`resources/included-tools/readiness.ts`) feeds the Documents
 status on every read, so an install shows up without a click; it looks on `PATH`
-and in the usual macOS, Linux and Windows install folders, including
-`~/Applications`. An explicit Check also runs `--version` on each found engine
+and in the usual install folders, including `/Applications`, `~/Applications`,
+Homebrew, and MacPorts. An explicit Check also runs `--version` on each found engine
 and records the version or the start problem for that exact path. See
-[Document verification](document-verification.md) for the status word and Set up.
+[Document verification](document-verification.md) for the status word and Set Up.
 `render` uses LibreOffice to produce PDF, `recalculate` uses an isolated LibreOffice
 Calc profile configured to recalculate OOXML on load and writes a separate XLSX, and
 `ocr` uses Tesseract on a selected page image. On macOS, `preview` uses Quick Look
@@ -309,7 +308,7 @@ and input copy. Macros are disabled in the isolated Office profile. The result n
 compatibility/recognition limits; successful execution alone does not verify content.
 
 These are optional standard programs with explicit setup, not bundled runtimes or
-automatic downloads: Set up opens the official download page or shows a command the
+automatic downloads: Set Up opens the official download page or shows a command the
 person runs. LibreOffice rendering/recalculation has a real installed-engine
 fixture; the Tesseract adapter's deterministic transport/cancellation fixture does not
 certify OCR accuracy. A release claiming that workflow needs the installed-engine

@@ -1,5 +1,5 @@
 /**
- * The durable background job journal (docs/background-jobs.md, F31).
+ * The durable background job journal (docs/background-jobs.md).
  *
  * Layout under `rootPath` (`jobs/` beneath the state root in production):
  *

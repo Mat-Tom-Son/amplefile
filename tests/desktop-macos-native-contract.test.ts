@@ -68,8 +68,8 @@ test("headless CLI relaunches never front the interactive window", () => {
     main,
     /app\.on\("second-instance", \(_event, argv, _workingDirectory, additionalData\) => \{[\s\S]*?ampleFileSecondInstanceIntent\(argv, additionalData\)[\s\S]*?intent\.kind === "cli-invalid"[\s\S]*?return;[\s\S]*?intent\.kind === "cli"[\s\S]*?processAmpleFileCliRequest\(intent\.requestId\)[\s\S]*?return;[\s\S]*?interactiveRequested = true;[\s\S]*?startInteractiveApp\(\)\.then\(showWindow\)/,
   );
-  // The old shape parsed ids inline and fell through to showWindow whenever
-  // both channels came back empty — CLI-shaped launches must not do that.
+  // Parsing ids inline would fall through to showWindow whenever both
+  // channels came back empty — CLI-shaped launches must not do that.
   assert.doesNotMatch(main, /ampleFileCliRequestIdFromInstanceData\(additionalData\)/);
 });
 

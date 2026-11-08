@@ -1,21 +1,21 @@
 # Chrome extension distribution
 
-Status: the Chrome Web Store item
-[`ophmjbphcjmjcpcdpmfehbldiomkepgk`](https://chromewebstore.google.com/detail/ophmjbphcjmjcpcdpmfehbldiomkepgk)
-is still work-fold's companion, version 1.0.2, which reaches the desktop
-through the native host `com.work_fold.chrome`. AmpleFile pins the AmpleFile
-build, 1.0.3 (`com.amplefile.chrome`), so the Chrome tool connects only after
-1.0.3 is published, to this item or to a new AmpleFile listing whose id and
-public key replace the ones in `src/shared/chrome-distribution.json`. Each
-extension update goes through Google's review before Chrome delivers it.
+The companion extension is the Chrome Web Store item
+[`ophmjbphcjmjcpcdpmfehbldiomkepgk`](https://chromewebstore.google.com/detail/ophmjbphcjmjcpcdpmfehbldiomkepgk).
+Its published version, 1.0.2, connects through the native host
+`com.work_fold.chrome`. AmpleFile pins version 1.0.3 and the native host
+`com.amplefile.chrome` in `src/shared/chrome-distribution.json`, so the Chrome
+tool connects only after 1.0.3 is published, to this item or to a new listing
+whose id and public key replace the ones in that file. Each extension update
+goes through Google's review before Chrome delivers it.
 
 ## Installation and updates
 
 Chrome setup in AmpleFile (Skills & Extensions → Chrome, or first run's
-optional **Let your Worker use your Mac** step) shows two steps: **Add the
-AmpleFile extension** (**Open Chrome Web Store** registers the app's signed
+optional **Let Your Worker Use Your Mac** step) shows two steps: **Add the
+AmpleFile Extension** (**Open Chrome Web Store** registers the app's signed
 native helper and opens the exact Chrome Web Store listing) and **Choose Connect
-in the extension**. Either order works (2026-10-11): at launch the installed app
+in the Extension**. Either order works: at launch the installed app
 registers its native helper when Chrome is set up on the Mac and no AmpleFile
 registration exists yet, never replacing another installation's, and it
 accepts **Connect** chosen in a freshly added extension without an earlier
@@ -32,9 +32,9 @@ Chrome supplies normal extension updates through the same Store item. The
 companion and desktop negotiate bridge major version and required capabilities;
 their product/package versions need not match. Incompatible companions receive
 Update AmpleFile or Update Chrome extension before any command is dequeued.
-No new user's setup requires Developer mode, Load unpacked, or finding Library
-folders. The older manual-companion helper remains a contributor/standalone Pi
-facility, not the production onboarding path.
+Setup never needs Developer mode, Load unpacked, or a folder under
+`~/Library`. The manual-companion helper is a contributor and standalone Pi
+facility, not part of setup.
 
 ## Bootstrap and ownership
 
@@ -77,7 +77,7 @@ existing bridge epoch. Uncertain browser effects are never automatically
 replayed. Cleanup may close only the session's created tabs and remove its
 own grouping; ordinary user tabs remain open.
 
-The 1.0.2 companion source includes target-window grouping, hidden-input
+The companion source includes target-window grouping, hidden-input
 failure reporting, complete multiline field replacement, targeted typing at
 field end, and recovery from half-open long polls. Text insertion preserves
 line breaks without sending Enter; widgets that require key events can use
@@ -90,7 +90,7 @@ desktop observes compatible polls, accepted results and active-command
 heartbeats rather than mistaking a long operation for a lost connection.
 Desktop status refreshes do
 not upgrade an installed extension. A companion-side fix ships as a new Store
-version (the app currently pins companion 1.0.3 in
+version (the app pins its companion version in
 `src/shared/chrome-distribution.json`); after Google approves it, Chrome
 updates installed copies on its own schedule, and the bridge version check
 asks for **Update Chrome extension** when an older companion lacks a required

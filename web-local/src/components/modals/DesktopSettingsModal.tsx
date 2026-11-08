@@ -39,11 +39,9 @@ type SettingsTabId = "appearance" | "ai-models" | "automations" | "command-line"
 const unsavedAiModelsEdits = new Map<string, AiModelsDraft>();
 
 /**
- * The tab a Settings page id opens. "general" and "desktop" are older ids
- * kept so existing callers still land somewhere sensible: the old
- * Desktop tab held Automations, Recently deleted and Limits, so "desktop"
- * with the "deleted" section opens Recently deleted and otherwise opens
- * Automations (where Limits now sits).
+ * The tab a Settings page id opens. "general" and "desktop" stay as page ids
+ * for existing callers: with the "deleted" section they open Recently Deleted,
+ * and otherwise Automations, which holds Limits.
  */
 export function settingsTabForPage(page: SettingsPage, section?: SettingsSection): SettingsTabId {
   if (page === "general" || page === "desktop") return section === "deleted" ? "recently-deleted" : "automations";
@@ -57,7 +55,7 @@ export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, c
   agentStatus: AgentStatus;
   fixtureMode?: boolean;
   initialPage?: SettingsPage;
-  /** Older callers named a section of the former Desktop tab. */
+  /** With the "general" or "desktop" page id: "deleted" opens Recently Deleted, anything else Automations. */
   initialSection?: SettingsSection;
   initialModelScope?: ModelScope;
   focusAiModel?: boolean;

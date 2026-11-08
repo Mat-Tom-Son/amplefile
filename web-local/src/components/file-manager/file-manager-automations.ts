@@ -1,7 +1,7 @@
 import type { FolderAutomationView } from "../../../../src/shared/automation-presentation";
 import { automationTemplateAutomationId, automationTemplates, type AutomationTemplateId } from "../../../../src/shared/automation-templates";
 
-/** The rows of the Info panel's Automations card (docs/product-model.md, 2026-11-06). */
+/** The rows of the Info panel's Automations card (docs/product-model.md). */
 export interface AutomationCardRow {
   automationId: string;
   title: string;

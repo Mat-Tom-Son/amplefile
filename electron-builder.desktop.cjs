@@ -94,7 +94,7 @@ module.exports = {
       NSMicrophoneUsageDescription: "A website open in AmpleFile's browser wants to use your microphone.",
       NSLocationUsageDescription: "A website open in AmpleFile's browser wants to know your location.",
       NSLocationWhenInUseUsageDescription: "A website open in AmpleFile's browser wants to know your location.",
-      // The File Manager's Standard Folders (docs/product-model.md, 2026-11-06).
+      // The File Manager's Standard Folders (docs/product-model.md).
       NSDesktopFolderUsageDescription: "AmpleFile shows your Desktop in its file manager.",
       NSDocumentsFolderUsageDescription: "AmpleFile shows your Documents folder in its file manager.",
       NSDownloadsFolderUsageDescription: "AmpleFile shows your Downloads folder in its file manager.",

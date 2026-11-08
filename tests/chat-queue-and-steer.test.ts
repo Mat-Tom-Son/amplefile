@@ -10,7 +10,7 @@ import { FileCredentialStore, ModelRuntime, SettingsManager } from "@earendil-wo
 import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
 
 /**
- * Queue and steer from every window (2026-10-27): a Chat's queued message is
+ * Queue and steer from every window: a Chat's queued message is
  * held by the app, so every window shows it and it is sent when the turn ends
  * (never after a Stop); and the AmpleFile agent's running turn takes a
  * steering message from the menu-bar panel.

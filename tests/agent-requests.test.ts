@@ -8,11 +8,9 @@ import { AmpleFileRequestStore } from "../src/local/requests/request-store.js";
 
 /**
  * Management request lineage over the durable request store
- * (docs/collaboration-contract.md, F25). These are the behaviors the
- * in-memory registry used to promise, kept word for word against the store
- * that replaced it: attribution only to an explicit task id, the widened
- * action vocabulary, one story per continued request, and a first settled
- * outcome that stands.
+ * (docs/collaboration-contract.md): attribution only to an explicit task id,
+ * the widened action vocabulary, one story per continued request, and a first
+ * settled outcome that stands.
  */
 
 async function openStore(t: { after: (fn: () => unknown) => void }): Promise<AmpleFileRequestStore> {

@@ -24,7 +24,7 @@ export class ChromeNativeHostRegistration {
   /**
    * `explicit` claims Chrome's registration for this installation; a startup
    * refresh only renews one this installation already owns. `ifAbsent`
-   * (2026-10-11) registers at launch only when Chrome is set up on this Mac and
+   * registers at launch only when Chrome is set up on this Mac and
    * no AmpleFile registration exists yet, so adding the extension first works;
    * it never replaces another installation's registration.
    */

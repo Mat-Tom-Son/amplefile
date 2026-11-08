@@ -55,8 +55,8 @@ export const ampleFileRecentlyDeletedMinRetentionDays = 1;
 export const ampleFileRecentlyDeletedMaxRetentionDays = 365;
 
 /**
- * Durable request bounds (docs/collaboration-contract.md, F25 and the Limits
- * table; docs/receipts-not-gates.md principle 6). Every request the AmpleFile agent, a
+ * Durable request bounds (docs/collaboration-contract.md, "Execution and
+ * transport bounds"; docs/act-ledger.md). Every request the AmpleFile agent, a
  * Worker, an automation, or an outside harness starts is one
  * record with these bounds, and every refusal names the number plus
  * "Settings → Automations → Limits".
@@ -72,7 +72,7 @@ export const ampleFileRequestLimits = Object.freeze({
   maxQuestionOptions: 64,
   maxQuestionOptionBytes: 4 * 1024,
   maxAnswerTextBytes: 4 * 1024 * 1024,
-  /** The checklist an agent keeps for its request (2026-10-18); long tasks only. */
+  /** The checklist an agent keeps for its request; long tasks only. */
   maxChecklistItems: 200,
   maxChecklistItemBytes: 2 * 1024,
   maxResultSummaryBytes: 4 * 1024 * 1024,
@@ -89,7 +89,7 @@ export const ampleFileRequestLimits = Object.freeze({
   retentionDays: 30,
 });
 
-/** F28: continuation turns are on by default and a person can turn them off. */
+/** Continuation turns (docs/collaboration-contract.md) are on by default and a person can turn them off. */
 export const ampleFileRequestContinuationsDefaultEnabled = true;
 
 /**

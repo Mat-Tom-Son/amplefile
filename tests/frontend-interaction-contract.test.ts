@@ -88,7 +88,7 @@ test("Settings keeps older page ids landing on the tab that now holds their cont
 });
 
 test("no surface offers an authority mode, a policy, or a decision card", () => {
-  // docs/receipts-not-gates.md, F19/F24: the Settings → Automations pane has no
+  // docs/act-ledger.md: the Settings → Automations pane has no
   // Authority selector and no Standing policies section; the main window has
   // no needs-you rail control; questions live inside their owning Chat.
   const settings = desktopDialogs[0] ?? "";
@@ -97,12 +97,12 @@ test("no surface offers an authority mode, a policy, or a decision card", () => 
 });
 
 test("the main window has no overview panel; the connected-folder-identity header carries no action and Files keeps its actions in the right-click menu", () => {
-  // The server digest stays (the popover's GlanceSection is gone too); the
-  // main-window "Since you last looked" panel is gone, so the renderer
-  // neither fetches nor acknowledges the overview from the main window.
+  // The server digest stays, but neither the popover nor the main window
+  // shows an overview panel, so the renderer neither fetches nor
+  // acknowledges the overview from the main window.
   assert.doesNotMatch(app, /OverviewHeaderControl|OverviewPanel|useOverview/);
   assert.doesNotMatch(app, /headerAction/);
-  // 2026-10-01: the search box spans the toolbar; refresh, new folder, and
+  // The search box spans the toolbar; refresh, new folder, and
   // add files are right-click actions, and a background refresh never dims
   // the tree.
   assert.doesNotMatch(app, /refreshFilesButton|aria-label="Refresh files"|aria-label="Add files"/);

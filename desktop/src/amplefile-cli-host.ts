@@ -94,7 +94,7 @@ export type AmpleFileSecondInstanceIntent =
 
 /**
  * Classifies a second-instance launch by cause. Only a genuine interactive
- * relaunch may surface or focus the window — docs/ui-parity.md: a headless
+ * relaunch may surface or focus the window — docs/product-model.md: a headless
  * CLI request must coexist with the running desktop app and avoid opening or
  * stealing focus from the interactive window. The shim relaunches this
  * executable for every request, so any launch that carries CLI shape —

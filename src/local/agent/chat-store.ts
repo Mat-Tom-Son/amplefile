@@ -494,9 +494,9 @@ function parseChatMessage(line: string): ChatMessage | null {
       const attachments = parsed.attachments.filter(isChatMessageAttachmentRef).slice(0, 32);
       if (attachments.length) message.attachments = attachments;
     }
-    // Logs older builds wrote may mark a user message `source: "app"` (a
-    // request a Connected Folder app made, before apps were removed on
-    // 2026-11-07). The marker is not carried: it loads as an ordinary message.
+    // Logs an earlier build wrote may mark a user message `source: "app"` (a
+    // request a Connected Folder app made). The marker is not carried: it
+    // loads as an ordinary message.
     if (isTurnIdentity(parsed.turnId)) message.turnId = parsed.turnId;
     if (isTurnIdentity(parsed.requestId)) message.requestId = parsed.requestId;
     if (parsed.role === "user" && parsed.delivery === "steer") message.delivery = "steer";

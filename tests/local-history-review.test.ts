@@ -172,7 +172,7 @@ test("protected metadata, traversal, links and newly registered nested Connected
   await mkdir(join(root, "child"));
   await writeFile(join(root, "child", "note.txt"), "belongs to child");
   const checkpoint = await createConnectedFolderCheckpoint(root);
-  for (const path of ["../outside.txt", "/absolute.txt", "child/../../outside.txt", "C:\\outside.txt", ".", ".pi/config.json", ".amplefile/connected-folder.json", ".workspace/secret", "child/.PI/config", "bad\nname.txt"]) {
+  for (const path of ["../outside.txt", "/absolute.txt", "child/../../outside.txt", "C:\\outside.txt", ".", ".pi/config.json", ".amplefile/connected-folder.json", ".work-fold/secret", "child/.PI/config", "bad\nname.txt"]) {
     await assert.rejects(readHistoryFile(root, { path, checkpointId: checkpoint.checkpointId }));
   }
   await symlink(join(root, "child"), join(root, "linked"));

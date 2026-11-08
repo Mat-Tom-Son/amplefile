@@ -1,5 +1,5 @@
 /**
- * Set up for me (2026-10-11): one click asks the Connected Folder's Worker to look
+ * Set up for me: one click asks the Connected Folder's Worker to look
  * the folder over and set it up, through the included set-up-connected-folder
  * Skill. "Set up for me" organizes it, writes Worker instructions, and gives
  * it a look; "Just the look" sets the banner, icon, and color and never

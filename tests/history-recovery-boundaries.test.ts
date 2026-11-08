@@ -42,10 +42,10 @@ test("restore refuses deleting or overwriting content its new safety checkpoint 
 test("additive undo never recursively deletes protected metadata", async (t) => {
   const { root } = await fixture(t);
   const cp = await createConnectedFolderMutationCheckpoint(root, { deleteOnRestore: ["added"] });
-  await mkdir(join(root, "added", ".workspace"), { recursive: true });
-  await writeFile(join(root, "added", ".workspace", "sentinel"), "preserve");
+  await mkdir(join(root, "added", ".work-fold"), { recursive: true });
+  await writeFile(join(root, "added", ".work-fold", "sentinel"), "preserve");
   await assert.rejects(restoreConnectedFolderCheckpoint(root, cp.checkpointId), /cannot be recovered/);
-  assert.equal(await readFile(join(root, "added", ".workspace", "sentinel"), "utf8"), "preserve");
+  assert.equal(await readFile(join(root, "added", ".work-fold", "sentinel"), "utf8"), "preserve");
 });
 
 test("History excludes nested Connected Folders and refuses older checkpoints after child registration", async (t) => {

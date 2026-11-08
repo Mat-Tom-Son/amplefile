@@ -15,7 +15,7 @@ import {
 } from "../desktop/src/updater.js";
 
 test("installed Windows and macOS builds with an updater feed enable update controls", () => {
-  const resourcesPath = "C:\\Program Files\\Workspace\\resources";
+  const resourcesPath = "C:\\Program Files\\AmpleFile\\resources";
   const expectedFeed = join(resourcesPath, "app-update.yml");
   const fileExists = (path: string) => path === expectedFeed;
 
@@ -30,7 +30,7 @@ test("downloaded payload readiness follows each platform updater", () => {
   assert.equal(hasDownloadedUpdatePayload({ platform: "darwin", updateDownloadedEventReceived: false, installerPath: null, installerExists: false }), false);
   assert.equal(hasDownloadedUpdatePayload({ platform: "darwin", updateDownloadedEventReceived: true, installerPath: null, installerExists: false }), true);
   assert.equal(hasDownloadedUpdatePayload({ platform: "win32", updateDownloadedEventReceived: true, installerPath: null, installerExists: false }), false);
-  assert.equal(hasDownloadedUpdatePayload({ platform: "win32", updateDownloadedEventReceived: true, installerPath: "C:\\updates\\Workspace.exe", installerExists: true }), true);
+  assert.equal(hasDownloadedUpdatePayload({ platform: "win32", updateDownloadedEventReceived: true, installerPath: "C:\\updates\\AmpleFile.exe", installerExists: true }), true);
 });
 
 class FakeUpdater extends EventEmitter implements DesktopUpdaterAdapter {
@@ -39,7 +39,7 @@ class FakeUpdater extends EventEmitter implements DesktopUpdaterAdapter {
   autoRunAppAfterInstall = false;
   allowDowngrade = true;
   allowPrerelease = true;
-  installerPath: string | null = "C:\\updates\\Workspace-Setup.exe";
+  installerPath: string | null = "C:\\updates\\AmpleFile-Setup.exe";
   checkResult: DesktopUpdateCheckResultLike | null = {
     isUpdateAvailable: true,
     updateInfo: { version: "1.1.0" },

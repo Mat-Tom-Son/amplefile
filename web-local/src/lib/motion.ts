@@ -231,7 +231,7 @@ export function settleIn(elements: Iterable<Element | null | undefined>, duratio
 }
 
 /**
- * New content arriving from a side (2026-11-07): a folder opened deeper or
+ * New content arriving from a side: a folder opened deeper or
  * forward slides in from the right, one gone up or back from the left, and
  * anything else settles in place.
  */

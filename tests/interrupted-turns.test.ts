@@ -11,7 +11,7 @@ import { fillInterruptedToolResults, interruptedToolResultText } from "../src/lo
 import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
 
 /**
- * A turn cut off by AmpleFile closing (2026-10-27): it is recorded like a
+ * A turn cut off by AmpleFile closing: it is recorded like a
  * crash, never as a Stop the person asked for; the person continues it with an
  * ordinary message; and a tool call that never recorded a result reaches the
  * model as possibly partly done, never as a bare "No result provided".

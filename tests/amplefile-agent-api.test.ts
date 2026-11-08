@@ -11,7 +11,7 @@ import {
 } from "../src/local/cli/act-commands.js";
 import { createAmpleFileCliActRequest } from "../src/local/cli/act-protocol.js";
 import type { AmpleFileActFacade } from "../src/local/cli/act-facade.js";
-import { AmpleFileCliActReceipts, type AmpleFileCliActReceiptV1 } from "../src/local/cli/act-receipts.js";
+import { AmpleFileCliActReceipts, type AmpleFileCliActReceiptV3 } from "../src/local/cli/act-receipts.js";
 import { AmpleFileCliError } from "../src/local/cli/protocol.js";
 import { startLocalApi } from "../src/local/server.js";
 import { setConnectedFolderIgnoreState } from "../src/local/connected-folder-ignore.js";
@@ -41,9 +41,9 @@ test("act argv parsing carries agent send attachments and the agent stop command
 });
 
 test("the act executor forwards attachments to the facade and stamps lineage on receipts", async () => {
-  const appended: Array<Omit<AmpleFileCliActReceiptV1, "v" | "at">> = [];
+  const appended: Array<Omit<AmpleFileCliActReceiptV3, "v" | "at">> = [];
   const receipts = {
-    append: (entry: Omit<AmpleFileCliActReceiptV1, "v" | "at">) => {
+    append: (entry: Omit<AmpleFileCliActReceiptV3, "v" | "at">) => {
       appended.push(entry);
       return Promise.resolve(true);
     },
@@ -172,7 +172,7 @@ test("AmpleFile agent requests carry attachments, record lineage, and expose hon
   try {
     const facade = api.actFacade;
     // This test pins attachments, lineage, and phases. Its delegated child
-    // settles after the AmpleFile agent's turn ends, which is exactly when F28 would
+    // settles after the AmpleFile agent's turn ends, which is exactly when the host would
     // bring the result back as a continuation turn and make that turn the
     // request's newest; tests/amplefile-collaboration-verbs.test.ts covers
     // that path, so here the setting is off and the projection stays put.
@@ -231,7 +231,7 @@ test("AmpleFile agent requests carry attachments, record lineage, and expose hon
     assert.equal(request.children.length, 1);
     assert.equal(request.children[0]!.taskId, childSend.taskId);
     assert.equal(request.children[0]!.connectedFolderName, "Target Connected Folder");
-    // The durable record beneath the phase (docs/collaboration-contract.md, F25).
+    // The durable record beneath the phase (docs/collaboration-contract.md).
     assert.match(request.requestId, /^req-/);
     assert.equal(request.kind, "agent");
     assert.equal(request.rootId, request.requestId, "an AmpleFile agent turn is its own root");
@@ -359,7 +359,7 @@ test("AmpleFile agent requests carry attachments, record lineage, and expose hon
 
     // Stopping the parent between its check and the child's acceptance
     // refuses the child at acceptance: no child request, no child turn, and
-    // no user message in the Connected Folder Chat (docs/collaboration-contract.md, F25).
+    // no user message in the Connected Folder Chat (docs/collaboration-contract.md).
     const admissionRaceParent = await facade.agentSend({ content: "/hold" });
     const admissionRaceConversation = await facade.createConversation({ connectedFolder: target.connectedFolder.id });
     holdChildAttribution = true;

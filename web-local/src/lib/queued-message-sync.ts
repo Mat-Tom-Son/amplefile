@@ -1,6 +1,6 @@
 /**
  * One window's view of a Chat's queued message, kept in step with the copy
- * the app holds (2026-10-27).
+ * the app holds.
  *
  * The app numbers every queue change. A window applies an app event only when
  * it is newer than every change the window has applied or made. While its own

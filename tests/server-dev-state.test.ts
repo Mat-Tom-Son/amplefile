@@ -16,7 +16,7 @@ test("local development defaults to dedicated state on every supported platform 
     environment: { APPDATA: windowsAppData },
     platform: "win32",
     homeDirectory: "C:\\Users\\developer",
-    currentDirectory: "C:\\source\\workspace",
+    currentDirectory: "C:\\source\\amplefile",
   });
   assert.equal(windowsRoot, win32.join(windowsAppData, "AmpleFile Development"));
   assert.notEqual(
@@ -28,7 +28,7 @@ test("local development defaults to dedicated state on every supported platform 
     environment: {},
     platform: "darwin",
     homeDirectory: "/Users/developer",
-    currentDirectory: "/source/workspace",
+    currentDirectory: "/source/amplefile",
   });
   assert.equal(macRoot, "/Users/developer/Library/Application Support/AmpleFile Development");
   assert.notEqual(macRoot, "/Users/developer/Library/Application Support/AmpleFile");
@@ -37,7 +37,7 @@ test("local development defaults to dedicated state on every supported platform 
     environment: { XDG_CONFIG_HOME: "/var/tmp/developer-config" },
     platform: "linux",
     homeDirectory: "/home/developer",
-    currentDirectory: "/source/workspace",
+    currentDirectory: "/source/amplefile",
   });
   assert.equal(linuxRoot, "/var/tmp/developer-config/AmpleFile Development");
   assert.notEqual(linuxRoot, "/var/tmp/developer-config/amplefile");
@@ -51,18 +51,18 @@ test("local development keeps AMPLEFILE_STATE_DIR as an explicit override", () =
     },
     platform: "linux",
     homeDirectory: "/home/developer",
-    currentDirectory: "/source/workspace",
+    currentDirectory: "/source/amplefile",
   });
 
   assert.deepEqual(options, {
     appMode: "dev",
     port: 5432,
-    stateBase: posix.resolve("/source/workspace", "fixtures/dev-state"),
+    stateBase: posix.resolve("/source/amplefile", "fixtures/dev-state"),
   });
 });
 
 test("local development loads .env before resolving its state and port", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-dev-env-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-dev-env-"));
   const envPath = join(sandbox, ".env");
   const environment: Record<string, string | undefined> = {};
   try {
@@ -77,11 +77,11 @@ test("local development loads .env before resolving its state and port", async (
       environment,
       platform: "linux",
       homeDirectory: "/home/developer",
-      currentDirectory: "/source/workspace",
+      currentDirectory: "/source/amplefile",
     }), {
       appMode: "dev",
       port: 5433,
-      stateBase: "/source/workspace/fixtures/from-dot-env",
+      stateBase: "/source/amplefile/fixtures/from-dot-env",
     });
   } finally {
     await rm(sandbox, { recursive: true, force: true });
@@ -94,14 +94,14 @@ test("local development rejects malformed inherited ports before listen", () => 
       environment: { AMPLEFILE_LOCAL_API_PORT: value },
       platform: "linux",
       homeDirectory: "/home/developer",
-      currentDirectory: "/source/workspace",
+      currentDirectory: "/source/amplefile",
     }).port, 4327);
   }
   assert.equal(createLocalDevelopmentApiOptions({
     environment: { AMPLEFILE_LOCAL_API_PORT: "0" },
     platform: "linux",
     homeDirectory: "/home/developer",
-    currentDirectory: "/source/workspace",
+    currentDirectory: "/source/amplefile",
   }).port, 0);
 });
 

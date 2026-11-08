@@ -19,7 +19,7 @@ import { ampleFileRequestLimits } from "../src/shared/amplefile-limits.js";
 import type { AmpleFileDurableTurnRecord } from "../src/local/agent/turn-store.js";
 
 /**
- * The durable request graph (docs/collaboration-contract.md, F25).
+ * The durable request graph (docs/collaboration-contract.md).
  *
  * Every accepted turn belongs to one record; the records survive restart, are
  * reconciled against the turn journal, and are never replayed. Payload and
@@ -50,8 +50,6 @@ const connectedFolderOwner = { connectedFolderId: "connected-folder-audits", con
 function stateInput(overrides: Partial<AmpleFileRequestStateInput> = {}): AmpleFileRequestStateInput {
   return {
     stopRequestedAt: null,
-    deadline: "2026-09-12T09:00:00.000Z",
-    now: new Date("2026-09-11T09:00:00.000Z"),
     turnStates: ["succeeded"],
     openQuestions: 0,
     openDescendantQuestions: 0,
@@ -223,8 +221,8 @@ test("the newest request on a Chat stays the newest across a compaction and a re
 test("a compaction keeps every record the journal holds, not only the ones in memory", async (t) => {
   const root = await temporaryRoot(t);
   const clock = clockFrom("2026-09-11T09:00:00.000Z");
-  // A tiny read cache plus an eager compaction: the combination that used to
-  // erase settled requests long before their retention window.
+  // A tiny read cache plus an eager compaction must not erase settled
+  // requests before their retention window.
   const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now, maxRecords: 2, compactBytes: 1 });
 
   const ids: string[] = [];
@@ -264,8 +262,8 @@ test("a request can grow past the former child and depth quotas", async (t) => {
 
   const breadth = await AmpleFileRequestStore.open({ rootPath: join(root, "breadth"), now: clock.now });
   await breadth.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1" });
-  // 33 was previously refused as the 33rd child. The graph records every
-  // accepted child; execution capacity is scheduled elsewhere.
+  // A 33rd child is accepted. The graph records every accepted child;
+  // execution capacity is scheduled elsewhere.
   for (let index = 0; index <= 32; index += 1) {
     await breadth.beginChild({
       parentTaskId: "task-1",
@@ -279,7 +277,7 @@ test("a request can grow past the former child and depth quotas", async (t) => {
 
   const deep = await AmpleFileRequestStore.open({ rootPath: join(root, "deep"), now: clock.now });
   await deep.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "deep-0" });
-  // Five levels was previously refused after level four.
+  // Five levels deep is accepted.
   for (let level = 1; level <= 5; level += 1) {
     const record = await deep.beginChild({
       parentTaskId: `deep-${level - 1}`,
@@ -302,12 +300,7 @@ test("the state ladder decides the same facts the same way every time", () => {
     computeAmpleFileRequestState(stateInput({ limitHit: { limit: "providerBudget", at: "2026-09-11T09:30:00.000Z" } })),
     "failed",
   );
-  assert.equal(
-    computeAmpleFileRequestState(stateInput({ turnStates: ["running"], now: new Date("2026-09-13T09:00:00.000Z") })),
-    "expired",
-  );
-  // A request that finished before its window closed stays finished.
-  assert.equal(computeAmpleFileRequestState(stateInput({ now: new Date("2026-09-13T09:00:00.000Z") })), "done");
+  assert.equal(computeAmpleFileRequestState(stateInput()), "done");
   // An open question this request asked outranks its own running turn: asking
   // puts the asking task in waiting, and Needs you means questions.
   assert.equal(computeAmpleFileRequestState(stateInput({ turnStates: ["running"], openQuestions: 1 })), "waiting");
@@ -322,13 +315,12 @@ test("the state ladder decides the same facts the same way every time", () => {
   assert.equal(computeAmpleFileRequestState(stateInput({ resultOutcomes: ["partial"] })), "partial");
   assert.equal(computeAmpleFileRequestState(stateInput({ resultOutcomes: ["succeeded"] })), "done");
 
-  // The older phase vocabulary keeps its meaning, and the closing-question
-  // heuristic still upgrades a finished request but never a failed one.
+  // The phase vocabulary keeps its meaning.
   assert.equal(ampleFileRequestStateToAgentPhase("waiting"), "needs_you");
   assert.equal(ampleFileRequestStateToAgentPhase("partial"), "done");
   assert.equal(ampleFileRequestStateToAgentPhase("expired"), "stopped");
-  assert.equal(ampleFileRequestStateToAgentPhase("done", true), "done");
-  assert.equal(ampleFileRequestStateToAgentPhase("failed", true), "failed");
+  assert.equal(ampleFileRequestStateToAgentPhase("done"), "done");
+  assert.equal(ampleFileRequestStateToAgentPhase("failed"), "failed");
 });
 
 test("a request never claims done while work it started is still running", async (t) => {
@@ -426,7 +418,7 @@ test("questions take exactly one answer, from the Connected Folder that was aske
   await store.flush();
 });
 
-test("new requests stay answerable without a timer, while legacy deadlines remain readable", async (t) => {
+test("new requests stay answerable without a timer", async (t) => {
   const root = await temporaryRoot(t);
   const clock = clockFrom("2026-09-11T09:00:00.000Z");
   const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
@@ -437,30 +429,12 @@ test("new requests stay answerable without a timer, while legacy deadlines remai
   assert.equal(store.get(request.requestId)?.state, "waiting");
 
   clock.advance(31 * 24 * 60 * 60 * 1_000);
-  assert.deepEqual(await store.expireDue(), { requests: 0, questions: 0 });
   const answered = await store.answer({ questionId: question.questionId, answer: "The 2026 one." });
   assert.equal(answered.state, "answered");
   await store.joinTurn({ requestId: request.requestId, taskId: "answer-turn" });
   assert.equal(store.byTaskId("answer-turn")?.requestId, request.requestId);
 
-  // Older journal records can still carry a deadline. Preserve that format
-  // and its expiration behavior without assigning one to new work.
   await store.flush();
-  const path = join(root, "requests.jsonl");
-  const legacy = (await readFile(path, "utf8"))
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line) as Record<string, unknown>)
-    .findLast((record) => record.requestId === request.requestId)!;
-  legacy.deadline = new Date(clock.now().getTime() - 1_000).toISOString();
-  await writeFile(path, `${JSON.stringify(legacy)}\n`, "utf8");
-  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
-  assert.equal(reopened.get(request.requestId)?.deadline, legacy.deadline);
-  const due = await reopened.expireDue();
-  assert.equal(due.requests, 1);
-  assert.equal(reopened.get(request.requestId)?.state, "expired");
-
-  await reopened.flush();
 });
 
 test("a stopped request keeps the lineage sentence rather than naming a bound", async (t) => {
@@ -530,7 +504,7 @@ test("the result envelope keeps its shape, its sizes, and its Connected Folderâ€
   });
   assert.equal(store.get(request.requestId)?.results.find((item) => item.resultId === manyFiles.resultId)?.fileCount, 65);
 
-  for (const path of ["../escape.md", "/etc/hosts", ".amplefile/connected-folder.json", ".pi/config.json", ".workspace/state.json"]) {
+  for (const path of ["../escape.md", "/etc/hosts", ".amplefile/connected-folder.json", ".pi/config.json", ".work-fold/state.json"]) {
     await assert.rejects(
       store.recordResult({
         requestId: request.requestId,
@@ -586,7 +560,7 @@ test("requests, questions, results, and the action trail survive a restart", asy
   const recovered = reopened.get(request.requestId);
   assert.equal(recovered?.content, "Place the contract.");
   assert.deepEqual(recovered?.attachments, [{ kind: "file", target: "/tmp/contract.pdf", name: "contract.pdf" }]);
-  // New records carry no paired-browser provenance (Web Access was removed 2026-11-07).
+  // New records carry no paired-browser provenance.
   assert.equal(recovered?.remote, null);
   assert.equal(recovered?.actions.length, 1);
   assert.equal(recovered?.actions[0]?.command, "files.add");
@@ -687,7 +661,7 @@ test("a damaged journal line degrades the view instead of keeping the app from s
   await reopened.flush();
 });
 
-test("a record written while page sharing, publishing, and Connected Folder apps existed still loads, without those retired actions", async (t) => {
+test("a record written while page publishing and Connected Folder apps existed still loads, without those retired actions", async (t) => {
   const root = await temporaryRoot(t);
   const clock = clockFrom("2026-09-11T09:00:00.000Z");
   const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
@@ -695,16 +669,13 @@ test("a record written while page sharing, publishing, and Connected Folder apps
   await store.recordAction("task-1", { command: "files.add", at: clock.now().toISOString(), connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits", copied: ["report.md"] });
   await store.flush();
 
-  // Older builds recorded `pages share`, `pages share-app`, `pages publish`,
-  // `pages unpublish`, and the `apps` verbs (with their `apps` references) in
-  // the same action trail; those verbs no longer exist (pages and Connected
-  // Folder apps were removed on 2026-11-07).
+  // Earlier builds recorded `pages publish`, `pages unpublish`, and the `apps`
+  // verbs (with their `apps` references) in the same action trail; AmpleFile
+  // has none of those verbs.
   const journalPath = join(root, "requests.jsonl");
   const lines = (await readFile(journalPath, "utf8")).trim().split("\n").map((line) => {
     const record = JSON.parse(line) as { actions: Array<Record<string, unknown>> };
     record.actions.push(
-      { command: "pages.share", at: "2026-09-11T09:01:00.000Z", connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" },
-      { command: "pages.share-app", at: "2026-09-11T09:02:00.000Z", connectedFolderId: "connected-folder-audits" },
       { command: "pages.publish", at: "2026-09-11T09:03:00.000Z", connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" },
       { command: "pages.unpublish", at: "2026-09-11T09:04:00.000Z", connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" },
       { command: "apps.revoke", at: "2026-09-11T09:05:00.000Z", connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" },
@@ -903,7 +874,7 @@ test("follow-up deliveries are recorded without a per-request quota", async (t) 
   const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
   const request = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1" });
 
-  // The fifth delivery used to be refused after four.
+  // A fifth delivery is accepted.
   for (let index = 1; index <= 5; index += 1) {
     assert.deepEqual(await store.noteContinuation(request.requestId), { allowed: true, count: index });
   }
@@ -927,7 +898,7 @@ test("the action trail keeps attribution past the former cutoff and only credits
   assert.equal(await store.recordAction(undefined, { command: "files.add", at: clock.now().toISOString() }), null);
   assert.equal(await store.recordAction("task-unknown", { command: "files.add", at: clock.now().toISOString() }), null);
 
-  // The 201st action was previously dropped from attribution.
+  // The 201st action still gets attribution.
   for (let index = 1; index <= 200; index += 1) {
     await store.recordAction("task-1", { command: "files.move", at: clock.now().toISOString(), connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" });
   }
@@ -998,7 +969,6 @@ test("a new request can continue after a formerly-expiring interval", async (t) 
   await store.settleTurn("asker", { status: "succeeded" });
   await store.answer({ questionId: question.questionId, answer: "Tomorrow" });
   clock.advance(31 * 24 * 60 * 60 * 1_000);
-  await store.expireDue();
   assert.notEqual(store.get(request.requestId)?.state, "expired");
   await store.joinTurn({ requestId: request.requestId, taskId: "late" });
   assert.equal(store.byTaskId("late")?.requestId, request.requestId);

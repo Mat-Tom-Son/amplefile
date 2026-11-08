@@ -1,16 +1,17 @@
 /**
  * The host-owned identity a Connected Folder turn receives in its hidden context
- * (docs/collaboration-contract.md, F26): this Connected Folder's id, this turn's task
- * id, the durable request it belongs to (F25), and — only when another
+ * (docs/collaboration-contract.md): this Connected Folder's id, this turn's task
+ * id, the durable request it belongs to, and — only when another
  * request delegated the work — an opaque handle for that request plus the
  * assignment it sent.
  *
  * The parent handle is derived, never the parent's real task or request id.
- * The parent is usually the AmpleFile agent's AmpleFile agent turn: handing a Worker
+ * The parent is usually an AmpleFile agent turn: handing a Worker
  * the raw parent task id would let it act with the AmpleFile agent's lineage through
  * `--parent-task`, and handing it the parent request id would let it read the
- * request graph a management-scope verb exposes. Either is an F9 leak one
- * command away, so the handle is a per-launch keyed hash that no verb accepts.
+ * request graph a management-scope verb exposes. Either would leak
+ * cross–Connected Folder context into the Worker one command away, so the
+ * handle is a per-launch keyed hash that no verb accepts.
  *
  * Pure and synchronous: no filesystem, no store, no server import.
  */
@@ -38,11 +39,11 @@ export interface PiConnectedFolderTurnContext {
   connectedFolderId: string;
   /** This turn's task id; the only id `--task` accepts. */
   taskId: string;
-  /** The durable request this turn belongs to (F25). */
+  /** The durable request this turn belongs to. */
   requestId: string;
   /**
-   * The question this turn's message answers, when it is a continuation
-   * (F27). A request may hold several open questions at once, and the answer
+   * The question this turn's message answers, when it is a continuation.
+   * A request may hold several open questions at once, and the answer
    * arrives as ordinary message text, so the link belongs in host-built
    * context rather than only in the travelling transcript.
    */
@@ -54,7 +55,7 @@ export interface PiConnectedFolderTurnContext {
   /** Actual pre-turn capture, including deduplicated reuse; never an assumed backup. */
   history?: PiConnectedFolderTurnHistory;
   /**
-   * Connected Folders registered directly inside this one (2026-10-01): their id,
+   * Connected Folders registered directly inside this one: their id,
    * name, and path here. The person nested them, so their existence is this
    * Connected Folder's own layout, not the registry; nothing else about them is named.
    */

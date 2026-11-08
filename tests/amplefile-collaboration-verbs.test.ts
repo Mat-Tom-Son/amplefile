@@ -18,7 +18,7 @@ import { ampleFileAgentScopeId } from "../src/local/state-paths.js";
 
 /**
  * Report, ask, answer, handoff, the non-blocking wait, and the root
- * continuation (docs/collaboration-contract.md, F27/F28) through the real
+ * continuation (docs/collaboration-contract.md) through the real
  * local API: a question puts the task in `waiting` without suspending its
  * turn; exactly one answer starts exactly one linked continuation; an answer
  * from the wrong Connected Folder, past the window, after a stop, or a second time is
@@ -521,7 +521,7 @@ test("chat ask puts the task in waiting without suspending its turn, and chat an
     // Both fields are scoped to the named Connected Folder. A task id is easy to come by,
     // and `waiting` carries the question text an agent wrote, so a caller
     // naming a Connected Folder that does not own the task learns nothing about it
-    // (F9 as amended, F26).
+    // (a Connected Folder sees only its own work; docs/collaboration-contract.md).
     const foreign = await api.actFacade.turnStatus({ connectedFolder: reviews.connectedFolder.id, taskId: child.taskId });
     assert.equal(foreign.task.state, "unknown");
     assert.equal(foreign.request, null);
@@ -747,10 +747,10 @@ test("a stop on a mid-graph request closes everything it handed on, not only its
     h.held.add(middle.connectedFolder.id);
     h.held.add(leaf.connectedFolder.id);
 
-    // fold -> Middle -> Leaf. `agent stop` takes any task id, and a request
+    // AmpleFile agent -> Middle -> Leaf. `agent stop` takes any task id, and a request
     // below a root records the ROOT's id, never its parent's, so a stop that
     // only looked at the root's own family would close Middle and leave Leaf
-    // running with its question still open (F25).
+    // running with its question still open.
     const root = await api.actFacade.agentSend({ content: "/hold" });
     const child = await api.actFacade.sendMessage({ connectedFolder: middle.connectedFolder.id, newConversation: true, content: "/hold", parentTaskId: root.taskId });
     const handed = await api.actFacade.chatHandoff({
@@ -975,7 +975,8 @@ test("the request graph is a management-scope read and is refused from inside a 
 
     // The AmpleFile agent and an outside harness read the graph; a caller whose own
     // directory is a registered Connected Folder is inside that Connected Folder's scope, and the
-    // graph carries every Connected Folder's results (F9 as amended).
+    // graph carries every Connected Folder's results, which never enter a
+    // Connected Folder Chat (docs/collaboration-contract.md).
     assert.ok((await api.actFacade.requestsList()).requests.length >= 1);
     assert.equal((await api.actFacade.requestsShow({ request: requestId })).request.id, requestId);
     for (const call of [

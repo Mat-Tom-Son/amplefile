@@ -10,8 +10,8 @@ import type { PiConnectedFolderTurnContext } from "./connected-folder-turn-conte
  * Each accepted turn's ids reach the model once, in the hidden turn-context
  * message sent before its prompt, and its request is the person's message
  * right after it. When Pi compacts in the middle of a long turn, both can be
- * folded into the summary. In measured runs (docs/archive/helper-tool-experiment.md)
- * the summary named the previous turn's task id as the current one, so the
+ * folded into the summary. In measured runs the summary named the previous
+ * turn's task id as the current one, so the
  * Worker's `chat report` was refused; and the summary of the turn so far read
  * "The user's actual task is not included", after which the Worker narrowed
  * its search and reported a partial list as complete.
@@ -43,7 +43,7 @@ export interface AmpleFileTurnIdentity {
   /** This request's own original assignment, distinct from a later answer. */
   assignment?: string;
   assignmentTruncated?: boolean;
-  /** The request's checklist as it stands now, so the plan survives the summary too (2026-10-18). */
+  /** The request's checklist as it stands now, so the plan survives the summary too. */
   checklist?: readonly AmpleFileChecklistItem[];
 }
 

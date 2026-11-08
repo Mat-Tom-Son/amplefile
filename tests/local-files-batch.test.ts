@@ -9,8 +9,8 @@ import { AmpleFileCliActReceipts } from "../src/local/cli/act-receipts.js";
 import { startLocalApi } from "../src/local/server.js";
 
 /**
- * Several Files rows moved or deleted together get one History restore point
- * (2026-11-05), while each deleted row keeps the receipt, busy refusal, and
+ * Several Files rows moved or deleted together get one History restore point,
+ * while each deleted row keeps the receipt, busy refusal, and
  * History or Recently deleted recovery one delete has. A row that fails
  * partway never leaves the rows already done without a restore point.
  */

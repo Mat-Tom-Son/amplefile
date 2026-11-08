@@ -2,7 +2,7 @@
 export interface ClipboardContent {
   text: string;
   html?: string;
-  /** A picture as a PNG or JPEG data URL, for Copy on a generated image (2026-10-11); copied alone, without the text. */
+  /** A picture as a PNG or JPEG data URL, for Copy on a generated image; copied alone, without the text. */
   image?: string;
 }
 

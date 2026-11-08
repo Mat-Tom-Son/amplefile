@@ -26,7 +26,7 @@ export function piSkillBundleContentDigest(bytes: Uint8Array): string {
 
 /**
  * Digest-verified import for the prepared `capability.skills.import` act
- * (docs/receipts-not-gates.md, F19). The prepared act pins the exact bytes
+ * (docs/act-ledger.md). The prepared act pins the exact bytes
  * that were enumerated when it was prepared; this path refuses changed
  * content before any archive parsing, so the execution can only ever run the
  * bytes the receipt names.
@@ -305,7 +305,7 @@ export interface PiSkillRemovalResult<K> {
  *
  * Removal never erases the Skill. `.pi/` and Pi's own folder are outside
  * History, so `keep` must move the validated folder somewhere it can come back
- * from (Recently deleted, docs/receipts-not-gates.md F20); if `keep` throws,
+ * from (Recently deleted, docs/act-ledger.md); if `keep` throws,
  * nothing else is touched.
  */
 export async function removePiSkill<K>(

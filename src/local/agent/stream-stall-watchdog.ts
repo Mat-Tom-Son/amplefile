@@ -11,9 +11,8 @@ import {
  *
  * Pi's HTTP idle timeout only fires when no bytes arrive, and providers keep
  * a stalled stream open with keep-alive pings, so a response can sit silent
- * for ten minutes (measured in the 2026-10-21 evals). Asking the model again
- * changes nothing on the computer, so it is always safe to repeat (Pi
- * Durable's "an interrupted model request is resent", 2026-10-27).
+ * for ten minutes. Asking the model again changes nothing on the computer,
+ * so it is always safe to repeat.
  *
  * When one response produces no stream event for the configured time, this
  * ends it with a retryable "stream timeout" error, keeping whatever partial

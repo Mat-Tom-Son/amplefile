@@ -25,9 +25,8 @@ const standardFolderPitch: Record<string, string> = {
 };
 
 /**
- * First run in the file manager (owner request, 2026-11-07): the same steps as
- * the classic first run (what AmpleFile is, connecting an AI, the Mac tools,
- * the first folder), shown in a file manager window, as macOS's Setup
+ * First run in the file manager: what AmpleFile is, connecting an AI, the Mac
+ * tools, and the first folder, shown in a file manager window, as macOS's Setup
  * Assistant shows its steps in a window. The sidebar already lists the
  * Standard Folders, and the last step offers each one to put to work in one
  * click, beside Connect Folder and New Connected Folder.
@@ -126,7 +125,7 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
                 </button>
                 {openTool === tool ? <div className="fm-welcome-tool-body">{tool === "chrome" ? <IncludedChromeSetup enabled /> : <IncludedComputerSetup enabled />}</div> : null}
               </div>)}
-              {/* Other AI agents can use the app's command too (owner request, 2026-11-07). */}
+              {/* Other AI agents can use the app's command too. */}
               <div className={`fm-welcome-tool${openTool === "command-line" ? " is-open" : ""}`}>
                 <button type="button" className="fm-welcome-row" aria-expanded={openTool === "command-line"} onClick={() => setOpenTool((current) => current === "command-line" ? null : "command-line")}>
                   <span className="fm-welcome-row-icon"><WindowConsole20Regular /></span>

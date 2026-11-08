@@ -66,7 +66,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     // The identity line names the AmpleFile agent while keeping "AmpleFile agent"
     // as the contract phrase in the same sentence.
     assert.match(ampleFileAgentContext, /You are the AmpleFile agent — the agent above all Connected Folders in this computer's AmpleFile app\./);
-    // Checks were removed (2026-11-07): nothing teaches the agent a Check verb.
+    // Nothing teaches the agent a Check verb.
     assert.doesNotMatch(ampleFileAgentContext, /\bchecks (status|run|propose|enable)\b|## Checks/);
     // The teaching pass (docs/act-ledger.md): the instructions name the
     // complete landed verb surface, family by family, with the ledger's
@@ -83,16 +83,15 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /connected-folders unregister --connected-folder <id>/);
     assert.match(ampleFileAgentContext, /connected-folders appearance apply --connected-folder <id> --proposal/);
     assert.match(ampleFileAgentContext, /tools import-skill --scope everywhere\|connected-folder/);
-    // Connected Folder apps and App Studio were removed on 2026-11-07:
-    // nothing teaches their verbs.
+    // Nothing teaches Connected Folder app or App Studio verbs.
     assert.doesNotMatch(ampleFileAgentContext, /\bapps (list|invoke|install|grant|revoke|release|uninstall)\b|App Studio|Settings → Apps/);
-    // The AmpleFile agent is never taught the retired desktop-served sharing
-    // verbs or a Shared pages surface.
+    // The AmpleFile agent is never taught desktop-served sharing verbs or a
+    // Shared pages surface.
     assert.doesNotMatch(ampleFileAgentContext, /\bpages (share|share-app|list|status|revoke|narrow|widen|snapshot-off)\b|help pages|Shared pages/);
-    // Pages were removed on 2026-11-07: nothing teaches them.
+    // Nothing teaches pages.
     assert.doesNotMatch(ampleFileAgentContext, /page tab|page\.json|pages validate/i);
     assert.match(ampleFileAgentContext, /agent overview --json/);
-    // Receipts, not gates (docs/receipts-not-gates.md, F19–F24): every verb
+    // Receipts, not gates (docs/act-ledger.md): every verb
     // runs on the first call and returns a receipt, destruction is reversible
     // through History or Recently deleted, limits are named rather than
     // hidden, needs-you is a question, and the setup surfaces have no verb.
@@ -112,7 +111,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /Deletion refuses until the affected Connected Folder's work has settled/);
     assert.match(ampleFileAgentContext, /Never bypass that refusal with raw tools/);
     assert.match(ampleFileAgentContext, /moves its folder into Recently deleted/);
-    // Help topics exist now, and the instructions cite them.
+    // The instructions cite the help topics.
     assert.match(ampleFileAgentContext, /amplefile help <family>/);
     assert.match(ampleFileAgentContext, /help recently-deleted/);
     // Automations: inert proposals, direct receipted enablement, the closed
@@ -122,7 +121,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /amplefile\.automation-proposal/);
     assert.match(ampleFileAgentContext, /Use version 1 for manual, interval, and on-settled triggers/);
     assert.match(ampleFileAgentContext, /Use version 3 for a folder-change trigger/);
-    // The 2026-10-11 opt-in catch-up: version 5, one run, never a backlog.
+    // The opt-in catch-up: version 5, one run, never a backlog.
     assert.match(ampleFileAgentContext, /use version 5 and add `"ifMissed":"run"` to the trigger/);
     assert.match(ampleFileAgentContext, /one run, never a backlog/);
     assert.match(ampleFileAgentContext, /<name>\.amplefile-automation\.json` directly in your own working folder/);
@@ -159,14 +158,14 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /not the popover's, not the main window's\./);
     assert.doesNotMatch(ampleFileAgentContext, /remote:<grantId>/);
     assert.match(ampleFileAgentContext, /Narration is on demand only\./);
-    // Needs-you is a question list, never work waiting to be let through (F24).
+    // Needs-you is a question list, never work waiting to be let through.
     assert.match(ampleFileAgentContext, /needs-you items \(questions, due snoozes, and requests waiting on the person's answer\)/);
-    // Delegation under the collaboration contract (F25–F29): the AmpleFile agent reads
+    // Delegation under the collaboration contract: the AmpleFile agent reads
     // the request graph, a wait that comes back waiting is not a failure, a
     // waiting or running child never holds this turn open, the follow-up turn
     // is bounded and ordinary, a child's question is answered with one
     // `chat answer` or handed to the person, handoffs are host-routed, and a
-    // Connected Folder Chat only ever receives its own work (F9 as amended).
+    // Connected Folder Chat only ever receives its own work.
     assert.match(ampleFileAgentContext, /requests list --json/);
     assert.match(ampleFileAgentContext, /requests show --request <id> --json/);
     assert.match(ampleFileAgentContext, /Both sit above Connected Folders and take no `--connected-folder`/);
@@ -200,7 +199,7 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /say whether History or Recently deleted holds it/);
     assert.match(ampleFileAgentContext, /Account for every attached item by name/);
     assert.match(ampleFileAgentContext, /record a question with `agent ask`/);
-    // The AmpleFile agent is never taught a gate vocabulary (docs/receipts-not-gates.md
+    // The AmpleFile agent is never taught a gate vocabulary (docs/act-ledger.md
     // acceptance: no user-facing copy says staged, approve, policy, Reviewed,
     // or Unrestricted).
     assert.doesNotMatch(
@@ -347,58 +346,6 @@ test("the AmpleFile agent fails closed when its required instructions cannot be 
         && error.code === "unavailable"
         && /required instructions/.test(error.message),
     );
-  } finally {
-    await api.close();
-    await rm(sandbox, { recursive: true, force: true });
-  }
-});
-
-test("AmpleFile agent transcripts saved with remote provenance still load as ordinary messages and are never rewritten", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-remote-legacy-read-test-"));
-  const stateBase = join(sandbox, "state");
-  const conversationId = "chat-f6e5b83-legacy";
-  const transcriptDir = join(stateBase, "management", ".amplefile", "conversations");
-  const transcriptPath = join(transcriptDir, `${conversationId}.jsonl`);
-  await mkdir(transcriptDir, { recursive: true });
-  const legacyMessage = {
-    id: "message-from-0.2.2",
-    role: "user",
-    content: "legacy remote request",
-    createdAt: "2026-08-01T12:00:00.000Z",
-    source: "remote_web",
-    remotePrincipalId: "browser-legacy",
-    remoteGrantId: "grant-legacy",
-    remoteRequestId: "request-before-grant-provenance",
-  };
-  const originalTranscript = `${JSON.stringify({
-    id: "legacy-title",
-    role: "system",
-    kind: "conversation_title",
-    titleSource: "placeholder",
-    content: "New Chat",
-    createdAt: "2026-08-01T11:59:59.000Z",
-  })}\n${JSON.stringify(legacyMessage)}\n`;
-  await writeFile(transcriptPath, originalTranscript, "utf8");
-
-  const api = await startLocalApi({
-    port: 0,
-    stateBase,
-    connectedFolderBase: join(sandbox, "content"),
-    loadEnv: false,
-  });
-  try {
-    const response = await fetch(new URL(`/api/amplefile-agent/conversations/${conversationId}`, api.origin));
-    assert.equal(response.status, 200);
-    const { messages } = await response.json() as { messages: Array<Record<string, unknown>> };
-    const loaded = messages.find((message) => message.id === legacyMessage.id);
-    assert.equal(loaded?.role, "user");
-    assert.equal(loaded?.content, legacyMessage.content);
-    for (const field of ["source", "remotePrincipalId", "remoteGrantId", "remoteRequestId"]) {
-      assert.equal(field in loaded!, false, `${field} is dropped on read`);
-    }
-    assert.equal((await api.actFacade.agentList()).conversations.some((conversation) => conversation.id === conversationId), true);
-    assert.equal(await readFile(transcriptPath, "utf8"), originalTranscript, "reading never rewrites the append-only log");
-    assert.deepEqual(await readdir(transcriptDir), [`${conversationId}.jsonl`], "reading a legacy Chat does not leave another transcript");
   } finally {
     await api.close();
     await rm(sandbox, { recursive: true, force: true });

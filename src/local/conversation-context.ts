@@ -26,7 +26,7 @@ export interface ConversationContextAttachment {
   sourcePath: string;
   /**
    * Set when the reference is a folder (the file manager's "Work on this
-   * folder", 2026-11-06). A folder is always a path-only reference.
+   * folder"). A folder is always a path-only reference.
    */
   sourceKind?: "folder";
   sourceFileName: string;

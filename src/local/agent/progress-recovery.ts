@@ -51,7 +51,7 @@ export class ProgressRecovery {
       const real = await realpath(resolve(root, path));
       const name = relative(root, real);
       if (!name || name.startsWith(`..${sep}`) || name === ".." || isAbsolute(name)
-        || name.split(sep).some(part => [".amplefile", ".workspace", ".pi", ".git"].includes(part))) return null;
+        || name.split(sep).some(part => [".amplefile", ".pi", ".git"].includes(part))) return null;
       const info = await stat(real);
       if (!info.isFile() || info.size > 32 * 1024 * 1024) return null;
       const hash = createHash("sha256");

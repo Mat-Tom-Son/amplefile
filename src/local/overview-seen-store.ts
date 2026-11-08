@@ -38,8 +38,8 @@ export const AMPLEFILE_OVERVIEW_BUILTIN_SURFACES = ["popover", "main-window"] as
 const defaultMaxSurfaces = 128;
 
 /**
- * Closed surface vocabulary: `popover` or `main-window`. Markers older builds
- * kept for paired browsers (`remote:<grantId>`) are skipped on read.
+ * Closed surface vocabulary: `popover` or `main-window`. Any other marker is
+ * skipped on read.
  */
 export function isAmpleFileOverviewSurfaceId(value: unknown): value is string {
   return typeof value === "string" && (AMPLEFILE_OVERVIEW_BUILTIN_SURFACES as readonly string[]).includes(value);

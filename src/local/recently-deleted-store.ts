@@ -1,6 +1,6 @@
 /**
  * Recently deleted (the machine-local trash) for reversible destruction
- * (docs/receipts-not-gates.md, F20).
+ * (docs/act-ledger.md).
  *
  * Nothing AmpleFile destroys is permanent at the moment it happens. History
  * covers ordinary deletion; whatever History cannot capture (oversized,
@@ -9,9 +9,9 @@
  * erased, and stays restorable for a retention window (default 30 days,
  * 1..365).
  *
- * Builds before Connected Folder apps were removed (2026-11-07) also kept app
- * data, App Studio Releases, and App Studio history here. Those entries still
- * list, expire, and can be deleted now, but nothing restores or reads them.
+ * An earlier build also kept Connected Folder app data, App Studio Releases,
+ * and App Studio history here. Those entries still list, expire, and can be
+ * deleted, but nothing restores or reads them.
  *
  * Layout under `rootPath` (`ampleFileRecentlyDeletedRoot()` in production):
  *
@@ -35,15 +35,15 @@
  *   store.list() / store.get(id)                 tolerant listing; damaged records are reported, never dropped
  *   store.attachConnectedFolderState(id, path)        finish carrying History after an interrupted Connected Folder deletion
  *   store.restoreTree(id, destination)           move a tree back, collision-renaming like connected-folder.ts
- *   store.remove(id)                             "Delete now"; refuses (HELD) for legacy `.workspace/` trees
- *   store.purgeExpired(now)                      retention purge; fails closed on legacy trees
+ *   store.remove(id)                             "Delete now"; refuses (HELD) for trees it cannot fully list
+ *   store.purgeExpired(now)                      retention purge; fails closed on trees it cannot fully list
  *   store.purgeExpiredIfDue(intervalMs)          the wake-tolerant "once a day while awake" wrapper
  *   store.retentionDays() / setRetentionDays(days)   1..365; rewrites every entry's `restoreBy`
  *
  * Invariants:
  *
  * - Nothing inside a moved tree is read except during size measurement and
- *   the legacy-metadata walk; symbolic links are never followed (`lstat`
+ *   the hold walk; symbolic links are never followed (`lstat`
  *   everywhere; the copy fallback copies links verbatim).
  * - `manifest.json` is the commit marker. `moveTreeToRecentlyDeleted` writes
  *   it `complete: false`, moves the source with `rename` (falling back to a
@@ -57,11 +57,12 @@
  *   reason and is never removed silently.
  * - Ids come only from the store and are re-validated against
  *   `ampleFileRecentlyDeletedEntryIdPattern` before any path join.
- * - Reserved names inside payloads (`.amplefile`, `.pi`, `.workspace`) are
- *   data, never interpreted — except that a tree holding legacy
- *   `.workspace/` records is never erased by retention or "Delete now" (the
- *   clean-break rule). Such an entry is marked `held`; the person can still
- *   restore it or handle the folder outside the product.
+ * - Reserved names inside payloads (`.amplefile`, `.pi`) are data, never
+ *   interpreted.
+ * - A tree the store cannot fully list is never erased by retention or
+ *   "Delete now": it cannot prove what the tree holds. Such an entry is marked
+ *   `held`; the person can still restore it or handle the folder outside the
+ *   product.
  */
 import { randomUUID } from "node:crypto";
 import { existsSync, type CopyOptions, type Stats } from "node:fs";
@@ -86,14 +87,14 @@ export const ampleFileRecentlyDeletedEntryIdPattern = /^trash-\d{14}-[0-9a-f]{8}
 
 /**
  * `app-storage`, `app-retained`, `app-release`, and `app-studio` are read
- * only: entries older builds kept before Connected Folder apps were removed
- * (2026-11-07). They list and expire like any entry; nothing creates one now.
+ * only: entries an earlier build kept for Connected Folder apps. They list
+ * and expire like any entry; nothing creates one.
  */
 export type AmpleFileRecentlyDeletedKind = "file" | "folder" | "connected-folder" | "skill" | "app-storage" | "app-retained" | "app-release" | "app-studio";
 
 export type AmpleFileRecentlyDeletedReason =
   | "files.delete"
-  /** Deleting a work-fold agent Chat keeps its transcript recoverable. */
+  /** Deleting an AmpleFile agent Chat keeps its transcript recoverable. */
   | "agent.chat.delete"
   /** Deleting a Worker Chat keeps its portable transcript recoverable. */
   | "chats.delete"
@@ -171,11 +172,12 @@ export type AmpleFileRecentlyDeletedPayload =
 
 export interface AmpleFileRecentlyDeletedHold {
   /**
-   * `legacy-metadata`: the tree holds `.workspace/` records from the earlier
-   * product, which AmpleFile never erases. `unreadable`: a directory inside
-   * the tree could not be listed, so the store cannot prove it holds none.
+   * `unreadable`: a directory inside the tree could not be listed (or the
+   * walk hit its budget), so the store cannot prove what it holds. A hold
+   * with any other reason, which an earlier build may have recorded, is
+   * ignored on read: the entry is then handled like any other.
    */
-  reason: "legacy-metadata" | "unreadable";
+  reason: "unreadable";
   noticedAt: string;
 }
 
@@ -306,7 +308,6 @@ const RECENTLY_DELETED_REASONS: readonly AmpleFileRecentlyDeletedReason[] = [
 ];
 const SKILL_SCOPES: readonly AmpleFileRecentlyDeletedSkillPayload["scope"][] = ["everywhere", "connected-folder"];
 const UNCOVERED_REASONS: readonly AmpleFileRecentlyDeletedUncoveredPath["reason"][] = ["too_large", "unreadable", "symbolic_link", "excluded"];
-const HOLD_REASONS: readonly AmpleFileRecentlyDeletedHold["reason"][] = ["legacy-metadata", "unreadable"];
 const MANIFEST_KEYS = new Set([
   "version", "id", "kind", "reason", "connectedFolderId", "connectedFolderName", "displayName", "originalPath", "sizeBytes", "sizeApproximate",
   "deletedAt", "restoreBy", "receiptId", "payload", "complete", "uncovered", "held", "stateDir",
@@ -325,7 +326,6 @@ const MEASURE_ENTRY_BUDGET = 64 * 1024;
 const MAX_UNCOVERED_PATHS = 65536;
 const MAX_TEXT_LENGTH = 4096;
 const FORBIDDEN_TEXT = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/;
-const LEGACY_METADATA_SEGMENT = ".workspace";
 const RECENTLY_DELETED = "Recently deleted";
 
 interface RecentlyDeletedSettingsFile {
@@ -659,10 +659,9 @@ export class AmpleFileRecentlyDeletedStore {
   }
 
   /**
-   * "Delete now". Refuses with
-   * HELD when the tree holds legacy `.workspace/` records or cannot be fully
-   * listed (the clean-break rule) and marks the manifest `held`. A damaged
-   * record is removed only when the same walk clears it.
+   * "Delete now". Refuses with HELD when the tree cannot be fully listed and
+   * marks the manifest `held`. A damaged record is removed only when the same
+   * walk clears it.
    */
   async remove(id: string): Promise<{ removed: boolean }> {
     assertEntryId(id);
@@ -670,14 +669,14 @@ export class AmpleFileRecentlyDeletedStore {
       const read = await this.#readEntry(id, false);
       if (read.state === "absent") return { removed: false };
       const entryPath = join(this.rootPath, "entries", id);
-      if (read.state === "entry" && read.entry.held) throw heldError(read.entry.held, id, entryPath);
+      if (read.state === "entry" && read.entry.held) throw heldError(id, entryPath);
       const hold = await holdReasonFor(entryPath);
       if (hold) {
         const held: AmpleFileRecentlyDeletedHold = { reason: hold, noticedAt: this.#now().toISOString() };
         if (read.state === "entry") {
           await this.#writeManifest(entryPath, { ...manifestOf(read.entry), held }).catch(() => undefined);
         }
-        throw heldError(held, id, entryPath);
+        throw heldError(id, entryPath);
       }
       await this.#erase(entryPath);
       return { removed: true };
@@ -686,8 +685,8 @@ export class AmpleFileRecentlyDeletedStore {
 
   /**
    * Erases every complete entry whose `restoreBy` has passed, except trees
-   * that hold legacy `.workspace/` records or cannot be fully listed: those
-   * become `held` and stay. Never throws for a single entry; records
+   * that cannot be fully listed: those become `held` and stay. Never throws
+   * for a single entry; records
    * `lastPurgeAt` in `settings.json`.
    */
   async purgeExpired(now: Date = this.#now()): Promise<AmpleFileRecentlyDeletedPurgeResult> {
@@ -915,12 +914,10 @@ function manifestOf(entry: AmpleFileRecentlyDeletedEntry): AmpleFileRecentlyDele
   return manifest;
 }
 
-function heldError(held: AmpleFileRecentlyDeletedHold, id: string, entryPath: string): AmpleFileRecentlyDeletedError {
+function heldError(id: string, entryPath: string): AmpleFileRecentlyDeletedError {
   return new AmpleFileRecentlyDeletedError(
     "HELD",
-    held.reason === "legacy-metadata"
-      ? `This item holds records from the earlier Workspace product, so AmpleFile never erases it. Open its folder to handle it yourself: ${entryPath}`
-      : `AmpleFile could not look through everything in this item, so it will not erase it. Open its folder to handle it yourself: ${entryPath}`,
+    `AmpleFile could not look through everything in this item, so it will not erase it. Open its folder to handle it yourself: ${entryPath}`,
     { entryId: id },
   );
 }
@@ -1131,14 +1128,17 @@ function parseManifest(value: unknown): AmpleFileRecentlyDeletedManifest {
     }
   }
   if (raw.held !== undefined) {
-    const held = raw.held as Partial<AmpleFileRecentlyDeletedHold> | null;
+    const held = raw.held as { reason?: unknown; noticedAt?: unknown } | null;
     if (!held || typeof held !== "object" || Array.isArray(held)
       || Object.keys(held).some((key) => key !== "reason" && key !== "noticedAt")
-      || !HOLD_REASONS.includes(held.reason as AmpleFileRecentlyDeletedHold["reason"])
+      || typeof held.reason !== "string"
       || typeof held.noticedAt !== "string" || !Number.isFinite(Date.parse(held.noticedAt))) {
       throw new Error("invalid held");
     }
-    manifest.held = { reason: held.reason as AmpleFileRecentlyDeletedHold["reason"], noticedAt: held.noticedAt };
+    // Any other hold reason (an earlier build could record one more) is
+    // dropped, so the entry lists, expires, and can be deleted like any
+    // other; the next purge or "Delete now" walks it again.
+    if (held.reason === "unreadable") manifest.held = { reason: "unreadable", noticedAt: held.noticedAt };
   }
   return manifest;
 }
@@ -1273,16 +1273,12 @@ async function measureTree(path: string): Promise<{ sizeBytes: number; approxima
 }
 
 /**
- * The clean-break rule: a tree that holds a `.workspace` segment is legacy
- * metadata AmpleFile never erases. Directories only (symbolic links are not
- * descended); an unlistable directory fails closed as `unreadable`.
- */
-/**
  * Whether this entry must be held rather than erased, with the same visited
- * budget `measureTree` uses. The budget fails closed to `"unreadable"`: one
- * pathological tree then becomes a held entry a person can deal with, instead
- * of an unbounded walk that stalls every later purge behind it. Holding is
- * always the safe answer — it never erases anything.
+ * budget `measureTree` uses. Directories only (symbolic links are not
+ * descended); an unlistable directory fails closed as `"unreadable"`, and so
+ * does the budget: one pathological tree then becomes a held entry a person
+ * can deal with, instead of an unbounded walk that stalls every later purge
+ * behind it. Holding is always the safe answer — it never erases anything.
  */
 async function holdReasonFor(entryPath: string): Promise<AmpleFileRecentlyDeletedHold["reason"] | null> {
   const stack = [entryPath];
@@ -1293,15 +1289,10 @@ async function holdReasonFor(entryPath: string): Promise<AmpleFileRecentlyDelete
     if (!children) return "unreadable";
     for (const child of children) {
       if (++visited > MEASURE_ENTRY_BUDGET) return "unreadable";
-      if (isLegacyMetadataSegment(child.name)) return "legacy-metadata";
       if (child.isDirectory()) stack.push(join(current, child.name));
     }
   }
   return null;
-}
-
-function isLegacyMetadataSegment(name: string): boolean {
-  return (process.platform === "win32" ? name.toLocaleLowerCase("en-US") : name) === LEGACY_METADATA_SEGMENT;
 }
 
 function nextAvailableDirectory(parent: string, segment: string): string {

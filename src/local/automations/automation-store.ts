@@ -3,9 +3,7 @@ import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:f
 import { dirname, join, resolve } from "node:path";
 
 import {
-  AMPLEFILE_CLI_ACT_LEGACY_SURFACES,
   AMPLEFILE_CLI_ACT_SURFACES,
-  type AmpleFileCliActLegacySurface,
   type AmpleFileCliActSurface,
 } from "../cli/act-receipts.js";
 import type { AutomationCatchUpReason } from "../../shared/automation-presentation.js";
@@ -105,10 +103,10 @@ export type AmpleFileAutomationRunCause =
 /**
  * One journal line. Lines are written at version 1 and read tolerantly:
  * unknown fields are ignored by readers (the overview destructures only what it
- * knows), and every text field is scrubbed before it is written. Lines written
- * before Checks and Connected Folder apps were removed (2026-11-07) may still
- * carry a `check` hop kind, a Check-run or app-automation `on-settled` cause,
- * and Check run fields; readers skip what they do not know. Receipts
+ * knows), and every text field is scrubbed before it is written. Lines an
+ * earlier build wrote may carry a `check` hop kind, a Check-run or
+ * app-automation `on-settled` cause, and Check run fields; readers skip what
+ * they do not know. Receipts
  * carry identifiers, digests, paths, and counts — never file contents or
  * secrets. The one bounded exception is `placeholders`: the text AmpleFile
  * itself filled into a chat- or agent-step message, so a person can see what
@@ -132,7 +130,7 @@ export interface AmpleFileAutomationReceiptV1 {
   detail?: string;
   /**
    * On a succeeded hop or run: its Worker reported finishing only partly
-   * (docs/automations.md, 2026-10-11). The outcome stays succeeded, so the
+   * (docs/automations.md). The outcome stays succeeded, so the
    * run's later steps still run and nothing that counts successes changes.
    */
   partial?: true;
@@ -158,9 +156,6 @@ export interface AmpleFileAutomationReceiptV1 {
   /** Byte length of the message the hop actually sent. */
   messageBytes?: number;
   surface?: AmpleFileCliActSurface;
-  /** Legacy field on receipts written before receipts-not-gates; never written now. */
-  decisionId?: string;
-  browserId?: string;
   missingConnectedFolderIds?: string[];
   requestId?: string;
   occurrenceId?: string;
@@ -388,20 +383,7 @@ export interface AmpleFileAutomationGrant {
   /** The enabling act's request id. */
   requestId: string;
   enabledAt: string;
-  /** Current surfaces on write; a legacy surface an older build recorded still loads. */
-  surface: AmpleFileCliActSurface | AmpleFileCliActLegacySurface;
-  /** Read only: the paired browser older builds recorded with a `remote_web` grant. */
-  browserId?: string;
-}
-
-/** The grant shape builds before receipts-not-gates wrote; converted on load. */
-interface LegacyAmpleFileAutomationGrant {
-  digest: string;
-  decisionId: string;
-  approvedAt: string;
-  surface: AmpleFileCliActSurface | AmpleFileCliActLegacySurface;
-  browserId?: string;
-  browserGrantId?: string;
+  surface: AmpleFileCliActSurface;
 }
 
 export interface AmpleFileAutomationSuspension {
@@ -471,8 +453,8 @@ export interface AmpleFileAutomationStoreStatus {
 }
 
 /**
- * A stored automation that names a feature AmpleFile no longer has (Checks,
- * removed 2026-11-07). It is left out on load, on its own: the rest of the
+ * A stored automation that names a retired feature (a Check, for example).
+ * It is left out on load, on its own: the rest of the
  * store loads and keeps running, and the next write leaves it out of the file.
  */
 export interface AmpleFileRetiredAutomation {
@@ -1008,28 +990,26 @@ async function loadAutomationStoreFile(
   const record = parsed as Record<string, unknown>;
   const unknown = Object.keys(record).find((key) => key !== "schemaVersion" && key !== "automations");
   if (unknown) return damaged(`carries the unknown field ${unknown}`);
-  if (record.schemaVersion !== 1 && record.schemaVersion !== 2 && record.schemaVersion !== AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION) {
+  if (record.schemaVersion !== AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION) {
     return typeof record.schemaVersion === "number" && record.schemaVersion > AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION
       ? damaged(`was written by a newer AmpleFile (schema version ${record.schemaVersion})`)
       : damaged(`uses the unsupported schema version ${String(record.schemaVersion)}`);
   }
-  const legacyGrants = record.schemaVersion !== AMPLEFILE_AUTOMATION_STORE_SCHEMA_VERSION;
   if (!Array.isArray(record.automations)) return damaged("does not list its automations");
   const automations: AmpleFileAutomationRecord[] = [];
   const retired: AmpleFileRetiredAutomation[] = [];
   const ids = new Set<string>();
   for (const [index, candidate] of record.automations.entries()) {
-    const converted = legacyGrants ? convertLegacyGrants(candidate) : candidate;
     // A record whose declaration names a retired feature is left out on its
     // own; one such record never takes the other automations down with it.
-    const retiredAutomation = retiredAutomationRecord(converted);
+    const retiredAutomation = retiredAutomationRecord(candidate);
     if (retiredAutomation) {
       retired.push(retiredAutomation);
       continue;
     }
-    const issue = automationRecordIssue(converted);
+    const issue = automationRecordIssue(candidate);
     if (issue) return damaged(`holds an invalid automation at index ${index}: ${issue}`);
-    const automation = converted as AmpleFileAutomationRecord;
+    const automation = candidate as AmpleFileAutomationRecord;
     if (ids.has(automation.declaration.id)) return damaged(`holds the duplicate automation id ${automation.declaration.id}`);
     ids.add(automation.declaration.id);
     automations.push(structuredClone(automation));
@@ -1060,36 +1040,7 @@ const AUTOMATION_RECORD_KEYS = [
   "suspension",
   "atOccurrence",
 ];
-const GRANT_KEYS = ["digest", "requestId", "enabledAt", "surface", "browserId"];
-const LEGACY_GRANT_KEYS = ["digest", "decisionId", "approvedAt", "surface", "browserId", "browserGrantId"];
-
-/**
- * Converts a pre-receipts-not-gates grant on load: the enabling act's id and
- * time keep their meaning under their honest names, and the browser grant id
- * a decision card carried is dropped. The first commit rewrites the file at
- * the current schema version, so the conversion runs once.
- */
-function convertLegacyGrants(candidate: unknown): unknown {
-  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return candidate;
-  const record = candidate as Record<string, unknown>;
-  if (!Array.isArray(record.grants)) return candidate;
-  return {
-    ...record,
-    grants: record.grants.map((entry) => {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
-      const grant = entry as Record<string, unknown>;
-      if (grant.decisionId === undefined && grant.approvedAt === undefined) return entry;
-      const legacy = grant as unknown as LegacyAmpleFileAutomationGrant;
-      return {
-        digest: legacy.digest,
-        requestId: legacy.decisionId,
-        enabledAt: legacy.approvedAt,
-        surface: legacy.surface,
-        ...(legacy.browserId !== undefined ? { browserId: legacy.browserId } : {}),
-      };
-    }),
-  };
-}
+const GRANT_KEYS = ["digest", "requestId", "enabledAt", "surface"];
 const SUSPENSION_KEYS = ["at", "missingConnectedFolderIds", "reRegisteredConnectedFolderIds"];
 const AT_OCCURRENCE_KEYS = ["occurrenceId", "slotAt", "consumedAt", "runId", "finishedAt"];
 
@@ -1188,20 +1139,12 @@ function grantIssue(value: unknown): string | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return "a grant must be an object";
   const grant = value as Record<string, unknown>;
   const unknown = Object.keys(grant).find((key) => !GRANT_KEYS.includes(key));
-  if (unknown) {
-    return LEGACY_GRANT_KEYS.includes(unknown)
-      ? `grant field ${unknown} was not converted from its older shape`
-      : `grant field ${unknown} is not part of the grant contract`;
-  }
+  if (unknown) return `grant field ${unknown} is not part of the grant contract`;
   if (typeof grant.digest !== "string" || !/^[a-f0-9]{64}$/.test(grant.digest)) return "a grant digest is invalid";
   if (typeof grant.requestId !== "string" || !grant.requestId.trim()) return "a grant request id is invalid";
   if (!isTimestamp(grant.enabledAt)) return "a grant enabledAt is invalid";
-  if (!(AMPLEFILE_CLI_ACT_SURFACES as readonly string[]).includes(String(grant.surface))
-    && !(AMPLEFILE_CLI_ACT_LEGACY_SURFACES as readonly string[]).includes(String(grant.surface))) {
+  if (!(AMPLEFILE_CLI_ACT_SURFACES as readonly string[]).includes(String(grant.surface))) {
     return "a grant surface is invalid";
-  }
-  if ((grant.surface === "remote_web") !== (typeof grant.browserId === "string")) {
-    return "a grant's browser identity must accompany exactly the remote surface";
   }
   return null;
 }

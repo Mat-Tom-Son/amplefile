@@ -19,7 +19,7 @@ type ReceiptEntry = Omit<AmpleFileCliActReceiptV3, "v" | "at">;
 
 /**
  * `recently-deleted list` and `recently-deleted restore` end to end through the installed act lane
- * (docs/receipts-not-gates.md, F20): argv → executor → the real facade inside
+ * (docs/act-ledger.md): argv → executor → the real facade inside
  * startLocalApi → the store. A delete History could not fully keep a copy of
  * is listed here, comes back on request, and the receipt's undo reference is
  * the item itself. Recently deleted sits above Connected Folders, so neither verb takes
@@ -254,8 +254,8 @@ test("recently-deleted restore takes no --to: nothing is saved out as a copy any
 });
 
 /**
- * Builds before Connected Folder apps were removed (2026-11-07) kept app
- * data, Releases, and App Studio history in Recently deleted. Those items
+ * Earlier builds kept Connected Folder app data, Releases, and App Studio
+ * history in Recently deleted. Those items
  * still list and wait out their window, but nothing can put them back.
  */
 test("an app item an earlier build kept lists as blocked and cannot be restored", async () => {

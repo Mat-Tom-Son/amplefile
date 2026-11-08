@@ -1364,7 +1364,7 @@ test("folder observer failures stay visible and a scan cannot outlive revocation
   await assert.rejects(harness.enable(declarationInput("automation-folder-health", { version: 2, trigger })), /version 3/);
 });
 
-// The version-4 placeholder set (docs/receipts-not-gates.md, F23). Resolution
+// The version-4 placeholder set (docs/act-ledger.md). Resolution
 // is host-side, in the executor, from the run's own cause and its earlier
 // hops' host records — never from model output — and every filled-in text
 // lands on the hop's terminal receipt so a person can see what was said.

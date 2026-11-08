@@ -45,13 +45,13 @@ sources, dynamic state, missing coverage and unresolved concerns. Compaction
 alone does not invalidate completed verification. Exact numeric claims also
 need arithmetic that preserves the promised range and precision, with
 independent expectations for signs, cancellation and range limits.
-Integer-valued floating-point cents remain bounded. When no magnitude bound is
+Integer-valued floating-point cents stay bounded. When no magnitude bound is
 given, use arbitrary precision from original decimal text through final
 formatting; converting a rounded intermediate to an exact type is too late.
 Final artifact checks also compare literal field names and types with the
 original requested contract, not only with an agent-written test's output shape.
 
-Records use invisible custom entries in the existing machine-local Pi session,
+Records use invisible custom entries in the machine-local Pi session,
 with the same session retention. They create no portable transcript records or
 second request store. The host admits only the current request's own turns in
 this Chat; another request, copied Chat or unrelated child cannot retrieve them.
@@ -82,12 +82,12 @@ be selected for fingerprinting.
 ## Structured collaboration
 
 `chat_handoff`, `chat_steer`, `chat_copy`, `chat_report`, `chat_ask`,
-`chat_answer`, `chat_stop`, `chat_children` and `chat_wait` call the existing act facade directly. The host
+`chat_answer`, `chat_stop`, `chat_children` and `chat_wait` call the act facade directly. The host
 supplies the Worker's own current task and Connected Folder. Assignment text is
 ordinary structured input, so code, quotes, dollar signs and newlines never
 pass through a shell. A handoff defaults to the same Connected Folder; another
 destination must be named explicitly. Child ownership, file copies, selected
-results and one-time delivery are the collaboration contract's existing rules.
+results and one-time delivery follow the [collaboration contract](collaboration-contract.md).
 After compaction, `chat_children` (CLI `chat children --connected-folder <id>
 --task <own-task-id> --json`) recovers the caller's delegated task handles so
 `chat_wait` can read a result again. It exposes no unrelated Chats.
@@ -101,8 +101,8 @@ surfaces can accept an answer during the running turn. It is journaled at once;
 the response says queued and has no continuation yet. Once the Chat is idle,
 one answer continuation incorporates the recorded answer. Stop closes that
 path. Restart preserves the answer but never automatically replays a turn;
-the existing answer retry is the explicit recovery path. Ordinary blocking
-questions retain their existing behavior.
+the answer retry is the explicit recovery path. An ordinary question
+still ends its turn.
 
 ## Interactive terminals and services
 
@@ -113,9 +113,8 @@ newlines or Ctrl-C, with an optional EOF. The CLI equivalents are `jobs start
 copied into an act receipt. Inspect output before retrying uncertain input.
 
 The terminal relay uses macOS's `/usr/bin/expect`, which allocates a PTY without
-requiring Electron to have a controlling terminal. Other POSIX hosts need
-that executable; Windows interactive jobs are unavailable. Both the relay and
-the terminal's process group are stopped and drained before settlement and
+requiring Electron to have a controlling terminal. Both the relay and the
+terminal's process group are stopped and drained before settlement and
 History. Restart checks recorded process start identities before killing.
 
 `job_start` with `service: true` (CLI `jobs start --service`) runs a server or
@@ -129,17 +128,15 @@ stops it. End services explicitly when the task no longer needs them.
 
 Every Worker and the AmpleFile agent in the desktop app carry the `browser_*`
 tools over AmpleFile's [built-in browser](built-in-browser.md): list the open
-tabs, open or load an address, read a page's structure, text, or console, take
+pages, open or load an address, read a page's structure, text, or console, take
 screenshots, click with mouse buttons and modifiers, hover, drag, attach local
 files to file inputs, inspect download progress and saved paths, type, focus
 and press keys, scroll inside panels, run a script, wait, and close the
-tabs they opened. The tabs are the person's too, so a Worker can use the page
-the person has in front, and a tab it opens appears in their tab strip. A page
-a background job serves on this computer (`localhost:3000`) opens like any other.
-The tools teach Workers to verify the resulting page before claiming success,
-use only task-authorized files and destinations for uploads, and treat page
-content as untrusted data. The AmpleFile agent receives the same tools and
-instructions. New input actions use the same per-page queue and Stop signal.
+pages they opened. A page a background job serves on this computer
+(`localhost:3000`) opens like any other. The tools teach Workers to verify the
+resulting page before claiming success, use only task-authorized files and
+destinations for uploads, and treat page content as untrusted data. Input
+actions share one per-page queue and the turn's Stop signal.
 
 ## Managed working copies
 
@@ -149,8 +146,7 @@ The CLI is `worktrees manage --connected-folder <source-id> --task <own-task-id>
 The source Connected Folder must be the repository root. Creation resolves and pins
 a committed revision (HEAD by default), journals before checkout, disables
 checkout hooks, excludes source `.amplefile/` identity/transcripts from
-materialization, leaves legacy `.workspace/` metadata unmaterialized, and
-registers a new Connected Folder. Local uncommitted source
+materialization, and registers a new Connected Folder. Local uncommitted source
 changes are left untouched and are not copied. Delegate edits to the returned
 connectedFolderId through the ordinary handoff path.
 
@@ -170,7 +166,7 @@ The `helper` tool runs a focused task in a fresh context inside the current
 Worker turn. It sees the assignment, selected paths and Worker instructions,
 and returns the standard summary/data/files/outcome envelope. It creates no
 Chat, request, or session file. Paths resolve inside this Connected Folder and
-refuse `.amplefile`, `.pi`, `.workspace`, and links out. Traversal skips Git
+refuse `.amplefile`, `.pi`, and links out. Traversal skips Git
 and dependency directories. Tools are read, grep, find and ls, optionally
 narrowed further with `tools`. It has no shell, edits, browser, MCP or nested
 helper. Read-only helpers may run in parallel through native Pi scheduling.

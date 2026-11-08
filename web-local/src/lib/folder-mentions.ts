@@ -1,5 +1,5 @@
 /**
- * @-mentions of Connected Folder Workers in a composer (2026-10-01). The draft text is
+ * @-mentions of Connected Folder Workers in a composer. The draft text is
  * the only state: a Worker is addressed when its `@Name` appears in the
  * message, whether it was picked from the menu or typed by hand, so deleting
  * the text un-addresses it and nothing hidden rides along with a send.

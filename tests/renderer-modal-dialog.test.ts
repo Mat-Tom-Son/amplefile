@@ -8,9 +8,9 @@ import { createDomHarness } from "./support/dom.js";
 
 /**
  * Behavioural coverage for the shared dialog contract. The keyboard and
- * background-isolation rules here were previously asserted by matching regular
- * expressions against component source, which passes whether or not the
- * behaviour survives.
+ * background-isolation rules are checked by rendering the dialog, not by
+ * matching regular expressions against component source, which passes
+ * whether or not the behaviour survives.
  */
 
 interface DialogProps {

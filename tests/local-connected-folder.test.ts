@@ -91,7 +91,7 @@ test("managed Connected Folders keep portable identity metadata inside a hidden 
   });
   assert.equal((await listConnectedFolders()).length, 1);
   assert.throws(() => resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, "../outside.txt"), /escapes/);
-  for (const reserved of [".amplefile", ".AMPLEFILE", ".workspace", ".WORKSPACE", ".pi", ".PI"]) {
+  for (const reserved of [".amplefile", ".AMPLEFILE", ".work-fold", ".WORK-FOLD", ".pi", ".PI"]) {
     assert.throws(
       () => resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, `ordinary/${reserved}/secret.txt`),
       /reserved/i,
@@ -105,9 +105,9 @@ test("linked Google Drive folders keep portable metadata hidden from Files", asy
   await mkdir(linkedRoot, { recursive: true });
   await mkdir(join(linkedRoot, ".pi", "skills"), { recursive: true });
   await writeFile(join(linkedRoot, ".pi", "skills", "private.md"), "hidden capability", "utf8");
-  await mkdir(join(linkedRoot, ".workspace", "conversations"), { recursive: true });
-  await writeFile(join(linkedRoot, ".workspace", "connected-folder.json"), "legacy identity", "utf8");
-  await writeFile(join(linkedRoot, ".workspace", "conversations", "old.jsonl"), "legacy chat", "utf8");
+  await mkdir(join(linkedRoot, ".work-fold", "conversations"), { recursive: true });
+  await writeFile(join(linkedRoot, ".work-fold", "records.json"), "earlier identity", "utf8");
+  await writeFile(join(linkedRoot, ".work-fold", "conversations", "old.jsonl"), "earlier chat", "utf8");
   const existingFile = join(linkedRoot, "existing.txt");
   await writeFile(existingFile, "original", "utf8");
   const connectedFolder = await registerLinkedConnectedFolder(linkedRoot);
@@ -117,7 +117,7 @@ test("linked Google Drive folders keep portable metadata hidden from Files", asy
   assert.equal(await readFile(existingFile, "utf8"), "original");
   assert.equal(existsSync(connectedFolderManifestFile(linkedRoot)), true);
   assert.equal((await scanConnectedFolderTree(linkedRoot)).entries[0]?.path, "existing.txt");
-  assert.equal(await readFile(join(linkedRoot, ".workspace", "connected-folder.json"), "utf8"), "legacy identity");
+  assert.equal(await readFile(join(linkedRoot, ".work-fold", "records.json"), "utf8"), "earlier identity");
 });
 
 test("a moved linked folder preserves its manifest identity when it is relinked", async () => {
@@ -137,28 +137,6 @@ test("a moved linked folder preserves its manifest identity when it is relinked"
   await mkdir(join(duplicateRoot, ".amplefile"), { recursive: true });
   await writeFile(connectedFolderManifestFile(duplicateRoot), await readFile(connectedFolderManifestFile(movedRoot), "utf8"), "utf8");
   await assert.rejects(registerLinkedConnectedFolder(duplicateRoot), /identity is already linked to another folder/);
-});
-
-test("legacy external manifests remain inert and are not imported", async () => {
-  const linkedRoot = join(sandbox, "legacy-manifest-connected-folder");
-  await mkdir(linkedRoot, { recursive: true });
-  const legacyFile = join(linkedRoot, ".workspace", "connected-folder.json");
-  await mkdir(dirname(legacyFile), { recursive: true });
-  const legacyManifest = {
-    id: "ws-0123456789abcdef",
-    name: "Portable legacy identity",
-    rootPath: linkedRoot,
-    location: { kind: "local", storage: "linked" },
-    createdAt: "2025-01-02T03:04:05.000Z",
-    updatedAt: "2025-01-02T03:04:05.000Z",
-  };
-  await writeFile(legacyFile, `${JSON.stringify(legacyManifest)}\n`, "utf8");
-
-  const connectedFolder = await registerLinkedConnectedFolder(linkedRoot);
-  assert.notEqual(connectedFolder.id, legacyManifest.id);
-  assert.notEqual(connectedFolder.name, legacyManifest.name);
-  assert.equal(existsSync(legacyFile), true);
-  assert.equal(existsSync(connectedFolderManifestFile(linkedRoot)), true);
 });
 
 test("Connected Folder listing survives when portable metadata can no longer be maintained", async () => {
@@ -336,7 +314,7 @@ test("a preserve-disposition removal unregisters a managed Connected Folder whil
 
 test("a managed folder registers again with its portable identity, and only inside the managed base", async () => {
   // How a Connected Folder's folder comes back from Recently deleted
-  // (docs/receipts-not-gates.md, F20): the folder is already in the managed
+  // (docs/act-ledger.md): the folder is already in the managed
   // base, and its `.amplefile/connected-folder.json` identity is what makes it the same
   // Connected Folder rather than a copy.
   const connectedFolder = await createManagedConnectedFolder("Restorable", contentRoot);
@@ -600,8 +578,8 @@ test("restore points live externally and can restore Connected Folder files", as
   const file = join(connectedFolder.connectedFolderRoot, "draft.txt");
   await writeFile(file, "version one", "utf8");
   const checkpoint = await createConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, { label: "Version one" });
-  assert.equal(checkpoint.files.some((entry) => entry.path.startsWith(".amplefile/") || entry.path.startsWith(".workspace/")), false);
-  assert.equal(checkpoint.directories.some((entry) => [".amplefile", ".workspace"].some((name) => entry === name || entry.startsWith(`${name}/`))), false);
+  assert.equal(checkpoint.files.some((entry) => entry.path.startsWith(".amplefile/")), false);
+  assert.equal(checkpoint.directories.some((entry) => entry === ".amplefile" || entry.startsWith(".amplefile/")), false);
   await writeFile(file, "version two", "utf8");
 
   const result = await restoreConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, checkpoint.checkpointId);

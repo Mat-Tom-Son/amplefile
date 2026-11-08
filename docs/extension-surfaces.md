@@ -1,17 +1,17 @@
 # Extension surfaces
 
-AmpleFile can render a controlled application surface contributed by a normal, full-trust Pi Extension. A surface can add one destination below the stable primary rail, a navigator in the left pane, and one or more Connected Folder–bound tabs in the work area.
+A normal, full-trust Pi Extension can describe a small read-only status surface in a static `surface.json` manifest beside its entry point. AmpleFile reads and validates that manifest, reports manifest errors in capability diagnostics, and carries valid surfaces in the kernel's capability snapshot. The file manager window does not draw them.
 
-This is a declarative UI contract, not renderer code injection. AmpleFile parses and bounds the manifest, renders its text and data through host-owned React components, and rejects unsupported block types. The Extension remains an ordinary executable Pi capability with its normal Everywhere or This Connected Folder only scope and trust implications.
+This is a declarative data contract, not renderer code injection. AmpleFile parses and bounds the manifest and rejects unsupported block types. The Extension remains an ordinary executable Pi capability with its normal Everywhere or This Connected Folder only scope and trust implications.
 
 Choose by what the capability needs:
 
 | Need | Use | Why |
 |---|---|---|
-| A trusted Pi Extension needs a small read-only status surface beside its tools or connection logic. | `surface.json` | Preserves native Pi packaging and keeps visible rendering data-only, but the owning Extension is still full trust. |
+| A trusted Pi Extension needs a small read-only status surface beside its tools or connection logic. | `surface.json` | Preserves native Pi packaging and keeps the surface data-only, but the owning Extension is still full trust. |
 | The capability needs unrestricted Node, shell, provider, event, or operating-system integration. | Native Pi Extension, optionally with `surface.json` | Those powers require full-current-user trust. |
 
-The checked-in [Connected inbox Pi Extension](../examples/packages/connected-inbox/README.md) demonstrates this compatibility lane. Its code can use the network and runs with the current user's permissions.
+The checked-in [Connected inbox Pi Extension](../examples/packages/connected-inbox/README.md) is an example. Its code can use the network and runs with the current user's permissions.
 
 ## Package layout
 
@@ -86,12 +86,12 @@ export default function projectPulse(_pi: ExtensionAPI) {
 }
 ```
 
-Surface and view ids use lowercase letters, numbers, and hyphens and may contain at most 64 characters. Titles, descriptions, collection sizes, table dimensions, and the complete manifest file are bounded. The current manifest limit is 256 KB.
+Surface and view ids use lowercase letters, numbers, and hyphens and may contain at most 64 characters. Titles, descriptions, collection sizes, table dimensions, and the complete manifest file are bounded. The manifest limit is 256 KB.
 
 Supported blocks are:
 
 - `heading` with text and level 1, 2, or 3;
-- `text` rendered as plain text with preserved line breaks;
+- `text` as plain text with preserved line breaks;
 - `callout` with `info`, `success`, or `warning` tone;
 - `metrics` containing label, value, and optional detail;
 - `table` containing columns and equally sized rows; and
@@ -99,10 +99,10 @@ Supported blocks are:
 
 HTML, scripts, styles, event handlers, arbitrary URLs, and custom React components are not accepted. A manifest error appears in capability diagnostics and prevents that surface from loading without taking down other Extensions.
 
-## Lifecycle and current boundary
+## Lifecycle and boundary
 
-Opening a rail destination shows the surface's views in the left pane; it never opens a tab by itself (2026-10-11). Clicking a view there opens or reactivates its deterministic Connected Folder–bound tab, and installed view tabs are restored with the rest of the local shell state. Removing the Extension or removing its Connected Folder leaves an already-restored tab in an explicit unavailable state rather than running stale code.
+A surface follows its Extension: it is present while Pi loads the adjacent Extension and gone when the Extension or its Connected Folder is removed. Surface ids must be unique; a second surface with a taken id is ignored with a diagnostic.
 
-Version 1 is intentionally read-only and manifest-backed. The package's Extension tools can still call connected systems when invoked by the agent because the owning Pi Extension is full trust. Do not encode credentials or remote account data in `surface.json`.
+Version 1 is read-only and manifest-backed. The package's Extension tools can still call connected systems when the agent invokes them, because the owning Pi Extension is full trust. Do not encode credentials or remote account data in `surface.json`.
 
-`surface.json` remains intentionally static and Pi-only.
+`surface.json` is static and Pi-only.

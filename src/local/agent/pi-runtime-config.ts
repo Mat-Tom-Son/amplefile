@@ -593,7 +593,7 @@ export async function setPiDefaultModel(
 }
 
 /**
- * The model a newly connected provider starts on (2026-10-11), tried in order
+ * The model a newly connected provider starts on, tried in order
  * against its catalog. Pi keeps the same idea as `defaultModelPerProvider` but
  * does not export it; OpenRouter leans to GPT-6 Luna here. A provider not
  * listed, or whose listed models are gone, starts on its first model.

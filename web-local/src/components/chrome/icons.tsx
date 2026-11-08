@@ -50,10 +50,8 @@ import {
 } from "@fluentui/react-icons";
 
 /**
- * Interface icons are drawn from Fluent, the family the rail, menus, and
- * Settings already use (docs/visual-design.md). The requested Lucide
- * exceptions (the rail's Blocks and Settings' Layout Panel Left)
- * stay with their controls and are deliberately not offered here. These components keep the names and `size` prop the
+ * Interface icons are drawn from Fluent, the family menus and Settings use
+ * (docs/visual-design.md). These components keep the names and `size` prop the
  * call sites were written with, so a call site reads the same while its
  * drawing matches the rest of the app. A size of 16 or less uses Fluent's
  * 16px drawing, which has the right stroke weight at small sizes.

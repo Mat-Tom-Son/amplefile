@@ -131,8 +131,8 @@ test("native edits outside the Connected Folder, through symlinks, or into inter
   await writeFile(external, "before\n");
   await writeFile(linked, "before\n");
   await symlink(linked, join(h.connectedFolderRoot, "link.txt"));
-  const targets = [external, "link.txt", ".amplefile/private.txt", ".pi/private.txt", ".workspace/private.txt"];
-  for (const directory of [".amplefile", ".pi", ".workspace"]) {
+  const targets = [external, "link.txt", ".amplefile/private.txt", ".pi/private.txt", ".work-fold/private.txt"];
+  for (const directory of [".amplefile", ".pi", ".work-fold"]) {
     await mkdir(join(h.connectedFolderRoot, directory), { recursive: true });
     await writeFile(join(h.connectedFolderRoot, directory, "private.txt"), "before\n");
   }
@@ -414,7 +414,7 @@ test("portable metadata rejects malformed ranges and unsafe edit paths, bounds d
   const disk = await readFile(join(root, ".amplefile", "conversations", "bounded.jsonl"), "utf8");
   assert.doesNotMatch(disk, /should not persist|private absolute headers|unrelated/);
 
-  for (const path of ["../secret", "/private/secret", "C:/secret", "folder\\secret", ".AMPLEFILE/private", ".pi/private", ".workspace/private"]) {
+  for (const path of ["../secret", "/private/secret", "C:/secret", "folder\\secret", ".AMPLEFILE/private", ".pi/private", ".work-fold/private"]) {
     await appendMessage(root, "unsafe", { id: path, role: "assistant", content, createdAt: "now", workTrail: [{ ...trail[0]!, edit: { ...edit, path } }] });
   }
   assert.ok((await readConversation(root, "unsafe")).every((message) => !message.workTrail?.[0]?.edit));

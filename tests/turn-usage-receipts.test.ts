@@ -12,8 +12,8 @@ import { PiConversationClient } from "../src/local/agent/pi-client.js";
 import type { PiRuntimeProvider } from "../src/local/agent/pi-runtime-config.js";
 
 /**
- * The measurement behind an app request's receipt (docs/receipts-not-gates.md,
- * F22): after a turn settles, the client reports the model that actually ran it
+ * The measurement behind an app request's receipt (docs/act-ledger.md):
+ * after a turn settles, the client reports the model that actually ran it
  * and what the provider said it used. A model with published rates carries a
  * cost; a model without them leaves the cost out rather than reporting zero.
  */

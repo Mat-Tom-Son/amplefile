@@ -329,8 +329,8 @@ test("ledger tools commands parse with strict shapes", () => {
   );
 
 
-  // Connected Folder apps and App Studio were removed on 2026-11-07: the whole
-  // family is an ordinary unknown command, and its app-only flags are unknown
+  // Connected Folder apps and App Studio: the whole `apps` family is an
+  // ordinary unknown command, and its app-only flags are unknown
   // options everywhere.
   for (const argv of [
     ["apps", "list", "--connected-folder", "connected-folder-1"],
@@ -499,7 +499,7 @@ test("direct verbs parse with strict shapes", () => {
     /--connected-folder cannot be used with 'automations enable'/,
   );
 
-  // Recently deleted sits above Connected Folders too (docs/receipts-not-gates.md, F20):
+  // Recently deleted sits above Connected Folders too (docs/act-ledger.md):
   // each item names the Connected Folder it came from, so neither verb takes --connected-folder
   assert.deepEqual(parseAmpleFileCliActArgv(["recently-deleted", "list", "--json"]), { name: "recently-deleted.list", output: "json" });
   assert.deepEqual(
@@ -515,7 +515,7 @@ test("direct verbs parse with strict shapes", () => {
       parentTaskId: "task-4",
     },
   );
-  // Saving a copy with --to served only app data an earlier build kept; it is gone.
+  // Restore takes no --to.
   assert.throws(
     () => parseAmpleFileCliActArgv(["recently-deleted", "restore", "--entry", "trash-20260910083000-53db781d", "--to", "/tmp/copy.json"]),
     /--to cannot be used with 'recently-deleted restore'/,
@@ -534,11 +534,10 @@ test("direct verbs parse with strict shapes", () => {
     /--parent-task cannot be used with 'recently-deleted list'/,
   );
 
-  // The pending-decision family, permanent deletion, the retired holding
-  // spellings of the automation and outward-exposure verbs, the retired
-  // desktop-served sharing verbs, and the pages family (removed 2026-11-07) are
-  // gone from the vocabulary (docs/receipts-not-gates.md, F19/F20): unknown
-  // commands, not refusals with a story.
+  // The pending-decision family, permanent deletion, the holding spellings
+  // of the automation and outward-exposure verbs, desktop-served sharing
+  // verbs, and the pages family are not in the vocabulary
+  // (docs/act-ledger.md): unknown commands, not refusals with a story.
   for (const argv of [
     ["staged", "list"], ["staged", "show"], ["staged", "cancel"],
     ["automations", "stage"], ["pages", "stage"],
@@ -1131,9 +1130,10 @@ test("file and search acts dispatch to the facade, stamp receipts, and render be
   assert.equal(lastOk().checkpointId, "cp-20260810130200-cccccccc");
   assert.deepEqual(lastOk().undoRef, { kind: "safety-checkpoint", value: "cp-20260810130200-cccccccc" });
 
-  // F20: when History could not keep a copy of every matched file, the delete
-  // still goes through, names why, and its undo reference is the Recently
-  // deleted item rather than the partial restore point.
+  // Destruction stays reversible (docs/act-ledger.md): when History could not
+  // keep a copy of every matched file, the delete still goes through, names
+  // why, and its undo reference is the Recently Deleted item rather than the
+  // partial restore point.
   deleteRecovery = {
     kind: "recently-deleted" as const,
     entryId: "trash-20260910083000-53db781d",
@@ -1201,7 +1201,7 @@ test("file and search acts dispatch to the facade, stamp receipts, and render be
   assert.match(emptySearch.stdout, /No matches for "nothing here" in Fold Connected Folder \[connected-folder-1\] \(scope all\)\./);
   assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", query: "nothing here" });
 
-  // Permanent deletion left the vocabulary (docs/receipts-not-gates.md, F20).
+  // Permanent deletion left the vocabulary (docs/act-ledger.md).
   assert.throws(
     () => parseAmpleFileCliActArgv(["files", "destroy"]),
     /Unknown command: files destroy/,

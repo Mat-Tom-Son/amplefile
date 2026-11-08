@@ -10,26 +10,14 @@ function memory(initial: Record<string,string> = {}) {
 }
 const preset = (name = "My Paper", preferences = defaultApplicationAppearance) => ({ kind: appearancePresetKind, version: 1, name, preferences });
 
-test("appearance migrates existing preferences without rewriting any storage on load", () => {
-  const storage = memory({ "amplefile.theme": "system", "amplefile.typography.v1": JSON.stringify({ font: "verdana", textSize: "comfortable" }) });
-  const store = new ApplicationAppearanceStore(storage);
-  assert.deepEqual({ mode: store.getSnapshot().preferences.mode, font: store.getSnapshot().preferences.font, readingSize: store.getSnapshot().preferences.readingSize }, { mode: "system", font: "verdana", readingSize: 16 });
-  assert.equal(storage.writes, 0);
-  store.update({ palette: "paper" });
-  assert.equal(storage.writes, 1);
-  assert.equal(JSON.parse(storage.data.get(applicationAppearanceKey)!).font, "verdana");
-  assert.equal(storage.data.get("amplefile.theme"), "system");
-});
-
-test("a record saved before a setting existed reads as its default and is only rewritten on the next change", () => {
-  const { version: _version, chatSteps: _chatSteps, ...saved } = defaultApplicationAppearance;
+test("a saved record loads without rewriting storage and is only rewritten on the next change", () => {
   const storage = memory({
-    [applicationAppearanceKey]: JSON.stringify({ ...saved, version: 1, palette: "slate" }),
-    [applicationPresetsKey]: JSON.stringify({ version: 1, presets: [preset("Old paper", { ...saved, version: 1, palette: "paper" } as never)] }),
+    [applicationAppearanceKey]: JSON.stringify({ ...defaultApplicationAppearance, palette: "slate" }),
+    [applicationPresetsKey]: JSON.stringify({ version: 2, presets: [preset("Old paper", { ...defaultApplicationAppearance, palette: "paper" })] }),
   });
   const store = new ApplicationAppearanceStore(storage);
   assert.deepEqual({ version: store.getSnapshot().preferences.version, palette: store.getSnapshot().preferences.palette, chatSteps: store.getSnapshot().preferences.chatSteps }, { version: 2, palette: "slate", chatSteps: "every" });
-  assert.equal(store.getSnapshot().presets[0]?.preferences.chatSteps, "every");
+  assert.equal(store.getSnapshot().presets[0]?.preferences.palette, "paper");
   assert.equal(store.getSnapshot().presetsError, null);
   assert.equal(storage.writes, 0);
   store.update({ chatSteps: "current" });
@@ -37,7 +25,14 @@ test("a record saved before a setting existed reads as its default and is only r
   store.savePreset("Fresh");
   assert.equal(JSON.parse(storage.data.get(applicationPresetsKey)!).version, 2);
   assert.throws(() => parseApplicationAppearance({ ...defaultApplicationAppearance, chatSteps: "all" }), /chatSteps/);
-  assert.throws(() => parseApplicationAppearance({ ...defaultApplicationAppearance, version: 1, chatSteps: "all" }), /chatSteps/);
+});
+
+test("with nothing saved, appearance starts from the defaults without writing", () => {
+  const storage = memory();
+  const store = new ApplicationAppearanceStore(storage);
+  assert.deepEqual(store.getSnapshot().preferences, defaultApplicationAppearance);
+  assert.equal(store.getSnapshot().error, null);
+  assert.equal(storage.writes, 0);
 });
 
 test("future appearance and preset bytes survive both initialization and explicit changes", () => {

@@ -1,6 +1,6 @@
 /**
  * The native right-click menu for the Connected Folder header (macOS), with the
- * same actions as the in-app menu other platforms show (2026-11-05).
+ * same actions as the in-app menu other platforms show.
  */
 export type NativeConnectedFolderMenuCommand = "new-chat" | "customize" | "set-up" | "look" | "reveal" | "manage" | "skills" | "settings"
   | "put-to-work" | "remove-from-sidebar" | "create-connected-folder" | "use-existing-folder" | "remove-connected-folder";
@@ -9,14 +9,14 @@ export interface NativeConnectedFolderMenuRequest {
   /**
    * Which of the header's actions this Connected Folder offers. Manage Connected Folders
    * is there unless `manage` is false. The file manager's Action menu
-   * (2026-11-07) adds Skills & Extensions and Settings and leaves out Manage,
+   * adds Skills & Extensions and Settings and leaves out Manage,
    * since its sidebar lists the Connected Folders; older renderers omit all three.
    */
   actions: {
     newChat: boolean; customize: boolean; setUp: boolean; reveal: boolean; skills?: boolean; settings?: boolean; manage?: boolean;
-    /** The file manager's Standard Folders (2026-11-07): register the folder, or take an added one off the sidebar. */
+    /** The file manager's Standard Folders: register the folder, or take an added one off the sidebar. */
     putToWork?: boolean; removeFromSidebar?: boolean;
-    /** The file manager's + beside Connected Folders (2026-11-07). */
+    /** The file manager's + beside Connected Folders. */
     createConnectedFolder?: boolean; useExistingFolder?: boolean;
     /**
      * The file manager's Connected Folder menus: Disconnect… a linked folder

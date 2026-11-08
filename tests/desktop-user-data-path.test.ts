@@ -16,14 +16,14 @@ test("non-packaged desktop runs cannot default to installed AmpleFile state", ()
     productName: "AmpleFile",
     useInstalledProductData: false,
     platform: "win32",
-    currentDirectory: "C:\\source\\workspace",
+    currentDirectory: "C:\\source\\amplefile",
   });
   const production = ampleFileDesktopUserDataPath({
     appDataPath,
     productName: "AmpleFile",
     useInstalledProductData: true,
     platform: "win32",
-    currentDirectory: "C:\\source\\workspace",
+    currentDirectory: "C:\\source\\amplefile",
   });
 
   assert.equal(development, win32.join(appDataPath, "AmpleFile Development"));
@@ -37,25 +37,21 @@ test("desktop user-data override remains explicit in development and production"
     productName: "AmpleFile",
     override: "fixtures/desktop-state",
     platform: "darwin" as const,
-    currentDirectory: "/source/workspace",
+    currentDirectory: "/source/amplefile",
   };
   assert.equal(
     ampleFileDesktopUserDataPath({ ...common, useInstalledProductData: false }),
-    "/source/workspace/fixtures/desktop-state",
+    "/source/amplefile/fixtures/desktop-state",
   );
   assert.equal(
     ampleFileDesktopUserDataPath({ ...common, useInstalledProductData: true }),
-    "/source/workspace/fixtures/desktop-state",
+    "/source/amplefile/fixtures/desktop-state",
   );
 });
 
-test("the legacy host-injected desktop variable cannot opt a child into production state", () => {
-  const productionState = "C:\\Users\\developer\\AppData\\Roaming\\amplefile";
+test("only the explicit AmpleFile desktop variable selects desktop state", () => {
+  assert.equal(ampleFileDesktopStateOverride({}), undefined);
   assert.equal(ampleFileDesktopStateOverride({
-    WORKSPACE_DESKTOP_USER_DATA_DIR: productionState,
-  }), undefined);
-  assert.equal(ampleFileDesktopStateOverride({
-    WORKSPACE_DESKTOP_STATE_DIR: productionState,
     AMPLEFILE_DESKTOP_STATE_DIR: "C:\\fixtures\\explicit-desktop-state",
   }), "C:\\fixtures\\explicit-desktop-state");
 });

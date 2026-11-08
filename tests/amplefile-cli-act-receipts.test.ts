@@ -6,13 +6,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { AMPLEFILE_CLI_ACT_LEGACY_SURFACES, AMPLEFILE_CLI_ACT_SURFACES, AmpleFileCliActReceipts, AmpleFileCliError } from "../src/local/cli/index.js";
+import { AMPLEFILE_CLI_ACT_SURFACES, AmpleFileCliActReceipts, AmpleFileCliError } from "../src/local/cli/index.js";
 
 const bellCharacter = String.fromCharCode(7);
 const replacementCharacter = String.fromCharCode(0xfffd);
 
 test("act receipts append ordered JSON lines and rotate only aged entries", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-act-receipts-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-act-receipts-test-"));
   try {
     const startTime = Date.parse("2026-07-31T12:00:00.000Z");
     let currentTime = startTime;
@@ -65,7 +65,7 @@ test("act receipts append ordered JSON lines and rotate only aged entries", asyn
 });
 
 test("accepted records gate duplicate request ids across the broker freshness window", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-act-receipts-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-act-receipts-test-"));
   try {
     const startTime = Date.parse("2026-07-31T12:00:00.000Z");
     let currentTime = startTime;
@@ -102,7 +102,7 @@ test("accepted records gate duplicate request ids across the broker freshness wi
 });
 
 test("receipt append failures report false instead of throwing", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-act-receipts-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-act-receipts-test-"));
   try {
     const receipts = new AmpleFileCliActReceipts({ stateRoot: sandbox });
     // Occupy the receipts directory path with a regular file so mkdir fails.
@@ -116,59 +116,12 @@ test("receipt append failures report false instead of throwing", async () => {
   }
 });
 
-test("readers accept version 1 and 2 lines and older version 3 lines beside current appends", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-act-receipts-v1-test-"));
-  try {
-    const receipts = new AmpleFileCliActReceipts({ stateRoot: sandbox });
-    const { mkdir, writeFile } = await import("node:fs/promises");
-    const { dirname } = await import("node:path");
-    const versionOneId = randomUUID();
-    const versionTwoId = randomUUID();
-    const remoteWebId = randomUUID();
-    await mkdir(dirname(receipts.path), { recursive: true });
-    // A version 2 line an older build wrote for a gated act: it still carries
-    // a decision id, a policy id, and a legacy surface. It stays readable
-    // history and still gates a replay of its request id.
-    await writeFile(
-      receipts.path,
-      `${JSON.stringify({ v: 1, at: "2026-07-31T12:00:00.000Z", requestId: versionOneId, command: "files.add", outcome: "accepted" })}\n`
-        + `${JSON.stringify({
-          v: 2, at: "2026-07-31T12:01:00.000Z", requestId: versionTwoId, command: "decision.approve", outcome: "accepted",
-          surface: "unrestricted", decisionId: "act-1", policyId: "policy-1", detail: "connected-folder.delete-folder (destroy)",
-        })}\n`
-        // A version 3 line an older build wrote for an act from a paired
-        // browser, before Web Access was removed.
-        + `${JSON.stringify({
-          v: 3, at: "2026-07-31T12:02:00.000Z", requestId: remoteWebId, command: "chat.send", outcome: "accepted",
-          surface: "remote_web", browserId: "browser-1", grantId: "grant-1",
-        })}\n`,
-      "utf8",
-    );
-    assert.equal(await receipts.hasAccepted(versionOneId), true, "a version 1 accepted record must keep gating replays");
-    assert.equal(await receipts.hasAccepted(versionTwoId), true, "a version 2 decision record must keep gating replays");
-    assert.equal(await receipts.hasAccepted(remoteWebId), true, "an older remote_web record must keep gating replays");
-
-    const versionThreeId = randomUUID();
-    await receipts.append({ requestId: versionThreeId, command: "chat.send", outcome: "accepted", surface: "cli" });
-    assert.equal(await receipts.hasAccepted(versionThreeId), true);
-    assert.equal(await receipts.hasAccepted(randomUUID()), false);
-    const lines = (await readFile(receipts.path, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
-    assert.deepEqual(lines.map((line) => line.v), [1, 2, 3, 3], "append writes the current version beside the older lines");
-    assert.equal("decisionId" in lines[3]!, false, "a version 3 line carries no decision id");
-  } finally {
-    await rm(sandbox, { recursive: true, force: true });
-  }
-});
-
 test("the recorded surface vocabulary is the closed three-value set", () => {
   assert.deepEqual([...AMPLEFILE_CLI_ACT_SURFACES], ["cli", "popover", "main-window"]);
-  // The surfaces older builds wrote — on decision receipts, and for acts from
-  // a paired browser — are read-only history.
-  assert.deepEqual([...AMPLEFILE_CLI_ACT_LEGACY_SURFACES], ["policy", "unrestricted", "remote_web"]);
 });
 
 test("a damaged receipt ledger fails closed instead of permitting a replay", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-act-receipts-damaged-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-act-receipts-damaged-test-"));
   try {
     const receipts = new AmpleFileCliActReceipts({ stateRoot: sandbox });
     const { mkdir, writeFile } = await import("node:fs/promises");

@@ -16,7 +16,7 @@ export type AutomationOutcome = "accepted" | "succeeded" | "failed" | "stopped" 
 /**
  * Why a folder-change automation that declares `"ifMissed": "run"` caught up:
  * the gap during which AmpleFile could not watch its folder
- * (docs/automations.md, 2026-10-11 amendment).
+ * (docs/automations.md).
  */
 export type AutomationCatchUpReason = "closed" | "asleep" | "off" | "unavailable";
 export const automationCatchUpReasons: readonly AutomationCatchUpReason[] = ["closed", "asleep", "off", "unavailable"];

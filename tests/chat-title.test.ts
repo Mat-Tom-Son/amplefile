@@ -26,5 +26,4 @@ test("successful first turns name chats with the conversation's active Pi model"
   assert.match(server, /await client\.generateConversationTitle\(firstUserMessage, finalText\)/);
   assert.doesNotMatch(server, /generateConversationTitle\(firstUserMessage, finalText\)\.catch/);
   assert.match(server, /await markConversationTitleAttempted\(connectedFolderRoot, conversationId\)/);
-  assert.doesNotMatch(server, /modelTitle \?\? conversationTitleFromFirstUserMessage/);
 });

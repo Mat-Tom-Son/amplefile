@@ -20,7 +20,7 @@ export function turnGeneratedImages(entries: ReadonlyArray<{ kind: string; phase
 }
 
 /**
- * Pictures a Worker made in this turn (2026-10-11), shown under its reply
+ * Pictures a Worker made in this turn, shown under its reply
  * whatever the Worker-steps setting is. Hovering one offers Copy and Add to
  * folder, or Show in Files once it is in the folder.
  */

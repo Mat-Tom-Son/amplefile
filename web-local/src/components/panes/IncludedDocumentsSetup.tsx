@@ -6,7 +6,7 @@ import { copyToClipboard } from "../../lib/clipboard";
 export const libreOfficeDownloadUrl = "https://www.libreoffice.org/download/download-libreoffice/";
 export const tesseractInstallGuideUrl = "https://tesseract-ocr.github.io/tessdoc/Installation.html";
 
-/** The install command a person can run themselves; AmpleFile never runs it (2026-10-18). */
+/** The install command a person can run themselves; AmpleFile never runs it. */
 export function documentEngineInstallCommand(engine: "libreoffice" | "tesseract", platform: string, homebrew: boolean): { label: string; command: string } | null {
   if (platform === "darwin" && homebrew) return { label: "Or in Terminal, with Homebrew:", command: engine === "libreoffice" ? "brew install --cask libreoffice" : "brew install tesseract" };
   if (platform === "linux") return { label: "On Debian or Ubuntu, in Terminal:", command: engine === "libreoffice" ? "sudo apt install libreoffice" : "sudo apt install tesseract-ocr" };

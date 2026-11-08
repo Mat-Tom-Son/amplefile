@@ -9,8 +9,8 @@ import type { ChatActivityStatus, ConversationSummary, ConnectedFolderSummary } 
 /**
  * The file manager's activity dots, as the design draws them: a pulsing dot
  * on a Connected Folder while its Worker is running, and a green one when a Chat
- * has a reply nobody has read. The same host report and saved "new reply"
- * marks the classic layout uses; a Chat open in the panel counts as read.
+ * has a reply nobody has read, from the host report and saved "new reply"
+ * marks useChatActivity reads; a Chat open in the panel counts as read.
  */
 export function useFileManagerActivity(connectedFolders: readonly ConnectedFolderSummary[], fixtureMode: boolean, watchedKey: string | null) {
   const activity = useChatActivity(fixtureMode);

@@ -14,14 +14,14 @@ import { showToast } from "../../ui/feedback";
 import { ampleFileLimitsSettings } from "../../ui-contract";
 
 /**
- * Settings → Automations → Limits (docs/receipts-not-gates.md, F19 principle 6:
+ * Settings → Automations → Limits (docs/act-ledger.md:
  * bounds are visible and named). Every request, job, and automation refusal
  * names this section, so this pane is where those phrases resolve.
  *
  * The bounds are frozen constants. The one adjustable number — how long
  * Recently Deleted keeps an item — is set in its own pane, which this one
  * links to, and the one switch — whether finished handed-out work is brought
- * back to its owner as a turn (docs/collaboration-contract.md, F28) — lives
+ * back to its owner as a turn (docs/collaboration-contract.md) — lives
  * here. Every shown value is read from the frozen contract the host enforces
  * (`ampleFileExtensionUiLimits`, `ampleFileRequestLimits`,
  * `ampleFileAutomationDeclarationBounds`, `ampleFileAutomationMaxConcurrentRuns`,
@@ -34,7 +34,7 @@ interface RequestSettingsResponse {
 }
 
 /**
- * The F28 switch. It loads from the running app and saves through a journaled
+ * The continuations switch. It loads from the running app and saves through a journaled
  * Settings act; without the app it shows the shipped default, disabled, and
  * says why. Turning it off changes nothing about what is recorded.
  */

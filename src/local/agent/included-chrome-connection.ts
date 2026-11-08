@@ -139,7 +139,7 @@ export class IncludedChromeConnectionService implements IncludedChromeConnection
   }
 
   /**
-   * At launch. A connection the person set up resumes; otherwise (2026-10-11)
+   * At launch. A connection the person set up resumes; otherwise
    * AmpleFile quietly registers its native helper when Chrome has none yet and
    * listens, so choosing Connect in a freshly added extension works before
    * anyone opens Chrome setup in AmpleFile. That quiet path reports no problem.
@@ -255,7 +255,7 @@ export class IncludedChromeConnectionService implements IncludedChromeConnection
       else if (request.action === "disconnect") response = selected ? { version: 1, state: "status", status: await this.#disconnect() } : result("not_connected");
       else if (!selected && request.action === "resume") response = result("not_connected");
       // Connect chosen in the extension is the person's own act, whether or not
-      // they opened Chrome setup in work-fold first (2026-10-11).
+      // they opened Chrome setup in AmpleFile first.
       else if (!this.#saved.enabled && request.action !== "connect") response = result("not_connected");
       else {
         if (!selected) {

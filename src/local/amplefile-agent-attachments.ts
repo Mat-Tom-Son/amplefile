@@ -84,7 +84,7 @@ export async function classifyAmpleFileAgentAttachments(
     }
     const path = isAbsolute(trimmed) ? resolve(trimmed) : resolve(cwd, trimmed);
     if (containsReservedConnectedFolderPathSegment(path)) {
-      throw new Error("Reserved AmpleFile, legacy product, and Pi metadata cannot be attached.");
+      throw new Error("Reserved .amplefile, .work-fold, and .pi metadata cannot be attached.");
     }
     const info = await lstat(path).catch(() => null);
     if (!info) throw new Error(`Attachment not found: ${trimmed}`);

@@ -735,7 +735,7 @@ function normalizeDefinition(definition: AmpleFileSchedulerJobDefinition): Norma
 function normalizeSchedule(definition: AmpleFileSchedulerJobDefinition): AmpleFileSchedulerSchedule {
   if (definition.schedule !== undefined) {
     if (definition.intervalMinutes !== undefined || definition.catchUp !== undefined) {
-      throw new Error("Automation schedule cannot be combined with legacy interval fields.");
+      throw new Error("Automation schedule cannot be combined with the flat interval fields.");
     }
     if (definition.schedule.kind === "interval") {
       intervalMilliseconds(definition.schedule.intervalMinutes);

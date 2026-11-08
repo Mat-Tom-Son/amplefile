@@ -18,11 +18,6 @@ interface ModelPreferencesFile {
   scopes: Record<string, ModelPreferencesEntry>;
 }
 
-interface LegacyModelPreferencesFile {
-  version: 1;
-  scopes: Record<string, PiPreferredModel & { updatedAt: string }>;
-}
-
 /**
  * Machine-local model choices for each portable Connected Folder identity and for the
  * AmpleFile agent. Provider credentials remain in Pi's shared AuthStorage.
@@ -108,15 +103,6 @@ export class ModelPreferenceStore {
     } catch {
       throw new Error("Model preferences are not valid JSON.");
     }
-    if (isLegacyPreferencesFile(parsed)) {
-      return {
-        version: 2,
-        scopes: Object.fromEntries(Object.entries(parsed.scopes).map(([scope, entry]) => [scope, {
-          model: { provider: entry.provider, id: entry.id },
-          updatedAt: entry.updatedAt,
-        }])),
-      };
-    }
     if (!isPreferencesFile(parsed)) throw new Error("Model preferences are invalid.");
     return parsed;
   }
@@ -152,19 +138,6 @@ function isPreferencesFile(value: unknown): value is ModelPreferencesFile {
     const model = preference.model as { provider?: unknown; id?: unknown };
     return typeof model.provider === "string" && Boolean(model.provider.trim())
       && typeof model.id === "string" && Boolean(model.id.trim());
-  });
-}
-
-function isLegacyPreferencesFile(value: unknown): value is LegacyModelPreferencesFile {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const candidate = value as { version?: unknown; scopes?: unknown };
-  if (candidate.version !== 1 || !candidate.scopes || typeof candidate.scopes !== "object" || Array.isArray(candidate.scopes)) return false;
-  return Object.values(candidate.scopes).every((entry) => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
-    const model = entry as { provider?: unknown; id?: unknown; updatedAt?: unknown };
-    return typeof model.provider === "string" && Boolean(model.provider.trim())
-      && typeof model.id === "string" && Boolean(model.id.trim())
-      && typeof model.updatedAt === "string" && !Number.isNaN(Date.parse(model.updatedAt));
   });
 }
 

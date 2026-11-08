@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Runs the document-checking evaluation (2026-10-18) for one condition.
+ * Runs the document-checking evaluation for one condition.
  *
  * For each seeded task it makes a disposable Connected Folder, drives one real
  * Worker turn with `npm run amplefile:drive -- --attach`, then scores the

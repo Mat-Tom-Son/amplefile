@@ -106,7 +106,7 @@ test("a request a removed app made in an older Chat renders as an ordinary messa
     suppressEnterAnimation: true, showRuntimePreview: false, runtimePreviews: [], connectedFolderId: "folder", connectedFolderRoot: "/folder",
     onCopyMessage: () => undefined }));
   const base: ChatMessage = { id: "m", role: "user", createdAt: "2026-10-11T12:00:00Z", content: "App request: Compare quotes" };
-  // Apps were removed (2026-11-07); older logs can still carry their marker.
+  // A log an earlier build wrote can carry a Connected Folder app's marker.
   const fromApp = row({ ...base, source: "app", appId: "quote-board", appTitle: "Quote board" } as ChatMessage);
   assert.match(fromApp, /<article class="message user settled">/);
   assert.doesNotMatch(fromApp, /app-request|message-sender|Quote board/);
@@ -116,7 +116,7 @@ test("a request a removed app made in an older Chat renders as an ordinary messa
 
 test("a Markdown hard line break is one line, not a break plus a blank line", () => {
   // Chat paragraphs keep newlines visible, so the newline that follows each
-  // `<br>` used to draw a second, empty line under every quoted line.
+  // `<br>` must not draw a second, empty line under every quoted line.
   const html = renderToStaticMarkup(createElement(MarkdownMessage, { content: "> “Peter.”  \n> “Where ARE you?”  \n> “Here.”\n\nAfter.\nSoft break." }));
   assert.match(html, /<blockquote>\s*<p>“Peter\.”<br\/>“Where ARE you\?”<br\/>“Here\.”<\/p>\s*<\/blockquote>/);
   assert.match(html, /<p>After\.\nSoft break\.<\/p>/, "a soft break keeps its newline");

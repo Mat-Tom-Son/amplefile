@@ -1,15 +1,7 @@
 /**
- * Links that open in the built-in browser (docs/built-in-browser.md). A link
- * to a server on this computer, such as the dev server a Worker started,
- * opens as a browser tab instead of in the default browser.
+ * A link to a server on this computer, such as the dev server a Worker
+ * started. Chat replies open it in the default browser.
  */
-
-/** Asks the open Connected Folder view to open a browser tab at an address. */
-export const openBrowserTabEvent = "amplefile:open-browser-tab";
-
-export interface OpenBrowserTabRequest {
-  url: string;
-}
 
 /** The address of a server on this computer, or null for anything else. */
 export function localServerHref(href: string | undefined): string | null {
@@ -25,12 +17,4 @@ export function localServerHref(href: string | undefined): string | null {
   } catch {
     return null;
   }
-}
-
-export function browserTabsAvailable(): boolean {
-  return Boolean(window.ampleFileDesktop?.browser);
-}
-
-export function requestBrowserTab(url: string): void {
-  window.dispatchEvent(new CustomEvent<OpenBrowserTabRequest>(openBrowserTabEvent, { detail: { url } }));
 }

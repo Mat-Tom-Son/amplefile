@@ -16,7 +16,7 @@ import {
 /**
  * The operations guide reaches a Connected Folder Chat's real Pi session as a system
  * prompt appendix, after the person's Connected Folder instructions, the way those are
- * appended (docs/collaboration-contract.md, F26). No model is contacted:
+ * appended (docs/collaboration-contract.md). No model is contacted:
  * building the session composes the prompt without a turn.
  */
 test("a Connected Folder Chat's system prompt carries Connected Folder instructions and then the operations guide", async (t) => {
@@ -81,15 +81,14 @@ test("the guide teaches the two rules the host actually enforces", () => {
 });
 
 /**
- * Pages were removed on 2026-11-07 (a fresh start for AmpleFile): the
- * Worker's guide no longer teaches page.json, the page script API, or the
- * validate verb, and never mentions publishing.
+ * The Worker's guide teaches no page.json, page script API, or validate
+ * verb, and never mentions publishing.
  */
 test("the guide does not teach pages", () => {
   const guide = ampleFileConnectedFolderOperationsGuide();
   assert.doesNotMatch(guide, /### Pages|page\.json|data-page-|pages validate|page tab/);
   assert.doesNotMatch(guide, /pages publish|pages unpublish|Web Access/);
-  // The retired single-file sharing is gone too.
+  // Nor single-file sharing.
   assert.doesNotMatch(guide, /Pages the person may share|shareable HTML|sharing pages|shares it from the file's tab/);
 });
 

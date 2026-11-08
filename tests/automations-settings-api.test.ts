@@ -101,7 +101,7 @@ test("trusted Settings manages automations with receipted enablement, bounded ru
   const disabled = await api.automationSettings.disable(declaration.id);
   assert.equal(disabled.disabled, true);
   // Enabling from Settings runs at once through the prepared-act path
-  // (docs/receipts-not-gates.md, F19/F23) under a Settings-minted request id.
+  // (docs/act-ledger.md) under a Settings-minted request id.
   const enabled = await api.automationSettings.enable(declaration.id);
   assert.deepEqual(enabled, {
     automationId: declaration.id,
@@ -192,7 +192,7 @@ test("automations enable is direct and an agent step opens a new management thre
   assert.equal((await api.automations.getAutomation(enabled.automationId))?.grants.length, 1);
 
   await api.automationSettings.run(enabled.automationId);
-  // A fold hop opens a real AmpleFile agent Chat and starts a real Pi turn
+  // An agent hop opens a real AmpleFile agent Chat and starts a real Pi turn
   // against it. The budget is generous on purpose: it bounds a hang, not a
   // slow start while the rest of the suite shares the machine.
   await waitFor(async () => {
@@ -400,7 +400,7 @@ test("receipts a build with Checks or Connected Folder apps journaled still read
     expectedDigest: ampleFileAutomationDigest(declaration),
     grant: { requestId: "request-retired-check", surface: "main-window" },
   });
-  // Lines exactly as the executor wrote them while Checks existed (removed 2026-11-07).
+  // Lines exactly as an earlier build's executor wrote them for a Check hop.
   const base = { v: 1, automationId: declaration.id, runId: "run-old-check", title: "After review", digest: "a".repeat(64) };
   const lines: Array<Record<string, unknown>> = [
     { ...base, at: "2026-09-02T10:00:00.000Z", scope: "run", outcome: "accepted", cause: { kind: "on-settled", source: { kind: "check-run", connectedFolderId: folder.connectedFolder.id, runId: "check-run-1", state: "succeeded", checkIds: ["check-12345678"], taskId: "check-task-1" } } },
@@ -408,7 +408,7 @@ test("receipts a build with Checks or Connected Folder apps journaled still read
     { ...base, at: "2026-09-02T10:00:02.000Z", scope: "hop", outcome: "succeeded", hopId: "verify", hopKind: "check", connectedFolderId: folder.connectedFolder.id, checkRunId: "check-run-2", checkIds: ["check-12345678"], findingCount: 2, admittedCount: 2 },
     { ...base, at: "2026-09-02T10:00:03.000Z", scope: "run", outcome: "succeeded" },
   ];
-  // And as it wrote them while Connected Folder apps existed (removed 2026-11-07).
+  // And as it wrote them for a run a Connected Folder app caused.
   const appBase = { ...base, runId: "run-old-app" };
   lines.push(
     { ...appBase, at: "2026-09-03T10:00:00.000Z", scope: "run", outcome: "accepted", cause: { kind: "on-settled", source: { kind: "app-automation-run", connectedFolderId: folder.connectedFolder.id, appId: "collector", appAutomationId: "collect", runId: "app-run-1", outcome: "success" } } },

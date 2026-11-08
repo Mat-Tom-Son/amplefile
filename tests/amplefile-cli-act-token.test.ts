@@ -15,7 +15,7 @@ const token = "b".repeat(64);
 const rotated = "c".repeat(64);
 
 test("act token file writes atomically, rotates in place, and round-trips", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-act-token-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-act-token-test-"));
   try {
     await writeAmpleFileCliActTokenFile(sandbox, token, "AmpleFile Test");
     const path = ampleFileCliActTokenPath(sandbox);
@@ -41,7 +41,7 @@ test("act token file writes atomically, rotates in place, and round-trips", asyn
 });
 
 test("malformed or oversized token files read as absent", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-act-token-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-act-token-test-"));
   try {
     assert.equal(await readAmpleFileCliActTokenFile(sandbox), null);
     await writeAmpleFileCliActTokenFile(sandbox, token, "AmpleFile Test");

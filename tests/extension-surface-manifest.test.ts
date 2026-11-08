@@ -62,7 +62,7 @@ test("Extension surface manifests reject executable markup shapes and invalid bo
 });
 
 test("Surface discovery only reads a regular manifest beside a loaded Extension", async () => {
-  const root = await mkdtemp(join(tmpdir(), "workspace-surfaces-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-surfaces-"));
   try {
     const extensionDir = join(root, "inbox");
     await mkdir(extensionDir, { recursive: true });

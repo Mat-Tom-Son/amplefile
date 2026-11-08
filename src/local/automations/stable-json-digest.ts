@@ -4,8 +4,7 @@ import { createHash } from "node:crypto";
  * SHA-256 over a stable JSON form: object keys sorted, `undefined` fields
  * left out, non-finite numbers refused. Automation enablement pins this
  * digest and stored automations are re-verified against it on every load, so
- * its output must never change. (Moved from the retired Checks integrity
- * module on 2026-11-07, byte for byte.)
+ * its output must never change.
  */
 export function stableJsonDigest(value: unknown): string {
   return createHash("sha256").update(stableJson(value)).digest("hex");

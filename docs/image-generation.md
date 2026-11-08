@@ -16,12 +16,12 @@ Every session has a native `generate_image` tool
 - `shape`: `wide` (about 21:9, for a Connected Folder banner), `square`, or `tall`;
 - `model`: an optional `{ provider, id }` naming one connected image model.
 
-A path must stay inside the folder and outside `.amplefile`, `.pi`, `.git`,
-and `.workspace`. The model decides the format, and the file extension follows
-it (asking for `banner.png` and receiving a JPEG saves `banner.jpg`). Without a
-path the picture stays out of the folder; the older `temporary: true` option
-means the same. The result gives the picture's absolute file path (for example,
-to apply it as a banner), its dimensions, the model, and the cost when the
+A path must stay inside the folder and outside `.amplefile`, `.pi`, and
+`.git`. The model decides the format, and the file extension follows it
+(asking for `banner.png` and receiving a JPEG saves `banner.jpg`). Without a
+path the picture stays out of the folder; `temporary: true` means the same.
+The result gives the picture's absolute file path (for example, to apply it as
+a banner), its dimensions, the model, and the cost when the
 provider reports one. When the session's own model can see images, a small copy
 comes back too, so the Worker can check its work.
 
@@ -49,18 +49,18 @@ is. Hovering one offers:
 
 The routes are `GET /api/generated-images/:id` (the bytes) and
 `GET`/`POST /api/connected-folders/:connectedFolderId/generated-images/:id[/add]`.
-The AmpleFile agent's panel does not show pictures yet, so its tool keeps them
+The AmpleFile agent's popover does not show pictures, so its tool keeps them
 in temporary space and does not say they appear in the Chat.
 
 ## Models and providers
 
 The tool calls Pi's image API (`ModelRuntime.generateImages`), the same model
-registry and credentials as chat. Today Pi generates images through
+registry and credentials as chat. Pi generates images through
 OpenRouter, whose catalog lists dozens of image models (Google's Nano Banana
 line, OpenAI's GPT Image, FLUX, Recraft, Seedream, and more). Any provider that
 registers an image API with Pi and lists image models works the same way.
 
-Pi lists no image models for OpenAI or Google yet, so AmpleFile reaches them
+Pi lists no image models for OpenAI or Google, so AmpleFile reaches them
 directly (`src/local/agent/direct-image-models.ts`). It uses the API key Pi
 already holds for that provider (`ModelRuntime.getAuth`) and the same base URL
 as the provider's chat models, and never changes the provider's chat models.
@@ -102,8 +102,9 @@ turns an image file into the Connected Folder's banner. `--icon <name>` and
 `--color <#rrggbb>` change those parts the same way. Each named part replaces
 only itself, and the rest of the appearance stays. The image is read
 host-side, resized to fit 1600×640, and stored as the same bounded data URL the
-Customize dialog keeps for an upload. It is a receipted act with one-step
-`appearance undo`. See [Connected Folder customization](connected-folder-customization.md).
+appearance store keeps for an upload. It is a receipted act with one-step
+`appearance undo`. The file manager window does not draw banners; the banner
+stays part of the Connected Folder's saved appearance. See [Connected Folder customization](connected-folder-customization.md).
 
 ## Privacy
 

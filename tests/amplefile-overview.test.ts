@@ -64,7 +64,7 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
   assert.equal(first.running[3].headline, 'Automation "Weekly handoff" running');
 
   // Needs you: questions and due snoozes only, newest first. Nothing here is
-  // an approval (docs/receipts-not-gates.md, F24).
+  // an approval (docs/act-ledger.md).
   assert.deepEqual(first.needsYou.map((item) => item.id), [
     "chats:chat-s:due-snooze:2026-08-10T11:30:00.000Z",
     "agent-requests:req-wait:question:q-person",
@@ -106,7 +106,7 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
   assert.equal(first.changes[2].headline, "chat.rename failed");
   assert.equal(first.changes[3].headline, 'Automation "Weekly handoff" failed — 1/3 steps completed');
   assert.equal(first.changes[8].headline, '"Waiting" snoozed until 2026-08-10T11:30:00.000Z');
-  assert.equal("checks" in first, false, "Checks were removed (2026-11-07): the digest has no Check rows");
+  assert.equal("checks" in first, false, "AmpleFile has no Checks: the digest has no Check rows");
 
   // Seen markers pass through with sorted surface keys.
   assert.deepEqual(Object.keys(first.seen), ["popover", "remote:grant-1"]);
@@ -173,7 +173,8 @@ test("needs-you carries questions, request questions, and due snoozes only", asy
 test("a question addressed to the parent agent never becomes a needs-you item", async () => {
   // `chat ask --to parent` puts the asking request in state `waiting`, and a
   // waiting state maps to phase `needs_you` — but that question belongs to
-  // the parent's agent, not to the person (docs/amplefile-agent-overview.md, F24/F27).
+  // the parent's agent, not to the person: needs-you means the person's
+  // questions only (docs/amplefile-agent-overview.md).
   // The root is waiting for the same reason and must stay quiet too.
   const snapshot = await composeAmpleFileOverview({
     now: new Date(composedAtIso),
@@ -237,7 +238,7 @@ test("changes are bounded per kind and in total, newest first", async () => {
         endedAt: stamp(index),
       })),
       actReceipts: async () => indexes.map((index) => ({
-        v: 2 as const,
+        v: 3 as const,
         at: stamp(index),
         requestId: `req-${index}`,
         command: "chat.send",
@@ -448,7 +449,7 @@ test("chat records derive question, snooze, lifecycle, and rename semantics", as
 });
 
 test("tolerant automation-run reader derives runs and hop outcomes from the journal", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-overview-stores-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-overview-stores-"));
   try {
     const reader = createAmpleFileOverviewAutomationRunReader({ stateRoot: sandbox });
     assert.deepEqual(await reader(), [], "a missing journal renders absent");
@@ -501,7 +502,7 @@ function fullFixtureSources(): AmpleFileOverviewSourceReaders {
     settledTurns: async () => [
       { taskId: "task-old", connectedFolderId: "connected-folder-a", conversationId: "chat-q", outcome: "succeeded", endedAt: "2026-08-10T07:00:00.000Z" },
     ],
-    // Durable requests (F25): the AmpleFile agent's own requests plus Connected Folder–owned ones.
+    // Durable requests: the AmpleFile agent's own requests plus Connected Folder–owned ones.
     // A request is keyed by its id, which is stable across continuations.
     ampleFileAgentRequests: async () => [
       { requestId: "req-mgmt", kind: "agent", state: "working", taskId: "task-mgmt", conversationId: "mgmt-1", phase: "working", startedAt: "2026-08-10T10:59:00.000Z", endedAt: null, childTaskIds: ["task-child"], openQuestions: [], questionCount: 0, resultCount: 0 },
@@ -566,9 +567,9 @@ function fullFixtureSources(): AmpleFileOverviewSourceReaders {
       { checkpointId: "cp-2", createdAt: "2026-08-10T06:30:00.000Z", reason: "mutation", scope: "targeted" },
     ] : [],
     actReceipts: async (): Promise<AmpleFileCliActReceipt[]> => [
-      { v: 2, at: "2026-08-10T10:50:00.000Z", requestId: "req-1", command: "files.add", connectedFolderId: "connected-folder-gone", outcome: "ok", checkpointId: "cp-9" },
-      { v: 1, at: "2026-08-10T10:20:00.000Z", requestId: "req-2", command: "chat.rename", connectedFolderId: "connected-folder-a", outcome: "error", errorCode: "conflict" },
-      { v: 2, at: "2026-08-10T10:55:00.000Z", requestId: "req-3", command: "chat.send", outcome: "accepted" },
+      { v: 3, at: "2026-08-10T10:50:00.000Z", requestId: "req-1", command: "files.add", connectedFolderId: "connected-folder-gone", outcome: "ok", checkpointId: "cp-9" },
+      { v: 3, at: "2026-08-10T10:20:00.000Z", requestId: "req-2", command: "chat.rename", connectedFolderId: "connected-folder-a", outcome: "error", errorCode: "conflict" },
+      { v: 3, at: "2026-08-10T10:55:00.000Z", requestId: "req-3", command: "chat.send", outcome: "accepted" },
     ],
     automationRuns: async () => [
       { runId: "rr-1", automationId: "automation-1", title: "Weekly handoff", state: "running", startedAt: "2026-08-10T11:25:00.000Z", hops: [] },
@@ -617,9 +618,9 @@ test("the local API wires the overview's live-registry readers end to end", asyn
     detail: "publish.viewer.expose; source notes.md; publication pub-old",
     undoRef: { kind: "publicationId", value: "pub-old" },
   });
-  // Likewise what a build with Checks left behind (removed 2026-11-07): its
-  // machine-local Check state stays on disk unread, and its act receipts are
-  // ordinary ledger history.
+  // Likewise what an earlier build with Checks left behind: its machine-local
+  // Check state stays on disk unread, and its act receipts are ordinary
+  // ledger history.
   const oldCheckState = join(stateRoot, "checks", "connected-folders", "space-old-0123456789abcdef.json");
   await mkdir(join(stateRoot, "checks", "connected-folders"), { recursive: true });
   await writeFile(oldCheckState, "{\"schemaVersion\":1,\"declarations\":[]}", "utf8");

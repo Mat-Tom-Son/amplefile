@@ -220,9 +220,9 @@ test("a never-settling Pi abort cannot strand the accepted turn", async (t) => {
 
 test("routed extension UI bridge resolves host responses", async () => {
   const bridge = new RoutedPiExtensionUiBridge();
-  bridge.publish({ id: "editor-1", method: "setEditorText", text: "hello", conversationId: "conversation", connectedFolderRoot: "C:/workspace" });
-  bridge.publish({ id: "editor-2", method: "pasteToEditor", text: " world", conversationId: "conversation", connectedFolderRoot: "C:/workspace" });
-  assert.equal(bridge.getEditorText({ conversationId: "conversation", connectedFolderRoot: "C:/workspace" }), "hello world");
+  bridge.publish({ id: "editor-1", method: "setEditorText", text: "hello", conversationId: "conversation", connectedFolderRoot: "C:/connected-folder" });
+  bridge.publish({ id: "editor-2", method: "pasteToEditor", text: " world", conversationId: "conversation", connectedFolderRoot: "C:/connected-folder" });
+  assert.equal(bridge.getEditorText({ conversationId: "conversation", connectedFolderRoot: "C:/connected-folder" }), "hello world");
   const requestPromise = once(bridge, "request");
   const resultPromise = bridge.request({
     id: "request-1",
@@ -230,7 +230,7 @@ test("routed extension UI bridge resolves host responses", async () => {
     title: "Trust?",
     message: "Load project extensions?",
     conversationId: "conversation",
-    connectedFolderRoot: "C:/workspace",
+    connectedFolderRoot: "C:/connected-folder",
   });
   const [request] = await requestPromise as [PiExtensionUiRequest];
   assert.equal(request.id, "request-1");
@@ -242,10 +242,10 @@ test("routed extension UI bridge resolves host responses", async () => {
 });
 
 test("Anthropic-style ZIP skill bundles preserve complete skill directories", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "workspace-skill-import-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-skill-import-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "agent");
-  const connectedFolderRoot = join(root, "workspace");
+  const connectedFolderRoot = join(root, "connected-folder");
   await mkdir(connectedFolderRoot, { recursive: true });
   const provider: PiRuntimeProvider = {
     async resolveRuntime() {
@@ -274,10 +274,10 @@ test("Anthropic-style ZIP skill bundles preserve complete skill directories", as
 });
 
 test("standalone SKILL.md imports use the declared skill name", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "workspace-skill-markdown-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-skill-markdown-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "agent");
-  const connectedFolderRoot = join(root, "workspace");
+  const connectedFolderRoot = join(root, "connected-folder");
   await mkdir(connectedFolderRoot, { recursive: true });
   const provider: PiRuntimeProvider = { async resolveRuntime() { return { agentDir }; } };
   const bytes = new TextEncoder().encode("---\nname: personal-helper\ndescription: A personal helper\n---\n\nHelp carefully.\n");
@@ -288,10 +288,10 @@ test("standalone SKILL.md imports use the declared skill name", async (t) => {
 });
 
 test("project skill imports require an explicit trust decision", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "workspace-skill-trust-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-skill-trust-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "agent");
-  const connectedFolderRoot = join(root, "workspace");
+  const connectedFolderRoot = join(root, "connected-folder");
   await mkdir(connectedFolderRoot, { recursive: true });
   const provider: PiRuntimeProvider = { async resolveRuntime() { return { agentDir }; } };
   const bytes = new TextEncoder().encode("---\nname: trusted-helper\ndescription: A trusted helper\n---\n\nHelp carefully.\n");
@@ -306,10 +306,10 @@ test("project skill imports require an explicit trust decision", async (t) => {
 });
 
 test("project package lifecycle requires the same explicit trust decision as Skill import", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "workspace-package-trust-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-package-trust-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "agent");
-  const connectedFolderRoot = join(root, "workspace");
+  const connectedFolderRoot = join(root, "connected-folder");
   const packageRoot = join(root, "local-package");
   await mkdir(connectedFolderRoot, { recursive: true });
   await mkdir(packageRoot, { recursive: true });
@@ -333,10 +333,10 @@ test("project package lifecycle requires the same explicit trust decision as Ski
 });
 
 test("project capability mutation trust honors negative policy precedence", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "workspace-mutation-trust-precedence-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-mutation-trust-precedence-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "agent");
-  const connectedFolderRoot = join(root, "workspace");
+  const connectedFolderRoot = join(root, "connected-folder");
   await mkdir(connectedFolderRoot, { recursive: true });
   const trustStore = new ProjectTrustStore(agentDir);
 
@@ -363,13 +363,13 @@ test("project capability mutation trust honors negative policy precedence", asyn
 });
 
 test("native Pi host discovers trusted project extensions, skills, context, commands, and built-ins", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "workspace-native-pi-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-native-pi-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "agent");
-  const connectedFolderRoot = join(root, "workspace");
+  const connectedFolderRoot = join(root, "connected-folder");
   await mkdir(join(connectedFolderRoot, ".pi", "extensions"), { recursive: true });
   await mkdir(join(connectedFolderRoot, ".pi", "skills", "demo"), { recursive: true });
-  await writeFile(join(connectedFolderRoot, "AGENTS.md"), "# Workspace instructions\n", "utf8");
+  await writeFile(join(connectedFolderRoot, "AGENTS.md"), "# Folder instructions\n", "utf8");
   await writeFile(
     join(connectedFolderRoot, ".pi", "skills", "demo", "SKILL.md"),
     "---\nname: demo\ndescription: Demo skill\n---\nFollow the demo.\n",
@@ -506,10 +506,10 @@ test("generic provider finish errors retry from the safe point and retain the fi
   }));
   const port = (providerServer.address() as AddressInfo).port;
 
-  const root = await mkdtemp(join(tmpdir(), "workspace-provider-retry-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-provider-retry-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "agent");
-  const connectedFolderRoot = join(root, "workspace");
+  const connectedFolderRoot = join(root, "connected-folder");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
   await mkdir(connectedFolderRoot, { recursive: true });
   await writeFile(

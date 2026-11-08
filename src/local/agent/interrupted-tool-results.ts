@@ -12,9 +12,8 @@ import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
  *
  * This hook supplies that missing result itself, at the position Pi would,
  * with the truth: nothing was recorded, the call may have partly happened, and
- * its effects should be checked before running it again (Pi Durable's
- * "interrupted, not replayed" rule, 2026-10-27). Nothing is written to the
- * session and no tool is ever replayed.
+ * its effects should be checked before running it again. Nothing is written
+ * to the session and no tool is ever replayed.
  */
 
 export const interruptedToolResultText = "No result was recorded for this call: AmpleFile closed, or the turn was stopped, while it was running. It may have partly happened. Check its effects (for example, the files it was changing) before running it again.";

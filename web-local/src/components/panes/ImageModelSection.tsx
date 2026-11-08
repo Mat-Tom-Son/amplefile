@@ -17,7 +17,7 @@ export interface ImageModelSettings {
 const automaticEntry = { provider: "amplefile", id: "automatic" };
 
 /**
- * Settings → AI Models → Image model (2026-10-11): one machine-wide choice for
+ * Settings → AI Models → Image model: one machine-wide choice for
  * every Worker and the AmpleFile agent, saved as soon as it is picked. Its
  * data arrives with the AI Models load, so opening Settings costs no extra request.
  * Automatic follows AmpleFile's own preference among connected image models.

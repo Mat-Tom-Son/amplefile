@@ -487,8 +487,9 @@ test("the act facade drives file and search families with ledger safety rules", 
     await facade.historyRestore({ connectedFolder: connectedFolder.id, checkpointId: deletedEntry.safetyCheckpointId });
     assert.equal(await readFile(join(connectedFolder.connectedFolderRoot, "notes", "done.md"), "utf8"), "keep me");
 
-    // F20: a delete whose restore point cannot cover every matched file never
-    // refuses. The whole selected entry moves to Recently deleted, the
+    // Destruction stays reversible (docs/act-ledger.md): a delete whose restore
+    // point cannot cover every matched file never refuses. The whole selected
+    // entry moves to Recently Deleted, the
     // receipt's undo reference is that entry, and restoring it puts the
     // entry back byte for byte — links included.
     await mkdir(join(connectedFolder.connectedFolderRoot, "bulk"), { recursive: true });
@@ -793,7 +794,7 @@ test("the direct act path executes formerly gated verbs behind fences, receipts,
     // `connected-folders delete` runs the shared removal orchestration on the first
     // call: the folder is gone, the registration is gone, the result is the
     // effect, and no decision identity exists anywhere
-    // (docs/receipts-not-gates.md, F19).
+    // (docs/act-ledger.md).
     const deleted = await facade.connectedFoldersDelete({ connectedFolder: doomed.connectedFolder.id, requestId: "req-delete-1" });
     assert.equal(deleted.removed, true);
     assert.equal(deleted.storage, "managed");
@@ -1066,8 +1067,8 @@ test("automation enablement executes on one call with one request identity", asy
 
     // Automation enablement: `automations enable` normalizes the inert typed
     // proposal and executes the automation service's enablement at once, with
-    // the act's request id as the grant identity (docs/receipts-not-gates.md,
-    // F23). No holding area is ever written.
+    // the act's request id as the grant identity (docs/act-ledger.md).
+    // No holding area is ever written.
     const proposalPath = join(sandbox, "weekly.amplefile-automation.json");
     const oneTimeAt = new Date(Date.now() + 24 * 60 * 60_000).toISOString();
     await writeFile(proposalPath, JSON.stringify({
@@ -1235,7 +1236,7 @@ test("the act facade's status documents say what a task is waiting on, and a sta
     assert.equal(api.requests.get(asked.request.id)!.questionIds.length, 1);
     assert.equal(api.requests.get(asked.request.id)!.childRequestIds.length, 0);
 
-    // The management status names the F25 graph beside its shipped projection.
+    // The management status names the durable request graph beside its shipped projection.
     held.delete(connectedFolder.connectedFolder.id);
     const agent = await facade.agentSend({ content: "/hold" });
     const managed = await facade.agentTurnStatus({ taskId: agent.taskId });

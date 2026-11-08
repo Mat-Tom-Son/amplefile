@@ -53,9 +53,9 @@ async function rejectsRecentlyDeletedError(promise: Promise<unknown>, code: Ampl
 }
 
 /**
- * Plants an entry the way builds before Connected Folder apps were removed
- * (2026-11-07) kept app data, a Release, or App Studio history: a complete
- * manifest beside its payload file or folder.
+ * Plants an entry the way an earlier build kept Connected Folder app data, a
+ * Release, or App Studio history: a complete manifest beside its payload file
+ * or folder.
  */
 async function plantOldAppEntry(
   root: string,
@@ -553,37 +553,37 @@ test("entries older builds kept for Connected Folder apps still list, expire, an
   assert.deepEqual((await store.list()).entries.map((entry) => entry.id).sort(), [ids["app-storage"], ids["app-studio"]]);
 });
 
-test("retention purge erases only expired entries, holds legacy trees, and runs once per interval", async (t) => {
+test("retention purge erases only expired entries, keeps held entries, and runs once per interval", async (t) => {
   const root = await sandbox(t);
   let clock = new Date("2026-09-10T00:00:00.000Z");
   const store = await openStore(root, { now: () => clock });
   const connectedFolder = join(root, "connected-folder");
-  await mkdir(join(connectedFolder, "legacy", ".workspace"), { recursive: true });
-  await writeFile(join(connectedFolder, "legacy", ".workspace", "legacy.json"), "{}");
-  await writeFile(join(connectedFolder, "legacy", "work.txt"), "work");
+  await mkdir(join(connectedFolder, "kept"), { recursive: true });
+  await writeFile(join(connectedFolder, "kept", "work.txt"), "work");
   await writeFile(join(connectedFolder, "old.txt"), "old");
   await writeFile(join(connectedFolder, "new.txt"), "new");
 
-  const legacy = await store.moveTreeToRecentlyDeleted({ kind: "folder", reason: "files.delete", sourcePath: join(connectedFolder, "legacy"), connectedFolderId: "connected-folder-1", originalPath: "legacy", receiptId: null });
+  const kept = await store.moveTreeToRecentlyDeleted({ kind: "folder", reason: "files.delete", sourcePath: join(connectedFolder, "kept"), connectedFolderId: "connected-folder-1", originalPath: "kept", receiptId: null });
   const old = await store.moveTreeToRecentlyDeleted({ kind: "file", reason: "files.delete", sourcePath: join(connectedFolder, "old.txt"), connectedFolderId: "connected-folder-1", originalPath: "old.txt", receiptId: null });
   clock = new Date(clock.getTime() + 10 * DAY_MS);
   const fresh = await store.moveTreeToRecentlyDeleted({ kind: "file", reason: "files.delete", sourcePath: join(connectedFolder, "new.txt"), connectedFolderId: "connected-folder-1", originalPath: "new.txt", receiptId: null });
+  // An earlier walk could not list everything in this tree and held it.
+  const heldAt = clock.toISOString();
+  await writeManifest(kept.entryPath, { ...await readManifest(kept.entryPath), held: { reason: "unreadable", noticedAt: heldAt } });
 
   clock = new Date(Date.parse(old.restoreBy) + 1000);
   const first = await store.purgeExpiredIfDue();
   assert.ok(first);
-  assert.deepEqual(first, { purged: [old.id], held: [legacy.id], failed: [] });
+  assert.deepEqual(first, { purged: [old.id], held: [kept.id], failed: [] });
   assert.equal(existsSync(old.entryPath), false);
-  assert.ok(existsSync(join(legacy.payloadPath, ".workspace", "legacy.json")));
+  assert.ok(existsSync(join(kept.payloadPath, "work.txt")));
   assert.ok(existsSync(fresh.entryPath));
   assert.equal(store.lastPurgeAt(), clock.toISOString());
-  const heldManifest = await readManifest(legacy.entryPath);
-  assert.equal(heldManifest.held?.reason, "legacy-metadata");
-  assert.equal(heldManifest.held?.noticedAt, clock.toISOString());
+  assert.deepEqual((await readManifest(kept.entryPath)).held, { reason: "unreadable", noticedAt: heldAt });
 
-  const heldError = await rejectsRecentlyDeletedError(store.remove(legacy.id), "HELD", /earlier Workspace product/);
-  assert.equal(heldError.entryId, legacy.id);
-  assert.ok(existsSync(join(legacy.payloadPath, "work.txt")));
+  const heldError = await rejectsRecentlyDeletedError(store.remove(kept.id), "HELD", /could not look through everything/);
+  assert.equal(heldError.entryId, kept.id);
+  assert.ok(existsSync(join(kept.payloadPath, "work.txt")));
 
   // Not due again until a day has passed, even across a reopen.
   clock = new Date(clock.getTime() + 60 * 60 * 1000);
@@ -592,23 +592,69 @@ test("retention purge erases only expired entries, holds legacy trees, and runs 
   assert.equal(await reopened.purgeExpiredIfDue(), null);
   clock = new Date(Date.parse(fresh.restoreBy) + DAY_MS);
   const second = await reopened.purgeExpiredIfDue();
-  assert.deepEqual(second, { purged: [fresh.id], held: [legacy.id], failed: [] });
-  assert.deepEqual((await reopened.list()).entries.map((item) => item.id), [legacy.id]);
+  assert.deepEqual(second, { purged: [fresh.id], held: [kept.id], failed: [] });
+  assert.deepEqual((await reopened.list()).entries.map((item) => item.id), [kept.id]);
 
-  // "Delete Now" also fails closed on a legacy tree that no purge has looked at yet.
-  await mkdir(join(connectedFolder, "again", ".WORKSPACE"), { recursive: true });
-  const again = await reopened.moveTreeToRecentlyDeleted({ kind: "folder", reason: "files.delete", sourcePath: join(connectedFolder, "again"), connectedFolderId: "connected-folder-1", originalPath: "again", receiptId: null });
-  if (process.platform === "win32") {
-    await rejectsRecentlyDeletedError(reopened.remove(again.id), "HELD");
-  } else {
-    assert.deepEqual(await reopened.remove(again.id), { removed: true });
-  }
   await writeFile(join(connectedFolder, "plain.txt"), "plain");
   const plain = await reopened.moveTreeToRecentlyDeleted({ kind: "file", reason: "files.delete", sourcePath: join(connectedFolder, "plain.txt"), connectedFolderId: "connected-folder-1", originalPath: "plain.txt", receiptId: null });
   assert.deepEqual(await reopened.remove(plain.id), { removed: true });
   assert.equal(existsSync(plain.entryPath), false);
   assert.deepEqual(await reopened.remove(plain.id), { removed: false });
   await rejectsRecentlyDeletedError(reopened.purgeExpiredIfDue(-1), "INPUT_INVALID");
+});
+
+test("a tree the store cannot fully list is held by retention and by Delete now", async (t) => {
+  const restrictable = process.platform !== "win32" && typeof process.getuid === "function" && process.getuid() !== 0;
+  if (!restrictable) {
+    t.skip("needs a folder this user cannot list");
+    return;
+  }
+  const root = await sandbox(t);
+  let clock = new Date("2026-09-10T00:00:00.000Z");
+  const store = await openStore(root, { now: () => clock });
+  const connectedFolder = join(root, "connected-folder");
+  for (const name of ["expired", "deleted"]) {
+    await mkdir(join(connectedFolder, name, "locked"), { recursive: true });
+    await writeFile(join(connectedFolder, name, "work.txt"), "work");
+  }
+  const expired = await store.moveTreeToRecentlyDeleted({ kind: "folder", reason: "files.delete", sourcePath: join(connectedFolder, "expired"), connectedFolderId: "connected-folder-1", originalPath: "expired", receiptId: null });
+  const deleted = await store.moveTreeToRecentlyDeleted({ kind: "folder", reason: "files.delete", sourcePath: join(connectedFolder, "deleted"), connectedFolderId: "connected-folder-1", originalPath: "deleted", receiptId: null });
+  const locked = [join(expired.payloadPath, "locked"), join(deleted.payloadPath, "locked")];
+  try {
+    for (const path of locked) await chmod(path, 0o000);
+
+    const heldError = await rejectsRecentlyDeletedError(store.remove(deleted.id), "HELD", /could not look through everything/);
+    assert.equal(heldError.entryId, deleted.id);
+    assert.equal((await readManifest(deleted.entryPath)).held?.reason, "unreadable");
+
+    clock = new Date(Date.parse(expired.restoreBy) + 1000);
+    const purged = await store.purgeExpired();
+    assert.deepEqual(purged.purged, []);
+    assert.deepEqual([...purged.held].sort(), [expired.id, deleted.id].sort());
+    assert.deepEqual((await readManifest(expired.entryPath)).held, { reason: "unreadable", noticedAt: clock.toISOString() });
+    assert.ok(existsSync(join(expired.payloadPath, "work.txt")));
+    assert.ok(existsSync(join(deleted.payloadPath, "work.txt")));
+  } finally {
+    for (const path of locked) await chmod(path, 0o700).catch(() => undefined);
+  }
+});
+
+test("a hold reason this build does not record loads without its hold", async (t) => {
+  const root = await sandbox(t);
+  const store = await openStore(root);
+  const connectedFolder = join(root, "connected-folder");
+  await mkdir(join(connectedFolder, "kept"), { recursive: true });
+  await writeFile(join(connectedFolder, "kept", "work.txt"), "work");
+  const entry = await store.moveTreeToRecentlyDeleted({ kind: "folder", reason: "files.delete", sourcePath: join(connectedFolder, "kept"), connectedFolderId: "connected-folder-1", originalPath: "kept", receiptId: null });
+  // An earlier build could record this reason; it holds nothing now.
+  await writeManifest(entry.entryPath, { ...await readManifest(entry.entryPath), held: { reason: "legacy-metadata", noticedAt: entry.deletedAt } });
+
+  const listing = await store.list();
+  assert.deepEqual(listing.damaged, []);
+  assert.deepEqual(listing.entries.map((item) => item.id), [entry.id]);
+  assert.equal(listing.entries[0]!.held, undefined);
+  assert.deepEqual(await store.remove(entry.id), { removed: true });
+  assert.equal(existsSync(entry.entryPath), false);
 });
 
 test("a Connected Folder's folder travels with its History state and both come back", async (t) => {

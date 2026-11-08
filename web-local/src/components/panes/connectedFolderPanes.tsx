@@ -12,7 +12,7 @@ export interface HistoryRestorePreview {
   conflicts: string[];
 }
 
-// Saved labels predate the plain words; older ones still say "turn" or "Assistant".
+// Restore point titles in the plain words; older saved labels say "turn" or "Assistant".
 const restorePointTitles: Record<string, string> = {
   "Before turn": "Before a Worker reply",
   "After turn": "After a Worker reply",

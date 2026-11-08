@@ -380,7 +380,7 @@ textarea:focus { outline: none; }
 }
 .composer-thinking:disabled { opacity: 0.55; cursor: default; }
 
-/* The @ menu (2026-10-01): Connected Folder Workers in their nested order, above the box. */
+/* The @ menu: Connected Folder Workers in their nested order, above the box. */
 .composer-input { position: relative; }
 .popover-mention-menu {
   position: absolute;

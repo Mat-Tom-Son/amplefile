@@ -7,7 +7,7 @@ export interface NestableFolder {
 }
 
 /**
- * Connected Folders registered inside other Connected Folders (2026-10-01). The registry already
+ * Connected Folders registered inside other Connected Folders. The registry already
  * allows nesting and the host treats each child as separately owned (History,
  * Search, automations); these helpers give the renderer and the host one
  * shared reading of that shape so the switcher, Files, the composer, and the

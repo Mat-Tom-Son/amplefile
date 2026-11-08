@@ -164,20 +164,20 @@ export interface PiTurnContext {
   /** Exact host-owned Connected Folder registry at the start of this AmpleFile agent turn. */
   ampleFileAgentConnectedFolders?: Array<{ id: string; name: string; connectedFolderRoot: string; parentConnectedFolderId?: string }>;
   /**
-   * Workers the person addressed with @ in this message (2026-10-01),
+   * Workers the person addressed with @ in this message,
    * resolved by the host from the ids the composer sent. Either scope.
    */
   addressedFolders?: Array<{ connectedFolderId: string; name: string }>;
   /**
-   * Host-owned identity of this Connected Folder turn (docs/collaboration-contract.md,
-   * F26). Set only for Connected Folder scopes; the two AmpleFile agent fields above are set
+   * Host-owned identity of this Connected Folder turn (docs/collaboration-contract.md).
+   * Set only for Connected Folder scopes; the two AmpleFile agent fields above are set
    * only for the AmpleFile agent scope, so a context never carries both.
    */
   connectedFolderTurn?: PiConnectedFolderTurnContext;
   /** Set when an Automation's step sent this turn's message; nobody is watching it run. */
   automation?: { title: string };
   /**
-   * This Chat's background jobs (docs/background-jobs.md, F32): the running
+   * This Chat's background jobs (docs/background-jobs.md): the running
    * ones, and ones that finished since its last turn and are delivered here.
    */
   backgroundJobs?: Array<{ jobId: string; name: string; status: string; finished: boolean }>;
@@ -204,7 +204,7 @@ export interface PiConversationClientOptions {
   browser?: BrowserToolHost;
   /** This Chat's identity in the browser: it may close only the tabs it opened. */
   browserOwner?: string;
-  /** Where the `checklist` tool keeps its request's checklist (2026-10-18). */
+  /** Where the `checklist` tool keeps its request's checklist. */
   checklist?: ChecklistToolHost;
   collaboration?: CollaborationToolHost;
   worktrees?: WorktreeToolHost;
@@ -503,8 +503,8 @@ export class PiConversationClient extends EventEmitter {
   /**
    * Whether this idle Chat has grown close enough to Pi's own automatic
    * compaction point that summarizing it now, in the background, saves the
-   * next turn from waiting on it (Pi Durable's background compaction,
-   * 2026-10-27). Never true while a turn runs, before a session exists, or
+   * next turn from waiting on it. Never true while a turn runs, before a
+   * session exists, or
    * when the person turned Pi's automatic compaction off.
    */
   backgroundCompactionDue(ratio = backgroundCompactionRatio): boolean {
@@ -819,7 +819,7 @@ export class PiConversationClient extends EventEmitter {
           ...await sessionResourceOptions(options.cwd, runtime, this.options.role ?? "worker", () => this.turnIdentity
             ? { ...this.turnIdentity, ...(this.turnChecklist?.length ? { checklist: this.turnChecklist } : {}) }
             : null, recovery),
-          // Connected Folder instructions first, then the operations guide (F26), so the
+          // Connected Folder instructions first, then the operations guide, so the
           // person's own text keeps the position it always had.
           appendSystemPromptOverride: (base) => appendToolFeedbackGuide(appendConnectedFolderOperationsGuide(
             appendWorkerInstructions(base, runtime.config.workerInstructions),
@@ -1692,7 +1692,7 @@ async function sessionResourceOptions(
 
 /**
  * Copies a Chat's Pi session, as of its last finished reply, into a new
- * Chat's session file (2026-10-18, `chat copy`). The source is opened
+ * Chat's session file (`chat copy`). The source is opened
  * separately and never written: Pi's own branch extraction writes a new file
  * holding only the path from the first entry to that reply, which then
  * becomes the new Chat's stable session file. A turn still running in the
@@ -1741,7 +1741,7 @@ export function buildTurnContextMessage(context: PiTurnContext): string {
     // Identity before data: after the host's environment line, a Connected Folder turn reads its own ids first. The block
     // never names the registry or the parent's real task id; the only other
     // Connected Folders it names are the ones nested inside this one and the ones the
-    // person addressed with @ (collaboration contract, 2026-10-01 amendment).
+    // person addressed with @ (docs/collaboration-contract.md).
     const turn = context.connectedFolderTurn;
     lines.push(...connectedFolderTurnIdentityLines(turn));
     if (turn.history) {
@@ -1751,7 +1751,7 @@ export function buildTurnContextMessage(context: PiTurnContext): string {
     if (turn.answeredQuestionId) {
       // The answer arrives as ordinary message text and a request may hold
       // several open questions, so the host names which one this continues
-      // (docs/collaboration-contract.md, F27).
+      // (docs/collaboration-contract.md).
       lines.push(
         `This turn continues question ${turn.answeredQuestionId}: the message in this turn is that question's answer. Carry on the work that question stopped.`,
       );
@@ -1804,7 +1804,7 @@ export function buildTurnContextMessage(context: PiTurnContext): string {
   }
   if (context.ampleFileAgentTaskId) lines.push(...ampleFileAgentTaskLines(context.ampleFileAgentTaskId));
   if (context.automation) {
-    // An Automation step's turn (docs/automations.md, 2026-10-11): the message
+    // An Automation step's turn (docs/automations.md): the message
     // is the whole instruction, nobody reads the reply while it runs, and the
     // step's recorded outcome is the result this turn reports.
     lines.push(

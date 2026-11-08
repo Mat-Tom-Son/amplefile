@@ -39,7 +39,7 @@ const [
   readRenderer("components/file-manager/FileManagerView.tsx"),
 ]);
 
-test("the Library is retired from the desktop (2026-09-25)", () => {
+test("the desktop has no Library", () => {
   assert.doesNotMatch(connectedFolderChromeSource, /Your Library|onOpenLibrary/);
   assert.doesNotMatch(appSource, /LibraryPane|openLibrary\(|libraryTree|migrateLegacyLibraryMode/);
   assert.doesNotMatch(connectedFolderPanesSource, /export function LibraryPane|From Library/);
@@ -90,7 +90,7 @@ test("Skills & Extensions opens as a popup from the Add button", () => {
   assert.match(capabilitiesSource, /Included with AmpleFile/);
   assert.match(capabilitiesSource, /capabilities-scope-columns/);
   assert.doesNotMatch(capabilitiesSource, /All scopes|installedSort|Add to this folder|Add for everywhere/);
-  // Apps were removed (2026-11-07); Skills & Extensions never lists them.
+  // Skills & Extensions lists no apps.
   assert.doesNotMatch(capabilitiesSource, /RestrictedAppsSection|restrictedApps|"Apps"/);
   // Catalog listings keep provenance readable in text, including its limit.
   assert.doesNotMatch(capabilitiesSource, /capabilities-external-host|"GitHub"|capabilities-official-badge/);
@@ -221,13 +221,13 @@ test("Connected Folder customization is visible, compact, and separate from stru
   assert.match(foundationCss, /--amplefile-font-size:\s*15px/, "the canonical sheet supplies a fallback; the appearance resolver owns the selected size");
   assert.match(foundationCss, /\.composer textarea:focus-visible\s*\{[\s\S]*?outline:\s*0/, "the connected-folder-colored composer shell must own the visible focus treatment");
   assert.doesNotMatch(desktopSettingsSource, /from\s+["']lucide-react["']/, "Settings uses Fluent icons only");
-  assert.doesNotMatch(desktopSettingsSource, /id: "apps"|SettingsAppsPane/, "Settings has no Apps page (apps removed 2026-11-07)");
+  assert.doesNotMatch(desktopSettingsSource, /id: "apps"|SettingsAppsPane/, "Settings has no Apps page");
   assert.match(desktopSettingsSource, /from\s+["']@fluentui\/react-icons["']/);
 });
 
 test("the appearance preview mirrors the Connected Folder header rather than the active surface", () => {
   // Compact, Band and Cover lead with the icon tile; every layout shows the Connected Folder's own name.
-  // The preview renders the header's own title component (2026-11-05).
+  // The preview renders the header's own title component.
   assert.match(connectedFolderBannerPreviewSource, /connected-folder-appearance-preview-copy"><ConnectedFolderBannerTitle identity=\{identity\} name=\{name\} \/><\/span>/);
   assert.doesNotMatch(connectedFolderChromeSource, /connected-folder-appearance-preview-copy"><strong>Files<\/strong>/);
   assert.match(customizationCss, /\.connected-folder-appearance-preview\s*\{[\s\S]*?min-height:\s*112px;/);

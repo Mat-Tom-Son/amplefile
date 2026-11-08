@@ -33,7 +33,7 @@ test("typography ships the brand font everywhere and omits the Windows-only Sego
   ]);
   assert.equal(typographyFontForPlatform("stable", "darwin"), "default");
   assert.equal(typographyFontForPlatform("stable", "win32"), "stable");
-  // Inter is bundled, so the default stack no longer forks per platform.
+  // Inter is bundled, so the default stack does not fork per platform.
   assert.match(styles, /--amplefile-font-family-default:\s*"Inter Variable"/);
   assert.doesNotMatch(styles, /:root\[data-platform="darwin"\][\s\S]{0,200}--amplefile-font-family-default/);
   assert.match(settings, /"Device Setting"/);

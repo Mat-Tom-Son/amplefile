@@ -218,7 +218,7 @@ function ConnectedFolderAppearancePanel({
       {proposalImportError ? <div className="connected-folder-appearance-import-error" role="alert">{proposalImportError}</div> : null}
       {preview ?? <ConnectedFolderBannerPreview identity={identity} name={connectedFolder.name} onFrame={(bannerFraming) => onCustomizeConnectedFolder(connectedFolderId, { bannerFraming })} />}
       {!appearancePasses ? <div className="connected-folder-appearance-audit warning" role="status"><Warning20Regular aria-hidden="true" /><span>Choose a higher-contrast accent.</span></div> : null}
-      {/* One page with a section each (2026-11-05); the previews above stay in view. */}
+      {/* One page with a section each; the previews above stay in view. */}
       <div className="connected-folder-appearance-sections">
         <section className="connected-folder-appearance-section" id="folder-appearance-section-icon" aria-labelledby="folder-appearance-heading-icon">
           <h3 id="folder-appearance-heading-icon">Icon</h3>

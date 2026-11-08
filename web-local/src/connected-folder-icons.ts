@@ -863,9 +863,9 @@ export function connectedFolderIconOptionFor(iconName: string | null | undefined
 }
 
 /**
- * The catalog entry an icon name or alias names, or null when it names none.
- * Contributed rail entries use this so an unknown name falls back to their own
- * generic glyph rather than to the first catalog entry (a folder).
+ * The catalog entry an icon name or alias names, or null when it names none,
+ * so a caller can fall back to its own glyph rather than to the first catalog
+ * entry (a folder).
  */
 export function knownConnectedFolderIconOption(iconName: string | null | undefined): ConnectedFolderIconOption | null {
   const normalizedIconName = iconName?.trim().toLowerCase();

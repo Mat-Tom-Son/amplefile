@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -39,37 +39,6 @@ test("Model preferences follow portable Connected Folder ids and keep the AmpleF
   await store.setInstructions(movedConnectedFolderRoot, "");
   assert.deepEqual(await store.get(firstConnectedFolderRoot), { provider: "openrouter", id: "connected-folder-model" });
   assert.equal(await store.getInstructions(firstConnectedFolderRoot), "");
-});
-
-test("agent preference v1 files migrate on the next write without losing the model", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "amplefile-model-preferences-v1-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const connectedFolderRoot = join(root, "connected-folder");
-  const filePath = join(root, "model-preferences.json");
-  await mkdir(join(connectedFolderRoot, ".amplefile"), { recursive: true });
-  await writeFile(join(connectedFolderRoot, ".amplefile", "connected-folder.json"), JSON.stringify({ id: "portable-connected-folder-id" }));
-  await writeFile(filePath, JSON.stringify({
-    version: 1,
-    scopes: {
-      "connected-folder:portable-connected-folder-id": {
-        provider: "openrouter",
-        id: "legacy-model",
-        updatedAt: "2026-08-31T12:00:00.000Z",
-      },
-    },
-  }));
-
-  const store = new ModelPreferenceStore({ filePath });
-  assert.deepEqual(await store.get(connectedFolderRoot), { provider: "openrouter", id: "legacy-model" });
-  await store.setInstructions(connectedFolderRoot, "Preserve the existing model.");
-
-  const persisted = JSON.parse(await readFile(filePath, "utf8")) as {
-    version: number;
-    scopes: Record<string, { model?: PiPreferredModel; instructions?: string }>;
-  };
-  assert.equal(persisted.version, 2);
-  assert.deepEqual(persisted.scopes["connected-folder:portable-connected-folder-id"]?.model, { provider: "openrouter", id: "legacy-model" });
-  assert.equal(persisted.scopes["connected-folder:portable-connected-folder-id"]?.instructions, "Preserve the existing model.");
 });
 
 test("Connected Folder instructions append after the app-owned prompt and leave other scopes untouched", () => {

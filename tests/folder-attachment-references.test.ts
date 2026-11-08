@@ -39,7 +39,7 @@ test("staging rejects unavailable files and unsafe paths; a later deletion remai
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "Notes"));
   await assert.rejects(previewConversationContextReference(root, { path: "missing.txt" }), /File not found/);
-  // A folder is a path-only reference (the file manager's "Work on this folder", 2026-11-06).
+  // A folder is a path-only reference (the file manager's "Work on this folder").
   const folder = await previewConversationContextReference(root, { path: "Notes" });
   assert.equal(folder.sourceKind, "folder");
   assert.equal(folder.mode, "path_only_reference");

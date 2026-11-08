@@ -24,7 +24,7 @@ import { outsideAgentSkill } from "../src/shared/outside-agent-skill.js";
 import { productIdentity } from "../src/shared/product-identity.js";
 
 /**
- * Settings → Command Line (owner request, 2026-11-07): the command on the
+ * Settings → Command Line: the command on the
  * Terminal's PATH through /etc/paths.d, and the skill in other agents'
  * skills folders. Tests stand in a temporary folder for /etc/paths.d and run
  * the administrator command as an ordinary shell.

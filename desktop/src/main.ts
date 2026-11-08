@@ -989,7 +989,7 @@ function registerIpc(): void {
     window.previewFile(filePath, basename(filePath));
     return true;
   });
-  // Copy and paste with Finder (2026-11-07): files copied in Finder paste into the file manager, and
+  // Copy and paste with Finder: files copied in Finder paste into the file manager, and
   // files copied here paste into Finder, through the system's file pasteboard.
   // Paste reads the pasteboard here, never in the window (the window can't read the clipboard): what was
   // copied in this window pastes by place (so ⌥⌘V can move it); anything else Finder copied is copied in.
@@ -1930,7 +1930,7 @@ async function registeredConnectedFolderIdForOpenPath(path: string): Promise<str
       }
     }
   } catch {
-    // Finder may pass a path that moved before work-fold was ready.
+    // Finder may pass a path that moved before AmpleFile was ready.
   }
   return null;
 }

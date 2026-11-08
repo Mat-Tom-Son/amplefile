@@ -3,8 +3,8 @@ import test from "node:test";
 
 import { QueuedMessageSync } from "../web-local/src/lib/queued-message-sync.js";
 
-// A window's queued message against the app's numbered copy (2026-10-27).
-// The sequences below are the two the PR #94 review reproduced in a renderer.
+// A window's queued message against the app's numbered copy. The sequences
+// below are two a renderer can produce.
 
 test("an echo of an older write never erases text added after it", () => {
   const sync = new QueuedMessageSync();

@@ -18,11 +18,11 @@ import {
  * lane-neutral v1 response contract so shims and the broker keep exactly one
  * response and error path. Version 3 advanced when the verbs that install
  * code, widen a power, or destroy data stopped returning a pending decision
- * and started returning their receipted result (docs/receipts-not-gates.md);
+ * and started returning their receipted result (docs/act-ledger.md);
  * an older shim is refused with the typed version error instead of receiving
  * a silently different result.
  *
- * The collaboration verbs (docs/collaboration-contract.md, F27/F28) do not
+ * The collaboration verbs (docs/collaboration-contract.md) do not
  * advance it, and that is deliberate rather than an oversight: adding
  * `chat report|ask|answer|handoff` and the `requests` family changes the
  * meaning of no existing response, so an older shim running a newer host

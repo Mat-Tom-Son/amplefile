@@ -13,7 +13,7 @@ import {
 
 /**
  * Saved folder snapshots for folder-change automations that declare
- * `"ifMissed": "run"` (docs/automations.md, 2026-10-11 amendment).
+ * `"ifMissed": "run"` (docs/automations.md).
  *
  * Machine-local application state beside the automation store, never inside a
  * Connected Folder: one file per automation holding the metadata the observer

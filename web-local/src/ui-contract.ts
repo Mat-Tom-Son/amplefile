@@ -1,7 +1,7 @@
 
 
 /**
- * Settings → Recently Deleted (docs/receipts-not-gates.md, F20).
+ * Settings → Recently Deleted (docs/act-ledger.md).
  * Nothing AmpleFile deletes is gone at the moment it happens: History covers
  * what it can, and this is where the rest waits.
  */
@@ -16,17 +16,17 @@ export const recentlyDeletedSettings = {
   retentionSaved: "Saved",
   retentionRange: "Choose between 1 and 365 days.",
   empty: "Nothing here.",
-  heldNote: "Held: contains legacy Workspace records. Cannot be deleted here.",
+  heldNote: "Held: AmpleFile could not read all of it. Cannot be deleted here.",
   damagedNote: "Some items could not be read.",
   previewDisabled: "Changing Recently Deleted is disabled in the preview",
 } as const;
 
 /**
- * Deleting a folder from Files (docs/receipts-not-gates.md, F20). The confirm
+ * Deleting a folder from Files (docs/act-ledger.md). The confirm
  * is the one moment the person decides, so it states what actually happens:
  * History keeps what it can, whatever History cannot keep moves into Recently
  * Deleted, and both are recoverable. The word "removed" without that is a
- * promise of finality the product no longer makes.
+ * promise of finality the product does not make.
  */
 export const deleteFolderConfirm = {
   title: (name: string) => `Delete ${name}?`,
@@ -42,7 +42,7 @@ export const deleteSelectionConfirm = {
 } as const;
 
 /**
- * Settings → Automations → Limits (docs/receipts-not-gates.md, F19 principle 6).
+ * Settings → Automations → Limits (docs/act-ledger.md).
  * Bounds are defaults, not gates: they exist so a runaway stops and so
  * envelopes stay sane. Every message that names a limit names this section,
  * so every number a request, job, or automation can hit has a row here. The numbers are
@@ -64,11 +64,9 @@ export const ampleFileLimitsSettings = {
 } as const;
 
 /**
- * A Connected Folder's own Automations tab (docs/automations.md, F15 as amended
- * 2026-09-24): a read-mostly window onto the automations whose trigger or
- * steps name this Connected Folder. Settings → Automations stays the place to manage
- * them; the rail entry exists only while at least one automation touches the
- * Connected Folder.
+ * One Connected Folder's view of its Automations (docs/automations.md): a
+ * read-mostly window onto the automations whose trigger or steps name this
+ * Connected Folder. Settings → Automations stays the place to manage them.
  */
 export const folderAutomations = {
   rail: "Automations",

@@ -8,9 +8,9 @@ interface HastNode {
 /**
  * A Markdown hard line break (two spaces or a backslash before a newline)
  * becomes `<br>` followed by the newline itself. Chat paragraphs keep newlines
- * visible (`white-space: pre-wrap`), so that leftover newline drew a blank line
- * after every hard break, double-spacing dialogue, verse, and addresses. This
- * rehype plugin drops the newline so each break is one line (2026-10-27).
+ * visible (`white-space: pre-wrap`), so that leftover newline would draw a
+ * blank line after every hard break, double-spacing dialogue, verse, and
+ * addresses. This rehype plugin drops the newline so each break is one line.
  */
 export function rehypeSingleLineBreaks() {
   return (tree: HastNode) => {

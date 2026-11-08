@@ -6,9 +6,9 @@ import { CapabilitiesPane } from "../panes/CapabilitiesPane";
 import type { AgentCatalog, AgentStatus, SkillsExtensionsView, ConnectedFolderSummary } from "../../types";
 
 /**
- * Skills & Extensions as a popup like Settings (2026-09-25). The rail's Add
- * button opens it for the Connected Folder that was active, and "This Connected Folder only"
- * keeps meaning that Connected Folder for as long as the popup is open.
+ * Skills & Extensions as a popup like Settings. It opens for one Connected
+ * Folder, and "This Connected Folder only" keeps meaning that Connected Folder
+ * for as long as the popup is open.
  */
 export function SkillsExtensionsModal({ connectedFolder, status, initialView, fixtureMode = false, onError, onCatalogChanged, onClose }: {
   connectedFolder: ConnectedFolderSummary;

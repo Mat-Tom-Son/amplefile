@@ -15,7 +15,7 @@ import { startLocalApi } from "../src/local/server.js";
 import { listPendingConnectedFolderRemovals, scanConnectedFolderTree } from "../src/local/connected-folder.js";
 
 /**
- * Connected Folders inside Connected Folders on the host (2026-10-01): the CLI and routes the
+ * Connected Folders inside Connected Folders on the host: the CLI and routes the
  * AmpleFile agent and the renderer read, and the boundary a parent Connected Folder's
  * file operations stop at.
  */

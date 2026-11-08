@@ -31,7 +31,7 @@
 .included-mcp-form summary { cursor: default; }
 .included-mcp-auth { padding: 8px 0; }
 
-/* Computer Control's permission checklist and Chrome's two steps (2026-10-11). */
+/* Computer Control's permission checklist and Chrome's two steps. */
 .setup-checklist { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 8px; }
 .setup-checklist li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface); }
 .setup-checklist li > svg { color: var(--ui-text-subtle); }
@@ -51,7 +51,7 @@
 .setup-step-mark { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--ui-border-strong); color: var(--ui-text-muted); font-size: var(--amplefile-type-xs); font-weight: 700; }
 .setup-steps li.done .setup-step-mark { color: var(--ui-surface); background: var(--ui-success); border-color: var(--ui-success); }
 
-/* Documents: the programs that let a Worker check its documents (2026-10-18). */
+/* Documents: the programs that let a Worker check its documents. */
 .setup-checklist .setup-checklist-state.problem { color: var(--ui-attention); }
 .setup-command { display: grid; gap: 4px; margin-top: 8px; font-size: var(--amplefile-type-sm); }
 .setup-command-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }

@@ -1,212 +1,176 @@
 # Document verification
 
-Design note, 2026-10-18. Approved by Mat on 2026-10-18: the tile says **Setup Needed** when LibreOffice is missing, and Set up guides the install without running it. The [evaluation](document-verification-evaluation.md) records how Workers did with and without the engines.
+A Worker that makes a Word report, a slide deck, or a budget workbook looks at
+the result before it says the work is done: it sees the pages, reads the
+formula results, and fixes what is wrong. This page covers how the Documents
+tool reports whether it can do that, how a person sets it up, and what the
+Skill teaches.
 
-A Worker that makes a Word report, a slide deck, or a budget workbook should
-look at the result before it says the work is done: see the pages, read the
-formula results, fix what is wrong. This note covers how the Documents tool
-reports whether it can do that, how a person sets it up, and what the Skill
-teaches.
-
-## What happens today
-
-- **Detection.** `document_engine status` looks for executable files only and
-  starts nothing. LibreOffice is searched on `PATH`,
-  `/Applications/LibreOffice.app`, `/opt/homebrew/bin`, and `/usr/local/bin`;
-  Tesseract on `PATH`, `/opt/homebrew/bin`, and `/usr/local/bin`. A missing
-  engine returns one setup sentence.
-- **Strip.** Documents shows **Not Checked** until someone presses Check or a
-  Worker runs `document_run`, then **Ready**. That check covers only the
-  bundled libraries. The engines appear nowhere in the strip or the details.
-  So a Mac without LibreOffice shows **Ready** while its Worker cannot see a
-  Word or PowerPoint file or calculate a formula.
-- **Set up.** Documents supports only `check`. Its details dialog is the
-  generic one: a status word and a Check button.
-- **Skill.** It describes the engines as optional, says the tool "does not
-  install programs", and describes inspection without making it a habit. It
-  says nothing about what to report when a check was not possible.
-
-Without LibreOffice, a typical Mac gives a Worker:
+Without an installed engine, the bundled libraries give a Worker:
 
 | File | Can it see the result? |
 | --- | --- |
 | PDF | Yes: pages render to images with the bundled renderer. |
-| Word, PowerPoint | No. Only the file structure (ZIP parts, text). |
+| Word, PowerPoint | Only the file structure (ZIP parts, text), plus a Quick Look preview of one page or slide at a time on a Mac. |
 | Excel | No calculated values. ExcelJS writes the formula and whatever cached result the script supplied. |
 
-## Proposal
+LibreOffice renders Word and PowerPoint files and recalculates workbooks.
+Tesseract reads text in scanned page images. AmpleFile bundles and installs
+neither.
 
-### 1. Status
+## Detection
 
-- Every status refresh also looks for the engines with the same file checks,
-  so nothing is launched. The status carries a `documentsSetup` record with
-  each engine's path and, after a Check, its version or start problem.
-- The status word:
-  - **Ready**: the bundled libraries passed their check (or a Worker's
-    `document_run` proved them) and LibreOffice is found.
-  - **Not Checked**: LibreOffice is found but the bundled libraries have not
-    been checked yet on this run of the app.
-  - **Setup Needed**: LibreOffice is not found. The detail reads: "Your Worker
-    can make documents but can't check how Word and PowerPoint files look or
-    what spreadsheet formulas calculate. Install LibreOffice to turn that on."
-  - **Unavailable**: only when the bundled libraries fail their check.
-  - Tesseract never changes the word. It reads scanned pages only, so it is an
-    optional row in the details.
-- **Check** stays explicit. It runs the bundled-library probe and
-  `--version` on each engine it finds, so an install that is blocked or broken
-  shows as such, and it records the version.
-- More places to look, because an app opened from the Finder gets a short
-  `PATH`: `~/Applications/LibreOffice.app`, MacPorts (`/opt/local/bin`), and
-  the usual Linux and Windows install folders.
+`document_engine status` and every Documents status read look for executable
+files only and start nothing (`resources/included-tools/readiness.ts`). They
+search `PATH`, `/Applications/LibreOffice.app`, `~/Applications/LibreOffice.app`,
+Homebrew (`/opt/homebrew/bin`, `/usr/local/bin`), and MacPorts (`/opt/local/bin`),
+because an app opened from the Finder gets a short `PATH`. A host's
+`documentEngineSearch` reaches both the tool and the status, so they look in
+the same places.
 
-### 2. Set up, in the Documents details
+**Check** stays explicit. It runs the bundled-library probe and `--version` on
+each engine it finds, so an install that is blocked or broken shows as such,
+and it records the version or the start problem for that exact path.
 
-A two-row checklist in the style of Computer Control. As built, the rows read
-"LibreOffice lets your Worker see Word and PowerPoint pages and calculate
-spreadsheet formulas" with **Download**, and "Tesseract (optional) lets your
-Worker read the text in scanned pages" with **Install guide**:
+## Status
 
-1. **Check layout and formulas: LibreOffice.** Free and open source, about
-   800 MB. **Download LibreOffice** opens the official download page
-   (libreoffice.org) in the browser. When Homebrew is present, a second line
-   shows `brew install --cask libreoffice` with **Copy**. Hint: "After
-   installing, open LibreOffice once so macOS can approve it."
-2. **Read scanned pages: Tesseract (optional).** Tesseract has no official
-   Mac installer; its own install guide points to Homebrew or MacPorts. Show
-   `brew install tesseract` with **Copy** and a link to that guide. Linux shows
-   the `apt` command, and Windows links the installer named in the same
-   guide.
+The Documents tile in the **Included with AmpleFile** strip shows one word:
+
+- **Ready**: the bundled libraries passed their check (or a Worker's
+  `document_run` proved them) and LibreOffice is found and starts.
+- **Not Checked**: LibreOffice is found but the bundled libraries have not been
+  checked yet in this run of the app.
+- **Setup Needed**: LibreOffice is not found, or it is found but did not start.
+  Without it, the detail reads: "Your Worker can make documents but can't check
+  how Word and PowerPoint files look or what spreadsheet formulas calculate.
+  Install LibreOffice to turn that on." On a Mac where Quick Look works, it
+  reads: "Your Worker can preview the first page of a Word file and each slide
+  of a deck, but can't check every page or what spreadsheet formulas calculate.
+  Install LibreOffice to turn that on." When LibreOffice did not start on a
+  Mac, the detail says to open it once from Applications so macOS can approve
+  it, then check again.
+- **Unavailable**: only when the bundled libraries fail their check.
+
+Tesseract never changes the word. It reads scanned pages only, so it is an
+optional row in the details.
+
+## Set Up
+
+The Documents details show a two-row checklist:
+
+1. **LibreOffice** "lets your Worker see Word and PowerPoint pages and
+   calculate spreadsheet formulas", with **Download**, which opens the official
+   download page (libreoffice.org) in the browser.
+2. **Tesseract** "(optional) lets your Worker read the text in scanned pages",
+   with **Install Guide**, which opens Tesseract's own guide.
+
+When Homebrew is present, a missing row also shows its command
+(`brew install --cask libreoffice` or `brew install tesseract`) with **Copy**.
+Under the list, a hint says both are free and, on a Mac without LibreOffice,
+to open it once after installing so macOS can approve it.
 
 While the details are open, the dialog's ordinary status refresh (every five
 seconds and whenever the window regains focus) runs the same file checks, so
-each row ticks off soon after the engine appears, with no ten-minute limit
-and no extra watcher. **Check** stays available. An installed engine's path
-and version sit in the tooltip of its **Installed** label. AmpleFile itself
-installs nothing: it opens the official page or shows a command the person
-runs. Nothing is bundled.
+each row ticks off soon after the engine appears, with no extra watcher. An
+installed engine's path and version sit in the tooltip of its **Installed**
+label; one that did not start says **Didn't Start** with the problem. AmpleFile
+itself installs nothing: it opens the official page or shows a command the
+person runs.
 
-### 3. The Skill
+## The Skill
+
+The Documents tool's Skill
+([document-work Skill](../resources/included-tools/documents/skills/documents/SKILL.md))
+makes checking a habit:
 
 - **Verify by default.** After making or changing a document, check it before
   reporting:
   - Excel: recalculate a copy, reopen it, compare the key values with what the
     numbers should be, and look for error values (`#REF!`, `#DIV/0!`,
-    `#NAME?`, `#VALUE!`).
+    `#NAME?`, `#VALUE!`, `#N/A`). ExcelJS reads a calculated 0 as no result, so
+    such a cell is confirmed from the sheet XML. The calculated values are
+    written back as each formula's cached result.
   - Word and PowerPoint: render to PDF, render the pages to images, look at
-    them, and fix clipped or overflowing text, broken tables, and wrong page
-    or slide counts. Re-render after a fix.
+    them, and fix clipped or overflowing text, broken tables, and wrong page or
+    slide counts. Re-render after a fix.
   - PDF: render the pages directly.
+  - Look closely: render at `scale: 2` or crop a region, so small text can be
+    read.
   - Review copies go in `.worker/<task-id>/`, never beside the deliverable.
-- **Without an engine,** still run the structural checks (reopen the
-  workbook, check formula references, estimate whether text fits its box),
-  then say exactly what could not be checked, for example "I couldn't see
-  how the slides look." Point to Skills & Extensions → Documents → Set Up.
+- **Write documents that render well.** In `docx`, a font size is in
+  half-points, and tables get explicit column widths wide enough for their
+  longest word or number.
+- **Without an engine,** still run the structural checks (reopen the workbook,
+  check formula references, estimate whether text fits its box and whether a
+  table column is wide enough), then say exactly what could not be checked.
   Never claim a visual check or a calculated value that did not happen.
-- **The report** includes one line on what was checked and how.
-- Keep the honest wording on Calc vs Excel differences.
-- Added after the evaluation:
-  - the `docx` half-point font unit and explicit table column widths;
-  - a zoomed look (`scale: 2` or a cropped region), because one Worker
-    rendered a page and still missed 5 pt text;
-  - the ExcelJS quirk that reads a calculated 0 as no result;
-  - a closing Set Up sentence for every file type;
-  - without engines, a column-width estimate for Word tables, because split
-    words were the fault seen most often on pages nobody looked at.
+- **On a Mac without LibreOffice,** preview page 1 of every Word file and every
+  slide of a deck with Quick Look, look at them, fix, and preview again. To see
+  a later part of a Word document, build a review copy that starts with that
+  part. Never reshape the deliverable to suit the preview.
+- **The report** includes one line on what was checked and how, and, when
+  something could not be checked, ends by pointing to **Skills & Extensions →
+  Documents → Set Up** — even when a preview showed the whole file.
 - **Installing on request only.** If the person asks the Worker to install
-  LibreOffice or Tesseract, it may run the same command Set up shows, visibly
+  LibreOffice or Tesseract, it may run the same command Set Up shows, visibly
   in the Chat. It never installs anything unasked.
 
-### 4. Evaluation
+## Quick Look preview
 
-- Three seeded tasks, each with a checker script kept outside the Worker's
-  folder and context:
-  - a budget workbook with formulas and a cross-sheet total;
-  - a slide deck whose dense slide overflows unless the Worker fixes it;
-  - a Word report with a wide table.
-- Two conditions, run through `npm run amplefile:drive` with the same model:
-  - engines visible;
-  - engines hidden by a macOS `sandbox-exec` profile, so the Worker's shell
-    cannot find them either.
-- Scoring: is the output correct by the hidden checks, did the Worker
-  actually verify it, and is its final report honest?
+On macOS, `document_engine` has a `preview` operation that draws a DOCX or
+PPTX as a PNG with Quick Look (`/usr/bin/qlmanage -t`), which is built into
+macOS and needs nothing installed. `status` lists Quick Look as an engine with
+the operation `preview`.
 
-## Out of scope (possible follow-ups)
+- A preview is page 1 of a Word file, or any one slide of a deck: for a slide
+  other than the first, the tool makes a private copy with that slide moved to
+  the front. The source file is never changed. A Word document has no such
+  order, so only page 1 can be drawn.
+- Otherwise it works like `render`: it captures a private copy, reports source
+  and output hashes and the Quick Look version, keeps a log, and supports Stop.
+- Quick Look never finishes on a file it cannot draw, so `preview` has a
+  60-second default deadline (`timeoutMs` overrides it). When no image
+  appears, it says: "Quick Look couldn't draw this file. It may be damaged, or
+  a kind Quick Look doesn't know."
+- Workbooks are not previewed: their thumbnails crop the sheet and show cached
+  values only. Fonts are substituted differently from Word, as with
+  LibreOffice.
 
-- A bundled, MIT-licensed JavaScript formula evaluator for formula checks
-  without LibreOffice.
+## Rerunning the evaluation
+
+`scripts/document-eval/` measures how Workers do on three seeded tasks — a
+budget workbook with formulas and a cross-sheet total, a slide deck whose dense
+slide overflows unless the Worker fixes it, and a Word report with a wide
+table — each scored by a checker kept outside the Worker's folder and context.
+Each run makes a disposable Connected Folder and drives one real Worker turn
+through `npm run amplefile:drive`.
+
+The conditions are `engines` (LibreOffice and Tesseract visible),
+`no-engines` (the host runs under a macOS `sandbox-exec` profile, so neither
+it nor any tool it starts can find them), and `no-libreoffice` (both hidden
+from the tools and the shell's `PATH`, while Quick Look stays available). The
+OpenRouter key is read from Pi's `auth.json` into the host's environment only;
+it is never printed or written.
+
+```bash
+npx tsx scripts/document-eval/run.ts --condition engines --repeat 2 --out /tmp/document-eval/engines
+npx tsx scripts/document-eval/run.ts --condition no-engines --repeat 2 --out /tmp/document-eval/no-engines
+npx tsx scripts/document-eval/run.ts --condition no-libreoffice --tasks report,deck --repeat 3 --out /tmp/document-eval/no-libreoffice
+npx tsx scripts/document-eval/score.ts /tmp/document-eval engines no-engines no-libreoffice
+```
+
+`--tasks budget,deck,report` limits the tasks. `--host-repo <checkout>` runs
+the host from another checkout, such as a baseline of `main`; the drive client
+and checker always come from this one. Each run's folder keeps the Worker's
+files, the turn report, the tools it called, the hidden checks, and the page
+images. Scoring asks whether the output is correct by the hidden checks,
+whether the Worker actually verified it, and whether its final report is
+honest.
+
+## Not included
+
+- A bundled formula evaluator for formula checks without LibreOffice.
 - One-click install through Homebrew from inside AmpleFile.
-- Exporting through the person's own Word or PowerPoint with Computer Control.
-
-## Addendum: a Quick Look preview without LibreOffice
-
-Design note, 2026-10-18. Approved by Mat on 2026-10-18: Word page 1 plus any slide of a deck, with the partial preview mentioned in the Documents detail on macOS.
-
-The evaluation found that the fault seen most often on pages nobody looked at
-was a word or amount split across lines in a narrow table column. Every Mac
-can already draw Office files without LibreOffice or Microsoft Office:
-Quick Look's built-in generator (`/System/Library/QuickLook/Office.qlgenerator`)
-handles Word, PowerPoint and Excel files, and `qlmanage -t` writes its
-thumbnail as a PNG.
-
-### What a survey of `qlmanage` showed
-
-- **Fast and faithful enough.** About 0.1 seconds per file. A Word page came
-  out at 1246 × 1600 pixels with `-s 1600`, and up to 3200 pixels on request.
-  It showed the same split words and amounts LibreOffice did. Fonts are
-  substituted differently from Word, as with LibreOffice.
-- **One page only.** A thumbnail is the first page of a Word file, the first
-  slide of a deck, or part of the first sheet of a workbook.
-- **Any slide, via a private copy.** Reordering the slide list in a private
-  copy of a deck makes Quick Look draw any chosen slide. A Word document has
-  no such order to change, so only page 1 can be drawn.
-- **Workbooks are not worth it.** Their thumbnails crop the sheet oddly
-  (a two-column sheet showed only its first column and part of the second)
-  and show cached values only.
-- **It hangs on failure.** On a missing, empty or damaged file, `qlmanage`
-  writes nothing and never exits. It needs a deadline and a kill.
-- **No sandboxing.** It cannot start inside a `sandbox-exec` profile.
-- `qlmanage --version` reports the Quick Look framework version.
-
-### Proposal
-
-1. **A `preview` operation on `document_engine`, macOS only.**
-   - It takes a DOCX or PPTX source and a new PNG output path, plus an
-     optional `slide` number for a deck.
-   - For a slide other than the first, it makes a private copy with that
-     slide moved to the front. The source file is never changed.
-   - Otherwise it works exactly like `render`: it captures a private copy,
-     reports source and output hashes and the Quick Look version, keeps a
-     log, and supports Stop.
-   - It has a 60-second default deadline, because a file Quick Look cannot
-     draw never finishes. `timeoutMs` overrides it.
-   - When no image appears, it says: "Quick Look couldn't draw this file. It
-     may be damaged, or a kind Quick Look doesn't know."
-2. **`status` lists Quick Look** as an engine: available on macOS, nothing
-   to install, operations `["preview"]`. The tool and the Documents status
-   look in the same places. A host's `documentEngineSearch` now reaches the
-   tool as well as the strip.
-3. **The Documents status word does not change.** It stays **Setup Needed**
-   without LibreOffice, because Quick Look covers one page and calculates
-   nothing. On macOS the detail becomes: "Your Worker can preview the first
-   page of a Word file and each slide of a deck, but can't check every page
-   or what spreadsheet formulas calculate. Install LibreOffice to turn that
-   on." Set up is unchanged.
-4. **The Skill: without LibreOffice on a Mac,**
-   - preview page 1 of every Word file and every slide of a deck, look at
-     them, fix, and preview again;
-   - to see a later part of a Word document it made, build a review copy
-     that starts with that part;
-   - say in the report which pages were seen and which were not, and still
-     point to Set Up.
-5. **Evaluation.** Quick Look cannot run inside the sandbox profile, so a new
-   no-LibreOffice condition hides LibreOffice and Tesseract through the
-   host's `documentEngineSearch`, and drops Homebrew's folders from the
-   host's `PATH`. Transcripts are checked for any use of `soffice`. The
-   report and deck tasks are rerun, and the results are added to the
-   evaluation page.
-
-As built, the evaluation added two Skill rules:
-- never reshape the deliverable to suit the preview, because one Worker
-  split its report into three sparse pages so each part could be previewed;
-- end the report with the Set Up sentence even when a preview showed the
-  whole file.
+- Exporting through the person's own Word or PowerPoint with Computer Control
+  as a built-in check (a Worker can still use those apps through Computer
+  Control when the person wants that).

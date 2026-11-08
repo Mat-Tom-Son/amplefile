@@ -104,8 +104,8 @@ test("automation proposals canonicalize the documented example into an exact rev
 });
 
 // Stored automations are re-verified against this digest on every load, so
-// its canonical JSON and hash must never change. These values were computed
-// on 2026-11-07 before the digest moved out of the retired Checks module.
+// its canonical JSON and hash must never change. These are the values every
+// stored automation was pinned with.
 test("the automation digest is pinned to known values", () => {
   const proposal = normalizeAmpleFileAutomationProposal({
     kind: "amplefile.automation-proposal",
@@ -162,7 +162,7 @@ test("digests pin the exact declaration independent of field order", () => {
 
 test("on-settled triggers are retired and refused by name", () => {
   // Their only sources were Check runs and Connected Folder app automation
-  // runs, both removed on 2026-11-07.
+  // runs, which AmpleFile does not have.
   const settled = (source: Record<string, unknown>) => mutated((value) => {
     value.automation.trigger = { kind: "on-settled", source };
   });
@@ -380,7 +380,7 @@ test("proposal files read bounded and refuse damage", async () => {
   await assert.rejects(() => readAmpleFileAutomationProposal(damaged));
 });
 
-// Version 4 (docs/receipts-not-gates.md, F23): the closed, host-filled
+// Version 4 (docs/act-ledger.md): the closed, host-filled
 // placeholder set and the `agent` step. Everything else inside `{{ }}` is a
 // declaration error, and a placeholder that could never be filled in for the
 // declared trigger is refused at parse — so it is refused when enabling,
@@ -521,7 +521,7 @@ test("a stored declaration that names a retired Check or app feature is recogniz
   assert.equal(ampleFileAutomationRetiredFeature(null), null);
 });
 
-// Version 5 (docs/automations.md, 2026-10-11 amendment): a folder-change
+// Version 5 (docs/automations.md): a folder-change
 // trigger may opt into one catch-up with `"ifMissed": "run"`. The field is
 // optional and never defaulted, so every older declaration normalizes to
 // exactly the shape — and the digest — it had before.

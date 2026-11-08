@@ -49,7 +49,7 @@ test("pending Chat sends preserve one stable acceptance identity across renderer
     };
     assert.equal(writeStoredPendingChatSend("connected-folder-1", "chat-1", pending), true);
     assert.deepEqual(readStoredPendingChatSend("connected-folder-1", "chat-1"), pending);
-    // A send saved before 2026-10-11 still carries the file selected in Files; it reads back without it.
+    // A send an earlier build saved may carry the file selected in Files; it reads back without it.
     assert.equal(writeStoredPendingChatSend("connected-folder-1", "chat-1", { ...pending, selectedPath: "notes.md" } as typeof pending), true);
     assert.deepEqual(readStoredPendingChatSend("connected-folder-1", "chat-1"), pending);
     clearStoredPendingChatSend("connected-folder-1", "chat-1");
@@ -82,17 +82,6 @@ test("Chat title rendering ignores only the initial placeholder and accepts gene
       createdAt: "2026-01-01T00:00:01Z",
     },
   ]), "Launch checklist review");
-  assert.equal(modelConversationTitle([
-    placeholder,
-    { id: "request", role: "user", content: "Review the launch checklist and identify missing owners.", createdAt },
-    {
-      ...placeholder,
-      id: "legacy-fallback",
-      titleSource: "generated",
-      content: "Review the launch checklist and identify missing owners.",
-      createdAt: "2026-01-01T00:00:01Z",
-    },
-  ]), null, "the old first-message fallback is not presented as a model title");
   assert.equal(modelConversationTitle([
     placeholder,
     { id: "request", role: "user", content: "Fix chat naming", createdAt },

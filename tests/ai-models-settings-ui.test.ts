@@ -58,7 +58,7 @@ async function setup(t: TestContext) {
   const select = async (selector: string, value: string) => {
     const field = dom.container.querySelector<HTMLElement>(selector)!;
     if (field.getAttribute("aria-haspopup") === "listbox") {
-      // The model dropdown (2026-09-27): open it, then pick the option that carries the model id.
+      // The model dropdown: open it, then pick the option that carries the model id.
       if (field.getAttribute("aria-expanded") !== "true") await dom.act(() => field.click());
       await dom.act(() => dom.container.querySelector<HTMLButtonElement>(`[role="option"][data-model-id="${value}"]`)!.click());
       return;

@@ -47,16 +47,3 @@ test("the appearance proposal tool emits the new kind, target fields, and defaul
   assert.equal(proposal.kind, "amplefile.connected-folder-appearance");
   assert.deepEqual(proposal.target, { connectedFolderId: "connected-folder-client", connectedFolderName: "Client" });
 });
-
-test("the appearance proposal tool rejects legacy Workspace target options", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-appearance-legacy-option-"));
-  await assert.rejects(
-    () => run(process.execPath, [
-      tsxCli, script, "create",
-      "--name", "Legacy",
-      "--color", "#0d74ce",
-      "--workspace-id", "connected-folder-client",
-    ], { cwd: sandbox }),
-    /Unknown option '--workspace-id'/,
-  );
-});

@@ -19,7 +19,7 @@ import {
 } from "../src/local/agent/chat-store.js";
 import { configureAmpleFileStateRoot, connectedFolderStateDir } from "../src/local/state-paths.js";
 
-const chatStateRoot = await mkdtemp(join(tmpdir(), "workspace-chat-state-"));
+const chatStateRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-state-"));
 configureAmpleFileStateRoot(chatStateRoot);
 after(async () => {
   configureAmpleFileStateRoot(undefined);
@@ -36,7 +36,7 @@ function message(id: string, content: string): ChatMessage {
 }
 
 test("chat store appends messages without rewriting the conversation log", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-append-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-append-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   await Promise.all(
@@ -49,7 +49,7 @@ test("chat store appends messages without rewriting the conversation log", async
 });
 
 test("chat store rejects unsafe conversation ids", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-safe-id-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-safe-id-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   await assert.rejects(
@@ -62,36 +62,20 @@ test("chat store rejects unsafe conversation ids", async (t) => {
   );
 });
 
-test("chat store ignores legacy external conversations and leaves them unchanged", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-migration-"));
-  t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
-  const legacyDir = join(connectedFolderRoot, ".workspace", "conversations");
-  await mkdir(legacyDir, { recursive: true });
-  const legacyPath = join(legacyDir, "chat-legacy.jsonl");
-  await writeFile(legacyPath, `${JSON.stringify(message("1", "legacy conversation"))}\n`, "utf8");
-
-  assert.deepEqual(await listConversations(connectedFolderRoot), []);
-  await appendMessage(connectedFolderRoot, "chat-legacy", message("2", "new AmpleFile conversation"));
-  const portablePath = join(conversationsDir(connectedFolderRoot), "chat-legacy.jsonl");
-  assert.notEqual(await readFile(portablePath, "utf8"), await readFile(legacyPath, "utf8"));
-  assert.equal(await readFile(legacyPath, "utf8"), `${JSON.stringify(message("1", "legacy conversation"))}\n`);
-  assert.deepEqual(await readConversation(connectedFolderRoot, "chat-legacy"), [message("2", "new AmpleFile conversation")]);
-});
-
 test("chat store skips malformed JSONL lines without deleting the transcript", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-malformed-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-malformed-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   const dir = conversationsDir(connectedFolderRoot);
   await mkdir(dir, { recursive: true });
   const path = join(dir, "chat-malformed.jsonl");
-  const systemLine = JSON.stringify({ id: "system", role: "system", content: "Workspace chat", createdAt: "2026-01-01T00:00:00Z" });
+  const systemLine = JSON.stringify({ id: "system", role: "system", content: "Project chat", createdAt: "2026-01-01T00:00:00Z" });
   const userLine = JSON.stringify(message("1", "valid user message"));
   const original = `${systemLine}\nnot json\n${userLine}\n{"id":"bad","role":"unknown","content":"bad","createdAt":"2026-01-01T00:00:02Z"}\n`;
   await writeFile(path, original, "utf8");
 
   assert.deepEqual(await readConversation(connectedFolderRoot, "chat-malformed"), [
-    { id: "system", role: "system", content: "Workspace chat", createdAt: "2026-01-01T00:00:00Z" },
+    { id: "system", role: "system", content: "Project chat", createdAt: "2026-01-01T00:00:00Z" },
     message("1", "valid user message"),
   ]);
 
@@ -103,7 +87,7 @@ test("chat store skips malformed JSONL lines without deleting the transcript", a
 });
 
 test("chat store keeps new appends readable after an unterminated malformed line", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-unterminated-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-unterminated-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   const dir = conversationsDir(connectedFolderRoot);
@@ -118,7 +102,7 @@ test("chat store keeps new appends readable after an unterminated malformed line
 });
 
 test("chat store preserves assistant landing metadata", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-landing-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-landing-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   const assistantMessage: ChatMessage = {
@@ -143,7 +127,7 @@ test("chat store preserves assistant landing metadata", async (t) => {
 });
 
 test("chat store preserves interrupted assistant output and completed activity", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-interruption-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-interruption-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   const assistantMessage: ChatMessage = {
@@ -172,7 +156,7 @@ test("chat store preserves interrupted assistant output and completed activity",
 });
 
 test("chat store preserves bounded thinking and tool trails on successful replies", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-work-trail-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-work-trail-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   const assistantMessage: ChatMessage = {
@@ -217,10 +201,10 @@ test("chat store preserves bounded thinking and tool trails on successful replie
 });
 
 test("chat store prefers generated landing title in conversation summaries", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-title-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-title-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
-  await appendMessage(connectedFolderRoot, "chat-title", message("1", "Can you inspect the notes in this workspace and summarize the open questions?"));
+  await appendMessage(connectedFolderRoot, "chat-title", message("1", "Can you inspect the notes in this folder and summarize the open questions?"));
   await appendMessage(connectedFolderRoot, "chat-title", {
     id: "assistant-1",
     role: "assistant",
@@ -230,7 +214,7 @@ test("chat store prefers generated landing title in conversation summaries", asy
       summary: "The agent completed the requested review.",
       nextActions: [],
       followUpPrompt: null,
-      conversationTitle: "Workspace Notes Review",
+      conversationTitle: "Folder Notes Review",
       generatedAt: "2026-01-01T00:00:03Z",
       provider: "openrouter",
       model: "openai/gpt-4.1-mini",
@@ -238,11 +222,11 @@ test("chat store prefers generated landing title in conversation summaries", asy
   });
 
   const summaries = await listConversations(connectedFolderRoot);
-  assert.equal(summaries[0]?.title, "Workspace Notes Review");
+  assert.equal(summaries[0]?.title, "Folder Notes Review");
 });
 
 test("new Chat placeholder does not override its generated landing title", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-created-title-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-created-title-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   const created = await createConversation(connectedFolderRoot);
@@ -268,7 +252,7 @@ test("new Chat placeholder does not override its generated landing title", async
 });
 
 test("an intentional later rename to New Chat remains authoritative", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-new-chat-rename-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-new-chat-rename-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   const created = await createConversation(connectedFolderRoot);
@@ -279,7 +263,7 @@ test("an intentional later rename to New Chat remains authoritative", async (t) 
 });
 
 test("generated title persists after the first successful turn without overriding later manual renames", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-generated-title-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-generated-title-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   const created = await createConversation(connectedFolderRoot);
@@ -299,7 +283,7 @@ test("generated title persists after the first successful turn without overridin
 });
 
 test("a failed first title request stays New Chat and is not repeated", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-title-attempt-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-title-attempt-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   const created = await createConversation(connectedFolderRoot);
@@ -317,7 +301,7 @@ test("a failed first title request stays New Chat and is not repeated", async (t
 });
 
 test("a model title may legitimately match the first user message after the request is recorded", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-title-matches-request-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-title-matches-request-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   const created = await createConversation(connectedFolderRoot);
@@ -330,8 +314,8 @@ test("a model title may legitimately match the first user message after the requ
   assert.equal(conversationNeedsGeneratedTitle(await readConversation(connectedFolderRoot, created.id)), false);
 });
 
-test("legacy generated first-message titles remain visible and authoritative", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-legacy-title-fallback-"));
+test("a generated first-message title remains visible and authoritative", async (t) => {
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-first-message-title-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   const created = await createConversation(connectedFolderRoot);
@@ -352,7 +336,7 @@ test("legacy generated first-message titles remain visible and authoritative", a
 });
 
 test("chat store manual conversation title overrides generated landing title", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-manual-title-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-manual-title-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   await appendMessage(connectedFolderRoot, "chat-manual-title", message("1", "Review this document draft."));
@@ -381,9 +365,9 @@ test("chat store manual conversation title overrides generated landing title", a
 });
 
 test("an app's request an older build logged loads as an ordinary message", async (t) => {
-  // Connected Folder apps were removed on 2026-11-07. A Chat log may still
-  // hold a user message an app sent, marked `source: "app"`; it loads as an
-  // ordinary message, and the marker is not carried.
+  // A Chat log an earlier build wrote may hold a user message a Connected
+  // Folder app sent, marked `source: "app"`; it loads as an ordinary message,
+  // and the marker is not carried.
   const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-app-source-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
   const created = await createConversation(connectedFolderRoot, "Inbox · Compare quotes", "chat-app-source");
@@ -427,7 +411,7 @@ test("saved work trails keep an app tool's readable title and drop an unusable o
 });
 
 test("chat store persists archive and snooze state as append-only lifecycle events", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-lifecycle-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-lifecycle-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   await appendMessage(connectedFolderRoot, "chat-lifecycle", message("1", "Review the launch checklist."));
@@ -457,7 +441,7 @@ test("chat store persists archive and snooze state as append-only lifecycle even
 });
 
 test("chat store rejects past snoozes and snoozing archived Chats", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-lifecycle-invalid-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-lifecycle-invalid-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   await appendMessage(connectedFolderRoot, "chat-lifecycle-invalid", message("1", "Keep this for later."));
@@ -473,7 +457,7 @@ test("chat store rejects past snoozes and snoozing archived Chats", async (t) =>
 });
 
 test("chat store keeps messages when landing metadata is malformed", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-bad-landing-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-bad-landing-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   const dir = conversationsDir(connectedFolderRoot);
@@ -504,7 +488,7 @@ test("chat store keeps messages when landing metadata is malformed", async (t) =
 });
 
 test("chat listing reuses cached summaries and rebuilds them when a transcript changes", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-index-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-index-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
   await appendMessage(connectedFolderRoot, "chat-indexed", message("1", "Give this Chat a compact cache title."));
   await setGeneratedConversationTitle(connectedFolderRoot, "chat-indexed", "alpha");
@@ -526,7 +510,7 @@ test("chat listing reuses cached summaries and rebuilds them when a transcript c
 });
 
 test("chat listing ignores cache records that do not describe their own transcript", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-index-invalid-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-index-invalid-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
   await appendMessage(connectedFolderRoot, "chat-guarded", message("1", "genuine"));
   await listConversations(connectedFolderRoot);
@@ -552,7 +536,7 @@ test("chat listing ignores cache records that do not describe their own transcri
 });
 
 test("chat listing rebuilds a previous-version cache after title semantics change", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-index-version-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-index-version-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
   const created = await createConversation(connectedFolderRoot);
   await appendMessage(connectedFolderRoot, created.id, message("1", "Name this completed conversation"));
@@ -586,7 +570,7 @@ test("chat listing rebuilds a previous-version cache after title semantics chang
 });
 
 test("listing a Connected Folder never deletes a Chat that is still being started", async (t) => {
-  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "workspace-chat-store-new-chat-survives-"));
+  const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-new-chat-survives-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
 
   // A Chat exists from the moment it is created; its first user message lands

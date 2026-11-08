@@ -94,7 +94,7 @@ export interface AmpleFileAutomationChatHopResult {
   /**
    * The same result, present only when the turn filed it itself with
    * `chat report` rather than ending with just a reply. Its outcome decides
-   * the step's (docs/automations.md, 2026-10-11).
+   * the step's (docs/automations.md).
    */
   reported?: AmpleFileResultEnvelope;
   error?: string;
@@ -222,7 +222,7 @@ export interface AmpleFileAutomationServiceStatus {
   activeRunCount: number;
   /** Runs found accepted-without-terminal at startup and recorded interrupted, never replayed. */
   recoveredInterruptedRunIds: string[];
-  /** Stored automations left out on load because they use a retired feature (Checks and apps, 2026-11-07). */
+  /** Stored automations left out on load because they use a retired feature. */
   retiredAutomations?: AmpleFileRetiredAutomation[];
 }
 

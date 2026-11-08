@@ -40,12 +40,11 @@ test("README local links and screenshots resolve without duplicating the docs", 
   assert.doesNotMatch(readme, /output\/playwright\/amplefile-/);
 });
 
-test("canonical product docs describe the Skills & Extensions popup (2026-09-25)", async () => {
+test("canonical product docs describe the Skills & Extensions popup", async () => {
   const files = [
     "AGENTS.md",
     "docs/product-model.md",
     "docs/architecture.md",
-    "docs/ui-parity.md",
     "docs/visual-design.md",
   ];
   const contents = await Promise.all(files.map((file) => readFile(join(root, file), "utf8")));
@@ -67,16 +66,15 @@ test("public and contributor docs route management behavior to one guide", async
   }
 });
 
-test("Connected Folder apps and App Studio stay removed from the docs (2026-11-07)", async () => {
+test("Connected Folder apps and App Studio stay out of the docs", async () => {
   const agents = await readFile(join(root, "AGENTS.md"), "utf8");
-  assert.match(agents, /There are no Connected Folder apps and no App Studio \(removed 2026-11-07\)/);
-  assert.doesNotMatch(agents, /restricted-app lane|Restricted app runtime|app-platform-foundation\.md/);
+  assert.doesNotMatch(agents, /restricted-app lane|Restricted app runtime|app-platform-foundation\.md|App Studio/);
   for (const removed of [
     "docs/restricted-app-authoring.md",
     "docs/restricted-app-runtime.md",
     "docs/app-platform-foundation.md",
     "docs/app-assistant-tasks.md",
   ]) {
-    await assert.rejects(access(join(root, removed)), `${removed} was removed with apps`);
+    await assert.rejects(access(join(root, removed)), `${removed} must not exist`);
   }
 });

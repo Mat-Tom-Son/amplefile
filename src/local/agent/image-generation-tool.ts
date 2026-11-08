@@ -40,7 +40,7 @@ export const preferredImageModelIds = [
 
 const imageTypes: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
 const typeExtensions: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp" };
-const reservedFolders = new Set([".amplefile", ".pi", ".git", ".workspace"]);
+const reservedFolders = new Set([".amplefile", ".pi", ".git"]);
 const maxPromptCharacters = 32_000;
 
 export type ImageModelSource = Pick<ModelRuntime, "getAvailableOfType" | "generateImages" | "hasConfiguredAuth" | "getAuth" | "getModels">;

@@ -18,7 +18,7 @@ import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js
 import { ampleFileStateRoot } from "./state-paths.js";
 
 /**
- * Standard Folders (docs/product-model.md, "2026-11-06 file manager layout"):
+ * Standard Folders (docs/product-model.md, "The file manager window"):
  * the person's Desktop, Documents, Downloads, Pictures, home folder, and
  * iCloud Drive, shown in the file manager's sidebar the way Finder shows them,
  * plus any folder the person added with the section's + button. The host

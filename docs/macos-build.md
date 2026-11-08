@@ -1,34 +1,18 @@
 # macOS build and release lane
 
-AmpleFile retains one Electron, React, local API, Pi, AmpleFile kernel, and versioning codebase with cross-platform seams, but Apple-silicon macOS is the only packaging and public distribution lane. The Windows build and release lanes were removed on 2026-11-07.
+AmpleFile is one Electron, React, local API, Pi, and AmpleFile kernel codebase. Apple-silicon macOS is its only packaging and public distribution lane.
 
-## Legacy Workspace baseline evidence
-
-The Apple silicon lane was verified on July 15, 2026 against Workspace 0.2.9:
-
-- TypeScript checks and the complete 246-test suite pass.
-- Desktop preparation passes, including the native Pi resource preflight and real-Electron restricted-app sandbox probe.
-- Electron Builder produces an arm64 app, DMG, ZIP, both blockmaps, `latest-mac.yml`, checksums, and machine-readable/text release manifests.
-- The app and DMG are Developer ID-signed by Team `464JD5K8DC`, use hardened runtime, are notarized and stapled, and are accepted by Gatekeeper.
-- The packaged app uses bundle id `io.github.mattomson.workspace`, the custom icon, native macOS menus, and the complete renderer and CLI payload.
-- The Mac update feed is the public artifact-only repository [`Mat-Tom-Son/workspace-mac-releases`](https://github.com/Mat-Tom-Son/workspace-mac-releases). Windows remains on [`Mat-Tom-Son/workspace`](https://github.com/Mat-Tom-Son/workspace/releases).
-- A signed/notarized installed 0.2.8 app discovered 0.2.9, exposed the rendered `Download Workspace 0.2.9` control, downloaded the public ZIP, installed it, and relaunched as 0.2.9. The updater-cache SHA-256 matched the published asset digest exactly.
-- After removing the obsolete ad hoc `Workspace Safe Storage` item once, two cold launches under the stable Developer ID identity completed without Keychain password prompts.
-
-This is preserved historical evidence for the legacy product; it does not prove
-AmpleFile identity, clean-profile behavior, or updater compatibility. The
-AmpleFile ad hoc package lane may retain the manifest for structural
-verification, but it uses the distinct `AmpleFile Local Smoke` name,
-`com.amplefile.desktop.local-smoke` bundle id, build channel, and
-application-data directory; its runtime never starts the updater or contacts
-the production feed.
+The ad hoc structural package uses its own name, `AmpleFile Local Smoke`, its
+own bundle id, `com.amplefile.desktop.local-smoke`, and its own build channel
+and application-data directory. Its runtime never starts the updater or
+contacts the production feed.
 
 ## Toolchain
 
 Use Node 24 and npm 11.16.0 or newer for contributor and release work. npm's
 per-dependency script controls keep the included computer helper's upstream
 installer from running; the checked-in packaging lane builds and signs it.
-The application's Node runtime minimum remains 22.19.0. The included computer
+The application's Node runtime minimum is 22.19.0. The included computer
 helper requires macOS 14 or later; other tools remain available on the app's
 supported systems.
 
@@ -108,13 +92,13 @@ version, and published feed version independently when reporting release state.
 Expected Apple silicon outputs:
 
 - `out/builder/mac-arm64/AmpleFile Local Smoke.app`
-- `out/builder/amplefile-<version>-mac-arm64.dmg`
-- `out/builder/amplefile-<version>-mac-arm64.zip`
+- `out/builder/AmpleFile-<version>-mac-arm64.dmg`
+- `out/builder/AmpleFile-<version>-mac-arm64.zip`
 - matching `.blockmap` files
 - `out/builder/latest-mac.yml`
 - `out/builder/SHA256SUMS-mac.txt`
-- `out/builder/amplefile-mac-release-manifest.json`
-- `out/builder/amplefile-mac-release-manifest.txt`
+- `out/builder/AmpleFile-mac-release-manifest.json`
+- `out/builder/AmpleFile-mac-release-manifest.txt`
 
 Use `-- --arch x64` after a build command when an Intel candidate is required. An Intel artifact is not releasable until it receives a real Intel launch and updater smoke.
 
@@ -129,7 +113,7 @@ AMPLEFILE_DESKTOP_STATE_DIR=/tmp/amplefile-macos-smoke \
   out/mac-rc/mac-arm64/AmpleFile.app/Contents/MacOS/AmpleFile
 ```
 
-That app-only path exists after `npm run desktop:rc:mac`; the complete distribution candidate remains at `out/builder/mac-arm64/AmpleFile.app`. The ad hoc executable is `out/builder/mac-arm64/AmpleFile Local Smoke.app/Contents/MacOS/AmpleFile Local Smoke`. Exercise onboarding, Connected Folder creation/registration, Files, Chats, History, the Skills & Extensions popup, Settings, native file actions, menus, window close/reopen, and sleep/wake continuity. The profile override isolates CLI requests, app files, and preferences, but it is not a Keychain boundary. A separate disposable macOS account is the alternative for interactive ad hoc testing.
+That app-only path exists after `npm run desktop:rc:mac`; the complete distribution candidate remains at `out/builder/mac-arm64/AmpleFile.app`. The ad hoc executable is `out/builder/mac-arm64/AmpleFile Local Smoke.app/Contents/MacOS/AmpleFile Local Smoke`. Exercise first run, connecting and creating Connected Folders, the file manager's sidebar and contents, the Worker panel (Info, History, and its Chats), the Skills & Extensions dialog, Settings, native file actions, menus, window close and reopen, and sleep/wake continuity. The profile override isolates CLI requests, app files, and preferences, but it is not a Keychain boundary. A separate disposable macOS account is the alternative for interactive ad hoc testing.
 
 The packaged CLI can be tested directly:
 
@@ -140,7 +124,7 @@ AMPLEFILE_CLI_APP="$PWD/out/mac-rc/mac-arm64/AmpleFile.app/Contents/MacOS/AmpleF
   out/mac-rc/mac-arm64/AmpleFile.app/Contents/bin/amplefile context --json
 ```
 
-The app adds `Contents/bin` to child-process `PATH`. A DMG must not edit a person's shell profile; making `amplefile` available to unrelated Terminal sessions remains an explicit installation action.
+The app adds `Contents/bin` to child-process `PATH`. A DMG must not edit a person's shell profile. Making `amplefile` available in other Terminal sessions is an explicit action: **Settings → Command Line → Add to Terminal**.
 
 ## Signing configuration
 
@@ -154,7 +138,7 @@ AMPLEFILE_MAC_RELEASE_REPO="amplefile-mac-releases"
 AMPLEFILE_MAC_TEAM_ID="464JD5K8DC"
 ```
 
-The notary profile name is local and arbitrary; the existing profile is valid for both products. Never commit Apple passwords, API keys, certificate private keys, or exported identities. `APPLE_KEYCHAIN_PROFILE` may be replaced by a complete App Store Connect API-key or Apple-ID environment set when needed.
+The notary profile name is local and arbitrary; `kai-workspace-notary` is the profile on the release workstation. Never commit Apple passwords, API keys, certificate private keys, or exported identities. `APPLE_KEYCHAIN_PROFILE` may be replaced by a complete App Store Connect API-key or Apple-ID environment set when needed.
 
 Build the fast app-only candidate for interactive QA:
 
@@ -176,7 +160,7 @@ The release lane signs/notarizes the app, signs/notarizes/staples the final DMG,
 
 Every macOS candidate stage reports elapsed time. A complete signed distribution
 build writes an ignored checkpoint at
-`out/builder/amplefile-mac-release-state.json`. The checkpoint binds completed
+`out/builder/AmpleFile-mac-release-state.json`. The checkpoint binds completed
 stages to the package version, architecture, Node version, signing identity,
 release feed, source/configuration fingerprint, signed app, and exact artifact
 hashes. It contains no signing or notarization credentials.
@@ -222,14 +206,10 @@ a new version or an Apple submission.
 
 ## Public releases
 
-The active public desktop release is the signed, notarized Apple-silicon Mac build. The source repository carries the exact source tag, while the separate Mac feed owns only the distribution artifacts:
-
-The first public AmpleFile version is `0.1.0`; the repository carried its
-predecessor's `0.15.3` until the first release commit reset it. The first
-higher release proves the `Mat-Tom-Son/amplefile-mac-releases` updater path
-from an installed `0.1.0`. No AmpleFile version is an update from a
-predecessor ("work-fold" or Workspace), and the frozen legacy release
-repositories must never receive these artifacts.
+The public release is the signed, notarized Apple-silicon Mac build. The
+source repository, `Mat-Tom-Son/amplefile`, carries the exact source tag. The
+separate feed, `Mat-Tom-Son/amplefile-mac-releases`, holds only the
+distribution artifacts.
 
 ```bash
 npm run desktop:release:mac
@@ -255,11 +235,11 @@ A new run removes old evidence before starting; a failure or source change canno
 success receipt. The status command is read-only. Run the checks after the
 final merge; an identical tree at another commit does not inherit the receipt.
 
-GitHub Actions is disabled in the canonical source repository as of September
-30, 2026. Pushes, PRs, and release tags do not start remote checks; the checked-in
-workflows remain dormant diagnostics. The local release check is the required
-verification lane, and the publisher checks canonical source identity directly.
-`npm run desktop:release:mac:ci` remains available for historical Actions diagnostics.
+GitHub Actions is off in the source repository. Pushes, PRs, and release tags
+start no remote checks; the checked-in workflows are dormant diagnostics. The
+local release check is the required verification lane, and the publisher
+checks canonical source identity directly. `npm run desktop:release:mac:ci` is
+an optional diagnostic for those dormant workflows.
 
 The publisher validates the local receipt, current canonical `main`, annotated
 source tag, and source-bound signed artifact checkpoint begun after that
@@ -278,7 +258,7 @@ See [macOS release runbook](macos-release.md) for the exact repeatable procedure
 
 ## Keychain behavior
 
-Provider credentials use Electron `safeStorage`, backed by Keychain. Stable Developer ID signing gives macOS one durable requester identity. An older ad hoc app that reused the production name may leave a Safe Storage access-control entry that repeatedly asks for a password after migration. Current local smoke builds use `AmpleFile Local Smoke`, a separate bundle id and application-data directory, and never start the production updater; do not rename them to `AmpleFile.app`.
+Provider credentials use Electron `safeStorage`, backed by Keychain. Stable Developer ID signing gives macOS one durable requester identity. An ad hoc app that used the production name can leave a Safe Storage access-control entry that repeatedly asks for a password. Local smoke builds use `AmpleFile Local Smoke`, a separate bundle id and application-data directory, and never start the production updater; do not rename them to `AmpleFile.app`.
 
 Only when repeated prompts are observed, quit AmpleFile and run:
 
@@ -286,13 +266,13 @@ Only when repeated prompts are observed, quit AmpleFile and run:
 npm run desktop:reset:mac-safe-storage -- --yes --reopen
 ```
 
-The helper deletes only the `amplefile Safe Storage` key and encrypted provider credential blobs. Connected Folders, chats, History, preferences, and ordinary app data remain. Users may need to enter provider credentials again.
+The helper deletes only the `AmpleFile Safe Storage` key and encrypted provider credential blobs. Connected Folders, chats, History, preferences, and ordinary app data remain. Users may need to enter provider credentials again.
 
 Do not diagnose this with `security find-generic-password ... -g`: `-g` requests the secret and can itself trigger a password prompt. The installed-app verifier deliberately reads no Keychain secret data.
 
 ## Code map
 
-- `electron-builder.desktop.cjs`: shared targets, platform-selected feeds, Mac identity, entitlements, icon, and DMG layout.
+- `electron-builder.desktop.cjs`: targets, the release feed, Mac identity, entitlements, icon, and DMG layout.
 - `scripts/generate-dmg-background.mjs`: installer-only DMG artwork under ignored build output.
 - `scripts/build-mac-release-candidate.mjs`: app-only signed/notarized interactive release candidate.
 - `scripts/verify-mac-release-candidate.mjs`: signature, hardened-runtime, staple, Gatekeeper, identity, version, and architecture verification for the app-only candidate.
@@ -305,11 +285,11 @@ Do not diagnose this with `security find-generic-password ... -g`: `-g` requests
 - `scripts/check-local-release.mjs`: full local release check and read-only receipt status.
 - `scripts/local-release-verification.mjs`: exact-source receipts, dependency evidence, and shared release-work lock.
 - `scripts/release-source.mjs`: canonical main and annotated source-tag identity checks.
-- `scripts/verify-release-ci.mjs`: optional GitHub CI diagnostics and source-only tag workflow entrypoint.
+- `scripts/verify-release-ci.mjs`: optional diagnostics for the dormant GitHub workflows, and the source-tag workflow's entrypoint.
 - `.github/workflows/release-tag.yml`: dependency-free source-tag verification.
 - `scripts/publish-mac-release.mjs`: guarded draft-first public publisher.
 - `scripts/verify-mac-release.mjs`: bundle, signature, updater, manifest, checksum, and mounted-DMG verification.
 - `scripts/verify-installed-mac-app.mjs`: installed version/feed/signature/notarization verification without Keychain reads.
 - `scripts/reset-mac-safe-storage.mjs`: narrow ad hoc-to-Developer-ID credential recovery helper.
-- `desktop/src/updater.ts`: shared Windows and Squirrel.Mac update state machine.
+- `desktop/src/updater.ts`: the update state machine over Squirrel.Mac.
 - `desktop/cli/amplefile-cli.jxa.js`: macOS protocol-v1 CLI helper.

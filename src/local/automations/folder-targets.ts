@@ -371,7 +371,7 @@ function safeTargetPath(value: unknown): string {
     throw new FolderTargetResolutionError("UNSAFE_PATH", "Folder targets must be normalized paths beneath the Connected Folder root.", { targetPath: value });
   }
   if (segments.some(isReservedConnectedFolderPathSegment)) {
-    throw new FolderTargetResolutionError("RESERVED_PATH", "Folder targets cannot select .amplefile, .workspace, or .pi material.", { targetPath: value });
+    throw new FolderTargetResolutionError("RESERVED_PATH", "Folder targets cannot select .amplefile, .work-fold, or .pi material.", { targetPath: value });
   }
   if (segments.some(isUnsafeWindowsPathSegment)) {
     throw new FolderTargetResolutionError("UNSAFE_PATH", "Folder targets cannot contain Windows-reserved or ambiguous path segments.", { targetPath: value });

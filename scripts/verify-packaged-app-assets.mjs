@@ -106,9 +106,6 @@ if (packagedPlatform === "darwin") {
     failures.push(`${identity.productName} CLI shell shim is not executable.`);
   }
 }
-for (const oldShim of ["workspace", "workspace-cli.jxa.js"]) {
-  if (existsSync(join(binDir, oldShim))) failures.push(`Legacy CLI shim must not be packaged: ${oldShim}.`);
-}
 
 if (existsSync(executablePath) && packagedPlatform === "darwin") {
   try {

@@ -13,7 +13,7 @@ type, colors, and spacing, with attention reserved for a question or a result.
 **Content plan:** the conversation is primary; a quiet work line describes
 progress; an inline question supplies the next action; selected deliverables
 finish the exchange. Origins, delegated work, and technical details expand
-only when useful. This adds no navigation destination or approval ceremony.
+only when useful. None of this is a navigation destination or an approval step.
 
 **Interaction thesis:** progress updates in place without moving focus or
 resetting a draft; disclosure opens with native keyboard behavior; new replies
@@ -35,7 +35,7 @@ answer.
   or questions from punctuation, an idle model, or an ended stream.
 - Working, collaborating, waiting for an agent, and needing the person
   are distinct. Only questions addressed to the person ask for their input.
-  Partial results, stopped work, expiry, and interruptions retain their meaning.
+  Partial results, stopped work, and interruptions keep their meaning.
 - Questions show their exact text and origin. An answer names that question;
   double submission cannot start another continuation. A saved answer whose
   delivery failed shows that saved answer and offers Continue with the saved answer. Ordinary replies in
@@ -49,8 +49,8 @@ answer.
   waiting questions. It stays available between model turns. It does not stop
   independent work in the same Connected Folder.
 - Host continuations have explicit message metadata and appear as quiet
-  activity, never as messages apparently typed by the person. Older messages
-  without that metadata retain their original presentation.
+  activity, never as messages apparently typed by the person. A message
+  without that metadata shows as an ordinary message.
 - Results show the summary and selected files with their owning Connected Folder.
   Structured data is secondary. Opening a file does not copy it into a Chat.
 - Failed continuations expose saved work and an explicit continuation action
@@ -58,17 +58,16 @@ answer.
 
 ## Surfaces and boundaries
 
-Connected Folder Chats and the AmpleFile agent popover share the same React
-work presentation. Each Connected Folder tab retains its identity.
-
-There is no paired browser surface: Web Access was removed from the desktop on 2026-11-07.
+Connected Folder Chats in the file manager's panel and the AmpleFile agent
+popover share the same React work presentation. Each Chat keeps its own
+Connected Folder.
 
 ## Acceptance
 
 Exercise delegation, a person question, answer, continuation, selected files,
 partial completion, and Stop from the originating surface. Also cover a
 question in a delegated Connected Folder, repeated/stale answers,
-restart with a saved answer, failure/reconnect with a draft, and keyboard/mobile
+restart with a saved answer, failure/reconnect with a draft, and keyboard
 interaction. Host integration tests verify authority and exact-once delivery;
 browser journeys verify visible state, controls, focus, and rendering.
 
@@ -83,12 +82,12 @@ question ownership, repeat answers, request-wide Stop, restart, selected files,
 and explicit continuation. `tests/work-request-rendering.test.ts` covers exact
 question rendering, escaping, draft/focus retention, failed sends, and duplicate
 submission. These are development checks; packaged
-Electron and signed-release verification remain separate release work.
+Electron and signed-release verification are separate release work.
 
-## Conversation navigation and Connected Folder browsing
+## Conversation navigation in the popover
 
-The AmpleFile agent popover has a searchable **Chats** view over saved machine-local fold
-conversations, with titles, dates, and quiet working/answer indicators. Selecting
+The AmpleFile agent popover has a searchable **Chats** view over saved machine-local
+AmpleFile agent conversations, with titles, dates, and quiet working/answer indicators. Selecting
 a chat pins its transcript, request, model state, and next message to that id;
 background refresh never switches the selection. New chat opens a clean draft
 without a success alert or confirmation. Text and attachment drafts remain with

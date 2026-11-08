@@ -30,8 +30,8 @@ function fixtureStatus(): CommandLineStatus {
 }
 
 /**
- * Settings → Command Line, and the same rows in first run (owner request,
- * 2026-11-07): let other AI agents use this app. One row adds the command to
+ * Settings → Command Line, and the same rows in first run: let other AI
+ * agents use this app. One row adds the command to
  * Terminal (macOS asks for the person's password once); the others put the
  * skill file into Claude Code and Codex, or copy it for any other agent.
  * Nothing changes until the person clicks.

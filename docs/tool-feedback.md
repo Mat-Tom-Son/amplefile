@@ -1,10 +1,10 @@
 # Feedback during Worker work
 
-Status: shared foundation and included integrations implemented in the development tree, 2026-09-11. This extends
-[Extensions and computer work](extension-foundation.md). It applies to every
-kind of work a Worker or the AmpleFile agent does, including text, calculations, service operations,
-files, generated artifacts, browsers, and desktop applications. Exact-build
-release acceptance is separate from implementation and fixture evidence.
+This extends [Extensions and computer work](extension-foundation.md). It
+applies to every kind of work a Worker or the AmpleFile agent does, including
+text, calculations, service operations, files, generated artifacts, browsers,
+and desktop applications. Exact-build release acceptance is separate from
+implementation and fixture evidence.
 
 ## Decision
 
@@ -292,30 +292,12 @@ acceptance must include an uncertain mutation outcome without automatic replay.
 Source inspection or scripted providers prove plumbing, not model judgment or
 packaged backend readiness.
 
-Three independent adversarial reviews completed on 2026-09-11: native Pi
-compatibility, evidence semantics, and ownership/lifecycle. Their accepted
-findings are incorporated above: uncertain effects versus failed observations;
-dependency-sensitive rendering and invalidation after edits; native image
-preferences and provider-stage tests; cancelled-tool draining; auxiliary-call
-attribution; bounded private recording; and honest capture-stage labels.
-
-Foundation verification on 2026-09-11: `npm run check`, `npm test` (1,354
-passed, one optional model-driven test skipped), the bridge's 55 tests, and
-`npm run desktop:prepare` passed. Browser checks covered the desktop inspector
-and the compact AmpleFile agent layout, keyboard navigation, closing and focus recovery.
-Provider fixtures use local synthetic responses; these checks establish native
-transport and lifecycle compatibility, not a model's judgment on real work.
-
-A subsequent Claude desktop review led to session-lifetime callback fixes
-and removal of the small per-string inspection cap. Native provider fixtures
-now compare an instruction block larger than 32 KiB across assembled context,
-observed payload and the local provider's received request. Escaped Unicode
-and oversized text remain bounded. The reported permanently blocked Chat
-scenario did not reproduce through the server: cancelled sessions are already
-disposed before admission reopens. Direct client reuse after disposal did
-reproduce it and now releases the disposed session's guard, while reuse of a
-still-draining live session remains refused. Compaction comparisons found no
-regression and did not justify replacing Pi's native compaction behavior.
+Native provider fixtures compare an instruction block larger than 32 KiB
+across assembled context, observed payload and the local provider's received
+request; escaped Unicode and oversized text stay bounded. A cancelled session
+is disposed before admission reopens. Reusing a client after disposal releases
+the disposed session's guard, while reuse of a still-draining live session is
+refused.
 
 ## Sources
 
@@ -338,14 +320,14 @@ runnable patches are not copied. A display diff describes that tool's observatio
 not a live file preview or proof of the entire task's correctness.
 
 Optional saved `assistantPresentation` metadata preserves native message boundaries
-without changing aggregate message content, old transcripts, or live text events.
+without changing aggregate message content, transcripts without it, or live text events.
 Consumers may use final/progress/command ranges after validation and fall back to
 full content when metadata is absent. Text and edit metadata are validated on
 append and read. Segment metadata is capped at 256 entries. The Chat puts progress,
 thinking, tools and captured edit excerpts in one ordered Worker steps strip, and
 renders native-confirmed final text as the answer. Copy preserves the complete
 aggregate reply. Missing, truncated or inconsistent metadata falls back to full
-text; old transcripts never acquire invented chronology. Interrupted turns never
+text; transcripts without metadata never acquire invented chronology. Interrupted turns never
 invent a successful final segment.
 
 Reconnecting to a running host replaces live presentation with its current snapshot,
@@ -357,7 +339,7 @@ durable content are unaffected. A host process crash remains an interrupted turn
 the durable journal preserves available partial text but does not reconstruct
 unfinished live steps. Reopening a view and resuming execution are different acts.
 
-Saved-file review uses [bounded History reads and differences](amplefile-agent-and-cli.md#bounded-history-review-and-durable-turn-evidence-2026-09-27).
+Saved-file review uses [bounded History reads and differences](amplefile-agent-and-cli.md#bounded-history-review-and-durable-turn-evidence).
 That comparison describes an interval's bytes; native edit evidence describes a
 particular tool call. They must not be conflated when other people or programs can
 write the same file.
@@ -375,7 +357,7 @@ limits. These are text-extraction guarantees, not claims about visual layout or
 formula recalculation.
 
 
-## Continued access to bounded evidence (2026-09-27)
+## Continued access to bounded evidence
 
 A response budget is not a ceiling on the task. The model chooses relevant files,
 pages, regions, ranges, and deadlines. Integrations preserve complete available
@@ -424,7 +406,7 @@ one-retry guard. The reviewed patch uses session order to distinguish fresh
 retries from pre-compaction context when timestamps are equal. It changes no
 retry count or ordinary output-length behavior.
 
-Native bash remains available for ordinary full-trust file/process work. This change
-does not install a PTY/job scheduler: native bash has no default command deadline and
-spills large output. The document worker and engine adapter own their own cancellation;
+Native bash remains available for ordinary full-trust file/process work. It has no
+default command deadline and spills large output; long-running commands belong in
+[background jobs](background-jobs.md). The document worker and engine adapter own their own cancellation;
 arbitrary child processes created by a user script remain outside worker ownership.

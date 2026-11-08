@@ -17,9 +17,8 @@ export function folderAutomationsPath(connectedFolderId: string): string {
 
 /**
  * The automations whose trigger or steps name a Connected Folder, cached per Connected Folder
- * (docs/automations.md, F15 as amended 2026-09-24). The active Connected Folder is
- * read when it changes and whenever the window regains focus; the rail entry
- * shows only while its list is non-empty. The preview reads fixture data and
+ * (docs/automations.md). The active Connected Folder is read when it changes
+ * and whenever the window regains focus. The preview reads fixture data and
  * never touches the network.
  */
 export function useFolderAutomations(activeConnectedFolderId: string, fixtureMode: boolean) {

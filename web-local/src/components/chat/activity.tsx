@@ -405,7 +405,7 @@ function humanizeTool(key: string): string {
   return key.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-/** Older Chats can hold steps from a removed app's tool, registered as `app_<16 hex>_<name>`; the hash is never shown. */
+/** Chats from an earlier build can hold steps from a Connected Folder app's tool, registered as `app_<16 hex>_<name>`; the hash is never shown. */
 const appToolName = /^app_[0-9a-f]{16}_(.+)$/i;
 
 /**

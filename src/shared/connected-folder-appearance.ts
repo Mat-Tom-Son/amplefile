@@ -24,10 +24,10 @@ export interface ConnectedFolderAppearanceBannerFraming { x: number; y: number; 
 /** How the banner sits above the Connected Folder's pane. Card is the original. */
 export const connectedFolderAppearanceBannerLayouts = ["card", "compact", "band", "cover"] as const;
 export type ConnectedFolderAppearanceBannerLayout = typeof connectedFolderAppearanceBannerLayouts[number];
-/** The icon beside the name on the banner (2026-11-05). */
+/** The icon beside the name on the banner. */
 export const connectedFolderAppearanceBannerIconStyles = ["none", "plain", "square", "circle"] as const;
 export type ConnectedFolderAppearanceBannerIconStyle = typeof connectedFolderAppearanceBannerIconStyles[number];
-/** What sits behind the name on the banner (2026-11-05). Accent is the Connected Folder color. */
+/** What sits behind the name on the banner. Accent is the Connected Folder color. */
 export const connectedFolderAppearanceBannerTitleFills = ["frosted", "solid", "accent", "none"] as const;
 export type ConnectedFolderAppearanceBannerTitleFill = typeof connectedFolderAppearanceBannerTitleFills[number];
 
@@ -48,7 +48,7 @@ export interface AccentIdentity {
 }
 
 export interface ConnectedFolderAppearanceCustomization {
-  /** Legacy renderer-local fields. They remain readable until the next explicit edit. */
+  /** Plain hex colors (and the schema they imply). Any API client may save them; they stay readable until the next explicit edit stores accent identities. */
   color?: string;
   color2?: string;
   schema?: 1 | 2;
@@ -305,7 +305,7 @@ export function defaultConnectedFolderAccent(connectedFolderId: string): { label
 
 /**
  * A new Connected Folder's starting color: one the fewest other Connected Folders use,
- * so they stay easy to tell apart (2026-10-30). Its id's own pick wins a tie,
+ * so they stay easy to tell apart. Its id's own pick wins a tie,
  * and later ties go to the next color along from it.
  */
 export function startingConnectedFolderAccentHex(connectedFolderId: string, otherAccentHexes: readonly string[]): string {
@@ -386,9 +386,6 @@ export function parseConnectedFolderAppearanceProposal(value: unknown): Connecte
   const targetRecord = record.target && typeof record.target === "object" && !Array.isArray(record.target)
     ? record.target as Record<string, unknown>
     : undefined;
-  if (targetRecord && ("workspaceId" in targetRecord || "workspaceName" in targetRecord)) {
-    throw new Error("Legacy appearance target fields are not supported.");
-  }
   const createdBy = record.createdBy === "codex"
     || record.createdBy === "claude-code"
     || record.createdBy === "human"

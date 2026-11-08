@@ -8,14 +8,14 @@ const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = async (relativePath: string) => await readFile(join(repositoryRoot, relativePath), "utf8");
 
 /**
- * docs/receipts-not-gates.md acceptance, last bullet: no user-facing copy
- * contains "staged", "approve", "policy", "Reviewed", or "Unrestricted"
- * outside history notes. This sweep pins the surfaces that speak to a person:
+ * docs/act-ledger.md, "Receipts, not gates": no user-facing copy
+ * contains "staged", "approve", "policy", "Reviewed", or "Unrestricted".
+ * This sweep pins the surfaces that speak to a person:
  * the public documents, the AmpleFile agent's materialized instructions, and the
  * desktop's copy contract.
  *
- * "Reviewed" and "Unrestricted" are matched case-sensitively because they are
- * the retired authority-setting names; an ordinary sentence about a person
+ * "Reviewed" and "Unrestricted" are matched case-sensitively because they
+ * would name an authority setting AmpleFile does not have; an ordinary sentence about a person
  * reviewing something is still allowed. Protocol identifiers that legitimately
  * survive — the pairing certificate fields and the stored grant status — are
  * neutralized by exact token so a newly written person-facing "approve" cannot
@@ -49,7 +49,7 @@ test("public documents promise receipts and undo instead of gates", async () => 
   // The promises the rewrite has to make, not just the words it drops.
   const readme = await read("README.md");
   assert.match(readme, /leaves a record you can read in the app/);
-  assert.match(readme, /\*\*Recently deleted\*\* for 30 days/);
+  assert.match(readme, /\*\*Recently Deleted\*\* for 30 days/);
 
   const security = await read("SECURITY.md");
   assert.match(security, /\*\*Receipts, not gates\.\*\*/);
@@ -58,7 +58,7 @@ test("public documents promise receipts and undo instead of gates", async () => 
   assert.match(security, /The only human-only surface establishes secrets/);
 
   const privacy = await read("PRIVACY.md");
-  assert.match(privacy, /Recently deleted items under the application-data `recently-deleted\/` directory/);
+  assert.match(privacy, /Recently Deleted items under the application-data `recently-deleted\/` directory/);
   assert.match(privacy, /runs at once and leaves a receipt; nothing waits for a further click/);
 });
 
@@ -75,12 +75,12 @@ test("shared Skills and the AmpleFile agent's materialized instructions stay gat
   assert.doesNotMatch(instructions, retiredAuthorityNames);
   assert.match(instructions, /## Receipts, not gates/);
   // Delegation teaching says what waiting is, and never tells a turn to sit
-  // on a child (docs/collaboration-contract.md, F28).
+  // on a child (docs/collaboration-contract.md).
   assert.match(instructions, /Waiting is not a failure/);
   assert.match(instructions, /Never busy-wait, sleep, or poll in a loop/);
   assert.doesNotMatch(instructions, /\bpoll(ing)? (until|every)\b|\bsleep \d/i);
 
-  // The Worker's operations guide (F26) is taught text too.
+  // The Worker's operations guide is taught text too.
   const guide = speakableSource(await read("src/local/agent/connected-folder-operations-guide.ts"));
   assert.doesNotMatch(guide, retiredGateWords);
   assert.doesNotMatch(guide, retiredAuthorityNames);

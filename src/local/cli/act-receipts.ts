@@ -19,8 +19,8 @@ export const AMPLEFILE_CLI_ACT_RECEIPTS_MAX_BYTES = 8 * 1024 * 1024;
  * must not be failed retroactively); the executor surfaces a warning when one
  * cannot be written.
  */
-export interface AmpleFileCliActReceiptV1 {
-  v: 1;
+export interface AmpleFileCliActReceiptV3 {
+  v: 3;
   at: string;
   requestId: string;
   command: string;
@@ -33,6 +33,8 @@ export interface AmpleFileCliActReceiptV1 {
   /** Kernel task id of the AmpleFile agent turn this act was performed for, when one was running. */
   parentTaskId?: string;
   detail?: string;
+  surface?: AmpleFileCliActSurface;
+  undoRef?: AmpleFileCliActUndoRef;
 }
 
 /**
@@ -45,17 +47,6 @@ export const AMPLEFILE_CLI_ACT_SURFACES = ["cli", "popover", "main-window"] as c
 export type AmpleFileCliActSurface = (typeof AMPLEFILE_CLI_ACT_SURFACES)[number];
 
 /**
- * Surfaces older builds wrote: on decision receipts (a standing policy or the
- * Unrestricted authority mode satisfying a gated act), and `remote_web` for
- * acts from a paired browser before Web Access was removed (2026-11-07).
- * Nothing writes them any more; readers of durable records accept them so
- * those lines stay readable history and still gate replays.
- */
-export const AMPLEFILE_CLI_ACT_LEGACY_SURFACES = ["policy", "unrestricted", "remote_web"] as const;
-
-export type AmpleFileCliActLegacySurface = (typeof AMPLEFILE_CLI_ACT_LEGACY_SURFACES)[number];
-
-/**
  * Typed pointer to the prior state an undo verb needs — identifiers, digests,
  * or short prior values (a title, a lifecycle state) only. Receipts never
  * grow file contents, message text, queries, or secrets.
@@ -65,32 +56,8 @@ export interface AmpleFileCliActUndoRef {
   value: string;
 }
 
-/**
- * Legacy read-only shape: lines older builds wrote while gated acts carried a
- * decision id, a policy id, and the two legacy surfaces. Still parsed, still
- * an at-most-once ledger entry, never written.
- */
-export interface AmpleFileCliActReceiptV2 extends Omit<AmpleFileCliActReceiptV1, "v"> {
-  v: 2;
-  surface?: AmpleFileCliActSurface | AmpleFileCliActLegacySurface;
-  decisionId?: string;
-  policyId?: string;
-  browserId?: string;
-  grantId?: string;
-  undoRef?: AmpleFileCliActUndoRef;
-}
-
-export interface AmpleFileCliActReceiptV3 extends Omit<AmpleFileCliActReceiptV1, "v"> {
-  v: 3;
-  surface?: AmpleFileCliActSurface | AmpleFileCliActLegacySurface;
-  /** Read only: the paired browser older builds stamped on acts that came through Web Access. */
-  browserId?: string;
-  grantId?: string;
-  undoRef?: AmpleFileCliActUndoRef;
-}
-
-/** Journal lines are written at the current version; readers accept every version. */
-export type AmpleFileCliActReceipt = AmpleFileCliActReceiptV1 | AmpleFileCliActReceiptV2 | AmpleFileCliActReceiptV3;
+/** Journal lines are written and read at version 3, the version every AmpleFile build writes. */
+export type AmpleFileCliActReceipt = AmpleFileCliActReceiptV3;
 
 export interface AmpleFileCliActReceiptsOptions {
   stateRoot: string;

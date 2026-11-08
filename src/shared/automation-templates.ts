@@ -1,6 +1,6 @@
 /**
- * Ready-made Automations (docs/automations.md, "Ready-made Automations",
- * 2026-11-07): a small fixed set a person can turn on for one Connected Folder from
+ * Ready-made Automations (docs/automations.md, "Ready-made Automations"):
+ * a small fixed set a person can turn on for one Connected Folder from
  * the file manager's Info panel. Each becomes an ordinary Automation with a
  * stable id per Connected Folder, so turning it off and on again is the same
  * Automation, and Settings → Automations lists it like any other.

@@ -5,14 +5,14 @@ import JSZip from "jszip";
 
 /**
  * The file manager's copy, paste, duplicate, move, and compress
- * (docs/product-model.md, "2026-11-06 file manager layout"), as Finder does
+ * (docs/product-model.md, "The file manager window"), as Finder does
  * them: nothing is ever replaced (a name already taken gets " copy", then
  * " copy 2"), a folder is never copied or moved into itself, and a copy never
- * carries a Connected Folder's identity (`.amplefile/`) or legacy metadata with it.
+ * carries a Connected Folder's identity (`.amplefile/`) with it.
  */
 
 /** Folders a copy or archive leaves behind: a Connected Folder's identity and History stay with the Connected Folder. */
-const identityFolders = new Set([".amplefile", ".workspace"]);
+const identityFolders = new Set([".amplefile"]);
 
 export function isInside(parentPath: string, childPath: string): boolean {
   const parent = comparison(parentPath);

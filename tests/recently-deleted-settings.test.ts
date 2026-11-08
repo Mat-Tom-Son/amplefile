@@ -10,11 +10,11 @@ import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
 
 /**
  * Settings → Recently deleted over the running local API
- * (docs/receipts-not-gates.md, F20). A delete never refuses for lack of
+ * (docs/act-ledger.md). A delete never refuses for lack of
  * coverage: the entry moves here and comes back on request. A deleted managed
  * Connected Folder's folder comes back with its portable identity, its Chats, and its
  * History. Retention is adjustable, "Delete Now" removes one item, and a tree
- * holding legacy `.workspace/` records is never erased — the clean-break rule.
+ * AmpleFile could not fully look through is held and never erased.
  */
 
 async function withApi(
@@ -157,8 +157,8 @@ test("a deleted managed Connected Folder's folder waits in Recently deleted and 
   });
 });
 
-test("retention is adjustable, Delete now removes one item, and legacy trees are never erased", async () => {
-  await withApi(async ({ api }) => {
+test("retention is adjustable, Delete now removes one item, and held items are never erased", async () => {
+  await withApi(async ({ api, stateBase }) => {
     const created = await api.actFacade.createConnectedFolder({ name: "Retention Connected Folder" });
     const connectedFolder = created.connectedFolder;
 
@@ -168,21 +168,26 @@ test("retention is adjustable, Delete now removes one item, and legacy trees are
 
     process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES = "1";
     let plain;
-    let legacy;
+    let kept;
     try {
       await writeFile(join(connectedFolder.connectedFolderRoot, "note.txt"), "plain", "utf8");
       plain = await send(api.origin, `/api/connected-folders/${connectedFolder.id}/local-file`, "DELETE", { path: "note.txt" });
-      // A folder carrying records from the earlier Workspace product may be
-      // deleted, and moving it here is fine; erasing it never is.
-      await mkdir(join(connectedFolder.connectedFolderRoot, "old", ".workspace"), { recursive: true });
-      await writeFile(join(connectedFolder.connectedFolderRoot, "old", ".workspace", "legacy.json"), "{}", "utf8");
+      await mkdir(join(connectedFolder.connectedFolderRoot, "old"), { recursive: true });
       await writeFile(join(connectedFolder.connectedFolderRoot, "old", "doc.txt"), "old", "utf8");
-      legacy = await send(api.origin, `/api/connected-folders/${connectedFolder.id}/local-file`, "DELETE", { path: "old" });
+      kept = await send(api.origin, `/api/connected-folders/${connectedFolder.id}/local-file`, "DELETE", { path: "old" });
     } finally {
       delete process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES;
     }
     const plainId = (plain.body.recentlyDeleted as { entryId: string }).entryId;
-    const legacyId = (legacy.body.recentlyDeleted as { entryId: string }).entryId;
+    const keptId = (kept.body.recentlyDeleted as { entryId: string }).entryId;
+    // A walk that could not list everything in a tree holds it; moving the
+    // folder here is fine, erasing it never is.
+    const keptManifest = join(stateBase, "recently-deleted", "entries", keptId, "manifest.json");
+    const heldAt = new Date().toISOString();
+    await writeFile(keptManifest, JSON.stringify({
+      ...JSON.parse(await readFile(keptManifest, "utf8")) as Record<string, unknown>,
+      held: { reason: "unreadable", noticedAt: heldAt },
+    }), "utf8");
 
     const narrowed = await send(api.origin, "/api/settings/recently-deleted/retention", "PUT", { retentionDays: 7 });
     assert.equal(narrowed.status, 200);
@@ -195,12 +200,12 @@ test("retention is adjustable, Delete now removes one item, and legacy trees are
     }
 
     assert.deepEqual((await send(api.origin, `/api/settings/recently-deleted/${plainId}`, "DELETE")).body, { removed: true });
-    const held = await send(api.origin, `/api/settings/recently-deleted/${legacyId}`, "DELETE");
-    assert.equal(held.status, 409, "a legacy tree is never erased");
-    assert.match(String(held.body.error), /earlier Workspace product/i);
+    const held = await send(api.origin, `/api/settings/recently-deleted/${keptId}`, "DELETE");
+    assert.equal(held.status, 409, "a held item is never erased");
+    assert.match(String(held.body.error), /could not look through everything/i);
     const remaining = (await getJson(api.origin, "/api/settings/recently-deleted")).entries as Array<Record<string, unknown>>;
-    assert.deepEqual(remaining.map((entry) => entry.id), [legacyId]);
-    assert.equal((remaining[0]!.held as { reason: string }).reason, "legacy-metadata");
+    assert.deepEqual(remaining.map((entry) => entry.id), [keptId]);
+    assert.deepEqual(remaining[0]!.held, { reason: "unreadable", noticedAt: heldAt });
   });
 });
 

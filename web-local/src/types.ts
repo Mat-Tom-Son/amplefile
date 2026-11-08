@@ -146,7 +146,7 @@ export interface ChatContextPathRequest {
 }
 /**
  * Sends a message at once with these Connected Folder paths as references: the
- * file manager's message box (2026-11-06) hands its words and selection to
+ * file manager's message box hands its words and selection to
  * the Chat it opens in the panel.
  */
 export interface ChatSendRequest {
@@ -163,7 +163,7 @@ export interface PendingChatSend {
   contextPaths: string[];
   transientConversation: boolean;
   draftStorageKey: string;
-  /** Connected Folder Workers the message @-mentions (2026-10-01). */
+  /** Connected Folder Workers the message @-mentions. */
   addressedConnectedFolderIds?: string[];
 }
 export interface ConnectedFolderFixtureConversation extends ConversationSummary {
@@ -501,7 +501,7 @@ export interface ChatStreamEvent {
   request?: ExtensionUiRequest;
   requests?: ExtensionUiRequest[];
   editorMode?: "replace" | "append";
-  /** The Chat's queued message, held by the app for every window (2026-10-27). */
+  /** The Chat's queued message, held by the app for every window. */
   queued?: { content: string; updatedAt: string; held?: boolean } | null;
   /** The app's number for this queue change; a higher one is newer. */
   revision?: number;

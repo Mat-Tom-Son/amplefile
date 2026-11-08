@@ -24,7 +24,7 @@ export const ampleFileAutomationProposalKind = "amplefile.automation-proposal" a
 export const ampleFileAutomationDeclarationKind = "amplefile.automation" as const;
 export const ampleFileAutomationContractVersion = 6 as const;
 /**
- * Version 6 (2026-11-07) lets a folder-change trigger watch the Connected Folder's
+ * Version 6 lets a folder-change trigger watch the Connected Folder's
  * own top level, `"path": ""` without recursion, for the file manager's
  * ready-made Automations (Organize New Files, docs/automations.md).
  */
@@ -100,7 +100,7 @@ export interface AmpleFileAutomationChatStep {
   kind: "chat";
   connectedFolder: string;
   message: string;
-  /** The model this step's new Chat uses, instead of the Connected Folder's own (version 4, 2026-10-11). */
+  /** The model this step's new Chat uses, instead of the Connected Folder's own (version 4). */
   model?: AmpleFileAutomationStepModel;
 }
 
@@ -163,7 +163,7 @@ export interface AmpleFileAutomationAgentStep {
   id: string;
   kind: "agent";
   message: string;
-  /** The model this step's new AmpleFile agent chat uses, instead of the agent's own (2026-10-11). */
+  /** The model this step's new AmpleFile agent chat uses, instead of the agent's own. */
   model?: AmpleFileAutomationStepModel;
 }
 
@@ -349,8 +349,8 @@ export function ampleFileAutomationDigest(value: unknown): string {
 }
 
 /**
- * Features a stored automation may still name from before they were removed
- * (Checks and Connected Folder apps, 2026-11-07). The parser refuses them;
+ * Retired features a stored automation may still name (Checks and Connected
+ * Folder apps, from an earlier build). The parser refuses them;
  * the automation store drops a stored automation that uses one on its own
  * instead of treating the whole store as damaged
  * (src/local/automations/automation-store.ts).
@@ -417,7 +417,7 @@ export function ampleFileAutomationReferencedConnectedFolderIds(definition: Ampl
     } else if (step.kind === "chat") {
       ids.add(step.connectedFolder);
     }
-    // An agent step names no work-folder: the work-fold agent sits above them.
+    // An agent step names no Connected Folder: the AmpleFile agent sits above them.
   }
   return [...ids].sort();
 }

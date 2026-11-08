@@ -28,7 +28,7 @@ test("turn file references reject malformed metadata, unsafe paths, duplicates a
   assert.deepEqual(parseTurnFileChanges(valid), valid);
   for (const value of [null, { ...valid, owner: "injected" }, { ...valid, beforeCheckpointId: "../../other" },
     { ...valid, files: [valid.files[0], valid.files[0]] }, { ...valid, files: Array(maxTurnFileChanges + 1).fill(valid.files[0]) },
-    ...["/outside", "../outside", ".amplefile/secret", ".workspace/old", "nested/.pi/auth", "file\\name", "a\0b"].map((path) => ({ ...valid, files: [{ ...valid.files[0], path }] })),
+    ...["/outside", "../outside", ".amplefile/secret", "nested/.pi/auth", "file\\name", "a\0b"].map((path) => ({ ...valid, files: [{ ...valid.files[0], path }] })),
     { ...valid, files: [{ ...valid.files[0], hashSha256: "invalid" }] }, { ...valid, files: [{ ...valid.files[0], sizeBytes: -1 }] }]) {
     assert.throws(() => parseTurnFileChanges(value));
   }

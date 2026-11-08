@@ -1,11 +1,11 @@
 # macOS release runbook
 
-This runbook publishes the active Apple silicon AmpleFile desktop release to the separate public feed at [`Mat-Tom-Son/amplefile-mac-releases`](https://github.com/Mat-Tom-Son/amplefile-mac-releases). AmpleFile has no Windows build or release lane.
+This runbook publishes the Apple-silicon AmpleFile desktop release to the separate public feed at [`Mat-Tom-Son/amplefile-mac-releases`](https://github.com/Mat-Tom-Son/amplefile-mac-releases). Source and release tags live in [`Mat-Tom-Son/amplefile`](https://github.com/Mat-Tom-Son/amplefile).
 
 ## One-time workstation setup
 
 1. Install the `Developer ID Application: James Thompson (464JD5K8DC)` certificate and private key in the login Keychain.
-2. Store notarization credentials with `xcrun notarytool store-credentials`. The existing local profile is `kai-workspace-notary`; profile names are not product-scoped and using it does not import legacy product data.
+2. Store notarization credentials with `xcrun notarytool store-credentials`. The release workstation's profile is `kai-workspace-notary`; a profile name is only a local label.
 3. Create ignored `.env.macos.local` using the non-secret variable template in [macOS build and release lane](macos-build.md).
 4. Confirm `gh auth status` uses the `Mat-Tom-Son` account and that the Mac feed repository is public.
 
@@ -53,34 +53,33 @@ This is a record from a trusted release workstation, not a tamper-resistant
 attestation: hidden lockfiles detect ordinary npm installation drift, not manual
 edits to installed package files. Do not edit installed dependencies between
 verification and packaging.
-GitHub Actions is disabled in the canonical source repository; publication uses
-the local receipt and checks source identity directly. Release-tooling-only changes need
+GitHub Actions is off in the source repository; publication uses the local
+receipt and checks source identity directly. Release-tooling-only changes need
 focused regression tests and normal local checks, not a version bump or an
 Apple submission.
 
-## First AmpleFile release
+## Release record
 
-The first public AmpleFile release is `0.1.0` (owner decision 2026-11-07). The
-repository carried its predecessor's `0.15.3` until the first release commit,
-which resets the package version. The signed candidate uses
-`com.amplefile.desktop`, the `AmpleFile` application-data profile, and only the
-`Mat-Tom-Son/amplefile-mac-releases` feed. It starts empty: AmpleFile does not
-open, import, or migrate the predecessor's application data, folder metadata,
-or updater cache, and the predecessor's folders do not come along.
-
-The predecessor, "work-fold", is not an updater predecessor. An installed copy
-of it keeps its own feed and never offers AmpleFile; AmpleFile is installed
-fresh from its DMG. The first in-place AmpleFile update to prove is `0.1.0` to
-the next release.
+- **0.1.0**, the first public AmpleFile release, was published to
+  `Mat-Tom-Son/amplefile-mac-releases` on November 7, 2026, from the
+  annotated source tag `v0.1.0` (commit `7ea62a0`). It is an arm64 DMG and ZIP
+  with blockmaps, `latest-mac.yml`, checksums, and both manifests.
+- The signed app uses `com.amplefile.desktop`, the `AmpleFile`
+  application-data profile, and only the `Mat-Tom-Son/amplefile-mac-releases`
+  feed. A new install starts with an empty profile and is installed from its
+  DMG.
+- The first in-place update to prove is from an installed `0.1.0` to the next
+  release. Record it under [Updater evidence](#updater-evidence) when it
+  passes.
 
 ## Release procedure
 
 1. Complete review, fixes, versioning, and release notes, then merge and push
    the final release commit to canonical `main` in `Mat-Tom-Son/amplefile`.
    Check both local and remote tags before selecting a version: a checkout can
-   retain frozen legacy tags absent from the active remote. Never push an
-   existing tag merely because creation failed; choose a higher version unused
-   locally and remotely.
+   hold tags the remote does not have. Never push an existing tag merely
+   because creation failed; choose a higher version unused locally and
+   remotely.
 2. On an Apple-silicon Mac with Node 24, supported npm, and Google Chrome
    installed for real CSS tests, run the complete local release check from that
    clean committed checkout:
@@ -133,10 +132,10 @@ the next release.
      git push origin refs/tags/v<version>:refs/tags/v<version>
    ```
 
-   GitHub Actions is disabled, so pushing the tag starts no remote workflow.
+   GitHub Actions is off, so pushing the tag starts no remote workflow.
    Publication verifies the package version, annotated tag, and canonical source
-   identity directly. `npm run desktop:release:mac:ci` remains an optional
-   diagnostic for historical Actions evidence.
+   identity directly. `npm run desktop:release:mac:ci` is an optional
+   diagnostic for the dormant workflows.
 5. Confirm the build checkpoint and local receipt still match, then publish
    through the resume lane without repeating completed Apple work:
 
@@ -165,7 +164,7 @@ the next release.
 
 8. Open AmpleFile normally and check **Settings > About** and
    **AmpleFile > Check for Updates...**. If the person reserved the update
-   click, verify the installed predecessor offers the new version and leave
+   click, verify the installed lower version offers the new version and leave
    installation to them; do not report the new version as installed.
 
 The publisher refuses a dirty/unpushed source tree, a mismatched annotated
@@ -195,9 +194,8 @@ The accepted proof must show:
 - `npm run desktop:verify:installed:mac` passes;
 - a full quit and reopen does not ask for repeated Keychain passwords.
 
-Updater evidence for the predecessor products ("work-fold" and Workspace) stays
-in their repositories. It does not establish AmpleFile identity or updater
-compatibility; record AmpleFile's proofs here as they pass.
+No in-place AmpleFile update has been proven yet; record each proof here as it
+passes, with the two versions and the date.
 
 ## Recovery rules
 

@@ -17,7 +17,7 @@ test("management attachments classify files, folders, and links as typed referen
   try {
     await writeFile(join(sandbox, "report.txt"), "external report", "utf8");
     await mkdir(join(sandbox, "incoming"), { recursive: true });
-    for (const reserved of [".amplefile", ".WORKSPACE", ".Pi"]) {
+    for (const reserved of [".amplefile", ".WORK-FOLD", ".Pi"]) {
       await mkdir(join(sandbox, "nested", reserved), { recursive: true });
       await writeFile(join(sandbox, "nested", reserved, "private.txt"), "private", "utf8");
     }
@@ -46,7 +46,7 @@ test("management attachments classify files, folders, and links as typed referen
     await assert.rejects(() => classifyAmpleFileAgentAttachments(["https://[broken"], sandbox), /Invalid link/);
     await assert.rejects(() => classifyAmpleFileAgentAttachments(["https://user:secret@example.com/file"], sandbox), /embedded credentials/);
     await assert.rejects(() => classifyAmpleFileAgentAttachments([""], sandbox), /cannot be empty/);
-    for (const reserved of [".amplefile", ".WORKSPACE", ".Pi"]) {
+    for (const reserved of [".amplefile", ".WORK-FOLD", ".Pi"]) {
       await assert.rejects(
         () => classifyAmpleFileAgentAttachments([join(sandbox, "nested", reserved, "private.txt")], sandbox),
         /reserved/i,
@@ -102,8 +102,8 @@ test("management attachment loading inlines readable files and keeps folders and
 
 test("attachment dispositions account for every attachment and never guess", () => {
   // The accounting reads the attachment references and the recorded action
-  // trail of a request; it depends on neither the registry that used to hold
-  // them nor the durable store that holds them now.
+  // trail of a request; it does not depend on the durable store that holds
+  // them.
   const dispositions = ampleFileAgentAttachmentDispositions({
     attachments: [
       { kind: "file", target: "/tmp/report.pdf", name: "report.pdf" },

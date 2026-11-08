@@ -101,8 +101,8 @@ interface PlaceFileBridge {
 }
 
 /**
- * The file manager layout (docs/product-model.md, "2026-11-06 file manager
- * layout"): a Finder-style window over the same local API and desktop bridge
+ * The file manager layout (docs/product-model.md, "The file manager
+ * window"): a Finder-style window over the same local API and desktop bridge
  * Files uses. The sidebar opens the Standard Folders and every Connected Folder.
  */
 export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, onSwitchConnectedFolder, onOpenSettings, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, onError }: {
@@ -140,9 +140,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const [forward, setForward] = useState<FileManagerLocation[]>([]);
   const place = location.place;
   const connectedFolder = place.kind === "connected-folder" ? connectedFolders.find((item) => item.id === place.id) ?? null : null;
-  // Nested Connected Folders sit under their parent in the sidebar behind a caret
-  // (owner request, 2026-11-07); the parent of one is the deepest Connected Folder
-  // that contains it, as everywhere else (src/shared/folder-nesting.ts).
+  // Nested Connected Folders sit under their parent in the sidebar behind a
+  // caret; the parent of one is the deepest Connected Folder that contains it,
+  // as everywhere else (src/shared/folder-nesting.ts).
   const [sidebarOpen, setSidebarOpenState] = useState<string[]>(() => readStoredJsonValue(sidebarOpenStorageKey, (value) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [], []));
   const setSidebarOpen = (next: string[]) => { setSidebarOpenState(next); writeStoredJsonValue(sidebarOpenStorageKey, next); };
   const toggleSidebarFolder = (id: string) => setSidebarOpen(sidebarOpen.includes(id) ? sidebarOpen.filter((item) => item !== id) : [...sidebarOpen, id]);
@@ -240,7 +240,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const [skillsFor, setSkillsFor] = useState<ConnectedFolderSummary | null>(null);
   const [actionMenu, setActionMenu] = useState<{ target: ConnectedFolderSummary | null; x: number; y: number } | null>(null);
   const [goToOpen, setGoToOpen] = useState(false);
-  // Recents (2026-11-07): files changed lately across the Connected Folders and the top of Desktop, Documents, and Downloads.
+  // Recents: files changed lately across the Connected Folders and the top of Desktop, Documents, and Downloads.
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [recents, setRecents] = useState<RecentItem[] | null>(null);
   const [recentSelection, setRecentSelection] = useState<string | null>(null);
@@ -262,7 +262,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const [turnsSettled, setTurnsSettled] = useState(0);
   const [composerDrop, setComposerDrop] = useState(false);
   const [quickMenu, setQuickMenu] = useState<{ x: number; y: number; items: Array<{ label: string; command: string }>; run: (command: string | null) => void } | null>(null);
-  // The Chat the panel holds (docs/product-model.md, 2026-11-06): one at a
+  // The Chat the panel holds (docs/product-model.md): one at a
   // time, in the Connected Folder it belongs to.
   // `conversationId` is the Chat opened from History; a new one from the
   // message box keeps it null (as a new Chat tab does) and learns `activeId`.
@@ -402,7 +402,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }
 
   /**
-   * Dropping onto the list (owner request, 2026-11-07: find the friction):
+   * Dropping onto the list:
    * files from Finder are added to the folder shown, or to the folder row they
    * land on; a file dragged out of this list onto a folder row moves there.
    * Both keep History, as every change here does. A Standard Folder is
@@ -486,7 +486,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     }
   }
 
-  // ---- Copy, paste, duplicate, compress, and ⌘Z (2026-11-07) ----
+  // ---- Copy, paste, duplicate, compress, and ⌘Z ----
   undoFileChangeRef.current = (redo) => undoFileChange(redo);
 
   interface TransferResult { mode: string; written: string[]; restorePoints: Array<{ connectedFolderId: string; checkpointId: string }>; copiedInstead?: boolean; moves?: Array<{ from: string; to: string }> }
@@ -1482,7 +1482,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
               </button> : null}
               <button type="button" className={`fm-sidebar-item${current ? " is-current" : ""}${sidebarDrop === placeKey({ kind: "connected-folder", id: item.id }) ? " is-drop-target" : ""}`} aria-current={current ? "page" : undefined} onClick={() => {
                   // A parent opens on the first click and goes to its top; clicking
-                  // it again while there closes it (owner request, 2026-11-07).
+                  // it again while there closes it.
                   const atTop = current && !location.path;
                   if (inside.length && atTop && open) { toggleSidebarFolder(item.id); return; }
                   if (inside.length && !open) toggleSidebarFolder(item.id);

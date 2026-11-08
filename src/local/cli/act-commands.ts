@@ -16,7 +16,7 @@ import type { AmpleFileCliActReceipts, AmpleFileCliActUndoRef } from "./act-rece
 import { maximumWorkerInstructionsLength } from "../agent/model-preferences.js";
 // The collaboration bounds and their person-facing refusal text live with the
 // request record that enforces them, so a parse-time refusal and a store-time
-// refusal say the same words (docs/collaboration-contract.md, F25/F29).
+// refusal say the same words (docs/collaboration-contract.md).
 import {
   parseAmpleFileQuestionOptions,
   ampleFileRequestLimitMessage,
@@ -43,9 +43,9 @@ export type AmpleFileCliActCommandName =
   | "chat.archive"
   | "chat.resume"
   | "chat.compact"
-  // The work-folder-scoped collaboration verbs (docs/collaboration-contract.md,
-  // F27). Delivery is host-side: no work-fold agent turn moves a report, an
-  // answer, or a handoff.
+  // The Connected Folder-scoped collaboration verbs (docs/collaboration-contract.md).
+  // Delivery is host-side: no AmpleFile agent turn moves a report, an answer,
+  // or a handoff.
   | "chat.report"
   | "agent.ask"
   | "agent.answer"
@@ -104,8 +104,8 @@ export type AmpleFileCliActCommandName =
   | "automations.receipts"
   | "recently-deleted.list"
   | "recently-deleted.restore"
-  // Reads of the request graph above all work-folders (docs/collaboration-contract.md,
-  // F25): one request, everything handed out under it, and what came back.
+  // Reads of the request graph above all Connected Folders (docs/collaboration-contract.md):
+  // one request, everything handed out under it, and what came back.
   | "requests.list"
   | "requests.show"
   // Background jobs (docs/background-jobs.md): the same records as the
@@ -169,7 +169,7 @@ export interface AmpleFileCliActParsedCommand {
   automation?: string;
   /** Recently deleted item id for recently-deleted.restore. */
   entry?: string;
-  /** Result-envelope summary for chat.report (docs/collaboration-contract.md, F29). */
+  /** Result-envelope summary for chat.report (docs/collaboration-contract.md). */
   summary?: string;
   /** Inline `--data` JSON for chat.report; the host validates it against a declared schema. */
   resultData?: unknown;
@@ -432,7 +432,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     throw usageError(`--path cannot be used with '${command || "(none)"}'.`);
   }
   // --file is repeatable and names deliverables to hand back or copies to
-  // carry (docs/collaboration-contract.md, F27/F29); nothing else takes it.
+  // carry (docs/collaboration-contract.md); nothing else takes it.
   const fileCommands = new Set(["chat report", "chat handoff"]);
   if (!fileCommands.has(command) && fileValues.length) {
     throw usageError(`--file cannot be used with '${command || "(none)"}'.`);
@@ -441,7 +441,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
   if (command !== "chat ask" && command !== "agent ask" && optionValues.length) {
     throw usageError(`--option cannot be used with '${command || "(none)"}'.`);
   }
-  // The request graph sits above Connected Folders (F25): every request names the Connected Folder
+  // The request graph sits above Connected Folders: every request names the Connected Folder
   // it belongs to, so neither read takes one.
   if (positional[0] === "requests" && flags.has("--connected-folder")) {
     throw usageError("The request graph sits above Connected Folders, so 'requests' takes no --connected-folder.");
@@ -765,7 +765,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
         ...(parentTaskId ? { parentTaskId } : {}),
       };
     case "chat report": {
-      // F27/F29: one result envelope attached to a task the caller owns. Parse
+      // One result envelope attached to a task the caller owns. Parse
       // bounds only what argv can carry; the host resolves each --file inside
       // the Connected Folder, records its content hash and size, and applies the declared
       // schema to --data when the request declared one.
@@ -789,7 +789,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     }
     case "agent ask":
     case "chat ask": {
-      // F27: recording a question never suspends the asking turn. The turn
+      // Recording a question never suspends the asking turn. The turn
       // ends; the task's request is what waits.
       allowOnlyFlags(...(command === "agent ask" ? ["--task", "--question", "--question-file", "--parent-task", "--asynchronous"] : ["--connected-folder", "--task", "--question", "--question-file", "--to", "--parent-task", "--asynchronous"]));
       // --option is collected apart from flags and checked above.
@@ -834,7 +834,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     case "chat steer": {
       // One more message into a Chat's running turn, delivered after its
       // current step. --task names the caller's own running turn when a
-      // Worker redirects work its Chat handed off (2026-10-18).
+      // Worker redirects work its Chat handed off.
       allowOnlyFlags("--connected-folder", "--conversation", "--task", "--message", "--message-from-payload", "--parent-task");
       const message = stringFlag("--message");
       const messageFromPayload = flags.get("--message-from-payload") === true;
@@ -906,8 +906,8 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     case "agent wait":
       // The wait is a shim-side poll on purpose: a host-side blocking wait
       // would hold the broker request open past its timeout. The current
-      // shim also settles when the task is waiting on an answer (F28).
-      throw usageError(`${command} runs inside the AmpleFile shim; update the installed AmpleFile CLI (it now settles on a waiting task too).`);
+      // shim also settles when the task is waiting on an answer.
+      throw usageError(`${command} runs inside the AmpleFile shim; update the installed AmpleFile CLI.`);
     case "agent send": {
       allowOnlyFlags("--conversation", "--new", "--message", "--message-from-payload");
       const newConversation = flags.get("--new") === true;
@@ -1303,7 +1303,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
         proposalPath: requireBoundedFlag("--proposal", "proposal-path", maxActPathLength),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
-    // Recently deleted sits above Connected Folders (docs/receipts-not-gates.md, F20):
+    // Recently deleted sits above Connected Folders (docs/act-ledger.md):
     // each item names the Connected Folder it came from, so neither verb takes
     // --connected-folder.
     case "recently-deleted list":
@@ -1317,7 +1317,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
         entry: requireBoundedFlag("--entry", "recently-deleted-id", 64),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
-    // Reads of the request graph (docs/collaboration-contract.md, F25): what
+    // Reads of the request graph (docs/collaboration-contract.md): what
     // was handed out under one request, what is still open, and what came
     // back. Reads take no lineage, matching the other act reads.
     case "requests list":
@@ -1665,7 +1665,7 @@ async function runActCommand(
           }));
     case "chat.abort":
       return toJson(await facade.abortTurn({ connectedFolder: command.connectedFolder!, conversationId: command.conversation! }));
-    // The collaboration verbs (docs/collaboration-contract.md, F27/F28).
+    // The collaboration verbs (docs/collaboration-contract.md).
     // Their results carry person content — summaries, questions, answers —
     // so they pass through the same bounding sanitizer as the overview.
     case "chat.report":
@@ -1993,7 +1993,7 @@ async function runActCommand(
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
     // The verbs that install code, widen a power, or destroy data
-    // (docs/act-ledger.md; docs/receipts-not-gates.md): each runs at
+    // (docs/act-ledger.md): each runs at
     // once through the prepared-act path and returns its effect. Results
     // pass the bounding sanitizer because they carry person content (paths,
     // titles, names). `request.id` is the journaled identity the act runs
@@ -2159,7 +2159,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
           : request && typeof request.state === "string"
             ? `Request ${terminalText(request.id)} — ${terminalText(request.state)}, ${terminalText(request.children ?? 0)} handed out, ${terminalText(request.openQuestions ?? 0)} waiting`
             : "";
-        // F28: a task waiting on an answer says so first, and says how to
+        // A task waiting on an answer says so first, and says how to
         // answer it. The turn state below stays exactly what it is.
         const waiting = record.waiting as {
           questionId?: string; respondent?: string; question?: string; askedAt?: string; expiresAt?: string | null;
@@ -2558,7 +2558,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
         const how = entry.restorable === "blocked"
           ? ` — can't be put back${typeof entry.note === "string" && entry.note ? `: ${terminalText(entry.note)}` : ""}`
           : "";
-        const held = entry.held ? " — kept indefinitely; it holds records from the earlier Workspace product" : "";
+        const held = entry.held ? " — kept indefinitely; AmpleFile could not read all of it" : "";
         return `- ${terminalText(entry.id)} — ${recentlyDeletedKindLabel(entry.kind)} "${terminalText(entry.name)}" ${where}`
           + ` — ${terminalText(entry.sizeBytes)} bytes — deleted ${terminalText(entry.deletedAt)}`
           + ` — kept until ${terminalText(entry.restoreBy)}${how}${held}`;
@@ -2777,7 +2777,7 @@ function recentlyDeletedKindLabel(kind: unknown): string {
     case "folder": return "folder";
     case "connected-folder": return "connected-folder";
     case "skill": return "Skill";
-    // What an earlier build kept from a Connected Folder app (removed 2026-11-07).
+    // What an earlier build kept from a Connected Folder app.
     case "app-storage":
     case "app-retained":
     case "app-release":
@@ -3176,8 +3176,8 @@ function actUndoRef(
         kind: "appearance-ref",
         value: typeof record.displacedAppearanceRef === "string" ? record.displacedAppearanceRef : "none",
       };
-    // The formerly gated verbs (docs/receipts-not-gates.md, F19): each undo
-    // reference names the identifier its narrowing inverse takes —
+    // Verbs that make code runnable or widen a power (docs/act-ledger.md):
+    // each undo reference names the identifier its narrowing inverse takes —
     // `automations disable`, `tools remove`.
     case "automations.enable":
       return typeof record.automationId === "string" ? { kind: "automation-id", value: record.automationId } : undefined;

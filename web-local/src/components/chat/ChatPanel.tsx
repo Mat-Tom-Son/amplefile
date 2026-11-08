@@ -142,8 +142,8 @@ export function ChatPanel({
   /** Sends at once with these references (the file manager's message box). */
   sendRequest?: ChatSendRequest | null;
   /**
-   * `panel`: the file manager's right panel (docs/product-model.md,
-   * 2026-11-06), drawn as the design draws it. Its composer is Reply and Send
+   * `panel`: the file manager's right panel (docs/product-model.md),
+   * drawn as the design draws it. Its composer is Reply and Send
    * (or Stop); what to attach comes from the selection, and the model is
    * chosen in Settings → AI Models.
    */
@@ -165,7 +165,7 @@ export function ChatPanel({
   fixtureMode?: boolean;
   fixtureConversations?: ConnectedFolderFixtureConversation[];
   fixtureTreeEntries?: TreeEntry[];
-  /** Workers this composer can address with @ (2026-10-01), nested Connected Folders first. */
+  /** Workers this composer can address with @, nested Connected Folders first. */
   mentionFolders?: readonly MentionFolderOption[];
 }) {
   const [conversation, setConversation] = useState<ConversationSummary | null>(null);
@@ -1160,7 +1160,7 @@ export function ChatPanel({
   const openingPastChat = !fixtureMode && Boolean(targetConversationId)
     && (conversation?.id !== targetConversationId || openingConversationId === targetConversationId);
   // A new Chat puts the composer under its greeting, with the Connected Folder's
-  // recent Chats below, until the first message is sent (2026-10-27).
+  // recent Chats below, until the first message is sent.
   const startLayout = !hasTranscript && !conversation && !targetConversationId && lifecycleView === "active";
   // The first message carries the composer from under the greeting to its place at the bottom.
   useLayoutEffect(() => {
@@ -2128,7 +2128,7 @@ export function ChatPanel({
             placeholder={running && !pendingSendRef.current ? "Steer (Enter) · Queue (⌘Enter)" : variant === "panel" ? "Reply" : "Message Worker"}
           />
           {/* What you add sits on the left; how the Worker runs and Send sit on
-              the right (2026-10-27). */}
+              the right. */}
           <div className="composer-capability-bar">
             {variant === "panel" ? null : <>
             <ComposerAttachMenu
@@ -2643,7 +2643,7 @@ function SetUpAiButton({ then }: { then?: () => void }) {
 
 /**
  * The model for this Connected Folder's new Chats, under the file manager's message
- * box (docs/product-model.md, 2026-11-06 file manager layout): the same chip
+ * box (docs/product-model.md, the file manager window): the same chip
  * and menu as the Chat composer, or Set Up AI when no AI is connected yet.
  */
 export function WorkerModelRow({ connectedFolder, fixtureMode, revision = 0, onOpenModelSettings }: {
@@ -2750,7 +2750,7 @@ function attachPickerFiles(entries: TreeEntry[], output: AttachPickerFile[] = []
 }
 
 /**
- * The composer's + button (2026-10-27): attach files from this Connected Folder,
+ * The composer's + button: attach files from this Connected Folder,
  * or copy files from the computer into its Dropped folder and attach them,
  * the same explicit act as dropping them on the composer.
  */

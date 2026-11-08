@@ -13,8 +13,8 @@ export function outsideAgentSkillName(identity: OutsideAgentSkillIdentity = prod
 
 /**
  * The skill another AI agent (Claude Code, Codex, or any agent that reads
- * SKILL.md) uses to drive this app through its command (owner request,
- * 2026-11-07). It stays short on purpose: the rules, how to look around, and
+ * SKILL.md) uses to drive this app through its command. It stays short on
+ * purpose: the rules, how to look around, and
  * the few recipes an outside agent needs, each a real command line. For
  * anything more it sends the agent to the command's own help, which is always
  * current, so the skill never becomes a second copy that drifts.

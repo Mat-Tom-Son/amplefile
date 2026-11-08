@@ -193,21 +193,14 @@ test("appearance proposals are typed, code-free, and ignore unknown fields", () 
   assert.equal("javascript" in parsed.customization, false);
 });
 
-test("legacy Workspace appearance kinds and target fields are rejected", () => {
+test("appearance proposals of another kind are rejected", () => {
   const customization = { schema: 2 as const, primary: accentIdentityFromHex("#0d74ce") };
   assert.throws(() => parseConnectedFolderAppearanceProposal({
-    kind: "workspace.connected-folder-appearance",
+    kind: "example.connected-folder-appearance",
     version: 1,
-    name: "Legacy kind",
+    name: "Other kind",
     customization,
   }), /unsupported format/);
-  assert.throws(() => parseConnectedFolderAppearanceProposal({
-    kind: "amplefile.connected-folder-appearance",
-    version: 1,
-    name: "Legacy target",
-    target: { workspaceId: "connected-folder-home", workspaceName: "Home projects" },
-    customization,
-  }), /Legacy appearance target fields/);
 });
 
 test("appearance store writes versioned machine-local state atomically", async (t) => {

@@ -34,8 +34,9 @@ test("General Settings includes Automations without introducing a builder", () =
   assert.match(paneSource, /Standing channel: whatever step \{handoff\.from\}/);
   assert.match(paneSource, /Worker turn uses the permissions its Connected Folder has at that moment/);
   assert.match(paneSource, /No automations yet\./);
-  // receipts-not-gates: nothing in this pane asks for permission or names an
-  // authority mode; turning an automation on is one receipted click.
+  // Receipts, not gates (docs/act-ledger.md): nothing in this pane asks for
+  // permission or names an authority mode; turning an automation on is one
+  // receipted click.
   assert.doesNotMatch(paneSource, /staged|approve|policy|Reviewed|Unrestricted|\bcard\b|\bmode\b/i);
 });
 
@@ -136,7 +137,7 @@ test("Run a copy now invokes the preload bridge, never a network request", async
   assert.match(dom.container.textContent ?? "", /Run Requested/);
 });
 
-test("Automations has no New automation button; the empty state says where to ask (2026-09-25)", async (t) => {
+test("Automations has no New automation button; the empty state says where to ask", async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   const calls = installAutomationBridge("disabled");
@@ -234,7 +235,7 @@ test("a late polling response cannot replace a newly selected automation or reta
   assert.deepEqual(bridge.disabledIds, ["automation-b"]);
 });
 
-test("a folder automation that catches up says so, shows a waiting catch-up, and names the last one (2026-10-11)", async (t) => {
+test("a folder automation that catches up says so, shows a waiting catch-up, and names the last one", async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   const trigger = {

@@ -1,9 +1,8 @@
 /**
  * The folder-target contract Automations use to name files and folders inside
  * a Connected Folder: exact files and bounded trees, each relative to the
- * Connected Folder root. Moved here from the retired Checks contract on
- * 2026-11-07 with its behavior unchanged, so stored automation declarations
- * keep normalizing — and digesting — exactly as before.
+ * Connected Folder root. Stored automation declarations are digested in this
+ * normalized form, so its behavior must never change.
  */
 export type FolderTargetRole = "primary" | "reference";
 
@@ -33,7 +32,7 @@ export function normalizeFolderTargetPath(value: unknown, label = "Folder target
   }
   if (segments.some((segment) => {
     const normalized = segment.toLocaleLowerCase("en-US");
-    return normalized === ".amplefile" || normalized === ".workspace" || normalized === ".pi";
+    return normalized === ".amplefile" || normalized === ".pi";
   })) {
     throw new Error(`${label} cannot select hidden AmpleFile or Pi configuration.`);
   }

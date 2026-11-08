@@ -165,9 +165,6 @@ test("the macOS Safe Storage reset can target only the AmpleFile identity", () =
   assert.match(reset, /`\/Applications\/\$\{identity\.productName\}\.app`/);
   assert.match(reset, /`\$\{identity\.productName\} Key`/);
   assert.match(reset, /`\$\{identity\.productName\} Safe Storage`/);
-  assert.doesNotMatch(reset, /Application Support", "Workspace"/);
-  assert.doesNotMatch(reset, /\/Applications\/Workspace\.app/);
-  assert.doesNotMatch(reset, /["'`]Workspace (?:Key|Safe Storage)["'`]/);
   assert.doesNotMatch(reset, /security[\s\S]{0,300}["']-g["']/);
 });
 

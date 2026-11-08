@@ -42,8 +42,8 @@ export type AmpleFileOverviewItemKind =
   | "compaction"
   | "agent-request"
   | "automation-run"
-  // Needs you: questions and due snoozes only (docs/receipts-not-gates.md,
-  // F24). Nothing here is an approval.
+  // Needs you: questions and due snoozes only (docs/act-ledger.md).
+  // Nothing here is an approval.
   | "request-question"
   | "chat-question"
   | "due-snooze"
@@ -60,9 +60,9 @@ export interface AmpleFileOverviewItemRef {
   taskId?: string;
   conversationId?: string;
   checkpointId?: string;
-  /** An act receipt's request id, or a durable request's id (F25). */
+  /** An act receipt's request id, or a durable request's id. */
   requestId?: string;
-  /** The open question a needs-you item points at (F27). */
+  /** The open question a needs-you item points at. */
   questionId?: string;
   automationId?: string;
   runId?: string;
@@ -142,7 +142,7 @@ export interface AmpleFileOverviewSettledTurnRecord {
 }
 
 /**
- * One durable request (docs/collaboration-contract.md, F25) as the overview
+ * One durable request (docs/collaboration-contract.md) as the overview
  * reads it: its state, the vocabulary `agent status` speaks beside it, the
  * turns it started, and its open questions by id — never a question's text,
  * a result's summary, or any Connected Folder content.
@@ -438,7 +438,7 @@ function composeRunning(input: {
 }
 
 /**
- * Needs you means questions (docs/receipts-not-gates.md, F24): an AmpleFile
+ * Needs you means questions (docs/act-ledger.md): an AmpleFile
  * agent request waiting on the person's answer, a Worker Chat whose newest
  * message is a question from the Worker, and a due snooze. Newest first;
  * overflow keeps the newest and states truncation. Nothing here is an
@@ -478,7 +478,7 @@ function composeNeedsYou(input: {
     // heuristic; every other kind derives `needs_you` straight from state
     // `waiting`, which a request also reaches on a question addressed to its
     // parent agent — a question that belongs to that parent and never to the
-    // person (docs/amplefile-agent-overview.md, F24/F27). A request that is
+    // person (docs/amplefile-agent-overview.md). A request that is
     // still waiting has a recorded question somewhere, and that question's own
     // record carries the item with its question id, so the generic form would
     // only double-list it.

@@ -1,6 +1,6 @@
 /*
  * Settings, Skills & Extensions, Connect AI, and the other dialogs over the
- * file manager (docs/product-model.md, 2026-11-06 file manager layout) wear
+ * file manager (docs/product-model.md, the file manager window) wear
  * its palette: the shared --ui-* tokens are pointed at the file manager's
  * colors inside each dialog, so every Settings page follows without its own
  * copy, and the Settings window takes the macOS System Settings shape.
@@ -65,8 +65,7 @@
 }
 
 /*
- * The Settings window in the file manager's own style (owner request,
- * 2026-11-07: "make them match our new styling"): its sidebar is the file
+ * The Settings window in the file manager's own style: its sidebar is the file
  * manager's sidebar (line icons in the accent, a gray pill for the page
  * shown), the page's name sits in a toolbar the way a folder's name does, and
  * each page is the right panel's grouped white cards on gray, with the file
@@ -1419,7 +1418,7 @@
 }
 
 /*
- * Notices (owner request, 2026-11-07: "a better toast template"): one card for
+ * Notices: one card for
  * everything the window tells you, errors included, stacked at the bottom
  * center. An icon says what kind it is (done, worth knowing, went wrong),
  * then the words, the one action, and a close button. Errors stay longer and
@@ -1592,7 +1591,7 @@
 }
 
 
-/* Settings → Command Line (2026-11-07): the command in Terminal and the skill in other AI agents. */
+/* Settings → Command Line: the command in Terminal and the skill in other AI agents. */
 :root[data-theme] .app-shell.layout-file-manager .command-line-pane {
   display: grid;
   gap: 30px;

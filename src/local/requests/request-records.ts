@@ -1,6 +1,6 @@
 /**
  * Durable request records: the types, closed-shape parsers, pure state rules,
- * and limit refusals behind F25 (docs/collaboration-contract.md).
+ * and limit refusals behind durable requests (docs/collaboration-contract.md).
  *
  * A request is the machine-local record of one thing a person asked for and
  * everything the AmpleFile agent, a Worker, an app, an automation, or an
@@ -44,9 +44,8 @@ const maximumStableIdLength = 160;
 const stableIdPattern = /^[A-Za-z0-9._:-]+$/;
 
 /**
- * `app` is read only: older builds recorded work a Connected Folder app
- * requested before apps were removed (2026-11-07). Such a record still loads;
- * nothing creates one now.
+ * `app` is read only: an earlier build recorded work a Connected Folder app
+ * requested. Such a record still loads; nothing creates one now.
  */
 export type AmpleFileRequestKind = "agent" | "connected-folder" | "app" | "automation" | "cli";
 
@@ -73,14 +72,11 @@ export function isAmpleFileRequestTerminalState(state: AmpleFileRequestState): b
 /**
  * Where the turn came from. `system` covers automations (and, in records
  * older builds wrote, app-started work).
- * `remote_web` is read only: older builds wrote it for work a paired browser
- * sent before Web Access was removed (2026-11-07).
  */
 export type AmpleFileRequestSurface =
   | "cli"
   | "popover"
   | "main-window"
-  | "remote_web"
   | "renderer"
   | "system";
 
@@ -138,8 +134,8 @@ export interface AmpleFileRequestTurnRef {
 }
 
 /**
- * A background job one of this request's turns started (docs/background-jobs.md,
- * F31), by reference. The job journal keeps the whole record and its output.
+ * A background job one of this request's turns started (docs/background-jobs.md),
+ * by reference. The job journal keeps the whole record and its output.
  * `running` covers a job from its journaled start until it settles.
  */
 export type AmpleFileRequestJobState = "running" | "exited" | "stopped" | "timed_out" | "failed" | "interrupted";
@@ -167,7 +163,6 @@ export interface AmpleFileRequestResultRef {
 }
 
 export type AmpleFileRequestLimitName =
-  | "deadline"
   | "childTasks"
   | "depth"
   | "concurrentChildren"
@@ -222,7 +217,7 @@ export const ampleFileRequestActionCommands = [
   "chat.archive",
   "chat.resume",
   "chat.compact",
-  // The collaboration verbs (F27): attributed like every other act, and
+  // The collaboration verbs: attributed like every other act, and
   // recorded by identifiers only — the report, question, and answer text
   // live in their own records, never in the action trail.
   "chat.report",
@@ -268,15 +263,13 @@ export const ampleFileRequestActionCommands = [
 export type AmpleFileRequestActionCommand = (typeof ampleFileRequestActionCommands)[number];
 
 /**
- * Commands older builds recorded for verbs AmpleFile no longer has: the
- * desktop-served page and app sharing verbs (retired 2026-11-05), page
- * publishing (removed with pages on 2026-11-07), and the Connected Folder app
- * verbs (removed with apps on 2026-11-07). A record that names one still
+ * Commands an earlier build recorded for verbs AmpleFile does not have: page
+ * publishing and the Connected Folder app verbs. A record that names one still
  * loads; that action is skipped, so the rest of the request's story survives
  * instead of the whole record reading as damaged.
  */
 const retiredAmpleFileRequestActionCommands: ReadonlySet<string> = new Set([
-  "pages.share", "pages.share-app", "pages.publish", "pages.unpublish",
+  "pages.publish", "pages.unpublish",
   "apps.proposals.dismiss", "apps.install-proposal", "apps.install-preview", "apps.remove", "apps.grant", "apps.revoke",
   "apps.connect", "apps.disconnect", "apps.automation.enable", "apps.automation.disable", "apps.automation.run",
   "apps.invoke", "apps.storage.clear", "apps.retained.purge", "apps.project.declare", "apps.release.prepare",
@@ -309,13 +302,6 @@ export interface AmpleFileRequestAction {
   taskId?: string;
 }
 
-/** Read only: the paired browser older builds recorded on work sent through Web Access. */
-export interface AmpleFileRequestRemoteRef {
-  principalId: string;
-  grantId: string;
-  requestId: string;
-}
-
 export interface AmpleFileRequestRecord {
   schema: typeof ampleFileRequestRecordSchema;
   requestId: string;
@@ -333,7 +319,7 @@ export interface AmpleFileRequestRecord {
   createdAt: string;
   updatedAt: string;
   settledAt: string | null;
-  /** A legacy request window, or `null` for work that does not expire on a timer. */
+  /** Always `null`: a request never expires on a timer. The field keeps stored records' shape. */
   deadline: string | null;
   state: AmpleFileRequestState;
   /** `turns[0].role` is always `origin`. */
@@ -345,12 +331,12 @@ export interface AmpleFileRequestRecord {
   continuationCount: number;
   /** Settled child turns already reserved for delivery, independent of timing. */
   deliveredChildTaskIds: string[];
-  /** Background jobs this request's turns started; absent until the first one (F31). */
+  /** Background jobs this request's turns started; absent until the first one. */
   jobs?: AmpleFileRequestJobRef[];
-  /** Finished jobs whose end already reached the Chat, by any path (F32). */
+  /** Finished jobs whose end already reached the Chat, by any path. */
   deliveredJobIds?: string[];
   /**
-   * The checklist the agent keeps for this request (2026-10-18): what it
+   * The checklist the agent keeps for this request: what it
    * plans to do and how far it got. The host keeps it, shows it to the
    * person, and hands it back to every later turn of the request.
    */
@@ -360,7 +346,8 @@ export interface AmpleFileRequestRecord {
   limitHit: AmpleFileRequestLimitHit | null;
   /** Set when startup reconciliation settled this request, so no one continues it. */
   reconciledAt: string | null;
-  remote: AmpleFileRequestRemoteRef | null;
+  /** Always `null`. The field keeps stored records' shape. */
+  remote: null;
   /** The original assignment, retained when answers and follow-ups join. */
   assignment: string;
   /** The newest turn's message text, bounded. */
@@ -429,7 +416,7 @@ export interface AmpleFileResultRecord {
 /**
  * A bound was reached. The message always names the number and the Settings
  * section that shows it, because a bound a person cannot find is a gate in
- * disguise (docs/receipts-not-gates.md, principle 6).
+ * disguise (docs/act-ledger.md).
  */
 export class AmpleFileRequestLimitError extends Error {
   readonly limit: AmpleFileRequestLimitName;
@@ -461,8 +448,6 @@ function kilobytes(bytes: number): string {
 export function ampleFileRequestLimitMessage(limit: AmpleFileRequestLimitName, cap: number): string {
   const shows = `${ampleFileRequestLimitsSection} shows this number.`;
   switch (limit) {
-    case "deadline":
-      return `This request passed its ${Math.round(cap / 3_600_000)}-hour window, so AmpleFile stopped it. ${shows}`;
     case "childTasks":
       return `This request has already started ${cap} Worker turns, the most one request may start. ${shows}`;
     case "depth":
@@ -510,8 +495,6 @@ export function ampleFileRequestLimitError(limit: AmpleFileRequestLimitName, cap
 
 export interface AmpleFileRequestStateInput {
   stopRequestedAt: string | null;
-  deadline: string | null;
-  now: Date;
   /** This request's own turns, in acceptance order. */
   turnStates: readonly AmpleFileRequestTurnState[];
   /** Open questions this request asked itself. */
@@ -523,7 +506,7 @@ export interface AmpleFileRequestStateInput {
   childStates: readonly (AmpleFileRequestState | null)[];
   resultOutcomes: readonly AmpleFileResultOutcome[];
   limitHit: AmpleFileRequestLimitHit | null;
-  /** This request's background jobs (F31). A running one is outstanding work. */
+  /** This request's background jobs. A running one is outstanding work. */
   jobStates?: readonly AmpleFileRequestJobState[];
 }
 
@@ -534,25 +517,24 @@ export interface AmpleFileRequestStateInput {
  *  1. a stop was asked for                        → stopped
  *  2. one of this request's turns was stopped     → stopped
  *  3. the model spending bound was reached        → failed
- *  4. the window closed with work outstanding     → expired
- *  5. a question this request asked is open       → waiting
- *  6. one of this request's turns or background jobs is running → working
- *  7. a question below this request is open       → waiting
- *  8. a child is still working                    → handed_off
- *  9. a turn failed, a background job was interrupted, a child failed, or a
+ *  4. a question this request asked is open       → waiting
+ *  5. one of this request's turns or background jobs is running → working
+ *  6. a question below this request is open       → waiting
+ *  7. a child is still working                    → handed_off
+ *  8. a turn failed, a background job was interrupted, a child failed, or a
  *     child id resolves to nothing                → failed
- * 10. a child was stopped or ran out of time      → stopped
- * 11. a recorded result came back partial or failed → partial
- * 12. otherwise                                   → done
+ *  9. a child was stopped or ran out of time      → stopped
+ * 10. a recorded result came back partial or failed → partial
+ * 11. otherwise                                   → done
  *
  * Rules 1-3 dominate so a stop or a spending stop is never narrated as done.
- * Rule 5 above rule 6 is F27: asking puts the asking task in `waiting`, even
- * while its turn is still live, so the question reaches Needs you. Rule 6
- * above rule 7 is F28: a parent is working while its own turn runs, and only
- * once that turn ends does a child's open question make the parent report
- * `waiting` rather than blocking on it. Rules 6-8 keep the older promise that
- * a request never claims `done` while work it started is still running. Rule
- * 10 above rule 11 means a mixed set of stopped and finished children reads as
+ * Rule 4 above rule 5: asking puts the asking task in `waiting`, even while
+ * its turn is still live, so the question reaches Needs you. Rule 5 above
+ * rule 6: a parent is working while its own turn runs, and only once that
+ * turn ends does a child's open question make the parent report `waiting`
+ * rather than blocking on it. Rules 5-7 keep the promise that a request
+ * never claims `done` while work it started is still running. Rule
+ * 9 above rule 10 means a mixed set of stopped and finished children reads as
  * `stopped` rather than as partial success.
  */
 export function computeAmpleFileRequestState(input: AmpleFileRequestStateInput): AmpleFileRequestState {
@@ -563,12 +545,6 @@ export function computeAmpleFileRequestState(input: AmpleFileRequestStateInput):
   const jobStates = input.jobStates ?? [];
   const running = input.turnStates.some((state) => state === "accepted" || state === "running")
     || jobStates.includes("running");
-  const outstanding = running
-    || input.openQuestions > 0
-    || input.openDescendantQuestions > 0
-    || input.childStates.some((state) => state === "working" || state === "waiting" || state === "handed_off");
-  const deadlineAt = input.deadline ? Date.parse(input.deadline) : Number.NaN;
-  if (outstanding && Number.isFinite(deadlineAt) && input.now.getTime() >= deadlineAt) return "expired";
 
   if ((input.openBlockingQuestions ?? input.openQuestions) > 0) return "waiting";
   if (running) return "working";
@@ -588,8 +564,8 @@ export function computeAmpleFileRequestState(input: AmpleFileRequestStateInput):
 
 /**
  * The phase vocabulary `agent status` and the popover already speak. The
- * true F25 state travels beside it, so those surfaces keep compiling while
- * the richer vocabulary reaches the ones that want it.
+ * request's true state travels beside it, so those surfaces keep compiling
+ * while the richer vocabulary reaches the ones that want it.
  */
 export type AmpleFileRequestAgentPhase =
   | "working"
@@ -599,10 +575,7 @@ export type AmpleFileRequestAgentPhase =
   | "failed"
   | "stopped";
 
-export function ampleFileRequestStateToAgentPhase(
-  state: AmpleFileRequestState,
-  _legacyReplyAsksQuestion = false,
-): AmpleFileRequestAgentPhase {
+export function ampleFileRequestStateToAgentPhase(state: AmpleFileRequestState): AmpleFileRequestAgentPhase {
   const phase = ((): AmpleFileRequestAgentPhase => {
     switch (state) {
       case "working":
@@ -846,7 +819,7 @@ export function parseAmpleFileRequestRecord(value: unknown): AmpleFileRequestRec
     owner,
     surface: enumValue(
       record.surface,
-      ["cli", "popover", "main-window", "remote_web", "renderer", "system"] as const,
+      ["cli", "popover", "main-window", "renderer", "system"] as const,
       `${label} surface`,
     ),
     createdAt: isoDate(record.createdAt, `${label} creation time`),
@@ -880,7 +853,7 @@ export function parseAmpleFileRequestRecord(value: unknown): AmpleFileRequestRec
     stopRequestedAt: nullableIsoDate(record.stopRequestedAt, `${label} stop time`),
     limitHit: record.limitHit === null || record.limitHit === undefined ? null : parseLimitHit(record.limitHit, label),
     reconciledAt: nullableIsoDate(record.reconciledAt, `${label} recovery time`),
-    remote: record.remote === null || record.remote === undefined ? null : parseRemoteRef(record.remote, label),
+    remote: nullField(record.remote, `${label} remote reference`),
     content: boundedText(record.content, `${label} message`, ampleFileRequestLimits.maxRequestContentBytes),
     assignment: boundedText(record.assignment ?? record.content, `${label} assignment`, ampleFileRequestLimits.maxRequestContentBytes),
     attachments: Array.isArray(record.attachments) && record.attachments.length <= maxAmpleFileAgentAttachments
@@ -929,7 +902,7 @@ function parseLimitHit(value: unknown, label: string): AmpleFileRequestLimitHit 
     limit: enumValue(
       record.limit,
       [
-        "deadline", "childTasks", "depth", "concurrentChildren", "continuations", "providerBudget", "questionLifetime",
+        "childTasks", "depth", "concurrentChildren", "continuations", "providerBudget", "questionLifetime",
         "questionText", "answerText", "resultSummary", "resultData", "resultFiles", "questionsPerRequest",
         "resultsPerRequest", "turnsPerRequest", "actionsPerRequest",
       ] as const,
@@ -939,14 +912,9 @@ function parseLimitHit(value: unknown, label: string): AmpleFileRequestLimitHit 
   };
 }
 
-function parseRemoteRef(value: unknown, label: string): AmpleFileRequestRemoteRef {
-  const record = objectValue(value, `${label} remote reference`);
-  assertClosedShape(record, ["principalId", "grantId", "requestId"], `${label} remote reference`);
-  return {
-    principalId: stableId(record.principalId, `${label} remote principal id`),
-    grantId: stableId(record.grantId, `${label} remote grant id`),
-    requestId: stableId(record.requestId, `${label} remote request id`),
-  };
+function nullField(value: unknown, label: string): null {
+  if (value !== null && value !== undefined) throw new Error(`${label} must be null.`);
+  return null;
 }
 
 export function parseAmpleFileQuestionRecord(value: unknown): AmpleFileQuestionRecord {
@@ -1036,9 +1004,9 @@ export function parseAmpleFileQuestionOptions(value: unknown): string[] {
 }
 
 /**
- * The one result shape (F29). Sizes are bounds, so a refusal here is a
- * `AmpleFileRequestLimitError` that names its number; anything else about the
- * shape is an ordinary error.
+ * The one result shape (docs/collaboration-contract.md). Sizes are bounds, so
+ * a refusal here is a `AmpleFileRequestLimitError` that names its number;
+ * anything else about the shape is an ordinary error.
  */
 export function parseAmpleFileResultEnvelope(value: unknown): AmpleFileResultEnvelope {
   const label = "Result";
@@ -1076,8 +1044,8 @@ function parseResultFileRef(value: unknown, label: string): AmpleFileResultFileR
 
 /**
  * A deliverable is named relative to the Connected Folder that produced it. Absolute
- * paths, parent traversal, and the reserved AmpleFile, Pi, and legacy product
- * folders are never valid endpoints (AGENTS.md, portable identity).
+ * paths, parent traversal, and the reserved `.amplefile/`, `.work-fold/`, and
+ * `.pi/` folders are never valid endpoints (AGENTS.md, portable identity).
  */
 export function assertConnectedFolderRelativeResultPath(path: string, label = "Result file"): void {
   if (!path.length) throw new Error(`${label} path cannot be empty.`);
@@ -1089,7 +1057,7 @@ export function assertConnectedFolderRelativeResultPath(path: string, label = "R
     throw new Error(`${label} path must be relative to the Connected Folder.`);
   }
   if (containsReservedConnectedFolderPathSegment(path)) {
-    throw new Error(`${label} path names reserved AmpleFile, Pi, or legacy product metadata.`);
+    throw new Error(`${label} path names reserved .amplefile, .work-fold, or .pi metadata.`);
   }
 }
 

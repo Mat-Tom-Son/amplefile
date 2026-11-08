@@ -40,5 +40,5 @@ export function parseTurnFileChanges(value: unknown): AmpleFileTurnFileChanges {
 
 export function safeTurnFilePath(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 2048 && !/[\\\u0000-\u001f\u007f]/u.test(value)
-    && !value.split("/").some((part) => !part || part === "." || part === ".." || [".amplefile", ".workspace", ".pi"].includes(part.toLowerCase()));
+    && !value.split("/").some((part) => !part || part === "." || part === ".." || [".amplefile", ".pi"].includes(part.toLowerCase()));
 }

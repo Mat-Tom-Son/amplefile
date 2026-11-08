@@ -6,9 +6,7 @@ import {
   upgradeConnectedFolderAppearanceCustomization,
   type ConnectedFolderAppearanceState,
 } from "../../../src/shared/connected-folder-appearance";
-import { connectedFolderCustomizationStorageKey } from "../constants";
 import { api, errorText } from "../lib/api";
-import { readStoredJsonValue } from "../lib/storage";
 import { normalizeConnectedFolderCustomizations } from "../lib/connected-folder-customization";
 import type { ConnectedFolderCustomization, ConnectedFolderCustomizationMap, ConnectedFolderCustomizationPatch } from "../types";
 import { showToast } from "../ui/feedback";
@@ -30,17 +28,8 @@ export function useConnectedFolderCustomizations({ fixtureCustomizations, appear
   connectedFolderIds: string;
 }) {
   const fixture = fixtureCustomizations !== null;
-  const legacyCustomizationsRef = useRef<ConnectedFolderCustomizationMap>(fixture ? {} : readStoredJsonValue(
-    connectedFolderCustomizationStorageKey,
-    (value) => normalizeConnectedFolderCustomizations(value, undefined, supportedConnectedFolderIconNames),
-    {},
-  ));
   const [customizations, setCustomizations] = useState<ConnectedFolderCustomizationMap>(() => fixtureCustomizations
-    ?? normalizeConnectedFolderCustomizations(
-      { ...legacyCustomizationsRef.current, ...(appearance?.customizations ?? {}) },
-      undefined,
-      supportedConnectedFolderIconNames,
-    ));
+    ?? normalizeConnectedFolderCustomizations(appearance?.customizations ?? {}, undefined, supportedConnectedFolderIconNames));
   const customizationsRef = useRef(customizations);
   const storageWarningShownRef = useRef(false);
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -52,30 +41,6 @@ export function useConnectedFolderCustomizations({ fixtureCustomizations, appear
     customizationsRef.current = next;
     setCustomizations(next);
   }
-
-  // Appearance once kept in this browser's storage moves to the local API, once.
-  useEffect(() => {
-    if (fixture || !Object.keys(legacyCustomizationsRef.current).length) return;
-    let cancelled = false;
-    writeQueueRef.current = writeQueueRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        const result = await api<{ appearance: ConnectedFolderAppearanceState }>("/api/appearance/migrate", {
-          method: "POST",
-          body: { customizations: legacyCustomizationsRef.current },
-        });
-        legacyCustomizationsRef.current = {};
-        localStorage.removeItem(connectedFolderCustomizationStorageKey);
-        if (!cancelled) setAll(result.appearance.customizations);
-      })
-      .catch((caught) => {
-        if (!cancelled && !storageWarningShownRef.current) {
-          storageWarningShownRef.current = true;
-          showToast({ text: `AmpleFile could not migrate the saved Connected Folder appearance. ${errorText(caught)}`, tone: "info" });
-        }
-      });
-    return () => { cancelled = true; };
-  }, [fixture]);
 
   useEffect(() => {
     // A temporarily missing or moved folder is not the same thing as an

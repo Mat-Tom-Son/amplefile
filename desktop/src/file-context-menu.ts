@@ -41,7 +41,7 @@ export interface NativeFileMenuRequest {
     /** A plain folder inside this Connected Folder that can become its own Connected Folder (optional; older renderers omit it). */
     worker?: boolean;
     /**
-     * The file manager's Finder actions (2026-11-07): Copy, Duplicate, Compress,
+     * The file manager's Finder actions: Copy, Duplicate, Compress,
      * and New Folder with Selection for items, and Paste on the folder (optional).
      */
     organize?: boolean;
@@ -161,7 +161,7 @@ export function nativeFileMenuItems(request: NativeFileMenuRequest): NativeFileM
     );
     if (request.capabilities.paste) items.push({ type: "item", label: "Paste Here", command: "paste" });
     if (request.capabilities.upload) items.push({ type: "item", label: "Add Files Here…", command: "upload-here" });
-    // Files has no toolbar buttons (2026-10-01): refreshing lives here with the other folder actions.
+    // Files has no toolbar buttons: refreshing lives here with the other folder actions.
     items.push({ type: "item", label: "Refresh", command: "refresh" });
     if (request.capabilities.worker) {
       items.push({ type: "separator" }, { type: "item", label: "Connect This Folder", command: "give-worker", icon: "amplefile" });

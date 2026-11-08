@@ -115,8 +115,8 @@ test("startup removal recovery finalizes the intent and leaves state a Checks bu
     const connectedFolder = await createConnectedFolder(api, "Leftover Check state");
     const intent = await beginConnectedFolderRemoval(connectedFolder.id, connectedFolderBase);
     assert.equal(intent.phase, "requested");
-    // Checks were removed (2026-11-07): their machine-local state is neither
-    // read, required, nor deleted.
+    // Check state an earlier build left is neither read, required, nor
+    // deleted.
     const checkState = join(ampleFileStateRoot(), "checks", "connected-folders", "leftover-0123456789abcdef.json");
     await mkdir(dirname(checkState), { recursive: true });
     await writeFile(checkState, "{damaged current state", "utf8");
@@ -171,7 +171,7 @@ test("final registry persistence failure keeps a retryable intent after folder r
     assert.equal(removal.deleted, true);
     assert.equal(removal.cleanupPending, true);
     assert.equal(existsSync(connectedFolder.connectedFolderRoot), false);
-    // The claimed folder was moved, not erased (docs/receipts-not-gates.md, F20).
+    // The claimed folder was moved, not erased (docs/act-ledger.md).
     const kept = (await api.recentlyDeleted.list()).entries.filter((entry) => entry.kind === "connected-folder");
     assert.equal(kept.length, 1);
     assert.equal(kept[0]?.originalPath, connectedFolder.connectedFolderRoot);
@@ -238,8 +238,8 @@ test("startup carries remaining History into a deletion whose folder already rea
 });
 
 test("an intent an older build marked app-state-removed still finalizes at startup", async () => {
-  // Builds before Connected Folder apps were removed (2026-11-07) recorded a
-  // removal's progress past its app cleanup as `app-state-removed`. Recovery
+  // Earlier builds with Connected Folder apps recorded a removal's progress
+  // past its app cleanup as `app-state-removed`. Recovery
   // finishes such an intent exactly like a `requested` one.
   const sandbox = await mkdtemp(join(tmpdir(), "connected-folder-removal-app-state-phase-"));
   const stateBase = join(sandbox, "state");

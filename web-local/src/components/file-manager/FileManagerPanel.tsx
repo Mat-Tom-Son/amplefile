@@ -31,8 +31,8 @@ type HistoryAction =
 interface HistoryRow { id: string; kind: "chat" | "change"; conversationId?: string; title: string; at: string; detail?: string; action?: HistoryAction }
 
 /**
- * The file manager's right panel (docs/product-model.md, "2026-11-06 file
- * manager layout"), as the design draws it. In a Connected Folder, Info says what
+ * The file manager's right panel (docs/product-model.md, "The file
+ * manager window"), as the design draws it. In a Connected Folder, Info says what
  * the selection is and History lists its Chats and changes. A standard folder
  * offers to put the folder to work.
  */
@@ -108,7 +108,7 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
   }
 
   const chatShown = Boolean(chat?.open);
-  // Motion (2026-11-07): Info and History slide in from the side of the tab
+  // Motion: Info and History slide in from the side of the tab
   // you chose, and coming back from a Chat slides the panel in from the left,
   // as a Mac app's navigation does. Decided while rendering, so the first
   // frame of the new pane already has it.
@@ -370,7 +370,7 @@ function HistoryList({ connectedFolder, file, fixture, chatStatuses, refreshKey,
     return () => { cancelled = true; };
   }, [file?.path, fixture, revision, refreshKey, connectedFolder.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Changes on top and Chats below, newest first in each (owner decision 2026-11-07: no filter).
+  // Changes on top and Chats below, newest first in each, with no filter.
   const sections = useMemo(() => {
     const sorted = [...(rows ?? [])].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
     return { changes: sorted.filter((row) => row.kind === "change"), chats: sorted.filter((row) => row.kind === "chat") };
@@ -476,8 +476,8 @@ function pluralKind(kind: string): string {
 }
 
 /**
- * The message box at the foot of the panel (docs/product-model.md,
- * 2026-11-06): "Work in <folder>", or "Work on this file" with the selection
+ * The message box at the foot of the panel (docs/product-model.md):
+ * "Work in <folder>", or "Work on this file" with the selection
  * shown as a removable chip. The selection goes to the Worker as path
  * references it reads with its own tools.
  */

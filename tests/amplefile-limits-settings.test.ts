@@ -18,7 +18,7 @@ import { AmpleFileLimitsPane } from "../web-local/src/components/modals/AmpleFil
 import { createDomHarness } from "./support/dom.js";
 
 /**
- * Settings → Automations → Limits (docs/receipts-not-gates.md, F19 principle 6).
+ * Settings → Automations → Limits (docs/act-ledger.md).
  * Bounds are defaults, not gates, and they are visible in Settings. Every
  * request, job, and Extension refusal names "Settings → Automations → Limits", so this suite pins
  * that the section exists, that it is read-only, and that the numbers it shows
@@ -58,9 +58,10 @@ test("the Limits pane reads the frozen contracts instead of retyping them", () =
     assert.ok(paneSource.includes(contract), `the pane sources ${contract}`);
   }
   // Nothing here changes a bound, and nothing here is a gate. The one control
-  // is the F28 switch for bringing finished handed-out work back to the AmpleFile agent
-  // (docs/collaboration-contract.md); it is the only input and the only API
-  // call the pane makes, and turning it off records everything just the same.
+  // is the switch for bringing finished handed-out work back to the AmpleFile
+  // agent as a continuation turn (docs/collaboration-contract.md); it is the
+  // only input and the only API call the pane makes, and turning it off
+  // records everything just the same.
   const inputs = paneSource.match(/<input\b/g) ?? [];
   assert.equal(inputs.length, 1, "the pane has exactly one control: the continuation switch");
   assert.match(paneSource, /type="checkbox"/);
@@ -77,7 +78,7 @@ test("the Limits pane shows the request, job, Extension, and automation numbers 
   const text = dom.container.textContent ?? "";
 
   assert.doesNotMatch(text, /How long one request stays open|Steps in one automation|Follow-up turns after work settles|Worker turns running together/);
-  // Apps and their Worker requests, short answers, and named automations are gone (2026-11-07).
+  // No app limits: Worker requests, short answers, and named automations from apps.
   assert.doesNotMatch(text, /Worker Requests|Short answer|per app|App Automations|returned to the app/);
   assert.ok(text.includes(`Automation runs at once${ampleFileAutomationMaxConcurrentRuns}`), "the raised run-slot default is shown");
   assert.ok(text.includes(`Message a step sends${sizeText(ampleFileAutomationDeclarationBounds.maxChatMessageBytes)}`), "the step message bound is shown");

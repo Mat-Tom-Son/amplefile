@@ -51,7 +51,7 @@ export interface TreeEntry {
   descendantIgnoredCount?: number;
   hasChildren?: boolean;
   children?: TreeEntry[];
-  /** This folder is its own registered Connected Folder (2026-10-01): the walk stops at its boundary. */
+  /** This folder is its own registered Connected Folder: the walk stops at its boundary. */
   nestedFolder?: true;
 }
 
@@ -113,9 +113,8 @@ export interface ConnectedFolderRemovalIntent {
    */
   folderDisposition?: "preserve";
   /**
-   * `app-state-removed` is read only: older builds marked an intent once the
-   * Connected Folder's app state was gone, before Connected Folder apps were
-   * removed (2026-11-07). Either phase finalizes now.
+   * `app-state-removed` is read only: an earlier build marked an intent once
+   * the Connected Folder's app state was gone. Either phase finalizes.
    */
   phase: "requested" | "app-state-removed";
   requestedAt: string;
@@ -206,7 +205,7 @@ export async function createManagedConnectedFolder(name: string, baseDir = manag
 /**
  * Registers a managed folder that already exists inside the managed base —
  * the path a Connected Folder's folder takes when it comes back from Recently deleted
- * (docs/receipts-not-gates.md, F20). The folder's portable
+ * (docs/act-ledger.md). The folder's portable
  * `.amplefile/connected-folder.json` identity is reused, so a restored Connected Folder keeps its
  * id, its Chats, and its History. Creating a brand-new managed folder stays
  * `createManagedConnectedFolder`.
@@ -456,14 +455,13 @@ export async function finalizeConnectedFolderRemoval(
 
 /**
  * Effect-time pin recheck for the prepared `connected-folder.delete-folder` act
- * (docs/receipts-not-gates.md, F19): re-verifies the pinned Connected Folder identity
+ * (docs/act-ledger.md): re-verifies the pinned Connected Folder identity
  * and canonical root against the live registry immediately before the
  * deletion executes. There is no decision time — the verb runs on its first
  * call — so this is the recheck the prepare-pin-journal-execute path performs
- * on its way to the effect. Identity only: the `.workspace/` fail-closed
- * rule, managed-base containment, and managed-root identity claims are
- * re-verified by the removal machinery itself at execution, exactly as they
- * are for a desktop-initiated deletion.
+ * on its way to the effect. Identity only: managed-base containment and
+ * managed-root identity claims are re-verified by the removal machinery
+ * itself at execution, exactly as they are for a desktop-initiated deletion.
  */
 export async function managedConnectedFolderDeletionPinIssue(
   pins: { connectedFolderId: string; connectedFolderRoot: string },
@@ -844,7 +842,7 @@ export async function createConnectedFolderTextFile(
  * The one resolution a delete performs before it commits to erasing or
  * moving: the same path policy, root refusal, and existence check
  * `deleteConnectedFolderEntry` applies, exposed so the Recently deleted lane
- * (docs/receipts-not-gates.md, F20) can move the exact entry instead.
+ * (docs/act-ledger.md) can move the exact entry instead.
  */
 export async function resolveConnectedFolderDeleteTarget(
   connectedFolderRoot: string,
@@ -941,7 +939,7 @@ export function resolveConnectedFolderPath(connectedFolderRoot: string, relative
     throw new Error("Path escapes the selected Connected Folder.");
   }
   if (containsReservedConnectedFolderPathSegment(normalized)) {
-    throw new Error("Path selects reserved AmpleFile, legacy product, or Pi metadata.");
+    throw new Error("Path selects reserved .amplefile, .work-fold, or .pi metadata.");
   }
   const path = resolve(root, normalized || ".");
   if (path !== root && !path.startsWith(`${root}${sep}`)) throw new Error("Path escapes the selected Connected Folder.");
@@ -1037,7 +1035,7 @@ async function touchConnectedFolder(connectedFolderRoot: string): Promise<void> 
       await commitRegistryAndPortableManifest(registry, connectedFolder);
     } catch {
       // The content mutation already succeeded. Leave both metadata records at their
-      // previous values and retry maintenance on a later mutation or work-folder listing.
+      // previous values and retry maintenance on a later mutation or Connected Folder listing.
     }
   });
 }
@@ -1265,7 +1263,7 @@ export async function registeredConnectedFolderOutline(): Promise<Array<{ id: st
 /**
  * Refuses a parent Connected Folder's file operation on a folder that holds a nested
  * registered Connected Folder, or on anything inside one: that content belongs to the
- * nested Connected Folder's own Worker and History (2026-10-01).
+ * nested Connected Folder's own Worker and History.
  */
 async function assertOutsideNestedFolders(connectedFolderRoot: string, relativePath: string): Promise<void> {
   const path = comparableRelative(relativePath);
@@ -1283,7 +1281,7 @@ async function assertOutsideNestedFolders(connectedFolderRoot: string, relativeP
 
 /**
  * Resolves a folder inside a registered Connected Folder that may become a nested Connected Folder
- * of its own (2026-10-01): a real, visible directory below the root that is not
+ * of its own: a real, visible directory below the root that is not
  * already a Connected Folder and does not sit inside one. Returns its absolute path.
  */
 export async function resolveNestableFolderPath(connectedFolderRoot: string, relativePath: string): Promise<string> {
@@ -1750,8 +1748,8 @@ function assertLinkedConnectedFolderStateSeparation(connectedFolderRoot: string)
 /**
  * A folder strictly inside a registered managed Connected Folder is that
  * Connected Folder's own content, not app data, so it may become a sub
- * Connected Folder even though managed Connected Folders live in the app's data folder
- * (2026-11-07). Hidden folders there (`.amplefile/`, a removal's claimed
+ * Connected Folder even though managed Connected Folders live in the app's data
+ * folder. Hidden folders there (`.amplefile/`, a removal's claimed
  * folder) stay off limits.
  */
 function insideManagedConnectedFolder(connectedFolderRoot: string, registry: ConnectedFolderRegistry): boolean {

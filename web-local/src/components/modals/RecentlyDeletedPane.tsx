@@ -8,18 +8,18 @@ import { showToast } from "../../ui/feedback";
 import { recentlyDeletedSettings } from "../../ui-contract";
 
 /**
- * Settings → Recently deleted (docs/receipts-not-gates.md, F20).
+ * Settings → Recently deleted (docs/act-ledger.md).
  * Nothing AmpleFile destroys is gone at the moment it happens: History covers
  * ordinary deletion, and whatever it could not keep a copy of waits here until
  * its time runs out. This pane lists what is waiting, puts an item back,
  * removes one item early, and sets how long items are kept. Nothing here
- * empties the whole store. Items left from the removed app platform are still
- * listed and can be deleted early, but cannot be put back.
+ * empties the whole store. Items an earlier build kept for Connected Folder
+ * apps are listed and can be deleted early, but cannot be put back.
  * The browser preview (`?fixture=connected-folder`) lists sample items and changes
  * nothing.
  */
 
-/** The `app-*` kinds are older items from the removed app platform: listed, never restorable. */
+/** The `app-*` kinds are items an earlier build kept for Connected Folder apps: listed, never restorable. */
 export type RecentlyDeletedKind = "file" | "folder" | "connected-folder" | "skill" | "app-storage" | "app-retained" | "app-release" | "app-studio";
 
 export interface RecentlyDeletedEntry {
@@ -31,7 +31,7 @@ export interface RecentlyDeletedEntry {
     | "chats.delete"
     | "connected-folders.delete"
     | "skills.remove"
-    // Older items from the removed app platform.
+    // Items an earlier build kept for Connected Folder apps.
     | "apps.remove"
     | "apps.connected-folder.removed"
     | "apps.storage.clear"
@@ -50,7 +50,7 @@ export interface RecentlyDeletedEntry {
   restoreBy: string;
   receiptId: string | null;
   uncovered?: Array<{ path: string; reason: "too_large" | "unreadable" | "symbolic_link" | "excluded" }>;
-  held?: { reason: "legacy-metadata" | "unreadable"; noticedAt: string };
+  held?: { reason: "unreadable"; noticedAt: string };
   restorable: "in-place" | "blocked";
   note?: string;
 }

@@ -27,21 +27,21 @@ import { backgroundRunningTransition, folderActivityStatuses } from "../web-loca
 import { mentionNames } from "../web-local/src/lib/folder-mentions.js";
 
 /**
- * Connected Folders inside Connected Folders (2026-10-01): one shared reading of nesting for the
+ * Connected Folders inside Connected Folders: one shared reading of nesting for the
  * switcher, Files, the composer, and the Workers' turn context.
  */
 
-const repo = { id: "repo", name: "workspace", connectedFolderRoot: "/Users/me/dev/workspace" };
-const api = { id: "api", name: "api", connectedFolderRoot: "/Users/me/dev/workspace/packages/api" };
-const web = { id: "web", name: "web", connectedFolderRoot: "/Users/me/dev/workspace/packages/web/" };
-const routes = { id: "routes", name: "routes", connectedFolderRoot: "/Users/me/dev/workspace/packages/api/src/routes" };
-const sibling = { id: "sibling", name: "workspace-notes", connectedFolderRoot: "/Users/me/dev/workspace-notes" };
+const repo = { id: "repo", name: "repo", connectedFolderRoot: "/Users/me/dev/repo" };
+const api = { id: "api", name: "api", connectedFolderRoot: "/Users/me/dev/repo/packages/api" };
+const web = { id: "web", name: "web", connectedFolderRoot: "/Users/me/dev/repo/packages/web/" };
+const routes = { id: "routes", name: "routes", connectedFolderRoot: "/Users/me/dev/repo/packages/api/src/routes" };
+const sibling = { id: "sibling", name: "repo-notes", connectedFolderRoot: "/Users/me/dev/repo-notes" };
 const notes = { id: "notes", name: "Notes", connectedFolderRoot: "/Users/me/Notes" };
 const all = [routes, notes, web, sibling, api, repo];
 
 test("the deepest containing Connected Folder is the parent, and a name prefix is not containment", () => {
   assert.equal(folderRootContains(repo.connectedFolderRoot, api.connectedFolderRoot), true);
-  assert.equal(folderRootContains(repo.connectedFolderRoot, sibling.connectedFolderRoot), false, "workspace-notes is beside workspace, not inside it");
+  assert.equal(folderRootContains(repo.connectedFolderRoot, sibling.connectedFolderRoot), false, "repo-notes is beside repo, not inside it");
   assert.equal(folderRootContains(repo.connectedFolderRoot, repo.connectedFolderRoot), false);
   assert.equal(folderRootContains("C:\\Work\\Repo", "c:\\work\\repo\\pkg"), true, "drive paths compare case-insensitively");
 
@@ -56,11 +56,11 @@ test("the deepest containing Connected Folder is the parent, and a name prefix i
 test("tree rows list top-level Connected Folders A–Z, each followed by its children", () => {
   assert.deepEqual(folderTreeRows(all).map((row) => `${"  ".repeat(row.depth)}${row.connectedFolder.name}`), [
     "Notes",
-    "workspace",
+    "repo",
     "  api",
     "    routes",
     "  web",
-    "workspace-notes",
+    "repo-notes",
   ]);
   assert.deepEqual(folderAncestors(routes, all).map((item) => item.id), [repo.id, api.id]);
   assert.deepEqual(childFolders(repo, all).map((item) => item.id), [api.id, web.id]);
@@ -174,7 +174,7 @@ test("a parent's Worker learns its nested Connected Folders and the Workers the 
   assert.doesNotMatch(plain, /Connected Folders inside this one|addressed these Workers/, "a Connected Folder without nesting or mentions hears nothing new");
 
   const management = buildTurnContextMessage({
-    ampleFileAgentConnectedFolders: [{ id: "repo", name: "workspace", connectedFolderRoot: repo.connectedFolderRoot }, { id: "api", name: "api", connectedFolderRoot: api.connectedFolderRoot, parentConnectedFolderId: "repo" }],
+    ampleFileAgentConnectedFolders: [{ id: "repo", name: "repo", connectedFolderRoot: repo.connectedFolderRoot }, { id: "api", name: "api", connectedFolderRoot: api.connectedFolderRoot, parentConnectedFolderId: "repo" }],
     ampleFileAgentTaskId: "task-m",
     addressedFolders: [{ connectedFolderId: "api", name: "api" }],
   });

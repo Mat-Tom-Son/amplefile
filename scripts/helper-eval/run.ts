@@ -210,8 +210,9 @@ const tree = root ? collectTree(requests, root.requestId) : [];
 const turnRecords = await readTurnRecords(host.stateBase);
 
 // A delegating parent can be continued by the host after its own turn ends
-// (F28 synthesis). Split those calls out: they are a real cost of handoff,
-// but not part of the turn the person waited for.
+// (one continuation turn, docs/collaboration-contract.md). Split those calls
+// out: they are a real cost of handoff, but not part of the turn the person
+// waited for.
 const originSettledAt = Date.parse(String((root?.turns[0] as { settledAt?: string } | undefined)?.settledAt ?? "")) || Infinity;
 const parentCalls = (parentSession?.calls ?? []).filter((call) => (call.timestamp ?? 0) <= originSettledAt);
 const continuationCalls = (parentSession?.calls ?? []).filter((call) => (call.timestamp ?? 0) > originSettledAt);

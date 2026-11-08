@@ -99,7 +99,7 @@ test("the resolver refuses the Connected Folder root, path escapes, and reserved
     file("folder\\outside.txt"),
     file(".amplefile/connected-folder.json"),
     file(".AMPLEFILE/connected-folder.json"),
-    file(".workspace/connected-folder.json"),
+    file(".work-fold/connected-folder.json"),
     file("Notes/.PI/AGENTS.md"),
     file("docs/report.txt:alternate"),
     file("docs/CON.txt"),
@@ -119,11 +119,11 @@ test("the resolver refuses the Connected Folder root, path escapes, and reserved
 test("reserved metadata nested below an explicit tree is never resolved", async (t) => {
   const root = await temporaryConnectedFolder(t);
   await mkdir(join(root, "Docs", ".amplefile"), { recursive: true });
-  await mkdir(join(root, "Docs", ".workspace"), { recursive: true });
+  await mkdir(join(root, "Docs", ".work-fold"), { recursive: true });
   await mkdir(join(root, "Docs", ".pi"), { recursive: true });
   await writeFile(join(root, "Docs", "visible.md"), "visible", "utf8");
   await writeFile(join(root, "Docs", ".amplefile", "current.md"), "hidden", "utf8");
-  await writeFile(join(root, "Docs", ".workspace", "hidden.md"), "hidden", "utf8");
+  await writeFile(join(root, "Docs", ".work-fold", "hidden.md"), "hidden", "utf8");
   await writeFile(join(root, "Docs", ".pi", "executable.md"), "executable", "utf8");
 
   const result = await resolveFolderTargets(root, [tree("Docs", [".md"], { recursive: true })]);

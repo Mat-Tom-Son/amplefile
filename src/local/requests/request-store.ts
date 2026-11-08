@@ -1,5 +1,5 @@
 /**
- * The durable request graph (docs/collaboration-contract.md, F25).
+ * The durable request graph (docs/collaboration-contract.md).
  *
  * Every accepted Worker or AmpleFile agent turn belongs to exactly one
  * machine-local request record. An AmpleFile agent turn creates a root;
@@ -186,7 +186,7 @@ export class AmpleFileRequestStore {
     return requestId ? this.get(requestId) : null;
   }
 
-  /** The request a background job belongs to (F31). */
+  /** The request a background job belongs to. */
   byJobId(jobId: string): AmpleFileRequestRecord | null {
     const requestId = this.#byJob.get(jobId);
     return requestId ? this.get(requestId) : null;
@@ -292,7 +292,7 @@ export class AmpleFileRequestStore {
 
   /**
    * The `--task` rule for `chat report`, `chat ask`, and `chat handoff`
-   * (docs/collaboration-contract.md, F27): a task id must name the caller's
+   * (docs/collaboration-contract.md): a task id must name the caller's
    * own turn — the newest turn of a request the named Connected Folder owns — and
    * that turn must still be running, exactly the way `--parent-task` is
    * checked. An id from an older turn, another Connected Folder, or another request
@@ -326,7 +326,7 @@ export class AmpleFileRequestStore {
     return this.#settings.lastPurgeAt;
   }
 
-  /** F28's follow-up turns; a person can turn them off without a second store. */
+  /** Whether finished handed-out work comes back as one follow-up turn; a person can turn them off without a second store. */
   continuationsEnabled(): boolean {
     return this.#settings.continuationsEnabled;
   }
@@ -517,7 +517,7 @@ export class AmpleFileRequestStore {
     });
   }
 
-  // --- background jobs (docs/background-jobs.md, F31–F32) ------------------
+  // --- background jobs (docs/background-jobs.md) ----------------------------
 
   /**
    * Attaches a job to the request whose turn started it, before its process
@@ -563,11 +563,9 @@ export class AmpleFileRequestStore {
     });
   }
 
-  /** A turn in the job's Chat read its end, or saw it in its turn context (F32). */
   /**
-   * Replaces the checklist the running turn keeps for its request
-   * (2026-10-18). Only that request's newest running turn may change it; an
-   * empty list clears it.
+   * Replaces the checklist the running turn keeps for its request. Only that
+   * request's newest running turn may change it; an empty list clears it.
    */
   setChecklist(taskId: string, items: unknown): Promise<AmpleFileChecklist | null> {
     return this.#run(async () => {
@@ -583,6 +581,7 @@ export class AmpleFileRequestStore {
     });
   }
 
+  /** A turn in the job's Chat read its end, or saw it in its turn context. */
   noteJobDelivery(requestId: string, jobIds: readonly string[]): Promise<void> {
     return this.#run(async () => {
       const record = this.#records.get(requestId);
@@ -665,8 +664,7 @@ export class AmpleFileRequestStore {
       if (!question) throw new AmpleFileRequestLineageError("That question is not on record.");
       if (question.state === "answered") throw new AmpleFileRequestLineageError("This question already has an answer.");
       if (question.state === "cancelled") throw new AmpleFileRequestLineageError("This question was withdrawn when its request stopped.");
-      // A refused answer changes nothing: `expireDue` owns the transition, so
-      // the request keeps the open question that makes it run out of time.
+      // A refused answer changes nothing.
       if (question.state === "expired") throw new AmpleFileRequestLineageError("That question has expired.");
       const record = this.#requireRecord(question.requestId);
       this.assertCanContinue(record.requestId);
@@ -799,7 +797,7 @@ export class AmpleFileRequestStore {
 
   /**
    * Counts one follow-up turn against a root. Past the bound the settle is
-   * still recorded — it is simply not narrated by another turn (F28).
+   * still recorded — it is simply not narrated by another turn.
    */
   noteContinuation(requestId: string, childTaskIds: string[] = [], jobIds: string[] = []): Promise<{ allowed: boolean; count: number }> {
     return this.#run(async () => {
@@ -900,7 +898,7 @@ export class AmpleFileRequestStore {
           };
         });
         // Nothing runs across a restart: a job still recorded running was
-        // interrupted, and the job journal says the same (F31).
+        // interrupted, and the job journal says the same.
         const jobs = record.jobs?.map((job) => job.state !== "running" ? job : {
           ...job, state: "interrupted" as const, settledAt: now.toISOString(),
         });
@@ -913,24 +911,6 @@ export class AmpleFileRequestStore {
         if (this.#records.get(record.requestId)?.state === "expired") expired += 1;
       }
       return { settled, expired };
-    });
-  }
-
-  /** Closes legacy requests whose persisted window has passed, and their questions. */
-  expireDue(now?: Date): Promise<{ requests: number; questions: number }> {
-    return this.#run(async () => {
-      const at = now ?? this.#now();
-      const targets = [...this.#records.values()]
-        .filter((record) => !isAmpleFileRequestTerminalState(record.state) && record.deadline !== null && at.getTime() >= Date.parse(record.deadline))
-        .sort((left, right) => right.depth - left.depth);
-      let requests = 0;
-      let questions = 0;
-      for (const target of targets) {
-        await this.#recomputeFrom(target.requestId, at);
-        if (this.#records.get(target.requestId)?.state === "expired") requests += 1;
-        questions += await this.#expireQuestionsDue(target.requestId, at);
-      }
-      return { requests, questions };
     });
   }
 
@@ -1027,23 +1007,15 @@ export class AmpleFileRequestStore {
   }
 
   /**
-   * The refusal for a request that is already terminal. A request that ran out
-   * of time, or that stopped at a configured bound, reached a limit rather
-   * than a lineage rule, so it refuses with the number and the Settings
-   * section every bound names (docs/receipts-not-gates.md, principle 6). A
-   * stopped or finished request keeps the plain lineage sentence.
+   * The refusal for a request that is already terminal. A request that
+   * stopped at a configured bound reached a limit rather than a lineage rule,
+   * so it refuses with the number and the Settings section every bound names
+   * (docs/act-ledger.md). A stopped or finished request
+   * keeps the plain lineage sentence.
    */
   #terminalRefusal(record: AmpleFileRequestRecord, lineage: string): Error {
     if (record.limitHit?.limit === "providerBudget" && this.#providerBudgetUsd !== null) {
       return ampleFileRequestLimitError("providerBudget", this.#providerBudgetUsd);
-    }
-    if (record.state === "expired") {
-      const deadline = record.deadline ? Date.parse(record.deadline) : Number.NaN;
-      const createdAt = Date.parse(record.createdAt);
-      const legacyWindowMs = Number.isFinite(deadline) && Number.isFinite(createdAt)
-        ? Math.max(0, deadline - createdAt)
-        : 0;
-      return ampleFileRequestLimitError("deadline", legacyWindowMs);
     }
     return new AmpleFileRequestLineageError(lineage);
   }
@@ -1161,8 +1133,6 @@ export class AmpleFileRequestStore {
     if (record.state === "stopped" || record.state === "expired") return record;
     const state = computeAmpleFileRequestState({
       stopRequestedAt: record.stopRequestedAt,
-      deadline: record.deadline,
-      now,
       turnStates: [record.turns.at(-1)!.state,
         ...(record.continuationState === "pending" ? ["accepted" as const] : record.continuationState === "failed" ? ["failed" as const] : [])],
       openQuestions: this.#openQuestionCount(record.requestId),
@@ -1185,7 +1155,7 @@ export class AmpleFileRequestStore {
    * Open questions this request asked; with `subtree`, every open question
    * below it as well. The two are counted separately because a request's own
    * open question makes it wait immediately, while a child's only surfaces
-   * once the parent's own turn has ended (F28).
+   * once the parent's own turn has ended.
    */
   #openQuestionCount(requestId: string, subtree = false, seen = new Set<string>()): number {
     if (seen.has(requestId)) return 0;
@@ -1369,7 +1339,7 @@ export class AmpleFileRequestStore {
    * the bound the oldest settled records leave memory; they stay in the
    * journal, come back on the next start, and `#trimmed` keeps the three
    * fields retention needs so they still leave on their own window rather
-   * than on a cache bound (docs/receipts-not-gates.md, principle 6).
+   * than on a cache bound (docs/act-ledger.md).
    */
   #trimMemory(): void {
     if (this.#records.size <= this.#maxRecords) return;
@@ -1399,7 +1369,7 @@ export class AmpleFileRequestStore {
    * the in-memory map is a bounded read cache (`#trimMemory`) and a record it
    * no longer holds is still on record. Rebuilding from memory would make the
    * cache bound erase settled requests years before retention, which is a
-   * bound with no name (docs/receipts-not-gates.md, principle 6). Records in
+   * bound with no name (docs/act-ledger.md). Records in
    * memory are overlaid last so a lineage repair reaches disk.
    *
    * `purged` names the ids retention just removed; they are the only ids a

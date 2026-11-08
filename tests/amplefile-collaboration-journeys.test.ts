@@ -33,9 +33,8 @@ import { ampleFileAgentScopeId } from "../src/local/state-paths.js";
  *   and nothing of the first Connected Folder inside the second Connected Folder's portable
  *   transcript.
  *
- * The journeys that need a real model turn (an app's assistant task
- * returning the one result envelope, and what a fresh Worker
- * actually receives on the wire) live in
+ * The journeys that need a real model turn (what a fresh Worker actually
+ * receives on the wire) live in
  * tests/amplefile-collaboration-journeys-model.test.ts.
  *
  * Turns run on a `/hold` extension command and wait at the prompt gate, so a
@@ -239,8 +238,8 @@ async function ampleFileAgentTranscript(api: LocalApiHandle, conversationId: str
 }
 
 /**
- * The F29 envelope, checked the same way wherever it came from: a `chat
- * report`, an app's assistant task, a handoff outcome. Every journey that
+ * The one result envelope, checked the same way wherever it came from: a
+ * `chat report` or a handoff outcome. Every journey that
  * produces one runs it through here, so a divergence fails in a test rather
  * than in review.
  */
@@ -330,7 +329,7 @@ test("journey: the AmpleFile agent delegates to a Connected Folder, the Connecte
     assert.deepEqual(j.outcomes(), ["accepted", "ok"]);
     assert.doesNotMatch(JSON.stringify(j.records), /currency/i, "a receipt never carries the question text");
 
-    // 4. F28: the host says which, on the status document, while the turn runs.
+    // 4. The host says which, on the status document, while the turn runs.
     const waitingStatus = await j.ok<{ task: { state: string }; waiting: { questionId: string; requestId: string; respondent: string; question: string; askedAt: string; expiresAt: string | null } | null; request: RequestRef }>([
       "chat", "status", "--connected-folder", quotes.id, "--task", child.taskId, "--json",
     ]);
@@ -590,7 +589,7 @@ test("journey: a Connected Folder asks for help with no request above it, hands 
     const draftBytes = "# Renewal\nDue in November.\n";
     await writeFile(join(drafts.connectedFolderRoot, "drafts", "renewal.md"), draftBytes, "utf8");
 
-    // 1. Work that starts in a Connected Folder owns its own root: no parent, no fold.
+    // 1. Work that starts in a Connected Folder owns its own root: no parent, no AmpleFile agent.
     const own = await j.ok<{ conversationId: string; taskId: string }>([
       "chat", "send", "--connected-folder", drafts.id, "--new", "--message", "/hold Draft the renewal note.", "--json",
     ]);
@@ -636,7 +635,7 @@ test("journey: a Connected Folder asks for help with no request above it, hands 
     assert.equal(j.api.requests.byTaskId(handed.taskId)!.rootId, rootRequestId, "the new Chat is a child of the caller's root");
     // The root id itself is not handed to a Connected Folder–scoped caller: `requests
     // show` reads a request by id, so it comes back as the opaque handle no
-    // verb accepts (F9 as amended, F26).
+    // verb accepts (docs/collaboration-contract.md).
     assert.match(handed.request.rootId, /^parent-[0-9a-f]{16}$/);
     assert.equal(handed.request.depth, 1);
     assert.deepEqual(j.outcomes(), ["accepted", "ok"]);
@@ -700,7 +699,7 @@ test("journey: a Connected Folder asks for help with no request above it, hands 
       [["chat", "handoff", "--connected-folder", drafts.id, "--task", answered.continuation.taskId, "--to-connected-folder", "connected-folder-not-registered", "--message", "/hold", "--json"], "notFound", /connected-folder-not-registered/],
       [["chat", "handoff", "--connected-folder", drafts.id, "--task", answered.continuation.taskId, "--to-connected-folder", reviews.id, "--message", "/hold", "--file", "../outside.md", "--json"], "usage", /./],
       [["chat", "handoff", "--connected-folder", drafts.id, "--task", answered.continuation.taskId, "--to-connected-folder", reviews.id, "--message", "/hold", "--file", ".amplefile/connected-folder.json", "--json"], "usage", /./],
-      [["chat", "handoff", "--connected-folder", drafts.id, "--task", answered.continuation.taskId, "--to-connected-folder", reviews.id, "--message", "/hold", "--file", ".workspace/legacy.json", "--json"], "usage", /./],
+      [["chat", "handoff", "--connected-folder", drafts.id, "--task", answered.continuation.taskId, "--to-connected-folder", reviews.id, "--message", "/hold", "--file", ".work-fold/records.json", "--json"], "usage", /./],
     ] as const) {
       const refused = await j.run([...argv]);
       assert.notEqual(refused.exitCode, 0, argv.join(" "));

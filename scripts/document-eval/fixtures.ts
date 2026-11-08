@@ -1,5 +1,5 @@
 /**
- * Seeded document tasks for the document-checking evaluation (2026-10-18).
+ * Seeded document tasks for the document-checking evaluation.
  *
  * Each task seeds ordinary input files into a disposable Connected Folder and asks
  * for one deliverable. What a correct result looks like lives only in

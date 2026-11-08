@@ -1,6 +1,6 @@
 /**
  * The places the file manager's sidebar opens (docs/product-model.md,
- * "2026-11-06 file manager layout"): a Connected Folder, or one of the Standard
+ * "The file manager window"): a Connected Folder, or one of the Standard
  * Folders (Desktop, Documents, Downloads, Pictures, the home folder, iCloud
  * Drive, and any folder added with +).
  */

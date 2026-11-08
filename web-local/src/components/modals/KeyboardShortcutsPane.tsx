@@ -3,8 +3,8 @@ import { isMacOS } from "../../lib/platform";
 import type { ShortcutGroup } from "../../types";
 
 /**
- * The file manager layout's keys (docs/product-model.md, 2026-11-06 file
- * manager layout): Finder's keys for the list and search, and the menu bar's
+ * The file manager layout's keys (docs/product-model.md, the file
+ * manager window): Finder's keys for the list and search, and the menu bar's
  * AmpleFile commands. It has no tabs, command palette, or agent panel, so
  * their keys are not listed.
  */

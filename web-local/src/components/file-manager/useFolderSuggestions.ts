@@ -7,9 +7,9 @@ const written = new Map<string, string[]>();
 
 /**
  * The suggested messages above the message box, written by the Connected Folder's
- * own model from what is in the folder shown and its recent Chats (owner
- * request, 2026-11-06). Until they arrive, or with no AI connected, or if the
- * call fails, the list is empty and the plain suggestions show instead.
+ * own model from what is in the folder shown and its recent Chats. Until they
+ * arrive, or with no AI connected, or if the call fails, the list is empty and
+ * the plain suggestions show instead.
  */
 export function useFolderSuggestions(connectedFolderId: string | null, path: string, enabled: boolean): string[] {
   const key = connectedFolderId ? `${connectedFolderId}\0${path}` : "";

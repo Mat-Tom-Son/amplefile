@@ -1,147 +1,48 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, posix, resolve } from "node:path";
+import { join } from "node:path";
 import test, { after, before } from "node:test";
 
 import {
-  defaultAgentSdkDir,
   connectedFolderSessionDir,
   connectedFolderStorageKey,
 } from "../src/local/agent/agent-data-dir.js";
-import { listConversations } from "../src/local/agent/chat-store.js";
 import { reservedSearchSegments } from "../src/local/agent/reserved-path-search.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "../src/local/connected-folder-ignore.js";
 import { isReservedConnectedFolderPathSegment } from "../src/local/connected-folder-path-policy.js";
 import { isHistoryAlwaysSkippedSegment } from "../src/local/history-capture-policy.js";
-import { createLocalDevelopmentApiOptions } from "../src/local/server-dev-options.js";
-import {
-  configureAmpleFileStateRoot,
-  connectedFolderManifestFile,
-} from "../src/local/state-paths.js";
-import {
-  listConnectedFolders,
-  registerLinkedConnectedFolder,
-  scanConnectedFolderTree,
-} from "../src/local/connected-folder.js";
-import { ampleFileDesktopStateOverride } from "../desktop/src/user-data-path.js";
 
 let sandbox = "";
-let newStateRoot = "";
 
 before(async () => {
   sandbox = await mkdtemp(join(tmpdir(), "amplefile-coexistence-"));
-  newStateRoot = join(sandbox, "new-product-state");
-  configureAmpleFileStateRoot(newStateRoot);
 });
 
 after(async () => {
-  configureAmpleFileStateRoot(undefined);
   await rm(sandbox, { recursive: true, force: true });
 });
 
-test("legacy app state and linked-folder metadata remain undiscovered and byte-preserved", async () => {
-  const linkedRoot = join(sandbox, "linked-connected-folder");
-  const legacyStateRoot = join(sandbox, "connected-folder");
-  const legacyMetadataRoot = join(linkedRoot, ".workspace");
-  const legacyConversationRoot = join(legacyMetadataRoot, "conversations");
-  await mkdir(legacyStateRoot, { recursive: true });
-  await mkdir(legacyConversationRoot, { recursive: true });
-  await writeFile(join(linkedRoot, "ordinary.txt"), "ordinary content\n", "utf8");
-
-  const legacyId = legacyUnsaltedConnectedFolderId(linkedRoot);
-  const legacyRegistryPath = join(legacyStateRoot, "connected-folder-registry.json");
-  const legacyManifestPath = join(legacyMetadataRoot, "connected-folder.json");
-  const legacyConversationPath = join(legacyConversationRoot, "chat-legacy.jsonl");
-  const legacyRegistryBytes = Buffer.from(`{\n  "version": 1,\n  "spaces": [{"id":"${legacyId}","name":"Legacy","rootPath":${JSON.stringify(linkedRoot)}}],\n  "pendingRemovals": []\n}\n`);
-  const legacyManifestBytes = Buffer.from(`${JSON.stringify({
-    version: 1,
-    id: legacyId,
-    name: "Legacy portable identity",
-    createdAt: "2025-01-02T03:04:05.000Z",
-    updatedAt: "2025-01-02T03:04:05.000Z",
-  })}\n`);
-  const legacyConversationBytes = Buffer.from("{\"id\":\"legacy-message\",\"role\":\"user\",\"content\":\"legacy bytes\",\"createdAt\":\"2025-01-02T03:04:05.000Z\"}\n");
-  await writeFile(legacyRegistryPath, legacyRegistryBytes);
-  await writeFile(legacyManifestPath, legacyManifestBytes);
-  await writeFile(legacyConversationPath, legacyConversationBytes);
-
-  const before = await snapshots([
-    legacyRegistryPath,
-    legacyManifestPath,
-    legacyConversationPath,
-  ]);
-
-  assert.deepEqual(await listConnectedFolders(), [], "the new profile must not discover the old registry");
-  assert.deepEqual(await listConversations(linkedRoot), [], "the new Chat store must not discover .workspace transcripts");
-
-  const registered = await registerLinkedConnectedFolder(linkedRoot);
-  const newManifest = JSON.parse(await readFile(connectedFolderManifestFile(linkedRoot), "utf8")) as { id: string };
-  assert.equal(registered.id, newManifest.id);
-  assert.notEqual(registered.id, legacyId, "the clean product identity must not reuse the exact legacy path-derived id");
-  assert.deepEqual((await listConnectedFolders()).map((connectedFolder) => connectedFolder.id), [registered.id]);
-  assert.deepEqual((await scanConnectedFolderTree(linkedRoot)).entries.map((entry) => entry.path), ["ordinary.txt"]);
-  assert.equal(existsSync(join(linkedRoot, ".amplefile", "connected-folder.json")), true);
-
-  assert.deepEqual(await snapshots([
-    legacyRegistryPath,
-    legacyManifestPath,
-    legacyConversationPath,
-  ]), before, "registration must leave all old product and portable bytes and timestamps untouched");
-});
-
-test("legacy Pi sessions remain intact beside the AmpleFile session namespace", async () => {
+test("other Pi sessions remain intact beside the AmpleFile session namespace", async () => {
   const connectedFolderRoot = join(sandbox, "session-connected-folder");
   const agentRoot = join(sandbox, "pi-agent");
   const connectedFolderKey = connectedFolderStorageKey(connectedFolderRoot);
-  const legacySessionRoot = join(agentRoot, "sessions", connectedFolderKey);
-  const legacySessionPath = join(legacySessionRoot, "session.jsonl");
-  await mkdir(legacySessionRoot, { recursive: true });
-  const legacyBytes = Buffer.from([0, 255, 17, 34, 51, 68, 85]);
-  await writeFile(legacySessionPath, legacyBytes);
-  const before = await snapshots([legacySessionPath]);
+  const otherSessionRoot = join(agentRoot, "sessions", connectedFolderKey);
+  const otherSessionPath = join(otherSessionRoot, "session.jsonl");
+  await mkdir(otherSessionRoot, { recursive: true });
+  const otherBytes = Buffer.from([0, 255, 17, 34, 51, 68, 85]);
+  await writeFile(otherSessionPath, otherBytes);
+  const before = await snapshots([otherSessionPath]);
 
   const newSessionRoot = connectedFolderSessionDir(connectedFolderRoot, agentRoot);
   assert.equal(newSessionRoot, join(agentRoot, "sessions", "amplefile", connectedFolderKey));
-  assert.notEqual(newSessionRoot, legacySessionRoot);
+  assert.notEqual(newSessionRoot, otherSessionRoot);
   await mkdir(newSessionRoot, { recursive: true });
   await writeFile(join(newSessionRoot, "session.jsonl"), "new AmpleFile session\n", "utf8");
 
-  assert.deepEqual(await snapshots([legacySessionPath]), before);
-  assert.deepEqual(await readFile(legacySessionPath), legacyBytes);
+  assert.deepEqual(await snapshots([otherSessionPath]), before);
+  assert.deepEqual(await readFile(otherSessionPath), otherBytes);
 });
-
-test("legacy product environment variables cannot select AmpleFile state", () => {
-  const legacyAgentRoot = join(sandbox, "legacy-agent");
-  const piAgentRoot = join(sandbox, "pi-agent-from-native-env");
-  assert.equal(defaultAgentSdkDir({
-    WORKSPACE_AGENT_DIR: legacyAgentRoot,
-    PI_CODING_AGENT_DIR: piAgentRoot,
-  }), piAgentRoot);
-
-  const options = createLocalDevelopmentApiOptions({
-    environment: {
-      WORKSPACE_LOCAL_API_PORT: "7999",
-      WORKSPACE_STATE_DIR: join(sandbox, "legacy-state-override"),
-    },
-    platform: "linux",
-    homeDirectory: join(sandbox, "home"),
-    currentDirectory: sandbox,
-  });
-  assert.equal(options.port, 4327);
-  assert.equal(options.stateBase, posix.resolve(join(sandbox, "home"), ".config", "AmpleFile Development"));
-  assert.equal(ampleFileDesktopStateOverride({
-    WORKSPACE_DESKTOP_STATE_DIR: join(sandbox, "legacy-desktop-state"),
-  }), undefined);
-});
-
-function legacyUnsaltedConnectedFolderId(rootPath: string): string {
-  const resolved = resolve(rootPath);
-  const normalized = process.platform === "win32" ? resolved.toLocaleLowerCase() : resolved;
-  return `ws-${createHash("sha256").update(normalized).digest("hex").slice(0, 16)}`;
-}
 
 async function snapshots(paths: string[]): Promise<Array<{ path: string; bytes: Buffer; mtimeMs: number }>> {
   return Promise.all(paths.map(async (path) => ({
@@ -151,15 +52,15 @@ async function snapshots(paths: string[]): Promise<Array<{ path: string; bytes: 
   })));
 }
 
-test("the predecessors' metadata folders stay hidden from Files, History, and search", () => {
-  // A folder once used with the predecessor keeps its .work-fold/ (or older
-  // .workspace/) folder. AmpleFile never reads it, and it never shows it.
-  for (const name of [".work-fold", ".workspace", ".amplefile", ".pi"]) {
+test("a .work-fold folder stays hidden from Files, History, and search", () => {
+  // A folder once used with an earlier app keeps its .work-fold/ folder.
+  // AmpleFile never reads it, and it never shows it.
+  for (const name of [".work-fold", ".amplefile", ".pi"]) {
     assert.equal(isReservedConnectedFolderPathSegment(name), true, `${name} is reserved`);
     assert.equal(isAlwaysHiddenConnectedFolderEntry(name), true, `${name} is hidden in Files`);
   }
   assert.equal(isReservedConnectedFolderPathSegment(".Work-Fold"), true, "matching ignores case");
-  for (const name of [".work-fold", ".workspace", ".amplefile"]) {
+  for (const name of [".work-fold", ".amplefile"]) {
     assert.equal(isHistoryAlwaysSkippedSegment(name), true, `${name} is left out of History`);
     assert.ok((reservedSearchSegments as readonly string[]).includes(name), `${name} is left out of search`);
   }

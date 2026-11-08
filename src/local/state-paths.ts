@@ -30,12 +30,12 @@ export function connectedFolderAppearanceFile(): string {
   return join(ampleFileStateRoot(), "appearance.json");
 }
 
-/** Recently deleted, the machine-local trash for reversible destruction (docs/receipts-not-gates.md, F20). */
+/** Recently deleted, the machine-local trash for reversible destruction (docs/act-ledger.md). */
 export function ampleFileRecentlyDeletedRoot(): string {
   return join(ampleFileStateRoot(), "recently-deleted");
 }
 
-/** Machine-local durable request graph (docs/collaboration-contract.md, F25). */
+/** Machine-local durable request graph (docs/collaboration-contract.md). */
 export function ampleFileRequestsRoot(): string {
   return join(ampleFileStateRoot(), "requests");
 }

@@ -70,10 +70,10 @@ test("a turn's commentary before and after tool calls is kept in the saved reply
   }));
   const port = (providerServer.address() as AddressInfo).port;
 
-  const root = await mkdtemp(join(tmpdir(), "workspace-transcript-segments-"));
+  const root = await mkdtemp(join(tmpdir(), "amplefile-transcript-segments-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const agentDir = join(root, "agent");
-  const connectedFolderRoot = join(root, "workspace");
+  const connectedFolderRoot = join(root, "connected-folder");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
   await mkdir(connectedFolderRoot, { recursive: true });
   await writeFile(

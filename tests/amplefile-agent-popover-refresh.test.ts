@@ -39,7 +39,7 @@ test("the popover keeps the conversation and composer visible without idle chrom
 });
 
 test("the popover has no decision surface", async () => {
-  // Needs you means questions (docs/receipts-not-gates.md, F24): the popover
+  // Needs you means questions (docs/act-ledger.md): the popover
   // renders the conversation and the composer, never a decision card, and the
   // preloads expose no decision helpers.
   const popover = await readFile(resolve(rootDir, "web-local/src/popover/PopoverApp.tsx"), "utf8");

@@ -1,5 +1,5 @@
 /**
- * A background job's output on disk (docs/background-jobs.md, F33): one
+ * A background job's output on disk (docs/background-jobs.md): one
  * writer per running job, and the reads every surface shares.
  *
  * Output is the command's combined stdout and stderr, kept byte for byte in

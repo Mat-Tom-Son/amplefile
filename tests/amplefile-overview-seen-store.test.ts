@@ -9,7 +9,7 @@ import { AmpleFileOverviewSeenStore, isAmpleFileOverviewSurfaceId } from "../src
 const cursorAt = (at: string, id = "act-receipts:req-1"): string => `${at}/${id}`;
 
 test("seen markers advance monotonically and persist atomically", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-overview-seen-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-overview-seen-"));
   try {
     const path = join(sandbox, "overview-seen.json");
     const store = new AmpleFileOverviewSeenStore({ path, now: () => new Date("2026-08-10T12:00:00.000Z") });
@@ -53,7 +53,7 @@ test("seen markers advance monotonically and persist atomically", async () => {
 });
 
 test("invalid surfaces and cursors are refused without effect", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-overview-seen-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-overview-seen-"));
   try {
     const store = new AmpleFileOverviewSeenStore({ path: join(sandbox, "overview-seen.json") });
     for (const surface of ["phone", "remote:", "remote:grant-1", "remote:bad grant", "", "POPOVER"]) {
@@ -74,7 +74,7 @@ test("invalid surfaces and cursors are refused without effect", async () => {
 
     assert.equal(isAmpleFileOverviewSurfaceId("popover"), true);
     assert.equal(isAmpleFileOverviewSurfaceId("main-window"), true);
-    assert.equal(isAmpleFileOverviewSurfaceId("remote:grant-1"), false, "paired-browser surfaces are gone");
+    assert.equal(isAmpleFileOverviewSurfaceId("remote:grant-1"), false, "only the two desktop surfaces are known");
     assert.equal(isAmpleFileOverviewSurfaceId("remote:"), false);
     assert.equal(isAmpleFileOverviewSurfaceId("tray"), false);
   } finally {
@@ -83,7 +83,7 @@ test("invalid surfaces and cursors are refused without effect", async () => {
 });
 
 test("a damaged or future-versioned store resets markers, which only over-reports", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-overview-seen-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-overview-seen-"));
   try {
     const path = join(sandbox, "overview-seen.json");
     await writeFile(path, "{not json", "utf8");
@@ -117,8 +117,8 @@ test("a damaged or future-versioned store resets markers, which only over-report
   }
 });
 
-test("paired-browser markers an older build kept are skipped on read and dropped on the next write", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-overview-seen-"));
+test("unknown surface markers are skipped on read and dropped on the next write", async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-overview-seen-"));
   try {
     const path = join(sandbox, "overview-seen.json");
     await writeFile(path, JSON.stringify({
@@ -140,7 +140,7 @@ test("paired-browser markers an older build kept are skipped on read and dropped
 });
 
 test("removing a surface purges exactly that surface's marker", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-overview-seen-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-overview-seen-"));
   try {
     const store = new AmpleFileOverviewSeenStore({ path: join(sandbox, "overview-seen.json") });
     await store.advance("popover", cursorAt("2026-08-10T10:00:00.000Z"));
@@ -157,7 +157,7 @@ test("removing a surface purges exactly that surface's marker", async () => {
 });
 
 test("the surface cap refuses new markers but never blocks existing ones", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-overview-seen-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-overview-seen-"));
   try {
     const store = new AmpleFileOverviewSeenStore({ path: join(sandbox, "overview-seen.json"), maxSurfaces: 1 });
     await store.advance("popover", cursorAt("2026-08-10T10:00:00.000Z"));

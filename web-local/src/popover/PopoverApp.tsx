@@ -177,8 +177,8 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
   const [messages, setMessages] = useState<AmpleFileAgentMessage[]>(popoverFixtureRequested ? popoverFixtureMessages : []);
   const [staged, setStaged] = useState<StagedItem[]>([]);
   const [text, setText] = useState("");
-  // Connected Folder Workers the AmpleFile agent can be told to involve with @
-  // (2026-10-01), in the same nested order as the Connected Folder switcher.
+  // Connected Folder Workers the AmpleFile agent can be told to involve with @,
+  // in the same nested order as the Connected Folder switcher.
   const [mentionFolders, setMentionFolders] = useState<MentionFolderOption[]>([]);
   const [composerCaret, setComposerCaret] = useState(0);
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
@@ -413,7 +413,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
       : entry));
   }, []);
 
-  // A draft from another surface (a Check or an Automation) lands in the message box.
+  // A draft handed in through `draftRequest` lands in the message box.
   useEffect(() => {
     if (!draftRequest) return;
     setHistoryOpen(false);
@@ -727,7 +727,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
   }, [text, staged, sending, loadingChat, stopping, refreshConversation, replaceStreamingAssistant, clearLiveSteps, mentionFolders, followLatest]);
 
   // Enter while the AmpleFile agent is working reaches its running turn after
-  // its current step, the way a Connected Folder Chat steers (2026-10-27).
+  // its current step, the way a Connected Folder Chat steers.
   const steer = useCallback(async () => {
     const content = text.trim();
     const conversation = selectionRef.current;
@@ -1301,8 +1301,8 @@ function chatDateLabel(value: string): string {
 }
 
 /**
- * The settled request's inline conversation entry — the same host-recorded
- * outcome the old result card carried, absorbed into the one narrator.
+ * The settled request's inline conversation entry: its host-recorded outcome,
+ * told inside the one narrator.
  */
 function ResultEntry({ request, showState = true }: { request: AmpleFileAgentRequestView; showState?: boolean }) {
   const showOutcome = request.phase === "failed"

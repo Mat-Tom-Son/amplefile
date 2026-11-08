@@ -1,6 +1,6 @@
 /**
- * `checklist`: the plan a Worker or the AmpleFile agent keeps for its request
- * (2026-10-18). The agent sends the whole list each time; the host keeps it
+ * `checklist`: the plan a Worker or the AmpleFile agent keeps for its request.
+ * The agent sends the whole list each time; the host keeps it
  * on the request record, shows it to the person beside the Chat's work, and
  * hands it back at the start of every later turn of that request, so a long
  * task keeps its shape across follow-ups and answered questions.

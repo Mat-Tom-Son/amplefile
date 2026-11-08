@@ -1,43 +1,111 @@
-// Inventory of every place the product's own names appear, for the rebrand
-// (docs/rebrand-plan.md). It finds the brand ("work-fold"), the noun
-// ("work-folder"), the agent above them ("work-fold agent"), the environment
-// prefix (WORKFOLD_), and the app kit's "wf" prefix, in every spelling, and
-// sorts each use three ways:
+// A guard against the predecessor's names coming back. It finds the old
+// brand ("work-fold"), its folder noun ("work-folder"), its agent ("work-fold
+// agent"), its environment prefix (WORKFOLD_), and its app kit's "wf" prefix,
+// in every spelling, and sorts each use three ways:
 //
 //   concept  which name it is
 //   area     where it lives (interface, local server, CLI, desktop, tests, docs…)
 //   class    how it is written (code identifier, identifier-like string,
 //            interface text, comment, document, CSS, JSON)
 //
-// It also pulls out the contracts: names written to disk, sent between
-// processes, or used by installed apps, which need a migration or a
-// compatibility decision rather than a plain find-and-replace.
+// It also names the contracts a use belongs to: names written to disk, sent
+// between processes, or read by something AmpleFile does not ship.
 //
 //   node scripts/rebrand/inventory.mjs                  # summary
 //   node scripts/rebrand/inventory.mjs --markdown <file> # full report
-//   node scripts/rebrand/inventory.mjs --json <file>     # every token, for a codemod
-//   node scripts/rebrand/inventory.mjs --check           # after the rename: fail if any remain
+//   node scripts/rebrand/inventory.mjs --json <file>     # every token
+//   node scripts/rebrand/inventory.mjs --check           # fail if any remain
 //
-// Dated release notes, archived documents, and third-party code are skipped,
-// as in scripts/vocabulary/scan.mjs, whose syntax walk this reuses.
+// Third-party code, patches, and binary assets are skipped.
+import ts from "typescript";
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { isIdentifierLikeString, scriptExtensions, scriptRegions, tokenPattern, trackedFiles, wordParts } from "../vocabulary/scan.mjs";
-
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
-/** Files that name the old spellings on purpose and keep doing so after a rename. */
-const historicalPaths = [
-  /^scripts\/rebrand\//,
-  /^docs\/rebrand-plan\.md$/,
-  /^scripts\/vocabulary\/GLOSSARY\.md$/,
-  /^scripts\/vocabulary\//,
-  /^src\/local\/vocabulary-migration/,
-  /^tests\/vocabulary-migration/,
-  /^web-local\/src\/lib\/storage-migration/,
+const scriptExtensions = /\.(ts|tsx|mts|cts|js|mjs|cjs|jsx)$/;
+
+/** Third-party code, patches, generated files, and binary assets. */
+const excludedPaths = [
+  /^patches\//,
+  /^desktop\/assets\//,
+  /^resources\/included-tools\/.*\/vendor\//,
+  /package-lock\.json$/,
+  /\.(png|jpe?g|webp|gif|ico|icns|woff2?|ttf|otf|pdf|zip|node|dylib|mp4|mov|svg)$/,
 ];
+
+/** Files that name the old spellings on purpose: this guard itself. */
+const guardPaths = [
+  /^scripts\/rebrand\//,
+];
+
+function trackedFiles() {
+  return execFileSync("git", ["-C", root, "ls-files", "-z"], { encoding: "utf8" })
+    .split("\0")
+    .filter(Boolean)
+    .filter((file) => !excludedPaths.some((pattern) => pattern.test(file)));
+}
+
+/** Identifier-shaped token: camelCase, PascalCase, snake, kebab, dotted. */
+const tokenPattern = /[A-Za-z_$][A-Za-z0-9_$]*(?:[-.][A-Za-z0-9_$]+)*/g;
+
+/** Split an identifier-shaped token into lowercase word parts. */
+function wordParts(token) {
+  return token
+    .split(/[-._$]+/)
+    .flatMap((piece) => piece.split(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/))
+    .filter(Boolean)
+    .map((part) => part.toLowerCase());
+}
+
+/**
+ * Walk a script file and yield every text region with its syntactic class:
+ * ident (code identifier), string (literal or template text), jsx (JSX text),
+ * regex, comment.
+ */
+function* scriptRegions(file, text) {
+  const kind = file.endsWith("x") ? ts.ScriptKind.TSX : /\.(m|c)?js$/.test(file) ? ts.ScriptKind.JS : ts.ScriptKind.TS;
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
+  const seenComments = new Set();
+  const comments = [];
+  const collectComments = (pos) => {
+    for (const range of [...(ts.getLeadingCommentRanges(text, pos) ?? []), ...(ts.getTrailingCommentRanges(text, pos) ?? [])]) {
+      if (seenComments.has(range.pos)) continue;
+      seenComments.add(range.pos);
+      comments.push({ cls: "comment", start: range.pos, end: range.end });
+    }
+  };
+  const regions = [];
+  const visit = (node) => {
+    collectComments(node.getFullStart());
+    if (ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) {
+      regions.push({ cls: "ident", start: node.getStart(source), end: node.getEnd() });
+    } else if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      regions.push({ cls: "string", start: node.getStart(source) + 1, end: node.getEnd() - 1 });
+    } else if (ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
+      const start = node.getStart(source);
+      const raw = text.slice(start, node.getEnd());
+      const openLen = raw.startsWith("`") || raw.startsWith("}") ? 1 : 0;
+      const closeLen = raw.endsWith("${") ? 2 : raw.endsWith("`") ? 1 : 0;
+      regions.push({ cls: "string", start: start + openLen, end: node.getEnd() - closeLen });
+    } else if (ts.isJsxText(node)) {
+      regions.push({ cls: "jsx", start: node.getStart(source, false), end: node.getEnd() });
+    } else if (ts.isRegularExpressionLiteral(node)) {
+      regions.push({ cls: "regex", start: node.getStart(source), end: node.getEnd() });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  collectComments(source.endOfFileToken.getFullStart());
+  yield* [...regions, ...comments].sort((a, b) => a.start - b.start);
+}
+
+/** A string region is identifier-like when it has no whitespace (keys, routes, ids, paths). */
+function isIdentifierLikeString(value) {
+  return value.length > 0 && !/\s/.test(value);
+}
 
 export const concepts = [
   { id: "agent", label: "work-fold agent", test: (parts) => hasRun(parts, ["work", "fold", "agent"]) },
@@ -54,29 +122,23 @@ export const areas = [
   { id: "desktop", label: "Desktop process (desktop/)", test: (file) => file.startsWith("desktop/") },
   { id: "tools", label: "Included tools (resources/)", test: (file) => file.startsWith("resources/") },
   { id: "tests", label: "Tests", test: (file) => file.startsWith("tests/") },
-  { id: "services", label: "Hosted services (services/)", test: (file) => file.startsWith("services/") },
   { id: "skills", label: "Agent Skills and harness files", test: (file) => /^\.agents\/|^\.claude\/|^\.codex\/|^AGENTS\.md$|^CLAUDE\.md$/.test(file) },
   { id: "docs", label: "Documents", test: (file) => /\.md$/.test(file) },
   { id: "build", label: "Build, packaging, and scripts", test: () => true },
 ];
 
-/**
- * Contracts: a name that leaves the source code. Each needs a migration, a
- * compatibility window, or a deliberate clean break, decided once.
- */
+/** Contracts: a name that leaves the source code. */
 export const contracts = [
   { id: "identity", label: "Product identity file (src/shared/product-identity.json)", test: (value, file) => file === "src/shared/product-identity.json" },
   { id: "bundle", label: "App ids, bundle ids, and URL scheme", test: (value) => /com\.work-fold|work-fold-desktop:|^work-fold-desktop$/.test(value) },
-  { id: "portable", label: "Portable metadata folder inside each work-folder (.work-fold/)", test: (value) => /(^|[^\w-])\.work-fold(\/|$|[^\w-])/.test(value) },
+  { id: "portable", label: "Portable metadata folder (.work-fold/)", test: (value) => /(^|[^\w-])\.work-fold(\/|$|[^\w-])/.test(value) },
   { id: "env", label: "Environment variables (WORKFOLD_*)", test: (value) => /\bWORKFOLD_[A-Z0-9_]+/.test(value) },
   { id: "routes", label: "Local HTTP routes and headers", test: (value) => /\/api\/work-fold|\/api\/work-folders|x-work-fold-/.test(value) },
   { id: "ipc", label: "Desktop IPC channels (work-fold:…)", test: (value) => /^work-fold:[a-z]/.test(value) },
-  { id: "storage", label: "Renderer storage keys (work-fold.…)", test: (value) => /^work-fold\.[a-z]/.test(value) && !/^work-fold\.(app-release|artifact|page|restricted-app-bridge|computer-helper)/.test(value) },
-  { id: "schemas", label: "Schema ids and media types", test: (value) => /work-fold\.(app-release|artifact|page\/|restricted-app-bridge|computer-helper)|application\/vnd\.work-fold/.test(value) },
-  { id: "globals", label: "Globals that installed apps and pages call", test: (value) => /\b(workFoldDesktop|workFoldRestrictedApp|workFoldPage|workFoldViewerApp|workFoldBrowserApp)\b/.test(value) },
-  { id: "appkit", label: "App kit (/__work-fold/kit.css, --wf-* variables, wf-* classes)", test: (value) => /\/__work-fold\/|(^|[^\w-])--wf-[a-z]|(^|[^\w-])wf-[a-z]/.test(value) },
-  { id: "command", label: "The installed command name (work-fold …)", test: (value, file, cls) => /(^|[\s`'"(])work-fold (agent|chat|chats|context|history|files|search|work-folders|tools|apps|checks|automations|pages|recently-deleted|requests|jobs|worktrees|help)\b/.test(value) || (cls === "idstring" && value === "work-fold") },
-  { id: "skills", label: "Skill and folder names the agent uses (manage-work-folders, management/)", test: (value) => /manage-work-folders|work-fold-agent/.test(value) },
+  { id: "storage", label: "Renderer storage keys (work-fold.…)", test: (value) => /^work-fold\.[a-z]/.test(value) },
+  { id: "globals", label: "Window globals", test: (value) => /\b(workFoldDesktop|workFoldRestrictedApp|workFoldPage)\b/.test(value) },
+  { id: "command", label: "The installed command name (work-fold …)", test: (value, file, cls) => /(^|[\s`'"(])work-fold (agent|chat|chats|context|history|files|search|work-folders|tools|automations|recently-deleted|requests|jobs|worktrees|help)\b/.test(value) || (cls === "idstring" && value === "work-fold") },
+  { id: "skills", label: "Skill and folder names the agent uses", test: (value) => /manage-work-folders|work-fold-agent/.test(value) },
   { id: "repos", label: "Source and release repositories", test: (value) => /Mat-Tom-Son\/work-fold|work-fold-mac-releases/.test(value) },
 ];
 
@@ -101,11 +163,11 @@ function classRegions(file, text) {
   return [{ cls: "other", value: text }];
 }
 
-/** Every product-name use in the tracked tree. */
+/** Every old product-name use in the tracked tree. */
 export function collect() {
   const uses = [];
   for (const file of trackedFiles()) {
-    if (historicalPaths.some((pattern) => pattern.test(file))) continue;
+    if (guardPaths.some((pattern) => pattern.test(file))) continue;
     let text;
     try { text = readFileSync(join(root, file), "utf8"); } catch { continue; }
     if (text.includes("\u0000")) continue;
@@ -118,16 +180,11 @@ export function collect() {
       const lineContracts = contractsIn(region.value, file, region.cls);
       for (const match of region.value.matchAll(tokenPattern)) {
         const token = match[0];
-        // Notes that name the old product on purpose: its repository, its
-        // website and hosted services, the builds that used them, and its
-        // published Chrome companion with that companion's native host.
-        // A quoted old name ("work-folder") is a dated quotation.
-        const after = region.value.slice(match.index + token.length);
-        if (/^work-fold\.com$/i.test(token) || (/^work-fold$/i.test(token) && /^(?: repositor|'s (?:Web Access|page service|companion)| builds)/.test(after))) continue;
+        // Literal values that keep the old spelling: the published Chrome
+        // companion's native-messaging host id, and the earlier app's portable
+        // `.work-fold/` folder, which AmpleFile hides and never reads.
         if (region.cls === "doc" && token === "com.work_fold.chrome") continue;
-        // The predecessor's portable metadata folder, which AmpleFile hides but never reads.
         if (/^work-fold$/i.test(token) && region.value[match.index - 1] === ".") continue;
-        if (region.value[match.index - 1] === '"' && after[0] === '"' && region.cls === "doc") continue;
         const parts = wordParts(token);
         let concept = concepts.find((candidate) => candidate.test(parts, token));
         if (!concept) continue;
@@ -163,7 +220,7 @@ function distinct(items, key) {
 function markdown(uses) {
   const lines = [];
   const files = distinct(uses, (use) => use.file);
-  lines.push("# Rebrand inventory", "", `Generated by \`node scripts/rebrand/inventory.mjs --markdown <file>\` on ${new Date().toISOString().slice(0, 10)}.`, "");
+  lines.push("# Old product-name inventory", "", `Generated by \`node scripts/rebrand/inventory.mjs --markdown <file>\` on ${new Date().toISOString().slice(0, 10)}.`, "");
   lines.push(`**${uses.length.toLocaleString("en-US")} uses in ${files} files.**`, "");
   lines.push("## By concept", "", "| Concept | Uses | Files | Distinct spellings |", "|---|---:|---:|---:|");
   for (const concept of concepts) {
@@ -178,7 +235,7 @@ function markdown(uses) {
   const classLabels = { ident: "Code identifiers", idstring: "Identifier-like strings (keys, routes, ids, paths)", text: "Interface and message text", comment: "Comments", doc: "Documents", css: "CSS", json: "JSON", other: "Other files", regex: "Regular expressions", filename: "File names" };
   lines.push("", "## By how it is written", "", "| Class | Uses |", "|---|---:|");
   for (const [cls, count] of countBy(uses, (use) => use.cls)) lines.push(`| ${classLabels[cls] ?? cls} | ${count} |`);
-  lines.push("", "## Contracts", "", "Names that leave the source code. Each needs a migration, a compatibility window, or a deliberate clean break.", "");
+  lines.push("", "## Contracts", "", "Names that leave the source code.", "");
   for (const contract of contracts) {
     const rows = uses.filter((use) => use.contract === contract.id);
     if (!rows.length) continue;
@@ -186,7 +243,7 @@ function markdown(uses) {
     for (const [token, count] of countBy(rows, (use) => use.token).slice(0, 12)) lines.push(`- \`${token}\` (${count})`);
     lines.push("");
   }
-  lines.push("## File names", "", "Files and folders whose own names carry a product name:", "");
+  lines.push("## File names", "", "Files and folders whose own names carry an old product name:", "");
   for (const use of uses.filter((item) => item.cls === "filename").sort((a, b) => a.file.localeCompare(b.file))) lines.push(`- \`${use.file}\``);
   lines.push("", "## Most frequent spellings per concept", "");
   for (const concept of concepts) {

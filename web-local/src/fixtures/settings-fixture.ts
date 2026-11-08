@@ -40,7 +40,7 @@ const keptUntil = (deletedAt: string, retentionDays = 30) => new Date(Date.parse
 /**
  * Settings → Recently Deleted with one item of each common kind: a Chat, a
  * file too large for History, an Everywhere Skill, and a deleted Connected
- * Folder held because its tree carries legacy Workspace records.
+ * Folder held because part of its folder could not be read.
  */
 export function buildFixtureRecentlyDeleted(): RecentlyDeletedResponse {
   const chatDeletedAt = "2026-11-03T21:14:00.000Z";
@@ -108,7 +108,7 @@ export function buildFixtureRecentlyDeleted(): RecentlyDeletedResponse {
         deletedAt: connectedFolderDeletedAt,
         restoreBy: keptUntil(connectedFolderDeletedAt),
         receiptId: null,
-        held: { reason: "legacy-metadata", noticedAt: keptUntil(connectedFolderDeletedAt) },
+        held: { reason: "unreadable", noticedAt: keptUntil(connectedFolderDeletedAt) },
         restorable: "in-place",
       },
     ],

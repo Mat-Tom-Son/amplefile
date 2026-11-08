@@ -17,7 +17,7 @@ export interface ConnectedFolderIgnoreUpdate {
   patterns: string[];
 }
 
-const builtInPatterns = [".amplefile", ".work-fold", ".workspace", ".pi", ".DS_Store", "Thumbs.db", "~$*", ".~lock.*#"];
+const builtInPatterns = [".amplefile", ".work-fold", ".pi", ".DS_Store", "Thumbs.db", "~$*", ".~lock.*#"];
 
 export async function readConnectedFolderIgnoreState(connectedFolderRoot: string): Promise<ConnectedFolderIgnoreState> {
   const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);

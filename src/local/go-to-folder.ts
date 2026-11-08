@@ -6,7 +6,7 @@ import { isShownStandardEntry, listStandardFolders } from "./standard-folders.js
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
 
 /**
- * Go to Folder (docs/product-model.md, "2026-11-06 file manager layout"), as
+ * Go to Folder (docs/product-model.md, "The file manager window"), as
  * Finder's ⇧⌘G: a typed path becomes a place the file manager opens, a
  * registered Connected Folder (the deepest one holding the path) or a Standard
  * Folder (the most specific one), and the folders and files whose names start

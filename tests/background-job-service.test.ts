@@ -16,7 +16,7 @@ import { reapOrphanedJobProcesses, AmpleFileJobService, type AmpleFileJobService
 import { AmpleFileJobStore } from "../src/local/jobs/job-store.js";
 
 /**
- * The background job service on its own (docs/background-jobs.md, F31–F33):
+ * The background job service on its own (docs/background-jobs.md):
  * real processes in a temporary folder, with the host's ports recorded so a
  * test can see exactly when a job settled and what History said.
  */

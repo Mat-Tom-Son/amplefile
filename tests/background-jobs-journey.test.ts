@@ -17,10 +17,10 @@ import { listConnectedFolderCheckpoints } from "../src/local/history.js";
 import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
 
 /**
- * Background jobs end to end (docs/background-jobs.md, F31–F33): a real turn
+ * Background jobs end to end (docs/background-jobs.md): a real turn
  * on a scripted provider calls job_start, its turn ends while the command
  * runs, and the command's end comes back to the same Chat exactly once —
- * through the F28 follow-up, through a read in the turn, or through the next
+ * through the host's follow-up turn, through a read in the turn, or through the next
  * turn's context. Stop, deletion, and quitting are driven through the same
  * local API the desktop uses.
  */

@@ -19,9 +19,9 @@ const deletion = () => prepareAct({
 
 test("prepareFoldAct refuses unknown kinds, unknown or malformed fields, and mismatched identities", () => {
   // The closed vocabulary: the six kinds behind every verb that installs
-  // code, widens a power, or destroys data; permanent file deletion, the
-  // retired desktop-served exposure, online page publishing, and every
-  // Connected Folder app act are gone.
+  // code, widens a power, or destroys data. There is no permanent file
+  // deletion, desktop-served exposure, online page publishing, or Connected
+  // Folder app act.
   assert.deepEqual([...PREPARED_ACT_KINDS].sort(), [
     "automation.enable",
     "capability.package.install",

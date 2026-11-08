@@ -578,7 +578,7 @@ function toolResultMessage(call: { id?: string; name?: string }, text: string, i
   return { role: "toolResult", toolCallId: call.id ?? "", toolName: call.name ?? "", content: [{ type: "text", text }], isError, timestamp: Date.now() };
 }
 
-/** Validates a submission as F29's envelope; named files must exist inside the Connected Folder. */
+/** Validates a submission as the one result envelope (docs/collaboration-contract.md); named files must exist inside the Connected Folder. */
 async function settleSubmission(value: unknown, scope: HelperPathScope): Promise<AmpleFileResultEnvelope> {
   const record = (value && typeof value === "object" ? value : {}) as { summary?: unknown; data?: unknown; files?: unknown; outcome?: unknown };
   const files = Array.isArray(record.files) ? record.files : [];

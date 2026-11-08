@@ -37,7 +37,6 @@ export const genericChatEmptyGreetings = [
   "New chat, clean slate.",
   "Let's make some progress.",
 ];
-export const connectedFolderCustomizationStorageKey = "amplefile.connected-folder.appearance.v1";
 export const defaultConnectedFolderBannerName = "classic";
 export const maxConnectedFolderBannerImageDataUrlLength = maxConnectedFolderAppearanceBannerImageDataUrlLength;
 export const maxConnectedFolderBannerImageFileBytes = 12 * 1024 * 1024;

@@ -1730,7 +1730,7 @@ to {
   white-space: nowrap;
 }
 
-/* Titles are regular weight so the open Chat's semi-bold title stands out (2026-10-27). */
+/* Titles are regular weight so the open Chat's semi-bold title stands out. */
 .chat-connected-folder-row-title {
   color: var(--ui-text-muted, #5c6460);
   font-size: var(--amplefile-type-xs);
@@ -2909,7 +2909,7 @@ to {
   border-radius: 8px;
 }
 
-/* Pictures a Worker made in the turn, under its reply (2026-10-11). */
+/* Pictures a Worker made in the turn, under its reply. */
 .generated-images {
   display: flex;
   flex-wrap: wrap;
@@ -5220,8 +5220,6 @@ to {
   color: var(--readiness-muted-fg);
 }
 
-/* History tab: space timeline (docs/review-center-design.md) */
-
 .toast-stack {
   position: fixed;
   right: 20px;
@@ -6377,7 +6375,7 @@ to {
   background: #3a424f;
 }
 
-/* Settings → Automations → Limits stays on the page but folded by default (2026-09-25). */
+/* Settings → Automations → Limits stays on the page but folded by default. */
 
 .settings-limits > summary {
   display: flex;
@@ -6671,7 +6669,7 @@ textarea:focus-visible,
   font-weight: 500;
 }
 
-/* Two large buttons, not two small circles (2026-09-25). */
+/* The AI Models scope choice: two large buttons. */
 
 .professional-setup .ai-models-scope-control label {
   position: relative;
@@ -8407,7 +8405,7 @@ textarea:focus-visible,
 }
 }
 
-/* Skills & Extensions as a popup (2026-09-25): the pane keeps its own scroll inside a Settings-sized dialog. */
+/* Skills & Extensions as a popup: the pane keeps its own scroll inside a Settings-sized dialog. */
 
 .skills-extensions-modal {
   position: relative;
@@ -8444,7 +8442,7 @@ textarea:focus-visible,
   padding-right: 52px;
 }
 
-/* Installed view (2026-09-25): included tools first, then the two homes side by side. */
+/* Installed view: included tools first, then the two homes side by side. */
 
 .capabilities-included {
   display: grid;
@@ -8457,7 +8455,7 @@ textarea:focus-visible,
   gap: 12px;
 }
 
-/* The whole tile is the control (2026-09-25). */
+/* The whole tile is the control. */
 
 .capabilities-included-tile {
   min-width: 0;
@@ -8573,7 +8571,7 @@ textarea:focus-visible,
   color: var(--ui-text-subtle);
 }
 
-/* Review dialog (2026-09-25): what matters first, the developer facts folded away. */
+/* Review dialog: what matters first, the developer facts folded away. */
 
 .capability-review-dialog .capability-dialog-body {
   display: grid;
@@ -8657,7 +8655,7 @@ textarea:focus-visible,
 }
 }
 
-/* Settings → AI Models: a model dropdown that opens with a search box and vendor headings (2026-09-27). */
+/* Settings → AI Models: a model dropdown that opens with a search box and vendor headings. */
 
 .model-catalog {
   position: relative;
@@ -10148,7 +10146,7 @@ textarea:focus-visible,
   white-space: nowrap;
 }
 
-/* Chats (2026-10-01): the Connected Folders inside this one sit under its own Chats,
+/* Chats: the Connected Folders inside this one sit under its own Chats,
    indented like the Connected Folder switcher, and Snoozed and Archived are quiet
    closed rows at the bottom rather than a tab bar. */
 
@@ -11851,7 +11849,7 @@ textarea:focus-visible,
 
 /* The composer starts one line tall and grows with the draft. Its bar keeps
    what you add (attach, Commands) on the left and how the Worker runs (model
-   and reasoning) beside Send on the right (2026-10-27). */
+   and reasoning) beside Send on the right. */
 
 :root[data-theme] .app-shell .composer-input-shell {
   min-height: 0;
@@ -12066,7 +12064,7 @@ textarea:focus-visible,
 }
 
 /* The files a reply wrote or edited close the reply as one bounded list, each
-   row opening its file (2026-10-27). */
+   row opening its file. */
 
 .turn-files {
   margin: 14px 0 2px;
@@ -12146,7 +12144,7 @@ textarea:focus-visible,
 }
 
 /* A new Chat starts with its composer under the greeting and the Connected Folder's
-   recent Chats below; the first message settles it at the bottom (2026-10-27). */
+   recent Chats below; the first message settles it at the bottom. */
 
 .chat-panel.is-start {
   grid-template-rows: auto minmax(0, 1fr) auto minmax(min-content, 1.25fr);
@@ -12474,24 +12472,7 @@ textarea:focus-visible,
   box-shadow: var(--ui-shadow-menu);
 }
 
-/* A narrow tab keeps the address readable: the dot and the warning icon stay, their words go. */
-
-/* A link to a server on this computer opens as a browser tab; it looks like any other link. */
-.message-body .message-browser-link {
-  appearance: none;
-  border: 0;
-  padding: 0;
-  margin: 0;
-  background: transparent;
-  color: var(--connected-folder-accent-text-body, var(--connected-folder-custom-color));
-  font: inherit;
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-/* Control sizes (docs/visual-design.md, 2026-11-04). Every control is one of
+/* Control sizes (docs/visual-design.md). Every control is one of
    three heights: small icon actions, buttons with toolbar fields and search,
    and form fields in dialogs and Settings. */
 
@@ -12803,7 +12784,7 @@ textarea:focus-visible,
   contain: inline-size;
 }
 
-/* Banner title (docs/connected-folder-customization.md, 2026-11-05). The header and
+/* Banner title (docs/connected-folder-customization.md). The header and
    Customize's previews render the same icon, name, and arrow, so they share
    these rules. Light and dark come from variables rather than the app theme,
    so the Dark preview matches a dark header while the app is light. */
@@ -12990,12 +12971,12 @@ textarea:focus-visible,
 }
 
 /* Popovers in dark mode get a hairline edge and a deeper shadow, so they read
-   as containers above the window (2026-11-05). */
+   as containers above the window. */
 :root[data-theme="dark"] .app-shell :is(.composer-command-menu,.composer-model-menu,.context-menu,.command-palette,.chat-rename-popover,.surface-tab-connected-folder-menu,.composer-mention-menu,.composer-menu,.command-palette-modal,.connected-folder-header-switcher) {
   box-shadow: 0 0 0 1px rgb(255 255 255 / .12), 0 14px 36px rgb(0 0 0 / .5);
 }
 
-/* Customize is one page (2026-11-05): Banner, Title, Icon, and Color each
+/* Customize is one page: Banner, Title, Icon, and Color each
    get a section, and the previews above stay in view. */
 .connected-folder-appearance-sections {
   flex: 1;
@@ -13024,7 +13005,7 @@ textarea:focus-visible,
   font-weight: 600;
 }
 
-/* Buttons (2026-11-05). Every text button has a visible shape at rest: a
+/* Buttons. Every text button has a visible shape at rest: a
    fill and a hairline edge that read in light and dark, and hover with the
    same fill as every other control. Icon-only toolbar buttons, rows, tabs,
    chips, and menu items stay flat until hovered. */
@@ -13213,11 +13194,10 @@ textarea:focus-visible,
   color: var(--ui-text);
 }
 
-/* ---------- Files multiple selection (2026-11-05) ---------- */
+/* ---------- Files multiple selection ---------- */
 
 /* The composer's text controls, Commands and the model chip, share one
-   height, type, and rounded hover with the round buttons beside them
-   (2026-11-05). */
+   height, type, and rounded hover with the round buttons beside them. */
 :root[data-theme] .app-shell .composer-capability-bar :is(.composer-command-trigger, .composer-model-chip) {
   height: var(--amplefile-control-md);
   min-height: var(--amplefile-control-md);
@@ -13233,12 +13213,12 @@ textarea:focus-visible,
   font-weight: 500;
 }
 
-/* A notice's kind icon belongs to the file manager's notices; the classic layout keeps its colored edge. */
+/* A notice's kind icon is hidden here; the file manager's notices show it (file-manager-dialogs.css). */
 .toast-icon {
   display: none;
 }
 
-/* Settings → Command Line (2026-11-07), classic layout. */
+/* Settings → Command Line: the command's state and the skill text. */
 .command-line-state {
   display: inline-flex;
   align-items: center;

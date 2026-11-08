@@ -4,7 +4,7 @@ import { Check, X } from "../chrome/icons";
 import { useModalDialog } from "../../hooks/useModalDialog";
 import { ConnectAi, type ConnectedAi } from "../onboarding/ConnectAi";
 
-/** The Connect your AI dialog any surface can open with requestConnectAi() (2026-10-11). */
+/** The Connect your AI dialog any surface can open with requestConnectAi(). */
 export function ConnectAiDialog({ onClose, onConnected, onOpenSettings, fixtureMode = false }: {
   onClose: () => void;
   onConnected: (connected: ConnectedAi) => void;

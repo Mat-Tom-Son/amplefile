@@ -124,9 +124,8 @@ for capture stages, coverage and bounds.
 | `scripts/` | Shared development, validation, and release commands |
 | `docs/`, `.agents/skills/` | Product contracts and task-specific contributor workflows |
 
-Use the [docs map](README.md) to distinguish current contracts from proposals
-and dated release evidence. Files in `docs/reference-skills/` are examples;
-app-generated AmpleFile agent instructions are runtime resources. Neither is an
+Use the [docs map](README.md) to find the document that owns an area. Files
+in `docs/reference-skills/` are examples; app-generated AmpleFile agent instructions are runtime resources. Neither is an
 extra repository instruction source.
 
 ## Verification
@@ -156,10 +155,10 @@ extra repository instruction source.
   `npm run desktop:browser:smoke` drives real browser pages served from a
   loopback server.
 
-GitHub Actions is disabled in the canonical source repository as of September
-30, 2026. Pushes, PRs, and release tags do not run remote checks. The checked-in
-CI and source-tag workflows remain dormant diagnostics; use local verification
-and do not re-enable Actions unless explicitly requested.
+GitHub Actions is off in the source repository, so pushes, PRs, and release
+tags run no remote checks. The checked-in CI and source-tag workflows are
+dormant diagnostics. Use local verification, and do not turn Actions on unless
+asked.
 
 Public Mac releases use `npm run desktop:release:mac:check` on the final clean,
 committed release SHA with Node 24, supported npm, and Google Chrome on an
@@ -242,15 +241,13 @@ resources and starting bytes, and change one factor at a time. Tool counts are
 observations, not pass criteria. Keep live-provider results separate from deterministic
 regressions and do not report one run as a measured success rate.
 
-The deterministic harness coverage now includes `local-history-review`,
+The deterministic harness coverage includes `local-history-review`,
 `amplefile-history-review-adapters`, `conversation-context-office`, `chat-presentation`,
 `history-comparison-ui`, `history-comparison-keyboard`, and `amplefile-turn-store`
 test files. They cover scope, completeness, persistence and UI behavior without
 requiring a paid model or production user data.
 
 ## Real-model harness acceptance
-
-The [2026-10-19 repeated evaluation](frozen-autonomy-evaluation.md) records the frozen comparison, all failed attempts, runtime fixes and its coverage limits.
 
 `npm run harness:autonomous -- --model openrouter/openai/gpt-6-luna --case
 research --out out/autonomous-eval/research-luna` runs an outcome-based live
@@ -272,9 +269,7 @@ comparing models; repeated coached attempts do not establish an autonomous
 success rate. The live cases are separate from deterministic regression tests.
 Without compaction flags the autonomous driver uses native Pi settings (the
 normal model window, 16,384 reserved tokens and 20,000 recent tokens in Pi
-1.1.0). Earlier versions of this driver silently forced a 40,000-token trigger;
-do not label those runs production-default context trials.
-For a context-pressure variant, keep the same prompt and add `--compact-at
+1.1.0). For a context-pressure variant, keep the same prompt and add `--compact-at
 18000 --keep-recent 2000`; the host records those explicit compaction settings.
 This is a stress configuration, not the production default.
 
@@ -311,9 +306,8 @@ out/frozen-eval/precision-checker.json`, then run it with `--manifest
 out/frozen-eval/precision-checker.json --results
 out/frozen-eval/baseline/results.json` (and each later phase). It validates its
 own hashes and writes `audited-results.json` beside the untouched original
-grades. This supplemental audit was added after the first frozen baseline
-exposed a grading blind spot; report both grades and apply the same audit to
-every cohort. It makes no model calls and never edits a model's saved patch.
+grades. Report both grades, and apply the same audit to every cohort. It
+makes no model calls and never edits a model's saved patch.
 
 `npm run harness:check` checks the evaluation scripts without making model
 requests; it is also part of `npm run check`.

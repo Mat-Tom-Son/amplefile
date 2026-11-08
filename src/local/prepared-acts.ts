@@ -5,7 +5,7 @@ import type {
 } from "./amplefile-kernel.js";
 
 /**
- * Prepared acts (docs/receipts-not-gates.md, F19): the closed kind vocabulary
+ * Prepared acts (docs/act-ledger.md): the closed kind vocabulary
  * behind every verb that installs code, widens a power, or destroys data,
  * reduced to what a receipted act needs — typed parameters, pinned
  * identities, an effect-time recheck against live state, the capability
@@ -258,7 +258,8 @@ export interface PreparedActRunInput {
 }
 
 /**
- * The prepare → pin recheck → execute path every formerly gated verb takes:
+ * The prepare → pin recheck → execute path every prepared verb takes
+ * (docs/act-ledger.md):
  * resolve the adapter (an unbound kind refuses before anything runs),
  * reserve the fence, recheck every pin against live state, start one
  * internal `fold_act` kernel task, execute through the bound domain path,

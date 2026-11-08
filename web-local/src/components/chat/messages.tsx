@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { Checkmark20Regular, Copy20Regular, Sparkle20Regular } from "@fluentui/react-icons";
 
 import { safeExternalHref } from "../../lib/api";
-import { browserTabsAvailable, localServerHref, requestBrowserTab } from "../../lib/browser-links";
+import { localServerHref } from "../../lib/browser-links";
 import { copyToClipboard } from "../../lib/clipboard";
 import { requestConnectAi } from "../../lib/connect-ai";
 import { formatDateTime } from "../../lib/format";
@@ -172,7 +172,7 @@ const turnFilesShownAtFirst = 5;
 
 /**
  * The files a reply wrote or edited, listed at its end so the result is one
- * click away (2026-10-27). A file that no longer exists is left out.
+ * click away. A file that no longer exists is left out.
  */
 function TurnFiles({ files, resolveConnectedFolderPathLinks, onOpenConnectedFolderFile }: {
   files: TurnChangedFile[];
@@ -380,11 +380,9 @@ export function MarkdownMessage({
             if (resolvedPath && onOpenConnectedFolderFile) {
               return <button className="connected-folder-file-link" type="button" onClick={() => onOpenConnectedFolderFile(resolvedPath)} title={resolvedPath}>{children}</button>;
             }
-            // A server on this computer, such as a Worker's dev server, opens as a browser tab.
+            // A server on this computer, such as a Worker's dev server, opens in the default browser.
             const localServer = localServerHref(href);
-            if (localServer && browserTabsAvailable()) {
-              return <button className="message-external-link message-browser-link" type="button" onClick={() => requestBrowserTab(localServer)} title={`Open ${localServer} in a browser tab`}>{children}</button>;
-            }
+            if (localServer) return <a className="message-external-link" href={localServer} target="_blank" rel="noreferrer">{children}</a>;
             const safeHref = safeExternalHref(href);
             return safeHref ? <a className="message-external-link" href={safeHref} target="_blank" rel="noreferrer">{children}</a> : <>{children}</>;
           },

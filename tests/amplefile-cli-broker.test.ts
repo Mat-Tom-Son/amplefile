@@ -305,7 +305,7 @@ async function withBroker(
 }
 
 async function withSandbox(action: (context: { sandbox: string; root: string }) => Promise<void>): Promise<void> {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-cli-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-cli-test-"));
   const root = resolve(sandbox, "state");
   await mkdir(root, { recursive: true });
   try {

@@ -17,7 +17,7 @@ import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
 
 /**
  * An idle Chat close to Pi's own compaction point is summarized in the
- * background (2026-10-27): as its own kernel compaction task, and never at the
+ * background: as its own kernel compaction task, and never at the
  * person's expense — a message sent meanwhile cancels the summary and runs.
  */
 

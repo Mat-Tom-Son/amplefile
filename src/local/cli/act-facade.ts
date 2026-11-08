@@ -7,7 +7,7 @@
  * exit codes map without translation.
  */
 
-import type { AmpleFileCliActLegacySurface, AmpleFileCliActSurface } from "./act-receipts.js";
+import type { AmpleFileCliActSurface } from "./act-receipts.js";
 import type { AmpleFileOverviewSnapshot } from "../overview.js";
 import type { AmpleFileAgentAttachmentDisposition, AmpleFileAgentAttachmentRef } from "../amplefile-agent-attachments.js";
 import type {
@@ -33,7 +33,7 @@ export interface AmpleFileActConnectedFolderRef {
 /**
  * One Recently deleted item, as the act lane reports it: identifiers and paths
  * only. The four `app-*` kinds and the `apps.*` reasons are items an earlier
- * build kept from Connected Folder apps (removed 2026-11-07). They still list,
+ * build kept from Connected Folder apps. They still list,
  * wait out their retention window, and can be deleted now, but nothing can
  * bring them back, so they always read `blocked`.
  */
@@ -65,8 +65,8 @@ export interface AmpleFileActRecentlyDeletedEntry {
   restoreBy: string;
   receiptId: string | null;
   uncovered?: Array<{ path: string; reason: "too_large" | "unreadable" | "symbolic_link" | "excluded" }>;
-  /** A tree holding records from the earlier Workspace product; AmpleFile never erases those. */
-  held?: { reason: "legacy-metadata" | "unreadable"; noticedAt: string };
+  /** A tree AmpleFile could not fully look through; it is never erased. */
+  held?: { reason: "unreadable"; noticedAt: string };
   /**
    * `in-place` goes back where it came from; `blocked` cannot be brought back
    * right now, and `note` says why.
@@ -159,7 +159,7 @@ export interface AmpleFileActFileVersionRef {
  * finished but a Worker turn it started is still running — "done" is
  * never claimed while downstream work continues. `needs_you` is an open
  * question, or a completed turn whose reply ends by asking the person one.
- * The durable record's full state (docs/collaboration-contract.md, F25)
+ * The durable record's full state (docs/collaboration-contract.md)
  * travels beside it as `state`: `partial` reads here as `done` and `expired`
  * as `stopped`.
  */
@@ -206,7 +206,7 @@ export interface AmpleFileActAgentRequest {
   actions: AmpleFileRequestAction[];
   children: AmpleFileActAgentChildStatus[];
   reply: { messageId: string; content: string } | null;
-  // --- the durable request record beneath the phase (F25), additive.
+  // --- the durable request record beneath the phase, additive.
   requestId: string;
   kind: AmpleFileRequestKind;
   rootId: string;
@@ -233,7 +233,7 @@ export interface AmpleFileActAgentRequest {
 }
 
 /**
- * F27/F28 (docs/collaboration-contract.md): the request graph as the act lane
+ * The request graph as the act lane (docs/collaboration-contract.md)
  * shows it. A request ref is the compact form every collaboration verb returns
  * beside its own result; the summary and detail forms are what `requests
  * list|show` read. `--json` carries a result's summary and data whole; the
@@ -276,7 +276,7 @@ export interface AmpleFileActQuestionRef {
 }
 
 /**
- * F28: the followed task is waiting on an answer. Absent when nothing is
+ * The followed task is waiting on an answer. Absent when nothing is
  * owed. This is a fact about the task's request, never a turn state — the
  * turn may still be running or may already have ended.
  */
@@ -344,7 +344,7 @@ export interface AmpleFileActRequestDetail extends AmpleFileActRequestSummary {
 }
 
 /**
- * One background job (docs/background-jobs.md, F31). The command and its
+ * One background job (docs/background-jobs.md). The command and its
  * folder are the caller's own; output text arrives only from `jobs output`.
  */
 export interface AmpleFileActJobRef {
@@ -414,15 +414,13 @@ export interface AmpleFileActAutomationTriggerRef {
 
 /**
  * One enablement receipt in an automation's history; `requestId` is the enabling
- * act's request id. A legacy surface appears only on grants an older build
- * recorded.
+ * act's request id.
  */
 export interface AmpleFileActAutomationGrantRef {
   digest: string;
   requestId: string;
   enabledAt: string;
-  surface: AmpleFileCliActSurface | AmpleFileCliActLegacySurface;
-  browserId?: string;
+  surface: AmpleFileCliActSurface;
 }
 
 /**
@@ -521,8 +519,6 @@ export interface AmpleFileActAutomationReceipt {
   placeholders?: Array<{ name: string; text: string; bytes: number; truncated: boolean }>;
   messageBytes?: number;
   surface?: string;
-  /** Legacy field on receipts an older build wrote; never written now. */
-  decisionId?: string;
   missingConnectedFolderIds?: string[];
   requestId?: string;
   occurrenceId?: string;
@@ -585,7 +581,7 @@ export interface AmpleFileActFacade {
   turnStatus(input: { connectedFolder: string; taskId: string }): Promise<{
     connectedFolder: AmpleFileActConnectedFolderRef;
     task: AmpleFileActTurnStatus;
-    /** F28: set while this task's request waits on an answer to a question this task asked. */
+    /** Set while this task's request waits on an answer to a question this task asked. */
     waiting: AmpleFileActWaitingRef | null;
     request: AmpleFileActRequestRef | null;
   }>;
@@ -599,7 +595,7 @@ export interface AmpleFileActFacade {
   }>;
 
   /**
-   * The collaboration verbs (docs/collaboration-contract.md, F27). Each is
+   * The collaboration verbs (docs/collaboration-contract.md). Each is
    * journal-first and receipted; delivery is host-side, so none of them
    * needs an AmpleFile agent turn. `--task` must name the caller's own turn —
    * the newest, still-running turn of a request the named Connected Folder owns — checked
@@ -678,7 +674,7 @@ export interface AmpleFileActFacade {
     toConnectedFolder: string;
     /**
      * Follow up in a Chat this Chat already handed work to, instead of
-     * starting a new one (2026-10-18). That Chat keeps its context.
+     * starting a new one. That Chat keeps its context.
      */
     toConversationId?: string;
     message: string;
@@ -748,7 +744,7 @@ export interface AmpleFileActFacade {
    * `cwd` is the caller's directory, which resolves its scope the way
    * `context` does; a caller inside a registered Connected Folder is refused by name,
    * because the graph carries other Connected Folders' results and the AmpleFile agent's own
-   * assignment text (docs/collaboration-contract.md, F26).
+   * assignment text (docs/collaboration-contract.md).
    */
   requestsList(input?: { cwd?: string }): Promise<{ requests: AmpleFileActRequestSummary[]; truncated: boolean }>;
   requestsShow(input: { request: string; cwd?: string }): Promise<{ request: AmpleFileActRequestDetail }>;
@@ -892,9 +888,9 @@ export interface AmpleFileActFacade {
   /**
    * In–Connected Folder file verbs (docs/act-ledger.md): the same local-entry
    * mutations as the desktop routes — same path policy (`.amplefile/`,
-   * `.pi/`, and `.workspace/` are never valid endpoints), same safety restore
+   * `.work-fold/`, and `.pi/` are never valid endpoints), same safety restore
    * points. `filesDelete` never refuses for lack of coverage
-   * (docs/receipts-not-gates.md, F20): when the restore point could not keep
+   * (docs/act-ledger.md): when the restore point could not keep
    * a copy of every matched file (oversized, unreadable, a symbolic link, or
    * History-excluded), the selected entry is moved into Recently deleted
    * instead of erased and `recovery` names the Recently deleted entry. Creation verbs
@@ -1061,7 +1057,7 @@ export interface AmpleFileActFacade {
 
   /**
    * The verbs that install code, widen a power, or destroy data
-   * (docs/act-ledger.md; docs/receipts-not-gates.md, F19). Each method
+   * (docs/act-ledger.md). Each method
    * composes the act's typed parameters and pins from live state — never
    * from model prose — and runs it at once through the prepared-act path:
    * pin recheck inside the capability fence, one internal kernel task, the
@@ -1144,7 +1140,7 @@ export interface AmpleFileActFacade {
     updated: true;
   }>;
   /**
-   * Recently deleted (docs/receipts-not-gates.md, F20). It sits above
+   * Recently deleted (docs/act-ledger.md). It sits above
    * Connected Folders, like automations, so neither verb takes
    * `--connected-folder`; each entry names the Connected Folder it came from. Listing is content-free: ids, kinds,
    * paths, sizes, and dates, never file contents. Nothing empties the store —
@@ -1286,12 +1282,12 @@ export interface AmpleFileActFacade {
   }>;
   agentTurnStatus(input: { taskId: string }): Promise<{
     task: AmpleFileActTurnStatus;
-    /** The shipped attachment-and-actions projection (`agent status` keeps it, F25). */
+    /** The shipped attachment-and-actions projection `agent status` keeps. */
     request: AmpleFileActAgentRequest | null;
-    /** F28: set while this task's request waits on an answer to a question this task asked. */
+    /** Set while this task's request waits on an answer to a question this task asked. */
     waiting: AmpleFileActWaitingRef | null;
     /**
-     * The F25 graph ref, named apart from `request` so the shipped field keeps
+     * The durable request graph ref, named apart from `request` so the shipped field keeps
      * its shape for the popover and the human renderer.
      */
     requestGraph: AmpleFileActRequestRef | null;

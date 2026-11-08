@@ -8,15 +8,13 @@ import {
   connectedFolderStorageKey,
 } from "../src/local/agent/agent-data-dir.js";
 
-test("AmpleFile preserves Pi's native agent override and ignores the old product override", () => {
+test("AmpleFile preserves Pi's native agent override", () => {
   assert.equal(defaultAgentSdkDir({
     AMPLEFILE_AGENT_DIR: "/tmp/amplefile-agent",
     PI_CODING_AGENT_DIR: "/tmp/pi-agent",
-    WORKSPACE_AGENT_DIR: "/tmp/legacy-agent",
   }), "/tmp/amplefile-agent");
   assert.equal(defaultAgentSdkDir({
     PI_CODING_AGENT_DIR: "/tmp/pi-agent",
-    WORKSPACE_AGENT_DIR: "/tmp/legacy-agent",
   }), "/tmp/pi-agent");
 });
 

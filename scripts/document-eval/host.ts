@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Evaluation host for document checking (2026-10-18).
+ * Evaluation host for document checking.
  *
  * Starts the local API in-process with the included tools (Documents and its
  * document-work Skill), an isolated Pi agent folder, and disposable app state,

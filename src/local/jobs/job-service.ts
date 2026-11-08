@@ -1,5 +1,5 @@
 /**
- * Runs background jobs (docs/background-jobs.md, F31–F33).
+ * Runs background jobs (docs/background-jobs.md).
  *
  * One service per local API. It owns the processes; the host owns what a job
  * means for requests, the kernel, History, and the Chat through the ports it

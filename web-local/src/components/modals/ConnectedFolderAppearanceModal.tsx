@@ -17,7 +17,7 @@ export function ConnectedFolderAppearanceModal({ onRenameConnectedFolder, onClos
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useModalDialog({ onClose, initialFocusRef: closeRef });
   const sections = ["icon", "color"] as const;
-  // One scrolling page (2026-11-05): opening at a section scrolls to it.
+  // One scrolling page: opening at a section scrolls to it.
   useEffect(() => {
     if (initialSection === "banner" || initialSection === "title") return;
     document.getElementById(`folder-appearance-section-${initialSection}`)?.scrollIntoView({ block: "start" });

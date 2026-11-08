@@ -27,20 +27,21 @@ that proves the requested behavior.
 6. Finish release inputs and merge to `main`, then run
    `npm run desktop:release:mac:check` on that final clean commit with Node 24
    on an Apple-silicon Mac with supported npm and Google Chrome for the real
-   CSS tests. It performs fresh root/bridge installs, repository and TypeScript
-   checks, full application and bridge tests, and Electron
-   preparation. A successful receipt pins the exact SHA, tree, build-input
-   fingerprint, runtime, and completed stages. Use `-- --status` to validate it
-   read-only. An older commit's receipt cannot carry across a merge.
+   CSS tests. It runs a fresh `npm ci`, `npm run check`, the complete
+   `npm test`, and `npm run desktop:prepare`. A successful receipt pins the
+   exact SHA, tree, build-input fingerprint, runtime, and completed stages.
+   Use `-- --status` to validate it read-only. An older commit's receipt
+   cannot carry across a merge.
 7. The full signed build requires a valid local receipt before it starts.
    Publication requires source-bound signed artifacts built after that receipt
    completed, under the same Node/npm and dependency state. The publisher
    requires canonical pushed `main` and its matching annotated source tag. GitHub
-   Actions is disabled in the source repository; do not re-enable it unless explicitly
+   Actions is off in the source repository; do not turn it on unless explicitly
    requested. The publisher checks source identity directly, and
-   `desktop:release:mac:ci` is a historical Actions diagnostic. Fix and recheck local
-   failures before tagging without consuming a version. A failed candidate's
-   pushed tag remains immutable; fix forward with a higher version and new tag.
+   `desktop:release:mac:ci` is an optional diagnostic for the dormant
+   workflows. Fix and recheck local failures before tagging without consuming
+   a version. A failed candidate's pushed tag remains immutable; fix forward
+   with a higher version and new tag.
 
 ## Choose the lane
 
@@ -99,7 +100,7 @@ verify the offered version and leave installation and relaunch unclaimed.
    architecture, Node runtime, signing identity, feed, or artifact bytes.
    Changed source, Node/npm, or dependencies also requires fresh local checks.
 
-Never edit `out/builder/amplefile-mac-release-state.json`. A checkpoint is
+Never edit `out/builder/AmpleFile-mac-release-state.json`. A checkpoint is
 ignored recovery data, not proof by itself. Resume must validate the source
 fingerprint, exact artifact receipts, signed app, notarization staple, and
 Gatekeeper result. Never edit `out/release-checks/local-verification.json`

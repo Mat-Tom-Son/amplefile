@@ -1,4 +1,4 @@
-/* Motion (2026-11-02): how things arrive, answer, and settle. Exits are played
+/* Motion: how things arrive, answer, and settle. Exits are played
    by lib/motion.ts. Both reduce-motion switches already zero every animation
    and transition, so nothing here needs its own reduced variant.
 

@@ -1,5 +1,5 @@
 /**
- * Background job records (docs/background-jobs.md, F31–F33): the types, the
+ * Background job records (docs/background-jobs.md): the types, the
  * closed-shape parser, and the pure rules the store and the service share.
  *
  * A job is one shell command a running Worker or AmpleFile agent turn started
@@ -58,7 +58,7 @@ export type AmpleFileJobHistory =
   | { status: "unavailable"; reason: string }
   | { status: "not_applicable"; reason: string };
 
-/** How a job's end reached its Chat, exactly once (F32). */
+/** How a job's end reached its Chat, exactly once. */
 export interface AmpleFileJobDelivery {
   at: string;
   by: "read" | "turn_context" | "follow_up";
@@ -117,7 +117,7 @@ export interface AmpleFileJobRecord {
   serving?: string;
 }
 
-/** A refusal that names its bound, like every request limit (receipts-not-gates principle 6). */
+/** A refusal that names its bound, like every request limit (docs/act-ledger.md, "Receipts, not gates"). */
 export class AmpleFileJobLimitError extends Error {
   constructor(message: string) {
     super(message);

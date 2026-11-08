@@ -1,7 +1,6 @@
-/* The file manager layout (docs/product-model.md, "File manager layout").
-   These styles follow the approved mockup ("amplefile as a smart file
-   manager", 2026-11-06): neutral macOS surfaces, an inset sidebar, rounded
-   toolbar groups, and Finder-shaped icons. The accent is the app's own. */
+/* The file manager layout (docs/product-model.md, "The file manager window"):
+   neutral macOS surfaces, an inset sidebar, rounded toolbar groups, and
+   Finder-shaped icons. The accent is the app's own. */
 
 :root[data-platform="darwin"] .app-shell.layout-file-manager::before {
   display: none;
@@ -102,7 +101,7 @@
   display: flex;
   flex-direction: column;
   width: var(--fm-sidebar-width, 228px);
-  /* Flush with the window's edges, square like everything else in the window (owner decision, 2026-11-07). */
+  /* Flush with the window's edges, square like everything else in the window. */
   margin: 0;
   padding: 0 10px 12px;
   box-sizing: border-box;
@@ -1366,7 +1365,7 @@
   text-overflow: ellipsis;
 }
 
-/* The message box at the panel's foot, on the panel's own ground with no rule above it (owner decision, 2026-11-07). */
+/* The message box at the panel's foot, on the panel's own ground with no rule above it. */
 .fm-comp {
   flex: none;
   padding: 12px;
@@ -1896,7 +1895,7 @@
 /*
  * With the small row under the field, the box's bottom padding matches the
  * gap above the row, so the row sits centered between the field and the
- * window's edge (owner request, 2026-11-07).
+ * window's edge.
  */
 .fm-comp:has(> .composer-panel-meta),
 :root[data-theme] .app-shell .fm-chat .composer:has(.composer-panel-meta) {
@@ -2061,7 +2060,7 @@
 }
 
 /*
- * Settings → Appearance restyles the file manager (owner decision, 2026-11-07).
+ * Settings → Appearance restyles the file manager.
  * Original keeps the design's Finder colors above; every other palette maps
  * its grounds, text, and lines onto the same tokens, in light and dark. A
  * chosen accent replaces the design's blue, and the app font, text size, list
@@ -2157,7 +2156,7 @@
 
 /*
  * A Chat in the panel: text at the panel's reading size, headings a step or
- * two above it rather than the classic transcript's display sizes.
+ * two above it.
  */
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel {
   --amplefile-reading-size: var(--fm-reading-size);
@@ -2183,7 +2182,7 @@
   font-weight: 500;
 }
 
-/* The context circle sits at the row's far end, under Send (the classic spacer is hidden here). */
+/* The context circle sits at the row's far end, under Send (the panel hides the composer's spacer). */
 :root[data-theme] .app-shell .composer-panel-meta .composer-context-control {
   margin-left: auto;
 }
@@ -2203,7 +2202,7 @@
 }
 
 /*
- * The path bar (owner request, 2026-11-07): Go to Folder at its start, every
+ * The path bar: Go to Folder at its start, every
  * item copies its path on a click and opens on a double-click, and the last
  * items stay whole while the ones before them give way.
  */
@@ -2578,7 +2577,7 @@
 }
 
 /*
- * First run in the file manager (owner request, 2026-11-07): the window with
+ * First run in the file manager: the window with
  * its sidebar, and the steps in one card at the middle, as macOS's Setup
  * Assistant shows them.
  */
@@ -2889,9 +2888,8 @@
 }
 
 /*
- * A Worker's reply in the panel (owner request, 2026-11-07): drawn in the file
- * manager's own look and sized for a narrow panel instead of the classic
- * full-window Chat. Code and tables are white cards with hairlines, quotes
+ * A Worker's reply in the panel: drawn in the file manager's own look and
+ * sized for a narrow panel. Code and tables are white cards with hairlines, quotes
  * carry an accent bar, checklists use the Mac's checkboxes, file mentions are
  * accent links with a file glyph, the files the reply touched are one card of
  * rows, the Worker's steps are a quiet pill, and Copy appears on hover.
@@ -3281,10 +3279,9 @@
   display: none;
 }
 
-/* Nested Connected Folders (owner request, 2026-11-07): each sits under its parent,
-   indented, and a caret inside the row, left of its icon, shows or hides
-   them (owner request, 2026-11-07: inside the highlight, as Mail and Notes
-   draw it). */
+/* Nested Connected Folders: each sits under its parent, indented, and a
+   caret inside the row, left of its icon, shows or hides them (inside the
+   highlight, as Mail and Notes draw it). */
 .fm-sidebar-node {
   position: relative;
 }
@@ -3377,7 +3374,7 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Motion in the file manager (owner request, 2026-11-07): small touches that
+   Motion in the file manager: small touches that
    say where something came from. Timings and easing are the app's motion
    tokens (motion.css); both reduce-motion switches turn every one off.
    --------------------------------------------------------------------------- */

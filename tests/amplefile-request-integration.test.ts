@@ -14,8 +14,8 @@ import { startLocalApi } from "../src/local/server.js";
 import { ampleFileAgentScopeId } from "../src/local/state-paths.js";
 
 /**
- * Durable requests through the local API (docs/collaboration-contract.md,
- * F25): every accepted turn creates or joins a request record, a Connected Folder turn
+ * Durable requests through the local API (docs/collaboration-contract.md):
+ * every accepted turn creates or joins a request record, a Connected Folder turn
  * with no parent is its own root, a delegated send is a child under the
  * AmpleFile agent request, a person's reply joins the request that was waiting on
  * it, and the records survive a restart — reconciled against the turn
@@ -132,7 +132,7 @@ test("a person's reply joins the request that was waiting on it and answers its 
   try {
     const first = await api.actFacade.agentSend({ content: "/hold" });
     const record = api.requests.byTaskId(first.taskId)!;
-    // The agent asks the person while its turn is live (F27); the turn
+    // The agent asks the person while its turn is live; the turn
     // then ends and the request waits on the answer.
     const question = await api.requests.ask({ requestId: record.requestId, taskId: first.taskId, respondent: "person", text: "Which quarter?" });
     releaseAmpleFileAgentTurn();

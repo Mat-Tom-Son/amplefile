@@ -12,7 +12,7 @@ export interface PendingDelete {
 }
 
 /**
- * A delete always goes through (docs/receipts-not-gates.md, F20). `recentlyDeleted` is
+ * A delete always goes through (docs/act-ledger.md). `recentlyDeleted` is
  * present when History could not keep a copy of everything, so the entry is
  * waiting in Settings → Recently Deleted instead of being gone.
  */
@@ -33,7 +33,7 @@ export interface DeleteLocalFilesResult {
 
 export async function deleteLocalFileRequest(pending: PendingDelete, keepalive = false): Promise<DeleteLocalFileResult> {
   // A delete History could not fully keep a copy of still succeeds: the
-  // entry is waiting in Recently Deleted instead (docs/receipts-not-gates.md).
+  // entry is waiting in Recently Deleted instead (docs/act-ledger.md).
   return await sendDeleteRequest<DeleteLocalFileResult>(`/api/connected-folders/${pending.connectedFolderId}/local-file`, { path: pending.path }, keepalive) ?? {};
 }
 

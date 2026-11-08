@@ -222,7 +222,7 @@ interface ResultEnvelope {
   outcome: "succeeded" | "partial" | "failed";
 }
 
-/** F29 and principle 7: wherever an envelope came from, it is checked the same way. */
+/** One result shape for everyone (docs/collaboration-contract.md): wherever an envelope came from, it is checked the same way. */
 function assertResultEnvelope(envelope: ResultEnvelope, expected: {
   summary: string;
   outcome: "succeeded" | "partial" | "failed";
@@ -307,8 +307,8 @@ test("journey: a fresh Connected Folder turn receives the operations guide, its 
     }
     assert.match(system, /Read and change this Connected Folder's folder only/);
     assert.match(system, /Never write cross-connected-folder context into this Chat: it travels with the folder\./);
-    // Checks and Connected Folder apps were removed (2026-11-07): neither is
-    // taught, and no app-authoring tool is offered.
+    // Neither Checks nor Connected Folder apps are taught, and no
+    // app-authoring tool is offered.
     assert.doesNotMatch(system, /checks (status|run)|apps (list|invoke)/);
     const tools = (parseBody(raw).tools ?? []).map((tool) => tool.function?.name ?? tool.name);
     assert.ok(!tools.includes("propose_connected_folder_app") && !tools.includes("start_connected_folder_app"), "no app-authoring tool is offered");

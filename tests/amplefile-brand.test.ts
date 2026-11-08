@@ -159,7 +159,7 @@ test("the empty-folder actions, loading, About, and the popover loading state ke
   assert.match(popoverCss, /--pop-accent:\s*#0b6fd6/i);
   assert.match(popoverCss, /--pop-accent:\s*#1ea0ff/i);
 
-  // The old terracotta-and-paper palette must not resurface in token files.
+  // The terracotta-and-paper palette must not appear in token files.
   for (const [name, css] of [["brand.css", brandCss], ["styles.css", foundation], ["popover.css", popoverCss]] as const) {
     assert.doesNotMatch(css, /#(c84f30|d95735|f08363|f3f0e9|252321|1b1a18)/i, `${name} still carries the pre-rebrand palette`);
   }
@@ -183,7 +183,6 @@ test("the empty-folder actions, loading, About, and the popover loading state ke
     assert.match(html, /data:image\/png;base64,/, "the favicon must be the 32 px mark as a data URI");
     assert.doesNotMatch(html, /data:image\/svg/, "no redrawn vector favicons");
   }
-  assert.doesNotMatch(`${indexHtml}\n${popoverHtml}`, /Workspace/);
 });
 
 test("the AmpleFile agent names the popover surface, tray entry, and two-state capture button", async () => {

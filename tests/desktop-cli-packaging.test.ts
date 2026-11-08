@@ -58,13 +58,11 @@ test("macOS CLI shim uses an atomic bounded protocol-v1 handoff", async () => {
   assert.match(jxaHelper, /fileHandleWithStandardError/);
   assert.match(jxaHelper, /\$\.exit\(exitCode\)/);
   assertActLaneShimContract(jxaHelper);
-  assert.doesNotMatch(jxaHelper, /WORKSPACE_CLI_|Workspace\.app|Workspace Local Smoke|--workspace-cli-request/);
 });
 
 test("packaged asset verification requires external CLI shims", async () => {
   const verifier = await read("scripts/verify-packaged-app-assets.mjs");
   assert.match(verifier, /identity\.cliCommand/);
-  assert.match(verifier, /Legacy CLI shim must not be packaged/);
   assert.match(verifier, /CLI shim must remain outside app\.asar/);
 });
 
@@ -109,11 +107,12 @@ function assertActLaneShimContract(shim: string): void {
   for (const routed of [...routedFamilies, "list", "status", "wait", "result"]) {
     assert.match(shim, new RegExp(`["']${routed}["']`), `act routing must reference ${routed}`);
   }
-  // Connected Folder apps were removed on 2026-11-07, so `apps` is no act group.
+  // There are no Connected Folder apps, so `apps` is no act group.
   assert.doesNotMatch(shim, /["']apps["']/, "act routing must not reference the removed apps family");
-  // F28: the wait loop settles on a task that is waiting on an answer, not
-  // only on a terminal turn state, and says which by printing the status
-  // document in that case. A shim that reads only task.state fails here.
+  // Waiting is a host state: the wait loop settles on a task that is waiting
+  // on an answer, not only on a terminal turn state, and says which by
+  // printing the status document in that case. A shim that reads only
+  // task.state fails here.
   assert.match(shim, /data\.waiting|\$data\.waiting/, "the wait loop must read the status document's waiting field");
   assert.match(shim, /waiting/);
   assert.match(shim, /act-token\.json/);

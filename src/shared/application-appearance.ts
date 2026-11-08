@@ -20,7 +20,7 @@ export const appearanceChoices = {
   chatSteps: ["every", "current"],
 } as const;
 type Choice<K extends keyof typeof appearanceChoices> = typeof appearanceChoices[K][number];
-/** The current record version. Version 1 records lack the keys in `addedSinceVersion1` and read as their defaults. */
+/** The current record version. */
 export const applicationAppearanceVersion = 2;
 export type ApplicationAppearance = { version: typeof applicationAppearanceVersion; accent: "system" | string; readingSize: number } & {
   [K in keyof typeof appearanceChoices]: Choice<K>;
@@ -32,17 +32,12 @@ export const defaultApplicationAppearance: ApplicationAppearance = {
   spacing: "standard", messages: "tinted", contrast: "system", motion: "system", transparency: "system",
   chatSteps: "every",
 };
-const addedSinceVersion1 = ["chatSteps"] as const satisfies readonly (keyof typeof appearanceChoices)[];
 
 /** Closed values only: proposals cannot introduce executable style or external resources. */
 export function parseApplicationAppearance(raw: unknown): ApplicationAppearance {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Choose an AmpleFile appearance preset file.");
-  const record = raw as Record<string, unknown>;
-  if (record.version !== 1 && record.version !== applicationAppearanceVersion) throw new Error("This appearance version is not supported by this build.");
-  // A record saved before a setting existed keeps its meaning: the missing key reads as the default.
-  const r: Record<string, unknown> = record.version === 1
-    ? { ...record, version: applicationAppearanceVersion, ...Object.fromEntries(addedSinceVersion1.filter((key) => record[key] === undefined).map((key) => [key, defaultApplicationAppearance[key]])) }
-    : record;
+  const r = raw as Record<string, unknown>;
+  if (r.version !== applicationAppearanceVersion) throw new Error("This appearance version is not supported by this build.");
   const allowed = new Set(["version", "accent", "readingSize", ...Object.keys(appearanceChoices)]);
   if (Object.keys(r).some((key) => !allowed.has(key))) throw new Error("This appearance file contains unknown settings.");
   for (const [key, values] of Object.entries(appearanceChoices)) {
@@ -59,16 +54,6 @@ export function parseAppearancePreset(raw: unknown): AppearancePreset {
   if (r.kind !== appearancePresetKind || r.version !== 1 || Object.keys(r).some((key) => !["kind", "version", "name", "preferences"].includes(key))) throw new Error("Choose a supported AmpleFile appearance preset file.");
   if (typeof r.name !== "string" || !r.name.trim() || r.name.trim().length > 60 || /[\u0000-\u001f]/.test(r.name)) throw new Error("Give the preset a name of 1–60 characters.");
   return { kind: appearancePresetKind, version: 1, name: r.name.trim(), preferences: parseApplicationAppearance(r.preferences) };
-}
-
-export function migrateApplicationAppearance(theme: unknown, typography: unknown): ApplicationAppearance {
-  const r = typography && typeof typography === "object" ? typography as Record<string, unknown> : {};
-  return { ...defaultApplicationAppearance,
-    mode: appearanceChoices.mode.includes(theme as Choice<"mode">) ? theme as Choice<"mode"> : defaultApplicationAppearance.mode,
-    font: appearanceChoices.font.includes(r.font as Choice<"font">) ? r.font as Choice<"font"> : "default",
-    textSize: appearanceChoices.textSize.includes(r.textSize as Choice<"textSize">) ? r.textSize as Choice<"textSize"> : "standard",
-    readingSize: r.textSize === "compact" ? 14 : r.textSize === "comfortable" ? 16 : 15,
-  };
 }
 
 // Each surface palette has an independently chosen light and dark counterpart.

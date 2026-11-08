@@ -1,6 +1,6 @@
 # AmpleFile brand sources
 
-The **Manila** brand (2026-11-07): a manila folder with one Signal dot, which
+The **Manila** brand: a manila folder with one Signal dot, which
 stands for the Worker. These files are the only source of the mark. Every
 installed icon, the menu-bar template, the favicons, the Chrome extension
 icons, the installer background, and the in-app lockups are generated from

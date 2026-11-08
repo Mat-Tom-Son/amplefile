@@ -141,8 +141,8 @@ test("CLI help covers every landed act family and is honest about what it runs",
       assert.ok(topic.includes(`amplefile ${spelled} `), `help ${family} must show usage for '${spelled}'`);
     }
   }
-  // Every verb runs immediately and leaves a receipt (docs/receipts-not-gates.md):
-  // no family topic promises a gate, and none of the retired vocabulary survives.
+  // Every verb runs immediately and leaves a receipt (docs/act-ledger.md):
+  // no family topic promises a gate or uses gate vocabulary.
   // `collaborate` is a topic without a verb family of its own, so the loop
   // names it explicitly rather than picking it up from the table.
   for (const family of [...Object.keys(families), "collaborate"]) {
@@ -150,24 +150,24 @@ test("CLI help covers every landed act family and is honest about what it runs",
     assert.doesNotMatch(topic, /[Ss]taged|pending decision|decision card|needs-you card|approv|Reviewed mode|Unrestricted|polic/, `help ${family} must not describe a gate`);
   }
   assert.doesNotMatch(overview, /[Ss]taged|decision|approv|Reviewed|Unrestricted|polic/);
-  // Pages were removed on 2026-11-07: no family, no topic.
+  // Pages: no family, no topic.
   assert.doesNotMatch(overview, /pages validate/);
   assert.equal(ampleFileCliHelp("AmpleFile", "pages"), overview);
   assert.match(ampleFileCliHelp("AmpleFile", "tools"), /immediately with a receipt/);
-  // Connected Folder apps and App Studio were removed on 2026-11-07: no
-  // family, no topic, and no mention in the overview or the collaborate topic.
+  // Connected Folder apps and App Studio: no family, no topic, and no
+  // mention in the overview or the collaborate topic.
   assert.doesNotMatch(overview, /\bapps\b|App Studio|[Rr]estricted app/);
   assert.equal(ampleFileCliHelp("AmpleFile", "apps"), overview);
   assert.doesNotMatch(ampleFileCliHelp("AmpleFile", "collaborate"), /\ban app\b/);
   // Automations have no on-settled trigger any more.
   assert.doesNotMatch(ampleFileCliHelp("AmpleFile", "automations"), /on-settled/);
   // Recently deleted is where a delete History could not fully cover goes
-  // (docs/receipts-not-gates.md, F20), and nothing empties it early.
+  // (docs/act-ledger.md), and nothing empties it early.
   const recentlyDeletedTopic = ampleFileCliHelp("AmpleFile", "recently-deleted");
   assert.match(recentlyDeletedTopic, /Recently deleted holds what a delete could not leave to History/);
   assert.match(recentlyDeletedTopic, /30 days by default/);
   assert.match(recentlyDeletedTopic, /Nothing empties Recently deleted early/);
-  // Saving a copy with --to served only app data, which no longer exists.
+  // The topic offers no --to copy and names no app data.
   assert.doesNotMatch(recentlyDeletedTopic, /--to\b|app data/);
   assert.match(overview, /recently-deleted list\|restore\s+Bring back what was deleted/);
   assert.match(ampleFileCliHelp("AmpleFile", "files"), /moves to Recently deleted instead/);
@@ -275,7 +275,7 @@ test("Automation help's complete authoring example passes the real proposal vali
   const proposal = normalizeAmpleFileAutomationProposal(JSON.parse(example));
   assert.equal(proposal.version, 5);
   assert.equal(proposal.automation.trigger.kind, "files-changed");
-  // The example teaches the version-5 catch-up (docs/automations.md, 2026-10-11).
+  // The example teaches the version-5 catch-up (docs/automations.md).
   assert.equal(proposal.automation.trigger.kind === "files-changed" && proposal.automation.trigger.ifMissed, "run");
   assert.deepEqual(proposal.automation.steps.map((step) => step.kind), ["files", "chat", "agent"]);
   // The example teaches the closed placeholder set, so it must itself be
@@ -300,9 +300,9 @@ test("Automation help's complete authoring example passes the real proposal vali
 test("help collaborate's worked example parses through the real act parser", () => {
   const help = ampleFileCliHelp("AmpleFile", "collaborate");
   const example = help.split("\n").filter((line) => line.startsWith("  $ amplefile "));
-  // send -> wait -> answer -> report -> wait -> requests show: the whole F27
-  // round trip, so a flag spelled one way in help and another in the parser
-  // fails here instead of in someone's terminal.
+  // send -> wait -> answer -> report -> wait -> requests show: the whole
+  // ask-and-answer round trip, so a flag spelled one way in help and another
+  // in the parser fails here instead of in someone's terminal.
   assert.equal(example.length, 6);
   const argvs = example.map((line) => exampleArgv(line.slice("  $ amplefile ".length)));
   const parsed = argvs.map((argv) => {
@@ -338,7 +338,7 @@ test("help collaborate's worked example parses through the real act parser", () 
     assert.ok(help.includes(`amplefile ${spelled} `), `help collaborate must show usage for '${spelled}'`);
   }
   // Bounds are visible where a person can change them, and a refusal names
-  // the same place (docs/receipts-not-gates.md, principle 6).
+  // the same place (docs/act-ledger.md).
   assert.match(help, /Settings → (?:Automations|Recently deleted)/);
   assert.match(help, /Nothing waits on someone clicking something\./);
   assert.doesNotMatch(help, /\bcard\b|\bmode\b|sandboxed/i);
@@ -487,7 +487,7 @@ test("the act parser refuses malformed collaboration arguments with stable usage
     );
   }
   // A bound refused at parse time says exactly what the same bound says when
-  // the request record refuses it (docs/receipts-not-gates.md, principle 6).
+  // the request record refuses it (docs/act-ledger.md).
   const overLongQuestion = () => parseAmpleFileCliActArgv([
     "chat", "ask", "--connected-folder", "connected-folder-1", "--task", "task-1",
     "--question", "x".repeat(ampleFileRequestLimits.maxQuestionTextBytes + 1),

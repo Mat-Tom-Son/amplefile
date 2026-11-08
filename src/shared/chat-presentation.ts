@@ -11,7 +11,7 @@ export interface AssistantPresentationSegment {
   start: number;
   end: number;
   kind: "progress" | "final" | "command";
-  /** Turn-local chronology shared with work-trail rows; absent on legacy messages. */
+  /** Turn-local chronology shared with work-trail rows; absent when the turn recorded none. */
   order?: number;
 }
 
@@ -31,7 +31,7 @@ export const maxChatToolTitleLength = 200;
 export const maxChatToolEditDiffBytes = 16 * 1024;
 
 /**
- * A picture generate_image made (2026-10-11), shown under the reply. The bytes
+ * A picture generate_image made, shown under the reply. The bytes
  * stay in AmpleFile's machine-local app state; the Chat log carries only this.
  */
 export interface ChatToolImage {
@@ -83,5 +83,5 @@ export interface ChatLiveTurnPresentation {
   textTruncated?: boolean;
 }
 
-/** Leaves room for the legacy text field in the 512 KiB stream queue. */
+/** Leaves room for the plain text field in the 512 KiB stream queue. */
 export const maxLiveTurnPresentationBytes = 192 * 1024;

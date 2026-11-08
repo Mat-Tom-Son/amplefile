@@ -11,8 +11,8 @@ export async function connectedFolderRawFileBlob(connectedFolderId: string, path
 }
 
 /**
- * A picture generate_image made, from AmpleFile's machine-local store
- * (2026-10-11). Rejects with a 404 ApiError when the picture is not on this
+ * A picture generate_image made, from AmpleFile's machine-local store.
+ * Rejects with a 404 ApiError when the picture is not on this
  * computer, for example in a Chat that traveled.
  */
 export async function generatedImageBlob(imageId: string, signal?: AbortSignal): Promise<Blob> {

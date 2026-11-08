@@ -18,12 +18,13 @@ const token = "a".repeat(64);
 type ReceiptEntry = Omit<AmpleFileCliActReceiptV3, "v" | "at">;
 
 /**
- * End-to-end coverage of the formerly gated verbs through the installed act
+ * End-to-end coverage of the verbs that install code, widen a power, or
+ * destroy data, through the installed act
  * lane: argv → executor → the real facade inside startLocalApi → the
  * prepared-act path — with the executor's own receipts capture proving every
  * verb executes on the first call, journals `accepted` before the effect and
  * a terminal line after, and stamps no decision id anywhere
- * (docs/receipts-not-gates.md, F19).
+ * (docs/act-ledger.md).
  */
 interface HeldTurn {
   taskId: string;
@@ -130,9 +131,9 @@ function errorCodeOf(stderr: string): string | undefined {
 test("retired verbs are unknown commands that leave no receipt", async () => {
   const h = await directVerbHarness("retired");
   try {
-    // The pending-decision family, permanent deletion, the retired holding
-    // spellings, the retired desktop-served sharing verbs, and the pages and
-    // apps families (removed 2026-11-07).
+    // The pending-decision family, permanent deletion, the holding
+    // spellings, desktop-served sharing verbs, and the pages and apps
+    // families: none exists.
     for (const argv of [
       ["staged", "list"], ["staged", "show"], ["files", "destroy"],
       ["automations", "stage"], ["pages", "stage"],
@@ -167,7 +168,7 @@ test("connected-folders delete deletes a managed folder on the first call, refus
     assert.equal(existsSync(managed.connectedFolder.connectedFolderRoot), false, "the managed folder is deleted on the first call");
     assert.deepEqual(h.records.map((record) => record.outcome), ["accepted", "ok"]);
     // The folder is moved, not erased: the receipt names the Recently deleted
-    // item that puts it back (docs/receipts-not-gates.md, F20).
+    // item that puts it back (docs/act-ledger.md).
     const keptConnectedFolder = (await h.api.recentlyDeleted.list()).entries;
     assert.equal(keptConnectedFolder.length, 1);
     assert.equal(keptConnectedFolder[0]?.kind, "connected-folder");

@@ -7,10 +7,9 @@ Connected Folders the **AmpleFile agent**, and the model/provider settings page
 
 AmpleFile uses Pi's native capability system for full-trust Skills and Extensions. This guide explains how Skills, Extensions, packages, scopes, and authorization fit the product without confusing them with ordinary files.
 
-The rail's **Add** button opens the **Skills & Extensions** popup directly (2026-09-25): a dialog like Settings and Keyboard shortcuts, pinned to the Connected Folder it was opened from. Its **Installed** view answers what is present, where it came from, which scope owns it, and whether Pi loaded it. It starts with an **Included with AmpleFile** strip holding exactly the five included tools — Chrome, Computer Control, Web, Documents, and Service Connections — each with one concise Title Case status (Ready, Setup Needed, Unavailable, Not Checked, or Turned Off; older Computer Control evidence says Last Check Passed, Service Connections says No Connections or Configured, and Chrome shows Connected, Connecting, or Not Connected) and a **Set Up** pointer only when a person can act. Below the strip, **Everywhere** (the AmpleFile agent and every Connected Folder) and **This folder only** (stored in the Connected Folder's folder) sit side by side and stack on narrow widths; a row opens its details on click, and the groups have no Add buttons. Its **Discover** view searches first-party/reference sources and community Pi packages. Skills and Extensions remain distinct item types inside both views because their behavior and risk are different. There is no Add menu and no Library (desktop 2026-09-25, CLI 2026-10-10).
+**Skills & Extensions…** in the toolbar's **Action** (⋯) menu, or in a Connected Folder's right-click menu in the sidebar, opens the **Skills & Extensions** popup: a dialog like Settings, pinned to the Connected Folder it was opened from. Its **Installed** view answers what is present, where it came from, which scope owns it, and whether Pi loaded it. It starts with an **Included with AmpleFile** strip holding exactly the five included tools — Chrome, Computer Control, Web, Documents, and Service Connections — each with one concise Title Case status (Ready, Setup Needed, Unavailable, Not Checked, or Turned Off; Computer Control evidence older than five minutes says Last Check Passed, Service Connections says No Connections or Configured, and Chrome shows Connected or Not Connected) and a **Set Up** pointer only when a person can act. Below the strip, **Everywhere** (the AmpleFile agent and every Connected Folder) and **This Connected Folder only** (stored in the Connected Folder's folder) sit side by side and stack on narrow widths; a row opens its details on click, and the groups have no Add buttons. Its **Discover** view searches first-party/reference sources and community Pi packages. Skills and Extensions remain distinct item types inside both views because their behavior and risk are different.
 
-The rail's Add control uses a blocks icon. Installed and Discover use a
-compact segmented tab control beside **+ Add Custom**, which opens the existing
+Installed and Discover use a compact segmented tab control beside **+ Add Custom**, which opens the
 scope-first import and package-source dialog. Search, type filters, and sorting
 share an aligned toolbar that wraps at narrow widths. Discover uses text-only
 rows with names, types, descriptions, authors, provenance, and source links;
@@ -36,7 +35,7 @@ The word “resource” has two different possible meanings, so AmpleFile uses d
 | **Ordinary file** | A template, reference document, example, image, or reusable file in a Connected Folder | Passive content. It reaches a Chat only when a person attaches it or a tool reads it. |
 | **Pi resource** | A Skill, Extension, prompt template, theme, model/provider configuration, or context instruction | Configuration discovered by Pi. Some resources influence the agent or execute code and therefore have scope and trust implications. |
 
-Internal APIs and storage may retain the name `resource` for compatibility. User-facing copy uses the specific Pi term—**Skill**, **Extension**, prompt, or package—when it means agent configuration.
+Internal APIs and storage use the name `resource`. User-facing copy uses the specific Pi term—**Skill**, **Extension**, prompt, or package—when it means agent configuration.
 
 ## Skills
 
@@ -51,7 +50,7 @@ A Skill is a reusable way of working. Its interoperable unit is an [Agent Skill]
 
 The last case is deliberately **skill-compatible**, not full plugin compatibility. AmpleFile preserves each discovered Skill directory so its supporting scripts, references, and assets continue to resolve. It does not activate bundled hooks, agents, MCP servers, plugin commands, binaries, marketplace metadata, or Extensions merely because they share an archive with a Skill.
 
-Anthropic marketplace archives may describe several named packs in `.claude-plugin/marketplace.json`. The current compatible importer discovers and imports Skill directories safely, but does not yet offer named-pack selection. This is a deliberate remaining lifecycle gap rather than a claim of full Claude plugin compatibility.
+Anthropic marketplace archives may describe several named packs in `.claude-plugin/marketplace.json`. The compatible importer discovers and imports Skill directories safely, but does not offer named-pack selection. This is a known lifecycle gap, not a claim of full Claude plugin compatibility.
 
 ### Minimal Skill
 
@@ -99,9 +98,8 @@ third-party schemas remain native. See [tool feedback](tool-feedback.md).
 Workers are taught to create `.worker/<task-id>/` lazily for drafts, scripts,
 intermediate data and renders, then deliver requested files outside that folder.
 Existing project files are edited in place. `.worker/` is ordinary content:
-the Files tab mutes its top-level folder name and icon without disabling
-selection, expansion, menus or dragging. Search, History, attachments,
-and file grants use their normal policies, including explicit ignore settings.
+it shows in the folder list like any other folder, and Search, History, and
+attachments use their normal policies, including explicit ignore settings.
 It is neither hidden metadata nor a private or automatically cleaned area.
 Registration never creates it, and the AmpleFile agent has no Connected Folder
 scratch appendix. Existing contents and conflicting file/link/registered-folder
@@ -167,8 +165,8 @@ pinned versions and reviewed compatibility patches live in
 [the integration manifest](../patches/included-tools/manifest.json). “Included
 with AmpleFile” describes maintenance, not a different Extension runtime.
 AmpleFile also ships one Skill of its own outside the five tools:
-`set-up-connected-folder` (`resources/included-tools/skills/`), which **Set up for
-me** and **Just the look** use (see [the product model](product-model.md)). It
+`set-up-connected-folder` (`resources/included-tools/skills/`), which **Set Up for
+Me** and **Just the Look** use (see [the product model](product-model.md)). It
 is listed under **Everywhere** as Included with AmpleFile, and it can be turned
 off through the same Pi path filter as any other resource, but never removed.
 The Documents tool's own Skill is likewise turned off rather than removed.
@@ -181,7 +179,7 @@ companion, optional Brave search credentials, and native MCP server definitions
 and authentication. Computer Control setup is one **Allow Computer Control**
 button with a two-item permission checklist; Chrome setup is two steps, add the
 AmpleFile extension from the Chrome Web Store and choose Connect in it, in either
-order (2026-10-11). Both also appear in first run's optional **Let your Worker
+order. Both also appear in first run's optional **Let your Worker
 use your Mac** step, and their setup works with or without a Connected Folder; see
 [Extensions and computer work](extension-foundation.md) and
 [Chrome extension distribution](chrome-extension-distribution.md). A saved credential alone does not establish readiness.
@@ -204,22 +202,22 @@ and runtime installed. Setup details and remaining limits are in the contract.
 
 ### Declarative Extension surfaces
 
-A loaded Extension may place a versioned `surface.json` manifest beside its entry point. For the model, the creation and lifecycle unit is the normal Pi package containing that Extension, its tools or connection logic, and the adjacent manifest. AmpleFile validates the static manifest and can contribute an app destination below the stable primary rail, a left-pane navigator, and Connected Folder–bound view tabs. The renderer owns every component; manifests cannot provide HTML, scripts, styles, React modules, event handlers, or direct renderer access. This is the **full-trust Pi Extension lane**.
+A loaded Extension may place a versioned `surface.json` manifest beside its entry point. The creation and lifecycle unit is the normal Pi package containing that Extension, its tools or connection logic, and the adjacent manifest. AmpleFile validates the static manifest and carries valid surfaces in the kernel's capability snapshot; the file manager window does not draw them. Manifests cannot provide HTML, scripts, styles, React modules, event handlers, or direct renderer access.
 
-Surface discovery follows Pi's loaded Extension catalog rather than scanning arbitrary files. Everywhere surfaces appear where their user-scope Extension is loaded. This Connected Folder surfaces appear while their folder is registered and Pi loads the adjacent Extension. Invalid, oversized, linked, or unsupported manifests produce capability diagnostics and do not take down other Extensions. See [Extension surfaces](extension-surfaces.md) for the version 1 schema and limits.
+Surface discovery follows Pi's loaded Extension catalog rather than scanning arbitrary files. Everywhere surfaces load with their user-scope Extension. This Connected Folder surfaces load while their folder is registered and Pi loads the adjacent Extension. Invalid, oversized, linked, or unsupported manifests produce capability diagnostics and do not take down other Extensions. See [Extension surfaces](extension-surfaces.md) for the version 1 schema and limits.
 
-The declarative surface does not reduce the trust level of its owning Extension. Extension code still runs with the current user's permissions and can make network requests. The UI must label these contributions as full-trust even though their visible blocks are host-rendered.
+A surface does not reduce the trust level of its owning Extension. Extension code still runs with the current user's permissions and can make network requests.
 
 ## Scopes
 
 | Product label | Pi scope | Typical location | Availability |
 |---|---|---|---|
-| **Everywhere** | User/global | The configured Pi agent directory, normally `~/.pi/agent` | Available to the AmpleFile agent and every Connected Folder. (Earlier builds labeled this scope **Personal**.) |
-| **This Connected Folder** | Project/local | `.pi/` inside the Connected Folder's folder | Portable with that folder and authorized while it is registered as a Connected Folder. |
+| **Everywhere** | User/global | The configured Pi agent directory, normally `~/.pi/agent` | Available to the AmpleFile agent and every Connected Folder. |
+| **This Connected Folder only** | Project/local | `.pi/` inside the Connected Folder's folder | Portable with that folder and authorized while it is registered as a Connected Folder. |
 
 Everywhere Skills commonly live below `~/.pi/agent/skills`; Everywhere Extensions below `~/.pi/agent/extensions`. Connected Folder–scoped equivalents live below `.pi/skills` and `.pi/extensions` in the Connected Folder. Pi also discovers global and project `.agents/skills` locations, packages, and paths added through settings. The Pi catalog is therefore the authority rather than a hard-coded directory scan in the renderer.
 
-Everywhere scope (Pi's user scope) is for capabilities a person wants in every Connected Folder — it is what the AmpleFile agent's agent loads, too. This Connected Folder scope is appropriate when a capability belongs with one activity or should travel with that folder. The Add dialog asks **Where should it live?** first, and a Discover details dialog asks it in the same review, with the same two-card chooser illustrated as the AmpleFile agent above a row of Connected Folders so the reach of each option is visible before confirming. Scope does not indicate safety: personal executable code still deserves inspection.
+Everywhere scope (Pi's user scope) is for capabilities a person wants in every Connected Folder — it is what the AmpleFile agent loads, too. This Connected Folder only scope is appropriate when a capability belongs with one activity or should travel with that folder. The Add dialog asks **Where should it live?** first, and a Discover details dialog asks it in the same review, with the same two-card chooser illustrated as the AmpleFile agent above a row of Connected Folders so the reach of each option is visible before confirming. Scope does not indicate safety: personal executable code still deserves inspection.
 
 ## Registered Connected Folder authorization
 
@@ -227,7 +225,7 @@ Creating or registering a Connected Folder is AmpleFile's authorization to load 
 
 This choice removes redundant ceremony; it does not certify the folder as safe. Existing native Pi Extension code can execute during the first catalog load, and `.pi` content can change later through local edits, source control, or a synchronization tool. Package installation review, external connections, provider credentials, and Chat attachments remain separate decisions.
 
-Importing a Skill directly into **This Connected Folder** requires a registered Connected Folder. Importing it for **Everywhere** is an explicit global install action and does not write to the Connected Folder.
+Importing a Skill directly into **This Connected Folder only** requires a registered Connected Folder. Importing it for **Everywhere** is an explicit global install action and does not write to the Connected Folder.
 
 ## Packages
 
@@ -237,9 +235,9 @@ Supported Pi sources include npm packages, git sources, HTTPS sources, and local
 
 In product language, lead with the outcome (“install this Skill” or “add this Extension”) and show package source, scope, resource types, load state, and diagnostics as provenance. A package can be mixed: installing an item presented as a Skill may also load Extensions, prompts, themes, dependencies, or install scripts. The Discover details dialog must disclose that package boundary before installation: it shows the description, the where-chooser, what is inside (the Skills and Extensions found), one plain warning when the install can run code on the computer, and a collapsed **Technical details** section holding source, version and license, provenance, dependencies, and install scripts. Do not add **Packages** as a peer to Connected Folder or Skills & Extensions unless the product model is deliberately revisited.
 
-AmpleFile delegates package update and removal to Pi so its settings, installed paths, pinned references, and deduplication rules stay authoritative. Project package installation, update, and removal require a registered target Connected Folder. Capability mutations are rejected while an affected Connected Folder has an active agent turn or Chat compaction; switching tabs or minimizing the app must not let a catalog reload terminate background work.
+AmpleFile delegates package update and removal to Pi so its settings, installed paths, pinned references, and deduplication rules stay authoritative. Project package installation, update, and removal require a registered target Connected Folder. Capability mutations are rejected while an affected Connected Folder has an active agent turn or Chat compaction; switching folders or minimizing the app must not let a catalog reload terminate background work.
 
-Direct Skill imports and packages have different ownership semantics. Package-provided resources can be updated or removed through their package record. Direct-imported Skills have import receipts and a separate removal path that checks their recorded ownership. Removing an imported Skill is reversible (2026-10-22): `.pi/` and Pi's own folder are outside History, so the whole Skill folder moves to **Recently Deleted** with its scope and its path inside that scope's skills folder, and the removal toast offers **Undo**. Restoring puts it back in the same scope at the same path under the same capability-mutation fencing and client reload as an install, so it loads with the next turn. A restore is refused, and the Skill stays in Recently Deleted, while a Skill of the same name is installed in that scope — Pi loads only the first Skill of a name — or something occupies its old path; a Connected Folder Skill also needs its Connected Folder registered. Per-resource enable/disable uses Pi's native filters for Extensions, Skills, prompts and themes, preserving unrelated resources, package patterns and scopes. Included resources use the same controls. The desktop and `tools enable|disable --path <resource-path> --kind extensions|skills|prompts|themes --scope everywhere|connected-folder [--connected-folder <id>]` share the prepared, identity-pinned, receipted operation. Affected active work blocks the change; clients are invalidated only after it succeeds. A package configured as a single Extension file cannot be filtered by Pi: AmpleFile explains that limitation and offers package removal rather than showing a false disabled state.
+Direct Skill imports and packages have different ownership semantics. Package-provided resources can be updated or removed through their package record. Direct-imported Skills have import receipts and a separate removal path that checks their recorded ownership. Removing an imported Skill is reversible: `.pi/` and Pi's own folder are outside History, so the whole Skill folder moves to **Recently Deleted** with its scope and its path inside that scope's skills folder, and the removal toast offers **Undo**. Restoring puts it back in the same scope at the same path under the same capability-mutation fencing and client reload as an install, so it loads with the next turn. A restore is refused, and the Skill stays in Recently Deleted, while a Skill of the same name is installed in that scope — Pi loads only the first Skill of a name — or something occupies its old path; a Connected Folder Skill also needs its Connected Folder registered. Per-resource enable/disable uses Pi's native filters for Extensions, Skills, prompts and themes, preserving unrelated resources, package patterns and scopes. Included resources use the same controls. The desktop and `tools enable|disable --path <resource-path> --kind extensions|skills|prompts|themes --scope everywhere|connected-folder [--connected-folder <id>]` share the prepared, identity-pinned, receipted operation. Affected active work blocks the change; clients are invalidated only after it succeeds. A package configured as a single Extension file cannot be filtered by Pi: AmpleFile explains that limitation and offers package removal rather than showing a false disabled state.
 
 ## Discovery sources
 
@@ -384,7 +382,7 @@ Endpoint and API-key requirements were checked against Microsoft's
 and [Claude deployment guide](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-claude),
 and Anthropic's [Claude in Foundry guide](https://platform.claude.com/docs/en/build-with-claude/claude-in-microsoft-foundry).
 
-Model-provider credentials belong to **Settings → AI Models** and application/Pi storage, never to a Connected Folder. They are machine-wide connections. The selected provider/model pair is a separate machine-local preference keyed by portable Connected Folder identity, with one additional preference for the AmpleFile agent; each Connected Folder may also keep bounded machine-local **Connected Folder instructions** under that same identity. Instructions are appended through Pi's native system-prompt override after AmpleFile's required prompt, never written into `.amplefile/` or `.pi/`, and sent to the selected provider with every subsequent turn in that Connected Folder. The AmpleFile agent may inspect and change a Connected Folder's model default and instructions through `connected-folders assistant`, but it cannot enter, replace, remove, or inspect provider credentials. The desktop path supports API-key setup and exposes Pi's provider OAuth flows when a provider advertises one. AmpleFile opens the provider URL in the system browser, handles device-code and manual-code prompts in native desktop UI, and persists the result through its existing encrypted Pi CredentialStore host. OpenRouter's tool-capable text-model list can be refreshed explicitly from its live API; normalized model metadata and the last successful response are cached in app state without the credential and injected into each fresh cwd-specific Pi registry so display and execution use the same catalog. A failed refresh keeps the previous live cache or Pi's built-in catalog. Support must still be described provider by provider: the presence of a Pi OAuth implementation is not proof that every account tier, billing policy, or packaged release flow has been verified.
+Model-provider credentials belong to **Settings → AI Models** and application/Pi storage, never to a Connected Folder. They are machine-wide connections. The selected provider/model pair is a separate machine-local preference keyed by portable Connected Folder identity, with one additional preference for the AmpleFile agent; each Connected Folder may also keep bounded machine-local **Connected Folder instructions** under that same identity. Instructions are appended through Pi's native system-prompt override after AmpleFile's required prompt, never written into `.amplefile/` or `.pi/`, and sent to the selected provider with every subsequent turn in that Connected Folder. The AmpleFile agent may inspect and change a Connected Folder's model default and instructions through `connected-folders worker`, but it cannot enter, replace, remove, or inspect provider credentials. The desktop path supports API-key setup and exposes Pi's provider OAuth flows when a provider advertises one. AmpleFile opens the provider URL in the system browser, handles device-code and manual-code prompts in native desktop UI, and persists the result through its existing encrypted Pi CredentialStore host. OpenRouter's tool-capable text-model list can be refreshed explicitly from its live API; normalized model metadata and the last successful response are cached in app state without the credential and injected into each fresh cwd-specific Pi registry so display and execution use the same catalog. A failed refresh keeps the previous live cache or Pi's built-in catalog. Support must still be described provider by provider: the presence of a Pi OAuth implementation is not proof that every account tier, billing policy, or packaged release flow has been verified.
 
 Likewise, an Extension can implement an external connection, but that does not make the core app a native integration with that service. Google Drive currently works by registering a folder synchronized through Google Drive for desktop. Direct Drive API synchronization remains future provider-adapter work.
 
@@ -394,12 +392,12 @@ For every new agent capability, keep these answers visible in code and UI:
 
 1. What will the agent gain: instructions, files, tools, commands, or network access?
 2. Where did it come from?
-3. Is it Everywhere or This Connected Folder?
+3. Is it Everywhere or This Connected Folder only?
 4. Which Connected Folder and connections does it reach?
 5. Is it enabled, loaded, ready, missing setup, or failing diagnostics?
 6. How can the person update, disable, remove, or revoke it?
 
-The current Pi catalog and import/install surfaces expose provenance, scope, status, diagnostics, package update/removal, native per-resource enable/disable, and direct-import receipts/removal. Full-trust Pi resources retain Pi's authority model. Named Anthropic-pack selection remains lifecycle work to complete.
+The Pi catalog and import/install surfaces expose provenance, scope, status, diagnostics, package update/removal, native per-resource enable/disable, and direct-import receipts/removal. Full-trust Pi resources retain Pi's authority model. Named Anthropic-pack selection remains lifecycle work to complete.
 
 Management adapters must preserve that checklist. Inventory is not authorization: seeing a capability through the kernel or CLI does not grant it to a Chat or permit another actor to mutate it.
 
@@ -418,4 +416,4 @@ Pi's economical cache warming runs while an accepted turn is streaming. `off` is
 respected; `idle` is bounded to `streaming` in AmpleFile without changing the
 personal settings file, so no model spend starts after request settlement.
 Canonical session messages, context edits and compaction are Pi-owned; portable
-Chat text and its activity trail remain projections. The Pi 1.1 integration evidence is archived in the work-fold repository.
+Chat text and its activity trail remain projections.

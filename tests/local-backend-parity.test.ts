@@ -15,13 +15,13 @@ import { configureAmpleFileStateRoot, connectedFolderConversationDir, connectedF
 import { readConnectedFolderIgnoreState, setConnectedFolderIgnoreState } from "../src/local/connected-folder-ignore.js";
 import { getConnectedFolderEntryInfo, registerLinkedConnectedFolder, scanConnectedFolderTree } from "../src/local/connected-folder.js";
 
-test("linked Connected Folders keep portable identity in .amplefile while legacy metadata and operational state remain external", async (t) => {
+test("linked Connected Folders keep portable identity in .amplefile while a .work-fold folder and operational state remain external", async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), "connected-folder-parity-linked-"));
   const root = join(sandbox, "ordinary-folder");
   const state = join(sandbox, "state");
   await mkdir(join(root, "Drafts"), { recursive: true });
-  await mkdir(join(root, ".workspace"), { recursive: true });
-  await writeFile(join(root, ".workspace", "connected-folder.json"), "legacy metadata", "utf8");
+  await mkdir(join(root, ".work-fold"), { recursive: true });
+  await writeFile(join(root, ".work-fold", "records.json"), "earlier metadata", "utf8");
   await writeFile(join(root, "Drafts", "notes.txt"), "first version\n", "utf8");
   configureAmpleFileStateRoot(state);
   t.after(async () => {
@@ -70,10 +70,8 @@ test("linked Connected Folders keep portable identity in .amplefile while legacy
   assert.equal(info.officeDocument, true);
   assert.equal(info.hashSha256?.length, 64);
   assert.equal(existsSync(connectedFolderManifestFile(root)), true);
-  assert.equal(existsSync(join(root, ".kai")), false);
-  assert.equal(existsSync(join(root, ".kaiignore")), false);
   assert.equal(existsSync(connectedFolderStateDir(root)), true);
-  assert.deepEqual((await readdir(root)).sort(), [".amplefile", ".workspace", "Drafts", "Plan.docx"]);
+  assert.deepEqual((await readdir(root)).sort(), [".amplefile", ".work-fold", "Drafts", "Plan.docx"]);
   assert.deepEqual((await scanConnectedFolderTree(root)).entries.map((entry) => entry.name), ["Drafts", "Plan.docx"]);
   assert.equal(connectedFolder.location.storage, "linked");
 });

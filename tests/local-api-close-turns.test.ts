@@ -25,7 +25,7 @@ test("closing stops an accepted turn that is still preparing before it reaches t
   // preparing after closing began, whenever close() reaches its clients.
   resume();
   await within(closing, "close()");
-  // Quitting is recorded like a crash, never as a Stop the person asked for (2026-10-27).
+  // Quitting is recorded like a crash, never as a Stop the person asked for.
   assert.equal(h.turnStore.get(taskId)?.status, "interrupted");
   const reply = (await readConversation(h.connectedFolderRoot, h.conversationId)).findLast((message) => message.role === "assistant");
   assert.equal(reply?.turnId, taskId);

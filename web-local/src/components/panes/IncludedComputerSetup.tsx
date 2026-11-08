@@ -12,7 +12,7 @@ type ComputerAction = "check" | "request-permissions" | "accessibility" | "scree
 const watchMs = 5 * 60_000;
 
 /**
- * Computer Control setup (2026-10-11): one Allow button that asks macOS, then
+ * Computer Control setup: one Allow button that asks macOS, then
  * watches until both permissions are on, restarting the helper by itself when
  * Screen Recording needs it. Names the helper macOS lists, AmpleFile
  * Computer, so people know what to turn on. Works with or without a

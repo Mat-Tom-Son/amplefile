@@ -43,7 +43,7 @@ export function App() {
   const [connectAiOpen, setConnectAiOpen] = useState(false);
   const afterConnectAi = useRef<(() => void) | undefined>(undefined);
   useEffect(() => onConnectAiRequested((then) => { afterConnectAi.current = then; setConnectAiOpen(true); }), []);
-  // Connected Folders just added that still show the Set up for me card (2026-10-11).
+  // Connected Folders just added that still show the Set up for me card.
   const [setUpOffers, setSetUpOffers] = useState<string[]>(() => readConnectedFolderSetUpOffers());
   useEffect(() => {
     if (!boot) return;
@@ -267,7 +267,7 @@ export function App() {
     } catch (caught) { setError(errorText(caught)); }
   }
 
-  // In the file manager an error is a notice like the others (owner request, 2026-11-07): one card style, stacked, never a bar over the window.
+  // In the file manager an error is a notice like the others: one card style, stacked, never a bar over the window.
   const errorsAsNotices = Boolean(activeConnectedFolder);
   useEffect(() => {
     if (!errorsAsNotices || !error) return;

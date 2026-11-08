@@ -43,7 +43,7 @@ test("Customize Connected Folder isolates its popup and routes edits to the Conn
   await dom.render(screen(true));
   const dialog = document.querySelector('[role="dialog"]')!;
   assert.equal(dialog.getAttribute("aria-modal"), "true");
-  // One page with a section each (2026-11-05), no tabs.
+  // One page with a section each, no tabs.
   assert.equal(dialog.querySelector('[role="tablist"]'), null);
   assert.deepEqual([...dialog.querySelectorAll('.connected-folder-appearance-section > h3')].map((heading) => heading.textContent), ["Icon", "Color"]);
   assert.equal(document.activeElement?.getAttribute("aria-label"), "Close Customize Connected Folder");

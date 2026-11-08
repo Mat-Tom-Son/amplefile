@@ -53,7 +53,7 @@ test("second-instance launches route by cause and CLI shape never reads as inter
   assert.deepEqual(ampleFileSecondInstanceIntent(["AmpleFile.exe"], { kind: "amplefile-gui" }), { kind: "gui" });
   assert.deepEqual(ampleFileSecondInstanceIntent(["AmpleFile.exe"], null), { kind: "gui" });
   // A CLI-stamped launch whose request id was dropped in transit must stay
-  // headless (docs/ui-parity.md: headless CLI requests never open or steal
+  // headless (docs/product-model.md: headless CLI requests never open or steal
   // focus from the interactive window) — it must never classify as "gui".
   assert.equal(ampleFileSecondInstanceIntent(["AmpleFile.exe"], { kind: "amplefile-cli" }).kind, "cli-invalid");
   assert.equal(ampleFileSecondInstanceIntent(["AmpleFile.exe"], { kind: "amplefile-cli", requestId: 7 }).kind, "cli-invalid");
@@ -240,11 +240,10 @@ test("desktop main wires one receipts ledger and automation sleep/wake beside th
   const hostStart = main.indexOf("async function ensureDesktopHost");
   assert.ok(hostStart >= 0);
   const hostBody = main.slice(hostStart, main.indexOf("\nasync function processAmpleFileCliRequest", hostStart));
-  // Checks were removed (2026-11-07): the desktop host no longer creates a Check service.
+  // The desktop host creates no Check service.
   assert.doesNotMatch(hostBody, /CheckService|createDesktopCheckService/);
-  // Connected Folder apps were removed (2026-11-07), and with them the settle
-  // seam their automation runs published into: no restricted-app service and
-  // no settle signal in the desktop host.
+  // No Connected Folder apps, so no settle seam for their automation runs:
+  // no restricted-app service and no settle signal in the desktop host.
   assert.doesNotMatch(hostBody, /RestrictedAppService|AmpleFileSettleSignal|settleSignal/);
   // Inspect the returned value, not property order: adding another host service
   // must not weaken the assertion that the CLI host is the one exposed.

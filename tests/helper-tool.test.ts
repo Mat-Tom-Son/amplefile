@@ -30,14 +30,14 @@ async function fixture(t: { after(fn: () => unknown): void }) {
   await mkdir(join(root, "notes", "deep"), { recursive: true });
   await mkdir(join(root, ".amplefile"), { recursive: true });
   await mkdir(join(root, ".pi"), { recursive: true });
-  await mkdir(join(root, ".workspace"), { recursive: true });
+  await mkdir(join(root, ".work-fold"), { recursive: true });
   await mkdir(outside, { recursive: true });
   await writeFile(join(root, "notes", "a.md"), "alpha needle\nsecond line\n");
   await writeFile(join(root, "notes", "deep", "b.txt"), "nothing here\n");
   await writeFile(join(root, "README.md"), "Research folder\n");
   await writeFile(join(root, ".amplefile", "connected-folder.json"), "{\"needle\":true}\n");
   await writeFile(join(root, ".pi", "settings.json"), "{\"needle\":true}\n");
-  await writeFile(join(root, ".workspace", "legacy.json"), "needle\n");
+  await writeFile(join(root, ".work-fold", "records.json"), "needle\n");
   await writeFile(join(outside, "secret.txt"), "outside needle\n");
   await symlink(outside, join(root, "link-out"));
   await symlink(join(outside, "secret.txt"), join(root, "link-file.txt"));
@@ -91,7 +91,7 @@ test("helper paths are enforced by real path: outside, home, links out and reser
   assert.equal((await scope.resolve("")).relative, ".");
   for (const refused of [
     "../Private/secret.txt", join(outside, "secret.txt"), "~/.ssh/id_rsa", "/etc/hosts",
-    ".amplefile/connected-folder.json", ".PI/settings.json", ".workspace/legacy.json", "notes/../.pi",
+    ".amplefile/connected-folder.json", ".PI/settings.json", ".work-fold/records.json", "notes/../.pi",
     "link-file.txt", "link-out/secret.txt", "meta/connected-folder.json", "missing/../../Private",
   ]) {
     await assert.rejects(scope.resolve(refused), HelperPathRefusal, refused);
@@ -140,7 +140,7 @@ test("helper globs match names without a slash and paths with one", () => {
   assert.ok(!helperGlobMatcher("notes/*.txt")("notes/deep/b.txt"));
 });
 
-test("a Worker's helper runs in its own context inside the turn, returns the F29 result and is counted in the turn's usage", async (t) => {
+test("a Worker's helper runs in its own context inside the turn, returns the result and is counted in the turn's usage", async (t) => {
   const { root } = await fixture(t);
   const setup = runtimeWith(root);
   const helperContexts: unknown[] = [];

@@ -42,7 +42,7 @@ import {
 import { configureAmpleFileStateRoot } from "../src/local/state-paths.js";
 import { registerLinkedConnectedFolder } from "../src/local/connected-folder.js";
 
-// Folder-change catch-up (docs/automations.md, 2026-10-11 amendment): an
+// Folder-change catch-up (docs/automations.md): an
 // automation that declares `"ifMissed": "run"` keeps a machine-local metadata
 // snapshot and, after AmpleFile was closed, asleep, turned off, or unable to
 // watch, starts one run for the files added or changed in that gap.

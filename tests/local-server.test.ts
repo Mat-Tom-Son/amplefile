@@ -21,7 +21,7 @@ import { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
 import { AmpleFileRecentlyDeletedStore } from "../src/local/recently-deleted-store.js";
 
 test("local API covers Connected Folder files and external restore points", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-api-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-api-test-"));
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
@@ -170,7 +170,7 @@ test("agent credentials require explicit removal before replacement", async () =
 });
 
 test("uploads record additive restore points", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-additive-history-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-additive-history-test-"));
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
@@ -216,7 +216,7 @@ test("uploads record additive restore points", async () => {
 });
 
 test("conversation runtime snapshots expose model and context state without transcript contents", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-runtime-snapshot-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-runtime-snapshot-test-"));
   const api = await startLocalApi({
     port: 0,
     stateBase: join(sandbox, "state"),
@@ -268,7 +268,7 @@ test("conversation runtime snapshots expose model and context state without tran
 });
 
 test("desktop linked folders require the exact one-shot picker grant", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-desktop-grant-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-desktop-grant-test-"));
   const linkedRoot = join(sandbox, "linked");
   const stateRoot = join(sandbox, "state");
   await mkdir(linkedRoot, { recursive: true });
@@ -309,7 +309,7 @@ test("desktop linked folders require the exact one-shot picker grant", async () 
 });
 
 test("registered Connected Folder authorization overrides Pi's independent project-trust decision", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-default-trust-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-default-trust-test-"));
   const agentDir = join(sandbox, "agent");
   const api = await startLocalApi({
     port: 0,
@@ -344,7 +344,7 @@ test("registered Connected Folder authorization overrides Pi's independent proje
 });
 
 test("capability catalog and package lifecycle preserve native Pi state and provenance", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-capability-api-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-capability-api-test-"));
   const agentDir = join(sandbox, "agent");
   const packageRoot = join(sandbox, "capability-package");
   await mkdir(join(packageRoot, "extensions"), { recursive: true });
@@ -461,7 +461,7 @@ test("capability catalog and package lifecycle preserve native Pi state and prov
 });
 
 test("registry discovery installs through guarded capability mutations without stopping active turns", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-capability-registry-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-capability-registry-test-"));
   const agentDir = join(sandbox, "agent");
   const packageRoot = join(sandbox, "registry-package");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
@@ -625,7 +625,7 @@ test("registry discovery installs through guarded capability mutations without s
 });
 
 test("capability mutations and explicit Chat compaction are mutually exclusive", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-capability-compaction-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-capability-compaction-test-"));
   const agentDir = join(sandbox, "agent");
   const packageRoot = join(sandbox, "local-package");
   await mkdir(packageRoot, { recursive: true });
@@ -719,7 +719,7 @@ test("capability mutations and explicit Chat compaction are mutually exclusive",
 });
 
 test("extension UI events retain the portable Connected Folder id after its folder moves", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-moved-extension-routing-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-moved-extension-routing-test-"));
   const originalRoot = join(sandbox, "original-connected-folder");
   const movedRoot = join(sandbox, "moved-connected-folder");
   await mkdir(originalRoot, { recursive: true });
@@ -782,7 +782,7 @@ test("extension UI events retain the portable Connected Folder id after its fold
 });
 
 test("chat streams snapshot running state and survive a throwing desktop activity observer", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-background-chat-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-background-chat-test-"));
   const agentDir = join(sandbox, "agent");
   await mkdir(join(agentDir, "extensions"), { recursive: true });
   await writeFile(join(agentDir, "extensions", "complete.ts"), `export default function (pi) {
@@ -904,7 +904,7 @@ test("provider HTTP 402 explains credit limits without leaking the body or retry
 });
 
 test("terminal provider failures persist partial output and leave the Chat resumable", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-provider-failure-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-provider-failure-test-"));
   let requestCount = 0;
   const providerServer = createServer((_request, response) => {
     requestCount += 1;
@@ -1329,7 +1329,7 @@ test("restoring a Worker Chat reserves its identity against concurrent creation 
 });
 
 test("agent setup failures are sanitized, persisted, and survive an API restart", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-model-setup-failure-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-model-setup-failure-test-"));
   const stateBase = join(sandbox, "state");
   const connectedFolderBase = join(sandbox, "content");
   const rawFailure = "No API key found. Read /Users/example/private/node_modules/provider/providers.md for setup details.";
@@ -1386,7 +1386,7 @@ test("agent setup failures are sanitized, persisted, and survive an API restart"
 });
 
 test("agent setup diagnostics are sanitized before reaching renderer event streams", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "workspace-model-setup-stream-test-"));
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-model-setup-stream-test-"));
   const agentDir = join(sandbox, "agent");
   const authStorage = FileCredentialStore.inMemory();
   const modelRuntime = await ModelRuntime.create({ credentials: authStorage, modelsPath: null });

@@ -13,7 +13,7 @@ export interface GoToFolderLookup {
 }
 
 /**
- * Go to Folder, as Finder's ⇧⌘G (owner request, 2026-11-07): type or paste a
+ * Go to Folder, as Finder's ⇧⌘G: type or paste a
  * path ("~/Documents/Taxes", "/Users/you/Downloads", or a name inside the
  * folder shown) and go straight there. Names that complete the path are listed
  * as you type: Tab completes the chosen one, the arrow keys choose, Return

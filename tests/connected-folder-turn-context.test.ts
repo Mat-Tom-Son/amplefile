@@ -17,7 +17,7 @@ import { startLocalApi } from "../src/local/server.js";
 import { ampleFileAgentScopeId } from "../src/local/state-paths.js";
 
 /**
- * Connected Folder turns get their own context (docs/collaboration-contract.md, F26):
+ * Connected Folder turns get their own context (docs/collaboration-contract.md):
  * this Connected Folder's id, this turn's task id, its request id, and — when another
  * request delegated the work — an opaque handle plus the assignment. Never
  * another Connected Folder, the registry, the AmpleFile agent's conversation, or the parent's real
@@ -119,7 +119,7 @@ test("the operations guide names the verbs and the rules, stays bounded, and fol
   ]) {
     assert.ok(guide.includes(verb), `the guide names ${verb}`);
   }
-  assert.doesNotMatch(guide, /\bapps (list|invoke)\b/, "Connected Folder apps were removed (2026-11-07)");
+  assert.doesNotMatch(guide, /\bapps (list|invoke)\b/, "AmpleFile has no Connected Folder apps");
   assert.match(guide, /accepts a task id only while that exact turn is your own and running/);
   assert.match(guide, /not yours to read.*hand it off, or ask/s);
   assert.match(guide, /Never write cross-connected-folder context into this Chat/);
@@ -212,7 +212,7 @@ test("the local API composes a Connected Folder turn's context from acceptance, 
     // A continuation names the question it answers in host-built context. The
     // answer itself is an ordinary message, and a request may hold several
     // open questions, so nothing else in the turn says which one this is
-    // (docs/collaboration-contract.md, F27).
+    // (docs/collaboration-contract.md).
     holdConnectedFolderTurns = true;
     const asking = await api.actFacade.sendMessage({ connectedFolder: connectedFolder.id, newConversation: true, content: "/hold" });
     const asked = await api.actFacade.chatAsk({ connectedFolder: connectedFolder.id, taskId: asking.taskId, question: "Which brief?", respondent: "person" });

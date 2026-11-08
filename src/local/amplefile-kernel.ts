@@ -46,7 +46,7 @@ export interface AmpleFileConnectedFolderSnapshot {
   createdAt: string;
   updatedAt: string;
   /**
-   * The nearest registered Connected Folder whose folder contains this one (2026-10-01).
+   * The nearest registered Connected Folder whose folder contains this one.
    * Present only in the connected-folders list and only for a nested Connected Folder; additive to
    * the v1 snapshot, so a top-level Connected Folder's shape is unchanged.
    */
@@ -92,7 +92,7 @@ export interface AmpleFileTaskInput {
  * Experimental internal task shape for one prepared-act execution: the
  * mutation a receipted verb that installs code, widens a power, or destroys
  * data performs through the prepared-act path (src/local/prepared-acts.ts,
- * docs/receipts-not-gates.md). It is deliberately separate from
+ * docs/act-ledger.md). It is deliberately separate from
  * AmpleFileTaskKind and must not enter the stable
  * `amplefile.tasks` v1 projection. A Connected Folder id is present only when the
  * execution mutates one Connected Folder; Everywhere-scope and machine-scope
@@ -146,7 +146,7 @@ export interface AmpleFileExperimentalAutomationRunTask {
 
 /**
  * Experimental internal task shape for one running background job
- * (docs/background-jobs.md, F31). Like `prepared_act`, it is deliberately
+ * (docs/background-jobs.md). Like `prepared_act`, it is deliberately
  * separate from AmpleFileTaskKind and must not enter the stable
  * `amplefile.tasks` v1 projection; `jobs list` is its public read. The id is
  * the job id. A Connected Folder id is absent for the AmpleFile agent's own jobs.
@@ -464,7 +464,7 @@ export class AmpleFileKernel {
     const context = scoped ? await this.getContext(normalizedActor) : null;
     const connectedFolderId = context?.connectedFolder?.id ?? null;
     const tasks = [...this.#tasks.values()]
-      // Only the stable kinds enter the `work-fold.tasks` v1 projection; the
+      // Only the stable kinds enter the `amplefile.tasks` v1 projection; the
       // experimental prepared-act, automation-run, and job lifecycles stay internal.
       .filter((task): task is AmpleFileTaskSnapshot => task.kind === "assistant_turn" || task.kind === "compaction")
       .filter((task) => !scoped || task.connectedFolderId === connectedFolderId)
@@ -578,7 +578,7 @@ export class AmpleFileKernel {
     if (!targetConnectedFolderId) throw new Error("A Connected Folder id is required.");
     const blockers: string[] = [];
     // A running background job may be writing into this folder; a restore
-    // would race it (docs/background-jobs.md, F31).
+    // would race it (docs/background-jobs.md).
     for (const job of this.listExperimentalJobTasks(targetConnectedFolderId)) {
       blockers.push(`Stop or wait for the background job "${job.name}" (${job.id}) running in this Connected Folder first: it may still be writing here.`);
     }

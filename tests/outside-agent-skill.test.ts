@@ -6,9 +6,9 @@ import { outsideAgentSkill, outsideAgentSkillName } from "../src/shared/outside-
 import { productIdentity } from "../src/shared/product-identity.js";
 
 /**
- * The skill another AI agent uses to drive the app's command (owner request,
- * 2026-11-07): a valid SKILL.md, every command it cites a real one, and every
- * name taken from the identity file so a rename carries it along.
+ * The skill another AI agent uses to drive the app's command: a valid
+ * SKILL.md, every command it cites a real one, and every name taken from the
+ * identity file so a rename carries it along.
  */
 
 const cli = productIdentity.cliCommand;
@@ -45,7 +45,7 @@ test("a renamed product leaves no trace of the old brand in the skill", () => {
   assert.match(renamed, /^---\nname: acme\n/);
   assert.match(renamed, /`acme chat send --connected-folder/);
   assert.match(renamed, /The \*\*Acme agent\*\*/);
-  // The noun "Connected Folder" is its own rename decision (docs/rebrand-plan.md).
+  // The noun "Connected Folder" stays as it is (scripts/vocabulary/GLOSSARY.md).
   assert.doesNotMatch(renamed.replace(/connected-folders?/g, ""), /work-?fold/i);
 });
 

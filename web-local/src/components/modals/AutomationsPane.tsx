@@ -384,9 +384,8 @@ export function AutomationsPane({ fixtureMode = false }: { fixtureMode?: boolean
   const wideningUnavailable = storeUnavailable || Boolean(status?.journalDamaged);
 
   // Automations sit above Connected Folders and are managed here, so the Connected Folder filter
-  // is a client-side view over one list. A Connected Folder's own Automations tab is
-  // a read-mostly window onto the same automations (docs/automations.md,
-  // F15 as amended 2026-09-24).
+  // is a client-side view over one list. A Connected Folder's Info panel is a
+  // read-mostly window onto the same automations (docs/automations.md).
   const folderChips = useMemo(() => {
     const byId = new Map<string, AutomationConnectedFolderRef>();
     for (const automation of allAutomations) {

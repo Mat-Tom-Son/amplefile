@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Hidden checks for the document-checking evaluation (2026-10-18).
+ * Hidden checks for the document-checking evaluation.
  *
  * Runs after a Worker's turn, outside its sandbox and context. It uses the
  * installed LibreOffice to recalculate and render the deliverable, measures it

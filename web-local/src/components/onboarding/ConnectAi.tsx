@@ -6,7 +6,7 @@ import type { AgentModel, AgentProvider, AgentStatus } from "../../types";
 import { FOUNDRY_PROVIDERS } from "../../../../src/shared/foundry";
 
 /**
- * Connect your AI (2026-10-11): the one place a person connects a model
+ * Connect your AI: the one place a person connects a model
  * provider, used by first run, the Connect AI dialog, and Settings → AI Models
  * while nothing is connected. Three accounts most people already have come
  * first; every other provider is a search away. Connecting also gives every

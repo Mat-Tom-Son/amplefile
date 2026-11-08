@@ -101,7 +101,6 @@ test("enable is journal-first exact-digest authority: declaration and enable rec
   assert.equal(journal[0]?.outcome, "enabled");
   assert.equal(journal[0]?.digest, record.digest);
   assert.equal(journal[0]?.requestId, "request-1");
-  assert.equal(journal[0]?.decisionId, undefined, "receipts-not-gates: nothing writes a decision id any more");
   assert.equal(journal[0]?.surface, "popover");
 
   const reloaded = await AmpleFileAutomationStore.create({ path: statePath, now: () => fixedNow });
@@ -112,17 +111,15 @@ test("enable is journal-first exact-digest authority: declaration and enable rec
     (error: unknown) => error instanceof AmpleFileAutomationStoreError && error.code === "DIGEST_MISMATCH",
     "a declaration that does not hash to the pinned digest is refused",
   );
-  for (const surface of ["policy", "unrestricted", "remote_web"] as const) {
-    await assert.rejects(
-      () => store.enable({
-        ...enableInput(declarationInput("automation-weekly-handoff"), "request-3"),
-        grant: { requestId: "request-3", surface: surface as never },
-      }),
-      (error: unknown) => error instanceof AmpleFileAutomationStoreError && error.code === "INPUT_INVALID"
-        && /act surface/.test(error.message),
-      `a legacy ${surface} surface is never written again`,
-    );
-  }
+  await assert.rejects(
+    () => store.enable({
+      ...enableInput(declarationInput("automation-weekly-handoff"), "request-3"),
+      grant: { requestId: "request-3", surface: "elsewhere" as never },
+    }),
+    (error: unknown) => error instanceof AmpleFileAutomationStoreError && error.code === "INPUT_INVALID"
+      && /act surface/.test(error.message),
+    "only an act surface enables an automation",
+  );
   const again = await store.enable({
     ...enableInput(declarationInput("automation-weekly-handoff"), "request-5"),
     grant: { requestId: "request-5", surface: "cli" },
@@ -326,67 +323,6 @@ test("one-time enablement rechecks its admission horizon and a durable claim com
   const deleted = (await readJournal(journalPath)).at(-1);
   assert.equal(deleted?.requestId, "request-delete-at");
   assert.equal(deleted?.surface, "main-window");
-});
-
-test("schema 1 and 2 stores load into the version 3 writer, converting the grants an older build wrote", async (t) => {
-  const { sandbox, store, statePath, receipts, journalPath } = await createSandbox("amplefile-automation-store-v1-upgrade-");
-  t.after(() => rm(sandbox, { recursive: true, force: true }));
-  await store.enable(enableInput(declarationInput("automation-v1-upgrade"), "request-v1"));
-  const legacy = JSON.parse(await readFile(statePath, "utf8")) as {
-    schemaVersion: number;
-    automations: Array<{ digest: string; grants: unknown[] }>;
-  };
-  legacy.schemaVersion = 2;
-  // Exactly what a pre-receipts-not-gates build wrote: a decision-shaped
-  // grant, including the surface an Unrestricted-mode execution recorded.
-  legacy.automations[0]!.grants = [
-    {
-      digest: legacy.automations[0]!.digest,
-      decisionId: "decision-v0",
-      approvedAt: fixedNow.toISOString(),
-      surface: "unrestricted",
-    },
-    {
-      digest: legacy.automations[0]!.digest,
-      decisionId: "decision-v1",
-      approvedAt: fixedNow.toISOString(),
-      surface: "remote_web",
-      browserId: "browser-1",
-      browserGrantId: "grant-1",
-    },
-  ];
-  await writeFile(statePath, `${JSON.stringify(legacy, null, 2)}\n`, "utf8");
-
-  const upgraded = await AmpleFileAutomationStore.create({ path: statePath, receipts, now: () => fixedNow });
-  assert.equal(upgraded.status().damaged, false, "an older state file still opens");
-  assert.deepEqual((await upgraded.list())[0]?.grants, [
-    {
-      digest: legacy.automations[0]!.digest,
-      requestId: "decision-v0",
-      enabledAt: fixedNow.toISOString(),
-      surface: "unrestricted",
-    },
-    {
-      // The browser grant id a decision card carried is dropped; the paired
-      // browser identity stays.
-      digest: legacy.automations[0]!.digest,
-      requestId: "decision-v1",
-      enabledAt: fixedNow.toISOString(),
-      surface: "remote_web",
-      browserId: "browser-1",
-    },
-  ]);
-  await upgraded.disable("automation-v1-upgrade");
-  const rewritten = JSON.parse(await readFile(statePath, "utf8")) as { schemaVersion: number };
-  assert.equal(rewritten.schemaVersion, 3, "the first commit rewrites the file at the current schema version");
-  assert.equal((await readJournal(journalPath)).at(-1)?.outcome, "disabled");
-
-  const schema1 = JSON.parse(await readFile(statePath, "utf8")) as { schemaVersion: number };
-  schema1.schemaVersion = 1;
-  const schema1Path = join(sandbox, "automations", "schema1.json");
-  await writeFile(schema1Path, `${JSON.stringify(schema1, null, 2)}\n`, "utf8");
-  const oldest = await AmpleFileAutomationStore.create({ path: schema1Path, receipts, now: () => fixedNow });
-  assert.equal(oldest.status().damaged, false);
 });
 
 test("a stored automation that uses a retired Check or Connected Folder app feature is left out on its own; the rest of the store loads", async (t) => {

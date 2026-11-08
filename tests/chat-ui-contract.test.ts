@@ -30,7 +30,7 @@ test("mid-turn Enter steers the running turn; ⌘Enter queues one visible, cance
   // queued draft. ⌘/Ctrl+Enter holds the draft as a dashed queued bubble;
   // further Enters append; the queued draft fires through the ordinary send
   // path when the turn settles; Stop and the bubble's cancel return it to the
-  // composer ahead of any newer text. Since 2026-10-27 the app holds the
+  // composer ahead of any newer text. The app holds the
   // queued draft (every window shows it and the app sends it when the turn
   // ends, never after a Stop); a window holds it only while its own turn has
   // not been accepted yet.
@@ -80,7 +80,7 @@ function readFileSyncLike(relativePath: string): Promise<string> {
 }
 
 test("Files exposes folder creation and naming uses in-app UI", () => {
-  // Connected Folder creation lives in the right-click menu (2026-10-01); Files has no toolbar buttons.
+  // Connected Folder creation lives in the right-click menu; Files has no toolbar buttons.
   assert.doesNotMatch(app, /aria-label="New [Ff]older"/);
   assert.match(fileManager, /onNewFolder=\{\(parent\) => requestNewFolder\(parent\)\}/);
   assert.match(fileManager, /else if \(command === "new-folder"\) requestNewFolder\(/);
@@ -91,7 +91,7 @@ test("Files exposes folder creation and naming uses in-app UI", () => {
 
 test("Chat turns report running and settled activity without interrupting active turns", () => {
   assert.match(localServer, /state\.runningTurns\.has\(key\)/);
-  // One shared activity mark (2026-10-01) labels a Connected Folder's Chat activity wherever it shows.
+  // One shared activity mark labels a Connected Folder's Chat activity wherever it shows.
   assert.match(activityDot, /status === "running" \? "Working" : "New Reply"/);
   assert.match(chatPanel, /onRunningChangeRef\.current/);
   assert.match(chatPanel, /reportChatSettled\(conversationId\)/);
@@ -223,7 +223,7 @@ test("Chat composer model and reasoning controls are truthful, scoped, and funct
   assert.match(chatPanel, /\/conversations\/\$\{conversationId\}\/thinking/);
   assert.match(chatPanel, /body: \{ level \}/);
   assert.match(chatPanel, /setConversationRuntime\(result\.runtime\)/);
-  // Reasoning shares the model chip and its menu (2026-10-27).
+  // Reasoning shares the model chip and its menu.
   assert.match(chatPanel, /className="composer-model-reasoning">\{thinkingLevelLabel\(reasoning\.level\)\}/);
   assert.match(chatPanel, /role="radiogroup" aria-labelledby=\{`\$\{menuId\}-reasoning`\}/);
   assert.match(chatPanel, /reasoning\.forThisChat \? "Reasoning for This Chat" : "Reasoning"/);
@@ -234,7 +234,7 @@ test("Chat composer model and reasoning controls are truthful, scoped, and funct
   assert.doesNotMatch(chatPanel, /No extended reasoning|A brief think before answering|Balanced reasoning|Deeper reasoning/);
   assert.match(styles, /\.composer-reasoning-levels button \{[\s\S]*?font: inherit;/);
   assert.match(styles, /\.composer-model-chip \{[\s\S]*?font-family: inherit;[\s\S]*?font-size: var\(--amplefile-type-2xs\);[\s\S]*?font-weight: 700;/);
-  // The context ring is its own button with a popover that compacts (2026-11-05),
+  // The context ring is its own button with a popover that compacts,
   // and the reasoning levels stay on one row.
   assert.match(chatPanel, /<ConversationContextControl runtime=\{conversationRuntime\}[^>]*onCompact=\{compactFromContextMenu\}/);
   assert.match(chatPanel, /\{compacting \? "Compacting" : "Compact Chat"\}/);

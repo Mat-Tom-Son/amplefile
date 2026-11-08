@@ -9,7 +9,7 @@ import { build } from "esbuild";
 import { createDomHarness } from "./support/dom.js";
 import type { ChatMessage } from "../web-local/src/types.js";
 
-// Continue on an interrupted reply (2026-10-27). The row is memoized, so
+// Continue on an interrupted reply. The row is memoized, so
 // whether Continue is offered must reach it on its own; and Continue sends
 // only its own words, never the files staged for the person's draft.
 

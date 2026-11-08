@@ -1,5 +1,5 @@
 /**
- * Pictures generate_image makes (2026-10-11). Each is kept in AmpleFile's own
+ * Pictures generate_image makes. Each is kept in AmpleFile's own
  * app state, outside every Connected Folder, so a Chat can show it inline and the
  * person can copy it or add it to the folder later. A Chat log carries only
  * the picture's id and size, never its bytes (docs/image-generation.md).

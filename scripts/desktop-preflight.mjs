@@ -88,7 +88,7 @@ function verifyPiDependencyNormalization() {
 }
 
 async function verifyNativePiResources() {
-  const fixtureRoot = await mkdtemp(join(tmpdir(), "workspace-pi-preflight-"));
+  const fixtureRoot = await mkdtemp(join(tmpdir(), "amplefile-pi-preflight-"));
   const projectDir = join(fixtureRoot, "project");
   const agentDir = join(fixtureRoot, "agent");
   try {

@@ -15,7 +15,7 @@ import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
 import { AmpleFileKernel } from "../src/local/amplefile-kernel.js";
 
 /**
- * Removing an imported Skill is reversible (docs/receipts-not-gates.md, F20):
+ * Removing an imported Skill is reversible (docs/act-ledger.md):
  * `.pi/` and Pi's own folder are outside History, so the whole Skill folder
  * goes to Recently deleted with its scope, and restoring puts it back where it
  * was so it loads again — from the desktop's Undo and from the act lane alike.

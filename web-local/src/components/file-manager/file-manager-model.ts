@@ -2,8 +2,8 @@ import type { TreeEntry } from "../../types";
 import { descendantFolders, folderAncestors, folderTreeRows, type NestableFolder } from "../../../../src/shared/folder-nesting";
 
 /**
- * Pure helpers for the file manager layout (docs/product-model.md, "File
- * manager layout"): ordering, labels, and selection, kept free of React so
+ * Pure helpers for the file manager layout (docs/product-model.md, "The file
+ * manager window"): ordering, labels, and selection, kept free of React so
  * tests can cover them directly.
  */
 
@@ -260,9 +260,8 @@ export function fileManagerStatusText(total: number, selected: number): string {
 /**
  * The suggested messages above the message box on the Info tab, as the
  * design shows them: up to four, or two when the folder already has
- * Automations on. These are plain fallbacks: the owner wants them written by
- * a model from the folder's context and its earlier Chats (2026-11-07), which
- * will replace this function's answers, not its place.
+ * Automations on. These are the plain suggestions: with nothing selected, the
+ * ones useFolderSuggestions has the model write replace them once they arrive.
  */
 export function fileManagerSuggestions(input: { selection: ReadonlyArray<{ kind: "file" | "folder" }>; inSubfolder: boolean; automationsOn?: boolean }): string[] {
   const { selection } = input;
@@ -285,7 +284,7 @@ export interface SidebarConnectedFolderRow<T extends NestableFolder> {
 }
 
 /**
- * The sidebar's Connected Folders (owner request, 2026-11-07): each sub
+ * The sidebar's Connected Folders: each sub
  * Connected Folder under its parent, A–Z at every level, shown only while every
  * Connected Folder around it is open.
  */

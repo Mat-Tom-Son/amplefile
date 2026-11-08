@@ -1,5 +1,5 @@
 import {
-  applicationAppearanceKey, applicationAppearanceVersion, applicationPresetsKey, defaultApplicationAppearance, migrateApplicationAppearance,
+  applicationAppearanceKey, applicationAppearanceVersion, applicationPresetsKey, defaultApplicationAppearance,
   parseApplicationAppearance, parseAppearancePreset, appearancePresetKind,
   type ApplicationAppearance, type AppearancePreset,
 } from "../../../src/shared/application-appearance.js";
@@ -54,9 +54,7 @@ export class ApplicationAppearanceStore {
         this.futureAppearance = Boolean(value && typeof value.version === "number" && value.version > applicationAppearanceVersion);
         preferences = parseApplicationAppearance(value);
       } else {
-        let typography: unknown = null;
-        try { typography = JSON.parse(this.raw("amplefile.typography.v1") ?? "null"); } catch {}
-        preferences = migrateApplicationAppearance(this.raw("amplefile.theme"), typography);
+        preferences = defaultApplicationAppearance;
       }
     } catch {
       error = this.futureAppearance
@@ -69,7 +67,7 @@ export class ApplicationAppearanceStore {
       else {
         const value = this.decode(raw) as { version?: unknown; presets?: unknown } | null;
         this.futurePresets = Boolean(value && typeof value.version === "number" && value.version > presetsCollectionVersion);
-        if (!value || (value.version !== 1 && value.version !== presetsCollectionVersion) || Object.keys(value).some((key) => key !== "version" && key !== "presets") || !Array.isArray(value.presets) || value.presets.length > maximumAppearancePresets) throw new Error("Invalid presets");
+        if (!value || value.version !== presetsCollectionVersion || Object.keys(value).some((key) => key !== "version" && key !== "presets") || !Array.isArray(value.presets) || value.presets.length > maximumAppearancePresets) throw new Error("Invalid presets");
         presets = value.presets.map(parseAppearancePreset);
         if (new Set(presets.map((preset) => preset.name.toLocaleLowerCase())).size !== presets.length) throw new Error("Duplicate names");
       }

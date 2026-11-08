@@ -15,7 +15,7 @@ the recommended Node major; run `nvm use` if you use nvm. Check `npm --version`
 after selecting Node: its bundled npm version varies. The contributor install
 requires npm's per-dependency script controls so the computer helper is built by
 our packaging lane, rather than installed by a dependency hook. The package's
-minimum runtime remains Node 22.19.0.
+minimum runtime is Node 22.19.0.
 
 ```sh
 git clone https://github.com/Mat-Tom-Son/amplefile.git
@@ -56,7 +56,7 @@ your change; `AGENTS.md` identifies the required ones.
 
 | Working on | Start here |
 |---|---|
-| Files, Chats, navigation, or UI | `web-local/src/`, [Desktop interaction](docs/ui-parity.md) |
+| Files, Chats, navigation, or UI | `web-local/src/`, [Product model](docs/product-model.md), [Visual system](docs/visual-design.md) |
 | Filesystem, Worker, or domain services | `src/local/`, [Architecture](docs/architecture.md) |
 | The AmpleFile agent, CLI, or shared task state | [Kernel](src/local/amplefile-kernel.ts), [CLI](src/local/cli/), [AmpleFile agent and CLI](docs/amplefile-agent-and-cli.md) |
 | Cross–Connected Folder work | [Automations](docs/automations.md) |

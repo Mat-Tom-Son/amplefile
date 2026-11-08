@@ -237,7 +237,6 @@ import {
   type PreparedActFields,
   type PreparedActKind,
 } from "./prepared-acts.js";
-import { removeRetiredGateState } from "./retired-gate-state.js";
 import {
   createAmpleFileOverviewAutomationRunReader,
   parseAmpleFileOverviewCursor,
@@ -414,7 +413,7 @@ export interface LocalApiOptions {
   actReceipts?: AmpleFileCliActReceipts;
   /** Test seam for the machine-local durable agent-turn journal. */
   turnStore?: AmpleFileTurnStore;
-  /** Test seam for the durable request graph (docs/collaboration-contract.md, F25). */
+  /** Test seam for the durable request graph (docs/collaboration-contract.md). */
   requestStore?: AmpleFileRequestStore;
   /** Test seam for the background job journal (docs/background-jobs.md). */
   jobStore?: AmpleFileJobStore;
@@ -423,7 +422,7 @@ export interface LocalApiOptions {
   localFolderGrantProvider?: LocalFolderGrantProvider;
   /** Failure-injection seam for the durable connected-folder-removal coordinator. */
   connectedFolderRemovalIo?: Partial<ConnectedFolderRemovalIo>;
-  /** Test seam for the machine-local trash behind Recently deleted (docs/receipts-not-gates.md, F20). */
+  /** Test seam for the machine-local trash behind Recently deleted (docs/act-ledger.md). */
   recentlyDeletedStore?: AmpleFileRecentlyDeletedStore;
   /**
    * The desktop's built-in browser (docs/built-in-browser.md). With it, every
@@ -438,7 +437,7 @@ export interface LocalApiOptions {
   onAgentTurnActivity?: (activeTurns: number) => void;
   /**
    * Failure-injection seam immediately before a Pi prompt starts. A Connected Folder
-   * turn's event carries the host-composed turn context (F26) so a test can
+   * turn's event carries the host-composed turn context so a test can
    * observe it without a second option.
    */
   beforeAgentPrompt?: (event: {
@@ -566,7 +565,7 @@ export interface AmpleFileAutomationSettingsFacade {
   enable(automationId: string): Promise<{ automationId: string; requestId: string; enabled: true; alreadyEnabled: boolean }>;
   /**
    * Turns on a ready-made Automation for one Connected Folder (the file manager's
-   * Info panel, 2026-11-07): the stored one when it was on before, else a new
+   * Info panel): the stored one when it was on before, else a new
    * declaration built by the host, through the same receipted enable path.
    */
   enableTemplate(connectedFolderId: string, templateId: string): Promise<{ automationId: string; requestId: string; enabled: true; alreadyEnabled: boolean }>;
@@ -575,9 +574,9 @@ export interface AmpleFileAutomationSettingsFacade {
   disable(automationId: string): Promise<{ automationId: string; requestId: string; disabled: true; stoppedRunId: string | null }>;
   delete(automationId: string): Promise<{ automationId: string; requestId: string; deleted: true }>;
   /**
-   * The Connected Folder–owned Automations view (docs/automations.md, F15 as amended
-   * 2026-09-24): the automations whose trigger or any step names this Connected Folder,
-   * with what each does there. Served at `GET /api/connected-folders/:id/automations`.
+   * The Connected Folder–owned Automations view (docs/automations.md): the
+   * automations whose trigger or any step names this Connected Folder, with
+   * what each does there. Served at `GET /api/connected-folders/:id/automations`.
    */
   forConnectedFolder(connectedFolderId: string): Promise<FolderAutomationsResponse>;
   /** Refuses with notFound unless the automation names this Connected Folder; the gate for the Connected Folder view's actions. */
@@ -592,7 +591,7 @@ export interface LocalApiHandle {
   actFacade: AmpleFileActFacade;
   /** Validates an explicitly named AmpleFile agent parent while its turn is active. */
   resolveAmpleFileAgentLineageParent: (taskId: string) => { taskId: string } | null;
-  /** The durable request graph every accepted turn belongs to (docs/collaboration-contract.md, F25). */
+  /** The durable request graph every accepted turn belongs to (docs/collaboration-contract.md). */
   requests: AmpleFileRequestStore;
   /** Background jobs Workers and the AmpleFile agent started (docs/background-jobs.md). */
   jobs: AmpleFileJobService;
@@ -601,7 +600,7 @@ export interface LocalApiHandle {
   /**
    * Main-window Settings capability. The local HTTP API serves only its Connected Folder–scoped subset — `forConnectedFolder` and the
    * enable, disable, and run of an automation that names that Connected Folder — at
-   * `/api/connected-folders/:id/automations` (docs/automations.md, F15 as amended).
+   * `/api/connected-folders/:id/automations` (docs/automations.md).
    */
   automationSettings: AmpleFileAutomationSettingsFacade;
   /** Recently deleted: the machine-local trash every destructive verb writes to first. */
@@ -636,14 +635,14 @@ interface LocalApiState {
   ampleFileAgentInstructionsError: string | null;
   localFolderGrantProvider?: LocalFolderGrantProvider;
   connectedFolderRemovalIo: Partial<ConnectedFolderRemovalIo>;
-  /** Recently deleted (docs/receipts-not-gates.md, F20). */
+  /** Recently deleted (docs/act-ledger.md). */
   recentlyDeleted: AmpleFileRecentlyDeletedStore;
   beforeConnectedFolderMutationRevalidation?: (connectedFolderId: string) => Promise<void>;
-  /** Every accepted turn's request record (docs/collaboration-contract.md, F25). */
+  /** Every accepted turn's request record (docs/collaboration-contract.md). */
   requests: AmpleFileRequestStore;
   /**
    * Turns that settled in this app run, as opposed to ones startup recovery
-   * settled from the journal. A root continuation (F28) narrates only settles
+   * settled from the journal. A root continuation narrates only settles
    * from this set, which is what makes "a restart never starts a
    * continuation" hold without a second durable marker. Bounded.
    */
@@ -655,14 +654,14 @@ interface LocalApiState {
    * phase with the prepared-act executor: its ports close over this state.
    */
   jobs: AmpleFileJobService;
-  /** Jobs that settled in this app run; like turnsSettledThisRun, only these can wake a Chat (F32). Bounded. */
+  /** Jobs that settled in this app run; like turnsSettledThisRun, only these can wake a Chat. Bounded. */
   jobsSettledThisRun: Set<string>;
-  /** Per-launch salt behind the opaque parent handle a delegated Connected Folder turn sees (F26). */
+  /** Per-launch salt behind the opaque parent handle a delegated Connected Folder turn sees. */
   connectedFolderTurnHandleSalt: string;
   chatStreams: Map<string, Set<LocalEventSink>>;
   controlStreams: Set<LocalEventSink>;
   localEventStreams: Set<LocalEventSink>;
-  /** In-process subscribers riding the same publish point as the SSE streams (remote watch). */
+  /** In-process subscribers riding the same publish point as the SSE streams. */
   chatEventListeners: Map<string, Set<(event: unknown) => void>>;
   chatEventLogs: Map<string, ChatEventLog>;
   activeTurnIdsByKey: Map<string, string>;
@@ -681,16 +680,16 @@ interface LocalApiState {
   settledTurns: Map<string, SettledTurnRecord>;
   compactingConversations: Set<string>;
   /**
-   * Idle Chats being summarized ahead of time (2026-10-27). Deliberately not in
+   * Idle Chats being summarized ahead of time. Deliberately not in
    * `compactingConversations`: a background summary never refuses the person.
    * Anything that needs the Chat's Pi session cancels it first.
    */
   backgroundCompactions: Map<string, BackgroundCompaction>;
   /**
    * One queued message per Chat, held by the app rather than a window, so
-   * every window shows it and it outlives the window that queued it
-   * (2026-10-27). It is sent when the running turn ends, unless that turn was
-   * stopped. It lives in the running app only: quitting drops it.
+   * every window shows it and it outlives the window that queued it. It is
+   * sent when the running turn ends, unless that turn was stopped. It lives
+   * in the running app only: quitting drops it.
    */
   queuedMessages: Map<string, QueuedChatMessage>;
   /**
@@ -782,7 +781,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   configureAmpleFileStateRoot(options.stateBase ?? developmentDefaults?.stateBase);
   // Recently deleted opens before anything can destroy: an interrupted Connected Folder
   // deletion finished by startup recovery below must reach Recently deleted rather
-  // than an erase (docs/receipts-not-gates.md, F20).
+  // than an erase (docs/act-ledger.md).
   const recentlyDeleted = options.recentlyDeletedStore ?? await AmpleFileRecentlyDeletedStore.open({ rootPath: ampleFileRecentlyDeletedRoot() });
   const host = options.host ?? "127.0.0.1";
   const requestedPort = options.port ?? developmentDefaults?.port ?? numberFromEnv("AMPLEFILE_LOCAL_API_PORT", 4327);
@@ -850,10 +849,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   const requestStore = options.requestStore ?? await AmpleFileRequestStore.open({ rootPath: ampleFileRequestsRoot() });
   // Background jobs and their output live beside the requests they belong to.
   const jobStore = options.jobStore ?? await AmpleFileJobStore.open({ rootPath: ampleFileJobsRoot() });
-  // Gate state an older build left behind is removed unread before any
-  // facade exists: a pending record there is an intent nobody confirmed
-  // (docs/receipts-not-gates.md, F19).
-  await removeRetiredGateState();
   const automationStore = await AmpleFileAutomationStore.create();
   const overviewSeen = new AmpleFileOverviewSeenStore();
   const state: LocalApiState = {
@@ -983,7 +978,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   await recoverDurableTurnState(state);
   // Nothing runs across a restart: a job a previous run left running is
   // recorded interrupted and never re-run, and its process is stopped only
-  // when it is provably the same process (docs/background-jobs.md, F31).
+  // when it is provably the same process (docs/background-jobs.md).
   const interruptedJobs = await jobStore.reconcile("AmpleFile closed before this job finished.");
   if (interruptedJobs.length) {
     const reaped = await reapOrphanedJobProcesses(interruptedJobs);
@@ -1045,9 +1040,9 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     // lastPurgeAt, so sleeping past a deadline purges within the hour and
     // never twice in one day.
     trackRetention(state.recentlyDeleted.purgeExpiredIfDue(), "AmpleFile could not clean Recently deleted");
-    // Requests past their window close, and settled graphs older than the
-    // retention window leave, on the same cadence.
-    trackRetention(state.requests.expireDue().then(() => state.requests.purgeExpiredIfDue()), "AmpleFile could not tidy its request records");
+    // Settled request graphs older than the retention window leave on the
+    // same cadence.
+    trackRetention(state.requests.purgeExpiredIfDue(), "AmpleFile could not tidy its request records");
     trackRetention(state.jobs.store.purgeExpired(), "AmpleFile could not tidy its background job records");
   }, 60 * 60 * 1_000);
   retentionTimer.unref();
@@ -1089,7 +1084,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
       await state.jobs.close().catch((error: unknown) => console.warn("Background jobs could not all stop:", errorMessage(error)));
       for (const streams of state.chatStreams.values()) for (const response of streams) response.close();
       for (const close of [...state.fileStreams.keys()]) close();
-      // A settle evaluation in flight (F28) may be accepting a continuation
+      // A settle evaluation in flight may be accepting a continuation
       // turn this instant; let it finish so that turn is in the drained set
       // below or was refused by the flag above, never left running unseen.
       await state.requestSettleChain.catch(() => undefined);
@@ -1213,7 +1208,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  // "Connect This Folder" (2026-10-01): a person registers a folder inside
+  // "Connect This Folder": a person registers a folder inside
   // a Connected Folder they already registered, from Files. The parent's registration
   // is the trust root for the path, so no fresh folder picker grant is asked
   // for; the explicit click is this Connected Folder's registration act, exactly as
@@ -1240,7 +1235,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   if (connectedFolderMatch && method === "DELETE") {
     const connectedFolder = await getConnectedFolder(connectedFolderMatch[1]);
     // Every deletion the desktop performs leaves a receipt
-    // (docs/receipts-not-gates.md): the same journal the act lane writes,
+    // (docs/act-ledger.md): the same journal the act lane writes,
     // stamped with the main-window surface. Removing a linked registration
     // destroys nothing, so it is journaled as the unregister it is.
     const command = connectedFolder.location.storage === "managed" ? "connected-folders.delete" : "connected-folders.unregister";
@@ -1255,8 +1250,8 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  // The Connected Folder–owned Automations view (docs/automations.md, F15 as amended
-  // 2026-09-24): a read of the automations that name this Connected Folder, and the same
+  // The Connected Folder–owned Automations view (docs/automations.md): a read
+  // of the automations that name this Connected Folder, and the same
   // Settings enable/disable/run acts — same facade, same receipts — refused
   // for an automation that does not name it.
   const spaceAutomationsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/automations$/);
@@ -1329,14 +1324,14 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  // Standard Folders (docs/product-model.md, "2026-11-06 file manager layout"):
+  // Standard Folders (docs/product-model.md, "The file manager window"):
   // Desktop, Documents, and Downloads for the file manager's sidebar. The host
   // resolves each from the home folder; nothing here writes `.amplefile/` data.
   if (method === "GET" && url.pathname === "/api/standard-folders") {
     sendJson(res, { folders: await listStandardFolders(await listConnectedFolders()) });
     return;
   }
-  // Copy, paste, duplicate, and move across the file manager's places (2026-11-07).
+  // Copy, paste, duplicate, and move across the file manager's places.
   if (method === "POST" && url.pathname === "/api/file-transfer") {
     const body = await readJsonBody<{ mode?: unknown; sources?: unknown; target?: unknown }>(state, req);
     sendJson(res, await transferFileEntries(body));
@@ -1414,7 +1409,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     }
   }
 
-  // Suggested messages written from the folder (owner request, 2026-11-06): one bounded model call on the
+  // Suggested messages written from the folder: one bounded model call on the
   // Connected Folder's model over its names and recent Chat titles, kept until the folder or its Chats change.
   const suggestionsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/suggestions$/);
   if (method === "GET" && suggestionsMatch) {
@@ -1489,7 +1484,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  // Pictures generate_image made (2026-10-11): their bytes for a Chat to show,
+  // Pictures generate_image made: their bytes for a Chat to show,
   // what the Chat needs to offer Add to folder or Show in Files, and Add to folder.
   const generatedImageMatch = match(url.pathname, /^\/api\/generated-images\/([^/]+)$/);
   if (method === "GET" && generatedImageMatch) {
@@ -1560,7 +1555,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  // Several Files rows into one folder under one restore point (2026-11-05).
+  // Several Files rows into one folder under one restore point.
   const moveManyMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/move-local-entries$/);
   if (method === "POST" && moveManyMatch) {
     const connectedFolder = await getConnectedFolder(moveManyMatch[1]);
@@ -1629,7 +1624,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (!body.path?.trim()) throw badRequest("Select a file or folder to delete.");
     // Every deletion the desktop performs leaves a receipt, and a delete
     // History cannot fully keep a copy of lands in Recently deleted rather
-    // than being refused (docs/receipts-not-gates.md, F20).
+    // than being refused (docs/act-ledger.md).
     const removal = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
       const value = await deleteConnectedFolderEntryWithRecovery(state, connectedFolder, body.path!, { receiptId: requestId });
       return {
@@ -1650,7 +1645,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  // Several Files rows under one restore point (2026-11-05): each row still
+  // Several Files rows under one restore point: each row still
   // gets its own receipt and its own History or Recently deleted recovery.
   const deleteManyMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/local-files$/);
   if (method === "DELETE" && deleteManyMatch) {
@@ -1790,7 +1785,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  // Settings → AI Models → Image model (2026-10-11): one choice for every Worker
+  // Settings → AI Models → Image model: one choice for every Worker
   // and the AmpleFile agent; null is Automatic. Credentials are machine-wide, so
   // the AmpleFile agent's runtime lists what every scope can use.
   if (method === "GET" && url.pathname === "/api/agent/image-models") {
@@ -2368,7 +2363,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const body = await readJsonBody<{
       content?: string;
       contextPaths?: string[];
-      /** Ignored since 2026-10-11: the file selected in Files no longer reaches the Worker. */
+      /** Ignored: the file selected in Files never reaches the Worker. */
       selectedPath?: unknown;
       requestId?: unknown;
       userMessageId?: unknown;
@@ -2413,7 +2408,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  // Make a Copy (2026-10-18): a new Chat with this one's history as of its
+  // Make a Copy: a new Chat with this one's history as of its
   // last finished reply. The same copy the act lane's `chat copy` makes.
   const copyMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/copy$/);
   if (method === "POST" && copyMatch) {
@@ -2511,7 +2506,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (!content) throw badRequest("Message content is required.");
     if (body.delivery !== undefined && body.delivery !== "steer") throw badRequest("Message delivery must be \"steer\" when present.");
     if (body.delivery === "steer") {
-      // The menu-bar panel and the agent panel reach a running turn the way a Connected Folder Chat does (2026-10-27).
+      // The menu-bar panel and the agent panel reach a running turn the way a Connected Folder Chat does.
       const steerConversationId = boundedOptionalId(body.conversationId, "conversationId");
       if (!steerConversationId) throw badRequest("Steering needs the conversationId of the running Chat.");
       if (Array.isArray(body.attachments) && body.attachments.length) throw badRequest("Attachments cannot be added to a running turn.");
@@ -2572,7 +2567,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
         throw badRequest(`A continued request can reference at most ${maxAmpleFileAgentAttachments} attachments in total.`);
       }
     }
-    // A reply to a waiting request joins that request (F25): one record, one
+    // A reply to a waiting request joins that request: one record, one
     // story, a further turn — never a second record copying the trail.
     const continuedRequestId = continuationTaskId ? state.requests.byTaskId(continuationTaskId)?.requestId : undefined;
     const { message, taskId } = await acceptConversationTurn(state, { id: scope.id, connectedFolderRoot: scope.rootPath }, conversationId, {
@@ -2778,7 +2773,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     return;
   }
 
-  // Settings → Recently deleted (docs/receipts-not-gates.md, F20).
+  // Settings → Recently deleted (docs/act-ledger.md).
   // Listing is a plain read; restoring, removing one item, and changing how
   // long items are kept are journaled acts with the main-window surface, like
   // every other trusted-Settings mutation. Nothing here empties the store.
@@ -2803,7 +2798,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     sendJson(res, updated.value);
     return;
   }
-  // Settings → Automations → Limits: the one adjustable request setting (F28).
+  // Settings → Automations → Limits: the one adjustable request setting.
   // Turning follow-up turns off changes nothing about what is recorded; it
   // only stops the host from bringing the results back as a turn.
   if (url.pathname === "/api/settings/requests" && method === "GET") {
@@ -2878,7 +2873,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
  * caller obeys identical concurrency and persistence rules.
  */
 /**
- * F25 lineage for one accepted turn. Absent means "a Connected Folder turn with no
+ * Request lineage for one accepted turn. Absent means "a Connected Folder turn with no
  * parent": the turn is its own root. `parentTaskId` makes it a child request
  * under the request that task belongs to; `joinRequestId` makes it a further
  * turn of an existing request (a reply to a question, a follow-up turn).
@@ -2936,9 +2931,9 @@ async function admitConversationTurn(
     userMessageId?: string;
     /** Host-composed selected reports already present in this continuation message. */
     releasedChildTaskIds?: string[];
-    /** Which durable request this turn creates or joins (docs/collaboration-contract.md, F25). */
+    /** Which durable request this turn creates or joins (docs/collaboration-contract.md). */
     request?: AcceptedTurnRequestInput;
-    /** Connected Folder Workers the person addressed with @ (2026-10-01); registered ids, never this scope's own. */
+    /** Connected Folder Workers the person addressed with @; registered ids, never this scope's own. */
     addressedConnectedFolderIds?: string[];
   },
 ): Promise<{ message: { id: string; role: "user"; content: string; createdAt: string; attachments?: ChatMessageAttachmentRef[] }; taskId: string; replayed: boolean }> {
@@ -3061,7 +3056,7 @@ async function admitConversationTurn(
   };
   let answeredQuestionIds: string[] = [];
   try {
-    // Every accepted turn belongs to exactly one request record (F25). The
+    // Every accepted turn belongs to exactly one request record. The
     // record is created before the user message lands so a refused child
     // never leaves a message behind; a failure here rolls back with the rest.
     const lineage = await recordAcceptedTurnRequest(state, connectedFolder, conversationId, task.id, input, ampleFileAgentAttachments);
@@ -3069,7 +3064,7 @@ async function admitConversationTurn(
     await appendMessage(connectedFolder.connectedFolderRoot, conversationId, message);
     await state.turnStore.markRunning(task.id);
     await state.requests.markTurnRunning(task.id);
-    // A person's free-text reply is a supported way to answer (F27): once
+    // A person's free-text reply is a supported way to answer: once
     // the message is the transcript's, it answers each open question that
     // was waiting on the person and is that answer's one continuation.
     await answerPersonQuestionsWithReply(state, lineage.answers, task.id, input.content);
@@ -3107,7 +3102,7 @@ async function admitConversationTurn(
       ...(ampleFileAgentAttachments ? { ampleFileAgentAttachments } : {}),
       ...(input.request?.parentTaskId ? { parentTaskId: input.request.parentTaskId } : {}),
       ...(input.request?.assignment !== undefined ? { assignment: input.request.assignment } : {}),
-      // The continuation's own link to the question it answers (F27), built
+      // The continuation's own link to the question it answers, built
       // by the host rather than read back out of the travelling transcript:
       // `chat answer` names the question, and a person's free-text reply
       // answers whichever of this request's questions were waiting on them.
@@ -3414,7 +3409,7 @@ async function registerConnectedFolderInternal(state: LocalApiState, rootPath: s
 
 /**
  * A new Connected Folder starts in the color the fewest others use, so two rarely
- * share one (2026-10-30). Nothing is saved when that is already the color its
+ * share one. Nothing is saved when that is already the color its
  * id picks, and a saved choice always wins. The color is a nicety: failing to
  * save it never fails the creation.
  */
@@ -3429,7 +3424,7 @@ async function giveStartingColor(state: LocalApiState, connectedFolderId: string
     if (hex === defaultConnectedFolderAccent(connectedFolderId).hex) return;
     await state.appearance.replaceConnectedFolder(connectedFolderId, { primary: accentIdentityFromHex(hex) });
   } catch {
-    // The work-folder keeps the color its id picks.
+    // The Connected Folder keeps the color its id picks.
   }
 }
 
@@ -3450,7 +3445,7 @@ export interface AmpleFileRecentlyDeletedEntryView {
   restoreBy: string;
   receiptId: string | null;
   uncovered?: AmpleFileRecentlyDeletedUncoveredPath[];
-  held?: { reason: "legacy-metadata" | "unreadable"; noticedAt: string };
+  held?: { reason: "unreadable"; noticedAt: string };
   /**
    * `in-place` goes back where it came from; `blocked` cannot be brought back
    * right now (or ever, for what older builds kept for Connected Folder
@@ -3469,13 +3464,13 @@ export type AmpleFileRecentlyDeletedRestoreResult =
    */
   | { kind: "file" | "folder"; entryId: string; connectedFolder: AmpleFileActConnectedFolderRef; path: string; renamed: boolean; safetyCheckpointId: string | null }
   | { kind: "connected-folder"; entryId: string; connectedFolder: AmpleFileActConnectedFolderRef; connectedFolderRoot: string; renamed: boolean }
-  /** `workFolder` names the work-folder for that scope only; `path` is the restored Skill folder. */
+  /** `workFolder` names the Connected Folder for that scope only; `path` is the restored Skill folder. */
   | { kind: "skill"; entryId: string; scope: "everywhere" | "connected-folder"; connectedFolder?: AmpleFileActConnectedFolderRef; name: string; path: string };
 
 /**
  * Whether an entry can go back where it came from, and the plain reason when
  * it cannot. What older builds kept for Connected Folder apps never goes back:
- * apps were removed (2026-11-07), so those entries only wait to expire.
+ * AmpleFile has no apps, so those entries only wait to expire.
  */
 async function recentlyDeletedEntryView(
   entry: AmpleFileRecentlyDeletedEntry,
@@ -3533,7 +3528,7 @@ async function recentlyDeletedEntryView(
 const retiredAppEntryNote = "AmpleFile no longer has Connected Folder apps, so this cannot be restored. It is deleted when it expires.";
 
 /**
- * Brings one Recently deleted entry back (docs/receipts-not-gates.md, F20).
+ * Brings one Recently deleted entry back (docs/act-ledger.md).
  * A file or folder returns to its Connected Folder at its original path, renamed when
  * something else took the name, and the restore itself is History-undoable.
  * A Connected Folder's folder returns to the managed base and is re-registered with its
@@ -3680,8 +3675,8 @@ async function restoreAmpleFileAgentConversationRecentlyDeletedEntry(
 }
 
 /**
- * Removes one imported Skill into Recently deleted (docs/receipts-not-gates.md,
- * F20). `.pi/` and Pi's own folder are outside History, so the whole Skill
+ * Removes one imported Skill into Recently deleted (docs/act-ledger.md).
+ * `.pi/` and Pi's own folder are outside History, so the whole Skill
  * folder moves there with its scope and its path inside that scope's skills
  * folder, under the same capability fence and client reload as an install.
  * An Everywhere Skill belongs to no Connected Folder; its entry is kept under the
@@ -3853,7 +3848,7 @@ function recentlyDeletedCliError(error: unknown): AmpleFileCliError {
  * holds no deletion authority.
  */
 /**
- * The managed-deletion seam of docs/receipts-not-gates.md F20: the folder the
+ * The managed-deletion seam of docs/act-ledger.md: the folder the
  * removal machinery has already claimed by exact identity is *moved* into
  * Recently deleted with the Connected Folder's machine-local History state, never
  * erased. Everything about the claim-verified removal above it is unchanged —
@@ -4081,8 +4076,8 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       // "answered with no follow-up" is a reachable state. Sending the same
       // answer again resumes from exactly there — the recorded answer
       // stands and its one continuation starts now — rather than refusing
-      // and leaving the answer with nowhere to go (F27: one accepted answer
-      // starts exactly one linked continuation).
+      // and leaving the answer with nowhere to go (one accepted answer starts
+      // exactly one linked continuation).
       const resuming = question.state === "answered" && question.continuationTaskId === null;
       if (resuming && question.asynchronous && question.answer !== answer) throw new AmpleFileCliError("conflict", "That question already has a different recorded answer. Retry the same answer to continue it.");
       // Every other refusal is named before anything changes: a second
@@ -4135,7 +4130,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       // continuation turn, deduplicated by the turn store under a request
       // id derived from the question so a replay returns the same turn.
       // The transcript gets an ordinary user message — the question id
-      // stays in machine-local records (F25/F27). A resumed answer carries
+      // stays in machine-local records. A resumed answer carries
       // the text already on record, so the Chat and the record say the same
       // thing. Should acceptance still fail here, the answer stays recorded
       // and sending it again picks up exactly where this left off.
@@ -4184,7 +4179,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
 
   /**
    * The one door for every verb that installs code, widens a power, or
-   * destroys data (docs/receipts-not-gates.md, F19): typed parameters and
+   * destroys data (docs/act-ledger.md): typed parameters and
    * pins composed by the calling method from live state, then the prepared-
    * act path — pin recheck inside the capability fence, one internal kernel
    * task, the same domain internals the desktop uses — run at once under the
@@ -4201,7 +4196,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
   }): Promise<string> => {
     const requestId = input.requestId?.trim() || randomUUID();
     // The journaled request id is the receipt id a Recently deleted entry records
-    // (docs/receipts-not-gates.md, F20), so the destroying adapters can read
+    // (docs/act-ledger.md), so the destroying adapters can read
     // it back off the same context slot they report their outcome through.
     if (input.context && typeof input.context === "object") {
       (input.context as { requestId?: string }).requestId ??= requestId;
@@ -4323,7 +4318,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
         const conversationId = input.newConversation
           ? (await createConversation(connectedFolder.connectedFolderRoot)).id
           : input.conversationId!;
-        // A delegated send is a child request under the named parent (F25).
+        // A delegated send is a child request under the named parent.
         // The parent check and every request bound run inside acceptance,
         // before the user message lands, so a refused child is never
         // accepted and then cancelled.
@@ -4379,7 +4374,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       const record = state.requests.byTaskId(taskId);
       // Both fields are scoped to the named Connected Folder: a task id is easy to come
       // by, and a question another Connected Folder's agent asked is that Connected Folder's
-      // content, never this caller's (F9 as amended, F26).
+      // content, never this caller's (docs/collaboration-contract.md).
       const owned = record !== null && record.owner.connectedFolderId === connectedFolder.id;
       return {
         connectedFolder: toActConnectedFolderRef(connectedFolder),
@@ -4395,7 +4390,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       const result = await turnResultForScope(state, connectedFolder.id, connectedFolder.connectedFolderRoot, taskId);
       return { connectedFolder: toActConnectedFolderRef(connectedFolder), ...result };
     },
-    // --- the collaboration verbs (docs/collaboration-contract.md, F27) ---
+    // --- the collaboration verbs (docs/collaboration-contract.md) ---
     async chatReport(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
@@ -4480,7 +4475,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
         }
         const sources = input.files.map((file) => resolveHandoffSource(connectedFolder, file));
         // A follow-up goes into a Chat this Chat already handed work to, so
-        // that Worker keeps everything it learned (2026-10-18).
+        // that Worker keeps everything it learned.
         const followUpId = input.toConversationId?.trim();
         if (followUpId) {
           if (!(await readConversationSummary(destination.connectedFolderRoot, followUpId))) throw new AmpleFileCliError("notFound", "Conversation not found.");
@@ -4689,7 +4684,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
         ...(input.offset !== undefined ? { offset: input.offset } : {}),
         ...(input.limit !== undefined ? { limit: input.limit } : {}),
       });
-      // A read from a running turn in the job's own Chat is its delivery (F32).
+      // A read from a running turn in the job's own Chat is its delivery.
       if (input.taskId && isAmpleFileJobTerminalState(job.state) && job.settledAt && state.requests.isAccepting(input.taskId)
         && state.requests.byTaskId(input.taskId)?.owner.conversationId === job.conversationId
         && (state.requests.byTaskId(input.taskId)?.owner.connectedFolderId ?? null) === (job.connectedFolderId ?? null)) {
@@ -5606,7 +5601,6 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
             requestId: grant.requestId,
             enabledAt: grant.enabledAt,
             surface: grant.surface,
-            ...(grant.browserId ? { browserId: grant.browserId } : {}),
           })),
         },
       };
@@ -5972,7 +5966,7 @@ async function classifyActAmpleFileAgentAttachments(raw: string[], cwd: string |
 /**
  * Rich, honest view of one request, keyed by any of its task ids. The phase
  * is the durable record's state mapped onto the vocabulary `agent status`
- * and the popover already speak (docs/collaboration-contract.md, F25): `done`
+ * and the popover already speak (docs/collaboration-contract.md): `done`
  * is claimed only when the request's own turn succeeded AND no child it
  * started is still running; downstream work keeps it in `handed_off`, and an
  * open question puts it in `needs_you`. A reply whose final non-empty line
@@ -6097,8 +6091,6 @@ function requestLimitStopMessage(limit: AmpleFileRequestLimitName): string {
   switch (limit) {
     case "providerBudget":
       return `This request reached its model spending limit, so AmpleFile stopped it. ${shows}`;
-    case "deadline":
-      return `This request passed its time window, so AmpleFile stopped it. ${shows}`;
     default:
       return `This request reached one of its limits, so AmpleFile stopped it. ${shows}`;
   }
@@ -6112,7 +6104,7 @@ function requestLimitStopMessage(limit: AmpleFileRequestLimitName): string {
  * request are aborted, each explicitly, and the result names every turn it
  * touched. The stop cascades through the whole owned graph: every descendant
  * request is marked, its open questions are withdrawn, and its running turn
- * is cancelled (docs/collaboration-contract.md, F25).
+ * is cancelled (docs/collaboration-contract.md).
  */
 async function stopAmpleFileAgentRequest(
   state: LocalApiState,
@@ -6127,7 +6119,7 @@ async function stopAmpleFileAgentRequest(
   const ampleFileAgentWasRunning = turnStatusFor(state, scopeId, ownTurn.taskId).state === "running";
   // The whole graph below this request, not only a root's: `agent stop`
   // takes any task id, so a mid-graph request must still close everything it
-  // handed on (docs/collaboration-contract.md, F25).
+  // handed on (docs/collaboration-contract.md).
   const descendants = state.requests.subtree(record.requestId);
   const runningChildren = descendants.flatMap((descendant) => {
     if (descendant.owner.connectedFolderId === undefined) return [];
@@ -6139,7 +6131,7 @@ async function stopAmpleFileAgentRequest(
   // A stop reaches everything still open under this request, not only the
   // turns running this instant: a child whose turn ended while waiting on an
   // answer is closed too, so a late `chat answer` is refused and no
-  // continuation turn can follow (docs/collaboration-contract.md, F28).
+  // continuation turn can follow (docs/collaboration-contract.md).
   const openBelow = !isAmpleFileRequestTerminalState(record.state)
     || descendants.some((descendant) => !isAmpleFileRequestTerminalState(descendant.state));
   if (ampleFileAgentWasRunning || runningChildren.length || openBelow) {
@@ -6267,7 +6259,7 @@ async function turnResultForScope(
  * A parent that reads a child's settled result while its own turn is still
  * running has received it: `chat wait` and `agent wait` end with exactly this
  * read. Recording that delivery by the child's turn identity keeps the host
- * from starting a follow-up turn that repeats the same result (F28). A later
+ * from starting a follow-up turn that repeats the same result. A later
  * child turn, such as an answer's continuation, is a new identity and is
  * still delivered.
  */
@@ -6390,12 +6382,12 @@ export interface AmpleFileDeleteResult {
 
 /**
  * The one delete both the desktop route and `files delete` run
- * (docs/receipts-not-gates.md, F20). A delete never refuses for lack of
+ * (docs/act-ledger.md). A delete never refuses for lack of
  * coverage: History keeps what it can, and when the restore point could not
  * cover every matched file the selected entry is *moved* into Recently
  * deleted instead of erased, so one delete keeps one undo reference.
  *
- * `.amplefile/`, `.pi/`, and `.workspace/` remain invalid endpoints, and the
+ * `.amplefile/`, `.work-fold/`, and `.pi/` remain invalid endpoints, and the
  * Connected Folder root still cannot be deleted: the path policy runs first, unchanged.
  */
 async function deleteConnectedFolderEntryWithRecovery(
@@ -6496,7 +6488,7 @@ export interface AmpleFileBatchDeleteResult {
 }
 
 /**
- * Several rows deleted under one History restore point (2026-11-05). Each row
+ * Several rows deleted under one History restore point. Each row
  * keeps what one delete has: the busy refusal and the shared active-work
  * reservation held through every effect, the same path checks, its own
  * receipt, and History or Recently deleted for whatever History cannot keep.
@@ -6588,8 +6580,8 @@ export interface AmpleFileBatchMoveResult {
 }
 
 /**
- * Several items moved into one folder under one History restore point
- * (2026-11-05). Every item passes every check one move makes before any of
+ * Several items moved into one folder under one History restore point.
+ * Every item passes every check one move makes before any of
  * them moves, then each runs through `moveConnectedFolderEntry`, the move one item
  * takes. If one still fails partway, the items already moved stay moved, the
  * rest stay put, and the restore point is replaced by one that names exactly
@@ -6893,7 +6885,7 @@ function projectAutomationReceipt(value: unknown): AmpleFileActAutomationReceipt
   };
   addText("runId", receipt.runId);
   addText("hopId", receipt.hopId);
-  // Lines written before Checks were removed may name a `check` hop; it is not projected.
+  // Lines an earlier build wrote may name a `check` hop; it is not projected.
   if (receipt.hopKind === "chat" || receipt.hopKind === "files" || receipt.hopKind === "agent") {
     projected.hopKind = receipt.hopKind;
   }
@@ -6911,7 +6903,6 @@ function projectAutomationReceipt(value: unknown): AmpleFileActAutomationReceipt
   addText("restorePointId", receipt.restorePointId);
   addText("failedHopId", receipt.failedHopId);
   addText("surface", receipt.surface);
-  addText("decisionId", receipt.decisionId);
   addText("requestId", receipt.requestId);
   addText("occurrenceId", receipt.occurrenceId);
   addText("scheduledRunId", receipt.scheduledRunId);
@@ -7647,7 +7638,7 @@ function turnStatusFor(state: LocalApiState, connectedFolderId: string, taskId: 
   return { taskId, state: "unknown", conversationId: null, messageId: null, error: null, endedAt: null };
 }
 
-// --- the collaboration verbs and the request graph (F27/F28) --------------
+// --- the collaboration verbs and the request graph ------------------------
 
 const maxTurnsRememberedThisRun = 4_000;
 
@@ -7675,7 +7666,7 @@ function assertCallerTurn(state: LocalApiState, callerTaskId: string): AmpleFile
  * Whether a Chat is one the caller's own Chat handed work to: some request in
  * that Chat has a parent request owned by the caller's Chat, in any of its
  * turns. A Worker may follow up with, redirect, or copy only such work, never
- * an unrelated Chat (F9 as amended, 2026-10-18). The caller's task must be
+ * an unrelated Chat (docs/collaboration-contract.md). The caller's task must be
  * its own turn that is still running.
  */
 function assertCallerHandedWorkTo(state: LocalApiState, callerTaskId: string, target: { connectedFolderId: string; conversationId: string }): AmpleFileRequestRecord {
@@ -7696,7 +7687,7 @@ function assertCallerHandedWorkTo(state: LocalApiState, callerTaskId: string, ta
 
 /**
  * Copies a Chat as of its last finished reply into a new Chat in the same
- * Connected Folder (2026-10-18, `chat copy`): the visible transcript up to that
+ * Connected Folder (`chat copy`): the visible transcript up to that
  * reply, and the Pi session along the same path, so the copy starts with the
  * same context. Copied messages get new ids and lose their turn and request
  * identities, which belong to the original Chat; the original is never
@@ -7742,12 +7733,12 @@ function collaborationRefusal(error: unknown): unknown {
   return error;
 }
 
-function requestLimitRefusalMessage(limit: "questionLifetime" | "deadline"): string {
+function requestLimitRefusalMessage(limit: "questionLifetime"): string {
   return "This request has expired.";
 }
 
 /**
- * F28's `waiting` field: the oldest open question this task itself asked,
+ * The `waiting` field: the oldest open question this task itself asked,
  * or null. A question past its window by wall-clock is never reported live
  * even before the store's sweep marks it expired.
  */
@@ -7774,7 +7765,7 @@ function waitingRefForTask(state: LocalApiState, taskId: string): AmpleFileActWa
  * The request reference a Connected Folder–scoped verb hands back to the caller.
  *
  * Identical to `toActRequestRef` except for one field: a delegated Connected Folder
- * request's `rootId` is usually the FOLD's root request id, and
+ * request's `rootId` is usually the AmpleFile agent's root request id, and
  * `requests show` reads a request by id. Handing that id into a Connected Folder turn
  * would put the AmpleFile agent's own content and other Connected Folders' results one taught
  * command away — the same leak `connected-folder-turn-context.ts` withholds the parent
@@ -7840,9 +7831,10 @@ function requestSummaryView(state: LocalApiState, record: AmpleFileRequestRecord
  * graph, including the AmpleFile agent's own assignment text and every Connected Folder's result
  * envelope. A caller working inside a registered Connected Folder is inside that Connected Folder's
  * scope, and what may reach a Connected Folder is its assignment, answers to its own
- * questions, and payloads released to it — never the graph (F9 as amended,
- * F26). The caller's directory resolves its scope exactly as `context` does,
- * and the refusal names the boundary and the verbs that do belong to a Connected Folder.
+ * questions, and payloads released to it — never the graph
+ * (docs/collaboration-contract.md). The caller's directory resolves its scope
+ * exactly as `context` does, and the refusal names the boundary and the verbs
+ * that do belong to a Connected Folder.
  */
 async function assertRequestsAboveConnectedFolders(cwd: string | undefined): Promise<void> {
   const candidate = cwd?.trim();
@@ -8113,7 +8105,7 @@ async function requestPresentation(state: LocalApiState, record: AmpleFileReques
       } else detail = "The selected result could not be read. Its receipt remains; try again or open the Chat.";
     }
   }
-  // Direct-child reports are deliberately released deliverables. Fold
+  // Direct-child reports are deliberately released deliverables. AmpleFile agent
   // requests have no Connected Folder file root of their own; retain each file's origin.
   if (isAmpleFileRequestTerminalState(record.state) && record.state !== "stopped" && record.state !== "expired") {
     const files = result?.files ?? [];
@@ -8213,7 +8205,7 @@ async function maybeStartRequestContinuation(state: LocalApiState, requestId: st
   if (state.runningTurns.has(key) || state.compactingConversations.has(key)) return;
   // Nested owners synthesize before their parent wakes, so delegated results
   // wait for the whole branch. A finished background job is this request's
-  // own work and does not wait for delegated children (docs/background-jobs.md, F32).
+  // own work and does not wait for delegated children (docs/background-jobs.md).
   const childrenBusy = state.requests.subtree(requestId).some((child) => child.continuationState === "pending"
     || child.turns.some((turn) => turn.state === "accepted" || turn.state === "running"));
   const batch = childrenBusy ? [] : state.requests.children(requestId).filter((child) => {
@@ -8243,7 +8235,7 @@ async function maybeStartRequestContinuation(state: LocalApiState, requestId: st
     console.error(`Request ${requestId} could not start its follow-up turn: ${errorMessage(error)}`);
   }
   // Reserved above whether or not the turn started: an end is delivered at
-  // most once, and a follow-up that could not start is not retried (F28).
+  // most once, and a follow-up that could not start is not retried.
   await deliverBackgroundJobs(state, jobs, "follow_up", followUpTaskId);
 }
 
@@ -8318,7 +8310,7 @@ async function composeContinuationMessage(
 }
 
 // ---------------------------------------------------------------------------
-// Background jobs (docs/background-jobs.md, F31–F33): the host side of the job
+// Background jobs (docs/background-jobs.md): the host side of the job
 // service — what a job means for its request, the kernel, History, the Chat
 // that started it, and the one follow-up turn its end may start.
 // ---------------------------------------------------------------------------
@@ -8414,7 +8406,7 @@ function undeliveredSettledJobs(state: LocalApiState, request: AmpleFileRequestR
   });
 }
 
-/** One delivery per job's end, recorded in the job journal and on its request (F32). */
+/** One delivery per job's end, recorded in the job journal and on its request. */
 async function deliverBackgroundJobs(
   state: LocalApiState,
   jobs: readonly AmpleFileJobRecord[],
@@ -8449,7 +8441,7 @@ async function composeBackgroundJobLines(state: LocalApiState, jobs: readonly Am
 /**
  * The jobs a new turn's context names: this Chat's running jobs, and ones
  * that finished in this run without reaching the Chat yet, which this turn
- * now delivers (F32). Delivery reserved by a follow-up is respected.
+ * now delivers. Delivery reserved by a follow-up is respected.
  */
 async function backgroundJobsForTurn(
   state: LocalApiState,
@@ -8721,9 +8713,9 @@ async function runAgentTurn(
     parentTaskId?: string;
     /** The assignment when it differs from this turn's message. */
     assignment?: string;
-    /** The question this turn's message answers, when it is a continuation (F27). */
+    /** The question this turn's message answers, when it is a continuation. */
     answeredQuestionId?: string;
-    /** Connected Folder Workers the person addressed with @ in this message (2026-10-01). */
+    /** Connected Folder Workers the person addressed with @ in this message. */
     addressedConnectedFolderIds?: string[];
     /** The automation that sent this message; nobody is watching the turn. */
     automation?: { title: string };
@@ -8768,14 +8760,14 @@ async function runAgentTurn(
           ...(connectedFolder.parentConnectedFolderId ? { parentConnectedFolderId: connectedFolder.parentConnectedFolderId } : {}),
         }))
       : undefined;
-    // Connected Folders inside Connected Folders (2026-10-01): the person's @ mentions resolve to
+    // Connected Folders inside Connected Folders: the person's @ mentions resolve to
     // the ids handoff and send take, and a parent's Worker learns which of
     // its own subfolders belong to another Worker.
     const addressedFolders = (options.addressedConnectedFolderIds ?? []).flatMap((id) => {
       const connectedFolder = registeredConnectedFolders.find((item) => item.id === id);
       return connectedFolder ? [{ connectedFolderId: connectedFolder.id, name: connectedFolder.name }] : [];
     });
-    // A Connected Folder turn's own identity (F26): its ids, and when delegated, an
+    // A Connected Folder turn's own identity: its ids, and when delegated, an
     // opaque handle for the request that asked. Never for the AmpleFile agent
     // scope, which carries the registry snapshot instead.
     const connectedFolderTurn = connectedFolderId === ampleFileAgentScopeId
@@ -8941,8 +8933,7 @@ async function runAgentTurn(
     await flushTurnCheckpoint(state, key, taskId);
     const durableText = state.turnStore.get(taskId)?.assistantText ?? "";
     // Attribution, recorded with the outcome: the model that actually ran this
-    // turn and what Pi reported it used. App-requested tasks read it back from
-    // the turn journal as their receipt (docs/receipts-not-gates.md, F22).
+    // turn and what Pi reported it used.
     const turnUsage = client?.getTurnUsage() ?? null;
     await state.turnStore.settle(taskId, {
       status: closedByApp ? "interrupted" : settledStatus,
@@ -8958,7 +8949,7 @@ async function runAgentTurn(
     });
     // The request record settles with the same outcome and usage, before the
     // task-scoped record, so a waiter or the overview reads a current request
-    // state on the next tick (F25).
+    // state on the next tick.
     await state.requests.settleTurn(taskId, {
       status: closedByApp ? "interrupted" : settledStatus,
       ...(settledMessageId ? { messageId: settledMessageId } : {}),
@@ -8973,9 +8964,8 @@ async function runAgentTurn(
     state.cancelledTurnTasks.delete(taskId);
     state.activeTurnIdsByKey.delete(key);
     state.kernel.finishTask(taskId);
-    // The Connected Folder's apps or Worker instructions changed during this turn
-    // (propose_connected_folder_app, or Set up for me). Rebuild this Chat's client so
-    // its next turn sees them.
+    // The Connected Folder's Worker instructions changed during this turn (Set up
+    // for me). Rebuild this Chat's client so its next turn sees them.
     await refreshClientIfMarked(state, key);
     settleTurnTask(state, taskId, {
       connectedFolderId,
@@ -8999,7 +8989,7 @@ async function runAgentTurn(
       }
     } else if (queued && !queued.held) void sendQueuedMessage(state, connectedFolderId, connectedFolderRoot, conversationId, queued);
     else if (settledStatus === "succeeded") scheduleBackgroundCompaction(state, connectedFolderId, connectedFolderRoot, conversationId);
-    // F28: once this turn's own settlement is fully visible, the request
+    // Once this turn's own settlement is fully visible, the request
     // graph above it may owe the AmpleFile agent one continuation turn. Fire-and-forget
     // with its own catch, the way activeTurnPromises are: a settle never
     // fails because a continuation could not start.
@@ -9128,10 +9118,9 @@ function backgroundCompactionIdleMs(env: NodeJS.ProcessEnv = process.env): numbe
 
 /**
  * Summarizes an idle Chat in the background once it nears Pi's own automatic
- * compaction point, so the next turn does not wait on that summary (Pi
- * Durable's background compaction, 2026-10-27). It runs as its own kernel
- * compaction task, only on a client that already exists, and only after the
- * Chat has been quiet for a moment; anything that needs the Chat first calls
+ * compaction point, so the next turn does not wait on that summary. It runs
+ * as its own kernel compaction task, only on a client that already exists,
+ * and only after the Chat has been quiet for a moment; anything that needs the Chat first calls
  * yieldBackgroundCompaction. A failed or cancelled summary changes nothing:
  * Pi still compacts mid-turn when it must.
  */
@@ -9457,7 +9446,7 @@ async function getClient(
     ? undefined
     : { connectedFolderId };
   // Connected Folder scopes carry the compact operations guide after their own Connected Folder
-  // instructions (F26); the AmpleFile agent scope has its own taught text.
+  // instructions; the AmpleFile agent scope has its own taught text.
   const operationsGuide = connectedFolderOperationsGuideForScope(connectedFolderId);
   const client = new PiConversationClient(conversationId, connectedFolderRoot, state.runtimeProvider, hostCapabilities, {
     role: connectedFolderId === ampleFileAgentScopeId ? "amplefile-agent" : "worker",
@@ -9699,7 +9688,7 @@ async function recoverPendingConnectedFolderRemovals(
       const intent = pending;
       // An interrupted managed deletion finishes into Recently deleted, not
       // into an erase: the folder this start finds claimed is still the
-      // person's (docs/receipts-not-gates.md, F20).
+      // person's (docs/act-ledger.md).
       const removalIo = managedConnectedFolderRemovalIo(recentlyDeleted, io, {
         connectedFolderId: intent.connectedFolderId,
         connectedFolderRoot: intent.connectedFolderRoot,
@@ -9708,8 +9697,8 @@ async function recoverPendingConnectedFolderRemovals(
       });
       await finalizeConnectedFolderRemoval(intent.connectedFolderId, removalIo.io);
     } catch {
-      // The durable intent keeps this work-folder hidden and untrusted. Recovery of
-      // other work-folders and normal startup can proceed; a later startup retries it.
+      // The durable intent keeps this Connected Folder hidden and untrusted. Recovery of
+      // other Connected Folders and normal startup can proceed; a later startup retries it.
     }
   }
   return {
@@ -9787,7 +9776,7 @@ function hasActiveCapabilityWorkForConnectedFolder(state: LocalApiState, connect
 }
 
 // ---------------------------------------------------------------------------
-// Fold wiring: the prepared-act fence and adapters, the automation executor's
+// AmpleFile agent wiring: the prepared-act fence and adapters, the automation executor's
 // hop ports, and the overview's live-registry source readers. All of it is
 // constructed by startLocalApi over the same shared state (and the same
 // fences) the HTTP routes and the act facade use.
@@ -9799,15 +9788,14 @@ function capabilityGlobalMutationScope(): { id: string; connectedFolderRoot: str
 }
 
 // ---------------------------------------------------------------------------
-// Prepared acts (docs/receipts-not-gates.md, F19; verb rows in
-// docs/act-ledger.md). The facade composes each act's typed parameters
+// Prepared acts (docs/act-ledger.md). The facade composes each act's typed parameters
 // and pins from live state and runs it at once through the prepared-act
 // executor. The helpers below are the shared plumbing: error translation
 // into the CLI's typed vocabulary, attribution from the validated management
 // lineage, and the automation enablement path Settings and the act lane share.
 // ---------------------------------------------------------------------------
 
-/** Attribution the prepared-act verbs thread into automation grants: the initiating surface (docs/receipts-not-gates.md, F19). */
+/** Attribution the prepared-act verbs thread into automation grants: the initiating surface (docs/act-ledger.md). */
 function preparedActAttribution(surface: AmpleFileCliActSurface): PreparedActAttribution {
   return { surface };
 }
@@ -10290,9 +10278,8 @@ function stringPinValue(act: PreparedAct, name: string): string {
 
 /**
  * `connected-folder.delete-folder` — the managed removal path. Pin recheck re-verifies
- * the registered identity and canonical root; the `.workspace/` fail-closed
- * rule and managed-root identity claims are re-checked by the removal
- * machinery itself at execution. The complete desktop removal orchestration
+ * the registered identity and canonical root; managed-root identity claims
+ * are re-checked by the removal machinery itself at execution. The complete desktop removal orchestration
  * — automation revocation and claim-verified managed deletion — is shared with DELETE /api/connected-folders/:id and `connected-folders
  * unregister`. It reserves its own capability fences across every affected
  * Connected Folder, so the adapter's null fenceScope keeps the executor from reserving
@@ -10596,7 +10583,7 @@ const maxOverviewActReceiptLines = 8_192;
 /**
  * The overview's live-registry source readers (docs/amplefile-agent-overview.md): recorded
  * state only — the settled-turn records, the durable request graph
- * (docs/collaboration-contract.md, F25), the
+ * (docs/collaboration-contract.md), the
  * chat store and History per registered Connected Folder, the act-receipts ledger, and the automation receipts
  * journal. The kernel's own task registry supplies running tasks.
  */
@@ -10638,8 +10625,8 @@ function createServerOverviewSources(state: LocalApiState): AmpleFileOverviewSou
 /**
  * Request records for the overview, composed from the durable record alone.
  *
- * The overview recomposes on every call, from the popover, the main window, and
- * every remote client, so this path stays cheap: a record already carries its
+ * The overview recomposes on every call, from the popover and the main window,
+ * so this path stays cheap: a record already carries its
  * state, its timestamps, its questions, and its results. Needs you is derived
  * from those records; rendering the overview never scans a transcript for a
  * question mark.
@@ -10688,9 +10675,8 @@ async function readActReceiptJournal(state: LocalApiState): Promise<AmpleFileCli
     for (const line of lines.slice(-maxOverviewActReceiptLines)) {
       try {
         const record = JSON.parse(line) as Partial<AmpleFileCliActReceipt>;
-        // Every journal version stays readable: older lines are history, and
-        // the current version is the one every act writes now.
-        if ((record.v !== 1 && record.v !== 2 && record.v !== 3)
+        // Version 3 is the version every act writes.
+        if (record.v !== 3
           || typeof record.at !== "string"
           || typeof record.requestId !== "string"
           || typeof record.command !== "string"
@@ -10725,7 +10711,7 @@ function sameExtensionScope(left: PiExtensionUiScope, right: PiExtensionUiScope)
 
 function remoteExtensionRequests(state: LocalApiState, record: AmpleFileRequestRecord): Array<Record<string, unknown>> {
   const taskId = record.turns.at(-1)?.taskId;
-  if (!taskId || record.owner.connectedFolderId || record.stopRequestedAt || record.state === "expired" || (record.deadline !== null && Date.now() >= Date.parse(record.deadline)) || state.cancelledTurnTasks.has(taskId)
+  if (!taskId || record.owner.connectedFolderId || record.stopRequestedAt || record.state === "expired" || state.cancelledTurnTasks.has(taskId)
       || state.activeTurnIdsByKey.get(streamKey(ampleFileAgentScopeId, record.owner.conversationId)) !== taskId) return [];
   return [...state.extensionRequests.values()].filter((request) => request.taskId === taskId
     && sameExtensionScope(request, { connectedFolderRoot: ampleFileAgentRoot(), conversationId: record.owner.conversationId })
@@ -10753,7 +10739,7 @@ function publishExtensionSnapshot(state: LocalApiState, scope: PiExtensionUiScop
   publishTransientExtensionEvent(state, scope, { type: "extension_ui_snapshot", conversationId: scope.conversationId, requests: extensionSnapshot(state, scope) });
 }
 
-/** Desktop UI only: no durable log and no remote-watch listeners. */
+/** Desktop UI only: no durable log and no in-process listeners. */
 function publishTransientExtensionEvent(state: LocalApiState, scope: PiExtensionUiScope, event: unknown): void {
   const scopeId = extensionScopeId(state, scope);
   if (!scopeId) return;
@@ -11066,7 +11052,7 @@ async function sendConnectedFolderRawFile(res: ServerResponse, connectedFolderRo
 }
 
 /**
- * The Connected Folder Workers a person addressed with @ (2026-10-01): at most eight
+ * The Connected Folder Workers a person addressed with @: at most eight
  * distinct registered Connected Folder ids in a stable order, never the sending scope's
  * own. An id that is no longer registered is dropped rather than refused, so a
  * retried send still replays after a Connected Folder was removed.
@@ -11548,7 +11534,7 @@ function closeServer(server: Server): Promise<void> {
 
 // ---------------------------------------------------------------------------
 // The file manager's file operations, Recents, and folder suggestions
-// (docs/product-model.md, "2026-11-06 file manager layout").
+// (docs/product-model.md, "The file manager window").
 
 type TransferPlaceRef = { kind: "connected-folder" | "standard"; id: string };
 type TransferRestorePoint = { connectedFolderId: string; checkpointId: string };

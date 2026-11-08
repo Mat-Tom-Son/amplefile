@@ -1,28 +1,8 @@
 # Privacy
 
-Progress recovery retains bounded text from completed tools and selected
-agent-authored findings in the Chat's existing machine-local Pi session. These
-records can contain private task content and share that session's retention.
-Only the current request's own observations are read back to its model; recovery
-does not send another model request by itself. Selected ordinary files carry
-SHA-256 fingerprints for freshness checks; image pixels are not duplicated.
+Last updated: November 8, 2026
 
-Read-only helpers send their selected task and file content to the parent's
-model provider, or an explicitly selected already-connected helper model.
-Their usage and content-free activity are recorded under the parent turn.
-Interactive terminal input goes to the local process; only output read by an
-agent enters model context. Managed Git working copies remain on this computer
-in an app-owned sibling directory; archiving retains their files and history.
-See [Worker tools](docs/worker-tools.md).
-
-This privacy description uses technical storage and protocol names where
-needed. In the product, a registered Connected Folder is presented as a **Connected Folder**, its
-agent as a **Worker**, the management agent as the **AmpleFile agent**,
-and deterministic automations as **Automations**.
-
-Last updated: November 4, 2026
-
-AmpleFile is a local-first desktop application. It does not use an AmpleFile account, and it does not connect to a hosted bridge or page service (work-fold's Web Access and online Publish were removed on 2026-11-07). The current application does not include first-party analytics, advertising, or usage telemetry.
+AmpleFile is a local-first desktop application. It does not use an AmpleFile account or a hosted AmpleFile service. The application does not include first-party analytics, advertising, or usage telemetry.
 
 This document describes the behavior of the open-source AmpleFile application. Model providers, GitHub, package hosts, cloud-sync software, and third-party Skills or Extensions have their own privacy terms.
 
@@ -62,24 +42,24 @@ By default, AmpleFile stores:
 - A hidden `.amplefile/` directory inside each Connected Folder. Its `connected-folder.json` file stores the portable Connected Folder identity, and its `conversations/` directory stores that Connected Folder's append-only Chat records, including title, archive, and snooze lifecycle events.
 - The Connected Folder registry, History objects, ignore rules, application settings, per–Connected Folder model defaults and Connected Folder instructions, and machine-local Chat attention acknowledgements under the local AmpleFile application-data directory or browser-backed application storage.
 - Pi settings, sessions, Pi's independent trust decisions, personal Skills, Extensions, and packages under the configured Pi agent directory, normally `~/.pi/agent`.
-- The built-in browser's profile — cookies, sign-ins, site storage, cache, the address and title of each open browser tab, the pages the browser's tabs visited (`browser-history.json`, cleared with **Clear browsing history** on a new tab), and what you allowed or blocked for each site (`browser-site-permissions.json`) — under the local AmpleFile application-data directory, apart from Chrome and from every Connected Folder. A site gets the camera, microphone, location, notifications, or similar access only after you allow it. Its cookies are encrypted with the operating system's keychain. Files it downloads go to the Downloads folder. Nothing is imported from Chrome or another browser ([built-in browser](docs/built-in-browser.md)).
+- The built-in browser's profile — cookies, sign-ins, site storage, cache, the address and title of each open browser tab, the pages the browser's tabs visited (`browser-history.json`), and what you allowed or blocked for each site (`browser-site-permissions.json`) — under the local AmpleFile application-data directory, apart from Chrome and from every Connected Folder. A site gets the camera, microphone, location, notifications, or similar access only after you allow it. Its cookies are encrypted with the operating system's keychain. Files it downloads go to the Downloads folder. Nothing is imported from Chrome or another browser ([built-in browser](docs/built-in-browser.md)).
 - Provider credentials in an application-scoped file encrypted through Electron's operating-system-backed `safeStorage`. AmpleFile refuses credential operations when that encryption is unavailable. Microsoft Foundry connections keep each format's API key, endpoint, deployment names, and optional Pi base-model selections in this same machine-local credential store. Settings reads back only the endpoint, names, and selections. Saving does not send an inference request or discover Azure resources.
 - Short-lived CLI request, claim, and response files under the owning app's application-data directory: `~/Library/Application Support/AmpleFile/cli` for the installed Mac app, or the separately identified smoke app's own directory.
-- The AmpleFile agent's machine-local transcript under the application-data `management/` root. When a request includes attachments, its user message stores their typed absolute local paths or http(s) links; remote uploads land in an app-owned holding folder under `management/Incoming/Remote/`. Request records — the turns and Connected Folders one ask spans, its questions and answers, and the results handed back — are durable machine-local app state under the application-data `requests/` directory, reconciled after a restart and never replayed, and kept for 30 days after the request settles; act lineage stays metadata in the receipt journal. Like the other records below, nothing in `requests/` is written into a Connected Folder's folder, captured by History, or synchronized by anything that synchronizes a Connected Folder.
+- The AmpleFile agent's machine-local transcript under the application-data `management/` root. When a request includes attachments, its user message stores their typed absolute local paths or http(s) links. Request records — the turns and Connected Folders one ask spans, its questions and answers, and the results handed back — are durable machine-local app state under the application-data `requests/` directory, reconciled after a restart and never replayed, and kept for 30 days after the request settles; act lineage stays metadata in the receipt journal. Like the other records below, nothing in `requests/` is written into a Connected Folder's folder, captured by History, or synchronized by anything that synchronizes a Connected Folder.
 - Unsent answers to agent questions in the current renderer's session storage. They survive refresh/reconnect, clear when accepted or when the session ends, and are not sent to the host or model until submitted.
-- Act receipts; Recently deleted items under the application-data `recently-deleted/` directory, each holding the moved bytes or a recovered copy plus a manifest (source Connected Folder id, original Connected Folder–relative path, kind, size, deleted-at, restore-by, and the receipt that produced it), kept for the retention window — 30 days by default, changed in Settings → Recently Deleted — and then removed; automation declarations with their exact-declaration enablement receipts, cadence anchors, and run receipts (including the summary each chat step's Worker reports); request records with their questions, answers, and results under the application-data `requests/` directory; background job records and each job's combined command output under the application-data `jobs/` directory, kept for 30 days after the job ends (only the part a Worker reads, or the end of it in one follow-up turn, enters a Chat); and per-surface overview last-seen markers — all under the AmpleFile application-data directory. Receipts record the initiating surface. None of these records is written into any Connected Folder's folder, captured by History, or synchronized by anything that synchronizes a Connected Folder.
+- Act receipts; Recently Deleted items under the application-data `recently-deleted/` directory, each holding the moved bytes or a recovered copy plus a manifest (source Connected Folder id, original Connected Folder–relative path, kind, size, deleted-at, restore-by, and the receipt that produced it), kept for the retention window — 30 days by default, changed in Settings → Recently Deleted — and then removed; automation declarations with their exact-declaration enablement receipts, cadence anchors, and run receipts (including the summary each chat step's Worker reports); request records with their questions, answers, and results under the application-data `requests/` directory; background job records and each job's combined command output under the application-data `jobs/` directory, kept for 30 days after the job ends (only the part a Worker reads, or the end of it in one follow-up turn, enters a Chat); and per-surface overview last-seen markers — all under the AmpleFile application-data directory. Receipts record the initiating surface. None of these records is written into any Connected Folder's folder, captured by History, or synchronized by anything that synchronizes a Connected Folder.
 
-AmpleFile uses a new application profile and does not inspect, import, migrate, rewrite, wipe, or delete legacy Workspace application data or `.workspace/` folder metadata. Legacy bytes remain where they already are and are not authoritative in AmpleFile. The app keeps `.workspace/` hidden and excludes it from History, Search, and Automation folder targets. Pi's personal resources and authentication may still be read from the configured Pi agent directory, while AmpleFile keeps its Pi sessions in the separate `sessions/amplefile/` namespace.
+Pi's personal resources and authentication may be read from the configured Pi agent directory, while AmpleFile keeps its Pi sessions in the separate `sessions/amplefile/` namespace.
 
-The File Manager layout's **Standard Folders** (Desktop, Documents, Downloads, Pictures, the home folder, iCloud Drive, and any folder the person adds with the sidebar's **+**) are read only when the person opens one; macOS asks for access the first time. The list of added folders is kept on this computer only, in AmpleFile's state folder, and **Remove from Sidebar** takes a folder off the list without touching it. With AI connected, the File Manager's suggested messages are written by the Connected Folder's configured model from the names of the items in the folder shown and the titles of its recent Chats; that text goes to the AI provider you connected, and no file contents are sent. AmpleFile writes nothing into them on its own — no `.amplefile/` record, History, or Chat — and changes them only when the person renames, makes a folder, moves an item to the system Trash, or puts the folder to work, which registers it like any other folder.
+The sidebar's **Standard Folders** (Desktop, Documents, Downloads, Pictures, the home folder, iCloud Drive, and any folder the person adds with the sidebar's **+**) are read only when the person opens one; macOS asks for access the first time. The list of added folders is kept on this computer only, in AmpleFile's state folder, and **Remove from Sidebar** takes a folder off the list without touching it. With AI connected, the suggested messages over the message box are written by the Connected Folder's configured model from the names of the items in the folder shown and the titles of its recent Chats; that text goes to the AI provider you connected, and no file contents are sent. AmpleFile writes nothing into them on its own — no `.amplefile/` record, History, or Chat — and changes them only when the person renames, makes a folder, moves an item to the system Trash, or puts the folder to work, which registers it like any other folder.
 
-Registering an existing folder does not upload, move, duplicate, or rename the user's files. It does add the documented hidden `.amplefile/` identity and Chat storage. Removing a linked Connected Folder from AmpleFile leaves both the ordinary files and `.amplefile/` in place. Deleting an AmpleFile-managed Connected Folder unregisters it and moves its managed folder into Recently deleted, where it stays restorable for the retention window. Uninstalling AmpleFile does not itself delete linked Connected Folders.
+Registering an existing folder does not upload, move, duplicate, or rename the user's files. It does add the documented hidden `.amplefile/` identity and Chat storage. Removing a linked Connected Folder from AmpleFile leaves both the ordinary files and `.amplefile/` in place. Deleting an AmpleFile-managed Connected Folder unregisters it and moves its managed folder into Recently Deleted, where it stays restorable for the retention window. Uninstalling AmpleFile does not itself delete linked Connected Folders.
 
 File and Chat deletion and Connected Folder removal refuse while affected request
 work is unfinished, including waiting questions and stopped turns still
 draining. Managed parent deletion requires removing nested registrations
 first. Its machine-local History travels with the folder into Recently
-deleted; interrupted moves keep the remaining state until recovery can
+Deleted; interrupted moves keep the remaining state until recovery can
 identify one intact destination. This recovery remains local.
 
 Nested Connected Folder relationships are derived from registered folder paths;
@@ -92,15 +72,27 @@ The whole registry and other Connected Folders' transcripts do not enter a
 Connected Folder turn. Activity marks use running Connected Folder and Chat ids from the
 local host, with unseen-reply acknowledgements saved on this computer.
 
-Managed-folder deletion is also blocked when the claimed tree contains preserved
-`.workspace/` metadata. The person may remove the AmpleFile registration without
-deleting the ordinary folder; AmpleFile never uses managed deletion to erase
-legacy product data.
+## Worker tools
+
+Progress recovery retains bounded text from completed tools and selected
+agent-authored findings in the Chat's existing machine-local Pi session. These
+records can contain private task content and share that session's retention.
+Only the current request's own observations are read back to its model; recovery
+does not send another model request by itself. Selected ordinary files carry
+SHA-256 fingerprints for freshness checks; image pixels are not duplicated.
+
+Read-only helpers send their selected task and file content to the parent's
+model provider, or an explicitly selected already-connected helper model.
+Their usage and content-free activity are recorded under the parent turn.
+Interactive terminal input goes to the local process; only output read by an
+agent enters model context. Managed Git working copies remain on this computer
+in an app-owned sibling directory; archiving retains their files and history.
+See [Worker tools](docs/worker-tools.md).
 
 ## Optional local context diagnostics
 
 The local `?dev-context` developer route includes optional **Record model
-context** diagnostics, with no normal Chat, fold or Settings entry. Recording
+context** diagnostics, with no Chat, AmpleFile agent, or Settings entry. Recording
 starts off and retains future request snapshots only in app memory: at most
 24 requests, 2 MiB per record, 16 MiB total and 30 minutes. Text fields and
 snapshot depth/size have additional disclosed limits. Images are represented
@@ -205,23 +197,6 @@ it chose — is recorded machine-locally and reaches another Connected Folder's 
 when someone deliberately puts it there. Questions, answers, results, and the
 request graph are not sent anywhere else by AmpleFile.
 
-### Web Access, published pages, and pages (removed)
-
-Earlier work-fold builds could relay a paired browser through the work-fold.com
-bridge and publish pages to work-fold's page service. Both were removed on
-2026-11-07. This build never connects to either service, and the next time it
-saves its encrypted settings it drops the Web Access address, device token, and
-keys an earlier build stored. Records an earlier build kept on the hosted
-services are not deleted by this build. Pages themselves were removed the same
-day: this build has no page tab and never reads the test entries an earlier
-build saved under its own storage, and it leaves them on this computer
-untouched.
-
-### Connected Folder apps (removed)
-
-Earlier builds let a Worker build and install Connected Folder apps. They were
-removed on 2026-11-07, and this build never installs or runs one.
-
 ### Model providers
 
 When a user sends an agent message, Pi sends the request to the provider and model selected in Settings → AI Models. The request can include the message, relevant conversation history and instructions, explicitly selected text attachments, and tool results produced during the turn. A Connected Folder's optional **Connected Folder instructions** stay in machine-local application state rather than the Connected Folder's folder, but they are appended to every subsequent model request for that Connected Folder and therefore sent to the selected provider. Management attachments are references: readable text files can be included directly within the shared context budget; folders, binaries, and oversized files are initially path-only; and attached links are listed as data. If the agent later inspects one with filesystem or network tools, information those tools return may become part of model context. If the agent uses filesystem or Extension tools, information those tools return may likewise become part of later model context.
@@ -232,7 +207,7 @@ AmpleFile does not proxy these requests through an AmpleFile account service. Th
 
 ### Application updates
 
-Installed Mac builds check the public `Mat-Tom-Son/amplefile-mac-releases` feed shortly after startup, every four hours while running, and when the platform update command is selected. A check sends a normal network request to GitHub, which can receive standard request metadata such as an IP address and user agent. The frozen legacy Workspace feeds are not queried by AmpleFile.
+Installed Mac builds check the public `Mat-Tom-Son/amplefile-mac-releases` feed shortly after startup, every four hours while running, and when the platform update command is selected. A check sends a normal network request to GitHub, which can receive standard request metadata such as an IP address and user agent.
 
 Update checks do not download an installer. When an update is available, the user chooses **Download update**; AmpleFile downloads it, performs its update-specific shutdown, and asks the updater to relaunch the app. If an already-downloaded update becomes ready outside that immediate action, AmpleFile can offer **Restart now** or **Later**; a ready update deferred with Later installs on explicit application quit. The ad hoc Mac structural package retains updater metadata for verification but is named `AmpleFile Local Smoke`, has a separate bundle identity and application-data directory, and never starts the updater or contacts the production feed.
 
@@ -242,7 +217,7 @@ Installing or updating a Pi package can contact its npm, git, HTTPS, or other co
 
 Skills may include scripts, and Extensions or packages can make their own network requests or open external sites. Their data handling is determined by their code and the services they contact, not by this document. Review the source and documentation before installing an unfamiliar capability.
 
-An Extension can contribute a local declarative surface through `surface.json`. AmpleFile reads and displays that manifest only after Pi loads the Extension. Surface version 1 contains static text and data and has no direct account, network, or credential bridge. Do not put credentials or sensitive remote records in a surface manifest, especially when the Connected Folder is synchronized by another application.
+An Extension can contribute a local declarative surface through `surface.json`. AmpleFile reads that manifest only after Pi loads the Extension; the window does not draw it. Surface version 1 contains static text and data and has no direct account, network, or credential bridge. Do not put credentials or sensitive remote records in a surface manifest, especially when the Connected Folder is synchronized by another application.
 
 ## Local CLI and development harness
 
@@ -252,8 +227,6 @@ The packaged `amplefile` command writes an atomic request beneath the owning app
 
 Act commands carry more. A `chat send` or `agent send` request includes the message text (a `--message-file` is embedded into the bounded request payload by the shim), `agent send --attach` places the typed path or link strings in argv, `search` places its query in argv, and `connected-folders worker instructions` places the bounded instruction text in argv. Content-bearing act responses — chat results, search matches, Connected Folder instructions, overview, and History listings — travel through the same bounded, short-lived request/response files and are deleted after the command. Those files do not contain referenced local file contents beyond what the command itself returns. `chat`/`agent` status, result, wait, and list responses include Chat titles, states, and message content. Sending a message routes that prompt and its turn through the configured model provider exactly like an interactive desktop Chat, so treat CLI prompts, attachments, and Connected Folder instructions with the same privacy care. The AmpleFile agent's transcript is machine-local application state under the app profile (`management/.amplefile/conversations/`), not portable Connected Folder data; it never moves with any folder. Act commands work only while the AmpleFile app is running: the app mints a per-launch token into `cli/act-token.json` (removed on quit), and every act command appends metadata-only records to the local `cli/receipts/act.jsonl` journal — timestamps, command names, connected-folder/Chat/task ids (including an explicit AmpleFile agent parent task id when present), outcomes, error codes, restore-point ids, the initiating surface, and receipt, Recently deleted item, and typed prior-state identifiers, never instruction text, message content, file contents, search queries, or credentials. The journal is size-rotated and stays on this computer.
 
-There are no Checks (removed on 2026-11-07). What an earlier build stored for them — files under `.amplefile/checks/` in a Connected Folder and machine-local state under the app profile's `checks/` folder — stays on disk unread: AmpleFile neither sends, migrates, nor deletes it.
-
 The shim removes its request and response after completion, and the broker cleans stale bounded files during initialization. All of these files remain local and are not sent to an AmpleFile service, but another process running as the same operating-system user may be able to read or submit them. See [AmpleFile agent and CLI](docs/amplefile-agent-and-cli.md) and [Security](SECURITY.md).
 
 `npm run amplefile:drive` is a developer test harness, not the installed management CLI. It sends the supplied prompt and any explicitly selected context through the configured model provider by the same Pi/local-API path as a desktop Chat. In-process runs use temporary AmpleFile application state unless `AMPLEFILE_STATE_DIR` is set; `--agent-dir` can isolate Pi state. Treat its prompts, reports, and provider traffic with the same privacy care as an interactive Chat.
@@ -261,8 +234,6 @@ The shim removes its request and response after completion, and the broker clean
 ## Connected Folder authorization and agent context
 
 Creating or registering a Connected Folder authorizes AmpleFile to load project Skills, Extensions, packages, scripts, settings, and instructions from Pi-supported locations in that exact folder. This does not upload the whole folder and does not certify its code as safe. Removing the Connected Folder revokes AmpleFile's authorization; the folder and its portable `.amplefile/` data remain according to the linked-versus-managed removal rules above.
-
-There is no Library: the desktop surface was removed on 2026-09-25 and the CLI `library` family on 2026-10-10. A machine-local `resources/` folder left in app state by an earlier build is not read, shared, or deleted.
 
 The folder's executable configuration can later change through local edits, source control, or a desktop synchronization tool without another registration prompt. Review native Pi Extensions and package changes with the same care as other current-user code. See [Skills & Extensions](docs/skills-and-extensions.md) for the complete distinction.
 
@@ -272,28 +243,28 @@ A Connected Folder image attached to a Chat turn (PNG, JPEG, GIF, or WebP) is se
 
 ## Google Drive and other synchronized folders
 
-AmpleFile does not currently connect to the Google Drive API or run its own cloud mirror. It can register an ordinary local folder managed by Google Drive for desktop or another sync application. That separate application may upload and synchronize the folder—including `.amplefile/connected-folder.json`, `.amplefile/conversations/`, preserved legacy `.workspace/` content, and any `.pi/` project configuration—under its own settings and privacy terms. Do not place a Connected Folder in a synchronized folder unless synchronizing its Chat history and hidden metadata is acceptable.
+AmpleFile does not currently connect to the Google Drive API or run its own cloud mirror. It can register an ordinary local folder managed by Google Drive for desktop or another sync application. That separate application may upload and synchronize the folder—including `.amplefile/connected-folder.json`, `.amplefile/conversations/`, and any `.pi/` project configuration—under its own settings and privacy terms. Do not place a Connected Folder in a synchronized folder unless synchronizing its Chat history and hidden metadata is acceptable.
 
 ## User choices
 
-Users choose which folders become Connected Folders, which files are attached to Chats, which model provider receives Worker and AmpleFile agent requests, and which Everywhere or This Connected Folder only capabilities are installed. Registering the folder is the local Pi authorization. Everything the AmpleFile agent, a Worker, or the command line does runs at once and leaves a receipt; nothing waits for a further click. Deletions stay recoverable from Recently deleted for the retention window. Enabling each automation and turning it off remain separately recorded effects. Revoking one authority does not imply revoking the others or invalidating a credential at its remote provider.
+Users choose which folders become Connected Folders, which files are attached to Chats, which model provider receives Worker and AmpleFile agent requests, and which Everywhere or This Connected Folder only capabilities are installed. Registering the folder is the local Pi authorization. Everything the AmpleFile agent, a Worker, or the command line does runs at once and leaves a receipt; nothing waits for a further click. Deletions stay recoverable from Recently Deleted for the retention window. Enabling each automation and turning it off remain separately recorded effects. Revoking one authority does not imply revoking the others or invalidating a credential at its remote provider.
 
 Because this project is early stage, not every data-management action has a dedicated UI yet. Application and Pi data remain ordinary local files, but manual changes should be made only while AmpleFile is closed and after creating a backup.
 
-## Changes and questions
+## Automations, results, and saved evidence
 
-Material privacy behavior changes should update this file in the same release. General questions can use [GitHub Issues](https://github.com/Mat-Tom-Son/amplefile/issues), but do not include private data or credentials. Report security concerns privately through [SECURITY.md](SECURITY.md).
-
+### Folder-change Automations
 
 An explicitly enabled folder-change automation scans metadata only for its named folder and file types. It does not read file contents or attach files to Chat. Observer baselines are in memory; run receipts retain the source Connected Folder, snapshot digest, and change count. It pauses while automation work runs and restarts from a fresh baseline after work, wake, or launch, without replaying missed edits. An automation that opts into catching up (`"ifMissed": "run"`) also saves that metadata — relative paths with size, times, device, and inode, never contents — in machine-local app state under `automations/folder-snapshots/`, never in the Connected Folder, so that after AmpleFile was closed or asleep it can start one run for the files added or changed meanwhile; deleting the automation, removing its watched Connected Folder, or turning catch-up off removes the snapshot. Each Chat step still sends only its declared message with the host-resolved placeholders it names; a separate files step is the explicit cross–Connected Folder transfer.
 
-### Fold task result links
+### Result file links
 
 Recent machine-local turn records may retain up to 64 changed/new relative file
 paths, hashes and sizes with pre/post History checkpoint ids. This is metadata
 about observed changes during a turn, not additional file content or a model
 request.
 
+### Requests and drafts
 
 The [collaboration contract](docs/collaboration-contract.md#completion-delivery-and-recovery)
 tracks work across model turns: durable questions and answer delivery, bounded
@@ -312,7 +283,7 @@ content-free read lane gains no file-reading operation.
 Comparison itself contacts no model provider; a Worker that requests it can use the
 returned text in its ordinary provider conversation.
 
-Portable Connected Folder Chat logs may now retain a successful native edit's selected diff,
+Portable Connected Folder Chat logs may retain a successful native edit's selected diff,
 relative path and first changed line, up to 16 KiB per edit and 64 KiB per turn.
 These excerpts travel with the Connected Folder just like its existing Chat content. Excerpts
 outside the Connected Folder, within nested Connected Folder identities or reserved metadata, and through
@@ -320,6 +291,7 @@ symlinks are excluded. Raw tool results are not copied. Optional assistant segme
 metadata stores offsets/classifications, not a second copy of message text. Management
 transcripts remain machine-local.
 
+### Document and attachment artifacts
 
 Document runs can retain selected render artifacts, complete overflow returns, logs,
 and observation metadata in machine-local `document-artifacts/` (or the ordinary
@@ -336,3 +308,7 @@ file contents. The model receives its path and can inspect selected files with
 ordinary tools. These manifests remain until deliberately removed; standalone
 runtimes without application/session storage use explicitly identified system
 temporary storage instead. Creating a manifest does not upload the selected files.
+
+## Changes and questions
+
+Material privacy behavior changes should update this file in the same release. General questions can use [GitHub Issues](https://github.com/Mat-Tom-Son/amplefile/issues), but do not include private data or credentials. Report security concerns privately through [SECURITY.md](SECURITY.md).

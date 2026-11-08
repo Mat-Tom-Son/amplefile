@@ -95,16 +95,14 @@ test("managed working copies isolate writes and preserve dirty files through arc
   const h = await harness(t); const cwd = h.connectedFolder.connectedFolderRoot;
   await exec("git", ["init", "-q"], { cwd });
   await writeFile(join(cwd, "source.txt"), "original\n");
-  await mkdir(join(cwd, ".workspace"));
-  await writeFile(join(cwd, ".workspace/legacy.json"), "opaque legacy fixture\n");
+  await writeFile(join(cwd, ".amplefile", "committed.txt"), "source metadata\n");
   // People may commit portable metadata: a copy still needs its own identity
   // and must not inherit the source Chat's transcripts.
-  await exec("git", ["add", "source.txt", ".amplefile", ".workspace"], { cwd });
+  await exec("git", ["add", "source.txt", ".amplefile"], { cwd });
   await exec("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"], { cwd });
   const copy = await h.api.actFacade.worktreesManage({ connectedFolder: h.connectedFolder.id, taskId: h.turn.taskId, action: "create" }) as any;
   assert.equal(copy.state, "active"); assert.notEqual(copy.connectedFolderId, h.connectedFolder.id);
-  await assert.rejects(readFile(join(copy.path, ".workspace/legacy.json")), /ENOENT/);
-  assert.equal(await readFile(join(cwd, ".workspace/legacy.json"), "utf8"), "opaque legacy fixture\n");
+  await assert.rejects(readFile(join(copy.path, ".amplefile", "committed.txt")), /ENOENT/);
   await writeFile(join(copy.path, "source.txt"), "independent edit\n");
   await writeFile(join(copy.path, "untracked.txt"), "keep this too\n");
   const child = await h.api.actFacade.chatHandoff({ connectedFolder: h.connectedFolder.id, taskId: h.turn.taskId, toConnectedFolder: copy.connectedFolderId, message: "/hold", files: [] });

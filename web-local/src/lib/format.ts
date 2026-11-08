@@ -1,6 +1,5 @@
 import { chatDraftKeyPrefix, chatDraftMaxStoredChars, chatDraftNewConversationId, untitledChatLabel } from "../constants";
 import type { ChatMessage } from "../types";
-import { conversationTitleFromFirstUserMessage } from "../../../src/shared/chat-title";
 import { readStoredJsonValue, readStoredValue, writeStoredJsonValue, writeStoredValue } from "./storage";
 
 export interface StoredPendingChatSend {
@@ -12,7 +11,7 @@ export interface StoredPendingChatSend {
   contextPaths: string[];
   transientConversation: boolean;
   draftStorageKey: string;
-  /** Connected Folder Workers the message @-mentions (2026-10-01). */
+  /** Connected Folder Workers the message @-mentions. */
   addressedConnectedFolderIds?: string[];
 }
 
@@ -103,16 +102,11 @@ export function chatDisplayTitle({
 }
 
 export function modelConversationTitle(messages: ChatMessage[]): string | null {
-  const firstUserMessage = messages.find((message) => message.role === "user")?.content;
-  const legacyFallback = conversationTitleFromFirstUserMessage(firstUserMessage);
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message.role !== "system" || message.kind !== "conversation_title") continue;
     const title = message.content.replace(/\s+/g, " ").trim();
     if (message.titleSource === "placeholder" || message.titleSource === "attempted") continue;
-    const hasRecordedAttempt = messages.slice(0, index).some((candidate) =>
-      candidate.kind === "conversation_title" && candidate.titleSource === "attempted");
-    if (message.titleSource === "generated" && title === legacyFallback && !hasRecordedAttempt) continue;
     if (index === 0 && title === untitledChatLabel) continue;
     if (title) return title.slice(0, 80);
   }

@@ -10,7 +10,7 @@ import {
 import { ampleFileRequestLimits } from "../src/shared/amplefile-limits.js";
 
 /**
- * The one result shape (docs/collaboration-contract.md, F29). `chat report`,
+ * The one result shape (docs/collaboration-contract.md). `chat report`,
  * a handoff outcome, and an automation chat hop all produce this envelope, so what it accepts and what it refuses is a
  * contract several callers depend on.
  */
@@ -46,7 +46,7 @@ test("one result envelope carries a summary, an outcome, and nothing undeclared"
   for (const outcome of ["succeeded", "partial", "failed"]) {
     assert.equal(parseAmpleFileResultEnvelope({ summary: "Done.", outcome }).outcome, outcome);
   }
-  // Failing closed: a field F29 does not define is refused rather than
+  // Failing closed: a field the result shape does not define is refused rather than
   // silently carried into a record that outlives this build.
   assert.throws(
     () => parseAmpleFileResultEnvelope({ summary: "Done.", outcome: "succeeded", nextSteps: "later" }),
@@ -81,7 +81,7 @@ test("an envelope without a usable summary or outcome is refused", () => {
 
 test("every envelope bound refuses as a named limit, not as a generic failure", () => {
   // Bounds are generous defaults a person can see and raise
-  // (docs/receipts-not-gates.md, principle 6), so a refusal carries the limit
+  // (docs/act-ledger.md), so a refusal carries the limit
   // it hit and points at the place that shows the number.
   const overSummary = () => parseAmpleFileResultEnvelope({
     summary: "x".repeat(ampleFileRequestLimits.maxResultSummaryBytes + 1),
@@ -133,9 +133,9 @@ test("deliverables are Connected Folder–relative paths with a real content has
     assert.throws(() => assertConnectedFolderRelativeResultPath(path), /must be relative to the Connected Folder\./, path);
     assert.throws(envelope([{ path, sha256, sizeBytes: 1 }]), /must be relative to the Connected Folder\./, path);
   }
-  for (const path of [".amplefile/connected-folder.json", ".pi/skills/x.md", "docs/.WORKSPACE/old.json", "notes/.AmpleFile/x"]) {
-    assert.throws(() => assertConnectedFolderRelativeResultPath(path), /reserved AmpleFile, Pi, or legacy product metadata\./, path);
-    assert.throws(envelope([{ path, sha256, sizeBytes: 1 }]), /reserved AmpleFile, Pi, or legacy product metadata\./, path);
+  for (const path of [".amplefile/connected-folder.json", ".pi/skills/x.md", "docs/.WORK-FOLD/old.json", "notes/.AmpleFile/x"]) {
+    assert.throws(() => assertConnectedFolderRelativeResultPath(path), /reserved \.amplefile, \.work-fold, or \.pi metadata\./, path);
+    assert.throws(envelope([{ path, sha256, sizeBytes: 1 }]), /reserved \.amplefile, \.work-fold, or \.pi metadata\./, path);
   }
   assert.throws(envelope([{ path: "", sha256, sizeBytes: 1 }]), /Result file 1 path cannot be empty\./);
   // Ordinary names with spaces stay ordinary.

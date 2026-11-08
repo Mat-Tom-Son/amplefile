@@ -8,7 +8,7 @@ import { productIdentity } from "../../src/shared/product-identity.js";
 import { outsideAgentSkill, outsideAgentSkillName } from "../../src/shared/outside-agent-skill.js";
 
 /**
- * Letting other AI agents use this app (owner request, 2026-11-07): the app's
+ * Letting other AI agents use this app: the app's
  * command on the Terminal's PATH, and its skill file in Claude Code's and
  * Codex's skills folders. Both happen only when the person clicks.
  *

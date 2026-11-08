@@ -73,7 +73,7 @@ type FocusTarget = "search" | "selected" | "start" | "end";
 /**
  * A provider's models as a dropdown: the closed control shows the chosen
  * model; open, it starts with a search box (past the threshold) and lists the
- * models under vendor headings; choosing one closes it again (2026-09-27).
+ * models under vendor headings; choosing one closes it again.
  */
 export function ModelCatalogList({ id, labelledBy, models, value, disabled = false, groupByProvider = false, onChange, controlRef }: {
   id: string;

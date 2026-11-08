@@ -18,8 +18,8 @@ test("sandboxed desktop preloads only require Electron", () => {
 });
 
 test("no preload or main-process handler serves a Connected Folder app view", () => {
-  // Connected Folder apps were removed on 2026-11-07, with their sandboxed
-  // host, its preload, and the agent-app protocol.
+  // There are no Connected Folder apps: no sandboxed app host, app preload,
+  // or agent-app protocol.
   for (const source of preloads) assert.doesNotMatch(source, /restrictedApps|restricted-app-view/);
   assert.doesNotMatch(main, /restricted-app-view|restricted-app-preload|restrictedAppProtocol|agent-app/);
 });
