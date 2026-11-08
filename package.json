@@ -89,9 +89,6 @@
     "ws": "^8.21.2"
   },
   "devDependencies": {
-    "@electron-forge/cli": "^7.11.2",
-    "@electron-forge/maker-zip": "^7.11.2",
-    "@electron-forge/plugin-fuses": "^7.11.2",
     "@electron/asar": "^4.0.2",
     "@electron/fuses": "^1.8.0",
     "@fluentui/react-icons": "^2.0.331",
