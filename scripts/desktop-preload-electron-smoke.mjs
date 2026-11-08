@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain } from "electron";
 import { writeDesktopClipboard } from "../dist/desktop/desktop/src/clipboard.js";
 
+if (process.platform === "linux" && process.env.DISPLAY && !app.commandLine.hasSwitch("ozone-platform")) app.commandLine.appendSwitch("ozone-platform", "x11");
+
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const productIdentity = JSON.parse(await readFile(join(rootDir, "src", "shared", "product-identity.json"), "utf8"));
 const expected = {

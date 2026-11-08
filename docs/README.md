@@ -18,6 +18,9 @@ for product scope and [AGENTS.md](../AGENTS.md) for contributor rules.
 
 ## Contracts
 
+Linux packaging, native helpers, sidebar paths and candidate verification are
+documented in [Linux builds](linux-build.md).
+
 | Area | Read |
 |---|---|
 | Product and contributor workflow | [Product model](product-model.md), [Contributing](../CONTRIBUTING.md), [Development](development.md), [Architecture](architecture.md) |

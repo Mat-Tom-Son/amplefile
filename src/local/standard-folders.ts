@@ -16,6 +16,7 @@ import {
 } from "./connected-folder.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "./connected-folder-ignore.js";
 import { ampleFileStateRoot } from "./state-paths.js";
+import { linuxUserDirectories } from "./standard-folder-locations.js";
 
 /**
  * Standard Folders (docs/product-model.md, "The file manager window"):
@@ -70,14 +71,26 @@ export function isStandardFolderId(value: unknown): value is StandardFolderId {
 }
 
 export function standardFolderRoot(id: StandardFolderId, home = homedir()): string {
-  if (isBuiltInStandardFolderId(id)) return builtInFolders[id].path(resolve(home));
+  if (isBuiltInStandardFolderId(id)) {
+    if (process.platform === "linux" && id !== "home" && id !== "icloud") {
+      const configured = linuxUserDirectories(resolve(home))[id];
+      if (configured) return configured;
+    }
+    return builtInFolders[id].path(resolve(home));
+  }
   const added = addedFolders().find((folder) => folder.id === id);
   if (!added) throw Object.assign(new Error("That folder isn’t in the sidebar anymore."), { status: 404, statusCode: 404 });
   return added.root;
 }
 
 export function standardFolderName(id: StandardFolderId, home = homedir()): string {
-  if (isBuiltInStandardFolderId(id)) return builtInFolders[id].name(resolve(home));
+  if (isBuiltInStandardFolderId(id)) {
+    if (process.platform === "linux" && id !== "home" && id !== "icloud") {
+      const configured = linuxUserDirectories(resolve(home))[id];
+      if (configured) return basename(configured);
+    }
+    return builtInFolders[id].name(resolve(home));
+  }
   return addedFolders().find((folder) => folder.id === id)?.name ?? "Folder";
 }
 
@@ -85,13 +98,16 @@ export function standardFolderName(id: StandardFolderId, home = homedir()): stri
 export async function listStandardFolders(
   connectedFolders: ReadonlyArray<{ id: string; connectedFolderRoot: string }>,
   home = homedir(),
+  platform: NodeJS.Platform = process.platform,
 ): Promise<StandardFolderSummary[]> {
   const folders: StandardFolderSummary[] = [];
   const places = [
-    ...builtInStandardFolderIds.map((id) => ({ id: id as StandardFolderId, name: standardFolderName(id, home), root: standardFolderRoot(id, home), added: false })),
+    ...builtInStandardFolderIds.filter(id => id !== "icloud" || platform === "darwin").map((id) => ({ id: id as StandardFolderId, name: standardFolderName(id, home), root: standardFolderRoot(id, home), added: false })),
     ...addedFolders().map((folder) => ({ ...folder, added: true })),
   ];
   for (const place of places) {
+    // XDG points a disabled directory at HOME; keep just the Home sidebar row.
+    if (platform === "linux" && place.id !== "home" && !place.added && samePath(place.root, resolve(home))) continue;
     // Looking inside ~/Library/Mobile Documents is what asks macOS for iCloud
     // access, so iCloud Drive is listed when that folder exists and asks only once opened.
     const probe = place.id === "icloud" ? dirname(place.root) : place.root;
@@ -104,14 +120,14 @@ export async function listStandardFolders(
 }
 
 /** One level of a standard folder, without what Finder hides (dotfiles, and Library in the home folder). */
-export async function scanStandardFolder(id: StandardFolderId, relativePath: string, home = homedir()): Promise<{ tree: TreeEntry[]; truncated: boolean }> {
+export async function scanStandardFolder(id: StandardFolderId, relativePath: string, home = homedir(), platform: NodeJS.Platform = process.platform): Promise<{ tree: TreeEntry[]; truncated: boolean }> {
   const root = standardFolderRoot(id, home);
   const atHomeRoot = samePath(root, resolve(home)) && !relativePath.split("/").some((part) => part && part !== ".");
   try {
     const scan = await scanConnectedFolderTree(root, 0, relativePath, { includeIgnored: true, nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(root) });
     return {
       tree: scan.entries
-        .filter((entry) => isShownStandardEntry(entry.name) && !(atHomeRoot && entry.name === "Library"))
+        .filter((entry) => isShownStandardEntry(entry.name) && !(platform === "darwin" && atHomeRoot && entry.name === "Library"))
         .map(({ children: _children, ...entry }) => entry),
       truncated: scan.truncated,
     };

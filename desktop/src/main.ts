@@ -1,3 +1,5 @@
+import { ComputerSessionService } from "../../src/local/agent/computer-session.js";
+import { NativeWaylandTransport } from "../../src/local/agent/wayland-transport.js";
 import { createEncryptedMcpCredentialBackend } from "./pi-mcp-credentials.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
@@ -66,7 +68,8 @@ import { includedToolsRoot } from "../../src/local/agent/included-tools.js";
 import { IncludedChromeConnectionService } from "../../src/local/agent/included-chrome-connection.js";
 import type { ChromeHostFacilities } from "../../src/shared/chrome-connection.js";
 import chromeDistribution from "../../src/shared/chrome-distribution.json" with { type: "json" };
-import { ChromeNativeHostRegistration } from "./chrome-native-host.js";
+import { ChromeNativeHostRegistration, googleChromeInstalled, openChromeStore } from "./chrome-native-host.js";
+import { prepareLinuxDevelopmentCli } from "./linux-development-cli.js";
 import { ComputerHelperInstallation } from "./computer-helper-installation.js";
 import { createJiti } from "jiti";
 import { applyLoginShellEnvironment, formatLoginShellEnvironmentResult, type LoginShellEnvironmentResult } from "./shell-environment.js";
@@ -115,6 +118,19 @@ import {
 } from "./command-line-install.js";
 import { outsideAgentSkill } from "../../src/shared/outside-agent-skill.js";
 import { resolveDesktopApplicationVersion } from "./application-version.js";
+
+// AppImage launchers can fall back to --no-sandbox when namespaces are blocked.
+// Refuse before initializing user state rather than weaken renderer isolation.
+if (process.platform === "linux" && app.commandLine.hasSwitch("no-sandbox")) {
+  console.error("AmpleFile requires the Chromium sandbox. Install the DEB/RPM with the distribution's supported sandbox configuration.");
+  app.exit(1);
+}
+
+// Hidden browser views need X11's native parent for trusted input and capture.
+// Desktop sharing still uses the Wayland portal in a Wayland login session.
+if (process.platform === "linux" && process.env.DISPLAY && !app.commandLine.hasSwitch("ozone-platform")) {
+  app.commandLine.appendSwitch("ozone-platform", "x11");
+}
 
 const productionProductName = productIdentity.productName;
 const localMacSmokeProductName = productIdentity.macSmokeProductName;
@@ -345,7 +361,7 @@ if (ownsInstance) {
 
 app.on("window-all-closed", () => {
   if (quittingForUpdate) return;
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform === "win32") app.quit();
 });
 
 app.on("before-quit", (event) => {
@@ -385,6 +401,7 @@ interface DesktopHost {
   kernel: AmpleFileKernel;
   cli: AmpleFileDesktopCliHost;
   chromeConnection: IncludedChromeConnectionService;
+  computerSession?: ComputerSessionService;
 }
 
 let loginShellEnvironmentPromise: Promise<LoginShellEnvironmentResult> | null = null;
@@ -429,30 +446,33 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
       stateRoot: join(userData, "assistant-tools"), distribution: chromeDistribution,
       sourceDirectory: app.isPackaged ? join(process.resourcesPath, "chrome-native-host") : join(app.getAppPath(), "out/included-tools/chrome-native-host"),
       // An isolated/dev host must not replace the normal Chrome registration.
-      enabled: process.platform === "darwin" && app.isPackaged && !localMacSmokeBuild && !ampleFileDesktopStateOverride(process.env),
+      enabled: ["darwin", "linux"].includes(process.platform) && app.isPackaged && !localMacSmokeBuild && !ampleFileDesktopStateOverride(process.env),
+      appPath: process.platform === "linux" ? process.env.APPIMAGE || process.execPath : process.execPath,
     });
     const chromeConnection = await IncludedChromeConnectionService.create({
       stateRoot: join(userData, "assistant-tools"), distribution: chromeDistribution,
       registerNativeHost: (explicit, ifAbsent) => chromeRegistration.register(explicit, ifAbsent),
       // Setup says "Install Google Chrome" instead of failing to open it; app bundles only.
-      browserInstalled: () => ["/Applications/Google Chrome.app", join(homedir(), "Applications/Google Chrome.app")].some((path) => existsSync(path)),
-      openStore: async () => {
-        if (!chromeDistribution.storeId || !/^[a-p]{32}$/.test(chromeDistribution.storeId)) throw new Error("Chrome connection is not available yet.");
-        await new Promise<void>((resolveOpen, rejectOpen) => execFile("/usr/bin/open", ["-a", "Google Chrome", `https://chromewebstore.google.com/detail/${chromeDistribution.storeId}`], error => error ? rejectOpen(new Error("Google Chrome could not open the AmpleFile listing.")) : resolveOpen()));
-      },
+      browserInstalled: () => googleChromeInstalled(),
+      openStore: () => openChromeStore(chromeDistribution.storeId),
       startTransport: async (facilities) => (await loadChromeConnection()).startIncludedChromeConnection(facilities),
       probe: async () => { await (await loadChromeConnection()).probeIncludedChromeConnection(chromeConnection); },
     });
-    const bundledComputerHelper = app.isPackaged
+    const bundledComputerHelper = process.platform === "linux"
+      ? join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "out", "included-tools"), "computer-helper", "linux-bridge")
+      : app.isPackaged
       ? join(process.resourcesPath, "computer-helper", "AmpleFile Computer.app")
       : join(app.getAppPath(), "out", "included-tools", "computer-helper", "AmpleFile Computer.app");
     const computerHelper = process.platform === "darwin" && app.isPackaged
       ? await ComputerHelperInstallation.create({ sourceAppPath: bundledComputerHelper, stateRoot: join(userData, "assistant-tools") })
       : undefined;
+    const computerSession = process.platform === "linux" && process.env.XDG_SESSION_TYPE === "wayland"
+      ? new ComputerSessionService({ launch: () => NativeWaylandTransport.launch(join(
+        app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "out", "included-tools"), "wayland-helper", "amplefile-wayland")) }) : undefined;
     const runtime = new PackagedPiRuntimeProvider({
       includedTools: {
         rootPath: includedToolsRoot(), stateRoot: join(userData, "assistant-tools"),
-        chromeConnection,
+        chromeConnection, computerSession,
         helperAppPath: computerHelper?.helperAppPath ?? bundledComputerHelper,
         prepareComputerHelper: computerHelper?.prepare,
         repairComputerHelper: computerHelper?.repair,
@@ -480,7 +500,7 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
     secureSettings = settings;
     piRuntime = runtime;
     return {
-      settings, extensionUi, runtime, runtimeProvider, connectedFolderTrustAuthority, kernel, cli, chromeConnection,
+      settings, extensionUi, runtime, runtimeProvider, connectedFolderTrustAuthority, kernel, cli, chromeConnection, computerSession,
     };
   })();
   return desktopHostPromise;
@@ -704,7 +724,7 @@ async function createMainWindow(): Promise<void> {
     railTooltipOverlay?.close();
     railTooltipOverlay = null;
     mainWindow = null;
-    if (process.platform !== "darwin" && !quitting && !quittingForUpdate) app.quit();
+    if (process.platform === "win32" && !quitting && !quittingForUpdate) app.quit();
   });
   configureWindowNavigation(mainWindow);
   configureContextMenu(mainWindow);
@@ -1389,6 +1409,7 @@ function buildApplicationSubmenuTemplate(menuId: ApplicationMenuId): MenuItemCon
   if (menuId === "view") {
     return [
       { label: "Command Palette...", accelerator: "CommandOrControl+K", click: () => sendRendererMenuCommand("open-command-palette") },
+      ...(process.platform === "linux" ? [{ label: "AmpleFile Agent", click: () => { void toggleAmpleFileAgentPopover(); } }] : []),
       { type: "separator" },
       { id: "toggle-sidebar", label: "Toggle Sidebar", accelerator: "CommandOrControl+B", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-sidebar") },
       { id: "toggle-agent-panel", label: "Toggle AmpleFile Agent", accelerator: "CommandOrControl+J", enabled: rendererMenuState.connectedFolderOpen, click: () => sendRendererMenuCommand("toggle-agent-panel") },
@@ -1635,7 +1656,13 @@ function configureCliEnvironment(): void {
   // this unset can expose a different Connected Folder registry through an
   // installed AmpleFile CLI on PATH.
   process.env.AMPLEFILE_CLI_STATE_DIR = app.getPath("userData");
-  if (!app.isPackaged || (process.platform !== "win32" && process.platform !== "darwin")) return;
+  if (process.platform === "linux" && !app.isPackaged) {
+    const launch = prepareLinuxDevelopmentCli({ repoRoot: app.getAppPath(), stateDirectory: app.getPath("userData"), electronPath: process.execPath });
+    process.env.PATH = `${launch.binDirectory}${delimiter}${process.env.PATH ?? ""}`;
+    process.env.AMPLEFILE_CLI_APP = launch.appPath;
+    return;
+  }
+  if (!app.isPackaged || !["win32", "darwin", "linux"].includes(process.platform)) return;
   const executableDirectory = dirnameFromFile(process.execPath);
   const binDirectory = process.platform === "darwin"
     ? resolve(executableDirectory, "..", "bin")
@@ -1786,7 +1813,7 @@ function popupNativeFileMenu(request: NativeFileMenuRequest): Promise<NativeFile
       settled = true;
       resolveCommand(command);
     };
-    const template = nativeFileMenuItems(request).map<MenuItemConstructorOptions>((item) => item.type === "separator"
+    const template = nativeFileMenuItems(request, process.platform).map<MenuItemConstructorOptions>((item) => item.type === "separator"
       ? { type: "separator" }
       : { label: nativeMenuLabel(item.label), click: () => finish(item.command), ...(item.icon === "amplefile" ? ampleFileMenuIcon() : {}) });
     Menu.buildFromTemplate(template).popup({
@@ -1992,11 +2019,13 @@ async function shutdown(): Promise<void> {
   const runtime = piRuntime;
   piRuntime = null;
   const chrome = desktopHostPromise?.then((host) => host.chromeConnection.close()) ?? Promise.resolve();
+  const computer = desktopHostPromise?.then((host) => host.computerSession?.close()) ?? Promise.resolve();
   shutdownPromise = (async () => {
     const outcomes = await Promise.allSettled([
       withShutdownTimeout(localApiLifetime.close(), "local API"),
       withShutdownTimeout(runtime?.flush() ?? Promise.resolve(), "Pi state"),
       withShutdownTimeout(chrome, "Chrome connection"),
+      withShutdownTimeout(computer, "desktop sharing"),
       withShutdownTimeout(removeAmpleFileCliActTokenFile(app.getPath("userData")), "CLI act token"),
     ]);
     for (const outcome of outcomes) {
@@ -2083,7 +2112,7 @@ function updateDesktopPreferences(update: Partial<DesktopPreferences>): void {
 }
 
 function createTrayIfSupported(): void {
-  if (tray || (process.platform !== "win32" && process.platform !== "darwin")) return;
+  if (tray || !["win32", "darwin", "linux"].includes(process.platform)) return;
   const icon = resolveTrayIcon();
   if (!icon) {
     console.warn(`${productName} tray icon was not found; the ${process.platform === "darwin" ? "menu-bar" : "tray"} surface is unavailable.`);
@@ -2277,6 +2306,7 @@ function configurePowerMonitor(): void {
   if (powerMonitorRegistered) return;
   powerMonitorRegistered = true;
   powerMonitor.on("suspend", () => {
+    void desktopHostPromise?.then(host => host.computerSession?.stop()).catch(() => {});
     // Automation runs share the scheduler discipline: suspension aborts the
     // active run (it settles `interrupted`, honestly receipted) and holds
     // admissions until resume (docs/automations.md).
@@ -2288,6 +2318,9 @@ function configurePowerMonitor(): void {
     });
     setTimeout(ensureRendererAfterResume, resumeRendererHealthDelayMs);
     setTimeout(() => { void checkForUpdates(false); }, resumeUpdateCheckDelayMs);
+  });
+  powerMonitor.on("lock-screen", () => {
+    void desktopHostPromise?.then(host => host.computerSession?.stop()).catch(() => {});
   });
   powerMonitor.on("shutdown", () => { void shutdown(); });
 }

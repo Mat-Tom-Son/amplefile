@@ -36,6 +36,12 @@ organizing metaphor.
 
 ## The file manager window
 
+The local [Linux candidate](linux-build.md) resolves Standard Folders through
+XDG user directories, including relocated paths, and omits disabled directories
+and iCloud Drive. The home row remains separate. **View → AmpleFile Agent**
+also opens the agent when the Linux desktop has no tray icon. Closing the
+last Linux window preserves accepted work; Quit ends the host.
+
 AmpleFile's window is a smart file manager that looks native to macOS and
 Finder. It uses the same local API, file events, and desktop bridge as every
 other surface.

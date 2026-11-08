@@ -80,6 +80,17 @@ is not rendered as a desktop component.
 
 ## Included tools and limits
 
+The [Linux candidate](linux-build.md#computer-control) includes the reviewed
+AT-SPI helper and native Wayland portal/PipeWire/libei sharing helper. Screen
+sharing is an explicit OS setup action, available before any Chat exists;
+an app-wide grant permits one accepted turn to control the desktop at a time.
+Full-trust Extensions receive the same optional versioned host facilities for
+shared-screen targets, observations, actions and release. Stop, lock, sleep,
+owner teardown and Quit revoke control; stale observations and uncertain input
+fail without replay. Desktop data and native lease identities never cross the
+renderer bridge. Catalog inspection remains cold. Mac helper behavior below
+continues to use its separate signed bundle and permission setup.
+
 | Tool | Included implementation | Setup and supported boundary |
 |---|---|---|
 | Computer Control | `@injaneity/pi-computer-use` 0.5.1; existing native observations/input coordination with reviewed helper lifecycle changes | Apple-silicon macOS helper built from source and included in the app signing lane. Accessibility and Screen Recording setup names the actual helper. Requested observations and actions, no continuous recorder. |

@@ -47,7 +47,6 @@ const retinaBytes = await renderBackground(2);
 await Promise.all([
   writeFile(join(outDir, "dmg-background.png"), backgroundBytes),
   writeFile(join(outDir, "dmg-background@2x.png"), retinaBytes),
-  writeFile(join(assetsDir, "dmg-background.png"), backgroundBytes),
 ]);
 
 console.log(`Generated AmpleFile DMG background at ${join(outDir, "dmg-background.png")}`);

@@ -182,6 +182,7 @@ await buildIcns();
 await copyFile(macIconSource, join(outDir, "icon.png"));
 const marks = await renderMarks();
 await writeFile(join(outDir, "icon-32.png"), marks.get(32));
+await writeFile(join(outDir, "icon-512.png"), marks.get(512));
 await buildIco(marks);
 await renderMenuTemplates();
 await writeDarkLockup();

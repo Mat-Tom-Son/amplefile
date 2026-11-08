@@ -1,3 +1,4 @@
+import type { NativeComputerOwner } from "./computer-session.js";
 import { createHash, randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -444,6 +445,7 @@ export class PiConversationClient extends EventEmitter {
       this.turnIdentity = null;
       this.turnChecklist = null;
       this.promptInFlight = false;
+      if (owner.taskId) await this.resolvedRuntime?.config.includedTools?.computerSession?.releaseTurn(owner.taskId, owner.cancelled);
     }
   }
 
@@ -488,6 +490,7 @@ export class PiConversationClient extends EventEmitter {
     this.emitEvent({ type: "status", message: reason });
     this.rejectPrompt?.(error);
     if (session) void session.abort().catch(() => undefined);
+    await this.resolvedRuntime?.config.includedTools?.computerSession?.releaseSession(this.computerOwner());
     return true;
   }
 
@@ -737,6 +740,8 @@ export class PiConversationClient extends EventEmitter {
     this.authController?.abort();
     this.runtimeGeneration += 1;
     if (this.activeExtensionTurn) this.activeExtensionTurn.cancelled = true;
+    const stopScreen = this.resolvedRuntime?.config.includedTools?.computerSession?.releaseSession(this.computerOwner());
+    void stopScreen?.catch(() => undefined);
     this.resolvedRuntime?.config.extensionUi?.forgetScope?.(this.extensionUiScope());
     // Bounded inference has no turn to settle; abort it so callers see an interruption, not a hang.
     for (const call of this.boundedCalls) call.abort();
@@ -763,6 +768,12 @@ export class PiConversationClient extends EventEmitter {
     // shutdown-triggered stop. Keep it alive until that settlement completes.
     if (!preserveActiveTurnTrail) this.resetTurnState();
     if (runtime) await settleWithin(runtime.dispose(), 2_000).catch(() => undefined);
+    await stopScreen;
+  }
+
+  private computerOwner(): NativeComputerOwner {
+    return { scope: this.hostCapabilities ? "connected-folder" : "management", conversationId: this.conversationId,
+      connectedFolderRoot: this.connectedFolderRoot, ...(this.hostCapabilities ? { connectedFolderId: this.hostCapabilities.connectedFolderId } : {}) };
   }
 
   private get session(): AgentSession {
@@ -818,7 +829,10 @@ export class PiConversationClient extends EventEmitter {
           additionalThemePaths: runtime.config.additionalThemePaths,
           ...await sessionResourceOptions(options.cwd, runtime, this.options.role ?? "worker", () => this.turnIdentity
             ? { ...this.turnIdentity, ...(this.turnChecklist?.length ? { checklist: this.turnChecklist } : {}) }
-            : null, recovery),
+            : null, recovery, { owner: this.computerOwner(), turn: () => {
+            const owner = this.extensionTurn.getStore();
+            return owner?.taskId ? owner as PiTurnOwner & { taskId: string } : undefined;
+          } }),
           // Connected Folder instructions first, then the operations guide, so the
           // person's own text keeps the position it always had.
           appendSystemPromptOverride: (base) => appendToolFeedbackGuide(appendConnectedFolderOperationsGuide(
@@ -1677,8 +1691,9 @@ async function sessionResourceOptions(
   role: NonNullable<PiConversationClientOptions["role"]>,
   turnIdentity: () => AmpleFileTurnIdentity | null,
   recovery: ProgressRecovery,
+  computer: Parameters<typeof includedResourceOptions>[4],
 ) {
-  const included = await includedResourceOptions(cwd, runtime, "session", role);
+  const included = await includedResourceOptions(cwd, runtime, "session", role, computer);
   return {
     ...included,
     extensionFactories: [

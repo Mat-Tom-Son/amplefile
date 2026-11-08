@@ -225,3 +225,12 @@ exact app without changing a shell profile.
 the native Pi preflight. The package contains no bundled document library,
 private Skill catalog, provider key, or signing material. See
 [macOS build lanes](macos-build.md) for verification and publishing.
+
+## Linux desktop candidate
+
+[Linux builds](linux-build.md) documents the native CLI, encrypted credential
+backends, XDG Standard Folders and portal Computer Control. Read v1 and act v3
+keep their existing semantics; the native Rust transport introduces no new
+product verbs. The app owns one optional ComputerSessionService and shares
+its native facilities only with explicit full-trust Chat identities. Renderer
+setup sees status and start/stop actions, never native leases or screen data.

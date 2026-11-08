@@ -57,7 +57,7 @@ async function sandbox(t: test.TestContext, appName = `${productIdentity.product
 test("only an installed Mac app, run from its own place, can put its command on the PATH", () => {
   const app = "/Applications/Acme.app/Contents/MacOS/Acme";
   assert.equal(pathUnsupportedReason({ platform: "darwin", isPackaged: true, executablePath: app }), null);
-  assert.match(pathUnsupportedReason({ platform: "linux", isPackaged: true, executablePath: app })!, /on a Mac/);
+  assert.match(pathUnsupportedReason({ platform: "linux", isPackaged: true, executablePath: app })!, /Linux packages add amplefile to Terminal automatically/);
   assert.match(pathUnsupportedReason({ platform: "darwin", isPackaged: false, executablePath: app })!, /Only the installed/);
   assert.match(pathUnsupportedReason({ platform: "darwin", isPackaged: true, executablePath: "/private/var/folders/x/AppTranslocation/ABC/d/Acme.app/Contents/MacOS/Acme" })!, /Applications folder/);
   assert.equal(commandBinDirectory(app), "/Applications/Acme.app/Contents/bin");

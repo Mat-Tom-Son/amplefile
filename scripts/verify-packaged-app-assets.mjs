@@ -41,7 +41,7 @@ const binDir = packagedPlatform === "darwin" ? join(appDir, "Contents", "bin") :
 const asarPath = join(resourcesDir, "app.asar");
 const executablePath = packagedPlatform === "darwin"
   ? join(appDir, "Contents", "MacOS", macExecutableName)
-  : join(appDir, identity.productName);
+  : join(appDir, packagedPlatform === "linux" ? identity.packageName : identity.productName);
 
 assertPath(executablePath, `${identity.productName} executable`);
 assertPath(asarPath, "app.asar");
@@ -107,7 +107,29 @@ if (packagedPlatform === "darwin") {
   }
 }
 
-if (existsSync(executablePath) && packagedPlatform === "darwin") {
+if (packagedPlatform === "linux") {
+  assertPath(join(binDir, `${identity.cliCommand}-cli`), "native Linux CLI");
+  assertPath(join(resourcesDir, "chrome-native-host", `${identity.cliCommand}-chrome-host`), "Linux Chrome bootstrap");
+  for (const [directory, binary, schema, protocolVersion] of [
+    [binDir, `${identity.cliCommand}-cli`, "amplefile.linux-cli-source.v1", undefined],
+    [join(resourcesDir, "chrome-native-host"), `${identity.cliCommand}-chrome-host`, "amplefile.chrome-native-host-source.v1", undefined],
+    [join(resourcesDir, "computer-helper"), "linux-bridge", "amplefile.computer-helper-source.v1", 4],
+    [join(resourcesDir, "wayland-helper"), "amplefile-wayland", "amplefile.wayland-helper-source.v1", 1],
+  ]) {
+    try {
+      const source = JSON.parse(readFileSync(join(directory, "source.json"), "utf8"));
+      const bytes = readFileSync(join(directory, binary));
+      if (source.schema !== schema || source.target !== "x86_64-unknown-linux-gnu"
+        || (protocolVersion !== undefined && source.protocolVersion !== protocolVersion)
+        || source.binarySha256 !== createHash("sha256").update(bytes).digest("hex")
+        || !(statSync(join(directory, binary)).mode & 0o111)) failures.push(`Invalid Linux helper provenance: ${binary}.`);
+    } catch (error) { failures.push(`Could not verify Linux helper ${binary}: ${formatError(error)}`); }
+    assertPath(join(directory, "THIRD-PARTY-LICENSES.txt"), `${binary} dependency licenses`);
+  }
+  if (existsSync(join(resourcesDir, "app-update.yml"))) failures.push("Linux candidates must not inherit the Mac update feed.");
+}
+
+if (existsSync(executablePath) && ["darwin", "linux"].includes(packagedPlatform)) {
   try {
     const wire = await getCurrentFuseWire(executablePath);
     const expectedFuses = new Map([

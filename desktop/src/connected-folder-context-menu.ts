@@ -71,7 +71,7 @@ export function parseNativeConnectedFolderMenuRequest(value: unknown): NativeCon
   };
 }
 
-export function nativeConnectedFolderMenuItems(request: NativeConnectedFolderMenuRequest): NativeConnectedFolderMenuItem[] {
+export function nativeConnectedFolderMenuItems(request: NativeConnectedFolderMenuRequest, platform: NodeJS.Platform = "darwin"): NativeConnectedFolderMenuItem[] {
   const { actions } = request;
   const items: NativeConnectedFolderMenuItem[] = [];
   if (actions.createConnectedFolder) items.push({ type: "item", label: "New Connected Folder…", command: "create-connected-folder" });
@@ -84,7 +84,7 @@ export function nativeConnectedFolderMenuItems(request: NativeConnectedFolderMen
       { type: "item", label: "Just the Look", command: "look" },
     );
   }
-  if (actions.reveal) items.push({ type: "item", label: "Show in Finder", command: "reveal" });
+  if (actions.reveal) items.push({ type: "item", label: platform === "darwin" ? "Show in Finder" : platform === "win32" ? "Show in File Explorer" : "Show in File Manager", command: "reveal" });
   if (actions.putToWork) items.push({ type: "item", label: "Connect This Folder", command: "put-to-work" });
   if (actions.skills) items.push({ type: "item", label: "Skills & Extensions…", command: "skills" });
   const tail: NativeConnectedFolderMenuItem[] = [];

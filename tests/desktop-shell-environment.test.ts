@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import test from "node:test";
@@ -140,7 +140,7 @@ test("a hanging or missing login shell leaves the launch environment untouched",
 });
 
 test("the default login shell follows $SHELL and falls back to a platform shell that exists", () => {
-  assert.equal(defaultLoginShell({ SHELL: "/definitely/missing/shell" }, "darwin"), "/bin/zsh");
+  assert.equal(defaultLoginShell({ SHELL: "/definitely/missing/shell" }, "darwin"), existsSync("/bin/zsh") ? "/bin/zsh" : "/bin/bash");
   assert.equal(defaultLoginShell({}, "linux"), "/bin/bash");
   assert.equal(defaultLoginShell({ SHELL: "/bin/sh" }, "darwin"), "/bin/sh");
 });

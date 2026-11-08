@@ -148,10 +148,10 @@ test("Pictures and iCloud Drive appear when the computer has them, and the home 
   const root = await home(t);
   await mkdir(join(root, "Pictures"));
   await mkdir(join(root, "Library", "Mobile Documents", "com~apple~CloudDocs"), { recursive: true });
-  const folders = await listStandardFolders([], root);
+  const folders = await listStandardFolders([], root, "darwin");
   assert.deepEqual(folders.map((folder) => folder.id), ["desktop", "downloads", "pictures", "home", "icloud"]);
   assert.equal(folders.find((folder) => folder.id === "icloud")?.name, "iCloud Drive");
-  const listing = await scanStandardFolder("home", "", root);
+  const listing = await scanStandardFolder("home", "", root, "darwin");
   assert.ok(listing.tree.some((entry) => entry.name === "Desktop"));
   assert.ok(!listing.tree.some((entry) => entry.name === "Library"), "Library stays hidden at the top of the home folder");
 });

@@ -16,7 +16,7 @@ import type { SettingsPage } from "../modals/DesktopSettingsModal";
 import { api, apiForm, errorText } from "../../lib/api";
 import { collectDroppedUploadFiles } from "../../lib/dropped-files";
 import { copyToClipboard } from "../../lib/clipboard";
-import { canOpenDirectly, nativeOpenLabel } from "../../lib/file-actions";
+import { canOpenDirectly, nativeOpenLabel, revealInFileManagerLabel } from "../../lib/file-actions";
 import { formatBytes, formatItemCount } from "../../lib/format";
 import { untitledChatLabel } from "../../constants";
 import { isMacOS, connectedFolderEntryNativePath } from "../../lib/platform";
@@ -1002,7 +1002,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   function openStandardFolderMenu(folder: StandardFolderSummary, event: MouseEvent<HTMLElement>) {
     const target: FileManagerPlace = { kind: "standard", id: folder.id };
     void popupMenu(event, { reveal: true, putToWork: true, removeFromSidebar: Boolean(folder.added) }, [
-      { label: "Show in Finder", command: "reveal" },
+      { label: revealInFileManagerLabel(), command: "reveal" },
       { label: "Connect This Folder", command: "put-to-work" },
       ...(folder.added ? [{ label: "Remove from Sidebar", command: "remove-from-sidebar" }] : []),
     ], (command) => {

@@ -19,7 +19,7 @@ test("Electron Builder packages the macOS CLI shims outside ASAR", () => {
   assert.equal(builder.electronFuses.runAsNode, false);
 });
 
-test("macOS DMG artwork keeps the tracked source and generated packaging artifact in sync", async () => {
+test("macOS DMG artwork generates packaging artwork without rewriting tracked assets", async () => {
   assert.equal(
     builder.dmg.background,
     join(rootDir, "out", "generated-assets", "dmg-background.png"),
@@ -31,7 +31,7 @@ test("macOS DMG artwork keeps the tracked source and generated packaging artifac
   ]);
   assert.match(generator, /join\(rootDir, "out", "generated-assets"\)/);
   assert.match(generator, /writeFile\(join\(outDir, "dmg-background\.png"\), backgroundBytes\)/);
-  assert.match(generator, /writeFile\(join\(assetsDir, "dmg-background\.png"\), backgroundBytes\)/);
+  assert.doesNotMatch(generator, /writeFile\(join\(assetsDir, "dmg-background\.png"\), backgroundBytes\)/);
   assert.match(preflight, /out\/generated-assets\/dmg-background\.png/);
 });
 
@@ -43,7 +43,7 @@ test("macOS CLI shim uses an atomic bounded protocol-v1 handoff", async () => {
   assert.match(shellShim, /^#!\/usr\/bin\/env sh/);
   assert.match(shellShim, /uname -s/);
   assert.match(shellShim, /osascript -l JavaScript/);
-  assert.match(shellShim, /runs only on macOS/);
+  assert.match(shellShim, /requires macOS or Linux/);
   for (const field of ["protocolVersion", "id", "argv", "cwd", "createdAt"]) {
     assert.match(jxaHelper, new RegExp(`\\b${field}:`), `request must include ${field}`);
   }

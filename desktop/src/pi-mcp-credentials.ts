@@ -1,8 +1,11 @@
 import { FileCredentialStoreBackend, McpOAuthCredentialStore } from "@earendil-works/pi-coding-agent";
 
+import { secureStorageAvailable } from "./secure-storage.js";
+
 type Backend = NonNullable<ConstructorParameters<typeof McpOAuthCredentialStore>[0]>;
 export interface PiCredentialEncryption {
   isEncryptionAvailable(): boolean;
+  getSelectedStorageBackend?(): string;
   encryptString(value: string): Buffer;
   decryptString(value: Buffer): string;
 }
@@ -12,7 +15,7 @@ export function createEncryptedMcpCredentialBackend(path: string, encryption: Pi
   const native = new FileCredentialStoreBackend(path);
   function decode(current: string | undefined): string | undefined {
     if (!current?.trim() || current.trim() === "{}") return undefined; // Native backend's initial empty file.
-    if (!encryption.isEncryptionAvailable()) throw new Error("Secure service credential storage is unavailable.");
+    if (!secureStorageAvailable(encryption)) throw new Error("Secure service credential storage is unavailable.");
     try {
       const envelope = JSON.parse(current);
       if (envelope.version !== 1 || typeof envelope.ciphertext !== "string" || !envelope.ciphertext) throw new Error();
@@ -21,7 +24,7 @@ export function createEncryptedMcpCredentialBackend(path: string, encryption: Pi
   }
   function encode(next: string | undefined): string | undefined {
     if (next === undefined) return undefined;
-    if (!encryption.isEncryptionAvailable()) throw new Error("Secure service credential storage is unavailable.");
+    if (!secureStorageAvailable(encryption)) throw new Error("Secure service credential storage is unavailable.");
     return JSON.stringify({ version: 1, ciphertext: encryption.encryptString(next).toString("base64") }) + "\n";
   }
   return {

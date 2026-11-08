@@ -70,12 +70,107 @@
     "source": "https://github.com/injaneity/pi-computer-use/tree/4b8dbd7eaa13328ab1a8a4b55d0be0b077de7d62",
     "license": "MIT",
     "patch": "pi-computer-use-0.5.1.patch",
-    "sha256": "bee057699474dec0e16019d44a32c138be0deccbfbe76eff97a46bb0a062ac16",
+    "sha256": "1a3fa09c743015f1c0a20ac115dd836802de33f4c3bbd58914dbfc9c356259a2",
     "files": [
+      {
+        "path": "docs/architecture.md",
+        "before": "479a2b8870a6ef338f6a0771d52a29096f8baf1d66ac4b6753330a74f3e59101",
+        "after": "b7c5ffd4d17cc51df34f06ecd3a25118b5ee3b688bc68cea79888e286171b5db"
+      },
       {
         "path": "extensions/computer-use.ts",
         "before": "1ed753c7b9bd4f11e36225e3358f827c2349d3a0fb71bbb18f8e4de38c5a9420",
-        "after": "0ee64cb01e6c71df7a862bd9b017e3ffd15111b0d6a5d91fd1186c738c499a3f"
+        "after": "a9c612405e9d0b331c022f5d5947353b9196ae2f5e509832df27cceee832bb27"
+      },
+      {
+        "path": "native/linux/bridge-rs/Cargo.lock",
+        "before": "905f5d1aefd8b8e9cb4d292cdc186e54d999dd821b5343ab251b6f55fbc9b7fb",
+        "after": "905f5d1aefd8b8e9cb4d292cdc186e54d999dd821b5343ab251b6f55fbc9b7fb"
+      },
+      {
+        "path": "native/linux/bridge-rs/Cargo.toml",
+        "before": "d974431a70d621066a84343c3887590b404f16ef79e6e323fcdbaab0b5ff322c",
+        "after": "d974431a70d621066a84343c3887590b404f16ef79e6e323fcdbaab0b5ff322c"
+      },
+      {
+        "path": "native/linux/bridge-rs/src/atspi/actions.rs",
+        "before": null,
+        "after": "df1e19212c73640330e34421d2aba54dd428bd7af8722159fdebc0465f1539b2"
+      },
+      {
+        "path": "native/linux/bridge-rs/src/atspi/validation.rs",
+        "before": null,
+        "after": "7536e3178390028879ba1edb9b56eb944b29457c783a6b76cab1dbc2524fcb77"
+      },
+      {
+        "path": "native/linux/bridge-rs/src/atspi.rs",
+        "before": "e8aad487e4d4d02e6ff48cbedcd7748fb24de2f23d0d1e6461c22cb5c4cf6a00",
+        "after": "73acd4098a51c5e2a442fb1a5c126e5dd56e4730394dc1ac17332b6435d6f7f5"
+      },
+      {
+        "path": "native/linux/bridge-rs/src/error.rs",
+        "before": "d553ca07226c8193ce777ed6dec2dd478cbc6b8b3f8f6787889e6bdf54fcef39",
+        "after": "aa898913a65af4500d2cf557cc6ed2f65453fe53d2d018728e63dc729c74f3c2"
+      },
+      {
+        "path": "native/linux/bridge-rs/src/lib.rs",
+        "before": "55202aa52347ff226b9d12382795968a4b3a43824276322518fa5cde3091b171",
+        "after": "55202aa52347ff226b9d12382795968a4b3a43824276322518fa5cde3091b171"
+      },
+      {
+        "path": "native/linux/bridge-rs/src/main.rs",
+        "before": "de47f254ec23163dc649a2f7dd225b25720755a1c3037c38c51e0b334bde5c9a",
+        "after": "a8a9dd5f9385b006662331765bd1b79d0046310b660e0fd662660e01807eeb32"
+      },
+      {
+        "path": "native/linux/bridge-rs/src/protocol.rs",
+        "before": "5fc04cf91bd7b57085198b5239d922e9f72e57acfda14bd52c9ca15253b18459",
+        "after": "5fc04cf91bd7b57085198b5239d922e9f72e57acfda14bd52c9ca15253b18459"
+      },
+      {
+        "path": "native/linux/bridge-rs/src/state.rs",
+        "before": "b09771a3f0a81cc2cab6d9806fed42204edcfb19ec8e23b4b67a5787ddf9f5bc",
+        "after": "6e928489d170d1c3c15cd7f3029d9f0b794f79138f4f408f321f9dfe3161f0f3"
+      },
+      {
+        "path": "native/linux/bridge-rs/src/wayland.rs",
+        "before": "601c2daa17e8a940d3e94e5bd5766603a12968c74738e4c9b3015053c8c44189",
+        "after": "601c2daa17e8a940d3e94e5bd5766603a12968c74738e4c9b3015053c8c44189"
+      },
+      {
+        "path": "native/linux/bridge-rs/src/x11.rs",
+        "before": "40848d0cc7b13d0bf9cd1e7c484cd710138ef8a9ae4608ed0a33aced811906f0",
+        "after": "40848d0cc7b13d0bf9cd1e7c484cd710138ef8a9ae4608ed0a33aced811906f0"
+      },
+      {
+        "path": "native/linux/bridge-rs/tests/accessibility_contract.rs",
+        "before": null,
+        "after": "8a9808b5ce324102feee7d1c28e577a642c8b68b2097cc60f80e900977c5c4b2"
+      },
+      {
+        "path": "native/linux/bridge-rs/tests/protocol_tests.rs",
+        "before": "aab02064aeb22a3cbb31823cf4d1136a42b5d3bd27b927225a85c100e9edaa75",
+        "after": "aab02064aeb22a3cbb31823cf4d1136a42b5d3bd27b927225a85c100e9edaa75"
+      },
+      {
+        "path": "native/macos/accessibility_contract.swift",
+        "before": null,
+        "after": "f918abf32d3b9c4e33f8ee249e938b0c3a9d069a42be519f67a337da97b0861c"
+      },
+      {
+        "path": "native/macos/accessibility_contract_tests.swift",
+        "before": null,
+        "after": "50f76b80968c7fe8d0dbc3e94722e558b36370c2a51a05153d4bf3d8924894b9"
+      },
+      {
+        "path": "native/macos/agent_cursor.swift",
+        "before": null,
+        "after": "96017adbf4b851cd034c195f2215122e1de8ad6f7454857b47706f4ba6a83687"
+      },
+      {
+        "path": "native/macos/agent_cursor_motion.swift",
+        "before": null,
+        "after": "bbe26e29317ecf1dc9dace61e37e2054147d3bc47f9b424dfcc76c3e5bca4b52"
       },
       {
         "path": "native/macos/bridge.swift",
@@ -133,9 +228,34 @@
         "after": "ed13c79f4afd97169f474205642d729dc40a1008ae10989d6cf9450439d82742"
       },
       {
+        "path": "src/contract.ts",
+        "before": "b2873c27f392c7254c49e71be6a2dfd8a2c0b865f29acd57ce0a49698dabbc41",
+        "after": "68bf5679a78636476505465f1669df7543caba7d3dff4b549fafee5a55a0f85a"
+      },
+      {
+        "path": "src/outline.ts",
+        "before": "4fbed9a94390b894a959b3bdf97aedca5d4a8d5b0b2fed8b0f77fb86eddf6367",
+        "after": "7e64f59de33b2e338d0d43ad95f752172db2bd3882c312397aa4df96155552cc"
+      },
+      {
         "path": "src/output.ts",
         "before": "42c2075e8e42e27a203a356f962ba5ed2c656cc08108c9923513289a04a12d94",
         "after": "0a8a95d5723c49cb86c9818ca5042856b9bb51ecfb5ce26db8f952b8e51fadad"
+      },
+      {
+        "path": "src/platform/linux/helper.ts",
+        "before": "0d79a939164cf9a5d4d87a6c8be006796892c4e6afe1b000d68f1507135b0ab3",
+        "after": "9fa2c50f84b9d6b2b0e47725fb67c235853296d781fc2ac8095198e320172243"
+      },
+      {
+        "path": "src/platform/macos/helper-identity.d.mts",
+        "before": null,
+        "after": "16cbedd529e87d714a17bd13659fef510a8bb66d8bf5ceb79929237fa7cb67e2"
+      },
+      {
+        "path": "src/platform/macos/helper-identity.mjs",
+        "before": null,
+        "after": "b8a8f261d4ea0c5fbe580c836594c8ad0ddd9b54a0ebd9c7fe4da825f7fb3b75"
       },
       {
         "path": "src/platform/macos/helper.ts",
@@ -148,54 +268,19 @@
         "after": "fcfbc1e78701e10eb1ffe6412019048d247d5604a32f29ed3c647d369c92448b"
       },
       {
+        "path": "src/platform/types.ts",
+        "before": "37676ae89be612d49a66885f003586d59e61e474d0c568d2761752b1a3c11ed4",
+        "after": "b7f087b854a66b5fa810a63401499e0f971a96f4402c544002217b9d686b02be"
+      },
+      {
         "path": "src/runtime.ts",
         "before": "dd2c969de1e9de8b3424404b70334f5356d4f9147c598517e2e09f00ded1510a",
         "after": "a558744904e41a61e73884d34e45553f874be84bbf8f26197680548a1b7f393d"
       },
       {
-        "path": "native/macos/agent_cursor.swift",
+        "path": "src/shared-screen.ts",
         "before": null,
-        "after": "96017adbf4b851cd034c195f2215122e1de8ad6f7454857b47706f4ba6a83687"
-      },
-      {
-        "path": "native/macos/agent_cursor_motion.swift",
-        "before": null,
-        "after": "bbe26e29317ecf1dc9dace61e37e2054147d3bc47f9b424dfcc76c3e5bca4b52"
-      },
-      {
-        "path": "docs/architecture.md",
-        "before": "479a2b8870a6ef338f6a0771d52a29096f8baf1d66ac4b6753330a74f3e59101",
-        "after": "b7c5ffd4d17cc51df34f06ecd3a25118b5ee3b688bc68cea79888e286171b5db"
-      },
-      {
-        "path": "src/platform/macos/helper-identity.mjs",
-        "before": null,
-        "after": "b8a8f261d4ea0c5fbe580c836594c8ad0ddd9b54a0ebd9c7fe4da825f7fb3b75"
-      },
-      {
-        "path": "src/platform/macos/helper-identity.d.mts",
-        "before": null,
-        "after": "16cbedd529e87d714a17bd13659fef510a8bb66d8bf5ceb79929237fa7cb67e2"
-      },
-      {
-        "path": "native/macos/accessibility_contract.swift",
-        "before": null,
-        "after": "f918abf32d3b9c4e33f8ee249e938b0c3a9d069a42be519f67a337da97b0861c"
-      },
-      {
-        "path": "native/macos/accessibility_contract_tests.swift",
-        "before": null,
-        "after": "50f76b80968c7fe8d0dbc3e94722e558b36370c2a51a05153d4bf3d8924894b9"
-      },
-      {
-        "path": "src/outline.ts",
-        "before": "4fbed9a94390b894a959b3bdf97aedca5d4a8d5b0b2fed8b0f77fb86eddf6367",
-        "after": "7e64f59de33b2e338d0d43ad95f752172db2bd3882c312397aa4df96155552cc"
-      },
-      {
-        "path": "src/platform/types.ts",
-        "before": "37676ae89be612d49a66885f003586d59e61e474d0c568d2761752b1a3c11ed4",
-        "after": "b7f087b854a66b5fa810a63401499e0f971a96f4402c544002217b9d686b02be"
+        "after": "c4fe5de8213496149c5a1afe2e766a5dcb4bd68a50eda92c2ace815280d83a09"
       }
     ]
   },

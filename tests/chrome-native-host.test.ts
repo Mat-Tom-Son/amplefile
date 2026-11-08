@@ -70,7 +70,7 @@ test("Chrome native registration preserves exact origin, stable copied binaries 
   await mkdir(sourceDirectory);
   await writeFile(join(sourceDirectory, "amplefile-chrome-host"), "synthetic binary v1");
   await writeFile(join(sourceDirectory, "source.json"), JSON.stringify({ schema: "amplefile.chrome-native-host-source.v1", origin, nativeHostName: distribution.nativeHostName, bootstrapVersion: 1 }));
-  const options = { sourceDirectory, stateRoot, chromeUserDataRoot, distribution, enabled: true, verifySignature: false };
+  const options = { sourceDirectory, stateRoot, chromeUserDataRoot, distribution, enabled: true, platform: "darwin" as const, verifySignature: false };
   const registration = new ChromeNativeHostRegistration(options);
   const manifestPath = join(chromeUserDataRoot, "NativeMessagingHosts", `${distribution.nativeHostName}.json`);
   await assert.rejects(() => new ChromeNativeHostRegistration({ ...options, enabled: false }).register(true), /installed AmpleFile/);

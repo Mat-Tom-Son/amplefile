@@ -13,6 +13,13 @@ Recently Deleted are in [the act ledger](act-ledger.md); completion across
 turns is governed by
 [the collaboration contract](collaboration-contract.md#completion-delivery-and-recovery).
 
+The [Linux candidate](linux-build.md) bundles a native Rust `amplefile` transport
+using the same bounded read v1 and authenticated act v3 request-file protocols.
+DEB/RPM add the command at installation; development gives Worker shells a
+profile-local launcher. Linux state defaults to `$XDG_CONFIG_HOME/AmpleFile`
+(normally `~/.config/AmpleFile`), and every Worker inherits the exact running
+profile and executable. Wait settles on completion or a question as on Mac.
+
 ## What the AmpleFile Agent is
 
 The AmpleFile Agent is one conversation scope above all Connected Folders,

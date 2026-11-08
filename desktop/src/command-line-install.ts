@@ -88,6 +88,7 @@ export function skillFile(home: string, target: CommandLineSkillTarget): string 
 
 /** Why this build can't put its command on the PATH, or null when it can. */
 export function pathUnsupportedReason(environment: Pick<CommandLineEnvironment, "platform" | "isPackaged" | "executablePath">): string | null {
+  if (environment.platform === "linux") return `Linux packages add ${command} to Terminal automatically. AppImage users can use the bundled command; Worker shells already have it on PATH.`;
   if (environment.platform !== "darwin") return `Adding ${command} to Terminal is available on a Mac.`;
   if (!environment.isPackaged) return `Only the installed ${product} app can add its command to Terminal.`;
   // Gatekeeper runs an app opened straight from a download from a temporary,

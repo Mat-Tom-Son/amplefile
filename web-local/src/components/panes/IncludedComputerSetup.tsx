@@ -1,3 +1,4 @@
+import { IncludedLinuxComputerSetup } from "./IncludedLinuxComputerSetup";
 import { useEffect, useRef, useState } from "react";
 import { Check, Circle, Loader2 } from "../chrome/icons";
 
@@ -23,6 +24,7 @@ export function IncludedComputerSetup({ connectedFolderId, enabled, onStatusChan
   enabled: boolean;
   onStatusChange?: (status: IncludedToolStatus | null) => void;
 }) {
+  if (window.ampleFileDesktop?.app.platform === "linux") return <IncludedLinuxComputerSetup connectedFolderId={connectedFolderId} enabled={enabled} onStatusChange={onStatusChange} />;
   const [status, setStatus] = useState<IncludedToolStatus | null>(null);
   const [busy, setBusy] = useState<ComputerAction | null>(null);
   const [error, setError] = useState<{ source: "read" | "action"; message: string } | null>(null);

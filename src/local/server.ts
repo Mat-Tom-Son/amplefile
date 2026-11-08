@@ -1093,6 +1093,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
       await Promise.allSettled([...state.backgroundCompactions.keys()].map((key) => yieldBackgroundCompaction(state, key)));
       await Promise.allSettled([...state.clients.values()].map((client) => client.stop()));
       await Promise.allSettled([...state.activeTurnPromises]);
+      await stopComputerSharingForScope(state, ampleFileAgentRoot()).catch(() => {});
       await shutdownIncludedToolHost(ampleFileAgentRoot(), state.runtimeProvider).catch((error) => console.warn("Computer helper shutdown:", errorMessage(error)));
       await state.requestSettleChain.catch(() => undefined);
       await flushAllTurnCheckpoints(state);
@@ -2123,7 +2124,10 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       const operation = () => setupIncludedTool(connectedFolder.connectedFolderRoot, body.id!, body.action!, { secret: body.secret }, state.runtimeProvider, signal.signal);
       // Observation and deliberate start never repair or dispose peer Chats.
       // Repair/permission setup keeps the mutation fence and idle-client reset.
-      const result = body.action === "check" || body.id === "computer" && body.action === "start-check" ? await operation() : await runCapabilityMutation(state, connectedFolder, "global", operation);
+      const result = body.action === "check" || body.id === "computer" && ["start-check", "stop-sharing"].includes(body.action)
+        ? await operation() : await runCapabilityMutation(state, connectedFolder, "global", operation, {
+            preserveClients: body.id === "computer" && body.action === "share-screen",
+          });
       sendJson(res, result);
     } finally { res.off("close", closed); }
     return;
@@ -2271,6 +2275,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       if (Date.parse(body.snoozedUntil) <= Date.now()) throw badRequest("Choose a future snooze time.");
     }
     const conversation = await runConversationMutation(state, connectedFolder.id, conversationId, async () => {
+      if (body.archived === true) await stopComputerSharingForScope(state, connectedFolder.connectedFolderRoot, connectedFolder.id, conversationId);
       const updated = body.title !== undefined
         ? await renameConversation(connectedFolder.connectedFolderRoot, conversationId, body.title)
         : await updateConversationLifecycle(connectedFolder.connectedFolderRoot, conversationId, {
@@ -5821,6 +5826,7 @@ async function deleteAmpleFileAgentConversation(
     }
     // An idle client can still hold the Pi session and extension callbacks.
     // Stop disposes that session before its transcript leaves the live root.
+    await stopComputerSharingForScope(state, root, ampleFileAgentScopeId, conversationId);
     await state.clients.get(key)?.stop();
     // `readConversationSummary` validated the id before this join. The source
     // remains a single known transcript below the app-owned management root.
@@ -5883,6 +5889,7 @@ async function deleteConnectedFolderConversation(
       && requestHasUnsettledWork(state, request))) {
       throw httpError(409, "Finish or stop this Chat's outstanding work before deleting it.");
     }
+    await stopComputerSharingForScope(state, connectedFolder.connectedFolderRoot, connectedFolder.id, conversationId);
     await state.clients.get(key)?.stop();
     // `readConversationSummary` validated the id before this join.
     const relativePath = `.amplefile/conversations/${conversationId}.jsonl`;
@@ -9509,6 +9516,8 @@ function assistantEventForRenderer(event: PiChatEvent): Omit<PiChatEvent, "raw">
 }
 
 async function invalidateAmpleFileClients(state: LocalApiState, connectedFolderId: string): Promise<void> {
+  const folder = await getConnectedFolder(connectedFolderId).catch(() => null);
+  if (folder) await stopComputerSharingForScope(state, folder.connectedFolderRoot, connectedFolderId);
   for (const [key, client] of [...state.clients]) {
     if (!key.startsWith(`${connectedFolderId}:`)) continue;
     await client.stop().catch(() => undefined);
@@ -9517,10 +9526,21 @@ async function invalidateAmpleFileClients(state: LocalApiState, connectedFolderI
 }
 
 async function invalidateAllClients(state: LocalApiState): Promise<void> {
+  await stopComputerSharingForScope(state, ampleFileAgentRoot());
   for (const [key, client] of [...state.clients]) {
     await client.stop().catch(() => undefined);
     state.clients.delete(key);
   }
+}
+
+/** Revoke the controlling Chat's share before its durable context disappears. */
+async function stopComputerSharingForScope(state: LocalApiState, root: string, connectedFolderId?: string, conversationId?: string): Promise<void> {
+  const service = (await state.runtimeProvider.resolveRuntime(root)).includedTools?.computerSession;
+  const owner = service?.status().owner;
+  if (!owner) return;
+  if (connectedFolderId !== undefined && (connectedFolderId === ampleFileAgentScopeId ? owner.scope !== "management" : owner.scope !== "connected-folder" || owner.connectedFolderId !== connectedFolderId)) return;
+  if (conversationId !== undefined && owner.conversationId !== conversationId) return;
+  await service!.stop();
 }
 
 type CapabilityScope = "global" | "project";
@@ -9640,7 +9660,7 @@ async function runCapabilityMutation<T>(
   connectedFolder: { id: string; connectedFolderRoot: string },
   scope: CapabilityScope,
   operation: () => Promise<T>,
-  options: { requireProjectTrust?: boolean } = {},
+  options: { requireProjectTrust?: boolean; preserveClients?: boolean } = {},
 ): Promise<T> {
   const key = scope === "global" ? globalCapabilityMutationKey : connectedFolder.id;
   reserveCapabilityMutation(state, connectedFolder.id, scope, key);
@@ -9653,8 +9673,10 @@ async function runCapabilityMutation<T>(
       throw forbidden("Trust this Connected Folder before changing Connected Folder–scoped capabilities.");
     }
     const result = await operation();
-    if (scope === "global") await invalidateAllClients(state);
-    else await invalidateAmpleFileClients(state, connectedFolder.id);
+    if (!options.preserveClients) {
+      if (scope === "global") await invalidateAllClients(state);
+      else await invalidateAmpleFileClients(state, connectedFolder.id);
+    }
     publishControlHint(state, "models");
     return result;
   } finally {

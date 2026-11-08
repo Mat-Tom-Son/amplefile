@@ -17,6 +17,7 @@ model credentials and Apple signing credentials are separate.
 | Inert UI preview | `npm run local:dev`, then open `http://localhost:5173/?fixture=connected-folder` | Sample Connected Folders drawn as the Mac app shows them; no API or model needed |
 | Native, unpackaged Electron | `npm run desktop:smoke` | Builds and verifies the desktop, then opens Electron; restart after native changes |
 | Packaged Mac candidate | See [Mac build lanes](macos-build.md) | Packaging, signing, and publication are separate from everyday development |
+| Packaged Linux candidate | `npm run desktop:make:linux` | Local x64 DEB/RPM/AppImage; see [Linux builds](linux-build.md) for dependencies and desktop qualification |
 
 The inert UI preview is the fastest loop for layout and styling. It reads
 sample data from `web-local/src/fixtures/` and never calls the local API, so

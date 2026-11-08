@@ -1,3 +1,4 @@
+import type { ComputerSessionSummary } from "./computer-session.js";
 import type { ChromeConnectionSummary } from "./chrome-connection.js";
 
 export const includedToolDefinitions = [
@@ -12,6 +13,7 @@ export type IncludedToolId = typeof includedToolDefinitions[number]["id"];
 
 export type IncludedToolReadiness = "ready" | "setup_required" | "unavailable" | "unknown";
 export interface IncludedToolStatus {
+  computerSession?: ComputerSessionSummary;
   id: IncludedToolId; state: IncludedToolReadiness; detail: string; checkedAt: string; stale?: boolean; facts?: Record<string, string | boolean>; chrome?: ChromeConnectionSummary;
   /** Chrome setup only: whether Chrome is installed and the extension has reached AmpleFile. Never read from a Chrome profile. */
   chromeSetup?: { browserInstalled: boolean; extensionSeen: boolean };

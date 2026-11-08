@@ -87,7 +87,7 @@ test("launch registration claims only an absent registration, and only when Chro
   await mkdir(sourceDirectory);
   await writeFile(join(sourceDirectory, "amplefile-chrome-host"), "synthetic binary");
   await writeFile(join(sourceDirectory, "source.json"), JSON.stringify({ schema: "amplefile.chrome-native-host-source.v1", origin, nativeHostName: distribution.nativeHostName, bootstrapVersion: 1 }));
-  const options = { sourceDirectory, stateRoot: join(root, "state"), chromeUserDataRoot, distribution, enabled: true, verifySignature: false };
+  const options = { sourceDirectory, stateRoot: join(root, "state"), chromeUserDataRoot, distribution, enabled: true, platform: "darwin" as const, verifySignature: false };
   const manifestPath = join(chromeUserDataRoot, "NativeMessagingHosts", `${distribution.nativeHostName}.json`);
 
   await new ChromeNativeHostRegistration(options).register(false, true);

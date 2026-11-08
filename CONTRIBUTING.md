@@ -34,6 +34,9 @@ For the native app, run `npm run desktop:smoke` instead. See
 [Development](docs/development.md) for the source map, separate development
 state, isolated test profiles, and focused test commands.
 
+Linux development and packaging also require the native helper toolchain;
+see [Linux builds](docs/linux-build.md) for Rust and system dependencies.
+
 ## Bring your coding agent
 
 Open the repository root in your agent and give it a concrete task.

@@ -18,6 +18,8 @@ AmpleFile is an open-source Mac app that brings your files, AI conversations, an
 
 For example: open a folder of vendor quotes, ask for a comparison, and have the Worker write a decision brief beside the originals. Come back tomorrow and pick up the same conversation.
 
+A [Linux preview build lane](docs/linux-build.md) also produces x64 RPM, DEB and AppImage candidates, including Linux Computer Control. Download the [Linux 0.1.2 prerelease](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.2). These previews are separate from the Mac release and updater.
+
 ## Connected Folders and Workers
 
 Each **Connected Folder** has its own **Worker** and conversations. Your files stay ordinary files, accessible in Finder and your existing tools. A Connected Folder is an ordinary folder you choose to work in; it is never converted into a proprietary container.

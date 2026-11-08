@@ -124,7 +124,7 @@ function parseSelection(value: unknown): { files: number; folders: number } {
   return { files, folders };
 }
 
-export function nativeFileMenuItems(request: NativeFileMenuRequest): NativeFileMenuItem[] {
+export function nativeFileMenuItems(request: NativeFileMenuRequest, platform: NodeJS.Platform = "darwin"): NativeFileMenuItem[] {
   if (request.selection) return nativeSelectionMenuItems(request, request.selection);
   const items: NativeFileMenuItem[] = [];
   if (request.capabilities.open) {
@@ -136,7 +136,7 @@ export function nativeFileMenuItems(request: NativeFileMenuRequest): NativeFileM
   }
   if (request.kind === "file") items.push({ type: "item", label: "Open With", command: "open-with" });
   items.push(
-    { type: "item", label: "Show in Finder", command: "reveal" },
+    { type: "item", label: platform === "darwin" ? "Show in Finder" : platform === "win32" ? "Show in File Explorer" : "Show in File Manager", command: "reveal" },
     { type: "item", label: `Copy ${request.kind === "folder" ? "Folder" : "File"} Path`, command: "copy-path" },
   );
   if (request.capabilities.organize && request.path) {

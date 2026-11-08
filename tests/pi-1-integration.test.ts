@@ -21,6 +21,7 @@ test("desktop MCP credentials keep native locking and never fall back to plainte
   let available = true;
   const encryption = {
     isEncryptionAvailable: () => available,
+    getSelectedStorageBackend: () => "gnome_libsecret",
     encryptString(value: string) { const iv = randomBytes(12), cipher = createCipheriv("aes-256-gcm", key, iv);
       const bytes = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]); return Buffer.concat([iv, cipher.getAuthTag(), bytes]); },
     decryptString(value: Buffer) { const cipher = createDecipheriv("aes-256-gcm", key, value.subarray(0, 12));
