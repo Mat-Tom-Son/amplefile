@@ -1,4 +1,3 @@
-import type { RestrictedAppCheckGrant, RestrictedAppCheckPermission } from "../../src/shared/restricted-app-checks";
 import type { AccentIdentity, ConnectedFolderAppearanceState } from "../../src/shared/connected-folder-appearance";
 export type AppTheme = "light" | "dark";
 export type AppThemePreference = AppTheme | "system";
@@ -91,10 +90,6 @@ export interface ChatMessage {
   requestId?: string;
   /** Sent into an already-running turn; the agent saw it after its current step. */
   delivery?: "steer";
-  /** `app`: an installed app asked for this (`assistant.request`), not the person. */
-  source?: "app";
-  appId?: string;
-  appTitle?: string;
 }
 
 export interface ChatMessageInterruption {
@@ -158,13 +153,6 @@ export interface ChatSendRequest {
   id: number;
   text: string;
   paths: readonly string[];
-}
-/** Seeds a Chat composer with starter text; the person finishes the sentence and sends. */
-export interface ChatDraftRequest {
-  id: number;
-  text: string;
-  connectedFolderId: string;
-  surfaceTabId: string;
 }
 export interface PendingChatSend {
   conversation: ConversationSummary;
@@ -382,351 +370,6 @@ export interface AgentExtensionSurface {
   views: AgentExtensionSurfaceView[];
 }
 
-export type RestrictedAppOAuthDiscoveryKind =
-  | "oauth-authorization-server"
-  | "openid-configuration"
-  | "pinned";
-
-export interface RestrictedAppOAuthPkceDeclaration {
-  kind: "oauth2-pkce";
-  issuer: string;
-  clientId: string;
-  scopes: string[];
-  discovery?: RestrictedAppOAuthDiscoveryKind;
-  authorizationEndpoint?: string;
-  tokenEndpoint?: string;
-  authorizationParameters?: Array<{ name: string; value: string }>;
-}
-
-export type RestrictedAppAuthDeclaration =
-  | { kind: "api-key"; header: string }
-  | { kind: "none" }
-  | { kind: "bearer" }
-  | { kind: "basic" }
-  | RestrictedAppOAuthPkceDeclaration;
-
-export interface RestrictedAppJsonSchema {
-  type: "object" | "array" | "string" | "number" | "integer" | "boolean" | "null";
-  description?: string;
-  properties?: Record<string, RestrictedAppJsonSchema>;
-  required?: string[];
-  additionalProperties?: false;
-  items?: RestrictedAppJsonSchema;
-  enum?: Array<string | number | boolean | null>;
-  minLength?: number;
-  maxLength?: number;
-  minimum?: number;
-  maximum?: number;
-  minItems?: number;
-  maxItems?: number;
-}
-
-export interface RestrictedAppTool {
-  name: string;
-  description: string;
-  action: string;
-  inputSchema: RestrictedAppJsonSchema;
-  resultSchema: RestrictedAppJsonSchema;
-}
-
-export interface RestrictedAppNetworkDestination {
-  id: string;
-  target:
-    | { kind: "public-https"; origin: string }
-    | { kind: "loopback-http"; host: "127.0.0.1" | "::1"; port: number };
-  methods: Array<"GET" | "POST" | "PUT" | "PATCH" | "DELETE">;
-  auth: RestrictedAppAuthDeclaration[];
-}
-
-export interface RestrictedAppFilePermission {
-  id: string;
-  target: "file" | "directory";
-  access: "read" | "read-write";
-}
-
-export interface RestrictedAppFileGrant {
-  id: string;
-  declarationId: string;
-  root: string;
-  access: "read" | "read-write";
-}
-
-export interface RestrictedAppNotificationPermission {
-  id: string;
-  title: string;
-  description: string;
-}
-
-export interface RestrictedAppAutomation {
-  id: string;
-  title: string;
-  description?: string;
-  handler: string;
-  trigger: { kind: "interval"; intervalMinutes: number };
-  permissions: {
-    network: string[];
-    files: string[];
-    notifications: string[];
-  };
-  catchUp: "none" | "latest";
-  overlap: "skip";
-}
-
-export interface RestrictedAppManifest {
-  version: 2;
-  id: string;
-  title: string;
-  description?: string;
-  runtime: { kind: "sandboxed-web"; entry: string; worker?: string };
-  ui: { icon?: string; cornerRadius?: number };
-  tools: RestrictedAppTool[];
-  assistantActions?: { id: string; title: string; instructions: string; inputSchema: RestrictedAppJsonSchema }[];
-  automations: RestrictedAppAutomation[];
-  permissions: {
-    network: RestrictedAppNetworkDestination[];
-    files: RestrictedAppFilePermission[];
-    checks?: RestrictedAppCheckPermission[];
-    notifications: RestrictedAppNotificationPermission[];
-  };
-}
-
-export interface RestrictedAppReview {
-  packageName: string;
-  version: string;
-  digest: string;
-  artifactDigest: string;
-  manifest: RestrictedAppManifest;
-  fileCount: number;
-  totalBytes: number;
-}
-
-export interface RestrictedAppInstalled extends RestrictedAppReview {
-  connectedFolderId: string;
-  sourceConnectedFolderId: string;
-  projectId: string;
-  tenantId: string;
-  principalId: string;
-  runtimeInstanceId: string;
-  runtimeInstanceKind: "development" | "app";
-  releaseDigest: string | null;
-  featureInstallationId: string;
-  dataNamespaceId: string;
-  authority: AppPlatformAuthorityStamp;
-  networkGrants: string[];
-  fileGrants: RestrictedAppFileGrant[];
-  checkGrants?: RestrictedAppCheckGrant[];
-  notificationGrants: string[];
-  automations: RestrictedAppAutomationState[];
-  installedAt: string;
-  updatedAt: string;
-}
-
-export interface LocalAppPresentation {
-  title: string;
-  description: string | null;
-  icon: string | null;
-}
-
-export interface LocalAppProject {
-  connectedFolderId: string;
-  projectId: string;
-  presentation: LocalAppPresentation;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface LocalAppRelease {
-  projectId: string;
-  sourceConnectedFolderId: string;
-  releaseDigest: string;
-  displayVersion: string;
-  presentation: LocalAppPresentation;
-  featureIds: string[];
-  state: "prepared" | "published";
-  preparedAt: string;
-  publishedAt: string | null;
-}
-
-export interface LocalAppReleaseDeletionResult {
-  deleted: boolean;
-  cleanupPending: boolean;
-  /** Where the deleted Release waits to be restored (docs/receipts-not-gates.md, F20). */
-  recentlyDeleted?: { entryId: string; restoreBy: string } | null;
-}
-
-export interface LocalAppInstance {
-  runtimeInstanceId: string;
-  projectId: string;
-  connectedFolderId: string;
-  releaseDigest: string;
-  displayVersion: string;
-  presentation: LocalAppPresentation;
-  featureIds: string[];
-  installedAt: string;
-  updatedAt: string;
-}
-
-export interface LocalAppInstallOperation {
-  operationId: string;
-  kind: "install";
-  projectId: string;
-  targetConnectedFolderId: string;
-  releaseDigest: string;
-  runtimeInstanceId: string;
-  features: Array<{ featureId: string; featureInstallationId: string; dataNamespaceId: string }>;
-  preparedAt: string;
-}
-
-export interface LocalAppUpdateOperation {
-  operationId: string;
-  kind: "update";
-  projectId: string;
-  targetConnectedFolderId: string;
-  releaseDigest: string;
-  runtimeInstanceId: string;
-  continuityPolicy: "eligible" | "reset";
-  plan: {
-    planDigest: string;
-    fromReleaseDigest: string;
-    toReleaseDigest: string;
-    canCommit: boolean;
-    blockedReasons: string[];
-    transitions: Array<{
-      featureId: string;
-      action: "add" | "keep" | "update" | "remove";
-      data: "create" | "retain" | "migrate" | "retain-disabled";
-      continuity: { grants: string[]; connections: string[]; enabledJobs: string[] };
-      resets: Array<"grants" | "connections" | "jobs">;
-      blockedReason?: string;
-    }>;
-  };
-  preparedAt: string;
-}
-
-export type LocalAppOperation = LocalAppInstallOperation | LocalAppUpdateOperation;
-
-export interface LocalAppRetainedData {
-  retainedDataId: string;
-  projectId: string;
-  runtimeInstanceId: string;
-  featureId: string;
-  featureInstallationId: string;
-  dataNamespaceId: string;
-  releaseDigest: string;
-  removedAt: string;
-}
-
-export interface LocalAppStudioSnapshot {
-  project: LocalAppProject | null;
-  previews: RestrictedAppInstalled[];
-  releases: LocalAppRelease[];
-  instances: LocalAppInstance[];
-  operations: LocalAppOperation[];
-  retainedData: LocalAppRetainedData[];
-}
-
-export interface LocalAppConnectedFolderRemovalImpact {
-  activeSourceInstanceCount: number;
-  activeTargetInstanceCount: number;
-  retainedDataCount: number;
-  incomingPreparedOperationCount: number;
-}
-
-export interface RestrictedAppAutomationState {
-  id: string;
-  enabled: boolean;
-  lastRunAt?: string;
-  lastError?: string;
-  nextRunAt?: string;
-}
-
-export interface RestrictedAppAutomationRunReceipt {
-  receiptId: string;
-  verification: "captured";
-  runId: string;
-  appAutomationId: string;
-  reason: "scheduled" | "manual" | "resume";
-  scheduledAt: string;
-  startedAt: string;
-  finishedAt: string;
-  outcome: "success" | "failure" | "skipped" | "cancelled" | "interrupted";
-  error?: string;
-  kind?: "job";
-  tenantId?: string;
-  runtimeInstanceId?: string;
-  featureInstallationId?: string;
-  featureRevisionDigest?: string;
-  dataNamespaceId?: string;
-  effectivePrincipal?: AppPlatformEffectivePrincipal;
-  authority?: AppPlatformAuthorityStamp;
-  acceptedAt?: string;
-  state?: "succeeded" | "failed" | "skipped" | "cancelled" | "expired";
-  occurrenceId?: string;
-  attemptId?: string;
-}
-
-export interface AppPlatformEffectivePrincipal {
-  principalId: string;
-  kind: "human" | "agent" | "service" | "system";
-  realm: "local" | "cloud";
-}
-
-export interface AppPlatformAuthorityStamp {
-  runtimeInstanceGeneration: string;
-  featureInstallationGeneration: string;
-  grantGeneration: string;
-  connectionGeneration: string;
-  jobGeneration: string;
-  principalGeneration: string;
-  dataGeneration: string;
-}
-
-export interface RestrictedAppProposal {
-  id: string;
-  connectedFolderId: string;
-  conversationId: string;
-  sourcePath: string;
-  review: RestrictedAppReview;
-  status: "pending" | "installed" | "failed" | "dismissed" | "revision-changed";
-  createdAt: string;
-  updatedAt: string;
-  installedApp?: RestrictedAppInstalled;
-  /** Bounded plain text from a failed install. */
-  error?: string;
-  /** What still needs a person after the install. */
-  needs?: { connections: string[]; files: string[]; checks: string[] };
-}
-
-export interface RestrictedAppConnectionStatus {
-  destinationId: string;
-  owner: "instance" | "principal";
-  kind: "api-key" | "bearer" | "basic" | "oauth2-pkce" | "none" | null;
-  configured: boolean;
-  diagnostics?: Array<{
-    code: "METADATA_RESPONSE_TYPE_UNDECLARED" | "METADATA_PKCE_UNDECLARED" | "METADATA_PUBLIC_CLIENT_UNDECLARED";
-    issuer: string;
-    message: string;
-  }>;
-}
-
-export interface RestrictedAppStorageUsage {
-  revision: number;
-  usageBytes: number;
-  quotaBytes: number;
-  keyCount: number;
-  keyLimit: number;
-}
-
-export interface RestrictedAppDataRecovery {
-  id: string;
-  createdAt: string;
-  available: boolean;
-}
-
-export type RestrictedAppCredential =
-  | { kind: "api-key"; value: string }
-  | { kind: "bearer"; token: string }
-  | { kind: "basic"; username: string; password: string };
 export interface AgentCatalog {
   resources?: import("../../src/local/agent/resource-lifecycle").NativeResource[];
   skills: AgentSkill[];
@@ -833,7 +476,7 @@ export interface ExtensionUiRequest {
 }
 
 export interface ChatStreamEvent {
-  type: "status" | "turn_state" | "turn_snapshot" | "assistant_delta" | "assistant_message" | "assistant_thinking" | "tool" | "resources_changed" | "error" | "done" | "extension_ui_request" | "extension_ui_snapshot" | "restricted_app_proposal" | "restricted_app_proposal_settled" | "editor" | "queued_message" | "runtime" | "context_compacted";
+  type: "status" | "turn_state" | "turn_snapshot" | "assistant_delta" | "assistant_message" | "assistant_thinking" | "tool" | "resources_changed" | "error" | "done" | "extension_ui_request" | "extension_ui_snapshot" | "editor" | "queued_message" | "runtime" | "context_compacted";
   conversationId: string;
   runtime?: ConversationRuntime;
   chatMessage?: ChatMessage;
@@ -842,7 +485,7 @@ export interface ChatStreamEvent {
   message?: string;
   text?: string;
   toolName?: string;
-  /** Readable name for a tool whose registered name is not, such as an app's. */
+  /** Readable name for a tool whose registered name is not. */
   toolTitle?: string;
   toolCallId?: string;
   phase?: AgentActivityPhase;
@@ -857,7 +500,6 @@ export interface ChatStreamEvent {
   presentation?: import("../../src/shared/chat-presentation").ChatLiveTurnPresentation;
   request?: ExtensionUiRequest;
   requests?: ExtensionUiRequest[];
-  proposal?: RestrictedAppProposal;
   editorMode?: "replace" | "append";
   /** The Chat's queued message, held by the app for every window (2026-10-27). */
   queued?: { content: string; updatedAt: string; held?: boolean } | null;

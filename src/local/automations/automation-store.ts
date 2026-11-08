@@ -100,18 +100,15 @@ export type AmpleFileAutomationRunCause =
        */
       catchUp?: { reason: AutomationCatchUpReason; count: number };
     }
-  | { kind: "run-now"; requestId?: string; surface?: AmpleFileCliActSurface }
-  | {
-      kind: "on-settled";
-      source: { kind: "app-automation-run"; connectedFolderId: string; appId: string; appAutomationId: string; runId: string; outcome: string };
-    };
+  | { kind: "run-now"; requestId?: string; surface?: AmpleFileCliActSurface };
 
 /**
  * One journal line. Lines are written at version 1 and read tolerantly:
  * unknown fields are ignored by readers (the overview destructures only what it
  * knows), and every text field is scrubbed before it is written. Lines written
- * before Checks were removed (2026-11-07) may still carry a `check` hop kind,
- * a Check-run cause, and Check run fields; readers skip what they do not know. Receipts
+ * before Checks and Connected Folder apps were removed (2026-11-07) may still
+ * carry a `check` hop kind, a Check-run or app-automation `on-settled` cause,
+ * and Check run fields; readers skip what they do not know. Receipts
  * carry identifiers, digests, paths, and counts — never file contents or
  * secrets. The one bounded exception is `placeholders`: the text AmpleFile
  * itself filled into a chat- or agent-step message, so a person can see what
@@ -612,8 +609,7 @@ export class AmpleFileAutomationStore {
         health: "enabled",
         grants: [...(existing?.grants ?? []), grant].slice(-AMPLEFILE_AUTOMATION_GRANT_HISTORY_LIMIT),
         // A fresh enablement starts a fresh cadence: the first scheduled
-        // slot is one interval after enablement, as restricted-app
-        // automations anchor at enable time.
+        // slot is one interval after enablement.
         ...(declaration.trigger.kind === "interval" ? { lastScheduledAt: now } : {}),
       };
       await this.#journalStrict({

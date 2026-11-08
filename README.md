@@ -30,7 +30,7 @@ Type `@` in a Chat or the AmpleFile agent's composer to address a Worker.
 The local `amplefile connected-folders list --json` projection includes `parentConnectedFolderId`
 for a nested Connected Folder; see [the AmpleFile agent and CLI guide](docs/amplefile-agent-and-cli.md).
 
-As a project grows, ask for a custom **app** in its sidebar or set up an **Automation** to run fixed steps on a schedule or after selected files change. Automations are deterministic app-run steps, not a second kind of Worker or an open-ended agent scheduler. These are optional; start with a Connected Folder and a conversation.
+As a project grows, set up an **Automation** to run fixed steps on a schedule or after selected files change. Automations are deterministic app-run steps, not a second kind of Worker or an open-ended agent scheduler. They are optional; start with a Connected Folder and a conversation.
 
 The [built-in browser](docs/built-in-browser.md) shares its tabs with the
 AmpleFile agent and every Worker. They can read and use pages, inspect screenshots,
@@ -38,7 +38,7 @@ hover and drag, work inside scrolling panels, attach local files to file inputs,
 and find completed downloads. Its sign-ins belong to AmpleFile's own profile,
 separate from Chrome.
 
-What a Worker or the AmpleFile agent does happens right away and leaves a record you can read in the app. Nothing it deletes is gone for good: **History** keeps versions of your files, and anything History cannot keep waits in **Recently deleted** for 30 days. An app's access and anything running on a schedule can both be turned off afterwards.
+What a Worker or the AmpleFile agent does happens right away and leaves a record you can read in the app. Nothing it deletes is gone for good: **History** keeps versions of your files, and anything History cannot keep waits in **Recently deleted** for 30 days. Anything running on a schedule can be turned off afterwards.
 
 Use **Compare** in Version History or a selected Connected Folder restore point to read saved text beside the current file before restoring. Binary, oversized, uncaptured, and incomplete comparisons explain their limits. The authenticated CLI offers paged `history list`/`versions`, verified `history read --offset-bytes 0` ranges for large saved text, and streaming `search` with `--path` narrowing and `--cursor` continuation; see `amplefile help history` and `amplefile help search`.
 
@@ -60,13 +60,13 @@ Files live on your computer. Content a Worker uses goes to your chosen model pro
 
 Handed-off work is tracked as a durable request: a question
 waits for its answer and continues once, and each Worker reports one result to
-whoever asked. The request graph and original assignments stay machine-local;
-only results a Worker deliberately releases reach another Connected Folder's Chat,
-and an app's task reads stay pinned to its own installation. See the
+whoever asked. The request graph and original assignments stay machine-local,
+and only results a Worker deliberately releases reach another Connected Folder's Chat.
+See the
 [collaboration contract](docs/collaboration-contract.md#completion-delivery-and-recovery)
 for stop, expiry, and restart behavior, and the
 [collaboration experience](docs/collaboration-experience.md) for how progress,
-questions, and result files appear in Chats, the AmpleFile agent, and apps.
+questions, and result files appear in Chats and the AmpleFile agent.
 
 Claude Code, Codex, and other AI agents can use AmpleFile too: **Settings →
 Command Line** adds the `amplefile` command to Terminal and adds a short skill

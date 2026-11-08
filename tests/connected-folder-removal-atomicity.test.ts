@@ -1,17 +1,10 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createServer as createNetServer, type AddressInfo, type Server as NetServer } from "node:net";
 import test from "node:test";
 
-import {
-  RestrictedAppService,
-  type RestrictedAppRuntimeAuthority,
-  type RestrictedAppRuntimeHost,
-} from "../src/local/agent/restricted-app-service.js";
 import { startLocalApi, type LocalApiHandle } from "../src/local/server.js";
 import { ampleFileStateRoot, configureAmpleFileStateRoot, connectedFolderRegistryFile, connectedFolderStateDir } from "../src/local/state-paths.js";
 import { createConnectedFolderCheckpoint, listConnectedFolderCheckpoints } from "../src/local/history.js";
@@ -24,22 +17,15 @@ import {
   type ConnectedFolderRemovalIo,
 } from "../src/local/connected-folder.js";
 
-const exampleRestrictedAppRoot = fileURLToPath(new URL(
-  "../examples/packages/restricted-connected-inbox/",
-  import.meta.url,
-));
-
-test("a failed removal-intent commit preserves both the Connected Folder and its App Project", async () => {
+test("a failed removal-intent commit preserves the Connected Folder", async () => {
   const sandbox = await mkdtemp(join(tmpdir(), "connected-folder-removal-intent-api-"));
   const stateBase = join(sandbox, "state");
   const connectedFolderBase = join(sandbox, "connected-folders");
-  const service = await RestrictedAppService.create({ rootPath: join(stateBase, "restricted-apps") });
   const api = await startLocalApi({
     port: 0,
     stateBase,
     connectedFolderBase,
     loadEnv: false,
-    restrictedAppService: service,
     connectedFolderRemovalIo: {
       async persistRegistry() {
         throw new Error("simulated removal-intent persistence failure");
@@ -47,14 +33,13 @@ test("a failed removal-intent commit preserves both the Connected Folder and its
     },
   });
   try {
-    const connectedFolder = await createAppProject(api, "Atomic source");
+    const connectedFolder = await createConnectedFolder(api, "Atomic source");
     const response = await fetch(`${api.origin}/api/connected-folders/${connectedFolder.id}`, { method: "DELETE" });
     assert.equal(response.status, 500);
     assert.match((await response.json() as { error: string }).error, /simulated removal-intent persistence failure/);
 
     const bootstrap = await request<{ connectedFolders: Array<{ id: string }> }>(api, "/api/bootstrap");
     assert.equal(bootstrap.connectedFolders.some((item) => item.id === connectedFolder.id), true);
-    assert.equal((await service.localAppStudio(connectedFolder.id)).project?.presentation.title, "Atomic source App");
     assert.equal(existsSync(connectedFolder.connectedFolderRoot), true);
     assert.deepEqual(await listPendingConnectedFolderRemovals(), []);
   } finally {
@@ -76,16 +61,14 @@ test("managed-folder deletion failure returns committed removal and startup reco
   };
   let api: LocalApiHandle | null = null;
   try {
-    const service = await RestrictedAppService.create({ rootPath: join(stateBase, "restricted-apps") });
-    api = await startLocalApi({
+      api = await startLocalApi({
       port: 0,
       stateBase,
       connectedFolderBase,
       loadEnv: false,
-      restrictedAppService: service,
-      connectedFolderRemovalIo: removalIo,
+        connectedFolderRemovalIo: removalIo,
     });
-    const connectedFolder = await createAppProject(api, "Locked source");
+    const connectedFolder = await createConnectedFolder(api, "Locked source");
     await writeFile(join(connectedFolder.connectedFolderRoot, "keep-until-retry.txt"), "pending", "utf8");
     const removal = await request<{
       removed: true;
@@ -93,25 +76,19 @@ test("managed-folder deletion failure returns committed removal and startup reco
       cleanupPending: boolean;
       recentlyDeleted: { entryId: string } | null;
     }>(api, `/api/connected-folders/${connectedFolder.id}`, { method: "DELETE" });
-    // The App Project went with the App state, after its copy reached Recently deleted.
-    const { appStudioRecentlyDeleted, ...rest } = removal as typeof removal & { appStudioRecentlyDeleted?: { entryId: string } | null };
-    assert.deepEqual(rest, { removed: true, deleted: false, connectedFolderRoot: connectedFolder.connectedFolderRoot, cleanupPending: true, recentlyDeleted: null, appRecentlyDeletedEntries: [] });
-    assert.equal((await api.recentlyDeleted.get(appStudioRecentlyDeleted?.entryId ?? ""))?.kind, "app-studio");
+    assert.deepEqual(removal, { removed: true, deleted: false, connectedFolderRoot: connectedFolder.connectedFolderRoot, cleanupPending: true, recentlyDeleted: null });
     assert.equal(existsSync(connectedFolder.connectedFolderRoot), true);
-    assert.equal((await service.localAppStudio(connectedFolder.id)).project, null);
     assert.equal((await request<{ connectedFolders: Array<{ id: string }> }>(api, "/api/bootstrap")).connectedFolders.some((item) => item.id === connectedFolder.id), false);
-    assert.equal((await listPendingConnectedFolderRemovals())[0]?.phase, "app-state-removed");
+    assert.equal((await listPendingConnectedFolderRemovals())[0]?.phase, "requested");
 
     await api.close();
     api = null;
     blockManagedDelete = false;
-    const recoveredService = await RestrictedAppService.create({ rootPath: join(stateBase, "restricted-apps") });
     api = await startLocalApi({
       port: 0,
       stateBase,
       connectedFolderBase,
       loadEnv: false,
-      restrictedAppService: recoveredService,
       connectedFolderRemovalIo: removalIo,
     });
     assert.equal(existsSync(connectedFolder.connectedFolderRoot), false);
@@ -129,15 +106,13 @@ test("startup removal recovery finalizes the intent and leaves state a Checks bu
   const connectedFolderBase = join(sandbox, "connected-folders");
   let api: LocalApiHandle | null = null;
   try {
-    const service = await RestrictedAppService.create({ rootPath: join(stateBase, "restricted-apps") });
-    api = await startLocalApi({
+      api = await startLocalApi({
       port: 0,
       stateBase,
       connectedFolderBase,
       loadEnv: false,
-      restrictedAppService: service,
-    });
-    const connectedFolder = await createAppProject(api, "Leftover Check state");
+      });
+    const connectedFolder = await createConnectedFolder(api, "Leftover Check state");
     const intent = await beginConnectedFolderRemoval(connectedFolder.id, connectedFolderBase);
     assert.equal(intent.phase, "requested");
     // Checks were removed (2026-11-07): their machine-local state is neither
@@ -148,13 +123,11 @@ test("startup removal recovery finalizes the intent and leaves state a Checks bu
 
     await api.close();
     api = null;
-    const recoveredService = await RestrictedAppService.create({ rootPath: join(stateBase, "restricted-apps") });
     api = await startLocalApi({
       port: 0,
       stateBase,
       connectedFolderBase,
       loadEnv: false,
-      restrictedAppService: recoveredService,
     });
     assert.equal(await readFile(checkState, "utf8"), "{damaged current state");
     assert.deepEqual(await listPendingConnectedFolderRemovals(), []);
@@ -165,7 +138,7 @@ test("startup removal recovery finalizes the intent and leaves state a Checks bu
   }
 });
 
-test("final registry persistence failure keeps a retryable intent after App and folder removal", async () => {
+test("final registry persistence failure keeps a retryable intent after folder removal", async () => {
   const sandbox = await mkdtemp(join(tmpdir(), "connected-folder-removal-registry-api-"));
   const stateBase = join(sandbox, "state");
   const connectedFolderBase = join(sandbox, "connected-folders");
@@ -180,16 +153,14 @@ test("final registry persistence failure keeps a retryable intent after App and 
   };
   let api: LocalApiHandle | null = null;
   try {
-    const service = await RestrictedAppService.create({ rootPath: join(stateBase, "restricted-apps") });
-    api = await startLocalApi({
+      api = await startLocalApi({
       port: 0,
       stateBase,
       connectedFolderBase,
       loadEnv: false,
-      restrictedAppService: service,
-      connectedFolderRemovalIo: removalIo,
+        connectedFolderRemovalIo: removalIo,
     });
-    const connectedFolder = await createAppProject(api, "Registry source");
+    const connectedFolder = await createConnectedFolder(api, "Registry source");
     const removal = await request<{
       removed: true;
       deleted: boolean;
@@ -205,21 +176,16 @@ test("final registry persistence failure keeps a retryable intent after App and 
     assert.equal(kept.length, 1);
     assert.equal(kept[0]?.originalPath, connectedFolder.connectedFolderRoot);
     assert.equal(removal.recentlyDeleted?.entryId, kept[0]?.id);
-    // Its App Studio history waits beside it as its own item.
-    assert.equal((await api.recentlyDeleted.list()).entries.filter((entry) => entry.kind === "app-studio").length, 1);
-    assert.equal((await service.localAppStudio(connectedFolder.id)).project, null);
-    assert.equal((await listPendingConnectedFolderRemovals())[0]?.phase, "app-state-removed");
+    assert.equal((await listPendingConnectedFolderRemovals())[0]?.phase, "requested");
 
     await api.close();
     api = null;
     blockFinalCommit = false;
-    const recoveredService = await RestrictedAppService.create({ rootPath: join(stateBase, "restricted-apps") });
     api = await startLocalApi({
       port: 0,
       stateBase,
       connectedFolderBase,
       loadEnv: false,
-      restrictedAppService: recoveredService,
       connectedFolderRemovalIo: removalIo,
     });
     assert.deepEqual(await listPendingConnectedFolderRemovals(), []);
@@ -271,238 +237,41 @@ test("startup carries remaining History into a deletion whose folder already rea
   }
 });
 
-test("post-intent App cleanup failure reports pending and cannot block later API startup", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "connected-folder-removal-app-retry-api-"));
+test("an intent an older build marked app-state-removed still finalizes at startup", async () => {
+  // Builds before Connected Folder apps were removed (2026-11-07) recorded a
+  // removal's progress past its app cleanup as `app-state-removed`. Recovery
+  // finishes such an intent exactly like a `requested` one.
+  const sandbox = await mkdtemp(join(tmpdir(), "connected-folder-removal-app-state-phase-"));
   const stateBase = join(sandbox, "state");
   const connectedFolderBase = join(sandbox, "connected-folders");
   let api: LocalApiHandle | null = null;
-  try {
-    const runtime = new AppAutomationRecordingRuntimeHost();
-    const service = await RestrictedAppService.create({
-      rootPath: join(stateBase, "restricted-apps"),
-      runtimeHost: runtime,
-    });
-    api = await startLocalApi({
-      port: 0,
-      stateBase,
-      connectedFolderBase,
-      loadEnv: false,
-      restrictedAppService: service,
-    });
-    const connectedFolder = await createAppProject(api, "App cleanup retry");
-    const packageRoot = join(connectedFolder.connectedFolderRoot, "apps", "connected-inbox");
-    await cp(exampleRestrictedAppRoot, packageRoot, { recursive: true });
-    const review = await service.inspect({
-      connectedFolderId: connectedFolder.id,
-      connectedFolderRoot: connectedFolder.connectedFolderRoot,
-      sourcePath: "apps/connected-inbox",
-    });
-    await service.install({
-      connectedFolderId: connectedFolder.id,
-      connectedFolderRoot: connectedFolder.connectedFolderRoot,
-      sourcePath: "apps/connected-inbox",
-      expectedDigest: review.digest,
-    });
-    await service.setAppAutomationEnabled({
-      connectedFolderId: connectedFolder.id,
-      appId: "restricted-connected-inbox",
-      expectedDigest: review.digest,
-      appAutomationId: "refresh-inbox",
-      enabled: true,
-    });
-    assert.equal(runtime.authorities.length, 1);
-    service.removeConnectedFolder = async () => { throw new Error("simulated App cleanup failure"); };
-    const removal = await request<{ removed: true; deleted: boolean; cleanupPending: boolean; recentlyDeleted: unknown }>(
-      api,
-      `/api/connected-folders/${connectedFolder.id}`,
-      { method: "DELETE" },
-    );
-    assert.deepEqual(removal, { removed: true, deleted: false, connectedFolderRoot: connectedFolder.connectedFolderRoot, cleanupPending: true, recentlyDeleted: null, appRecentlyDeletedEntries: [], appStudioRecentlyDeleted: null });
-    assert.equal((await listPendingConnectedFolderRemovals())[0]?.phase, "requested");
-    assert.equal(existsSync(connectedFolder.connectedFolderRoot), true);
-    assert.deepEqual(runtime.authorities, [], "the durable removal intent must fence live broker authority");
-    await assert.rejects(service.runAppAutomationNow({
-      connectedFolderId: connectedFolder.id,
-      appId: "restricted-connected-inbox",
-      expectedDigest: review.digest,
-      appAutomationId: "refresh-inbox",
-    }), /Automations are not active for this Connected Folder/);
-    assert.equal(runtime.appAutomationRuns, 0, "the fenced Connected Folder cannot launch another automation");
-
-    await api.close();
-    api = null;
-    const stillFailingService = await RestrictedAppService.create({ rootPath: join(stateBase, "restricted-apps") });
-    stillFailingService.removeConnectedFolder = async () => { throw new Error("simulated startup retry failure"); };
-    api = await startLocalApi({
-      port: 0,
-      stateBase,
-      connectedFolderBase,
-      loadEnv: false,
-      restrictedAppService: stillFailingService,
-    });
-    assert.deepEqual((await request<{ connectedFolders: unknown[] }>(api, "/api/bootstrap")).connectedFolders, []);
-    assert.equal((await listPendingConnectedFolderRemovals())[0]?.phase, "requested");
-
-    await api.close();
-    api = null;
-    const recoveredService = await RestrictedAppService.create({ rootPath: join(stateBase, "restricted-apps") });
-    api = await startLocalApi({
-      port: 0,
-      stateBase,
-      connectedFolderBase,
-      loadEnv: false,
-      restrictedAppService: recoveredService,
-    });
-    assert.equal(existsSync(connectedFolder.connectedFolderRoot), false);
-    assert.deepEqual(await listPendingConnectedFolderRemovals(), []);
-    // The retried removal owes the same copy the live one did: the App Studio
-    // history reaches Recently deleted before startup clears it.
-    const kept = (await api.recentlyDeleted.list()).entries.filter((entry) => entry.kind === "app-studio");
-    assert.deepEqual(kept.map((entry) => [entry.connectedFolderId, entry.reason, entry.receiptId]), [[connectedFolder.id, "apps.connected-folder.removed", null]]);
-    assert.equal((await api.recentlyDeleted.readAppStudio(kept[0]!.id)).studio.previews.length, 1);
-  } finally {
-    await api?.close();
-    await rm(sandbox, { recursive: true, force: true });
-  }
-});
-
-test("Local API owns first automation startup and removes a pending Connected Folder before a due job can launch", async () => {
-  const sandbox = await mkdtemp(join(tmpdir(), "connected-folder-removal-deferred-app-automation-api-"));
-  const stateBase = join(sandbox, "state");
-  const connectedFolderBase = join(sandbox, "connected-folders");
-  const restrictedAppRoot = join(stateBase, "restricted-apps");
-  const setupTime = new Date("2026-07-15T12:00:00.000Z");
-  const recoveryTime = new Date("2026-07-15T13:00:00.000Z");
-  let api: LocalApiHandle | null = null;
-  let service: RestrictedAppService | null = null;
-  let occupiedPortServer: NetServer | null = null;
   try {
     configureAmpleFileStateRoot(stateBase);
-    const connectedFolder = await createManagedConnectedFolder("Pending automated Connected Folder", connectedFolderBase);
-    const packageRoot = join(connectedFolder.connectedFolderRoot, "apps", "connected-inbox");
-    await cp(exampleRestrictedAppRoot, packageRoot, { recursive: true });
-
-    const setupRuntime = new AppAutomationRecordingRuntimeHost();
-    service = await RestrictedAppService.create({
-      rootPath: restrictedAppRoot,
-      runtimeHost: setupRuntime,
-      now: () => setupTime,
-      deferAppAutomationStart: false,
-    });
-    const review = await service.inspect({
-      connectedFolderId: connectedFolder.id,
-      connectedFolderRoot: connectedFolder.connectedFolderRoot,
-      sourcePath: "apps/connected-inbox",
-    });
-    await service.install({
-      connectedFolderId: connectedFolder.id,
-      connectedFolderRoot: connectedFolder.connectedFolderRoot,
-      sourcePath: "apps/connected-inbox",
-      expectedDigest: review.digest,
-    });
-    await service.setAppAutomationEnabled({
-      connectedFolderId: connectedFolder.id,
-      appId: "restricted-connected-inbox",
-      expectedDigest: review.digest,
-      appAutomationId: "refresh-inbox",
-      enabled: true,
-    });
-    await service.close();
-    service = null;
-
+    const connectedFolder = await createManagedConnectedFolder("Old phase", connectedFolderBase);
     await beginConnectedFolderRemoval(connectedFolder.id, connectedFolderBase);
+    const registryFile = connectedFolderRegistryFile();
+    const registry = JSON.parse(await readFile(registryFile, "utf8")) as ConnectedFolderRegistry;
+    registry.pendingRemovals[0]!.phase = "app-state-removed";
+    await persistRegistryForTest(registry);
+    assert.equal((await listPendingConnectedFolderRemovals())[0]?.phase, "app-state-removed");
 
-    const rejectedRuntime = new AppAutomationRecordingRuntimeHost();
-    const alreadyStarted = await RestrictedAppService.create({
-      rootPath: restrictedAppRoot,
-      runtimeHost: rejectedRuntime,
-      now: () => recoveryTime,
-      deferAppAutomationStart: false,
-    });
-    await assert.rejects(startLocalApi({
-      port: 0,
-      stateBase,
-      connectedFolderBase,
-      loadEnv: false,
-      restrictedAppService: alreadyStarted,
-    }), /automation startup is still deferred/i,
-    "the Local API must never accept a service that could have launched jobs before recovery");
-    await alreadyStarted.close();
-    assert.equal(rejectedRuntime.appAutomationRuns, 0);
-    assert.equal((await listPendingConnectedFolderRemovals()).length, 1,
-      "rejecting unsafe composition must not consume the pending removal intent");
-
-    const runtime = new AppAutomationRecordingRuntimeHost();
-    service = await RestrictedAppService.create({
-      rootPath: restrictedAppRoot,
-      runtimeHost: runtime,
-      now: () => recoveryTime,
-    });
-    assert.equal(service.appAutomationsStarted, false, "service construction is deferred by default");
-
-    occupiedPortServer = createNetServer();
-    await listenOnEphemeralPort(occupiedPortServer);
-    const occupiedPort = (occupiedPortServer.address() as AddressInfo).port;
-    await assert.rejects(startLocalApi({
-      port: occupiedPort,
-      stateBase,
-      connectedFolderBase,
-      loadEnv: false,
-      restrictedAppService: service,
-    }), (error: NodeJS.ErrnoException) => error.code === "EADDRINUSE",
-    "a failed socket bind must reject startup");
-    assert.equal(service.appAutomationsStarted, false,
-      "a failed socket bind must not leave the scheduler running without an API handle");
-    assert.equal(runtime.appAutomationRuns, 0, "a due job must remain inert after failed API startup");
-    await closeNetServer(occupiedPortServer);
-    occupiedPortServer = null;
-
-    api = await startLocalApi({
-      port: 0,
-      stateBase,
-      connectedFolderBase,
-      loadEnv: false,
-      restrictedAppService: service,
-    });
-    assert.equal(service.appAutomationsStarted, true, "the Local API starts jobs only after recovery");
-    await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
-    assert.equal(runtime.appAutomationRuns, 0, "the due job from the removed Connected Folder must never launch");
-    assert.deepEqual(await service.list(connectedFolder.id), []);
+    api = await startLocalApi({ port: 0, stateBase, connectedFolderBase, loadEnv: false });
     assert.deepEqual(await listPendingConnectedFolderRemovals(), []);
     assert.equal(existsSync(connectedFolder.connectedFolderRoot), false);
+    assert.deepEqual((await request<{ connectedFolders: unknown[] }>(api, "/api/bootstrap")).connectedFolders, []);
+    const kept = (await api.recentlyDeleted.list()).entries.filter((entry) => entry.kind === "connected-folder");
+    assert.equal(kept.length, 1, "the managed folder reached Recently deleted, not an erase");
   } finally {
-    await api?.close().catch(() => undefined);
-    if (!api) await service?.close().catch(() => undefined);
-    if (occupiedPortServer) await closeNetServer(occupiedPortServer).catch(() => undefined);
+    await api?.close();
     configureAmpleFileStateRoot(undefined);
     await rm(sandbox, { recursive: true, force: true });
   }
 });
 
-function listenOnEphemeralPort(server: NetServer): Promise<void> {
-  return new Promise((resolvePromise, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      server.off("error", reject);
-      resolvePromise();
-    });
-  });
-}
-
-function closeNetServer(server: NetServer): Promise<void> {
-  return new Promise((resolvePromise, reject) => {
-    server.close((error) => error ? reject(error) : resolvePromise());
-  });
-}
-
-async function createAppProject(api: LocalApiHandle, name: string): Promise<{ id: string; connectedFolderRoot: string }> {
+async function createConnectedFolder(api: LocalApiHandle, name: string): Promise<{ id: string; connectedFolderRoot: string }> {
   const { connectedFolder } = await request<{ connectedFolder: { id: string; connectedFolderRoot: string } }>(api, "/api/connected-folders", {
     method: "POST",
     body: { name },
-  });
-  await request(api, `/api/connected-folders/${connectedFolder.id}/app-studio`, {
-    method: "PUT",
-    body: { title: `${name} App`, description: null, icon: null },
   });
   return connectedFolder;
 }
@@ -530,17 +299,4 @@ async function persistRegistryForTest(registry: ConnectedFolderRegistry): Promis
   const temp = `${file}.${process.pid}.test.tmp`;
   await writeFile(temp, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
   await rename(temp, file);
-}
-
-class AppAutomationRecordingRuntimeHost implements RestrictedAppRuntimeHost {
-  appAutomationRuns = 0;
-  authorities: RestrictedAppRuntimeAuthority[] = [];
-
-  syncAuthority(authorities: readonly RestrictedAppRuntimeAuthority[]): void {
-    this.authorities = structuredClone(authorities);
-  }
-  async invoke(): Promise<unknown> { return {}; }
-  async runAppAutomation(): Promise<void> { this.appAutomationRuns += 1; }
-  async stop(): Promise<void> {}
-  async close(): Promise<void> {}
 }

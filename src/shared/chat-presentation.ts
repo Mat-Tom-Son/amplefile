@@ -26,7 +26,7 @@ export interface ChatToolEdit {
 }
 
 export const maxAssistantPresentationSegments = 256;
-/** An app title (80) plus " (preview): " and a tool name (64), with room to spare. */
+/** A readable tool name, with room to spare. */
 export const maxChatToolTitleLength = 200;
 export const maxChatToolEditDiffBytes = 16 * 1024;
 
@@ -53,9 +53,9 @@ export interface ChatWorkTrailEntry {
   detail?: string;
   toolName?: string;
   /**
-   * What to call a tool whose registered name is not readable, such as an
-   * app's tool (`app_<hash>_search` → "Inbox: Search"). Display only;
-   * `toolName` stays the identity.
+   * What to call a tool whose registered name is not readable (older Chats
+   * saved one for Connected Folder app tools). Display only; `toolName`
+   * stays the identity.
    */
   toolTitle?: string;
   phase?: "queued" | "running" | "streaming" | "complete" | "error";

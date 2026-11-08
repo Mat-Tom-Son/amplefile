@@ -60,7 +60,6 @@ your change; `AGENTS.md` identifies the required ones.
 | Filesystem, Worker, or domain services | `src/local/`, [Architecture](docs/architecture.md) |
 | The AmpleFile agent, CLI, or shared task state | [Kernel](src/local/amplefile-kernel.ts), [CLI](src/local/cli/), [AmpleFile agent and CLI](docs/amplefile-agent-and-cli.md) |
 | Cross–Connected Folder work | [Automations](docs/automations.md) |
-| Worker-built Connected Folder apps | [App foundation](docs/app-platform-foundation.md), [Authoring](docs/restricted-app-authoring.md), [Runtime](docs/restricted-app-runtime.md) |
 | Native desktop behavior | `desktop/src/`, [macOS builds](docs/macos-build.md) |
 
 ## Verify and submit

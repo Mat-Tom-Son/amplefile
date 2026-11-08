@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -42,29 +42,12 @@ test("an automation's roles in a Connected Folder come from its trigger and the 
   assert.deepEqual(ampleFileAutomationConnectedFolderRoles(declaration, home), ["watches", "copies-from"]);
   assert.deepEqual(ampleFileAutomationConnectedFolderRoles(declaration, trip), ["copies-to", "chats-here"]);
   assert.deepEqual(ampleFileAutomationConnectedFolderRoles(declaration, other), [], "an agent step names no Connected Folder");
-
-  const settled = normalizeAmpleFileAutomationDeclaration({
-    kind: "amplefile.automation",
-    version: 1,
-    id: "automation-after-an-app",
-    title: "After an app automation",
-    createdBy: "human",
-    createdAt: "2026-09-24T12:00:00.000Z",
-    trigger: { kind: "on-settled", source: { kind: "app-automation-run", connectedFolder: other, appId: "collector", appAutomationId: "collect" } },
-    steps: [{ id: "tell", kind: "chat", connectedFolder: home, message: "The collector settled." }],
-  });
-  assert.deepEqual(ampleFileAutomationConnectedFolderRoles(settled, other), ["watches"]);
-  assert.deepEqual(ampleFileAutomationConnectedFolderRoles(settled, home), ["chats-here"]);
 });
 
 test("the shared trigger summary is the one Settings and the Connected Folder view print", () => {
   assert.equal(automationTriggerSummary({ kind: "manual" }), "Manual only");
   assert.equal(automationTriggerSummary({ kind: "interval", intervalMinutes: 30 }), "Every 30 minutes");
   assert.equal(automationTriggerSummary({ kind: "interval", intervalMinutes: 120 }), "Every 2 hours");
-  assert.equal(
-    automationTriggerSummary({ kind: "on-settled", source: { kind: "app-automation-run", connectedFolderId: home, connectedFolderName: "Home projects", appId: "collector", appAutomationId: "collect" } }),
-    "After collector · collect settles in Home projects",
-  );
   const folderTrigger = {
     kind: "files-changed" as const,
     connectedFolderId: home,
@@ -108,6 +91,8 @@ test("GET /api/connected-folders/:id/automations lists only automations naming t
   const c = (await api.actFacade.createConnectedFolder({ name: "Folder C" })).connectedFolder;
   const d = (await api.actFacade.createConnectedFolder({ name: "Folder D" })).connectedFolder;
   await writeFile(join(a.connectedFolderRoot, "notes.txt"), "folder handoff", "utf8");
+  // A watched folder nothing in this test writes to, so the folder trigger never fires.
+  await mkdir(join(b.connectedFolderRoot, "Ready"), { recursive: true });
 
   const declarations = [
     {
@@ -123,9 +108,15 @@ test("GET /api/connected-folders/:id/automations lists only automations naming t
       steps: [{ id: "ask", kind: "chat", connectedFolder: c.id, message: "Summarize the week." }],
     },
     {
-      kind: "amplefile.automation", version: 1, id: "automation-after-b-app", title: "After an app in B",
+      kind: "amplefile.automation", version: 3, id: "automation-watch-b-forward", title: "When B changes",
       createdBy: "human", createdAt: "2026-09-24T12:00:00.000Z",
-      trigger: { kind: "on-settled", source: { kind: "app-automation-run", connectedFolder: b.id, appId: "collector", appAutomationId: "collect" } },
+      trigger: {
+        kind: "files-changed",
+        connectedFolder: b.id,
+        watch: { kind: "tree", path: "Ready", recursive: false, extensions: [".md"] },
+        debounceSeconds: 5,
+        cooldownMinutes: 1,
+      },
       steps: [{ id: "forward", kind: "files", fromConnectedFolder: b.id, from: { kind: "paths", paths: ["Incoming/notes.txt"] }, toConnectedFolder: c.id, to: "From B" }],
     },
   ].map((value) => normalizeAmpleFileAutomationDeclaration(value));
@@ -151,17 +142,17 @@ test("GET /api/connected-folders/:id/automations lists only automations naming t
   const inB = await get(b.id);
   assert.deepEqual(inB.automations.map((item) => [item.automationId, item.roles]).sort(), [
     ["automation-a-to-b-handoff", ["copies-to"]],
-    ["automation-after-b-app", ["watches", "copies-from"]],
+    ["automation-watch-b-forward", ["watches", "copies-from"]],
   ]);
   assert.equal(
-    inB.automations.find((item) => item.automationId === "automation-after-b-app")?.triggerSummary,
-    "After collector · collect settles in Folder B",
-    "the settled source is named by its Connected Folder name",
+    inB.automations.find((item) => item.automationId === "automation-watch-b-forward")?.triggerSummary,
+    "When Ready changes · wait 5s · 1 minute cooldown",
+    "the folder trigger reads the shared summary Settings prints",
   );
   const inC = await get(c.id);
   assert.deepEqual(inC.automations.map((item) => [item.automationId, item.roles]).sort(), [
-    ["automation-after-b-app", ["copies-to"]],
     ["automation-chat-in-c", ["chats-here"]],
+    ["automation-watch-b-forward", ["copies-to"]],
   ]);
   assert.deepEqual(await get(d.id), { automations: [] }, "an untouched Connected Folder gets an empty list");
 

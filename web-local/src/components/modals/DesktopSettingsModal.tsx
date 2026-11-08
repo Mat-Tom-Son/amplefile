@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type * as React from "react";
-import { LayoutPanelLeft } from "lucide-react";
 import {
   ArrowClockwise20Regular,
   ArrowLeft20Regular,
@@ -27,17 +26,15 @@ import { AiModelsPane, type AiModelsDraft, type ModelScope } from "../panes/AiMo
 import type { ApplicationAppearanceController } from "../../hooks/useApplicationAppearance";
 import { AppearanceSettingsPane } from "./AppearanceSettingsPane";
 import { AmpleFileLimitsPane } from "./AmpleFileLimitsPane";
-import { SettingsAppsPane, type RestrictedAppsState } from "./SettingsAppsPane";
 import { KeyboardShortcutsPane } from "./KeyboardShortcutsPane";
 import { IconCredits } from "./IconCredits";
-import type { RestrictedAppInstalled } from "../../types";
 import { AutomationsPane } from "./AutomationsPane";
 import { RecentlyDeletedPane } from "./RecentlyDeletedPane";
 import { CommandLinePane } from "./CommandLinePane";
 
-export type SettingsPage = "appearance" | "ai-models" | "automations" | "apps" | "command-line" | "recently-deleted" | "general" | "desktop" | "shortcuts" | "about";
+export type SettingsPage = "appearance" | "ai-models" | "automations" | "command-line" | "recently-deleted" | "general" | "desktop" | "shortcuts" | "about";
 export type SettingsSection = "automations" | "deleted" | "limits";
-type SettingsTabId = "appearance" | "ai-models" | "automations" | "apps" | "command-line" | "recently-deleted" | "shortcuts" | "about";
+type SettingsTabId = "appearance" | "ai-models" | "automations" | "command-line" | "recently-deleted" | "shortcuts" | "about";
 // AI Models edits nobody saved yet: closing Settings and opening it again finds them as left.
 const unsavedAiModelsEdits = new Map<string, AiModelsDraft>();
 
@@ -53,17 +50,10 @@ export function settingsTabForPage(page: SettingsPage, section?: SettingsSection
   return page;
 }
 
-export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, connectedFolder, connectedFolders = [], restrictedApps = null, onChangeApp, onOpenAppBuildChat, onOpenAppResultFile, onOpenAppStudio, agentStatus, fixtureMode = false, initialPage = "appearance", initialSection, initialModelScope, focusAiModel = false, focusWorkerInstructions = false, onAgentConfigured, onModelChanged, onClose, onBackToCustomization, updateStatus, onUpdateAction }: {
+export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, connectedFolder, agentStatus, fixtureMode = false, initialPage = "appearance", initialSection, initialModelScope, focusAiModel = false, focusWorkerInstructions = false, onAgentConfigured, onModelChanged, onClose, onBackToCustomization, updateStatus, onUpdateAction }: {
   appearance: ApplicationAppearanceController;
   onCustomizeConnectedFolder?: (connectedFolderId: string) => void;
   connectedFolder: ConnectedFolderSummary | null;
-  /** Settings → Apps lists every installed app by Connected Folder (the Connected Folder–owned Apps tab was retired 2026-09-25). */
-  connectedFolders?: ConnectedFolderSummary[];
-  restrictedApps?: RestrictedAppsState | null;
-  onChangeApp?: (app: RestrictedAppInstalled) => void;
-  onOpenAppBuildChat?: (connectedFolderId: string, conversationId: string) => void;
-  onOpenAppResultFile?: (connectedFolderId: string, path: string) => void;
-  onOpenAppStudio?: (connectedFolderId: string, runtimeInstanceId?: string) => void;
   agentStatus: AgentStatus;
   fixtureMode?: boolean;
   initialPage?: SettingsPage;
@@ -138,7 +128,6 @@ export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, c
     { id: "appearance", label: "Appearance", icon: <PaintBrush20Regular /> },
     { id: "ai-models", label: "AI Models", icon: <Sparkle20Regular /> },
     { id: "automations", label: "Automations", icon: <Flash20Regular /> },
-    { id: "apps", label: "Apps", icon: <LayoutPanelLeft size={20} strokeWidth={1.5} aria-hidden="true" /> },
     { id: "command-line", label: "Command Line", icon: <WindowConsole20Regular /> },
     { id: "recently-deleted", label: "Recently Deleted", icon: <Delete20Regular /> },
     { id: "shortcuts", label: "Shortcut Keys", icon: <Keyboard20Regular /> },
@@ -209,11 +198,6 @@ export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, c
               <div className="settings-tab-panel" id="settings-panel-automations" role="tabpanel" aria-labelledby="settings-tab-automations">
                 <AutomationsPane fixtureMode={fixtureMode} />
                 <AmpleFileLimitsPane onOpenRecentlyDeleted={() => setPage("recently-deleted")} fixtureMode={fixtureMode} />
-              </div>
-            ) : null}
-            {page === "apps" ? (
-              <div className="settings-tab-panel" id="settings-panel-apps" role="tabpanel" aria-labelledby="settings-tab-apps">
-                <SettingsAppsPane connectedFolders={connectedFolders} apps={restrictedApps} fixtureMode={fixtureMode} onChangeApp={onChangeApp} onOpenBuildChat={onOpenAppBuildChat} onOpenResultFile={onOpenAppResultFile} onOpenAppStudio={onOpenAppStudio} />
               </div>
             ) : null}
             {page === "command-line" ? (

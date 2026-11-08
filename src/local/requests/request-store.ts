@@ -57,7 +57,6 @@ import {
 } from "../../shared/amplefile-limits.js";
 import { syncDirectory, writeFileAtomic, type AmpleFileDurableTurnRecord, type AmpleFileDurableTurnUsage } from "../agent/turn-store.js";
 import { maxAmpleFileAgentAttachments, type AmpleFileAgentAttachmentRef } from "../amplefile-agent-attachments.js";
-import type { RestrictedAppJsonSchema } from "../agent/restricted-app-manifest.js";
 import {
   computeAmpleFileRequestState,
   isAmpleFileRequestTerminalState,
@@ -76,9 +75,9 @@ import {
   type AmpleFileChecklist,
   type AmpleFileQuestionRecord,
   type AmpleFileRequestAction,
-  type AmpleFileRequestAppRef,
   type AmpleFileRequestJobRef,
   type AmpleFileRequestJobState,
+  type AmpleFileRequestCreatableKind,
   type AmpleFileRequestKind,
   type AmpleFileRequestOwner,
   type AmpleFileRequestRecord,
@@ -356,11 +355,10 @@ export class AmpleFileRequestStore {
   // --- creation and joining ----------------------------------------------
 
   beginRoot(input: {
-    kind: AmpleFileRequestKind;
+    kind: AmpleFileRequestCreatableKind;
     owner: AmpleFileRequestOwner;
     surface: AmpleFileRequestSurface;
     taskId: string;
-    app?: AmpleFileRequestAppRef;
     content?: string;
     attachments?: readonly AmpleFileAgentAttachmentRef[];
     continuedFromTaskId?: string | null;
@@ -385,11 +383,10 @@ export class AmpleFileRequestStore {
    */
   beginChild(input: {
     parentTaskId: string;
-    kind: AmpleFileRequestKind;
+    kind: AmpleFileRequestCreatableKind;
     owner: AmpleFileRequestOwner;
     surface: AmpleFileRequestSurface;
     taskId: string;
-    app?: AmpleFileRequestAppRef;
     content?: string;
     attachments?: readonly AmpleFileAgentAttachmentRef[];
     acceptedAt?: string;
@@ -723,15 +720,11 @@ export class AmpleFileRequestStore {
     taskId: string;
     receiptId: string;
     envelope: unknown;
-    schema?: RestrictedAppJsonSchema;
   }): Promise<AmpleFileResultRecord> {
     return this.#run(async () => {
       const record = this.#requireRecord(input.requestId);
       this.#requireOwnTurn(record, input.taskId);
-      const envelope: AmpleFileResultEnvelope = parseAmpleFileResultEnvelope(
-        input.envelope,
-        input.schema ? { schema: input.schema } : {},
-      );
+      const envelope: AmpleFileResultEnvelope = parseAmpleFileResultEnvelope(input.envelope);
       const at = this.#now().toISOString();
       const result = parseAmpleFileResultRecord({
         schema: ampleFileResultRecordSchema,
@@ -1063,11 +1056,10 @@ export class AmpleFileRequestStore {
   }
 
   #newRecord(input: {
-    kind: AmpleFileRequestKind;
+    kind: AmpleFileRequestCreatableKind;
     owner: AmpleFileRequestOwner;
     surface: AmpleFileRequestSurface;
     taskId: string;
-    app?: AmpleFileRequestAppRef;
     content?: string;
     attachments?: readonly AmpleFileAgentAttachmentRef[];
     continuedFromTaskId?: string | null;
@@ -1122,7 +1114,6 @@ export class AmpleFileRequestStore {
       actions: [],
       continuedFromTaskId: input.continuedFromTaskId ?? null,
     };
-    if (input.app) draft.app = { ...input.app };
     // Validating what is about to be appended keeps a malformed record from
     // reaching the journal at all, rather than only failing on the way back.
     return parseAmpleFileRequestRecord(draft);

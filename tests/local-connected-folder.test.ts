@@ -22,7 +22,6 @@ import {
   getConnectedFolder,
   listConnectedFolders,
   listPendingConnectedFolderRemovals,
-  markConnectedFolderRemovalAppStateRemoved,
   readConnectedFolderTextFile,
   registerManagedConnectedFolder,
   renameConnectedFolder,
@@ -259,7 +258,6 @@ test("managed-folder cleanup failure leaves a hidden, recoverable removal intent
   const connectedFolder = await createManagedConnectedFolder("Removal cleanup retry", contentRoot);
   await writeFile(join(connectedFolder.connectedFolderRoot, "retry.txt"), "retry", "utf8");
   await beginConnectedFolderRemoval(connectedFolder.id, contentRoot);
-  await markConnectedFolderRemovalAppStateRemoved(connectedFolder.id);
 
   const pending = await finalizeConnectedFolderRemoval(connectedFolder.id, {
     async claimManagedRoot() {
@@ -274,7 +272,7 @@ test("managed-folder cleanup failure leaves a hidden, recoverable removal intent
   });
   assert.equal((await listConnectedFolders()).some((item) => item.id === connectedFolder.id), false);
   assert.equal(await readFile(join(connectedFolder.connectedFolderRoot, "retry.txt"), "utf8"), "retry");
-  assert.equal((await listPendingConnectedFolderRemovals())[0]?.phase, "app-state-removed");
+  assert.equal((await listPendingConnectedFolderRemovals())[0]?.phase, "requested");
 
   const recovered = await finalizeConnectedFolderRemoval(connectedFolder.id);
   assert.equal(recovered.cleanupPending, false);
@@ -298,7 +296,6 @@ test("a preserve-disposition removal unregisters a managed Connected Folder whil
   assert.equal((await listPendingConnectedFolderRemovals())[0]?.folderDisposition, "preserve");
   await assert.rejects(beginConnectedFolderRemoval(connectedFolder.id, contentRoot), /different folder disposition/);
 
-  await markConnectedFolderRemovalAppStateRemoved(connectedFolder.id);
   // A crash between app-state cleanup and registry finalization keeps the
   // preserve semantics: the pending result never claims a deletion.
   const pending = await finalizeConnectedFolderRemoval(connectedFolder.id, {
@@ -345,7 +342,6 @@ test("a managed folder registers again with its portable identity, and only insi
   const connectedFolder = await createManagedConnectedFolder("Restorable", contentRoot);
   await writeFile(join(connectedFolder.connectedFolderRoot, "brief.md"), "# brief\n", "utf8");
   await beginConnectedFolderRemoval(connectedFolder.id, contentRoot, {});
-  await markConnectedFolderRemovalAppStateRemoved(connectedFolder.id, {});
   // The removal moves the claimed folder away instead of erasing it, exactly
   // as the trash io does; putting it back is what a restore then does.
   const parked = join(dirname(connectedFolder.connectedFolderRoot), "parked-managed-folder");
@@ -400,7 +396,6 @@ test("a preserve marker is valid only on a managed intent that holds no deletion
   // Restore the valid preserve intent and complete the removal so later
   // tests see a clean registry.
   await writeFile(connectedFolderRegistryFile(), registryText, "utf8");
-  await markConnectedFolderRemovalAppStateRemoved(connectedFolder.id);
   const removed = await finalizeConnectedFolderRemoval(connectedFolder.id);
   assert.equal(removed.deleted, false);
   assert.equal(existsSync(connectedFolder.connectedFolderRoot), true);
@@ -410,7 +405,6 @@ test("a durable claim hint cannot finalize while the approved root still exists"
   const connectedFolder = await createManagedConnectedFolder("Removal claim replay", contentRoot);
   await writeFile(join(connectedFolder.connectedFolderRoot, "approved-original.txt"), "original", "utf8");
   await beginConnectedFolderRemoval(connectedFolder.id, contentRoot);
-  await markConnectedFolderRemovalAppStateRemoved(connectedFolder.id);
 
   const registry = JSON.parse(await readFile(connectedFolderRegistryFile(), "utf8")) as {
     pendingRemovals: Array<{ managedRootClaimed: boolean }>;
@@ -429,7 +423,6 @@ test("a durable claim hint cannot finalize while the approved root still exists"
 test("a final registry-write failure remains idempotently recoverable after managed content is gone", async () => {
   const connectedFolder = await createManagedConnectedFolder("Removal registry retry", contentRoot);
   await beginConnectedFolderRemoval(connectedFolder.id, contentRoot);
-  await markConnectedFolderRemovalAppStateRemoved(connectedFolder.id);
 
   const pending = await finalizeConnectedFolderRemoval(connectedFolder.id, {
     async persistRegistry(registry) {
@@ -463,7 +456,6 @@ test("an unclaimed replacement folder or junction keeps managed removal pending"
   const connectedFolder = await createManagedConnectedFolder("Removal replacement guard", contentRoot);
   await writeFile(join(connectedFolder.connectedFolderRoot, "approved-original.txt"), "original", "utf8");
   await beginConnectedFolderRemoval(connectedFolder.id, contentRoot);
-  await markConnectedFolderRemovalAppStateRemoved(connectedFolder.id);
 
   const originalAside = join(contentRoot, "approved-original-aside");
   await rename(connectedFolder.connectedFolderRoot, originalAside);
@@ -506,7 +498,6 @@ test("a root swap during the managed claim never deletes either directory", asyn
   const connectedFolder = await createManagedConnectedFolder("Removal claim swap", contentRoot);
   await writeFile(join(connectedFolder.connectedFolderRoot, "approved-original.txt"), "original", "utf8");
   await beginConnectedFolderRemoval(connectedFolder.id, contentRoot);
-  await markConnectedFolderRemovalAppStateRemoved(connectedFolder.id);
 
   const originalAside = join(contentRoot, "claim-swap-original-aside");
   let claimedReplacement = "";
@@ -538,7 +529,6 @@ test("recovery retries restoration of a mismatched managed claim", async () => {
   const connectedFolder = await createManagedConnectedFolder("Removal claim restore retry", contentRoot);
   await writeFile(join(connectedFolder.connectedFolderRoot, "approved-original.txt"), "original", "utf8");
   await beginConnectedFolderRemoval(connectedFolder.id, contentRoot);
-  await markConnectedFolderRemovalAppStateRemoved(connectedFolder.id);
 
   const originalAside = join(contentRoot, "claim-restore-original-aside");
   let claimPath = "";
@@ -575,7 +565,6 @@ test("a replacement created after the managed claim survives approved-folder del
   const connectedFolder = await createManagedConnectedFolder("Removal post-claim replacement", contentRoot);
   await writeFile(join(connectedFolder.connectedFolderRoot, "approved-original.txt"), "original", "utf8");
   await beginConnectedFolderRemoval(connectedFolder.id, contentRoot);
-  await markConnectedFolderRemovalAppStateRemoved(connectedFolder.id);
 
   let claimPath = "";
   const replacementSentinel = join(connectedFolder.connectedFolderRoot, "replacement-sentinel.txt");
@@ -764,7 +753,6 @@ test("a pending managed deletion cannot gain a newly registered nested Connected
   await assert.rejects(registerLinkedConnectedFolder(childRoot), /still being removed/);
   assert.equal(existsSync(connectedFolderManifestFile(childRoot)), false, "the refused registration creates no portable identity");
   assert.equal(await readFile(join(childRoot, "note.txt"), "utf8"), "still present");
-  await markConnectedFolderRemovalAppStateRemoved(parent.id);
   assert.equal((await finalizeConnectedFolderRemoval(parent.id)).cleanupPending, false);
 });
 

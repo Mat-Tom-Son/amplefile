@@ -8,7 +8,6 @@
 export const recentlyDeletedSettings = {
   heading: "Recently Deleted",
   restore: "Restore",
-  saveCopy: "Save a Copy",
   deleteNow: "Delete Now",
   deleteNowConfirm: "Delete this for good? It cannot be brought back afterwards.",
   retentionLabel: "Keep Deleted Items For",
@@ -46,12 +45,11 @@ export const deleteSelectionConfirm = {
  * Settings → Automations → Limits (docs/receipts-not-gates.md, F19 principle 6).
  * Bounds are defaults, not gates: they exist so a runaway stops and so
  * envelopes stay sane. Every message that names a limit names this section,
- * so every number an app or an automation can hit has a row here. The numbers are
+ * so every number a request, job, or automation can hit has a row here. The numbers are
  * read from the same frozen contracts the host enforces, never retyped.
  */
 export const ampleFileLimitsSettings = {
   heading: "Limits",
-  appRequestsHeading: "Worker Requests",
   requestsHeading: "Requests",
   continuationsHeading: "Continuations",
   continuationsLabel: "Continue requests when handed-out work or background jobs finish",
@@ -60,7 +58,6 @@ export const ampleFileLimitsSettings = {
   continuationsUnavailable: "This setting needs the AmpleFile app running.",
   previewDisabled: "Changing limits is disabled in the preview",
   automationsHeading: "Automations",
-  appAutomationsHeading: "App Automations",
   deletedHeading: "Recently Deleted",
   deletedLink: "Open Recently Deleted",
   frozenNote: "",

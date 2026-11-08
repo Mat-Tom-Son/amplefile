@@ -18,14 +18,22 @@ const deletion = () => prepareAct({
 });
 
 test("prepareFoldAct refuses unknown kinds, unknown or malformed fields, and mismatched identities", () => {
-  // The closed vocabulary: the fourteen kinds behind every verb that installs
+  // The closed vocabulary: the six kinds behind every verb that installs
   // code, widens a power, or destroys data; permanent file deletion, the
-  // retired desktop-served exposure, and online page publishing are gone.
-  assert.equal(PREPARED_ACT_KINDS.length, 14);
+  // retired desktop-served exposure, online page publishing, and every
+  // Connected Folder app act are gone.
+  assert.deepEqual([...PREPARED_ACT_KINDS].sort(), [
+    "automation.enable",
+    "capability.package.install",
+    "capability.package.update",
+    "capability.resource.enabled",
+    "capability.skills.import",
+    "connected-folder.delete-folder",
+  ]);
   assert.equal((PREPARED_ACT_KINDS as readonly string[]).includes("files.destroy"), false);
   assert.equal((PREPARED_ACT_KINDS as readonly string[]).includes("publish.viewer.expose"), false);
   assert.equal((PREPARED_ACT_KINDS as readonly string[]).includes("page.publish"), false);
-  assert.equal((PREPARED_ACT_KINDS as readonly string[]).includes("app.review.install"), true);
+  assert.equal(PREPARED_ACT_KINDS.some((kind) => kind.startsWith("app.")), false);
 
   const refused = (input: Parameters<typeof prepareAct>[0], code: string, message: RegExp) =>
     assert.throws(
@@ -34,6 +42,7 @@ test("prepareFoldAct refuses unknown kinds, unknown or malformed fields, and mis
       `expected ${code} for ${JSON.stringify(input)}`,
     );
   refused({ kind: "files.destroy" as never, parameters: {}, pins: {} }, "KIND_UNKNOWN", /fail closed/);
+  refused({ kind: "app.storage.clear" as never, parameters: {}, pins: {} }, "KIND_UNKNOWN", /fail closed/);
   refused(
     { kind: "connected-folder.delete-folder", parameters: { connectedFolderId: "connected-folder-1", extra: "x" }, pins: { connectedFolderId: "connected-folder-1", connectedFolderRoot: "/r" } },
     "INPUT_INVALID",
@@ -51,12 +60,12 @@ test("prepareFoldAct refuses unknown kinds, unknown or malformed fields, and mis
   );
   refused(
     {
-      kind: "app.storage.clear",
-      parameters: { connectedFolderId: "connected-folder-1", appInstanceId: "app-1" },
-      pins: { appInstanceId: "app-1", dataNamespaceIds: ["ns-1"], observedBytes: -1 },
+      kind: "capability.skills.import",
+      parameters: { source: "/skills/pack", scope: "connected-folder", connectedFolderId: "connected-folder-1" },
+      pins: { source: "/skills/pack", contentDigest: "d".repeat(64), skillNames: [] },
     },
     "INPUT_INVALID",
-    /non-negative integer/,
+    /pins\.skillNames must list 1-256 entries/,
   );
   refused(
     { kind: "capability.package.install", parameters: { scope: "connected-folder" }, pins: { packageId: "p", version: "1", source: "npm:p", scope: "connected-folder", resourceSummary: "r" } },
@@ -101,11 +110,11 @@ test("the executor fences, rechecks pins, wraps execution in one fold_act task, 
         recheckPins: () => null,
         execute: async () => ({ detail: "deleted" }),
       },
-      "app.storage.clear": {
+      "capability.skills.import": {
         recheckPins: (_act, context) => (context as { mismatch?: string } | undefined)?.mismatch ?? null,
         execute: async (_act, context) => {
           (context as { ran?: boolean }).ran = true;
-          return { detail: "cleared" };
+          return { detail: "imported" };
         },
       },
       "capability.package.install": {
@@ -120,25 +129,25 @@ test("the executor fences, rechecks pins, wraps execution in one fold_act task, 
   // A Connected Folder–scoped act reserves the Connected Folder fence by default, rechecks its
   // pins inside it, and runs inside one fold_act task that is finished on
   // the way out; the effect names the task.
-  const clear = prepareAct({
-    kind: "app.storage.clear",
-    parameters: { connectedFolderId: "connected-folder-1", appInstanceId: "app-1" },
-    pins: { appInstanceId: "app-1", dataNamespaceIds: ["ns-1"], observedBytes: 10 },
+  const skillsImport = prepareAct({
+    kind: "capability.skills.import",
+    parameters: { source: "/skills/pack", scope: "connected-folder", connectedFolderId: "connected-folder-1" },
+    pins: { source: "/skills/pack", contentDigest: "d".repeat(64), skillNames: ["tidy-notes"] },
   });
   const context: { ran?: boolean } = {};
-  const effect = await executor.run({ act: clear, requestId: "req-1", context });
-  assert.equal(effect.detail, "cleared");
+  const effect = await executor.run({ act: skillsImport, requestId: "req-1", context });
+  assert.equal(effect.detail, "imported");
   assert.equal(effect.taskId, "task-1");
   assert.equal(context.ran, true);
   assert.deepEqual(scopes, [{ scope: "connected-folder", connectedFolderId: "connected-folder-1" }]);
-  assert.deepEqual(started, [{ requestId: "req-1", kind: "app.storage.clear", connectedFolderId: "connected-folder-1" }]);
+  assert.deepEqual(started, [{ requestId: "req-1", kind: "capability.skills.import", connectedFolderId: "connected-folder-1" }]);
   assert.deepEqual(finished, ["task-1"]);
 
   // A pin mismatch refuses before execute and starts no task.
-  const mismatch: { mismatch: string; ran?: boolean } = { mismatch: "the live storage changed" };
+  const mismatch: { mismatch: string; ran?: boolean } = { mismatch: "the skill pack changed" };
   await assert.rejects(
-    () => executor.run({ act: clear, requestId: "req-2", context: mismatch }),
-    (error: unknown) => error instanceof PreparedActError && error.code === "PIN_MISMATCH" && /live storage changed/.test(error.message),
+    () => executor.run({ act: skillsImport, requestId: "req-2", context: mismatch }),
+    (error: unknown) => error instanceof PreparedActError && error.code === "PIN_MISMATCH" && /skill pack changed/.test(error.message),
   );
   assert.equal(mismatch.ran, undefined);
   assert.equal(started.length, 1);
@@ -161,13 +170,13 @@ test("the executor fences, rechecks pins, wraps execution in one fold_act task, 
   assert.equal(finished.length, started.length, "every started task is finished, including after a throw");
 
   // An unbound kind refuses before anything runs.
-  const grant = prepareAct({
-    kind: "app.grant.network",
-    parameters: { connectedFolderId: "connected-folder-1", appInstanceId: "app-1", declarationId: "api" },
-    pins: { appInstanceId: "app-1", declarationId: "api", releaseDigest: "d".repeat(64) },
+  const enable = prepareAct({
+    kind: "automation.enable",
+    parameters: { automationId: "automation-weekly-handoff" },
+    pins: { automationId: "automation-weekly-handoff", declarationDigest: "d".repeat(64) },
   });
   await assert.rejects(
-    () => executor.run({ act: grant, requestId: "req-5" }),
+    () => executor.run({ act: enable, requestId: "req-5" }),
     (error: unknown) => error instanceof PreparedActError && error.code === "EXECUTION_UNAVAILABLE",
   );
   assert.equal(started.length, 3);

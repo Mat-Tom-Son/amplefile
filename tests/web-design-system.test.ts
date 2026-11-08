@@ -22,7 +22,6 @@ const [
   customizationCss,
   desktopSettingsSource,
   capabilitiesSource,
-  chatPanelSource,
   fileManagerViewSource,
 ] = await Promise.all([
   readRenderer("App.tsx"),
@@ -37,7 +36,6 @@ const [
   readRenderer("styles.css"),
   readRenderer("components/modals/DesktopSettingsModal.tsx"),
   readRenderer("components/panes/CapabilitiesPane.tsx"),
-  readRenderer("components/chat/ChatPanel.tsx"),
   readRenderer("components/file-manager/FileManagerView.tsx"),
 ]);
 
@@ -47,14 +45,12 @@ test("the Library is retired from the desktop (2026-09-25)", () => {
   assert.doesNotMatch(connectedFolderPanesSource, /export function LibraryPane|From Library/);
 });
 
-test("Skills & Extensions opens as a popup from the Add button, and apps are managed in Settings", () => {
+test("Skills & Extensions opens as a popup from the Add button", () => {
   // The rail's Add button opens one popup: Skills & Extensions. Discovery and
-  // management are the same place; apps are managed in Settings → Apps and
-  // built by asking a Worker in a Chat, so nothing here seeds a Chat.
+  // management are the same place, and nothing here seeds a Chat.
   assert.doesNotMatch(connectedFolderChromeSource, /Browse Skills &amp; Extensions|Manage agent tools|Build an app|Your Library|<strong>Apps<\/strong>/);
   assert.match(fileManagerViewSource, /skillsFor \? <SkillsExtensionsModal[^>]*initialView="installed"/);
   assert.doesNotMatch(appSource, /startAppBuildChat|onBuildApp=|<ConnectedFolderAppsPane|openConnectedFolderAppsSurfaceTab|openAssistantToolsSurfaceTab/);
-  assert.match(chatPanelSource, /textarea\.setSelectionRange\(end, end\)/);
   assert.match(capabilitiesSource, /<h1>Skills &amp; Extensions<\/h1>/);
   // Where a tool lives is one explicit decision in the review step, shown as
   // the AmpleFile agent above folders hierarchy rather than a bare Personal/This folder toggle.
@@ -94,8 +90,7 @@ test("Skills & Extensions opens as a popup from the Add button, and apps are man
   assert.match(capabilitiesSource, /Included with AmpleFile/);
   assert.match(capabilitiesSource, /capabilities-scope-columns/);
   assert.doesNotMatch(capabilitiesSource, /All scopes|installedSort|Add to this folder|Add for everywhere/);
-  // Sandboxed apps are a different lane with their own authority model: they
-  // live in the Connected Folder–owned Apps tab, never inside Skills & Extensions.
+  // Apps were removed (2026-11-07); Skills & Extensions never lists them.
   assert.doesNotMatch(capabilitiesSource, /RestrictedAppsSection|restrictedApps|"Apps"/);
   // Catalog listings keep provenance readable in text, including its limit.
   assert.doesNotMatch(capabilitiesSource, /capabilities-external-host|"GitHub"|capabilities-official-badge/);
@@ -225,9 +220,8 @@ test("Connected Folder customization is visible, compact, and separate from stru
   assert.doesNotMatch(appSource, /dataset\.windowMaterial/, "window material must not wait for a passive React effect");
   assert.match(foundationCss, /--amplefile-font-size:\s*15px/, "the canonical sheet supplies a fallback; the appearance resolver owns the selected size");
   assert.match(foundationCss, /\.composer textarea:focus-visible\s*\{[\s\S]*?outline:\s*0/, "the connected-folder-colored composer shell must own the visible focus treatment");
-  const settingsIconsSource = desktopSettingsSource.replace('import { LayoutPanelLeft } from "lucide-react";', "");
-  assert.doesNotMatch(settingsIconsSource, /from\s+["']lucide-react["']/, "Settings keeps its icon exceptions limited to the requested controls");
-  assert.match(desktopSettingsSource, /id: "apps", label: "Apps", icon: <LayoutPanelLeft size=\{20\} strokeWidth=\{1\.5\} aria-hidden="true" \/>/);
+  assert.doesNotMatch(desktopSettingsSource, /from\s+["']lucide-react["']/, "Settings uses Fluent icons only");
+  assert.doesNotMatch(desktopSettingsSource, /id: "apps"|SettingsAppsPane/, "Settings has no Apps page (apps removed 2026-11-07)");
   assert.match(desktopSettingsSource, /from\s+["']@fluentui\/react-icons["']/);
 });
 

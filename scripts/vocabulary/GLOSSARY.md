@@ -12,11 +12,9 @@ in labels and in sentences, like **Worker**.
 | Worker | `worker`, `Worker` | `worker` | Space Assistant, product-sense `assistant` |
 | AmpleFile agent | `ampleFileAgent`, `AmpleFileAgent` | `amplefile-agent` (CLI verb `agent`) | work-fold agent; management conversation, the fold |
 | Automation | `automation`, `Automation` | `automation` | routing |
-| app automation | `appAutomation`, `AppAutomation` | `app-automation` | an app's declared named automations |
 | Recently deleted | `recentlyDeleted`, `RecentlyDeleted` | `recently-deleted` | trash |
 | overview | `overview`, `Overview` | `overview` | glance |
 | Everywhere | `everywhere` | `everywhere` | the `personal` capability scope |
-| The app kit | — | `af-` classes, `--af-*` variables, `/__amplefile/kit.css` | `wf-`, `--wf-*` |
 
 Not renamed, because they are not product vocabulary:
 
@@ -41,11 +39,10 @@ The folder that holds app-managed Connected Folders keeps its name (`spaces/` in
 app state), as does the AmpleFile agent's working folder (`management/`), and
 path-derived storage keys keep their old fallback segment: moving or
 re-keying them would move user content and detach History, per-folder state,
-and Pi chat sessions from existing folders. The restricted-app bridge API
-(`assistant.request`, `assistant.infer`, `assistantActions`) also keeps its
-names; "worker" already means an app's background runtime there. (The
-paired-web `management.*` wire operations were the other exception until Web
-Access was removed from the desktop on 2026-11-07.)
+and Pi chat sessions from existing folders. (The restricted-app bridge API
+and the paired-web `management.*` wire operations were also exceptions until
+Connected Folder apps and Web Access were removed from the desktop on
+2026-11-07.)
 
 ## Existing data
 

@@ -93,31 +93,6 @@ export type AmpleFileCliActCommandName =
   | "tools.enable"
   | "tools.disable"
   | "tools.remove"
-  | "apps.list"
-  | "apps.invoke"
-  | "apps.proposals.list"
-  | "apps.proposals.dismiss"
-  | "apps.install-proposal"
-  | "apps.install-preview"
-  | "apps.remove"
-  | "apps.grant"
-  | "apps.revoke"
-  | "apps.connect"
-  | "apps.disconnect"
-  | "apps.automation.enable"
-  | "apps.automation.disable"
-  | "apps.automation.run"
-  | "apps.storage.clear"
-  | "apps.retained.purge"
-  | "apps.project.declare"
-  | "apps.release.prepare"
-  | "apps.release.publish"
-  | "apps.release.delete"
-  | "apps.install.prepare"
-  | "apps.update.prepare"
-  | "apps.operation.activate"
-  | "apps.operation.cancel"
-  | "apps.uninstall"
   | "automations.enable"
   | "automations.list"
   | "automations.models"
@@ -177,12 +152,9 @@ export interface AmpleFileCliActParsedCommand {
   checkpoint?: string;
   fromCheckpoint?: string;
   toCheckpoint?: string;
-  /**
-   * Single Connected Folder–relative entry path for file and History verbs, and the
-   * exact file an `apps grant --kind files` single-file permission binds to.
-   */
+  /** Single Connected Folder–relative entry path for file, History, Skills & Extensions, and search verbs. */
   path?: string;
-  /** File-version hash for history.restore-file; display version for apps.release.prepare. */
+  /** File-version hash for history.restore-file. */
   version?: string;
   query?: string;
   cursor?: string; limit?: number; offsetBytes?: number; lengthBytes?: number; expectedSha256?: string;
@@ -193,34 +165,10 @@ export interface AmpleFileCliActParsedCommand {
   resourceKind?: "extensions" | "skills" | "prompts" | "themes";
   catalogId?: string;
   source?: string;
-  /** Restricted-app proposal id (apps.* commands). */
-  proposal?: string;
-  /** Connected Folder–relative packaged-app path for apps.install-preview. */
-  packagePath?: string;
-  app?: string;
-  digest?: string;
-  grantKind?: "network" | "files" | "notifications";
-  declaration?: string;
-  destination?: string;
-  /** An app automation id for `apps automation …`, or an Automation id for `automations …`. */
+  /** An Automation id for `automations …`. */
   automation?: string;
-  /** Declared tool name for apps.invoke. */
-  tool?: string;
-  /** Parsed --input JSON for apps.invoke; the app's runtime validates it against the tool's schema. */
-  toolInput?: unknown;
-  /** Typed presentation file path for apps.project.declare, resolved host-side. */
-  presentationPath?: string;
-  release?: string;
-  targetConnectedFolder?: string;
-  instance?: string;
-  operation?: string;
-  retained?: string;
-  /** Explicit apps.uninstall data disposition; deliberately never defaulted. */
-  disposition?: "retain-data" | "purge-data";
   /** Recently deleted item id for recently-deleted.restore. */
   entry?: string;
-  /** Absolute destination for `recently-deleted restore --to`, the "save a copy" path for app data. */
-  toPath?: string;
   /** Result-envelope summary for chat.report (docs/collaboration-contract.md, F29). */
   summary?: string;
   /** Inline `--data` JSON for chat.report; the host validates it against a declared schema. */
@@ -303,10 +251,6 @@ const maxActPathLength = 4_096;
 /** Mirrors `maxQueryLength` in src/local/search.ts so parse and service refuse together. */
 const maxActSearchQueryLength = 64 * 1024;
 const maxActIdLength = 256;
-/** Matches the app runtime's own invocation bound (desktop/src/restricted-app-host.ts). */
-const maxActToolInputBytes = 16 * 1024 * 1024;
-/** Terminal output stays readable; --json always carries the whole result. */
-const maxHumanToolResultLength = 4_096;
 
 const cliControlCharacters = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u;
 
@@ -364,21 +308,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     "--scope",
     "--id",
     "--source",
-    "--app",
-    "--digest",
     "--kind",
-    "--declaration",
-    "--destination",
-    "--automation",
-    "--tool",
-    "--input",
-    "--package",
-    "--presentation",
-    "--release",
-    "--target-connected-folder",
-    "--instance",
-    "--operation",
-    "--retained",
     "--automation",
     "--provider",
     "--model",
@@ -413,7 +343,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     "--action",
     "--ref",
   ]);
-  const booleanFlags = new Set(["--new", "--message-from-payload", "--retain-data", "--purge-data", "--clear", "--running", "--asynchronous", "--interactive", "--service", "--eof"]);
+  const booleanFlags = new Set(["--new", "--message-from-payload", "--clear", "--running", "--asynchronous", "--interactive", "--service", "--eof"]);
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index] ?? "";
@@ -497,7 +427,6 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     "history read",
     "history diff",
     "history restore-file",
-    "apps grant",
   ]);
   if (!pathCommands.has(command) && pathValues.length) {
     throw usageError(`--path cannot be used with '${command || "(none)"}'.`);
@@ -710,29 +639,6 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     "tools enable",
     "tools disable",
     "tools remove",
-    "apps proposals dismiss",
-    "apps install-proposal",
-    "apps install-preview",
-    "apps remove",
-    "apps grant",
-    "apps revoke",
-    "apps connect",
-    "apps disconnect",
-    "apps automation enable",
-    "apps automation disable",
-    "apps automation run",
-    "apps invoke",
-    "apps storage clear",
-    "apps retained purge",
-    "apps project declare",
-    "apps release prepare",
-    "apps release publish",
-    "apps release delete",
-    "apps install prepare",
-    "apps update prepare",
-    "apps operation activate",
-    "apps operation cancel",
-    "apps uninstall",
     "automations enable",
     "automations run",
     "automations stop",
@@ -1386,230 +1292,6 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
         source: requireBoundedFlag("--source", "package-source", maxActPathLength),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
-    case "apps list":
-      allowOnlyFlags("--connected-folder");
-      return { name: "apps.list", output, connectedFolder: requireConnectedFolder() };
-    case "apps invoke": {
-      allowOnlyFlags("--connected-folder", "--app", "--tool", "--input", "--parent-task");
-      const rawToolInput = stringFlag("--input");
-      if (rawToolInput === undefined) throw usageError("Provide --input <json>.");
-      if (Buffer.byteLength(rawToolInput, "utf8") > maxActToolInputBytes) {
-        throw usageError(`--input must be at most ${maxActToolInputBytes} bytes.`);
-      }
-      let toolInput: unknown;
-      // Deliberately not requireBoundedFlag: pretty-printed JSON carries the
-      // newlines that rule refuses, and the app's runtime validates the value.
-      try {
-        toolInput = JSON.parse(rawToolInput);
-      } catch {
-        throw usageError("--input must be valid JSON.");
-      }
-      return {
-        name: "apps.invoke",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        app: requireBoundedFlag("--app", "app-id"),
-        tool: requireBoundedFlag("--tool", "tool-name"),
-        toolInput,
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    }
-    case "apps proposals list":
-      allowOnlyFlags("--connected-folder", "--conversation");
-      return {
-        name: "apps.proposals.list",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        conversation: requireConversation(),
-      };
-    case "apps proposals dismiss":
-      allowOnlyFlags("--connected-folder", "--conversation", "--proposal", "--parent-task");
-      return {
-        name: "apps.proposals.dismiss",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        conversation: requireConversation(),
-        proposal: requireBoundedFlag("--proposal", "proposal-id"),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps install-proposal":
-      allowOnlyFlags("--connected-folder", "--conversation", "--proposal", "--parent-task");
-      return {
-        name: "apps.install-proposal",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        conversation: requireConversation(),
-        proposal: requireBoundedFlag("--proposal", "proposal-id"),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps install-preview":
-      allowOnlyFlags("--connected-folder", "--package", "--parent-task");
-      return {
-        name: "apps.install-preview",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        packagePath: requireBoundedFlag("--package", "connected-folder-path", maxActPathLength),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps remove":
-      allowOnlyFlags("--connected-folder", "--app", "--parent-task");
-      return {
-        name: "apps.remove",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        app: requireBoundedFlag("--app", "app-id"),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps grant":
-    case "apps revoke": {
-      allowOnlyFlags("--connected-folder", "--app", "--digest", "--kind", "--declaration", "--parent-task");
-      const rawKind = requireBoundedFlag("--kind", "network|files|notifications");
-      if (rawKind !== "network" && rawKind !== "files" && rawKind !== "notifications") {
-        throw usageError("--kind must be network, files, or notifications.");
-      }
-      // A file permission that names one file is granted by naming that file
-      // (docs/receipts-not-gates.md, F21). A folder permission keeps binding
-      // to the whole Connected Folder and takes no --path, and revoking takes none
-      // either: it names the declaration, not a root.
-      if (pathValues.length && !(command === "apps grant" && rawKind === "files")) {
-        throw usageError("--path can be used only with 'apps grant --kind files'.");
-      }
-      const filePath = pathValues.length ? requireSinglePath("connected-folder-file-path") : undefined;
-      return {
-        name: command === "apps grant" ? "apps.grant" : "apps.revoke",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        app: requireBoundedFlag("--app", "app-id"),
-        digest: requireBoundedFlag("--digest", "sha256"),
-        grantKind: rawKind,
-        declaration: requireBoundedFlag("--declaration", "declaration-id"),
-        ...(filePath !== undefined ? { path: filePath } : {}),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    }
-    case "apps connect":
-    case "apps disconnect":
-      // The act names app, destination, and adapter only; credentials never
-      // ride argv, payloads, or the journal.
-      allowOnlyFlags("--connected-folder", "--app", "--destination", "--parent-task");
-      return {
-        name: command === "apps connect" ? "apps.connect" : "apps.disconnect",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        app: requireBoundedFlag("--app", "app-id"),
-        destination: requireBoundedFlag("--destination", "destination-id"),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps automation enable":
-    case "apps automation disable":
-    case "apps automation run":
-      allowOnlyFlags("--connected-folder", "--app", "--automation", "--parent-task");
-      return {
-        name: command === "apps automation enable"
-          ? "apps.automation.enable"
-          : command === "apps automation disable"
-            ? "apps.automation.disable"
-            : "apps.automation.run",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        app: requireBoundedFlag("--app", "app-id"),
-        automation: requireBoundedFlag("--automation", "automation-id"),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps storage clear":
-      allowOnlyFlags("--connected-folder", "--app", "--parent-task");
-      return {
-        name: "apps.storage.clear",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        app: requireBoundedFlag("--app", "app-id"),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps retained purge":
-      allowOnlyFlags("--connected-folder", "--retained", "--parent-task");
-      return {
-        name: "apps.retained.purge",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        retained: requireBoundedFlag("--retained", "retained-data-id"),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps project declare":
-      // Same file-borne pattern as `automations enable --proposal`: the typed
-      // presentation file passes as a path resolved host-side.
-      allowOnlyFlags("--connected-folder", "--presentation", "--parent-task");
-      return {
-        name: "apps.project.declare",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        presentationPath: requireBoundedFlag("--presentation", "json-path", maxActPathLength),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps release prepare":
-      allowOnlyFlags("--connected-folder", "--version", "--parent-task");
-      return {
-        name: "apps.release.prepare",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        version: requireBoundedFlag("--version", "display-version"),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps release publish":
-    case "apps release delete":
-      allowOnlyFlags("--connected-folder", "--release", "--parent-task");
-      return {
-        name: command === "apps release publish" ? "apps.release.publish" : "apps.release.delete",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        release: requireBoundedFlag("--release", "release-digest"),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps install prepare":
-      allowOnlyFlags("--connected-folder", "--release", "--target-connected-folder", "--parent-task");
-      return {
-        name: "apps.install.prepare",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        release: requireBoundedFlag("--release", "release-digest"),
-        targetConnectedFolder: requireBoundedFlag("--target-connected-folder", "connected-folder-id-or-name"),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps update prepare":
-      allowOnlyFlags("--connected-folder", "--instance", "--release", "--parent-task");
-      return {
-        name: "apps.update.prepare",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        instance: requireBoundedFlag("--instance", "instance-id"),
-        release: requireBoundedFlag("--release", "release-digest"),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps operation activate":
-    case "apps operation cancel":
-      allowOnlyFlags("--connected-folder", "--operation", "--parent-task");
-      return {
-        name: command === "apps operation activate" ? "apps.operation.activate" : "apps.operation.cancel",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        operation: requireBoundedFlag("--operation", "operation-id"),
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    case "apps uninstall": {
-      allowOnlyFlags("--connected-folder", "--instance", "--retain-data", "--purge-data", "--parent-task");
-      const retainData = flags.get("--retain-data") === true;
-      const purgeData = flags.get("--purge-data") === true;
-      if (retainData === purgeData) {
-        throw usageError("Provide exactly one of --retain-data or --purge-data; the disposition is never defaulted.");
-      }
-      return {
-        name: "apps.uninstall",
-        output,
-        connectedFolder: requireConnectedFolder(),
-        instance: requireBoundedFlag("--instance", "instance-id"),
-        disposition: retainData ? "retain-data" : "purge-data",
-        ...(parentTaskId ? { parentTaskId } : {}),
-      };
-    }
     case "automations enable":
       // Automations are above Connected Folders (docs/automations.md): no
       // --connected-folder, like the agent group. The inert typed proposal passes as
@@ -1627,17 +1309,14 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
     case "recently-deleted list":
       allowOnlyFlags();
       return { name: "recently-deleted.list", output };
-    case "recently-deleted restore": {
-      allowOnlyFlags("--entry", "--to", "--parent-task");
-      const toPath = optionalBoundedFlag("--to", "absolute-path", maxActPathLength);
+    case "recently-deleted restore":
+      allowOnlyFlags("--entry", "--parent-task");
       return {
         name: "recently-deleted.restore",
         output,
         entry: requireBoundedFlag("--entry", "recently-deleted-id", 64),
-        ...(toPath ? { toPath } : {}),
         ...(parentTaskId ? { parentTaskId } : {}),
       };
-    }
     // Reads of the request graph (docs/collaboration-contract.md, F25): what
     // was handed out under one request, what is still open, and what came
     // back. Reads take no lineage, matching the other act reads.
@@ -2313,134 +1992,6 @@ async function runActCommand(
         source: command.source!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
       }));
-    case "apps.list":
-      return toJson(await facade.appsList({ connectedFolder: command.connectedFolder! }));
-    case "apps.invoke":
-      return toJson(await facade.appsInvoke({
-        connectedFolder: command.connectedFolder!,
-        app: command.app!,
-        tool: command.tool!,
-        input: command.toolInput,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
-    case "apps.proposals.list":
-      return toJson(await facade.appsProposalsList({
-        connectedFolder: command.connectedFolder!,
-        conversationId: command.conversation!,
-      }));
-    case "apps.proposals.dismiss":
-      return toJson(await facade.appsProposalsDismiss({
-        connectedFolder: command.connectedFolder!,
-        conversationId: command.conversation!,
-        proposal: command.proposal!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
-    case "apps.remove":
-      return toJson(await facade.appsRemove({
-        connectedFolder: command.connectedFolder!,
-        app: command.app!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-        requestId: request.id,
-      }));
-    case "apps.revoke":
-      return toJson(await facade.appsRevoke({
-        connectedFolder: command.connectedFolder!,
-        app: command.app!,
-        digest: command.digest!,
-        kind: command.grantKind!,
-        declaration: command.declaration!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
-    case "apps.disconnect":
-      return toJson(await facade.appsDisconnect({
-        connectedFolder: command.connectedFolder!,
-        app: command.app!,
-        destination: command.destination!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
-    case "apps.automation.disable":
-      return toJson(await facade.appsAutomationDisable({
-        connectedFolder: command.connectedFolder!,
-        app: command.app!,
-        automation: command.automation!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
-    case "apps.automation.run":
-      return toJson(await facade.appsAutomationRun({
-        connectedFolder: command.connectedFolder!,
-        app: command.app!,
-        automation: command.automation!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
-    case "apps.project.declare":
-      return toJson(await facade.appsProjectDeclare({
-        connectedFolder: command.connectedFolder!,
-        presentationPath: command.presentationPath!,
-        cwd: request.cwd,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
-    case "apps.release.prepare":
-      return toJson(await facade.appsReleasePrepare({
-        connectedFolder: command.connectedFolder!,
-        version: command.version!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
-    case "apps.release.publish":
-      return toJson(await facade.appsReleasePublish({
-        connectedFolder: command.connectedFolder!,
-        release: command.release!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
-    case "apps.release.delete":
-      return toJson(await facade.appsReleaseDelete({
-        connectedFolder: command.connectedFolder!,
-        release: command.release!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-        requestId: request.id,
-      }));
-    case "apps.install.prepare":
-      return toJson(await facade.appsInstallPrepare({
-        connectedFolder: command.connectedFolder!,
-        release: command.release!,
-        targetConnectedFolder: command.targetConnectedFolder!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
-    case "apps.update.prepare":
-      return toJson(await facade.appsUpdatePrepare({
-        connectedFolder: command.connectedFolder!,
-        instance: command.instance!,
-        release: command.release!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
-    case "apps.operation.activate":
-      return toJson(await facade.appsOperationActivate({
-        connectedFolder: command.connectedFolder!,
-        operation: command.operation!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
-    case "apps.operation.cancel":
-      return toJson(await facade.appsOperationCancel({
-        connectedFolder: command.connectedFolder!,
-        operation: command.operation!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
-    case "apps.uninstall":
-      // The retain disposition is the plain uninstall; `--purge-data` runs the
-      // purge through the prepared-act path and never reaches the
-      // retain-only uninstall method.
-      if (command.disposition === "purge-data") {
-        return toTerminalSafeJson(await facade.appsUninstallPurge({
-          connectedFolder: command.connectedFolder!,
-          instance: command.instance!,
-          ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-          requestId: request.id,
-        }));
-      }
-      return toJson(await facade.appsUninstall({
-        connectedFolder: command.connectedFolder!,
-        instance: command.instance!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-      }));
     // The verbs that install code, widen a power, or destroy data
     // (docs/act-ledger.md; docs/receipts-not-gates.md): each runs at
     // once through the prepared-act path and returns its effect. Results
@@ -2486,69 +2037,10 @@ async function runActCommand(
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
-    case "apps.install-proposal":
-      return toTerminalSafeJson(await facade.appsInstallProposal({
-        connectedFolder: command.connectedFolder!,
-        conversationId: command.conversation!,
-        proposal: command.proposal!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-        requestId: request.id,
-      }));
-    case "apps.grant":
-      return toTerminalSafeJson(await facade.appsGrant({
-        connectedFolder: command.connectedFolder!,
-        app: command.app!,
-        digest: command.digest!,
-        kind: command.grantKind!,
-        declaration: command.declaration!,
-        ...(command.path !== undefined ? { path: command.path } : {}),
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-        requestId: request.id,
-      }));
-    case "apps.connect":
-      return toTerminalSafeJson(await facade.appsConnect({
-        connectedFolder: command.connectedFolder!,
-        app: command.app!,
-        destination: command.destination!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-        requestId: request.id,
-      }));
-    case "apps.automation.enable":
-      return toTerminalSafeJson(await facade.appsAutomationEnable({
-        connectedFolder: command.connectedFolder!,
-        app: command.app!,
-        automation: command.automation!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-        requestId: request.id,
-      }));
-    case "apps.storage.clear":
-      return toTerminalSafeJson(await facade.appsStorageClear({
-        connectedFolder: command.connectedFolder!,
-        app: command.app!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-        requestId: request.id,
-      }));
-    case "apps.retained.purge":
-      return toTerminalSafeJson(await facade.appsRetainedPurge({
-        connectedFolder: command.connectedFolder!,
-        retained: command.retained!,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-        requestId: request.id,
-      }));
     case "automations.enable":
       return toTerminalSafeJson(await facade.automationsEnable({
         proposalPath: command.proposalPath!,
         cwd: request.cwd,
-        ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
-        requestId: request.id,
-      }));
-    case "apps.install-preview":
-      // The host creates the review record over the named package and installs
-      // it through the same `app.review.install` kind a Chat proposal uses —
-      // the closed act vocabulary gains nothing.
-      return toTerminalSafeJson(await facade.appsInstallPreview({
-        connectedFolder: command.connectedFolder!,
-        packagePath: command.packagePath!,
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
@@ -2560,7 +2052,6 @@ async function runActCommand(
     case "recently-deleted.restore":
       return toTerminalSafeJson(await facade.recentlyDeletedRestore({
         entry: command.entry!,
-        ...(command.toPath ? { toPath: command.toPath } : {}),
         ...(command.parentTaskId ? { parentTaskId: command.parentTaskId } : {}),
         requestId: request.id,
       }));
@@ -2982,86 +2473,15 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
       }
       return `${total} match${total === 1 ? "" : "es"} for "${terminalText(record.query)}" in ${connectedFolderLabel} (${scopeLabel}):\n${sections.join("\n")}${boundNote}\n`;
     }
-    case "apps.list": {
-      const apps = (Array.isArray(record.apps) ? record.apps : []) as Array<{
-        appId?: unknown;
-        title?: unknown;
-        version?: unknown;
-        kind?: unknown;
-        tools?: Array<{ name?: unknown }>;
-        automations?: Array<{ id?: unknown; enabled?: unknown }>;
-      }>;
-      if (!apps.length) return `No apps are installed in ${connectedFolderLabel}.\n`;
-      const lines = apps.map((app) => {
-        const tools = (app.tools ?? []).map((tool) => terminalText(tool.name)).join(", ") || "none";
-        const automations = (app.automations ?? [])
-          .map((automation) => `${terminalText(automation.id)} ${automation.enabled === true ? "on" : "off"}`)
-          .join(", ") || "none";
-        return `- ${terminalText(app.title)} ${terminalText(app.version)} [${terminalText(app.appId)}] (${terminalText(app.kind)})`
-          + `\n    tools: ${tools}\n    automations: ${automations}`;
-      });
-      const more = record.truncated === true ? "\nMore apps are installed than this list shows.\n" : "";
-      return `${apps.length} app${apps.length === 1 ? "" : "s"} in ${connectedFolderLabel}:\n${lines.join("\n")}\n${more}`;
-    }
-    case "apps.invoke": {
-      const serialized = JSON.stringify(record.result ?? null, null, 2);
-      const shown = serialized.length > maxHumanToolResultLength
-        ? `${serialized.slice(0, maxHumanToolResultLength)}\n… (full result in --json)`
-        : serialized;
-      return `Ran ${terminalText(record.tool)} of ${terminalText(record.appId)} in ${connectedFolderLabel}.\n${terminalText(shown)}\n`;
-    }
-    case "apps.proposals.list": {
-      const proposals = (Array.isArray(record.proposals) ? record.proposals : []) as Array<{
-        id?: unknown;
-        status?: unknown;
-        title?: unknown;
-        version?: unknown;
-        digest?: unknown;
-      }>;
-      if (!proposals.length) return `No app proposals in Chat [${terminalText(record.conversationId)}] of ${connectedFolderLabel}.\n`;
-      const lines = proposals.map((proposal) =>
-        `- ${terminalText(proposal.title)} ${terminalText(proposal.version)} [${terminalText(proposal.id)}] — ${terminalText(proposal.status)} — digest ${terminalText(proposal.digest)}`);
-      return `${proposals.length} app proposal${proposals.length === 1 ? "" : "s"} in Chat [${terminalText(record.conversationId)}] of ${connectedFolderLabel}:\n${lines.join("\n")}\n`;
-    }
-    case "apps.proposals.dismiss":
-      return record.dismissed === true
-        ? `Dismissed app proposal ${terminalText(record.proposalId)} in ${connectedFolderLabel}. Nothing runnable existed; the Worker may propose again.\n`
-        : `App proposal ${terminalText(record.proposalId)} was no longer pending in ${connectedFolderLabel}; nothing was dismissed.\n`;
-    case "apps.remove": {
-      if (record.removed !== true) return `App ${terminalText(record.appId)} was not installed in ${connectedFolderLabel}; nothing was removed.\n`;
-      const recentlyDeleted = (record.recentlyDeleted ?? null) as { entryId?: unknown; restoreBy?: unknown } | null;
-      return `Removed app ${terminalText(record.appId)} [digest ${terminalText(record.digest)}] from ${connectedFolderLabel}. Reinstalling it is a fresh receipted act.\n`
-        + (recentlyDeleted
-          ? `Its data is in Recently deleted until ${terminalText(recentlyDeleted.restoreBy)} — save it with 'recently-deleted restore --entry ${terminalText(recentlyDeleted.entryId)} --to <path>'.\n`
-          : "");
-    }
-    case "apps.revoke":
-      return record.revoked === true
-        ? `Revoked the ${terminalText(record.grantKind)} grant ${terminalText(record.declaration)} from ${terminalText(record.appId)} in ${connectedFolderLabel}. Re-granting it is a fresh receipted act.\n`
-        : `The ${terminalText(record.grantKind)} declaration ${terminalText(record.declaration)} of ${terminalText(record.appId)} was not granted in ${connectedFolderLabel}; authority is unchanged.\n`;
-    case "apps.disconnect":
-      return (record.disconnected === true
-        ? `Removed the saved connection to ${terminalText(record.destination)} from ${terminalText(record.appId)} in ${connectedFolderLabel}.`
-        : `No saved connection to ${terminalText(record.destination)} was found for ${terminalText(record.appId)} in ${connectedFolderLabel}.`)
-        + " Deleting the local record does not revoke the credential at its provider.\n";
-    case "apps.automation.disable":
-      return record.wasEnabled === true
-        ? `Disabled automation ${terminalText(record.appAutomationId)} of ${terminalText(record.appId)} in ${connectedFolderLabel}. Re-enabling it is a fresh receipted act.\n`
-        : `Automation ${terminalText(record.appAutomationId)} of ${terminalText(record.appId)} was already disabled in ${connectedFolderLabel}.\n`;
-    case "apps.automation.run": {
-      const run = record.run as { runId?: unknown; outcome?: unknown; error?: unknown } | undefined;
-      const error = typeof run?.error === "string" && run.error ? `\n${terminalText(run.error)}` : "";
-      return `Automation ${terminalText(record.appAutomationId)} of ${terminalText(record.appId)} ran with outcome ${terminalText(run?.outcome)} (run ${terminalText(run?.runId)}).${error}\n`;
-    }
     case "connected-folders.rename":
       return `Renamed Connected Folder ${connectedFolderLabel} (was "${terminalText(record.priorName)}").\n`;
     case "connected-folders.unregister": {
       const cleanup = record.cleanupPending === true
-        ? "\nSome app-state cleanup is still pending; AmpleFile finishes it on the next start."
+        ? "\nSome cleanup is still pending; AmpleFile finishes it on the next start."
         : "";
       return `Unregistered ${terminalText(record.storage)} Connected Folder ${connectedFolderLabel}. `
         + `The folder remains at ${terminalText(record.connectedFolder?.connectedFolderRoot)} with its portable .amplefile identity; `
-        + `register it again to restore it.${cleanup}\n${removedAppStateText(record)}`;
+        + `register it again to restore it.${cleanup}\n`;
     }
     case "connected-folders.appearance.apply": {
       const prior = typeof record.priorAppearanceRef === "string"
@@ -3087,87 +2507,12 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
         ? `Removed package ${terminalText(record.source)} (${where}). Reinstalling it is a fresh receipted act.\n`
         : `Package ${terminalText(record.source)} is not installed (${where}); nothing was removed.\n`;
     }
-    case "apps.project.declare": {
-      const project = record.project as { projectId?: unknown; presentation?: { title?: unknown } } | undefined;
-      const prior = record.priorPresentation === null
-        ? "This is the Project's first declared presentation."
-        : "Re-declare with the prior values in the --json result to undo.";
-      return `Declared App Project presentation "${terminalText(project?.presentation?.title)}" [${terminalText(project?.projectId)}] in ${connectedFolderLabel}. ${prior}\n`;
-    }
-    case "apps.release.prepare": {
-      const release = record.release as { releaseDigest?: unknown; displayVersion?: unknown; featureCount?: unknown } | undefined;
-      return `Prepared Release ${terminalText(release?.displayVersion)} [${terminalText(release?.releaseDigest)}] in ${connectedFolderLabel} `
-        + `(${terminalText(release?.featureCount)} Feature${release?.featureCount === 1 ? "" : "s"}). `
-        + `Later source edits cannot alter its bytes; publish it with 'apps release publish'.\n`;
-    }
-    case "apps.release.publish": {
-      const release = record.release as { releaseDigest?: unknown; displayVersion?: unknown } | undefined;
-      return `Published Release ${terminalText(release?.displayVersion)} [${terminalText(release?.releaseDigest)}] in ${connectedFolderLabel}. `
-        + `This is a local state transition — nothing is uploaded, hosted, listed, or granted.\n`;
-    }
-    case "apps.release.delete": {
-      const recentlyDeleted = (record.recentlyDeleted ?? null) as { entryId?: unknown; restoreBy?: unknown } | null;
-      return record.deleted === true
-        ? `Deleted unused Release [${terminalText(record.releaseDigest)}] in ${connectedFolderLabel}.\n`
-          + (recentlyDeleted
-            ? `It is in Recently deleted until ${terminalText(recentlyDeleted.restoreBy)} — put it back with 'recently-deleted restore --entry ${terminalText(recentlyDeleted.entryId)}'.\n`
-            : "")
-        : `Release [${terminalText(record.releaseDigest)}] was not found in ${connectedFolderLabel}; nothing was deleted.\n`;
-    }
-    case "apps.install.prepare": {
-      const operation = record.operation as { operationId?: unknown; releaseDigest?: unknown } | undefined;
-      const target = record.targetConnectedFolder as { id?: unknown; name?: unknown } | undefined;
-      return `Prepared install of Release [${terminalText(operation?.releaseDigest)}] into ${terminalText(target?.name)} [${terminalText(target?.id)}] `
-        + `— operation ${terminalText(operation?.operationId)}. Activate it with 'apps operation activate'; every power starts off.\n`;
-    }
-    case "apps.update.prepare": {
-      const operation = record.operation as { operationId?: unknown; releaseDigest?: unknown; fromReleaseDigest?: unknown; runtimeInstanceId?: unknown } | undefined;
-      return `Prepared update of instance ${terminalText(operation?.runtimeInstanceId)} from Release [${terminalText(operation?.fromReleaseDigest)}] `
-        + `to [${terminalText(operation?.releaseDigest)}] — operation ${terminalText(operation?.operationId)}. `
-        + `The plan is rechecked at activation; activate it with 'apps operation activate'.\n`;
-    }
-    case "apps.operation.activate": {
-      const instance = record.instance as { runtimeInstanceId?: unknown; releaseDigest?: unknown; displayVersion?: unknown } | undefined;
-      const powers = record.operationKind === "install" ? " Every power starts off." : "";
-      return `Activated ${terminalText(record.operationKind)} operation ${terminalText(record.operationId)}: `
-        + `instance ${terminalText(instance?.runtimeInstanceId)} now runs Release ${terminalText(instance?.displayVersion)} `
-        + `[${terminalText(instance?.releaseDigest)}].${powers}\n`;
-    }
-    case "apps.operation.cancel":
-      return record.cancelled === true
-        ? `Cancelled prepared operation ${terminalText(record.operationId)}. Prepare it again when needed.\n`
-        : `Operation ${terminalText(record.operationId)} was no longer pending; nothing was cancelled.\n`;
-    case "apps.uninstall": {
-      if (Array.isArray(record.purgedNamespaceIds)) {
-        const cleanup = record.cleanupPending === true
-          ? "\nSome app cleanup is still pending; AmpleFile finishes it on the next start."
-          : "";
-        const kept = (Array.isArray(record.recentlyDeleted) ? record.recentlyDeleted : []) as unknown[];
-        const copies = kept.length
-          ? ` ${kept.length} cop${kept.length === 1 ? "y is" : "ies are"} in Recently deleted; see 'recently-deleted list'.`
-          : "";
-        return `Uninstalled instance ${terminalText(record.runtimeInstanceId)} from ${connectedFolderLabel} and purged its data.${copies}${cleanup}\n`;
-      }
-      const retained = (Array.isArray(record.retainedNamespaceIds) ? record.retainedNamespaceIds : []) as unknown[];
-      const cleanup = record.cleanupPending === true
-        ? "\nSome app cleanup is still pending; AmpleFile finishes it on the next start."
-        : "";
-      if (record.removed !== true) {
-        return `Instance ${terminalText(record.runtimeInstanceId)} was not installed in ${connectedFolderLabel}; nothing was uninstalled.${cleanup}\n`;
-      }
-      return `Uninstalled instance ${terminalText(record.runtimeInstanceId)} from ${connectedFolderLabel}, retaining `
-        + `${retained.length} data namespace${retained.length === 1 ? "" : "s"}. Retained data does not remain runnable, `
-        + `and reinstalling creates a new instance.${cleanup}\n`;
-    }
     case "connected-folders.delete": {
       const cleanup = record.cleanupPending === true ? " Final cleanup completes at the next start." : "";
       const recentlyDeleted = (record.recentlyDeleted ?? null) as { entryId?: unknown; restoreBy?: unknown } | null;
-      // The Connected Folder's preview apps go with it, so their data copies are named
-      // too: the folder coming back is not the whole recovery.
-      const apps = removedAppStateText(record);
-      if (!recentlyDeleted) return `Deleted the managed folder of ${connectedFolderLabel}.${cleanup}\n${apps}`;
+      if (!recentlyDeleted) return `Deleted the managed folder of ${connectedFolderLabel}.${cleanup}\n`;
       return `Deleted ${connectedFolderLabel}. Its folder is in Recently deleted until ${terminalText(recentlyDeleted.restoreBy)}; `
-        + `put it back with 'recently-deleted restore --entry ${terminalText(recentlyDeleted.entryId)}'.${cleanup}\n${apps}`;
+        + `put it back with 'recently-deleted restore --entry ${terminalText(recentlyDeleted.entryId)}'.${cleanup}\n`;
     }
     case "tools.import-skill":
       return `Imported ${skillNameList(record.skillNames)} (${terminalText(record.scope)} scope).\n`;
@@ -3180,63 +2525,6 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
       return `Turned ${record.enabled ? "on" : "off"} ${terminalText(record.path)} (${terminalText(record.scope)} scope).\n`;
     case "tools.update":
       return `Updated ${terminalText(record.packageId)} to ${terminalText(record.version)} (${terminalText(record.scope)} scope).\n`;
-    case "apps.install-proposal":
-    case "apps.install-preview": {
-      const app = (record.app ?? {}) as { title?: unknown; version?: unknown };
-      const replaced = record.replacesInstalled === true ? " It replaced the previous installation." : "";
-      // The same two halves the Chat path reports: what the install turned on,
-      // and what deliberately still needs the person (F21). Without them the
-      // AmpleFile agent cannot say what is missing after it adds an app.
-      const granted = (record.granted ?? {}) as Record<string, unknown>;
-      const count = (value: unknown, singular: string, plural = `${singular}s`): string =>
-        `${terminalText(value)} ${value === 1 ? singular : plural}`;
-      const on = typeof granted.destinations === "number"
-        ? `On now: ${[
-          count(granted.destinations, "destination"),
-          `${count(granted.wholeConnectedFolderFolders, "folder permission")} over the whole Connected Folder`,
-          count(granted.notifications, "notification"),
-          count(granted.checks, "Check slot"),
-          count(granted.automations, "automation"),
-        ].join(", ")}.\n`
-        : "";
-      const needs = (record.needs ?? {}) as { connections?: unknown; files?: unknown; checks?: unknown };
-      const list = (value: unknown): string[] => (Array.isArray(value) ? value : []).map((item) => terminalText(item));
-      const still = [
-        ...(list(needs.connections).length ? [`connect ${list(needs.connections).join(", ")}`] : []),
-        ...(list(needs.files).length ? [`choose a file for ${list(needs.files).join(", ")}`] : []),
-        ...(list(needs.checks).length ? [`choose a Check for ${list(needs.checks).join(", ")}`] : []),
-      ];
-      const remainder = still.length ? `Still needs the person, in Settings → Apps: ${still.join("; ")}.\n` : "";
-      return `Installed ${terminalText(app.title)} ${terminalText(app.version)} in ${connectedFolderLabel}.${replaced}\n${on}${remainder}`;
-    }
-    case "apps.grant": {
-      const root = typeof record.root === "string" ? record.root : undefined;
-      const covers = record.grantKind !== "files"
-        ? ""
-        : root && root !== "."
-          ? ` It covers ${terminalText(root)} and nothing else.`
-          : " It covers the whole Connected Folder.";
-      return `Granted ${terminalText(record.grantKind)} ${terminalText(record.declaration)} to ${terminalText(record.appId)} in ${connectedFolderLabel}.${covers}\n`;
-    }
-    case "apps.connect":
-      return `Connected ${terminalText(record.appId)} to ${terminalText(record.destination)} (${terminalText(record.target)}) through the browser sign-in flow.\n`;
-    case "apps.automation.enable":
-      return `Enabled automation ${terminalText(record.appAutomationId)} (${terminalText(record.scheduleSummary)}) of ${terminalText(record.appId)} in ${connectedFolderLabel}.\n`;
-    case "apps.storage.clear": {
-      const recentlyDeleted = (record.recentlyDeleted ?? null) as { entryId?: unknown; restoreBy?: unknown } | null;
-      return `Cleared ${terminalText(record.clearedBytes)} bytes of live storage of ${terminalText(record.appId)} in ${connectedFolderLabel}; `
-        + `${terminalText(record.remainingBytes)} bytes remain.\n`
-        + (recentlyDeleted
-          ? `A copy is in Recently deleted until ${terminalText(recentlyDeleted.restoreBy)} — put it back with 'recently-deleted restore --entry ${terminalText(recentlyDeleted.entryId)}'.\n`
-          : "");
-    }
-    case "apps.retained.purge": {
-      const entries = (Array.isArray(record.recentlyDeleted) ? record.recentlyDeleted : []) as Array<{ entryId?: unknown; restoreBy?: unknown }>;
-      return `Purged retained App data ${terminalText(record.retainedDataId)} in ${connectedFolderLabel}.\n`
-        + (entries[0]
-          ? `A copy is in Recently deleted until ${terminalText(entries[0].restoreBy)} — save it with 'recently-deleted restore --entry ${terminalText(entries[0].entryId)} --to <path>'.\n`
-          : "");
-    }
     case "automations.enable":
       return record.alreadyEnabled === true
         ? `Automation "${terminalText(record.title)}" [${terminalText(record.automationId)}] is already on with this exact declaration; nothing changed.\n`
@@ -3256,6 +2544,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
         deletedAt?: unknown;
         restoreBy?: unknown;
         restorable?: unknown;
+        note?: unknown;
         held?: unknown;
       }>;
       const days = terminalText(record.retentionDays);
@@ -3266,7 +2555,9 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
           : typeof entry.connectedFolderName === "string" && entry.connectedFolderName
             ? `from ${terminalText(entry.connectedFolderName)} [${terminalText(entry.connectedFolderId)}]`
             : `from Connected Folder ${terminalText(entry.connectedFolderId)}`;
-        const how = entry.restorable === "save-only" ? " — can only be saved as a copy" : "";
+        const how = entry.restorable === "blocked"
+          ? ` — can't be put back${typeof entry.note === "string" && entry.note ? `: ${terminalText(entry.note)}` : ""}`
+          : "";
         const held = entry.held ? " — kept indefinitely; it holds records from the earlier Workspace product" : "";
         return `- ${terminalText(entry.id)} — ${recentlyDeletedKindLabel(entry.kind)} "${terminalText(entry.name)}" ${where}`
           + ` — ${terminalText(entry.sizeBytes)} bytes — deleted ${terminalText(entry.deletedAt)}`
@@ -3286,22 +2577,12 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
         connectedFolderRoot?: unknown;
         scope?: unknown;
         name?: unknown;
-        appId?: unknown;
-        releaseDigest?: unknown;
-        displayVersion?: unknown;
         safetyCheckpointId?: unknown;
-        projectTitle?: unknown;
-        previewCount?: unknown;
-        releaseCount?: unknown;
-        operationCount?: unknown;
-        droppedOperationCount?: unknown;
-        appDataEntryIds?: unknown;
         connectedFolder?: { name?: unknown; id?: unknown };
       };
       const where = typeof restored.connectedFolder?.name === "string"
         ? `${terminalText(restored.connectedFolder.name)} [${terminalText(restored.connectedFolder.id)}]`
         : "its Connected Folder";
-      if (restored.kind === "saved-copy") return `Saved a copy to ${terminalText(restored.path)}.\n`;
       if (restored.kind === "connected-folder") {
         return `Restored Connected Folder ${where} to ${terminalText(restored.connectedFolderRoot)}`
           + `${restored.renamed === true ? " under a new folder name, because the old one was taken" : ""}.\n`;
@@ -3309,21 +2590,6 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
       if (restored.kind === "skill") {
         const scope = restored.scope === "everywhere" ? "Everywhere" : `to ${where}`;
         return `Restored Skill "${terminalText(restored.name)}" ${scope} at ${terminalText(restored.path)}; it loads with the next turn.\n`;
-      }
-      if (restored.kind === "app-storage") return `Restored ${terminalText(restored.appId)}'s data in ${where}.\n`;
-      if (restored.kind === "app-release") {
-        return `Restored Release ${terminalText(restored.displayVersion)} [${terminalText(restored.releaseDigest)}] to App Studio in ${where}.\n`;
-      }
-      if (restored.kind === "app-studio") {
-        const count = (value: unknown, noun: string) => `${Number(value) || 0} ${noun}${Number(value) === 1 ? "" : "s"}`;
-        const dataIds = Array.isArray(restored.appDataEntryIds) ? restored.appDataEntryIds : [];
-        const dropped = Number(restored.droppedOperationCount) || 0;
-        return `Restored the App Studio history of ${where}`
-          + `${typeof restored.projectTitle === "string" ? ` (${terminalText(restored.projectTitle)})` : ""}: `
-          + `${count(restored.previewCount, "app preview")}, ${count(restored.releaseCount, "Release")}, `
-          + `${count(restored.operationCount, "prepared operation")}.\n`
-          + (dataIds.length ? `The data of ${count(dataIds.length, "app")} went back with them [${dataIds.map((id) => terminalText(id)).join(", ")}].\n` : "")
-          + (dropped ? `${count(dropped, "prepared operation")} no longer fit what changed since and did not come back; prepare them again in App Studio.\n` : "");
       }
       return `Restored ${restored.kind === "folder" ? "folder" : "file"} ${terminalText(restored.path)} to ${where}`
         + `${restored.renamed === true ? " under a new name, because the old one was taken" : ""}.\n`
@@ -3367,7 +2633,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
         title?: unknown;
         health?: unknown;
         digest?: unknown;
-        trigger?: { kind?: unknown; intervalMinutes?: unknown; at?: unknown; ifMissed?: unknown; source?: Record<string, unknown>; connectedFolderId?: unknown; watch?: Record<string, unknown>; debounceSeconds?: unknown; cooldownMinutes?: unknown };
+        trigger?: { kind?: unknown; intervalMinutes?: unknown; at?: unknown; ifMissed?: unknown; connectedFolderId?: unknown; watch?: Record<string, unknown>; debounceSeconds?: unknown; cooldownMinutes?: unknown };
         steps?: unknown;
         grants?: unknown;
         enabledAt?: unknown;
@@ -3400,9 +2666,7 @@ function humanActOutput(name: AmpleFileCliActCommandName, data: AmpleFileCliJson
           ? `once at ${terminalText(automation.trigger.at)}; if missed: ${terminalText(automation.trigger.ifMissed)}`
         : automation.trigger?.kind === "files-changed"
           ? `folder changes in Connected Folder ${terminalText(automation.trigger.connectedFolderId)}: ${terminalText(automation.trigger.watch?.path)}; debounce ${terminalText(automation.trigger.debounceSeconds)}s; cooldown ${terminalText(automation.trigger.cooldownMinutes)} minutes${automation.trigger.ifMissed === "run" ? "; catches up once on files added or changed while AmpleFile was closed, the computer was asleep, or this automation was off" : ""}`
-        : automation.trigger?.kind === "on-settled"
-          ? `on-settled: ${terminalText(automation.trigger.source?.kind)} in Connected Folder ${terminalText(automation.trigger.source?.connectedFolderId)}`
-          : "manual (run-now only)";
+        : "manual (run-now only)";
       const grants = (Array.isArray(automation.grants) ? automation.grants : []) as Array<Record<string, unknown>>;
       const grantLines = grants.map((grant) =>
         `- enabled ${terminalText(grant.enabledAt)} via ${terminalText(grant.surface)} (request ${terminalText(grant.requestId)}) — digest ${terminalText(grant.digest)}`);
@@ -3506,13 +2770,6 @@ function skillNameList(names: unknown): string {
   return Array.isArray(names) ? names.map((name) => terminalText(name)).join(", ") : terminalText(names);
 }
 
-/** The entry id a destroying verb's `recentlyDeleted` result names, if it names one. */
-function recentlyDeletedEntryId(value: unknown): string | undefined {
-  const first = Array.isArray(value) ? value[0] : value;
-  const entryId = first && typeof first === "object" ? (first as { entryId?: unknown }).entryId : undefined;
-  return typeof entryId === "string" ? entryId : undefined;
-}
-
 /** Person-facing names for what is waiting in Recently deleted. */
 function recentlyDeletedKindLabel(kind: unknown): string {
   switch (kind) {
@@ -3520,41 +2777,13 @@ function recentlyDeletedKindLabel(kind: unknown): string {
     case "folder": return "folder";
     case "connected-folder": return "connected-folder";
     case "skill": return "Skill";
+    // What an earlier build kept from a Connected Folder app (removed 2026-11-07).
     case "app-storage":
-    case "app-retained": return "app data";
-    case "app-release": return "Release";
-    case "app-studio": return "App Studio history";
+    case "app-retained":
+    case "app-release":
+    case "app-studio": return "old app item";
     default: return "item";
   }
-}
-
-/** The Recently deleted ids a Connected Folder removal's receipt names for its apps. */
-function removedAppStateReceiptDetail(value: object): string {
-  const record = value as { appRecentlyDeletedEntries?: unknown; appStudioRecentlyDeleted?: unknown };
-  const appEntries = (Array.isArray(record.appRecentlyDeletedEntries) ? record.appRecentlyDeletedEntries : []) as Array<{ entryId?: unknown }>;
-  const appIds = appEntries.map((item) => String(item?.entryId ?? "")).filter(Boolean);
-  const studio = record.appStudioRecentlyDeleted && typeof record.appStudioRecentlyDeleted === "object"
-    ? String((record.appStudioRecentlyDeleted as { entryId?: unknown }).entryId ?? "")
-    : "";
-  return (appIds.length ? `; app data ${appIds.join(", ")}` : "") + (studio ? `; App Studio ${studio}` : "");
-}
-
-/**
- * What a Connected Folder removal kept of its apps: each preview's data and the
- * Connected Folder's App Studio history wait in Recently deleted too, because the
- * folder coming back is not the whole recovery.
- */
-function removedAppStateText(value: object): string {
-  const record = value as { appRecentlyDeletedEntries?: unknown; appStudioRecentlyDeleted?: unknown };
-  const appEntries = (Array.isArray(record.appRecentlyDeletedEntries) ? record.appRecentlyDeletedEntries : []) as Array<{ entryId?: unknown }>;
-  const studio = (record.appStudioRecentlyDeleted ?? null) as { entryId?: unknown } | null;
-  const apps = appEntries.length
-    ? `The data of ${appEntries.length} app${appEntries.length === 1 ? "" : "s"} installed here is in Recently deleted too `
-      + `[${appEntries.map((item) => terminalText(item.entryId)).join(", ")}].\n`
-    : "";
-  return apps + (studio
-    ? `Its App Studio history is in Recently deleted too [${terminalText(studio.entryId)}]; put it back once the Connected Folder is registered again.\n`
-    : "");
 }
 
 /** Why History alone could not keep a copy of one path. */
@@ -3676,56 +2905,24 @@ function actReceiptDetail(
     restoredAppearanceRef?: unknown;
     removed?: unknown;
     source?: unknown;
-    release?: { releaseDigest?: unknown };
-    releaseDigest?: unknown;
-    deleted?: unknown;
-    operation?: { operationId?: unknown; fromReleaseDigest?: unknown; releaseDigest?: unknown };
-    operationId?: unknown;
-    cancelled?: unknown;
-    instance?: { releaseDigest?: unknown };
-    runtimeInstanceId?: unknown;
-    retainedNamespaceIds?: unknown;
-    proposalId?: unknown;
-    appId?: unknown;
     digest?: unknown;
-    grantKind?: unknown;
-    declaration?: unknown;
-    destination?: unknown;
-    disconnected?: unknown;
-    appAutomationId?: unknown;
-    wasEnabled?: unknown;
-    dismissed?: unknown;
-    revoked?: unknown;
     run?: { runId?: unknown; outcome?: unknown };
-    clearedBytes?: unknown;
-    root?: unknown;
-    purgedNamespaceIds?: unknown;
-    retainedDataId?: unknown;
     automationId?: unknown;
     declarationDigest?: unknown;
     alreadyEnabled?: unknown;
     stoppedRunId?: unknown;
     runId?: unknown;
     finalHealth?: unknown;
-    replacesInstalled?: unknown;
     contentDigest?: unknown;
     version?: unknown;
     packageId?: unknown;
-    target?: unknown;
-    adapterKind?: unknown;
-    scheduleSummary?: unknown;
     model?: { provider?: unknown; id?: unknown } | null;
     instructions?: unknown;
-    apps?: unknown[];
-    tool?: unknown;
     result?: unknown;
     recovery?: { kind?: unknown; entryId?: unknown };
     recentlyDeleted?: unknown;
-    appRecentlyDeletedEntries?: unknown;
-    granted?: unknown;
-    needs?: unknown;
     entry?: { id?: unknown; kind?: unknown };
-    restored?: { kind?: unknown; path?: unknown; connectedFolderRoot?: unknown; appId?: unknown; connectedFolder?: { id?: unknown } };
+    restored?: { kind?: unknown; path?: unknown; connectedFolderRoot?: unknown; connectedFolder?: { id?: unknown } };
     question?: { questionId?: unknown; respondent?: unknown };
     redirectedToPerson?: unknown;
     continuation?: { taskId?: unknown };
@@ -3798,11 +2995,10 @@ function actReceiptDetail(
     case "recently-deleted.restore":
       return `entry ${String(record.entry?.id ?? "")}; kind ${String(record.restored?.kind ?? "")}; `
         + `restored ${boundedReceiptText(String(
-          record.restored?.path ?? record.restored?.connectedFolderRoot ?? record.restored?.appId ?? record.restored?.connectedFolder?.id ?? "",
+          record.restored?.path ?? record.restored?.connectedFolderRoot ?? record.restored?.connectedFolder?.id ?? "",
         ))}`;
     case "connected-folders.delete":
-      return `connected-folder.delete-folder${recentlyDeletedRef(record.recentlyDeleted) ? `; ${recentlyDeletedRef(record.recentlyDeleted)}` : ""}`
-        + removedAppStateReceiptDetail(record);
+      return `connected-folder.delete-folder${recentlyDeletedRef(record.recentlyDeleted) ? `; ${recentlyDeletedRef(record.recentlyDeleted)}` : ""}`;
     case "tools.import-skill":
       return `capability.skills.import; scope ${String(record.scope)}; source ${boundedReceiptText(String(record.source))}; digest ${String(record.contentDigest)}`;
     case "tools.install":
@@ -3814,35 +3010,6 @@ function actReceiptDetail(
       return `capability.resource.enabled; scope ${String(record.scope)}; enabled ${String(record.enabled)}; path ${boundedReceiptText(String(record.path))}`;
     case "tools.update":
       return `capability.package.update; scope ${String(record.scope)}; source ${boundedReceiptText(String(record.source))}; version ${String(record.version)}`;
-    case "apps.install-proposal":
-    case "apps.install-preview": {
-      const needs = (record.needs ?? {}) as { connections?: unknown; files?: unknown; checks?: unknown };
-      const pending = [...(Array.isArray(needs.connections) ? needs.connections : []),
-        ...(Array.isArray(needs.files) ? needs.files : []),
-        ...(Array.isArray(needs.checks) ? needs.checks : [])].length;
-      return `app.review.install; proposal ${String(record.proposalId)}; digest ${String(record.digest)}`
-        + `${record.replacesInstalled === true ? "; replaced installed preview" : ""}`
-        + `${pending ? `; ${pending} still needs the person` : ""}`;
-    }
-    case "apps.grant":
-      return `app.grant.${String(record.grantKind)}; app ${String(record.appId)}; declaration ${String(record.declaration)}`
-        + `${typeof record.root === "string" ? `; root ${boundedReceiptText(record.root)}` : ""}`;
-    case "apps.connect":
-      return `app.connection.save; app ${String(record.appId)}; destination ${String(record.destination)}`;
-    case "apps.automation.enable":
-      return `app.automation.enable; app ${String(record.appId)}; automation ${String(record.appAutomationId)}`;
-    case "apps.storage.clear":
-      return `app.storage.clear; app ${String(record.appId)}; bytes ${String(record.clearedBytes)}`
-        + `${recentlyDeletedRef(record.recentlyDeleted) ? `; ${recentlyDeletedRef(record.recentlyDeleted)}` : ""}`;
-    case "apps.retained.purge":
-      return `app.data.purge; retained ${String(record.retainedDataId)}`
-        + `${recentlyDeletedRef(record.recentlyDeleted) ? `; ${recentlyDeletedRef(record.recentlyDeleted)}` : ""}`;
-    case "apps.uninstall":
-      if (Array.isArray(record.purgedNamespaceIds)) {
-        return `app.data.purge; instance ${String(record.runtimeInstanceId)}`
-          + `${recentlyDeletedRef(record.recentlyDeleted) ? `; ${recentlyDeletedRef(record.recentlyDeleted)}` : ""}`;
-      }
-      break;
     case "automations.enable":
       return `automation.enable; automation ${String(record.automationId)}; digest ${String(record.declarationDigest)}`
         + `${record.alreadyEnabled === true ? "; already enabled" : ""}`
@@ -3867,41 +3034,8 @@ function actReceiptDetail(
       return typeof record.scope === "string" ? `scope ${record.scope}` : undefined;
     case "files.move":
       return typeof record.path === "string" ? `moved to ${record.path}` : undefined;
-    case "apps.list":
-      return Array.isArray(record.apps) ? `apps ${record.apps.length}` : undefined;
-    case "apps.invoke":
-      return typeof record.appId === "string" && typeof record.tool === "string"
-        ? `app ${record.appId}; tool ${record.tool}; result ${Buffer.byteLength(JSON.stringify(record.result ?? null), "utf8")} bytes`
-        : undefined;
-    case "apps.proposals.dismiss":
-      return typeof record.proposalId === "string"
-        ? `proposal ${record.proposalId}${record.dismissed === false ? " (not pending)" : ""}`
-        : undefined;
-    case "apps.remove":
-      return typeof record.appId === "string" && typeof record.digest === "string"
-        ? `app ${record.appId}; digest ${record.digest}${record.removed === false ? " (not installed)" : ""}`
-          + `${recentlyDeletedRef(record.recentlyDeleted) ? `; ${recentlyDeletedRef(record.recentlyDeleted)}` : ""}`
-        : undefined;
-    case "apps.revoke":
-      return typeof record.appId === "string" && typeof record.grantKind === "string" && typeof record.declaration === "string"
-        ? `app ${record.appId}; kind ${record.grantKind}; declaration ${record.declaration}${record.revoked === false ? " (was not granted)" : ""}`
-        : undefined;
-    case "apps.disconnect":
-      // The receipt says so: removing the local record does not revoke the
-      // credential at its provider (docs/act-ledger.md).
-      return typeof record.appId === "string" && typeof record.destination === "string"
-        ? `app ${record.appId}; destination ${record.destination}; local record only — provider credential not revoked${record.disconnected === false ? " (no saved connection)" : ""}`
-        : undefined;
-    case "apps.automation.disable":
-      return typeof record.appId === "string" && typeof record.appAutomationId === "string"
-        ? `app ${record.appId}; automation ${record.appAutomationId}${record.wasEnabled === false ? " (already disabled)" : ""}`
-        : undefined;
-    case "apps.automation.run":
-      return typeof record.appId === "string" && typeof record.appAutomationId === "string" && typeof record.run?.runId === "string"
-        ? `app ${record.appId}; automation ${record.appAutomationId}; run ${record.run.runId}; outcome ${String(record.run.outcome)}`
-        : undefined;
     case "connected-folders.unregister":
-      return typeof record.storage === "string" ? `storage ${record.storage}${removedAppStateReceiptDetail(record)}` : undefined;
+      return typeof record.storage === "string" ? `storage ${record.storage}` : undefined;
     case "connected-folders.appearance.apply":
       return typeof record.appearanceRef === "string" ? `applied ${record.appearanceRef}` : "applied default";
     case "connected-folders.appearance.reset":
@@ -3912,47 +3046,6 @@ function actReceiptDetail(
       return typeof record.scope === "string" && typeof record.source === "string"
         ? `scope ${record.scope}; source ${boundedReceiptText(record.source)}${record.removed === false ? " (not installed)" : ""}`
         : undefined;
-    case "apps.release.prepare":
-    case "apps.release.publish":
-      return typeof record.release?.releaseDigest === "string" ? `release ${record.release.releaseDigest}` : undefined;
-    case "apps.release.delete":
-      return typeof record.releaseDigest === "string"
-        ? `release ${record.releaseDigest}${record.deleted === false ? " (not found)" : ""}`
-          + `${recentlyDeletedEntryId(record.recentlyDeleted) ? `; trash ${recentlyDeletedEntryId(record.recentlyDeleted)}` : ""}`
-        : undefined;
-    case "apps.install.prepare":
-      return typeof record.operation?.operationId === "string" ? `operation ${record.operation.operationId}` : undefined;
-    case "apps.update.prepare": {
-      const operation = record.operation;
-      if (typeof operation?.operationId !== "string") return undefined;
-      // The transition is named by content identity — the ledger's
-      // "direction" without inferring an update-versus-rollback label the
-      // service does not record.
-      const transition = typeof operation.fromReleaseDigest === "string" && typeof operation.releaseDigest === "string"
-        ? `; from ${operation.fromReleaseDigest}; to ${operation.releaseDigest}`
-        : "";
-      return `operation ${operation.operationId}${transition}`;
-    }
-    case "apps.operation.activate":
-      return typeof record.operationId === "string"
-        ? `operation ${record.operationId}${typeof record.instance?.releaseDigest === "string" ? `; release ${record.instance.releaseDigest}` : ""}`
-        : undefined;
-    case "apps.operation.cancel":
-      return typeof record.operationId === "string"
-        ? `operation ${record.operationId}${record.cancelled === false ? " (not pending)" : ""}`
-        : undefined;
-    case "apps.uninstall": {
-      if (typeof record.runtimeInstanceId !== "string") return undefined;
-      const retained = Array.isArray(record.retainedNamespaceIds)
-        ? record.retainedNamespaceIds.filter((item): item is string => typeof item === "string")
-        : [];
-      const named = retained.slice(0, 5);
-      const more = retained.length - named.length;
-      const retainedLabel = retained.length
-        ? `; retained ${named.join(",")}${more > 0 ? ` and ${more} more` : ""}`
-        : "";
-      return `instance ${record.runtimeInstanceId}${retainedLabel}`;
-    }
     // Automation receipts carry identifiers and outcomes only, per the
     // automations five-questions table — the owning journal holds the per-hop
     // evidence.
@@ -4003,13 +3096,7 @@ function actUndoRef(
     restored?: { kind?: unknown; connectedFolderRoot?: unknown };
     priorAppearanceRef?: unknown;
     displacedAppearanceRef?: unknown;
-    priorPresentationRef?: unknown;
-    release?: { releaseDigest?: unknown };
-    operation?: { operationId?: unknown };
     automationId?: unknown;
-    declaration?: unknown;
-    destination?: unknown;
-    appAutomationId?: unknown;
     source?: unknown;
     bundlePath?: unknown;
     contentDigest?: unknown;
@@ -4045,11 +3132,7 @@ function actUndoRef(
         return { kind: "recently-deleted-entry", value: record.recovery.entryId };
       }
       return safetyCheckpointId ? { kind: "safety-checkpoint", value: safetyCheckpointId } : undefined;
-    case "connected-folders.delete":
-    case "apps.storage.clear":
-    case "apps.retained.purge":
-    case "apps.release.delete":
-    case "apps.uninstall": {
+    case "connected-folders.delete": {
       const first = Array.isArray(record.recentlyDeleted) ? record.recentlyDeleted[0] : record.recentlyDeleted;
       const entryId = first && typeof first === "object" ? (first as { entryId?: unknown }).entryId : undefined;
       return typeof entryId === "string" ? { kind: "recently-deleted-entry", value: entryId } : undefined;
@@ -4093,35 +3176,11 @@ function actUndoRef(
         kind: "appearance-ref",
         value: typeof record.displacedAppearanceRef === "string" ? record.displacedAppearanceRef : "none",
       };
-    case "apps.project.declare":
-      return {
-        kind: "app-presentation-ref",
-        value: typeof record.priorPresentationRef === "string" ? record.priorPresentationRef : "none",
-      };
-    case "apps.release.prepare":
-    case "apps.release.publish":
-      // The inverse while unused is `apps release delete` of this digest.
-      return typeof record.release?.releaseDigest === "string"
-        ? { kind: "release-digest", value: record.release.releaseDigest }
-        : undefined;
-    case "apps.install.prepare":
-    case "apps.update.prepare":
-      // The inverse of preparing is `apps operation cancel`.
-      return typeof record.operation?.operationId === "string"
-        ? { kind: "operation-id", value: record.operation.operationId }
-        : undefined;
     // The formerly gated verbs (docs/receipts-not-gates.md, F19): each undo
     // reference names the identifier its narrowing inverse takes —
-    // `automations disable`, `apps revoke|disconnect`,
-    // `apps automation disable`, `tools remove`.
+    // `automations disable`, `tools remove`.
     case "automations.enable":
       return typeof record.automationId === "string" ? { kind: "automation-id", value: record.automationId } : undefined;
-    case "apps.grant":
-      return typeof record.declaration === "string" ? { kind: "declaration", value: record.declaration } : undefined;
-    case "apps.connect":
-      return typeof record.destination === "string" ? { kind: "declaration", value: record.destination } : undefined;
-    case "apps.automation.enable":
-      return typeof record.appAutomationId === "string" ? { kind: "app-automation", value: record.appAutomationId } : undefined;
     case "tools.install":
     case "tools.update":
       // A catalog skill bundle installs as a skills import; its inverse is

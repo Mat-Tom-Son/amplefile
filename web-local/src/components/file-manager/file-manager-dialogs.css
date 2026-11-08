@@ -413,15 +413,13 @@
   color: var(--ui-danger);
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop .ui-control--icon,
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop .ui-control--quiet {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop .ui-control--icon {
   padding: 0 6px;
   background: transparent;
   box-shadow: none;
 }
 
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop .ui-control--icon:hover:not(:disabled),
-:root[data-theme] .app-shell.layout-file-manager .modal-backdrop .ui-control--quiet:hover:not(:disabled) {
+:root[data-theme] .app-shell.layout-file-manager .modal-backdrop .ui-control--icon:hover:not(:disabled) {
   background: var(--fm-hover);
 }
 

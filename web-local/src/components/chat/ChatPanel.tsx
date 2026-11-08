@@ -7,7 +7,7 @@ import { useWorkRequest } from "../../hooks/useWorkRequest";
 import { WorkRequest, openWorkFile } from "./WorkRequest";
 import type * as React from "react";
 import { Add16Regular, ArrowDown20Regular, ArrowUp20Regular, Chat16Regular, ChevronDown16Regular, ChevronLeft16Regular, Desktop20Regular, Search16Regular } from "@fluentui/react-icons";
-import { AlertTriangle, Archive, CircleCheck, Clock3, Loader2, Square, X } from "../chrome/icons";
+import { Archive, Clock3, Loader2, Square, X } from "../chrome/icons";
 
 import { chatDraftDebounceMs, genericChatEmptyGreetings, connectedFolderPathDragType } from "../../constants";
 import { createFixtureContextAttachment, fixtureConversationSummary } from "../../fixtures/shared";
@@ -37,11 +37,10 @@ import { glideFrom } from "../../lib/motion";
 import { latestAssistantMessageId as findLatestAssistantMessageId, settledTurnHasNewAssistantMessage } from "../../lib/chat-turn-artifacts";
 import { assistantTurnView } from "../../lib/chat-work-trail";
 import type { AssistantPresentation } from "../../../../src/shared/chat-presentation";
-import { dismissRestrictedAppProposal, installRestrictedAppProposal } from "../../lib/restricted-apps";
 import { resolveFixtureConnectedFolderPathCandidates } from "../../lib/connected-folder-path-links";
 import { connectedFolderIdentityStyle, type ConnectedFolderIdentity } from "../../lib/connected-folder-identity";
 import type { AgentCatalog, AgentCommand, AgentModel, AgentStatus, ComposerState, ChatContextPathRequest,
-  ChatDraftRequest, ChatLifecycleView, ChatSendRequest, ChatMessage, ChatStreamEvent, ContextAttachment, ConversationRuntime, ConversationSummary, ExtensionUiRequest, PendingChatSend, RestrictedAppInstalled, RestrictedAppProposal, RuntimePreviewEntry, TreeEntry, ConnectedFolderCustomizationMap, ConnectedFolderFixtureConversation, ConnectedFolderSummary } from "../../types";
+  ChatLifecycleView, ChatSendRequest, ChatMessage, ChatStreamEvent, ContextAttachment, ConversationRuntime, ConversationSummary, ExtensionUiRequest, PendingChatSend, RuntimePreviewEntry, TreeEntry, ConnectedFolderCustomizationMap, ConnectedFolderFixtureConversation, ConnectedFolderSummary } from "../../types";
 import type { WorkRequestView } from "../../../../src/shared/request-presentation";
 import { ExtensionQuestions } from "./ExtensionQuestions";
 import { AttachmentChip } from "./AttachmentChip";
@@ -113,7 +112,6 @@ export function ChatPanel({
   active = true,
   targetConversationId = null,
   contextPathRequest,
-  draftRequest = null,
   sendRequest = null,
   variant = "default",
   onAddPathToChatContext,
@@ -127,8 +125,6 @@ export function ChatPanel({
   lifecycleView = "active",
   onResumeConversation,
   onAgentFinished,
-  onRestrictedAppInstalled,
-  onRestrictedAppProposalRequested,
   onOpenModelSettings,
   onOpenConversation,
   fixtureMode = false,
@@ -143,7 +139,6 @@ export function ChatPanel({
   active?: boolean;
   targetConversationId?: string | null;
   contextPathRequest: ChatContextPathRequest | null;
-  draftRequest?: ChatDraftRequest | null;
   /** Sends at once with these references (the file manager's message box). */
   sendRequest?: ChatSendRequest | null;
   /**
@@ -164,8 +159,6 @@ export function ChatPanel({
   lifecycleView?: ChatLifecycleView;
   onResumeConversation?: () => void | Promise<void>;
   onAgentFinished: () => void | Promise<void>;
-  onRestrictedAppInstalled?: (app: RestrictedAppInstalled) => void;
-  onRestrictedAppProposalRequested?: () => void;
   onOpenModelSettings?: () => void;
   /** Opens one of this Connected Folder's Chats, as its row in Chats does. */
   onOpenConversation?: (conversation: ConversationSummary) => void;
@@ -246,9 +239,6 @@ export function ChatPanel({
   const [composerModelRevision, setComposerModelRevision] = useState(0);
   const [extensionSnapshot, setExtensionSnapshot] = useState<{ conversationId: string; requests: ExtensionUiRequest[] } | null>(null);
   const extensionRequests = extensionSnapshot && extensionSnapshot.conversationId === conversation?.id ? extensionSnapshot.requests : [];
-  const [appProposal, setAppProposal] = useState<RestrictedAppProposal | null>(null);
-  const [appProposalBusy, setAppProposalBusy] = useState(false);
-  const appProposalVersionsRef = useRef(new Map<string, Pick<RestrictedAppProposal, "status" | "updatedAt">>());
   const emptyStateGreeting = useMemo(() => randomChatEmptyGreeting(), []);
   const connectedFolderIdentityFor = useConnectedFolderIdentityResolver();
   const connectedFolderIdentity = useMemo(
@@ -429,12 +419,6 @@ export function ChatPanel({
     eventStreamReadyConversationIdRef.current = null;
     transientConversationIdsRef.current = new Set();
   }, [connectedFolder.id]);
-
-  useEffect(() => {
-    setAppProposal(null);
-    setAppProposalBusy(false);
-    appProposalVersionsRef.current.clear();
-  }, [connectedFolder.id, conversation?.id]);
 
   useEffect(() => {
     if (fixtureMode) return;
@@ -794,16 +778,6 @@ export function ChatPanel({
         }
         if (queueSync.applyEvent(data)) publishQueue();
       }
-      // A proposal installs inside the proposing turn; the Chat surfaces the
-      // settled receipt (added, or failed with a retry), never a review.
-      if (data.type === "restricted_app_proposal" && data.proposal?.connectedFolderId === connectedFolder.id && data.proposal.conversationId === conversationId && observeAppProposal(data.proposal)) {
-        onRestrictedAppProposalRequested?.();
-      }
-      if (data.type === "restricted_app_proposal_settled" && data.proposal?.connectedFolderId === connectedFolder.id && data.proposal.conversationId === conversationId && observeAppProposal(data.proposal)) {
-        const settled = data.proposal;
-        if (settled.status === "installed" || settled.status === "failed") setAppProposal(settled);
-        else setAppProposal((current) => current?.id === settled.id ? null : current);
-      }
       if (data.type === "editor" && typeof data.text === "string") {
         setDraft((current) => data.editorMode === "replace" ? data.text ?? "" : `${current}${data.text ?? ""}`);
         window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
@@ -868,22 +842,6 @@ export function ChatPanel({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [sendRequest?.id]);
-
-  useEffect(() => {
-    if (!draftRequest) return;
-    // Seed the composer and leave the caret at the end so the person simply
-    // keeps typing what they want.
-    setDraft(draftRequest.text);
-    window.requestAnimationFrame(() => {
-      const textarea = composerTextareaRef.current;
-      if (!textarea) return;
-      textarea.focus();
-      const end = textarea.value.length;
-      textarea.setSelectionRange(end, end);
-      resizeComposerTextarea();
-      textarea.scrollTop = textarea.scrollHeight;
-    });
-  }, [draftRequest?.id]);
 
   useEffect(() => {
     if (userPinnedToBottomRef.current) scrollMessagesToBottom("auto");
@@ -1863,43 +1821,6 @@ export function ChatPanel({
       ? { ...current, requests: current.requests.filter((item) => item.id !== request.id) } : current);
   }
 
-  function observeAppProposal(proposal: RestrictedAppProposal): boolean {
-    const previous = appProposalVersionsRef.current.get(proposal.id);
-    if (previous?.updatedAt && previous.updatedAt > proposal.updatedAt) return false;
-    if (previous?.updatedAt === proposal.updatedAt && previous.status !== "pending" && proposal.status === "pending") return false;
-    appProposalVersionsRef.current.set(proposal.id, { status: proposal.status, updatedAt: proposal.updatedAt });
-    return true;
-  }
-
-  async function retryAppProposal() {
-    if (!appProposal || appProposalBusy) return;
-    const proposal = appProposal;
-    setAppProposalBusy(true);
-    try {
-      const app = await installRestrictedAppProposal(connectedFolder.id, proposal.conversationId, proposal.id);
-      showToast({ text: `Added ${app.manifest.title} to this Connected Folder.`, tone: "success" });
-    } catch (caught) {
-      setError(errorText(caught));
-    } finally {
-      setAppProposalBusy(false);
-    }
-  }
-
-  async function dismissAppProposal() {
-    if (!appProposal || appProposalBusy) return;
-    const proposal = appProposal;
-    if (proposal.status !== "failed") { setAppProposal(null); return; }
-    setAppProposalBusy(true);
-    try {
-      await dismissRestrictedAppProposal(connectedFolder.id, proposal.conversationId, proposal.id);
-      setAppProposal(null);
-    } catch (caught) {
-      setError(errorText(caught));
-    } finally {
-      setAppProposalBusy(false);
-    }
-  }
-
   function applySuggestedPrompt(prompt: string): void {
     if (!prompt || running) return;
     setDraft(prompt);
@@ -2266,53 +2187,7 @@ export function ChatPanel({
         </div> : null}
       </form>
       {startLayout && variant !== "panel" && recentChats.length && onOpenConversation ? <ChatRecentChats chats={recentChats} onOpen={onOpenConversation} /> : null}
-      {appProposal ? <RestrictedAppAddedNotice proposal={appProposal} busy={appProposalBusy} onOpen={appProposal.installedApp && onRestrictedAppInstalled ? () => { onRestrictedAppInstalled(appProposal.installedApp!); setAppProposal(null); } : undefined} onRetry={() => void retryAppProposal()} onDismiss={() => void dismissAppProposal()} /> : null}
     </section>
-  );
-}
-
-/** The proposing Chat's receipt: the app was added (with what still needs a person), or it failed and can be retried. */
-function RestrictedAppAddedNotice({ proposal, busy, onOpen, onRetry, onDismiss }: {
-  proposal: RestrictedAppProposal;
-  busy: boolean;
-  onOpen?: () => void;
-  onRetry: () => void;
-  onDismiss: () => void;
-}) {
-  const title = proposal.review.manifest.title;
-  if (proposal.status === "failed") {
-    return (
-      <aside className="capability-code-warning danger restricted-app-added-notice" role="status">
-        <AlertTriangle size={20} aria-hidden="true" />
-        <div>
-          <strong>Couldn’t add {title}</strong>
-          <p>{proposal.error ?? "The app package could not be added."}</p>
-          <div className="restricted-app-task-actions">
-            <button className="ui-control ui-control--primary" type="button" disabled={busy} onClick={onRetry}>Try Again</button>
-            <button className="ui-control" type="button" disabled={busy} onClick={onDismiss}>Dismiss</button>
-          </div>
-        </div>
-      </aside>
-    );
-  }
-  const needs = proposal.needs;
-  const still = needs ? [
-    ...(needs.connections.length ? [`Connect ${needs.connections.join(", ")} in Settings → Apps → ${title}`] : []),
-    ...(needs.files.length ? [`Choose a file for ${needs.files.join(", ")}`] : []),
-    ...(needs.checks.length ? [`Choose a Check for ${needs.checks.join(", ")}`] : []),
-  ] : [];
-  return (
-    <aside className="capability-code-warning restricted-app-added-notice" role="status">
-      <CircleCheck size={20} aria-hidden="true" />
-      <div>
-        <strong>Added {title} to this Connected Folder.</strong>
-        {still.length ? <p>Still needs you: {still.join(" · ")}.</p> : <p>Every declared destination, folder, notification, and automation is on. Turn any of them off in Settings → Apps.</p>}
-        <div className="restricted-app-task-actions">
-          {onOpen ? <button className="ui-control ui-control--primary" type="button" disabled={busy} onClick={onOpen}>Open App</button> : null}
-          <button className="ui-control" type="button" disabled={busy} onClick={onDismiss}>Close</button>
-        </div>
-      </div>
-    </aside>
   );
 }
 

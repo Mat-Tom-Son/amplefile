@@ -1,8 +1,8 @@
 # Architecture
 
-AmpleFile has three runtime responsibility layers, one shared in-process management plane, and a separate restricted-app execution lane:
+AmpleFile has three runtime responsibility layers and one shared in-process management plane:
 
-1. The React renderer presents a persistent connected-folder-identity header menu plus Files, Chats, and History rail surfaces; the Skills & Extensions popup; and agent configuration and app management in Settings.
+1. The React renderer presents a persistent connected-folder-identity header menu plus Files, Chats, and History rail surfaces; the Skills & Extensions popup; and agent configuration in Settings.
 2. The local Node host owns filesystem access, conversations, resource import, Pi sessions, and the domain services that authorize mutations.
 3. Electron supplies native windows, menus, dialogs, secure storage, lifecycle, and packaging.
 
@@ -43,7 +43,6 @@ The persistent connected-folder-header menu establishes the active root-folder e
 - **Chats** — conversations associated with the selected Connected Folder, followed by collapsed groups for every other registered Connected Folder, including zero-count groups in the current view.
 - **History** — checkpoints and recoverable changes for the selected Connected Folder.
 - **Skills & Extensions** — one popup dialog, opened by the rail's Add button and pinned to the Connected Folder it was opened from, with Installed/Discover views for Skills and Extensions, available personally or from a registered Connected Folder. Package provenance and lifecycle live here without becoming another rail destination.
-- **Settings → Apps** — per-app management for installed Connected Folder apps, listed by Connected Folder; the apps themselves open in their contributed rail region.
 
 There is no Library: the desktop surface went on 2026-09-25 and the CLI `library` family and its routes on 2026-10-10.
 
@@ -63,9 +62,9 @@ Technical types, routes, and storage paths use `connected-folder`, `project`, or
 
 Every Connected Folder is backed by an ordinary content folder. Its small portable data layer lives under `.amplefile/`: `connected-folder.json` carries a stable, versioned identity and `conversations/` carries append-only Chat logs. AmpleFile reuses a valid manifest id when a moved folder is relinked. `.amplefile/`, preserved legacy `.workspace/`, and `.pi/` are hidden from the Files surface and excluded from History capture. A Worker's grep and find also leave `.amplefile/` and `.workspace/` out at any depth, so a broad search never surfaces Chat transcripts; a deliberate read still works, and `.pi/` stays searchable because a Worker may be asked to work on this Connected Folder's own Skills & Extensions.
 
-AmpleFile is a clean authority domain. It does not open, parse, import, migrate, mutate, wipe, or delete a legacy Workspace application profile, `.workspace/` record, restricted-app registry, connection, storage namespace, receipt, or artifact. Registering the same ordinary folder creates new AmpleFile identity under `.amplefile/`; preserved legacy bytes remain inert. Pi personal resources and authentication may remain shared at the configured Pi root, while AmpleFile sessions use `sessions/amplefile/`.
+AmpleFile is a clean authority domain. It does not open, parse, import, migrate, mutate, wipe, or delete a legacy Workspace application profile, `.workspace/` record, registry, connection, storage namespace, receipt, or artifact. Registering the same ordinary folder creates new AmpleFile identity under `.amplefile/`; preserved legacy bytes remain inert. Pi personal resources and authentication may remain shared at the configured Pi root, while AmpleFile sessions use `sessions/amplefile/`.
 
-Operational state remains outside the folder. Electron user data holds the Connected Folder registry, content-addressed History objects, ignore rules, provider credentials, application preferences, and the local App Studio registry/store. App Project presentation, canonical Release envelopes, release-backed App bytes, grants, connections, schedules, operation journals, receipts, retained-data records, and mutable App data are machine-local application state; the current product does not add a portable App Project file. Development API, non-packaged Electron, and uninstalled Windows package directories default to a distinct `AmpleFile Development` application-data root, with `AMPLEFILE_STATE_DIR` and `AMPLEFILE_DESKTOP_STATE_DIR` reserved as explicit overrides, so those development entrypoints do not touch the installed product's state. A production-signed macOS candidate is different: it uses normal AmpleFile state by default even outside `/Applications`; an explicit `AMPLEFILE_DESKTOP_STATE_DIR` override is needed for separate app data, and it does not isolate Keychain. On Windows, the installer-owned sibling uninstaller—not the updater manifest—distinguishes an NSIS installation from the same packaged bytes before installation. The separate `AMPLEFILE_CLI_STATE_DIR` exact root keeps packaged child CLI requests on the owning app's broker without granting a later desktop process access to that state. A recognized registry version newer than the current binary remains byte-for-byte untouched and routes packaged startup to updater/release recovery instead of destructive downgrade; malformed state still fails closed. The configured Pi agent directory holds Pi sessions, Pi's own trust store for other native consumers, personal capabilities, and Pi settings. Native Pi project skills, extensions, prompts, settings, and context stay separately under the Connected Folder's `.pi/` directory. AmpleFile's runtime provider authorizes the exact registered root and explicitly denies unregistered roots; it does not rewrite Pi's independent trust store. Removing a linked Connected Folder preserves its ordinary files and `.amplefile/`; deleting a managed Connected Folder removes the managed folder. Managed deletion is blocked if preserved `.workspace/` metadata exists beneath the claimed tree, so AmpleFile cannot recursively erase legacy product state. Removal first persists a machine-local intent and installs a whole–Connected Folder runtime fence, then revokes trust and clears App state before final cleanup. Interrupted intents stay hidden and untrusted for startup recovery. Managed deletion atomically claims the exact canonical directory identity under a random transaction-bound same-filesystem path, revalidates and records that claim, and recursively deletes only the claim rather than any later replacement at the registered path. Either removal is blocked while the Connected Folder is the source or target of an active release-backed App Instance, so uninstall can make the data disposition explicit first. A source Connected Folder is also blocked while its Project owns retained App data. After those obligations are gone, source removal clears that machine-local App Project, Development Instance, prepared operations, Releases, and administrative receipts, and marks unreferenced Release objects for safe reconciliation; transient cleanup failure is retried before later App mutations and at startup. Target removal cancels prepared operations aimed at that target. Both first keep what they clear, with copies of the previews' packages and the verified Release envelopes, as one Recently deleted item that the service re-verifies when it is restored (2026-10-11).
+Operational state remains outside the folder. Electron user data holds the Connected Folder registry, content-addressed History objects, ignore rules, provider credentials, and application preferences. Development API, non-packaged Electron, and uninstalled Windows package directories default to a distinct `AmpleFile Development` application-data root, with `AMPLEFILE_STATE_DIR` and `AMPLEFILE_DESKTOP_STATE_DIR` reserved as explicit overrides, so those development entrypoints do not touch the installed product's state. A production-signed macOS candidate is different: it uses normal AmpleFile state by default even outside `/Applications`; an explicit `AMPLEFILE_DESKTOP_STATE_DIR` override is needed for separate app data, and it does not isolate Keychain. On Windows, the installer-owned sibling uninstaller—not the updater manifest—distinguishes an NSIS installation from the same packaged bytes before installation. The separate `AMPLEFILE_CLI_STATE_DIR` exact root keeps packaged child CLI requests on the owning app's broker without granting a later desktop process access to that state. A recognized registry version newer than the current binary remains byte-for-byte untouched and routes packaged startup to updater/release recovery instead of destructive downgrade; malformed state still fails closed. The configured Pi agent directory holds Pi sessions, Pi's own trust store for other native consumers, personal capabilities, and Pi settings. Native Pi project skills, extensions, prompts, settings, and context stay separately under the Connected Folder's `.pi/` directory. AmpleFile's runtime provider authorizes the exact registered root and explicitly denies unregistered roots; it does not rewrite Pi's independent trust store. Removing a linked Connected Folder preserves its ordinary files and `.amplefile/`; deleting a managed Connected Folder removes the managed folder. Managed deletion is blocked if preserved `.workspace/` metadata exists beneath the claimed tree, so AmpleFile cannot recursively erase legacy product state. Removal first persists a machine-local intent and installs a whole–Connected Folder runtime fence, then revokes trust and clears App state before final cleanup. Interrupted intents stay hidden and untrusted for startup recovery. Managed deletion atomically claims the exact canonical directory identity under a random transaction-bound same-filesystem path, revalidates and records that claim, and recursively deletes only the claim rather than any later replacement at the registered path. Either removal is blocked while the Connected Folder is the source or target of an active release-backed App Instance, so uninstall can make the data disposition explicit first. A source Connected Folder is also blocked while its Project owns retained App data. After those obligations are gone, source removal clears that machine-local App Project, Development Instance, prepared operations, Releases, and administrative receipts, and marks unreferenced Release objects for safe reconciliation; transient cleanup failure is retried before later App mutations and at startup. Target removal cancels prepared operations aimed at that target. Both first keep what they clear, with copies of the previews' packages and the verified Release envelopes, as one Recently deleted item that the service re-verifies when it is restored (2026-10-11).
 
 An app-state `resources/` folder left by an earlier build's Library is not read, attached to conversations, or deleted.
 
@@ -73,99 +72,9 @@ File change streams retain the logical Connected Folder root as the access-polic
 
 Connected Folders synchronized by Google Drive for desktop or other desktop sync tools can be turned into Connected Folders like any other local folder. Native cloud-provider mirroring is a separate feature and should use a provider-neutral adapter with stable remote IDs and explicit conflict handling.
 
-## Connected Folder authorization and executable lanes
+## Connected Folder authorization
 
 Creating or registering a Connected Folder is the single user action that authorizes AmpleFile to load executable project configuration from that exact folder. The shared runtime authority is derived from the Connected Folder registry, so the renderer, local API, kernel, CLI projection, and Pi sessions cannot drift. Removing the Connected Folder revokes AmpleFile's authorization. Registration is not code review: native Pi Extensions still run with the current user's permissions, and synchronized or source-controlled `.pi` content can change later.
-
-Restricted apps run beside, not inside, the Pi capability catalog and management snapshot:
-
-```mermaid
-flowchart LR
-  chat["connected-folder Chat and propose_connected_folder_app"] --> review["Host inspection and digest-pinned review"]
-  capabilities["Settings → Apps grants, connections, lifecycle"] --> service["RestrictedAppService"]
-  studio["connected-folder-bound App Studio"] --> service
-  review --> service
-  service --> staged["Content-addressed reviewed Feature assets"]
-  service --> releases["Immutable v2 Release store"]
-  releases --> instance["Release-backed local App Instance"]
-  instance --> service
-  service --> visible["Visible sandboxed WebContentsView"]
-  service --> worker["Hidden sandboxed worker"]
-  visible --> tabs["Host-owned connected-folder tabs"]
-  visible --> brokers["Network, storage, and file brokers"]
-  worker --> brokers
-  worker --> notifications["Static reviewed system notifications"]
-  kernel["AmpleFileKernel / CLI v1"] -. "does not project or mutate app state" .-> service
-```
-
-The trusted renderer supplies app identity, placement rectangles, review and permission UI, and shell tab state. It does not execute package JavaScript. Electron main owns installed-revision verification, sandbox creation, sender-to-owner binding, generation-aware lifecycle, brokers, credential injection, and teardown. Package JavaScript sees only the frozen `ampleFileRestrictedApp` bridge appropriate to its visible or worker lifecycle.
-
-Agent-created restricted apps use a separate package contract. AmpleFile parses version-2 `agent-app.json`, validates a reviewed HTML entry, an optional worker, bounded tool schemas, exact public-HTTPS or numeric-loopback targets, reviewed connected-folder-file needs, static notification categories, and named interval automations with exact permission subsets; it rejects native-Pi execution fields and linked or oversized files and stages a reviewed content digest without importing JavaScript. A host-owned Pi tool turns a completed Connected Folder–relative package into a persisted, owning-Chat-bound receipt and installs it at once as a Local preview with its declared powers on ([Receipts, not gates](receipts-not-gates.md), F21); it never collects credentials. Its direct preview path creates a Local preview in a Development Instance. Visible UI runs in an ephemeral sandboxed `WebContentsView` with sender-bound context, tab, network, bounded storage, storage-invalidation, and file bridges, while agent actions and automations use a separate hidden sandbox. A machine-wide in-process scheduler outside management protocol v1 coordinates all connected-folder-app jobs with two active slots, FIFO admission, same-job non-overlap, durable cadence/catch-up state, and run receipts. System notifications are host-owned, separately granted, static-copy, enabled-automation-only, and rate-limited. File writes are grant-relative, atomic, and History-covered. Public OAuth PKCE is host-owned and encrypted. Apps own a Connected Folder rail navigator and may request normal persistent, Connected Folder–owned right tabs; the host derives identity and shell tab ids. Proposal, preview addition, Release preparation, local publication, App Instance installation, destination/file/notification grants, connections, every automation enablement, update activation, and uninstall data disposition remain separate. These packages never enter Pi's loaded Extension catalog. See [Restricted app runtime](restricted-app-runtime.md) for shipped behavior and [App platform foundation](app-platform-foundation.md) for the Project/Release/Instance model.
-
-The local App-platform foundation resolves that compatibility surface into
-explicit Project, Development Instance, Feature Installation, Data Namespace,
-Tenant, Principal, artifact-digest, and seven-domain authority records. Storage
-uses Tenant + Data Namespace ownership. Connections bind Tenant, Runtime
-Instance, Feature Installation and revision, exact declaration and target, and
-the current Runtime Instance owner; the portable contract models future
-Principal-owned consent separately. Authority is fenced again immediately before
-external fetches and atomic storage or connected-folder-file effects.
-
-The platform now drives App Studio through a strict offline multi-Feature
-Release assembler/verifier, a durable content-addressed Release store, and a
-side-effect-free local App Instance update planner. Release format version 2
-includes a bounded App presentation snapshot; its digest closes canonical
-records plus every referenced artifact byte. Review, signature, and
-registry-policy sidecars remain outside that digest. Preparing a Release stores
-the verified canonical envelope and a local prepared record; publishing is a
-separate state transition that rechecks the source preview stamps and does not
-contact a server. The store applies a four-GiB aggregate byte quota before each
-new content-addressed put. Startup performs one bounded full verification pass,
-uses compact verified projections for registry/install integrity, and only then
-prunes unreferenced objects. Explicit Release deletion is denied while an active
-Instance, a prepared operation's source or target, or retained data requires the
-digest; it keeps the record and verified envelope in Recently deleted first, and
-registry removal commits before restart-retried physical pruning.
-
-Install and update preparation persist operation ids, target Connected Folder, exact
-Release digest, Runtime Instance identity, new Feature/Data allocations, and the
-deterministic update plan before activation. Source and target capability
-mutation locks prevent concurrent agent/capability work in either affected
-Connected Folder. Activation re-reads the published envelope, rechecks target Feature-id
-collisions or the active Release pointer, recomputes the plan, stages verified
-Feature packages, stops predecessor hosts, and exposes the transition only
-through one registry commit. One `(projectId, target connected-folder)` instance is allowed.
-The current local runtime rejects schema-bearing Features and migrations, so its
-data decision is retain rather than an unimplemented migration.
-
-Registry commits also persist idempotent cleanup obligations before old
-credentials, data, or package bytes become unreachable, and startup retries
-unfinished cleanup. New automation receipts capture the accepting local
-Tenant, Runtime Instance, Feature Installation, canonical Feature Revision,
-Data Namespace, effective Principal, seven-domain authority, occurrence, and
-attempt. Acceptance is persisted before worker execution in an
-installation-independent ledger and terminalized by run id after update or
-removal. Startup reconciles an accepted run whose worker result was lost to an
-explicit `interrupted`/`expired` receipt that says its external-effect outcome
-is unknown. Legacy Workspace receipts are not imported.
-
-Whole-instance uninstall removes live runtime and connection authority and
-requires a retain-or-purge choice for every Feature Data Namespace. Retained
-namespaces are recorded without an installation and can be purged later;
-retained-data adoption and export are not implemented. Source and target Connected Folder
-removal are blocked while an App Instance remains active so neither path can
-silently choose this lifecycle outcome. The source remains blocked until any
-retained namespaces are explicitly purged; a target may be removed after
-uninstall because the retained namespace stays owned by its source Project.
-
-A separate private-hosted semantic core exercises the same object and authority
-model through injected durable CAS-state, job/lease, vault, and effect-broker
-interfaces. It proves authenticated Project/cloud-Project and Tenant separation,
-closed Release review/publication/deployment, role-aware data, connection and job
-revocation, compatible update, receipts, export, deletion, and cleanup recovery.
-It is executable contract evidence, not a shipped cloud service: production
-persistence, scheduling workers, vault, egress, transport, deployment,
-operations, and UI adapters are intentionally absent.
 
 ## Packaging
 
@@ -177,4 +86,4 @@ On Windows 11 22H2 or newer, Electron may use Mica when reduced transparency is 
 
 macOS uses a hidden-inset native title bar with traffic lights and native application/File/Edit/View/Window/Help menus. Sidebar vibrancy is limited to structural chrome when reduced transparency is off; content surfaces remain opaque and use a theme-matched solid fallback. Packaged child processes inherit `AmpleFile.app/Contents/bin` so the Mac protocol-v1 CLI can address the exact app without changing a shell profile.
 
-`desktop:prepare` runs the production renderer and Electron compile, native Pi preflight, and a real-Electron restricted-app probe that exercises both sandbox hosts and their lifecycle denial. The package does not contain a bundled document library, private Skill catalog, provider key, or signing material. See [macOS build and release lane](macos-build.md) for verification and publishing.
+`desktop:prepare` runs the production renderer and Electron compile and native Pi preflight. The package does not contain a bundled document library, private Skill catalog, provider key, or signing material. See [macOS build and release lane](macos-build.md) for verification and publishing.

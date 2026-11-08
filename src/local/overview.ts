@@ -31,8 +31,6 @@ export const AMPLEFILE_OVERVIEW_SOURCES = [
   "chats",
   "history-checkpoints",
   "act-receipts",
-  "app-automation-receipts",
-  "app-automation-schedule",
   "automation-runs",
 ] as const;
 
@@ -43,7 +41,6 @@ export type AmpleFileOverviewItemKind =
   | "assistant-turn"
   | "compaction"
   | "agent-request"
-  | "app-automation-run"
   | "automation-run"
   // Needs you: questions and due snoozes only (docs/receipts-not-gates.md,
   // F24). Nothing here is an approval.
@@ -57,7 +54,6 @@ export type AmpleFileOverviewItemKind =
   | "chat-lifecycle"
   | "chat-renamed"
   | "act-performed"
-  | "app-automation-run-settled"
   | "automation-run-settled";
 
 export interface AmpleFileOverviewItemRef {
@@ -229,34 +225,6 @@ export interface AmpleFileOverviewCheckpointRecord {
   scope: "full" | "targeted";
 }
 
-export interface AmpleFileOverviewAppAutomationRunRecord {
-  runId: string;
-  appAutomationId: string;
-  /** The app's and the automation's titles, when the installation still declares them. */
-  appTitle?: string;
-  automationTitle?: string;
-  connectedFolderId?: string;
-  startedAt: string;
-}
-
-export type AmpleFileOverviewAppAutomationOutcome =
-  | "success"
-  | "failure"
-  | "skipped"
-  | "cancelled"
-  | "interrupted";
-
-export interface AmpleFileOverviewAppAutomationReceiptRecord {
-  receiptId: string;
-  runId: string;
-  appAutomationId: string;
-  appTitle?: string;
-  automationTitle?: string;
-  connectedFolderId?: string;
-  outcome: AmpleFileOverviewAppAutomationOutcome;
-  finishedAt: string;
-}
-
 export type AmpleFileOverviewAutomationRunState =
   | "running"
   | "succeeded"
@@ -289,8 +257,6 @@ export interface AmpleFileOverviewSourceReaders {
   chats?(connectedFolder: AmpleFileOverviewConnectedFolderRef): Promise<AmpleFileOverviewChatRecord[]>;
   checkpoints?(connectedFolder: AmpleFileOverviewConnectedFolderRef): Promise<AmpleFileOverviewCheckpointRecord[]>;
   actReceipts?(): Promise<AmpleFileCliActReceipt[]>;
-  appAutomationRunReceipts?(): Promise<AmpleFileOverviewAppAutomationReceiptRecord[]>;
-  appAutomationRuns?(): Promise<AmpleFileOverviewAppAutomationRunRecord[]>;
   automationRuns?(): Promise<AmpleFileOverviewAutomationRunRecord[]>;
 }
 
@@ -340,8 +306,6 @@ export async function composeAmpleFileOverview(input: AmpleFileOverviewComposeIn
   const chats = await readConnectedFolderSource("chats", connectedFolders, sources.chats, unavailable);
   const checkpoints = await readConnectedFolderSource("history-checkpoints", connectedFolders, sources.checkpoints, unavailable);
   const actReceipts = await readSource("act-receipts", sources.actReceipts, unavailable);
-  const appAutomationReceipts = await readSource("app-automation-receipts", sources.appAutomationRunReceipts, unavailable);
-  const appAutomationRuns = await readSource("app-automation-schedule", sources.appAutomationRuns, unavailable);
   const automationRuns = await readSource("automation-runs", sources.automationRuns, unavailable);
 
   // A request in `waiting` is not running: what it waits on is in Needs you.
@@ -365,7 +329,6 @@ export async function composeAmpleFileOverview(input: AmpleFileOverviewComposeIn
     runningRequests,
     foldedTaskIds,
     runningTaskIds,
-    appAutomationRuns: appAutomationRuns ?? [],
     automationRuns: automationRuns ?? [],
     connectedFolderNames,
   });
@@ -383,7 +346,6 @@ export async function composeAmpleFileOverview(input: AmpleFileOverviewComposeIn
     chats,
     checkpoints,
     actReceipts: actReceipts ?? [],
-    appAutomationReceipts: appAutomationReceipts ?? [],
     automationRuns: automationRuns ?? [],
     connectedFolderNames,
   });
@@ -416,7 +378,6 @@ function composeRunning(input: {
   runningRequests: AmpleFileOverviewAgentRequestRecord[];
   foldedTaskIds: Set<string>;
   runningTaskIds: Set<string>;
-  appAutomationRuns: AmpleFileOverviewAppAutomationRunRecord[];
   automationRuns: AmpleFileOverviewAutomationRunRecord[];
   connectedFolderNames: Map<string, string>;
 }): { items: AmpleFileOverviewItem[]; truncated: boolean } {
@@ -453,16 +414,6 @@ function composeRunning(input: {
       connectedFolderNames: input.connectedFolderNames,
       headline,
       ref: { taskId: task.id, ...(task.conversationId ? { conversationId: task.conversationId } : {}) },
-    }));
-  }
-  for (const run of input.appAutomationRuns.slice(0, maxSourceRecords)) {
-    items.push(overviewItem({
-      id: `app-automation-schedule:${run.runId}`,
-      at: run.startedAt,
-      kind: "app-automation-run",
-      ...(run.connectedFolderId ? { connectedFolderId: run.connectedFolderId, connectedFolderNames: input.connectedFolderNames } : {}),
-      headline: `${appAutomationSubject(run)} running`,
-      ref: { runId: run.runId },
     }));
   }
   for (const run of input.automationRuns.slice(0, maxSourceRecords)) {
@@ -589,7 +540,6 @@ function composeChanges(input: {
   chats: Array<{ connectedFolder: AmpleFileOverviewConnectedFolderRef; records: AmpleFileOverviewChatRecord[] }>;
   checkpoints: Array<{ connectedFolder: AmpleFileOverviewConnectedFolderRef; records: AmpleFileOverviewCheckpointRecord[] }>;
   actReceipts: AmpleFileCliActReceipt[];
-  appAutomationReceipts: AmpleFileOverviewAppAutomationReceiptRecord[];
   automationRuns: AmpleFileOverviewAutomationRunRecord[];
   connectedFolderNames: Map<string, string>;
 }): { items: AmpleFileOverviewItem[]; truncated: boolean } {
@@ -685,16 +635,6 @@ function composeChanges(input: {
         ...(receipt.checkpointId ? { checkpointId: receipt.checkpointId } : {}),
         requestId: receipt.requestId,
       },
-    }));
-  }
-  for (const receipt of input.appAutomationReceipts.slice(0, maxSourceRecords)) {
-    add(overviewItem({
-      id: `app-automation-receipts:${receipt.receiptId}`,
-      at: receipt.finishedAt,
-      kind: "app-automation-run-settled",
-      ...(receipt.connectedFolderId ? { connectedFolderId: receipt.connectedFolderId, connectedFolderNames: input.connectedFolderNames } : {}),
-      headline: `${appAutomationSubject(receipt)} ${appAutomationOutcomeLabel(receipt.outcome)}`,
-      ref: { runId: receipt.runId },
     }));
   }
   for (const run of input.automationRuns.slice(0, maxSourceRecords)) {
@@ -920,23 +860,6 @@ function chatLifecycleHeadline(title: string, event: AmpleFileOverviewChatLifecy
   if (event.change === "restored") return `"${title}" restored`;
   if (event.change === "snoozed") return `"${title}" snoozed${event.snoozedUntil ? ` until ${event.snoozedUntil}` : ""}`;
   return `"${title}" snooze cleared`;
-}
-
-/**
- * An app's named automation by the app's and the automation's titles
- * (`Inbox automation "Refresh inbox"`), so it reads apart from AmpleFile's
- * own Automations. A run whose app is gone keeps its declared id.
- */
-function appAutomationSubject(record: { appAutomationId: string; appTitle?: string; automationTitle?: string }): string {
-  const automation = clampText(record.automationTitle?.trim() || record.appAutomationId, maxTitleInHeadline);
-  const app = record.appTitle?.trim();
-  return app ? `${clampText(app, maxTitleInHeadline)} automation "${automation}"` : `App automation "${automation}"`;
-}
-
-function appAutomationOutcomeLabel(outcome: AmpleFileOverviewAppAutomationOutcome): string {
-  if (outcome === "success") return "succeeded";
-  if (outcome === "failure") return "failed";
-  return outcome;
 }
 
 function isAtOrBefore(timestamp: string, referenceMs: number): boolean {

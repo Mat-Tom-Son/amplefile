@@ -372,7 +372,7 @@ test("a stored one-time proposal stays out of pending files after its admission 
   assert.equal(pending[0]?.valid, false, "an unstored expired proposal remains invalid");
 });
 
-test("receipts a build with Checks journaled still read: the run shows, the retired Check hop and cause do not", async (t) => {
+test("receipts a build with Checks or Connected Folder apps journaled still read: the run shows, the retired hop and cause do not", async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), "amplefile-automation-settings-retired-check-"));
   const api = await startLocalApi({
     port: 0,
@@ -402,12 +402,20 @@ test("receipts a build with Checks journaled still read: the run shows, the reti
   });
   // Lines exactly as the executor wrote them while Checks existed (removed 2026-11-07).
   const base = { v: 1, automationId: declaration.id, runId: "run-old-check", title: "After review", digest: "a".repeat(64) };
-  const lines = [
+  const lines: Array<Record<string, unknown>> = [
     { ...base, at: "2026-09-02T10:00:00.000Z", scope: "run", outcome: "accepted", cause: { kind: "on-settled", source: { kind: "check-run", connectedFolderId: folder.connectedFolder.id, runId: "check-run-1", state: "succeeded", checkIds: ["check-12345678"], taskId: "check-task-1" } } },
     { ...base, at: "2026-09-02T10:00:01.000Z", scope: "hop", outcome: "accepted", hopId: "verify", hopKind: "check", connectedFolderId: folder.connectedFolder.id },
     { ...base, at: "2026-09-02T10:00:02.000Z", scope: "hop", outcome: "succeeded", hopId: "verify", hopKind: "check", connectedFolderId: folder.connectedFolder.id, checkRunId: "check-run-2", checkIds: ["check-12345678"], findingCount: 2, admittedCount: 2 },
     { ...base, at: "2026-09-02T10:00:03.000Z", scope: "run", outcome: "succeeded" },
   ];
+  // And as it wrote them while Connected Folder apps existed (removed 2026-11-07).
+  const appBase = { ...base, runId: "run-old-app" };
+  lines.push(
+    { ...appBase, at: "2026-09-03T10:00:00.000Z", scope: "run", outcome: "accepted", cause: { kind: "on-settled", source: { kind: "app-automation-run", connectedFolderId: folder.connectedFolder.id, appId: "collector", appAutomationId: "collect", runId: "app-run-1", outcome: "success" } } },
+    { ...appBase, at: "2026-09-03T10:00:01.000Z", scope: "hop", outcome: "accepted", hopId: "summarize", hopKind: "chat", connectedFolderId: folder.connectedFolder.id },
+    { ...appBase, at: "2026-09-03T10:00:02.000Z", scope: "hop", outcome: "succeeded", hopId: "summarize", hopKind: "chat", connectedFolderId: folder.connectedFolder.id },
+    { ...appBase, at: "2026-09-03T10:00:03.000Z", scope: "run", outcome: "succeeded" },
+  );
   const journal = join(sandbox, "state", "automations", "receipts.jsonl");
   await appendFile(journal, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf8");
 
@@ -421,6 +429,14 @@ test("receipts a build with Checks journaled still read: the run shows, the reti
   assert.equal(receipts.length, 4);
   assert.ok(receipts.every((receipt) => !("checkRunId" in receipt) && !("findingCount" in receipt) && receipt.hopKind === undefined));
   assert.equal(receipts.find((receipt) => receipt.outcome === "accepted" && receipt.scope === "run")?.cause, undefined, "a Check-run cause is not projected");
+
+  const appRun = history.runs.find((item) => item.runId === "run-old-app");
+  assert.equal(appRun?.outcome, "succeeded", "the older app-caused run still reads");
+  assert.equal(appRun?.cause, undefined, "a retired app automation cause is not shown");
+  const appReceipts = (await api.actFacade.automationsReceipts({ automation: declaration.id })).receipts
+    .filter((receipt) => receipt.runId === "run-old-app");
+  assert.equal(appReceipts.length, 4);
+  assert.equal(appReceipts.find((receipt) => receipt.outcome === "accepted" && receipt.scope === "run")?.cause, undefined, "an app automation cause is not projected");
 });
 
 // A wall-clock budget, not an attempt count: every attempt awaits a real API

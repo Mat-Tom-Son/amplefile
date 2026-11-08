@@ -11,11 +11,6 @@ import {
   connectedFolderSessionDir,
   connectedFolderStorageKey,
 } from "../src/local/agent/agent-data-dir.js";
-import {
-  RestrictedAppFileBroker,
-  RestrictedAppFileError,
-  type RestrictedAppFileContext,
-} from "../src/local/agent/restricted-app-files.js";
 import { listConversations } from "../src/local/agent/chat-store.js";
 import { reservedSearchSegments } from "../src/local/agent/reserved-path-search.js";
 import { isAlwaysHiddenConnectedFolderEntry } from "../src/local/connected-folder-ignore.js";
@@ -142,37 +137,6 @@ test("legacy product environment variables cannot select AmpleFile state", () =>
   }), undefined);
 });
 
-test("restricted app public file APIs deny Windows-case variants of reserved metadata", async () => {
-  const root = join(sandbox, "restricted-app-connected-folder");
-  await mkdir(root, { recursive: true });
-  const broker = new RestrictedAppFileBroker();
-  const authority = restrictedAppContext(root);
-
-  for (const reserved of [".AMPLEFILE", ".WoRkSpAcE", ".PI"]) {
-    const reservedRoot = join(root, reserved);
-    await mkdir(reservedRoot, { recursive: true });
-    await writeFile(join(reservedRoot, "secret.txt"), "must stay private", "utf8");
-    await assert.rejects(
-      broker.read(authority, { grantId: "selected-files", path: `${reserved}/secret.txt` }),
-      isFileDenied,
-    );
-    await assert.rejects(
-      broker.write(authority, {
-        grantId: "selected-files",
-        path: `${reserved}/secret.txt`,
-        data: "overwrite attempt",
-        mode: "replace",
-      }),
-      isFileDenied,
-    );
-    await assert.rejects(
-      broker.validateGrant(restrictedAppContext(root, reserved), "selected-files"),
-      isFileDenied,
-    );
-    assert.equal(await readFile(join(reservedRoot, "secret.txt"), "utf8"), "must stay private");
-  }
-});
-
 function legacyUnsaltedConnectedFolderId(rootPath: string): string {
   const resolved = resolve(rootPath);
   const normalized = process.platform === "win32" ? resolved.toLocaleLowerCase() : resolved;
@@ -185,18 +149,6 @@ async function snapshots(paths: string[]): Promise<Array<{ path: string; bytes: 
     bytes: await readFile(path),
     mtimeMs: (await stat(path)).mtimeMs,
   })));
-}
-
-function restrictedAppContext(connectedFolderRoot: string, root = "."): RestrictedAppFileContext {
-  return {
-    connectedFolderRoot,
-    declarations: [{ id: "files", target: "directory", access: "read-write" }],
-    grants: [{ id: "selected-files", declarationId: "files", root, access: "read-write" }],
-  };
-}
-
-function isFileDenied(error: unknown): boolean {
-  return error instanceof RestrictedAppFileError && error.code === "FILE_DENIED";
 }
 
 test("the predecessors' metadata folders stay hidden from Files, History, and search", () => {

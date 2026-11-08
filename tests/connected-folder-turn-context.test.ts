@@ -115,10 +115,11 @@ test("the operations guide names the verbs and the rules, stays bounded, and fol
   assert.ok(guide.startsWith(ampleFileConnectedFolderOperationsGuideHeading));
   for (const verb of [
     "chat report", "chat ask", "chat answer", "chat handoff", "chat wait",
-    "files delete", "history list|save|restore", "search", "apps list", "apps invoke", "help collaborate",
+    "files delete", "history list|save|restore", "search", "help collaborate",
   ]) {
     assert.ok(guide.includes(verb), `the guide names ${verb}`);
   }
+  assert.doesNotMatch(guide, /\bapps (list|invoke)\b/, "Connected Folder apps were removed (2026-11-07)");
   assert.match(guide, /accepts a task id only while that exact turn is your own and running/);
   assert.match(guide, /not yours to read.*hand it off, or ask/s);
   assert.match(guide, /Never write cross-connected-folder context into this Chat/);

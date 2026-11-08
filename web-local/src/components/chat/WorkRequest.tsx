@@ -1,19 +1,11 @@
 import { useId, useRef, useState } from "react";
 import { readQuestionDraft, writeQuestionDraft, clearQuestionDraft } from "../../lib/question-drafts.js";
 import type { WorkQuestionView, WorkRequestView } from "../../../../src/shared/request-presentation";
-import { useWorkRequest } from "../../hooks/useWorkRequest";
 
 export async function openWorkFile(connectedFolderId: string, path: string): Promise<void> {
   if (window.ampleFileDesktop?.ampleFileAgent?.openResultFile) {
     await window.ampleFileDesktop.ampleFileAgent.openResultFile(connectedFolderId, path);
   } else window.dispatchEvent(new window.CustomEvent("amplefile:open-result-file", { detail: { connectedFolderId, path } }));
-}
-
-export function ConnectedWorkRequest({ path, onOpenFile, showResultSummary = true, showResultFiles = true, showStop = true }: {
-  path: string; onOpenFile?: (connectedFolderId: string, path: string) => void; showResultSummary?: boolean; showResultFiles?: boolean; showStop?: boolean;
-}) {
-  const state = useWorkRequest(path);
-  return <WorkRequest {...state} onOpenFile={onOpenFile} showResultSummary={showResultSummary} showResultFiles={showResultFiles} showStop={showStop} />;
 }
 
 export function WorkRequest({ work, error, busy, act, refresh, onOpenFile = openWorkFile, showStop = true, showResultSummary = false, showProgress = true, showResultFiles = true }: {

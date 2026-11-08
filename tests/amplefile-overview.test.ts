@@ -54,7 +54,6 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
     "agent-requests:req-mgmt",
     "kernel-tasks:task-turn",
     "kernel-tasks:task-compact",
-    "app-automation-schedule:auto-run-1",
     "automation-runs:rr-1",
   ]);
   assert.equal(first.running[0].headline, "Handling your request — 1 Worker turn running");
@@ -62,8 +61,7 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
   assert.equal(first.running[1].connectedFolderName, "Alpha");
   assert.equal(first.running[1].kind, "assistant-turn", "a plain Connected Folder turn's own root never replaces its kernel task");
   assert.ok(!first.running.some((item) => item.id === "agent-requests:req-wait"), "a waiting request is not running");
-  assert.equal(first.running[3].headline, 'Inbox automation "Collect new mail" running', "an app automation names the app and its title, not its id");
-  assert.equal(first.running[4].headline, 'Automation "Weekly handoff" running');
+  assert.equal(first.running[3].headline, 'Automation "Weekly handoff" running');
 
   // Needs you: questions and due snoozes only, newest first. Nothing here is
   // an approval (docs/receipts-not-gates.md, F24).
@@ -87,7 +85,6 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
     "act-receipts:req-1",
     "history-checkpoints:connected-folder-a:cp-1",
     "act-receipts:req-2",
-    "app-automation-receipts:ar-1",
     "automation-runs:rr-0",
     "agent-requests:req-done",
     "agent-requests:req-expired",
@@ -97,9 +94,9 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
     "chats:chat-x:msg-arch",
     "chats:chat-x:msg-ren",
   ]);
-  assert.equal(first.changes[5].headline, "Request done");
-  assert.equal(first.changes[6].headline, "Request ran out of time");
-  assert.deepEqual(first.changes[6].ref, { taskId: "task-expired", conversationId: "mgmt-1", requestId: "req-expired" });
+  assert.equal(first.changes[4].headline, "Request done");
+  assert.equal(first.changes[5].headline, "Request ran out of time");
+  assert.deepEqual(first.changes[5].ref, { taskId: "task-expired", conversationId: "mgmt-1", requestId: "req-expired" });
   assert.ok(!first.changes.some((item) => item.id === "agent-requests:req-plain-old"), "a plain Connected Folder turn's settle is its turn-settled item, not a second request item");
   assert.equal(first.cursor, "2026-08-10T10:50:00.000Z/act-receipts:req-1");
   const actItem = first.changes[0];
@@ -107,9 +104,8 @@ test("composeAmpleFileGlance is deterministic and orders every section", async (
   assert.equal(actItem.connectedFolderName, "connected-folder-gone (removed)", "an unregistered Connected Folder renders the id plus (removed)");
   assert.deepEqual(actItem.ref, { checkpointId: "cp-9", requestId: "req-1" });
   assert.equal(first.changes[2].headline, "chat.rename failed");
-  assert.equal(first.changes[3].headline, 'Inbox automation "Collect new mail" succeeded');
-  assert.equal(first.changes[4].headline, 'Automation "Weekly handoff" failed — 1/3 steps completed');
-  assert.equal(first.changes[9].headline, '"Waiting" snoozed until 2026-08-10T11:30:00.000Z');
+  assert.equal(first.changes[3].headline, 'Automation "Weekly handoff" failed — 1/3 steps completed');
+  assert.equal(first.changes[8].headline, '"Waiting" snoozed until 2026-08-10T11:30:00.000Z');
   assert.equal("checks" in first, false, "Checks were removed (2026-11-07): the digest has no Check rows");
 
   // Seen markers pass through with sorted surface keys.
@@ -247,13 +243,20 @@ test("changes are bounded per kind and in total, newest first", async () => {
         command: "chat.send",
         outcome: "ok" as const,
       })),
-      appAutomationRunReceipts: async () => indexes.map((index) => ({
-        receiptId: `ar-${index}`,
-        runId: `run-${index}`,
-        appAutomationId: "collect",
-        outcome: "success" as const,
-        finishedAt: stamp(index),
-      })),
+      chats: async () => [{
+        conversationId: "chat-renamed-often",
+        title: "Renamed often",
+        archivedAt: null,
+        snoozedUntil: null,
+        newestMessage: null,
+        lifecycleEvents: [],
+        titleEvents: indexes.map((index) => ({
+          messageId: `msg-${index}`,
+          createdAt: stamp(index),
+          title: `Title ${index}`,
+          source: "manual" as const,
+        })),
+      }],
       automationRuns: async () => indexes.map((index) => ({
         runId: `rr-${index}`,
         automationId: "automation-1",
@@ -266,11 +269,6 @@ test("changes are bounded per kind and in total, newest first", async () => {
   });
   assert.equal(snapshot.changes.length, ampleFileOverviewChangesTotalCap);
   assert.equal(snapshot.truncated.changes, true);
-  assert.equal(
-    snapshot.changes.find((item) => item.kind === "app-automation-run-settled")?.headline,
-    'App automation "collect" succeeded',
-    "a receipt whose app is gone keeps its declared id and still reads as an app's",
-  );
   const counts = new Map<string, number>();
   for (const item of snapshot.changes) counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1);
   for (const [kind, count] of counts) {
@@ -571,12 +569,6 @@ function fullFixtureSources(): AmpleFileOverviewSourceReaders {
       { v: 2, at: "2026-08-10T10:50:00.000Z", requestId: "req-1", command: "files.add", connectedFolderId: "connected-folder-gone", outcome: "ok", checkpointId: "cp-9" },
       { v: 1, at: "2026-08-10T10:20:00.000Z", requestId: "req-2", command: "chat.rename", connectedFolderId: "connected-folder-a", outcome: "error", errorCode: "conflict" },
       { v: 2, at: "2026-08-10T10:55:00.000Z", requestId: "req-3", command: "chat.send", outcome: "accepted" },
-    ],
-    appAutomationRuns: async () => [
-      { runId: "auto-run-1", appAutomationId: "collect", appTitle: "Inbox", automationTitle: "Collect new mail", connectedFolderId: "connected-folder-b", startedAt: "2026-08-10T11:20:00.000Z" },
-    ],
-    appAutomationRunReceipts: async () => [
-      { receiptId: "ar-1", runId: "auto-run-0", appAutomationId: "collect", appTitle: "Inbox", automationTitle: "Collect new mail", connectedFolderId: "connected-folder-b", outcome: "success", finishedAt: "2026-08-10T10:10:00.000Z" },
     ],
     automationRuns: async () => [
       { runId: "rr-1", automationId: "automation-1", title: "Weekly handoff", state: "running", startedAt: "2026-08-10T11:25:00.000Z", hops: [] },

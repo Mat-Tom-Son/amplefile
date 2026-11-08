@@ -78,7 +78,7 @@ test("Settings keeps older page ids landing on the tab that now holds their cont
   assert.equal(settingsTabForPage("desktop", "limits"), "automations");
   assert.equal(settingsTabForPage("desktop", "deleted"), "recently-deleted");
   assert.equal(settingsTabForPage("general", "deleted"), "recently-deleted");
-  for (const page of ["appearance", "ai-models", "automations", "apps", "recently-deleted", "shortcuts", "about"] as const) {
+  for (const page of ["appearance", "ai-models", "automations", "command-line", "recently-deleted", "shortcuts", "about"] as const) {
     assert.equal(settingsTabForPage(page), page);
   }
   const settings = desktopDialogs[0] ?? "";

@@ -389,7 +389,7 @@ test("schema 1 and 2 stores load into the version 3 writer, converting the grant
   assert.equal(oldest.status().damaged, false);
 });
 
-test("a stored automation that uses a retired Check feature is left out on its own; the rest of the store loads", async (t) => {
+test("a stored automation that uses a retired Check or Connected Folder app feature is left out on its own; the rest of the store loads", async (t) => {
   const { sandbox, store, statePath, receipts } = await createSandbox("amplefile-automation-store-retired-");
   t.after(() => rm(sandbox, { recursive: true, force: true }));
   await store.enable(enableInput(declarationInput("automation-keeps-working"), "request-valid"));
@@ -401,8 +401,8 @@ test("a stored automation that uses a retired Check feature is left out on its o
     schemaVersion: number;
     automations: Array<Record<string, unknown> & { grants: Array<Record<string, unknown>> }>;
   };
-  // Exactly what a build with Checks stored: digest-pinned, enabled records
-  // whose declarations the current parser refuses.
+  // Exactly what a build with Checks or Connected Folder apps stored:
+  // digest-pinned, enabled records whose declarations the current parser refuses.
   const retired = (declaration: Record<string, unknown>) => {
     const digest = ampleFileAutomationDigest(declaration);
     return {
@@ -426,6 +426,16 @@ test("a stored automation that uses a retired Check feature is left out on its o
     trigger: { kind: "manual" },
     steps: [{ id: "tell", kind: "agent", message: "New findings:\n{{ trigger.findings }}" }],
   }) as Record<string, unknown>));
+  persisted.automations.push(retired(declarationInput("automation-after-an-app", {
+    trigger: {
+      kind: "on-settled",
+      source: { kind: "app-automation-run", connectedFolder: connectedFolderA, appId: "collector", appAutomationId: "collect" },
+    },
+  }) as Record<string, unknown>));
+  // A settled-run source this build never knew is still a retired trigger, not damage.
+  persisted.automations.push(retired(declarationInput("automation-after-something-else", {
+    trigger: { kind: "on-settled", source: { kind: "something-else", connectedFolder: connectedFolderA } },
+  }) as Record<string, unknown>));
   await writeFile(statePath, `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
 
   const reloaded = await AmpleFileAutomationStore.create({ path: statePath, receipts, now: () => fixedNow });
@@ -437,11 +447,16 @@ test("a stored automation that uses a retired Check feature is left out on its o
     "automation-runs-a-check",
     "automation-after-a-check",
     "automation-reads-findings",
+    "automation-after-an-app",
+    "automation-after-something-else",
   ]);
   assert.equal(status.retiredAutomations?.[0]?.title, "Automation automation-runs-a-check");
   assert.match(status.retiredAutomations?.[0]?.reason ?? "", /runs a Check/);
   assert.match(status.retiredAutomations?.[1]?.reason ?? "", /waits for a Check run/);
   assert.match(status.retiredAutomations?.[2]?.reason ?? "", /\{\{trigger\.findings\}\}/);
+  assert.equal(status.retiredAutomations?.[3]?.title, "Automation automation-after-an-app");
+  assert.match(status.retiredAutomations?.[3]?.reason ?? "", /Connected Folder app's automation/);
+  assert.match(status.retiredAutomations?.[4]?.reason ?? "", /waits for other work to settle/);
   assert.deepEqual((await reloaded.list()).map((record) => record.declaration.id), [
     "automation-keeps-working",
     "automation-literal-braces",

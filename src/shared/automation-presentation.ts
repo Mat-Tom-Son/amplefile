@@ -9,19 +9,7 @@ export type AutomationTriggerView =
   | { kind: "files-changed"; connectedFolderId: string; watch: { kind: "tree"; path: string; recursive: boolean; extensions: string[] }; debounceSeconds: number; cooldownMinutes: number; ifMissed?: "run" | "skip"; summary?: string }
   | { kind: "manual"; summary?: string }
   | { kind: "interval"; intervalMinutes: number; summary?: string }
-  | { kind: "at"; at: string; ifMissed: "run" | "skip"; summary?: string }
-  | {
-    kind: "on-settled";
-    summary?: string;
-    source: {
-      kind: "app-automation-run";
-      connectedFolderId: string;
-      connectedFolderName?: string;
-      appId?: string;
-      appAutomationId?: string;
-      outcomes?: string[];
-    };
-  };
+  | { kind: "at"; at: string; ifMissed: "run" | "skip"; summary?: string };
 
 export type AutomationOutcome = "accepted" | "succeeded" | "failed" | "stopped" | "interrupted" | "skipped" | "lapsed";
 
@@ -60,10 +48,7 @@ export function automationTriggerSummary(trigger: AutomationTriggerView): string
   }
   if (trigger.kind === "manual") return "Manual only";
   if (trigger.kind === "interval") return `Every ${formatAutomationMinutes(trigger.intervalMinutes)}`;
-  if (trigger.kind === "at") return `Once · ${formatAutomationDateTime(trigger.at)}`;
-  const source = trigger.source;
-  const connectedFolder = source.connectedFolderName ?? source.connectedFolderId;
-  return `After ${source.appId} · ${source.appAutomationId} settles in ${connectedFolder}`;
+  return `Once · ${formatAutomationDateTime(trigger.at)}`;
 }
 
 export function formatAutomationMinutes(minutes: number): string {
@@ -79,8 +64,7 @@ export function formatAutomationDateTime(value: string): string {
 
 /**
  * What an automation does in one Connected Folder, from its declaration: its trigger
- * watches the Connected Folder (a folder change, or an app automation settling
- * there), a files step copies into or out of it, or a chat step starts a Chat
+ * watches the Connected Folder (a folder change there), a files step copies into or out of it, or a chat step starts a Chat
  * there.
  */
 export type FolderAutomationRole = "watches" | "copies-to" | "copies-from" | "chats-here";

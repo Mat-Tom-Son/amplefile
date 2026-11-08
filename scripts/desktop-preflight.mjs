@@ -28,8 +28,6 @@ assertPath("dist/desktop/desktop/src/preload.cjs");
 assertPath("dist/desktop/desktop/src/model-context-preload.cjs");
 assertPath("dist/desktop/desktop/src/model-context-window.js");
 assertPath("dist/desktop/desktop/src/amplefile-agent-popover-preload.cjs");
-assertPath("dist/desktop/desktop/src/restricted-app-host.js");
-assertPath("dist/desktop/desktop/src/restricted-app-preload.cjs");
 assertPath("desktop/assets/icon.ico");
 assertPath("desktop/assets/icon.png");
 assertPath("desktop/assets/iconTemplate.png");

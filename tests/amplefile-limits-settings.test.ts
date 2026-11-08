@@ -7,10 +7,7 @@ import {
   ampleFileRequestLimitMessage,
   type AmpleFileRequestLimitName,
 } from "../src/local/requests/request-records.js";
-import { restrictedAppInferenceLimits } from "../src/shared/restricted-app-inference.js";
-import { restrictedAppAssistantLimits, restrictedAppLimitSize } from "../src/shared/restricted-app-tasks.js";
 import {
-  ampleFileAppAutomationDefaultConcurrency,
   ampleFileBackgroundJobLimits,
   ampleFileExtensionUiLimits,
   ampleFileRequestLimits,
@@ -23,16 +20,15 @@ import { createDomHarness } from "./support/dom.js";
 /**
  * Settings → Automations → Limits (docs/receipts-not-gates.md, F19 principle 6).
  * Bounds are defaults, not gates, and they are visible in Settings. Every
- * app-facing refusal names "Settings → Automations → Limits", so this suite pins
+ * request, job, and Extension refusal names "Settings → Automations → Limits", so this suite pins
  * that the section exists, that it is read-only, and that the numbers it shows
  * are the frozen constants the host enforces rather than retyped copies.
  */
 
-const [settingsSource, paneSource, tasksSource, inferenceSource] = await Promise.all([
+const [settingsSource, paneSource, extensionUiSource] = await Promise.all([
   readFile(new URL("../web-local/src/components/modals/DesktopSettingsModal.tsx", import.meta.url), "utf8"),
   readFile(new URL("../web-local/src/components/modals/AmpleFileLimitsPane.tsx", import.meta.url), "utf8"),
-  readFile(new URL("../src/local/agent/restricted-app-tasks.ts", import.meta.url), "utf8"),
-  readFile(new URL("../src/local/agent/restricted-app-inference.ts", import.meta.url), "utf8"),
+  readFile(new URL("../src/local/agent/extension-ui.ts", import.meta.url), "utf8"),
 ]);
 
 /** The pane's own rendering: KB below one MB, MB from there. */
@@ -44,13 +40,8 @@ function sizeText(bytes: number): string {
 
 test("the surface every limit message names is a real fold Settings section", () => {
   // The phrase the refusals interpolate.
-  for (const [label, source] of [["tasks", tasksSource], ["inference", inferenceSource]] as const) {
-    assert.match(
-      source,
-      /const limitsSection = "Settings → Automations → Limits";/,
-      `${label} refusals still name the Limits section`,
-    );
-  }
+  assert.match(extensionUiSource, /Settings → Automations → Limits/, "Extension question refusals name the Limits section");
+  assert.match(ampleFileRequestLimitMessage("resultSummary", 1), /Settings → Automations → Limits/, "request refusals name the Limits section");
   assert.match(settingsSource, /type SettingsSection = [^;]*\| "limits";/);
   assert.match(settingsSource, /id: "automations", label: "Automations"/);
   assert.match(settingsSource, /page === "automations" \? \(\s*<div[^>]*>\s*<AutomationsPane fixtureMode=\{fixtureMode\} \/>\s*<AmpleFileLimitsPane onOpenRecentlyDeleted=\{\(\) => setPage\("recently-deleted"\)\} fixtureMode=\{fixtureMode\} \/>/);
@@ -58,12 +49,10 @@ test("the surface every limit message names is a real fold Settings section", ()
 
 test("the Limits pane reads the frozen contracts instead of retyping them", () => {
   for (const contract of [
-    "restrictedAppAssistantLimits",
-    "restrictedAppInferenceLimits",
+    "ampleFileExtensionUiLimits",
     "ampleFileRequestLimits",
     "ampleFileAutomationDeclarationBounds",
     "ampleFileAutomationMaxConcurrentRuns",
-    "ampleFileAppAutomationDefaultConcurrency",
     "ampleFileBackgroundJobLimits",
   ]) {
     assert.ok(paneSource.includes(contract), `the pane sources ${contract}`);
@@ -81,34 +70,17 @@ test("the Limits pane reads the frozen contracts instead of retyping them", () =
   assert.doesNotMatch(paneSource, /staged|approve|policy|Reviewed|Unrestricted|\bcard\b|\bmode\b/i);
 });
 
-test("the Limits pane shows the assistant, automation, and automation numbers a refusal can name", async (t) => {
+test("the Limits pane shows the request, job, Extension, and automation numbers a refusal can name", async (t) => {
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   await dom.render(createElement(AmpleFileLimitsPane));
   const text = dom.container.textContent ?? "";
 
   assert.doesNotMatch(text, /How long one request stays open|Steps in one automation|Follow-up turns after work settles|Worker turns running together/);
-  assert.ok(text.includes(`Worker request input${restrictedAppLimitSize(restrictedAppAssistantLimits.inputBytes)}`), "the Worker request input bound is shown");
-  assert.ok(text.includes(`Worker result returned to the app${restrictedAppLimitSize(restrictedAppAssistantLimits.resultBytes)}`), "the Worker result bound is shown");
-  assert.ok(
-    text.includes(`Worker requests running per app${restrictedAppAssistantLimits.runningPerInstallation}`),
-    "the running-per-app bound is shown",
-  );
-  assert.ok(text.includes(`Short answer instructions${restrictedAppLimitSize(restrictedAppInferenceLimits.instructionsBytes)}`), "the short-answer instruction bound is shown");
-  assert.ok(text.includes(`Short answer input${restrictedAppLimitSize(restrictedAppInferenceLimits.inputBytes)}`), "the short-answer input bound is shown");
-  assert.ok(
-    text.includes(`Short answers running per app${restrictedAppInferenceLimits.runningPerInstallation}, with ${restrictedAppInferenceLimits.waitingPerInstallation} more waiting`),
-    "the per-app inference bound is shown",
-  );
-  assert.ok(
-    text.includes(`Short answers running on this computer${restrictedAppInferenceLimits.runningMachineWide}`),
-    "the machine-wide inference bound is shown",
-  );
+  // Apps and their Worker requests, short answers, and named automations are gone (2026-11-07).
+  assert.doesNotMatch(text, /Worker Requests|Short answer|per app|App Automations|returned to the app/);
   assert.ok(text.includes(`Automation runs at once${ampleFileAutomationMaxConcurrentRuns}`), "the raised run-slot default is shown");
-  assert.ok(
-    text.includes(`Automations running on this computer${ampleFileAppAutomationDefaultConcurrency}`),
-    "the automation concurrency default is shown",
-  );
+  assert.ok(text.includes(`Message a step sends${sizeText(ampleFileAutomationDeclarationBounds.maxChatMessageBytes)}`), "the step message bound is shown");
 
   // The request bounds every collaboration refusal names (docs/collaboration-contract.md).
   assert.ok(text.includes("Model spending for one requestNo limit"), "no spending cap is shipped");

@@ -33,7 +33,6 @@ import {
   type AmpleFileAutomationReceiptV1,
   type AmpleFileAutomationRecord,
 } from "../src/local/automations/automation-store.js";
-import { AmpleFileSettleSignal, type AmpleFileAppAutomationRunSettleRecord } from "../src/local/automations/settle-signal.js";
 
 const startTime = Date.parse("2026-07-14T12:00:00.000Z");
 const minute = 60_000;
@@ -46,7 +45,6 @@ interface RecordedPortCall {
   hopId: string;
   runId: string;
   automationId: string;
-  lineage: AmpleFileAutomationHopContext["lineage"];
   source?: AmpleFileAutomationResolvedFilesSource;
   /** The message the executor actually sent, with every placeholder filled in. */
   message?: string;
@@ -122,7 +120,7 @@ class FakePorts implements AmpleFileAutomationHopPorts {
     message: string,
     context: AmpleFileAutomationHopContext,
   ): Promise<AmpleFileAutomationChatHopResult> {
-    this.calls.push({ kind: "chat", hopId: context.hopId, runId: context.runId, automationId: context.automationId, lineage: context.lineage, message });
+    this.calls.push({ kind: "chat", hopId: context.hopId, runId: context.runId, automationId: context.automationId, message });
     return this.chatImpl(step, context);
   }
 
@@ -131,7 +129,7 @@ class FakePorts implements AmpleFileAutomationHopPorts {
     message: string,
     context: AmpleFileAutomationHopContext,
   ): Promise<AmpleFileAutomationAgentHopResult> {
-    this.calls.push({ kind: "agent", hopId: context.hopId, runId: context.runId, automationId: context.automationId, lineage: context.lineage, message });
+    this.calls.push({ kind: "agent", hopId: context.hopId, runId: context.runId, automationId: context.automationId, message });
     return this.ampleFileAgentImpl(step, context);
   }
 
@@ -140,7 +138,7 @@ class FakePorts implements AmpleFileAutomationHopPorts {
     source: AmpleFileAutomationResolvedFilesSource,
     context: AmpleFileAutomationHopContext,
   ): Promise<AmpleFileAutomationFilesHopResult> {
-    this.calls.push({ kind: "files", hopId: context.hopId, runId: context.runId, automationId: context.automationId, lineage: context.lineage, source });
+    this.calls.push({ kind: "files", hopId: context.hopId, runId: context.runId, automationId: context.automationId, source });
     return this.filesImpl(step, source, context);
   }
 
@@ -192,7 +190,6 @@ interface Harness {
   sandbox: string;
   clock: FakeClock;
   ports: FakePorts;
-  signal: AmpleFileSettleSignal;
   store: AmpleFileAutomationStore;
   service: AmpleFileAutomationService;
   journalPath: string;
@@ -212,13 +209,11 @@ async function createHarness(t: TestContext, options: { maxConcurrency?: number;
     now,
   });
   const store = await AmpleFileAutomationStore.create({ path: join(sandbox, "automations", "automations.json"), receipts, now });
-  const signal = new AmpleFileSettleSignal({ now });
   const ports = new FakePorts();
   let nextRunId = 0;
   const service = await AmpleFileAutomationService.create({
     store,
     ports,
-    settleSignal: signal,
     ...(options.observeFiles ? { observeFiles: options.observeFiles, filePollIntervalMs: 0 } : {}),
     clock,
     createRunId: () => `run-${++nextRunId}`,
@@ -250,7 +245,6 @@ async function createHarness(t: TestContext, options: { maxConcurrency?: number;
     sandbox,
     clock,
     ports,
-    signal,
     store,
     service,
     journalPath,
@@ -288,23 +282,6 @@ const pipelineSteps = [
   { id: "handoff", kind: "files", fromConnectedFolder: connectedFolderA, from: { kind: "paths", paths: ["reports/weekly.md"] }, toConnectedFolder: connectedFolderB, to: "Incoming" },
   { id: "verify", kind: "chat", connectedFolder: connectedFolderB, message: "Confirm the handoff reads cleanly." },
 ];
-
-const appSettle: AmpleFileAppAutomationRunSettleRecord = {
-  kind: "app-automation-run",
-  connectedFolderId: connectedFolderA,
-  appId: "collector",
-  appAutomationId: "collect",
-  runId: "settled-app-run-1",
-  outcome: "success",
-  reason: "scheduled",
-  scheduledAt: "2026-07-14T11:59:00.000Z",
-  startedAt: "2026-07-14T11:59:00.000Z",
-  finishedAt: "2026-07-14T11:59:30.000Z",
-};
-
-function appSettledTrigger(connectedFolder: string): Record<string, unknown> {
-  return { kind: "on-settled", source: { kind: "app-automation-run", connectedFolder, appId: "collector", appAutomationId: "collect", outcomes: ["success"] } };
-}
 
 async function waitForCondition(predicate: () => Promise<boolean> | boolean, label: string): Promise<void> {
   for (let attempt = 0; attempt < 400; attempt += 1) {
@@ -372,9 +349,9 @@ test("a scheduled run executes hops strictly in order with journal-first receipt
   assert.deepEqual(harness.ports.calls.map((call) => call.kind), ["chat", "files", "chat"]);
   const runId = accepted?.runId ?? "";
   assert.deepEqual(
-    harness.ports.calls[2]?.lineage,
-    { kind: "automation-hop", automationId: "automation-weekly-handoff", automationRunId: runId, hopId: "verify" },
-    "every hop-caused domain run carries automation lineage",
+    harness.ports.calls.map(({ automationId, runId: callRunId, hopId }) => ({ automationId, runId: callRunId, hopId })),
+    ["review", "handoff", "verify"].map((hopId) => ({ automationId: "automation-weekly-handoff", runId, hopId })),
+    "every hop the executor dispatches names its automation, run, and step",
   );
 
   await waitForCondition(
@@ -859,47 +836,6 @@ test("restart catch-up runs or skips a missed one-time occurrence exactly as dec
   assert.ok(skipped.every((line) => line.outcome !== "lapsed"), "missed skip uses the canonical skipped + completed receipt pair");
 });
 
-test("an on-settled trigger admits matching settles only, and automation-caused settles never fire triggers", async (t) => {
-  const harness = await createHarness(t);
-  await harness.enable(declarationInput("automation-on-settle", {
-    trigger: appSettledTrigger(connectedFolderA),
-    steps: [{ id: "verify", kind: "chat", connectedFolder: connectedFolderB, message: "Read the collected mail." }],
-  }));
-
-  harness.signal.publish(appSettle);
-  await waitForCondition(
-    async () => (await harness.journal()).some((line) => line.scope === "run" && line.outcome === "succeeded"),
-    "the settle-admitted run to settle",
-  );
-  const accepted = (await harness.journal()).find((line) => line.scope === "run" && line.outcome === "accepted");
-  assert.deepEqual(accepted?.cause, {
-    kind: "on-settled",
-    source: {
-      kind: "app-automation-run",
-      connectedFolderId: connectedFolderA,
-      appId: "collector",
-      appAutomationId: "collect",
-      runId: "settled-app-run-1",
-      outcome: "success",
-    },
-  }, "the run receipt names the settled source exactly");
-  assert.equal(harness.ports.calls[0]?.lineage.automationId, "automation-on-settle");
-
-  harness.signal.publish({ ...appSettle, runId: "settled-app-run-2", outcome: "failure" });
-  harness.signal.publish({ ...appSettle, runId: "settled-app-run-3", connectedFolderId: connectedFolderB });
-  harness.signal.publish({ ...appSettle, runId: "settled-app-run-5", appAutomationId: "other" });
-  harness.signal.publish({
-    ...appSettle,
-    runId: "settled-app-run-4",
-    lineage: { kind: "automation-hop", automationId: "automation-on-settle", automationRunId: "some-run", hopId: "verify" },
-  });
-  await new Promise<void>((resolve) => setTimeout(resolve, 50));
-  const acceptedCount = (await harness.journal())
-    .filter((line) => line.scope === "run" && line.outcome === "accepted")
-    .length;
-  assert.equal(acceptedCount, 1, "unmatched outcomes, other Connected Folders, and lineage-stamped settles admit nothing — chains are structurally impossible");
-});
-
 test("per-automation non-overlap settles the second admission skipped, receipted with its own cause", async (t) => {
   const harness = await createHarness(t);
   await harness.enable(declarationInput("automation-manual-only"));
@@ -1115,7 +1051,7 @@ test("suspension interrupts the active run honestly and skips admissions while s
   assert.match(
     (await harness.journal()).find((line) => line.scope === "run" && line.outcome === "skipped")?.detail ?? "",
     /suspended/,
-    "settles during suspension are not queued; the admission is receipted as skipped",
+    "admissions during suspension are not queued; the admission is receipted as skipped",
   );
 
   harness.service.resume();
@@ -1254,7 +1190,6 @@ test("Connected Folder removal stops the active run, suspends durably, disarms e
     trigger: { kind: "interval", intervalMinutes: 60 },
   }), "decision-alpha");
   await harness.enable(declarationInput("automation-beta-standby", {
-    trigger: appSettledTrigger(connectedFolderC),
     steps: [{ id: "tidy", kind: "chat", connectedFolder: connectedFolderC, message: "Tidy the inbox." }],
   }), "decision-beta");
   harness.ports.chatImpl = (step, context) => step.connectedFolder === connectedFolderA
@@ -1283,7 +1218,7 @@ test("Connected Folder removal stops the active run, suspends durably, disarms e
   await new Promise<void>((resolve) => setTimeout(resolve, 50));
   assert.equal(await acceptedForAlpha(), alphaRunsAfterSuspension, "a suspended automation never fires on its schedule");
 
-  harness.signal.publish({ ...appSettle, connectedFolderId: connectedFolderC, runId: "settled-app-run-beta" });
+  assert.equal((await harness.service.runNow("automation-beta-standby", { requestId: "request-beta" })).outcome, "success");
   await waitForCondition(
     async () => (await harness.journal()).some((line) => line.scope === "run" && line.outcome === "succeeded" && line.automationId === "automation-beta-standby"),
     "automation-beta-standby to keep working",

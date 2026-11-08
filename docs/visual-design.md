@@ -22,7 +22,7 @@ AmpleFile uses a quiet desktop-tool aesthetic. The interface should feel native,
 - Use Fluent System Icons for shell navigation, commands, status, and empty states.
 - Use regular icons at rest and the matching filled icon for a selected navigation item.
 - Use 16px icons for inline actions, 20px for section markers, and no more than 24px for empty states.
-- Material file-type icons retain their familiar type colors. Settings → Apps uses **Layout Panel Left** at 20px (2026-10-08). These requested icons use a 1.5px stroke to match the neighboring Fluent outlines and inherit the same control colors; other shell controls retain Fluent icons.
+- Material file-type icons retain their familiar type colors; other shell controls retain Fluent icons.
 - Keep icon-library exceptions limited to those named controls. The Connected Folder glyph may repeat only where it communicates inherited root context: the sidebar, cards, and Chat groups. The Card banner is name-first; the Compact, Band, and Cover layouts lead with the Connected Folder icon (2026-11-04).
 - Connected Folder color may appear as a small avatar accent or active indicator, never as a frame around the application.
 
@@ -72,10 +72,6 @@ Motion confirms what happened and where things went; it never decorates. Entranc
 - When Mica is active, keep the titlebar overlay transparent and make only the root window chrome and pane gutters transparent. Content surfaces remain opaque so hierarchy and contrast do not depend on the wallpaper.
 - The preload reports `window.material` and `main.tsx` applies `data-window-material="mica"` synchronously before React's first paint. Do not move this to a passive effect that produces a solid-background flash.
 - Older Windows builds and reduced-transparency sessions use a theme-matched solid background. Light, dark, and system theme changes must update native chrome and the renderer together.
-
-## Restricted Connected Folder apps
-
-- Installed apps have no view in the window since the classic layout was removed (2026-11-07). Their grants, connections, automations, data, and updates stay in Settings → Apps, never inside app-controlled pixels.
 
 ## macOS chrome
 

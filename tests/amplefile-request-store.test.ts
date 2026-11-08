@@ -543,15 +543,6 @@ test("the result envelope keeps its shape, its sizes, and its Connected Folderâ€
     );
   }
 
-  // A declared schema validates the details; an undeclared property is refused.
-  await assert.rejects(store.recordResult({
-    requestId: request.requestId,
-    taskId: "task-1",
-    receiptId: "receipt-4",
-    envelope: { summary: "ok", data: { rows: "twelve" }, outcome: "succeeded" },
-    schema: { type: "object", properties: { rows: { type: "integer" } }, required: ["rows"], additionalProperties: false },
-  }));
-
   // A task from another request cannot report into this one.
   await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "renderer", taskId: "task-elsewhere" });
   await assert.rejects(
@@ -696,7 +687,7 @@ test("a damaged journal line degrades the view instead of keeping the app from s
   await reopened.flush();
 });
 
-test("a record written while page sharing and publishing existed still loads, without those retired actions", async (t) => {
+test("a record written while page sharing, publishing, and Connected Folder apps existed still loads, without those retired actions", async (t) => {
   const root = await temporaryRoot(t);
   const clock = clockFrom("2026-09-11T09:00:00.000Z");
   const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
@@ -705,8 +696,9 @@ test("a record written while page sharing and publishing existed still loads, wi
   await store.flush();
 
   // Older builds recorded `pages share`, `pages share-app`, `pages publish`,
-  // and `pages unpublish` in the same action trail; those verbs no longer
-  // exist (pages were removed on 2026-11-07).
+  // `pages unpublish`, and the `apps` verbs (with their `apps` references) in
+  // the same action trail; those verbs no longer exist (pages and Connected
+  // Folder apps were removed on 2026-11-07).
   const journalPath = join(root, "requests.jsonl");
   const lines = (await readFile(journalPath, "utf8")).trim().split("\n").map((line) => {
     const record = JSON.parse(line) as { actions: Array<Record<string, unknown>> };
@@ -715,6 +707,13 @@ test("a record written while page sharing and publishing existed still loads, wi
       { command: "pages.share-app", at: "2026-09-11T09:02:00.000Z", connectedFolderId: "connected-folder-audits" },
       { command: "pages.publish", at: "2026-09-11T09:03:00.000Z", connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" },
       { command: "pages.unpublish", at: "2026-09-11T09:04:00.000Z", connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" },
+      { command: "apps.revoke", at: "2026-09-11T09:05:00.000Z", connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits" },
+      {
+        command: "apps.install-preview",
+        at: "2026-09-11T09:06:00.000Z",
+        connectedFolderId: "connected-folder-audits",
+        apps: [{ connectedFolderId: "connected-folder-audits", appId: "quote-board", featureInstallationId: "installation-1", digest: "a".repeat(64), title: "Quote board", version: "1.0.0" }],
+      },
     );
     return JSON.stringify(record);
   });

@@ -102,25 +102,6 @@ interface AmpleFileDesktopFileMenuRequest {
   point: { x: number; y: number };
 }
 
-interface AmpleFileRestrictedAppViewRequest {
-  connectedFolderId: string;
-  appId: string;
-  featureInstallationId: string;
-  digest: string;
-  mountId: string;
-  placement: "navigator" | "tab";
-  appTabId?: string;
-  route: string;
-  state?: unknown;
-  sequence: number;
-  bounds: { x: number; y: number; width: number; height: number };
-  active: boolean;
-  occluded: boolean;
-  theme: "light" | "dark";
-  appearance?: Record<string, string>;
-  openedFrom?: { kind: "notification"; permissionId: string };
-}
-
 interface AmpleFileBrowserHistoryEntry {
   url: string;
   title: string;
@@ -133,42 +114,6 @@ type AmpleFileBrowserCommand =
   | { type: "mute"; muted: boolean }
   | { type: "find"; text: string; forward: boolean; newSearch: boolean }
   | { type: "forget-permission" | "open-privacy-settings"; kind: import("../../src/shared/browser").BrowserSitePermission };
-
-interface AmpleFileRestrictedAppAttention {
-  connectedFolderId: string;
-  appId: string;
-  featureInstallationId: string;
-  count: number;
-}
-
-interface AmpleFileRestrictedAppTabCommand {
-  type: "open" | "update" | "close";
-  connectedFolderId: string;
-  appId: string;
-  featureInstallationId: string;
-  digest: string;
-  sourceMountId: string;
-  sourcePlacement: "navigator" | "tab";
-  sourceAppTabId?: string;
-  tab?: { appTabId: string; title: string; route: string; state?: unknown };
-}
-
-interface AmpleFileRestrictedAppViewState {
-  mountId: string;
-  state: "loading" | "ready" | "crashed" | "stopped";
-  message?: string;
-}
-
-interface AmpleFileRestrictedAppOwner {
-  connectedFolderId: string;
-  appId: string;
-  featureInstallationId: string;
-  digest: string;
-  permissionId: string;
-  /** Where the clicked notification opens the app's left-pane view; "/" when the app named none. */
-  route?: string;
-  state?: unknown;
-}
 
 declare global {
   interface Window {
@@ -261,16 +206,6 @@ declare global {
         openMainWindow: () => Promise<boolean>;
         openAiModelsSettings: () => Promise<boolean>;
         onStaged: (listener: (items: Array<{ kind: "path" | "text"; value: string }>) => void) => () => void;
-      };
-      restrictedApps: {
-        mountView: (request: AmpleFileRestrictedAppViewRequest) => Promise<{ mounted: true; digest: string }>;
-        layoutView: (request: AmpleFileRestrictedAppViewRequest) => void;
-        unmountView: (mountId: string) => Promise<void>;
-        onTabCommand: (listener: (command: AmpleFileRestrictedAppTabCommand) => void) => () => void;
-        onViewState: (listener: (state: AmpleFileRestrictedAppViewState) => void) => () => void;
-        onOpenRequest: (listener: (owner: AmpleFileRestrictedAppOwner) => void) => () => void;
-        attentionStates?: () => Promise<AmpleFileRestrictedAppAttention[]>;
-        onAttention?: (listener: (state: AmpleFileRestrictedAppAttention) => void) => () => void;
       };
       /** The built-in browser's tabs; main-window only (docs/built-in-browser.md). */
       browser?: {

@@ -25,9 +25,7 @@ configuration, diagnostics, update, enable/disable and removal. Since
 2026-09-25 it is a popup dialog opened by the rail's Add button and pinned to
 the Connected Folder it was opened from. Its Installed view starts with an **Included
 with AmpleFile** strip holding the five included tools; **Everywhere** and
-**This folder only** remain the scope groups below it, side by side. Account and OS setup stays on a trusted local surface. Generated
-Connected Folder apps remain separate: they may request agent work through
-`assistant.request`, but receive no native desktop-control bridge.
+**This folder only** remain the scope groups below it, side by side. Account and OS setup stays on a trusted local surface.
 
 ## Responsibilities
 
@@ -43,7 +41,7 @@ Extensions and a standard document-work `SKILL.md`. Pi evaluates the same
 resource filters used for user-added files. An optional versioned native event
 bus query, `amplefile:extension-host:v1`, provides explicit runtime paths,
 catalog/session mode and on-demand configuration callbacks. This context stays
-inside the full-trust native runtime; it is not a renderer or restricted-app
+inside the full-trust native runtime; it is not a renderer
 API, and other native Extensions can use the same supported event bus.
 
 Chrome production distribution, native bootstrap ownership and independent update

@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { restrictedAppInferenceLimits } from "../../../../src/shared/restricted-app-inference";
-import { restrictedAppAssistantLimits } from "../../../../src/shared/restricted-app-tasks";
 import {
-  ampleFileAppAutomationDefaultConcurrency,
   ampleFileBackgroundJobLimits,
   ampleFileExtensionUiLimits,
   ampleFileRequestContinuationsDefaultEnabled,
@@ -18,17 +15,16 @@ import { ampleFileLimitsSettings } from "../../ui-contract";
 
 /**
  * Settings → Automations → Limits (docs/receipts-not-gates.md, F19 principle 6:
- * bounds are visible and named). Every app and automation refusal names this
- * section, so this pane is where those phrases resolve.
+ * bounds are visible and named). Every request, job, and automation refusal
+ * names this section, so this pane is where those phrases resolve.
  *
  * The bounds are frozen constants. The one adjustable number — how long
  * Recently Deleted keeps an item — is set in its own pane, which this one
  * links to, and the one switch — whether finished handed-out work is brought
  * back to its owner as a turn (docs/collaboration-contract.md, F28) — lives
  * here. Every shown value is read from the frozen contract the host enforces
- * (`restrictedAppAssistantLimits`, `restrictedAppInferenceLimits`,
- * `ampleFileRequestLimits`, `ampleFileAutomationDeclarationBounds`,
- * `ampleFileAutomationMaxConcurrentRuns`, `ampleFileAppAutomationDefaultConcurrency`,
+ * (`ampleFileExtensionUiLimits`, `ampleFileRequestLimits`,
+ * `ampleFileAutomationDeclarationBounds`, `ampleFileAutomationMaxConcurrentRuns`,
  * `ampleFileBackgroundJobLimits`),
  * so the shown number cannot drift from the enforced one.
  */
@@ -127,8 +123,6 @@ function LimitRows({ rows }: { rows: Array<[string, string]> }) {
 }
 
 export function AmpleFileLimitsPane({ onOpenRecentlyDeleted, fixtureMode = false }: { onOpenRecentlyDeleted?: () => void; fixtureMode?: boolean }) {
-  const assistant = restrictedAppAssistantLimits;
-  const inference = restrictedAppInferenceLimits;
   const automation = ampleFileAutomationDeclarationBounds;
   const requests = ampleFileRequestLimits;
   const jobs = ampleFileBackgroundJobLimits;
@@ -137,23 +131,6 @@ export function AmpleFileLimitsPane({ onOpenRecentlyDeleted, fixtureMode = false
     <details className="settings-section settings-limits">
       <summary className="settings-section-heading settings-limits-summary"><h3 id="amplefile-limits-title">{ampleFileLimitsSettings.heading}</h3></summary>
       {ampleFileLimitsSettings.frozenNote ? <span className="settings-section-note">{ampleFileLimitsSettings.frozenNote}</span> : null}
-
-      <h4 id="amplefile-limits-app-requests-title">{ampleFileLimitsSettings.appRequestsHeading}</h4>
-      <LimitRows
-        rows={[
-          ["Worker request input", kib(assistant.inputBytes)],
-          ["Worker result returned to the app", kib(assistant.resultBytes)],
-          ["Worker requests running per app", String(assistant.runningPerInstallation)],
-          ["Short answer instructions", kib(inference.instructionsBytes)],
-          ["Short answer input", kib(inference.inputBytes)],
-          ["Short answer result shape", kib(inference.schemaBytes)],
-          ["Short answer result", inference.defaultOutputBytes === inference.maxOutputBytes
-            ? kib(inference.maxOutputBytes)
-            : `${kib(inference.defaultOutputBytes)} by default, up to ${kib(inference.maxOutputBytes)}`],
-          ["Short answers running per app", `${inference.runningPerInstallation}, with ${inference.waitingPerInstallation} more waiting`],
-          ["Short answers running on this computer", String(inference.runningMachineWide)],
-        ]}
-      />
 
       <h4>Live Extension Questions</h4>
       <LimitRows rows={[
@@ -198,9 +175,6 @@ export function AmpleFileLimitsPane({ onOpenRecentlyDeleted, fixtureMode = false
           ["One filled-in detail", `${kib(automation.maxPlaceholderTextBytes)}, up to ${automation.maxPlaceholderListItems} items`],
         ]}
       />
-
-      <h4 id="amplefile-limits-app-automations-title">{ampleFileLimitsSettings.appAutomationsHeading}</h4>
-      <LimitRows rows={[["Automations running on this computer", String(ampleFileAppAutomationDefaultConcurrency)]]} />
 
       <h4 id="amplefile-limits-deleted-title">{ampleFileLimitsSettings.deletedHeading}</h4>
       <LimitRows rows={[["Kept for", `${ampleFileRecentlyDeletedDefaultRetentionDays} days unless you change it`]]} />

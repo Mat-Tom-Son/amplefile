@@ -149,32 +149,6 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     disable: (automationId: string) => ipcRenderer.invoke("amplefile:automations:disable", automationId),
     delete: (automationId: string) => ipcRenderer.invoke("amplefile:automations:delete", automationId),
   },
-  restrictedApps: {
-    mountView: (request: unknown) => ipcRenderer.invoke("amplefile:restricted-app-view:mount", request),
-    layoutView: (request: unknown) => ipcRenderer.send("amplefile:restricted-app-view:layout", request),
-    unmountView: (mountId: string) => ipcRenderer.invoke("amplefile:restricted-app-view:unmount", mountId),
-    onTabCommand: (callback: (command: unknown) => void) => {
-      const listener = (_event: unknown, command: unknown) => callback(command);
-      ipcRenderer.on("amplefile:restricted-app-view:tab-command", listener);
-      return () => ipcRenderer.removeListener("amplefile:restricted-app-view:tab-command", listener);
-    },
-    onViewState: (callback: (state: unknown) => void) => {
-      const listener = (_event: unknown, state: unknown) => callback(state);
-      ipcRenderer.on("amplefile:restricted-app-view:state", listener);
-      return () => ipcRenderer.removeListener("amplefile:restricted-app-view:state", listener);
-    },
-    attentionStates: () => ipcRenderer.invoke("amplefile:restricted-app-view:attention-states"),
-    onAttention: (callback: (state: unknown) => void) => {
-      const listener = (_event: unknown, state: unknown) => callback(state);
-      ipcRenderer.on("amplefile:restricted-app-view:attention", listener);
-      return () => ipcRenderer.removeListener("amplefile:restricted-app-view:attention", listener);
-    },
-    onOpenRequest: (callback: (owner: unknown) => void) => {
-      const listener = (_event: unknown, owner: unknown) => callback(owner);
-      ipcRenderer.on("amplefile:restricted-app-view:open-request", listener);
-      return () => ipcRenderer.removeListener("amplefile:restricted-app-view:open-request", listener);
-    },
-  },
   // The built-in browser's tabs (docs/built-in-browser.md). Pages run in the
   // main process; this renderer only places them and shows their state.
   browser: {

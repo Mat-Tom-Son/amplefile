@@ -185,7 +185,7 @@ test("activity, outline, addressed Workers, and nested-Folder file guards over t
   assert.equal(unknownDropped.status, 404, "validation passes and the missing Chat is what refuses");
 
   // Even an idle nested Connected Folder prevents managed parent deletion before any
-  // removal intent or App Project cleanup is accepted.
+  // removal intent is accepted.
   const managedResponse = await call("/api/connected-folders", { method: "POST", body: { name: "Managed nested parent" } });
   assert.equal(managedResponse.status, 201);
   const managed = managedResponse.body!.connectedFolder;
@@ -195,18 +195,12 @@ test("activity, outline, addressed Workers, and nested-Folder file guards over t
   const managedChildResponse = await call(`/api/connected-folders/${managed.id}/nested-folders`, { method: "POST", body: { path: "Child" } });
   assert.equal(managedChildResponse.status, 201);
   const managedChild = managedChildResponse.body!.connectedFolder;
-  assert.equal((await call(`/api/connected-folders/${managed.id}/app-studio`, { method: "PUT", body: { title: "Parent retained App", description: null, icon: null } })).status, 200);
-  assert.equal((await call(`/api/connected-folders/${managedChild.id}/app-studio`, { method: "PUT", body: { title: "Child retained App", description: null, icon: null } })).status, 200);
-  const parentStudioBefore = (await call(`/api/connected-folders/${managed.id}/app-studio`)).body;
-  const childStudioBefore = (await call(`/api/connected-folders/${managedChild.id}/app-studio`)).body;
   const intentsBefore = await listPendingConnectedFolderRemovals();
   assert.deepEqual((await call("/api/connected-folders/activity")).body, { running: [] });
   const refusedDelete = await call(`/api/connected-folders/${managed.id}`, { method: "DELETE" });
   assert.equal(refusedDelete.status, 409, JSON.stringify(refusedDelete.body));
   assert.match(refusedDelete.body!.error, /nested Connected Folder/);
   assert.deepEqual(await listPendingConnectedFolderRemovals(), intentsBefore);
-  assert.deepEqual((await call(`/api/connected-folders/${managed.id}/app-studio`)).body, parentStudioBefore);
-  assert.deepEqual((await call(`/api/connected-folders/${managedChild.id}/app-studio`)).body, childStudioBefore);
   assert.equal(await readFile(join(managedChildRoot, "keep.txt"), "utf8"), "nested retained content");
   const finalConnectedFolders = (await call("/api/bootstrap")).body!.connectedFolders as Array<{ id: string }>;
   assert.equal(finalConnectedFolders.some((item) => item.id === managed.id), true);

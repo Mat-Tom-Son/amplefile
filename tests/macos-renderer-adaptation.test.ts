@@ -9,7 +9,7 @@ import { desktopShortcutKeyLabel, desktopShortcutKeySpokenName, desktopShortcutM
 import { typographyFontForPlatform, connectedFolderEntryNativePath } from "../web-local/src/lib/platform.js";
 
 const root = process.cwd();
-const [app, fileManager, fileManagerCss, rendererMain, styles, customization, settings, restrictedApps] = await Promise.all([
+const [app, fileManager, fileManagerCss, rendererMain, styles, customization, settings] = await Promise.all([
   read("web-local/src/App.tsx"),
   read("web-local/src/components/file-manager/FileManagerView.tsx"),
   read("web-local/src/components/file-manager/file-manager.css"),
@@ -17,7 +17,6 @@ const [app, fileManager, fileManagerCss, rendererMain, styles, customization, se
   read("web-local/src/styles.css"),
   read("web-local/src/styles.css"),
   read("web-local/src/components/modals/AppearanceSettingsPane.tsx"),
-  read("web-local/src/components/panes/RestrictedAppsSection.tsx"),
 ]);
 
 test("typography ships the brand font everywhere and omits the Windows-only Segoe choice on macOS", () => {
@@ -107,12 +106,6 @@ test("Darwin file context menus use native command IDs while Windows keeps the R
   for (const request of nativeRequests) {
     assert.doesNotMatch(request, /(?:label|callback|onSelect):/, "native popup requests must contain data and capabilities only");
   }
-});
-
-test("restricted-app notification copy is platform-neutral", () => {
-  assert.match(restrictedApps, /<h3 id="restricted-app-notifications-title">Notifications<\/h3>/);
-  assert.match(restrictedApps, /Allow Notifications/);
-  assert.doesNotMatch(restrictedApps, /Windows notifications|Windows notification settings/);
 });
 
 async function read(relativePath: string): Promise<string> {

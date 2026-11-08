@@ -125,13 +125,6 @@ test("CLI help covers every landed act family and is honest about what it runs",
       "worker show", "worker model", "worker instructions",
     ],
     tools: ["import-skill", "install", "update", "remove"],
-    apps: [
-      "list", "invoke", "proposals list", "proposals dismiss", "install-proposal", "install-preview", "remove",
-      "grant", "revoke", "connect", "disconnect", "automation enable", "automation disable",
-      "automation run", "storage clear", "retained purge", "project declare", "release prepare",
-      "release publish", "release delete", "install prepare", "update prepare",
-      "operation activate", "operation cancel", "uninstall",
-    ],
     automations: ["enable", "list", "show", "run", "stop", "disable", "delete", "receipts"],
     "recently-deleted": ["list", "restore"],
     requests: ["list", "show"],
@@ -161,17 +154,21 @@ test("CLI help covers every landed act family and is honest about what it runs",
   assert.doesNotMatch(overview, /pages validate/);
   assert.equal(ampleFileCliHelp("AmpleFile", "pages"), overview);
   assert.match(ampleFileCliHelp("AmpleFile", "tools"), /immediately with a receipt/);
-  assert.match(ampleFileCliHelp("AmpleFile", "apps"), /--purge-data/);
-  // A single-file permission is granted by naming its file; a folder
-  // permission covers the whole Connected Folder (docs/receipts-not-gates.md, F21).
-  assert.match(ampleFileCliHelp("AmpleFile", "apps"), /--kind <network\|files\|notifications> --declaration <id> \[--path <connected-folder-path>\]/);
-  assert.match(ampleFileCliHelp("AmpleFile", "apps"), /names a single file needs\n?.*--path <connected-folder-path>/);
+  // Connected Folder apps and App Studio were removed on 2026-11-07: no
+  // family, no topic, and no mention in the overview or the collaborate topic.
+  assert.doesNotMatch(overview, /\bapps\b|App Studio|[Rr]estricted app/);
+  assert.equal(ampleFileCliHelp("AmpleFile", "apps"), overview);
+  assert.doesNotMatch(ampleFileCliHelp("AmpleFile", "collaborate"), /\ban app\b/);
+  // Automations have no on-settled trigger any more.
+  assert.doesNotMatch(ampleFileCliHelp("AmpleFile", "automations"), /on-settled/);
   // Recently deleted is where a delete History could not fully cover goes
   // (docs/receipts-not-gates.md, F20), and nothing empties it early.
   const recentlyDeletedTopic = ampleFileCliHelp("AmpleFile", "recently-deleted");
   assert.match(recentlyDeletedTopic, /Recently deleted holds what a delete could not leave to History/);
   assert.match(recentlyDeletedTopic, /30 days by default/);
   assert.match(recentlyDeletedTopic, /Nothing empties Recently deleted early/);
+  // Saving a copy with --to served only app data, which no longer exists.
+  assert.doesNotMatch(recentlyDeletedTopic, /--to\b|app data/);
   assert.match(overview, /recently-deleted list\|restore\s+Bring back what was deleted/);
   assert.match(ampleFileCliHelp("AmpleFile", "files"), /moves to Recently deleted instead/);
   assert.match(ampleFileCliHelp("AmpleFile", "connected-folders"), /moves\na managed Connected Folder to Recently deleted/);

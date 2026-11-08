@@ -21,9 +21,8 @@ import type {
 /**
  * Prepared-act fields are closed, flat, and typed — exact ids, paths,
  * digests, scopes, and host-composed one-line summaries. No free-form
- * payloads, no nesting, no secrets: `app.connection.save` names only the
- * connection's shape, and the field vocabulary has nowhere to put a
- * credential.
+ * payloads, no nesting, no secrets: the field vocabulary has nowhere to put
+ * a credential.
  */
 export type PreparedActFieldValue = string | number | boolean | readonly string[];
 
@@ -61,10 +60,6 @@ const KIND_DESCRIPTORS = {
   "capability.resource.enabled": {
     parameters: { path: req("string"), kind: req("string", ["extensions", "skills", "prompts", "themes"]), enabled: req("boolean"), scope: req("string", CAPABILITY_SCOPES), connectedFolderId: opt("string") },
     pins: { path: req("string"), digest: req("string"), scope: req("string", CAPABILITY_SCOPES) },
-  },
-  "app.review.install": {
-    parameters: { connectedFolderId: req("string"), proposalId: req("string") },
-    pins: { proposalId: req("string"), reviewDigest: req("string") },
   },
   "capability.package.install": {
     parameters: {
@@ -108,36 +103,6 @@ const KIND_DESCRIPTORS = {
       skillNames: req("string-list"),
     },
   },
-  "app.grant.network": {
-    parameters: { connectedFolderId: req("string"), appInstanceId: req("string"), declarationId: req("string") },
-    pins: { appInstanceId: req("string"), declarationId: req("string"), releaseDigest: req("string") },
-  },
-  "app.grant.files": {
-    parameters: { connectedFolderId: req("string"), appInstanceId: req("string"), declarationId: req("string") },
-    pins: { appInstanceId: req("string"), declarationId: req("string"), releaseDigest: req("string") },
-  },
-  "app.grant.notifications": {
-    parameters: { connectedFolderId: req("string"), appInstanceId: req("string"), declarationId: req("string") },
-    pins: { appInstanceId: req("string"), declarationId: req("string"), releaseDigest: req("string") },
-  },
-  "app.connection.save": {
-    parameters: { connectedFolderId: req("string"), appInstanceId: req("string"), destinationId: req("string") },
-    pins: {
-      appInstanceId: req("string"),
-      declarationId: req("string"),
-      target: req("string"),
-      adapterKind: req("string"),
-    },
-  },
-  "app.automation.enable": {
-    parameters: { connectedFolderId: req("string"), appInstanceId: req("string"), appAutomationId: req("string") },
-    pins: {
-      appInstanceId: req("string"),
-      appAutomationId: req("string"),
-      reviewedDigest: req("string"),
-      scheduleSummary: req("string"),
-    },
-  },
   "automation.enable": {
     parameters: { automationId: req("string") },
     pins: { automationId: req("string"), declarationDigest: req("string") },
@@ -145,28 +110,6 @@ const KIND_DESCRIPTORS = {
   "connected-folder.delete-folder": {
     parameters: { connectedFolderId: req("string") },
     pins: { connectedFolderId: req("string"), connectedFolderRoot: req("string") },
-  },
-  "app.data.purge": {
-    parameters: {
-      connectedFolderId: req("string"),
-      appInstanceId: req("string"),
-      purgeTarget: opt("string", ["retained", "runtime-instance"]),
-    },
-    pins: {
-      appInstanceId: req("string"),
-      dataNamespaceIds: req("string-list"),
-      retainedDataId: opt("string"),
-      runtimeInstanceId: opt("string"),
-      sourceConnectedFolderId: opt("string"),
-    },
-  },
-  "app.storage.clear": {
-    parameters: { connectedFolderId: req("string"), appInstanceId: req("string") },
-    pins: {
-      appInstanceId: req("string"),
-      dataNamespaceIds: req("string-list"),
-      observedBytes: req("number"),
-    },
   },
 } satisfies Record<string, PreparedActKindDescriptor>;
 
@@ -241,7 +184,7 @@ export type PreparedActFenceScope =
 
 /**
  * Injectable seam over the local API's capability-mutation reservation
- * (`runCapabilityMutation` / `runRestrictedAppMutation` in
+ * (`runCapabilityMutation` / `runConnectedFolderMutation` in
  * src/local/server.ts): reserves the scope for the operation and releases it
  * on every outcome, exactly as the equivalent desktop route would. A busy
  * scope refuses with the routes' own conflict.
@@ -272,8 +215,8 @@ export interface PreparedActEffect {
  * One per-kind execution adapter: the bridge from a prepared act's typed pins
  * to the same domain service the equivalent desktop action uses. `context`
  * carries execution inputs the calling verb already validated that are not
- * flat receipt fields (a normalized automation declaration, a resolved app
- * record); receipts never grow from it.
+ * flat receipt fields (a normalized automation declaration); receipts never
+ * grow from it.
  */
 export interface PreparedActAdapter<Context = unknown> {
   /**

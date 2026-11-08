@@ -11,13 +11,15 @@ import { recentlyDeletedSettings } from "../../ui-contract";
  * Settings → Recently deleted (docs/receipts-not-gates.md, F20).
  * Nothing AmpleFile destroys is gone at the moment it happens: History covers
  * ordinary deletion, and whatever it could not keep a copy of waits here until
- * its time runs out. This pane lists what is waiting, puts an item back, saves
- * app data whose app is gone as a plain file, removes one item early, and sets
- * how long items are kept. Nothing here empties the whole store.
+ * its time runs out. This pane lists what is waiting, puts an item back,
+ * removes one item early, and sets how long items are kept. Nothing here
+ * empties the whole store. Items left from the removed app platform are still
+ * listed and can be deleted early, but cannot be put back.
  * The browser preview (`?fixture=connected-folder`) lists sample items and changes
  * nothing.
  */
 
+/** The `app-*` kinds are older items from the removed app platform: listed, never restorable. */
 export type RecentlyDeletedKind = "file" | "folder" | "connected-folder" | "skill" | "app-storage" | "app-retained" | "app-release" | "app-studio";
 
 export interface RecentlyDeletedEntry {
@@ -29,6 +31,7 @@ export interface RecentlyDeletedEntry {
     | "chats.delete"
     | "connected-folders.delete"
     | "skills.remove"
+    // Older items from the removed app platform.
     | "apps.remove"
     | "apps.connected-folder.removed"
     | "apps.storage.clear"
@@ -48,7 +51,7 @@ export interface RecentlyDeletedEntry {
   receiptId: string | null;
   uncovered?: Array<{ path: string; reason: "too_large" | "unreadable" | "symbolic_link" | "excluded" }>;
   held?: { reason: "legacy-metadata" | "unreadable"; noticedAt: string };
-  restorable: "in-place" | "save-only" | "blocked";
+  restorable: "in-place" | "blocked";
   note?: string;
 }
 
@@ -65,8 +68,8 @@ const kindLabels: Record<RecentlyDeletedKind, string> = {
   skill: "Skill",
   "app-storage": "App Data",
   "app-retained": "App Data",
-  "app-release": "Release",
-  "app-studio": "App Studio",
+  "app-release": "App",
+  "app-studio": "App",
 };
 
 const uncoveredLabels: Record<"too_large" | "unreadable" | "symbolic_link" | "excluded", string> = {
@@ -147,20 +150,6 @@ export function RecentlyDeletedPane({ fixtureMode = false }: { fixtureMode?: boo
       await api(`/api/settings/recently-deleted/${entry.id}/restore`, { method: "POST", body: {} });
       window.dispatchEvent(new CustomEvent("amplefile:recently-deleted-restored", { detail: { entryId: entry.id, kind: entry.kind } }));
       return `${entry.name} is back`;
-    });
-  }
-
-  async function saveCopy(entry: RecentlyDeletedEntry): Promise<void> {
-    await run(`save-${entry.id}`, async () => {
-      const response = await api<{ backup: unknown }>(`/api/settings/recently-deleted/${entry.id}/export`);
-      const blob = new Blob([JSON.stringify(response.backup, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${entry.name.replace(/[^A-Za-z0-9._-]+/g, "-")}-data.json`;
-      link.click();
-      URL.revokeObjectURL(url);
-      return "Copy saved";
     });
   }
 
@@ -246,15 +235,6 @@ export function RecentlyDeletedPane({ fixtureMode = false }: { fixtureMode?: boo
                       onClick={() => { void restore(entry); }}
                     >
                       {recentlyDeletedSettings.restore}
-                    </button>
-                  ) : entry.restorable === "save-only" ? (
-                    <button
-                      className="ui-control"
-                      type="button"
-                      disabled={Boolean(busy)}
-                      onClick={() => { void saveCopy(entry); }}
-                    >
-                      {recentlyDeletedSettings.saveCopy}
                     </button>
                   ) : null}
                   <button

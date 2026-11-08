@@ -29,7 +29,7 @@ import {
 
 export const ampleFileKernelSnapshotVersion = 1 as const;
 
-export type AmpleFileActorKind = "human" | "assistant" | "cli" | "renderer" | "extension" | "app" | "system";
+export type AmpleFileActorKind = "human" | "assistant" | "cli" | "renderer" | "extension" | "system";
 
 export interface AmpleFileActor {
   kind: AmpleFileActorKind;
@@ -193,22 +193,6 @@ export interface AmpleFileHistoryRestoreFenceSources {
    * be verified blocks the restore rather than racing it.
    */
   automationRunFilesHopTargets?(automationId: string): Promise<string[] | null>;
-  /**
-   * Active (accepted, not yet settled) restricted-app automation runs whose
-   * app holds a file grant into the named Connected Folder. The owning host wires it
-   * over the restricted-app registry's machine-wide accessor
-   * (`listActiveAutomationRuns` in
-   * `src/local/agent/restricted-app-service.ts`); a run whose grants cannot
-   * be resolved is included by that wiring rather than dropped, and a
-   * configured reader that fails blocks the restore (fail closed). An absent
-   * reader is absence of evidence, unlike an active automation-run task the
-   * kernel can already see.
-   */
-  appAutomationRunsWithFileGrantInto?(connectedFolderId: string): Promise<Array<{
-    appId: string;
-    appAutomationId: string;
-    runId: string;
-  }>>;
 }
 
 export type AmpleFileCapabilityScope = "global" | "project" | "temporary";
@@ -565,7 +549,7 @@ export class AmpleFileKernel {
    * Post-construction wiring for the History-restore fence readers, exactly
    * like `configureOverview`: the owning host builds its automation executor after
    * the kernel exists, so the readers attach here. Reads only — the kernel
-   * never mutates automation or app state through this seam.
+   * never mutates automation state through this seam.
    */
   configureHistoryRestoreFence(input: { sources: AmpleFileHistoryRestoreFenceSources }): void {
     this.#historyRestoreFenceSources = { ...input.sources };
@@ -584,11 +568,6 @@ export class AmpleFileKernel {
    *   reader, an unknown automation, a failed read — blocks too (fail closed):
    *   the registry proves work is running, so unverifiable hops must not
    *   race a restore.
-   * - An active restricted-app automation run whose app holds a file grant
-   *   into this Connected Folder blocks, through the injected reader; a configured
-   *   reader that fails blocks (fail closed). While no reader is configured
-   *   there is no recorded evidence of such runs anywhere in-process, and
-   *   this half of the rule stays honestly inactive.
    *
    * The experimental method is not part of the stable snapshot surface, and
    * turn and compaction fencing stays with the act facade's own live route
@@ -624,18 +603,6 @@ export class AmpleFileKernel {
       }
       if (targets.includes(targetConnectedFolderId)) {
         blockers.push(`Wait for the running ${label} to finish before restoring: it declares a files hop into this Connected Folder.`);
-      }
-    }
-    const readAppAutomationRuns = this.#historyRestoreFenceSources.appAutomationRunsWithFileGrantInto;
-    if (readAppAutomationRuns) {
-      try {
-        for (const run of await readAppAutomationRuns(targetConnectedFolderId)) {
-          blockers.push(
-            `Wait for the running app automation ${run.appAutomationId} of ${run.appId} (run ${run.runId}) to finish before restoring: the app holds a file grant into this Connected Folder.`,
-          );
-        }
-      } catch {
-        blockers.push("Wait before restoring: running app automations with file grants into this Connected Folder could not be verified.");
       }
     }
     return blockers;

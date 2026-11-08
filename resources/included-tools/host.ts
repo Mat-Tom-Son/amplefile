@@ -3,7 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ChromeHostFacilities } from "../../src/shared/chrome-connection.js";
 import type { IncludedToolStatus } from "../../src/shared/included-tools.js";
 
-/** Optional native host context. It never crosses a renderer or restricted-app bridge. */
+/** Optional native host context. It never crosses a renderer bridge. */
 export function hostContext(pi: ExtensionAPI) {
   const query: { version: 1; context?: Partial<ChromeHostFacilities> & {
     version: 1; mode: "catalog" | "session"; cwd: string; agentDir: string; stateRoot: string;

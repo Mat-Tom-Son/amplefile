@@ -1,6 +1,6 @@
 # macOS build and release lane
 
-AmpleFile retains one Electron, React, local API, Pi, AmpleFile kernel, restricted-app, and versioning codebase with cross-platform seams, but Apple-silicon macOS is the only packaging and public distribution lane. The Windows build and release lanes were removed on 2026-11-07.
+AmpleFile retains one Electron, React, local API, Pi, AmpleFile kernel, and versioning codebase with cross-platform seams, but Apple-silicon macOS is the only packaging and public distribution lane. The Windows build and release lanes were removed on 2026-11-07.
 
 ## Legacy Workspace baseline evidence
 
@@ -103,7 +103,7 @@ an isolated identity by default; a signed candidate needs an explicit
 not isolate Keychain. Check the running executable path, installed bundle
 version, and published feed version independently when reporting release state.
 
-`desktop:make:mac` is the unsigned/ad hoc structural smoke lane. It performs desktop preparation, Pi and restricted-app smoke checks, Electron Builder DMG/ZIP assembly, packaged-asset and fuse verification, updater-manifest verification, mounted-DMG inspection, checksum generation, and release-manifest generation. Installer-only DMG artwork is generated under ignored `out/generated-assets` so image encoders cannot rewrite tracked source bytes or make the guarded publisher reject its own build. The smoke build is not distributable and must not be renamed or installed over the production app.
+`desktop:make:mac` is the unsigned/ad hoc structural smoke lane. It performs desktop preparation, Pi smoke checks, Electron Builder DMG/ZIP assembly, packaged-asset and fuse verification, updater-manifest verification, mounted-DMG inspection, checksum generation, and release-manifest generation. Installer-only DMG artwork is generated under ignored `out/generated-assets` so image encoders cannot rewrite tracked source bytes or make the guarded publisher reject its own build. The smoke build is not distributable and must not be renamed or installed over the production app.
 
 Expected Apple silicon outputs:
 
@@ -129,7 +129,7 @@ AMPLEFILE_DESKTOP_STATE_DIR=/tmp/amplefile-macos-smoke \
   out/mac-rc/mac-arm64/AmpleFile.app/Contents/MacOS/AmpleFile
 ```
 
-That app-only path exists after `npm run desktop:rc:mac`; the complete distribution candidate remains at `out/builder/mac-arm64/AmpleFile.app`. The ad hoc executable is `out/builder/mac-arm64/AmpleFile Local Smoke.app/Contents/MacOS/AmpleFile Local Smoke`. Exercise onboarding, Connected Folder creation/registration, Files, Chats, History, the Skills & Extensions popup, Settings including Settings → Apps, native file actions, restricted apps, menus, window close/reopen, and sleep/wake continuity. The profile override isolates CLI requests, app files, restricted-app state, and preferences, but it is not a Keychain boundary. A separate disposable macOS account is the alternative for interactive ad hoc testing.
+That app-only path exists after `npm run desktop:rc:mac`; the complete distribution candidate remains at `out/builder/mac-arm64/AmpleFile.app`. The ad hoc executable is `out/builder/mac-arm64/AmpleFile Local Smoke.app/Contents/MacOS/AmpleFile Local Smoke`. Exercise onboarding, Connected Folder creation/registration, Files, Chats, History, the Skills & Extensions popup, Settings, native file actions, menus, window close/reopen, and sleep/wake continuity. The profile override isolates CLI requests, app files, and preferences, but it is not a Keychain boundary. A separate disposable macOS account is the alternative for interactive ad hoc testing.
 
 The packaged CLI can be tested directly:
 
@@ -278,7 +278,7 @@ See [macOS release runbook](macos-release.md) for the exact repeatable procedure
 
 ## Keychain behavior
 
-Provider and restricted-app credentials use Electron `safeStorage`, backed by Keychain. Stable Developer ID signing gives macOS one durable requester identity. An older ad hoc app that reused the production name may leave a Safe Storage access-control entry that repeatedly asks for a password after migration. Current local smoke builds use `AmpleFile Local Smoke`, a separate bundle id and application-data directory, and never start the production updater; do not rename them to `AmpleFile.app`.
+Provider credentials use Electron `safeStorage`, backed by Keychain. Stable Developer ID signing gives macOS one durable requester identity. An older ad hoc app that reused the production name may leave a Safe Storage access-control entry that repeatedly asks for a password after migration. Current local smoke builds use `AmpleFile Local Smoke`, a separate bundle id and application-data directory, and never start the production updater; do not rename them to `AmpleFile.app`.
 
 Only when repeated prompts are observed, quit AmpleFile and run:
 
@@ -286,7 +286,7 @@ Only when repeated prompts are observed, quit AmpleFile and run:
 npm run desktop:reset:mac-safe-storage -- --yes --reopen
 ```
 
-The helper deletes only the `amplefile Safe Storage` key and encrypted provider/restricted-app credential blobs. Connected Folders, chats, History, preferences, and ordinary app data remain. Users may need to enter provider or app credentials again.
+The helper deletes only the `amplefile Safe Storage` key and encrypted provider credential blobs. Connected Folders, chats, History, preferences, and ordinary app data remain. Users may need to enter provider credentials again.
 
 Do not diagnose this with `security find-generic-password ... -g`: `-g` requests the secret and can itself trigger a password prompt. The installed-app verifier deliberately reads no Keychain secret data.
 

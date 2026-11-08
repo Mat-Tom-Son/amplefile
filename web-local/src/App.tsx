@@ -16,19 +16,18 @@ import { useApplicationAppearance } from "./hooks/useApplicationAppearance";
 import { ConnectedFolderAppearanceProvider } from "./lib/connected-folder-appearance-context";
 import { useModelConfigurationRevision } from "./hooks/useModelConfigurationRevision";
 import { useBootstrapRefresh } from "./hooks/useBootstrapRefresh";
-import { useRestrictedApps } from "./hooks/useRestrictedApps";
 import { api, errorText } from "./lib/api";
 import { readConnectedFolderSetUpOffers, writeConnectedFolderSetUpOffers } from "./lib/connected-folder-setup";
 import { ampleFileAgentDraftEvent } from "./lib/agent-draft";
 import { isMacOS } from "./lib/platform";
-import type { AgentStatus, AppThemePreference, BootstrapResponse, DesktopUpdateStatus, RestrictedAppInstalled, ConnectedFolderSummary } from "./types";
+import type { AgentStatus, AppThemePreference, BootstrapResponse, DesktopUpdateStatus, ConnectedFolderSummary } from "./types";
 import { ConfirmDialogHost, showToast, ToastHost } from "./ui/feedback";
 
 const fixtureRequested = new URLSearchParams(window.location.search).get("fixture") === "connected-folder";
 
-type DesktopActionCommand = "toggle-sidebar" | "toggle-agent-panel" | "new-chat" | "reload-connected-folder-state" | "open-capabilities" | "open-skills" | "open-extensions" | "open-command-palette" | "close-tab" | "customize-connected-folder" | "app-change-chat" | "open-app-build-chat" | "open-app-result-file" | "open-app-studio";
-/** A cross-cutting request handled by the open Connected Folder view; app navigation from Settings carries the app or Chat it names. */
-type DesktopAction = { id: number; command: DesktopActionCommand; connectedFolderId?: string; app?: RestrictedAppInstalled; conversationId?: string; runtimeInstanceId?: string; path?: string; title?: string };
+type DesktopActionCommand = "toggle-sidebar" | "toggle-agent-panel" | "new-chat" | "reload-connected-folder-state" | "open-capabilities" | "open-skills" | "open-extensions" | "open-command-palette" | "close-tab" | "customize-connected-folder";
+/** A cross-cutting request handled by the open Connected Folder view. */
+type DesktopAction = { id: number; command: DesktopActionCommand; connectedFolderId?: string };
 
 export function App() {
   const appearance = useApplicationAppearance({ fixtureMode: fixtureRequested });
@@ -78,9 +77,6 @@ export function App() {
   const [pendingConnectedFolderOpen, setPendingConnectedFolderOpen] = useState<{ id: number; connectedFolderId: string } | null>(null);
   const [desktopAction, setDesktopAction] = useState<DesktopAction | null>(null);
   const [updateStatus, setUpdateStatus] = useState<DesktopUpdateStatus | null>(null);
-  const handleRestrictedAppError = useCallback((caught: unknown) => setError(errorText(caught)), []);
-  // Installed apps live above the Connected Folder view so Settings → Apps and the rail read one list.
-  const restrictedAppsState = useRestrictedApps({ activeConnectedFolderId: boot ? activeConnectedFolderId : "", connectedFolders: boot?.connectedFolders, fixtureMode: fixtureRequested, onError: handleRestrictedAppError });
   const showDesktopTitleBar = window.ampleFileDesktop?.app.platform === "win32";
 
   const openSettings = useCallback((page: SettingsPage = "appearance", modelScope?: ModelScope, focusAiModel = false, workerConnectedFolderId?: string, focusWorkerInstructions = false, backToCustomization?: () => void) => {
@@ -287,7 +283,7 @@ export function App() {
     {error && !activeConnectedFolder ? <div className="global-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Dismiss"><X size={15} /></button></div> : null}
     {createConnectedFolderOpen ? <CreateConnectedFolderModal onClose={() => setCreateConnectedFolderOpen(false)} onCreate={createConnectedFolder} /> : null}
     {connectAiOpen ? <ConnectAiDialog fixtureMode={Boolean(fixture)} onClose={() => { afterConnectAi.current = undefined; setConnectAiOpen(false); }} onConnected={(connected) => { aiConnected(connected.status); const then = afterConnectAi.current; afterConnectAi.current = undefined; then?.(); }} onOpenSettings={() => { setConnectAiOpen(false); openSettings("ai-models", "agent", true); }} /> : null}
-    {settingsOpen ? <DesktopSettingsModal appearance={appearance} onCustomizeConnectedFolder={(connectedFolderId) => { setSettingsOpen(false); setDesktopAction({ id: Date.now(), command: "customize-connected-folder", connectedFolderId }); }} connectedFolder={settingsWorkerConnectedFolderId ? boot.connectedFolders.find((item) => item.id === settingsWorkerConnectedFolderId) ?? null : activeConnectedFolder} connectedFolders={boot.connectedFolders} restrictedApps={restrictedAppsState} onChangeApp={(app) => { setSettingsOpen(false); setDesktopAction({ id: Date.now(), command: "app-change-chat", connectedFolderId: app.sourceConnectedFolderId, app }); }} onOpenAppBuildChat={(connectedFolderId, conversationId) => { setSettingsOpen(false); setDesktopAction({ id: Date.now(), command: "open-app-build-chat", connectedFolderId, conversationId }); }} onOpenAppResultFile={(connectedFolderId, path) => { setSettingsOpen(false); setDesktopAction({ id: Date.now(), command: "open-app-result-file", connectedFolderId, path }); }} onOpenAppStudio={(connectedFolderId, runtimeInstanceId) => { setSettingsOpen(false); setDesktopAction({ id: Date.now(), command: "open-app-studio", connectedFolderId, ...(runtimeInstanceId ? { runtimeInstanceId } : {}) }); }} agentStatus={boot.agent} fixtureMode={Boolean(fixture)} initialPage={settingsInitialPage} initialModelScope={settingsModelScope} focusAiModel={settingsFocusAiModel} focusWorkerInstructions={settingsFocusWorkerInstructions} onAgentConfigured={(agent) => setBoot((current) => current ? { ...current, agent } : current)} onModelChanged={modelConfigurationChanged} updateStatus={updateStatus} onUpdateAction={() => void runUpdateAction()} onBackToCustomization={settingsBackAction ? () => { setSettingsOpen(false); setSettingsBackAction(null); settingsBackAction(); } : undefined} onClose={closeSettings} /> : null}
+    {settingsOpen ? <DesktopSettingsModal appearance={appearance} onCustomizeConnectedFolder={(connectedFolderId) => { setSettingsOpen(false); setDesktopAction({ id: Date.now(), command: "customize-connected-folder", connectedFolderId }); }} connectedFolder={settingsWorkerConnectedFolderId ? boot.connectedFolders.find((item) => item.id === settingsWorkerConnectedFolderId) ?? null : activeConnectedFolder} agentStatus={boot.agent} fixtureMode={Boolean(fixture)} initialPage={settingsInitialPage} initialModelScope={settingsModelScope} focusAiModel={settingsFocusAiModel} focusWorkerInstructions={settingsFocusWorkerInstructions} onAgentConfigured={(agent) => setBoot((current) => current ? { ...current, agent } : current)} onModelChanged={modelConfigurationChanged} updateStatus={updateStatus} onUpdateAction={() => void runUpdateAction()} onBackToCustomization={settingsBackAction ? () => { setSettingsOpen(false); setSettingsBackAction(null); settingsBackAction(); } : undefined} onClose={closeSettings} /> : null}
     <ConfirmDialogHost /><ToastHost />
   </div>;
 }

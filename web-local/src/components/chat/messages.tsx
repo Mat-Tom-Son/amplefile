@@ -88,14 +88,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   if (message.kind === "assistant_continuation") return <p className="work-continuation" role="note">Continuing with the results from delegated work.</p>;
   if (message.kind === "context_compaction") return <p className="work-continuation" role="note">{message.content}</p>;
 
-  // An app's request is not the person's message: it gets its own quiet
-  // treatment and says which app asked, instead of the person's bubble.
-  const fromApp = message.role === "user" && message.source === "app" && message.appTitle?.trim() ? message.appTitle.trim() : null;
-  const sender = fromApp ? "app-request" : message.role;
-
   return (
-    <article className={`message ${sender}${suppressEnterAnimation ? " settled" : ""}`}>
-      {fromApp ? <p className="message-sender">From {fromApp}</p> : null}
+    <article className={`message ${message.role}${suppressEnterAnimation ? " settled" : ""}`}>
       {message.role === "user" && message.attachments?.length ? <SentAttachments attachments={message.attachments} onOpenConnectedFolderFile={onOpenConnectedFolderFile} /> : null}
       <div className="message-surface">
         {turnView.steps.length ? (
@@ -155,8 +149,6 @@ function areChatMessageRowPropsEqual(previous: ChatMessageRowProps, next: ChatMe
     && previousMessage.interruption === nextMessage.interruption
     && previousMessage.attachments === nextMessage.attachments
     && previousMessage.delivery === nextMessage.delivery
-    && previousMessage.source === nextMessage.source
-    && previousMessage.appTitle === nextMessage.appTitle
   );
   const sameRuntimePreview = !previous.showRuntimePreview && !next.showRuntimePreview
     ? true

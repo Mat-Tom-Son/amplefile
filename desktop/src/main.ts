@@ -32,7 +32,6 @@ import {
   type Rectangle,
 } from "electron";
 
-import { parseFeatureInstallationId } from "../../src/local/agent/app-platform-contract.js";
 import { RoutedPiExtensionUiBridge, type PiExtensionUiEvent } from "../../src/local/agent/extension-ui.js";
 import { defaultAgentSdkDir } from "../../src/local/agent/agent-data-dir.js";
 import {
@@ -52,12 +51,6 @@ import { configureAmpleFileStateRoot, managedConnectedFolderRoot, ampleFileAgent
 import { getConnectedFolder, listConnectedFolders } from "../../src/local/connected-folder.js";
 import { AmpleFileCliKernelAdapter } from "../../src/local/amplefile-cli-adapter.js";
 import { AmpleFileKernel } from "../../src/local/amplefile-kernel.js";
-import { AmpleFileSettleSignal } from "../../src/local/automations/settle-signal.js";
-import { RestrictedAppService } from "../../src/local/agent/restricted-app-service.js";
-import { FileRestrictedAppStorage } from "../../src/local/agent/restricted-app-storage.js";
-import { RestrictedAppNotificationBroker } from "../../src/local/agent/restricted-app-notifications.js";
-import { RestrictedAppNotificationRecord } from "../../src/local/agent/restricted-app-notification-record.js";
-import { restrictedAppRoot } from "../../src/local/state-paths.js";
 import {
   AmpleFileDesktopCliHost,
   ampleFileCliInstanceData,
@@ -77,9 +70,6 @@ import { ChromeNativeHostRegistration } from "./chrome-native-host.js";
 import { ComputerHelperInstallation } from "./computer-helper-installation.js";
 import { createJiti } from "jiti";
 import { applyLoginShellEnvironment, formatLoginShellEnvironmentResult, type LoginShellEnvironmentResult } from "./shell-environment.js";
-import { createRestrictedAppConnectionStore } from "./restricted-app-connections.js";
-import { createRestrictedAppOAuthClient } from "./restricted-app-oauth.js";
-import { RestrictedAppHost, restrictedAppProtocol } from "./restricted-app-host.js";
 import { SecureSettingsStore } from "./settings.js";
 import { DesktopUpdater, type DesktopUpdateStatus } from "./updater.js";
 import {
@@ -87,12 +77,6 @@ import {
   ampleFileDesktopStateOverride,
   ampleFileDesktopUsesInstalledProductData,
 } from "./user-data-path.js";
-import {
-  latestAmpleFileReleaseUrl,
-  runAmpleFileStartupRecovery,
-  ampleFileStartupRecoveryPlan,
-  type AmpleFileStartupRecoveryPlan,
-} from "./startup-recovery.js";
 import { createDesktopPiOAuthHooks } from "./pi-oauth.js";
 import { AppLifetimeResource } from "./app-lifetime-resource.js";
 import {
@@ -223,7 +207,6 @@ let trayPulseTimer: NodeJS.Timeout | null = null;
 let trayPulseFrames: Electron.NativeImage[] | null = null;
 let powerBlockerId: number | null = null;
 let desktopUpdater: DesktopUpdater | null = null;
-let startupRecoveryPromise: Promise<void> | null = null;
 let shutdownPromise: Promise<void> | null = null;
 let rendererProtocolRegistered = false;
 let ipcRegistered = false;
@@ -262,13 +245,6 @@ protocol.registerSchemesAsPrivileged([
       supportFetchAPI: true,
       corsEnabled: true,
       stream: true,
-    },
-  },
-  {
-    scheme: restrictedAppProtocol,
-    privileges: {
-      standard: true,
-      secure: true,
     },
   },
 ]);
@@ -408,18 +384,7 @@ interface DesktopHost {
   connectedFolderTrustAuthority: RegisteredConnectedFolderTrustAuthority;
   kernel: AmpleFileKernel;
   cli: AmpleFileDesktopCliHost;
-  restrictedApps: RestrictedAppService;
-  restrictedAppHost: RestrictedAppHost;
-  /** What each app's notifications did, read by Settings → Apps through the local API. */
-  restrictedAppNotificationRecord: RestrictedAppNotificationRecord;
   chromeConnection: IncludedChromeConnectionService;
-  /**
-   * The one in-process settle seam (docs/automations.md): the host's
-   * restricted-app service publishes into this exact instance, and the
-   * interactive local API consumes it for automation triggers — one signal for
-   * the whole desktop, or settles silently never reach enabled automations.
-   */
-  settleSignal: AmpleFileSettleSignal;
 }
 
 let loginShellEnvironmentPromise: Promise<LoginShellEnvironmentResult> | null = null;
@@ -447,158 +412,76 @@ async function ensureDesktopHost(): Promise<DesktopHost> {
     const userData = app.getPath("userData");
     configureAmpleFileStateRoot(userData);
     const settings = new SecureSettingsStore(join(userData, "secure-settings.bin"));
-    const restrictedConnections = createRestrictedAppConnectionStore(join(userData, "restricted-app-connections.bin"));
-    const restrictedOAuth = createRestrictedAppOAuthClient(restrictedConnections, (url) => shell.openExternal(url));
-    const restrictedStorage = new FileRestrictedAppStorage(join(restrictedAppRoot(), "data"));
-    const restrictedNotificationRecord = await RestrictedAppNotificationRecord.open({
-      path: join(restrictedAppRoot(), "notification-receipts.jsonl"),
+    const extensionUi = new RoutedPiExtensionUiBridge();
+    extensionUi.on("event", (event: PiExtensionUiEvent) => {
+    if (event.method === "openExternal") void openExternal(event.url).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
+    else if (event.method === "oauthDeviceCode") void openExternal(event.verificationUri).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
+    else if (event.method === "copyText") clipboard.writeText(event.text);
+    else if (event.method === "openSettings") mainWindow?.webContents.send("amplefile:agent:open-settings");
+    else if (event.method === "quit") app.quit();
     });
-    const restrictedNotifications = new RestrictedAppNotificationBroker({
-      record: (outcome) => restrictedNotificationRecord.record(outcome),
-      sink: {
-        isSupported: () => Notification.isSupported(),
-        show: (display, callbacks) => {
-          const notification = new Notification({ title: display.title, body: display.body });
-          notification.on("click", callbacks.onClick);
-          notification.on("close", callbacks.onClose);
-          notification.show();
-          return { close: () => notification.close() };
-        },
-      },
+    const nativeJiti = createJiti(import.meta.url, { moduleCache: true });
+    const loadChromeConnection = () => nativeJiti.import<{
+      startIncludedChromeConnection(facilities: ChromeHostFacilities): Promise<{ close(): void }>;
+      probeIncludedChromeConnection(facilities: ChromeHostFacilities): Promise<unknown>;
+    }>(join(includedToolsRoot(), "chrome", "index.ts"));
+    const chromeRegistration = new ChromeNativeHostRegistration({
+      stateRoot: join(userData, "assistant-tools"), distribution: chromeDistribution,
+      sourceDirectory: app.isPackaged ? join(process.resourcesPath, "chrome-native-host") : join(app.getAppPath(), "out/included-tools/chrome-native-host"),
+      // An isolated/dev host must not replace the normal Chrome registration.
+      enabled: process.platform === "darwin" && app.isPackaged && !localMacSmokeBuild && !ampleFileDesktopStateOverride(process.env),
     });
-    // One settle signal for the whole desktop host: the restricted-app service
-    // publishes durable settles into it, and the local API's automation
-    // executor subscribes to the same instance.
-    const settleSignal = new AmpleFileSettleSignal();
-    let restrictedApps!: RestrictedAppService;
-    const restrictedRuntime = new RestrictedAppHost({
-      assistantTasks: async () => (await ensureInteractiveLocalApi()).appAssistantTasks,
-    assistantInference: async () => (await ensureInteractiveLocalApi()).appInference,
-      connections: restrictedConnections,
-      oauth: restrictedOAuth,
-      storage: restrictedStorage,
-      notifications: restrictedNotifications,
-      resolveConnectedFolderRoot: async (connectedFolderId) => (await listConnectedFolders()).find((connectedFolder) => connectedFolder.id === connectedFolderId)?.connectedFolderRoot ?? null,
-      preloadPath: resolveRestrictedAppPreloadPath(),
-      kitRoot: join(dirnameFromFile(currentFile), "..", "..", "restricted-app-kit"),
-      onTabCommand: (command) => {
-        if (!mainWindow || mainWindow.isDestroyed()) return;
-        mainWindow.webContents.send("amplefile:restricted-app-view:tab-command", command);
+    const chromeConnection = await IncludedChromeConnectionService.create({
+      stateRoot: join(userData, "assistant-tools"), distribution: chromeDistribution,
+      registerNativeHost: (explicit, ifAbsent) => chromeRegistration.register(explicit, ifAbsent),
+      // Setup says "Install Google Chrome" instead of failing to open it; app bundles only.
+      browserInstalled: () => ["/Applications/Google Chrome.app", join(homedir(), "Applications/Google Chrome.app")].some((path) => existsSync(path)),
+      openStore: async () => {
+        if (!chromeDistribution.storeId || !/^[a-p]{32}$/.test(chromeDistribution.storeId)) throw new Error("Chrome connection is not available yet.");
+        await new Promise<void>((resolveOpen, rejectOpen) => execFile("/usr/bin/open", ["-a", "Google Chrome", `https://chromewebstore.google.com/detail/${chromeDistribution.storeId}`], error => error ? rejectOpen(new Error("Google Chrome could not open the AmpleFile listing.")) : resolveOpen()));
       },
-      onUiState: (state) => {
-        if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.id !== state.ownerWebContentsId) return;
-        mainWindow.webContents.send("amplefile:restricted-app-view:state", state);
-      },
-      onAttention: (state) => {
-        if (!mainWindow || mainWindow.isDestroyed()) return;
-        mainWindow.webContents.send("amplefile:restricted-app-view:attention", state);
-      },
-      onNotificationOpen: (request) => {
-        if (!request.featureInstallationId) return;
-        const resolveOwner = restrictedApps.findByFeatureInstallation(request.connectedFolderId, request.featureInstallationId);
-        void resolveOwner.then((current) => {
-          if (!current || current.manifest.id !== request.appId || current.digest !== request.digest) return;
-          const enabledForNotification = current.automations.some((state) => state.enabled
-            && current.manifest.automations.some((automation) => automation.id === state.id
-              && automation.permissions.notifications.includes(request.permissionId)));
-          if (!enabledForNotification || !current.notificationGrants.includes(request.permissionId)
-            || !current.manifest.permissions.notifications.some((item) => item.id === request.permissionId)) return;
-          showWindow();
-          if (!mainWindow || mainWindow.isDestroyed()) return;
-          mainWindow.webContents.send("amplefile:restricted-app-view:open-request", request);
-        }).catch(() => undefined);
-      },
+      startTransport: async (facilities) => (await loadChromeConnection()).startIncludedChromeConnection(facilities),
+      probe: async () => { await (await loadChromeConnection()).probeIncludedChromeConnection(chromeConnection); },
     });
-    try {
-      restrictedApps = await RestrictedAppService.create({
-        rootPath: restrictedAppRoot(),
-        runtimeHost: restrictedRuntime,
-        connections: restrictedConnections,
-        oauth: restrictedOAuth,
-        storage: restrictedStorage,
-        deferAppAutomationStart: true,
-        settleSignal,
-      });
-    } catch (error) {
-      await restrictedRuntime.close();
-      throw error;
-    }
-    try {
-      const extensionUi = new RoutedPiExtensionUiBridge();
-      extensionUi.on("event", (event: PiExtensionUiEvent) => {
-      if (event.method === "openExternal") void openExternal(event.url).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
-      else if (event.method === "oauthDeviceCode") void openExternal(event.verificationUri).catch((error) => console.warn(`${productName} blocked external navigation: ${errorMessage(error)}`));
-      else if (event.method === "copyText") clipboard.writeText(event.text);
-      else if (event.method === "openSettings") mainWindow?.webContents.send("amplefile:agent:open-settings");
-      else if (event.method === "quit") app.quit();
-      });
-      const nativeJiti = createJiti(import.meta.url, { moduleCache: true });
-      const loadChromeConnection = () => nativeJiti.import<{
-        startIncludedChromeConnection(facilities: ChromeHostFacilities): Promise<{ close(): void }>;
-        probeIncludedChromeConnection(facilities: ChromeHostFacilities): Promise<unknown>;
-      }>(join(includedToolsRoot(), "chrome", "index.ts"));
-      const chromeRegistration = new ChromeNativeHostRegistration({
-        stateRoot: join(userData, "assistant-tools"), distribution: chromeDistribution,
-        sourceDirectory: app.isPackaged ? join(process.resourcesPath, "chrome-native-host") : join(app.getAppPath(), "out/included-tools/chrome-native-host"),
-        // An isolated/dev host must not replace the normal Chrome registration.
-        enabled: process.platform === "darwin" && app.isPackaged && !localMacSmokeBuild && !ampleFileDesktopStateOverride(process.env),
-      });
-      const chromeConnection = await IncludedChromeConnectionService.create({
-        stateRoot: join(userData, "assistant-tools"), distribution: chromeDistribution,
-        registerNativeHost: (explicit, ifAbsent) => chromeRegistration.register(explicit, ifAbsent),
-        // Setup says "Install Google Chrome" instead of failing to open it; app bundles only.
-        browserInstalled: () => ["/Applications/Google Chrome.app", join(homedir(), "Applications/Google Chrome.app")].some((path) => existsSync(path)),
-        openStore: async () => {
-          if (!chromeDistribution.storeId || !/^[a-p]{32}$/.test(chromeDistribution.storeId)) throw new Error("Chrome connection is not available yet.");
-          await new Promise<void>((resolveOpen, rejectOpen) => execFile("/usr/bin/open", ["-a", "Google Chrome", `https://chromewebstore.google.com/detail/${chromeDistribution.storeId}`], error => error ? rejectOpen(new Error("Google Chrome could not open the AmpleFile listing.")) : resolveOpen()));
-        },
-        startTransport: async (facilities) => (await loadChromeConnection()).startIncludedChromeConnection(facilities),
-        probe: async () => { await (await loadChromeConnection()).probeIncludedChromeConnection(chromeConnection); },
-      });
-      const bundledComputerHelper = app.isPackaged
-        ? join(process.resourcesPath, "computer-helper", "AmpleFile Computer.app")
-        : join(app.getAppPath(), "out", "included-tools", "computer-helper", "AmpleFile Computer.app");
-      const computerHelper = process.platform === "darwin" && app.isPackaged
-        ? await ComputerHelperInstallation.create({ sourceAppPath: bundledComputerHelper, stateRoot: join(userData, "assistant-tools") })
-        : undefined;
-      const runtime = new PackagedPiRuntimeProvider({
-        includedTools: {
-          rootPath: includedToolsRoot(), stateRoot: join(userData, "assistant-tools"),
-          chromeConnection,
-          helperAppPath: computerHelper?.helperAppPath ?? bundledComputerHelper,
-          prepareComputerHelper: computerHelper?.prepare,
-          repairComputerHelper: computerHelper?.repair,
-        },
-        agentDir: defaultAgentSdkDir(),
-        authStorageHost: settings,
-        mcpCredentialBackend: createEncryptedMcpCredentialBackend(join(userData, "pi-mcp-credentials.bin"), safeStorage),
-        modelPreferencesPath: join(userData, "model-preferences.json"),
-        openRouterCatalogPath: join(userData, "model-catalogs", "openrouter.json"),
-        ampleFileAgentRootPath: ampleFileAgentRoot(),
-        extensionUi,
-      });
-      const connectedFolderTrustAuthority = new RegisteredConnectedFolderTrustAuthority((await listConnectedFolders()).map((connectedFolder) => connectedFolder.connectedFolderRoot));
-      const runtimeProvider = new RegisteredConnectedFolderRuntimeProvider(runtime, connectedFolderTrustAuthority);
-      const kernel = new AmpleFileKernel({ runtimeProvider });
-      const cli = new AmpleFileDesktopCliHost({
-      stateRoot: userData,
-      kernel: new AmpleFileCliKernelAdapter(kernel),
-      version: applicationVersion,
-      productName,
-      getActFacade: () => (actFacade && actToken ? { facade: actFacade, token: actToken } : null),
-      resolveLineageParent: (taskId) => resolveAmpleFileAgentLineageParent?.(taskId) ?? null,
-      });
-      await cli.initialize();
-      secureSettings = settings;
-      piRuntime = runtime;
-      return {
-        settings, extensionUi, runtime, runtimeProvider, connectedFolderTrustAuthority, kernel, cli, restrictedApps,
-        restrictedAppHost: restrictedRuntime, restrictedAppNotificationRecord: restrictedNotificationRecord, settleSignal, chromeConnection,
-      };
-    } catch (error) {
-      await restrictedApps.close();
-      throw error;
-    }
+    const bundledComputerHelper = app.isPackaged
+      ? join(process.resourcesPath, "computer-helper", "AmpleFile Computer.app")
+      : join(app.getAppPath(), "out", "included-tools", "computer-helper", "AmpleFile Computer.app");
+    const computerHelper = process.platform === "darwin" && app.isPackaged
+      ? await ComputerHelperInstallation.create({ sourceAppPath: bundledComputerHelper, stateRoot: join(userData, "assistant-tools") })
+      : undefined;
+    const runtime = new PackagedPiRuntimeProvider({
+      includedTools: {
+        rootPath: includedToolsRoot(), stateRoot: join(userData, "assistant-tools"),
+        chromeConnection,
+        helperAppPath: computerHelper?.helperAppPath ?? bundledComputerHelper,
+        prepareComputerHelper: computerHelper?.prepare,
+        repairComputerHelper: computerHelper?.repair,
+      },
+      agentDir: defaultAgentSdkDir(),
+      authStorageHost: settings,
+      mcpCredentialBackend: createEncryptedMcpCredentialBackend(join(userData, "pi-mcp-credentials.bin"), safeStorage),
+      modelPreferencesPath: join(userData, "model-preferences.json"),
+      openRouterCatalogPath: join(userData, "model-catalogs", "openrouter.json"),
+      ampleFileAgentRootPath: ampleFileAgentRoot(),
+      extensionUi,
+    });
+    const connectedFolderTrustAuthority = new RegisteredConnectedFolderTrustAuthority((await listConnectedFolders()).map((connectedFolder) => connectedFolder.connectedFolderRoot));
+    const runtimeProvider = new RegisteredConnectedFolderRuntimeProvider(runtime, connectedFolderTrustAuthority);
+    const kernel = new AmpleFileKernel({ runtimeProvider });
+    const cli = new AmpleFileDesktopCliHost({
+    stateRoot: userData,
+    kernel: new AmpleFileCliKernelAdapter(kernel),
+    version: applicationVersion,
+    productName,
+    getActFacade: () => (actFacade && actToken ? { facade: actFacade, token: actToken } : null),
+    resolveLineageParent: (taskId) => resolveAmpleFileAgentLineageParent?.(taskId) ?? null,
+    });
+    await cli.initialize();
+    secureSettings = settings;
+    piRuntime = runtime;
+    return {
+      settings, extensionUi, runtime, runtimeProvider, connectedFolderTrustAuthority, kernel, cli, chromeConnection,
+    };
   })();
   return desktopHostPromise;
 }
@@ -647,7 +530,6 @@ async function quitAfterCliRequest(): Promise<void> {
     await startInteractiveApp();
     return;
   }
-  await host.restrictedApps.close();
   await host.chromeConnection.close();
   // A headless boot proves no interactive app holds the single-instance lock,
   // so any act-token file on disk is stale crash residue; removing it lets
@@ -662,54 +544,9 @@ async function quitAfterCliRequest(): Promise<void> {
 
 function reportStartupError(error: unknown): void {
   console.error(`${productName} could not start: ${errorMessage(error)}`);
-  const recovery = ampleFileStartupRecoveryPlan(error);
-  if (interactiveRequested && recovery) {
-    startupRecoveryPromise ??= recoverFromNewerLocalState(recovery).catch((recoveryError) => {
-      console.error(`${productName} update recovery failed: ${errorMessage(recoveryError)}`);
-      dialog.showErrorBox(
-        `${productName} update recovery failed`,
-        "AmpleFile could not complete update recovery. Your Connected Folders and app data are still safe.",
-      );
-      quitting = true;
-      app.quit();
-    });
-    return;
-  }
   if (interactiveRequested) dialog.showErrorBox(`${productName} could not start`, errorMessage(error));
   quitting = true;
   app.quit();
-}
-
-async function recoverFromNewerLocalState(plan: AmpleFileStartupRecoveryPlan): Promise<void> {
-  await runAmpleFileStartupRecovery(plan, {
-    showDialog: async (prompt) => (await dialog.showMessageBox({
-      type: prompt.type,
-      title: prompt.title,
-      message: prompt.message,
-      detail: prompt.detail,
-      buttons: prompt.buttons,
-      defaultId: prompt.defaultId,
-      cancelId: prompt.cancelId,
-      noLink: true,
-    })).response,
-    checkForUpdate: async () => {
-      configureUpdater();
-      const checked = await checkForUpdates(true);
-      if (checked.phase === "error") throw new Error(checked.error ?? checked.message);
-      return checked.phase === "available" ? checked.availableVersion : null;
-    },
-    downloadAndInstall: async () => {
-      if (!desktopUpdater) return false;
-      let status = await desktopUpdater.updateNow();
-      if (status.phase === "ready") status = await desktopUpdater.install();
-      return status.phase === "installing";
-    },
-    openReleases: () => openExternal(latestAmpleFileReleaseUrl),
-    quit: () => {
-      quitting = true;
-      app.quit();
-    },
-  });
 }
 
 function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLocalApi>>> {
@@ -738,21 +575,13 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
       connectedFolderTrustAuthority: host.connectedFolderTrustAuthority,
       extensionUiBridge: host.extensionUi,
       kernel: host.kernel,
-      // The exact instance the injected restricted-app service publishes
-      // into, so desktop settles reach automation triggers; and the CLI
-      // host's own act-receipts journal, so Settings acts and CLI acts share
-      // one ledger file and one at-most-once gate.
-      settleSignal: host.settleSignal,
+      // The CLI host's own act-receipts journal, so Settings acts and CLI
+      // acts share one ledger file and one at-most-once gate.
       actReceipts: host.cli.receipts,
       localFolderGrantProvider: { consumeLocalFolderGrant },
       // Every Worker and the AmpleFile agent can use the browser tabs the person sees.
       browser: ensureBuiltInBrowser().toolHost,
-      restrictedAppService: host.restrictedApps,
-      appNotificationRecord: host.restrictedAppNotificationRecord,
       onAgentTurnActivity: updateAgentPowerState,
-      // Resolved before any window exists, so no app view can be mounted
-      // without this wire in place (docs/collaboration-contract.md, F30).
-      onAppAssistantActivity: (activity) => host.restrictedAppHost.publishAssistantActivity(activity),
     });
     // The per-launch act token authorizes the CLI act lane for exactly this
     // interactive run; without a readable token file, act commands stay
@@ -838,16 +667,12 @@ async function createMainWindow(): Promise<void> {
       console.warn(`${productName} could not configure spellchecker languages: ${errorMessage(error)}`);
     }
   }
-  const rendererWebContentsId = mainWindow.webContents.id;
   mainWindow.webContents.on("did-start-navigation", () => railTooltipOverlay?.hide());
   mainWindow.webContents.on("render-process-gone", () => railTooltipOverlay?.hide());
   mainWindow.webContents.on("page-title-updated", (event) => {
     if (process.platform !== "darwin" || !activeNativeConnectedFolder) return;
     event.preventDefault();
     applyNativeActiveConnectedFolderToWindow(mainWindow);
-  });
-  mainWindow.webContents.once("destroyed", () => {
-    void desktopHostPromise?.then((host) => host.restrictedAppHost.unmountUiOwner(rendererWebContentsId));
   });
   configureWindowStatePersistence(mainWindow);
   if (state?.isMaximized) mainWindow.maximize();
@@ -1444,37 +1269,6 @@ function registerIpc(): void {
     assertTrustedMainRenderer(event);
     if (typeof path !== "string") throw new Error("The download is invalid.");
     ensureBuiltInBrowser().showDownload(path);
-  });
-  ipcMain.handle("amplefile:restricted-app-view:mount", async (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
-    const window = mainWindow;
-    if (!window || window.isDestroyed()) throw new Error("The AmpleFile window is not available.");
-    const identity = restrictedAppViewIdentity(value);
-    const host = await ensureDesktopHost();
-    const descriptor = await host.restrictedApps.runtimeDescriptor(identity.connectedFolderId, identity.appId, identity.digest, identity.featureInstallationId);
-    const mounted = await host.restrictedAppHost.mountUi(descriptor, event.sender, window, restrictedAppViewPayload(value));
-    railTooltipOverlay?.raise();
-    return mounted;
-  });
-  ipcMain.on("amplefile:restricted-app-view:layout", (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
-    void ensureDesktopHost()
-      .then((host) => {
-        host.restrictedAppHost.layoutUi(event.sender.id, restrictedAppViewPayload(value));
-        railTooltipOverlay?.raise();
-      })
-      .catch((error) => console.warn(`${productName} could not lay out a restricted app view: ${errorMessage(error)}`));
-  });
-  ipcMain.handle("amplefile:restricted-app-view:attention-states", async (event) => {
-    assertTrustedMainRenderer(event);
-    const host = await ensureDesktopHost();
-    return host.restrictedAppHost.attentionStates();
-  });
-  ipcMain.handle("amplefile:restricted-app-view:unmount", async (event, value: unknown) => {
-    assertTrustedMainRenderer(event);
-    if (typeof value !== "string") throw new Error("A restricted app mount id is required.");
-    const host = await ensureDesktopHost();
-    await host.restrictedAppHost.unmountUi(event.sender.id, value);
   });
   ipcMain.handle("amplefile:updates:status", (event): DesktopUpdateStatus => {
     assertTrustedRenderer(event);
@@ -2197,13 +1991,11 @@ async function shutdown(): Promise<void> {
   updateAgentPowerState(0);
   const runtime = piRuntime;
   piRuntime = null;
-  const restrictedApps = desktopHostPromise?.then((host) => host.restrictedApps.close()) ?? Promise.resolve();
   const chrome = desktopHostPromise?.then((host) => host.chromeConnection.close()) ?? Promise.resolve();
   shutdownPromise = (async () => {
     const outcomes = await Promise.allSettled([
       withShutdownTimeout(localApiLifetime.close(), "local API"),
       withShutdownTimeout(runtime?.flush() ?? Promise.resolve(), "Pi state"),
-      withShutdownTimeout(restrictedApps, "restricted apps"),
       withShutdownTimeout(chrome, "Chrome connection"),
       withShutdownTimeout(removeAmpleFileCliActTokenFile(app.getPath("userData")), "CLI act token"),
     ]);
@@ -2485,14 +2277,12 @@ function configurePowerMonitor(): void {
   if (powerMonitorRegistered) return;
   powerMonitorRegistered = true;
   powerMonitor.on("suspend", () => {
-    void desktopHostPromise?.then((host) => host.restrictedApps.suspendAppAutomations());
     // Automation runs share the scheduler discipline: suspension aborts the
     // active run (it settles `interrupted`, honestly receipted) and holds
     // admissions until resume (docs/automations.md).
     automationPowerLifecycle?.suspend();
   });
   powerMonitor.on("resume", () => {
-    void desktopHostPromise?.then((host) => host.restrictedApps.resumeAppAutomations());
     void automationPowerLifecycle?.resume().catch((error) => {
       console.warn(`${productName} could not resume Automations after wake: ${errorMessage(error)}`);
     });
@@ -2532,13 +2322,12 @@ function getSystemAccentColor(): string | null {
 }
 
 function configureWindowResilience(window: BrowserWindow): void {
-  const unmountRestrictedViews = () => {
-    void desktopHostPromise?.then((host) => host.restrictedAppHost.unmountUiOwner(window.webContents.id));
+  const detachBrowserViews = () => {
     // Browser pages keep running; they show again when the renderer lays their tabs out.
     builtInBrowser?.detachWindow(window);
   };
   window.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) unmountRestrictedViews();
+    if (isMainFrame && !isInPlace) detachBrowserViews();
   });
   window.webContents.on("did-fail-load", (_event, code, description, url, isMainFrame) => {
     if (!isMainFrame || !isTrustedRendererUrl(url)) return;
@@ -2548,7 +2337,7 @@ function configureWindowResilience(window: BrowserWindow): void {
     rendererRecoveryAttempts = 0;
   });
   window.webContents.on("render-process-gone", (_event, details) => {
-    unmountRestrictedViews();
+    detachBrowserViews();
     if (!window.isDestroyed()) scheduleRendererRecovery(`renderer process ended: ${details.reason}`);
   });
 }
@@ -2698,7 +2487,7 @@ function assertTrustedMainRenderer(event: IpcMainInvokeEvent | IpcMainEvent): vo
   const mainFrame = event.sender.mainFrame;
   const mainFrameMatches = Boolean(frame && frame.processId === mainFrame.processId && frame.routingId === mainFrame.routingId);
   if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents || !mainFrameMatches) {
-    throw new Error("Restricted app view requests require the main AmpleFile renderer.");
+    throw new Error("This request requires the main AmpleFile renderer.");
   }
 }
 
@@ -2719,25 +2508,6 @@ function automationSettingsId(value: unknown): string {
     throw new Error("The Automation id is invalid.");
   }
   return automationId;
-}
-
-function restrictedAppViewIdentity(value: unknown): { connectedFolderId: string; appId: string; digest: string; featureInstallationId: string } {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Restricted app view identity is invalid.");
-  const record = value as Record<string, unknown>;
-  const connectedFolderId = typeof record.connectedFolderId === "string" ? record.connectedFolderId : "";
-  const appId = typeof record.appId === "string" ? record.appId : "";
-  const digest = typeof record.digest === "string" ? record.digest.toLowerCase() : "";
-  const featureInstallationId = parseFeatureInstallationId(record.featureInstallationId);
-  if (!connectedFolderId || connectedFolderId.length > 256 || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(appId) || !/^[a-f0-9]{64}$/.test(digest)) {
-    throw new Error("Restricted app view identity is invalid.");
-  }
-  return { connectedFolderId, appId, digest, featureInstallationId };
-}
-
-function restrictedAppViewPayload(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Restricted app view request is invalid.");
-  const { connectedFolderId: _connectedFolderId, appId: _appId, digest: _digest, featureInstallationId: _featureInstallationId, ...payload } = value as Record<string, unknown>;
-  return payload;
 }
 
 function isTrustedRendererUrl(value: string): boolean {
@@ -2772,10 +2542,6 @@ function resolvePreloadPath(): string {
 
 function resolveAmpleFileAgentPopoverPreloadPath(): string {
   return join(dirnameFromFile(currentFile), "amplefile-agent-popover-preload.cjs");
-}
-
-function resolveRestrictedAppPreloadPath(): string {
-  return join(dirnameFromFile(currentFile), "restricted-app-preload.cjs");
 }
 
 function resolveWindowIcon(): string {

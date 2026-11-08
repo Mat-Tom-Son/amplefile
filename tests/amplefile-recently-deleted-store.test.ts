@@ -5,19 +5,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
-import { parseDataNamespaceId, parseFeatureInstallationId, parseRuntimeInstanceId, parseTenantId } from "../src/local/agent/app-platform-contract.js";
-import {
-  FileRestrictedAppStorage,
-  validateRestrictedAppDataBackup,
-  type RestrictedAppDataBackup,
-  type RestrictedAppStorageOwner,
-} from "../src/local/agent/restricted-app-storage.js";
 import {
   AMPLEFILE_RECENTLY_DELETED_DEFAULT_RETENTION_DAYS,
   AmpleFileRecentlyDeletedError,
   AmpleFileRecentlyDeletedStore,
   ampleFileRecentlyDeletedEntryIdPattern,
-  type AmpleFileRecentlyDeletedAppDataIdentity,
   type AmpleFileRecentlyDeletedManifest,
   type AmpleFileRecentlyDeletedStoreOptions,
 } from "../src/local/recently-deleted-store.js";
@@ -60,31 +52,42 @@ async function rejectsRecentlyDeletedError(promise: Promise<unknown>, code: Ampl
   return caught;
 }
 
-const appOwner: RestrictedAppStorageOwner = {
-  ownerClass: "instance",
-  tenantId: parseTenantId("tenant_test"),
-  runtimeInstanceId: parseRuntimeInstanceId("runtime-instance_test"),
-  featureInstallationId: parseFeatureInstallationId("feature-installation_test"),
-  dataNamespaceId: parseDataNamespaceId("data-namespace_test"),
-};
-const appDigest = "a".repeat(64);
-const appIdentity: AmpleFileRecentlyDeletedAppDataIdentity = {
-  kind: "app-data",
-  appId: "quotes",
-  appDigest,
-  featureInstallationId: appOwner.featureInstallationId,
-  runtimeInstanceId: appOwner.runtimeInstanceId,
-  dataNamespaceId: appOwner.dataNamespaceId,
-  sourceConnectedFolderId: "connected-folder_source",
-  projectId: "project_quotes",
-  releaseDigest: null,
-};
-
-async function exportedBackup(root: string): Promise<RestrictedAppDataBackup> {
-  const storage = new FileRestrictedAppStorage(join(root, "app-storage"));
-  await storage.set(appOwner, "record", { count: 3 });
-  await storage.set(appOwner, "title", "Quotes");
-  return await storage.exportData(appOwner, "quotes", appDigest);
+/**
+ * Plants an entry the way builds before Connected Folder apps were removed
+ * (2026-11-07) kept app data, a Release, or App Studio history: a complete
+ * manifest beside its payload file or folder.
+ */
+async function plantOldAppEntry(
+  root: string,
+  id: string,
+  kind: "app-storage" | "app-retained" | "app-release" | "app-studio",
+  restoreBy = "2099-01-01T00:00:00.000Z",
+): Promise<string> {
+  const entryPath = join(root, "recently-deleted", "entries", id);
+  await mkdir(join(entryPath, "payload"), { recursive: true });
+  const appData = {
+    kind: "app-data", appId: "quotes", appDigest: "a".repeat(64), featureInstallationId: "feature-installation_test",
+    runtimeInstanceId: "runtime-instance_test", dataNamespaceId: "data-namespace_test", sourceConnectedFolderId: "connected-folder_source",
+    projectId: "project_quotes", releaseDigest: null,
+  };
+  const payload = kind === "app-release"
+    ? { kind: "app-release", projectId: "project_quotes", releaseDigest: `sha256:${"c".repeat(64)}`, displayVersion: "1.0.0", sourceConnectedFolderId: "connected-folder-1" }
+    : kind === "app-studio"
+      ? { kind: "app-studio", connectedFolderId: "connected-folder-1", projectId: "project_quotes" }
+      : kind === "app-retained" ? { ...appData, retainedDataId: "retained-data_1" } : appData;
+  if (kind === "app-studio") {
+    await mkdir(join(entryPath, "payload", "app-studio"), { recursive: true });
+    await writeFile(join(entryPath, "payload", "app-studio", "studio.json"), "{}");
+  } else {
+    await writeFile(join(entryPath, "payload", kind === "app-release" ? "app-release.json" : "app-data.json"), "{}");
+  }
+  await writeManifest(entryPath, {
+    version: 1, id, kind,
+    reason: kind === "app-release" ? "apps.release.delete" : kind === "app-studio" ? "apps.connected-folder.removed" : kind === "app-retained" ? "apps.retained.purge" : "apps.storage.clear",
+    connectedFolderId: "connected-folder-1", originalPath: "quotes/data-namespace_test", sizeBytes: 2,
+    deletedAt: "2026-11-01T00:00:00.000Z", restoreBy, receiptId: null, payload, complete: true,
+  });
+  return entryPath;
 }
 
 test("ampleFileTrashRoot lives under the state root", () => {
@@ -485,12 +488,10 @@ test("restoreTree puts a tree back, collision-renames, and removes the entry", a
   assert.deepEqual(renamedFolder, { restoredPath: join(connectedFolder, "drafts-2"), renamed: true });
   assert.equal(await readFile(join(connectedFolder, "drafts-2", "one.txt"), "utf8"), "one");
 
-  // App data cannot be restored as a tree; relative destinations are refused before anything moves.
-  const app = await store.moveAppDataToRecentlyDeleted({
-    kind: "app-storage", reason: "apps.storage.clear", backup: await exportedBackup(root), identity: appIdentity, connectedFolderId: "connected-folder-1", receiptId: null,
-  });
-  await rejectsRecentlyDeletedError(store.restoreTree(app.id, { absolutePath: join(connectedFolder, "app.json") }), "INPUT_INVALID", /app data/);
-  await rejectsRecentlyDeletedError(store.restoreTree(app.id, { absolutePath: "relative/path" }), "INPUT_INVALID", /absolute path/);
+  // App data an older build kept cannot be restored as a tree; relative destinations are refused before anything moves.
+  await plantOldAppEntry(root, "trash-20261101000000-0000a0d0", "app-storage");
+  await rejectsRecentlyDeletedError(store.restoreTree("trash-20261101000000-0000a0d0", { absolutePath: join(connectedFolder, "app.json") }), "INPUT_INVALID", /Connected Folder app/);
+  await rejectsRecentlyDeletedError(store.restoreTree("trash-20261101000000-0000a0d0", { absolutePath: "relative/path" }), "INPUT_INVALID", /absolute path/);
 });
 
 test("a failing restore leaves the entry intact", async (t) => {
@@ -521,264 +522,35 @@ test("a failing restore leaves the entry intact", async (t) => {
   assert.equal(await readFile(join(connectedFolder, "keep.txt"), "utf8"), "kept");
 });
 
-test("app data round-trips through the recently-deleted and every integrity failure is named", async (t) => {
+test("entries older builds kept for Connected Folder apps still list, expire, and delete now, but never restore", async (t) => {
   const root = await sandbox(t);
-  // The listing orders by deleted-at, so two entries kept in the same second
-  // are deliberately not ordered against each other; the clock moves here to
-  // assert the order the store does promise.
-  let now = new Date("2026-09-10T08:30:00.000Z");
-  const store = await openStore(root, { now: () => now });
-  const backup = await exportedBackup(root);
-
-  const entry = await store.moveAppDataToRecentlyDeleted({
-    kind: "app-storage",
-    reason: "apps.storage.clear",
-    backup: JSON.parse(JSON.stringify(backup)) as RestrictedAppDataBackup,
-    identity: appIdentity,
-    connectedFolderId: "connected-folder-1",
-    connectedFolderName: "Fold Connected Folder",
-    receiptId: "settings:11111111-2222-4333-8444-555555555555",
-  });
-  assert.equal(entry.kind, "app-storage");
-  assert.equal(entry.originalPath, `quotes/${appOwner.dataNamespaceId}`);
-  assert.equal(entry.payloadPath, join(entry.entryPath, "payload", "app-data.json"));
-  assert.deepEqual(entry.payload, appIdentity);
-  assert.equal(entry.sizeBytes, (await stat(entry.payloadPath)).size);
-  assert.ok(entry.sizeBytes > 0);
-  assert.equal(entry.complete, true);
-  assert.equal(entry.receiptId, "settings:11111111-2222-4333-8444-555555555555");
-
-  const read = await store.readAppData(entry.id);
-  assert.deepEqual(read, backup);
-  assert.deepEqual(validateRestrictedAppDataBackup(read, appOwner, "quotes", appDigest), backup);
-
-  // Tampered content on disk is STORE_DAMAGED on read; the entry is still listed.
-  const tampered = structuredClone(backup);
-  tampered.data.entries[0]!.value = { count: 99 };
-  await writeFile(entry.payloadPath, JSON.stringify(tampered));
-  await rejectsRecentlyDeletedError(store.readAppData(entry.id), "STORE_DAMAGED", /integrity/);
-  await writeFile(entry.payloadPath, "not json");
-  await rejectsRecentlyDeletedError(store.readAppData(entry.id), "STORE_DAMAGED", /cannot be read/);
-  assert.equal((await store.list()).entries.length, 1);
-
-  // A backup whose hash, app, or installation identity does not match is refused before anything is written.
-  const badHash = { ...backup, sha256: "0".repeat(64) };
-  await rejectsRecentlyDeletedError(store.moveAppDataToRecentlyDeleted({
-    kind: "app-storage", reason: "apps.storage.clear", backup: badHash, identity: appIdentity, connectedFolderId: "connected-folder-1", receiptId: null,
-  }), "INPUT_INVALID", /cannot be kept/);
-  await rejectsRecentlyDeletedError(store.moveAppDataToRecentlyDeleted({
-    kind: "app-storage", reason: "apps.storage.clear", backup, identity: { ...appIdentity, appDigest: "b".repeat(64) }, connectedFolderId: "connected-folder-1", receiptId: null,
-  }), "INPUT_INVALID", /different app/);
-  await rejectsRecentlyDeletedError(store.moveAppDataToRecentlyDeleted({
-    kind: "app-storage", reason: "apps.storage.clear", backup, identity: { ...appIdentity, dataNamespaceId: "data-namespace_other" }, connectedFolderId: "connected-folder-1", receiptId: null,
-  }), "INPUT_INVALID");
-  await rejectsRecentlyDeletedError(store.moveAppDataToRecentlyDeleted({
-    kind: "app-retained", reason: "apps.retained.purge", backup, identity: appIdentity, connectedFolderId: "connected-folder-1", receiptId: null,
-  }), "INPUT_INVALID", /retained-data id/);
-  assert.equal((await store.list()).entries.length, 1);
-
-  now = new Date("2026-09-10T08:30:05.000Z");
-  const retained = await store.moveAppDataToRecentlyDeleted({
-    kind: "app-retained", reason: "apps.uninstall.purge", backup, identity: { ...appIdentity, retainedDataId: "retained-data_1" }, connectedFolderId: "connected-folder-1", receiptId: null,
-  });
-  assert.equal(retained.kind, "app-retained");
-  assert.equal(retained.payload.kind === "app-data" ? retained.payload.retainedDataId : null, "retained-data_1");
-  await rejectsRecentlyDeletedError(store.readAppData("trash-20991231235959-ffffffff"), "NOT_FOUND");
-  assert.deepEqual((await store.list()).entries.map((item) => item.id), [retained.id, entry.id], "newest first");
-});
-
-test("a deleted Release round-trips with its record and envelope, and a mismatched or damaged copy is named", async (t) => {
-  const root = await sandbox(t);
-  const store = await openStore(root);
-  const releaseDigest = `sha256:${"c".repeat(64)}`;
-  const identity = {
-    kind: "app-release" as const,
-    projectId: "project_11111111-2222-4333-8444-555555555555",
-    releaseDigest,
-    displayVersion: "1.2.0",
-    sourceConnectedFolderId: "connected-folder-1",
-  };
-  const record = { projectId: identity.projectId, sourceConnectedFolderId: "connected-folder-1", releaseDigest, displayVersion: "1.2.0", state: "published" };
-  const release = { releaseDigest, manifest: { displayVersion: "1.2.0" } };
-
-  const entry = await store.moveAppReleaseToRecentlyDeleted({
-    reason: "apps.release.delete",
-    identity,
-    record,
-    release,
-    connectedFolderId: "connected-folder-1",
-    connectedFolderName: "Fold Connected Folder",
-    displayName: "Quotes 1.2.0",
-    receiptId: "settings:11111111-2222-4333-8444-555555555555",
-  });
-  assert.equal(entry.kind, "app-release");
-  assert.equal(entry.reason, "apps.release.delete");
-  assert.equal(entry.displayName, "Quotes 1.2.0");
-  assert.equal(entry.originalPath, `${identity.projectId}/${releaseDigest}`);
-  assert.equal(entry.payloadPath, join(entry.entryPath, "payload", "app-release.json"));
-  assert.deepEqual(entry.payload, identity);
-  assert.equal(entry.sizeBytes, (await stat(entry.payloadPath)).size);
-  assert.equal(entry.complete, true);
-
-  const reopened = await openStore(root);
-  assert.deepEqual((await reopened.list()).entries.map((item) => [item.id, item.kind]), [[entry.id, "app-release"]], "the manifest parses back");
-  assert.deepEqual(await reopened.readAppRelease(entry.id), { identity, record, release });
-  await rejectsRecentlyDeletedError(reopened.readAppData(entry.id), "INPUT_INVALID", /not app data/);
-  await rejectsRecentlyDeletedError(reopened.restoreTree(entry.id, { absolutePath: join(root, "anywhere") }), "INPUT_INVALID", /a Release/);
-
-  // A record or envelope naming another Release is refused before anything is written.
-  for (const [mismatch, pattern] of [
-    [{ record: { ...record, releaseDigest: `sha256:${"d".repeat(64)}` } }, /different Release/],
-    [{ release: { ...release, releaseDigest: `sha256:${"d".repeat(64)}` } }, /different Release/],
-    [{ record: { ...record, displayVersion: "1.3.0" } }, /different App Project, Connected Folder, or version/],
-    [{ record: "not a record" }, /missing/],
-  ] as const) {
-    await rejectsRecentlyDeletedError(store.moveAppReleaseToRecentlyDeleted({
-      reason: "apps.release.delete", identity, record, release, connectedFolderId: "connected-folder-1", receiptId: null, ...mismatch,
-    }), "INPUT_INVALID", pattern);
+  const store = await openStore(root, { now: () => new Date("2026-11-08T00:00:00.000Z") });
+  const ids = {
+    "app-storage": "trash-20261101000000-0000a001",
+    "app-retained": "trash-20261101000000-0000a002",
+    "app-release": "trash-20261101000000-0000a003",
+    "app-studio": "trash-20261101000000-0000a004",
+  } as const;
+  const paths: Record<string, string> = {};
+  for (const [kind, id] of Object.entries(ids)) {
+    paths[kind] = await plantOldAppEntry(root, id, kind as keyof typeof ids, kind === "app-retained" ? "2026-11-02T00:00:00.000Z" : "2099-01-01T00:00:00.000Z");
   }
-  await rejectsRecentlyDeletedError(store.moveAppReleaseToRecentlyDeleted({
-    reason: "apps.release.delete", identity: { ...identity, appId: "quotes" } as never, record, release, connectedFolderId: "connected-folder-1", receiptId: null,
-  }), "INPUT_INVALID", /Release identity/);
-  assert.equal((await store.list()).entries.length, 1);
 
-  // Damaged content on disk is STORE_DAMAGED on read; the entry stays listed.
-  await writeFile(entry.payloadPath, JSON.stringify({ format: "amplefile.app-release-recovery", formatVersion: 1, record, release: { ...release, releaseDigest: `sha256:${"e".repeat(64)}` } }));
-  await rejectsRecentlyDeletedError(store.readAppRelease(entry.id), "STORE_DAMAGED", /different Release/);
-  await writeFile(entry.payloadPath, "{\"format\":");
-  await rejectsRecentlyDeletedError(store.readAppRelease(entry.id), "STORE_DAMAGED", /cannot be read/);
-  assert.equal((await store.list()).entries.length, 1);
-  assert.deepEqual(await store.remove(entry.id), { removed: true });
-});
-
-test("a removed Connected Folder's App Studio history round-trips with its Releases and package copies, and a mismatched or damaged copy is named", async (t) => {
-  const root = await sandbox(t);
-  const store = await openStore(root);
-  const projectId = "project_11111111-2222-4333-8444-555555555555";
-  const releaseDigest = `sha256:${"c".repeat(64)}`;
-  const packageDigest = "a".repeat(64);
-  const identity = { kind: "app-studio" as const, connectedFolderId: "connected-folder-1", projectId };
-  const studio = {
-    project: { connectedFolderId: "connected-folder-1", projectId, presentation: { title: "Quotes" } },
-    runtimeInstances: [{ kind: "development", connectedFolderId: "connected-folder-1", projectId }],
-    previews: [{ connectedFolderId: "connected-folder-1", projectId, digest: packageDigest }],
-    operations: [
-      { operationId: "operation_1", projectId, targetConnectedFolderId: "connected-folder-2" },
-      { operationId: "operation_2", projectId: "project_other", targetConnectedFolderId: "connected-folder-1" },
-    ],
-    adminReceipts: [{ receiptId: "admin_1", projectId }],
-  };
-  const releases = [{
-    record: { projectId, sourceConnectedFolderId: "connected-folder-1", releaseDigest, displayVersion: "1.0.0", state: "published" },
-    release: { releaseDigest, manifest: { displayVersion: "1.0.0" } },
-  }];
-  const packageRoot = join(root, "staged", packageDigest);
-  await mkdir(join(packageRoot, "nested"), { recursive: true });
-  await writeFile(join(packageRoot, "package.json"), "{\"name\":\"quotes\"}");
-  await writeFile(join(packageRoot, "nested", "app.js"), "export {};\n");
-
-  const entry = await store.moveAppStudioToRecentlyDeleted({
-    reason: "apps.connected-folder.removed",
-    identity,
-    studio,
-    releases,
-    packages: [{ digest: packageDigest, root: packageRoot }],
-    connectedFolderId: "connected-folder-1",
-    connectedFolderName: "Fold Connected Folder",
-    displayName: "Quotes (App Studio)",
-    receiptId: "settings:11111111-2222-4333-8444-555555555555",
-  });
-  assert.equal(entry.kind, "app-studio");
-  assert.equal(entry.reason, "apps.connected-folder.removed");
-  assert.equal(entry.displayName, "Quotes (App Studio)");
-  assert.equal(entry.originalPath, projectId);
-  assert.equal(entry.payloadPath, join(entry.entryPath, "payload", "app-studio"));
-  assert.deepEqual(entry.payload, identity);
-  assert.equal(entry.complete, true);
-  assert.ok(entry.sizeBytes > 0);
-  assert.equal(await readFile(join(packageRoot, "nested", "app.js"), "utf8"), "export {};\n", "the original package folder is copied, never moved");
-  assert.deepEqual(await readdir(join(root, "recently-deleted", "incoming")), [], "nothing is left half-assembled");
-
-  const reopened = await openStore(root);
-  assert.deepEqual((await reopened.list()).entries.map((item) => [item.id, item.kind]), [[entry.id, "app-studio"]], "the manifest parses back");
-  const read = await reopened.readAppStudio(entry.id);
-  assert.deepEqual(read.identity, identity);
-  assert.deepEqual(read.studio, studio);
-  assert.deepEqual(read.releases, releases);
-  assert.deepEqual([...read.packageRoots.keys()], [packageDigest]);
-  assert.equal(await readFile(join(read.packageRoots.get(packageDigest)!, "nested", "app.js"), "utf8"), "export {};\n");
-  await rejectsRecentlyDeletedError(reopened.readAppData(entry.id), "INPUT_INVALID", /not app data/);
-  await rejectsRecentlyDeletedError(reopened.readAppRelease(entry.id), "INPUT_INVALID", /not a Release/);
-  await rejectsRecentlyDeletedError(reopened.restoreTree(entry.id, { absolutePath: join(root, "anywhere") }), "INPUT_INVALID", /App Studio history/);
-
-  // A target-only Connected Folder keeps just the installs that were aimed at it.
-  const targetOnly = await store.moveAppStudioToRecentlyDeleted({
-    reason: "apps.connected-folder.removed",
-    identity: { kind: "app-studio", connectedFolderId: "connected-folder-2", projectId: null },
-    studio: { project: null, runtimeInstances: [], previews: [], operations: [studio.operations[0]], adminReceipts: [] },
-    releases: [],
-    packages: [],
-    connectedFolderId: "connected-folder-2",
-    receiptId: null,
-  });
-  assert.equal(targetOnly.originalPath, "connected-folder-2");
-  assert.deepEqual((await store.readAppStudio(targetOnly.id)).studio.operations, [studio.operations[0]]);
-
-  // Anything naming another Project or Connected Folder is refused before anything is written.
-  const base = {
-    reason: "apps.connected-folder.removed" as const, identity, studio, releases,
-    packages: [{ digest: packageDigest, root: packageRoot }], connectedFolderId: "connected-folder-1", receiptId: null,
-  };
-  for (const [mismatch, pattern] of [
-    [{ studio: { ...studio, project: { ...studio.project, projectId: "project_other" } } }, /different Project or Connected Folder/],
-    [{ studio: { ...studio, previews: [{ ...studio.previews[0], projectId: "project_other" }] } }, /different App Project/],
-    [{ studio: { ...studio, operations: [{ operationId: "operation_3", projectId: "project_other", targetConnectedFolderId: "connected-folder-9" }] } }, /neither this App Project nor this Connected Folder/],
-    [{ studio: { ...studio, extra: [] } }, /not complete/],
-    [{ releases: [{ ...releases[0], record: { ...releases[0]!.record, sourceConnectedFolderId: "connected-folder-9" } }] }, /different App Project or Connected Folder/],
-    [{ releases: [{ ...releases[0], release: { releaseDigest: `sha256:${"d".repeat(64)}` } }] }, /different Release/],
-    [{ packages: [{ digest: "not-a-digest", root: packageRoot }] }, /content digest/],
-    [{ packages: [{ digest: packageDigest, root: join(root, "missing") }] }, /not a real folder/],
-    [{ connectedFolderId: "connected-folder-9" }, /Connected Folder it is kept for/],
-  ] as const) {
-    await rejectsRecentlyDeletedError(store.moveAppStudioToRecentlyDeleted({ ...base, ...mismatch } as never), "INPUT_INVALID", pattern);
-  }
-  assert.equal((await store.list()).entries.length, 2);
-
-  // Damaged content on disk is STORE_DAMAGED on read; the entry stays listed.
-  const releaseFile = join(entry.payloadPath, "releases", `${"c".repeat(64)}.json`);
-  const releaseText = await readFile(releaseFile, "utf8");
-  await writeFile(releaseFile, releaseText.replace(`"sourceConnectedFolderId":"connected-folder-1"`, `"sourceConnectedFolderId":"connected-folder-9"`));
-  await rejectsRecentlyDeletedError(store.readAppStudio(entry.id), "STORE_DAMAGED", /different App Project or Connected Folder/);
-  await writeFile(releaseFile, releaseText);
-  await rm(join(entry.payloadPath, "packages", packageDigest), { recursive: true });
-  await rejectsRecentlyDeletedError(store.readAppStudio(entry.id), "STORE_DAMAGED", /package .* is missing/);
-  await writeFile(join(entry.payloadPath, "studio.json"), "{\"format\":");
-  await rejectsRecentlyDeletedError(store.readAppStudio(entry.id), "STORE_DAMAGED", /cannot be read/);
-  assert.equal((await store.list()).entries.length, 2);
-  assert.deepEqual(await store.remove(entry.id), { removed: true });
-});
-
-test("an interrupted App Studio copy never becomes a complete entry", async (t) => {
-  const root = await sandbox(t);
-  const packageDigest = "b".repeat(64);
-  const packageRoot = join(root, "staged", packageDigest);
-  await mkdir(packageRoot, { recursive: true });
-  await writeFile(join(packageRoot, "package.json"), "{}");
-  // The package copy fails part-way: nothing is kept, and nothing half-written is listed.
-  const store = await openStore(root, { io: { cp: async () => { throw new Error("disk full"); } } });
-  await rejectsRecentlyDeletedError(store.moveAppStudioToRecentlyDeleted({
-    reason: "apps.connected-folder.removed",
-    identity: { kind: "app-studio", connectedFolderId: "connected-folder-1", projectId: null },
-    studio: { project: null, runtimeInstances: [], previews: [], operations: [], adminReceipts: [] },
-    releases: [],
-    packages: [{ digest: packageDigest, root: packageRoot }],
-    connectedFolderId: "connected-folder-1",
-    receiptId: null,
-  }), "MOVE_FAILED", /could not keep a copy of the App Studio history/);
   const listing = await store.list();
-  assert.deepEqual(listing.entries, []);
-  assert.deepEqual(listing.damaged, []);
-  assert.deepEqual(await readdir(join(root, "recently-deleted", "incoming")), []);
+  assert.deepEqual(listing.damaged, [], "an old app entry never reads as damaged");
+  assert.deepEqual(listing.entries.map((entry) => entry.kind).sort(), ["app-release", "app-retained", "app-storage", "app-studio"]);
+  const studio = listing.entries.find((entry) => entry.kind === "app-studio")!;
+  assert.equal(studio.payloadPath, join(paths["app-studio"]!, "payload", "app-studio"));
+  for (const id of Object.values(ids)) {
+    await rejectsRecentlyDeletedError(store.restoreTree(id, { absolutePath: join(root, "anywhere") }), "INPUT_INVALID", /cannot be restored/);
+  }
+  assert.equal(existsSync(join(paths["app-storage"]!, "payload", "app-data.json")), true, "a refused restore keeps the files");
+
+  // Delete now still works, and retention still removes what expired.
+  assert.deepEqual(await store.remove(ids["app-release"]), { removed: true });
+  const purged = await store.purgeExpired(new Date("2026-11-08T00:00:00.000Z"));
+  assert.deepEqual(purged.purged, [ids["app-retained"]]);
+  assert.deepEqual((await store.list()).entries.map((entry) => entry.id).sort(), [ids["app-storage"], ids["app-studio"]]);
 });
 
 test("retention purge erases only expired entries, holds legacy trees, and runs once per interval", async (t) => {
@@ -1026,7 +798,6 @@ test("entry ids are validated before any path is touched", async (t) => {
     await rejectsRecentlyDeletedError(store.get(id), "INPUT_INVALID", /look like trash-/);
     await rejectsRecentlyDeletedError(store.restoreTree(id, { absolutePath: join(root, "x") }), "INPUT_INVALID");
     await rejectsRecentlyDeletedError(store.attachConnectedFolderState(id, join(root, "state")), "INPUT_INVALID");
-    await rejectsRecentlyDeletedError(store.readAppData(id), "INPUT_INVALID");
     await rejectsRecentlyDeletedError(store.remove(id), "INPUT_INVALID");
   }
   assert.equal(existsSync(join(root, "x")), false);

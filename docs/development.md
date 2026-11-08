@@ -30,7 +30,7 @@ steps; in development, `&script=fixture-chat-1` replays a Chat
 files, settings, or History explain that they are disabled in the preview.
 
 The browser preview cannot prove native dialogs, secure storage, preloads, or
-restricted-app WebContentsView behavior. Use the native lane for those changes.
+built-in browser behavior. Use the native lane for those changes.
 `desktop:prepare` alone builds and runs automated probes; it does not launch the
 normal interactive app or create an installer.
 
@@ -93,7 +93,7 @@ During browser development, open the local renderer with `?dev-context`
 This is a developer diagnostic route, with no normal Chat, AmpleFile agent or
 Settings entry. Enable **Record model context**, reproduce the behavior in the
 app, then refresh and choose the request. The all-request view includes Worker
-and AmpleFile agent turns, titles, app inference and compaction. Search or copy assembled context, compare
+and AmpleFile agent turns, titles, bounded inference, and compaction. Search or copy assembled context, compare
 provider payloads where the adapter exposes them, and inspect provenance from
 the loaded runtime: source paths, instruction digests, Skills, Extensions and
 tools. These facts are captured at dispatch, not reconstructed from later file
@@ -113,13 +113,13 @@ for capture stages, coverage and bounds.
 |---|---|
 | `web-local/src/` | React UI, client state, styles, and inert UI fixtures |
 | `src/local/server.ts` | Local API routes and domain-service composition |
-| `src/local/agent/` | Pi integration, Chat turns, app services, and brokers |
+| `src/local/agent/` | Pi integration, Chat turns, and agent services |
 | `src/local/connected-folder*.ts` | Connected Folder registration, path policy, ignore rules, watching, and appearance |
 | `src/local/automations/`, `src/local/requests/` | Automations (including their folder target resolver) and durable request records |
 | `src/local/overview.ts`, `src/local/amplefile-agent-*.ts` | The AmpleFile agent's overview, attachments, and instructions |
 | [Kernel](../src/local/amplefile-kernel.ts), [CLI](../src/local/cli/), [adapter](../src/local/amplefile-cli-adapter.ts) | Shared context, tasks, and control-plane contracts |
 | `src/shared/` | Shared types and the product identity contract |
-| `desktop/src/` | Electron windows, lifecycle, preloads, native app hosts, and updater |
+| `desktop/src/` | Electron windows, lifecycle, preloads, the built-in browser, and updater |
 | `tests/` | Application regression tests |
 | `scripts/` | Shared development, validation, and release commands |
 | `docs/`, `.agents/skills/` | Product contracts and task-specific contributor workflows |
@@ -152,10 +152,9 @@ extra repository instruction source.
   folder. Running a test file directly with `node --import tsx --test` skips
   that isolation; use `npm test -- <file>` instead.
 - `npm run desktop:prepare` verifies desktop resources, compiled code, native
-  preloads, the real restricted-app sandbox, and the built-in browser. After a
-  compiled native change, `npm run desktop:restricted-app:smoke` is the focused
-  sandbox probe and `npm run desktop:browser:smoke` drives real browser pages
-  served from a loopback server.
+  preloads, and the built-in browser. After a compiled native change,
+  `npm run desktop:browser:smoke` drives real browser pages served from a
+  loopback server.
 
 GitHub Actions is disabled in the canonical source repository as of September
 30, 2026. Pushes, PRs, and release tags do not run remote checks. The checked-in

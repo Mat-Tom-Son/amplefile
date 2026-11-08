@@ -30,7 +30,13 @@ export interface AmpleFileActConnectedFolderRef {
   connectedFolderRoot: string;
 }
 
-/** One Recently deleted item, as the act lane reports it: identifiers and paths only. */
+/**
+ * One Recently deleted item, as the act lane reports it: identifiers and paths
+ * only. The four `app-*` kinds and the `apps.*` reasons are items an earlier
+ * build kept from Connected Folder apps (removed 2026-11-07). They still list,
+ * wait out their retention window, and can be deleted now, but nothing can
+ * bring them back, so they always read `blocked`.
+ */
 export interface AmpleFileActRecentlyDeletedEntry {
   id: string;
   kind: "file" | "folder" | "connected-folder" | "skill" | "app-storage" | "app-retained" | "app-release" | "app-studio";
@@ -50,7 +56,7 @@ export interface AmpleFileActRecentlyDeletedEntry {
   connectedFolderName?: string;
   /** skill only: the scope it goes back into. An Everywhere Skill names the AmpleFile agent's scope as its Connected Folder. */
   scope?: "everywhere" | "connected-folder";
-  /** Connected Folder–relative path, a deleted Connected Folder's original folder path, a Skill's path inside its scope's skills folder, `<appId>/<namespace>`, `<projectId>/<releaseDigest>`, or an App Project id (App Studio history). */
+  /** Connected Folder–relative path, a deleted Connected Folder's original folder path, a Skill's path inside its scope's skills folder, or what an earlier build's app item named. */
   originalPath: string;
   name: string;
   sizeBytes: number;
@@ -62,11 +68,10 @@ export interface AmpleFileActRecentlyDeletedEntry {
   /** A tree holding records from the earlier Workspace product; AmpleFile never erases those. */
   held?: { reason: "legacy-metadata" | "unreadable"; noticedAt: string };
   /**
-   * `in-place` goes back where it came from; `save-only` can only be written
-   * out as a file with `--to` (app data whose app is gone); `blocked` cannot
-   * be brought back right now, and `note` says why.
+   * `in-place` goes back where it came from; `blocked` cannot be brought back
+   * right now, and `note` says why.
    */
-  restorable: "in-place" | "save-only" | "blocked";
+  restorable: "in-place" | "blocked";
   note?: string;
 }
 
@@ -386,132 +391,8 @@ export interface AmpleFileActJobOutput {
 /** Registered Connected Folder storage kind, mirrored from the Connected Folder registry. */
 export type AmpleFileActConnectedFolderStorage = "managed" | "linked";
 
-/**
- * App Studio presentation values, exactly the pane's typed form: a title plus
- * optional description and icon id. The act verb reads them from a typed JSON
- * file resolved host-side, never from free-form argv.
- */
-export interface AmpleFileActAppPresentation {
-  title: string;
-  description: string | null;
-  icon: string | null;
-}
-
-/** Bounded projection of one immutable content-addressed App Release record. */
-export interface AmpleFileActAppReleaseRef {
-  releaseDigest: string;
-  displayVersion: string;
-  state: "prepared" | "published";
-  preparedAt: string;
-  publishedAt: string | null;
-  featureCount: number;
-}
-
-/**
- * Bounded projection of one prepared App Studio operation. `fromReleaseDigest`
- * is present exactly for update plans, so a receipt can name the transition by
- * content identity instead of inferring an update-versus-rollback label the
- * service does not record.
- */
-export interface AmpleFileActAppOperationRef {
-  operationId: string;
-  kind: "install" | "update";
-  releaseDigest: string;
-  runtimeInstanceId: string;
-  targetConnectedFolderId: string;
-  preparedAt: string;
-  fromReleaseDigest?: string;
-  continuityPolicy?: "eligible" | "reset";
-}
-
-/** Bounded projection of one release-backed App Instance. */
-export interface AmpleFileActAppInstanceRef {
-  runtimeInstanceId: string;
-  connectedFolderId: string;
-  releaseDigest: string;
-  displayVersion: string;
-}
-
-/**
- * Bounded projection of one Chat-bound restricted-app proposal receipt. The
- * review's digest and package identity are the fields a staging or dismissal
- * needs; the full review (manifest, permissions, file counts) stays on the
- * desktop review dialog.
- */
-export interface AmpleFileActAppProposalRef {
-  id: string;
-  status: "pending" | "installed" | "failed" | "dismissed" | "revision-changed";
-  sourcePath: string;
-  title: string;
-  packageName: string;
-  version: string;
-  digest: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** One declared tool of an installed app, with the schemas a caller needs to invoke it. */
-export interface AmpleFileActAppToolRef {
-  name: string;
-  description: string;
-  action: string;
-  inputSchema: unknown;
-  resultSchema: unknown;
-}
-
-/**
- * What one installed app can do, as the AmpleFile agent sees it before acting: its
- * declared tools and Worker actions, the powers it holds, which
- * destinations have a saved connection, and its named automations.
- */
-export interface AmpleFileActAppListing {
-  appId: string;
-  featureInstallationId: string;
-  digest: string;
-  title: string;
-  description: string | null;
-  version: string;
-  kind: "preview" | "installed";
-  tools: AmpleFileActAppToolRef[];
-  assistantActions: Array<{ id: string; title: string }>;
-  grants: {
-    network: string[];
-    files: Array<{ declarationId: string; root: string; access: string }>;
-    notifications: string[];
-    checks: Array<{ permissionId: string; checkId: string }>;
-  };
-  connections: Array<{ destinationId: string; kind: string | null; configured: boolean }>;
-  automations: Array<{ id: string; title: string; enabled: boolean; nextRunAt: string | null; lastRunAt: string | null }>;
-}
-
-/**
- * What an install turned on, and what still needs the person. F21 grants every
- * declared destination, folder permission, notification category, and
- * automation at install; a permission that names a single file, a Check slot
- * in a Connected Folder with several Checks, and a destination whose secret the person
- * types are the deliberate remainder. Both halves ride the result so the
- * AmpleFile agent can say them the way a Worker Chat does.
- */
-export interface AmpleFileActAppInstallOutcome {
-  granted: {
-    destinations: number;
-    wholeConnectedFolderFolders: number;
-    notifications: number;
-    checks: number;
-    automations: number;
-  };
-  needs: {
-    /** Destinations whose declared credential the person still enters in Settings → Apps. */
-    connections: string[];
-    /** Permissions that name a single file the person still chooses. */
-    files: string[];
-    /** Check-result slots not bound to a Check. */
-    checks: string[];
-  };
-}
-
-/** Bounded projection of one named-automation run receipt. */
-export interface AmpleFileActAppAutomationRunRef {
+/** Bounded projection of one automation run receipt. */
+export interface AmpleFileActAutomationRunRef {
   runId: string;
   outcome: "success" | "failure" | "skipped" | "cancelled" | "interrupted";
   startedAt: string;
@@ -521,7 +402,7 @@ export interface AmpleFileActAppAutomationRunRef {
 
 /** Bounded projection of an automation's reviewed trigger (docs/automations.md). */
 export interface AmpleFileActAutomationTriggerRef {
-  kind: "manual" | "interval" | "at" | "on-settled" | "files-changed";
+  kind: "manual" | "interval" | "at" | "files-changed";
   connectedFolderId?: string;
   watch?: { kind: "tree"; path: string; recursive: boolean; extensions: string[] };
   debounceSeconds?: number;
@@ -529,13 +410,6 @@ export interface AmpleFileActAutomationTriggerRef {
   intervalMinutes?: number;
   at?: string;
   ifMissed?: "run" | "skip";
-  source?: {
-    kind: "app-automation-run";
-    connectedFolderId: string;
-    appId?: string;
-    appAutomationId?: string;
-    outcomes: string[];
-  };
 }
 
 /**
@@ -653,16 +527,6 @@ export interface AmpleFileActAutomationReceipt {
   requestId?: string;
   occurrenceId?: string;
   scheduledRunId?: string;
-}
-
-/** The exact installation an install verb produced. Never resolved by display name. */
-export interface AmpleFileActInstalledAppRef {
-  connectedFolderId: string;
-  appId: string;
-  featureInstallationId: string;
-  digest: string;
-  title: string;
-  version: string;
 }
 
 export interface AmpleFileActFacade {
@@ -976,8 +840,7 @@ export interface AmpleFileActFacade {
    * restore verbs record the safety restore point History itself created, so
    * every History act is recoverable through History. Whole–Connected Folder restore is
    * refused while Worker or compaction work is active in the
-   * Connected Folder, while a restricted-app automation run whose app holds a file
-   * grant into the Connected Folder is active, and while an automation run with a files hop
+   * Connected Folder and while an automation run with a files hop
    * targeting the Connected Folder is active (the kernel-checked rule) — a deliberate
    * strengthening over the desktop's confirm dialog.
    */
@@ -1123,9 +986,9 @@ export interface AmpleFileActFacade {
    * AmpleFile's project-runtime authorization while the folder and its
    * portable `.amplefile/` identity remain — for both storage kinds: a
    * managed Connected Folder's registration removal records a preserve-disposition
-   * intent that provably holds no deletion authority. It runs the same App
-   * Studio impact checks and automation revocation cascades as the desktop
-   * removal path. Deleting a managed folder is
+   * intent that provably holds no deletion authority. It runs the same
+   * automation revocation cascades as the desktop removal path. Deleting a
+   * managed folder is
    * `connectedFoldersDelete`, a direct receipted verb on the prepared-act path.
    */
   connectedFoldersRename(input: { connectedFolder: string; name: string; parentTaskId?: string }): Promise<{
@@ -1137,10 +1000,6 @@ export interface AmpleFileActFacade {
     storage: AmpleFileActConnectedFolderStorage;
     removed: true;
     cleanupPending: boolean;
-    /** One recoverable copy per preview app in the Connected Folder that held local data. */
-    appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
-    /** The Connected Folder's App Studio history, kept in Recently deleted; null when it had none. */
-    appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
   }>;
 
   /**
@@ -1201,183 +1060,6 @@ export interface AmpleFileActFacade {
   }>;
 
   /**
-   * connected-folder-app authority direct verbs (docs/act-ledger.md): the
-   * narrowing and neutral side of restricted-app authority, reusing the
-   * exact desktop route internals with their capability fencing. Widening —
-   * installs, grants, connections, automation enablement — runs through the
-   * prepared-act methods below. Verbs that name an app
-   * without a digest resolve the installed revision host-side and pin it for
-   * the mutation, so a revision change between lookup and act fails instead
-   * of acting on different bytes.
-   */
-  /**
-   * Act read: what is installed in one Connected Folder and what each app can do —
-   * tools with their schemas, named Worker actions, grants, connection
-   * state, and automations (docs/receipts-not-gates.md, Connected Folder apps). Reads
-   * carry no lineage and write no action record.
-   */
-  appsList(input: { connectedFolder: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    apps: AmpleFileActAppListing[];
-    truncated: boolean;
-  }>;
-  /**
-   * Runs one declared tool through the app's own runtime, with the installed
-   * revision pinned at lookup so a code change between lookup and call fails
-   * instead of running different bytes. The tool's own effects are the app's,
-   * bounded by the powers it holds; the receipt names the app and the tool.
-   */
-  appsInvoke(input: { connectedFolder: string; app: string; tool: string; input: unknown; parentTaskId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    appId: string;
-    featureInstallationId: string;
-    digest: string;
-    tool: string;
-    action: string;
-    result: unknown;
-  }>;
-  appsProposalsList(input: { connectedFolder: string; conversationId: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    conversationId: string;
-    proposals: AmpleFileActAppProposalRef[];
-  }>;
-  /** Dismissal is not denial-of-review: nothing runnable existed, and the Worker may propose again. */
-  appsProposalsDismiss(input: { connectedFolder: string; conversationId: string; proposal: string; parentTaskId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    proposalId: string;
-    dismissed: boolean;
-  }>;
-  /** Removes a reviewed development app; release-backed Instances take `appsUninstall`. Reinstalling is a fresh receipted act. */
-  appsRemove(input: { connectedFolder: string; app: string; parentTaskId?: string; requestId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    appId: string;
-    digest: string;
-    removed: boolean;
-    /** A removed preview takes its data with it, so a copy lands in Recently deleted first. */
-    recentlyDeleted: AmpleFileActRecentlyDeletedRef | null;
-  }>;
-  /**
-   * Revokes one granted declaration on the exact reviewed digest. Revocation
-   * stops stale launches before the authority change reads as complete
-   * (service-side), and `revoked: false` honestly reports a declaration that
-   * was not granted. Re-granting is a fresh receipted act.
-   */
-  appsRevoke(input: {
-    connectedFolder: string;
-    app: string;
-    digest: string;
-    kind: "network" | "files" | "notifications";
-    declaration: string;
-    parentTaskId?: string;
-  }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    appId: string;
-    grantKind: "network" | "files" | "notifications";
-    declaration: string;
-    revoked: boolean;
-  }>;
-  /**
-   * Removes one saved connection's local record. Deleting the local record
-   * does not revoke the credential at its provider — the receipt says so.
-   */
-  appsDisconnect(input: { connectedFolder: string; app: string; destination: string; parentTaskId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    appId: string;
-    destination: string;
-    disconnected: boolean;
-  }>;
-  appsAutomationDisable(input: { connectedFolder: string; app: string; automation: string; parentTaskId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    appId: string;
-    appAutomationId: string;
-    disabled: true;
-    wasEnabled: boolean;
-  }>;
-  /**
-   * Run-now for an enabled named automation, under the machine-wide
-   * scheduler's admission rules (32 slots by default, same-job non-overlap). The run's
-   * durable, authority-captured receipt is the result; a run the scheduler
-   * skipped reports its skipped outcome honestly.
-   */
-  appsAutomationRun(input: { connectedFolder: string; app: string; automation: string; parentTaskId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    appId: string;
-    appAutomationId: string;
-    run: AmpleFileActAppAutomationRunRef;
-  }>;
-
-  /**
-   * App Studio's authority-neutral spine (docs/act-ledger.md): these
-   * verbs change which local records exist, never what may run with which
-   * powers — powers arrive through the receipted grant verbs. Every method
-   * reuses the exact desktop route internals, including the App Studio
-   * guards: referenced Releases cannot be deleted, prepared operations
-   * recheck at activation, digest identity beats display versions, and
-   * install activation turns on every declared power (docs/receipts-not-gates.md, F21).
-   */
-  appsProjectDeclare(input: { connectedFolder: string; presentationPath: string; cwd: string; parentTaskId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    project: { projectId: string; presentation: AmpleFileActAppPresentation };
-    priorPresentation: AmpleFileActAppPresentation | null;
-    priorPresentationRef: string | null;
-  }>;
-  appsReleasePrepare(input: { connectedFolder: string; version: string; parentTaskId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    release: AmpleFileActAppReleaseRef;
-  }>;
-  appsReleasePublish(input: { connectedFolder: string; release: string; parentTaskId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    release: AmpleFileActAppReleaseRef;
-  }>;
-  /**
-   * Deletes one unused Release. Its record and verified envelope go to
-   * Recently deleted first (docs/receipts-not-gates.md, F20), so
-   * `recently-deleted restore` puts it back in the state it was deleted in.
-   */
-  appsReleaseDelete(input: { connectedFolder: string; release: string; parentTaskId?: string; requestId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    releaseDigest: string;
-    deleted: boolean;
-    cleanupPending: boolean;
-    /** The Recently deleted item holding the Release; null when nothing was deleted. */
-    recentlyDeleted: AmpleFileActRecentlyDeletedRef | null;
-  }>;
-  appsInstallPrepare(input: { connectedFolder: string; release: string; targetConnectedFolder: string; parentTaskId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    targetConnectedFolder: AmpleFileActConnectedFolderRef;
-    operation: AmpleFileActAppOperationRef;
-  }>;
-  appsUpdatePrepare(input: { connectedFolder: string; instance: string; release: string; parentTaskId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    targetConnectedFolder: AmpleFileActConnectedFolderRef;
-    operation: AmpleFileActAppOperationRef;
-  }>;
-  appsOperationActivate(input: { connectedFolder: string; operation: string; parentTaskId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    operationId: string;
-    operationKind: "install" | "update";
-    instance: AmpleFileActAppInstanceRef;
-  }>;
-  appsOperationCancel(input: { connectedFolder: string; operation: string; parentTaskId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    operationId: string;
-    cancelled: boolean;
-  }>;
-  /**
-   * Uninstall with the retain-data disposition only; `--purge-data` is
-   * `appsUninstallPurge`, which runs through the prepared-act path. Retained
-   * namespaces do not remain runnable, and reinstalling creates a new
-   * Instance.
-   */
-  appsUninstall(input: { connectedFolder: string; instance: string; parentTaskId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    runtimeInstanceId: string;
-    removed: boolean;
-    retainedNamespaceIds: string[];
-    cleanupPending: boolean;
-  }>;
-
-  /**
    * The verbs that install code, widen a power, or destroy data
    * (docs/act-ledger.md; docs/receipts-not-gates.md, F19). Each method
    * composes the act's typed parameters and pins from live state — never
@@ -1398,10 +1080,6 @@ export interface AmpleFileActFacade {
     removed: true;
     cleanupPending: boolean;
     recentlyDeleted: { entryId: string; restoreBy: string } | null;
-    /** One recoverable copy per preview app in the Connected Folder that held local data. */
-    appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
-    /** The Connected Folder's App Studio history, kept in Recently deleted; null when it had none. */
-    appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
   }>;
   /** Imports one skill bundle, pinning the exact inspected bytes. */
   toolsImportSkill(input: {
@@ -1465,118 +1143,6 @@ export interface AmpleFileActFacade {
     resourceSummary: string;
     updated: true;
   }>;
-  /** Installs one pending Chat app review at its reviewed digest. */
-  appsInstallProposal(input: {
-    connectedFolder: string;
-    conversationId: string;
-    proposal: string;
-    parentTaskId?: string;
-    requestId?: string;
-  }): Promise<AmpleFileActAppInstallOutcome & {
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    proposalId: string;
-    digest: string;
-    app: AmpleFileActInstalledAppRef;
-  }>;
-  /**
-   * The ledger's "Add / update local preview" row: the host inspects the
-   * named Connected Folder–relative package folder, records the same host-owned review
-   * the Chat proposal path produces — AmpleFile owning every review field
-   * and the digest — and installs it through the same digest-checked path.
-   */
-  appsInstallPreview(input: {
-    connectedFolder: string;
-    packagePath: string;
-    parentTaskId?: string;
-    requestId?: string;
-  }): Promise<AmpleFileActAppInstallOutcome & {
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    proposalId: string;
-    digest: string;
-    title: string;
-    packageName: string;
-    version: string;
-    /**
-     * True when a Local preview of the same app id at a different revision was
-     * already in the Connected Folder: the install replaced it, carrying forward
-     * grants and automation states by declaration id, run receipts, and
-     * connections whose destination declaration is byte-identical
-     * (`carryForwardInstallation`). Re-adding the installed revision is false.
-     */
-    replacesInstalled: boolean;
-    app: AmpleFileActInstalledAppRef;
-  }>;
-  /**
-   * Grants one exact reviewed declaration on the exact installed digest. A
-   * folder permission covers the whole Connected Folder; a permission that names a
-   * single file binds to the Connected Folder–relative file given as `path`, which must
-   * already exist inside the Connected Folder and outside its reserved metadata.
-   */
-  appsGrant(input: {
-    connectedFolder: string;
-    app: string;
-    digest: string;
-    kind: "network" | "files" | "notifications";
-    declaration: string;
-    path?: string;
-    parentTaskId?: string;
-    requestId?: string;
-  }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    appId: string;
-    grantKind: "network" | "files" | "notifications";
-    declaration: string;
-    granted: true;
-    root?: string;
-  }>;
-  /** Connects through the browser sign-in flow; a destination that takes a typed secret is refused and connected from Settings → Apps. */
-  appsConnect(input: { connectedFolder: string; app: string; destination: string; parentTaskId?: string; requestId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    appId: string;
-    destination: string;
-    target: string;
-    adapterKind: string;
-    connection: { destinationId: string; kind: string | null; configured: boolean };
-  }>;
-  /** Enables one reviewed named job, pinning its digest and schedule summary. */
-  appsAutomationEnable(input: { connectedFolder: string; app: string; automation: string; parentTaskId?: string; requestId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    appId: string;
-    appAutomationId: string;
-    scheduleSummary: string;
-    enabled: true;
-  }>;
-  /**
-   * Clears one installed app's live storage; the observed byte count is
-   * pinned and a change before the effect is a conflict. A complete copy of
-   * the data lands in Recently deleted first, unless the app held nothing
-   * (docs/receipts-not-gates.md, F20).
-   */
-  appsStorageClear(input: { connectedFolder: string; app: string; parentTaskId?: string; requestId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    appId: string;
-    clearedBytes: number;
-    remainingBytes: number;
-    recentlyDeleted: AmpleFileActRecentlyDeletedRef | null;
-  }>;
-  /** Purges one retained App data record, after a copy of it lands in Recently deleted. */
-  appsRetainedPurge(input: { connectedFolder: string; retained: string; parentTaskId?: string; requestId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    retainedDataId: string;
-    dataNamespaceIds: string[];
-    purged: true;
-    cleanupPending: boolean;
-    recentlyDeleted: AmpleFileActRecentlyDeletedRef[];
-  }>;
-  /** The purge disposition of `apps uninstall --purge-data`; every affected namespace is copied into Recently deleted first. */
-  appsUninstallPurge(input: { connectedFolder: string; instance: string; parentTaskId?: string; requestId?: string }): Promise<{
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    runtimeInstanceId: string;
-    purgedNamespaceIds: string[];
-    removed: true;
-    cleanupPending: boolean;
-    recentlyDeleted: AmpleFileActRecentlyDeletedRef[];
-  }>;
   /**
    * Recently deleted (docs/receipts-not-gates.md, F20). It sits above
    * Connected Folders, like automations, so neither verb takes
@@ -1594,36 +1160,18 @@ export interface AmpleFileActFacade {
    * path, renamed when something else took the name; a deleted Connected Folder's
    * folder returns and is re-registered with its portable identity; a removed
    * Skill returns to the same scope and path and loads with the next turn,
-   * unless a Skill of the same name is installed there now; app data goes back into
-   * the same installation at the same revision; a Release goes back into the
-   * App Project it came from; a removed Connected Folder's App Studio history goes
-   * back once that Connected Folder is registered again, bringing its previews'
-   * data along. App data whose app is gone can only be saved as a file, which
-   * is what `--to` does.
+   * unless a Skill of the same name is installed there now. An item an earlier
+   * build kept from a Connected Folder app is refused: there is nothing left
+   * for it to go back into.
    */
-  recentlyDeletedRestore(input: { entry: string; toPath?: string; parentTaskId?: string; requestId?: string }): Promise<{
+  recentlyDeletedRestore(input: { entry: string; parentTaskId?: string; requestId?: string }): Promise<{
     entry: AmpleFileActRecentlyDeletedEntry | null;
     restored:
       /** `safetyCheckpointId` is null when the restore succeeded but History could not record an undo point for it. */
       | { kind: "file" | "folder"; connectedFolder: AmpleFileActConnectedFolderRef; path: string; renamed: boolean; safetyCheckpointId: string | null }
       | { kind: "connected-folder"; connectedFolder: AmpleFileActConnectedFolderRef; connectedFolderRoot: string; renamed: boolean }
-      /** `workFolder` only for the work-folder scope; `path` is the restored Skill folder. */
-      | { kind: "skill"; scope: "everywhere" | "connected-folder"; connectedFolder?: AmpleFileActConnectedFolderRef; name: string; path: string }
-      | { kind: "app-storage"; connectedFolder: AmpleFileActConnectedFolderRef; appId: string; usage: { revision: number; usageBytes: number } }
-      | { kind: "app-release"; connectedFolder: AmpleFileActConnectedFolderRef; releaseDigest: string; displayVersion: string }
-      | {
-        kind: "app-studio";
-        connectedFolder: AmpleFileActConnectedFolderRef;
-        projectTitle: string | null;
-        previewCount: number;
-        releaseCount: number;
-        operationCount: number;
-        /** Prepared operations whose Release, target, or App Instance changed since the removal. */
-        droppedOperationCount: number;
-        /** The Recently deleted items holding the previews' data that went back with them. */
-        appDataEntryIds: string[];
-      }
-      | { kind: "saved-copy"; path: string };
+      /** `connectedFolder` only for the Connected Folder scope; `path` is the restored Skill folder. */
+      | { kind: "skill"; scope: "everywhere" | "connected-folder"; connectedFolder?: AmpleFileActConnectedFolderRef; name: string; path: string };
   }>;
   /**
    * Enables one declared automation from its inert typed proposal file, or a
@@ -1671,7 +1219,7 @@ export interface AmpleFileActFacade {
   automationsRun(input: { automation: string; parentTaskId?: string; requestId?: string }): Promise<{
     automationId: string;
     title: string;
-    run: AmpleFileActAppAutomationRunRef;
+    run: AmpleFileActAutomationRunRef;
   }>;
   /** Stops this automation's active run; an automation with no active run refuses with its settled truth. */
   automationsStop(input: { automation: string; parentTaskId?: string }): Promise<{

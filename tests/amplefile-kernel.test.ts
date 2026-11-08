@@ -402,24 +402,6 @@ test("the experimental History-restore fence judges automation runs from the tas
   kernel.finishTask(run.id);
   assert.deepEqual(await blockers(), []);
 
-  // The automation reader blocks on runs whose app holds a file grant into
-  // this Connected Folder, and a configured reader that fails blocks too (fail closed).
-  kernel.configureHistoryRestoreFence({
-    sources: {
-      appAutomationRunsWithFileGrantInto: async (connectedFolderId) => connectedFolderId === targetId
-        ? [{ appId: "connected-inbox", appAutomationId: "daily-sync", runId: "run-9" }]
-        : [],
-    },
-  });
-  judged = await blockers();
-  assert.equal(judged.length, 1);
-  assert.match(judged[0]!, /app automation daily-sync of connected-inbox \(run run-9\)/);
-  assert.match(judged[0]!, /file grant into this Connected Folder/);
-  kernel.configureHistoryRestoreFence({
-    sources: { appAutomationRunsWithFileGrantInto: async () => { throw new Error("no machine-wide accessor"); } },
-  });
-  assert.match((await blockers())[0]!, /could not be verified/);
-
   // Agent-turn and compaction fencing stays with the act facade's live
   // route state; those task kinds alone never trip the kernel fence.
   kernel.configureHistoryRestoreFence({ sources: {} });

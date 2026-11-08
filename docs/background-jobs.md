@@ -105,8 +105,8 @@ not start) | `interrupted` (AmpleFile closed or restarted first).
 - **Startup write failure.** Exit settlement waits for the running-record write
   to succeed or fail. A failure stops the process and settles it once as failed,
   with History coverage even when a fast command has already exited.
-- **Stop.** Stopping a request (the Chat's Stop, the work line's Stop, `agent
-  stop`, or an App's cancel) stops every running job of that
+- **Stop.** Stopping a request (the Chat's Stop, the work line's Stop, or `agent
+  stop`) stops every running job of that
   request and its descendants: SIGTERM to the process group, then SIGKILL after
   5 seconds. `job_stop` and `jobs stop` stop one job the same way. Stopping a
   newer, unrelated request in the same Chat does not stop an older request's job.

@@ -22,10 +22,6 @@
 import { Buffer } from "node:buffer";
 
 import { ampleFileRequestLimits } from "../../shared/amplefile-limits.js";
-import {
-  validateRestrictedAppValue,
-  type RestrictedAppJsonSchema,
-} from "../agent/restricted-app-manifest.js";
 import { maxAmpleFileAgentAttachments, type AmpleFileAgentAttachmentRef } from "../amplefile-agent-attachments.js";
 import { containsReservedConnectedFolderPathSegment } from "../connected-folder-path-policy.js";
 
@@ -47,7 +43,15 @@ const maximumErrorLength = 2_048;
 const maximumStableIdLength = 160;
 const stableIdPattern = /^[A-Za-z0-9._:-]+$/;
 
+/**
+ * `app` is read only: older builds recorded work a Connected Folder app
+ * requested before apps were removed (2026-11-07). Such a record still loads;
+ * nothing creates one now.
+ */
 export type AmpleFileRequestKind = "agent" | "connected-folder" | "app" | "automation" | "cli";
+
+/** The kinds AmpleFile creates now. */
+export type AmpleFileRequestCreatableKind = Exclude<AmpleFileRequestKind, "app">;
 
 export type AmpleFileRequestState =
   | "working"
@@ -67,7 +71,8 @@ export function isAmpleFileRequestTerminalState(state: AmpleFileRequestState): b
 }
 
 /**
- * Where the turn came from. `system` covers automations and app-started work.
+ * Where the turn came from. `system` covers automations (and, in records
+ * older builds wrote, app-started work).
  * `remote_web` is read only: older builds wrote it for work a paired browser
  * sent before Web Access was removed (2026-11-07).
  */
@@ -98,6 +103,7 @@ export interface AmpleFileRequestOwner {
   conversationId: string;
 }
 
+/** Read only: the app older builds recorded on a request of kind `app`. */
 export interface AmpleFileRequestAppRef {
   connectedFolderId: string;
   appId: string;
@@ -248,29 +254,6 @@ export const ampleFileRequestActionCommands = [
   "tools.enable",
   "tools.disable",
   "tools.remove",
-  "apps.proposals.dismiss",
-  "apps.install-proposal",
-  "apps.install-preview",
-  "apps.remove",
-  "apps.grant",
-  "apps.revoke",
-  "apps.connect",
-  "apps.disconnect",
-  "apps.automation.enable",
-  "apps.automation.disable",
-  "apps.automation.run",
-  "apps.invoke",
-  "apps.storage.clear",
-  "apps.retained.purge",
-  "apps.project.declare",
-  "apps.release.prepare",
-  "apps.release.publish",
-  "apps.release.delete",
-  "apps.install.prepare",
-  "apps.update.prepare",
-  "apps.operation.activate",
-  "apps.operation.cancel",
-  "apps.uninstall",
   "automations.enable",
   // Background jobs (docs/background-jobs.md): the tools and the CLI record the same act.
   "jobs.start",
@@ -286,12 +269,20 @@ export type AmpleFileRequestActionCommand = (typeof ampleFileRequestActionComman
 
 /**
  * Commands older builds recorded for verbs AmpleFile no longer has: the
- * desktop-served page and app sharing verbs (retired 2026-11-05) and page
- * publishing (removed with pages on 2026-11-07). A record that names
- * one still loads; that action is skipped, so the rest of the request's story
- * survives instead of the whole record reading as damaged.
+ * desktop-served page and app sharing verbs (retired 2026-11-05), page
+ * publishing (removed with pages on 2026-11-07), and the Connected Folder app
+ * verbs (removed with apps on 2026-11-07). A record that names one still
+ * loads; that action is skipped, so the rest of the request's story survives
+ * instead of the whole record reading as damaged.
  */
-const retiredAmpleFileRequestActionCommands: ReadonlySet<string> = new Set(["pages.share", "pages.share-app", "pages.publish", "pages.unpublish"]);
+const retiredAmpleFileRequestActionCommands: ReadonlySet<string> = new Set([
+  "pages.share", "pages.share-app", "pages.publish", "pages.unpublish",
+  "apps.proposals.dismiss", "apps.install-proposal", "apps.install-preview", "apps.remove", "apps.grant", "apps.revoke",
+  "apps.connect", "apps.disconnect", "apps.automation.enable", "apps.automation.disable", "apps.automation.run",
+  "apps.invoke", "apps.storage.clear", "apps.retained.purge", "apps.project.declare", "apps.release.prepare",
+  "apps.release.publish", "apps.release.delete", "apps.install.prepare", "apps.update.prepare",
+  "apps.operation.activate", "apps.operation.cancel", "apps.uninstall",
+]);
 
 function isRetiredAmpleFileRequestAction(value: unknown): boolean {
   return typeof value === "object" && value !== null
@@ -316,21 +307,6 @@ export interface AmpleFileRequestAction {
   connectedFolderRoot?: string;
   conversationId?: string;
   taskId?: string;
-  /** Exact installation produced by a completed app operation. Never resolved by display name. */
-  apps?: Array<{
-    connectedFolderId: string;
-    /**
-     * Display label for the installation's own Connected Folder at the time of the
-     * act, which can differ from the act's Connected Folder (an install into a
-     * target). Records written before this field existed omit it.
-     */
-    connectedFolderName?: string;
-    appId: string;
-    featureInstallationId: string;
-    digest: string;
-    title: string;
-    version: string;
-  }>;
 }
 
 /** Read only: the paired browser older builds recorded on work sent through Web Access. */
@@ -724,7 +700,7 @@ export function parseAmpleFileRequestAction(value: unknown, label = "Request act
   const record = objectValue(value, label);
   assertClosedShape(
     record,
-    ["command", "at", "connectedFolderId", "connectedFolderName", "sources", "copied", "checkpointId", "connectedFolderRoot", "conversationId", "taskId", "apps"],
+    ["command", "at", "connectedFolderId", "connectedFolderName", "sources", "copied", "checkpointId", "connectedFolderRoot", "conversationId", "taskId"],
     label,
   );
   const action: AmpleFileRequestAction = {
@@ -741,22 +717,6 @@ export function parseAmpleFileRequestAction(value: unknown, label = "Request act
   if (record.connectedFolderRoot !== undefined) action.connectedFolderRoot = boundedText(record.connectedFolderRoot, `${label} Connected Folder root`, 4_096);
   if (record.conversationId !== undefined) action.conversationId = stableId(record.conversationId, `${label} conversation id`);
   if (record.taskId !== undefined) action.taskId = stableId(record.taskId, `${label} task id`);
-  if (record.apps !== undefined) {
-    if (!Array.isArray(record.apps) || record.apps.length > 64) throw new Error(`${label} apps are invalid.`);
-    action.apps = record.apps.map((item, index) => {
-      const app = objectValue(item, `${label} app ${index + 1}`);
-      assertClosedShape(app, ["connectedFolderId", "connectedFolderName", "appId", "featureInstallationId", "digest", "title", "version"], `${label} app ${index + 1}`);
-      return {
-        connectedFolderId: stableId(app.connectedFolderId, `${label} app Connected Folder id`),
-        ...(app.connectedFolderName === undefined ? {} : { connectedFolderName: boundedText(app.connectedFolderName, `${label} app Connected Folder name`, 1_024) }),
-        appId: stableId(app.appId, `${label} app id`),
-        featureInstallationId: stableId(app.featureInstallationId, `${label} app installation id`),
-        digest: stableId(app.digest, `${label} app fingerprint`),
-        title: boundedText(app.title, `${label} app title`, 1_024),
-        version: boundedText(app.version, `${label} app version`, 128),
-      };
-    });
-  }
   return action;
 }
 
@@ -1080,10 +1040,7 @@ export function parseAmpleFileQuestionOptions(value: unknown): string[] {
  * `AmpleFileRequestLimitError` that names its number; anything else about the
  * shape is an ordinary error.
  */
-export function parseAmpleFileResultEnvelope(
-  value: unknown,
-  options: { schema?: RestrictedAppJsonSchema } = {},
-): AmpleFileResultEnvelope {
+export function parseAmpleFileResultEnvelope(value: unknown): AmpleFileResultEnvelope {
   const label = "Result";
   const record = objectValue(value, label);
   assertClosedShape(record, ["summary", "data", "files", "outcome"], label);
@@ -1099,7 +1056,6 @@ export function parseAmpleFileResultEnvelope(
     if (Buffer.byteLength(serialized, "utf8") > ampleFileRequestLimits.maxResultDataBytes) {
       throw ampleFileRequestLimitError("resultData", ampleFileRequestLimits.maxResultDataBytes);
     }
-    if (options.schema) validateRestrictedAppValue(options.schema, record.data, `${label} details`);
     envelope.data = JSON.parse(serialized) as unknown;
   }
   if (record.files !== undefined) {

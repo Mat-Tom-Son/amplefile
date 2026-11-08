@@ -4,15 +4,14 @@ AmpleFile can render a controlled application surface contributed by a normal, f
 
 This is a declarative UI contract, not renderer code injection. AmpleFile parses and bounds the manifest, renders its text and data through host-owned React components, and rejects unsupported block types. The Extension remains an ordinary executable Pi capability with its normal Everywhere or This Connected Folder only scope and trust implications.
 
-Do not choose between `surface.json` and a restricted Connected Folder app based only on visual complexity:
+Choose by what the capability needs:
 
 | Need | Use | Why |
 |---|---|---|
 | A trusted Pi Extension needs a small read-only status surface beside its tools or connection logic. | `surface.json` | Preserves native Pi packaging and keeps visible rendering data-only, but the owning Extension is still full trust. |
-| The agent should generate interactive forms, dashboards, inboxes, extractors, or project-service controls for one Connected Folder. | Restricted Connected Folder app | Runs arbitrary reviewed web UI in a sandbox and requires host-mediated grants for every external power. |
-| The capability needs unrestricted Node, shell, provider, event, or operating-system integration. | Native Pi Extension, optionally with `surface.json` | Those powers are intentionally outside the restricted bridge and require full-current-user trust. |
+| The capability needs unrestricted Node, shell, provider, event, or operating-system integration. | Native Pi Extension, optionally with `surface.json` | Those powers require full-current-user trust. |
 
-The checked-in [Connected inbox Pi Extension](../examples/packages/connected-inbox/README.md) demonstrates this compatibility lane. Its code can use the network and runs with the current user's permissions. The separate [restricted Connected inbox app](../examples/packages/restricted-connected-inbox/README.md) demonstrates the agent-created package lane; see [Restricted app authoring](restricted-app-authoring.md) and [Restricted app runtime](restricted-app-runtime.md).
+The checked-in [Connected inbox Pi Extension](../examples/packages/connected-inbox/README.md) demonstrates this compatibility lane. Its code can use the network and runs with the current user's permissions.
 
 ## Package layout
 
@@ -106,4 +105,4 @@ Opening a rail destination shows the surface's views in the left pane; it never 
 
 Version 1 is intentionally read-only and manifest-backed. The package's Extension tools can still call connected systems when invoked by the agent because the owning Pi Extension is full trust. Do not encode credentials or remote account data in `surface.json`.
 
-Agent-generated executable UI belongs in the restricted package lane, not in this Pi Extension format. Restricted apps use reviewed HTML/CSS/JavaScript in a sandboxed visible renderer, can render arbitrary buttons and forms, call granted targets through the host broker, and open Connected Folder–owned tabs from a click in their left-pane view. `surface.json` remains intentionally static and Pi-only.
+`surface.json` remains intentionally static and Pi-only.

@@ -28,9 +28,10 @@ test("control hints share one visible connection and requery after hiding/reopen
   try {
     await settle();
     assert.equal(connections.length, 1);
+    // "apps" was the installed-apps hint; with apps gone it is just another unknown type.
     connections[0]!.controller.enqueue(new TextEncoder().encode('data: {"type":"reset"}\n\ndata: {"type":"apps"}\n\ndata: {"type":"connected-folders"}\n\ndata: {"type":"models"}\n\ndata: {"type":"unknown"}\n\n'));
     await settle();
-    assert.deepEqual(first, ["reset", "apps", "connected-folders", "models"]);
+    assert.deepEqual(first, ["reset", "connected-folders", "models"]);
     assert.deepEqual(second, first);
     document.visibilityState = "hidden";
     document.dispatchEvent(new Event("visibilitychange"));
@@ -43,10 +44,10 @@ test("control hints share one visible connection and requery after hiding/reopen
     unsubscribeFirst();
     // "decisions" was the pending-decision hint; with one authority mode it is
     // just another unknown type and never reaches a listener.
-    connections[1]!.controller.enqueue(new TextEncoder().encode('data: {"type":"decisions"}\n\ndata: {"type":"apps"}\n\n'));
+    connections[1]!.controller.enqueue(new TextEncoder().encode('data: {"type":"decisions"}\n\ndata: {"type":"models"}\n\n'));
     await settle();
-    assert.deepEqual(first, ["reset", "apps", "connected-folders", "models"]);
-    assert.deepEqual(second, ["reset", "apps", "connected-folders", "models", "apps"]);
+    assert.deepEqual(first, ["reset", "connected-folders", "models"]);
+    assert.deepEqual(second, ["reset", "connected-folders", "models", "models"]);
     unsubscribeSecond();
     await settle();
     assert.equal(connections[1]!.signal.aborted, true);

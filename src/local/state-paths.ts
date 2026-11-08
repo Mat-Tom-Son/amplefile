@@ -30,11 +30,6 @@ export function connectedFolderAppearanceFile(): string {
   return join(ampleFileStateRoot(), "appearance.json");
 }
 
-/** Machine-local staged code and lifecycle receipts for restricted apps. */
-export function restrictedAppRoot(): string {
-  return join(ampleFileStateRoot(), "restricted-apps");
-}
-
 /** Recently deleted, the machine-local trash for reversible destruction (docs/receipts-not-gates.md, F20). */
 export function ampleFileRecentlyDeletedRoot(): string {
   return join(ampleFileStateRoot(), "recently-deleted");

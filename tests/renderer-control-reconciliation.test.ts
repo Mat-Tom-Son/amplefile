@@ -5,7 +5,6 @@ import { createRequire, registerHooks } from "node:module";
 import test from "node:test";
 import { useBootstrapRefresh } from "../web-local/src/hooks/useBootstrapRefresh.js";
 import { useModelConfigurationRevision } from "../web-local/src/hooks/useModelConfigurationRevision.js";
-import { useRestrictedApps } from "../web-local/src/hooks/useRestrictedApps.js";
 import { useFolderListing } from "../web-local/src/components/file-manager/useFolderListing.js";
 import type { ConnectedFolderSummary } from "../web-local/src/types.js";
 import { createDomHarness } from "./support/dom.js";
@@ -34,35 +33,6 @@ test("newer registry reads win and a removed surface cannot report a late read f
   await dom.render(null);
   await dom.act(() => pending[2]!(Response.json({ error: "Connected Folder not found" }, { status: 404 })));
   assert.deepEqual(failures, []);
-});
-
-test("app hints wait for the updated registry and never requery removed Connected Folders", async (t) => {
-  const dom = await createDomHarness(); t.after(() => dom.cleanup());
-  const previousFetch = globalThis.fetch; t.after(() => { globalThis.fetch = previousFetch; });
-  let stream!: ReadableStreamDefaultController<Uint8Array>;
-  const reads: string[] = [];
-  let finishDeleted!: (response: Response) => void;
-  globalThis.fetch = (async (input, init) => {
-    const path = String(input);
-    if (path.endsWith("/api/events")) return new Response(new ReadableStream({ start(controller) { stream = logicalEventController(controller, init); init?.signal?.addEventListener("abort", () => controller.close(), { once: true }); } }), { headers: { "content-type": "text/event-stream" } });
-    reads.push(path);
-    if (path.includes("/deleted/")) return new Promise<Response>((resolve) => { finishDeleted = resolve; });
-    return Response.json({ apps: [] });
-  }) as typeof fetch;
-  const errors: unknown[] = [];
-  const onError = (error: unknown) => errors.push(error);
-  function Catalog({ connectedFolders, active }: { connectedFolders: ConnectedFolderSummary[]; active: string }) {
-    const state = useRestrictedApps({ activeConnectedFolderId: active, connectedFolders, onError });
-    return createElement("output", null, [...state.knownConnectedFolderIds].join(","));
-  }
-  await dom.render(createElement(Catalog, { connectedFolders: [connectedFolder("deleted"), connectedFolder("survivor")], active: "deleted" }));
-  await dom.act(async () => { stream.enqueue(new TextEncoder().encode('data: {"type":"connected-folders"}\n\n')); await new Promise(setImmediate); });
-  await dom.act(() => finishDeleted(Response.json({ error: "Connected Folder not found" }, { status: 404 })));
-  assert.deepEqual(errors, []);
-  await dom.render(createElement(Catalog, { connectedFolders: [connectedFolder("survivor")], active: "survivor" }));
-  await dom.act(async () => { stream.enqueue(new TextEncoder().encode('data: {"type":"apps"}\n\n')); await new Promise(setImmediate); });
-  assert.equal(reads.filter((path) => path.includes("/deleted/")).length, 1);
-  assert.equal(dom.container.textContent, "survivor");
 });
 
 test("an external agent hint refreshes draft models while existing Chat sessions keep their model", async (t) => {

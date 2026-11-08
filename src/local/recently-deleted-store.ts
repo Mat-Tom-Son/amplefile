@@ -5,21 +5,22 @@
  * Nothing AmpleFile destroys is permanent at the moment it happens. History
  * covers ordinary deletion; whatever History cannot capture (oversized,
  * unreadable, symbolic-link, or always-excluded content), a deleted managed
- * Connected Folder, a removed imported Skill, app data that was cleared or purged,
- * a deleted App Studio Release, and the App Studio history a removed
- * Connected Folder takes with it is moved here instead of erased, and stays
- * restorable for a retention window (default 30 days, 1..365).
+ * Connected Folder, and a removed imported Skill is moved here instead of
+ * erased, and stays restorable for a retention window (default 30 days,
+ * 1..365).
+ *
+ * Builds before Connected Folder apps were removed (2026-11-07) also kept app
+ * data, App Studio Releases, and App Studio history here. Those entries still
+ * list, expire, and can be deleted now, but nothing restores or reads them.
  *
  * Layout under `rootPath` (`ampleFileRecentlyDeletedRoot()` in production):
  *
  *   settings.json                              { version: 1, retentionDays, lastPurgeAt }
  *   entries/<entryId>/manifest.json            AmpleFileRecentlyDeletedManifest — the only commit marker
  *   entries/<entryId>/payload/<name>           file | folder | Connected Folder | skill: the moved tree, original basename
- *   entries/<entryId>/payload/app-data.json    app-storage | app-retained: a RestrictedAppDataBackup
- *   entries/<entryId>/payload/app-release.json app-release: the Release's registry record and its verified envelope
- *   entries/<entryId>/payload/app-studio/      app-studio: studio.json (the Project, Development Instance, previews,
- *                                              operations, receipts), releases/<hex>.json (record and envelope
- *                                              per Release), packages/<digest>/ (each preview's staged package)
+ *   entries/<entryId>/payload/app-data.json    app-storage | app-retained (older builds only; never read)
+ *   entries/<entryId>/payload/app-release.json app-release (older builds only; never read)
+ *   entries/<entryId>/payload/app-studio/      app-studio (older builds only; never read)
  *   entries/<entryId>/state/                   Connected Folder only: the Connected Folder's machine-local state dir (History)
  *   incoming/<uuid>/                           cross-device copy staging, swept on open()
  *
@@ -31,15 +32,9 @@
  *
  *   AmpleFileRecentlyDeletedStore.open(options)   create the layout, load settings, sweep debris
  *   store.moveTreeToRecentlyDeleted(input)       move a file, folder, Connected Folder, or Skill folder in
- *   store.moveAppDataToRecentlyDeleted(input)    write a verified app-data export in
- *   store.moveAppReleaseToRecentlyDeleted(input) write a deleted Release's record and envelope in
- *   store.moveAppStudioToRecentlyDeleted(input)  write a removed Connected Folder's App Studio history in
  *   store.list() / store.get(id)                 tolerant listing; damaged records are reported, never dropped
  *   store.attachConnectedFolderState(id, path)        finish carrying History after an interrupted Connected Folder deletion
  *   store.restoreTree(id, destination)           move a tree back, collision-renaming like connected-folder.ts
- *   store.readAppData(id)                        read and re-verify an app-data export
- *   store.readAppRelease(id)                     read a kept Release back (the service re-verifies it)
- *   store.readAppStudio(id)                      read kept App Studio history back (the service re-verifies it)
  *   store.remove(id)                             "Delete now"; refuses (HELD) for legacy `.workspace/` trees
  *   store.purgeExpired(now)                      retention purge; fails closed on legacy trees
  *   store.purgeExpiredIfDue(intervalMs)          the wake-tolerant "once a day while awake" wrapper
@@ -78,17 +73,6 @@ import {
   ampleFileRecentlyDeletedMaxRetentionDays,
   ampleFileRecentlyDeletedMinRetentionDays,
 } from "../shared/amplefile-limits.js";
-import {
-  parseDataNamespaceId,
-  parseFeatureInstallationId,
-  parseRuntimeInstanceId,
-  parseTenantId,
-} from "./agent/app-platform-contract.js";
-import {
-  validateRestrictedAppDataBackup,
-  type RestrictedAppDataBackup,
-  type RestrictedAppStorageOwner,
-} from "./agent/restricted-app-storage.js";
 import { writeFileAtomic } from "./agent/turn-store.js";
 
 export const AMPLEFILE_RECENTLY_DELETED_DEFAULT_RETENTION_DAYS = ampleFileRecentlyDeletedDefaultRetentionDays;
@@ -100,6 +84,11 @@ export const AMPLEFILE_RECENTLY_DELETED_PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** Shape of every entry id; CLI and route input must match it before any path join. */
 export const ampleFileRecentlyDeletedEntryIdPattern = /^trash-\d{14}-[0-9a-f]{8}$/;
 
+/**
+ * `app-storage`, `app-retained`, `app-release`, and `app-studio` are read
+ * only: entries older builds kept before Connected Folder apps were removed
+ * (2026-11-07). They list and expire like any entry; nothing creates one now.
+ */
 export type AmpleFileRecentlyDeletedKind = "file" | "folder" | "connected-folder" | "skill" | "app-storage" | "app-retained" | "app-release" | "app-studio";
 
 export type AmpleFileRecentlyDeletedReason =
@@ -111,14 +100,12 @@ export type AmpleFileRecentlyDeletedReason =
   | "connected-folders.delete"
   /** Removing an imported Skill keeps its whole folder; `.pi/` and Pi's own folder are outside History. */
   | "skills.remove"
-  /** Removing a Development preview, which takes its namespace with it. */
+  /** The `apps.*` reasons are read only, on entries older builds kept for Connected Folder apps. */
   | "apps.remove"
-  /** Unregistering a work-folder removes the previews installed in it, and its App Studio history. */
   | "apps.connected-folder.removed"
   | "apps.storage.clear"
   | "apps.retained.purge"
   | "apps.uninstall.purge"
-  /** Deleting an unused App Studio Release keeps its record and envelope recoverable. */
   | "apps.release.delete";
 
 /** Why History alone could not keep a copy of one path inside a Recently deleted entry. */
@@ -129,6 +116,7 @@ export interface AmpleFileRecentlyDeletedUncoveredPath {
   reason: "too_large" | "unreadable" | "symbolic_link" | "excluded";
 }
 
+/** Read only: what an `app-storage`/`app-retained` entry from an older build names. */
 export type AmpleFileRecentlyDeletedAppDataIdentity = {
   kind: "app-data";
   appId: string;
@@ -143,7 +131,7 @@ export type AmpleFileRecentlyDeletedAppDataIdentity = {
   retainedDataId?: string;
 };
 
-/** Which Release an `app-release` entry keeps: enough to list it and to check the kept file against. */
+/** Read only: which Release an `app-release` entry from an older build keeps. */
 export type AmpleFileRecentlyDeletedAppReleaseIdentity = {
   kind: "app-release";
   projectId: string;
@@ -152,12 +140,7 @@ export type AmpleFileRecentlyDeletedAppReleaseIdentity = {
   sourceConnectedFolderId: string;
 };
 
-/**
- * Whose App Studio history an `app-studio` entry keeps: the Connected Folder it was
- * removed with and the App Project whose source that Connected Folder was. A
- * Connected Folder that only had prepared installs aimed at it keeps those with
- * `projectId: null`.
- */
+/** Read only: whose App Studio history an `app-studio` entry from an older build keeps. */
 export type AmpleFileRecentlyDeletedAppStudioIdentity = {
   kind: "app-studio";
   connectedFolderId: string;
@@ -293,74 +276,6 @@ export interface AmpleFileRecentlyDeletedTreeInput {
   skill?: { scope: AmpleFileRecentlyDeletedSkillPayload["scope"]; skillName: string };
 }
 
-export interface AmpleFileRecentlyDeletedAppDataInput {
-  kind: "app-storage" | "app-retained";
-  reason: AmpleFileRecentlyDeletedReason;
-  /** From restricted-app-storage.ts `exportData` / the service's `exportStorage`. */
-  backup: RestrictedAppDataBackup;
-  identity: AmpleFileRecentlyDeletedAppDataIdentity;
-  connectedFolderId: string;
-  connectedFolderName?: string;
-  receiptId: string | null;
-}
-
-export interface AmpleFileRecentlyDeletedAppReleaseInput {
-  reason: AmpleFileRecentlyDeletedReason;
-  identity: AmpleFileRecentlyDeletedAppReleaseIdentity;
-  /**
-   * The service's registry record for the Release and the canonical Release
-   * envelope read from its store, as plain JSON. The store checks only that
-   * both name the identity; the service re-verifies both before a restore.
-   */
-  record: unknown;
-  release: unknown;
-  connectedFolderId: string;
-  connectedFolderName?: string;
-  /** Person-facing label, such as the App title and version. */
-  displayName?: string;
-  receiptId: string | null;
-}
-
-/** A kept Release as `readAppRelease` returns it: still to be re-verified by the service. */
-export interface AmpleFileRecentlyDeletedAppRelease {
-  identity: AmpleFileRecentlyDeletedAppReleaseIdentity;
-  record: Record<string, unknown>;
-  release: Record<string, unknown>;
-}
-
-/** The registry records an `app-studio` entry keeps, as plain JSON; the service re-validates each before a restore. */
-export interface AmpleFileRecentlyDeletedAppStudioRecords {
-  project: unknown;
-  runtimeInstances: unknown[];
-  previews: unknown[];
-  operations: unknown[];
-  adminReceipts: unknown[];
-}
-
-export interface AmpleFileRecentlyDeletedAppStudioInput {
-  reason: AmpleFileRecentlyDeletedReason;
-  identity: AmpleFileRecentlyDeletedAppStudioIdentity;
-  studio: AmpleFileRecentlyDeletedAppStudioRecords;
-  /** One registry record and verified envelope per Release, like an `app-release` entry. */
-  releases: ReadonlyArray<{ record: unknown; release: unknown }>;
-  /** Each preview's staged package folder, by package digest. The store copies them; it never moves the originals. */
-  packages: ReadonlyArray<{ digest: string; root: string }>;
-  connectedFolderId: string;
-  connectedFolderName?: string;
-  /** Person-facing label, such as the App Project's title. */
-  displayName?: string;
-  receiptId: string | null;
-}
-
-/** Kept App Studio history as `readAppStudio` returns it: still to be re-verified by the service. */
-export interface AmpleFileRecentlyDeletedAppStudio {
-  identity: AmpleFileRecentlyDeletedAppStudioIdentity;
-  studio: AmpleFileRecentlyDeletedAppStudioRecords;
-  releases: Array<{ record: Record<string, unknown>; release: Record<string, unknown> }>;
-  /** Package digest → the kept package folder inside the entry; the service re-stages each from here. */
-  packageRoots: Map<string, string>;
-}
-
 export interface AmpleFileRecentlyDeletedRestoreDestination {
   /** Where the tree goes back. An occupied path is collision-renamed (`stem (2).ext` / `name-2`). */
   absolutePath: string;
@@ -402,15 +317,9 @@ const APP_DATA_IDENTITY_KEYS = new Set([
 ]);
 const APP_RELEASE_IDENTITY_KEYS = new Set(["kind", "projectId", "releaseDigest", "displayVersion", "sourceConnectedFolderId"]);
 const APP_STUDIO_IDENTITY_KEYS = new Set(["kind", "connectedFolderId", "projectId"]);
-const APP_STUDIO_RECORD_KEYS = ["project", "runtimeInstances", "previews", "operations", "adminReceipts"] as const;
 const APP_DATA_FILE = "app-data.json";
 const APP_RELEASE_FILE = "app-release.json";
-const APP_RELEASE_FORMAT = "amplefile.app-release-recovery";
 const APP_STUDIO_DIR = "app-studio";
-const APP_STUDIO_FILE = "studio.json";
-const APP_STUDIO_FORMAT = "amplefile.app-studio-recovery";
-const RELEASE_DIGEST_PATTERN = /^sha256:([0-9a-f]{64})$/;
-const PACKAGE_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const MANIFEST_FILE = "manifest.json";
 const MEASURE_ENTRY_BUDGET = 64 * 1024;
 const MAX_UNCOVERED_PATHS = 65536;
@@ -623,230 +532,6 @@ export class AmpleFileRecentlyDeletedStore {
     });
   }
 
-  /**
-   * Writes a verified app-data export as `payload/app-data.json`. The backup
-   * is re-validated exactly as `validateRestrictedAppDataBackup` does (closed
-   * shape, identity, sha256); a mismatch is INPUT_INVALID and nothing is
-   * written.
-   */
-  async moveAppDataToRecentlyDeleted(input: AmpleFileRecentlyDeletedAppDataInput): Promise<AmpleFileRecentlyDeletedEntry> {
-    if (input.kind !== "app-storage" && input.kind !== "app-retained") {
-      throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "Only app data exports can be kept this way.");
-    }
-    assertReason(input.reason);
-    const connectedFolderId = requireText(input.connectedFolderId, "Connected Folder id", 160);
-    const connectedFolderName = input.connectedFolderName === undefined ? undefined : requireText(input.connectedFolderName, "Connected Folder name", 200);
-    const receiptId = requireReceiptId(input.receiptId);
-    const identity = normalizeAppDataIdentity(input.identity);
-    if (input.kind === "app-retained" && identity.retainedDataId === undefined) {
-      throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "Retained app data needs its retained-data id.");
-    }
-    const backup = verifyBackup(input.backup, identity, "INPUT_INVALID");
-    const serialized = `${JSON.stringify(backup)}\n`;
-
-    return await this.#mutate(async () => {
-      const deletedAt = this.#now().toISOString();
-      const id = newEntryId(deletedAt);
-      const entryPath = join(this.rootPath, "entries", id);
-      const payloadDir = join(entryPath, "payload");
-      const payloadPath = join(payloadDir, APP_DATA_FILE);
-      const manifest: AmpleFileRecentlyDeletedManifest = {
-        version: 1,
-        id,
-        kind: input.kind,
-        reason: input.reason,
-        connectedFolderId,
-        ...(connectedFolderName === undefined ? {} : { connectedFolderName }),
-        originalPath: `${identity.appId}/${identity.dataNamespaceId}`,
-        sizeBytes: Buffer.byteLength(serialized, "utf8"),
-        deletedAt,
-        restoreBy: addDays(deletedAt, this.#settings.retentionDays),
-        receiptId,
-        payload: identity,
-        complete: false,
-      };
-      try {
-        await mkdir(entryPath, { mode: 0o700 });
-        await mkdir(payloadDir, { mode: 0o700 });
-        await this.#writeManifest(entryPath, manifest);
-        await writeFileAtomic(payloadPath, serialized);
-        const completed = { ...manifest, complete: true };
-        await this.#writeManifest(entryPath, completed);
-        return { ...completed, entryPath, payloadPath };
-      } catch (error) {
-        await rm(entryPath, { recursive: true, force: true }).catch(() => undefined);
-        throw new AmpleFileRecentlyDeletedError("MOVE_FAILED", `AmpleFile could not keep a copy of the app data in ${RECENTLY_DELETED}: ${errorMessage(error)}.`, { cause: error });
-      }
-    });
-  }
-
-  /**
-   * Writes a deleted Release's registry record and verified envelope as
-   * `payload/app-release.json`. Both must name the identity the entry claims;
-   * a mismatch is INPUT_INVALID and nothing is written. The bytes are a copy
-   * taken before the Release store prunes its object, so the restore path
-   * re-verifies the envelope's content digest before anything is reinstated.
-   */
-  async moveAppReleaseToRecentlyDeleted(input: AmpleFileRecentlyDeletedAppReleaseInput): Promise<AmpleFileRecentlyDeletedEntry> {
-    assertReason(input.reason);
-    const connectedFolderId = requireText(input.connectedFolderId, "Connected Folder id", 160);
-    const connectedFolderName = input.connectedFolderName === undefined ? undefined : requireText(input.connectedFolderName, "Connected Folder name", 200);
-    const displayName = input.displayName === undefined ? undefined : requireText(input.displayName, "Display name", 200);
-    const receiptId = requireReceiptId(input.receiptId);
-    const identity = normalizeAppReleaseIdentity(input.identity);
-    const kept = verifyKeptRelease({ format: APP_RELEASE_FORMAT, formatVersion: 1, record: input.record, release: input.release }, identity, "INPUT_INVALID");
-    const serialized = `${JSON.stringify({ format: APP_RELEASE_FORMAT, formatVersion: 1, record: kept.record, release: kept.release })}\n`;
-
-    return await this.#mutate(async () => {
-      const deletedAt = this.#now().toISOString();
-      const id = newEntryId(deletedAt);
-      const entryPath = join(this.rootPath, "entries", id);
-      const payloadDir = join(entryPath, "payload");
-      const payloadPath = join(payloadDir, APP_RELEASE_FILE);
-      const manifest: AmpleFileRecentlyDeletedManifest = {
-        version: 1,
-        id,
-        kind: "app-release",
-        reason: input.reason,
-        connectedFolderId,
-        ...(connectedFolderName === undefined ? {} : { connectedFolderName }),
-        ...(displayName === undefined ? {} : { displayName }),
-        originalPath: `${identity.projectId}/${identity.releaseDigest}`,
-        sizeBytes: Buffer.byteLength(serialized, "utf8"),
-        deletedAt,
-        restoreBy: addDays(deletedAt, this.#settings.retentionDays),
-        receiptId,
-        payload: identity,
-        complete: false,
-      };
-      try {
-        await mkdir(entryPath, { mode: 0o700 });
-        await mkdir(payloadDir, { mode: 0o700 });
-        await this.#writeManifest(entryPath, manifest);
-        await writeFileAtomic(payloadPath, serialized);
-        const completed = { ...manifest, complete: true };
-        await this.#writeManifest(entryPath, completed);
-        return { ...completed, entryPath, payloadPath };
-      } catch (error) {
-        await rm(entryPath, { recursive: true, force: true }).catch(() => undefined);
-        throw new AmpleFileRecentlyDeletedError("MOVE_FAILED", `AmpleFile could not keep a copy of the Release in ${RECENTLY_DELETED}: ${errorMessage(error)}.`, { cause: error });
-      }
-    });
-  }
-
-  /**
-   * Writes the App Studio history a removed Connected Folder takes with it as
-   * `payload/app-studio/`: the registry records, one file per Release, and a
-   * copy of each preview's staged package folder. Everything must name the
-   * identity the entry claims; a mismatch is INPUT_INVALID and nothing is
-   * written. The package folders are copied, never moved, so the service's
-   * own cleanup stays the only thing that removes them; the restore path
-   * re-stages each one against its content digest.
-   */
-  async moveAppStudioToRecentlyDeleted(input: AmpleFileRecentlyDeletedAppStudioInput): Promise<AmpleFileRecentlyDeletedEntry> {
-    assertReason(input.reason);
-    const connectedFolderId = requireText(input.connectedFolderId, "Connected Folder id", 160);
-    const connectedFolderName = input.connectedFolderName === undefined ? undefined : requireText(input.connectedFolderName, "Connected Folder name", 200);
-    const displayName = input.displayName === undefined ? undefined : requireText(input.displayName, "Display name", 200);
-    const receiptId = requireReceiptId(input.receiptId);
-    const identity = normalizeAppStudioIdentity(input.identity);
-    if (identity.connectedFolderId !== connectedFolderId) {
-      throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "The App Studio history must belong to the Connected Folder it is kept for.");
-    }
-    const studio = verifyKeptStudio(input.studio, identity, "INPUT_INVALID");
-    if (!Array.isArray(input.releases) || !Array.isArray(input.packages)) {
-      throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "The App Studio history must list its Releases and packages.");
-    }
-    const releases = input.releases.map((item) => {
-      const kept = verifyKeptStudioRelease(item, identity, "INPUT_INVALID");
-      return { hex: RELEASE_DIGEST_PATTERN.exec(kept.record.releaseDigest as string)![1]!, kept };
-    });
-    assertUniqueText(releases.map((item) => item.hex), "Release");
-    const packages: Array<{ digest: string; root: string }> = [];
-    for (const item of input.packages) {
-      const digest = typeof item?.digest === "string" && PACKAGE_DIGEST_PATTERN.test(item.digest) ? item.digest : null;
-      if (!digest) throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "A kept package needs its content digest.");
-      const root = requireAbsolutePath(item.root, "The package folder");
-      const info = await lstat(root).catch(() => null);
-      if (!info?.isDirectory() || info.isSymbolicLink()) {
-        throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `The package folder for ${digest} is not a real folder.`);
-      }
-      packages.push({ digest, root });
-    }
-    assertUniqueText(packages.map((item) => item.digest), "package");
-    const studioFile = `${JSON.stringify({
-      format: APP_STUDIO_FORMAT,
-      formatVersion: 1,
-      studio,
-      releases: releases.map((item) => item.kept.record.releaseDigest),
-      packages: packages.map((item) => item.digest),
-    })}\n`;
-
-    return await this.#mutate(async () => {
-      const deletedAt = this.#now().toISOString();
-      const id = newEntryId(deletedAt);
-      const entryPath = join(this.rootPath, "entries", id);
-      const payloadPath = join(entryPath, "payload", APP_STUDIO_DIR);
-      const manifest: AmpleFileRecentlyDeletedManifest = {
-        version: 1,
-        id,
-        kind: "app-studio",
-        reason: input.reason,
-        connectedFolderId,
-        ...(connectedFolderName === undefined ? {} : { connectedFolderName }),
-        ...(displayName === undefined ? {} : { displayName }),
-        originalPath: identity.projectId ?? identity.connectedFolderId,
-        sizeBytes: 0,
-        deletedAt,
-        restoreBy: addDays(deletedAt, this.#settings.retentionDays),
-        receiptId,
-        payload: identity,
-        complete: false,
-      };
-      // The copy is assembled under `incoming/` and renamed into the entry
-      // whole, so `payload/app-studio` exists only once everything it names
-      // does, and an interrupted copy is never repaired into a complete entry.
-      const stagingDir = this.#newStagingDir();
-      const building = join(stagingDir, APP_STUDIO_DIR);
-      try {
-        await mkdir(entryPath, { mode: 0o700 });
-        await mkdir(join(entryPath, "payload"), { mode: 0o700 });
-        await this.#writeManifest(entryPath, manifest);
-        await mkdir(join(building, "releases"), { recursive: true, mode: 0o700 });
-        await mkdir(join(building, "packages"), { mode: 0o700 });
-        for (const { hex, kept } of releases) {
-          await writeFileAtomic(
-            join(building, "releases", `${hex}.json`),
-            `${JSON.stringify({ format: APP_RELEASE_FORMAT, formatVersion: 1, record: kept.record, release: kept.release })}\n`,
-          );
-        }
-        for (const item of packages) {
-          const destination = join(building, "packages", item.digest);
-          await this.#io.cp(item.root, destination, {
-            recursive: true, force: false, errorOnExist: true, dereference: false, verbatimSymlinks: true, preserveTimestamps: true,
-          });
-          await syncTree(destination);
-        }
-        await writeFileAtomic(join(building, APP_STUDIO_FILE), studioFile);
-        await this.#io.rename(building, payloadPath);
-        await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
-        const measured = await measureTree(payloadPath);
-        const completed: AmpleFileRecentlyDeletedManifest = {
-          ...manifest,
-          sizeBytes: measured.sizeBytes,
-          ...(measured.approximate ? { sizeApproximate: true as const } : {}),
-          complete: true,
-        };
-        await this.#writeManifest(entryPath, completed);
-        return { ...completed, entryPath, payloadPath };
-      } catch (error) {
-        await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
-        await rm(entryPath, { recursive: true, force: true }).catch(() => undefined);
-        throw new AmpleFileRecentlyDeletedError("MOVE_FAILED", `AmpleFile could not keep a copy of the App Studio history in ${RECENTLY_DELETED}: ${errorMessage(error)}.`, { cause: error });
-      }
-    });
-  }
-
   /** Every readable entry, newest first, plus the records that could not be trusted. Repairs missed commits. */
   async list(): Promise<AmpleFileRecentlyDeletedListing> {
     return await this.#mutate(async () => {
@@ -910,8 +595,7 @@ export class AmpleFileRecentlyDeletedStore {
     return await this.#mutate(async () => {
       const entry = await this.#requireEntry(id, true);
       if (entry.payload.kind !== "tree" && entry.payload.kind !== "skill") {
-        const holds = entry.payload.kind === "app-release" ? "a Release" : entry.payload.kind === "app-studio" ? "App Studio history" : "app data";
-        throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${id} holds ${holds}, which cannot be put back as a file or folder this way.`);
+        throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${id} holds data a Connected Folder app kept before apps were removed from AmpleFile; it cannot be restored. It is deleted when it expires, or delete it now.`);
       }
       if (destination.onConflict === "error" && existsSync(desired)) {
         throw new AmpleFileRecentlyDeletedError(
@@ -974,111 +658,8 @@ export class AmpleFileRecentlyDeletedStore {
     });
   }
 
-  /** Reads an app-data export back and re-verifies it; a tampered or truncated file is STORE_DAMAGED. */
-  async readAppData(id: string): Promise<RestrictedAppDataBackup> {
-    assertEntryId(id);
-    return await this.#mutate(async () => {
-      const entry = await this.#requireEntry(id, false);
-      if (entry.payload.kind !== "app-data") {
-        throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${id} is a ${entry.kind}, not app data.`);
-      }
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(await readFile(entry.payloadPath, "utf8"));
-      } catch (error) {
-        throw new AmpleFileRecentlyDeletedError("STORE_DAMAGED", `The app data kept as ${id} in ${RECENTLY_DELETED} cannot be read: ${errorMessage(error)}`, { entryId: id, cause: error });
-      }
-      return verifyBackup(parsed, entry.payload, "STORE_DAMAGED", id);
-    });
-  }
-
-  /** Reads a kept Release back; a truncated file or one naming another Release is STORE_DAMAGED. */
-  async readAppRelease(id: string): Promise<AmpleFileRecentlyDeletedAppRelease> {
-    assertEntryId(id);
-    return await this.#mutate(async () => {
-      const entry = await this.#requireEntry(id, false);
-      if (entry.payload.kind !== "app-release") {
-        throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${id} is a ${entry.kind}, not a Release.`);
-      }
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(await readFile(entry.payloadPath, "utf8"));
-      } catch (error) {
-        throw new AmpleFileRecentlyDeletedError("STORE_DAMAGED", `The Release kept as ${id} in ${RECENTLY_DELETED} cannot be read: ${errorMessage(error)}`, { entryId: id, cause: error });
-      }
-      const kept = verifyKeptRelease(parsed, entry.payload, "STORE_DAMAGED", id);
-      return { identity: { ...entry.payload }, record: kept.record, release: kept.release };
-    });
-  }
-
   /**
-   * Reads kept App Studio history back: its records, every Release file, and
-   * where each kept package folder is. A truncated file, a Release or record
-   * naming another Project or Connected Folder, or a missing package is
-   * STORE_DAMAGED. The package bytes themselves are the service's to verify
-   * when it re-stages them.
-   */
-  async readAppStudio(id: string): Promise<AmpleFileRecentlyDeletedAppStudio> {
-    assertEntryId(id);
-    return await this.#mutate(async () => {
-      const entry = await this.#requireEntry(id, false);
-      if (entry.payload.kind !== "app-studio") {
-        throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `${id} is a ${entry.kind}, not App Studio history.`);
-      }
-      const identity = entry.payload;
-      const damaged = (reason: string, cause?: unknown): never => {
-        throw new AmpleFileRecentlyDeletedError(
-          "STORE_DAMAGED",
-          `The App Studio history kept as ${id} in ${RECENTLY_DELETED} failed its check: ${reason}`,
-          { entryId: id, ...(cause === undefined ? {} : { cause }) },
-        );
-      };
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(await readFile(join(entry.payloadPath, APP_STUDIO_FILE), "utf8"));
-      } catch (error) {
-        return damaged(`it cannot be read: ${errorMessage(error)}`, error);
-      }
-      const file = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
-      if (!file || Object.keys(file).some((key) => !["format", "formatVersion", "studio", "releases", "packages"].includes(key))
-        || file.format !== APP_STUDIO_FORMAT || file.formatVersion !== 1
-        || !Array.isArray(file.releases) || !Array.isArray(file.packages)) {
-        return damaged("it is not kept App Studio history.");
-      }
-      const studio = verifyKeptStudio(file.studio, identity, "STORE_DAMAGED", id);
-      const releases: AmpleFileRecentlyDeletedAppStudio["releases"] = [];
-      for (const digest of file.releases) {
-        const match = typeof digest === "string" ? RELEASE_DIGEST_PATTERN.exec(digest) : null;
-        if (!match) return damaged("it lists an invalid Release.");
-        let release: unknown;
-        try {
-          release = JSON.parse(await readFile(join(entry.payloadPath, "releases", `${match[1]}.json`), "utf8"));
-        } catch (error) {
-          return damaged(`Release ${digest} cannot be read: ${errorMessage(error)}`, error);
-        }
-        const keptRelease = release && typeof release === "object" && !Array.isArray(release) ? release as Record<string, unknown> : null;
-        if (!keptRelease || keptRelease.format !== APP_RELEASE_FORMAT || keptRelease.formatVersion !== 1
-          || Object.keys(keptRelease).some((key) => !["format", "formatVersion", "record", "release"].includes(key))) {
-          return damaged(`Release ${digest} is not a kept Release.`);
-        }
-        const kept = verifyKeptStudioRelease({ record: keptRelease.record, release: keptRelease.release }, identity, "STORE_DAMAGED", id);
-        if (kept.record.releaseDigest !== digest) return damaged(`Release ${digest} names a different Release.`);
-        releases.push(kept);
-      }
-      const packageRoots = new Map<string, string>();
-      for (const digest of file.packages) {
-        if (typeof digest !== "string" || !PACKAGE_DIGEST_PATTERN.test(digest)) return damaged("it lists an invalid package.");
-        const root = join(entry.payloadPath, "packages", digest);
-        const info = await lstat(root).catch(() => null);
-        if (!info?.isDirectory() || info.isSymbolicLink()) return damaged(`the package ${digest} is missing.`);
-        packageRoots.set(digest, root);
-      }
-      return { identity: { ...identity }, studio, releases, packageRoots };
-    });
-  }
-
-  /**
-   * "Delete now" and post-restore cleanup of app-data entries. Refuses with
+   * "Delete now". Refuses with
    * HELD when the tree holds legacy `.workspace/` records or cannot be fully
    * listed (the clean-break rule) and marks the manifest `held`. A damaged
    * record is removed only when the same walk clears it.
@@ -1480,47 +1061,6 @@ function normalizeAppReleaseIdentity(value: unknown): AmpleFileRecentlyDeletedAp
   };
 }
 
-/**
- * The closed shape of a kept Release, and that its record and envelope both
- * name the identity the entry claims. The envelope's own content digest and
- * the record's full shape are the service's to verify at restore time.
- */
-function verifyKeptRelease(
-  value: unknown,
-  identity: AmpleFileRecentlyDeletedAppReleaseIdentity,
-  code: "INPUT_INVALID" | "STORE_DAMAGED",
-  entryId?: string,
-): { record: Record<string, unknown>; release: Record<string, unknown> } {
-  const fail = (reason: string): never => {
-    throw new AmpleFileRecentlyDeletedError(
-      code,
-      code === "INPUT_INVALID"
-        ? `The Release cannot be kept: ${reason}`
-        : `The Release kept as ${entryId} in ${RECENTLY_DELETED} failed its check: ${reason}`,
-      entryId === undefined ? {} : { entryId },
-    );
-  };
-  const object = (field: unknown): Record<string, unknown> | null => (
-    field && typeof field === "object" && !Array.isArray(field) ? field as Record<string, unknown> : null
-  );
-  const kept = object(value);
-  if (!kept || Object.keys(kept).some((key) => !["format", "formatVersion", "record", "release"].includes(key))
-    || kept.format !== APP_RELEASE_FORMAT || kept.formatVersion !== 1) {
-    return fail("it is not a kept Release.");
-  }
-  const record = object(kept.record);
-  const release = object(kept.release);
-  if (!record || !release) return fail("its record or Release envelope is missing.");
-  if (record.releaseDigest !== identity.releaseDigest || release.releaseDigest !== identity.releaseDigest) {
-    return fail("it names a different Release.");
-  }
-  if (record.projectId !== identity.projectId || record.sourceConnectedFolderId !== identity.sourceConnectedFolderId
-    || record.displayVersion !== identity.displayVersion) {
-    return fail("its record names a different App Project, Connected Folder, or version.");
-  }
-  return { record, release };
-}
-
 function normalizeAppStudioIdentity(value: unknown): AmpleFileRecentlyDeletedAppStudioIdentity {
   const invalid = (): never => {
     throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", "The App Studio identity must name its Connected Folder and App Project.");
@@ -1538,139 +1078,6 @@ function normalizeAppStudioIdentity(value: unknown): AmpleFileRecentlyDeletedApp
     connectedFolderId: text(raw.connectedFolderId),
     projectId: raw.projectId === null ? null : text(raw.projectId),
   };
-}
-
-/**
- * The closed shape of kept App Studio records, and that each one names the
- * entry's Connected Folder and App Project. Their full shapes and the links between
- * them are the service's to verify at restore time.
- */
-function verifyKeptStudio(
-  value: unknown,
-  identity: AmpleFileRecentlyDeletedAppStudioIdentity,
-  code: "INPUT_INVALID" | "STORE_DAMAGED",
-  entryId?: string,
-): AmpleFileRecentlyDeletedAppStudioRecords {
-  const fail = (reason: string): never => {
-    throw new AmpleFileRecentlyDeletedError(
-      code,
-      code === "INPUT_INVALID"
-        ? `The App Studio history cannot be kept: ${reason}`
-        : `The App Studio history kept as ${entryId} in ${RECENTLY_DELETED} failed its check: ${reason}`,
-      entryId === undefined ? {} : { entryId },
-    );
-  };
-  const object = (field: unknown): Record<string, unknown> | null => (
-    field && typeof field === "object" && !Array.isArray(field) ? field as Record<string, unknown> : null
-  );
-  const studio = object(value);
-  if (!studio || Object.keys(studio).some((key) => !(APP_STUDIO_RECORD_KEYS as readonly string[]).includes(key))
-    || APP_STUDIO_RECORD_KEYS.some((key) => key !== "project" && !Array.isArray(studio[key]))) {
-    return fail("its records are not complete.");
-  }
-  const project = studio.project === null ? null : object(studio.project);
-  if (studio.project !== null && !project) return fail("its App Project record is invalid.");
-  if ((project?.projectId ?? null) !== identity.projectId || (project && project.connectedFolderId !== identity.connectedFolderId)) {
-    return fail("its App Project names a different Project or Connected Folder.");
-  }
-  const owned = [
-    ...(studio.runtimeInstances as unknown[]),
-    ...(studio.previews as unknown[]),
-    ...(studio.adminReceipts as unknown[]),
-  ];
-  if (owned.some((record) => object(record)?.projectId !== identity.projectId)) {
-    return fail("a record names a different App Project.");
-  }
-  if ((studio.operations as unknown[]).some((record) => {
-    const operation = object(record);
-    return !operation || (operation.projectId !== identity.projectId && operation.targetConnectedFolderId !== identity.connectedFolderId);
-  })) {
-    return fail("a prepared operation belongs to neither this App Project nor this Connected Folder.");
-  }
-  return {
-    project: project ?? null,
-    runtimeInstances: studio.runtimeInstances as unknown[],
-    previews: studio.previews as unknown[],
-    operations: studio.operations as unknown[],
-    adminReceipts: studio.adminReceipts as unknown[],
-  };
-}
-
-/** One kept Release inside App Studio history: its record and envelope name the same Release of this Project. */
-function verifyKeptStudioRelease(
-  value: unknown,
-  identity: AmpleFileRecentlyDeletedAppStudioIdentity,
-  code: "INPUT_INVALID" | "STORE_DAMAGED",
-  entryId?: string,
-): { record: Record<string, unknown>; release: Record<string, unknown> } {
-  const fail = (reason: string): never => {
-    throw new AmpleFileRecentlyDeletedError(
-      code,
-      code === "INPUT_INVALID"
-        ? `The App Studio history cannot be kept: ${reason}`
-        : `The App Studio history kept as ${entryId} in ${RECENTLY_DELETED} failed its check: ${reason}`,
-      entryId === undefined ? {} : { entryId },
-    );
-  };
-  const object = (field: unknown): Record<string, unknown> | null => (
-    field && typeof field === "object" && !Array.isArray(field) ? field as Record<string, unknown> : null
-  );
-  const item = object(value);
-  const record = object(item?.record);
-  const release = object(item?.release);
-  if (!item || !record || !release) return fail("a Release record or envelope is missing.");
-  if (typeof record.releaseDigest !== "string" || !RELEASE_DIGEST_PATTERN.test(record.releaseDigest)
-    || release.releaseDigest !== record.releaseDigest) {
-    return fail("a Release envelope names a different Release.");
-  }
-  if (identity.projectId === null || record.projectId !== identity.projectId || record.sourceConnectedFolderId !== identity.connectedFolderId) {
-    return fail("a Release belongs to a different App Project or Connected Folder.");
-  }
-  return { record, release };
-}
-
-function assertUniqueText(values: readonly string[], label: string): void {
-  if (new Set(values).size !== values.length) {
-    throw new AmpleFileRecentlyDeletedError("INPUT_INVALID", `The App Studio history lists the same ${label} twice.`);
-  }
-}
-
-/**
- * Re-validates a backup exactly as the storage layer does (closed shape,
- * owner identity taken from the export itself, sha256) and checks it names
- * the identity the entry claims.
- */
-function verifyBackup(value: unknown, identity: AmpleFileRecentlyDeletedAppDataIdentity, code: "INPUT_INVALID" | "STORE_DAMAGED", entryId?: string): RestrictedAppDataBackup {
-  const fail = (reason: string): never => {
-    throw new AmpleFileRecentlyDeletedError(
-      code,
-      code === "INPUT_INVALID"
-        ? `The app data export cannot be kept: ${reason}`
-        : `The app data kept as ${entryId} in ${RECENTLY_DELETED} failed its integrity check: ${reason}`,
-      entryId === undefined ? {} : { entryId },
-    );
-  };
-  const candidate = value as Partial<RestrictedAppDataBackup> | null;
-  const data = candidate && typeof candidate === "object" && candidate.data && typeof candidate.data === "object" ? candidate.data : null;
-  if (!data) return fail("it is not a complete app data export.");
-  if (candidate!.appId !== identity.appId || candidate!.appDigest !== identity.appDigest) return fail("it belongs to a different app or app revision.");
-  let owner: RestrictedAppStorageOwner;
-  try {
-    owner = {
-      ownerClass: "instance",
-      tenantId: parseTenantId(data.tenantId),
-      runtimeInstanceId: parseRuntimeInstanceId(identity.runtimeInstanceId),
-      featureInstallationId: parseFeatureInstallationId(identity.featureInstallationId),
-      dataNamespaceId: parseDataNamespaceId(identity.dataNamespaceId),
-    };
-  } catch (error) {
-    return fail(errorMessage(error));
-  }
-  try {
-    return validateRestrictedAppDataBackup(value, owner, identity.appId, identity.appDigest);
-  } catch (error) {
-    return fail(errorMessage(error));
-  }
 }
 
 function parseManifest(value: unknown): AmpleFileRecentlyDeletedManifest {

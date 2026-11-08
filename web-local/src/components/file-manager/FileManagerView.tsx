@@ -27,15 +27,13 @@ import { settleIn, slideIn } from "../../lib/motion";
 import { useConnectedFolderCustomizations } from "../../hooks/useConnectedFolderCustomizations";
 import { ConnectedFolderAppearanceModal, type ConnectedFolderAppearanceSection } from "../modals/ConnectedFolderAppearanceModal";
 import type { ModelScope } from "../panes/AiModelsPane";
-import { appChangeDraft } from "../../lib/chat-context-request";
-import { prepareRestrictedAppChange } from "../../lib/restricted-apps";
 import { useConnectedFolderIdentityResolver } from "../../lib/connected-folder-appearance-context";
 import { deleteFolderConfirm, deleteSelectionConfirm } from "../../ui-contract";
 import { requestConfirm, showToast } from "../../ui/feedback";
 import { fileSelectionLabel } from "../../../../src/shared/file-selection";
 import type { ConnectedFolderAppearanceState } from "../../../../src/shared/connected-folder-appearance";
 import type { ConnectedFolderUiFixture } from "../../fixtures/connected-folder-fixture";
-import type { AgentStatus, ChatDraftRequest, ChatSendRequest, ConversationSummary, FileContextMenuState, RestrictedAppInstalled, TreeEntry, ConnectedFolderSummary } from "../../types";
+import type { AgentStatus, ChatSendRequest, ConversationSummary, FileContextMenuState, TreeEntry, ConnectedFolderSummary } from "../../types";
 import {
   closedSidebarParents,
   defaultFileManagerSort,
@@ -111,8 +109,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   connectedFolder: ConnectedFolderSummary;
   connectedFolders: ConnectedFolderSummary[];
   agent: AgentStatus;
-  /** Menu-bar commands meant for the window in front, and the buttons in Settings that open something here. */
-  desktopAction?: { id: number; command: string; connectedFolderId?: string; conversationId?: string; path?: string; title?: string; app?: RestrictedAppInstalled } | null;
+  /** Menu-bar commands meant for the window in front, and Settings' Customize button. */
+  desktopAction?: { id: number; command: string; connectedFolderId?: string } | null;
   appearance?: ConnectedFolderAppearanceState;
   fixture: ConnectedFolderUiFixture | null;
   onSwitchConnectedFolder: (connectedFolder: ConnectedFolderSummary) => void;
@@ -268,7 +266,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   // time, in the Connected Folder it belongs to.
   // `conversationId` is the Chat opened from History; a new one from the
   // message box keeps it null (as a new Chat tab does) and learns `activeId`.
-  const [panelChat, setPanelChat] = useState<{ key: number; connectedFolderId: string; conversationId: string | null; activeId: string | null; title: string; sendRequest: ChatSendRequest | null; draftRequest?: ChatDraftRequest | null; open: boolean } | null>(null);
+  const [panelChat, setPanelChat] = useState<{ key: number; connectedFolderId: string; conversationId: string | null; activeId: string | null; title: string; sendRequest: ChatSendRequest | null; open: boolean } | null>(null);
 
   // Another part of the app (the menu bar, a notification) chose a different
   // Connected Folder: show its top level, as choosing it in the sidebar would.
@@ -818,7 +816,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   /**
    * Disconnect: AmpleFile stops using the folder; a linked folder and
    * its files stay where they are, and a managed one moves to Recently Deleted.
-   * The host refuses while that Connected Folder has work or apps that need it, and
+   * The host refuses while that Connected Folder has work that needs it, and
    * its words say what to do.
    */
   async function removeConnectedFolder(target: ConnectedFolderSummary) {
@@ -882,18 +880,6 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       window.requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".fm-comp .fm-field input")?.focus());
     } else if (command === "reload-connected-folder-state") void Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
     else if (command === "customize-connected-folder" && desktopAction.connectedFolderId) setCustomizing({ connectedFolderId: desktopAction.connectedFolderId, section: "banner" });
-    else if (command === "open-app-build-chat" && desktopAction.connectedFolderId && desktopAction.conversationId) {
-      const target = connectedFolders.find((item) => item.id === desktopAction.connectedFolderId);
-      if (target) openChatIn(target, desktopAction.conversationId, "Build Chat");
-      else onError("The app's source Connected Folder is unavailable.");
-    } else if (command === "open-app-result-file" && desktopAction.connectedFolderId && desktopAction.path) {
-      // A result file is shown where it lives, selected.
-      const target = connectedFolders.find((item) => item.id === desktopAction.connectedFolderId);
-      if (target) revealIn(target, desktopAction.path);
-      else onError("The result's Connected Folder is unavailable.");
-    } else if (command === "app-change-chat" && desktopAction.app) void startAppChange(desktopAction.app);
-    // Apps open only in the classic layout (owner decision 2026-11-06: the file manager leaves apps out).
-    else if (command === "open-app-studio") showToast({ text: "App Studio opens in the Classic layout. Switch in Settings → Appearance → Layout.", tone: "info" });
   }, [desktopAction?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function renameConnectedFolder(target: ConnectedFolderSummary, name: string) {
@@ -957,35 +943,6 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (!nativePath) return;
     await copyToClipboard({ text: nativePath });
     showToast({ text: "Path copied", tone: "success" });
-  }
-
-  /** Show a Connected Folder's file or folder where it lives, selected, as Finder's Show in Enclosing Folder does. */
-  function revealIn(target: ConnectedFolderSummary, path: string) {
-    setQuery("");
-    navigate({ place: { kind: "connected-folder", id: target.id }, path: parentPath(path) }, "push", target);
-    window.setTimeout(() => select([path]), 0);
-  }
-
-  /** Open a Chat of any Connected Folder in the panel, going to that Connected Folder first. */
-  function openChatIn(target: ConnectedFolderSummary, conversationId: string, title: string) {
-    if (!(place.kind === "connected-folder" && place.id === target.id)) navigate({ place: { kind: "connected-folder", id: target.id }, path: "" }, "push", target);
-    setPanelOpen(true);
-    setPanelChat({ key: Date.now(), connectedFolderId: target.id, conversationId, activeId: conversationId, title, sendRequest: null, open: true });
-  }
-
-  /** Settings → Apps' Change: a new Chat in the app's Connected Folder with the change request drafted, as the classic layout does. */
-  async function startAppChange(app: RestrictedAppInstalled) {
-    const source = connectedFolders.find((item) => item.id === app.sourceConnectedFolderId);
-    if (!source) { onError("The app's source Connected Folder is unavailable. Refresh Connected Folders before changing it."); return; }
-    try {
-      const change = await prepareRestrictedAppChange(app, crypto.randomUUID());
-      if (!(place.kind === "connected-folder" && place.id === source.id)) navigate({ place: { kind: "connected-folder", id: source.id }, path: "" }, "push", source);
-      setPanelOpen(true);
-      const key = Date.now();
-      setPanelChat({ key, connectedFolderId: source.id, conversationId: null, activeId: null, title: `Change ${app.manifest.title}`, sendRequest: null, draftRequest: { id: key, text: appChangeDraft(change), connectedFolderId: source.id, surfaceTabId: `file-manager:${source.id}` }, open: true });
-    } catch (caught) {
-      onError(errorText(caught));
-    }
   }
 
   // ⌘F searches names and contents, and ⇧⌘G goes to a folder by its path, as in Finder.
@@ -1791,7 +1748,6 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           targetConversationId={fixtureMode ? panelChat.conversationId : panelChat.activeId ?? panelChat.conversationId}
           contextPathRequest={null}
           sendRequest={panelChat.sendRequest}
-          draftRequest={panelChat.draftRequest ?? null}
           variant="panel"
           // The composer's Model Settings opens AI Models for this Worker, with the model in focus.
           onOpenModelSettings={() => onOpenSettings("ai-models", "connected-folder", true, chatConnectedFolder.id)}

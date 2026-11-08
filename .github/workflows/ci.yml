@@ -61,8 +61,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run desktop:prepare
-        env:
-          AMPLEFILE_RESTRICTED_SMOKE_LOG: out/ci/restricted-app-smoke.log
       - name: Save Electron failure evidence
         if: failure()
         uses: actions/upload-artifact@v4

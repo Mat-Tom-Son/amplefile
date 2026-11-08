@@ -84,19 +84,11 @@ test("shared Skills and the AmpleFile agent's materialized instructions stay gat
   const guide = speakableSource(await read("src/local/agent/connected-folder-operations-guide.ts"));
   assert.doesNotMatch(guide, retiredGateWords);
   assert.doesNotMatch(guide, retiredAuthorityNames);
-
-  // The prompt an app's Worker request dispatches is taught text as well,
-  // and so is the app-building guide the proposal tool hands the model.
-  const taskPrompt = speakableSource(await read("src/local/agent/restricted-app-tasks.ts"));
-  assert.doesNotMatch(taskPrompt, retiredGateWords);
-  assert.doesNotMatch(taskPrompt, retiredAuthorityNames);
-  assert.match(taskPrompt, /amplefile chat report/);
 });
 
 test("the desktop copy contract never says approve or staged", async () => {
   for (const source of [
     "web-local/src/ui-contract.ts",
-    "web-local/src/components/modals/SettingsAppsPane.tsx",
   ]) {
     const text = speakableSource(await read(source));
     assert.doesNotMatch(text, retiredGateWords, `${source} still carries gate vocabulary`);

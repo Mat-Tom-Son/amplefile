@@ -302,7 +302,7 @@ test("ledger Chat, History, file, search, and Connected Folder commands parse wi
   );
 });
 
-test("ledger tools and apps commands parse with strict shapes", () => {
+test("ledger tools commands parse with strict shapes", () => {
   assert.deepEqual(
     parseAmpleFileCliActArgv(["tools", "import-skill", "--scope", "connected-folder", "--connected-folder", "connected-folder-1", "--from", "bundles/skill"]),
     { name: "tools.import-skill", output: "human", toolsScope: "connected-folder", connectedFolder: "connected-folder-1", fromPaths: ["bundles/skill"] },
@@ -328,124 +328,29 @@ test("ledger tools and apps commands parse with strict shapes", () => {
     { name: "tools.remove", output: "human", toolsScope: "connected-folder", connectedFolder: "connected-folder-1", source: "npm:example-pkg" },
   );
 
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "list", "--connected-folder", "connected-folder-1"]),
-    { name: "apps.list", output: "human", connectedFolder: "connected-folder-1" },
-  );
-  // --input carries JSON, so it deliberately escapes the control-character
-  // rule every other bounded flag keeps; the app's runtime validates the value.
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "invoke", "--connected-folder", "connected-folder-1", "--app", "app-1", "--tool", "summarize", "--input", "{\n  \"text\": \"North\"\n}", "--parent-task", "task-1"]),
-    { name: "apps.invoke", output: "human", connectedFolder: "connected-folder-1", app: "app-1", tool: "summarize", toolInput: { text: "North" }, parentTaskId: "task-1" },
-  );
-  assert.throws(
-    () => parseAmpleFileCliActArgv(["apps", "invoke", "--connected-folder", "connected-folder-1", "--app", "app-1", "--tool", "summarize"]),
-    /Provide --input <json>/,
-  );
-  assert.throws(
-    () => parseAmpleFileCliActArgv(["apps", "invoke", "--connected-folder", "connected-folder-1", "--app", "app-1", "--tool", "summarize", "--input", "{not json"]),
-    /--input must be valid JSON/,
-  );
-  assert.throws(
-    () => parseAmpleFileCliActArgv(["apps", "invoke", "--connected-folder", "connected-folder-1", "--app", "app-1", "--tool", "summarize", "--input", JSON.stringify({ text: "x".repeat(16 * 1024 * 1024) })]),
-    /--input must be at most 16777216 bytes/,
-  );
-  assert.throws(() => parseAmpleFileCliActArgv(["apps", "list", "--connected-folder", "connected-folder-1", "--app", "app-1"]), /--app/);
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "proposals", "list", "--connected-folder", "connected-folder-1", "--conversation", "conv-1"]),
-    { name: "apps.proposals.list", output: "human", connectedFolder: "connected-folder-1", conversation: "conv-1" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "proposals", "dismiss", "--connected-folder", "connected-folder-1", "--conversation", "conv-1", "--proposal", "proposal-1"]),
-    { name: "apps.proposals.dismiss", output: "human", connectedFolder: "connected-folder-1", conversation: "conv-1", proposal: "proposal-1" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "install-proposal", "--connected-folder", "connected-folder-1", "--conversation", "conv-1", "--proposal", "proposal-1"]),
-    { name: "apps.install-proposal", output: "human", connectedFolder: "connected-folder-1", conversation: "conv-1", proposal: "proposal-1" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "install-preview", "--connected-folder", "connected-folder-1", "--package", "apps/preview"]),
-    { name: "apps.install-preview", output: "human", connectedFolder: "connected-folder-1", packagePath: "apps/preview" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "remove", "--connected-folder", "connected-folder-1", "--app", "app-1"]),
-    { name: "apps.remove", output: "human", connectedFolder: "connected-folder-1", app: "app-1" },
-  );
-  const digest = "c".repeat(64);
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "grant", "--connected-folder", "connected-folder-1", "--app", "app-1", "--digest", digest, "--kind", "network", "--declaration", "decl-1"]),
-    { name: "apps.grant", output: "human", connectedFolder: "connected-folder-1", app: "app-1", digest, grantKind: "network", declaration: "decl-1" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "revoke", "--connected-folder", "connected-folder-1", "--app", "app-1", "--digest", digest, "--kind", "files", "--declaration", "decl-2"]),
-    { name: "apps.revoke", output: "human", connectedFolder: "connected-folder-1", app: "app-1", digest, grantKind: "files", declaration: "decl-2" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "connect", "--connected-folder", "connected-folder-1", "--app", "app-1", "--destination", "dest-1"]),
-    { name: "apps.connect", output: "human", connectedFolder: "connected-folder-1", app: "app-1", destination: "dest-1" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "disconnect", "--connected-folder", "connected-folder-1", "--app", "app-1", "--destination", "dest-1"]),
-    { name: "apps.disconnect", output: "human", connectedFolder: "connected-folder-1", app: "app-1", destination: "dest-1" },
-  );
-  for (const [verb, name] of [
-    ["enable", "apps.automation.enable"],
-    ["disable", "apps.automation.disable"],
-    ["run", "apps.automation.run"],
-  ] as const) {
-    assert.deepEqual(
-      parseAmpleFileCliActArgv(["apps", "automation", verb, "--connected-folder", "connected-folder-1", "--app", "app-1", "--automation", "job-1"]),
-      { name, output: "human", connectedFolder: "connected-folder-1", app: "app-1", automation: "job-1" },
-    );
+
+  // Connected Folder apps and App Studio were removed on 2026-11-07: the whole
+  // family is an ordinary unknown command, and its app-only flags are unknown
+  // options everywhere.
+  for (const argv of [
+    ["apps", "list", "--connected-folder", "connected-folder-1"],
+    ["apps", "invoke", "--connected-folder", "connected-folder-1"],
+    ["apps", "install-proposal", "--connected-folder", "connected-folder-1"],
+    ["apps", "grant", "--connected-folder", "connected-folder-1"],
+    ["apps", "release", "prepare", "--connected-folder", "connected-folder-1"],
+    ["apps", "uninstall", "--connected-folder", "connected-folder-1"],
+  ]) {
+    assert.throws(() => parseAmpleFileCliActArgv(argv), /Unknown command: apps /, argv.join(" "));
   }
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "storage", "clear", "--connected-folder", "connected-folder-1", "--app", "app-1"]),
-    { name: "apps.storage.clear", output: "human", connectedFolder: "connected-folder-1", app: "app-1" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "retained", "purge", "--connected-folder", "connected-folder-1", "--retained", "retained-1"]),
-    { name: "apps.retained.purge", output: "human", connectedFolder: "connected-folder-1", retained: "retained-1" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "project", "declare", "--connected-folder", "connected-folder-1", "--presentation", "studio/presentation.json"]),
-    { name: "apps.project.declare", output: "human", connectedFolder: "connected-folder-1", presentationPath: "studio/presentation.json" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "release", "prepare", "--connected-folder", "connected-folder-1", "--version", "1.2"]),
-    { name: "apps.release.prepare", output: "human", connectedFolder: "connected-folder-1", version: "1.2" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "release", "publish", "--connected-folder", "connected-folder-1", "--release", digest]),
-    { name: "apps.release.publish", output: "human", connectedFolder: "connected-folder-1", release: digest },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "release", "delete", "--connected-folder", "connected-folder-1", "--release", digest]),
-    { name: "apps.release.delete", output: "human", connectedFolder: "connected-folder-1", release: digest },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "install", "prepare", "--connected-folder", "connected-folder-1", "--release", digest, "--target-connected-folder", "connected-folder-2"]),
-    { name: "apps.install.prepare", output: "human", connectedFolder: "connected-folder-1", release: digest, targetConnectedFolder: "connected-folder-2" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "update", "prepare", "--connected-folder", "connected-folder-1", "--instance", "instance-1", "--release", digest]),
-    { name: "apps.update.prepare", output: "human", connectedFolder: "connected-folder-1", instance: "instance-1", release: digest },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "operation", "activate", "--connected-folder", "connected-folder-1", "--operation", "op-1"]),
-    { name: "apps.operation.activate", output: "human", connectedFolder: "connected-folder-1", operation: "op-1" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "operation", "cancel", "--connected-folder", "connected-folder-1", "--operation", "op-1"]),
-    { name: "apps.operation.cancel", output: "human", connectedFolder: "connected-folder-1", operation: "op-1" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "uninstall", "--connected-folder", "connected-folder-1", "--instance", "instance-1", "--retain-data"]),
-    { name: "apps.uninstall", output: "human", connectedFolder: "connected-folder-1", instance: "instance-1", disposition: "retain-data" },
-  );
-  assert.deepEqual(
-    parseAmpleFileCliActArgv(["apps", "uninstall", "--connected-folder", "connected-folder-1", "--instance", "instance-1", "--purge-data"]),
-    { name: "apps.uninstall", output: "human", connectedFolder: "connected-folder-1", instance: "instance-1", disposition: "purge-data" },
-  );
+  for (const flag of [
+    "--app", "--tool", "--input", "--package", "--presentation", "--release", "--target-connected-folder",
+    "--instance", "--operation", "--retained", "--digest", "--declaration", "--destination",
+  ]) {
+    assert.throws(() => parseAmpleFileCliActArgv(["chats", "list", "--connected-folder", "connected-folder-1", flag, "x"]), new RegExp(`Unknown option: ${flag}`));
+  }
+  for (const flag of ["--retain-data", "--purge-data"]) {
+    assert.throws(() => parseAmpleFileCliActArgv(["chats", "list", "--connected-folder", "connected-folder-1", flag]), new RegExp(`Unknown option: ${flag}`));
+  }
 });
 
 test("ledger command flag validation refuses malformed and misplaced shapes", () => {
@@ -498,18 +403,6 @@ test("ledger command flag validation refuses malformed and misplaced shapes", ()
     /--scope must be everywhere or Connected Folder/,
   );
   assert.throws(
-    () => parseAmpleFileCliActArgv(["apps", "grant", "--connected-folder", "s", "--app", "a", "--digest", "d", "--kind", "everything", "--declaration", "x"]),
-    /--kind must be network, files, or notifications/,
-  );
-  assert.throws(
-    () => parseAmpleFileCliActArgv(["apps", "uninstall", "--connected-folder", "s", "--instance", "i"]),
-    /never defaulted/,
-  );
-  assert.throws(
-    () => parseAmpleFileCliActArgv(["apps", "uninstall", "--connected-folder", "s", "--instance", "i", "--retain-data", "--purge-data"]),
-    /never defaulted/,
-  );
-  assert.throws(
     () => parseAmpleFileCliActArgv(["connected-folders", "rename", "--connected-folder", "s", "--name", "bad\u0007name"]),
     /--name contains unsupported control characters/,
   );
@@ -520,8 +413,8 @@ test("ledger command flag validation refuses malformed and misplaced shapes", ()
     /--title cannot be used with 'chat create'/,
   );
   assert.throws(
-    () => parseAmpleFileCliActArgv(["connected-folders", "create", "--name", "Home", "--release", "digest"]),
-    /--release cannot be used with 'connected-folders create'/,
+    () => parseAmpleFileCliActArgv(["connected-folders", "create", "--name", "Home", "--automation", "automation-1"]),
+    /--automation cannot be used with 'connected-folders create'/,
   );
   assert.throws(
     () => parseAmpleFileCliActArgv(["chat", "rename", "--connected-folder", "s", "--conversation", "c", "--title", "t", "--parent", "x"]),
@@ -614,14 +507,18 @@ test("direct verbs parse with strict shapes", () => {
     { name: "recently-deleted.restore", output: "human", entry: "trash-20260910083000-53db781d" },
   );
   assert.deepEqual(
-    parseAmpleFileCliActArgv(["recently-deleted", "restore", "--entry", "trash-20260910083000-53db781d", "--to", "/tmp/copy.json", "--parent-task", "task-4"]),
+    parseAmpleFileCliActArgv(["recently-deleted", "restore", "--entry", "trash-20260910083000-53db781d", "--parent-task", "task-4"]),
     {
       name: "recently-deleted.restore",
       output: "human",
       entry: "trash-20260910083000-53db781d",
-      toPath: "/tmp/copy.json",
       parentTaskId: "task-4",
     },
+  );
+  // Saving a copy with --to served only app data an earlier build kept; it is gone.
+  assert.throws(
+    () => parseAmpleFileCliActArgv(["recently-deleted", "restore", "--entry", "trash-20260910083000-53db781d", "--to", "/tmp/copy.json"]),
+    /--to cannot be used with 'recently-deleted restore'/,
   );
   assert.throws(
     () => parseAmpleFileCliActArgv(["recently-deleted", "list", "--connected-folder", "connected-folder-1"]),
@@ -659,7 +556,6 @@ test("direct verbs parse with strict shapes", () => {
 
 test("formerly gated verbs execute through the facade and receipt without a decision id", async () => {
   const connectedFolderRef = { id: "connected-folder-1", name: "Fold Connected Folder", connectedFolderRoot: "/tmp/fold" };
-  const appRef = { connectedFolderId: "connected-folder-1", appId: "quote-board", featureInstallationId: "feature-installation-1", digest: "f".repeat(64), title: "Quote board", version: "0.9.0" };
   const calls: Array<{ method: string; input?: unknown }> = [];
   let automationsEnableAlready = false;
   const facade = {
@@ -682,18 +578,6 @@ test("formerly gated verbs execute through the facade and receipt without a deci
       calls.push({ method: "toolsImportSkill", input });
       return { scope: "connected-folder", connectedFolder: connectedFolderRef, source: "/tmp/notes.skill", contentDigest: "c".repeat(64), skillNames: ["notes", "todo"], bundlePath: "/tmp/fold/.pi/skills/notes.skill" };
     },
-    appsUninstallPurge: async (input: unknown) => {
-      calls.push({ method: "appsUninstallPurge", input });
-      return { connectedFolder: connectedFolderRef, runtimeInstanceId: "runtime-instance_1", purgedNamespaceIds: ["data-namespace_1"], removed: true, cleanupPending: false };
-    },
-    appsGrant: async (input: unknown) => {
-      calls.push({ method: "appsGrant", input });
-      return { connectedFolder: connectedFolderRef, appId: "quote-board", grantKind: "files", declaration: "exports", granted: true, root: "." };
-    },
-    appsStorageClear: async (input: unknown) => {
-      calls.push({ method: "appsStorageClear", input });
-      return { connectedFolder: connectedFolderRef, appId: "quote-board", clearedBytes: 2048, remainingBytes: 0 };
-    },
     automationsEnable: async (input: unknown) => {
       calls.push({ method: "automationsEnable", input });
       return {
@@ -705,21 +589,6 @@ test("formerly gated verbs execute through the facade and receipt without a deci
         enabledAt: "2026-09-01T12:00:00.000Z",
         alreadyEnabled: automationsEnableAlready,
         stoppedRunId: null,
-      };
-    },
-    appsInstallPreview: async (input: unknown) => {
-      calls.push({ method: "appsInstallPreview", input });
-      return {
-        connectedFolder: connectedFolderRef,
-        proposalId: "proposal-1",
-        digest: "f".repeat(64),
-        title: "Quote board",
-        packageName: "quote-board",
-        version: "0.9.0",
-        replacesInstalled: true,
-        app: appRef,
-        granted: { destinations: 2, wholeConnectedFolderFolders: 1, notifications: 0, checks: 0, automations: 1 },
-        needs: { connections: ["crm"], files: ["ledger"], checks: ["review"] },
       };
     },
   } as unknown as AmpleFileActFacade;
@@ -771,22 +640,6 @@ test("formerly gated verbs execute through the facade and receipt without a deci
   assert.equal(lastOk().detail, `capability.skills.import; scope connected-folder; source /tmp/notes.skill; digest ${"c".repeat(64)}`);
   assert.deepEqual(lastOk().undoRef, { kind: "skill-bundle-path", value: "/tmp/fold/.pi/skills/notes.skill" });
 
-  const purge = await execute(["apps", "uninstall", "--connected-folder", "connected-folder-1", "--instance", "runtime-instance_1", "--purge-data"]);
-  assert.equal(purge.exitCode, 0);
-  assert.match(purge.stdout, /^Uninstalled instance runtime-instance_1 from Fold Connected Folder \[connected-folder-1\] and purged its data\.\n$/);
-  assert.equal(calls.at(-1)?.method, "appsUninstallPurge");
-  assert.equal(lastOk().detail, "app.data.purge; instance runtime-instance_1");
-
-  const grant = await execute(["apps", "grant", "--connected-folder", "connected-folder-1", "--app", "quote-board", "--digest", "f".repeat(64), "--kind", "files", "--declaration", "exports"]);
-  assert.equal(grant.exitCode, 0);
-  assert.match(grant.stdout, /^Granted files exports to quote-board in Fold Connected Folder \[connected-folder-1\]\. It covers the whole Connected Folder\.\n$/);
-  assert.equal(lastOk().detail, "app.grant.files; app quote-board; declaration exports; root .");
-  assert.deepEqual(lastOk().undoRef, { kind: "declaration", value: "exports" });
-
-  const cleared = await execute(["apps", "storage", "clear", "--connected-folder", "connected-folder-1", "--app", "quote-board"]);
-  assert.match(cleared.stdout, /^Cleared 2048 bytes of live storage of quote-board in Fold Connected Folder \[connected-folder-1\]; 0 bytes remain\.\n$/);
-  assert.equal(lastOk().detail, "app.storage.clear; app quote-board; bytes 2048");
-
   const automation = await execute(["automations", "enable", "--proposal", "fold/weekly.json"]);
   assert.equal(automation.exitCode, 0);
   assert.match(automation.stdout, /^Enabled automation "Weekly glue" \[automation-weekly\]\. It now runs on its trigger; /);
@@ -804,29 +657,6 @@ test("formerly gated verbs execute through the facade and receipt without a deci
   assert.match(again.stdout, /^Automation "Weekly glue" \[automation-weekly\] is already on with this exact declaration; nothing changed\.\n$/);
   assert.equal(lastOk().detail, `automation.enable; automation automation-weekly; digest ${"e".repeat(64)}; already enabled`);
   automationsEnableAlready = false;
-
-  // The host creates the review itself and installs it at once through the
-  // same digest-checked path a Chat proposal uses.
-  records.length = 0;
-  const preview = await execute(["apps", "install-preview", "--connected-folder", "connected-folder-1", "--package", "apps/preview"]);
-  assert.equal(preview.exitCode, 0);
-  // Both halves, the way the Chat path reports them: what came on, and what
-  // deliberately still needs the person (docs/receipts-not-gates.md, F21).
-  assert.match(preview.stdout, /^Installed Quote board 0\.9\.0 in Fold Connected Folder \[connected-folder-1\]\. It replaced the previous installation\.\n/);
-  assert.match(preview.stdout, /On now: 2 destinations, 1 folder permission over the whole Connected Folder, 0 notifications, 0 Check slots, 1 automation\.\n/);
-  assert.match(
-    preview.stdout,
-    /Still needs the person, in Settings → Apps: connect crm; choose a file for ledger; choose a Check for review\.\n$/,
-  );
-  const previewInput = calls.at(-1)?.input as { connectedFolder: string; packagePath: string; requestId?: string };
-  assert.equal(previewInput.connectedFolder, "connected-folder-1");
-  assert.equal(previewInput.packagePath, "apps/preview");
-  assert.ok(previewInput.requestId, "the act request's journal id rides into the facade");
-  assert.deepEqual(records.map((record) => record.outcome), ["accepted", "ok"]);
-  assert.equal(
-    lastOk().detail,
-    `app.review.install; proposal proposal-1; digest ${"f".repeat(64)}; replaced installed preview; 3 still needs the person`,
-  );
 
   // A setup-only refusal happens at parse time: no journal entry at all.
   records.length = 0;
@@ -1378,11 +1208,8 @@ test("file and search acts dispatch to the facade, stamp receipts, and render be
   );
 });
 
-test("Connected Folder, appearance, tools, and App Studio acts dispatch to the facade, stamp receipts, and render bespoke output", async () => {
+test("Connected Folder, appearance, and tools acts dispatch to the facade, stamp receipts, and render bespoke output", async () => {
   const connectedFolderRef = { id: "connected-folder-1", name: "Fold Connected Folder", connectedFolderRoot: "/tmp/fold" };
-  const targetRef = { id: "connected-folder-2", name: "Target Connected Folder", connectedFolderRoot: "/tmp/target" };
-  const releaseDigest = `sha256:${"a".repeat(64)}`;
-  const priorDigest = `sha256:${"b".repeat(64)}`;
   const calls: Array<{ method: string; input?: unknown }> = [];
   let toolsRemoved = true;
   const facade = {
@@ -1414,8 +1241,6 @@ test("Connected Folder, appearance, tools, and App Studio acts dispatch to the f
         storage: "linked" as const,
         removed: true,
         cleanupPending: false,
-        appRecentlyDeletedEntries: [],
-        appStudioRecentlyDeleted: { entryId: "trash-20261011120000-abcdef12", restoreBy: "2026-11-10T12:00:00.000Z" },
       };
     },
     connectedFoldersAppearanceApply: async (input: unknown) => {
@@ -1456,210 +1281,6 @@ test("Connected Folder, appearance, tools, and App Studio acts dispatch to the f
         removed: toolsRemoved,
       };
     },
-    appsProjectDeclare: async (input: unknown) => {
-      calls.push({ method: "appsProjectDeclare", input });
-      return {
-        connectedFolder: connectedFolderRef,
-        project: { projectId: "project_1", presentation: { title: "Connected Inbox", description: null, icon: "mail" } },
-        priorPresentation: null,
-        priorPresentationRef: null,
-      };
-    },
-    appsReleasePrepare: async (input: unknown) => {
-      calls.push({ method: "appsReleasePrepare", input });
-      return {
-        connectedFolder: connectedFolderRef,
-        release: {
-          releaseDigest,
-          displayVersion: "1.0.0",
-          state: "prepared" as const,
-          preparedAt: createdAt,
-          publishedAt: null,
-          featureCount: 1,
-        },
-      };
-    },
-    appsReleasePublish: async (input: unknown) => {
-      calls.push({ method: "appsReleasePublish", input });
-      return {
-        connectedFolder: connectedFolderRef,
-        release: {
-          releaseDigest,
-          displayVersion: "1.0.0",
-          state: "published" as const,
-          preparedAt: createdAt,
-          publishedAt: createdAt,
-          featureCount: 1,
-        },
-      };
-    },
-    appsReleaseDelete: async (input: unknown) => {
-      calls.push({ method: "appsReleaseDelete", input });
-      return { connectedFolder: connectedFolderRef, releaseDigest, deleted: true, cleanupPending: false };
-    },
-    appsInstallPrepare: async (input: unknown) => {
-      calls.push({ method: "appsInstallPrepare", input });
-      return {
-        connectedFolder: connectedFolderRef,
-        targetConnectedFolder: targetRef,
-        operation: {
-          operationId: "operation_1",
-          kind: "install" as const,
-          releaseDigest,
-          runtimeInstanceId: "runtime-instance_1",
-          targetConnectedFolderId: targetRef.id,
-          preparedAt: createdAt,
-        },
-      };
-    },
-    appsUpdatePrepare: async (input: unknown) => {
-      calls.push({ method: "appsUpdatePrepare", input });
-      return {
-        connectedFolder: connectedFolderRef,
-        targetConnectedFolder: targetRef,
-        operation: {
-          operationId: "operation_2",
-          kind: "update" as const,
-          releaseDigest,
-          runtimeInstanceId: "runtime-instance_1",
-          targetConnectedFolderId: targetRef.id,
-          preparedAt: createdAt,
-          fromReleaseDigest: priorDigest,
-          continuityPolicy: "eligible" as const,
-        },
-      };
-    },
-    appsOperationActivate: async (input: unknown) => {
-      calls.push({ method: "appsOperationActivate", input });
-      return {
-        connectedFolder: connectedFolderRef,
-        operationId: "operation_1",
-        operationKind: "install" as const,
-        instance: {
-          runtimeInstanceId: "runtime-instance_1",
-          connectedFolderId: targetRef.id,
-          releaseDigest,
-          displayVersion: "1.0.0",
-        },
-      };
-    },
-    appsOperationCancel: async (input: unknown) => {
-      calls.push({ method: "appsOperationCancel", input });
-      return { connectedFolder: connectedFolderRef, operationId: "operation_2", cancelled: true };
-    },
-    appsUninstall: async (input: unknown) => {
-      calls.push({ method: "appsUninstall", input });
-      return {
-        connectedFolder: connectedFolderRef,
-        runtimeInstanceId: "runtime-instance_1",
-        removed: true,
-        retainedNamespaceIds: ["data-namespace_1"],
-        cleanupPending: false,
-      };
-    },
-    appsUninstallPurge: async (input: unknown) => {
-      calls.push({ method: "appsUninstallPurge", input });
-      return { connectedFolder: connectedFolderRef, runtimeInstanceId: "runtime-instance_1", purgedNamespaceIds: ["data-namespace_1"], removed: true, cleanupPending: true };
-    },
-    appsList: async (input: unknown) => {
-      calls.push({ method: "appsList", input });
-      return {
-        connectedFolder: connectedFolderRef,
-        apps: [{
-          appId: "connected-inbox",
-          featureInstallationId: "feature-installation_1",
-          digest: "d".repeat(64),
-          title: "Connected inbox",
-          description: "Reads the shared inbox.",
-          version: "0.1.0",
-          kind: "preview" as const,
-          tools: [{
-            name: "summarize",
-            description: "Summarize the inbox.",
-            action: "summarize",
-            inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false },
-            resultSchema: { type: "string" },
-          }],
-          assistantActions: [{ id: "compare", title: "Compare quotes" }],
-          grants: { network: ["crm"], files: [{ declarationId: "connected-folder-notes", root: ".", access: "read-write" }], notifications: [], checks: [] },
-          connections: [{ destinationId: "crm", kind: null, configured: false }],
-          automations: [{ id: "daily-sync", title: "Daily sync", enabled: true, nextRunAt: createdAt, lastRunAt: null }],
-        }],
-        truncated: false,
-      };
-    },
-    appsInvoke: async (input: unknown) => {
-      calls.push({ method: "appsInvoke", input });
-      return {
-        connectedFolder: connectedFolderRef,
-        appId: "connected-inbox",
-        featureInstallationId: "feature-installation_1",
-        digest: "d".repeat(64),
-        tool: "summarize",
-        action: "summarize",
-        result: { summary: "Two quotes, North is cheaper." },
-      };
-    },
-    appsProposalsList: async (input: unknown) => {
-      calls.push({ method: "appsProposalsList", input });
-      return {
-        connectedFolder: connectedFolderRef,
-        conversationId: "conv-1",
-        proposals: [{
-          id: "proposal-1",
-          status: "pending" as const,
-          sourcePath: "apps/inbox",
-          title: "Connected inbox",
-          packageName: "connected-inbox",
-          version: "0.1.0",
-          digest: "d".repeat(64),
-          createdAt,
-          updatedAt: createdAt,
-        }],
-      };
-    },
-    appsProposalsDismiss: async (input: unknown) => {
-      calls.push({ method: "appsProposalsDismiss", input });
-      return { connectedFolder: connectedFolderRef, proposalId: "proposal-1", dismissed: true };
-    },
-    appsRemove: async (input: unknown) => {
-      calls.push({ method: "appsRemove", input });
-      return {
-        connectedFolder: connectedFolderRef,
-        appId: "connected-inbox",
-        digest: "d".repeat(64),
-        removed: true,
-        recentlyDeleted: { entryId: "trash-app-1", restoreBy: "2026-10-10T00:00:00.000Z" },
-      };
-    },
-    appsRevoke: async (input: unknown) => {
-      calls.push({ method: "appsRevoke", input });
-      const scoped = input as { kind: "network" | "files" | "notifications"; declaration: string };
-      return {
-        connectedFolder: connectedFolderRef,
-        appId: "connected-inbox",
-        grantKind: scoped.kind,
-        declaration: scoped.declaration,
-        revoked: scoped.declaration !== "never-granted",
-      };
-    },
-    appsDisconnect: async (input: unknown) => {
-      calls.push({ method: "appsDisconnect", input });
-      return { connectedFolder: connectedFolderRef, appId: "connected-inbox", destination: "crm", disconnected: true };
-    },
-    appsAutomationDisable: async (input: unknown) => {
-      calls.push({ method: "appsAutomationDisable", input });
-      return { connectedFolder: connectedFolderRef, appId: "connected-inbox", appAutomationId: "daily-sync", disabled: true, wasEnabled: true };
-    },
-    appsAutomationRun: async (input: unknown) => {
-      calls.push({ method: "appsAutomationRun", input });
-      return {
-        connectedFolder: connectedFolderRef,
-        appId: "connected-inbox",
-        appAutomationId: "daily-sync",
-        run: { runId: "run-77", outcome: "success" as const, startedAt: createdAt, finishedAt: createdAt },
-      };
-    },
   } as unknown as AmpleFileActFacade;
   const records: Array<Record<string, unknown>> = [];
   const execute = (argv: string[]) => executeAmpleFileCliActRequest(
@@ -1689,11 +1310,11 @@ test("Connected Folder, appearance, tools, and App Studio acts dispatch to the f
   const unregistered = await execute(["connected-folders", "unregister", "--connected-folder", "connected-folder-1", "--parent-task", "task-9"]);
   assert.match(unregistered.stdout, /Unregistered linked Connected Folder Fold Connected Folder \[connected-folder-1\]\./);
   assert.match(unregistered.stdout, /The folder remains at \/tmp\/fold with its portable \.amplefile identity/);
-  // The Connected Folder's App Studio history waits in Recently deleted, and the receipt names it.
-  assert.match(unregistered.stdout, /Its App Studio history is in Recently deleted too \[trash-20261011120000-abcdef12\]/);
+  // Connected Folder apps are gone, so unregistering names no app state at all.
+  assert.doesNotMatch(unregistered.stdout, /App Studio|app data|apps? installed/);
   assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", parentTaskId: "task-9", requestId: lastOk().requestId });
   assert.equal(lastOk().parentTaskId, "task-9");
-  assert.equal(lastOk().detail, "storage linked; App Studio trash-20261011120000-abcdef12");
+  assert.equal(lastOk().detail, "storage linked");
   assert.deepEqual(lastOk().undoRef, { kind: "connected-folder-root", value: "/tmp/fold" });
 
   const assistant = await execute(["connected-folders", "worker", "show", "--connected-folder", "connected-folder-1"]);
@@ -1745,135 +1366,6 @@ test("Connected Folder, appearance, tools, and App Studio acts dispatch to the f
   assert.deepEqual(calls.at(-1)?.input, { scope: "connected-folder", connectedFolder: "connected-folder-1", source: "./tools/pkg" });
   assert.equal(lastOk().detail, "scope connected-folder; source ./tools/pkg (not installed)");
   assert.equal(lastOk().connectedFolderId, "connected-folder-1");
-
-  const declared = await execute(["apps", "project", "declare", "--connected-folder", "connected-folder-1", "--presentation", "presentation.json"]);
-  assert.match(declared.stdout, /Declared App Project presentation "Connected Inbox" \[project_1\] in Fold Connected Folder \[connected-folder-1\]\. This is the Project's first declared presentation\./);
-  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", presentationPath: "presentation.json", cwd });
-  assert.deepEqual(lastOk().undoRef, { kind: "app-presentation-ref", value: "none" });
-
-  const prepared = await execute(["apps", "release", "prepare", "--connected-folder", "connected-folder-1", "--version", "1.0.0"]);
-  assert.match(prepared.stdout, /Prepared Release 1\.0\.0 \[sha256:a+\] in Fold Connected Folder \[connected-folder-1\] \(1 Feature\)\./);
-  assert.match(prepared.stdout, /Later source edits cannot alter its bytes/);
-  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", version: "1.0.0" });
-  assert.equal(lastOk().detail, `release ${releaseDigest}`);
-  assert.deepEqual(lastOk().undoRef, { kind: "release-digest", value: releaseDigest });
-
-  const published = await execute(["apps", "release", "publish", "--connected-folder", "connected-folder-1", "--release", releaseDigest]);
-  assert.match(published.stdout, /Published Release 1\.0\.0 \[sha256:a+\] in Fold Connected Folder \[connected-folder-1\]\./);
-  assert.match(published.stdout, /local state transition — nothing is uploaded, hosted, listed, or granted\./);
-  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", release: releaseDigest });
-
-  const installPrepared = await execute(["apps", "install", "prepare", "--connected-folder", "connected-folder-1", "--release", releaseDigest, "--target-connected-folder", "connected-folder-2"]);
-  assert.match(installPrepared.stdout, /Prepared install of Release \[sha256:a+\] into Target Connected Folder \[connected-folder-2\] — operation operation_1\./);
-  assert.match(installPrepared.stdout, /every power starts off\./);
-  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", release: releaseDigest, targetConnectedFolder: "connected-folder-2" });
-  assert.equal(lastOk().detail, "operation operation_1");
-  assert.deepEqual(lastOk().undoRef, { kind: "operation-id", value: "operation_1" });
-
-  const activated = await execute(["apps", "operation", "activate", "--connected-folder", "connected-folder-1", "--operation", "operation_1"]);
-  assert.match(activated.stdout, /Activated install operation operation_1: instance runtime-instance_1 now runs Release 1\.0\.0 \[sha256:a+\]\. Every power starts off\./);
-  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", operation: "operation_1" });
-  assert.equal(lastOk().detail, `operation operation_1; release ${releaseDigest}`);
-
-  const updatePrepared = await execute(["apps", "update", "prepare", "--connected-folder", "connected-folder-1", "--instance", "runtime-instance_1", "--release", releaseDigest]);
-  assert.match(updatePrepared.stdout, /Prepared update of instance runtime-instance_1 from Release \[sha256:b+\] to \[sha256:a+\] — operation operation_2\./);
-  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", instance: "runtime-instance_1", release: releaseDigest });
-  assert.equal(lastOk().detail, `operation operation_2; from ${priorDigest}; to ${releaseDigest}`);
-  assert.deepEqual(lastOk().undoRef, { kind: "operation-id", value: "operation_2" });
-
-  const cancelled = await execute(["apps", "operation", "cancel", "--connected-folder", "connected-folder-1", "--operation", "operation_2"]);
-  assert.match(cancelled.stdout, /Cancelled prepared operation operation_2\. Prepare it again when needed\./);
-  assert.equal(lastOk().detail, "operation operation_2");
-
-  const uninstalled = await execute(["apps", "uninstall", "--connected-folder", "connected-folder-1", "--instance", "runtime-instance_1", "--retain-data"]);
-  assert.match(uninstalled.stdout, /Uninstalled instance runtime-instance_1 from Fold Connected Folder \[connected-folder-1\], retaining 1 data namespace\./);
-  assert.match(uninstalled.stdout, /Retained data does not remain runnable, and reinstalling creates a new instance\./);
-  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", instance: "runtime-instance_1" });
-  assert.equal(lastOk().detail, "instance runtime-instance_1; retained data-namespace_1");
-
-  const deletedRelease = await execute(["apps", "release", "delete", "--connected-folder", "connected-folder-1", "--release", releaseDigest]);
-  assert.match(deletedRelease.stdout, /Deleted unused Release \[sha256:a+\] in Fold Connected Folder \[connected-folder-1\]\./);
-  assert.equal(lastOk().detail, `release ${releaseDigest}`);
-  assert.equal(lastOk().undoRef, undefined);
-
-  // The AmpleFile agent reads what an app can do, then runs one of its declared tools.
-  const listedApps = await execute(["apps", "list", "--connected-folder", "connected-folder-1"]);
-  assert.match(listedApps.stdout, /1 app in Fold Connected Folder \[connected-folder-1\]:/);
-  assert.match(listedApps.stdout, /- Connected inbox 0\.1\.0 \[connected-inbox\] \(preview\)/);
-  assert.match(listedApps.stdout, /tools: summarize/);
-  assert.match(listedApps.stdout, /automations: daily-sync on/);
-  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1" });
-  assert.equal(lastOk().detail, "apps 1");
-  const listedJson = JSON.parse((await execute(["apps", "list", "--connected-folder", "connected-folder-1", "--json"])).stdout);
-  assert.equal(listedJson.data.apps[0].tools[0].inputSchema.type, "object", "a caller can build --input from the listing alone");
-  assert.deepEqual(listedJson.data.apps[0].assistantActions, [{ id: "compare", title: "Compare quotes" }]);
-
-  const invoked = await execute(["apps", "invoke", "--connected-folder", "connected-folder-1", "--app", "connected-inbox", "--tool", "summarize", "--input", "{\"text\":\"North $42\"}", "--parent-task", "task-9"]);
-  assert.match(invoked.stdout, /Ran summarize of connected-inbox in Fold Connected Folder \[connected-folder-1\]\./);
-  assert.match(invoked.stdout, /Two quotes, North is cheaper\./);
-  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", app: "connected-inbox", tool: "summarize", input: { text: "North $42" }, parentTaskId: "task-9" });
-  assert.equal(lastOk().parentTaskId, "task-9");
-  assert.match(String(lastOk().detail), /^app connected-inbox; tool summarize; result \d+ bytes$/);
-
-  // The connected-folder-app authority direct verbs: narrowing, neutral, and widening
-  // alike, with honest receipt details. Under F21 `apps grant` is a direct
-  // receipted verb too; nothing here waits on a second act.
-  const proposals = await execute(["apps", "proposals", "list", "--connected-folder", "connected-folder-1", "--conversation", "conv-1"]);
-  assert.match(proposals.stdout, /1 app proposal in Chat \[conv-1\] of Fold Connected Folder \[connected-folder-1\]:/);
-  assert.match(proposals.stdout, /- Connected inbox 0\.1\.0 \[proposal-1\] — pending — digest d+/);
-  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", conversationId: "conv-1" });
-
-  const dismissed = await execute(["apps", "proposals", "dismiss", "--connected-folder", "connected-folder-1", "--conversation", "conv-1", "--proposal", "proposal-1"]);
-  assert.match(dismissed.stdout, /Dismissed app proposal proposal-1 in Fold Connected Folder \[connected-folder-1\]\. Nothing runnable existed; the Worker may propose again\./);
-  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", conversationId: "conv-1", proposal: "proposal-1" });
-  assert.equal(lastOk().detail, "proposal proposal-1");
-
-  const removedApp = await execute(["apps", "remove", "--connected-folder", "connected-folder-1", "--app", "connected-inbox"]);
-  assert.match(removedApp.stdout, /Removed app connected-inbox \[digest d+\] from Fold Connected Folder \[connected-folder-1\]\. Reinstalling it is a fresh receipted act/);
-  // Removing a preview takes its data with it, so the removal names the
-  // recoverable copy it left behind (docs/receipts-not-gates.md, F20).
-  assert.match(removedApp.stdout, /Its data is in Recently deleted until 2026-10-10T00:00:00\.000Z — save it with 'recently-deleted restore --entry trash-app-1 --to <path>'\./);
-  assert.deepEqual(calls.at(-1)?.input, { connectedFolder: "connected-folder-1", app: "connected-inbox", requestId: lastOk().requestId });
-  assert.equal(lastOk().detail, `app connected-inbox; digest ${"d".repeat(64)}; recently-deleted trash-app-1`);
-
-  const revoked = await execute(["apps", "revoke", "--connected-folder", "connected-folder-1", "--app", "connected-inbox", "--digest", "d".repeat(64), "--kind", "files", "--declaration", "connected-folder-notes"]);
-  assert.match(revoked.stdout, /Revoked the files grant connected-folder-notes from connected-inbox in Fold Connected Folder \[connected-folder-1\]\. Re-granting it is a fresh receipted act/);
-  assert.deepEqual(calls.at(-1)?.input, {
-    connectedFolder: "connected-folder-1",
-    app: "connected-inbox",
-    digest: "d".repeat(64),
-    kind: "files",
-    declaration: "connected-folder-notes",
-  });
-  assert.equal(lastOk().detail, "app connected-inbox; kind files; declaration connected-folder-notes");
-
-  const revokeMiss = await execute(["apps", "revoke", "--connected-folder", "connected-folder-1", "--app", "connected-inbox", "--digest", "d".repeat(64), "--kind", "network", "--declaration", "never-granted"]);
-  assert.match(revokeMiss.stdout, /was not granted in Fold Connected Folder \[connected-folder-1\]; authority is unchanged\./);
-  assert.equal(lastOk().detail, "app connected-inbox; kind network; declaration never-granted (was not granted)");
-
-  const disconnected = await execute(["apps", "disconnect", "--connected-folder", "connected-folder-1", "--app", "connected-inbox", "--destination", "crm"]);
-  assert.match(disconnected.stdout, /Removed the saved connection to crm from connected-inbox in Fold Connected Folder \[connected-folder-1\]\./);
-  assert.match(disconnected.stdout, /Deleting the local record does not revoke the credential at its provider\./);
-  assert.equal(lastOk().detail, "app connected-inbox; destination crm; local record only — provider credential not revoked");
-
-  const disabledAppAutomation = await execute(["apps", "automation", "disable", "--connected-folder", "connected-folder-1", "--app", "connected-inbox", "--automation", "daily-sync"]);
-  assert.match(disabledAppAutomation.stdout, /Disabled automation daily-sync of connected-inbox in Fold Connected Folder \[connected-folder-1\]\. Re-enabling it is a fresh receipted act/);
-  assert.equal(lastOk().detail, "app connected-inbox; automation daily-sync");
-
-  const ranAppAutomation = await execute(["apps", "automation", "run", "--connected-folder", "connected-folder-1", "--app", "connected-inbox", "--automation", "daily-sync"]);
-  assert.match(ranAppAutomation.stdout, /Automation daily-sync of connected-inbox ran with outcome success \(run run-77\)\./);
-  assert.equal(lastOk().detail, "app connected-inbox; automation daily-sync; run run-77; outcome success");
-
-  // The uninstall disposition executes immediately: the executor routes
-  // `--purge-data` to the purge method, never to the retain-only uninstall.
-  records.length = 0;
-  const purge = await execute(["apps", "uninstall", "--connected-folder", "connected-folder-1", "--instance", "runtime-instance_1", "--purge-data"]);
-  assert.equal(purge.exitCode, 0);
-  assert.match(purge.stdout, /^Uninstalled instance runtime-instance_1 from Fold Connected Folder \[connected-folder-1\] and purged its data\.\nSome app cleanup is still pending; AmpleFile finishes it on the next start\.\n$/);
-  assert.equal(calls.at(-1)?.method, "appsUninstallPurge");
-  assert.deepEqual(records.map((record) => record.outcome), ["accepted", "ok"]);
-  assert.equal(lastOk().decisionId, undefined);
-  assert.equal(lastOk().detail, "app.data.purge; instance runtime-instance_1");
 });
 
 test("the ledger families ride the act protocol v3 envelope", () => {

@@ -9,11 +9,8 @@
  * This file carries no runtime code and imports nothing from `src/local`, so
  * the desktop renderer can display exactly what the host enforces.
  *
- * Numbers that already live in a browser-safe contract stay there:
- * `restrictedAppAssistantLimits` (src/shared/restricted-app-tasks.ts) and
- * `restrictedAppInferenceLimits` (src/shared/restricted-app-inference.ts).
- * This module covers the automation and automation bounds whose enforcing
- * modules cannot be loaded in a browser.
+ * This module covers the automation bounds whose enforcing modules cannot be
+ * loaded in a browser.
  */
 
 /**
@@ -38,21 +35,19 @@ export const ampleFileAutomationDeclarationBounds = Object.freeze({
 });
 
 /**
- * Error text an app or its worker reports, kept whole up to this many
- * characters. The app host and an app automation's durable run receipt share
- * it, so a receipt never cuts what the host kept.
+ * Error text a scheduled job reports, kept whole up to this many characters
+ * in its durable run receipt.
  */
-export const ampleFileAppErrorTextMaxLength = 16 * 1024;
+export const ampleFileSchedulerErrorTextMaxLength = 16 * 1024;
 
 /** Automation runs this machine executes at once before the rest queue. */
 export const ampleFileAutomationMaxConcurrentRuns = 64;
 
 /**
- * Named app automations this machine runs at once. A host may configure a
- * different ceiling; this is the number the product ships and documents
- * (docs/restricted-app-runtime.md).
+ * Scheduled jobs the shared scheduler runs at once. A host may configure a
+ * different ceiling; this is the number the product ships.
  */
-export const ampleFileAppAutomationDefaultConcurrency = 32;
+export const ampleFileSchedulerDefaultConcurrency = 32;
 
 /** Days a Recently deleted item is kept before retention purges it. */
 export const ampleFileRecentlyDeletedDefaultRetentionDays = 30;
@@ -62,7 +57,7 @@ export const ampleFileRecentlyDeletedMaxRetentionDays = 365;
 /**
  * Durable request bounds (docs/collaboration-contract.md, F25 and the Limits
  * table; docs/receipts-not-gates.md principle 6). Every request the AmpleFile agent, a
- * Worker, an app, an automation, or an outside harness starts is one
+ * Worker, an automation, or an outside harness starts is one
  * record with these bounds, and every refusal names the number plus
  * "Settings → Automations → Limits".
  *

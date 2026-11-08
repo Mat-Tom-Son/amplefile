@@ -16,7 +16,7 @@ test("Claude Code imports the canonical Codex contributor contract", async () =>
   assert.match(claude, /canonical contributor contract/i);
   assert.match(agents, /Harness parity/);
   assert.match(agents, /Native full-trust Skills, Extensions, built-in tools, and their catalog\/runtime remain Pi-owned/);
-  assert.match(agents, /AmpleFile owns the product documentation and restricted-app lane, but both remain harness-neutral/);
+  assert.match(agents, /AmpleFile owns the product documentation, which remains harness-neutral/);
   assert.match(agents, /\.agents\/skills\//);
   assert.match(gitignore, /^\/\.claude\/\*$/m);
   assert.match(gitignore, /^!\/\.claude\/skills\/ship-macos-release$/m);
@@ -40,7 +40,7 @@ test("README local links and screenshots resolve without duplicating the docs", 
   assert.doesNotMatch(readme, /output\/playwright\/amplefile-/);
 });
 
-test("canonical product docs describe the Skills & Extensions popup and Settings → Apps (2026-09-25)", async () => {
+test("canonical product docs describe the Skills & Extensions popup (2026-09-25)", async () => {
   const files = [
     "AGENTS.md",
     "docs/product-model.md",
@@ -52,13 +52,11 @@ test("canonical product docs describe the Skills & Extensions popup and Settings
   for (const content of contents) {
     assert.match(content, /Files[\s\S]*Chats[\s\S]*History/);
     assert.match(content, /Skills & Extensions/);
-    assert.match(content, /Settings → Apps/);
     assert.doesNotMatch(content, /one persistent Library tab/i);
     assert.doesNotMatch(content, /primary (?:rail )?(?:navigation|surfaces?)[^\n.]{0,80}Files[^\n.]{0,20}Chats[^\n.]{0,20}Library[^\n.]{0,20}History/i);
   }
   const assistantCapabilities = await readFile(join(root, "docs/skills-and-extensions.md"), "utf8");
   assert.match(assistantCapabilities, /popup/i);
-  assert.match(assistantCapabilities, /Settings → Apps/);
   assert.doesNotMatch(assistantCapabilities, /one persistent Library tab per (?:connected-folder|Connected Folder)/i);
 });
 test("public and contributor docs route management behavior to one guide", async () => {
@@ -69,28 +67,16 @@ test("public and contributor docs route management behavior to one guide", async
   }
 });
 
-test("App-platform docs route future behavior to one accepted foundation", async () => {
-  const routedFiles = [
-    "AGENTS.md",
-    "docs/product-model.md",
-    "docs/architecture.md",
-    "docs/restricted-app-runtime.md",
+test("Connected Folder apps and App Studio stay removed from the docs (2026-11-07)", async () => {
+  const agents = await readFile(join(root, "AGENTS.md"), "utf8");
+  assert.match(agents, /There are no Connected Folder apps and no App Studio \(removed 2026-11-07\)/);
+  assert.doesNotMatch(agents, /restricted-app lane|Restricted app runtime|app-platform-foundation\.md/);
+  for (const removed of [
     "docs/restricted-app-authoring.md",
-  ];
-  const contents = await Promise.all(routedFiles.map((file) => readFile(join(root, file), "utf8")));
-  for (const content of contents) {
-    assert.match(content, /app-platform-foundation\.md/, "Each canonical App document must link the accepted foundation.");
+    "docs/restricted-app-runtime.md",
+    "docs/app-platform-foundation.md",
+    "docs/app-assistant-tasks.md",
+  ]) {
+    await assert.rejects(access(join(root, removed)), `${removed} was removed with apps`);
   }
-
-  const foundation = await readFile(join(root, "docs/app-platform-foundation.md"), "utf8");
-  assert.match(foundation, /Connected Folder.*may never become an App/s);
-  assert.match(foundation, /kind: development/);
-  assert.match(foundation, /kind: app/);
-  assert.match(foundation, /host: local \| hosted/);
-  assert.match(foundation, /projectId.*cloudProjectId/s);
-  assert.match(foundation, /featureInstallationId.*dataNamespaceId/s);
-  assert.match(foundation, /runtime-instance, feature-installation, grant,\s+connection, job, principal, and data generations/);
-  assert.match(foundation, /Publish is not sync/);
-  assert.match(foundation, /Every accepted effect has one effective Principal/);
-  assert.doesNotMatch(foundation, /releaseLineageId|kind: app-local|kind: app-hosted/);
 });

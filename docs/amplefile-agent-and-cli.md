@@ -8,10 +8,9 @@ code identifiers. In the product, people see **Connected Folders**, **Workers**,
 
 > Request lifecycle consolidation: the [collaboration contract](collaboration-contract.md#completion-delivery-and-recovery)
 > governs completion across turns. Questions use `chat ask|answer` or `agent
-> ask|answer`; an accepted answer remains outstanding until linked. The AmpleFile agent,
-> Connected Folder and app owners receive bounded, recorded child-result deliveries.
-> App status/stop/usage follow the owned request, and task result reads expose
-> its selected envelope. Counts and transport sizes shown in Limits are fixed
+> ask|answer`; an accepted answer remains outstanding until linked. The AmpleFile agent
+> and Connected Folder owners receive bounded, recorded child-result deliveries,
+> and task result reads expose the request's selected envelope. Counts and transport sizes shown in Limits are fixed
 > in this build; the continuation switch is configurable.
 
 
@@ -26,7 +25,7 @@ subscription generation. This keeps start, answer, and Stop requests out of
 Chromium's HTTP/1.1 connection limit even with many mounted background Chats.
 
 The underlying direct GET streams remain compatible. The closed `reset`,
-`apps`, `connected-folders`, `assistant`, and `activity` control hints contain no content or authority;
+`connected-folders`, `assistant`, and `activity` control hints contain no content or authority;
 renderers re-read the relevant service after a hint and reset on reconnect.
 `GET /api/connected-folders/activity` returns only the Connected Folder and Chat ids of running
 Worker turns, including those without a mounted Chat tab. The renderer uses
@@ -35,7 +34,7 @@ that projection for activity marks and records unseen replies locally.
 rewriting portable manifests; local composers use it to address Workers.
 File watchers have no replay log and refresh Files after every ready signal,
 covering changes during reconnection. Chat replay retains its existing event
-log, transient Extension interaction snapshots, and proposal filtering.
+log and transient Extension interaction snapshots.
 A removed or failed subscription closes independently; removing a Connected Folder also
 closes its file watchers. Parent disconnect disposes every child watcher and
 timer. The host caps physical connections, sends heartbeats, and bounds the
@@ -48,13 +47,6 @@ re-read the saved default; existing Pi sessions keep their own model. Settings
 refreshes clean forms while preserving unsaved edits. Connected Folder hints first reconcile
 the registry, then refresh catalogs only for surviving registrations; obsolete
 requests cannot restore a removed Connected Folder or report a late error from its surface.
-
-App act commands accepting `--app` resolve a unique manifest id or an exact
-`featureInstallationId`. Ambiguous names refuse and list exact choices. The
-resolved installation and digest travel through the existing domain controls,
-including grant and automation execution; remove/reinstall cannot redirect
-an admitted operation to identical replacement bytes. This is an act-lane
-selector extension, not a protocol-v1 inventory or authority change.
 
 AmpleFile now has a small AmpleFile agent layer over its existing product model. It gives the renderer, command line, test harnesses, and future agent-facing adapters one semantic view of Connected Folders, running work, and Pi capabilities without creating another data store or agent framework.
 
@@ -104,14 +96,9 @@ flowchart LR
   api -- "act facade<br/>(per-launch token)" --> host
   api --> driver["amplefile:drive test harness"]
   kernel -. "future scoped adapters" .-> future["Scoped agents, Extensions, and connected-folder runtimes"]
-  api --> restricted["RestrictedAppService<br/>separate mutation/lifecycle domain"]
-  restricted --> sandboxes["Visible and worker sandbox hosts"]
-  restricted -. "excluded from v1 snapshots" .-> kernel
 ```
 
 Domain services still own writes. The kernel does not bypass folder grants, registered Connected Folder authorization, capability-mutation locks, History behavior, or any other mutation policy.
-
-The dotted restricted-app edge is a boundary, not a data flow into the kernel. Connected Folder apps have their own reviewed package, grant, encrypted connection, storage, named-automation, notification, and sandbox-host state. Protocol v1 and `amplefile.capabilities` intentionally do not list or mutate that state. The machine-wide automation scheduler is an in-process execution coordinator for that domain, not a management-protocol mutation surface. Future app inventory belongs in a deliberately versioned kernel snapshot only after its content and authorization contract are designed.
 
 ## Kernel contract
 
@@ -119,7 +106,7 @@ The dotted restricted-app edge is a boundary, not a data flow into the kernel. C
 
 ```ts
 interface AmpleFileActor {
-  kind: "human" | "assistant" | "cli" | "renderer" | "extension" | "app" | "system";
+  kind: "human" | "assistant" | "cli" | "renderer" | "extension" | "system";
   cwd?: string;
   connectedFolderId?: string;
   conversationId?: string;
@@ -275,9 +262,7 @@ prepared act were removed on 2026-11-07.
 `amplefile recently-deleted …` reads and restores **Recently deleted**, the machine-local
 store under the state root that holds what a delete could not leave to History:
 files and folders the safety restore point could not keep a copy of, deleted
-managed Connected Folders, removed imported Skills, app data that was cleared or
-purged, deleted App Studio Releases, and the App Studio history a removed
-Connected Folder takes with it
+managed Connected Folders, and removed imported Skills
 ([Receipts, not gates](receipts-not-gates.md), F20). Like `automations` it
 sits above Connected Folders, so neither verb takes `--connected-folder`; each item names
 the Connected Folder it came from. `recently-deleted list` is content-free — ids, kinds, paths,
@@ -285,13 +270,10 @@ sizes, and dates. `recently-deleted restore` puts one item back where it came fr
 renaming it when something else took the name; a Skill (kind `skill`, with its
 `scope`) goes back to the same scope and path and loads with the next turn, and
 is refused while a Skill of the same name is installed there; an Everywhere
-Skill names the AmpleFile agent's scope id as its Connected Folder; a Release goes back into its App
-Project, re-verified, unless that version has been prepared again; App Studio
-history goes back once its Connected Folder is registered again, re-verified, with its
-previews' data; and app data whose app is gone
-is saved as a file with `--to <absolute-path>`. `connected-folders delete` and
-`connected-folders unregister` name the App Studio item they kept as
-`appStudioRecentlyDeleted`. Nothing empties the store: the
+Skill names the AmpleFile agent's scope id as its Connected Folder. Entries an
+earlier build kept for Connected Folder apps (app data, Releases, and App
+Studio history) are tolerated on load and listed until they expire, and
+nothing creates or restores them anymore. Nothing empties the store: the
 retention window in Settings → Recently deleted does, and a tree
 holding legacy `.workspace/` records is never erased.
 
@@ -303,7 +285,7 @@ explicit Chat id, renderer and CLI title/lifecycle changes, deletion, and
 restoration share the Chat mutation fence through their final filesystem
 write, so overlapping operations cannot recreate or rename a deleted Chat.
 
-`amplefile agent …` talks to the **AmpleFile agent**, the one conversation above all Connected Folders. It reuses the same acceptance path, Pi runtime, kernel task records, and task-scoped outcome semantics as Connected Folder Chats under the dedicated scope id `amplefile-agent` instead of a Connected Folder id. Its transcript lives in machine-local application state under the app profile's `management/` root — it describes this machine's registry, so it is deliberately not portable Connected Folder data. Its Pi session loads Everywhere Skills and Extensions plus exactly two app-materialized project resources — an `AGENTS.md` context file and the `manage-connected-folders` Skill, rewritten on every start — and gets no user Connected Folder's `.pi` configuration, no restricted-app bridges, and no History checkpoints (History is a Connected Folder concept).
+`amplefile agent …` talks to the **AmpleFile agent**, the one conversation above all Connected Folders. It reuses the same acceptance path, Pi runtime, kernel task records, and task-scoped outcome semantics as Connected Folder Chats under the dedicated scope id `amplefile-agent` instead of a Connected Folder id. Its transcript lives in machine-local application state under the app profile's `management/` root — it describes this machine's registry, so it is deliberately not portable Connected Folder data. Its Pi session loads Everywhere Skills and Extensions plus exactly two app-materialized project resources — an `AGENTS.md` context file and the `manage-connected-folders` Skill, rewritten on every start — and gets no user Connected Folder's `.pi` configuration, and no History checkpoints (History is a Connected Folder concept).
 
 Those two app-owned resources are required, not an optional enhancement. If AmpleFile cannot materialize them safely, ordinary Connected Folders and the desktop may still start, but management commands fail closed until the AmpleFile agent folder can be prepared; AmpleFile never runs this full-trust scope as an unidentified, uninstructed agent.
 
@@ -315,11 +297,11 @@ Without `--conversation`, manage commands target the most recent active AmpleFil
 
 `agent send --attach <path-or-link>` (repeatable, at most 16) attaches **references, not copies**: absolute or cwd-relative file and folder paths, or http(s) links. A Connected Folder Chat stages dropped material inside the Connected Folder because Connected Folder transcripts are portable; the AmpleFile agent transcript is deliberately machine-local, so its attachments carry absolute paths, missing sources are refused at send time, and the only copy in the flow stays the restore-pointed `files add` into a destination Connected Folder. Readable files inline into the turn within the shared context budget; folders, binaries, and oversized files stay honest path-only references; links arrive as a typed list, never as fake files. The typed references persist on the management user message, and `--attach` rides in ordinary act argv — the act protocol's envelope and payload shapes are unchanged.
 
-Every accepted AmpleFile agent turn is a **request**. Its hidden turn context supplies that request's task id and, like every Worker turn's, the host's local time, time zone, and platform (docs/collaboration-contract.md, 2026-10-18 amendment), and the app-owned instructions require `--parent-task <id>` on `chat.send`, `files.add`, `connected-folders.create`, and `connected-folders.register`. The act host validates that explicit parent while it is active before journaling or running the mutation; attributed actions become the request's action trail, delegated turns become its children, and act receipts gain the same `parentTaskId`. An unrelated same-user CLI action is therefore never credited merely because one AmpleFile agent turn happens to be running, and concurrent AmpleFile agent turns remain unambiguous. This is lineage, not a new caller-authentication boundary: the act token still has the documented same-user posture. Every accepted turn — management, Connected Folder, CLI, automation hop, or app-requested — belongs to one **durable request record** under the state root's `requests/` directory (docs/collaboration-contract.md, F25): an AmpleFile agent turn creates a root, `chat send --parent-task` creates a child under it, a Connected Folder turn with no parent is its own root, and a person's reply to a request waiting on their answer joins that request as a further turn rather than opening a second record. The record carries the assignment text, attachment references, the attributed action trail, child request ids, questions and results by id, rolled-up usage, and a state from the vocabulary `working`, `waiting`, `handed_off`, `done`, `partial`, `failed`, `stopped`, `expired`. Records survive restart: after the turn journal repairs itself at startup, every request still believed live is reconciled against it — settled, never re-dispatched — and stamped as recovered so nothing continues it. Settled request graphs are kept for 30 days. Transcripts and act receipts remain the long-lived content records, while the bounded machine-local turn journal preserves acceptance identity, stream checkpoints, and recent terminal outcomes.
+Every accepted AmpleFile agent turn is a **request**. Its hidden turn context supplies that request's task id and, like every Worker turn's, the host's local time, time zone, and platform (docs/collaboration-contract.md, 2026-10-18 amendment), and the app-owned instructions require `--parent-task <id>` on `chat.send`, `files.add`, `connected-folders.create`, and `connected-folders.register`. The act host validates that explicit parent while it is active before journaling or running the mutation; attributed actions become the request's action trail, delegated turns become its children, and act receipts gain the same `parentTaskId`. An unrelated same-user CLI action is therefore never credited merely because one AmpleFile agent turn happens to be running, and concurrent AmpleFile agent turns remain unambiguous. This is lineage, not a new caller-authentication boundary: the act token still has the documented same-user posture. Every accepted turn — management, Connected Folder, CLI, or automation hop — belongs to one **durable request record** under the state root's `requests/` directory (docs/collaboration-contract.md, F25): an AmpleFile agent turn creates a root, `chat send --parent-task` creates a child under it, a Connected Folder turn with no parent is its own root, and a person's reply to a request waiting on their answer joins that request as a further turn rather than opening a second record. The record carries the assignment text, attachment references, the attributed action trail, child request ids, questions and results by id, rolled-up usage, and a state from the vocabulary `working`, `waiting`, `handed_off`, `done`, `partial`, `failed`, `stopped`, `expired`. Records survive restart: after the turn journal repairs itself at startup, every request still believed live is reconciled against it — settled, never re-dispatched — and stamped as recovered so nothing continues it. Settled request graphs are kept for 30 days. Transcripts and act receipts remain the long-lived content records, while the bounded machine-local turn journal preserves acceptance identity, stream checkpoints, and recent terminal outcomes.
 
 `agent status --task` therefore reports a `request` object alongside the turn: per-attachment **dispositions** computed from recorded actions (`placed`, `registered`, or honestly `unrecorded`), recorded actions with restore-point ids, child turns with their own task states, the reply, and a **phase** — `working`, `needs_you` (an open question, or a reply whose final line asks one), `handed_off` (the AmpleFile agent turn finished but a delegated Connected Folder turn still runs), `done`, `failed`, or `stopped`. The durable record's own `state` travels beside the phase (`partial` reads as `done` there and `expired` as `stopped`), with the request id, root id, kind, deadline, and bounded question and result references. Done requires both the AmpleFile agent turn and every child to succeed; a failed or lost child fails the request, and an aborted child or accepted request-level stop stays stopped. A popover reply to `needs_you` joins the same request as a further turn — one record, one story — carrying the prior attachments and action trail without replaying those attachments into model context, and it is recorded as the answer to any open question that was waiting on the person. `agent stop --task` aborts the AmpleFile agent turn and every turn still running anywhere under that request, withdraws its open questions, and names each turn it touched.
 
-The same request model backs the desktop's **menu-bar popover** (macOS menu-bar item; the Windows tray gains the same "AmpleFile agent" entry), which talks to `/api/amplefile-agent/*` local-API routes — send with attachments, summary, request status, request stop, transcript, per-conversation runtime and thinking-level changes, and the event stream — through the same acceptance path, conflict rules, and kernel task records as every other surface. The popover is deliberately a window, not a tab, so the Connected Folder–bound tab contract is untouched. Its transcript stays visible as a conventional compact chat: person messages are colored bubbles aligned right, agent replies are unboxed and aligned left, and redundant speaker labels and divider lines are absent. It follows streamed text while pinned near the bottom but respects deliberate scrollback. The header shows the current chat title, with separate **Previous** and **New chat** actions. The per-conversation stream renders replay-safe `turn_snapshot`, incremental `assistant_delta`, and final `assistant_message` text in place; when the request settles, the persisted transcript replaces that transient projection. The composer's model label uses one fixed bridge to show the main window's **Settings → AI Models** scoped to **AmpleFile agent**; the adjacent text-only reasoning selector is hydrated from the AmpleFile agent's selected model before the first send, saves Pi's default for a future session, and writes the live Pi session once the conversation has one. The aligned action becomes **Stop** while the request is active, using the existing request-scoped stop route, while the text area remains available for drafting; one compact live line carries the current activity without displacing the transcript. Dropping onto the macOS menu-bar icon stages bounded references, while dragging over the popover temporarily turns the whole surface into the drop target; neither sends anything, and send is always an explicit act. Its sandboxed renderer has a dedicated preload exposing only the local API session, dropped-file path resolution, hide/show-main, open-AI-Models-settings (`openAiModelsSettings`), and window-material actions — it does not inherit the main renderer's folder, restricted-app, update, general settings, or shell bridges.
+The same request model backs the desktop's **menu-bar popover** (macOS menu-bar item; the Windows tray gains the same "AmpleFile agent" entry), which talks to `/api/amplefile-agent/*` local-API routes — send with attachments, summary, request status, request stop, transcript, per-conversation runtime and thinking-level changes, and the event stream — through the same acceptance path, conflict rules, and kernel task records as every other surface. The popover is deliberately a window, not a tab, so the Connected Folder–bound tab contract is untouched. Its transcript stays visible as a conventional compact chat: person messages are colored bubbles aligned right, agent replies are unboxed and aligned left, and redundant speaker labels and divider lines are absent. It follows streamed text while pinned near the bottom but respects deliberate scrollback. The header shows the current chat title, with separate **Previous** and **New chat** actions. The per-conversation stream renders replay-safe `turn_snapshot`, incremental `assistant_delta`, and final `assistant_message` text in place; when the request settles, the persisted transcript replaces that transient projection. The composer's model label uses one fixed bridge to show the main window's **Settings → AI Models** scoped to **AmpleFile agent**; the adjacent text-only reasoning selector is hydrated from the AmpleFile agent's selected model before the first send, saves Pi's default for a future session, and writes the live Pi session once the conversation has one. The aligned action becomes **Stop** while the request is active, using the existing request-scoped stop route, while the text area remains available for drafting; one compact live line carries the current activity without displacing the transcript. Dropping onto the macOS menu-bar icon stages bounded references, while dragging over the popover temporarily turns the whole surface into the drop target; neither sends anything, and send is always an explicit act. Its sandboxed renderer has a dedicated preload exposing only the local API session, dropped-file path resolution, hide/show-main, open-AI-Models-settings (`openAiModelsSettings`), and window-material actions — it does not inherit the main renderer's folder, update, general settings, or shell bridges.
 
 The AmpleFile agent has one machine-local provider/model preference distinct from every Connected Folder preference. Settings → AI Models labels that scope **AmpleFile agent**; the same choice governs this one AmpleFile agent in the menu-bar/tray popover. Each registered Connected Folder may additionally keep bounded machine-local **Worker instructions**, keyed by its portable identity and appended to subsequent Pi turns without changing portable `.amplefile/` or `.pi/` content. Saving them never waits on or interrupts work: idle Chats pick them up at once, and a Chat that is mid-turn or compacting, including the Worker that saved them (as Set up for me does), picks them up as soon as that work ends. Provider credentials remain machine-wide Pi AuthStorage records rather than being duplicated per scope.
 
@@ -327,16 +309,16 @@ The AmpleFile agent has one machine-local provider/model preference distinct fro
 
 [The collaboration contract](collaboration-contract.md) (F25–F29) makes the
 request an owned record rather than a projection. Every accepted turn —
-management, Connected Folder, CLI, automation hop, or app-requested — joins one. A
+management, Connected Folder, CLI, or automation hop — joins one. A
 AmpleFile agent turn creates a root; `chat send --parent-task` creates a child
 under that root; a Connected Folder turn with no parent is its own root; a person's reply
 to a request that is waiting on their answer joins the existing record. Records
 live under the state root's `requests/` directory, survive restart, and are
 never replayed.
 
-A **request** carries its id, kind (`management`, `connected-folder`, `app`, `automation`,
-`cli`), root id, parent task id, owner scope (management, or a Connected Folder id plus
-conversation id), app installation where one applies, initiating surface,
+A **request** carries its id, kind (`management`, `connected-folder`, `automation`,
+`cli`; records of kind `app` an earlier build wrote are tolerated on load), root id, parent task id, owner scope (management, or a Connected Folder id plus
+conversation id), initiating surface,
 created-at, state, its turns, child request ids, question ids, results,
 rolled-up usage, and a nullable deadline retained for compatibility. New
 requests have no deadline. Its state comes from one vocabulary:
@@ -388,8 +370,7 @@ selected report and files, or its failure/no-report status; older successes
 remain historical, and partial or failed graph outcomes take precedence.
 
 File deletion and Connected Folder removal use the same desktop/CLI reservation against
-active turns, compaction, app jobs with file access, and automation file
-work. Unfinished requests, waiting questions, and accepted continuations also refuse deletion;
+active turns, compaction, and automation file work. Unfinished requests, waiting questions, and accepted continuations also refuse deletion;
 after Stop, accepted turns must drain first. Managed parent deletion requires
 removing nested registrations first. A refused delete changes no content and
 creates no safety checkpoint. See [the recovery amendment](receipts-not-gates.md#trash)
@@ -433,8 +414,7 @@ shown four at a time, with the remaining count; answering reveals the next ones.
 The authenticated local API reads it through
 `GET /api/connected-folders/:connectedFolderId/conversations/:conversationId/work`,
 `GET /api/amplefile-agent/conversations/:conversationId/work`, and
-`GET /api/tasks/:taskId/work`. The original task id keeps Apps pinned to their own
-request even if the Chat later starts unrelated work. Journaled
+`GET /api/tasks/:taskId/work`. Journaled
 `POST /api/requests/:requestId/answer|stop|continue` uses the shared answer, Stop,
 and turn-admission paths. Answers carry `questionId` and `answer`; explicit
 continuations carry a stable `deliveryId`. A lost-response retry acknowledges
@@ -443,7 +423,7 @@ carries the selected child reports and records their delivery before prompting.
 
 See [Collaboration experience](collaboration-experience.md) for rendering,
 recovery, keyboard, and privacy behavior. These endpoints are for trusted
-surfaces; restricted app bridges receive no new access.
+surfaces.
 
 ### No remote browser surface
 
@@ -456,7 +436,7 @@ archived in the work-fold repository, record the earlier design.
 
 ### Act command behavior
 
-connected-folder-targeted act commands never resolve a Connected Folder from the working directory — every write names its Connected Folder explicitly. `recently-deleted list --json` and `recently-deleted restore --entry <id>` are Connected Folder–free act verbs over the machine-local trash; `apps list --connected-folder <id> --json` and `apps invoke --connected-folder <id> --app <id> --tool <name> --input <json>` let the AmpleFile agent see and call an installed app's declared tools with lineage and receipts. `connected-folders worker show` is a content-bearing act read that returns the current default, only already-connected model choices, and instruction text; `connected-folders worker model` saves the default for new Chats, while `connected-folders worker instructions` changes subsequent turns. Both setters reserve the existing Connected Folder–scoped agent mutation fence across validation, write, and client invalidation, and their receipts contain model identifiers or an instruction character count, never instruction text. Provider credentials and connection setup have no act verb. `chat send` accepts a CLI-initiated agent turn through the exact same acceptance path as the renderer (conflict checks, stable request identity, durable acceptance before transcript append, kernel task record with a `cli` actor, portable transcript persistence, pre/post-turn History checkpoints) and returns a task id. The act-envelope request id is the turn's idempotency key, so an uncertain delivery cannot create a second agent run. Terminal failures and explicit stops append a typed, sanitized agent result before the task settles, including setup failures that occur before a provider can answer; that same durable rule covers the machine-local AmpleFile agent transcript and menu-bar popover, while raw provider diagnostics stay host-side. That task id is how a caller follows exactly its own turn: AmpleFile keeps recent terminal outcomes (`succeeded`, `failed`, or `aborted`, with the persisted response message id or failure message) in a bounded machine-local journal across app restarts. `chat status --task`/`chat result --task` read it, and `chat wait --task` is a shim-side poll that finishes with that turn's own result — a failed or aborted turn exits non-zero instead of presenting an older transcript message as success (wait timeout exit code 7). On startup, an accepted turn that reached its transcript but never settled is recorded as interrupted and is not automatically rerun, because completed tools may already have changed something. Quitting AmpleFile mid-turn records the turn the same way (interrupted, reported as failed), never as a Stop the person asked for. The Chat's last interrupted reply offers **Continue**, which sends the ordinary visible message "Continue where you left off." as a new turn, without the files staged for the person's draft; nothing is replayed. A tool call that never recorded a result reaches the model as an honest error saying it may have partly happened and its effects should be checked, instead of Pi's bare "No result provided" (2026-10-27). `chat status|result --conversation` remain the transcript-scoped views. `files add` copies outside material in with a targeted restore point that succeeds or fails together with the placement, and `connected-folders create`/`connected-folders register` grant the same registered Connected Folder runtime authorization as the desktop actions. Content-bearing chat and agent-preference reads (`chat status|result`, `chats list`, `connected-folders worker show`) belong to the act lane too, so the read lane keeps its content-free property. When the interactive app is not running, act commands fail fast with "Open AmpleFile…" and exit code 6.
+connected-folder-targeted act commands never resolve a Connected Folder from the working directory — every write names its Connected Folder explicitly. `recently-deleted list --json` and `recently-deleted restore --entry <id>` are Connected Folder–free act verbs over the machine-local trash. `connected-folders worker show` is a content-bearing act read that returns the current default, only already-connected model choices, and instruction text; `connected-folders worker model` saves the default for new Chats, while `connected-folders worker instructions` changes subsequent turns. Both setters reserve the existing Connected Folder–scoped agent mutation fence across validation, write, and client invalidation, and their receipts contain model identifiers or an instruction character count, never instruction text. Provider credentials and connection setup have no act verb. `chat send` accepts a CLI-initiated agent turn through the exact same acceptance path as the renderer (conflict checks, stable request identity, durable acceptance before transcript append, kernel task record with a `cli` actor, portable transcript persistence, pre/post-turn History checkpoints) and returns a task id. The act-envelope request id is the turn's idempotency key, so an uncertain delivery cannot create a second agent run. Terminal failures and explicit stops append a typed, sanitized agent result before the task settles, including setup failures that occur before a provider can answer; that same durable rule covers the machine-local AmpleFile agent transcript and menu-bar popover, while raw provider diagnostics stay host-side. That task id is how a caller follows exactly its own turn: AmpleFile keeps recent terminal outcomes (`succeeded`, `failed`, or `aborted`, with the persisted response message id or failure message) in a bounded machine-local journal across app restarts. `chat status --task`/`chat result --task` read it, and `chat wait --task` is a shim-side poll that finishes with that turn's own result — a failed or aborted turn exits non-zero instead of presenting an older transcript message as success (wait timeout exit code 7). On startup, an accepted turn that reached its transcript but never settled is recorded as interrupted and is not automatically rerun, because completed tools may already have changed something. Quitting AmpleFile mid-turn records the turn the same way (interrupted, reported as failed), never as a Stop the person asked for. The Chat's last interrupted reply offers **Continue**, which sends the ordinary visible message "Continue where you left off." as a new turn, without the files staged for the person's draft; nothing is replayed. A tool call that never recorded a result reaches the model as an honest error saying it may have partly happened and its effects should be checked, instead of Pi's bare "No result provided" (2026-10-27). `chat status|result --conversation` remain the transcript-scoped views. `files add` copies outside material in with a targeted restore point that succeeds or fails together with the placement, and `connected-folders create`/`connected-folders register` grant the same registered Connected Folder runtime authorization as the desktop actions. Content-bearing chat and agent-preference reads (`chat status|result`, `chats list`, `connected-folders worker show`) belong to the act lane too, so the read lane keeps its content-free property. When the interactive app is not running, act commands fail fast with "Open AmpleFile…" and exit code 6.
 
 There is no `checks` command family (removed on 2026-11-07): the read lane has no Check status command, protocol v1 no longer lists the `checks.status` command or the `amplefile.checks.experimental` capability, the kernel has no Check task kind, and the overview has no Check rows. What an earlier build stored for Checks, machine-local or under `.amplefile/checks/`, stays on disk unread.
 
@@ -514,30 +494,18 @@ This read-only layer is the first primitive for a broader AmpleFile operating la
 
 The renderer capability catalog now also carries validated declarative surface metadata from Extensions Pi actually loaded. The compact installed CLI projection remains content-free and does not emit surface block contents or mutate UI state.
 
-Separately, the local restricted-app service can inspect and install completed reviewed web assets without evaluation, and the desktop can mount or invoke them through the sandbox hosts. Package dependency metadata is never resolved or installed. Restricted apps remain outside the kernel and CLI projection and must never be merged into Pi's loaded Extension catalog. See [Restricted app runtime](restricted-app-runtime.md).
-
 It does **not** yet provide:
 
 - a headless act lane (act commands need the running interactive app; the turn runtime lives there);
 - Chat-scoped or revocable per-grant authorization beyond the per-launch act token;
 - a tool-restricted or independently permissioned cross–Connected Folder agent beyond the current full-trust, taught AmpleFile agent;
 - event subscriptions for all state changes;
-- imperative APIs for full-trust Pi Extensions to dynamically create or mutate rail items, panes, or tabs beyond the static `surface.json` contribution contract (restricted Connected Folder apps already have their separate host-owned navigator and tab bridge);
-- a verified registry that binds a Connected Folder–local service to an amplefile-launched process generation;
-- host-owned remote subscriptions or arbitrary push adapters for restricted
-  apps (static reviewed automation notifications are already supported);
-- resource isolation comparable to a mobile operating system; the shipped Chromium hosts and brokers do not eliminate renderer exploits or CPU/memory denial-of-service risk.
+- imperative APIs for full-trust Pi Extensions to dynamically create or mutate rail items, panes, or tabs beyond the static `surface.json` contribution contract;
+- a verified registry that binds a Connected Folder–local service to an amplefile-launched process generation.
 
-Restricted apps already have an explicit package, permission, lifecycle, sandbox-host, connection, storage, file-grant, named-automation, run-receipt, and UI-surface model. The remaining features should extend those contracts and the kernel's read authority instead of reaching around either boundary.
+The remaining features should extend the kernel's read authority instead of reaching around it.
 
 ## Implementation and verification map
-
-App-requested agent tasks use the same `acceptConversationTurn`, kernel
-task, History, cancellation and durable turn journal as a normal Connected Folder Chat.
-A request is journaled and dispatched in one call with exact installation,
-authority and input pins; the native bridge cannot read arbitrary Chats, and
-the trusted Settings → Apps page offers Details, Open Chat and Stop. See
-[App-requested agent work](app-assistant-tasks.md).
 
 | Area | Source | Primary tests |
 |---|---|---|
@@ -553,18 +521,16 @@ the trusted Settings → Apps page offers Details, Open Chat and Stop. See
 | Electron single-instance host | `desktop/src/amplefile-cli-host.ts`, `desktop/src/main.ts` | `tests/desktop-amplefile-cli-host.test.ts` |
 | CLI shims and child-process PATH | `desktop/cli/`, `desktop/src/main.ts` | `tests/desktop-cli-packaging.test.ts` |
 | Real Pi turn driver | `scripts/amplefile-drive.ts` | Exercised against the local API when provider credentials are available. |
-| Restricted app review, grants, lifecycle, and storage | `src/local/agent/restricted-app-*.ts` | `tests/restricted-app-*.test.ts` |
-| Machine-wide restricted-app automation scheduling | `src/local/agent/amplefile-scheduler-service.ts` | `tests/amplefile-scheduler-service.test.ts` plus restricted-app service/API tests |
+| Machine-wide automation scheduling | `src/local/agent/amplefile-scheduler-service.ts` | `tests/amplefile-scheduler-service.test.ts` |
 | Prepared acts (prepare, pin, journal, execute) | `src/local/prepared-acts.ts` | `tests/prepared-acts.test.ts`, `tests/amplefile-cli-act-receipts.test.ts` |
 | Recently deleted (trash store, retention, restore) | `src/local/recently-deleted-store.ts` | `tests/amplefile-recently-deleted-store.test.ts`, `tests/amplefile-cli-recently-deleted-verbs.test.ts`, `tests/recently-deleted-settings.test.ts` |
 | Durable requests (records, store, reconciliation, retention) | `src/local/requests/request-records.ts`, `src/local/requests/request-store.ts` | `tests/amplefile-request-store.test.ts`, `tests/agent-requests.test.ts`, `tests/amplefile-request-integration.test.ts` |
 | Connected Folder turn context and operations guide | `src/local/agent/connected-folder-turn-context.ts`, `src/local/agent/connected-folder-operations-guide.ts` | `tests/connected-folder-turn-context.test.ts`, `tests/connected-folder-operations-guide-prompt.test.ts`, `tests/amplefile-agent-turn-context.test.ts` |
 | Turn environment line and role preamble | `src/local/agent/turn-environment.ts`, `src/local/agent/role-preamble.ts` | `tests/turn-environment.test.ts`, `tests/role-preamble-prompt.test.ts` |
 | Report, ask, answer, handoff, waiting, and continuation | `src/local/cli/act-commands.ts`, `src/local/cli/act-facade.ts`, `src/local/server.ts` | `tests/amplefile-collaboration-verbs.test.ts`, `tests/collaboration-result-envelope.test.ts`, `tests/amplefile-collaboration-journeys.test.ts` |
-| App Worker requests and bounded inference | `src/local/agent/restricted-app-tasks.ts`, `src/local/agent/restricted-app-inference.ts`, `src/local/agent/bounded-inference.ts` | `tests/restricted-app-tasks.test.ts`, `tests/restricted-app-inference.test.ts`, `tests/bounded-inference.test.ts` |
+| Bounded inference | `src/local/agent/bounded-inference.ts` | `tests/bounded-inference.test.ts` |
 | Automation declarations, store, settle signals, and executor | `src/local/automations/` | `tests/amplefile-automation-declarations.test.ts`, `tests/amplefile-automation-store.test.ts`, `tests/amplefile-automation-settle-signal.test.ts`, `tests/amplefile-automation-service.test.ts` |
 | Glance composition and seen markers | `src/local/overview.ts`, `src/local/overview-seen-store.ts` | `tests/amplefile-overview.test.ts`, `tests/amplefile-overview-seen-store.test.ts` |
-| Visible and worker sandbox hosts | `desktop/src/restricted-app-host.ts`, `desktop/src/restricted-app-preload.cts` | `npm run desktop:restricted-app:smoke` plus focused host/broker tests. |
 
 See [Architecture](architecture.md) for the surrounding process boundaries, [Product model](product-model.md) for the user-facing mental model, and [macOS build and release lane](macos-build.md) for packaging and release verification.
 
@@ -575,7 +541,7 @@ Automation declaration version 3 adds `files-changed` with an explicit folder, r
 
 *Amended 2026-10-11 (owner decision):* declaration version 5 adds an optional `"ifMissed": "run"` to `files-changed`. Such an automation keeps a machine-local metadata snapshot under `automations/folder-snapshots/` and, after AmpleFile was closed, the computer slept, the automation was off, or the folder could not be watched, starts one coalesced run for the files added or changed in that gap — never a backlog. Its run cause adds `catchUp: {reason, count}` to the existing `files-changed` shape (`automations receipts --json`), `automations show` and the trigger ref in `automations list|show --json` carry `ifMissed`, and Settings reports the waiting and last catch-up. Edits made while an automation runs are still never replayed. `amplefile help automations` now shows a version-5 example. Versions 1–4 parse unchanged, with unchanged digests.
 
-Desktop and CLI History restores reserve affected Connected Folder work through completion and consult the same automation/app-automation blockers. Provider setup/removal uses the global capability fence, so changing a provider cannot silently stop accepted Chats.
+Desktop and CLI History restores reserve affected Connected Folder work through completion and consult the same automation blockers. Provider setup/removal uses the global capability fence, so changing a provider cannot silently stop accepted Chats.
 
 ### Receipts, not gates (2026-09-10)
 
@@ -583,8 +549,8 @@ Desktop and CLI History restores reserve affected Connected Folder work through 
 
 - The act protocol envelope advanced to version 3 (`src/local/cli/act-protocol.ts`). An older shim is refused with the typed version error rather than handed a differently shaped result. Receipts written at version 3 carry no `decisionId` or `policyId`, and the surface vocabulary shrank to `cli`, `popover`, `main-window`, and `remote_web`; readers still accept the retired `policy` and `unrestricted` surfaces on older lines.
 - The remote operation vocabulary lost `decisions.list` and `decisions.decide`. A web client that still asks for them gets the ordinary unknown-operation refusal, and the shipped client no longer asks.
-- New act verbs: `recently-deleted list|restore` over Recently deleted, `apps list|invoke` so the AmpleFile agent can see and call an installed app's declared tools, and `automations enable` in place of the old staging token. `files destroy` and the `staged list|show|cancel` family are gone.
-- `assistant.request` journals and dispatches a Connected Folder Chat in one call with no review state, and `assistant.infer` performs a bounded, tool-free model call on the native model transport under its own limiter. Installation is the grant for both ([App-requested agent work](app-assistant-tasks.md)).
+- New act verbs: `recently-deleted list|restore` over Recently deleted, `apps list|invoke` so the AmpleFile agent could see and call an installed app's declared tools (removed with apps on 2026-11-07), and `automations enable` in place of the old staging token. `files destroy` and the `staged list|show|cancel` family are gone.
+- `assistant.request` journaled and dispatched a Connected Folder Chat in one call with no review state, and `assistant.infer` performed a bounded, tool-free model call on the native model transport under its own limiter. Installation was the grant for both. Both were removed with apps on 2026-11-07.
 - Settings → General gained **Recently deleted**: the entry list, Restore, Save a copy, Delete now, and the retention window (default 30 days). The Authority selector and the standing-rules section are gone from every surface.
 
 ### Collaboration contract (2026-09-11)
@@ -595,7 +561,7 @@ observe:
 
 - New act verbs: `agent ask|answer` and `chat report`, `chat ask`, `chat answer`, and `chat handoff`,
   Connected Folder–scoped and receipted. They are available to the AmpleFile agent, a Connected Folder
-  agent, an app-requested task, and an outside harness on the same terms;
+  agent, and an outside harness on the same terms;
   `amplefile help collaborate` documents them. `requests list|show` are the
   Connected Folder–free **management-scope** reads of the graph and are the exception:
   the graph carries every Connected Folder's results and the AmpleFile agent's own assignment text,
@@ -622,17 +588,18 @@ observe:
   delegated, an opaque parent handle and the assignment text — plus a compact
   operations guide appended to the system prompt the way Connected Folder instructions
   are. No registry, no other Connected Folder's results, and no AmpleFile agent transcript.
-- Apps subscribe to their own work changing through `bridge.tasks.onChanged`,
+- Apps subscribed to their own work changing through `bridge.tasks.onChanged`,
   `bridge.checks.onChanged`, and `bridge.files.onChanged`, and a finished app
-  agent task returns the same result envelope every other result uses.
+  agent task returned the same result envelope every other result uses. Both
+  were removed with apps on 2026-11-07.
 
-## Observed turn files and app result links
+## Observed turn files
 
 The additive optional `fileChanges` field in `amplefile.turn.v1` records full
 pre/post History checkpoint ids and at most 64 changed/new file paths, hashes
 and sizes. It contains no file bytes and is admitted only on terminal turns;
 old records remain readable. Current AmpleFile agent requests project at most 12
-currently visible child-file paths and exact installed app references.
+currently visible child-file paths.
 No content-free read-lane contract changes. The request trail is durable under
 the state root's `requests/` directory and bounded by the same per-request
 limits and 30-day retention as the rest of the record; turn metadata alone
@@ -650,7 +617,6 @@ Both are authenticated act-lane reads with metadata-only receipts. Protocol v1
 remains content-free. Local GET routes at `/api/connected-folders/:id/history/read` and
 `/api/connected-folders/:id/history/diff` take `path` plus `checkpointId` or
 `fromCheckpointId`/`toCheckpointId` and call the same `history-review.ts` service.
-No restricted-app grant is added.
 
 The service verifies checkpoint membership in the selected Connected Folder and the exact
 relative path before opening an object. It rejects internal paths, symlink

@@ -233,24 +233,21 @@ test("desktop CLI host gates act requests on the per-launch authority and record
   }
 });
 
-test("desktop main wires one settle seam, one receipts ledger, and automation sleep/wake beside the app lifecycle", async () => {
+test("desktop main wires one receipts ledger and automation sleep/wake beside the app lifecycle", async () => {
   const { readFile } = await import("node:fs/promises");
   const main = await readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8");
 
-  // One AmpleFileSettleSignal per desktop host: constructed once, published
-  // into by the host's restricted-app service, consumed by the
-  // local API's automation executor. Anything else silently drops settles.
   const hostStart = main.indexOf("async function ensureDesktopHost");
   assert.ok(hostStart >= 0);
   const hostBody = main.slice(hostStart, main.indexOf("\nasync function processAmpleFileCliRequest", hostStart));
-  assert.match(hostBody, /const settleSignal = new AmpleFileSettleSignal\(\);/);
-  assert.equal([...hostBody.matchAll(/\bnew AmpleFileSettleSignal\(/g)].length, 1, "the desktop host constructs exactly one settle authority");
-  const restrictedCreate = hostBody.slice(hostBody.indexOf("RestrictedAppService.create({"), hostBody.indexOf("})", hostBody.indexOf("RestrictedAppService.create({")));
-  assert.match(restrictedCreate, /settleSignal,/, "the restricted-app service publishes into the shared signal");
   // Checks were removed (2026-11-07): the desktop host no longer creates a Check service.
   assert.doesNotMatch(hostBody, /CheckService|createDesktopCheckService/);
+  // Connected Folder apps were removed (2026-11-07), and with them the settle
+  // seam their automation runs published into: no restricted-app service and
+  // no settle signal in the desktop host.
+  assert.doesNotMatch(hostBody, /RestrictedAppService|AmpleFileSettleSignal|settleSignal/);
   // Inspect the returned value, not property order: adding another host service
-  // must not weaken the assertion that consumers receive this exact signal.
+  // must not weaken the assertion that the CLI host is the one exposed.
   const { default: ts } = await import("typescript");
   const source = ts.createSourceFile("desktop-host.ts", hostBody, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const returnedHosts: import("typescript").ObjectLiteralExpression[] = [];
@@ -261,27 +258,27 @@ test("desktop main wires one settle seam, one receipts ledger, and automation sl
   };
   visit(source);
   assert.equal(returnedHosts.length, 1, "one desktop host value exposes the runtime and services");
-  const signalProperty = returnedHosts[0]!.properties.find(property => property.name && ts.isIdentifier(property.name) && property.name.text === "settleSignal");
-  assert.ok(signalProperty && ts.isShorthandPropertyAssignment(signalProperty), "the returned host retains the same settleSignal binding the apps publish into");
+  const cliProperty = returnedHosts[0]!.properties.find(property => property.name && ts.isIdentifier(property.name) && property.name.text === "cli");
+  assert.ok(cliProperty && ts.isShorthandPropertyAssignment(cliProperty), "the returned host carries the one CLI host");
 
   const apiStart = main.indexOf("function ensureInteractiveLocalApi");
   const apiEnd = main.indexOf("\nasync function createMainWindow", apiStart);
   assert.ok(apiStart !== -1 && apiEnd !== -1, "the interactive local API setup is found");
   const apiBody = main.slice(apiStart, apiEnd);
-  assert.match(apiBody, /settleSignal: host\.settleSignal,/, "the local API consumes the host's exact signal instance");
+  assert.doesNotMatch(apiBody, /settleSignal/, "the local API takes no settle signal");
   assert.match(apiBody, /actReceipts: host\.cli\.receipts,/, "Settings acts and CLI acts share the CLI host's one ledger");
   assert.doesNotMatch(apiBody, /publication/i, "the local API no longer takes publication keys or a bridge slot lane");
   assert.match(apiBody, /automationPowerLifecycle = api\.automations;/);
 
-  // Sleep suspends both schedulers; wake resumes both. Automation runs abort on
-  // suspension and settle `interrupted` (docs/automations.md).
+  // Sleep suspends the automation scheduler; wake resumes it. Automation runs
+  // abort on suspension and settle `interrupted` (docs/automations.md).
   const powerStart = main.indexOf("function configurePowerMonitor");
   const powerBody = main.slice(powerStart, main.indexOf("\nfunction configureAccentColorMonitor", powerStart));
   const suspendBody = powerBody.slice(powerBody.indexOf('powerMonitor.on("suspend"'), powerBody.indexOf('powerMonitor.on("resume"'));
-  assert.match(suspendBody, /suspendAppAutomations\(\)/);
+  assert.doesNotMatch(suspendBody, /suspendAppAutomations/);
   assert.match(suspendBody, /automationPowerLifecycle\?\.suspend\(\);/);
   const resumeBody = powerBody.slice(powerBody.indexOf('powerMonitor.on("resume"'), powerBody.indexOf('powerMonitor.on("shutdown"'));
-  assert.match(resumeBody, /resumeAppAutomations\(\)/);
+  assert.doesNotMatch(resumeBody, /resumeAppAutomations/);
   assert.match(resumeBody, /automationPowerLifecycle\?\.resume\(\)\.catch\(\(error\) =>/);
   assert.match(resumeBody, /could not resume Automations after wake/);
 

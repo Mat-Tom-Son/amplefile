@@ -50,8 +50,6 @@ product keeps for its own sake. The overview never causes a record to exist.
 | Chat lifecycle and titles | `src/local/agent/chat-store.ts` | Durable — append-only portable transcripts with a rebuildable machine-local summary index | `conversation_lifecycle` events, title changes, `snoozedUntil` due times, and the newest assistant `landing.followUpPrompt` |
 | History checkpoints | `listConnectedFolderCheckpoints` in `src/local/history.ts` | Durable machine-local app state | `checkpointId`, `createdAt`, `label`, `reason`, `scope` |
 | Act receipts | `AmpleFileCliActReceipts` journal (`src/local/cli/act-receipts.ts`) | Durable, rotation-bounded | Terminal `ok`/`error` records: command name, Connected Folder id, outcome, checkpoint id, parent task id |
-| App automation run receipts | `RestrictedAppAutomationRunReceipt` in `src/local/agent/restricted-app-service.ts` | Durable registry state | Named job, App Instance, outcome, timestamps; the app's and automation's titles are read from the installation |
-| App automation scheduler state | `AmpleFileSchedulerService` | In-memory, app run | Active and pending named jobs, feeding "Running now" |
 | Automation runs | `src/local/automations/automation-store.ts` | Durable | Running and settled automation runs with per-hop outcomes |
 
 Durability is disclosed, not papered over. In-memory sources live for the
@@ -60,7 +58,7 @@ and simply contains less — it never fabricates continuity it cannot
 re-derive. Requests moved to a durable store on 2026-09-11, so an
 outstanding request and its open questions now survive a restart; the
 sources still living for the app run are the kernel's running-task
-registry, the settled-turn outcomes, and the app automation scheduler.
+registry and the settled-turn outcomes.
 
 ## The digest
 
@@ -70,16 +68,11 @@ the same recorded state and the same single `composedAt` clock reading
 produce a byte-identical digest. Headlines are fixed templates over typed
 record fields — never model output, never file content, never free
 re-wording. A receipt naming an unregistered Connected Folder renders the id plus
-"(removed)". An app's named automation is named by the app's and the
-automation's reviewed titles from its installation — `Inbox automation
-"Refresh inbox" running` — so it reads apart from AmpleFile's own
-Automations (`Automation "Weekly handoff" running`); once the installation
-is gone, the item keeps the declared id (`App automation "refresh-inbox"
-succeeded`) (2026-10-11). Every section carries a `truncated` flag; bounds
+"(removed)". Every section carries a `truncated` flag; bounds
 are disclosure, not curation.
 
 **Running now** — everything the product knows is executing: assistant
-turns and compactions, app automation runs, and Automation runs.
+turns and compactions, and Automation runs.
 Running work above a single turn is request-derived: a request in `working`
 or `handed_off` is one item that carries the turns it started, wherever
 those turns run, so a delegated request and its Connected Folder turns are never
@@ -118,7 +111,7 @@ read the results handed back through `requests show` — a result's summary,
 structured data, and files are never in the digest), `chat-lifecycle`,
 `chat-renamed`, `act-performed` (every receipted verb,
 including the ones that install code, widen a power, or delete),
-`app-automation-run-settled`, and `automation-run-settled`. An answered question adds
+and `automation-run-settled`. An answered question adds
 no kind of its own: it simply leaves **Needs you**, and the request's own
 settle carries the story. Bounded
 twice: at most 128 items per kind and 512 total. The `cursor` identifies the

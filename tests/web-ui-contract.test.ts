@@ -13,7 +13,6 @@ test("Recently deleted says what is waiting, how long, and what AmpleFile never 
   // permanence either way.
   assert.equal(recentlyDeletedSettings.heading, "Recently Deleted");
   assert.equal(recentlyDeletedSettings.restore, "Restore");
-  assert.equal(recentlyDeletedSettings.saveCopy, "Save a Copy");
   assert.equal(recentlyDeletedSettings.deleteNow, "Delete Now");
   // Deleting a plain folder in Files says "Folder", not "Connected Folder".
   assert.equal(deleteFolderConfirm.confirmLabel, "Delete Folder");

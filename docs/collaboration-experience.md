@@ -1,6 +1,6 @@
 # Collaboration experience
 
-The person asks for work in a Chat, the AmpleFile agent, or an App. That remains one
+The person asks for work in a Chat or the AmpleFile agent. That remains one
 piece of work while agents divide it, ask questions, and combine results.
 The interface follows the durable request, while streamed text and tool
 activity still follow the current turn.
@@ -58,11 +58,10 @@ answer.
 
 ## Surfaces and boundaries
 
-Connected Folder Chats, the trusted Settings → Apps page, and the AmpleFile agent popover share the same React
+Connected Folder Chats and the AmpleFile agent popover share the same React
 work presentation. Each Connected Folder tab retains its identity.
 
-Sandboxed App bridges gain no request-graph or question access. There is no
-paired browser surface: Web Access was removed from the desktop on 2026-11-07.
+There is no paired browser surface: Web Access was removed from the desktop on 2026-11-07.
 
 ## Acceptance
 
@@ -83,8 +82,7 @@ local adapter in `src/local/server.ts`. Desktop surfaces share
 question ownership, repeat answers, request-wide Stop, restart, selected files,
 and explicit continuation. `tests/work-request-rendering.test.ts` covers exact
 question rendering, escaping, draft/focus retention, failed sends, and duplicate
-submission. `tests/renderer-app-assistant-tasks.test.ts` covers results and Chat
-navigation in the trusted Apps surface. These are development checks; packaged
+submission. These are development checks; packaged
 Electron and signed-release verification remain separate release work.
 
 ## Conversation navigation and Connected Folder browsing

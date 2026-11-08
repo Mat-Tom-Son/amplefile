@@ -251,7 +251,7 @@ function HighlightedJson({ text, matches, queryLength }: { text: string; matches
   let end = 0;
   return <>{matches.map((start) => { const before = text.slice(end, start); end = start + queryLength; return <span key={start}>{before}<mark>{text.slice(start, end)}</mark></span>; })}{text.slice(end)}</>;
 }
-function purposeLabel(purpose: string): string { return ({ assistant: "Chat Turn", chat: "Chat", title: "Chat Title", app_inference: "App Inference", compaction: "Context Compaction" } as Record<string, string>)[purpose] ?? purpose.replace(/[_-]/g, " "); }
+function purposeLabel(purpose: string): string { return ({ assistant: "Chat Turn", chat: "Chat", title: "Chat Title", compaction: "Context Compaction" } as Record<string, string>)[purpose] ?? purpose.replace(/[_-]/g, " "); }
 function statusLabel(status: ModelContextInspectionSummary["status"]): string { return status === "response_received" ? "Response Started" : status === "dispatch_error" ? "Dispatch Error" : "Captured"; }
 function requestLabel(record: ModelContextInspectionSummary): string { return `${new Date(record.createdAt).toLocaleTimeString()} · ${purposeLabel(record.owner.purpose)} · ${record.model}`; }
 

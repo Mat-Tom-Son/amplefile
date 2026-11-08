@@ -24,6 +24,13 @@
 > step, and the `check-run` trigger source described below no longer exist,
 > and neither does the
 > `{{trigger.findings}}` placeholder.
+>
+> **Removed 2026-11-07 (owner decision):** Connected Folder apps and App
+> Studio left the product. F21 and F22, the app parts of F19 and F20, the
+> `apps` verbs, `assistant.request` and `assistant.infer`, app grants,
+> connections, notifications, storage, and app automations described below
+> no longer exist, and Settings → Apps went with them. The overview and
+> receipts remain the after-the-fact disclosure.
 
 ## The principle
 
@@ -172,7 +179,7 @@ it; competing History copies are never merged or replaced.
   input and 256 KiB result; up to four running per installation. Available
   to the worker bridge. (2026-10-10: raised again to 4 MiB input, a 16 MiB
   result envelope, and 32 running per installation, with no request quota;
-  see [App-requested Assistant work](app-assistant-tasks.md#bounds).)
+  see App-requested Assistant work, removed with apps on 2026-11-07.)
 - `assistant.infer({ instructions, input, outputSchema?, maxOutputBytes? })`
   returns `{ text }` or `{ json }` validated against the closed schema
   subset already used for app tools. Input up to 256 KiB. Up to four
@@ -181,7 +188,7 @@ it; competing History copies are never merged or replaced.
   model and usage. (2026-10-10: input up to 16 MiB with the context window as
   the real bound, 16 concurrent per installation, the Connected Folder's configured
   thinking level and the model's own output limit; see
-  [Bounded inference](app-assistant-tasks.md#bounded-inference).)
+  Bounded inference, removed with apps on 2026-11-07.)
 - The AmpleFile agent gains `apps list --connected-folder <id> --json` (installed apps, their
   tools, actions, grants, connections, automations) and
   `apps invoke --connected-folder <id> --app <id> --tool <name> --input <json>`

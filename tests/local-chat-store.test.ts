@@ -380,43 +380,31 @@ test("chat store manual conversation title overrides generated landing title", a
   assert.ok((await readConversation(connectedFolderRoot, "chat-manual-title")).some((item) => item.kind === "conversation_title" && item.content === "Manual Document Rename"));
 });
 
-test("an app's request keeps its app marker, and logs without one still load", async (t) => {
+test("an app's request an older build logged loads as an ordinary message", async (t) => {
+  // Connected Folder apps were removed on 2026-11-07. A Chat log may still
+  // hold a user message an app sent, marked `source: "app"`; it loads as an
+  // ordinary message, and the marker is not carried.
   const connectedFolderRoot = await mkdtemp(join(tmpdir(), "amplefile-chat-store-app-source-"));
   t.after(() => rm(connectedFolderRoot, { recursive: true, force: true }));
   const created = await createConversation(connectedFolderRoot, "Inbox · Compare quotes", "chat-app-source");
-  assert.equal(created.title, "Inbox · Compare quotes");
-  await appendMessage(connectedFolderRoot, created.id, {
-    ...message("app", "App request: Compare quotes"), source: "app", appId: "connected-inbox", appTitle: "Inbox",
-  });
-  // A line written before the marker existed, and lines whose marker is not
-  // usable: each still loads as an ordinary message.
   const path = join(conversationsDir(connectedFolderRoot), `${created.id}.jsonl`);
-  const legacy = { ...message("legacy", "An older app request"), createdAt: "2026-07-01T00:00:00.000Z" };
   const lines = [
-    legacy,
+    { ...message("app", "App request: Compare quotes"), source: "app", appId: "connected-inbox", appTitle: "Inbox" },
     { ...message("bad-title", "Control characters"), source: "app", appTitle: "Inbox\u0000" },
-    { ...message("long-title", "Too long"), source: "app", appTitle: "x".repeat(81) },
-    { ...message("bad-id", "Odd id"), source: "app", appId: "has spaces", appTitle: "Inbox" },
     { id: "reply", role: "assistant", content: "Done.", createdAt: "2026-07-01T00:00:01.000Z", source: "app", appTitle: "Inbox" },
-    { ...message("future", "A newer source"), source: "somewhere-else", appTitle: "Inbox" },
   ];
   await writeFile(path, `${await readFile(path, "utf8")}${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf8");
 
-  const messages = new Map((await readConversation(connectedFolderRoot, created.id)).map((item) => [item.id, item]));
-  const app = messages.get("app")!;
-  assert.equal(app.source, "app");
-  assert.equal(app.appTitle, "Inbox");
-  assert.equal(app.appId, "connected-inbox");
-  assert.equal(messages.get("legacy")?.content, "An older app request");
-  assert.equal(messages.get("legacy")?.source, undefined, "an old log line without the marker still loads");
-  for (const id of ["bad-title", "long-title", "reply", "future"]) {
+  const messages = new Map((await readConversation(connectedFolderRoot, created.id)).map((item) => [item.id, item as unknown as Record<string, unknown>]));
+  for (const id of ["app", "bad-title", "reply"]) {
     const item = messages.get(id);
     assert.ok(item, `${id} still loads`);
     assert.equal(item.source, undefined, `${id} carries no app marker`);
     assert.equal(item.appTitle, undefined);
+    assert.equal(item.appId, undefined);
   }
-  assert.equal(messages.get("bad-id")?.source, "app", "an unusable app id drops only the id");
-  assert.equal(messages.get("bad-id")?.appId, undefined);
+  assert.equal(messages.get("app")?.content, "App request: Compare quotes");
+  assert.equal(messages.get("app")?.role, "user");
 });
 
 test("saved work trails keep an app tool's readable title and drop an unusable one alone", async (t) => {

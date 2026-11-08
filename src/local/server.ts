@@ -6,8 +6,6 @@ import { prepareResourceEnable, resourceEnableAdapter } from "./agent/resource-e
 import { listIncludedToolStatus, setupIncludedTool, shutdownIncludedToolHost, type IncludedSetupAction } from "./agent/included-tool-setup.js";
 import { includedToolDefinitions, type IncludedToolId } from "../shared/included-tools.js";
 import type { BrowserToolHost } from "../shared/browser.js";
-import { RestrictedAppTaskService, RestrictedAppTaskError, restrictedAppTaskAuthorityDigest, restrictedAppTaskChatTitle, restrictedAppTaskPrompt, restrictedAppTaskTurnRequestId, type RestrictedAppAssistantActivity } from "./agent/restricted-app-tasks.js";
-import { RestrictedAppInferenceService, RestrictedAppInferenceError, type RestrictedAppInferenceActivity } from "./agent/restricted-app-inference.js";
 import { ModelContextInspector } from "./agent/model-context-inspector.js";
 import { type NativeResourceKind } from "./agent/resource-lifecycle.js";
 import { observeAmpleFileAutomationFiles, ampleFileAutomationFileObserverBounds } from "./automations/automation-file-observer.js";
@@ -16,7 +14,6 @@ import { turnFileChanges } from "./agent/turn-file-changes.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { workRequestLabel, type WorkRequestView } from "../shared/request-presentation.js";
 import { childFolderPaths } from "../shared/folder-nesting.js";
-import { restrictedAppDataRestoreBytes } from "../shared/restricted-app-storage-limits.js";
 import {
   automationCatchUpReasons,
   automationCatchUpSentence,
@@ -51,7 +48,7 @@ import {
 import { goToFolder } from "./go-to-folder.js";
 import { compressInto, copyInto, isInside, moveInto, relativeTo } from "./file-transfer.js";
 import { homedir as userHomedir } from "node:os";
-import { lstat, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
@@ -122,31 +119,6 @@ import {
   RegisteredConnectedFolderRuntimeProvider,
   RegisteredConnectedFolderTrustAuthority,
 } from "./agent/registered-connected-folder-runtime.js";
-import { RestrictedAppError } from "./agent/restricted-app-connections.js";
-import { RestrictedAppStorageError } from "./agent/restricted-app-storage.js";
-import { materializeRestrictedAppWorkingCopy } from "./agent/restricted-app-working-copy.js";
-import {
-  RoutedRestrictedAppProposalHost,
-  type RestrictedAppProposalReceipt,
-  type RestrictedAppProposalSettled,
-} from "./agent/restricted-app-proposals.js";
-import {
-  RestrictedAppService,
-  restrictedAppAutomationScheduleSummary,
-  type LocalAppInstance,
-  type LocalAppOperation,
-  type LocalAppRelease,
-  type LocalAppReleaseDeletionResult,
-  type LocalAppRetainedData,
-  type LocalAppConnectedFolderRecoveryCopy,
-  type RestrictedAppAutomationRunReceipt,
-  type RestrictedAppInstallationNeeds,
-  type RestrictedAppInstalled,
-} from "./agent/restricted-app-service.js";
-import type { RestrictedAppNetworkDeclaration } from "./agent/restricted-app-manifest.js";
-import type { RestrictedAppConnectionStatus } from "./agent/restricted-app-connections.js";
-import type { RestrictedAppDataBackup } from "./agent/restricted-app-storage.js";
-import { RestrictedAppNotificationRecord } from "./agent/restricted-app-notification-record.js";
 import {
   getPiComposerState,
   getPiWorkerInstructions,
@@ -192,11 +164,9 @@ import {
   ampleFileRequestLimitMessage,
   ampleFileRequestLimitsSection,
   ampleFileRequestStateToAgentPhase,
-  type AmpleFileRequestAction,
   type AmpleFileRequestActionCommand,
-  type AmpleFileRequestAppRef,
   type AmpleFileRequestJobState,
-  type AmpleFileRequestKind,
+  type AmpleFileRequestCreatableKind,
   type AmpleFileRequestLimitName,
   type AmpleFileRequestRecord,
   type AmpleFileRequestSurface,
@@ -255,7 +225,6 @@ import {
   type ConnectedFolderAppearanceCustomization,
   type ConnectedFolderAppearanceProposal,
 } from "../shared/connected-folder-appearance.js";
-import type { AppReleasePresentation } from "./agent/app-platform-release.js";
 import { resolveFolderTargets } from "./automations/folder-targets.js";
 import {
   PreparedActError,
@@ -273,8 +242,6 @@ import {
   createAmpleFileOverviewAutomationRunReader,
   parseAmpleFileOverviewCursor,
   ampleFileOverviewChatRecordFromMessages,
-  type AmpleFileOverviewAppAutomationReceiptRecord,
-  type AmpleFileOverviewAppAutomationRunRecord,
   type AmpleFileOverviewAgentRequestRecord,
   type AmpleFileOverviewSettledTurnRecord,
   type AmpleFileOverviewSourceReaders,
@@ -315,10 +282,8 @@ import {
   type AmpleFileAutomationReceiptV1,
   type AmpleFileAutomationRecord,
 } from "./automations/automation-store.js";
-import { AmpleFileSettleSignal } from "./automations/settle-signal.js";
 import {
   configureAmpleFileStateRoot,
-  restrictedAppRoot,
   connectedFolderStateDir,
   ampleFileAgentRoot,
   ampleFileAgentScopeId,
@@ -346,12 +311,6 @@ import {
 } from "./cli/act-receipts.js";
 import { AmpleFileCliError } from "./cli/protocol.js";
 import type {
-  AmpleFileActAppAutomationRunRef,
-  AmpleFileActAppInstanceRef,
-  AmpleFileActAppOperationRef,
-  AmpleFileActAppPresentation,
-  AmpleFileActAppProposalRef,
-  AmpleFileActAppReleaseRef,
   AmpleFileActChatLifecycleState,
   AmpleFileActChatMessage,
   AmpleFileActChatState,
@@ -399,7 +358,6 @@ import {
   listConnectedFolders,
   listPendingConnectedFolderRemovals,
   managedConnectedFolderDeletionPinIssue,
-  markConnectedFolderRemovalAppStateRemoved,
   moveConnectedFolderEntry,
   outermostConnectedFolderPaths,
   readConnectedFolderTextFile,
@@ -443,20 +401,10 @@ export interface LocalApiOptions {
   extensionUiBridge?: RoutedPiExtensionUiBridge;
   piOAuthHooks?: PiOAuthHooks;
   capabilityRegistry?: CapabilityRegistryService;
-  /** Separate from Pi packages: reviewed, staged apps that execute only in the desktop sandbox host. */
-  restrictedAppService?: RestrictedAppService;
-  restrictedAppProposalHost?: RoutedRestrictedAppProposalHost;
   /** Machine-local Connected Folder appearance state, shared by the renderer and test harnesses. */
   appearanceStore?: ConnectedFolderAppearanceStore;
   /** A supplied kernel must use a provider wrapped by the same spaceTrustAuthority. */
   kernel?: AmpleFileKernel;
-  /**
-   * The one in-process settle seam between the restricted-app settlement
-   * funnel and the automation executor. Supply the same instance to an
-   * injected restrictedAppService so its settles reach automation triggers;
-   * when absent, the API creates one for the services it constructs itself.
-   */
-  settleSignal?: AmpleFileSettleSignal;
   /**
    * The act lane's durable receipts journal (the AmpleFile agent's one ledger). Supply
    * the desktop CLI host's instance so decisions, Settings acts, and CLI acts
@@ -478,28 +426,16 @@ export interface LocalApiOptions {
   /** Test seam for the machine-local trash behind Recently deleted (docs/receipts-not-gates.md, F20). */
   recentlyDeletedStore?: AmpleFileRecentlyDeletedStore;
   /**
-   * The record of what apps' notifications did. The desktop host owns the one
-   * instance its notification broker writes; without one the API opens the
-   * same file itself.
-   */
-  appNotificationRecord?: RestrictedAppNotificationRecord;
-  /**
    * The desktop's built-in browser (docs/built-in-browser.md). With it, every
    * Worker and the AmpleFile agent carry the browser_* tools; a development API
    * without Electron has none.
    */
   browser?: BrowserToolHost;
   /** Failure-injection seam that runs immediately before mandatory post-reservation Connected Folder validation. */
-  beforeRestrictedAppConnectedFolderRevalidation?: (connectedFolderId: string) => Promise<void>;
+  beforeConnectedFolderMutationRevalidation?: (connectedFolderId: string) => Promise<void>;
   maxBodyBytes?: number;
   loadEnv?: boolean;
   onAgentTurnActivity?: (activeTurns: number) => void;
-  /**
-   * One installation's own Worker tasks or inference receipts moved. The
-   * desktop turns this into a bounded `bridge.tasks.onChanged` hint; a host
-   * without app views ignores it (docs/collaboration-contract.md, F30).
-   */
-  onAppAssistantActivity?: (activity: RestrictedAppAssistantActivity) => void;
   /**
    * Failure-injection seam immediately before a Pi prompt starts. A Connected Folder
    * turn's event carries the host-composed turn context (F26) so a test can
@@ -649,14 +585,6 @@ export interface AmpleFileAutomationSettingsFacade {
 }
 
 export interface LocalApiHandle {
-  /** Native app bridge reads and stops its own immediately dispatched requests. */
-  appAssistantTasks: RestrictedAppTaskService;
-  /**
-   * Bounded app inference (docs/receipts-not-gates.md, F22): the desktop host
-   * hands an active view's or a running worker's call here, and every call
-   * appends a receipt Settings → Apps can list.
-   */
-  appInference: Pick<RestrictedAppInferenceService, "infer" | "list">;
   origin: string;
   port: number;
   kernel: AmpleFileKernel;
@@ -682,9 +610,6 @@ export interface LocalApiHandle {
 }
 
 interface LocalApiState {
-  appAssistantTasks: RestrictedAppTaskService;
-  appInference: RestrictedAppInferenceService;
-  appNotificationRecord: RestrictedAppNotificationRecord;
   appMode: "dev" | "desktop";
   connectedFolderBase?: string;
   allowedOrigins: string[];
@@ -695,11 +620,8 @@ interface LocalApiState {
   modelContextInspector: ModelContextInspector;
   piOAuthHooks?: PiOAuthHooks;
   capabilityRegistry: CapabilityRegistryService;
-  restrictedApps: RestrictedAppService;
-  restrictedAppProposals: RoutedRestrictedAppProposalHost;
   appearance: ConnectedFolderAppearanceStore;
   kernel: AmpleFileKernel;
-  settleSignal: AmpleFileSettleSignal;
   actReceipts: AmpleFileCliActReceipts;
   turnStore: AmpleFileTurnStore;
   overviewSeen: AmpleFileOverviewSeenStore;
@@ -716,7 +638,7 @@ interface LocalApiState {
   connectedFolderRemovalIo: Partial<ConnectedFolderRemovalIo>;
   /** Recently deleted (docs/receipts-not-gates.md, F20). */
   recentlyDeleted: AmpleFileRecentlyDeletedStore;
-  beforeRestrictedAppConnectedFolderRevalidation?: (connectedFolderId: string) => Promise<void>;
+  beforeConnectedFolderMutationRevalidation?: (connectedFolderId: string) => Promise<void>;
   /** Every accepted turn's request record (docs/collaboration-contract.md, F25). */
   requests: AmpleFileRequestStore;
   /**
@@ -891,34 +813,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
       listModelCatalogs: () => options.piRuntimeProvider!.listModelCatalogs!(),
     } : {}),
   };
-  const restrictedApps = options.restrictedAppService ?? await RestrictedAppService.create({
-    rootPath: restrictedAppRoot(),
-    deferAppAutomationStart: true,
-  });
-  if (options.restrictedAppService?.appAutomationsStarted) {
-    throw new Error(
-      "The Local API requires an injected restricted App service whose automation startup is still deferred.",
-    );
-  }
-  // propose_connected_folder_app installs the local preview inside the proposing turn's
-  // own tool call. That install waits for other Connected Folder work instead of refusing
-  // it and never stops the proposing turn's own Pi client.
-  let proposalState: LocalApiState | undefined;
-  const restrictedAppProposals = options.restrictedAppProposalHost ?? await RoutedRestrictedAppProposalHost.create({
-    service: restrictedApps,
-    registryPath: join(restrictedAppRoot(), "proposals.json"),
-    installNow: async (id, context) => {
-      if (!proposalState) throw new Error("AmpleFile is still starting.");
-      const current = proposalState;
-      const proposal = await current.restrictedAppProposals.get(id);
-      if (proposal?.status === "installed") return current.restrictedAppProposals.install(id);
-      return runRestrictedAppMutationFromTurn(current, context.connectedFolderId, clientKey(context.connectedFolderId, context.conversationId),
-        () => current.restrictedAppProposals.install(id));
-    },
-  });
   const recoveredRemovals = await recoverPendingConnectedFolderRemovals(
-    restrictedApps,
-    restrictedAppProposals,
     options.connectedFolderRemovalIo ?? {},
     recentlyDeleted,
   );
@@ -945,7 +840,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   }
   const runtimeProvider = new RegisteredConnectedFolderRuntimeProvider(extensionRuntimeProvider, connectedFolderTrustAuthority);
   const kernel = options.kernel ?? new AmpleFileKernel({ runtimeProvider });
-  const settleSignal = options.settleSignal ?? new AmpleFileSettleSignal();
   // The AmpleFile agent's one ledger: the same act-receipts journal the desktop CLI host
   // appends. Both instances write the identical state-root path, so prepared
   // acts land in the journal the act lane already audits.
@@ -963,11 +857,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   const automationStore = await AmpleFileAutomationStore.create();
   const overviewSeen = new AmpleFileOverviewSeenStore();
   const state: LocalApiState = {
-    appAssistantTasks: undefined as unknown as RestrictedAppTaskService,
-    appInference: undefined as unknown as RestrictedAppInferenceService,
-    appNotificationRecord: options.appNotificationRecord ?? await RestrictedAppNotificationRecord.open({
-      path: join(ampleFileStateRoot(), "restricted-apps", "notification-receipts.jsonl"),
-    }),
     appMode,
     ...(options.browser ? { browser: options.browser } : {}),
     connectedFolderBase: options.connectedFolderBase ? resolve(options.connectedFolderBase) : undefined,
@@ -979,11 +868,8 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     modelContextInspector,
     piOAuthHooks: options.piOAuthHooks,
     capabilityRegistry: options.capabilityRegistry ?? new RemoteCapabilityRegistry(),
-    restrictedApps,
-    restrictedAppProposals,
     appearance,
     kernel,
-    settleSignal,
     actReceipts,
     turnStore,
     overviewSeen,
@@ -996,7 +882,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     localFolderGrantProvider: options.localFolderGrantProvider,
     connectedFolderRemovalIo: options.connectedFolderRemovalIo ?? {},
     recentlyDeleted,
-    beforeRestrictedAppConnectedFolderRevalidation: options.beforeRestrictedAppConnectedFolderRevalidation,
+    beforeConnectedFolderMutationRevalidation: options.beforeConnectedFolderMutationRevalidation,
     requests: requestStore,
     turnsSettledThisRun: new Set(),
     requestSettleChain: Promise.resolve(),
@@ -1057,127 +943,10 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     fence: createPreparedActFence(state),
     kernel,
   });
-  state.appAssistantTasks = await RestrictedAppTaskService.create({
-    path: join(ampleFileStateRoot(), "restricted-apps", "assistant-tasks.json"),
-    ports: {
-      withApp: (scope, operation) => restrictedApps.withAssistantTaskApp(scope, async (actions, app) => {
-        await getConnectedFolder(scope.connectedFolderId);
-        if (!state.acceptingTurns) throw new RestrictedAppTaskError("TASK_UNAVAILABLE", "AmpleFile is closing.");
-        return operation(actions, app);
-      }),
-      dispatch: async (receipt, app) => {
-        const connectedFolder = await getConnectedFolder(receipt.scope.connectedFolderId);
-        await createConversation(connectedFolder.connectedFolderRoot, restrictedAppTaskChatTitle(app.title, receipt.title), receipt.conversationId);
-        await acceptConversationTurn(state, connectedFolder, receipt.conversationId, {
-          content: restrictedAppTaskPrompt(receipt, app.title), contextPaths: [], actorKind: "system",
-          requestId: restrictedAppTaskTurnRequestId(receipt), userMessageId: `message-app-${receipt.id}`,
-          // The message is the app's, not the person's; the Chat says so.
-          appSource: { appId: receipt.scope.appId, title: app.title },
-          // An app-requested task is its own root request, owned by the app
-          // installation that asked (docs/collaboration-contract.md, F25).
-          request: {
-            kind: "app",
-            app: {
-              connectedFolderId: receipt.scope.connectedFolderId,
-              appId: receipt.scope.appId,
-              featureInstallationId: receipt.scope.featureInstallationId,
-              digest: receipt.scope.digest,
-            },
-          },
-        });
-      },
-      findTurn: (receipt) => turnStore.findRequest(receipt.scope.connectedFolderId, receipt.conversationId, restrictedAppTaskTurnRequestId(receipt)),
-      cancelTurn: async (_receipt, turnId) => { await stopAmpleFileAgentRequest(state, turnId); },
-      findRequest: (receipt) => {
-        const origin = turnStore.findRequest(receipt.scope.connectedFolderId, receipt.conversationId, restrictedAppTaskTurnRequestId(receipt));
-        const request = origin ? state.requests.byTaskId(origin.turnId) : null;
-        const turn = request ? turnStore.get(request.turns.at(-1)!.taskId) : null;
-        if (!request || !turn) return null;
-        const family = [request, ...state.requests.subtree(request.requestId)];
-        return {
-          state: request.state,
-          taskIds: request.turns.map((item) => item.taskId),
-          turn,
-          usage: {
-            turns: family.reduce((n, item) => n + item.usage.turns, 0),
-            inputTokens: family.reduce((n, item) => n + item.usage.inputTokens, 0),
-            outputTokens: family.reduce((n, item) => n + item.usage.outputTokens, 0),
-            amountUsdComplete: family.every((item) => item.usage.amountUsdComplete),
-            ...(family.some((item) => item.usage.amountUsd !== undefined)
-              ? { amountUsd: family.reduce((n, item) => n + (item.usage.amountUsd ?? 0), 0) } : {}),
-          },
-        };
-      },
-      // The envelope the Worker filed for this task with `chat report`
-      // (docs/collaboration-contract.md, F29). The request store stays the
-      // authority; the newest report for the latest own turn wins, and a turn that
-      // reported nothing falls back to its final reply as the summary.
-      findReport: async (receipt) => {
-        const turn = turnStore.findRequest(receipt.scope.connectedFolderId, receipt.conversationId, restrictedAppTaskTurnRequestId(receipt));
-        const request = turn ? state.requests.byTaskId(turn.turnId) : null;
-        const ref = [...(request?.results ?? [])].reverse().find((item) => item.taskId === request!.turns.at(-1)!.taskId);
-        const read = ref ? await state.requests.result(ref.resultId) : null;
-        if (!ref) return null;
-        if (read?.state !== "ok") throw new RestrictedAppTaskError("TASK_UNAVAILABLE", "The selected Worker result could not be read. Try reading it again.");
-        const { summary, outcome, data, files } = read.record.envelope;
-        return {
-          summary,
-          truncated: false,
-          outcome,
-          ...(data === undefined ? {} : { data }),
-          ...(files?.length ? { files: files.map((file) => ({ ...file })) } : {}),
-        };
-      },
-    },
-  });
-  // Bounded app inference (docs/receipts-not-gates.md, F22). The transport is
-  // the owning Connected Folder's own configured session, reached through a client whose
-  // conversation is never prompted, so it stays at zero messages and re-reads
-  // the Connected Folder's saved model whenever a capability or model change rebuilds it.
-  state.appInference = await RestrictedAppInferenceService.create({
-    path: join(ampleFileStateRoot(), "restricted-apps", "inference-receipts.jsonl"),
-    ports: {
-      pin: (scope) => restrictedApps.withAssistantTaskApp(scope, async () => {
-        await getConnectedFolder(scope.connectedFolderId);
-        if (!state.acceptingTurns) throw new RestrictedAppInferenceError("INFER_UNAVAILABLE", "AmpleFile is closing.");
-      }),
-      infer: async (connectedFolderId, request) => {
-        const connectedFolder = await getConnectedFolder(connectedFolderId);
-        const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, ampleFileAppInferenceConversationId);
-        return client.infer(request);
-      },
-    },
-  });
-  proposalState = state;
-  // Ids only, forwarded to whatever host wants to turn owned-app activity into
-  // a bounded view hint (docs/collaboration-contract.md, F30). The control hint
-  // behaviour is unchanged: every change still refreshes Settings → Apps.
-  const appTasksChanged = (change?: { tasks?: RestrictedAppAssistantActivity[] }) => {
-    publishControlHint(state, "apps");
-    for (const activity of change?.tasks ?? []) options.onAppAssistantActivity?.(activity);
-  };
-  state.appAssistantTasks.on("changed", appTasksChanged);
-  const appInferenceChanged = (change?: RestrictedAppInferenceActivity) => {
-    publishControlHint(state, "apps");
-    if (!change?.terminal) return;
-    options.onAppAssistantActivity?.({
-      connectedFolderId: change.receipt.connectedFolderId,
-      appId: change.receipt.appId,
-      featureInstallationId: change.receipt.featureInstallationId,
-      taskIds: [],
-      receiptIds: [change.receipt.id],
-    });
-  };
-  state.appInference.on("changed", appInferenceChanged);
-  // Settings → Apps shows each app's recent notifications.
-  const appNotificationsChanged = () => publishControlHint(state, "apps");
-  state.appNotificationRecord.on("changed", appNotificationsChanged);
-  const unsubscribeAppCatalog = restrictedApps.subscribeCatalog(() => publishControlHint(state, "apps"));
   state.automations = await AmpleFileAutomationService.create({
     store: automationStore,
     ports: createAutomationHopPorts(state),
     observeFiles: observeAmpleFileAutomationFiles,
-    settleSignal,
     tasks: {
       start: ({ automationId, runId }) =>
         kernel.startExperimentalAutomationRunTask({ automationId, runId, actor: { kind: "system" } }),
@@ -1199,10 +968,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   // History-restore fence readers (docs/act-ledger.md, conflict rule 7):
   // the kernel's routing_run tasks come from this API's own task port, and
   // this reader resolves each active run's declared files-hop targets from
-  // the automation store. The restricted-app half reads the registry's durable
-  // accepted-run ledger through the machine-wide accessor; a run whose
-  // file-grant authority cannot be resolved (fileGrantIds null) blocks too —
-  // vanished authority must never read as none while the run is live.
+  // the automation store.
   kernel.configureHistoryRestoreFence({
     sources: {
       automationRunFilesHopTargets: async (automationId) => {
@@ -1212,10 +978,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
           .filter((step): step is AmpleFileAutomationFilesStep => step.kind === "files")
           .map((step) => step.toConnectedFolder);
       },
-      appAutomationRunsWithFileGrantInto: async (connectedFolderId) =>
-        (await state.restrictedApps.listActiveAppAutomationRuns())
-          .filter((run) => run.connectedFolderId === connectedFolderId && (run.fileGrantIds === null || run.fileGrantIds.length > 0))
-          .map((run) => ({ appId: run.appId, appAutomationId: run.appAutomationId, runId: run.runId })),
     },
   });
   await recoverDurableTurnState(state);
@@ -1264,8 +1026,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     state.extensionRequests.delete(event.id);
     if (request) publishExtensionSnapshot(state, request);
   };
-  const proposalListener = (proposal: RestrictedAppProposalReceipt) => routeRestrictedAppProposal(state, proposal);
-  const proposalSettledListener = (event: RestrictedAppProposalSettled) => routeRestrictedAppProposalSettled(state, event.proposal);
 
   const server = createServer(async (request, response) => {
     try {
@@ -1291,26 +1051,14 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     trackRetention(state.jobs.store.purgeExpired(), "AmpleFile could not tidy its background job records");
   }, 60 * 60 * 1_000);
   retentionTimer.unref();
-  try {
-    restrictedApps.startAppAutomations(pendingConnectedFolderIds);
-  } catch (error) {
-    clearInterval(retentionTimer);
-    await closeServer(server).catch(() => undefined);
-    await drainRetention();
-    throw error;
-  }
   extensionUi.on("request", requestListener);
   extensionUi.on("event", eventListener);
   extensionUi.on("settled", settledListener);
-  restrictedAppProposals.on("request", proposalListener);
-  restrictedAppProposals.on("settled", proposalSettledListener);
   const address = server.address() as AddressInfo;
   return {
     origin: `http://${host}:${address.port}`,
     port: address.port,
     kernel,
-    appAssistantTasks: state.appAssistantTasks,
-    appInference: state.appInference,
     actFacade: createAmpleFileActFacade(state),
     resolveAmpleFileAgentLineageParent: (taskId) => resolveAmpleFileAgentLineageParent(state, taskId),
     requests: state.requests,
@@ -1325,17 +1073,11 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
       clearInterval(retentionTimer);
       state.modelContextInspector.setEnabled(false);
       await closeMcpSetups(state);
-      unsubscribeAppCatalog();
-      state.appAssistantTasks.off("changed", appTasksChanged);
-      state.appInference.off("changed", appInferenceChanged);
-      state.appNotificationRecord.off("changed", appNotificationsChanged);
       for (const response of state.localEventStreams) response.close();
       for (const response of state.controlStreams) response.close();
       extensionUi.off("request", requestListener);
       extensionUi.off("event", eventListener);
       extensionUi.off("settled", settledListener);
-      restrictedAppProposals.off("request", proposalListener);
-      restrictedAppProposals.off("settled", proposalSettledListener);
       extensionUi.cancelAll();
       // Stop the automation executor first: it aborts active runs (they settle
       // with honest interrupted/stopped receipts through their own domains),
@@ -1361,9 +1103,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
       await flushAllTurnCheckpoints(state);
       await state.turnStore.flush();
       await state.appearance.flush();
-      await state.appAssistantTasks.flush();
-      await state.appInference.flush();
-      await state.restrictedApps.close();
       await closeServer(server);
       // In particular, startup retention may still be writing its
       // durable lastPurgeAt even when no turn has ever run.
@@ -1509,9 +1248,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       const value = await removeConnectedFolderRegistrationInternal(state, connectedFolder, { receiptId: requestId });
       return {
         value,
-        detail: `Connected Folder ${connectedFolder.id}${value.recentlyDeleted ? `; trash ${value.recentlyDeleted.entryId}` : ""}`
-          + (value.appRecentlyDeletedEntries.length ? `; app data ${value.appRecentlyDeletedEntries.map((item) => item.entryId).join(", ")}` : "")
-          + (value.appStudioRecentlyDeleted ? `; App Studio ${value.appStudioRecentlyDeleted.entryId}` : ""),
+        detail: `Connected Folder ${connectedFolder.id}${value.recentlyDeleted ? `; trash ${value.recentlyDeleted.entryId}` : ""}`,
       };
     });
     sendJson(res, removal.value);
@@ -1561,616 +1298,6 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   if (connectedFolderAppearanceMatch && method === "DELETE") {
     const connectedFolder = await getConnectedFolder(connectedFolderAppearanceMatch[1]);
     sendJson(res, { appearance: await state.appearance.removeConnectedFolder(connectedFolder.id) });
-    return;
-  }
-
-  const proposalCollectionMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/restricted-app-proposals$/);
-  if (proposalCollectionMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(proposalCollectionMatch[1]);
-    if (!(await readConversation(connectedFolder.connectedFolderRoot, proposalCollectionMatch[2])).length) throw notFound("Conversation not found.");
-    const proposals = await state.restrictedAppProposals.list({ connectedFolderId: connectedFolder.id, conversationId: proposalCollectionMatch[2] });
-    sendJson(res, { proposals: proposals.map(rendererRestrictedAppProposal) });
-    return;
-  }
-  const proposalInstallMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/restricted-app-proposals\/([^/]+)\/install$/);
-  if (proposalInstallMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(proposalInstallMatch[1]);
-    const proposal = await state.restrictedAppProposals.get(proposalInstallMatch[3]);
-    if (!proposal || proposal.connectedFolderId !== connectedFolder.id || proposal.conversationId !== proposalInstallMatch[2]) throw notFound("App proposal not found.");
-    const app = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedAppProposals.install(proposal.id));
-    if (!app) throw httpError(409, "This app proposal is no longer available to install.");
-    sendJson(res, { app, proposal: rendererRestrictedAppProposal((await state.restrictedAppProposals.get(proposal.id))!) }, 201);
-    return;
-  }
-  const proposalMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/restricted-app-proposals\/([^/]+)$/);
-  if (proposalMatch && method === "DELETE") {
-    const connectedFolder = await getConnectedFolder(proposalMatch[1]);
-    const proposal = await state.restrictedAppProposals.get(proposalMatch[3]);
-    if (!proposal || proposal.connectedFolderId !== connectedFolder.id || proposal.conversationId !== proposalMatch[2]) throw notFound("App proposal not found.");
-    sendJson(res, { dismissed: await state.restrictedAppProposals.dismiss(proposal.id) });
-    return;
-  }
-
-  const localAppStudioMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio$/);
-  if (localAppStudioMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(localAppStudioMatch[1]);
-    sendJson(res, { studio: await state.restrictedApps.localAppStudio(connectedFolder.id) });
-    return;
-  }
-
-  const localAppRemovalImpactMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-removal-impact$/);
-  if (localAppRemovalImpactMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(localAppRemovalImpactMatch[1]);
-    sendJson(res, { impact: await state.restrictedApps.connectedFolderRemovalImpact(connectedFolder.id) });
-    return;
-  }
-  if (localAppStudioMatch && method === "PUT") {
-    const connectedFolder = await getConnectedFolder(localAppStudioMatch[1]);
-    const body = await readJsonBody<{ title?: unknown; description?: unknown; icon?: unknown }>(state, req);
-    if (typeof body.title !== "string"
-      || (body.description !== undefined && body.description !== null && typeof body.description !== "string")
-      || (body.icon !== undefined && body.icon !== null && typeof body.icon !== "string")) {
-      throw badRequest("An App title plus optional text description and icon id are required.");
-    }
-    const title = body.title;
-    const description = body.description === undefined ? null : body.description;
-    const icon = body.icon === undefined ? null : body.icon;
-    const project = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.declareLocalAppProject({
-      connectedFolderId: connectedFolder.id,
-      presentation: { title, description, icon },
-    }));
-    sendJson(res, { project });
-    return;
-  }
-
-  const localAppReleasePrepareMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/releases\/prepare$/);
-  if (localAppReleasePrepareMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(localAppReleasePrepareMatch[1]);
-    const body = await readJsonBody<{ displayVersion?: unknown }>(state, req);
-    if (typeof body.displayVersion !== "string" || !body.displayVersion.trim()) throw badRequest("A Release version is required.");
-    const displayVersion = body.displayVersion;
-    const prepared = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.prepareLocalAppRelease({
-      connectedFolderId: connectedFolder.id,
-      displayVersion,
-    }));
-    sendJson(res, { release: prepared }, 201);
-    return;
-  }
-
-  const localAppReleasePublishMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/releases\/publish$/);
-  if (localAppReleasePublishMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(localAppReleasePublishMatch[1]);
-    const body = await readJsonBody<{ releaseDigest?: unknown }>(state, req);
-    if (typeof body.releaseDigest !== "string" || !body.releaseDigest.trim()) throw badRequest("A prepared Release digest is required.");
-    const releaseDigest = body.releaseDigest;
-    const release = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.publishLocalAppRelease({
-      connectedFolderId: connectedFolder.id,
-      releaseDigest,
-    }));
-    sendJson(res, { release });
-    return;
-  }
-
-  const localAppReleaseMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/releases\/([^/]+)$/);
-  if (localAppReleaseMatch && method === "DELETE") {
-    const connectedFolder = await getConnectedFolder(localAppReleaseMatch[1]);
-    const releaseDigest = localAppReleaseMatch[2];
-    // A copy of the Release lands in Recently deleted before it goes
-    // (docs/receipts-not-gates.md, F20), the same order the CLI verb uses.
-    const deleted = await runDesktopSettingsAct(state, "apps.release.delete", async (requestId) => {
-      const deletion = await deleteLocalAppReleaseIntoRecentlyDeleted(state, connectedFolder, releaseDigest, requestId);
-      return {
-        value: deletion,
-        detail: `release ${releaseDigest}${deletion.recentlyDeleted ? `; trash ${deletion.recentlyDeleted.entryId}` : deletion.deleted ? "" : " (not found)"}`,
-      };
-    });
-    sendJson(res, { deletion: deleted.value });
-    return;
-  }
-
-  const localAppInstallPrepareMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/installs\/prepare$/);
-  if (localAppInstallPrepareMatch && method === "POST") {
-    const source = await getConnectedFolder(localAppInstallPrepareMatch[1]);
-    const body = await readJsonBody<{ targetConnectedFolderId?: unknown; releaseDigest?: unknown }>(state, req);
-    if (typeof body.targetConnectedFolderId !== "string" || !body.targetConnectedFolderId.trim()
-      || typeof body.releaseDigest !== "string" || !body.releaseDigest.trim()) {
-      throw badRequest("A target Connected Folder and published Release are required.");
-    }
-    const targetConnectedFolderId = body.targetConnectedFolderId;
-    const releaseDigest = body.releaseDigest;
-    const target = await getConnectedFolder(targetConnectedFolderId);
-    const operation = await runRestrictedAppMutations(state, [source.id, target.id], () => state.restrictedApps.prepareLocalAppInstall({
-      sourceConnectedFolderId: source.id,
-      targetConnectedFolderId: target.id,
-      releaseDigest,
-    }));
-    sendJson(res, { operation }, 201);
-    return;
-  }
-
-  const localAppOperationActivateMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/operations\/([^/]+)\/activate$/);
-  if (localAppOperationActivateMatch && method === "POST") {
-    const source = await getConnectedFolder(localAppOperationActivateMatch[1]);
-    const studio = await state.restrictedApps.localAppStudio(source.id);
-    const operation = studio.operations.find((item) => item.operationId === localAppOperationActivateMatch[2]);
-    if (!operation) throw notFound("Prepared App operation not found.");
-    const target = await getConnectedFolder(operation.targetConnectedFolderId);
-    const result = await runRestrictedAppMutations(state, [source.id, target.id], () => operation.kind === "install"
-      ? state.restrictedApps.activateLocalAppInstall(operation.operationId)
-      : state.restrictedApps.activateLocalAppUpdate(operation.operationId));
-    sendJson(res, result);
-    return;
-  }
-  const localAppOperationMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/operations\/([^/]+)$/);
-  if (localAppOperationMatch && method === "DELETE") {
-    const source = await getConnectedFolder(localAppOperationMatch[1]);
-    const operationId = localAppOperationMatch[2];
-    const cancelled = await runRestrictedAppMutation(state, source.id, async () => {
-      const studio = await state.restrictedApps.localAppStudio(source.id);
-      if (!studio.operations.some((operation) => operation.operationId === operationId)) {
-        throw notFound("Prepared App operation not found.");
-      }
-      return state.restrictedApps.cancelLocalAppOperation(operationId);
-    });
-    sendJson(res, { cancelled });
-    return;
-  }
-
-  const localAppUpdatePrepareMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/instances\/([^/]+)\/updates\/prepare$/);
-  if (localAppUpdatePrepareMatch && method === "POST") {
-    const source = await getConnectedFolder(localAppUpdatePrepareMatch[1]);
-    const body = await readJsonBody<{ releaseDigest?: unknown; continuityPolicy?: unknown }>(state, req);
-    if (typeof body.releaseDigest !== "string" || !body.releaseDigest.trim()) throw badRequest("A target published Release is required.");
-    if (body.continuityPolicy !== undefined && body.continuityPolicy !== "eligible" && body.continuityPolicy !== "reset") {
-      throw badRequest("Update continuity must be eligible or reset.");
-    }
-    const releaseDigest = body.releaseDigest;
-    const continuityPolicy = body.continuityPolicy;
-    const studio = await state.restrictedApps.localAppStudio(source.id);
-    const instance = studio.instances.find((item) => item.runtimeInstanceId === localAppUpdatePrepareMatch[2]);
-    if (!instance) throw notFound("Local App Instance not found.");
-    const target = await getConnectedFolder(instance.connectedFolderId);
-    const operation = await runRestrictedAppMutations(state, [source.id, target.id], () => state.restrictedApps.prepareLocalAppUpdate({
-      sourceConnectedFolderId: source.id,
-      runtimeInstanceId: instance.runtimeInstanceId,
-      releaseDigest,
-      ...(continuityPolicy ? { continuityPolicy } : {}),
-    }));
-    sendJson(res, { operation }, 201);
-    return;
-  }
-
-  const localAppInstanceMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/local-app-instances\/([^/]+)$/);
-  if (localAppInstanceMatch && method === "DELETE") {
-    const connectedFolder = await getConnectedFolder(localAppInstanceMatch[1]);
-    const body = await readJsonBody<{ dataDisposition?: "retain" | "purge" }>(state, req);
-    if (body.dataDisposition !== "retain" && body.dataDisposition !== "purge") {
-      throw badRequest("Choose whether to retain or purge this App's local data.");
-    }
-    const installed = (await state.restrictedApps.list(connectedFolder.id)).find((app) => (
-      app.runtimeInstanceKind === "app" && app.runtimeInstanceId === localAppInstanceMatch[2]
-    ));
-    if (!installed) throw notFound("Local App Instance not found.");
-    if (body.dataDisposition === "retain") {
-      const result = await runRestrictedAppMutations(state, [installed.sourceConnectedFolderId, connectedFolder.id], () => state.restrictedApps.uninstallLocalApp({
-        runtimeInstanceId: localAppInstanceMatch[2],
-        dataDisposition: "retain",
-      }), { requiredConnectedFolderIds: [connectedFolder.id] });
-      sendJson(res, { ...result, recentlyDeleted: [] });
-      return;
-    }
-    // Purging carries copies of every affected namespace into Recently
-    // deleted first (docs/receipts-not-gates.md, F20).
-    const uninstalled = await runDesktopSettingsAct(state, "apps.uninstall", async (requestId) => (
-      runRestrictedAppMutations(state, [installed.sourceConnectedFolderId, connectedFolder.id], async () => {
-        const entries = await moveUninstallPurgeExportsToRecentlyDeleted(state, localAppInstanceMatch[2], [connectedFolder.id, installed.sourceConnectedFolderId], requestId);
-        const result = await state.restrictedApps.uninstallLocalApp({
-          runtimeInstanceId: localAppInstanceMatch[2],
-          dataDisposition: "purge",
-        });
-        return {
-          value: { ...result, recentlyDeleted: entries.map((entry) => ({ entryId: entry.id, restoreBy: entry.restoreBy })) },
-          detail: `instance ${localAppInstanceMatch[2]}; trash ${entries.length} entr${entries.length === 1 ? "y" : "ies"}`,
-        };
-      }, { requiredConnectedFolderIds: [connectedFolder.id] })
-    ));
-    sendJson(res, uninstalled.value);
-    return;
-  }
-
-  const localAppRetainedDataMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/app-studio\/retained-data\/([^/]+)$/);
-  if (localAppRetainedDataMatch && method === "GET") {
-    const source = await getConnectedFolder(localAppRetainedDataMatch[1]);
-    sendJson(res, { backup: await state.restrictedApps.exportRetainedStorage(source.id, localAppRetainedDataMatch[2]) });
-    return;
-  }
-  if (localAppRetainedDataMatch && method === "DELETE") {
-    const source = await getConnectedFolder(localAppRetainedDataMatch[1]);
-    const retainedDataId = localAppRetainedDataMatch[2];
-    const purged = await runDesktopSettingsAct(state, "apps.retained.purge", async (requestId) => (
-      runRestrictedAppMutation(state, source.id, async () => {
-        const studio = await state.restrictedApps.localAppStudio(source.id);
-        const record = studio.retainedData.find((item) => item.retainedDataId === retainedDataId);
-        if (!record) throw notFound("Retained Local App data not found.");
-        const entry = await moveRetainedExportToRecentlyDeleted(state, source.id, record, "apps.retained.purge", requestId);
-        const result = await state.restrictedApps.purgeLocalAppRetainedData(retainedDataId);
-        return {
-          value: { ...result, recentlyDeleted: [{ entryId: entry.id, restoreBy: entry.restoreBy }] },
-          detail: `retained ${retainedDataId}; trash ${entry.id}`,
-        };
-      })
-    ));
-    sendJson(res, purged.value);
-    return;
-  }
-
-  const restrictedCollectionMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps$/);
-  if (restrictedCollectionMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(restrictedCollectionMatch[1]);
-    sendJson(res, { apps: await state.restrictedApps.list(connectedFolder.id) });
-    return;
-  }
-  // A local preview is added by a Worker's proposal in its Chat or by
-  // `amplefile apps install-preview`; both inspect the package and own the
-  // review digest host-side, so this collection has no desktop install route.
-
-  const restrictedItemMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)$/);
-  if (restrictedItemMatch && method === "DELETE") {
-    const connectedFolder = await getConnectedFolder(restrictedItemMatch[1]);
-    const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req);
-    // Removing a preview takes its data with it, so a copy lands in Recently
-    // deleted first (docs/receipts-not-gates.md, F20) — the same
-    // export-then-destroy order "Clear data" and uninstall-with-purge use, and
-    // the removal leaves a receipt naming the entry.
-    const outcome = await runDesktopSettingsAct(state, "apps.remove", async (requestId) => (
-      runRestrictedAppMutation(state, connectedFolder.id, async () => {
-        const entry = await moveRemovedAppStorageToRecentlyDeleted(state, connectedFolder.id, restrictedItemMatch[2], "apps.remove", requestId, body);
-        const removed = await state.restrictedApps.remove({
-          connectedFolderId: connectedFolder.id,
-          appId: restrictedItemMatch[2],
-          featureInstallationId: body.featureInstallationId,
-          ...(body.expectedDigest ? { expectedDigest: body.expectedDigest } : {}),
-        });
-        return {
-          value: { removed, recentlyDeleted: entry ? { entryId: entry.id, restoreBy: entry.restoreBy } : null },
-          detail: `app ${restrictedItemMatch[2]}${entry ? `; trash ${entry.id}` : ""}`,
-        };
-      })
-    ));
-    sendJson(res, outcome.value);
-    return;
-  }
-
-  const restrictedBuildContextMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/build-context$/);
-  if (restrictedBuildContextMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(restrictedBuildContextMatch[1]);
-    const expectedDigest = url.searchParams.get("expectedDigest");
-    if (!expectedDigest) throw badRequest("An exact app revision is required.");
-    sendJson(res, { context: await state.restrictedAppProposals.buildContext(connectedFolder.id, restrictedBuildContextMatch[2], expectedDigest, url.searchParams.get("featureInstallationId") ?? undefined) });
-    return;
-  }
-
-  const restrictedChangeMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/change$/);
-  if (restrictedChangeMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(restrictedChangeMatch[1]);
-    const body = await readJsonBody<{ requestId?: string; featureInstallationId?: string; expectedDigest?: string }>(state, req);
-    if (typeof body.requestId !== "string" || typeof body.expectedDigest !== "string") throw badRequest("An exact app revision and change request are required.");
-    const app = await state.restrictedApps.runtimeDescriptor(connectedFolder.id, restrictedChangeMatch[2], body.expectedDigest, body.featureInstallationId);
-    const source = await getConnectedFolder(app.sourceConnectedFolderId);
-    const change = await runRestrictedAppMutations(state, [connectedFolder.id, source.id], () => state.restrictedAppProposals.prepareChange({
-      id: body.requestId!, connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, expectedDigest: body.expectedDigest!,
-    }, async (receipt, files) => {
-      if (receipt.sourceConnectedFolderId !== source.id) throw httpError(409, "The app source changed. Refresh before starting an edit.");
-      await materializeRestrictedAppWorkingCopy(source.connectedFolderRoot, receipt, files, (paths) => createConnectedFolderMutationCheckpoint(source.connectedFolderRoot, {
-        deleteOnRestore: paths, reason: "app-change", label: `Change ${app.manifest.title}`,
-      }));
-    }));
-    // The Chat draft receives source/build context only, never target Instance data or authority.
-    sendJson(res, { change: {
-      id: change.id, sourceConnectedFolderId: change.sourceConnectedFolderId, sourcePath: change.sourcePath,
-      appId: change.appId, title: change.title, version: change.version, baseDigest: change.baseDigest,
-      buildConversationId: change.buildConversationId,
-    } }, 201);
-    return;
-  }
-
-  const restrictedInvokeMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/invoke$/);
-  if (restrictedInvokeMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(restrictedInvokeMatch[1]);
-    assertNoCapabilityMutationForTurn(state, connectedFolder.id);
-    const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string; action?: string; input?: unknown }>(state, req);
-    if (!body.expectedDigest?.trim() || !body.action?.trim()) throw badRequest("An installed revision and action are required.");
-    assertNoCapabilityMutationForTurn(state, connectedFolder.id);
-    const result = await state.restrictedApps.invoke({
-      connectedFolderId: connectedFolder.id,
-      appId: restrictedInvokeMatch[2],
-      featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest,
-      action: body.action,
-      input: body.input,
-    });
-    sendJson(res, { result });
-    return;
-  }
-
-  const restrictedConnectionsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/connections$/);
-  if (restrictedConnectionsMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(restrictedConnectionsMatch[1]);
-    const expectedDigest = url.searchParams.get("expectedDigest")?.trim();
-    if (!expectedDigest) throw badRequest("An installed revision is required.");
-    sendJson(res, { connections: await state.restrictedApps.connectionStatus(
-      connectedFolder.id,
-      restrictedConnectionsMatch[2],
-      expectedDigest,
-      url.searchParams.get("featureInstallationId") ?? undefined,
-    ) });
-    return;
-  }
-
-  const restrictedNetworkGrantMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/permissions\/network\/([^/]+)$/);
-  if (restrictedNetworkGrantMatch && (method === "PUT" || method === "DELETE")) {
-    const connectedFolder = await getConnectedFolder(restrictedNetworkGrantMatch[1]);
-    const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req);
-    if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
-    const operation = method === "PUT" ? state.restrictedApps.grantNetwork.bind(state.restrictedApps) : state.restrictedApps.revokeNetwork.bind(state.restrictedApps);
-    const app = await runRestrictedAppMutation(state, connectedFolder.id, () => operation({
-      connectedFolderId: connectedFolder.id,
-      appId: restrictedNetworkGrantMatch[2],
-      destinationId: restrictedNetworkGrantMatch[3],
-      featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
-    }));
-    sendJson(res, { app });
-    return;
-  }
-
-  const restrictedFileGrantMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/permissions\/files\/([^/]+)$/);
-  if (restrictedFileGrantMatch && (method === "PUT" || method === "DELETE")) {
-    const connectedFolder = await getConnectedFolder(restrictedFileGrantMatch[1]);
-    const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string; root?: string }>(state, req);
-    if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
-    const app = await runRestrictedAppMutation(state, connectedFolder.id, () => method === "PUT"
-      ? state.restrictedApps.grantFiles({
-          connectedFolderId: connectedFolder.id,
-          connectedFolderRoot: connectedFolder.connectedFolderRoot,
-          appId: restrictedFileGrantMatch[2],
-          permissionId: restrictedFileGrantMatch[3],
-          featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
-          root: body.root ?? "",
-        })
-      : state.restrictedApps.revokeFiles({
-          connectedFolderId: connectedFolder.id,
-          appId: restrictedFileGrantMatch[2],
-          permissionId: restrictedFileGrantMatch[3],
-          featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
-        }));
-    sendJson(res, { app });
-    return;
-  }
-
-  // The trusted Apps tab lists an installation's requests across code changes
-  // (Details, Open Chat, Stop); the app bridge stays pinned to its own revision.
-  const appTaskMatch = /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/assistant-tasks(?:\/([^/]+))?(?:\/(cancel))?$/.exec(url.pathname)
-    ?.map((value) => value === undefined ? "" : decodeURIComponent(value));
-  if (appTaskMatch && (method === "GET" || method === "POST")) {
-    const connectedFolder = await getConnectedFolder(appTaskMatch[1]);
-    const body = method === "POST" ? await readJsonBody<Record<string, unknown>>(state, req) : Object.fromEntries(url.searchParams);
-    if (typeof body.featureInstallationId !== "string" || typeof body.expectedDigest !== "string") throw badRequest("An exact app installation and revision are required.");
-    const allowed = ["featureInstallationId", "expectedDigest"];
-    if (Object.keys(body).some((key) => !allowed.includes(key))) throw badRequest("Worker request fields are invalid.");
-    const app = await state.restrictedApps.runtimeDescriptor(connectedFolder.id, appTaskMatch[2], body.expectedDigest, body.featureInstallationId);
-    const scope = { connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId,
-      digest: app.digest, authorityDigest: restrictedAppTaskAuthorityDigest(app.authority) };
-    if (method === "GET" && !appTaskMatch[4]) {
-      sendJson(res, appTaskMatch[3] ? { detail: await state.appAssistantTasks.detail(scope, appTaskMatch[3], "installation") }
-        : { tasks: await state.appAssistantTasks.list(scope, "installation", "summary") });
-    } else if (method === "POST" && appTaskMatch[3] && appTaskMatch[4] === "cancel") {
-      sendJson(res, { task: await state.appAssistantTasks.cancel(scope, appTaskMatch[3], () => {}, "installation") });
-    } else throw badRequest("Choose an Worker request.");
-    return;
-  }
-
-  // Bounded inference receipts for Settings → Apps: the installation's calls
-  // across code changes, with the effective model and its usage.
-  const appInferenceMatch = /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/inference-receipts$/.exec(url.pathname)
-    ?.map((value) => value === undefined ? "" : decodeURIComponent(value));
-  if (appInferenceMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(appInferenceMatch[1]);
-    const query = Object.fromEntries(url.searchParams);
-    if (typeof query.featureInstallationId !== "string" || typeof query.expectedDigest !== "string") {
-      throw badRequest("An exact app installation and revision are required.");
-    }
-    const allowed = ["featureInstallationId", "expectedDigest"];
-    if (Object.keys(query).some((key) => !allowed.includes(key))) throw badRequest("Inference receipt fields are invalid.");
-    const app = await state.restrictedApps.runtimeDescriptor(connectedFolder.id, appInferenceMatch[2], query.expectedDigest, query.featureInstallationId);
-    const scope = { connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId,
-      digest: app.digest, authorityDigest: restrictedAppTaskAuthorityDigest(app.authority) };
-    sendJson(res, { receipts: await state.appInference.list(scope, { ownership: "installation" }) });
-    return;
-  }
-
-  // Settings → Apps: what this installation's notifications did, newest first,
-  // across code changes. The record names the category, never the route or
-  // state the app attached.
-  const appNotificationRecordMatch = /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/notification-receipts$/.exec(url.pathname)
-    ?.map((value) => value === undefined ? "" : decodeURIComponent(value));
-  if (appNotificationRecordMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(appNotificationRecordMatch[1]);
-    const query = Object.fromEntries(url.searchParams);
-    if (typeof query.featureInstallationId !== "string" || typeof query.expectedDigest !== "string") {
-      throw badRequest("An exact app installation and revision are required.");
-    }
-    if (Object.keys(query).some((key) => !["featureInstallationId", "expectedDigest", "limit"].includes(key))) {
-      throw badRequest("Notification record fields are invalid.");
-    }
-    const limit = query.limit === undefined ? undefined : Number(query.limit);
-    if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1)) throw badRequest("Choose how many notifications to show.");
-    const app = await state.restrictedApps.runtimeDescriptor(connectedFolder.id, appNotificationRecordMatch[2], query.expectedDigest, query.featureInstallationId);
-    sendJson(res, {
-      receipts: await state.appNotificationRecord.list(
-        { connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId },
-        limit,
-      ),
-    });
-    return;
-  }
-
-  const restrictedNotificationGrantMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/permissions\/notifications\/([^/]+)$/);
-  if (restrictedNotificationGrantMatch && (method === "PUT" || method === "DELETE")) {
-    const connectedFolder = await getConnectedFolder(restrictedNotificationGrantMatch[1]);
-    const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req);
-    if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
-    const operation = method === "PUT"
-      ? state.restrictedApps.grantNotifications.bind(state.restrictedApps)
-      : state.restrictedApps.revokeNotifications.bind(state.restrictedApps);
-    const app = await runRestrictedAppMutation(state, connectedFolder.id, () => operation({
-      connectedFolderId: connectedFolder.id,
-      appId: restrictedNotificationGrantMatch[2],
-      permissionId: restrictedNotificationGrantMatch[3],
-      featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
-    }));
-    sendJson(res, { app });
-    return;
-  }
-
-  const restrictedAppAutomationRunMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/automations\/([^/]+)\/run$/);
-  if (restrictedAppAutomationRunMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(restrictedAppAutomationRunMatch[1]);
-    const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req);
-    if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
-    const result = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.runAppAutomationNow({
-      connectedFolderId: connectedFolder.id,
-      appId: restrictedAppAutomationRunMatch[2],
-      appAutomationId: restrictedAppAutomationRunMatch[3],
-      featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
-    }));
-    sendJson(res, result);
-    return;
-  }
-
-  const restrictedAppAutomationRunsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/automations\/([^/]+)\/runs$/);
-  if (restrictedAppAutomationRunsMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(restrictedAppAutomationRunsMatch[1]);
-    const expectedDigest = url.searchParams.get("expectedDigest")?.trim();
-    if (!expectedDigest) throw badRequest("An installed revision is required.");
-    const runs = await state.restrictedApps.listAppAutomationRuns(
-      connectedFolder.id,
-      restrictedAppAutomationRunsMatch[2],
-      expectedDigest,
-      restrictedAppAutomationRunsMatch[3],
-      url.searchParams.get("featureInstallationId") ?? undefined,
-    );
-    sendJson(res, { runs });
-    return;
-  }
-
-  const restrictedAppAutomationMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/automations\/([^/]+)$/);
-  if (restrictedAppAutomationMatch && (method === "PUT" || method === "DELETE")) {
-    const connectedFolder = await getConnectedFolder(restrictedAppAutomationMatch[1]);
-    const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req);
-    if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
-    const app = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.setAppAutomationEnabled({
-      connectedFolderId: connectedFolder.id,
-      appId: restrictedAppAutomationMatch[2],
-      appAutomationId: restrictedAppAutomationMatch[3],
-      featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
-      enabled: method === "PUT",
-    }));
-    sendJson(res, { app });
-    return;
-  }
-
-  const restrictedStorageMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/storage$/);
-  if (restrictedStorageMatch && (method === "GET" || method === "DELETE")) {
-    const connectedFolder = await getConnectedFolder(restrictedStorageMatch[1]);
-    const body = method === "DELETE" ? await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req) : null;
-    const expectedDigest = body?.expectedDigest ?? url.searchParams.get("expectedDigest")?.trim();
-    if (!expectedDigest) throw badRequest("An installed revision is required.");
-    const featureInstallationId = method === "DELETE" ? body!.featureInstallationId : url.searchParams.get("featureInstallationId") ?? undefined;
-    if (method !== "DELETE") {
-      sendJson(res, { usage: await state.restrictedApps.storageUsage(connectedFolder.id, restrictedStorageMatch[2], expectedDigest, featureInstallationId) });
-      return;
-    }
-    // A copy of the app's data lands in Recently deleted before the live data
-    // goes (docs/receipts-not-gates.md, F20). The service stays the identity
-    // authority: a stale installation or a changed revision is refused by its
-    // own read before anything is exported or cleared.
-    const cleared = await runDesktopSettingsAct(state, "apps.storage.clear", async (requestId) => (
-      runRestrictedAppMutation(state, connectedFolder.id, async () => {
-        const app = await requireInstalledAppForStorage(state, connectedFolder.id, restrictedStorageMatch[2], expectedDigest, featureInstallationId);
-        const entry = await moveAppStorageExportToRecentlyDeleted(state, app, "apps.storage.clear", requestId);
-        const usage = await state.restrictedApps.clearStorage(connectedFolder.id, restrictedStorageMatch[2], expectedDigest, featureInstallationId);
-        return {
-          value: { usage, recentlyDeleted: entry ? { entryId: entry.id, restoreBy: entry.restoreBy } : null },
-          detail: `app ${app.manifest.id}${entry ? `; trash ${entry.id}` : ""}`,
-        };
-      })
-    ));
-    sendJson(res, cleared.value);
-    return;
-  }
-
-  const restrictedDataMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/storage\/(export|recovery|restore)$/);
-  if (restrictedDataMatch && ((method === "GET" && restrictedDataMatch[3] !== "restore") || (method === "POST" && restrictedDataMatch[3] === "restore"))) {
-    const connectedFolder = await getConnectedFolder(restrictedDataMatch[1]);
-    const appId = restrictedDataMatch[2];
-    if (method === "POST") {
-      // A restore carries a whole export, so its bound is the export's own
-      // (every export AmpleFile makes restores), above the general body cap.
-      const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest: string; expectedRevision: number; backup?: unknown; recoveryId?: string }>(
-        state, req, restrictedAppDataRestoreBytes, { exceedDefaultLimit: true },
-      );
-      if (!body || typeof body !== "object" || Array.isArray(body)) throw badRequest("A backup or recovery point is required.");
-      const usage = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.restoreStorage({
-        connectedFolderId: connectedFolder.id, appId, featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest, expectedRevision: body.expectedRevision,
-        backup: body.backup, recoveryId: body.recoveryId,
-      }));
-      sendJson(res, { usage });
-    } else {
-      const digest = url.searchParams.get("expectedDigest") ?? "";
-      sendJson(res, restrictedDataMatch[3] === "export"
-        ? { backup: await state.restrictedApps.exportStorage(connectedFolder.id, appId, digest, url.searchParams.get("featureInstallationId") ?? undefined) }
-        : { recovery: await state.restrictedApps.storageRecovery(connectedFolder.id, appId, digest, url.searchParams.get("featureInstallationId") ?? undefined) });
-    }
-    return;
-  }
-
-  const restrictedOAuthMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/connections\/([^/]+)\/oauth$/);
-  if (restrictedOAuthMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(restrictedOAuthMatch[1]);
-    const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string }>(state, req);
-    if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
-    const connection = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.connectOAuth({
-      connectedFolderId: connectedFolder.id,
-      appId: restrictedOAuthMatch[2],
-      destinationId: restrictedOAuthMatch[3],
-      featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
-    }));
-    sendJson(res, { connection });
-    return;
-  }
-
-  const restrictedConnectionMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/restricted-apps\/([^/]+)\/connections\/([^/]+)$/);
-  if (restrictedConnectionMatch && (method === "PUT" || method === "DELETE")) {
-    const connectedFolder = await getConnectedFolder(restrictedConnectionMatch[1]);
-    const body = await readJsonBody<{ featureInstallationId?: string; expectedDigest?: string; credential?: unknown }>(state, req);
-    if (!body.expectedDigest?.trim()) throw badRequest("An installed revision is required.");
-    const result = await runRestrictedAppMutation(state, connectedFolder.id, async () => {
-      if (method === "DELETE") {
-        return { removed: await state.restrictedApps.deleteConnection({
-          connectedFolderId: connectedFolder.id,
-          appId: restrictedConnectionMatch[2],
-          destinationId: restrictedConnectionMatch[3],
-          featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
-        }) };
-      }
-      return { connection: await state.restrictedApps.setConnection({
-        connectedFolderId: connectedFolder.id,
-        appId: restrictedConnectionMatch[2],
-        destinationId: restrictedConnectionMatch[3],
-        featureInstallationId: body.featureInstallationId, expectedDigest: body.expectedDigest!,
-        credential: body.credential,
-      }) };
-    });
-    sendJson(res, result);
     return;
   }
 
@@ -3658,9 +2785,8 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   if (url.pathname === "/api/settings/recently-deleted" && method === "GET") {
     const listing = await state.recentlyDeleted.list();
     const registered = new Set((await listConnectedFolders()).map((connectedFolder) => connectedFolder.id));
-    const appStudioWaiting = appStudioWaitingConnectedFolders(listing.entries);
     const entries = [];
-    for (const entry of listing.entries) entries.push(await recentlyDeletedEntryView(state, entry, registered, appStudioWaiting));
+    for (const entry of listing.entries) entries.push(await recentlyDeletedEntryView(entry, registered));
     sendJson(res, { entries, damaged: listing.damaged, retentionDays: listing.retentionDays });
     return;
   }
@@ -3724,18 +2850,6 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     sendJson(res, { restored: restored.value });
     return;
   }
-  const recentlyDeletedExportMatch = match(url.pathname, /^\/api\/settings\/recently-deleted\/([^/]+)\/export$/);
-  if (recentlyDeletedExportMatch && method === "GET") {
-    const entryId = recentlyDeletedExportMatch[1];
-    if (!ampleFileRecentlyDeletedEntryIdPattern.test(entryId)) throw notFound("That item is no longer in Recently deleted.");
-    const entry = await state.recentlyDeleted.get(entryId);
-    if (!entry || (entry.kind !== "app-storage" && entry.kind !== "app-retained")) {
-      throw notFound("Only kept app data can be saved as a copy.");
-    }
-    sendJson(res, { backup: await state.recentlyDeleted.readAppData(entryId) });
-    return;
-  }
-
   const extensionResponseMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/extension-ui(?:\/([^/]+))?$/);
   const ampleFileAgentExtensionMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)\/extension-ui(?:\/([^/]+))?$/);
   if ((extensionResponseMatch || ampleFileAgentExtensionMatch) && (method === "GET" || method === "POST")) {
@@ -3770,11 +2884,10 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
  * turn of an existing request (a reply to a question, a follow-up turn).
  */
 interface AcceptedTurnRequestInput {
-  kind?: AmpleFileRequestKind;
+  kind?: AmpleFileRequestCreatableKind;
   surface?: AmpleFileRequestSurface;
   parentTaskId?: string;
   joinRequestId?: string;
-  app?: AmpleFileRequestAppRef;
   /** The assignment text when it differs from this turn's message (an answer continuation). */
   assignment?: string;
   /**
@@ -3815,8 +2928,6 @@ async function admitConversationTurn(
     ampleFileAgentAttachments?: AmpleFileAgentAttachmentRef[];
     /** Previous needs-you request whose audit trail this reply continues. */
     continuedFromAmpleFileAgentTaskId?: string;
-    /** An app's `assistant.request`: persisted on the message so the Chat shows who asked. */
-    appSource?: { appId: string; title: string };
     /** An automation's chat or agent step: its turn learns that no one is watching and how to report. */
     automationSource?: { automationId: string; title: string };
     /** Stable caller identity. Replays with the same input return the original acceptance. */
@@ -3947,11 +3058,6 @@ async function admitConversationTurn(
     ...(ampleFileAgentAttachments?.length
       ? { attachments: ampleFileAgentAttachments.map((ref) => ({ kind: ref.kind, target: ref.target, name: ref.name })) }
       : attachmentFields),
-    ...(input.appSource ? {
-      source: "app" as const,
-      appId: input.appSource.appId,
-      appTitle: input.appSource.title,
-    } : {}),
   };
   let answeredQuestionIds: string[] = [];
   try {
@@ -4040,7 +3146,6 @@ function requestRefusal(error: unknown): unknown {
  *   AmpleFile agent scope, renderer                    → management / popover
  *   AmpleFile agent scope, cli                         → management / cli
  *   AmpleFile agent scope, system (automation agent hop)   → automation / system
- *   Connected Folder scope, system, app dispatch             → app / system
  *   Connected Folder scope, system (automation chat hop)        → automation / system
  *   Connected Folder scope, cli                              → cli / cli
  *   Connected Folder scope, assistant (renderer Connected Folder Chat)  → Connected Folder / renderer
@@ -4077,11 +3182,11 @@ async function recordAcceptedTurnRequest(
   const owner = isAmpleFileAgent
     ? { conversationId }
     : { connectedFolderId: connectedFolder.id, ...(connectedFolder.name ? { connectedFolderName: connectedFolder.name } : {}), conversationId };
-  const kind: AmpleFileRequestKind = input.request?.kind
+  const kind: AmpleFileRequestCreatableKind = input.request?.kind
     ?? (isAmpleFileAgent
       ? (input.actorKind === "system" ? "automation" : "agent")
       : input.actorKind === "system"
-        ? (input.request?.app ? "app" : "automation")
+        ? "automation"
         : input.actorKind === "cli"
           ? "cli"
           : "connected-folder");
@@ -4111,7 +3216,6 @@ async function recordAcceptedTurnRequest(
         taskId,
         content: input.content,
         attachments,
-        ...(input.request.app ? { app: input.request.app } : {}),
       })
       : await state.requests.beginRoot({
         kind,
@@ -4120,7 +3224,6 @@ async function recordAcceptedTurnRequest(
         taskId,
         content: input.content,
         attachments,
-        ...(input.request?.app ? { app: input.request.app } : {}),
         ...(input.continuedFromAmpleFileAgentTaskId ? { continuedFromTaskId: input.continuedFromAmpleFileAgentTaskId } : {}),
       });
   // A retried acceptance whose earlier attempt could not persist its message
@@ -4349,11 +3452,11 @@ export interface AmpleFileRecentlyDeletedEntryView {
   uncovered?: AmpleFileRecentlyDeletedUncoveredPath[];
   held?: { reason: "legacy-metadata" | "unreadable"; noticedAt: string };
   /**
-   * `in-place` goes back where it came from; `save-only` can only be written
-   * out as a file (app data whose app is gone); `blocked` cannot be brought
-   * back at all right now, and `note` says why.
+   * `in-place` goes back where it came from; `blocked` cannot be brought back
+   * right now (or ever, for what older builds kept for Connected Folder
+   * apps), and `note` says why.
    */
-  restorable: "in-place" | "save-only" | "blocked";
+  restorable: "in-place" | "blocked";
   note?: string;
 }
 
@@ -4367,37 +3470,16 @@ export type AmpleFileRecentlyDeletedRestoreResult =
   | { kind: "file" | "folder"; entryId: string; connectedFolder: AmpleFileActConnectedFolderRef; path: string; renamed: boolean; safetyCheckpointId: string | null }
   | { kind: "connected-folder"; entryId: string; connectedFolder: AmpleFileActConnectedFolderRef; connectedFolderRoot: string; renamed: boolean }
   /** `workFolder` names the work-folder for that scope only; `path` is the restored Skill folder. */
-  | { kind: "skill"; entryId: string; scope: "everywhere" | "connected-folder"; connectedFolder?: AmpleFileActConnectedFolderRef; name: string; path: string }
-  | { kind: "app-storage"; entryId: string; connectedFolder: AmpleFileActConnectedFolderRef; appId: string; usage: { revision: number; usageBytes: number } }
-  | { kind: "app-release"; entryId: string; connectedFolder: AmpleFileActConnectedFolderRef; releaseDigest: string; displayVersion: string }
-  | {
-    kind: "app-studio";
-    entryId: string;
-    connectedFolder: AmpleFileActConnectedFolderRef;
-    /** The App Project's title, or null when only prepared installs aimed at the Connected Folder were kept. */
-    projectTitle: string | null;
-    previewCount: number;
-    releaseCount: number;
-    operationCount: number;
-    /** Prepared operations whose Release, target, or App Instance changed since the removal; prepare them again. */
-    droppedOperationCount: number;
-    /** The previews' own data, put back from Recently deleted with them. */
-    appDataEntryIds: string[];
-  }
-  | { kind: "saved-copy"; entryId: string; path: string };
+  | { kind: "skill"; entryId: string; scope: "everywhere" | "connected-folder"; connectedFolder?: AmpleFileActConnectedFolderRef; name: string; path: string };
 
 /**
  * Whether an entry can go back where it came from, and the plain reason when
- * it cannot. App data only goes back into the same installation at the same
- * revision — AmpleFile never adopts one app's data into another
- * (docs/app-data-recovery.md) — so everything else is "save a copy".
+ * it cannot. What older builds kept for Connected Folder apps never goes back:
+ * apps were removed (2026-11-07), so those entries only wait to expire.
  */
 async function recentlyDeletedEntryView(
-  state: LocalApiState,
   entry: AmpleFileRecentlyDeletedEntry,
   registered?: ReadonlySet<string>,
-  /** Connected Folders whose App Studio history is waiting in Recently deleted too. */
-  appStudioWaiting?: ReadonlySet<string>,
 ): Promise<AmpleFileRecentlyDeletedEntryView> {
   const base: AmpleFileRecentlyDeletedEntryView = {
     id: entry.id,
@@ -4442,61 +3524,26 @@ async function recentlyDeletedEntryView(
       ? base
       : { ...base, restorable: "blocked", note: "The Connected Folder this Skill came from is no longer registered." };
   }
-  if (entry.kind === "app-release") {
-    // A Release goes back only into the App Project it came from, and only
-    // while its version has not been prepared again in the meantime.
-    const payload = entry.payload;
-    if (payload.kind !== "app-release") return { ...base, restorable: "blocked" };
-    const studio = await state.restrictedApps.localAppStudio(entry.connectedFolderId).catch(() => null);
-    if (!studio?.project || studio.project.projectId !== payload.projectId) {
-      return { ...base, restorable: "blocked", note: "The App Project this Release came from is no longer in that Connected Folder." };
-    }
-    if (studio.releases.some((release) => release.displayVersion === payload.displayVersion && release.releaseDigest !== payload.releaseDigest)) {
-      return { ...base, restorable: "blocked", note: `Another Release ${payload.displayVersion} has been prepared since this one was deleted.` };
-    }
-    return base;
-  }
-  if (entry.kind === "app-studio") {
-    // App Studio history goes back only into its own Connected Folder, and never
-    // over a different App Project that has work of its own there.
-    const payload = entry.payload;
-    if (payload.kind !== "app-studio") return { ...base, restorable: "blocked" };
-    const present = registered ? registered.has(entry.connectedFolderId) : Boolean(await getConnectedFolder(entry.connectedFolderId).catch(() => null));
-    if (!present) return { ...base, restorable: "blocked", note: appStudioConnectedFolderMissingNote(entry) };
-    const blocker = await state.restrictedApps.connectedFolderAppStudioRestoreBlocker(entry.connectedFolderId, payload.projectId).catch(() => null);
-    return blocker ? { ...base, restorable: "blocked", note: blocker } : base;
-  }
-  if (entry.kind === "app-retained") {
-    return { ...base, restorable: "save-only", note: "Retained app data has no app to go back into." };
-  }
-  const payload = entry.payload;
-  if (payload.kind !== "app-data") return { ...base, restorable: "blocked" };
-  const app = await state.restrictedApps.findByFeatureInstallation(entry.connectedFolderId, payload.featureInstallationId).catch(() => undefined);
-  if (!app && entry.reason === "apps.connected-folder.removed" && appStudioWaiting?.has(entry.connectedFolderId)) {
-    // The app went with its Connected Folder's App Studio history; putting that
-    // back brings the app back and this data with it.
-    return { ...base, restorable: "save-only", note: "Restore this Connected Folder's App Studio history first; this app and its data come back with it." };
-  }
-  if (!app) return { ...base, restorable: "save-only", note: "That app is no longer installed." };
-  if (app.digest !== payload.appDigest || app.dataNamespaceId !== payload.dataNamespaceId) {
-    return { ...base, restorable: "save-only", note: "That app changed since this copy was kept." };
-  }
-  return base;
+  // Data, Releases, and App Studio history older builds kept for Connected
+  // Folder apps: listed until they expire, never restored.
+  return { ...base, restorable: "blocked", note: retiredAppEntryNote };
 }
+
+/** Why an entry an older build kept for a Connected Folder app cannot come back. */
+const retiredAppEntryNote = "AmpleFile no longer has Connected Folder apps, so this cannot be restored. It is deleted when it expires.";
 
 /**
  * Brings one Recently deleted entry back (docs/receipts-not-gates.md, F20).
  * A file or folder returns to its Connected Folder at its original path, renamed when
  * something else took the name, and the restore itself is History-undoable.
  * A Connected Folder's folder returns to the managed base and is re-registered with its
- * portable identity, so its Chats and History come with it. App data goes
- * back into the same installation at the same revision, or is saved as a
- * plain export file at an explicitly named path outside every Connected Folder.
+ * portable identity, so its Chats and History come with it. What older
+ * builds kept for Connected Folder apps never comes back.
  */
 async function restoreRecentlyDeletedEntry(
   state: LocalApiState,
   id: string,
-  context: { receiptId: string | null; toPath?: string },
+  context: { receiptId: string | null },
 ): Promise<AmpleFileRecentlyDeletedRestoreResult> {
   if (!ampleFileRecentlyDeletedEntryIdPattern.test(id)) {
     throw new AmpleFileCliError("usage", "That is not a Recently deleted item id.");
@@ -4505,18 +3552,10 @@ async function restoreRecentlyDeletedEntry(
     throw recentlyDeletedCliError(error);
   });
   if (!entry) throw new AmpleFileCliError("notFound", "That item is no longer in Recently deleted.");
-  if (entry.kind === "app-storage" || entry.kind === "app-retained") {
-    return restoreRecentlyDeletedAppData(state, entry, context);
-  }
-  if (context.toPath !== undefined) {
-    throw new AmpleFileCliError(
-      "usage",
-      "'--to' saves a copy of app data; files, folders, Connected Folders, Skills, Releases, and App Studio history go back where they came from.",
-    );
+  if (entry.kind === "app-storage" || entry.kind === "app-retained" || entry.kind === "app-release" || entry.kind === "app-studio") {
+    throw new AmpleFileCliError("conflict", retiredAppEntryNote);
   }
   if (entry.kind === "skill") return restoreRecentlyDeletedSkill(state, entry);
-  if (entry.kind === "app-release") return restoreRecentlyDeletedAppRelease(state, entry);
-  if (entry.kind === "app-studio") return restoreRecentlyDeletedAppStudio(state, entry);
   if (entry.kind === "connected-folder") return restoreRecentlyDeletedConnectedFolder(state, entry);
   if (isAmpleFileAgentConversationRecentlyDeletedEntry(entry)) return restoreAmpleFileAgentConversationRecentlyDeletedEntry(state, entry);
   if (isConnectedFolderConversationRecentlyDeletedEntry(entry)) return restoreConnectedFolderConversationRecentlyDeletedEntry(state, entry);
@@ -4787,221 +3826,6 @@ async function restoreRecentlyDeletedConnectedFolder(state: LocalApiState, entry
   };
 }
 
-/**
- * Puts a deleted Release back into the App Project it came from, through the
- * service's own verification: the envelope must match its content digest and
- * its record, and the record must still fit the Project (docs/receipts-not-gates.md, F20).
- */
-async function restoreRecentlyDeletedAppRelease(
-  state: LocalApiState,
-  entry: AmpleFileRecentlyDeletedEntry,
-): Promise<AmpleFileRecentlyDeletedRestoreResult> {
-  const kept = await state.recentlyDeleted.readAppRelease(entry.id).catch((error: unknown) => {
-    throw recentlyDeletedCliError(error);
-  });
-  const connectedFolder = await getConnectedFolder(entry.connectedFolderId).catch(() => null);
-  if (!connectedFolder) {
-    throw new AmpleFileCliError(
-      "conflict",
-      "The Connected Folder this Release came from is no longer registered, so there is nowhere to put it back. Register that Connected Folder again first.",
-    );
-  }
-  const release = await runRestrictedAppMutation(state, connectedFolder.id, () => state.restrictedApps.restoreLocalAppRelease({
-    connectedFolderId: connectedFolder.id,
-    record: kept.record,
-    release: kept.release,
-  }));
-  await state.recentlyDeleted.remove(entry.id).catch(() => undefined);
-  return {
-    kind: "app-release",
-    entryId: entry.id,
-    connectedFolder: toActConnectedFolderRef(connectedFolder),
-    releaseDigest: release.releaseDigest,
-    displayVersion: release.displayVersion,
-  };
-}
-
-/** The Connected Folders whose App Studio history is waiting in this listing. */
-function appStudioWaitingConnectedFolders(entries: readonly AmpleFileRecentlyDeletedEntry[]): Set<string> {
-  return new Set(entries.filter((entry) => entry.kind === "app-studio").map((entry) => entry.connectedFolderId));
-}
-
-function appStudioConnectedFolderMissingNote(entry: AmpleFileRecentlyDeletedEntry): string {
-  const name = entry.connectedFolderName ? `"${entry.connectedFolderName}"` : "the Connected Folder it came from";
-  return `Put ${name} back first — restore it here, or add its folder again with Connect Folder — then restore this.`;
-}
-
-/**
- * Puts a removed Connected Folder's App Studio history back (docs/receipts-not-gates.md,
- * F20): its App Project, Development Instance and previews, Releases,
- * prepared operations, and receipts, each re-checked by the service. It needs
- * the Connected Folder registered again and refuses plainly until it is. The
- * previews' own data, which the removal kept as separate items, goes back
- * into them in the same act; any that cannot stays in Recently deleted.
- */
-async function restoreRecentlyDeletedAppStudio(
-  state: LocalApiState,
-  entry: AmpleFileRecentlyDeletedEntry,
-): Promise<AmpleFileRecentlyDeletedRestoreResult> {
-  const connectedFolder = await getConnectedFolder(entry.connectedFolderId).catch(() => null);
-  if (!connectedFolder) throw new AmpleFileCliError("conflict", appStudioConnectedFolderMissingNote(entry));
-  const kept = await state.recentlyDeleted.readAppStudio(entry.id).catch((error: unknown) => {
-    throw recentlyDeletedCliError(error);
-  });
-  const registered = new Set((await listConnectedFolders()).map((item) => item.id));
-  const targets = kept.studio.operations
-    .map((operation) => (operation && typeof operation === "object" ? (operation as { targetConnectedFolderId?: unknown }).targetConnectedFolderId : undefined))
-    .filter((id): id is string => typeof id === "string" && registered.has(id));
-  const result = await runRestrictedAppMutations(state, [connectedFolder.id, ...targets], () => state.restrictedApps.restoreConnectedFolderAppStudio({
-    connectedFolderId: connectedFolder.id,
-    studio: kept.studio,
-    releases: kept.releases,
-    packageRoots: kept.packageRoots,
-    registeredConnectedFolderIds: registered,
-  }), { requiredConnectedFolderIds: [connectedFolder.id] });
-  const appDataEntryIds: string[] = [];
-  if (result.restored && result.previews.length) {
-    const handled = new Set<string>();
-    // Newest first, so a removal retried after an interruption brings back its latest copy.
-    for (const candidate of (await state.recentlyDeleted.list()).entries) {
-      const payload = candidate.payload;
-      if (candidate.kind !== "app-storage" || candidate.reason !== "apps.connected-folder.removed"
-        || candidate.connectedFolderId !== connectedFolder.id || payload.kind !== "app-data" || handled.has(payload.featureInstallationId)) continue;
-      const preview = result.previews.find((app) => app.featureInstallationId === payload.featureInstallationId
-        && app.digest === payload.appDigest && app.dataNamespaceId === payload.dataNamespaceId);
-      if (!preview) continue;
-      handled.add(payload.featureInstallationId);
-      try {
-        await restoreRecentlyDeletedAppData(state, candidate, {});
-        appDataEntryIds.push(candidate.id);
-      } catch {
-        // The copy stays in Recently deleted, restorable on its own.
-      }
-    }
-  }
-  await state.recentlyDeleted.remove(entry.id).catch(() => undefined);
-  publishControlHint(state, "apps");
-  return {
-    kind: "app-studio",
-    entryId: entry.id,
-    connectedFolder: toActConnectedFolderRef(connectedFolder),
-    projectTitle: result.project?.presentation.title ?? null,
-    previewCount: result.previews.length,
-    releaseCount: result.releases.length,
-    operationCount: result.operations.length,
-    droppedOperationCount: result.droppedOperationCount,
-    appDataEntryIds,
-  };
-}
-
-/**
- * Writes what removing a Connected Folder takes out of App Studio into Recently
- * deleted (docs/receipts-not-gates.md, F20), before the service removes it.
- */
-async function keepConnectedFolderAppStudioInRecentlyDeleted(
-  recentlyDeleted: AmpleFileRecentlyDeletedStore,
-  copy: LocalAppConnectedFolderRecoveryCopy,
-  context: { connectedFolderName?: string; receiptId: string | null },
-): Promise<AmpleFileRecentlyDeletedEntry> {
-  return await recentlyDeleted.moveAppStudioToRecentlyDeleted({
-    reason: "apps.connected-folder.removed",
-    identity: { kind: "app-studio", connectedFolderId: copy.connectedFolderId, projectId: copy.project?.projectId ?? null },
-    studio: {
-      project: copy.project,
-      runtimeInstances: copy.runtimeInstances,
-      previews: copy.previews,
-      operations: copy.operations,
-      adminReceipts: copy.adminReceipts,
-    },
-    releases: copy.releases,
-    packages: copy.packages,
-    connectedFolderId: copy.connectedFolderId,
-    ...(context.connectedFolderName ? recentlyDeletedConnectedFolderName(context.connectedFolderName) : {}),
-    ...recentlyDeletedDisplayName(copy.project ? copy.project.presentation.title : "Prepared App installs"),
-    receiptId: context.receiptId,
-  });
-}
-
-/** A Connected Folder name the Recently deleted manifest accepts, or none. */
-function recentlyDeletedConnectedFolderName(text: string): { connectedFolderName?: string } {
-  const printable = text.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "").trim().slice(0, 200).trim();
-  return printable ? { connectedFolderName: printable } : {};
-}
-
-async function restoreRecentlyDeletedAppData(
-  state: LocalApiState,
-  entry: AmpleFileRecentlyDeletedEntry,
-  context: { toPath?: string },
-): Promise<AmpleFileRecentlyDeletedRestoreResult> {
-  const payload = entry.payload;
-  if (payload.kind !== "app-data") throw new AmpleFileCliError("failure", "This item is not app data.");
-  const backup = await state.recentlyDeleted.readAppData(entry.id).catch((error: unknown) => {
-    throw recentlyDeletedCliError(error);
-  });
-  if (context.toPath !== undefined) {
-    const saved = await saveRecentlyDeletedAppDataCopy(backup, context.toPath);
-    await state.recentlyDeleted.remove(entry.id).catch(() => undefined);
-    return { kind: "saved-copy", entryId: entry.id, path: saved };
-  }
-  const view = await recentlyDeletedEntryView(state, entry);
-  if (view.restorable === "save-only") {
-    throw new AmpleFileCliError(
-      "conflict",
-      `${view.note ?? "This app's data has no app to go back into."} `
-        + "Save a copy from Settings → Recently deleted, or with 'recently-deleted restore --entry "
-        + `${entry.id} --to <absolute-file-path>'.`,
-    );
-  }
-  const connectedFolder = await getConnectedFolder(entry.connectedFolderId);
-  const app = await state.restrictedApps.findByFeatureInstallation(entry.connectedFolderId, payload.featureInstallationId);
-  if (!app) throw new AmpleFileCliError("conflict", "That app is no longer installed.");
-  const usage = await runRestrictedAppMutation(state, connectedFolder.id, async () => {
-    const current = await state.restrictedApps.storageUsage(connectedFolder.id, app.manifest.id, app.digest, app.featureInstallationId);
-    return state.restrictedApps.restoreStorage({
-      connectedFolderId: connectedFolder.id,
-      appId: app.manifest.id,
-      featureInstallationId: app.featureInstallationId,
-      expectedDigest: app.digest,
-      expectedRevision: current.revision,
-      backup,
-    });
-  });
-  await state.recentlyDeleted.remove(entry.id).catch(() => undefined);
-  return {
-    kind: "app-storage",
-    entryId: entry.id,
-    connectedFolder: toActConnectedFolderRef(connectedFolder),
-    appId: app.manifest.id,
-    usage: { revision: usage.revision, usageBytes: usage.usageBytes },
-  };
-}
-
-/**
- * "Save a copy": the verified export is written to an absolute path the
- * person named, deliberately outside every Connected Folder and outside AmpleFile's own
- * state, so a recovery file never becomes agent context by accident.
- */
-async function saveRecentlyDeletedAppDataCopy(backup: RestrictedAppDataBackup, toPath: string): Promise<string> {
-  const destination = resolve(toPath.trim());
-  if (!isAbsolute(toPath.trim())) throw new AmpleFileCliError("usage", "'--to' needs an absolute file path.");
-  const stateRoot = resolve(ampleFileStateRoot());
-  if (destination === stateRoot || destination.startsWith(`${stateRoot}${sep}`)) {
-    throw new AmpleFileCliError("usage", "Save the copy somewhere of your own, not inside AmpleFile's own files.");
-  }
-  for (const connectedFolder of await listConnectedFolders()) {
-    const root = resolve(connectedFolder.connectedFolderRoot);
-    if (destination === root || destination.startsWith(`${root}${sep}`)) {
-      throw new AmpleFileCliError(
-        "usage",
-        `Save the copy outside your Connected Folders; ${connectedFolder.name} would pick it up as content. Use 'files add' if you want it in a Connected Folder.`,
-      );
-    }
-  }
-  await mkdir(dirname(destination), { recursive: true });
-  await writeFile(destination, `${JSON.stringify(backup, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
-  return destination;
-}
-
 /** Store failures become the act lane's typed errors; nothing leaks a stack. */
 function recentlyDeletedCliError(error: unknown): AmpleFileCliError {
   if (!(error instanceof AmpleFileRecentlyDeletedError)) {
@@ -5021,9 +3845,8 @@ function recentlyDeletedCliError(error: unknown): AmpleFileCliError {
  * The one connected-folder-removal path, shared by the desktop DELETE route, the
  * `connected-folder.delete-folder` prepared act behind `connected-folders delete`, and the act
  * facade's `connected-folders unregister`:
- * App Studio impact checks, the durable removal intent, runtime-authorization
- * revocation, per-service app-state cleanup with the crash-safe pending
- * result, and finalization. A linked registration removal always leaves the
+ * automation suspension, the durable removal intent, runtime-authorization
+ * revocation with the crash-safe pending result, and finalization. A linked registration removal always leaves the
  * folder and its portable `.amplefile/` identity in place; a managed Connected Folder
  * deletes its folder tree unless the caller passes the preserve disposition
  * (the act lane's `connected-folders unregister`), which records an intent that provably
@@ -5105,10 +3928,7 @@ async function removeConnectedFolderRegistrationInternal(
   options: { managedFolderDisposition?: "delete" | "preserve"; receiptId?: string | null } = {},
 ): Promise<ConnectedFolderRemovalResult & {
   recentlyDeleted: { entryId: string; restoreBy: string } | null;
-  appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
-  appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
 }> {
-  const affectedConnectedFolderIds = await state.restrictedApps.connectedFolderRemovalMutationConnectedFolderIds(connectedFolder.id);
   // A preserve removal keeps the folder, so it keeps the plain state-directory
   // removal; a delete removal sends the claimed folder to Recently deleted.
   const removal = options.managedFolderDisposition === "preserve"
@@ -5120,43 +3940,20 @@ async function removeConnectedFolderRegistrationInternal(
       receiptId: options.receiptId ?? null,
       managedDeletion: connectedFolder.location.storage === "managed",
     });
-  // Removing the Connected Folder removes every preview app installed in it, and that
-  // takes each app's data with it. A copy of each reaches Recently deleted
-  // before the registry drops them (docs/receipts-not-gates.md, F20), so
-  // restoring the folder never restores a Connected Folder whose app data is gone. The
-  // entry ids ride on the result so the `connected-folders delete` receipt names them.
-  // The Connected Folder's App Studio history — its App Project, previews,
-  // Releases, prepared operations, and receipts — goes the same way, as one
-  // more item.
-  const appEntries: AmpleFileRecentlyDeletedEntry[] = [];
-  let appStudioEntry: AmpleFileRecentlyDeletedEntry | null = null;
   const withRecentlyDeleted = <T extends ConnectedFolderRemovalResult>(result: T): T & {
     recentlyDeleted: { entryId: string; restoreBy: string } | null;
-    appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
-    appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
   } => {
     const entry = removal.entry();
-    const studio = appStudioEntry as AmpleFileRecentlyDeletedEntry | null;
     return {
       ...result,
       recentlyDeleted: entry ? { entryId: entry.id, restoreBy: entry.restoreBy } : null,
-      appRecentlyDeletedEntries: appEntries.map((item) => ({ entryId: item.id, restoreBy: item.restoreBy })),
-      appStudioRecentlyDeleted: studio ? { entryId: studio.id, restoreBy: studio.restoreBy } : null,
     };
   };
-  return runRestrictedAppMutations(state, affectedConnectedFolderIds, () => runSettledConnectedFolderDeletion(state, connectedFolder.id, async () => {
+  return runConnectedFolderMutations(state, [connectedFolder.id], () => runSettledConnectedFolderDeletion(state, connectedFolder.id, async () => {
     try {
-      const impact = await state.restrictedApps.connectedFolderRemovalImpact(connectedFolder.id);
-      if (impact.activeSourceInstanceCount > 0 || impact.activeTargetInstanceCount > 0) {
-        throw badRequest("Uninstall release-backed Apps from this Connected Folder before removing it.");
-      }
-      if (impact.retainedDataCount > 0) {
-        throw badRequest("Purge this App Project's retained local data in App Studio before removing its source Connected Folder.");
-      }
       const intent = await beginConnectedFolderRemoval(connectedFolder.id, state.connectedFolderBase, removal.io, {
         ...(options.managedFolderDisposition ? { folderDisposition: options.managedFolderDisposition } : {}),
       });
-      state.restrictedApps.fenceConnectedFolderRemoval(connectedFolder.id);
       state.connectedFolderTrustAuthority.revoke(connectedFolder.connectedFolderRoot);
       state.connectedFolderIdsByRoot.delete(connectedFolderRootKey(connectedFolder.connectedFolderRoot));
       await invalidateAmpleFileClients(state, connectedFolder.id);
@@ -5175,34 +3972,22 @@ async function removeConnectedFolderRegistrationInternal(
       } catch {
         return withRecentlyDeleted(await connectedFolderRemovalPendingResult(intent));
       }
-      try {
-        for (const app of await state.restrictedApps.list(connectedFolder.id)) {
-          const entry = await moveAppStorageExportToRecentlyDeleted(state, app, "apps.connected-folder.removed", options.receiptId ?? null, { skipWhenStorageUnavailable: true });
-          if (entry) appEntries.push(entry);
-        }
-        await removeConnectedFolderAppStudioIntoRecentlyDeleted(state.restrictedApps, state.recentlyDeleted, connectedFolder.id, {
-          connectedFolderName: connectedFolder.name,
-          receiptId: options.receiptId ?? null,
-          onKept: (entry) => { appStudioEntry = entry; },
-        });
-        await state.restrictedAppProposals.removeConnectedFolder(connectedFolder.id);
-      } catch {
-        return withRecentlyDeleted(await connectedFolderRemovalPendingResult(intent));
-      }
-      try {
-        await markConnectedFolderRemovalAppStateRemoved(intent.connectedFolderId, removal.io);
-      } catch {
-        return withRecentlyDeleted(await connectedFolderRemovalPendingResult(intent));
-      }
       const result = await finalizeConnectedFolderRemoval(intent.connectedFolderId, removal.io);
       if (!result.cleanupPending) await state.appearance.removeConnectedFolder(connectedFolder.id);
-      if (!result.cleanupPending) state.restrictedApps.releaseConnectedFolderRemovalFence(connectedFolder.id);
       return withRecentlyDeleted(result);
     } finally {
       publishControlHint(state, "connected-folders");
     }
   }), { requiredConnectedFolderIds: [connectedFolder.id] });
 }
+
+/**
+ * The per–Connected Folder client that carries bounded inference (the file
+ * manager's folder suggestions). It is streamed, never prompted, so no Chat is
+ * created and no transcript exists; the name only keeps it separate from the
+ * Connected Folder's real conversations.
+ */
+const ampleFileInferenceConversationId = "amplefile.inference";
 
 /**
  * The act facade is the CLI act lane's in-process authority. Every method
@@ -5212,23 +3997,6 @@ async function removeConnectedFolderRegistrationInternal(
  * through the act lane deliberately has no renderer folder-picker grant:
  * possession of the per-launch act token is that caller's authorization.
  */
-/**
- * Act-lane marker recorded as the owning conversation of a host-created
- * install-preview review: the same digest-pinned review record the Chat
- * proposal path stores, bound to the act lane instead of a real Chat.
- */
-/** One `apps list` response stays a readable projection, not a package dump. */
-const maxActAppListings = 64;
-
-const ampleFileActInstallPreviewConversationId = "amplefile.act.install-preview";
-
-/**
- * The per–Connected Folder client that carries bounded app inference. It is streamed,
- * never prompted, so no Chat is created and no transcript exists; the name
- * only keeps it separate from the Connected Folder's real conversations.
- */
-const ampleFileAppInferenceConversationId = "amplefile.app-inference";
-
 function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
   const resolveConnectedFolder = async (selector: string): Promise<ConnectedFolderSummary> => {
     const resolved = resolveAmpleFileCliConnectedFolderSelector(await listConnectedFolders(), selector.trim() || undefined);
@@ -5285,7 +4053,6 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       }
       await recordFacadeAction(state, input.parentTaskId, { command: "chat.ask", connectedFolder, taskId });
       publishControlHint(state, "connected-folders");
-      void state.appAssistantTasks.refresh().catch((error) => console.error(errorMessage(error)));
       return {
         connectedFolder: toActConnectedFolderRef(connectedFolder),
         taskId,
@@ -5406,7 +4173,6 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
         taskId,
       });
       publishControlHint(state, "connected-folders");
-      void state.appAssistantTasks.refresh().catch((error) => console.error(errorMessage(error)));
       return {
         connectedFolder: toActConnectedFolderRef(connectedFolder),
         question: toActQuestionRef(linked),
@@ -5416,22 +4182,6 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
     });
   };
 
-  /**
-   * Resolves one installed app by its manifest id so digest-less narrowing
-   * verbs can pin the current reviewed revision for their mutation — a
-   * revision change between lookup and act then fails with the service's
-   * REVISION_CHANGED instead of acting on different bytes.
-   */
-  const requireInstalledApp = async (connectedFolder: ConnectedFolderSummary, appId: string): Promise<RestrictedAppInstalled> => {
-    const id = appId.trim();
-    if (!id) throw new AmpleFileCliError("usage", "Provide --app <id>.");
-    const matches = (await runActOperation(() => state.restrictedApps.list(connectedFolder.id)))
-      .filter((item) => item.manifest.id === id || item.featureInstallationId === id);
-    if (matches.length > 1) throw new AmpleFileCliError("usage", `More than one installation matches. Use --app with an exact installation: ${matches.map((app) => `${app.runtimeInstanceKind === "development" ? "preview" : "installed App"} ${app.featureInstallationId}`).join(", ")}.`);
-    const app = matches[0];
-    if (!app) throw new AmpleFileCliError("notFound", "No app with this id is installed in this Connected Folder.");
-    return app;
-  };
   /**
    * The one door for every verb that installs code, widens a power, or
    * destroys data (docs/receipts-not-gates.md, F19): typed parameters and
@@ -5474,8 +4224,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
    * dialog (docs/act-ledger.md, conflict rule 7). The live route state
    * covers turns and compactions; the kernel's
    * experimental fence covers active automation runs with files hops into the
-   * Connected Folder and — once its reader exists — restricted-app automation runs whose
-   * apps hold file grants into it (the ledger's item 4).
+   * Connected Folder and running background jobs there (the ledger's item 4).
    */
   const assertConnectedFolderQuietForHistoryRestore = async (connectedFolderId: string): Promise<void> => {
     const prefix = `${connectedFolderId}:`;
@@ -5658,19 +4407,6 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
           ? await readReportDataFile(input.dataPath, input.cwd ?? connectedFolder.connectedFolderRoot)
           : input.data;
         const files = await resolveReportFiles(connectedFolder, input.files);
-        // When an app asked for this work and declared a shape for the
-        // details, the report is checked against that shape here, while the
-        // turn is still running and can correct it (F29: validated when the
-        // request declared a schema). The app's own projection checks it
-        // again, so a report that got past this one can never reach the app
-        // as matching details.
-        const schema = record.kind === "app" && record.app
-          ? state.appAssistantTasks.outputSchemaForTurn({
-            connectedFolderId: record.app.connectedFolderId,
-            conversationId: record.owner.conversationId,
-            taskId,
-          })
-          : null;
         let result;
         try {
           result = await state.requests.recordResult({
@@ -5683,13 +4419,12 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
               ...(files.length ? { files } : {}),
               outcome: input.outcome,
             },
-            ...(schema ? { schema } : {}),
           });
         } catch (error) {
           const refusal = collaborationRefusal(error);
           if (refusal !== error) throw refusal;
-          // A shape the report does not fit is the agent's to correct, so
-          // it reads as a usage refusal naming the property, not a failure.
+          // A report the envelope rules refuse is the agent's to correct, so
+          // it reads as a usage refusal naming the field, not a failure.
           throw new AmpleFileCliError("usage", errorMessage(error), { cause: error });
         }
         await recordFacadeAction(state, input.parentTaskId, { command: "chat.report", connectedFolder, taskId });
@@ -6392,9 +5127,8 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const storage = connectedFolder.location.storage;
-      // Both storage kinds run the same removal orchestration — App Studio
-      // impact checks, automation suspension, durable intent, app-state
-      // cleanup. A managed Connected Folder records a
+      // Both storage kinds run the same removal orchestration — automation
+      // suspension and a durable intent. A managed Connected Folder records a
       // preserve-disposition intent that provably holds no deletion
       // authority, so the folder and its portable `.amplefile/` identity
       // remain exactly as they do for a linked registration; deleting the
@@ -6411,8 +5145,6 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
         storage,
         removed: true as const,
         cleanupPending: removal.cleanupPending,
-        appRecentlyDeletedEntries: removal.appRecentlyDeletedEntries,
-        appStudioRecentlyDeleted: removal.appStudioRecentlyDeleted,
       };
     },
     async connectedFoldersAppearanceApply(input) {
@@ -6542,365 +5274,6 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       await recordFacadeAction(state, input.parentTaskId, { command: "tools.remove" });
       return { scope: "everywhere" as const, source, removed };
     },
-    async appsList(input) {
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const apps = await runActOperation(() => state.restrictedApps.list(connectedFolder.id));
-      const listed = apps.slice(0, maxActAppListings);
-      const listing = await Promise.all(listed.map(async (app) => ({
-        appId: app.manifest.id,
-        featureInstallationId: app.featureInstallationId,
-        digest: app.digest,
-        title: app.manifest.title,
-        description: app.manifest.description ?? null,
-        version: app.version,
-        kind: app.runtimeInstanceKind === "development" ? "preview" as const : "installed" as const,
-        // The exact schemas the tool declares, so a caller can build --input
-        // without opening the package.
-        tools: app.manifest.tools.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          action: tool.action,
-          inputSchema: structuredClone(tool.inputSchema) as unknown,
-          resultSchema: structuredClone(tool.resultSchema) as unknown,
-        })),
-        assistantActions: (app.manifest.assistantActions ?? []).map((action) => ({ id: action.id, title: action.title })),
-        grants: {
-          network: [...app.networkGrants],
-          files: app.fileGrants.map((grant) => ({ declarationId: grant.declarationId, root: grant.root, access: grant.access })),
-          notifications: [...app.notificationGrants],
-          checks: (app.checkGrants ?? []).map((grant) => ({ permissionId: grant.permissionId, checkId: grant.checkId })),
-        },
-        connections: (await runActOperation(() =>
-          state.restrictedApps.connectionStatus(connectedFolder.id, app.manifest.id, app.digest, app.featureInstallationId)))
-          .map((connection) => ({ destinationId: connection.destinationId, kind: connection.kind, configured: connection.configured })),
-        automations: app.automations.map((automation) => ({
-          id: automation.id,
-          title: app.manifest.automations.find((item) => item.id === automation.id)?.title ?? automation.id,
-          enabled: automation.enabled,
-          nextRunAt: automation.nextRunAt ?? null,
-          lastRunAt: automation.lastRunAt ?? null,
-        })),
-      })));
-      return { connectedFolder: toActConnectedFolderRef(connectedFolder), apps: listing, truncated: apps.length > listed.length };
-    },
-    async appsInvoke(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const app = await requireInstalledApp(connectedFolder, input.app);
-      const toolName = input.tool.trim();
-      if (!toolName) throw new AmpleFileCliError("usage", "Provide --tool <name>.");
-      const tool = app.manifest.tools.find((item) => item.name === toolName);
-      if (!tool) {
-        throw new AmpleFileCliError("notFound", `${app.manifest.title} has no tool named ${toolName}. Run apps list --json to see its tools.`);
-      }
-      // The same service path a Chat tool call takes: the revision resolved
-      // above is pinned, and the runtime validates input and result against
-      // the tool's own declared schemas.
-      const result = await runActOperation(() => state.restrictedApps.invoke({
-        connectedFolderId: connectedFolder.id,
-        appId: app.manifest.id,
-        featureInstallationId: app.featureInstallationId,
-        expectedDigest: app.digest,
-        action: tool.action,
-        input: input.input,
-      }));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.invoke", connectedFolder, apps: [ampleFileAgentAppResultRef(app)] });
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        appId: app.manifest.id,
-        featureInstallationId: app.featureInstallationId,
-        digest: app.digest,
-        tool: tool.name,
-        action: tool.action,
-        result,
-      };
-    },
-    async appsProposalsList(input) {
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      // The desktop proposal route's own scope rule: proposals are bound to
-      // one Chat, and the Chat must exist in this Connected Folder.
-      if (!(await runActOperation(() => readConversation(connectedFolder.connectedFolderRoot, input.conversationId))).length) {
-        throw new AmpleFileCliError("notFound", "Conversation not found.");
-      }
-      const proposals = await runActOperation(() =>
-        state.restrictedAppProposals.list({ connectedFolderId: connectedFolder.id, conversationId: input.conversationId }));
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        conversationId: input.conversationId,
-        proposals: proposals.map(toActAppProposalRef),
-      };
-    },
-    async appsProposalsDismiss(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const proposal = await runActOperation(() => state.restrictedAppProposals.get(input.proposal));
-      if (!proposal || proposal.connectedFolderId !== connectedFolder.id || proposal.conversationId !== input.conversationId) {
-        throw new AmpleFileCliError("notFound", "App proposal not found.");
-      }
-      const dismissed = await runActOperation(() => state.restrictedAppProposals.dismiss(proposal.id));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.proposals.dismiss", connectedFolder, conversationId: input.conversationId });
-      return { connectedFolder: toActConnectedFolderRef(connectedFolder), proposalId: proposal.id, dismissed };
-    },
-    async appsRemove(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const app = await requireInstalledApp(connectedFolder, input.app);
-      // The exact desktop DELETE route, with the resolved digest pinned; the
-      // service refuses release-backed Instances toward `apps uninstall` and
-      // stops the running app host before the registration goes. A copy of the
-      // app's data reaches Recently deleted first (F20), the same order the
-      // clear and uninstall-with-purge paths use.
-      const outcome = await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, async () => {
-        const entry = await moveAppStorageExportToRecentlyDeleted(state, app, "apps.remove", input.requestId ?? null, { skipWhenStorageUnavailable: true });
-        const removed = await state.restrictedApps.remove({
-          connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, expectedDigest: app.digest,
-        });
-        return { removed, entry };
-      }));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.remove", connectedFolder });
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        appId: app.manifest.id,
-        digest: app.digest,
-        removed: outcome.removed,
-        recentlyDeleted: outcome.entry ? { entryId: outcome.entry.id, restoreBy: outcome.entry.restoreBy } : null,
-      };
-    },
-    async appsRevoke(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const digest = input.digest.trim();
-      if (!digest) throw new AmpleFileCliError("usage", "Provide --digest <sha256>.");
-      const declaration = input.declaration.trim();
-      if (!declaration) throw new AmpleFileCliError("usage", "Provide --declaration <id>.");
-      const app = await requireInstalledApp(connectedFolder, input.app);
-      // Grants bind to the exact reviewed digest, so revocation names it too.
-      const granted = input.kind === "network"
-        ? app.networkGrants.includes(declaration)
-        : input.kind === "files"
-          ? app.fileGrants.some((grant) => grant.declarationId === declaration)
-          : app.notificationGrants.includes(declaration);
-      await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, () => input.kind === "network"
-        ? state.restrictedApps.revokeNetwork({ connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, destinationId: declaration, expectedDigest: digest })
-        : input.kind === "files"
-          ? state.restrictedApps.revokeFiles({ connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, permissionId: declaration, expectedDigest: digest })
-          : state.restrictedApps.revokeNotifications({ connectedFolderId: connectedFolder.id, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, permissionId: declaration, expectedDigest: digest })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.revoke", connectedFolder });
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        appId: app.manifest.id,
-        grantKind: input.kind,
-        declaration,
-        revoked: granted,
-      };
-    },
-    async appsDisconnect(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const destination = input.destination.trim();
-      if (!destination) throw new AmpleFileCliError("usage", "Provide --destination <id>.");
-      const app = await requireInstalledApp(connectedFolder, input.app);
-      const disconnected = await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, () =>
-        state.restrictedApps.deleteConnection({
-          connectedFolderId: connectedFolder.id,
-          appId: app.manifest.id,
-          destinationId: destination,
-          featureInstallationId: app.featureInstallationId,
-          expectedDigest: app.digest,
-        })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.disconnect", connectedFolder });
-      return { connectedFolder: toActConnectedFolderRef(connectedFolder), appId: app.manifest.id, destination, disconnected };
-    },
-    async appsAutomationDisable(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const appAutomationId = input.automation.trim();
-      if (!appAutomationId) throw new AmpleFileCliError("usage", "Provide --automation <id>.");
-      const app = await requireInstalledApp(connectedFolder, input.app);
-      const wasEnabled = app.automations.some((automation) => automation.id === appAutomationId && automation.enabled);
-      await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, () =>
-        state.restrictedApps.setAppAutomationEnabled({
-          connectedFolderId: connectedFolder.id,
-          appId: app.manifest.id,
-          appAutomationId,
-          featureInstallationId: app.featureInstallationId,
-          expectedDigest: app.digest,
-          enabled: false,
-        })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.automation.disable", connectedFolder });
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        appId: app.manifest.id,
-        appAutomationId,
-        disabled: true as const,
-        wasEnabled,
-      };
-    },
-    async appsAutomationRun(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const appAutomationId = input.automation.trim();
-      if (!appAutomationId) throw new AmpleFileCliError("usage", "Provide --automation <id>.");
-      const app = await requireInstalledApp(connectedFolder, input.app);
-      const result = await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, () =>
-        state.restrictedApps.runAppAutomationNow({
-          connectedFolderId: connectedFolder.id,
-          appId: app.manifest.id,
-          appAutomationId,
-          featureInstallationId: app.featureInstallationId,
-          expectedDigest: app.digest,
-        })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.automation.run", connectedFolder });
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        appId: app.manifest.id,
-        appAutomationId,
-        run: toActAppAutomationRunRef(result.run),
-      };
-    },
-    async appsProjectDeclare(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const presentation = await readAppPresentationFile(input.presentationPath, input.cwd);
-      return runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, async () => {
-        const prior = (await state.restrictedApps.localAppStudio(connectedFolder.id)).project?.presentation ?? null;
-        const project = await state.restrictedApps.declareLocalAppProject({ connectedFolderId: connectedFolder.id, presentation });
-        await recordFacadeAction(state, input.parentTaskId, { command: "apps.project.declare", connectedFolder });
-        return {
-          connectedFolder: toActConnectedFolderRef(connectedFolder),
-          project: { projectId: project.projectId, presentation: toActAppPresentation(project.presentation) },
-          priorPresentation: prior ? toActAppPresentation(prior) : null,
-          priorPresentationRef: prior ? shortContentRef(prior) : null,
-        };
-      }));
-    },
-    async appsReleasePrepare(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const release = await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, () =>
-        state.restrictedApps.prepareLocalAppRelease({ connectedFolderId: connectedFolder.id, displayVersion: input.version })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.release.prepare", connectedFolder });
-      return { connectedFolder: toActConnectedFolderRef(connectedFolder), release: toActAppReleaseRef(release) };
-    },
-    async appsReleasePublish(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const release = await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, () =>
-        state.restrictedApps.publishLocalAppRelease({ connectedFolderId: connectedFolder.id, releaseDigest: input.release })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.release.publish", connectedFolder });
-      return { connectedFolder: toActConnectedFolderRef(connectedFolder), release: toActAppReleaseRef(release) };
-    },
-    async appsReleaseDelete(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const deletion = await runActOperation(() => deleteLocalAppReleaseIntoRecentlyDeleted(state, connectedFolder, input.release, input.requestId ?? null));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.release.delete", connectedFolder });
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        releaseDigest: input.release,
-        deleted: deletion.deleted,
-        cleanupPending: deletion.cleanupPending,
-        recentlyDeleted: deletion.recentlyDeleted,
-      };
-    },
-    async appsInstallPrepare(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const target = await resolveConnectedFolder(input.targetConnectedFolder);
-      const operation = await runActOperation(() => runRestrictedAppMutations(state, [connectedFolder.id, target.id], () =>
-        state.restrictedApps.prepareLocalAppInstall({
-          sourceConnectedFolderId: connectedFolder.id,
-          targetConnectedFolderId: target.id,
-          releaseDigest: input.release,
-        })));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.install.prepare", connectedFolder });
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        targetConnectedFolder: toActConnectedFolderRef(target),
-        operation: toActAppOperationRef(operation),
-      };
-    },
-    async appsUpdatePrepare(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      return runActOperation(async () => {
-        const studio = await state.restrictedApps.localAppStudio(connectedFolder.id);
-        const instance = studio.instances.find((item) => item.runtimeInstanceId === input.instance);
-        if (!instance) throw new AmpleFileCliError("notFound", "Local App Instance not found.");
-        const target = await getConnectedFolder(instance.connectedFolderId);
-        const operation = await runRestrictedAppMutations(state, [connectedFolder.id, target.id], () =>
-          state.restrictedApps.prepareLocalAppUpdate({
-            sourceConnectedFolderId: connectedFolder.id,
-            runtimeInstanceId: instance.runtimeInstanceId,
-            releaseDigest: input.release,
-          }));
-        await recordFacadeAction(state, input.parentTaskId, { command: "apps.update.prepare", connectedFolder });
-        return {
-          connectedFolder: toActConnectedFolderRef(connectedFolder),
-          targetConnectedFolder: toActConnectedFolderRef(target),
-          operation: toActAppOperationRef(operation),
-        };
-      });
-    },
-    async appsOperationActivate(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      return runActOperation(async () => {
-        const studio = await state.restrictedApps.localAppStudio(connectedFolder.id);
-        const operation = studio.operations.find((item) => item.operationId === input.operation);
-        if (!operation) throw new AmpleFileCliError("notFound", "Prepared App operation not found.");
-        const target = await getConnectedFolder(operation.targetConnectedFolderId);
-        const result = await runRestrictedAppMutations(state, [connectedFolder.id, target.id], () => operation.kind === "install"
-          ? state.restrictedApps.activateLocalAppInstall(operation.operationId)
-          : state.restrictedApps.activateLocalAppUpdate(operation.operationId));
-        await recordFacadeAction(state, input.parentTaskId, { command: "apps.operation.activate", connectedFolder,
-          apps: result.apps.map((app) => ({ ...ampleFileAgentAppResultRef(app), ...(app.connectedFolderId === target.id ? { connectedFolderName: target.name } : {}) })) });
-        return {
-          connectedFolder: toActConnectedFolderRef(connectedFolder),
-          operationId: operation.operationId,
-          operationKind: operation.kind,
-          instance: toActAppInstanceRef(result.instance),
-        };
-      });
-    },
-    async appsOperationCancel(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const cancelled = await runActOperation(() => runRestrictedAppMutation(state, connectedFolder.id, async () => {
-        const studio = await state.restrictedApps.localAppStudio(connectedFolder.id);
-        if (!studio.operations.some((operation) => operation.operationId === input.operation)) {
-          throw new AmpleFileCliError("notFound", "Prepared App operation not found.");
-        }
-        return state.restrictedApps.cancelLocalAppOperation(input.operation);
-      }));
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.operation.cancel", connectedFolder });
-      return { connectedFolder: toActConnectedFolderRef(connectedFolder), operationId: input.operation, cancelled };
-    },
-    async appsUninstall(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      return runActOperation(async () => {
-        const installed = (await state.restrictedApps.list(connectedFolder.id)).find((app) => (
-          app.runtimeInstanceKind === "app" && app.runtimeInstanceId === input.instance
-        ));
-        if (!installed) throw new AmpleFileCliError("notFound", "Local App Instance not found.");
-        const result = await runRestrictedAppMutations(state, [installed.sourceConnectedFolderId, connectedFolder.id], () =>
-          state.restrictedApps.uninstallLocalApp({
-            runtimeInstanceId: input.instance,
-            // The purge disposition is `appsUninstallPurge` on the prepared-act
-            // path; this facade method is deliberately retain-only.
-            dataDisposition: "retain",
-          }), { requiredConnectedFolderIds: [connectedFolder.id] });
-        await recordFacadeAction(state, input.parentTaskId, { command: "apps.uninstall", connectedFolder });
-        return {
-          connectedFolder: toActConnectedFolderRef(connectedFolder),
-          runtimeInstanceId: input.instance,
-          removed: result.removed,
-          retainedNamespaceIds: result.retainedData.map((item) => item.dataNamespaceId),
-          cleanupPending: result.cleanupPending,
-        };
-      });
-    },
     async connectedFoldersDelete(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
@@ -6910,20 +5283,8 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
           "Only a managed Connected Folder's folder can be deleted. Removing a linked registration is 'connected-folders unregister'; the folder is yours either way.",
         );
       }
-      // The same read-only impact checks the removal orchestration runs
-      // (docs/act-ledger.md, conflict rule 4): the verb refuses what the
-      // desktop removal would refuse.
-      const impact = await runActOperation(() => state.restrictedApps.connectedFolderRemovalImpact(connectedFolder.id));
-      if (impact.activeSourceInstanceCount > 0 || impact.activeTargetInstanceCount > 0) {
-        throw new AmpleFileCliError("conflict", "Uninstall release-backed Apps from this Connected Folder before deleting it.");
-      }
-      if (impact.retainedDataCount > 0) {
-        throw new AmpleFileCliError("conflict", "Purge this App Project's retained local data in App Studio before deleting its source Connected Folder.");
-      }
       const context: PreparedActOutcome<ConnectedFolderRemovalResult & {
         recentlyDeleted: { entryId: string; restoreBy: string } | null;
-        appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
-        appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
       }> = {};
       await runPreparedAct({
         kind: "connected-folder.delete-folder",
@@ -6939,8 +5300,6 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
         removed: true as const,
         cleanupPending: context.outcome?.cleanupPending ?? false,
         recentlyDeleted: context.outcome?.recentlyDeleted ?? null,
-        appRecentlyDeletedEntries: context.outcome?.appRecentlyDeletedEntries ?? [],
-        appStudioRecentlyDeleted: context.outcome?.appStudioRecentlyDeleted ?? null,
       };
     },
     async toolsImportSkill(input) {
@@ -7146,331 +5505,6 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
         updated: true as const,
       };
     },
-    async appsInstallProposal(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const proposal = await runActOperation(() => state.restrictedAppProposals.get(input.proposal));
-      if (!proposal || proposal.connectedFolderId !== connectedFolder.id || proposal.conversationId !== input.conversationId) {
-        throw new AmpleFileCliError("notFound", "App proposal not found.");
-      }
-      if (proposal.status !== "pending" && proposal.status !== "failed") {
-        throw new AmpleFileCliError(
-          "conflict",
-          proposal.status === "revision-changed"
-            ? "The package changed after review; review the new revision before installing it."
-            : `This app proposal is ${proposal.status}; only a pending or failed one can be installed.`,
-        );
-      }
-      const context: PreparedActOutcome<RestrictedAppInstalled> = {};
-      await runPreparedAct({
-        kind: "app.review.install",
-        parameters: { connectedFolderId: connectedFolder.id, proposalId: proposal.id },
-        pins: { proposalId: proposal.id, reviewDigest: proposal.review.digest },
-        requestId: input.requestId,
-        context,
-      });
-      if (!context.outcome) throw new AmpleFileCliError("failure", "The app review did not report an installed app.");
-      const app = ampleFileAgentAppResultRef(context.outcome);
-      const settled = await runActOperation(() => state.restrictedAppProposals.get(proposal.id));
-      const outcome = ampleFileAgentInstallOutcome(context.outcome, settled?.needs);
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.install-proposal", connectedFolder, apps: [app] });
-      return { connectedFolder: toActConnectedFolderRef(connectedFolder), proposalId: proposal.id, digest: proposal.review.digest, app, ...outcome };
-    },
-    async appsInstallPreview(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const packagePath = input.packagePath.trim();
-      if (!packagePath) throw new AmpleFileCliError("usage", "Provide --package <connected-folder-path>.");
-      // `propose` installs in the same call, so what the package replaces is
-      // read before it runs: the Local preview of each app id, by revision.
-      const previewsBefore = new Map((await runActOperation(() => state.restrictedApps.list(connectedFolder.id)))
-        .filter((app) => app.runtimeInstanceKind === "development")
-        .map((app) => [app.manifest.id, app.digest]));
-      // The host inspects the package and owns every review field and the
-      // digest — the same review record the Chat proposal path creates, under
-      // an act-lane marker instead of a conversation — and installs it at
-      // once through the same digest-checked path as a Chat proposal.
-      const proposal = await runActOperation(async () => {
-        const result = await state.restrictedAppProposals.propose({
-          connectedFolderId: connectedFolder.id,
-          connectedFolderRoot: connectedFolder.connectedFolderRoot,
-          conversationId: ampleFileActInstallPreviewConversationId,
-          sourcePath: packagePath,
-        });
-        if (!result.proposal || result.status === "cancelled") {
-          throw new AmpleFileCliError("failure", "The package review could not be recorded.");
-        }
-        if (result.status === "failed") {
-          throw new AmpleFileCliError("failure", result.proposal.error ?? "The package could not be added.");
-        }
-        return result.proposal;
-      });
-      // Re-adding the revision already installed changes nothing, so only a
-      // different revision of the same app id is a replacement.
-      const previousDigest = previewsBefore.get(proposal.review.manifest.id);
-      const replacesInstalled = previousDigest !== undefined && previousDigest !== proposal.review.digest;
-      const context: PreparedActOutcome<RestrictedAppInstalled> = {};
-      await runPreparedAct({
-        kind: "app.review.install",
-        parameters: { connectedFolderId: connectedFolder.id, proposalId: proposal.id },
-        pins: { proposalId: proposal.id, reviewDigest: proposal.review.digest },
-        requestId: input.requestId,
-        context,
-      });
-      if (!context.outcome) throw new AmpleFileCliError("failure", "The package review did not report an installed app.");
-      const app = ampleFileAgentAppResultRef(context.outcome);
-      const settled = await runActOperation(() => state.restrictedAppProposals.get(proposal.id));
-      const outcome = ampleFileAgentInstallOutcome(context.outcome, settled?.needs);
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.install-preview", connectedFolder, apps: [app] });
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        proposalId: proposal.id,
-        digest: proposal.review.digest,
-        title: proposal.review.manifest.title,
-        packageName: proposal.review.packageName,
-        version: proposal.review.version,
-        replacesInstalled,
-        app,
-        ...outcome,
-      };
-    },
-    async appsGrant(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const app = await requireInstalledApp(connectedFolder, input.app);
-      if (input.digest.trim() !== app.digest) {
-        throw new AmpleFileCliError(
-          "conflict",
-          "Grants bind to the exact reviewed digest, and the installed app's digest is different. Read the current revision's review first.",
-        );
-      }
-      const declaration = input.declaration.trim();
-      const filePermission = input.kind === "files"
-        ? app.manifest.permissions.files.find((item) => item.id === declaration)
-        : undefined;
-      const declared = input.kind === "network"
-        ? app.manifest.permissions.network.some((item) => item.id === declaration)
-        : input.kind === "files"
-          ? Boolean(filePermission)
-          : app.manifest.permissions.notifications.some((item) => item.id === declaration);
-      if (!declared) throw new AmpleFileCliError("notFound", "The app does not declare this permission.");
-      // A folder permission binds to the whole Connected Folder (docs/receipts-not-gates.md,
-      // F21) and takes no file. A permission that names a single file binds to
-      // the exact Connected Folder–relative file named here; without one there is nothing
-      // to hand the broker but a Connected Folder root it would reject.
-      const requestedPath = input.path?.trim();
-      if (requestedPath !== undefined && requestedPath !== "" && (input.kind !== "files" || filePermission?.target === "directory")) {
-        throw new AmpleFileCliError(
-          "usage",
-          "Only a permission that names a single file takes a file; a folder permission covers the whole Connected Folder.",
-        );
-      }
-      if (filePermission && filePermission.target !== "directory" && !requestedPath) {
-        throw new AmpleFileCliError(
-          "usage",
-          `This permission needs one file. Name it with --path <connected-folder-path>, or pick it for “${declaration}” in Settings → Apps, under Connected Folder files.`,
-        );
-      }
-      const kind = input.kind === "network"
-        ? "app.grant.network" as const
-        : input.kind === "files"
-          ? "app.grant.files" as const
-          : "app.grant.notifications" as const;
-      const root = input.kind !== "files"
-        ? undefined
-        : requestedPath
-          ? await grantedConnectedFolderFile(connectedFolder.connectedFolderRoot, requestedPath)
-          : ".";
-      await runPreparedAct({
-        kind,
-        parameters: { connectedFolderId: connectedFolder.id, appInstanceId: app.featureInstallationId, declarationId: declaration },
-        pins: {
-          appInstanceId: app.featureInstallationId,
-          declarationId: declaration,
-          releaseDigest: app.releaseDigest ?? app.digest,
-        },
-        requestId: input.requestId,
-        ...(root !== undefined ? { context: { root } } : {}),
-      });
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.grant", connectedFolder });
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        appId: app.manifest.id,
-        grantKind: input.kind,
-        declaration,
-        granted: true as const,
-        ...(root !== undefined ? { root } : {}),
-      };
-    },
-    async appsConnect(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const app = await requireInstalledApp(connectedFolder, input.app);
-      const destination = app.manifest.permissions.network.find((item) => item.id === input.destination.trim());
-      if (!destination) throw new AmpleFileCliError("notFound", "The app does not declare this connection destination.");
-      const target = destination.target.kind === "public-https"
-        ? String(destination.target.origin)
-        : `http://${String(destination.target.host)}:${String(destination.target.port)}`;
-      // The act names the connection's shape only — app, destination, target,
-      // adapter — never a secret. Only the browser sign-in flow can run
-      // without a person typing a credential.
-      const adapterKind = destination.auth.some((item) => item.kind === "oauth2-pkce")
-        ? "oauth2-pkce"
-        : destination.auth[0]?.kind;
-      if (!adapterKind) throw new AmpleFileCliError("conflict", "This destination declares no credential adapter to connect with.");
-      if (adapterKind !== "oauth2-pkce") {
-        throw new AmpleFileCliError(
-          "permissionDenied",
-          "This destination takes a secret typed on the desktop. Connect it from Settings → Apps.",
-        );
-      }
-      const context: PreparedActOutcome<RestrictedAppConnectionStatus> = {};
-      await runPreparedAct({
-        kind: "app.connection.save",
-        parameters: { connectedFolderId: connectedFolder.id, appInstanceId: app.featureInstallationId, destinationId: destination.id },
-        pins: {
-          appInstanceId: app.featureInstallationId,
-          declarationId: destination.id,
-          target,
-          adapterKind,
-        },
-        requestId: input.requestId,
-        context,
-      });
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.connect", connectedFolder });
-      const connection = context.outcome;
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        appId: app.manifest.id,
-        destination: destination.id,
-        target,
-        adapterKind,
-        connection: {
-          destinationId: connection?.destinationId ?? destination.id,
-          kind: connection?.kind ?? adapterKind,
-          configured: connection?.configured ?? true,
-        },
-      };
-    },
-    async appsAutomationEnable(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const app = await requireInstalledApp(connectedFolder, input.app);
-      const appAutomationId = input.automation.trim();
-      const declaration = app.manifest.automations.find((item) => item.id === appAutomationId);
-      if (!declaration) throw new AmpleFileCliError("notFound", "The app does not declare this automation.");
-      if (app.automations.some((automation) => automation.id === appAutomationId && automation.enabled)) {
-        throw new AmpleFileCliError("conflict", "This automation is already enabled.");
-      }
-      const scheduleSummary = restrictedAppAutomationScheduleSummary(declaration);
-      await runPreparedAct({
-        kind: "app.automation.enable",
-        parameters: { connectedFolderId: connectedFolder.id, appInstanceId: app.featureInstallationId, appAutomationId },
-        pins: {
-          appInstanceId: app.featureInstallationId,
-          appAutomationId,
-          reviewedDigest: app.digest,
-          scheduleSummary,
-        },
-        requestId: input.requestId,
-      });
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.automation.enable", connectedFolder });
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        appId: app.manifest.id,
-        appAutomationId,
-        scheduleSummary,
-        enabled: true as const,
-      };
-    },
-    async appsStorageClear(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const app = await requireInstalledApp(connectedFolder, input.app);
-      // The receipt states the byte count being cleared; without an
-      // observable count the act refuses instead of clearing blind, and a
-      // count that changes before the effect is a conflict.
-      const usage = await runActOperation(() => state.restrictedApps.storageUsage(connectedFolder.id, app.manifest.id, app.digest, app.featureInstallationId));
-      const context: PreparedActOutcome<{ remainingBytes: number; recentlyDeleted: RecentlyDeletedRef | null }> = {};
-      await runPreparedAct({
-        kind: "app.storage.clear",
-        parameters: { connectedFolderId: connectedFolder.id, appInstanceId: app.featureInstallationId },
-        pins: {
-          appInstanceId: app.featureInstallationId,
-          dataNamespaceIds: [app.dataNamespaceId],
-          observedBytes: usage.usageBytes,
-        },
-        requestId: input.requestId,
-        context,
-      });
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.storage.clear", connectedFolder });
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        appId: app.manifest.id,
-        clearedBytes: usage.usageBytes,
-        remainingBytes: context.outcome?.remainingBytes ?? 0,
-        recentlyDeleted: context.outcome?.recentlyDeleted ?? null,
-      };
-    },
-    async appsRetainedPurge(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const studio = await runActOperation(() => state.restrictedApps.localAppStudio(connectedFolder.id));
-      const retained = studio.retainedData.find((item) => item.retainedDataId === input.retained.trim());
-      if (!retained) throw new AmpleFileCliError("notFound", "Retained App data record not found in this Connected Folder's App Studio.");
-      const context: PreparedActOutcome<{ cleanupPending: boolean; recentlyDeleted: RecentlyDeletedRef[] }> = {};
-      await runPreparedAct({
-        kind: "app.data.purge",
-        parameters: { connectedFolderId: connectedFolder.id, appInstanceId: retained.featureInstallationId, purgeTarget: "retained" },
-        pins: {
-          appInstanceId: retained.featureInstallationId,
-          dataNamespaceIds: [retained.dataNamespaceId],
-          retainedDataId: retained.retainedDataId,
-          sourceConnectedFolderId: connectedFolder.id,
-        },
-        requestId: input.requestId,
-        context,
-      });
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.retained.purge", connectedFolder });
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        retainedDataId: retained.retainedDataId,
-        dataNamespaceIds: [retained.dataNamespaceId],
-        purged: true as const,
-        cleanupPending: context.outcome?.cleanupPending ?? false,
-        recentlyDeleted: context.outcome?.recentlyDeleted ?? [],
-      };
-    },
-    async appsUninstallPurge(input) {
-      assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
-      const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
-      const installed = (await runActOperation(() => state.restrictedApps.list(connectedFolder.id))).find((app) => (
-        app.runtimeInstanceKind === "app" && app.runtimeInstanceId === input.instance
-      ));
-      if (!installed) throw new AmpleFileCliError("notFound", "Local App Instance not found.");
-      const context: PreparedActOutcome<{ cleanupPending: boolean; recentlyDeleted: RecentlyDeletedRef[] }> = {};
-      await runPreparedAct({
-        kind: "app.data.purge",
-        parameters: { connectedFolderId: connectedFolder.id, appInstanceId: installed.featureInstallationId, purgeTarget: "runtime-instance" },
-        pins: {
-          appInstanceId: installed.featureInstallationId,
-          dataNamespaceIds: [installed.dataNamespaceId],
-          runtimeInstanceId: installed.runtimeInstanceId,
-          sourceConnectedFolderId: installed.sourceConnectedFolderId,
-        },
-        requestId: input.requestId,
-        context,
-      });
-      await recordFacadeAction(state, input.parentTaskId, { command: "apps.uninstall", connectedFolder });
-      return {
-        connectedFolder: toActConnectedFolderRef(connectedFolder),
-        runtimeInstanceId: installed.runtimeInstanceId,
-        purgedNamespaceIds: [installed.dataNamespaceId],
-        removed: true as const,
-        cleanupPending: context.outcome?.cleanupPending ?? false,
-        recentlyDeleted: context.outcome?.recentlyDeleted ?? [],
-      };
-    },
     async automationsEnable(input) {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const { declaration, digest } = await readAutomationStagingFile(input.proposalPath, input.cwd);
@@ -7485,9 +5519,8 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
     async recentlyDeletedList() {
       const listing = await runActOperation(() => state.recentlyDeleted.list());
       const registered = new Set((await listConnectedFolders()).map((connectedFolder) => connectedFolder.id));
-      const appStudioWaiting = appStudioWaitingConnectedFolders(listing.entries);
       const entries: AmpleFileActRecentlyDeletedEntry[] = [];
-      for (const entry of listing.entries) entries.push(await recentlyDeletedEntryView(state, entry, registered, appStudioWaiting));
+      for (const entry of listing.entries) entries.push(await recentlyDeletedEntryView(entry, registered));
       return { entries, retentionDays: listing.retentionDays, damagedCount: listing.damaged.length };
     },
     async recentlyDeletedRestore(input) {
@@ -7499,7 +5532,6 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       const before = await runActOperation(() => state.recentlyDeleted.get(entryId).catch(() => null));
       const restored = await runActOperation(() => restoreRecentlyDeletedEntry(state, entryId, {
         receiptId: input.requestId ?? null,
-        ...(input.toPath === undefined ? {} : { toPath: input.toPath }),
       }));
       const connectedFolder = "connectedFolder" in restored && restored.connectedFolder ? await getConnectedFolder(restored.connectedFolder.id).catch(() => null) : null;
       await recordFacadeAction(state, input.parentTaskId, {
@@ -7508,42 +5540,25 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       });
       // The entry id is the request's own input; the result reports what came
       // back, with the entry it came from alongside.
-      const effect = restored.kind === "saved-copy"
-        ? { kind: restored.kind, path: restored.path }
-        : restored.kind === "connected-folder"
-          ? { kind: restored.kind, connectedFolder: restored.connectedFolder, connectedFolderRoot: restored.connectedFolderRoot, renamed: restored.renamed }
-          : restored.kind === "skill"
-            ? {
-              kind: restored.kind,
-              scope: restored.scope,
-              ...(restored.connectedFolder ? { connectedFolder: restored.connectedFolder } : {}),
-              name: restored.name,
-              path: restored.path,
-            }
-          : restored.kind === "app-storage"
-            ? { kind: restored.kind, connectedFolder: restored.connectedFolder, appId: restored.appId, usage: restored.usage }
-            : restored.kind === "app-release"
-              ? { kind: restored.kind, connectedFolder: restored.connectedFolder, releaseDigest: restored.releaseDigest, displayVersion: restored.displayVersion }
-              : restored.kind === "app-studio"
-                ? {
-                  kind: restored.kind,
-                  connectedFolder: restored.connectedFolder,
-                  projectTitle: restored.projectTitle,
-                  previewCount: restored.previewCount,
-                  releaseCount: restored.releaseCount,
-                  operationCount: restored.operationCount,
-                  droppedOperationCount: restored.droppedOperationCount,
-                  appDataEntryIds: restored.appDataEntryIds,
-                }
-                : {
-              kind: restored.kind,
-              connectedFolder: restored.connectedFolder,
-              path: restored.path,
-              renamed: restored.renamed,
-              safetyCheckpointId: restored.safetyCheckpointId,
-            };
+      const effect = restored.kind === "connected-folder"
+        ? { kind: restored.kind, connectedFolder: restored.connectedFolder, connectedFolderRoot: restored.connectedFolderRoot, renamed: restored.renamed }
+        : restored.kind === "skill"
+          ? {
+            kind: restored.kind,
+            scope: restored.scope,
+            ...(restored.connectedFolder ? { connectedFolder: restored.connectedFolder } : {}),
+            name: restored.name,
+            path: restored.path,
+          }
+          : {
+            kind: restored.kind,
+            connectedFolder: restored.connectedFolder,
+            path: restored.path,
+            renamed: restored.renamed,
+            safetyCheckpointId: restored.safetyCheckpointId,
+          };
       return {
-        entry: before ? await recentlyDeletedEntryView(state, before) : null,
+        entry: before ? await recentlyDeletedEntryView(before) : null,
         restored: effect,
       };
     },
@@ -8186,7 +6201,6 @@ async function recordFacadeAction(
     checkpointId?: string | null;
     taskId?: string;
     copied?: string[];
-    apps?: AmpleFileRequestAction["apps"];
   },
 ): Promise<void> {
   if (!parentTaskId) return;
@@ -8198,42 +6212,7 @@ async function recordFacadeAction(
     ...(input.checkpointId !== undefined ? { checkpointId: input.checkpointId } : {}),
     ...(input.taskId ? { taskId: input.taskId } : {}),
     ...(input.copied ? { copied: input.copied } : {}),
-    // Each app result names its own Connected Folder so a result link can label
-    // it; an installation in the act's Connected Folder takes that name.
-    ...(input.apps ? { apps: input.apps.slice(0, 64).map((app) => app.connectedFolderName === undefined && input.connectedFolder && app.connectedFolderId === input.connectedFolder.id
-      ? { ...app, connectedFolderName: input.connectedFolder.name }
-      : app) } : {}),
   });
-}
-
-/**
- * "On now" and "Still needs you" for an act-lane install, the same two halves
- * the Chat path reports (`restrictedAppProposalResultText` in
- * src/local/agent/pi-client.ts). F21 puts the AmpleFile agent on the same footing as a
- * Connected Folder Chat, so an install that reports only "Installed" leaves the AmpleFile agent
- * unable to tell the person what is missing.
- */
-function ampleFileAgentInstallOutcome(
-  app: RestrictedAppInstalled,
-  needs: RestrictedAppInstallationNeeds | undefined,
-): {
-  granted: { destinations: number; wholeConnectedFolderFolders: number; notifications: number; checks: number; automations: number };
-  needs: RestrictedAppInstallationNeeds;
-} {
-  return {
-    granted: {
-      destinations: app.networkGrants.length,
-      wholeConnectedFolderFolders: app.fileGrants.filter((grant) => grant.root === ".").length,
-      notifications: app.notificationGrants.length,
-      checks: app.checkGrants?.length ?? 0,
-      automations: app.automations.filter((automation) => automation.enabled).length,
-    },
-    needs: needs ?? { connections: [], files: [], checks: [] },
-  };
-}
-
-function ampleFileAgentAppResultRef(app: import("./agent/restricted-app-service.js").RestrictedAppInstalled): NonNullable<AmpleFileRequestAction["apps"]>[number] {
-  return { connectedFolderId: app.connectedFolderId, appId: app.manifest.id, featureInstallationId: app.featureInstallationId, digest: app.digest, title: app.manifest.title, version: app.version };
 }
 
 async function cancelAcceptedTurn(
@@ -8687,282 +6666,6 @@ async function restorePointForMoves(
 }
 
 /**
- * App data is destroyed only after a complete, verified copy of it is in
- * Recently deleted (docs/receipts-not-gates.md, F20). The restricted-app
- * service is deliberately not given a Recently deleted dependency: the host composes
- * export → keep → destroy, so the export path stays the one Settings → Apps
- * already uses and the copy is a plain `amplefile.app-data` envelope.
- *
- * Clearing storage that holds nothing writes no entry: there is nothing to
- * bring back, and an empty shell in Recently deleted would only be noise.
- */
-async function moveAppStorageExportToRecentlyDeleted(
-  state: LocalApiState,
-  app: RestrictedAppInstalled,
-  reason: AmpleFileRecentlyDeletedReason,
-  receiptId: string | null,
-  options: { skipWhenStorageUnavailable?: boolean } = {},
-): Promise<AmpleFileRecentlyDeletedEntry | null> {
-  return await keepAppStorageInRecentlyDeleted(state.restrictedApps, state.recentlyDeleted, app, reason, receiptId, options);
-}
-
-async function keepAppStorageInRecentlyDeleted(
-  restrictedApps: RestrictedAppService,
-  recentlyDeleted: AmpleFileRecentlyDeletedStore,
-  app: RestrictedAppInstalled,
-  reason: AmpleFileRecentlyDeletedReason,
-  receiptId: string | null,
-  options: { skipWhenStorageUnavailable?: boolean } = {},
-): Promise<AmpleFileRecentlyDeletedEntry | null> {
-  // Removal paths must never fail because this process has no storage host:
-  // without one there is no live app data in it to lose, so there is nothing
-  // to export and the removal proceeds. Every other failure still fails the
-  // removal, so data is never destroyed without a recoverable copy.
-  const usage = await restrictedApps
-    .storageUsage(app.connectedFolderId, app.manifest.id, app.digest, app.featureInstallationId)
-    .catch((error: unknown) => {
-      if (options.skipWhenStorageUnavailable && error instanceof RestrictedAppError && error.code === "APP_UNAVAILABLE") return null;
-      throw error;
-    });
-  if (!usage || usage.usageBytes === 0) return null;
-  const backup = await restrictedApps.exportStorage(app.connectedFolderId, app.manifest.id, app.digest, app.featureInstallationId);
-  return recentlyDeleted.moveAppDataToRecentlyDeleted({
-    kind: "app-storage",
-    reason,
-    backup,
-    connectedFolderId: app.connectedFolderId,
-    ...(await connectedFolderDisplayName(app.connectedFolderId)),
-    receiptId,
-    identity: {
-      kind: "app-data",
-      appId: backup.appId,
-      appDigest: backup.appDigest,
-      featureInstallationId: app.featureInstallationId,
-      runtimeInstanceId: app.runtimeInstanceId,
-      dataNamespaceId: app.dataNamespaceId,
-      sourceConnectedFolderId: app.sourceConnectedFolderId,
-      projectId: app.projectId,
-      releaseDigest: app.releaseDigest,
-    },
-  });
-}
-
-/**
- * The recovery export a removal owes its app's data before the namespace goes
- * (docs/receipts-not-gates.md, F20). Resolution is deliberately tolerant: the
- * removal itself stays the identity authority, so a missing or mismatched
- * installation returns null here and is refused by `remove` with its own
- * message rather than by a second, differently worded error.
- */
-async function moveRemovedAppStorageToRecentlyDeleted(
-  state: LocalApiState,
-  connectedFolderId: string,
-  appId: string,
-  reason: AmpleFileRecentlyDeletedReason,
-  receiptId: string | null,
-  selector: { featureInstallationId?: string; expectedDigest?: string } = {},
-): Promise<AmpleFileRecentlyDeletedEntry | null> {
-  const app = (await state.restrictedApps.list(connectedFolderId)).find((item) => (
-    item.manifest.id === appId
-    && (selector.featureInstallationId === undefined || item.featureInstallationId === selector.featureInstallationId)
-    && (selector.expectedDigest === undefined || item.digest === selector.expectedDigest)
-  ));
-  if (!app) return null;
-  return await moveAppStorageExportToRecentlyDeleted(state, app, reason, receiptId, { skipWhenStorageUnavailable: true });
-}
-
-/**
- * Clears a removed Connected Folder's App Studio state after its copy is in
- * Recently deleted (docs/receipts-not-gates.md, F20). The service hands over
- * the copy only once every blocker has passed; if the copy cannot be written,
- * nothing is cleared. If the copy landed but the history is still in App
- * Studio afterwards, the copy is withdrawn so Recently deleted never shows
- * something that was not removed.
- */
-async function removeConnectedFolderAppStudioIntoRecentlyDeleted(
-  restrictedApps: RestrictedAppService,
-  recentlyDeleted: AmpleFileRecentlyDeletedStore,
-  connectedFolderId: string,
-  context: { connectedFolderName?: string; receiptId: string | null; onKept?: (entry: AmpleFileRecentlyDeletedEntry) => void },
-): Promise<void> {
-  let kept: { entry: AmpleFileRecentlyDeletedEntry; copy: LocalAppConnectedFolderRecoveryCopy } | null = null;
-  try {
-    await restrictedApps.removeConnectedFolder(connectedFolderId, {
-      keep: async (copy) => {
-        const entry = await keepConnectedFolderAppStudioInRecentlyDeleted(recentlyDeleted, copy, context);
-        kept = { entry, copy };
-        context.onKept?.(entry);
-      },
-    });
-  } catch (error) {
-    const landed = kept as { entry: AmpleFileRecentlyDeletedEntry; copy: LocalAppConnectedFolderRecoveryCopy } | null;
-    if (landed) {
-      const stillThere = landed.copy.project
-        ? await restrictedApps.localAppStudio(connectedFolderId)
-          .then((studio) => studio.project?.projectId === landed.copy.project?.projectId)
-          .catch(() => false)
-        : await restrictedApps.connectedFolderRemovalImpact(connectedFolderId)
-          .then((impact) => impact.incomingPreparedOperationCount > 0)
-          .catch(() => false);
-      if (stillThere) await recentlyDeleted.remove(landed.entry.id).catch(() => undefined);
-    }
-    throw error;
-  }
-}
-
-/**
- * Deleting an unused App Studio Release keeps its registry record and verified
- * envelope in Recently deleted first (docs/receipts-not-gates.md, F20); the
- * Release comes back from there in the state it was deleted in. The service
- * hands over the copy only once every blocker has passed, so a refused delete
- * leaves nothing behind. If the copy landed but the Release is still there
- * afterwards, the copy is withdrawn so Recently deleted never shows a Release
- * that was not deleted.
- */
-async function deleteLocalAppReleaseIntoRecentlyDeleted(
-  state: LocalApiState,
-  connectedFolder: ConnectedFolderSummary,
-  releaseDigest: string,
-  receiptId: string | null,
-): Promise<LocalAppReleaseDeletionResult & { recentlyDeleted: { entryId: string; restoreBy: string } | null }> {
-  return await runRestrictedAppMutation(state, connectedFolder.id, async () => {
-    let kept: { entry: AmpleFileRecentlyDeletedEntry; releaseDigest: string } | null = null;
-    try {
-      const deletion = await state.restrictedApps.deleteLocalAppRelease({
-        connectedFolderId: connectedFolder.id,
-        releaseDigest,
-        keep: async (copy) => {
-          const entry = await state.recentlyDeleted.moveAppReleaseToRecentlyDeleted({
-            reason: "apps.release.delete",
-            identity: {
-              kind: "app-release",
-              projectId: copy.record.projectId,
-              releaseDigest: copy.record.releaseDigest,
-              displayVersion: copy.record.displayVersion,
-              sourceConnectedFolderId: copy.record.sourceConnectedFolderId,
-            },
-            record: copy.record,
-            release: copy.release,
-            connectedFolderId: connectedFolder.id,
-            connectedFolderName: connectedFolder.name,
-            ...recentlyDeletedDisplayName(`${copy.record.presentation.title} ${copy.record.displayVersion}`),
-            receiptId,
-          });
-          kept = { entry, releaseDigest: copy.record.releaseDigest };
-        },
-      });
-      const landed = kept as { entry: AmpleFileRecentlyDeletedEntry } | null;
-      return { ...deletion, recentlyDeleted: landed ? { entryId: landed.entry.id, restoreBy: landed.entry.restoreBy } : null };
-    } catch (error) {
-      const landed = kept as { entry: AmpleFileRecentlyDeletedEntry; releaseDigest: string } | null;
-      if (landed) {
-        const stillThere = await state.restrictedApps.localAppStudio(connectedFolder.id)
-          .then((studio) => studio.releases.some((release) => release.releaseDigest === landed.releaseDigest))
-          .catch(() => false);
-        if (stillThere) await state.recentlyDeleted.remove(landed.entry.id).catch(() => undefined);
-      }
-      throw error;
-    }
-  });
-}
-
-/** A person-facing Recently deleted label, or none when the text has nothing printable left. */
-function recentlyDeletedDisplayName(text: string): { displayName?: string } {
-  const printable = text.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "").trim().slice(0, 200).trim();
-  return printable ? { displayName: printable } : {};
-}
-
-async function moveRetainedExportToRecentlyDeleted(
-  state: LocalApiState,
-  sourceConnectedFolderId: string,
-  retained: LocalAppRetainedData,
-  reason: AmpleFileRecentlyDeletedReason,
-  receiptId: string | null,
-): Promise<AmpleFileRecentlyDeletedEntry> {
-  const backup = await state.restrictedApps.exportRetainedStorage(sourceConnectedFolderId, retained.retainedDataId);
-  return state.recentlyDeleted.moveAppDataToRecentlyDeleted({
-    kind: "app-retained",
-    reason,
-    backup,
-    connectedFolderId: sourceConnectedFolderId,
-    ...(await connectedFolderDisplayName(sourceConnectedFolderId)),
-    receiptId,
-    identity: {
-      kind: "app-data",
-      appId: backup.appId,
-      appDigest: backup.appDigest,
-      featureInstallationId: retained.featureInstallationId,
-      runtimeInstanceId: retained.runtimeInstanceId,
-      dataNamespaceId: retained.dataNamespaceId,
-      sourceConnectedFolderId,
-      projectId: retained.projectId,
-      releaseDigest: retained.releaseDigest,
-      retainedDataId: retained.retainedDataId,
-    },
-  });
-}
-
-/**
- * Everything an uninstall-with-purge is about to destroy: the live storage of
- * every installation of that instance, and every record its Project already
- * retained for it. Each becomes its own entry, so a single record can come
- * back on its own.
- */
-async function moveUninstallPurgeExportsToRecentlyDeleted(
-  state: LocalApiState,
-  runtimeInstanceId: string,
-  connectedFolderIds: readonly string[],
-  receiptId: string | null,
-): Promise<AmpleFileRecentlyDeletedEntry[]> {
-  const entries: AmpleFileRecentlyDeletedEntry[] = [];
-  const sourceConnectedFolderIds = new Set<string>();
-  for (const connectedFolderId of new Set(connectedFolderIds)) {
-    for (const app of await state.restrictedApps.list(connectedFolderId)) {
-      if (app.runtimeInstanceId !== runtimeInstanceId) continue;
-      sourceConnectedFolderIds.add(app.sourceConnectedFolderId);
-      const entry = await moveAppStorageExportToRecentlyDeleted(state, app, "apps.uninstall.purge", receiptId);
-      if (entry) entries.push(entry);
-    }
-  }
-  for (const sourceConnectedFolderId of sourceConnectedFolderIds) {
-    const studio = await state.restrictedApps.localAppStudio(sourceConnectedFolderId).catch(() => null);
-    for (const retained of studio?.retainedData ?? []) {
-      if (retained.runtimeInstanceId !== runtimeInstanceId) continue;
-      entries.push(await moveRetainedExportToRecentlyDeleted(state, sourceConnectedFolderId, retained, "apps.uninstall.purge", receiptId));
-    }
-  }
-  return entries;
-}
-
-/**
- * The installation a storage act names, resolved through the service's own
- * identity read first, so a stale installation id or a changed revision is
- * refused exactly as it was before anything is exported or cleared.
- */
-async function requireInstalledAppForStorage(
-  state: LocalApiState,
-  connectedFolderId: string,
-  appId: string,
-  expectedDigest: string,
-  featureInstallationId?: string,
-): Promise<RestrictedAppInstalled> {
-  await state.restrictedApps.storageUsage(connectedFolderId, appId, expectedDigest, featureInstallationId);
-  const app = (await state.restrictedApps.list(connectedFolderId)).find((item) => (
-    item.manifest.id === appId
-    && item.digest === expectedDigest
-    && (featureInstallationId === undefined || item.featureInstallationId === featureInstallationId)
-  ));
-  if (!app) throw notFound("This app is not installed in this Connected Folder at that revision.");
-  return app;
-}
-
-/** The Connected Folder's display name for a trash entry, when it is still registered. */
-async function connectedFolderDisplayName(connectedFolderId: string): Promise<{ connectedFolderName?: string }> {
-  const connectedFolder = await getConnectedFolder(connectedFolderId).catch(() => null);
-  return connectedFolder ? { connectedFolderName: connectedFolder.name } : {};
-}
-
-/**
  * Splits one Connected Folder–relative act path into the desktop create routes' parent
  * and name inputs, so `files mkdir`/`files create` run the exact same
  * `createConnectedFolderFolder`/`createConnectedFolderTextFile` internals as the renderer.
@@ -8980,8 +6683,6 @@ function splitActEntryPath(rawPath: string, missingMessage: string): { target: s
 
 /** Banner-image data URLs dominate a proposal's size; anything past this bound is not a typed proposal. */
 const maxActAppearanceProposalBytes = 1_048_576;
-/** A typed presentation file is a small JSON object; larger inputs are refused unread. */
-const maxActPresentationFileBytes = 65_536;
 
 /**
  * Reads and validates one typed `connected-folder-appearance` proposal file, resolved
@@ -8996,28 +6697,6 @@ async function readConnectedFolderAppearanceProposalFile(rawPath: string, cwd: s
   } catch (error) {
     throw new AmpleFileCliError("usage", errorMessage(error), { cause: error });
   }
-}
-
-/**
- * Reads one typed App Studio presentation file and applies exactly the
- * desktop pane's shape validation; the service's own value bounds still run
- * inside `declareLocalAppProject`.
- */
-async function readAppPresentationFile(rawPath: string, cwd: string): Promise<AppReleasePresentation> {
-  const parsed = await readBoundedActJsonFile(rawPath, cwd, maxActPresentationFileBytes, "App presentation");
-  const body = parsed && typeof parsed === "object" && !Array.isArray(parsed)
-    ? parsed as { title?: unknown; description?: unknown; icon?: unknown }
-    : {};
-  if (typeof body.title !== "string"
-    || (body.description !== undefined && body.description !== null && typeof body.description !== "string")
-    || (body.icon !== undefined && body.icon !== null && typeof body.icon !== "string")) {
-    throw new AmpleFileCliError("usage", "An App title plus optional text description and icon id are required.");
-  }
-  return {
-    title: body.title,
-    description: body.description === undefined ? null : body.description,
-    icon: body.icon === undefined ? null : body.icon,
-  };
 }
 
 async function readBoundedActJsonFile(
@@ -9062,68 +6741,6 @@ function appearanceCustomizationsEqual(
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
 
-function toActAppPresentation(presentation: AppReleasePresentation): AmpleFileActAppPresentation {
-  return { title: presentation.title, description: presentation.description, icon: presentation.icon };
-}
-
-function toActAppReleaseRef(release: LocalAppRelease): AmpleFileActAppReleaseRef {
-  return {
-    releaseDigest: release.releaseDigest,
-    displayVersion: release.displayVersion,
-    state: release.state,
-    preparedAt: release.preparedAt,
-    publishedAt: release.publishedAt,
-    featureCount: release.featureIds.length,
-  };
-}
-
-function toActAppOperationRef(operation: LocalAppOperation): AmpleFileActAppOperationRef {
-  return {
-    operationId: operation.operationId,
-    kind: operation.kind,
-    releaseDigest: operation.releaseDigest,
-    runtimeInstanceId: operation.runtimeInstanceId,
-    targetConnectedFolderId: operation.targetConnectedFolderId,
-    preparedAt: operation.preparedAt,
-    ...(operation.kind === "update"
-      ? { fromReleaseDigest: operation.plan.fromReleaseDigest, continuityPolicy: operation.continuityPolicy }
-      : {}),
-  };
-}
-
-function toActAppInstanceRef(instance: LocalAppInstance): AmpleFileActAppInstanceRef {
-  return {
-    runtimeInstanceId: instance.runtimeInstanceId,
-    connectedFolderId: instance.connectedFolderId,
-    releaseDigest: instance.releaseDigest,
-    displayVersion: instance.displayVersion,
-  };
-}
-
-function toActAppProposalRef(proposal: RestrictedAppProposalReceipt): AmpleFileActAppProposalRef {
-  return {
-    id: proposal.id,
-    status: proposal.status,
-    sourcePath: proposal.sourcePath,
-    title: proposal.review.manifest.title,
-    packageName: proposal.review.packageName,
-    version: proposal.review.version,
-    digest: proposal.review.digest,
-    createdAt: proposal.createdAt,
-    updatedAt: proposal.updatedAt,
-  };
-}
-
-function toActAppAutomationRunRef(run: RestrictedAppAutomationRunReceipt): AmpleFileActAppAutomationRunRef {
-  return {
-    runId: run.runId,
-    outcome: run.outcome,
-    startedAt: run.startedAt,
-    finishedAt: run.finishedAt,
-    ...(run.error !== undefined ? { error: run.error } : {}),
-  };
-}
-
 function toActAutomationTriggerRef(trigger: AmpleFileAutomationDeclaration["trigger"]): AmpleFileActAutomationTriggerRef {
   if (trigger.kind === "files-changed") {
     return {
@@ -9137,19 +6754,6 @@ function toActAutomationTriggerRef(trigger: AmpleFileAutomationDeclaration["trig
   }
   if (trigger.kind === "interval") return { kind: "interval", intervalMinutes: trigger.intervalMinutes };
   if (trigger.kind === "at") return { kind: "at", at: trigger.at, ifMissed: trigger.ifMissed };
-  if (trigger.kind === "on-settled") {
-    const source = trigger.source;
-    return {
-      kind: "on-settled",
-      source: {
-        kind: "app-automation-run",
-        connectedFolderId: source.connectedFolder,
-        appId: source.appId,
-        appAutomationId: source.appAutomationId,
-        outcomes: [...source.outcomes],
-      },
-    };
-  }
   return { kind: "manual" };
 }
 
@@ -9393,21 +6997,8 @@ function projectAutomationReceiptCause(value: unknown): unknown {
       ...(surface ? { surface } : {}),
     };
   }
-  if (cause.kind !== "on-settled" || !cause.source || typeof cause.source !== "object" || Array.isArray(cause.source)) {
-    return undefined;
-  }
-  const source = cause.source as Record<string, unknown>;
-  const connectedFolderId = automationReceiptText(source.connectedFolderId);
-  const runId = automationReceiptText(source.runId);
-  const outcome = automationReceiptText(source.outcome);
-  if (!connectedFolderId || !runId || !outcome) return undefined;
-  // A Check-run cause from before Checks were removed is not projected.
-  if (source.kind === "app-automation-run") {
-    const appId = automationReceiptText(source.appId);
-    const appAutomationId = automationReceiptText(source.appAutomationId);
-    if (!appId || !appAutomationId) return undefined;
-    return { kind: "on-settled", source: { kind: "app-automation-run", connectedFolderId, appId, appAutomationId, runId, outcome } };
-  }
+  // An `on-settled` cause older builds wrote (a Check run or a Connected
+  // Folder app's automation settling) is not projected.
   return undefined;
 }
 
@@ -9726,14 +7317,8 @@ function folderAutomationView(
   connectedFolderId: string,
 ): FolderAutomationView {
   // The act-lane trigger ref is the loose superset of the discriminated view
-  // Settings already renders over IPC; the settled source gains its name.
-  const view = summary.trigger as AutomationTriggerView;
-  const sourceName = view.kind === "on-settled"
-    ? summary.connectedFolders.find((connectedFolder) => connectedFolder.connectedFolderId === view.source.connectedFolderId)?.connectedFolderName
-    : undefined;
-  const trigger: AutomationTriggerView = view.kind === "on-settled" && sourceName
-    ? { ...view, source: { ...view.source, connectedFolderName: sourceName } }
-    : view;
+  // Settings already renders over IPC.
+  const trigger = summary.trigger as AutomationTriggerView;
   const state: FolderAutomationState = summary.activeRun
     ? "running"
     : ({ enabled: "on", disabled: "off", suspended: "suspended", completed: "completed" } as const)[summary.health];
@@ -9936,10 +7521,6 @@ function automationSettingsCause(value: unknown): string | undefined {
   if ((cause.kind === "scheduled" || cause.kind === "resume") && typeof cause.slotAt === "string") {
     return cause.kind === "resume" ? `Caught up from ${cause.slotAt}` : `Scheduled for ${cause.slotAt}`;
   }
-  if (cause.kind === "on-settled" && cause.source && typeof cause.source === "object" && !Array.isArray(cause.source)) {
-    const source = cause.source as Record<string, unknown>;
-    return source.kind === "app-automation-run" ? "After an app automation run" : "After a settled run";
-  }
   return undefined;
 }
 
@@ -9963,10 +7544,10 @@ async function runActOperation<T>(operation: () => Promise<T>): Promise<T> {
   } catch (error) {
     if (error instanceof AmpleFileCliError) throw error;
     // Exactly the HTTP boundary's status translation (sendError), so a
-    // restricted-app or route error means the same thing on both surfaces.
+    // route error means the same thing on both surfaces.
     const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === "number"
       ? (error as { statusCode: number }).statusCode
-      : automationErrorStatus(error) ?? restrictedAppErrorStatus(error);
+      : automationErrorStatus(error);
     const message = error instanceof Error ? error.message : String(error ?? "Connected Folder act command failed.");
     if (statusCode === 400) throw new AmpleFileCliError("usage", message, { cause: error });
     if (statusCode === 403) throw new AmpleFileCliError("permissionDenied", message, { cause: error });
@@ -10396,7 +7977,6 @@ function queueRequestGraphSettle(state: LocalApiState, taskId: string): void {
   }
   state.requestSettleChain = state.requestSettleChain
     .then(() => evaluateRequestGraphSettle(state, taskId))
-    .then(() => state.appAssistantTasks.refresh())
     .catch((error: unknown) => {
       console.error(`A request continuation could not be evaluated: ${errorMessage(error)}`);
     });
@@ -10412,7 +7992,6 @@ function queueConversationRequestEvaluation(state: LocalApiState, connectedFolde
         }
       }
     })
-    .then(() => state.appAssistantTasks.refresh())
     .catch((error: unknown) => {
       console.error(`A request continuation could not be evaluated after compaction: ${errorMessage(error)}`);
     });
@@ -11873,15 +9452,10 @@ async function getClient(
   const existing = state.clients.get(key);
   if (existing) return existing;
   // The AmpleFile agent scope loads personal Pi capabilities and its two app-owned
-  // project instructions. It belongs to no Connected Folder, so Connected Folder–bound restricted-
-  // app proposal and invocation bridges stay disconnected.
+  // project instructions. It belongs to no Connected Folder.
   const hostCapabilities = connectedFolderId === ampleFileAgentScopeId
     ? undefined
-    : {
-        connectedFolderId,
-        restrictedAppProposals: state.restrictedAppProposals,
-        restrictedApps: state.restrictedApps,
-      };
+    : { connectedFolderId };
   // Connected Folder scopes carry the compact operations guide after their own Connected Folder
   // instructions (F26); the AmpleFile agent scope has its own taught text.
   const operationsGuide = connectedFolderOperationsGuideForScope(connectedFolderId);
@@ -11992,12 +9566,10 @@ function capabilityScope(value: unknown): CapabilityScope {
 async function runHistoryRestore<T>(state: LocalApiState, connectedFolderId: string, operation: () => Promise<T>): Promise<T> {
   reserveCapabilityMutation(state, connectedFolderId, "project", connectedFolderId);
   try {
-    return await state.restrictedApps.withHistoryRestoreReservation(connectedFolderId, async () => {
-      const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
-      if (blockers.length) throw httpError(409, blockers[0]!);
-      await getConnectedFolder(connectedFolderId);
-      return await operation();
-    });
+    const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
+    if (blockers.length) throw httpError(409, blockers[0]!);
+    await getConnectedFolder(connectedFolderId);
+    return await operation();
   } finally { state.capabilityMutations.delete(connectedFolderId); }
 }
 
@@ -12019,13 +9591,11 @@ async function runSettledConnectedFolderDeletion<T>(state: LocalApiState, connec
     }
   };
   assertSettled();
-  return state.restrictedApps.withHistoryRestoreReservation(connectedFolderId, async () => {
-    const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
-    if (blockers.length) throw httpError(409, blockers[0]!);
-    await getConnectedFolder(connectedFolderId);
-    assertSettled();
-    return operation();
-  });
+  const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
+  if (blockers.length) throw httpError(409, blockers[0]!);
+  await getConnectedFolder(connectedFolderId);
+  assertSettled();
+  return operation();
 }
 
 /**
@@ -12103,14 +9673,14 @@ async function runCapabilityMutation<T>(
   }
 }
 
-async function runRestrictedAppMutation<T>(
+async function runConnectedFolderMutation<T>(
   state: LocalApiState,
   connectedFolderId: string,
   operation: () => Promise<T>,
 ): Promise<T> {
   reserveCapabilityMutation(state, connectedFolderId, "project", connectedFolderId);
   try {
-    await revalidateRestrictedAppConnectedFolder(state, connectedFolderId);
+    await revalidateMutatedConnectedFolder(state, connectedFolderId);
     const result = await operation();
     await invalidateAmpleFileClients(state, connectedFolderId);
     return result;
@@ -12119,57 +9689,14 @@ async function runRestrictedAppMutation<T>(
   }
 }
 
-/**
- * Runs an app mutation from inside a Connected Folder turn's own tool call. Other
- * capability work in the Connected Folder is awaited rather than refused (a fence that
- * would refuse a short wait prefers queueing), the Connected Folder lane is held exactly
- * as runRestrictedAppMutation holds it, and the proposing turn's own Pi
- * client is never stopped mid-turn: it is marked for a rebuild when the turn
- * settles so the next turn sees the new app's tools.
- */
-async function runRestrictedAppMutationFromTurn<T>(
-  state: LocalApiState,
-  connectedFolderId: string,
-  ownTurnKey: string,
-  operation: () => Promise<T>,
-  signal?: AbortSignal,
-): Promise<T> {
-  const deadline = Date.now() + 10 * 60_000;
-  while (
-    state.capabilityMutations.has(globalCapabilityMutationKey)
-    || state.capabilityMutations.has(connectedFolderId)
-    || hasActiveCapabilityWorkForConnectedFolder(state, connectedFolderId, ownTurnKey)
-  ) {
-    if (signal?.aborted || !state.acceptingTurns) throw new Error("The turn stopped before the app could be added.");
-    if (Date.now() > deadline) throw new Error("Other work in this Connected Folder did not finish in time. Try again from Apps.");
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  state.capabilityMutations.add(connectedFolderId);
-  try {
-    await revalidateRestrictedAppConnectedFolder(state, connectedFolderId);
-    const result = await operation();
-    for (const [key, client] of [...state.clients]) {
-      if (!key.startsWith(`${connectedFolderId}:`)) continue;
-      if (key === ownTurnKey && state.runningTurns.has(ownTurnKey)) { state.clientsToRefresh.add(key); continue; }
-      await client.stop().catch(() => undefined);
-      state.clients.delete(key);
-    }
-    return result;
-  } finally {
-    state.capabilityMutations.delete(connectedFolderId);
-  }
-}
-
 async function recoverPendingConnectedFolderRemovals(
-  restrictedApps: RestrictedAppService,
-  restrictedAppProposals: RoutedRestrictedAppProposalHost,
   io: Partial<ConnectedFolderRemovalIo>,
   recentlyDeleted: AmpleFileRecentlyDeletedStore,
 ): Promise<{ connectedFolderRoots: string[]; connectedFolderIds: string[] }> {
   const pendingRemovals = await listPendingConnectedFolderRemovals();
   for (const pending of pendingRemovals) {
     try {
-      let intent = pending;
+      const intent = pending;
       // An interrupted managed deletion finishes into Recently deleted, not
       // into an erase: the folder this start finds claimed is still the
       // person's (docs/receipts-not-gates.md, F20).
@@ -12179,20 +9706,6 @@ async function recoverPendingConnectedFolderRemovals(
         receiptId: null,
         managedDeletion: intent.storage === "managed" && intent.folderDisposition !== "preserve",
       });
-      if (intent.phase === "requested") {
-        // The same copies the interrupted removal owed: each preview's data
-        // and the Connected Folder's App Studio history reach Recently deleted
-        // before anything is cleared, or nothing is cleared and a later start
-        // tries again (docs/receipts-not-gates.md, F20).
-        for (const app of await restrictedApps.list(intent.connectedFolderId)) {
-          await keepAppStorageInRecentlyDeleted(restrictedApps, recentlyDeleted, app, "apps.connected-folder.removed", null, {
-            skipWhenStorageUnavailable: true,
-          });
-        }
-        await removeConnectedFolderAppStudioIntoRecentlyDeleted(restrictedApps, recentlyDeleted, intent.connectedFolderId, { receiptId: null });
-        await restrictedAppProposals.removeConnectedFolder(intent.connectedFolderId);
-        intent = await markConnectedFolderRemovalAppStateRemoved(intent.connectedFolderId, removalIo.io);
-      }
       await finalizeConnectedFolderRemoval(intent.connectedFolderId, removalIo.io);
     } catch {
       // The durable intent keeps this work-folder hidden and untrusted. Recovery of
@@ -12205,17 +9718,17 @@ async function recoverPendingConnectedFolderRemovals(
   };
 }
 
-async function runRestrictedAppMutations<T>(
+async function runConnectedFolderMutations<T>(
   state: LocalApiState,
   connectedFolderIds: readonly string[],
   operation: () => Promise<T>,
   options: { requiredConnectedFolderIds?: readonly string[] } = {},
 ): Promise<T> {
   const ids = [...new Set(connectedFolderIds)].sort();
-  if (ids.length === 0) throw badRequest("A Connected Folder is required for this App change.");
+  if (ids.length === 0) throw badRequest("A Connected Folder is required for this change.");
   const requiredConnectedFolderIds = [...new Set(options.requiredConnectedFolderIds ?? ids)].sort();
   if (requiredConnectedFolderIds.length === 0 || requiredConnectedFolderIds.some((connectedFolderId) => !ids.includes(connectedFolderId))) {
-    throw new Error("Restricted App mutation validation must name one or more reserved Connected Folders.");
+    throw new Error("Connected Folder mutation validation must name one or more reserved Connected Folders.");
   }
   if (state.capabilityMutations.has(globalCapabilityMutationKey)
     || ids.some((connectedFolderId) => state.capabilityMutations.has(connectedFolderId))) {
@@ -12227,7 +9740,7 @@ async function runRestrictedAppMutations<T>(
   for (const connectedFolderId of ids) state.capabilityMutations.add(connectedFolderId);
   try {
     for (const connectedFolderId of requiredConnectedFolderIds) {
-      await revalidateRestrictedAppConnectedFolder(state, connectedFolderId);
+      await revalidateMutatedConnectedFolder(state, connectedFolderId);
     }
     const result = await operation();
     await Promise.all(ids.map((connectedFolderId) => invalidateAmpleFileClients(state, connectedFolderId)));
@@ -12237,8 +9750,8 @@ async function runRestrictedAppMutations<T>(
   }
 }
 
-async function revalidateRestrictedAppConnectedFolder(state: LocalApiState, connectedFolderId: string): Promise<void> {
-  await state.beforeRestrictedAppConnectedFolderRevalidation?.(connectedFolderId);
+async function revalidateMutatedConnectedFolder(state: LocalApiState, connectedFolderId: string): Promise<void> {
+  await state.beforeConnectedFolderMutationRevalidation?.(connectedFolderId);
   await getConnectedFolder(connectedFolderId);
 }
 
@@ -12526,33 +10039,8 @@ function capabilityResourceSummary(details: {
 }
 
 /**
- * The exact Connected Folder file an app's single-file permission binds to. The Connected Folder
- * path policy already refuses an escape, a symlinked segment, and reserved
- * `.amplefile/`, `.pi/`, and `.workspace/` metadata; this adds the one thing
- * a grant root needs on top: the file has to exist as an ordinary file right
- * now. The broker re-verifies the same facts at effect time and on every
- * read, so this is an honest early refusal, not the authority.
- */
-async function grantedConnectedFolderFile(connectedFolderRoot: string, relativePath: string): Promise<string> {
-  let path: string;
-  try {
-    path = resolveConnectedFolderPath(connectedFolderRoot, relativePath);
-  } catch (error) {
-    throw new AmpleFileCliError("usage", errorMessage(error), { cause: error });
-  }
-  // Canonical Connected Folder–relative form, so "./notes.md" and "notes.md" bind one root.
-  const normalized = relative(resolve(connectedFolderRoot), path).split(sep).join("/");
-  if (!normalized) throw new AmpleFileCliError("usage", "Name the file inside the Connected Folder that this permission covers.");
-  const info = await lstat(path).catch(() => null);
-  if (!info || !info.isFile() || info.isSymbolicLink()) {
-    throw new AmpleFileCliError("notFound", "That file does not exist in this Connected Folder as an ordinary file.");
-  }
-  return normalized;
-}
-
-/**
  * The prepared-act fence over the exact reservation state the desktop routes
- * use: a Connected Folder scope reserves with runRestrictedAppMutation semantics, the
+ * use: a Connected Folder scope reserves with runConnectedFolderMutation semantics, the
  * global scope with runCapabilityMutation's global branch. A busy scope
  * refuses with the routes' own conflict, which the act facade translates into
  * the CLI's typed vocabulary. Project trust checks stay with the calling
@@ -12562,7 +10050,7 @@ function createPreparedActFence(state: LocalApiState): PreparedActFence {
   return {
     run(scope, operation) {
       return scope.scope === "connected-folder"
-        ? runRestrictedAppMutation(state, scope.connectedFolderId, operation)
+        ? runConnectedFolderMutation(state, scope.connectedFolderId, operation)
         : runCapabilityMutation(state, capabilityGlobalMutationScope(), "global", operation);
     },
   };
@@ -12575,15 +10063,9 @@ interface PreparedActAttribution {
 
 /**
  * The execution outcome slot a calling verb reads back after a prepared act
- * ran: the installed app, the removal result. It travels in the executor's
+ * ran: the imported Skill, the removal result. It travels in the executor's
  * `context`, never in a receipt.
  */
-/** The Recently deleted entry a destroying verb reports back. */
-interface RecentlyDeletedRef {
-  entryId: string;
-  restoreBy: string;
-}
-
 interface PreparedActOutcome<T> {
   outcome?: T;
   /** Stamped by `runPreparedAct`: the journaled request id the act runs under. */
@@ -12604,175 +10086,12 @@ interface AutomationEnableContext extends PreparedActOutcome<AmpleFileAutomation
  */
 function createPreparedActAdapters(state: LocalApiState): PreparedActAdapters {
   return {
-    "app.review.install": createAppReviewInstallAdapter(state),
-    "app.grant.network": createAppGrantAdapter(state, "app.grant.network"),
-    "app.grant.files": createAppGrantAdapter(state, "app.grant.files"),
-    "app.grant.notifications": createAppGrantAdapter(state, "app.grant.notifications"),
-    "app.automation.enable": createAppAutomationEnableAdapter(state),
     "capability.skills.import": createSkillImportAdapter(state),
     "capability.package.install": createCapabilityPackageAdapter(state, "install"),
     "capability.package.update": createCapabilityPackageAdapter(state, "update"),
     "capability.resource.enabled": resourceEnableAdapter(async (act) => act.parameters.scope === "connected-folder" ? (await getConnectedFolder(String(act.parameters.connectedFolderId))).connectedFolderRoot : ampleFileAgentRoot(), state.runtimeProvider),
-    "app.connection.save": createAppConnectionSaveAdapter(state),
-    "app.data.purge": createAppDataPurgeAdapter(state),
-    "app.storage.clear": createAppStorageClearAdapter(state),
     "automation.enable": createAutomationEnableAdapter(state),
     "connected-folder.delete-folder": createManagedConnectedFolderDeletionAdapter(state),
-  };
-}
-
-/** The prepared-act pin as bounded text, tolerating the parameter mirror. */
-function stringPinValue(act: PreparedAct, name: string): string {
-  const value = act.pins[name] ?? act.parameters[name];
-  return typeof value === "string" ? value : "";
-}
-
-/**
- * `app.review.install` — the digest-checked install path the desktop uses.
- * The proposal host re-verifies the reviewed digest at install time, so a
- * source changed between recheck and execution surfaces as the existing
- * REVISION_CHANGED refusal.
- */
-function createAppReviewInstallAdapter(
-  state: LocalApiState,
-): PreparedActAdapter<PreparedActOutcome<RestrictedAppInstalled> | undefined> {
-  const recheck = async (act: PreparedAct): Promise<string | null> => {
-    const proposal = await state.restrictedAppProposals.get(stringPinValue(act, "proposalId"));
-    if (!proposal) return "The app review no longer exists; it was removed or superseded.";
-    if (proposal.connectedFolderId !== act.parameters.connectedFolderId) return "The app review belongs to a different Connected Folder.";
-    if (proposal.review.digest !== act.pins.reviewDigest) {
-      return "The reviewed package no longer matches the pinned review; the source changed after review.";
-    }
-    if (proposal.status === "revision-changed") return "The package changed after review; review the new revision before installing it.";
-    if (proposal.status === "dismissed") return "The app review was dismissed.";
-    return null;
-  };
-  return {
-    recheckPins: recheck,
-    async execute(act, context) {
-      const app = await state.restrictedAppProposals.install(stringPinValue(act, "proposalId"));
-      if (!app) throw new Error("This app review is no longer available to install.");
-      if (context) context.outcome = app;
-      return { detail: `Installed ${app.packageName}@${app.version} (digest ${app.digest}).` };
-    },
-  };
-}
-
-type AppGrantKind = "app.grant.network" | "app.grant.files" | "app.grant.notifications";
-
-/**
- * `app.grant.network|files|notifications` — the same grant path agent
- * tools uses, addressed by the pinned App Instance identity and re-verified
- * against the installed digest and the exact reviewed declaration. A file
- * grant binds to the whole Connected Folder (docs/receipts-not-gates.md, F21).
- */
-function createAppGrantAdapter(
-  state: LocalApiState,
-  kind: AppGrantKind,
-): PreparedActAdapter<{ root?: string } | undefined> {
-  const resolve = async (act: PreparedAct): Promise<{ app: RestrictedAppInstalled } | { issue: string }> => {
-    const app = await state.restrictedApps.findByFeatureInstallation(String(act.parameters.connectedFolderId), stringPinValue(act, "appInstanceId"));
-    if (!app) return { issue: "The App Instance is no longer installed in this Connected Folder." };
-    if ((app.releaseDigest ?? app.digest) !== act.pins.releaseDigest) {
-      return { issue: "The installed app no longer matches the pinned release; it changed after the request was prepared." };
-    }
-    const declarationId = stringPinValue(act, "declarationId");
-    const declared = kind === "app.grant.network"
-      ? app.manifest.permissions.network.some((item) => item.id === declarationId)
-      : kind === "app.grant.files"
-        ? app.manifest.permissions.files.some((item) => item.id === declarationId)
-        : app.manifest.permissions.notifications.some((item) => item.id === declarationId);
-    if (!declared) return { issue: "The app no longer declares this permission." };
-    return { app };
-  };
-  return {
-    async recheckPins(act) {
-      const resolved = await resolve(act);
-      return "issue" in resolved ? resolved.issue : null;
-    },
-    async execute(act, context) {
-      const resolved = await resolve(act);
-      if ("issue" in resolved) throw new Error(resolved.issue);
-      const { app } = resolved;
-      const declarationId = stringPinValue(act, "declarationId");
-      const base = {
-        connectedFolderId: app.connectedFolderId,
-        appId: app.manifest.id,
-        featureInstallationId: app.featureInstallationId,
-        expectedDigest: app.digest,
-      };
-      if (kind === "app.grant.network") {
-        await state.restrictedApps.grantNetwork({ ...base, destinationId: declarationId });
-        return {
-          detail: `Granted network destination "${declarationId}" to ${app.manifest.id}.`,
-          undoRef: { kind: "declaration", value: declarationId },
-        };
-      }
-      if (kind === "app.grant.notifications") {
-        await state.restrictedApps.grantNotifications({ ...base, permissionId: declarationId });
-        return {
-          detail: `Granted notification category "${declarationId}" to ${app.manifest.id}.`,
-          undoRef: { kind: "declaration", value: declarationId },
-        };
-      }
-      const root = context?.root ?? ".";
-      const connectedFolder = await getConnectedFolder(app.connectedFolderId);
-      await state.restrictedApps.grantFiles({ ...base, connectedFolderRoot: connectedFolder.connectedFolderRoot, permissionId: declarationId, root });
-      return {
-        detail: `Granted Connected Folder file access "${declarationId}" (root "${root}") to ${app.manifest.id}.`,
-        undoRef: { kind: "declaration", value: declarationId },
-      };
-    },
-  };
-}
-
-/**
- * `app.automation.enable` — the existing enablement path; runs stay inside
- * the machine-wide scheduler bounds. The reviewed digest and the
- * host-composed schedule summary are pins, so a job whose package or cadence
- * changed since the request was prepared refuses instead of enabling
- * something the receipt never described.
- */
-function createAppAutomationEnableAdapter(state: LocalApiState): PreparedActAdapter {
-  const resolve = async (act: PreparedAct): Promise<{ app: RestrictedAppInstalled } | { issue: string }> => {
-    const app = await state.restrictedApps.findByFeatureInstallation(String(act.parameters.connectedFolderId), stringPinValue(act, "appInstanceId"));
-    if (!app) return { issue: "The App Instance is no longer installed in this Connected Folder." };
-    // Automations bind to the package digest they were reviewed under, the
-    // same identity automation run receipts capture.
-    if (app.digest !== act.pins.reviewedDigest) {
-      return { issue: "The installed package no longer matches the digest this job was reviewed under." };
-    }
-    const appAutomationId = stringPinValue(act, "appAutomationId");
-    const declaration = app.manifest.automations.find((item) => item.id === appAutomationId);
-    if (!declaration) return { issue: "The app no longer declares this automation." };
-    if (restrictedAppAutomationScheduleSummary(declaration) !== act.pins.scheduleSummary) {
-      return { issue: "The job's reviewed schedule changed after the request was prepared." };
-    }
-    return { app };
-  };
-  return {
-    async recheckPins(act) {
-      const resolved = await resolve(act);
-      return "issue" in resolved ? resolved.issue : null;
-    },
-    async execute(act) {
-      const resolved = await resolve(act);
-      if ("issue" in resolved) throw new Error(resolved.issue);
-      const { app } = resolved;
-      const appAutomationId = stringPinValue(act, "appAutomationId");
-      await state.restrictedApps.setAppAutomationEnabled({
-        connectedFolderId: app.connectedFolderId,
-        appId: app.manifest.id,
-        featureInstallationId: app.featureInstallationId,
-        expectedDigest: app.digest,
-        appAutomationId,
-        enabled: true,
-      });
-      return {
-        detail: `Enabled automation "${appAutomationId}" (${String(act.pins.scheduleSummary)}) for ${app.manifest.id}.`,
-        undoRef: { kind: "app-automation", value: appAutomationId },
-      };
-    },
   };
 }
 
@@ -12906,208 +10225,6 @@ function createCapabilityPackageAdapter(
 }
 
 /**
- * `app.connection.save` — opens the existing host connection flow scoped to
- * the pinned declaration. Only the browser OAuth flow can run without a
- * person typing a secret, so form-credential shapes refuse: the secret is
- * entered in Settings → Apps, never through the AmpleFile agent, and the act carries only
- * the connection's shape.
- */
-function createAppConnectionSaveAdapter(
-  state: LocalApiState,
-): PreparedActAdapter<PreparedActOutcome<RestrictedAppConnectionStatus> | undefined> {
-  const targetLabel = (target: { kind: string; origin?: string; host?: string; port?: number }): string =>
-    target.kind === "public-https" ? String(target.origin) : `http://${String(target.host)}:${String(target.port)}`;
-  const resolve = async (act: PreparedAct): Promise<
-    | { issue: string }
-    | { app: RestrictedAppInstalled; destination: RestrictedAppNetworkDeclaration }
-  > => {
-    const app = await state.restrictedApps.findByFeatureInstallation(String(act.parameters.connectedFolderId), stringPinValue(act, "appInstanceId"));
-    if (!app) return { issue: "The App Instance is no longer installed in this Connected Folder." };
-    const declarationId = String(act.pins.declarationId);
-    const destination = app.manifest.permissions.network.find((item) => item.id === declarationId);
-    if (!destination) return { issue: "The app no longer declares this connection destination." };
-    if (targetLabel(destination.target) !== act.pins.target) {
-      return { issue: "The destination's reviewed target changed after the request was prepared." };
-    }
-    if (!destination.auth.some((item) => item.kind === act.pins.adapterKind)) {
-      return { issue: "The destination no longer declares the pinned credential adapter." };
-    }
-    if (act.pins.adapterKind !== "oauth2-pkce") {
-      return { issue: "This destination takes a secret typed on the desktop. Connect it from Settings → Apps." };
-    }
-    return { app, destination };
-  };
-  return {
-    async recheckPins(act) {
-      const resolved = await resolve(act);
-      return "issue" in resolved ? resolved.issue : null;
-    },
-    async execute(act, context) {
-      const resolved = await resolve(act);
-      if ("issue" in resolved) throw new Error(resolved.issue);
-      const connection = await state.restrictedApps.connectOAuth({
-        connectedFolderId: resolved.app.connectedFolderId,
-        appId: resolved.app.manifest.id,
-        destinationId: resolved.destination.id,
-        expectedDigest: resolved.app.digest,
-      });
-      if (context) context.outcome = connection;
-      return {
-        detail: `Connected ${resolved.app.manifest.id} to ${String(act.pins.target)} through the browser sign-in flow.`,
-        undoRef: { kind: "declaration", value: resolved.destination.id },
-      };
-    },
-  };
-}
-
-function createAppStorageClearAdapter(
-  state: LocalApiState,
-): PreparedActAdapter<PreparedActOutcome<{ remainingBytes: number; recentlyDeleted: RecentlyDeletedRef | null }> | undefined> {
-  const resolve = async (act: PreparedAct): Promise<
-    | { issue: string }
-    | { app: RestrictedAppInstalled; observedBytes: number }
-  > => {
-    const connectedFolderId = String(act.parameters.connectedFolderId);
-    const app = await state.restrictedApps.findByFeatureInstallation(connectedFolderId, stringPinValue(act, "appInstanceId"));
-    if (!app) return { issue: "The App Instance is no longer installed in this Connected Folder." };
-    const namespaces = act.pins.dataNamespaceIds;
-    if (!Array.isArray(namespaces) || namespaces.length !== 1 || namespaces[0] !== app.dataNamespaceId) {
-      return { issue: "The app's Data Namespace no longer matches the pinned storage identity." };
-    }
-    try {
-      const usage = await state.restrictedApps.storageUsage(connectedFolderId, app.manifest.id, app.digest, app.featureInstallationId);
-      if (usage.usageBytes !== act.pins.observedBytes) {
-        return { issue: `The app's live storage changed after the request was prepared (${String(act.pins.observedBytes)} → ${usage.usageBytes} bytes).` };
-      }
-      return { app, observedBytes: usage.usageBytes };
-    } catch (error) {
-      return { issue: errorMessage(error) };
-    }
-  };
-  return {
-    async recheckPins(act) {
-      const resolved = await resolve(act);
-      return "issue" in resolved ? resolved.issue : null;
-    },
-    async execute(act, context) {
-      const resolved = await resolve(act);
-      if ("issue" in resolved) throw new Error(resolved.issue);
-      // The copy lands in Recently deleted before the live data goes
-      // (docs/receipts-not-gates.md, F20).
-      const entry = await moveAppStorageExportToRecentlyDeleted(state, resolved.app, "apps.storage.clear", context?.requestId ?? null);
-      const cleared = await state.restrictedApps.clearStorage(
-        resolved.app.connectedFolderId,
-        resolved.app.manifest.id,
-        resolved.app.digest,
-        resolved.app.featureInstallationId,
-      );
-      if (context) context.outcome = { remainingBytes: cleared.usageBytes, recentlyDeleted: entry ? { entryId: entry.id, restoreBy: entry.restoreBy } : null };
-      return {
-        detail: `Cleared ${resolved.observedBytes} bytes of live storage; ${cleared.usageBytes} bytes remain`
-          + `${entry ? `; a copy is in Recently deleted as ${entry.id}` : ""}.`,
-        ...(entry ? { undoRef: { kind: "recently-deleted-entry", value: entry.id } } : {}),
-      };
-    },
-  };
-}
-
-function createAppDataPurgeAdapter(
-  state: LocalApiState,
-): PreparedActAdapter<PreparedActOutcome<{ cleanupPending: boolean; recentlyDeleted: RecentlyDeletedRef[] }> | undefined> {
-  type PurgeResolution =
-    | { issue: string }
-    | { target: "retained"; retainedDataId: string; namespaceId: string }
-    | { target: "runtime-instance"; runtimeInstanceId: string; namespaceId: string };
-  const resolve = async (act: PreparedAct): Promise<PurgeResolution> => {
-    const target = act.parameters.purgeTarget;
-    const namespaceIds = act.pins.dataNamespaceIds;
-    if (!Array.isArray(namespaceIds) || namespaceIds.length !== 1) {
-      return { issue: "This purge must pin exactly one Data Namespace." };
-    }
-    const namespaceId = namespaceIds[0]!;
-    if (target === "retained") {
-      const sourceConnectedFolderId = String(act.pins.sourceConnectedFolderId ?? act.parameters.connectedFolderId);
-      const retainedDataId = String(act.pins.retainedDataId ?? "");
-      const studio = await state.restrictedApps.localAppStudio(sourceConnectedFolderId).catch(() => null);
-      const retained = studio?.retainedData.find((item) => item.retainedDataId === retainedDataId);
-      if (!retained) return { issue: "The retained App data record no longer exists." };
-      if (retained.featureInstallationId !== act.pins.appInstanceId || retained.dataNamespaceId !== namespaceId) {
-        return { issue: "The retained App data identity changed after the request was prepared." };
-      }
-      return { target, retainedDataId, namespaceId };
-    }
-    if (target === "runtime-instance") {
-      const connectedFolderId = String(act.parameters.connectedFolderId);
-      const runtimeInstanceId = String(act.pins.runtimeInstanceId ?? "");
-      const installed = (await state.restrictedApps.list(connectedFolderId)).find((app) => (
-        app.runtimeInstanceKind === "app" && app.runtimeInstanceId === runtimeInstanceId
-      ));
-      if (!installed) return { issue: "The Local App Instance is no longer installed." };
-      if (installed.featureInstallationId !== act.pins.appInstanceId || installed.dataNamespaceId !== namespaceId) {
-        return { issue: "The Local App Instance data identity changed after the request was prepared." };
-      }
-      if (act.pins.sourceConnectedFolderId !== undefined && installed.sourceConnectedFolderId !== act.pins.sourceConnectedFolderId) {
-        return { issue: "The Local App Instance source Connected Folder changed after the request was prepared." };
-      }
-      return { target, runtimeInstanceId, namespaceId };
-    }
-    return { issue: "This purge does not identify whether it targets retained data or an installed App Instance." };
-  };
-  return {
-    fenceScope: () => ({ scope: "global" }),
-    async recheckPins(act) {
-      const resolved = await resolve(act);
-      return "issue" in resolved ? resolved.issue : null;
-    },
-    async execute(act, context) {
-      const resolved = await resolve(act);
-      if ("issue" in resolved) throw new Error(resolved.issue);
-      const receiptId = context?.requestId ?? null;
-      if (resolved.target === "retained") {
-        // A copy of the retained record lands in Recently deleted before the
-        // namespace goes (docs/receipts-not-gates.md, F20).
-        const sourceConnectedFolderId = String(act.pins.sourceConnectedFolderId ?? act.parameters.connectedFolderId);
-        const studio = await state.restrictedApps.localAppStudio(sourceConnectedFolderId);
-        const record = studio.retainedData.find((item) => item.retainedDataId === resolved.retainedDataId);
-        if (!record) throw new Error("The retained App data record disappeared before execution.");
-        const entry = await moveRetainedExportToRecentlyDeleted(state, sourceConnectedFolderId, record, "apps.retained.purge", receiptId);
-        const result = await state.restrictedApps.purgeLocalAppRetainedData(resolved.retainedDataId);
-        if (!result.purged) throw new Error("The retained App data record disappeared before execution.");
-        if (context) context.outcome = { cleanupPending: result.cleanupPending, recentlyDeleted: [{ entryId: entry.id, restoreBy: entry.restoreBy }] };
-        return {
-          detail: `Purged Data Namespace ${resolved.namespaceId}; a copy is in Recently deleted as ${entry.id}`
-            + `${result.cleanupPending ? "; secure cleanup is pending" : ""}.`,
-          undoRef: { kind: "recently-deleted-entry", value: entry.id },
-        };
-      }
-      const entries = await moveUninstallPurgeExportsToRecentlyDeleted(
-        state,
-        resolved.runtimeInstanceId,
-        [String(act.parameters.connectedFolderId), String(act.pins.sourceConnectedFolderId ?? act.parameters.connectedFolderId)],
-        receiptId,
-      );
-      const result = await state.restrictedApps.uninstallLocalApp({
-        runtimeInstanceId: resolved.runtimeInstanceId,
-        dataDisposition: "purge",
-      });
-      if (!result.removed) throw new Error("The Local App Instance disappeared before execution.");
-      if (context) {
-        context.outcome = {
-          cleanupPending: result.cleanupPending,
-          recentlyDeleted: entries.map((entry) => ({ entryId: entry.id, restoreBy: entry.restoreBy })),
-        };
-      }
-      return {
-        detail: `Uninstalled ${resolved.runtimeInstanceId} and purged its data`
-          + `${entries.length ? `; ${entries.length} cop${entries.length === 1 ? "y is" : "ies are"} in Recently deleted` : ""}`
-          + `${result.cleanupPending ? "; secure cleanup is pending" : ""}.`,
-        ...(entries[0] ? { undoRef: { kind: "recently-deleted-entry", value: entries[0].id } } : {}),
-      };
-    },
-  };
-}
-
-/**
  * `automation.enable` — the enablement receipt of docs/automations.md. The
  * normalized declaration arrives as execution context from the calling verb,
  * is re-verified against the pinned digest and automation id, and every
@@ -13165,13 +10282,18 @@ function createAutomationEnableAdapter(state: LocalApiState): PreparedActAdapter
   };
 }
 
+/** The prepared-act pin as bounded text, tolerating the parameter mirror. */
+function stringPinValue(act: PreparedAct, name: string): string {
+  const value = act.pins[name] ?? act.parameters[name];
+  return typeof value === "string" ? value : "";
+}
+
 /**
  * `connected-folder.delete-folder` — the managed removal path. Pin recheck re-verifies
  * the registered identity and canonical root; the `.workspace/` fail-closed
  * rule and managed-root identity claims are re-checked by the removal
  * machinery itself at execution. The complete desktop removal orchestration
- * — impact checks, automation and app-state revocation, claim-verified
- * managed deletion — is shared with DELETE /api/connected-folders/:id and `connected-folders
+ * — automation revocation and claim-verified managed deletion — is shared with DELETE /api/connected-folders/:id and `connected-folders
  * unregister`. It reserves its own capability fences across every affected
  * Connected Folder, so the adapter's null fenceScope keeps the executor from reserving
  * twice.
@@ -13180,8 +10302,6 @@ function createManagedConnectedFolderDeletionAdapter(
   state: LocalApiState,
 ): PreparedActAdapter<PreparedActOutcome<ConnectedFolderRemovalResult & {
   recentlyDeleted: { entryId: string; restoreBy: string } | null;
-  appRecentlyDeletedEntries: Array<{ entryId: string; restoreBy: string }>;
-  appStudioRecentlyDeleted: { entryId: string; restoreBy: string } | null;
 }> | undefined> {
   return {
     fenceScope: () => null,
@@ -13195,9 +10315,7 @@ function createManagedConnectedFolderDeletionAdapter(
       const connectedFolder = await getConnectedFolder(String(act.pins.connectedFolderId ?? act.parameters.connectedFolderId));
       const result = await removeConnectedFolderRegistrationInternal(state, connectedFolder, { receiptId: context?.requestId ?? null });
       if (context) context.outcome = result;
-      const trashed = (result.recentlyDeleted ? `; trash ${result.recentlyDeleted.entryId}` : "")
-        + (result.appRecentlyDeletedEntries.length ? `; app data ${result.appRecentlyDeletedEntries.map((item) => item.entryId).join(", ")}` : "")
-        + (result.appStudioRecentlyDeleted ? `; App Studio ${result.appStudioRecentlyDeleted.entryId}` : "");
+      const trashed = result.recentlyDeleted ? `; trash ${result.recentlyDeleted.entryId}` : "";
       return {
         detail: result.cleanupPending
           ? `Moved the managed Connected Folder's folder ${connectedFolder.connectedFolderRoot} to Recently deleted${trashed}; final cleanup completes at the next start.`
@@ -13474,16 +10592,13 @@ function settleDelay(milliseconds: number): Promise<void> {
 const maxOverviewConversationsPerConnectedFolder = 2_048;
 const maxOverviewCheckpointsPerConnectedFolder = 256;
 const maxOverviewActReceiptLines = 8_192;
-const maxOverviewAppAutomationReceipts = 2_048;
 
 /**
  * The overview's live-registry source readers (docs/amplefile-agent-overview.md): recorded
  * state only — the settled-turn records, the durable request graph
  * (docs/collaboration-contract.md, F25), the
- * chat store and History per registered Connected Folder, the act-receipts ledger, the automation receipts
- * journal, and the restricted-app registry's machine-wide automation ledgers
- * (active accepted runs and settled receipts). The kernel's own task registry supplies running
- * tasks.
+ * chat store and History per registered Connected Folder, the act-receipts ledger, and the automation receipts
+ * journal. The kernel's own task registry supplies running tasks.
  */
 function createServerOverviewSources(state: LocalApiState): AmpleFileOverviewSourceReaders {
   const automationRunReader = createAmpleFileOverviewAutomationRunReader();
@@ -13516,30 +10631,6 @@ function createServerOverviewSources(state: LocalApiState): AmpleFileOverviewSou
         scope: checkpoint.scope,
       })),
     actReceipts: () => readActReceiptJournal(state),
-    // The restricted-app registry's machine-wide ledgers: accepted-but-not-
-    // settled runs render as running work, durable settled receipts as
-    // what-changed items. Both are recorded state; no run is executed or
-    // polled to compose the digest.
-    appAutomationRuns: async (): Promise<AmpleFileOverviewAppAutomationRunRecord[]> =>
-      (await state.restrictedApps.listActiveAppAutomationRuns()).map((run) => ({
-        runId: run.runId,
-        appAutomationId: run.appAutomationId,
-        ...(run.appTitle ? { appTitle: run.appTitle } : {}),
-        ...(run.automationTitle ? { automationTitle: run.automationTitle } : {}),
-        connectedFolderId: run.connectedFolderId,
-        startedAt: run.acceptedAt,
-      })),
-    appAutomationRunReceipts: async (): Promise<AmpleFileOverviewAppAutomationReceiptRecord[]> =>
-      (await state.restrictedApps.listAppAutomationRunHistory(maxOverviewAppAutomationReceipts)).map((receipt) => ({
-        receiptId: receipt.receiptId,
-        runId: receipt.runId,
-        appAutomationId: receipt.appAutomationId,
-        ...(receipt.appTitle ? { appTitle: receipt.appTitle } : {}),
-        ...(receipt.automationTitle ? { automationTitle: receipt.automationTitle } : {}),
-        connectedFolderId: receipt.connectedFolderId,
-        outcome: receipt.outcome,
-        finishedAt: receipt.finishedAt,
-      })),
     automationRuns: automationRunReader,
   };
 }
@@ -13701,38 +10792,6 @@ function answerExtensionRequest(state: LocalApiState, scope: PiExtensionUiScope,
   return state.extensionUi.respond(request.id, response);
 }
 
-function routeRestrictedAppProposal(state: LocalApiState, proposal: RestrictedAppProposalReceipt): void {
-  broadcast(state, streamKey(proposal.connectedFolderId, proposal.conversationId), {
-    type: "restricted_app_proposal",
-    conversationId: proposal.conversationId,
-    proposal: rendererRestrictedAppProposal(proposal),
-  });
-}
-
-function routeRestrictedAppProposalSettled(state: LocalApiState, proposal: RestrictedAppProposalReceipt): void {
-  broadcast(state, streamKey(proposal.connectedFolderId, proposal.conversationId), {
-    type: "restricted_app_proposal_settled",
-    conversationId: proposal.conversationId,
-    proposal: rendererRestrictedAppProposal(proposal),
-  });
-}
-
-function rendererRestrictedAppProposal(proposal: RestrictedAppProposalReceipt): Record<string, unknown> {
-  return {
-    id: proposal.id,
-    connectedFolderId: proposal.connectedFolderId,
-    conversationId: proposal.conversationId,
-    sourcePath: proposal.sourcePath,
-    review: proposal.review,
-    status: proposal.status,
-    createdAt: proposal.createdAt,
-    updatedAt: proposal.updatedAt,
-    ...(proposal.installedApp ? { installedApp: proposal.installedApp } : {}),
-    ...(proposal.error ? { error: proposal.error } : {}),
-    ...(proposal.needs ? { needs: proposal.needs } : {}),
-  };
-}
-
 function routeExtensionEvent(state: LocalApiState, event: PiExtensionUiEvent): void {
   const connectedFolderId = extensionScopeId(state, event);
   if (!connectedFolderId) return;
@@ -13872,14 +10931,6 @@ function openChatStream(
   const extensionScope = { conversationId, connectedFolderRoot: connectedFolderId === ampleFileAgentScopeId
     ? ampleFileAgentRoot() : [...state.connectedFolderIdsByRoot].find(([, id]) => id === connectedFolderId)?.[0] ?? "" };
   writeSseData(res, { type: "extension_ui_snapshot", conversationId, requests: extensionSnapshot(state, extensionScope) });
-  void state.restrictedAppProposals.list({ connectedFolderId, conversationId }).then(async (proposals) => {
-    for (const proposal of proposals) {
-      if (proposal.status !== "pending" || res.closed) continue;
-      const current = await state.restrictedAppProposals.get(proposal.id);
-      if (!current || current.status !== "pending" || current.updatedAt !== proposal.updatedAt || res.closed) continue;
-      res.send({ type: "restricted_app_proposal", conversationId, proposal: rendererRestrictedAppProposal(current) });
-    }
-  }).catch(() => undefined);
   const heartbeat = setInterval(() => {
     try {
       res.heartbeat();
@@ -14269,9 +11320,8 @@ async function readJsonBody<T>(
   state: LocalApiState,
   req: IncomingMessage,
   maximumBytes?: number,
-  options: { exceedDefaultLimit?: boolean } = {},
 ): Promise<T> {
-  const bytes = await readBody(state, req, maximumBytes, options);
+  const bytes = await readBody(state, req, maximumBytes);
   if (!bytes.length) return {} as T;
   try { return JSON.parse(bytes.toString("utf8")) as T; } catch { throw badRequest("Request body must be valid JSON."); }
 }
@@ -14309,18 +11359,13 @@ async function readMultipartBody(state: LocalApiState, req: IncomingMessage): Pr
   return { fields, files };
 }
 
-/**
- * A route's own bound applies under the general body cap, except where the
- * route names a larger contract of its own (`exceedDefaultLimit`), such as an
- * app-data restore that must accept every export AmpleFile produces.
- */
+/** A route's own bound applies under the general body cap. */
 async function readBody(
   state: LocalApiState,
   req: IncomingMessage,
   maximumBytes = state.maxBodyBytes,
-  options: { exceedDefaultLimit?: boolean } = {},
 ): Promise<Buffer> {
-  const limit = options.exceedDefaultLimit ? maximumBytes : Math.min(maximumBytes, state.maxBodyBytes);
+  const limit = Math.min(maximumBytes, state.maxBodyBytes);
   const declared = Number(req.headers["content-length"] ?? 0);
   if (Number.isFinite(declared) && declared > limit) throw tooLarge("Request body is too large.");
   const chunks: Buffer[] = [];
@@ -14368,7 +11413,7 @@ function sendJson(res: ServerResponse, payload: unknown, status = 200): void {
 }
 
 /** Content-free hints only. Reconnect always sends reset; no events are replayed. */
-function publishControlHint(state: LocalApiState, type: "apps" | "connected-folders" | "models" | "activity"): void {
+function publishControlHint(state: LocalApiState, type: "connected-folders" | "models" | "activity"): void {
   for (const response of state.controlStreams) {
     if (response.closed) continue;
     // A slow renderer must reconnect and requery instead of accumulating a queue.
@@ -14382,14 +11427,11 @@ function sendError(res: ServerResponse, error: unknown): void {
   const explicit = typeof (error as { statusCode?: unknown })?.statusCode === "number" ? (error as { statusCode: number }).statusCode : null;
   const status = explicit
     ?? ampleFileCliErrorStatus(error)
-    ?? (error instanceof RestrictedAppTaskError ? ({ TASK_DENIED: 403, TASK_INVALID: 400, TASK_CONFLICT: 409, TASK_UNAVAILABLE: 503 }[error.code]) : null)
     ?? automationErrorStatus(error)
-    ?? restrictedAppErrorStatus(error)
     ?? 500;
   sendJson(res, {
     error: errorMessage(error),
     ...((error instanceof AmpleFileAutomationServiceError || error instanceof AmpleFileAutomationStoreError) ? { code: error.code } : {}),
-    ...(error instanceof RestrictedAppError || error instanceof RestrictedAppStorageError || error instanceof RestrictedAppTaskError ? { code: error.code } : {}),
   }, status);
 }
 
@@ -14429,39 +11471,6 @@ function automationErrorStatus(error: unknown): number | null {
     }
   }
   return null;
-}
-
-function restrictedAppErrorStatus(error: unknown): number | null {
-  if (error instanceof RestrictedAppStorageError) {
-    switch (error.code) {
-      case "STORAGE_INVALID": return 400;
-      case "STORAGE_CONFLICT": return 409;
-      case "STORAGE_QUOTA": return 413;
-      case "STORAGE_CORRUPT": return 422;
-      case "STORAGE_UNSAFE": return 503;
-    }
-  }
-  if (!(error instanceof RestrictedAppError)) return null;
-  switch (error.code) {
-    case "INPUT_INVALID": return 400;
-    case "ACTION_UNKNOWN": return 404;
-    case "NETWORK_DENIED":
-    case "FILE_DENIED":
-    case "TAB_DENIED": return 403;
-    case "AUTH_REQUIRED":
-    case "AUTHORITY_STALE":
-    case "REVISION_CHANGED": return 409;
-    case "APP_TIMEOUT": return 504;
-    case "APP_CRASHED":
-    case "APP_ERROR": return 502;
-    case "NETWORK_REQUEST_TOO_LARGE": return 413;
-    case "NETWORK_RESPONSE_TOO_LARGE": return 502;
-    case "NETWORK_FAILED":
-    case "FILE_FAILED":
-    case "STORAGE_FAILED":
-    case "APP_UNAVAILABLE": return 503;
-    case "OUTPUT_INVALID": return 500;
-  }
 }
 
 function httpError(statusCode: number, message: string): Error {
@@ -14727,7 +11736,7 @@ async function folderSuggestions(state: LocalApiState, connectedFolder: Connecte
   const cached = folderSuggestionCache.get(cacheKey);
   if (cached && cached.key === key && Date.now() - cached.at < folderSuggestionLifetimeMs) return cached.suggestions;
   try {
-    const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, ampleFileAppInferenceConversationId);
+    const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, ampleFileInferenceConversationId);
     const outcome = await client.infer({
       instructions: [
         "Suggest up to four short messages this person might send next to the assistant that works in this folder.",

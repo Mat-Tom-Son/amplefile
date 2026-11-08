@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { parseAmpleFileRequestAction } from "../src/local/requests/request-records.js";
 import { AmpleFileRequestStore } from "../src/local/requests/request-store.js";
 
 /**
@@ -99,11 +98,11 @@ test("the widened action vocabulary records every landed mutation verb, Connecte
   // Personal-scope tools are Connected Folder–free: the action records honestly without
   // inventing a Connected Folder.
   await store.recordAction("task-1", { command: "tools.remove", at: new Date().toISOString() });
-  await store.recordAction("task-1", { command: "apps.revoke", at: new Date().toISOString(), connectedFolderId: "connected-folder-1", connectedFolderName: "Fold" });
+  await store.recordAction("task-1", { command: "connected-folders.rename", at: new Date().toISOString(), connectedFolderId: "connected-folder-1", connectedFolderName: "Fold" });
   const record = store.get(request.requestId)!;
   assert.deepEqual(
     record.actions.map((action) => action.command),
-    ["chat.compact", "tools.remove", "apps.revoke"],
+    ["chat.compact", "tools.remove", "connected-folders.rename"],
   );
   assert.equal(record.actions[1]?.connectedFolderId, undefined);
 
@@ -168,19 +167,3 @@ test("a needs-you continuation joins the request instead of copying its trail in
   assert.equal(store.list().length, 1, "no second record was created");
 });
 
-test("an app result names its own Connected Folder, and older app results without a name still load", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "amplefile-agent-requests-apps-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const store = await AmpleFileRequestStore.open({ rootPath: root });
-  const request = await store.beginRoot({ kind: "agent", owner: { conversationId: "chat-1" }, surface: "popover", taskId: "task-1", content: "install it" });
-  const app = { connectedFolderId: "connected-folder-target", appId: "quote-board", featureInstallationId: "installation-1", digest: "a".repeat(64), title: "Quote board", version: "1.0.0" };
-  await store.recordAction("task-1", { command: "apps.operation.activate", at: new Date().toISOString(), connectedFolderId: "connected-folder-studio", connectedFolderName: "Studio",
-    apps: [{ ...app, connectedFolderName: "Launch plan" }] });
-  await store.recordAction("task-1", { command: "apps.install-preview", at: new Date().toISOString(), connectedFolderId: "connected-folder-target", connectedFolderName: "Launch plan", apps: [app] });
-  const reopened = await AmpleFileRequestStore.open({ rootPath: root });
-  const actions = reopened.get(request.requestId)!.actions;
-  assert.equal(actions[0]?.apps?.[0]?.connectedFolderName, "Launch plan", "the installation's Connected Folder, not the act's");
-  assert.equal(Object.hasOwn(actions[1]!.apps![0]!, "connectedFolderName"), false, "a reference without a name stays without one");
-  assert.equal(parseAmpleFileRequestAction({ command: "apps.install-preview", at: new Date().toISOString(), apps: [app] }).apps?.[0]?.connectedFolderName, undefined);
-  assert.throws(() => parseAmpleFileRequestAction({ command: "apps.install-preview", at: new Date().toISOString(), apps: [{ ...app, connectedFolderName: 7 }] }), /Connected Folder name/);
-});

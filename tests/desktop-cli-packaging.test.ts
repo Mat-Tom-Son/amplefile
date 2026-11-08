@@ -104,11 +104,13 @@ test("desktop agent shells inherit the exact running profile in development and 
 function assertActLaneShimContract(shim: string): void {
   const routedFamilies = [
     "chat", "chats", "files", "agent", "connected-folders", "history", "search",
-    "tools", "apps", "automations", "recently-deleted", "requests", "jobs",
+    "tools", "automations", "recently-deleted", "requests", "jobs",
   ];
   for (const routed of [...routedFamilies, "list", "status", "wait", "result"]) {
     assert.match(shim, new RegExp(`["']${routed}["']`), `act routing must reference ${routed}`);
   }
+  // Connected Folder apps were removed on 2026-11-07, so `apps` is no act group.
+  assert.doesNotMatch(shim, /["']apps["']/, "act routing must not reference the removed apps family");
   // F28: the wait loop settles on a task that is waiting on an answer, not
   // only on a terminal turn state, and says which by printing the status
   // document in that case. A shim that reads only task.state fails here.

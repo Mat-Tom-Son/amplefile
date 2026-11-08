@@ -75,7 +75,7 @@ function isActCommand(argumentsList) {
   if (argumentsList.includes("--help") || argumentsList.includes("-h")) return false;
   const positional = argumentsList.filter((token) => token !== "--json");
   const group = positional[0] || "";
-  const actGroups = ["chat", "chats", "files", "agent", "history", "search", "tools", "apps", "automations", "recently-deleted", "requests", "jobs", "worktrees"];
+  const actGroups = ["chat", "chats", "files", "agent", "history", "search", "tools", "automations", "recently-deleted", "requests", "jobs", "worktrees"];
   if (actGroups.includes(group)) return true;
   return group === "connected-folders" && positional[1] !== "list";
 }

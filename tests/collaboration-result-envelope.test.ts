@@ -8,12 +8,10 @@ import {
   ampleFileRequestLimitsSection,
 } from "../src/local/requests/request-records.js";
 import { ampleFileRequestLimits } from "../src/shared/amplefile-limits.js";
-import { parseRestrictedAppJsonSchema } from "../src/local/agent/restricted-app-manifest.js";
 
 /**
  * The one result shape (docs/collaboration-contract.md, F29). `chat report`,
- * an app-requested Worker task, a handoff outcome, and an automation chat hop
- * all produce this envelope, so what it accepts and what it refuses is a
+ * a handoff outcome, and an automation chat hop all produce this envelope, so what it accepts and what it refuses is a
  * contract several callers depend on.
  */
 
@@ -159,39 +157,3 @@ test("deliverables are Connected Folder–relative paths with a real content has
   }
 });
 
-test("a declared result shape is applied by the app manifest validator, not a second one", () => {
-  // The closed subset already shipped for app tools is the single
-  // implementation; the envelope hands `data` to it rather than reimplementing
-  // schema validation.
-  const schema = parseRestrictedAppJsonSchema({
-    type: "object",
-    additionalProperties: false,
-    properties: { words: { type: "integer" }, title: { type: "string" } },
-    required: ["words"],
-  }, "Result data schema");
-
-  assert.deepEqual(
-    parseAmpleFileResultEnvelope({ summary: "Done.", outcome: "succeeded", data: { words: 812 } }, { schema }).data,
-    { words: 812 },
-  );
-  // A visible validation failure that names the property, never silently
-  // accepted prose in the shape of a result.
-  assert.throws(
-    () => parseAmpleFileResultEnvelope({ summary: "Done.", outcome: "succeeded", data: { words: "many" } }, { schema }),
-    /Result details\.words must have type integer\./,
-  );
-  assert.throws(
-    () => parseAmpleFileResultEnvelope({ summary: "Done.", outcome: "succeeded", data: { title: "Q3" } }, { schema }),
-    /Result details is missing required property words\./,
-  );
-  assert.throws(
-    () => parseAmpleFileResultEnvelope({ summary: "Done.", outcome: "succeeded", data: { words: 1, extra: true } }, { schema }),
-    /Result details contains undeclared property extra\./,
-  );
-  // A free-text result is the common case and needs no schema at all.
-  assert.equal(parseAmpleFileResultEnvelope({ summary: "Done.", outcome: "succeeded" }, { schema }).data, undefined);
-  assert.throws(
-    () => parseAmpleFileResultEnvelope({ summary: "Done.", outcome: "succeeded", data: "free text" }, { schema }),
-    /Result details must have type object\./,
-  );
-});

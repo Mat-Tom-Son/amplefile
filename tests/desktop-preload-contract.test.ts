@@ -17,6 +17,13 @@ test("sandboxed desktop preloads only require Electron", () => {
   }
 });
 
+test("no preload or main-process handler serves a Connected Folder app view", () => {
+  // Connected Folder apps were removed on 2026-11-07, with their sandboxed
+  // host, its preload, and the agent-app protocol.
+  for (const source of preloads) assert.doesNotMatch(source, /restrictedApps|restricted-app-view/);
+  assert.doesNotMatch(main, /restricted-app-view|restricted-app-preload|restrictedAppProtocol|agent-app/);
+});
+
 test("main passes centralized product identity into both sandboxed preloads", () => {
   assert.equal((main.match(/\.\.\.productRendererArguments\(\)/g) ?? []).length, 2);
   assert.match(main, /rendererArgument\("product-name", productName\)/);
@@ -34,12 +41,10 @@ test("desktop preparation runs the real sandboxed preload smoke", () => {
 
 test("native clipboard writes require a trusted top-level sender and expose no reads", async () => {
   const inspector = await readFile(new URL("../desktop/src/model-context-preload.cts", import.meta.url), "utf8");
-  const restricted = await readFile(new URL("../desktop/src/restricted-app-preload.cts", import.meta.url), "utf8");
   for (const source of [...preloads, inspector]) {
     assert.match(source, /ipcRenderer\.invoke\("amplefile:clipboard:write", content\)/);
     assert.doesNotMatch(source, /clipboard:(?:read|clear)|clipboard\.read/);
   }
-  assert.doesNotMatch(restricted, /amplefile:clipboard/);
   const handler = main.slice(main.indexOf('ipcMain.handle("amplefile:clipboard:write"'));
   const body = handler.slice(0, handler.indexOf("\n  });\n"));
   assert.match(body, /modelContextWindow\.assertSender\(event\)/);

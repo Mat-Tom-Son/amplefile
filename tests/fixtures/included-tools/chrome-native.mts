@@ -143,14 +143,11 @@ try {
   command = await next(); assert.equal(command.params.foreground, true); assert.equal(command.params.targetId, "4102");
   await reply(command, { id: 4102, active: true }); await independent;
   for (const route of ["/status", "/next-v2?protocol=2&version=0.15.51", "/command-state-v2?id=made-up"]) assert.equal((await fetch(url + route)).status, 403);
-  const { RestrictedAppNetworkBroker } = await import("../../../src/local/agent/restricted-app-connections.ts");
-  const { parseRestrictedAppManifest } = await import("../../../src/local/agent/restricted-app-manifest.ts");
-  const broker = new RestrictedAppNetworkBroker({ credentials: { get: async () => undefined } as any });
-  const restricted = parseRestrictedAppManifest({ version: 2, id: "probe-app", title: "Probe", runtime: { kind: "sandboxed-web", entry: "index.html" }, ui: {}, tools: [], automations: [], permissions: { network: [{ id: "chrome-loopback", target: { kind: "loopback-http", host: "127.0.0.1", port }, methods: ["GET", "POST"], auth: [{ kind: "none" }] }] } });
-  const owner: any = { tenantId: "tenant_probe", runtimeInstanceId: "runtime-instance_probe", featureId: "probe-app", featureInstallationId: "feature-installation_probe", featureRevisionDigest: `amplefile.artifact.v1:sha256:${"a".repeat(64)}`, effectivePrincipalId: "principal_probe", connectionOwner: { kind: "instance", runtimeInstanceId: "runtime-instance_probe" }, networkGrants: ["chrome-loopback"] };
+  // Any other local process that reaches the loopback port without the
+  // companion's credential is refused, on every route and method.
   for (const [method, path] of [["GET", "/next-v2?protocol=2&version=0.15.51"], ["GET", "/status"], ["POST", "/result"], ["POST", "/command-v2"]] as const) {
-    const response = await broker.request(owner, restricted, { destinationId: "chrome-loopback", method, path, ...(method === "POST" ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "page.evaluate", params: { expression: "submit()" }, protocolVersion: 2, id: "made-up", ok: true }) } : {}) });
-    assert.equal(response.status, 403); assert.ok(!response.body.includes(token));
+    const response = await fetch(url + path, { method, ...(method === "POST" ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "page.evaluate", params: { expression: "submit()" }, protocolVersion: 2, id: "made-up", ok: true }) } : {}) });
+    assert.equal(response.status, 403); assert.ok(!(await response.text()).includes(token));
   }
   const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ1sAAAAASUVORK5CYII=";
   const screenshot = call(b.session, "chrome_screenshot", { targetId: "42" }); command = await next();
@@ -167,7 +164,7 @@ try {
   const stoppingB = stop(b.session); command = await next(); await reply(command, {}); await stoppingB;
   await assert.rejects(readFile(artifactB, "utf8"));
   await assert.rejects(fetch(url + "/status"));
-  console.log("PASS native Chrome: lazy credential, persistent companion identity, authenticated transport and actual restricted-app broker refusal, native Pi image result, no Connected Folder capture files, two-session disposal");
+  console.log("PASS native Chrome: lazy credential, persistent companion identity, authenticated transport and unauthenticated loopback refusal, native Pi image result, no Connected Folder capture files, two-session disposal");
 } finally {
   for (const session of sessions) { await session.extensionRunner.emit({ type: "session_shutdown", reason: "reload" }); session.dispose(); }
   await rm(root, { recursive: true, force: true });

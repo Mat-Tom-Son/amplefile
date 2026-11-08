@@ -112,6 +112,11 @@ export interface ConnectedFolderRemovalIntent {
    * exactly the pre-existing intent shape.
    */
   folderDisposition?: "preserve";
+  /**
+   * `app-state-removed` is read only: older builds marked an intent once the
+   * Connected Folder's app state was gone, before Connected Folder apps were
+   * removed (2026-11-07). Either phase finalizes now.
+   */
   phase: "requested" | "app-state-removed";
   requestedAt: string;
 }
@@ -279,7 +284,7 @@ export async function renameConnectedFolder(connectedFolderId: string, name: str
 }
 
 /**
- * Persists the user-authorized removal before any App or content cleanup. From
+ * Persists the user-authorized removal before any content cleanup. From
  * this point the Connected Folder is intentionally hidden from every registry projection;
  * startup recovery can safely roll the operation forward after a crash.
  */
@@ -340,22 +345,6 @@ export async function beginConnectedFolderRemoval(
   });
 }
 
-export async function markConnectedFolderRemovalAppStateRemoved(
-  connectedFolderId: string,
-  io: Partial<ConnectedFolderRemovalIo> = {},
-): Promise<ConnectedFolderRemovalIntent> {
-  assertId(connectedFolderId);
-  return withRegistryMutation(async () => {
-    const registry = await readRegistry();
-    const intent = registry.pendingRemovals.find((item) => item.connectedFolderId === connectedFolderId);
-    if (!intent) throw new Error("Connected Folder removal intent not found.");
-    if (intent.phase === "app-state-removed") return structuredClone(intent);
-    intent.phase = "app-state-removed";
-    await removalIo(io).persistRegistry(registry);
-    return structuredClone(intent);
-  });
-}
-
 export async function listPendingConnectedFolderRemovals(): Promise<ConnectedFolderRemovalIntent[]> {
   return (await readRegistry()).pendingRemovals.map((intent) => structuredClone(intent));
 }
@@ -369,9 +358,6 @@ export async function finalizeConnectedFolderRemoval(
     const registry = await readRegistry();
     const intent = registry.pendingRemovals.find((item) => item.connectedFolderId === connectedFolderId);
     if (!intent) throw new Error("Connected Folder removal intent not found.");
-    if (intent.phase !== "app-state-removed") {
-      throw new Error("Connected Folder cleanup cannot start before App state has been removed.");
-    }
     const connectedFolder = registry.connectedFolders.find((item) => item.id === connectedFolderId);
     if (!connectedFolder || !samePath(connectedFolder.connectedFolderRoot, intent.connectedFolderRoot)
       || connectedFolder.location.storage !== intent.storage) {
@@ -385,7 +371,7 @@ export async function finalizeConnectedFolderRemoval(
     let deleted = false;
     // A preserve intent carries no deletion authority (null base, null root
     // identity), so the managed claim-and-delete machinery below must never
-    // run for it: the registration and app state go, the folder stays.
+    // run for it: the registration goes, the folder stays.
     if (intent.storage === "managed" && intent.folderDisposition !== "preserve") {
       const claimPath = managedRemovalClaimPath(intent);
       let claimStatus = await managedClaimStatus(intent);

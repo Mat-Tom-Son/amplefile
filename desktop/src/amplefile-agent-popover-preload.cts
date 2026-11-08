@@ -22,7 +22,7 @@ const maxStagedValueLength = 4 * 1024 * 1024;
 // This window needs the local API session, fixed popover actions, and opening
 // a selected Connected Folder–relative result through the existing checked path handler. Keep
 // it separate from the main renderer preload so a UI bug here cannot reach
-// folder pickers, restricted-app brokers, updates, settings, or shell actions.
+// folder pickers, updates, settings, or shell actions.
 contextBridge.exposeInMainWorld("ampleFileDesktop", {
   desktop: true,
   clipboard: {

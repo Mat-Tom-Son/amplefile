@@ -6,7 +6,6 @@ import { resolve } from "node:path";
 import { normalizeFolderTargetPath } from "../../shared/folder-target-path.js";
 import { ampleFileAutomationDeclarationBounds } from "../../shared/amplefile-limits.js";
 import { folderAutomationRoles, type FolderAutomationRole } from "../../shared/automation-presentation.js";
-import { restrictedAppAutomationIntervalMinutes } from "../agent/restricted-app-manifest.js";
 import { stableJsonDigest } from "./stable-json-digest.js";
 
 /**
@@ -38,37 +37,19 @@ export const ampleFileAutomationProposalFileSuffix = ".amplefile-automation.json
 /**
  * Every declaration bound, enforced at parse and re-enforced by the executor.
  * The values are inherited from contracts this codebase already proves rather
- * than invented here: the interval reuses the restricted-app automation
- * cadence, exact source paths mirror the act lane's `files add` bound
+ * than invented here: the interval allows one minute to a year (366 days),
+ * exact source paths mirror the act lane's `files add` bound
  * (`maxActFromPaths` in src/local/cli/act-commands.ts), and created-files
  * handoffs may tighten but never widen the folder target resolver's hard
  * limits (src/local/automations/folder-targets.ts).
  */
 export const ampleFileAutomationBounds = Object.freeze({
   ...ampleFileAutomationDeclarationBounds,
-  minIntervalMinutes: restrictedAppAutomationIntervalMinutes.minimum,
-  maxIntervalMinutes: restrictedAppAutomationIntervalMinutes.maximum,
+  minIntervalMinutes: 1,
+  maxIntervalMinutes: 366 * 24 * 60,
   maxHandoffFiles: 100_000,
   maxHandoffTotalBytes: 64 * 1024 * 1024 * 1024,
 });
-
-/**
- * Automation-run settles an on-settled trigger may admit. `skipped` and
- * `cancelled` are never admissible — they are lifecycle artifacts of
- * non-overlap, suspension, and revocation, and chaining on them oscillates.
- */
-export const ampleFileAutomationAppAutomationRunOutcomes = ["failure", "success"] as const;
-export type AmpleFileAutomationAppAutomationRunOutcome = (typeof ampleFileAutomationAppAutomationRunOutcomes)[number];
-
-export interface AmpleFileAutomationAppAutomationRunSettleSource {
-  kind: "app-automation-run";
-  connectedFolder: string;
-  appId: string;
-  appAutomationId: string;
-  outcomes: AmpleFileAutomationAppAutomationRunOutcome[];
-}
-
-export type AmpleFileAutomationSettleSource = AmpleFileAutomationAppAutomationRunSettleSource;
 
 /** Run-now only; every enabled automation additionally accepts manual run-now. */
 export interface AmpleFileAutomationManualTrigger {
@@ -85,11 +66,6 @@ export interface AmpleFileAutomationAtTrigger {
   /** Canonical absolute time; proposal input must name an explicit offset. */
   at: string;
   ifMissed: "run" | "skip";
-}
-
-export interface AmpleFileAutomationOnSettledTrigger {
-  kind: "on-settled";
-  source: AmpleFileAutomationSettleSource;
 }
 
 export interface AmpleFileAutomationFilesChangedTrigger {
@@ -113,7 +89,6 @@ export type AmpleFileAutomationTrigger =
   | AmpleFileAutomationManualTrigger
   | AmpleFileAutomationIntervalTrigger
   | AmpleFileAutomationAtTrigger
-  | AmpleFileAutomationOnSettledTrigger
   | AmpleFileAutomationFilesChangedTrigger;
 
 /**
@@ -277,8 +252,6 @@ export const ampleFileAutomationDocumentMaxBytes = 64 * 1024 * 1024;
 // records ids only.
 const connectedFolderIdPattern = /^space-[a-f0-9]{16}$/;
 const automationIdPattern = /^automation-[a-z0-9][a-z0-9-]{7,154}$/;
-// Mirrors the restricted-app manifest id rule for app and automation ids.
-const restrictedAppIdPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const stepIdPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const extensionPattern = /^\.[a-z0-9][a-z0-9._+-]*$/;
 /**
@@ -299,12 +272,6 @@ const forbiddenMessageCharacters = new RegExp(`[${ampleFileAutomationForbiddenMe
 export function scrubAmpleFileAutomationMessageText(value: string): string {
   return value.replace(new RegExp(`[${ampleFileAutomationForbiddenMessageCharacters}]`, "gu"), "\uFFFD");
 }
-
-const inadmissibleOutcomeReasons = new Map<string, string>([
-  ["interrupted", "it records a crashed run, not a result"],
-  ["skipped", "it is a lifecycle artifact of non-overlap and suspension"],
-  ["cancelled", "it is a lifecycle artifact of shutdown and revocation"],
-]);
 
 export function normalizeAmpleFileAutomationProposal(value: unknown): AmpleFileAutomationProposal {
   const record = objectRecord(value, "Automation proposal must be a JSON object.");
@@ -383,14 +350,17 @@ export function ampleFileAutomationDigest(value: unknown): string {
 
 /**
  * Features a stored automation may still name from before they were removed
- * (Checks, 2026-11-07). The parser refuses them; the automation store drops a
- * stored automation that uses one on its own instead of treating the whole
- * store as damaged (src/local/automations/automation-store.ts).
+ * (Checks and Connected Folder apps, 2026-11-07). The parser refuses them;
+ * the automation store drops a stored automation that uses one on its own
+ * instead of treating the whole store as damaged
+ * (src/local/automations/automation-store.ts).
  */
 const retiredAutomationFeatureReasons = Object.freeze({
   checkStep: "it runs a Check, and AmpleFile no longer has Checks",
   checkRunTrigger: "it waits for a Check run, and AmpleFile no longer has Checks",
   findingsPlaceholder: "its message fills in {{trigger.findings}} from a Check run, and AmpleFile no longer has Checks",
+  appAutomationRunTrigger: "it waits for a Connected Folder app's automation, and AmpleFile no longer has Connected Folder apps",
+  settledTrigger: "it waits for other work to settle, and AmpleFile no longer has that trigger",
 });
 
 /**
@@ -403,8 +373,11 @@ const retiredAutomationFeatureReasons = Object.freeze({
 export function ampleFileAutomationRetiredFeature(value: unknown): string | null {
   if (!isJsonObject(value)) return null;
   const trigger = value.trigger;
-  if (isJsonObject(trigger) && trigger.kind === "on-settled" && isJsonObject(trigger.source) && trigger.source.kind === "check-run") {
-    return retiredAutomationFeatureReasons.checkRunTrigger;
+  if (isJsonObject(trigger) && trigger.kind === "on-settled") {
+    const source = isJsonObject(trigger.source) ? trigger.source.kind : undefined;
+    if (source === "check-run") return retiredAutomationFeatureReasons.checkRunTrigger;
+    if (source === "app-automation-run") return retiredAutomationFeatureReasons.appAutomationRunTrigger;
+    return retiredAutomationFeatureReasons.settledTrigger;
   }
   const steps = Array.isArray(value.steps) ? value.steps.filter(isJsonObject) : [];
   if (steps.some((step) => step.kind === "check")) return retiredAutomationFeatureReasons.checkStep;
@@ -437,7 +410,6 @@ export function ampleFileAutomationTriggerCatchesUp(
 export function ampleFileAutomationReferencedConnectedFolderIds(definition: AmpleFileAutomationDefinition): string[] {
   const ids = new Set<string>();
   if (definition.trigger.kind === "files-changed") ids.add(definition.trigger.connectedFolder);
-  if (definition.trigger.kind === "on-settled") ids.add(definition.trigger.source.connectedFolder);
   for (const step of definition.steps) {
     if (step.kind === "files") {
       ids.add(step.fromConnectedFolder);
@@ -452,15 +424,13 @@ export function ampleFileAutomationReferencedConnectedFolderIds(definition: Ampl
 
 /**
  * What this automation does in one Connected Folder, derived from the declaration alone:
- * the trigger watches it (a folder change, or an app automation settling
- * there), a files step copies into or out of it, a chat step starts a
+ * the trigger watches it (a folder change there), a files step copies into or out of it, a chat step starts a
  * conversation there. Empty exactly when
  * `ampleFileAutomationReferencedConnectedFolderIds` does not name the Connected Folder.
  */
 export function ampleFileAutomationConnectedFolderRoles(definition: AmpleFileAutomationDefinition, connectedFolderId: string): FolderAutomationRole[] {
   const roles = new Set<FolderAutomationRole>();
   if (definition.trigger.kind === "files-changed" && definition.trigger.connectedFolder === connectedFolderId) roles.add("watches");
-  if (definition.trigger.kind === "on-settled" && definition.trigger.source.connectedFolder === connectedFolderId) roles.add("watches");
   for (const step of definition.steps) {
     if (step.kind === "files") {
       if (step.toConnectedFolder === connectedFolderId) roles.add("copies-to");
@@ -608,30 +578,11 @@ function normalizeTrigger(value: unknown, version: AmpleFileAutomationContractVe
       ...(record.ifMissed !== undefined ? { ifMissed: record.ifMissed as "run" | "skip" } : {}) };
   }
   if (record.kind === "on-settled") {
-    assertKeys(record, ["kind", "source"], [], "Automation on-settled trigger");
-    return { kind: "on-settled", source: normalizeSettleSource(record.source) };
+    throw new Error(`Automation trigger kind on-settled is retired: ${ampleFileAutomationRetiredFeature({ trigger: record })}.`);
   }
-  throw new Error(version >= 3 ? "Automation trigger kind must be manual, interval, at, on-settled, or files-changed." : version >= 2
-    ? "Automation trigger kind must be manual, interval, at, or on-settled."
-    : "Automation trigger kind must be manual, interval, or on-settled.");
-}
-
-function normalizeSettleSource(value: unknown): AmpleFileAutomationSettleSource {
-  const record = objectRecord(value, "Automation trigger source must be a JSON object.");
-  if (record.kind === "check-run") {
-    throw new Error(`Automation trigger source kind check-run is retired: ${retiredAutomationFeatureReasons.checkRunTrigger}.`);
-  }
-  if (record.kind === "app-automation-run") {
-    assertKeys(record, ["kind", "connectedFolder", "appId", "appAutomationId"], ["outcomes"], "Automation app-automation-run trigger source");
-    return {
-      kind: "app-automation-run",
-      connectedFolder: connectedFolderId(record.connectedFolder, "Automation app-automation-run trigger source Connected Folder"),
-      appId: restrictedAppId(record.appId, "Automation app-automation-run trigger source appId"),
-      appAutomationId: restrictedAppId(record.appAutomationId, "Automation app-automation-run trigger source automationId"),
-      outcomes: normalizeOutcomes(record.outcomes, "Automation app-automation-run trigger source", ampleFileAutomationAppAutomationRunOutcomes, ["success"]),
-    };
-  }
-  throw new Error("Automation trigger source kind must be app-automation-run.");
+  throw new Error(version >= 3 ? "Automation trigger kind must be manual, interval, at, or files-changed." : version >= 2
+    ? "Automation trigger kind must be manual, interval, or at."
+    : "Automation trigger kind must be manual or interval.");
 }
 
 function normalizeStep(value: unknown, index: number, version: AmpleFileAutomationContractVersion): AmpleFileAutomationStep {
@@ -739,28 +690,6 @@ function normalizeFilesSource(value: unknown, stepLabel: string): AmpleFileAutom
   throw new Error(`${label} kind must be paths, tree, or step-created-files.`);
 }
 
-function normalizeOutcomes<Outcome extends string>(
-  value: unknown,
-  label: string,
-  admissible: readonly Outcome[],
-  fallback: readonly Outcome[],
-): Outcome[] {
-  if (value === undefined) return [...fallback];
-  if (!Array.isArray(value) || value.length < 1) throw new Error(`${label} outcomes must name at least one outcome.`);
-  const outcomes = new Set<Outcome>();
-  for (const item of value) {
-    if (typeof item === "string" && (admissible as readonly string[]).includes(item)) {
-      outcomes.add(item as Outcome);
-      continue;
-    }
-    const reason = typeof item === "string" ? inadmissibleOutcomeReasons.get(item) : undefined;
-    if (reason) throw new Error(`${label} cannot admit outcome "${item}": ${reason}.`);
-    throw new Error(`${label} outcomes must be among: ${admissible.join(", ")}.`);
-  }
-  if (outcomes.size !== value.length) throw new Error(`${label} outcomes repeat an outcome.`);
-  return [...outcomes].sort();
-}
-
 function normalizeExtensions(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > 256) {
     throw new Error(`${label} extensions must contain between 1 and 256 file extensions.`);
@@ -799,12 +728,6 @@ function connectedFolderId(value: unknown, label: string): string {
 function automationId(value: unknown): string {
   const id = boundedText(value, "Automation id", 160).toLocaleLowerCase("en-US");
   if (!automationIdPattern.test(id)) throw new Error("Automation id is invalid.");
-  return id;
-}
-
-function restrictedAppId(value: unknown, label: string): string {
-  const id = boundedText(value, label, 64).toLocaleLowerCase("en-US");
-  if (!restrictedAppIdPattern.test(id)) throw new Error(`${label} is invalid.`);
   return id;
 }
 

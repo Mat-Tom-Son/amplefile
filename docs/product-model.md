@@ -54,16 +54,12 @@ use the same request, receipt and Stop paths: [Worker tools](worker-tools.md).
 | **Chats** | Conversations grounded in the selected Connected Folder. | A chat does not automatically receive every file in the Connected Folder. |
 | **History** | Checkpoints and recoverable changes associated with a Connected Folder. | It should remain distinct from chat history. |
 | **Worker** | The Pi-powered helper in a Connected Folder. | Provider connections are configured in Settings and stay machine-local; model choices are saved separately for each Connected Folder and for the AmpleFile agent, independently from Connected Folder content. |
-| **Skills & Extensions** | One popup dialog, opened by the rail's Add button, to discover and manage what the Workers and the AmpleFile agent can do. | It groups Skills and Extensions and is pinned to the Connected Folder it was opened from; installed Connected Folder apps are managed in Settings → Apps. |
+| **Skills & Extensions** | One popup dialog, opened by the rail's Add button, to discover and manage what the Workers and the AmpleFile agent can do. | It groups Skills and Extensions and is pinned to the Connected Folder it was opened from. |
 | **Skill** | A reusable way of working that helps the agent approach a task. | A Skill may contain executable scripts and is not merely a document. |
 | **Extension** | An executable capability or connection available to the agent. | It has a stronger trust implication than an ordinary file. |
-| **App Project** | An optional build-and-publication identity declared for one Connected Folder. | Its presentation and identity are machine-local application state, not another portable file or cloud ownership record. |
-| **Feature** | One stable reviewed contribution to an App Project. | A Feature id names a slot; only an exact reviewed revision identifies executable bytes. |
-| **Release** | An immutable content-addressed snapshot of reviewed Features and App presentation. | Preparing, publishing, and installing it are separate local acts; a display version is not executable identity. |
-| **App Instance** | One published Release installed into a chosen Connected Folder with its own runtime, data, grants, connections, jobs, and receipts. | It is distinct from the source-bound Development preview and does not live in or own the Connected Folder's folder. |
 | **AmpleFile agent** | The agent above all Connected Folders: one conversation scope, shown in the menu-bar/tray popover and the main window's agent panel under one name. | It is not a Connected Folder, a second Worker, or a renamed contract; "AmpleFile agent" stays the technical term. |
 | **Automation** | A declared, inert-until-enabled set of deterministic steps that move work between Connected Folders on a reviewed trigger. | It is executed by app code, never by a Worker conversation, and nothing automation-shaped is written into any Connected Folder. The technical contract remains `automation`. |
-| **Recently deleted** | The machine-local holding place for anything AmpleFile removed that History could not restore — files, folders, a managed Connected Folder's folder, a removed imported Skill, app storage and retained-data exports — kept for a retention window and restorable from Settings or the CLI. | It is not a Connected Folder, not portable, not a backup, and never empties on a verb; only retention purges it. |
+| **Recently deleted** | The machine-local holding place for anything AmpleFile removed that History could not restore — files, folders, a managed Connected Folder's folder, and a removed imported Skill — kept for a retention window and restorable from Settings or the CLI. | It is not a Connected Folder, not portable, not a backup, and never empties on a verb; only retention purges it. |
 
 The Connected Folder header chooses the active working folder and provides compact
 actions to use an existing folder, create a Connected Folder, or manage Connected Folders. The
@@ -79,18 +75,14 @@ tab; **Settings → Automations** remains the place to manage declarations
 (the 2026-09-24 amendment in [Automations](automations.md)).
 
 The bottom-rail **Add** button opens the **Skills & Extensions** popup directly
-(2026-09-25). There is no Add menu and no Library (desktop 2026-09-25, CLI 2026-10-10); the Connected Folder–owned Apps tab is retired too. App building is not an Add
-destination and has no button: a person asks a Worker to build an app in a
-Chat. Skills, Extensions, packages, and core tools are managed in the
+(2026-09-25). There is no Add menu, no Library (desktop 2026-09-25, CLI 2026-10-10), and no
+Connected Folder apps (removed 2026-11-07). Skills, Extensions, packages, and core tools are managed in the
 **Skills & Extensions** popup, a dialog like Settings and Keyboard shortcuts
 that is pinned to the Connected Folder it was opened from. Its Installed view starts with
 an **Included with AmpleFile** strip holding the five included tools, then shows
 **Everywhere** tools for the AmpleFile agent and every Connected Folder beside
 **This folder only** tools that travel with one Connected Folder; the two groups stack on
-narrow widths. Installed Connected Folder apps open from their contributed rail region,
-while **Settings → Apps** lists apps by Connected Folder and owns their grants,
-connections, named automations and run history, local data, update review,
-removal, Worker requests, and the receipts of their model use. Provider connections,
+narrow widths. Provider connections,
 API keys, supported provider OAuth, scoped model choices, and per–Connected Folder
 **Worker instructions** live in **Settings → AI Models**. Credentials are shared
 machine-wide, while model choices and Worker instructions are machine-local
@@ -104,8 +96,7 @@ working in that folder, the Worker or the AmpleFile agent adds it as one line
 with `connected-folders worker instructions --append`, which keeps what is already
 there and skips an exact repeat, and says what it saved. OpenRouter has an explicit live
 refresh backed by its tool-capable text-model API; the last good result is
-cached outside every Connected Folder and Pi's built-in catalog remains a fallback. A
-restricted Connected Folder app's connection is managed with that app in **Settings → Apps**.
+cached outside every Connected Folder and Pi's built-in catalog remains a fallback.
 
 Microsoft Foundry setup in AI Models offers **Microsoft Foundry / Azure
 (OpenAI)**, **Microsoft Foundry (Chat Completions)**, and **Microsoft Foundry
@@ -239,7 +230,7 @@ finished before deletion, and stopped turns must finish draining first.
 
 File deletion and Connected Folder removal likewise refuse until the affected
 Connected Folder's requests and delegated work have settled or been stopped and
-drained. Running turns, compaction, app jobs with file access, and
+drained. Running turns, compaction, and
 Automation file work hold the same backend reservation across deletion. A waiting question still
 counts as unfinished work. This applies to desktop and CLI calls, including a
 Worker deleting from its own running turn; a busy refusal must not be bypassed
@@ -274,7 +265,7 @@ There are two honest ways to create a Connected Folder:
 
 Both routes should lead to the same product experience. Registration must not move, duplicate, or rename user files. AmpleFile adds one intentionally narrow, hidden metadata layer: `.amplefile/connected-folder.json` preserves the Connected Folder identity when its folder moves, and `.amplefile/conversations/` keeps that Connected Folder's Chats with it. The Files and History surfaces hide this directory. Provider credentials, the Connected Folder registry, History objects, Pi sessions, ignore rules, and other machine-specific app state remain in application storage. Portable executable Pi configuration remains separate under `.pi/`. Creating or registering the Connected Folder is the user's authorization for AmpleFile to load that local configuration; removing the Connected Folder revokes that authorization.
 
-AmpleFile starts from a clean profile. It does not parse, import, migrate, rewrite, wipe, or delete legacy Workspace application state, `.workspace/` metadata, restricted-app data, connections, receipts, or artifacts. Preserved `.workspace/` content is non-authoritative and remains hidden and excluded from History, Search, Automation folder targets, and restricted-app file grants. Pi's personal resources and authentication may remain shared at the configured Pi root, but AmpleFile sessions are isolated under `sessions/amplefile/`.
+AmpleFile starts from a clean profile. It does not parse, import, migrate, rewrite, wipe, or delete legacy Workspace application state, `.workspace/` metadata, connections, receipts, or artifacts. Preserved `.workspace/` content is non-authoritative and remains hidden and excluded from History, Search, and Automation folder targets. Pi's personal resources and authentication may remain shared at the configured Pi root, but AmpleFile sessions are isolated under `sessions/amplefile/`.
 
 Deleting a managed Connected Folder moves its folder into Recently deleted and
 unregisters it; removing a linked Connected Folder only unregisters. The clean-break rule
@@ -285,21 +276,13 @@ rewrites that metadata.
 
 A Connected Folder may also have a personal visual identity: accent colors, a compact banner, and a Fluent icon. Those preferences help distinguish Connected Folders inside AmpleFile, but they currently remain application state on this computer. The versioned `connected-folder.json` schema can grow deliberately if portable appearance is introduced later; current code must not smuggle machine-specific state into it.
 
-The same portability rule applies to the App Project declaration. Its
-`projectId`, source Connected Folder binding, title, description, and icon live in AmpleFile
-application data. A Release captures an immutable presentation snapshot, but
-AmpleFile does not create `.amplefile/app-project.json` or imply that copying a
-folder transfers Project ownership. Portable Project metadata, import, and
-collision handling require a later explicit design.
-
 The user should always be able to reveal a Connected Folder in the operating system, open its files with other applications, back it up normally, or synchronize it with a desktop sync tool. A Google Drive for desktop folder works because it is a local folder; that is not the same as direct Google Drive API integration.
 
 Settings uses one preferences window with **Appearance**, **AI Models**,
 **Automations**, **Command Line** (2026-11-07: add the command to Terminal and
 the skill to Claude Code or Codex, so other AI agents can use AmpleFile),
-**Recently deleted**, and **About** navigation,
-plus an **Apps** page (2026-09-25) that lists installed Connected Folder apps by Connected Folder and
-owns their management. Automations also carries **Limits**, collapsed by default
+**Recently deleted**, and **About** navigation.
+Automations also carries **Limits**, collapsed by default
 under a Limits disclosure and unchanged in meaning; **Closing the window**, where supported,
 lives in Appearance → Interface, and updates live in About. The navigation becomes a single horizontally scrollable row in
 narrow windows; keyboard selection brings the selected item into view. AI Models
@@ -333,30 +316,15 @@ Worker settings; appearance stays personal application state outside the ordinar
 
 ## Context is explicit
 
-Registering a folder is also the host authorization for its existing local Pi configuration. Agent context, new package installation, restricted-app permissions, and external connections remain separate states:
+Registering a folder is also the host authorization for its existing local Pi configuration. Agent context, new package installation, and external connections remain separate states:
 
 | Action | What changes | What does not happen implicitly |
 |---|---|---|
 | Register a folder as a Connected Folder | The folder appears in AmpleFile and its local Pi configuration may load. | Files are not uploaded or converted, and local code is not certified as safe. |
 | Attach a file to a Chat | That file is made available to the conversation. | Other Connected Folder files are not included automatically. |
 | Install a personal Skill or Extension | It becomes available through the user's Pi scope. | It is not copied into every Connected Folder. |
-| Ask a Worker to build a Connected Folder app | The agent writes an ordinary restricted-app package and asks AmpleFile to inspect it; the inspected digest is installed at once as a Local preview with every declared destination, file permission, notification category, and automation, and the proposal record is the receipt. | No JavaScript is evaluated during inspection, no secret is collected, and destinations that need a secret are named for the person to connect in Settings → Apps. |
-| Add a reviewed Connected Folder app | The exact reviewed digest becomes a Local preview in that Connected Folder's Development Instance, able to reach everything its package declares. | It is not a Release or App Instance, and a destination that needs a secret stays unusable until the person connects it. |
-| Declare an App Project | AmpleFile records an explicit machine-local title, description, icon, Project identity, and source Connected Folder binding. | No file is added to `.amplefile/`, no account or cloud Project is created, and source is not uploaded. |
-| Prepare a Release | AmpleFile snapshots every current reviewed Development preview into one verified, immutable, content-addressed v2 Release and records a prepared state. | It is not yet eligible to install, and later source edits cannot alter its bytes. |
-| Publish a prepared Release | AmpleFile rechecks that the reviewed previews are still exact, then records a separate local publication receipt. | Nothing is uploaded, signed, listed, hosted, granted, or installed. |
-| Delete an unused Release | AmpleFile keeps the Release's record and envelope in Recently deleted, removes its machine-local lifecycle record, then safely prunes the unreferenced immutable object. Restoring it from Recently deleted puts it back in App Studio as it was. | A Release required by an active App Instance, either side of a prepared install/update/rollback, or retained data cannot be deleted. Project source and App data are not removed. |
-| Prepare and activate an App install | AmpleFile durably allocates one new App Instance and its Feature/Data identities, then installs the exact published Release into the chosen registered Connected Folder. | It does not convert the Development Instance. Declared powers are granted and declared automations enabled on install; connections with a byte-identical destination declaration, automation enabled states by id, and run receipts carry forward across a changed digest; an identical digest is idempotent. |
-| Prepare and activate an update or rollback | AmpleFile records a deterministic plan, rechecks it at activation, fences the old runtime, and atomically changes the active Release and authority. | A friendly version cannot override digest identity. Only exact unchanged content is eligible for continuity; schema/migration execution is not supported locally. |
-| Uninstall an App Instance | AmpleFile fences the whole release-backed runtime and requires an explicit retain-or-purge choice for local data. A purge first writes a recovery export into Recently deleted. | Project source and separately selected Connected Folder files are never deleted. Retained namespaces do not remain runnable and require a later explicit purge. |
-| Re-allow or revoke one app destination, file root, or notification category | Declared powers are on from install; the person narrows them and can re-allow them, and each control names one exact reviewed declaration. | Other declarations, saved connections, automations, and other Connected Folders receive no authority. |
-| See what an app's notifications did | Settings → Apps lists the app's recent notifications under its categories — when, which one, and whether it was shown — from a bounded machine-local record (2026-10-11). | The record names reviewed categories only; it never holds where a click would have opened the app. |
-| Save or remove an app connection | AmpleFile adds or deletes one operating-system-encrypted binding for the host-derived Tenant, Runtime Instance, Feature Installation, canonical Feature Revision, declaration, target, and current Runtime Instance owner. | Destination access is not implicitly granted, and deleting the local record does not revoke the credential at its provider. Principal-owned connections remain a future portable-runtime journey, not a current local UI. |
-| Disable or re-enable one app automation | Declared automations run from install on their bounded schedules while AmpleFile is running; disabling stops one, and re-enabling starts it again. | A disabled job does not run, and every run receives only the intersection of current grants and its reviewed permission subset. |
-| Run an app automation now | AmpleFile runs that named job once and records a durable receipt, even if its schedule is off. | It does not enable or shift the schedule; a disabled job has no notification authority. |
 | Delete a file or folder | AmpleFile records a safety restore point; anything the restore point cannot cover moves into Recently deleted with a manifest naming its Connected Folder, path, size, deleted-at, restore-by, and receipt. | Nothing is permanent at the moment it happens; `.amplefile/`, `.pi/`, and `.workspace/` are never valid endpoints. |
 | Restore from Recently deleted | AmpleFile puts the entry back at its recorded Connected Folder path, or re-registers a deleted managed Connected Folder, and receipts the restore. | The retention clock is the only thing that empties Recently deleted; no agent or CLI verb does. |
-| Ask an app for agent work or a model call | `assistant.request` starts a fresh full-tools Chat in the owning Connected Folder immediately, titled with the app's name and the action's and showing its message as **From** the app; `assistant.infer` returns bounded text or schema-validated JSON from the Connected Folder's model with no tools or transcript. Both leave receipts naming the effective model and usage. | No grant beyond installation is needed; remote app views get neither; model selection stays with the person. |
 | Enable an automation | AmpleFile records an exact-digest machine grant over one reviewed declaration on a single receipted call. | Proposal authoring, registration, and run-now never enable standing behavior; an edited declaration returns to proposed. |
 | Run an automation | App code executes the reviewed steps in order with per-hop receipts inside the shared scheduler bounds. A declared `fold` step may message the AmpleFile agent, and a closed set of host-resolved placeholders may fill a step's message. | No model composes glue, an automation never moves or deletes source files, and no Connected Folder's folder learns another Connected Folder exists. |
 
@@ -391,59 +359,13 @@ The **Skills & Extensions** popup unifies discovery and management without erasi
 
 Packages can distribute Skills, Extensions, prompts, themes, and related Pi resources. They remain installation and lifecycle plumbing; the primary UI should describe the capability a person is gaining, show inspected resource types and lifecycle scripts when registry metadata is available, and label unavailable details as unknown rather than absent. A package that includes Extensions or install scripts is a code-execution decision and must not be presented as a harmless Skill-only import. See [Skills & Extensions](skills-and-extensions.md) for the complete compatibility and safety model.
 
-AmpleFile has two deliberately different executable lanes:
-
-| Lane | Trust and distribution | UI and authority |
-|---|---|---|
-| Native Pi Extension | Standard Pi package/resource locations; full current-user execution after Everywhere install or Connected Folder registration. | May add Pi tools, commands, providers, events, and a static host-rendered `surface.json` contribution. Its code owns its network and operating-system access. |
-| Restricted Connected Folder app | A complete, Connected Folder–local reviewed-web package proposed by the agent or added with `amplefile apps install-preview`. It never enters Pi's package manager or loaded catalog. | Runs reviewed UI and worker code in separate sandboxed Electron hosts. Tabs, network, storage, files, connections, notifications, and named automations exist only through narrow host contracts. |
-
-The model experiences either lane as a package-shaped capability, but the product must not flatten their execution boundaries. Native Pi compatibility remains the full-trust ecosystem lane; restricted apps are the flexible app canvas for generated inboxes, dashboards, extractors, project-service panels, and other Connected Folder–specific tools. See [Restricted app authoring](restricted-app-authoring.md) and [Restricted app runtime](restricted-app-runtime.md).
-
-## Apps without turning every Connected Folder into an App
-
-AmpleFile is growing from a local Connected Folder tool into a local-first App studio and
-runtime, but **Connected Folder** and **App** are not synonyms. A Connected Folder remains the ordinary
-folder-backed context for general work and may never produce an App. A Connected Folder may
-instead declare one optional **App Project**: a source-and-publication role that
-defines reviewed **Features** such as the current restricted sidebar app.
-
-Preparing selected reviewed material creates an immutable **App Release**;
-publishing it is a separate local decision. Installing or hosting a Release creates a release-backed **App Instance** with
-its own mutable data, grants, connections, jobs, users, and receipts. Local
-builder preview runs in a separate, release-less **Development Instance** so
-editable source never becomes running bytes implicitly. Internally both runtime
-forms share a tightly scoped broker contract, but Development and App Instances
-never convert into one another.
-
-Project ownership and runtime tenancy are separate. `projectId` is the local App
-lineage; an optional registry `cloudProjectId` is only an authenticated binding.
-A Principal or Organization owns project roles, while a Tenant owns Runtime
-Instance policy and data. Every effect is attributed to one human, agent,
-service, or system Principal and the exact Feature Installation executing for
-it.
-
-Review, publication, installation, every live grant, connection, named
-automation, role, migration, and data-retention decision remain separate acts.
-Publication is not folder sync, an App Release contains no ambient Connected Folder or Pi
-authority, and hosted web must implement the same semantic broker restrictions
-as the desktop runtime. The accepted identities, authority rules, implementation
-order, and private hosted milestone are defined in
-[App platform foundation](app-platform-foundation.md).
-
-In the shipped local path, a Chat-bound or `amplefile apps install-preview` preview
-is explicitly a **Local preview** in the source Connected Folder's Development Instance.
-App Studio separately declares Project presentation, prepares, publishes, and
-deletes unused Releases, installs one into a chosen registered Connected Folder, and
-manages update, rollback, uninstall, retained data, and purge. App Studio is a Connected Folder–bound work
-tab reached from each Connected Folder's group heading in Settings → Apps and from an
-app's details there, not a fifth top-level rail destination.
+Native Pi Extensions are AmpleFile's executable capability lane: standard Pi package/resource locations, with full current-user execution after Everywhere install or Connected Folder registration. An Extension may add Pi tools, commands, providers, events, and a static host-rendered `surface.json` contribution; its code owns its network and operating-system access. The separate sandboxed lane for Connected Folder apps was removed on 2026-11-07.
 
 ## Shared semantic layer
 
 AmpleFile also needs a semantic layer above its individual screens so the same product can be understood by the renderer, command line, scripts, Pi, and eventually a higher-level agent. `AmpleFileKernel` is that shared in-process read authority. It resolves actor context to the most-specific Connected Folder, exposes versioned snapshots of registered Connected Folders and running agent work, and projects Pi's authoritative capability catalog without creating another registry.
 
-The installed `amplefile` command is the first adapter over that layer. Its read lane reports context, Connected Folders, active agent turns and compactions, and available Skills, Extensions, tools, packages, prompts, themes, and commands in human or stable JSON form, and stays deliberately content-free. A separately versioned act lane — authenticated per app launch and recorded with durable receipts — additionally gives a shell-capable agent the product's receipted verbs while the app is running: Connected Folder lifecycle and appearance, per–Connected Folder model defaults and instructions, Chats and their lifecycle, History restore points and restores, restore-pointed file operations, content search, App Studio's authority-neutral lifecycle, Recently deleted, app listing and tool invocation for the AmpleFile agent (`apps list|invoke`), the collaboration verbs and request reads (`chat report|ask|answer|handoff`, `requests list|show`), and the AmpleFile agent itself. `connected-folders worker show` is a content-bearing act read because it returns the instruction text and only already-connected model choices; its model and instruction setters are direct, Connected Folder–scoped, metadata-receipted acts fenced against active Connected Folder work. Provider credentials and provider connection setup remain unavailable. Act commands reuse the same trust, conflict, History, and task rules as the desktop surfaces. Acts that make bytes runnable, widen a standing power, or destroy run immediately through the same prepare, pin, journal-first, fenced execution path and return a receipt; destruction is reversible through History or Recently deleted (`recently-deleted list|restore`). The act lane has no approval state. Tabs, panes, other application settings, pairing, and secret entry stay outside it.
+The installed `amplefile` command is the first adapter over that layer. Its read lane reports context, Connected Folders, active agent turns and compactions, and available Skills, Extensions, tools, packages, prompts, themes, and commands in human or stable JSON form, and stays deliberately content-free. A separately versioned act lane — authenticated per app launch and recorded with durable receipts — additionally gives a shell-capable agent the product's receipted verbs while the app is running: Connected Folder lifecycle and appearance, per–Connected Folder model defaults and instructions, Chats and their lifecycle, History restore points and restores, restore-pointed file operations, content search, Recently deleted, the collaboration verbs and request reads (`chat report|ask|answer|handoff`, `requests list|show`), and the AmpleFile agent itself. `connected-folders worker show` is a content-bearing act read because it returns the instruction text and only already-connected model choices; its model and instruction setters are direct, Connected Folder–scoped, metadata-receipted acts fenced against active Connected Folder work. Provider credentials and provider connection setup remain unavailable. Act commands reuse the same trust, conflict, History, and task rules as the desktop surfaces. Acts that make bytes runnable, widen a standing power, or destroy run immediately through the same prepare, pin, journal-first, fenced execution path and return a receipt; destruction is reversible through History or Recently deleted (`recently-deleted list|restore`). The act lane has no approval state. Tabs, panes, other application settings, pairing, and secret entry stay outside it.
 
 The **AmpleFile agent** is the first in-product consumer of that layer: one conversation scope above all Connected Folders and the door through which material enters them. Its transcript is machine-local, and its Pi session loads Everywhere capabilities plus two app-materialized AmpleFile agent instructions. It is a full-trust agent with ordinary local tools, taught to prefer receipted `amplefile` read and act commands for work that touches Connected Folders. It is reached through `amplefile agent …`, with a default single saved conversation and `--new` creating another thread, and through the menu-bar popover. The popover is a compact conventional chat: person messages are colored bubbles on the right and agent replies are unboxed on the left. Its header shows the current Chat title, **Previous**, and **New chat**; it has no **Open app** action, brand lockup, conversation disclosure, overflow menu, or phase badge. **New chat** makes a clean slate, creates a saved transcript on first send, and never deletes a prior transcript. The popover remains a separate window rather than a Connected Folder–bound tab. Dragging files, folders, or links over it stages inert reference chips; the person adds an instruction and send remains the explicit act. Its composer is an expanding field with a centered circular send action; the model label opens **Settings → AI Models** scoped to the AmpleFile agent and the reasoning selector saves the next-session default before a Chat exists and changes a live management session when one exists. While a turn runs, the action becomes **Stop**, the draft remains usable, and incremental agent text streams before the persisted reply replaces it. A request whose delegated Connected Folder turn is still running shows **handed off**, never done; a failed child fails the request, Stop names every recorded child it aborts, and every attachment receives a final disposition.
 
@@ -461,7 +383,7 @@ When a design is ambiguous, prefer the option that best preserves these properti
 2. **Ordinary files:** user content stays portable and directly accessible.
 3. **Clear language:** expose the Connected Folder mental model before filesystem or package-manager jargon.
 4. **Explicit context:** people can tell what the agent can see in the current chat.
-5. **Layered authorization:** Connected Folder registration authorizes local Pi configuration; package installation, restricted-app permissions, connections, and Chat context stay explicit and separately revocable.
+5. **Layered authorization:** Connected Folder registration authorizes local Pi configuration; package installation, connections, and Chat context stay explicit and separately revocable.
 6. **Pi compatibility:** use standard Pi behavior and formats instead of parallel AmpleFile-only systems.
 7. **Capability transparency:** show source, scope, status, and diagnostics for executable additions.
 8. **Provider neutrality:** cloud and model integrations should use replaceable adapters rather than shape the core model.
@@ -500,88 +422,36 @@ When a design is ambiguous, prefer the option that best preserves these properti
 - Reach tabs, files, and running work from the keyboard: close, cycle, and jump between surface tabs, open a new Chat tab, stop the running turn, move the Files selection with arrow keys, rename and delete from the tree into the existing undo window, and answer Settings groups with arrows.
 - Drive one real Pi turn through the local API with the harness-neutral `amplefile:drive` test driver.
 - Render validated declarative `surface.json` contributions from loaded Pi Extensions as a contributed rail destination, left-pane navigator, and Connected Folder–bound view tabs without injecting Extension code into the renderer.
-- Let the agent submit a completed, Connected Folder–relative restricted-app package through a host-owned proposal tool. AmpleFile persists a connected-folder-and-Chat-bound, digest-pinned review without evaluating JavaScript; the inspected package is installed at once as a Local preview with every declared power and automation, and destinations needing a secret are named for the person.
-- Give each installed Connected Folder app arbitrary reviewed web UI in a sandboxed rail navigator that may open host-derived Connected Folder–owned tabs from a click, plus optional bounded agent actions and named automations in a separate worker sandbox. A machine-wide scheduler shared across Connected Folders provides 32 execution slots by default, FIFO admission, same-job non-overlap, durable cadence, bounded catch-up, and run receipts. Settings → Apps manages each job independently alongside exact network/file/notification grants, host-owned encrypted connections, local data, updates that carry eligible authority forward, and removal; the CLI's `apps install-preview` is the local-package path.
-- Provide bounded host-owned JSON storage with active-visible-view invalidation hints, History-covered connected-folder-file grants, exact public-HTTPS or numeric-loopback requests, API-key/bearer/basic/OAuth PKCE connection adapters, and static reviewed system notifications from enabled automation runs, whose click opens the app's left pane at the route and state the app named (2026-10-11).
-- Carry host-owned local App Project, Development Instance, Feature Installation,
-  Data Namespace, canonical Feature Revision, and seven-domain authority identity
-  through the restricted-app UI. The first connected-folder-app preview may
-  establish the Connected Folder's machine-local App Project/Development Instance scaffold;
-  App Studio exposes its explicit presentation and lifecycle.
-- Produce portable, authority-captured receipts for local automation runs.
-  Unsupported, future, or legacy registries remain inert rather than being
-  assigned invented authority. Post-update and uninstall cleanup is a durable, restart-retried
-  outbox, so stale secret/data bytes never regain live authority after partial
-  cleanup failure.
-- Provide canonical declaration/artifact conformance and a durable local App
-  Studio: immutable v2 Release assembly and verification; a content-addressed
-  Release store; separate prepared and published states; persisted
-  install/update operations; release-backed App Instance
-  install/update/rollback; and explicit uninstall retain/purge plus later purge.
-- Attach each local App Instance to one chosen registered Connected Folder while keeping its
-  bytes, data, grants, connections, schedules, journals, and receipts in
-  AmpleFile application data. Enforce one instance per `(projectId, target
-  Connected Folder)` and reject Feature-id collisions with previews or other installed Apps
-  in that Connected Folder.
-- Preserve only exact eligible authority across a release change. A changed
-  Feature revision keeps its installation/data lineage but resets grants,
-  connections, and jobs; the current local runtime rejects schema-bearing
-  Releases and migration execution rather than applying them partially.
-- Block removal of a Project's source Connected Folder or an App Instance's target Connected Folder
-  while a release-backed instance remains active, directing the person to
-  uninstall it with an explicit data choice first. Keep the source blocked while
-  its Project owns retained data; after explicit purge, source removal clears the
-  machine-local Project/Release lineage and target removal cancels prepared
-  operations aimed at that Connected Folder. Both keep what they clear in Recently
-  deleted as one App Studio item, which goes back once the Connected Folder is
-  registered again and brings its previews' data with it (2026-10-11).
 - Build, Developer ID-sign, notarize, and publish the macOS arm64 app, DMG, ZIP, blockmap, and update metadata, with a verified installed two-version updater lane. This is the only active desktop distribution lane.
 
 - Meet the whole product through the **AmpleFile agent** — the AmpleFile agent above all Connected Folders, its menu-bar/tray popover, and the main window's agent panel — with capture in. See [the AmpleFile agent](amplefile-agent-decisions.md).
-- Perform every product verb through the AmpleFile agent's receipted act lane at human parity: chat lifecycle and compaction, History restore with automation-aware fencing, file operations, content search, Connected Folder rename/unregister and appearance, capability removal, and App Studio's authority-neutral lifecycle — each act journaled before it runs, receipted after, with typed undo references.
+- Perform every product verb through the AmpleFile agent's receipted act lane at human parity: chat lifecycle and compaction, History restore with automation-aware fencing, file operations, content search, Connected Folder rename/unregister and appearance, and capability removal — each act journaled before it runs, receipted after, with typed undo references.
 - Run every verb — including those that make bytes runnable, widen a standing power, or delete — on first call with identity pins, journal-first receipts, and at-most-once execution; keep every deletion reversible through History or Recently deleted, restorable from Settings → Recently deleted and `amplefile recently-deleted`.
-- Declare deterministic cross–Connected Folder automations — a schedule, explicitly designated folder change, or settled app automation run driving fixed Chat, files, and agent steps on a separate eight-slot automation scheduler with per-hop receipts and host-resolved placeholders; enablement is one receipted call, and nothing above Connected Folders runs an unattended conversation.
+- Declare deterministic cross–Connected Folder automations — a schedule or explicitly designated folder change driving fixed Chat, files, and agent steps on a separate eight-slot automation scheduler with per-hop receipts and host-resolved placeholders; enablement is one receipted call, and nothing above Connected Folders runs an unattended conversation.
 - Read the overview — the app-composed digest of running work, needs-you questions and due snoozes, and changes since each surface last looked — through `amplefile agent overview --json` and narration on demand, neither of which advances seen markers. The compact popover stays focused on the live conversation and capture.
 
 - Follow an explicit request across agent turns and delegated work. The
   [collaboration contract](collaboration-contract.md) provides durable questions,
   selected result envelopes, non-blocking waits and bounded continuations.
-  Chats, the AmpleFile agent, and Apps share the
+  Chats and the AmpleFile agent share the
   [collaboration experience](collaboration-experience.md): questions answered in
   place, request-wide Stop, visible results and explicit saved-work recovery.
 
 ### Next product layer
 
-- Add a deliberate portable App Project declaration, import/relink, and
-  collision model only if it can preserve ordinary-folder semantics without
-  treating a copied id as ownership.
-- Add reviewed schema and migration execution, retained-data adoption, and
-  bounded export before allowing a Release that needs those transitions to run
-  locally.
-- Add richer multi-Feature composition review and instance diagnostics while
-  preserving the current per-Feature authority boundary.
 - Make Connected Folder location, storage ownership, History coverage, and executable capability class easier to inspect at a glance.
 - Add named-pack selection for Anthropic marketplace bundles instead of importing every discovered Skill in an archive.
 - Extend the shipped personal act lane with Chat-scoped grants, confirmation and revocation ceremonies, and headless execution, if the surface ever outgrows the per-launch single-user token.
 - Extend the shipped fold and bounded Automation triggers only through deliberate contracts for any new event source, handoff condition, or recovery behavior. Cross–Connected Folder coordination stays in the AmpleFile agent; Connected Folder Chats remain local to their own work.
-- Add restricted-app remote subscriptions and arbitrary push adapters, finer web-runtime resource controls, and a verified connected-folder-service registry backed by a trusted launcher, per-instance challenge, and process-generation lifecycle. Raw numeric loopback grants remain useful for development but do not prove which process owns a port.
 - Offer Chrome and Computer Control setup in a Chat the first time a Worker needs them, deepen accessibility coverage beyond the shipped keyboard reach, renderer interaction tests, recovery, export, and diagnostics.
 
 ### Later adapters and distribution maturity
 
-- Prove one private hosted-web App Instance end to end—publish, deploy, explicit
-  destination and connection grant, named automation and receipt, update, and
-  revocation—before public discovery, an App Store, or generalized sync.
 - Verify and document supported provider OAuth flows account tier by account tier in packaged desktop releases; do not turn Pi's generic OAuth hook support into a blanket compatibility claim.
 - Add direct cloud-storage integrations behind a provider-neutral model with stable remote IDs, offline behavior, explicit conflicts, and no surprise deletion.
 - Bring Windows distribution back only as a deliberate future product decision: the Windows build and release lanes were removed on 2026-11-07, so a new one needs a publicly trusted code-signing identity, platform-native package evidence, an updater proof, and release authority that does not gate the Mac lane.
 
 Roadmap wording must distinguish shipped behavior from direction. Update this section when a capability moves between layers.
-
-The completed App platform exploration (archived in the work-fold repository) and its
-Gate 1–4 memos preserve the rationale and rejected ambiguities behind the
-accepted [App platform foundation](app-platform-foundation.md). Roadmap wording
-must continue to distinguish accepted direction from shipped behavior.
 
 ## Decision test
 
@@ -638,9 +508,8 @@ so a native front end could later sit on the same server.
   as on the Mac), the app font, text size, list density, contrast,
   transparency, and message style apply to the window and its dialogs, and the
   page's preview is a small file manager. Settings' buttons open their targets
-  in the file manager: an app's build Chat opens in the
-  panel, a result file is shown selected where it lives,
-  and an app change starts a Chat with the request drafted. Shortcut Keys
+  in the file manager: a result file is shown selected where it lives.
+  Shortcut Keys
   lists the file manager's keys.
   **Customize Connected Folder** keeps Name, Icon, and Color; the file manager draws
   no banner, so Banner and Title are left out, and a chosen icon is stamped on
@@ -704,7 +573,7 @@ so a native front end could later sit on the same server.
 - **Removing a connected-folder:** right-clicking it in the sidebar, or the Action
   menu, offers Disconnect…; a linked folder and its files stay where
   they are, a managed one moves to Recently Deleted, and the host still refuses
-  while its work or apps need it.
+  while its work needs it.
 - **Finder's file actions** (owner request, 2026-11-07): ⌘C copies the
   selection, also onto the system pasteboard so Finder can paste it; ⌘V pastes
   what was copied here or in Finder (the desktop process reads the pasteboard
@@ -765,8 +634,8 @@ so a native front end could later sit on the same server.
   Automation on. They are plain fallbacks for now ("What’s in
   here?", "Summarize"); the owner wants them written by a model from the
   folder's context and its earlier Chats (2026-11-07).
-- **Left out for now:** the built-in browser, apps, and full-width Chats.
-  Page tabs went with pages on 2026-11-07.
+- **Left out for now:** the built-in browser and full-width Chats. Page tabs
+  went with pages on 2026-11-07, and apps were removed the same day.
 
 ### 2026-09-25 information architecture amendment
 
@@ -784,7 +653,8 @@ Owner decisions, recorded here in dated form; the body of this document and
   connections, named automations and run history, local data, update review,
   removal, Worker requests, and the receipts of the app's model use — lives in
   **Settings → Apps**, which lists apps by Connected Folder. **Build with Worker** is
-  gone; a person asks a Worker to build an app in a Chat.
+  gone; a person asks a Worker to build an app in a Chat. *(Removed 2026-11-07
+  with Connected Folder apps.)*
 - **Skills & Extensions** is a popup dialog like Settings and Keyboard
   shortcuts, pinned to the Connected Folder it was opened from. Its Installed view starts
   with an **Included with AmpleFile** strip holding exactly the five included
@@ -884,11 +754,12 @@ Owner decisions, recorded here in dated form; the body of this document and
   left-pane view may open one tab per press of the person's mouse or keyboard.
   Built-in **Automations** follows the same rule: its rail button lists the
   automations that touch the Connected Folder in the left pane, and clicking one
-  opens its own tab.
+  opens its own tab. *(Apps were removed 2026-11-07.)*
 - Apps look like AmpleFile: their views receive the shell's colors, font, and
   radii, following the theme and the Connected Folder's accent, plus an opt-in kit
   of matching controls. An app may show the same still green dot the Chats use
   on its rail button when something new is waiting, and clears it itself.
+  *(Removed 2026-11-07 with Connected Folder apps.)*
 
 
 ### 2026-10-18 Documents checking

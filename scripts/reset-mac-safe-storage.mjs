@@ -14,14 +14,12 @@ const keychainPath = join(homedir(), "Library", "Keychains", "login.keychain-db"
 const protectedFiles = [
   "secure-settings.bin",
   "secure-settings.bin.bak",
-  "restricted-app-connections.bin",
-  "restricted-app-connections.bin.bak",
 ];
 
 if (process.platform !== "darwin") throw new Error(`${identity.productName} Safe Storage reset is only available on macOS.`);
 
 if (!apply) {
-  console.log(`This removes the ${identity.productName} Safe Storage key and encrypted provider/restricted-app credentials.`);
+  console.log(`This removes the ${identity.productName} Safe Storage key and encrypted provider credentials.`);
   console.log("Connected Folders, chats, History, preferences, and ordinary app data are preserved.");
   console.log(`Quit ${identity.productName}, then rerun with: npm run desktop:reset:mac-safe-storage -- --yes --reopen`);
   process.exitCode = 2;

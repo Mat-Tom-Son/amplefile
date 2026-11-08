@@ -405,13 +405,13 @@ function humanizeTool(key: string): string {
   return key.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-/** An app's tool is registered as `app_<16 hex>_<name>`; the hash is never shown. */
+/** Older Chats can hold steps from a removed app's tool, registered as `app_<16 hex>_<name>`; the hash is never shown. */
 const appToolName = /^app_[0-9a-f]{16}_(.+)$/i;
 
 /**
- * The name a step shows for a tool without its own verb. An app's tool says
- * which app it belongs to ("Inbox: Search"); a step saved before titles were
- * recorded falls back to the tool's own name, marked as an app's.
+ * The name a step shows for a tool without its own verb: its recorded title
+ * when it has one ("Inbox: Search"). A removed app's step saved before titles
+ * were recorded falls back to the tool's own name, marked as an app's.
  */
 export function toolTitle(entry: RuntimePreviewEntry): string {
   const title = entry.toolTitle?.trim();

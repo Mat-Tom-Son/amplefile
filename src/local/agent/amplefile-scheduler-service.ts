@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { ampleFileAppAutomationDefaultConcurrency, ampleFileAppErrorTextMaxLength } from "../../shared/amplefile-limits.js";
+import { ampleFileSchedulerDefaultConcurrency, ampleFileSchedulerErrorTextMaxLength } from "../../shared/amplefile-limits.js";
 
-/** The same bound the app host keeps, so a run receipt holds an app's whole error. */
-export const ampleFileSchedulerMaxErrorLength = ampleFileAppErrorTextMaxLength;
+/** A run receipt keeps a job's error text whole up to this bound. */
+export const ampleFileSchedulerMaxErrorLength = ampleFileSchedulerErrorTextMaxLength;
 
-/** Shared with Settings → Automations → Limits so the shown number is the enforced one. */
-const defaultMaxConcurrency = ampleFileAppAutomationDefaultConcurrency;
+const defaultMaxConcurrency = ampleFileSchedulerDefaultConcurrency;
 const defaultMaxRunResults = 500;
 const maximumTimerDelayMs = 2_147_483_647;
 const maximumKeyPartLength = 200;
@@ -68,7 +67,7 @@ export interface AmpleFileSchedulerJobDefinition {
   /** Canonical scheduling contract. */
   schedule?: AmpleFileSchedulerSchedule;
   /**
-   * Compatibility input for restricted-app callers. It is normalized
+   * Compatibility input for interval-only callers. It is normalized
    * immediately into an interval schedule and may not accompany `schedule`.
    */
   intervalMinutes?: number;

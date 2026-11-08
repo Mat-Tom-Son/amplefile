@@ -160,45 +160,18 @@ test("digests pin the exact declaration independent of field order", () => {
   assert.notEqual(ampleFileAutomationDigest(renamed), ampleFileAutomationDigest(declaration));
 });
 
-test("on-settled triggers admit only recorded settle outcomes with fail-closed defaults", () => {
-  const explicit = normalizeAmpleFileAutomationProposal(mutated((value) => {
-    value.automation.trigger = {
-      kind: "on-settled",
-      source: { kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect", outcomes: ["success", "failure"] },
-    };
-  }));
-  if (explicit.automation.trigger.kind !== "on-settled") assert.fail("trigger shape");
-  assert.deepEqual(explicit.automation.trigger.source.outcomes, ["failure", "success"], "outcomes canonicalize sorted");
-  assert.deepEqual(ampleFileAutomationReferencedConnectedFolderIds(explicit.automation), [collectorConnectedFolder, manuscriptConnectedFolder, publisherConnectedFolder].sort());
-
-  const automation = normalizeAmpleFileAutomationProposal(mutated((value) => {
-    value.automation.trigger = {
-      kind: "on-settled",
-      source: { kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect" },
-    };
-  }));
-  if (automation.automation.trigger.kind !== "on-settled") assert.fail("trigger shape");
-  assert.deepEqual(automation.automation.trigger.source, {
-    kind: "app-automation-run",
-    connectedFolder: collectorConnectedFolder,
-    appId: "collector",
-    appAutomationId: "collect",
-    outcomes: ["success"],
-  });
-
+test("on-settled triggers are retired and refused by name", () => {
+  // Their only sources were Check runs and Connected Folder app automation
+  // runs, both removed on 2026-11-07.
   const settled = (source: Record<string, unknown>) => mutated((value) => {
     value.automation.trigger = { kind: "on-settled", source };
   });
-  const app = { kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect" };
-  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ ...app, outcomes: ["interrupted"] })), /cannot admit outcome "interrupted"/);
-  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ ...app, outcomes: ["success", "success"] })), /repeat/);
-  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ ...app, outcomes: [] })), /at least one/);
-  // Checks were removed (2026-11-07): their settle source is refused by name.
-  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "check-run", connectedFolder: collectorConnectedFolder })), /check-run is retired/);
-  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect", outcomes: ["skipped"] })), /cannot admit outcome "skipped"/);
-  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect", outcomes: ["cancelled"] })), /cannot admit outcome "cancelled"/);
-  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect", outcomes: ["exploded"] })), /must be among/);
-  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector" })), /missing required field: appAutomationId/);
+  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "check-run", connectedFolder: collectorConnectedFolder })), /on-settled is retired: it waits for a Check run/);
+  assert.throws(
+    () => normalizeAmpleFileAutomationProposal(settled({ kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect" })),
+    /on-settled is retired: it waits for a Connected Folder app's automation/,
+  );
+  assert.throws(() => normalizeAmpleFileAutomationProposal(settled({ kind: "assistant-turn", connectedFolder: collectorConnectedFolder })), /on-settled is retired/);
 });
 
 test("version 2 admits explicit-offset one-time triggers and keeps their time-sensitive horizon out of stable parsing", () => {
@@ -351,13 +324,10 @@ test("unknown kinds, versions, fields, and unpinned references fail closed", () 
   })), /unsupported field: enabled/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
     value.automation.trigger = { kind: "cron", expression: "0 9 * * 1" };
-  })), /manual, interval, or on-settled/);
+  })), /manual or interval/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
     value.automation.trigger = { kind: "manual", intervalMinutes: 60 };
   })), /unsupported field: intervalMinutes/);
-  assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
-    value.automation.trigger = { kind: "on-settled", source: { kind: "assistant-turn", connectedFolder: manuscriptConnectedFolder } };
-  })), /must be app-automation-run/);
   assert.throws(() => normalizeAmpleFileAutomationProposal(mutated((value) => {
     value.automation.steps[0] = { id: "run", kind: "shell", connectedFolder: manuscriptConnectedFolder, command: "rm -rf /" };
   })), /chat or files/);
@@ -510,7 +480,7 @@ test("an agent-step-only automation names only the Connected Folder its trigger 
     ...version4Proposal,
     automation: {
       title: "Nightly digest",
-      trigger: { kind: "on-settled", source: { kind: "app-automation-run", connectedFolder: collectorConnectedFolder, appId: "collector", appAutomationId: "collect", outcomes: ["failure"] } },
+      trigger: { kind: "files-changed", connectedFolder: collectorConnectedFolder, watch: { kind: "tree", path: "inbox", recursive: true, extensions: [".md"] }, debounceSeconds: 30, cooldownMinutes: 5 },
       steps: [{ id: "digest", kind: "agent", message: "{{trigger.summary}}" }],
     },
   });
@@ -518,7 +488,7 @@ test("an agent-step-only automation names only the Connected Folder its trigger 
   assert.equal(ampleFileAgentStepOnly.automation.steps.length, 1);
 });
 
-test("a stored declaration that names a retired Check feature is recognized without parsing anything else", () => {
+test("a stored declaration that names a retired Check or app feature is recognized without parsing anything else", () => {
   const stored = (overrides: Record<string, unknown>) => ({
     kind: "amplefile.automation",
     version: 1,
@@ -538,6 +508,12 @@ test("a stored declaration that names a retired Check feature is recognized with
   assert.match(ampleFileAutomationRetiredFeature(stored({
     trigger: { kind: "on-settled", source: { kind: "check-run", connectedFolder: manuscriptConnectedFolder } },
   })) ?? "", /waits for a Check run/);
+  assert.match(ampleFileAutomationRetiredFeature(stored({
+    trigger: { kind: "on-settled", source: { kind: "app-automation-run", connectedFolder: manuscriptConnectedFolder, appId: "collector", appAutomationId: "collect" } },
+  })) ?? "", /Connected Folder app's automation/);
+  assert.match(ampleFileAutomationRetiredFeature(stored({
+    trigger: { kind: "on-settled", source: "damaged" },
+  })) ?? "", /no longer has that trigger/);
   assert.match(ampleFileAutomationRetiredFeature(stored({
     version: 4,
     steps: [{ id: "tell", kind: "agent", message: "{{ trigger.findings }}" }],

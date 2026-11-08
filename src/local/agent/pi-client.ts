@@ -20,7 +20,6 @@ import {
   type AgentSession,
   type AgentSessionEvent,
   type AgentSessionRuntime,
-  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
 /** Pi's inline image content shape, as accepted by `AgentSession.prompt`. */
@@ -58,9 +57,6 @@ import type { AmpleFileDurableTurnUsage } from "./turn-store.js";
 import { localEditPath, parseChatToolImage, projectNativeEdit, turnPresentation } from "./turn-presentation.js";
 import { boundedLiveTurnPresentation } from "./turn-live-presentation.js";
 import { maxTurnToolEditDiffBytes, type AssistantPresentation, type ChatToolEdit, type ChatToolImage, type ChatWorkTrailEntry, type ChatLiveTurnPresentation } from "../../shared/chat-presentation.js";
-import { type RestrictedAppProposalHost, type RestrictedAppProposalResult } from "./restricted-app-proposals.js";
-import { restrictedAppAutomationIntervalMinutes } from "./restricted-app-manifest.js";
-import { restrictedAppStarterFiles, writeRestrictedAppStarter } from "./restricted-app-starter.js";
 import { createImageGenerationTool, type GeneratedImageSink } from "./image-generation-tool.js";
 import {
   buildTurnIdentity,
@@ -83,12 +79,6 @@ import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel
 import { createChecklistTool, describeChecklist, type ChecklistToolHost } from "./checklist-tool.js";
 import { ProgressRecovery } from "./progress-recovery.js";
 import type { AmpleFileChecklistItem } from "../requests/request-records.js";
-import { restrictedAppAssistantLimits, restrictedAppLimitSize } from "../../shared/restricted-app-tasks.js";
-import { restrictedAppInferenceLimits } from "../../shared/restricted-app-inference.js";
-import type {
-  RestrictedAppInstalled,
-  RestrictedAppService,
-} from "./restricted-app-service.js";
 
 export type { PiRuntimeConfig, PiRuntimeMetadata, PiRuntimeProvider } from "./pi-runtime-config.js";
 export type { PiConnectedFolderTurnContext, PiConnectedFolderTurnDelegation } from "./connected-folder-turn-context.js";
@@ -117,7 +107,7 @@ export interface PiChatEvent {
   assistantPresentation?: AssistantPresentation;
   toolCallId?: string;
   toolName?: string;
-  /** Readable name for an app's tool, whose registered name carries a hash. */
+  /** Readable tool name, when one is known beyond the registered name. */
   toolTitle?: string;
   phase?: "queued" | "running" | "streaming" | "complete" | "error";
   detail?: string;
@@ -245,8 +235,6 @@ export interface PiConversationState {
 
 export interface PiConversationHostCapabilities {
   connectedFolderId: string;
-  restrictedAppProposals?: RestrictedAppProposalHost;
-  restrictedApps?: Pick<RestrictedAppService, "list" | "invoke">;
 }
 
 interface PiTurnOwner {
@@ -308,8 +296,6 @@ export class PiConversationClient extends EventEmitter {
   private pendingAssistantError: string | null = null;
   private retryAttempts = 0;
   private turnActivities = new Map<string, PiTurnActivity>();
-  /** Registered app tool name → "App: Tool", so steps never show the hashed name. */
-  private appToolTitles = new Map<string, string>();
   private turnWorkTrail = new Map<string, PiTurnWorkTrailEntry>();
   private turnWorkTrailTruncated = false;
   private activeThinkingTrailId: string | null = null;
@@ -318,7 +304,7 @@ export class PiConversationClient extends EventEmitter {
   private lastToolEventKey = "";
   private nativeEditPaths = new Map<string, string>();
   private turnEditDiffBytes = 0;
-  /** In-flight bounded app inference calls; `stop()` aborts them so a runtime rebuild interrupts them honestly. */
+  /** In-flight bounded inference calls; `stop()` aborts them so a runtime rebuild interrupts them honestly. */
   private readonly boundedCalls = new Set<AbortController>();
   /**
    * What the last settled turn spent, measured as the session's own totals
@@ -346,7 +332,7 @@ export class PiConversationClient extends EventEmitter {
       { purpose: "title" }, () => title.call(this, request, response));
     const infer = this.infer;
     this.infer = (request) => this.modelCall.run(
-      { purpose: "app_inference" }, () => infer.call(this, request));
+      { purpose: "bounded_inference" }, () => infer.call(this, request));
   }
 
   /** Sends the user's exact text to Pi; /skill and extension commands stay raw. */
@@ -371,7 +357,7 @@ export class PiConversationClient extends EventEmitter {
     this.turnProgressRequestId = context.connectedFolderTurn?.requestId;
     this.turnChecklist = context.checklist?.length ? context.checklist.map((item) => ({ ...item })) : null;
     // Measured around this turn only, so a later Chat title request or a bounded
-    // app inference call on the same session cannot be charged to it.
+    // inference call on the same session cannot be charged to it.
     let measuredSession: AgentSession | null = null;
     let baseline: SessionUsageBaseline | null = null;
     try {
@@ -677,7 +663,7 @@ export class PiConversationClient extends EventEmitter {
   }
 
   /**
-   * Bounded app inference on this Connected Folder's configured model: no transcript, no
+   * Bounded inference on this Connected Folder's configured model: no transcript, no
    * tools beyond the optional result submission, and no persisted messages.
    * The session is streamed, never prompted, so it stays at zero messages and
    * keeps resolving the Connected Folder's saved model on every rebuild.
@@ -752,7 +738,7 @@ export class PiConversationClient extends EventEmitter {
     this.runtimeGeneration += 1;
     if (this.activeExtensionTurn) this.activeExtensionTurn.cancelled = true;
     this.resolvedRuntime?.config.extensionUi?.forgetScope?.(this.extensionUiScope());
-    // Bounded app inference has no turn to settle; abort it so callers see an interruption, not a hang.
+    // Bounded inference has no turn to settle; abort it so callers see an interruption, not a hang.
     for (const call of this.boundedCalls) call.abort();
     const session = this.runtimeHost?.session;
     if (this.promptInFlight) {
@@ -845,17 +831,6 @@ export class PiConversationClient extends EventEmitter {
       const preferred = options.sessionManager.buildSessionContext().messages.length === 0
         ? findPreferredModel(runtime)
         : undefined;
-      const restrictedApps = this.hostCapabilities?.restrictedApps
-        ? await this.hostCapabilities.restrictedApps.list(this.hostCapabilities.connectedFolderId)
-        : [];
-      const restrictedAppTools = this.hostCapabilities?.restrictedApps
-        ? createRestrictedAppTools({
-          connectedFolderId: this.hostCapabilities.connectedFolderId,
-          apps: restrictedApps,
-          service: this.hostCapabilities.restrictedApps,
-        })
-        : [];
-      this.appToolTitles = restrictedAppToolTitles(restrictedApps);
       const customTools = [
         recovery.tool(),
         ...(this.options.worktrees ? [createWorktreeTool(this.options.worktrees, () => this.extensionTurn.getStore()?.taskId ?? this.activeExtensionTurn?.taskId)] : []),
@@ -909,15 +884,6 @@ export class PiConversationClient extends EventEmitter {
         }) : []),
         // Every session in the desktop app can use the built-in browser the person sees.
         ...(this.options.browser ? createBrowserTools({ host: this.options.browser, ...(this.options.browserOwner ? { owner: this.options.browserOwner } : {}) }) : []),
-        ...(this.hostCapabilities?.restrictedAppProposals
-          ? [createRestrictedAppStarterTool({ connectedFolderRoot: options.cwd }), createRestrictedAppProposalTool({
-            connectedFolderId: this.hostCapabilities.connectedFolderId,
-            connectedFolderRoot: options.cwd,
-            conversationId: this.conversationId,
-            host: this.hostCapabilities.restrictedAppProposals,
-          })]
-          : []),
-        ...restrictedAppTools,
       ];
       const result = await createAgentSessionFromServices({
         services,
@@ -1261,7 +1227,7 @@ export class PiConversationClient extends EventEmitter {
   }
 
   private emitToolEvent(raw: any): void {
-    const event = toolEvent(raw, this.appToolTitles);
+    const event = toolEvent(raw);
     if (!event) return;
     const toolCallId = event.toolCallId;
     if (!toolCallId) return;
@@ -1684,204 +1650,6 @@ export class PiConversationClient extends EventEmitter {
   }
 }
 
-export function createRestrictedAppProposalTool(input: {
-  connectedFolderId: string;
-  connectedFolderRoot: string;
-  conversationId: string;
-  host: RestrictedAppProposalHost;
-}): ToolDefinition<any> {
-  return {
-    name: "propose_connected_folder_app",
-    label: "Propose Connected Folder app",
-    description: "Add a completed Connected Folder app package from the current Connected Folder. AmpleFile inspects and hashes the folder, adds it as this Connected Folder's local preview immediately with every declared destination, access to the whole Connected Folder, notification category, and automation on, and records a receipt. Secrets are never stored by this tool.",
-    promptSnippet: "Add a Connected Folder app from a package folder in this Connected Folder",
-    promptGuidelines: [
-      "When the user asks you to create or update an AmpleFile side-rail app, write the complete restricted app package inside the current Connected Folder, then call propose_connected_folder_app with its Connected Folder–relative folder. For a new app, start with start_connected_folder_app, which writes a working package that already follows these rules, and build from it.",
-      "An app is a tool for the person inside AmpleFile that uses their files, a Worker, notifications, or connections.",
-      "Make the app look like AmpleFile: link /__amplefile/kit.css and put class af-app on <body> for the shell's font, colors, and controls: af-button (with af-button-primary, af-button-quiet, af-button-danger), af-input, af-select, af-textarea, af-field, af-toolbar, af-list with af-row, af-row-title, and af-row-meta, af-card, af-badge, af-empty, af-divider, af-spinner, af-title, af-heading, and af-muted. For anything custom, use the --wf-* variables AmpleFile puts into every view: --af-font, --af-font-size, --af-canvas, --af-surface, --af-surface-subtle, --af-surface-hover, --af-text, --af-text-muted, --af-text-subtle, --af-border, --af-border-strong, --af-accent, --af-on-accent, --af-accent-soft, --af-accent-text, --af-focus, --af-success, --af-danger, --af-attention, --af-radius-sm, --af-radius-md, --af-radius-lg, and --af-shadow. They follow light and dark and the Connected Folder's accent live, so never hard-code the shell's colors.",
-      "globalThis.ampleFileRestrictedApp.attention.set({count}) puts a dot on the app's rail button to say something new is waiting, and attention.clear() removes it. Call it from the view or from the worker during an automation run, and clear it once the person has seen what was new.",
-      `The package must contain package.json with an agentApp path and already-built local assets; AmpleFile never runs npm or installs dependencies. agent-app.json version 2 has id, title, optional description, runtime {kind:'sandboxed-web',entry,worker?}, ui {icon?,cornerRadius?}, tools, automations, and permissions {network,files,notifications?}. cornerRadius is an optional whole number from 0 through 24; omission uses AmpleFile's rounded 12px canvas and 0 deliberately requests square corners. Each automation has id, title, optional description, handler, trigger {kind:'interval',intervalMinutes:${restrictedAppAutomationIntervalMinutes.minimum}..${restrictedAppAutomationIntervalMinutes.maximum}}, explicit network/file/notification permission-id subsets, catchUp:'none'|'latest', and overlap:'skip'. A notification is {id,title,description} with static single-line copy and must be referenced by an automation. A file permission is {id,target:'file'|'directory',access:'read'|'read-write'}. A network permission has id, target ({kind:'public-https',origin} or {kind:'loopback-http',host:'127.0.0.1'|'::1',port}), explicit GET/POST/PUT/PATCH/DELETE methods, auth, and an optional requestHeaders array naming up to 16 extra lowercase request headers beyond the always-allowed accept/content-type/if-modified-since/if-none-match; routing, hop-by-hop, and credential header names are rejected. Public auth supports none, api-key {header}, bearer, basic, or oauth2-pkce {issuer,clientId,scopes,discovery?,authorizationEndpoint?,tokenEndpoint?,authorizationParameters?}; loopback is anonymous only. Never put a secret in the package.`,
-      "OAuth discovery is 'oauth-authorization-server' (RFC 8414, the default), 'openid-configuration' (providers that publish only an OIDC document), or 'pinned' with an exact authorizationEndpoint and tokenEndpoint and no query string. Use pinned only when a provider publishes neither document or its metadata issuer does not match the URL you declare, and note that pinned endpoints must use the issuer's exact host — subdomains and sibling hosts are refused, so a provider that serves authorization and tokens from different hosts must be reached through discovery, because only a document served from the issuer's own well-known path can vouch for another host. authorizationParameters is up to eight {name,value} pairs of reviewed static text for provider dialects — Google needs access_type=offline (add prompt=consent to force a refresh token on re-authorization), some providers need audience or resource. Names the authorization request owns (response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, grant_type, code, client_secret, request, request_uri, response_mode and similar) are rejected at review. AmpleFile always sends PKCE S256 and never sends a client secret, so a provider that under-advertises those in its metadata still connects.",
-      "Call globalThis.ampleFileRestrictedApp.limits.get() to read the host's runtime bounds synchronously and design to them instead of failing into them: network.maxRequestBytes/maxResponseBytes/timeoutMs, storage.quotaBytes/maxKeys/maxValueBytes, files.maxReadBytes/maxWriteBytes, automations.minimumIntervalMinutes/maximumIntervalMinutes, assistant.summaryBytes/dataBytes/resultFiles, and subscriptions.minHintIntervalMs/filePollIntervalMs/fileDebounceMs/fileMinHintIntervalMs/fileMaxFiles. Page network reads under the response limit and handle NETWORK_RESPONSE_TOO_LARGE by requesting a smaller range. App storage is small and is the wrong place for bulk data: request a read-write directory permission and write large or long-lived records as ordinary Connected Folder files, which the person and the Worker can also read with normal tools.",
-      "Visible browser code uses only globalThis.ampleFileRestrictedApp: context.get/onChanged; tabs.open/update/close; network.request (also request); storage.usage/keys/get/set/delete/clear/transaction/onChanged; files.list/read/write/onChanged with a grantId and grant-relative path; tasks.onChanged; and checks.read/onChanged. The four onChanged channels are bounded invalidation hints: storage.onChanged gives { revision, keys, reset }, tasks.onChanged gives { revision, taskIds, receiptIds }, checks.onChanged gives { revision, permissionIds }, and files.onChanged gives { revision, permissionIds, truncated }. Each registration returns an unsubscribe function. Hints carry ids only, never content, may be coalesced or dropped, and are never replayed, so always re-read and also read what you need at startup. File writes also supply data, utf8 or base64 encoding, and mode create or replace. Direct fetch, WebSocket, Node, filesystem APIs, popups, frames, workers, service workers, dialogs (alert/confirm/prompt), downloads, file pickers, and files dragged or pasted in from the computer are unavailable; to read the person's files, declare a file or directory permission. Keep all scripts, styles, images, fonts, and data inside the package you propose.",
-      "The page's content security policy allows only packaged script files: put every script in a .js or .mjs file loaded with <script type=module src=...>. Inline <script> blocks, inline event handlers such as onclick=, eval, new Function, and WebAssembly are blocked and fail silently. Inline styles and <style> are fine. The view can load only its declared entry .html plus .css, .js/.mjs, .png/.jpg/.gif/.webp/.svg/.ico images (also data: URLs), and .woff/.woff2 fonts; fetch() of a packaged file is blocked, so ship data as a JS module (export default {...}) instead of a .json file.",
-      "The app lives in its rail button's left-pane view, 280-640px wide, with context.get().placement 'navigator'; design that view as the app's home and make it work on its own. The rail button opens it at route '/'; a notification click can open it at another route, so render from context.get().route and state, and follow context.onChanged. tabs.open({tabId,title,route,state}) works only from the left-pane view, inside a handler for the person's click or key press, and one press opens at most one tab (TAB_DENIED otherwise), the way clicking a file in Files opens its preview; never open tabs at startup or from timers. A tab's view (placement 'tab', with its route and state in context) can tabs.update or tabs.close itself but cannot open others. Read context.get().theme ('light' or 'dark') at startup and follow context.onChanged so the app matches AmpleFile in both themes.",
-      "App storage calls take positional arguments: await bridge.storage.get(key) returns the saved JSON value or undefined; await bridge.storage.set(key,value) saves JSON; await bridge.storage.delete(key) removes it; await bridge.storage.keys(prefix?) lists matching keys. For an atomic update, await bridge.storage.transaction({expectedRevision,set:[{key,value}],delete:[key]}) uses the revision from await bridge.storage.usage(). Here bridge is globalThis.ampleFileRestrictedApp. Load saved state once at startup and explicitly save successful changes; storage methods are asynchronous.",
-      "A declared worker is a browser ES module. Export handleAction(action,input) for tools and handleAutomation(event) for named automations; the event includes runId, appAutomationId (the automation's declared id), handler, reason, and scheduledAt; dispatch on event.appAutomationId or event.handler. Only handleAutomation can call notifications.show({permissionId, route?, state?}). The person sees only the category's static copy; route (an origin-relative path such as '/threads/42', at most 2,048 characters, default '/') and state (JSON, at most 64 KiB) say where a click opens the app: always its left-pane view, never a tab, with context.get().route and state set to them and context.get().openedFrom set to {kind:'notification', permissionId}; a left pane that is already open gets them through context.onChanged. Name a route that shows what the notification is about. Tool input/result schemas use the bounded closed JSON-Schema subset and object schemas set additionalProperties:false. A run can use only the intersection of its declared permission subsets and the app's current grants, which start on and stay on until the person narrows them in Settings → Apps. Notifications are narrower: only an enabled automation may select one of its declared static categories. Manual Run now remains available while a schedule is off, but notifications stay unavailable. Treat optional powers as optional and catch denied notification or connection calls without failing unrelated work.",
-      "Always give the app a short human-readable title, a one-sentence description, and a ui.icon chosen from AmpleFile's icon catalog (for example apps, mail, calendar, notebook, table, chart, checklist, tasks, clipboard-data, globe, people-team, star, rocket). AmpleFile shows exactly those three as the app's name, description, and rail icon, so never leave title or description as placeholders like Untitled or TODO.",
-      "Installed apps come up with every declared destination, directory permission (whole Connected Folder), notification, and automation on; the person can turn each off in Settings → Apps. A file-target permission needs the person to choose a file and is reported as still needing them. Design for a destination to be unconnected and say so in the UI.",
-      `The optional top-level assistantActions array declares named requests the app can hand to this Connected Folder's Worker: each has id, a single-line title (80 characters), static instructions, an inputSchema in the same closed JSON-Schema subset, and an optional outputSchema in that same subset. From an app view, the app's worker module, or an automation, call globalThis.ampleFileRestrictedApp.assistant.request({ requestId, requestedAt, actionId, input }) with a fresh UUID and canonical UTC timestamp; it starts an ordinary Worker Chat in the owning Connected Folder immediately and returns the task. Input is at most ${restrictedAppLimitSize(restrictedAppAssistantLimits.inputBytes)} and up to ${restrictedAppAssistantLimits.runningPerInstallation} requests may run at once per installation; a refusal names the bound it hit. Save the envelope in app storage and replay the same envelope after an uncertain response; assistant.list, assistant.get(requestId), and assistant.cancel(requestId) cover the rest. A settled task carries one result shape: result.summary (at most ${restrictedAppLimitSize(restrictedAppAssistantLimits.summaryBytes)}), result.outcome (succeeded, partial, or failed), result.truncated, result.data only when the action declared outputSchema and the reported value matches it, and result.files naming Connected Folder–relative deliverables with sha256 and sizeBytes. Declare outputSchema whenever the app needs structured details back rather than prose. Subscribe with tasks.onChanged to learn a task moved instead of polling.`,
-      `assistant.infer({ instructions, input, outputSchema?, maxOutputBytes? }), from an app view or from the app's worker module while it holds an action or automation run, performs one bounded model call on the Connected Folder's configured model with no tools, files, or conversation history. It returns { text, truncated, receiptId } or, when outputSchema (the same closed JSON-Schema subset as tool schemas) is given, { json, receiptId } already validated against it; both carry the model and its usage, receiptId matches the id a tasks.onChanged hint carries, and every call leaves a receipt under the app in Settings → Apps. Put the task in instructions and treat input as data. Input is at most ${restrictedAppLimitSize(restrictedAppInferenceLimits.inputBytes)}; output is at most ${restrictedAppLimitSize(restrictedAppInferenceLimits.defaultOutputBytes)} unless maxOutputBytes sets another cap (at most ${restrictedAppInferenceLimits.maxOutputBytes} bytes); and up to ${restrictedAppInferenceLimits.runningPerInstallation} calls run at once per installation while more wait their turn. Each refusal names the bound it hit — INFER_INPUT_TOO_LARGE, INFER_OUTPUT_TOO_LARGE, INFER_BUSY, INFER_OUTPUT_INVALID, INFER_MODEL_UNAVAILABLE. Use assistant.request when the work needs tools or files and assistant.infer when a single answer over supplied text is enough.`,
-      "When propose_connected_folder_app returns installed, the app is added and working; tell the person what still needs them (a secret to connect or a file to choose) and where (Settings → Apps, under the app). If it returns failed, fix the package and propose again.",
-    ],
-    parameters: {
-      type: "object",
-      properties: {
-        sourcePath: {
-          type: "string",
-          minLength: 1,
-          description: "Folder containing the completed restricted app package, relative to the current Connected Folder root.",
-        },
-      },
-      required: ["sourcePath"],
-      additionalProperties: false,
-    } as any,
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      const argumentsValue = params as { sourcePath?: unknown };
-      const sourcePath = typeof argumentsValue.sourcePath === "string" ? argumentsValue.sourcePath.trim() : "";
-      if (!sourcePath) throw new Error("A Connected Folder–relative app package folder is required.");
-      const result = await input.host.propose({
-        connectedFolderId: input.connectedFolderId,
-        connectedFolderRoot: input.connectedFolderRoot,
-        conversationId: input.conversationId,
-        sourcePath,
-      }, signal);
-      return { content: [{ type: "text", text: restrictedAppProposalResultText(result) }], details: result };
-    },
-  };
-}
-
-export function createRestrictedAppStarterTool(input: { connectedFolderRoot: string }): ToolDefinition<any> {
-  return {
-    name: "start_connected_folder_app",
-    label: "Start a Connected Folder app",
-    description: "Write a small, working AmpleFile app package into a new folder in this Connected Folder: a left-pane home with a list, click-to-open tabs, app storage, AmpleFile's look (kit.css and --wf-* variables), and the rail dot cleared once seen. Edit it into the app the person wants, then call propose_connected_folder_app with the same folder.",
-    promptSnippet: "Start a new Connected Folder app package from a working template",
-    parameters: {
-      type: "object",
-      properties: {
-        folder: { type: "string", minLength: 1, description: "New or empty folder for the package, relative to the Connected Folder root, for example apps/reading-list." },
-        id: { type: "string", minLength: 1, maxLength: 64, description: "App id: lowercase letters, numbers, and hyphens." },
-        title: { type: "string", minLength: 1, maxLength: 80, description: "Short human-readable app name." },
-        description: { type: "string", minLength: 1, maxLength: 280, description: "One sentence saying what the app does." },
-        icon: { type: "string", minLength: 1, maxLength: 64, description: "Icon name from AmpleFile's catalog, for example apps, checklist, mail, calendar, or table." },
-      },
-      required: ["folder", "id", "title", "description", "icon"],
-      additionalProperties: false,
-    } as any,
-    executionMode: "sequential",
-    async execute(_toolCallId, params) {
-      const value = params as Record<string, unknown>;
-      const text = (key: string) => (typeof value[key] === "string" ? value[key] as string : "");
-      const files = restrictedAppStarterFiles({ id: text("id"), title: text("title"), description: text("description"), icon: text("icon") });
-      const folder = await writeRestrictedAppStarter(input.connectedFolderRoot, text("folder"), files);
-      return {
-        content: [{
-          type: "text",
-          text: `Wrote a starter app in ${folder}: ${Object.keys(files).join(", ")}. It runs as is. Edit app.js, styles.css, and agent-app.json into the app the person asked for, keep the left pane as its home, then call propose_connected_folder_app with sourcePath ${folder}.`,
-        }],
-        details: { folder, files: Object.keys(files) },
-      };
-    },
-  };
-}
-
-/** Plain receipt text for the proposing turn: what was added, and what still needs a person. */
-export function restrictedAppProposalResultText(result: RestrictedAppProposalResult): string {
-  const title = result.proposal?.review.manifest.title ?? "the app";
-  if (result.status === "installed" && result.app) {
-    const app = result.app;
-    const count = (value: number, singular: string, plural = `${singular}s`) => `${value} ${value === 1 ? singular : plural}`;
-    const wholeConnectedFolder = app.fileGrants.filter((grant) => grant.root === ".").length;
-    const on = [
-      count(app.networkGrants.length, "destination"),
-      `${count(wholeConnectedFolder, "folder permission")} over the whole Connected Folder`,
-      count(app.notificationGrants.length, "notification"),
-      count(app.automations.filter((automation) => automation.enabled).length, "automation"),
-    ].join(", ");
-    const needs = result.needs;
-    const still = needs ? [
-      ...(needs.connections.length ? [`connect ${needs.connections.join(", ")} in Settings → Apps → ${title}`] : []),
-      ...(needs.files.length ? [`choose a file for ${needs.files.join(", ")}`] : []),
-      ...(needs.checks.length ? [`choose a Check for ${needs.checks.join(", ")}`] : []),
-    ] : [];
-    return `AmpleFile added ${title} as this Connected Folder's local preview (revision ${app.digest}). On now: ${on}.`
-      + (still.length ? ` Still needs you: ${still.join("; ")}.` : "")
-      + " Its tools are available from the next turn.";
-  }
-  if (result.status === "failed") {
-    const reason = (result.proposal?.error ?? "the package could not be added").replace(/\.$/, "");
-    return result.proposal?.status === "revision-changed"
-      ? `AmpleFile could not add ${title}: ${reason}. Propose the current package again.`
-      : `AmpleFile could not add ${title}: ${reason}. Fix the package and propose again, or try again from Settings → Apps.`;
-  }
-  return "The app proposal was cancelled. Nothing was added.";
-}
-
-export function createRestrictedAppTools(input: {
-  connectedFolderId: string;
-  apps: RestrictedAppInstalled[];
-  service: Pick<RestrictedAppService, "invoke">;
-}): ToolDefinition<any>[] {
-  return input.apps.flatMap((app) => app.manifest.tools.map((tool): ToolDefinition<any> => ({
-    name: restrictedAppToolName(app.featureInstallationId, tool.name),
-    label: `${app.manifest.title}${app.runtimeInstanceKind === "development" ? " (preview)" : ""}: ${tool.name}`,
-    description: `${tool.description} This action belongs to ${app.runtimeInstanceKind === "development" ? "the local preview of" : "the installed"} sandboxed Connected Folder app “${app.manifest.title}”.`,
-    promptSnippet: `${app.manifest.title}: ${tool.description}`,
-    promptGuidelines: [
-      `Use ${restrictedAppToolName(app.featureInstallationId, tool.name)} only when the user wants ${app.manifest.title} to ${tool.description.charAt(0).toLowerCase()}${tool.description.slice(1)}`,
-      "The app reaches its declared destinations unless the person turned one off in Apps; report connection or permission errors without asking for secret values in Chat.",
-    ],
-    parameters: structuredClone(tool.inputSchema) as any,
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      if (signal?.aborted) throw turnCancelledError();
-      const result = await input.service.invoke({
-        connectedFolderId: input.connectedFolderId,
-        appId: app.manifest.id,
-        featureInstallationId: app.featureInstallationId,
-        expectedDigest: app.digest,
-        action: tool.action,
-        input: params,
-      });
-      if (signal?.aborted) throw turnCancelledError();
-      return {
-        content: [{ type: "text", text: JSON.stringify(result) }],
-        details: {
-          connectedFolderId: input.connectedFolderId,
-          appId: app.manifest.id,
-          digest: app.digest,
-          action: tool.action,
-          result,
-        },
-      };
-    },
-  })));
-}
-
-/**
- * What a Chat's steps call an app's tool: the app's title and the tool's name
- * ("Inbox: Search messages"), never the registered `app_<hash>_` name.
- */
-export function restrictedAppToolTitle(
-  app: Pick<RestrictedAppInstalled, "runtimeInstanceKind"> & { manifest: Pick<RestrictedAppInstalled["manifest"], "title"> },
-  toolName: string,
-): string {
-  const words = toolName.replace(/[_-]+/g, " ").trim();
-  const tool = words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : toolName;
-  return `${app.manifest.title}${app.runtimeInstanceKind === "development" ? " (preview)" : ""}: ${tool}`;
-}
-
-/** Registered tool name → readable title for every tool these apps add. */
-export function restrictedAppToolTitles(apps: readonly RestrictedAppInstalled[]): Map<string, string> {
-  return new Map(apps.flatMap((app) => app.manifest.tools.map((tool) => [
-    restrictedAppToolName(app.featureInstallationId, tool.name),
-    restrictedAppToolTitle(app, tool.name),
-  ] as const)));
-}
-
-function restrictedAppToolName(featureInstallationId: string, toolName: string): string {
-  const prefix = `app_${createHash("sha256").update(JSON.stringify([featureInstallationId, toolName])).digest("hex").slice(0, 16)}_`;
-  return `${prefix}${toolName}`.slice(0, 64);
-}
-
-function turnCancelledError(): Error {
-  const error = new Error("Agent turn cancelled.");
-  error.name = "PiTurnCancelledError";
-  return error;
-}
-
 export function isPiTurnCancelledError(error: unknown): boolean {
   return error instanceof Error && error.name === "PiTurnCancelledError";
 }
@@ -2261,7 +2029,7 @@ function lastAssistantText(messages: any[]): string {
   return "";
 }
 
-function toolEvent(raw: any, titles: ReadonlyMap<string, string> = new Map()): Omit<PiChatEvent, "conversationId" | "raw"> | null {
+function toolEvent(raw: any): Omit<PiChatEvent, "conversationId" | "raw"> | null {
   const assistantEvent = raw.assistantMessageEvent ?? {};
   const call = assistantEvent.toolCall ?? assistantEvent.partial?.toolCall ?? raw.tool ?? {};
   const toolName = String(raw.toolName ?? raw.name ?? call.toolName ?? call.name ?? "");
@@ -2271,19 +2039,15 @@ function toolEvent(raw: any, titles: ReadonlyMap<string, string> = new Map()): O
   const detail = summarizeToolValue(args);
   const subtype = String(assistantEvent.type ?? "");
   const type = String(raw.type ?? "");
-  // An app's tool is registered as `app_<hash>_<name>`; its title names the
-  // app instead, so no surface shows the hash.
-  const toolTitle = titles.get(toolName);
-  const label = toolTitle ?? humanize(toolName);
-  const named = toolTitle ? { toolTitle } : {};
+  const label = humanize(toolName);
   if (subtype === "toolcall_start" || subtype === "toolcall_end") {
-    return { type: "tool", toolCallId, toolName, ...named, phase: "queued", message: `${label} queued`, detail };
+    return { type: "tool", toolCallId, toolName, phase: "queued", message: `${label} queued`, detail };
   }
   if (type === "tool_execution_start" || type === "tool_call") {
-    return { type: "tool", toolCallId, toolName, ...named, phase: "running", message: `${label} running`, detail };
+    return { type: "tool", toolCallId, toolName, phase: "running", message: `${label} running`, detail };
   }
   if (type === "tool_execution_update") {
-    return { type: "tool", toolCallId, toolName, ...named, phase: "streaming", message: `${label} updating`, detail };
+    return { type: "tool", toolCallId, toolName, phase: "streaming", message: `${label} updating`, detail };
   }
   if (type === "tool_execution_end" || type === "tool_result") {
     const failed = Boolean(raw.isError);
@@ -2291,7 +2055,6 @@ function toolEvent(raw: any, titles: ReadonlyMap<string, string> = new Map()): O
       type: "tool",
       toolCallId,
       toolName,
-      ...named,
       phase: failed ? "error" : "complete",
       ...(typeof raw.durationMs === "number" && Number.isFinite(raw.durationMs) && raw.durationMs >= 0 && raw.durationMs <= 86_400_000 ? { durationMs: raw.durationMs } : {}),
       message: `${label} ${failed ? "failed" : "finished"}`,

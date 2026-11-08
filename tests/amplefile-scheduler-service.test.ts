@@ -10,7 +10,7 @@ import {
   type AmpleFileSchedulerJobKey,
   type AmpleFileSchedulerRunContext,
 } from "../src/local/agent/amplefile-scheduler-service.js";
-import { ampleFileAppAutomationDefaultConcurrency, ampleFileAppErrorTextMaxLength } from "../src/shared/amplefile-limits.js";
+import { ampleFileSchedulerDefaultConcurrency, ampleFileSchedulerErrorTextMaxLength } from "../src/shared/amplefile-limits.js";
 
 const startTime = Date.parse("2026-07-14T12:00:00.000Z");
 const minute = 60_000;
@@ -28,8 +28,8 @@ test("AmpleFileAutomationService defaults to the published machine-wide executio
   const starts: string[] = [];
   const releases: Array<() => void> = [];
   const service = new AmpleFileSchedulerService({ clock, createRunId: runIds().next });
-  const slots = ampleFileAppAutomationDefaultConcurrency;
-  const keys = Array.from({ length: slots + 1 }, (_, index) => key(`space-${index}/app`, "job"));
+  const slots = ampleFileSchedulerDefaultConcurrency;
+  const keys = Array.from({ length: slots + 1 }, (_, index) => key(`space-${index}/automation`, "job"));
   for (const automation of keys) {
     service.register(job(automation, async () => {
       starts.push(automation.ownerId);
@@ -98,7 +98,7 @@ test("AmpleFileAutomationService schedules intervals, exposes the next due time,
   const clock = new FakeClock(startTime);
   const contexts: AmpleFileSchedulerRunContext[] = [];
   const observedReasons: string[] = [];
-  const automation = key("connected-folder-one/app-one", "refresh");
+  const automation = key("connected-folder-one/automation-one", "refresh");
   const service = new AmpleFileSchedulerService({
     clock,
     createRunId: runIds().next,
@@ -288,9 +288,9 @@ test("a due one-time slot waits for its own manual copy instead of being consume
 test("AmpleFileAutomationService restores a persisted cadence and performs at most one deterministically staggered latest catch-up", async () => {
   const clock = new FakeClock(startTime);
   const contexts: AmpleFileSchedulerRunContext[] = [];
-  const latestOne = key("connected-folder-one/app-one", "one");
-  const latestTwo = key("connected-folder-two/app-two", "two");
-  const noCatchUp = key("connected-folder-three/app-three", "none");
+  const latestOne = key("connected-folder-one/automation-one", "one");
+  const latestTwo = key("connected-folder-two/automation-two", "two");
+  const noCatchUp = key("connected-folder-three/automation-three", "none");
   const service = new AmpleFileSchedulerService({
     clock,
     createRunId: runIds().next,
@@ -405,7 +405,7 @@ test("AmpleFileAutomationService records bounded failures and isolates observabl
   const second = await service.runNow(failing);
   const third = await service.runNow(failing);
   assert.equal(first.outcome, "failure");
-  assert.equal(ampleFileSchedulerMaxErrorLength, ampleFileAppErrorTextMaxLength, "a receipt keeps as much as the app host does");
+  assert.equal(ampleFileSchedulerMaxErrorLength, ampleFileSchedulerErrorTextMaxLength, "a receipt keeps the published error length");
   assert.equal(first.error?.length, ampleFileSchedulerMaxErrorLength);
   assert.ok(ampleFileSchedulerMaxErrorLength > 300, "an error is no longer cut to 300 characters");
   assert.deepEqual(observed, [first.runId, second.runId, third.runId]);

@@ -83,10 +83,9 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /connected-folders unregister --connected-folder <id>/);
     assert.match(ampleFileAgentContext, /connected-folders appearance apply --connected-folder <id> --proposal/);
     assert.match(ampleFileAgentContext, /tools import-skill --scope everywhere\|connected-folder/);
-    assert.match(ampleFileAgentContext, /apps release publish --connected-folder <id> --release <digest>/);
-    assert.match(ampleFileAgentContext, /a local state transition — nothing is uploaded, hosted, or granted/);
-    assert.match(ampleFileAgentContext, /apps uninstall --connected-folder <id> --instance <id> --retain-data\|--purge-data/);
-    assert.match(ampleFileAgentContext, /The disposition flag is never defaulted/);
+    // Connected Folder apps and App Studio were removed on 2026-11-07:
+    // nothing teaches their verbs.
+    assert.doesNotMatch(ampleFileAgentContext, /\bapps (list|invoke|install|grant|revoke|release|uninstall)\b|App Studio|Settings → Apps/);
     // The AmpleFile agent is never taught the retired desktop-served sharing
     // verbs or a Shared pages surface.
     assert.doesNotMatch(ampleFileAgentContext, /\bpages (share|share-app|list|status|revoke|narrow|widen|snapshot-off)\b|help pages|Shared pages/);
@@ -113,16 +112,6 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     assert.match(ampleFileAgentContext, /Deletion refuses until the affected Connected Folder's work has settled/);
     assert.match(ampleFileAgentContext, /Never bypass that refusal with raw tools/);
     assert.match(ampleFileAgentContext, /moves its folder into Recently deleted/);
-    // Apps come up able to work (F21) and are usable as tools (F22 lineage).
-    assert.match(ampleFileAgentContext, /Connected Folder apps come up able to work\./);
-    assert.match(ampleFileAgentContext, /grant each declared folder permission over the whole Connected Folder/);
-    // What the installer actually does not grant: the AmpleFile agent must relay it
-    // rather than report a chosen file as already granted.
-    assert.match(ampleFileAgentContext, /a permission that names a single file/);
-    assert.match(ampleFileAgentContext, /Relay that list; do not report those as granted\./);
-    assert.match(ampleFileAgentContext, /apps list --connected-folder <id> --json/);
-    assert.match(ampleFileAgentContext, /apps invoke --connected-folder <id> --app <id> --tool <name> --input/);
-    assert.match(ampleFileAgentContext, /leave a copy in Recently deleted before removing live data/);
     // Help topics exist now, and the instructions cite them.
     assert.match(ampleFileAgentContext, /amplefile help <family>/);
     assert.match(ampleFileAgentContext, /help recently-deleted/);
@@ -223,12 +212,8 @@ test("the AmpleFile agent runs above all Connected Folders on the shared turn ma
     // The manage-connected-folders Skill teaches the same surface and etiquette.
     const skillContent = await readFile(join(ampleFileAgentRootPath, ".pi", "skills", "manage-connected-folders", "SKILL.md"), "utf8");
     assert.match(skillContent, /Every verb runs on the first call and returns a receipt/);
-    assert.match(skillContent, /## Tools and apps/);
-    assert.match(skillContent, /Connected Folder apps come up able to work/);
-    assert.match(skillContent, /grant each declared folder permission over the whole Connected Folder/);
-    assert.match(skillContent, /A single-file permission still needs the person in Settings → Apps/);
-    assert.match(skillContent, /apps invoke --connected-folder <id> --app <id> --tool <name> --input <json>/);
-    assert.match(skillContent, /leave a copy in Recently deleted first/);
+    assert.match(skillContent, /## Tools/);
+    assert.doesNotMatch(skillContent, /\bapps (list|invoke|install|grant|revoke|release|uninstall)\b|App Studio|Settings → Apps/);
     assert.match(skillContent, /recently-deleted restore --entry <id>/);
     assert.match(skillContent, /Setup-only \(no act verb\)/);
     assert.match(skillContent, /Never delegate cross-connected-folder work into a Connected Folder Chat/);

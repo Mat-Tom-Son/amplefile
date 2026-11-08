@@ -353,16 +353,13 @@ test("Connected Folder lifecycle renames external metadata and removes linked ve
   assert.equal(await readFile(join(linkedRoot, "keep.txt"), "utf8"), "keep");
   assert.equal(existsSync(connectedFolderManifestFile(linkedRoot)), true);
   const removedLinked = await json(`${api.origin}/api/connected-folders/${linked.connectedFolder.id}`, { method: "DELETE" }) as { removed: true; deleted: boolean };
-  // Removing a linked registration destroys nothing, so nothing is kept —
-  // neither the folder nor any app data belonging to it.
+  // Removing a linked registration destroys nothing, so nothing is kept.
   assert.deepEqual(removedLinked, {
     removed: true,
     deleted: false,
     connectedFolderRoot: linkedRoot,
     cleanupPending: false,
     recentlyDeleted: null,
-    appRecentlyDeletedEntries: [],
-    appStudioRecentlyDeleted: null,
   });
   assert.equal(existsSync(linkedRoot), true);
   assert.equal(existsSync(connectedFolderManifestFile(linkedRoot)), true);

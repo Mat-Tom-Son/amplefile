@@ -229,7 +229,7 @@ test("recently-deleted restore brings a deleted Connected Folder back with its i
   }
 });
 
-test("--to saves app data as a file and refuses a path inside a Connected Folder or AmpleFile's own files", async () => {
+test("recently-deleted restore takes no --to: nothing is saved out as a copy any more", async () => {
   const h = await recentlyDeletedHarness("save-copy");
   try {
     const created = await h.api.actFacade.createConnectedFolder({ name: "Save Connected Folder" });
@@ -238,12 +238,15 @@ test("--to saves app data as a file and refuses a path inside a Connected Folder
     const deleted = await deleteUncoverable(h, connectedFolder.id, "big.bin");
     const entryId = (JSON.parse(deleted.stdout) as { data: { recovery: { entryId: string } } }).data.recovery.entryId;
 
-    // `--to` is for app data only; a file goes back where it came from.
-    const refusedForFile = await h.execute([
+    // `--to` saved app data out as a file; Connected Folder apps are gone, so
+    // the flag is a parse-time usage error that leaves no receipt.
+    h.records.length = 0;
+    const refused = await h.execute([
       "recently-deleted", "restore", "--entry", entryId, "--to", join(h.sandbox, "copy.json"), "--json",
     ]);
-    assert.equal(errorCodeOf(refusedForFile.stderr), "usage");
-    assert.match(refusedForFile.stderr, /go back where they came from/);
+    assert.equal(errorCodeOf(refused.stderr), "usage");
+    assert.match(refused.stderr, /--to cannot be used with 'recently-deleted restore'/);
+    assert.deepEqual(h.records, [], "a usage error leaves no receipt");
     assert.equal((await h.api.recentlyDeleted.list()).entries.length, 1, "a refused restore leaves the item alone");
   } finally {
     await h.close();
@@ -251,96 +254,60 @@ test("--to saves app data as a file and refuses a path inside a Connected Folder
 });
 
 /**
- * `apps release delete` keeps the Release in Recently deleted first
- * (docs/receipts-not-gates.md, F20): the receipt's undo reference is that
- * item, and `recently-deleted restore` puts the Release back into App Studio.
+ * Builds before Connected Folder apps were removed (2026-11-07) kept app
+ * data, Releases, and App Studio history in Recently deleted. Those items
+ * still list and wait out their window, but nothing can put them back.
  */
-test("apps release delete leaves the Release in Recently deleted and recently-deleted restore brings it back", async () => {
-  const h = await recentlyDeletedHarness("release");
+test("an app item an earlier build kept lists as blocked and cannot be restored", async () => {
+  const h = await recentlyDeletedHarness("old-app-item");
   try {
-    const created = await h.api.actFacade.createConnectedFolder({ name: "Release Connected Folder" });
+    const created = await h.api.actFacade.createConnectedFolder({ name: "Old Apps Connected Folder" });
     const connectedFolder = created.connectedFolder;
-    const packageRoot = join(connectedFolder.connectedFolderRoot, "apps", "quotes");
-    await mkdir(packageRoot, { recursive: true });
-    await writeFile(join(packageRoot, "package.json"), JSON.stringify({ name: "quotes", version: "1.0.0", private: true, type: "module", agentApp: "agent-app.json" }), "utf8");
-    await writeFile(join(packageRoot, "agent-app.json"), JSON.stringify({
-      version: 2, id: "quotes", title: "Quotes", description: "A Release fixture.",
-      runtime: { kind: "sandboxed-web", entry: "index.html" }, ui: { icon: "shield" }, tools: [], automations: [],
-      permissions: { network: [], files: [], notifications: [] },
+    const entryId = "trash-20261101120000-0a1b2c3d";
+    const entryPath = join(h.api.recentlyDeleted.rootPath, "entries", entryId);
+    await mkdir(join(entryPath, "payload"), { recursive: true });
+    await writeFile(join(entryPath, "payload", "app-release.json"), "{}\n", "utf8");
+    const deletedAt = new Date().toISOString();
+    await writeFile(join(entryPath, "manifest.json"), JSON.stringify({
+      version: 1,
+      id: entryId,
+      kind: "app-release",
+      reason: "apps.release.delete",
+      connectedFolderId: connectedFolder.id,
+      connectedFolderName: connectedFolder.name,
+      displayName: "Quotes 1.0.0",
+      originalPath: `project_1/sha256:${"a".repeat(64)}`,
+      sizeBytes: 3,
+      deletedAt,
+      restoreBy: new Date(Date.parse(deletedAt) + 30 * 86_400_000).toISOString(),
+      receiptId: null,
+      payload: {
+        kind: "app-release",
+        projectId: "project_1",
+        releaseDigest: `sha256:${"a".repeat(64)}`,
+        displayVersion: "1.0.0",
+        sourceConnectedFolderId: connectedFolder.id,
+      },
+      complete: true,
     }), "utf8");
-    await writeFile(join(packageRoot, "index.html"), "<!doctype html><title>Quotes</title>", "utf8");
-    const installed = await h.execute(["apps", "install-preview", "--connected-folder", connectedFolder.id, "--package", "apps/quotes", "--json"]);
-    assert.equal(installed.exitCode, 0, installed.stderr);
-    const prepared = await h.execute(["apps", "release", "prepare", "--connected-folder", connectedFolder.id, "--version", "1.0.0", "--json"]);
-    assert.equal(prepared.exitCode, 0, prepared.stderr);
-    const releaseDigest = (JSON.parse(prepared.stdout) as { data: { release: { releaseDigest: string } } }).data.release.releaseDigest;
 
-    const deleted = await h.execute(["apps", "release", "delete", "--connected-folder", connectedFolder.id, "--release", releaseDigest]);
-    assert.equal(deleted.exitCode, 0, deleted.stderr);
-    assert.match(deleted.stdout, /It is in Recently deleted until .* — put it back with 'recently-deleted restore --entry trash-/);
-    const receipt = h.lastOk();
-    assert.equal(receipt.undoRef?.kind, "recently-deleted-entry");
-    const entryId = receipt.undoRef!.value;
+    const listed = await h.execute(["recently-deleted", "list", "--json"]);
+    assert.equal(listed.exitCode, 0, listed.stderr);
+    const listedJson = JSON.parse(listed.stdout) as { data: { entries: Array<Record<string, unknown>> } };
+    const entry = listedJson.data.entries.find((item) => item.id === entryId);
+    assert.ok(entry, "the old item still lists");
+    assert.equal(entry.kind, "app-release");
+    assert.equal(entry.reason, "apps.release.delete");
+    assert.equal(entry.restorable, "blocked");
 
-    const listed = await h.execute(["recently-deleted", "list"]);
-    assert.match(listed.stdout, new RegExp(`${entryId} — Release "Quotes 1\\.0\\.0" from Release Connected Folder`));
+    const human = await h.execute(["recently-deleted", "list"]);
+    assert.match(human.stdout, new RegExp(`${entryId} — old app item "[^"]*" from Old Apps Connected Folder`));
+    assert.match(human.stdout, /can't be put back/);
+    assert.doesNotMatch(human.stdout, /saved as a copy|--to /);
 
-    const restored = await h.execute(["recently-deleted", "restore", "--entry", entryId]);
-    assert.equal(restored.exitCode, 0, restored.stderr);
-    assert.match(restored.stdout, new RegExp(`^Restored Release 1\\.0\\.0 \\[${releaseDigest}\\] to App Studio in Release Connected Folder`));
-    assert.equal((await h.api.recentlyDeleted.list()).entries.length, 0, "a restored Release leaves Recently deleted");
-    const deletedAgain = await h.execute(["apps", "release", "delete", "--connected-folder", connectedFolder.id, "--release", releaseDigest, "--json"]);
-    assert.equal((JSON.parse(deletedAgain.stdout) as { data: { deleted: boolean } }).data.deleted, true, "the restored Release is back in App Studio");
-  } finally {
-    await h.close();
-  }
-});
-
-/**
- * Deleting a Connected Folder keeps its App Studio history in Recently deleted as
- * its own item (docs/receipts-not-gates.md, F20). Restoring that item refuses
- * plainly until the Connected Folder is back, then returns the App Project, its
- * preview, and its Release in one act.
- */
-test("connected-folders delete keeps the App Studio history and recently-deleted restore brings it back after the Connected Folder", async () => {
-  const h = await recentlyDeletedHarness("app-studio");
-  try {
-    const created = await h.api.actFacade.createConnectedFolder({ name: "Studio Connected Folder" });
-    const connectedFolder = created.connectedFolder;
-    const packageRoot = join(connectedFolder.connectedFolderRoot, "apps", "quotes");
-    await mkdir(packageRoot, { recursive: true });
-    await writeFile(join(packageRoot, "package.json"), JSON.stringify({ name: "quotes", version: "1.0.0", private: true, type: "module", agentApp: "agent-app.json" }), "utf8");
-    await writeFile(join(packageRoot, "agent-app.json"), JSON.stringify({
-      version: 2, id: "quotes", title: "Quotes", description: "An App Studio fixture.",
-      runtime: { kind: "sandboxed-web", entry: "index.html" }, ui: { icon: "shield" }, tools: [], automations: [],
-      permissions: { network: [], files: [], notifications: [] },
-    }), "utf8");
-    await writeFile(join(packageRoot, "index.html"), "<!doctype html><title>Quotes</title>", "utf8");
-    assert.equal((await h.execute(["apps", "install-preview", "--connected-folder", connectedFolder.id, "--package", "apps/quotes", "--json"])).exitCode, 0);
-    assert.equal((await h.execute(["apps", "release", "prepare", "--connected-folder", connectedFolder.id, "--version", "1.0.0", "--json"])).exitCode, 0);
-
-    const deleted = await h.execute(["connected-folders", "delete", "--connected-folder", connectedFolder.id]);
-    assert.equal(deleted.exitCode, 0, deleted.stderr);
-    assert.match(deleted.stdout, /Its App Studio history is in Recently deleted too \[trash-[^\]]+\]; put it back once the Connected Folder is registered again\./);
-    const studioId = /App Studio history is in Recently deleted too \[(trash-[^\]]+)\]/.exec(deleted.stdout)![1]!;
-    assert.match(h.lastOk().detail ?? "", new RegExp(`App Studio ${studioId}`), "the receipt names the App Studio item");
-    const folderId = h.lastOk().undoRef!.value;
-
-    const listed = await h.execute(["recently-deleted", "list"]);
-    assert.match(listed.stdout, new RegExp(`${studioId} — App Studio history "Quotes" from Studio Connected Folder`));
-
-    const early = await h.execute(["recently-deleted", "restore", "--entry", studioId, "--json"]);
-    assert.notEqual(early.exitCode, 0);
-    assert.equal(errorCodeOf(early.stderr), "conflict");
-    assert.match(early.stderr, /back first/);
-
-    assert.equal((await h.execute(["recently-deleted", "restore", "--entry", folderId])).exitCode, 0);
-    const restored = await h.execute(["recently-deleted", "restore", "--entry", studioId]);
-    assert.equal(restored.exitCode, 0, restored.stderr);
-    assert.match(restored.stdout, /^Restored the App Studio history of Studio Connected Folder \[[^\]]+\] \(Quotes\): 1 app preview, 1 Release, 0 prepared operations\./);
-    assert.equal((await h.api.recentlyDeleted.list()).entries.length, 0, "both items leave Recently deleted");
-    const listedApps = await h.execute(["apps", "list", "--connected-folder", connectedFolder.id, "--json"]);
-    assert.match(listedApps.stdout, /"quotes"/, "the preview is back in its Connected Folder");
+    const restored = await h.execute(["recently-deleted", "restore", "--entry", entryId, "--json"]);
+    assert.notEqual(restored.exitCode, 0, "nothing can bring an old app item back");
+    assert.ok((await h.api.recentlyDeleted.list()).entries.some((item) => item.id === entryId), "a refused restore leaves the item alone");
   } finally {
     await h.close();
   }

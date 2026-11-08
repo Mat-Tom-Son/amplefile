@@ -8,7 +8,7 @@ migration they said `routing`/`routings`; that one-time migration moved the
 stored records to the new names.
 
 The automation feature shipped with the AmpleFile agent build
-— `src/local/automations/` (declarations, store, settle signal, executor) and
+— `src/local/automations/` (declarations, store, executor) and
 its suites are the implementation authority — and its decisions were
 promoted on 2026-08-11 into [the AmpleFile agent decision register](amplefile-agent-decisions.md) (F8, F9,
 F14), [Product model](product-model.md) (the Automation noun, the
@@ -94,6 +94,14 @@ reported in the store status as a retired automation — instead of marking
 the whole store damaged, so every other automation keeps working. Versions
 1–6 otherwise read exactly as before, and their digests do not change.
 
+*Amended 2026-11-07 (owner decision):* Connected Folder apps were removed,
+and with them the `on-settled` trigger, whose only remaining source was an
+app's named automation run (`app-automation-run`), and its in-process
+settle signal. A stored automation with any `on-settled` trigger is dropped
+on its own when the store loads, exactly like a Check-using one, and run
+receipts that recorded an `on-settled` cause still read, without that cause.
+Schedules, folder changes, and manual run-now remain.
+
 **Settings → Automations** is the desktop management surface. The
 store schema is version 3; version-1 and version-2 records load and are
 rewritten as version 3 on the next mutation, converting the grants an older
@@ -145,7 +153,7 @@ run history shows every dispatch, and the overview lists automation runs.
 
 An automation has exactly one declared trigger; manual run-now is additionally
 available for every enabled automation. Triggers are evaluated by app code from
-recorded settle/schedule state, or explicitly granted bounded folder metadata observation. Trigger evaluation never calls a model or reads file contents.
+recorded schedule state, or explicitly granted bounded folder metadata observation. Trigger evaluation never calls a model or reads file contents.
 
 **Manual only** is `{"kind":"manual"}` (any version): the automation never fires
 on its own and runs only through run-now below.
@@ -231,15 +239,6 @@ observer bounds, symlink refusal, and nested Connected Folder refusal apply to a
 catch-up exactly as to a live change: a catch-up is admitted through the same
 dispatch and launch-boundary recheck.
 
-**Admitted on-settled source** (durable and already receipted; the
-`check-run` source was retired with Checks on 2026-11-07):
-
-- **`app-automation-run`**: a named Connected Folder's restricted-app named automation
-  run settled — scoped to app id and automation id, filtered by outcome
-  (default `success`; `failure` may be named explicitly; `skipped` and
-  `cancelled` are never admissible — they are lifecycle artifacts, and
-  chaining on them oscillates).
-
 **Deliberately excluded as trigger sources:** Worker-turn settles
 (standing behavior keyed to a person finishing a chat is ambient watching of
 their conversation activity, and the records are in-memory only — the real
@@ -249,15 +248,13 @@ settles (no recorded outcome), and AmpleFile agent request settles (on the
 AmpleFile agent's side, in-memory, and glue firing from AmpleFile agent chat
 activity would blur interactive work with the agent into unattended behavior).
 
-**Automation-caused settles never fire triggers.** An app automation
-run whose lineage records an automation hop is dropped at trigger evaluation,
-making automation chains structurally impossible — no cycles, no fan-out.
+**Automation-caused settles never fire triggers**, so automation chains are
+structurally impossible — no cycles, no fan-out.
 Composition happens inside one automation's ordered steps; chains would
 be a separate register decision with its own depth budget.
 
 **The recurring schedule trigger** is `{"kind": "interval", "intervalMinutes": N}`
-with the restricted-app automation bounds reused as-is (1 minute to 366 days,
-that is 1–527,040 minutes).
+with bounds of 1 minute to 366 days (1–527,040 minutes).
 Cadence is durable — a persisted `lastScheduledAt` anchor resumes across
 restarts — and catch-up is bounded to the existing `latest` policy: at most
 one make-up run for the most recent missed slot, staggered by the shared
@@ -435,11 +432,8 @@ names the destination Connected Folder and the delivered file count.
 
 The automation service (`src/local/automations/automation-service.ts`) owns execution
 as app code. It creates its **own** instance of the existing
-`AmpleFileSchedulerService` — the same class, the same discipline, a
-separate 64-slot default budget with `ownerId: "amplefile.automation"`. Sharing the
-restricted-app service's instance was rejected: it would let one Connected Folder
-app's jobs starve cross–Connected Folder glue and couple two authority domains to one
-lifecycle. That buys, verbatim from the proven scheduler: FIFO admission,
+`AmpleFileSchedulerService` — the same class, the same discipline, its
+own 64-slot default budget with `ownerId: "amplefile.automation"`. That buys, verbatim from the proven scheduler: FIFO admission,
 per-automation non-overlap (an overlapping admission settles `skipped` and is
 receipted as such; a one-time slot overlapping its own run-now copy remains
 pending), interval and one-time schedules, durable cadence,
@@ -455,8 +449,8 @@ task id, outcome, checkpoint ids, and the summary and `partial` mark its
 Worker reported; files hop: source and destination Connected Folder
 ids, resolved and copied paths with collision renames, counts, restore-point
 id). The run's
-terminal record names the trigger cause exactly — scheduled slot, run-now
-request id, or the settled source — plus the declaration digest in force.
+terminal record names the trigger cause exactly — scheduled slot, folder
+change, or run-now request id — plus the declaration digest in force.
 
 **Failure.** A failed hop — including a chat step whose Worker reported
 `failed` — fails the run; later hops are recorded `skipped`
@@ -504,13 +498,7 @@ run-now rides the act lane's request-id at-most-once gate. The journal-first
 `accepted` gate plus startup `interrupted` recovery means a crash can
 interrupt a run but never execute it twice under one run id.
 
-**Trigger delivery.** The admitted settle family publishes typed settle
-records — after durable persistence, fire-and-forget, failure-isolated —
-through the settle-signal seam (`src/local/automations/settle-signal.ts`)
-attached at the restricted-app `onResult` funnel; the seam has one owner (reconciliation 8
-in Fold integration, archived in the work-fold repository). Settle records carry lineage,
-so automation-caused runs are dropped at evaluation; settles during suspension
-are not queued. Automation runs register as the experimental kernel task kind
+**Kernel task.** Automation runs register as the experimental kernel task kind
 `automation_run`, excluded from stable protocol-v1 task projections.
 
 ## Lifecycle and authority
@@ -536,7 +524,7 @@ are not queued. Automation runs register as the experimental kernel task kind
    is recorded below. The declaration write and the enablement commit are
    one logical operation; a failure may leave an inert declaration, never
    undeclared or digest-mismatched authority.
-3. **Run.** Scheduled, on-settled, or run-now. Any edit to the declaration
+3. **Run.** Scheduled, folder change, or run-now. Any edit to the declaration
    changes its digest, and a run admitted under the old digest is refused at
    the launch boundary — an edited automation never coasts on a stale
    enablement.
@@ -553,7 +541,7 @@ The five questions, per mutation:
 | Mutation | Journaled by | Receipt contains | Revoked / undone by | Mid-act failure | Replay prevented by |
 |---|---|---|---|---|---|
 | Enable | Act-lane journal plus automation store commit (`automation/enabled` with digest, surface, request id) | Automation id, declaration digest, surface, timestamp (grants older builds wrote may also carry a `remote_web` browser identity) | Disable; Connected Folder removal (automatic revocation to `suspended`) | Declaration-then-receipt as one logical operation; failure leaves inert declaration, never digest-mismatched authority | Act request-id at-most-once; an identical already-enabled digest is a no-op |
-| Run (scheduled / on-settled) | Automation receipts journal, run `accepted` then durable schedule claim before hop 1, per-hop accepted/terminal pairs | Trigger cause, digest, occurrence id for one-time work, per-hop domain evidence (task ids, run ids, conversation id, restore-point id, counts) | Stop (active); files effects restorable via the hop's restore point; chat effects are an ordinary archivable Chat | Startup reconciles an accepted slot, records `interrupted`, and never replays it; completed hops keep receipts | Host-minted run ids; journal-first accepted gate; pre-hop interval/occurrence claim; serialized trigger funnel |
+| Run (scheduled / folder change) | Automation receipts journal, run `accepted` then durable schedule claim before hop 1, per-hop accepted/terminal pairs | Trigger cause, digest, occurrence id for one-time work, per-hop domain evidence (task ids, run ids, conversation id, restore-point id, counts) | Stop (active); files effects restorable via the hop's restore point; chat effects are an ordinary archivable Chat | Startup reconciles an accepted slot, records `interrupted`, and never replays it; completed hops keep receipts | Host-minted run ids; journal-first accepted gate; pre-hop interval/occurrence claim; serialized trigger funnel |
 | Run-now | Act-lane journal plus the same run journal | As above, plus the act request id | Same as a run | Same as a run | Act request-id at-most-once plus run-id gate |
 | Stop | Act-lane journal (or desktop action record) plus run terminal record | Run id, aborted hop task ids, skipped hops | Not applicable — stop is itself the revocation act | Abort signals are idempotent; a second stop finds a settled run | Act request-id at-most-once; a settled run refuses stop with its terminal state |
 | Disable | Act-lane journal plus automation store | Prior state, stopped run id if one was aborted | Enable again (a fresh receipt) | Disabled intent persists first; startup refuses to arm a disabled automation; the active run at a crash is `interrupted` anyway | Act request-id at-most-once |
@@ -598,7 +586,7 @@ per–Connected Folder place: automations stay above Connected Folders.
 *Amended 2026-09-24 (owner decision, revising F15):* Settings → Automations
 stays the management home, and a Connected Folder also gets a read-mostly window onto
 the automations that touch it. The rail shows an **Automations** entry
-(between History and the contributed apps) only while at least one
+(after History) only while at least one
 automation's trigger or step names that Connected Folder; the renderer reads
 `GET /api/connected-folders/:id/automations` when the Connected Folder changes and when the
 window regains focus, and caches the list per Connected Folder. Actions in Settings or
@@ -648,7 +636,7 @@ machine-wide count, step-count, or exact-path-count quota.
 | Bound | Value | Source of the value |
 |---|---|---|
 | Triggers per automation | 1 (plus always-available run-now) | This design |
-| Interval | 1 minute to 366 days (1–527,040 minutes) | `restrictedAppAutomationIntervalMinutes` |
+| Interval | 1 minute to 366 days (1–527,040 minutes) | `ampleFileAutomationBounds` in `src/local/automations/automation-declarations.ts` |
 | Catch-up | `latest` only (one make-up run) | `AmpleFileSchedulerService` |
 | One-time horizon | at least one second in the future, up to ten years ahead, at enablement | `minAtAdvanceMs`/`maxAtAdvanceMs` in `src/shared/amplefile-limits.ts` |
 | One-time missed policy | `run` or `skip` | One bounded catch-up or one recorded non-run |
@@ -671,7 +659,7 @@ machine-wide count, step-count, or exact-path-count quota.
 
 The plan items shipped as follows:
 
-1. Settle-signal seam — `src/local/automations/settle-signal.ts`; `tests/amplefile-automation-settle-signal.test.ts`.
+1. Settle-signal seam — removed with Connected Folder apps on 2026-11-07.
 2. Declaration and proposal schema — `src/local/automations/automation-declarations.ts`; `tests/amplefile-automation-declarations.test.ts`.
 3. Automation store and receipts journal — `src/local/automations/automation-store.ts`; `tests/amplefile-automation-store.test.ts`.
 4. Executor service and the `automation_run` kernel kind — `src/local/automations/automation-service.ts`, `src/local/amplefile-kernel.ts`; `tests/amplefile-automation-service.test.ts`, `tests/amplefile-kernel.test.ts`.
@@ -724,8 +712,7 @@ The plan items shipped as follows:
 - **Hosted or remote execution.** Automations run only on this desktop while
   the app runs, and no automation step can publish anything.
 - **A general job system.** 64 run slots by default, generous bounds,
-  three step kinds. If a flow does not fit, it belongs to a Connected Folder app's named
-  automations or a person.
+  three step kinds. If a flow does not fit, it belongs to a person.
 
 ## Authoring guidance
 

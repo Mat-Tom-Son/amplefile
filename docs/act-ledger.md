@@ -34,7 +34,7 @@ deleted.
 | Target | Meaning |
 |---|---|
 | **direct verb** | The AmpleFile agent performs it through the act lane: explicit selection, journal-first receipt, at-most-once execution, desktop conflict rules. |
-| **prepared verb** | A direct verb whose execution shape is prepare → pin → journal-first → fenced execute → receipt, run on the call that asks. Covers app install/update, Pi package and skill-bundle install/update, app grants and automation enablement, automation enablement, managed Connected Folder deletion, app storage clear and retained-data purge. |
+| **prepared verb** | A direct verb whose execution shape is prepare → pin → journal-first → fenced execute → receipt, run on the call that asks. Covers Pi package and skill-bundle install/update, automation enablement, and managed Connected Folder deletion. |
 | **reversible deletion** | A delete whose undo is a History restore point or a Recently-deleted entry (`recently-deleted restore`). No product verb destroys permanently; retention does. |
 | **setup-only boundary** | The AmpleFile agent can neither perform nor request it: act-token machinery, provider credentials, settings administration, and anything that widens the set of principals controlling the AmpleFile agent. |
 | **deliberately absent** | Not a product verb — desktop-session mechanics, machine-local UI preference, or a surface whose meaning does not survive leaving the desktop. Listed so absence is a decision, not a gap. |
@@ -54,8 +54,8 @@ record only per-verb additions.
    `cli/receipts/act.jsonl` (`src/local/cli/act-receipts.ts`) **before** the
    mutation runs; an unwritable journal refuses the command. The owning
    domain service then keeps its own durable records exactly as it does for
-   the renderer (History checkpoints, transcript lifecycle events, App
-   Studio operation records, automation run receipts).
+   the renderer (History checkpoints, transcript lifecycle events,
+   automation run receipts).
 2. **What the receipt contains.** Baseline: version, timestamp, request id,
    command, outcome (`accepted`/`ok`/`error`/`rejected`), error code,
    connected-folder/conversation ids, checkpoint id, kernel task id, and management
@@ -72,8 +72,7 @@ record only per-verb additions.
    undone through the restore point or `recently-deleted restore --entry <id>`.
 4. **What happens on failure mid-act.** The domain service's existing
    atomicity applies unchanged — placement and restore point succeed or fail
-   together, prepared App operations recheck at activation, Connected Folder removal
-   uses the durable cleanup outbox. The executor appends a terminal `error`
+   together, Connected Folder removal uses the durable cleanup outbox. The executor appends a terminal `error`
    receipt; a crash between `accepted` and the terminal line is itself the
    honest signal that the outcome was interrupted. A failed or interrupted
    prepared verb is never auto-retried; another attempt is a fresh call.
@@ -105,8 +104,8 @@ rules, which mirror the desktop's.
 | Create Connected Folder | Header menu, palette, onboarding | act | direct verb | `connected-folders create --name <n>` | spaceId | `connected-folders unregister` (folder remains) | name collision rejected |
 | Register folder | Header menu, native picker | act | direct verb | `connected-folders register --path <abs>` | spaceId | `connected-folders unregister` revokes runtime authorization | already-registered path rejected |
 | Rename Connected Folder | Manage Connected Folders pane | none | direct verb | `connected-folders rename --connected-folder <id> --name <n>` | prior name | rename back (prior name in receipt) | duplicate exact name rejected as ambiguous-making |
-| Unregister Connected Folder | Manage Connected Folders → Remove (linked) | none | direct verb | `connected-folders unregister --connected-folder <id>` | storage kind | re-register the folder; `.amplefile/` identity persists | refused while a release-backed App Instance is sourced by or installed in it, or its Project owns retained data — same App Studio impact checks as the desktop; on success, automations referencing it suspend with active runs stopped ([Automations](automations.md)) |
-| Delete managed Connected Folder's folder | Manage Connected Folders → Delete (managed) | none | **prepared verb** | `connected-folders delete --connected-folder <id>` | trash entry id, canonical root | `recently-deleted restore --entry <id>` re-registers the Connected Folder from Recently deleted with its portable identity, its Chats, and its History | same impact checks as unregister; the claimed folder is moved into Recently deleted, never erased, so a legacy `.workspace/` tree moves like any other and the retention purge is what fails closed on it |
+| Unregister Connected Folder | Manage Connected Folders → Remove (linked) | none | direct verb | `connected-folders unregister --connected-folder <id>` | storage kind | re-register the folder; `.amplefile/` identity persists | on success, automations referencing it suspend with active runs stopped ([Automations](automations.md)) |
+| Delete managed Connected Folder's folder | Manage Connected Folders → Delete (managed) | none | **prepared verb** | `connected-folders delete --connected-folder <id>` | trash entry id, canonical root | `recently-deleted restore --entry <id>` re-registers the Connected Folder from Recently deleted with its portable identity, its Chats, and its History | the claimed folder is moved into Recently deleted, never erased, so a legacy `.workspace/` tree moves like any other and the retention purge is what fails closed on it |
 | Apply appearance | Customize Connected Folder → Import proposal | none | direct verb (argued below) | `connected-folders appearance apply --connected-folder <id> (--proposal <path> \| [--banner-image <path>] [--icon <name>] [--color <#rrggbb>])` | prior customization ref | `connected-folders appearance undo --connected-folder <id>` | proposal must parse as the typed `connected-folder-appearance` proposal; nothing else is accepted |
 | Reset appearance | Customize Connected Folder → Reset | none | direct verb | `connected-folders appearance reset --connected-folder <id>` | prior customization ref | `connected-folders appearance undo` | — |
 | Undo appearance | — (the desktop re-imports or resets instead) | none | direct verb | `connected-folders appearance undo --connected-folder <id>` | restored and displaced customization refs | apply the displaced ref again — undo is its own inverse | refused with a typed error when the receipt chain records no prior customization ref for that Connected Folder, including when the current appearance was last changed on the desktop rather than through a receipted act |
@@ -150,7 +149,7 @@ convenience.
 | Compact Chat | Composer `/compact` | none | direct verb | `chat compact --connected-folder <id> --conversation <id>` | kernel task id | none — compaction is additive summarization, not deletion | refused while a turn runs; registers the same kernel `compaction` task and capability-mutation fencing as the renderer |
 | Copy Chat | Chat actions popover "Make a Copy" | act | direct verb | `chat copy --connected-folder <id> --conversation <id> [--title <t>] [--task <own-task-id>] [--message <text>]` | copied-from Chat, message count, started task id | archive or delete the copy; the original is never written | a turn still running is left out of the copy; refused while compacting; with `--task`, only the caller's own Chat or one it handed work to |
 | Steer a running Chat | Composer while a turn runs | act | direct verb | `chat steer --connected-folder <id> --conversation <id> [--task <own-task-id>] --message <text>` | running task id | n/a (delivered after the current step) | refused when no turn runs; with `--task`, only a Chat the caller's Chat handed work to |
-| Report a result | — (Worker, app task, or outside harness) | act | direct verb | `chat report --connected-folder <id> --task <own-task-id> --summary <text> [--data <json-or-@path>] [--file <connected-folder-path>]... [--outcome …]` | outcome and file count — never the summary or data | none — a report is a record, not a mutation | `--task` must be the caller's own running turn; summary ≤ 4 MiB and data ≤ 16 MiB; each file must be inside the Connected Folder |
+| Report a result | — (Worker or outside harness) | act | direct verb | `chat report --connected-folder <id> --task <own-task-id> --summary <text> [--data <json-or-@path>] [--file <connected-folder-path>]... [--outcome …]` | outcome and file count — never the summary or data | none — a report is a record, not a mutation | `--task` must be the caller's own running turn; summary ≤ 4 MiB and data ≤ 16 MiB; each file must be inside the Connected Folder |
 | Ask a question | — (the same callers) | act | direct verb | `chat ask --connected-folder <id> --task <own-task-id> --question <text> [--to person\|parent]` or `agent ask --task <own-task-id> --question <text>` | question id and respondent — never the text | none — the question stays on record; a root Stop closes it | `--to parent` on a root reaches the person and says so; the asking turn is never suspended; the request reads `waiting` |
 | Answer a question | Composer (free-text reply) | act | direct verb | `chat answer --connected-folder <id> --question <id> --answer <text>` or `agent answer --question <id> --answer <text>` | question id and the continuation task id — never the answer | none — one accepted answer, one linked continuation turn | refuses a second answer, a stopped request, a Connected Folder that does not own the question, and a Chat whose turn or compaction is running (the question stays open); the turn store dedups the continuation under `answer-<question-id>` |
 | Hand work on | — (the same callers) | act | direct verb | `chat handoff --connected-folder <id> --task <own-task-id> --to-connected-folder <id-or-name> [--to-conversation <id>] (--message <text> \| --message-file <path>) [--file <connected-folder-path>]...` | destination Connected Folder, new Chat, task, restore point, copy count | the destination's restore point (copies are additive, exactly `files add`'s path) | concurrency is checked before any copy; copy before acceptance so a refused copy never leaves a started Chat; same Connected Folder handoff takes no `--file` |
@@ -196,7 +195,7 @@ stay renderer conveniences — the verb takes an explicit `--until`.
 |---|---|---|---|---|---|---|---|
 | List restore points | History pane | none | direct verb (content-bearing act read) | `history list --connected-folder <id>` | — | n/a | — |
 | Save restore point | History pane, palette | none | direct verb | `history save --connected-folder <id> [--label <t>]` | checkpointId, `created` flag | none needed (additive) | unchanged files → honest "already matches" result, not a new checkpoint |
-| Restore a restore point | History pane → Restore | none | direct verb | `history restore --connected-folder <id> --checkpoint <id>` | restored checkpointId + pre-restore safety checkpointId | restore the safety checkpoint the act itself recorded | **refused while any agent turn or compaction is active in that Connected Folder, while a restricted-app automation run whose app holds a file grant into that Connected Folder is active, or while an automation run with a files hop targeting that Connected Folder is active** — shared with desktop recovery |
+| Restore a restore point | History pane → Restore | none | direct verb | `history restore --connected-folder <id> --checkpoint <id>` | restored checkpointId + pre-restore safety checkpointId | restore the safety checkpoint the act itself recorded | **refused while any agent turn or compaction is active in that Connected Folder, or while an automation run with a files hop targeting that Connected Folder is active** — shared with desktop recovery |
 | List file versions | File version history modal | none | direct verb (content-bearing act read) | `history versions --connected-folder <id> --path <p>` | — | n/a | — |
 | Restore file version | File version history modal | none | direct verb | `history restore-file --connected-folder <id> --path <p> --version <sha256>` | safety checkpointId | restore the safety checkpoint (the modal's own Undo does the same) | missing version → not-found; folder at path → refused |
 
@@ -238,8 +237,8 @@ entry records its source Connected Folder, so the family takes no `--connected-f
 
 | Verb | Human surface | Fold today | Target | Command shape | Receipt adds | Undo / revocation | Conflicts |
 |---|---|---|---|---|---|---|---|
-| List Recently deleted | Settings → Recently deleted | none | direct verb (content-bearing act read) | `recently-deleted list --json` | — | n/a | entries carry source Connected Folder id, original Connected Folder–relative path or folder, kind (`file`, `folder`, `connected-folder`, `skill`, `app-storage`, `app-retained`, `app-release`, `app-studio`), a Skill's `scope`, size, deleted-at, restore-by, and the producing receipt id |
-| Restore an entry | Recently deleted → Restore / Save a copy | none | direct verb | `recently-deleted restore --entry <id> [--to <absolute-path>]` | entry id, kind, restored path or Connected Folder id; the additive restore point for a file or folder | file/folder: its restore point; Connected Folder: `connected-folders delete`; Skill: remove it again; app data: the app's own single recovery point | an occupied destination is collision-renamed, never overwritten (`stem (2).ext` / `name-2`), except that a Skill goes back only to its own scope and path, and is refused while a Skill of the same name is installed in that scope or the path is taken, and while affected work runs (capability-mutation fencing); refused when the source Connected Folder is unregistered and the entry is not itself a Connected Folder, when the entry's portable Connected Folder identity is registered elsewhere, or when app data's installation is gone or changed — that data can only be saved as a file with `--to`, at an absolute path outside every Connected Folder and outside AmpleFile's own state |
+| List Recently deleted | Settings → Recently deleted | none | direct verb (content-bearing act read) | `recently-deleted list --json` | — | n/a | entries carry source Connected Folder id, original Connected Folder–relative path or folder, kind (`file`, `folder`, `connected-folder`, `skill`; an earlier build's app entries keep their `app-storage`, `app-retained`, `app-release`, or `app-studio` kind), a Skill's `scope`, size, deleted-at, restore-by, and the producing receipt id |
+| Restore an entry | Recently deleted → Restore | none | direct verb | `recently-deleted restore --entry <id>` | entry id, kind, restored path or Connected Folder id; the additive restore point for a file or folder | file/folder: its restore point; Connected Folder: `connected-folders delete`; Skill: remove it again | an occupied destination is collision-renamed, never overwritten (`stem (2).ext` / `name-2`), except that a Skill goes back only to its own scope and path, and is refused while a Skill of the same name is installed in that scope or the path is taken, and while affected work runs (capability-mutation fencing); refused when the source Connected Folder is unregistered and the entry is not itself a Connected Folder, when the entry's portable Connected Folder identity is registered elsewhere, or when the entry is something an earlier build kept for Connected Folder apps — that stays listed until it expires and can be deleted now, never restored |
 
 No verb empties Recently deleted. **Delete now** is a Settings-only action;
 retention (default 30 days, adjustable in Settings → Recently deleted
@@ -247,10 +246,8 @@ deleted) is the only automatic purge, run on app start and daily while awake.
 Neither the purge nor **Delete now** ever erases an entry whose tree holds
 legacy `.workspace/` records: it is marked held and stays until the person
 handles the folder outside the product (the clean-break rule). The
-producers are `files delete` for uncoverable paths, `connected-folders delete`,
-`apps storage clear`, `apps retained purge`, and `apps uninstall
---purge-data`; the last three write a recovery export into the trash before
-removing live data.
+producers are `files delete` for uncoverable paths and `connected-folders
+delete`.
 
 ### Pages (removed)
 
@@ -296,53 +293,14 @@ live?**.
 Scope is authority: `--scope everywhere` makes bytes runnable inside the AmpleFile agent's
 own runtime on next start; the receipt names that scope for what it is.
 
-### Connected Folder app authority
+### Connected Folder apps and App Studio (removed)
 
-Restricted Connected Folder apps keep their separate reviewed-web lane; nothing here
-touches Pi's package manager or loaded catalog. Installation grants every
-declared power (F21); the grant, connection, and automation rows below are
-the person's narrowing and re-allowing controls.
-
-*Amended 2026-09-25:* the human surfaces named "Apps tab" and "App details"
-below live in **Settings → Apps**, which lists apps by Connected Folder; the Connected Folder–owned
-Apps tab is retired.
-
-| Verb | Human surface | Fold today | Target | Command shape | Receipt adds | Undo / revocation | Conflicts |
-|---|---|---|---|---|---|---|---|
-| List proposals | Chat proposal | none | direct verb (act read) | `apps proposals list --connected-folder <id> --conversation <id>` | — | n/a | — |
-| Dismiss proposal | Chat proposal → dismiss | none | direct verb | `apps proposals dismiss --connected-folder <id> --conversation <id> --proposal <id>` | proposal id | the agent may propose again; the preview it installed is removed with `apps remove` | — |
-| List installed apps | Apps tab | none | direct verb (content-bearing act read) | `apps list --connected-folder <id> --json` | app count | n/a | returns installed apps with their tools, actions, grants, connections, and automations |
-| Install proposal as local preview | Chat proposal (installed at once when proposed; this verb re-installs the same inspected digest) | none | **prepared verb** (`app.review.install`) | `apps install-proposal --connected-folder <id> --conversation <id> --proposal <id>` | kind `app.review.install`, digest, granted declarations, enabled automations, destinations still needing a secret | `apps remove` | digest-pinned; desktop refuses install while an agent turn runs; an identical digest is idempotent |
-| Add / update local preview | Chat proposal (Settings → Apps has no manual add path) | none | **prepared verb** (`app.review.install`) | `apps install-preview --connected-folder <id> --package <connected-folder-path>` | kind `app.review.install`, digest, granted declarations, enabled automations, destinations still needing a secret | `apps remove` | digest-pinned; a changed digest carries forward connections whose destination declaration is byte-identical, automation enabled states by id, and run receipts; grants follow the new declarations; an identical digest is idempotent |
-| Remove app | App details → Remove | none | direct verb | `apps remove --connected-folder <id> --app <id>` | app id, digest | reinstall is a fresh prepared verb | fenced against running automation jobs |
-| Re-allow network / file / notification | App details toggles | none | direct verb | `apps grant --connected-folder <id> --app <id> --digest <sha> --kind network\|files\|notifications --declaration <id> [--path <connected-folder-path>]` | exact declaration, granted file root when one is named | `apps revoke` (direct) | declared powers are on from install, so this re-allows after a revoke; grants bind to the exact digest and single declaration; nothing is batched. A `--kind files` declaration over a folder binds to the whole Connected Folder and takes no `--path`; one that names a single file requires `--path`, an existing ordinary file inside the Connected Folder and outside `.amplefile/`, `.pi/`, and `.workspace/`, and binds to exactly that file |
-| Revoke grant | App details toggles | none | direct verb | `apps revoke --connected-folder <id> --app <id> --digest <sha> --kind … --declaration <id>` | declaration id | re-allow with `apps grant` | revocation stops stale launches before authority changes take effect |
-| Save connection | App details → Connect | none | direct verb | `apps connect --connected-folder <id> --app <id> --destination <id>` | destination, adapter kind, `needs-secret` marker | `apps disconnect` (direct); deleting the local record does not revoke the credential at its provider — the receipt says so | the verb records the destination shape and reports that a secret is still needed; **the secret is entered by the person in Settings → Apps, once per destination** — credentials never ride argv, payloads, or the journal |
-| Remove connection | App details → Disconnect | none | direct verb | `apps disconnect --connected-folder <id> --app <id> --destination <id>` | destination id | reconnect by entering the secret again in Settings → Apps | — |
-| Re-enable automation | App details → automation toggle | none | direct verb | `apps automation enable --connected-folder <id> --app <id> --automation <id>` | job id | `apps automation disable` (direct) | declared automations are enabled at install, so this re-enables one after a disable; runs receive only the intersection of current grants and the job's reviewed permission subset |
-| Disable automation | App details toggle | none | direct verb | `apps automation disable --connected-folder <id> --app <id> --automation <id>` | job id | re-enable with `apps automation enable` | — |
-| Run automation now | App details → Run now | none | direct verb | `apps automation run --connected-folder <id> --app <id> --automation <id>` | run receipt id | n/a — the run already produces a durable, authority-captured receipt | scheduler admission rules apply (32 slots by default, same-job non-overlap); a disabled job still has no notification authority |
-| Invoke an app tool from the AmpleFile agent | — (the AmpleFile agent's verb; a Worker calls tools in its own Connected Folder) | none | direct verb | `apps invoke --connected-folder <id> --app <id> --tool <name> --input <json>` | app id, tool name, result bytes, lineage | n/a — the tool's own effects follow their domain undo | schema and current-grant checks by `RestrictedAppService.invoke`; fenced like an app action |
-| Clear app storage | App details → storage | none | **prepared verb** | `apps storage clear --connected-folder <id> --app <id>` | recovery-export entry id, byte count | `recently-deleted restore --entry <id>` while the same installation is present at the same revision; otherwise save a copy | the recovery export is written into Recently deleted before live data is removed; clearing storage that holds nothing writes no entry |
-
-### App Studio
-
-The authority-neutral spine of the App platform: everything below changes
-which *local records* exist, never what may run with which powers — powers
-arrive with installation and are narrowed through the rows above.
-
-| Verb | Human surface | Fold today | Target | Command shape | Receipt adds | Undo / revocation | Conflicts |
-|---|---|---|---|---|---|---|---|
-| Declare / edit presentation | App Studio form | none | direct verb | `apps project declare --connected-folder <id> --presentation <json-path>` | prior presentation ref | re-declare with prior values | typed presentation file, same validation as the pane; machine-local application state, no `.amplefile/` write |
-| Prepare Release | App Studio → Prepare | none | direct verb | `apps release prepare --connected-folder <id> --version <display>` | releaseDigest | `apps release delete` while unused | snapshots current reviewed previews into one immutable content-addressed Release; later source edits cannot alter its bytes |
-| Publish Release | App Studio → Publish | none | direct verb | `apps release publish --connected-folder <id> --release <digest>` | releaseDigest | delete while unused; publication records are lifecycle state, not exposure | rechecks that reviewed previews are still exact; **local state transition only** — nothing is uploaded, hosted, listed, or granted |
-| Delete unused Release | App Studio → Delete | none | direct verb | `apps release delete --connected-folder <id> --release <digest>` | releaseDigest, Recently deleted entry | `recently-deleted restore --entry <id>` | service guard refuses while any App Instance, either side of a prepared operation, or retained data references it; the Release's record and verified envelope go to Recently deleted before the record is removed (2026-10-11), and a restore re-verifies both and returns the Release in the state it was deleted in unless its version has been prepared again |
-| Prepare install | App Studio → Install | none | direct verb | `apps install prepare --connected-folder <id> --release <digest> --target-connected-folder <id>` | operationId | `apps operation cancel` | one instance per (projectId, target Connected Folder); Feature-id collisions rejected |
-| Prepare update / rollback | App Studio instance actions | none | direct verb | `apps update prepare --connected-folder <id> --instance <id> --release <digest>` | operationId, direction | `apps operation cancel`; a completed update is undone by preparing the rollback | deterministic plan recorded now, rechecked at activation |
-| Activate operation | App Studio → Activate | none | direct verb | `apps operation activate --connected-folder <id> --operation <id>` | operationId, resulting release | rollback is a new prepared operation | activation rechecks the plan, fences the old runtime, changes Release and authority atomically; declared powers are granted and declared automations enabled on install; a changed digest carries forward byte-identical connections, automation enabled states by id, and run receipts |
-| Cancel prepared operation | App Studio → Cancel | none | direct verb | `apps operation cancel --connected-folder <id> --operation <id>` | operationId | prepare again | — |
-| Uninstall with retain | Uninstall dialog → retain | none | direct verb | `apps uninstall --connected-folder <id> --instance <id> --retain-data` | instance id, retained namespace ids | reinstall creates a **new** Instance; retained namespaces do not remain runnable | fences the whole release-backed runtime; cleanup is the durable restart-retried outbox |
-| Uninstall with purge / purge retained data | Uninstall dialog → purge; retained-data list | none | **prepared verb** | `apps uninstall … --purge-data` / `apps retained purge --connected-folder <id> --retained <id>` | recovery-export entry ids | `recently-deleted restore --entry <id> --to <absolute-path>` saves a copy — both leave no app to restore into | `apps uninstall` without a disposition flag is refused — the choice is never defaulted; a recovery export for every affected namespace lands in Recently deleted before live data is removed |
+Connected Folder apps and App Studio went on 2026-11-07, with the whole
+`apps` act family (proposals, previews, grants, connections, app
+automations, `apps invoke`, storage, Releases, installs, and uninstall) and
+the `app.*` prepared acts. There are no app verbs. Recently deleted entries
+and request records an earlier build wrote for apps are tolerated on load,
+and nothing creates them anymore.
 
 ### The AmpleFile agent itself
 
@@ -407,26 +365,16 @@ Consolidated, so implementations and tests can point at one list:
 3. Capability mutations (`tools …`) are
    blocked while affected work is active; a catalog reload can never
    silently terminate a background turn.
-4. Connected Folder unregistration and managed-folder deletion run the App Studio
-   impact checks: active source/target Instances block, retained data
-   blocks, and incoming prepared operations are named in the refusal. A
-   removal that proceeds suspends
+4. Connected Folder unregistration and managed-folder deletion suspend
    automations referencing that Connected Folder, stopping any active run
    ([Automations](automations.md)).
 5. Managed recursive deletion fails closed when the claimed tree contains
    preserved `.workspace/` data.
-6. App Studio guards hold: referenced Releases cannot be deleted, prepared
-   operations recheck at activation, digest identity beats display
-   versions, uninstall requires an explicit retain-or-purge disposition.
-7. Whole–Connected Folder History restore is refused while any agent turn
-   or compaction is active in that Connected Folder, while a restricted-app
-   automation run whose app holds a file grant into that Connected Folder is active,
-   or while an automation run with a files hop targeting that Connected Folder is active
+6. Whole–Connected Folder History restore is refused while any agent turn
+   or compaction is active in that Connected Folder, or while an automation run with a files hop targeting that Connected Folder is active
    (the desktop uses the same reservation and refusal).
-8. Restricted-app proposal execution inherits the desktop's
-   no-active-turn install rule; automation runs obey the machine-wide
-   scheduler's admission and non-overlap rules.
-9. `files delete` never refuses for coverage reasons; paths the safety
+7. Automation runs obey their scheduler's admission and non-overlap rules.
+8. `files delete` never refuses for coverage reasons; paths the safety
    checkpoint cannot cover (oversized, unreadable, symlink) move into
    Recently deleted, and `.amplefile/`, `.pi/`, `.workspace/` stay invalid
    endpoints.
@@ -471,7 +419,7 @@ The ledger's plan items shipped as follows (suites named in
 8. Help and read-lane text — `src/local/cli/commands.ts`; `tests/amplefile-cli-protocol.test.ts`.
 9. Management-instruction teaching — `src/local/amplefile-agent-instructions.ts`; `tests/amplefile-agent-conversation.test.ts`.
 10. Documentation promotion — recorded in Fold integration (archived in the work-fold repository).
-11. Receipts, not gates (2026-09-10) — reclassification of every formerly gated row to a prepared or direct verb, `files destroy` removed, the `recently-deleted` family, `apps list|invoke`, and `automations enable`; recorded in [Receipts, not gates](receipts-not-gates.md).
+11. Receipts, not gates (2026-09-10) — reclassification of every formerly gated row to a prepared or direct verb, `files destroy` removed, the `recently-deleted` family, `apps list|invoke` (removed with apps on 2026-11-07), and `automations enable`; recorded in [Receipts, not gates](receipts-not-gates.md).
 
 ## Deliberately not in this design
 

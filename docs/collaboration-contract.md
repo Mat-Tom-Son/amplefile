@@ -14,12 +14,12 @@ technical `connected-folder`, `fold`, and `automation` record and command names.
 The goal: a person asks the AmpleFile agent for an outcome, the AmpleFile agent and Connected Folder
 agents divide the work, hand each other selected results, ask each other
 and the person questions, and continue exactly once when an answer arrives.
-Custom apps see their own work change without polling. Any shell-capable
+Any shell-capable
 agent on the CLI gets the same verbs. Nothing in this contract adds a gate.
 
 The person-facing presentation is specified in [Collaboration experience](collaboration-experience.md):
 request-wide progress and Stop, addressed questions, selected files, and explicit recovery
-across Chats, the AmpleFile agent, and Apps.
+across Chats and the AmpleFile agent.
 
 Native Pi Extension dialogs are a separate compatibility mechanism: the
 development [Extension UI adapter](skills-and-extensions.md#live-extension-questions)
@@ -42,9 +42,9 @@ afterward; an accepted answer starts its single continuation only when idle.
 | F25 | **Durable requests.** Every accepted agent turn belongs to a machine-local request record. An AmpleFile agent turn creates a root request; a `chat send --parent-task` creates a child request under it; a Connected Folder turn with no parent creates its own root. Records live under the state root (`requests/`), survive restart, are reconciled against the turn journal, and are never replayed. The in-memory AmpleFile agent request registry is replaced by this store; `agent status` keeps its projection. | Turn acceptance, conflict rules, History checkpoints, and kernel task records stay where they are. Connected Folder transcripts carry nothing new. |
 | F26 | **Connected Folder turns get their own context.** Every Connected Folder turn's hidden context names its task id and request id and, when delegated, an opaque parent handle and the assignment text. A compact operations guide is appended to the system prompt the way Connected Folder instructions are, describing the verbs below and the rule that cross–Connected Folder work goes through them. The AmpleFile agent transcript, the Connected Folder registry, and unselected results from other Connected Folders never enter a Connected Folder turn. | Nothing is written into the Connected Folder's folder. `.pi/` and `.amplefile/` are untouched. |
 | F27 | **Report, ask, answer, handoff.** Connected Folder–scoped collaboration verbs and management-scoped `agent ask|answer`, receipted and journal-first: `chat report` attaches a result envelope to the caller's task; `chat ask` records a question and puts the task in `waiting`; `chat answer` and `agent answer` durably reserve one answer delivery and start exactly one linked continuation turn; `chat handoff` asks the host to start a new Chat in another Connected Folder with a message and copies of named files. Delivery is host-side: no AmpleFile agent model turn is needed to move a report, an answer, or a handoff. | The person's free-text Chat reply stays a supported way to answer. Automations remain the only unattended cross–Connected Folder glue on a trigger. |
-| F28 | **Waiting is a host state.** `chat wait` and `agent wait` return when the followed task reaches a terminal state or `waiting`, and say which. A parent turn never blocks on a child that is waiting for input; it finishes and reports the request as `waiting`. When an owning Chat is idle and its children have settled or asked questions, the host can start one continuation carrying undelivered direct-child reports. This applies to the AmpleFile agent, Connected Folder, app, CLI and automation requests. Delivery is recorded by child turn identity, never inferred from relative settle times. | No arbitrary event-driven fold turns. A continuation belongs to an explicit request; declared automation agent steps remain the only trigger-driven entry. |
-| F29 | **One result shape.** A result envelope is `summary` (text, at most 4 MiB), optional `data` (JSON, at most 16 MiB, validated against a schema when the request declared one), optional `files` (Connected Folder–relative paths with digest and size), and `outcome` (`succeeded`, `partial`, or `failed`). Reports, app assistant tasks, handoff outcomes, and automation chat hops all produce it. | Existing `fileChanges` turn metadata stays as evidence; a report's `files` are the deliverables the agent chose. |
-| F30 | **Apps see their own work change.** `bridge.tasks.onChanged`, `bridge.checks.onChanged`, and `bridge.files.onChanged` deliver bounded hints for the app's own assistant tasks and inference receipts, its selected Checks, and its granted file roots. Active views subscribe; workers receive task/file hints during an operation, while Check access and hints remain view-only. Viewers do not subscribe. A hint carries ids and revisions, never content; the app re-reads. *Amended 2026-11-07:* with Checks removed, an app has no selected Checks to read or be hinted about. | Hints never start a model turn. The internal settle signal stays private. |
+| F28 | **Waiting is a host state.** `chat wait` and `agent wait` return when the followed task reaches a terminal state or `waiting`, and say which. A parent turn never blocks on a child that is waiting for input; it finishes and reports the request as `waiting`. When an owning Chat is idle and its children have settled or asked questions, the host can start one continuation carrying undelivered direct-child reports. This applies to the AmpleFile agent, Connected Folder, app, CLI and automation requests. Delivery is recorded by child turn identity, never inferred from relative settle times. *Amended 2026-11-07:* app requests left with Connected Folder apps. | No arbitrary event-driven fold turns. A continuation belongs to an explicit request; declared automation agent steps remain the only trigger-driven entry. |
+| F29 | **One result shape.** A result envelope is `summary` (text, at most 4 MiB), optional `data` (JSON, at most 16 MiB, validated against a schema when the request declared one), optional `files` (Connected Folder–relative paths with digest and size), and `outcome` (`succeeded`, `partial`, or `failed`). Reports, app assistant tasks, handoff outcomes, and automation chat hops all produce it. *Amended 2026-11-07:* app assistant tasks left with Connected Folder apps. | Existing `fileChanges` turn metadata stays as evidence; a report's `files` are the deliverables the agent chose. |
+| F30 | **Apps see their own work change.** `bridge.tasks.onChanged`, `bridge.checks.onChanged`, and `bridge.files.onChanged` deliver bounded hints for the app's own assistant tasks and inference receipts, its selected Checks, and its granted file roots. Active views subscribe; workers receive task/file hints during an operation, while Check access and hints remain view-only. Viewers do not subscribe. A hint carries ids and revisions, never content; the app re-reads. *Amended 2026-11-07:* with Checks removed, an app has no selected Checks to read or be hinted about. *Retired 2026-11-07 (owner decision):* removed with Connected Folder apps. | Hints never start a model turn. The internal settle signal stays private. |
 
 ### 2026-10-01 amendment: Connected Folders inside Connected Folders
 
@@ -178,7 +178,7 @@ unchanged.
 ## Verbs
 
 All are act-lane and receipted; `chat` verbs name a Connected Folder and `agent` verbs own management questions. They are available to the AmpleFile agent, a Connected Folder
-agent, an app-requested task, and an outside harness alike. `help
+agent, and an outside harness alike. `help
 collaborate` documents them with examples that the tests validate.
 
 ```
@@ -222,7 +222,7 @@ amplefile requests list|show --request <id> --json                          # ma
 ## Completion, delivery and recovery
 
 A request owns the work; a turn is one execution within it. Status, waits,
-app receipts and automation hops follow the request across answer and synthesis
+and automation hops follow the request across answer and synthesis
 turns. An unanswered question or an accepted answer without a linked turn
 remains outstanding, including after restart. Stop fences answer acceptance
 and continuation admission through every ancestor.
@@ -256,11 +256,10 @@ Deleting a Chat, a file, or a Connected Folder refuses while its affected reques
 graph remains unfinished, including questions waiting for an answer and
 accepted continuations. Stop closes outstanding work but deletion waits for
 its accepted turns to drain. File and Connected Folder deletion also reserve the
-affected Connected Folder against new turns, compaction, app jobs with file
-access, and Automation file work until the deletion completes.
+affected Connected Folder against new turns, compaction, and Automation file
+work until the deletion completes.
 
-An app receipt keeps its installation and authority pins while following the
-whole owned request. `waiting` is ongoing and has no final result. Stop reaches
+`waiting` is ongoing and has no final result. Stop reaches
 outstanding descendants, schema validation applies to every own continuation,
 and usage totals include settled delegated work. An automation waits for the
 request, not only its first turn. If it needs an answer, the automation ends at
@@ -269,10 +268,11 @@ request but never replays subsequent automation effects.
 
 ## Records
 
-- **Request:** id, kind (`management`, `connected-folder`, `app`, `automation`, `cli`),
+- **Request:** id, kind (`management`, `connected-folder`, `automation`, `cli`;
+  records of kind `app` an earlier build wrote are tolerated on load),
   root id, parent task id, original assignment, latest message, delivered child
   turn ids, continuation reservation state, owner scope (management, or Connected Folder id plus
-  conversation id), app installation when applicable, surface, created at,
+  conversation id), surface, created at,
   state (`working`, `waiting`, `handed_off`, `done`, `partial`, `failed`,
   `stopped`), children, questions, results, usage, and the optional
   checklist its running turn keeps.
@@ -303,27 +303,17 @@ guards sized so ordinary work never meets them (2026-10-10).
 | Result data | 16 MiB | the write is refused before it is recorded |
 | Provider budget per root | no default cap; a host may set one | request fails when the configured cap is exceeded |
 
-## Apps
+## Apps (removed)
 
-- `bridge.tasks.onChanged(listener)` fires for the installation's own
-  assistant tasks and inference receipts: `{ revision, taskIds, receiptIds }`.
-- *2026-11-07:* Checks were removed, so an app has no selected Check
-  results for `bridge.checks.onChanged` to report.
-- `bridge.files.onChanged(listener)` fires when files under a granted root
-  change on disk, debounced, bounded: `{ revision, permissionIds, truncated }`.
-- Subscriptions are per mount, dropped on close, and never replayed.
-  Inference receipt ids can refresh the trusted
-  Apps view; the app bridge has no receipt lookup.
-- App assistant tasks produce the F29 envelope: `result.summary`,
-  `result.data` when the action declared an output schema, and `result.files`.
+Connected Folder apps were removed on 2026-11-07 (owner decision), with
+their `bridge.*.onChanged` hints and app assistant tasks. No request of kind
+`app` is created anymore.
 
 ## What does not change
 
 - Everything in the receipts record's "What does not change".
 - The AmpleFile agent has no independent ambient scheduler. A declared automation agent step may start an AmpleFile agent request; its continuations keep the same durable identity and Stop behavior.
 - Connected Folder Chats stay portable and carry no cross–Connected Folder state.
-- `assistant.infer` and the app sandbox. (The bounded text-review Check this
-  line also named was removed on 2026-11-07.)
 
 ## Build plan
 

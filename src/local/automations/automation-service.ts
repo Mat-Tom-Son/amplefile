@@ -34,7 +34,6 @@ import {
   type AmpleFileAutomationFilesStep,
   type AmpleFileAutomationAgentStep,
   type AmpleFileAutomationPlaceholder,
-  type AmpleFileAutomationSettleSource,
   type AmpleFileAutomationStep,
   type AmpleFileAutomationStepCreatedFilesSource,
   type AmpleFileAutomationTrigger,
@@ -52,15 +51,10 @@ import {
   type AmpleFileRetiredAutomation,
   ampleFileAutomationAtOccurrenceId,
 } from "./automation-store.js";
-import type {
-  AmpleFileAutomationHopLineage,
-  AmpleFileSettleRecord,
-  AmpleFileSettleSignal,
-} from "./settle-signal.js";
 
 /**
- * The automation executor (docs/automations.md): deterministic app code that
- * evaluates triggers over settle signals and the bounded schedule, admits
+ * The automation executor (docs/automations.md): deterministic host code that
+ * evaluates triggers over folder changes and the bounded schedule, admits
  * runs through its own FIFO scheduler instance, executes at most sixteen
  * declared hops by default strictly in order, and writes journal-first
  * receipts for every run and hop. There is no model call anywhere in this
@@ -70,11 +64,8 @@ import type {
  * dispatches — the only text it adds is the closed placeholder set, filled in
  * host-side from the run's own cause and its earlier hops' host records.
  *
- * The service owns its own `AmpleFileSchedulerService` instance — the same
- * proven class the restricted-app scheduler uses, deliberately a separate
- * budget so one Connected Folder app's jobs can never starve cross–Connected Folder
- * glue (and vice versa), and a separate suspend/resume/close lifecycle so the
- * two authority domains stay uncoupled.
+ * The service owns its own `AmpleFileSchedulerService` instance, with its own
+ * budget and its own suspend/resume/close lifecycle.
  */
 export const ampleFileAutomationSchedulerOwnerId = "amplefile.automation";
 
@@ -91,8 +82,6 @@ export interface AmpleFileAutomationHopContext {
   title: string;
   runId: string;
   hopId: string;
-  /** Stamped onto every domain run a hop causes, so its settles never fire triggers. */
-  lineage: AmpleFileAutomationHopLineage;
   signal: AbortSignal;
 }
 
@@ -233,14 +222,13 @@ export interface AmpleFileAutomationServiceStatus {
   activeRunCount: number;
   /** Runs found accepted-without-terminal at startup and recorded interrupted, never replayed. */
   recoveredInterruptedRunIds: string[];
-  /** Stored automations left out on load because they use a retired feature (Checks, 2026-11-07). */
+  /** Stored automations left out on load because they use a retired feature (Checks and apps, 2026-11-07). */
   retiredAutomations?: AmpleFileRetiredAutomation[];
 }
 
 export interface AmpleFileAutomationServiceOptions {
   store: AmpleFileAutomationStore;
   ports: AmpleFileAutomationHopPorts;
-  settleSignal?: AmpleFileSettleSignal;
   tasks?: AmpleFileAutomationRunTaskPort;
   clock?: AmpleFileSchedulerClock;
   createRunId?: () => string;
@@ -312,7 +300,6 @@ export class AmpleFileAutomationService {
   readonly #activeRuns = new Map<string, ActiveRunState>();
   readonly #recoveredRunIds: string[] = [];
   #pendingCause: AmpleFileAutomationRunCause | null = null;
-  #unsubscribeSettle: (() => void) | null = null;
   #journalDamageReason: string | null = null;
   #suspensionGeneration = 0;
   #suspensionDesired = false;
@@ -355,7 +342,7 @@ export class AmpleFileAutomationService {
 
   static async create(options: AmpleFileAutomationServiceOptions): Promise<AmpleFileAutomationService> {
     const service = new AmpleFileAutomationService(options);
-    await service.#initialize(options.settleSignal);
+    await service.#initialize();
     if (options.observeFiles && options.filePollIntervalMs !== 0) {
       service.#filePollTimer = setInterval(() => { void service.pollFileChanges(); }, Math.max(2000, options.filePollIntervalMs ?? 2000));
       service.#filePollTimer.unref?.();
@@ -612,12 +599,10 @@ export class AmpleFileAutomationService {
     this.#resetFileWatches(true);
     this.#suspensionDesired = true;
     this.#suspensionGeneration += 1;
-    this.#unsubscribeSettle?.();
-    this.#unsubscribeSettle = null;
     this.#automation.close();
   }
 
-  async #initialize(settleSignal?: AmpleFileSettleSignal): Promise<void> {
+  async #initialize(): Promise<void> {
     if (!this.#store.status().damaged) {
       await this.#recoverInterruptedRuns();
       if (this.#journalDamageReason === null) {
@@ -629,11 +614,6 @@ export class AmpleFileAutomationService {
           this.#arm(record, "closed");
         }
       }
-    }
-    if (settleSignal) {
-      this.#unsubscribeSettle = settleSignal.subscribe((record) => {
-        this.#onSettle(record);
-      });
     }
   }
 
@@ -749,7 +729,7 @@ export class AmpleFileAutomationService {
       trigger: structuredClone(trigger),
     });
     const scheduled = trigger.kind === "interval" || trigger.kind === "at" ? trigger : null;
-    // Manual and on-settled automations register disabled: the job then never
+    // Manual and folder-change automations register disabled: the job then never
     // fires on a cadence, while dispatch (always reason "manual" to the
     // scheduler) still flows through the same FIFO admission, per-automation
     // non-overlap, suspension, and abort machinery.
@@ -952,22 +932,6 @@ export class AmpleFileAutomationService {
     });
     this.#fileHoldChain = hold.catch(() => undefined);
     await hold;
-  }
-
-  #onSettle(record: AmpleFileSettleRecord): void {
-    if (this.#closed) return;
-    // Automation-caused settles never fire triggers: dropping lineage here is
-    // what makes automation chains structurally impossible.
-    if (record.lineage) return;
-    for (const [automationId, armed] of this.#armed) {
-      if (armed.trigger.kind !== "on-settled") continue;
-      if (!settleMatchesSource(armed.trigger.source, record)) continue;
-      void this.#dispatch(automationId, settleCause(record));
-    }
-  }
-
-  #dispatch(automationId: string, cause: AmpleFileAutomationRunCause): Promise<AmpleFileSchedulerRunResult> {
-    return this.#dispatchAdmission(automationId, cause).result;
   }
 
   #dispatchAdmission(automationId: string, cause: AmpleFileAutomationRunCause): AmpleFileSchedulerRunAdmission {
@@ -1217,7 +1181,6 @@ export class AmpleFileAutomationService {
         title: declaration.title,
         runId,
         hopId: step.id,
-        lineage: { kind: "automation-hop", automationId, automationRunId: runId, hopId: step.id },
         signal: controller.signal,
       };
       const acceptedHop = await this.#receipts.append({
@@ -1650,28 +1613,6 @@ function hopConnectedFolderFields(
   return step.kind === "agent" ? {} : { connectedFolderId: step.connectedFolder };
 }
 
-function settleMatchesSource(source: AmpleFileAutomationSettleSource, record: AmpleFileSettleRecord): boolean {
-  return record.kind === "app-automation-run"
-    && record.connectedFolderId === source.connectedFolder
-    && record.appId === source.appId
-    && record.appAutomationId === source.appAutomationId
-    && (source.outcomes as readonly string[]).includes(record.outcome);
-}
-
-function settleCause(record: AmpleFileSettleRecord): AmpleFileAutomationRunCause {
-  return {
-    kind: "on-settled",
-    source: {
-      kind: "app-automation-run",
-      connectedFolderId: record.connectedFolderId,
-      appId: record.appId,
-      appAutomationId: record.appAutomationId,
-      runId: record.runId,
-      outcome: record.outcome,
-    },
-  };
-}
-
 function sameSavedFileState(
   left: { snapshot: { digest: string }; lastTriggeredAt?: string; owed?: { reason: string; paths: string[] } },
   right: { snapshot: { digest: string }; lastTriggeredAt?: string; owed?: { reason: string; paths: string[] } },
@@ -1745,9 +1686,6 @@ function causeSummary(cause: AmpleFileAutomationRunCause, declaration: AmpleFile
       }
       return `${cause.changedCount} file(s) changed ${watched ? `under "${watched}"` : "at the top level"} in Connected Folder ${cause.connectedFolderId}.`;
     }
-    default:
-      return `App automation ${cause.source.appId}/${cause.source.appAutomationId} in Connected Folder ${cause.source.connectedFolderId}`
-        + ` settled ${cause.source.outcome}.`;
   }
 }
 
@@ -1762,8 +1700,6 @@ function causeClause(cause: AmpleFileAutomationRunCause): string {
       return "this was a caught-up run";
     case "files-changed":
       return "this run was started by a folder change";
-    default:
-      return "this run was started by a settled run";
   }
 }
 

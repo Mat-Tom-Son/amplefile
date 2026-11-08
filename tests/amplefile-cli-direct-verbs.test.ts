@@ -131,14 +131,16 @@ test("retired verbs are unknown commands that leave no receipt", async () => {
   const h = await directVerbHarness("retired");
   try {
     // The pending-decision family, permanent deletion, the retired holding
-    // spellings, the retired desktop-served sharing verbs, and the pages
-    // family (removed 2026-11-07).
+    // spellings, the retired desktop-served sharing verbs, and the pages and
+    // apps families (removed 2026-11-07).
     for (const argv of [
       ["staged", "list"], ["staged", "show"], ["files", "destroy"],
       ["automations", "stage"], ["pages", "stage"],
       ["pages", "share"], ["pages", "share-app"], ["pages", "status"],
       ["pages", "revoke"], ["pages", "narrow"], ["pages", "widen"], ["pages", "snapshot-off"],
       ["pages", "validate"],
+      ["apps", "list"], ["apps", "invoke"], ["apps", "install-preview"], ["apps", "grant"],
+      ["apps", "release", "prepare"], ["apps", "uninstall"],
     ]) {
       h.records.length = 0;
       const unknown = await h.execute(argv);
@@ -195,192 +197,6 @@ test("connected-folders delete deletes a managed folder on the first call, refus
     assert.match(orphan.stderr, /no longer active/);
     assert.deepEqual(h.records.map((record) => record.outcome), ["rejected"]);
     assert.equal(existsSync(other.connectedFolder.connectedFolderRoot), true, "a refused act changes nothing");
-  } finally {
-    await h.close();
-  }
-});
-
-/**
- * A file permission that names a single file is granted from the act lane by
- * naming that file (docs/receipts-not-gates.md, F21). The folder permission
- * beside it keeps binding to the whole Connected Folder and takes no file at all.
- */
-async function writeSingleFilePackage(root: string): Promise<void> {
-  await mkdir(root, { recursive: true });
-  await writeFile(join(root, "package.json"), JSON.stringify({
-    name: "ledger-demo",
-    version: "0.1.0",
-    private: true,
-    type: "module",
-    agentApp: "agent-app.json",
-  }), "utf8");
-  await writeFile(join(root, "agent-app.json"), JSON.stringify({
-    version: 2,
-    id: "ledger-demo",
-    title: "Ledger demo",
-    description: "Declares one single-file permission beside a folder permission.",
-    runtime: { kind: "sandboxed-web", entry: "index.html" },
-    ui: { icon: "shield" },
-    tools: [],
-    automations: [],
-    permissions: {
-      network: [],
-      files: [
-        { id: "ledger", target: "file", access: "read-write" },
-        { id: "exports", target: "directory", access: "read-write" },
-      ],
-      notifications: [],
-    },
-  }), "utf8");
-  await writeFile(join(root, "index.html"), "<!doctype html><script type=module src=app.js></script>", "utf8");
-  await writeFile(join(root, "app.js"), "export {};\n", "utf8");
-}
-
-test("apps grant --kind files --path binds a single-file permission to that exact file", async () => {
-  const h = await directVerbHarness("grants");
-  try {
-    const connectedFolder = await h.api.actFacade.createConnectedFolder({ name: "Ledger Connected Folder" });
-    await writeSingleFilePackage(join(connectedFolder.connectedFolder.connectedFolderRoot, "apps", "ledger-demo"));
-    const installed = await h.execute(["apps", "install-preview", "--connected-folder", connectedFolder.connectedFolder.id, "--package", "apps/ledger-demo", "--json"]);
-    assert.equal(installed.exitCode, 0, installed.stderr);
-    const installedJson = JSON.parse(installed.stdout) as {
-      data: {
-        app: { appId: string; digest: string };
-        granted: { wholeConnectedFolderFolders: number };
-        needs: { files: string[] };
-      };
-    };
-    const digest = installedJson.data.app.digest;
-    assert.equal(installedJson.data.granted.wholeConnectedFolderFolders, 1, "the folder permission is on from install");
-    assert.deepEqual(
-      installedJson.data.needs.files,
-      ["ledger"],
-      "the single-file permission is what installation leaves open",
-    );
-
-    await mkdir(join(connectedFolder.connectedFolder.connectedFolderRoot, "books"), { recursive: true });
-    await writeFile(join(connectedFolder.connectedFolder.connectedFolderRoot, "books", "ledger.csv"), "date,amount\n", "utf8");
-
-    const grantArgv = ["apps", "grant", "--connected-folder", connectedFolder.connectedFolder.id, "--app", "ledger-demo", "--digest", digest, "--kind", "files"];
-
-    // Nothing but an existing ordinary file inside the Connected Folder can be named, and
-    // reserved metadata is not a file endpoint.
-    for (const [path, code] of [
-      ["ghost.csv", "notFound"],
-      ["books", "notFound"],
-      ["../outside.csv", "usage"],
-      [".amplefile/connected-folder.json", "usage"],
-      [".pi/config.json", "usage"],
-      [".workspace/legacy.json", "usage"],
-    ] as const) {
-      const refused = await h.execute([...grantArgv, "--declaration", "ledger", "--path", path, "--json"]);
-      assert.notEqual(refused.exitCode, 0, `'${path}' must be refused`);
-      assert.equal(errorCodeOf(refused.stderr), code, `'${path}' refuses as ${code}`);
-    }
-
-    // A single-file permission with no file named says what it needs; the
-    // folder permission beside it refuses a file outright.
-    const unnamed = await h.execute([...grantArgv, "--declaration", "ledger", "--json"]);
-    assert.equal(errorCodeOf(unnamed.stderr), "usage");
-    assert.match(unnamed.stderr, /needs one file/);
-    const folderWithPath = await h.execute([...grantArgv, "--declaration", "exports", "--path", "books/ledger.csv", "--json"]);
-    assert.equal(errorCodeOf(folderWithPath.stderr), "usage");
-    assert.match(folderWithPath.stderr, /covers the whole Connected Folder/);
-
-    // A file is not part of the network or notification shapes, and revoking
-    // names a declaration rather than a root: both are usage errors at parse
-    // time, before anything is journaled.
-    h.records.length = 0;
-    const networkWithPath = await h.execute([
-      "apps", "grant", "--connected-folder", connectedFolder.connectedFolder.id, "--app", "ledger-demo", "--digest", digest,
-      "--kind", "network", "--declaration", "mail-api", "--path", "books/ledger.csv", "--json",
-    ]);
-    assert.equal(errorCodeOf(networkWithPath.stderr), "usage");
-    assert.match(networkWithPath.stderr, /--path can be used only with 'apps grant --kind files'/);
-    const revokeWithPath = await h.execute([
-      "apps", "revoke", "--connected-folder", connectedFolder.connectedFolder.id, "--app", "ledger-demo", "--digest", digest,
-      "--kind", "files", "--declaration", "ledger", "--path", "books/ledger.csv", "--json",
-    ]);
-    assert.equal(errorCodeOf(revokeWithPath.stderr), "usage");
-    assert.match(revokeWithPath.stderr, /--path cannot be used with 'apps revoke'/);
-    assert.deepEqual(h.records, [], "a usage error leaves no receipt");
-
-    // The grant binds to the exact file, and the receipt names that root.
-    h.records.length = 0;
-    const granted = await h.execute([...grantArgv, "--declaration", "ledger", "--path", "./books/ledger.csv", "--json"]);
-    assert.equal(granted.exitCode, 0, granted.stderr);
-    const grantedJson = JSON.parse(granted.stdout) as { data: { granted: boolean; grantKind: string; declaration: string; root: string } };
-    assert.equal(grantedJson.data.granted, true);
-    assert.equal(grantedJson.data.grantKind, "files");
-    assert.equal(grantedJson.data.declaration, "ledger");
-    assert.equal(grantedJson.data.root, "books/ledger.csv", "the root is the canonical Connected Folder–relative file");
-    assert.deepEqual(h.records.map((record) => record.outcome), ["accepted", "ok"]);
-    assert.equal(h.lastOk().detail, "app.grant.files; app ledger-demo; declaration ledger; root books/ledger.csv");
-    assert.deepEqual(h.lastOk().undoRef, { kind: "declaration", value: "ledger" });
-
-    // The human form says what the app can reach, and re-granting the same
-    // file changes nothing.
-    const human = await h.execute([...grantArgv, "--declaration", "ledger", "--path", "books/ledger.csv"]);
-    assert.equal(human.exitCode, 0, human.stderr);
-    assert.match(human.stdout, /^Granted files ledger to ledger-demo in Ledger Connected Folder \[[^\]]+\]\. It covers books\/ledger\.csv and nothing else\.\n$/);
-
-    // Revoking takes the file grant away; the whole–Connected Folder grant is
-    // untouched and still reports its own root.
-    const revoked = await h.execute([
-      "apps", "revoke", "--connected-folder", connectedFolder.connectedFolder.id, "--app", "ledger-demo", "--digest", digest,
-      "--kind", "files", "--declaration", "ledger", "--json",
-    ]);
-    assert.equal(revoked.exitCode, 0, revoked.stderr);
-    assert.equal((JSON.parse(revoked.stdout) as { data: { revoked: boolean } }).data.revoked, true);
-    const folderGrant = await h.execute([...grantArgv, "--declaration", "exports", "--json"]);
-    assert.equal(folderGrant.exitCode, 0, folderGrant.stderr);
-    assert.equal((JSON.parse(folderGrant.stdout) as { data: { root: string } }).data.root, ".");
-  } finally {
-    await h.close();
-  }
-});
-
-/**
- * `apps install-preview` installs inside the same call that records the
- * review, so "replaced" has to be read from what was installed before the
- * call: a first add and a re-add of the installed revision replace nothing,
- * and only a changed revision of the same app id is a replacement — one that
- * carries the person's narrowing forward rather than resetting it.
- */
-test("apps install-preview reports a replacement only when a different revision of the same app was installed", async () => {
-  const h = await directVerbHarness("replaces");
-  try {
-    const connectedFolder = await h.api.actFacade.createConnectedFolder({ name: "Replacement Connected Folder" });
-    const packageRoot = join(connectedFolder.connectedFolder.connectedFolderRoot, "apps", "ledger-demo");
-    await writeSingleFilePackage(packageRoot);
-    const install = async () => {
-      const result = await h.execute(["apps", "install-preview", "--connected-folder", connectedFolder.connectedFolder.id, "--package", "apps/ledger-demo", "--json"]);
-      assert.equal(result.exitCode, 0, result.stderr);
-      return (JSON.parse(result.stdout) as { data: { replacesInstalled: boolean; app: { digest: string } } }).data;
-    };
-
-    const first = await install();
-    assert.equal(first.replacesInstalled, false, "a first add replaces nothing");
-    const again = await install();
-    assert.equal(again.replacesInstalled, false, "re-adding the installed revision changes nothing");
-    assert.equal(again.app.digest, first.app.digest);
-
-    // The person narrows the preview, then the package changes.
-    const revoked = await h.execute(["apps", "revoke", "--connected-folder", connectedFolder.connectedFolder.id, "--app", "ledger-demo",
-      "--digest", first.app.digest, "--kind", "files", "--declaration", "exports", "--json"]);
-    assert.equal(revoked.exitCode, 0, revoked.stderr);
-    await writeFile(join(packageRoot, "app.js"), "export const revision = 2;\n", "utf8");
-    const changed = await install();
-    assert.notEqual(changed.app.digest, first.app.digest);
-    assert.equal(changed.replacesInstalled, true, "a changed revision of the same app id is a replacement");
-    const human = await h.execute(["apps", "install-preview", "--connected-folder", connectedFolder.connectedFolder.id, "--package", "apps/ledger-demo"]);
-    assert.doesNotMatch(human.stdout, /replaced the previous installation/, "the now-installed revision is not reported as a replacement");
-
-    const listed = await (await fetch(`${h.api.origin}/api/connected-folders/${connectedFolder.connectedFolder.id}/restricted-apps`)).json() as {
-      apps: Array<{ digest: string; fileGrants: Array<{ declarationId: string }> }>;
-    };
-    assert.deepEqual(listed.apps.map((app) => app.digest), [changed.app.digest], "the replacement is the one preview");
-    assert.deepEqual(listed.apps[0]!.fileGrants, [], "the revoked folder permission stayed revoked across the replacement");
   } finally {
     await h.close();
   }

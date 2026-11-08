@@ -1,6 +1,6 @@
 /**
  * Portable Connected Folder metadata and executable Pi configuration never belong to
- * ordinary Files, History, attachment, Check, or restricted-app payloads.
+ * ordinary Files, History, or attachment payloads.
  * The predecessor apps' metadata folders (`.work-fold/` and `.workspace/`)
  * stay hidden the same way; AmpleFile never reads them.
  * Match case-insensitively on every platform so a package prepared on macOS

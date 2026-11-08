@@ -16,10 +16,10 @@ import {
   type BoundedInferenceStreamOptions,
   type BoundedInferenceStreamResult,
 } from "../src/local/agent/bounded-inference.js";
-import { parseRestrictedAppJsonSchema, restrictedAppJsonSchemaLimits } from "../src/local/agent/restricted-app-manifest.js";
+import { closedJsonSchemaLimits, parseClosedJsonSchema } from "../src/local/closed-json-schema.js";
 
 const model = { provider: "test", id: "connected-folder-model", maxTokens: 8192, contextWindow: 128_000 };
-const schema = parseRestrictedAppJsonSchema({
+const schema = parseClosedJsonSchema({
   type: "object",
   additionalProperties: false,
   required: ["total"],
@@ -80,7 +80,7 @@ test("text inference sends one untrusted user message on the configured stream p
   assert.equal(context.tools.length, 0);
   assert.ok(context.systemPrompt.startsWith(boundedInferenceSystemPrompt));
   assert.match(context.systemPrompt, /untrusted/);
-  assert.match(context.systemPrompt, /App instructions:\nSummarize the sales figures\.$/);
+  assert.match(context.systemPrompt, /Instructions:\nSummarize the sales figures\.$/);
   assert.ok(!JSON.stringify(context).includes("PRIVATE SPACE CONVERSATION"));
   const options = calls[0]!.options!;
   assert.equal(options.signal, input.signal);
@@ -105,19 +105,19 @@ test("reasoning follows the Connected Folder session's configured thinking level
   assert.equal("reasoning" in unset.calls[0]!.options!, false, "no configured level never becomes the lowest available one");
 });
 
-test("json inference carries the app schema as the single submit_result tool and returns plain validated data", async () => {
+test("json inference carries the caller's schema as the single submit_result tool and returns plain validated data", async () => {
   const submitted = { total: 59, note: "two regions" };
   const { session, calls } = fakeSession({ stopReason: "toolUse", content: [{ type: "toolCall", name: boundedInferenceResultToolName, arguments: submitted }] });
   const outcome = await runBoundedInference(session, request({ outputSchema: schema }));
   assert.deepEqual(outcome, { kind: "json", json: submitted, model: { provider: "test", id: "connected-folder-model" }, usage: { inputTokens: 20, outputTokens: 10, amountUsd: 0.01 } });
-  assert.ok(outcome.kind === "json" && outcome.json !== submitted, "the app receives a JSON copy, not the provider object");
+  assert.ok(outcome.kind === "json" && outcome.json !== submitted, "the caller receives a JSON copy, not the provider object");
   const transcript = calls[0]!.context;
   const context = { systemPrompt: getCurrentSystemPrompt(transcript.messages), messages: transcript.messages.filter((m) => m.role !== "system"), tools: getCurrentTools(transcript.messages) };
   assert.equal(context.tools?.length, 1);
   assert.equal(context.tools?.[0].name, "submit_result");
   assert.equal(context.tools?.[0].parameters, schema);
   assert.match(context.systemPrompt, /submit_result/);
-  assert.match(context.systemPrompt, /App instructions:\nSummarize/);
+  assert.match(context.systemPrompt, /Instructions:\nSummarize/);
 });
 
 for (const [label, reply, code, pattern] of [
@@ -223,17 +223,17 @@ test("buildBoundedInferenceContext is the only shape the transport sends", () =>
   assert.deepEqual(json.tools?.map(({ name, description }) => ({ name, description })), [{ name: "submit_result", description: "Submit the result once, exactly matching the requested shape." }]);
 });
 
-test("parseRestrictedAppJsonSchema applies the tool-schema rules to a runtime schema", () => {
-  assert.deepEqual(parseRestrictedAppJsonSchema({ type: "array", items: { type: "string", enum: ["a", "b"] }, maxItems: 5 }), { type: "array", items: { type: "string", enum: ["a", "b"] }, maxItems: 5 });
+test("parseClosedJsonSchema applies the closed subset's rules to a runtime schema", () => {
+  assert.deepEqual(parseClosedJsonSchema({ type: "array", items: { type: "string", enum: ["a", "b"] }, maxItems: 5 }), { type: "array", items: { type: "string", enum: ["a", "b"] }, maxItems: 5 });
   let nested: unknown = { type: "string" };
-  for (let depth = 0; depth < restrictedAppJsonSchemaLimits.depth; depth++) nested = { type: "array", items: nested };
-  assert.doesNotThrow(() => parseRestrictedAppJsonSchema(nested), "the published depth is reachable");
+  for (let depth = 0; depth < closedJsonSchemaLimits.depth; depth++) nested = { type: "array", items: nested };
+  assert.doesNotThrow(() => parseClosedJsonSchema(nested), "the published depth is reachable");
   nested = { type: "array", items: nested };
-  assert.throws(() => parseRestrictedAppJsonSchema(nested), /exceeds the maximum nesting depth/);
-  assert.throws(() => parseRestrictedAppJsonSchema({ type: "object", properties: {} }), /Restricted app schema must set additionalProperties to false/);
-  assert.throws(() => parseRestrictedAppJsonSchema({ type: "string", pattern: "^a" }, "Inference output schema"), /Inference output schema/);
-  assert.throws(() => parseRestrictedAppJsonSchema({ type: "number", enum: ["one"] }), /enum values must match its declared type/);
-  assert.throws(() => parseRestrictedAppJsonSchema("string"), /Restricted app schema/);
+  assert.throws(() => parseClosedJsonSchema(nested), /exceeds the maximum nesting depth/);
+  assert.throws(() => parseClosedJsonSchema({ type: "object", properties: {} }), /JSON schema must set additionalProperties to false/);
+  assert.throws(() => parseClosedJsonSchema({ type: "string", pattern: "^a" }, "Inference output schema"), /Inference output schema/);
+  assert.throws(() => parseClosedJsonSchema({ type: "number", enum: ["one"] }), /enum values must match its declared type/);
+  assert.throws(() => parseClosedJsonSchema("string"), /JSON schema/);
 });
 
 test("PiConversationClient.infer forwards the caller's signal and stop() interrupts in-flight inference", async () => {
@@ -261,7 +261,7 @@ test("PiConversationClient.infer forwards the caller's signal and stop() interru
   await rejectsWith(forwardedCall, "INFER_INTERRUPTED");
 
   const stopped = fakeSession(waitForAbort);
-  const client = new PiConversationClient("app-inference", tmpdir());
+  const client = new PiConversationClient("bounded-inference", tmpdir());
   (client as unknown as { ensureSession: () => Promise<unknown> }).ensureSession = async () => stopped.session;
   const stoppedCall = client.infer({ instructions: "Summarize.", input: "data", maxOutputBytes: 1024 });
   await new Promise((resolve) => setTimeout(resolve, 10));

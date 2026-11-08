@@ -117,10 +117,9 @@ things should go. Plain words, no headings beyond a title.
 
 ## 5. Point at what could come next
 
-If the contents suggest a recurring job, name one or two Automations or apps the
+If the contents suggest a recurring job, name one or two Automations the
 person could ask you for, one line each: for example "a monthly receipts
-summary", "sort new screenshots as they land", or "a reading list app for these
-papers". Do not build them now.
+summary" or "sort new screenshots as they land". Do not build them now.
 
 ## 6. Report
 

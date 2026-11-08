@@ -33,7 +33,7 @@ async function fixture(t: test.TestContext, options: { vision?: boolean; blockIm
       })}\n\n`);
       const hasToolResult = body.messages.some((message: any) => message.role === "tool");
       const isTitle = JSON.stringify(body.messages).includes("Write a specific 3 to 7 word title");
-      const isInference = JSON.stringify(body.messages).includes("You are answering one bounded request from a Connected Folder app");
+      const isInference = JSON.stringify(body.messages).includes("You are answering one bounded request from AmpleFile");
       const isCheck = body.tools?.some((tool: any) => tool.function?.name === "submit_review");
       if (isCheck) {
         send({ role: "assistant", tool_calls: [{ index: 0, id: "review-1", type: "function", function: {
@@ -203,22 +203,22 @@ test("auxiliary title calls are recorded with their own context and no borrowed 
   assert.equal(title.stage, "provider_payload", "direct stream calls are observed even without the Agent loop's hook");
 });
 
-test("overlapping title and app inference contexts retain separate purposes without Chat instructions", async (t) => {
+test("overlapping title and bounded inference contexts retain separate purposes without Chat instructions", async (t) => {
   const { client, inspector } = await fixture(t);
   await client.prompt("Inspect the fixture.", { ampleFileAgentTaskId: "parent-turn" });
   inspector.clear();
   await Promise.all([
     client.generateConversationTitle("Only title input", "Only title reply"),
-    client.infer({ instructions: "Only app instructions", input: "Only app input", maxOutputBytes: 4096, timeoutMs: 5000 }),
+    client.infer({ instructions: "Only inference instructions", input: "Only inference input", maxOutputBytes: 4096, timeoutMs: 5000 }),
   ]);
   const records = inspector.list();
-  assert.deepEqual(records.map((record) => record.owner.purpose).sort(), ["app_inference", "title"]);
+  assert.deepEqual(records.map((record) => record.owner.purpose).sort(), ["bounded_inference", "title"]);
   for (const record of records) {
     assert.equal(record.owner.taskId, undefined);
     assert.equal(record.stage, "provider_payload");
     const detail = JSON.stringify(inspector.get(record.id));
     assert.doesNotMatch(detail, /PERSONAL_INSTRUCTIONS_SURVIVE|Observed rows|NATIVE_CONTEXT_HOOK/);
-    if (record.owner.purpose === "title") assert.doesNotMatch(detail, /Only app input/);
-    if (record.owner.purpose === "app_inference") assert.doesNotMatch(detail, /Only title input/);
+    if (record.owner.purpose === "title") assert.doesNotMatch(detail, /Only inference input/);
+    if (record.owner.purpose === "bounded_inference") assert.doesNotMatch(detail, /Only title input/);
   }
 });

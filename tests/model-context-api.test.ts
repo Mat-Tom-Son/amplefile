@@ -127,7 +127,7 @@ test("context diagnostics are authenticated, read-only to Pi, exactly scoped and
   const inferenceInspector = new ModelContextInspector();
   inferenceInspector.setEnabled(true);
   const sessionOnlyInstructions = "SESSION-INSTRUCTIONS-NOT-SENT-TO-BOUNDED-INFERENCE";
-  const inferenceClient = new PiConversationClient("app-inference", connectedFolder.connectedFolderRoot, {
+  const inferenceClient = new PiConversationClient("bounded-inference", connectedFolder.connectedFolderRoot, {
     async resolveRuntime() {
       return { ...await options.piRuntimeProvider.resolveRuntime(), workerInstructions: sessionOnlyInstructions,
         modelContextInspector: inferenceInspector };
@@ -138,7 +138,7 @@ test("context diagnostics are authenticated, read-only to Pi, exactly scoped and
     await inferenceClient.infer({ instructions: "Summarize the supplied notes.", input: "Synthetic workshop notes.", maxOutputBytes: 1024, timeoutMs: 5_000 });
     assert.equal(providerRequests.length, beforeInference + 1);
     const inference = inferenceInspector.get(inferenceInspector.list()[0]!.id)!;
-    assert.equal(inference.owner.purpose, "app_inference");
+    assert.equal(inference.owner.purpose, "bounded_inference");
     assert.equal(inference.truncated, false, JSON.stringify(inference.provenance?.omissions));
     const assembled = inference.assembled.value as any;
     const provenance = inference.provenance!.value as any;

@@ -39,15 +39,13 @@ const keptUntil = (deletedAt: string, retentionDays = 30) => new Date(Date.parse
 
 /**
  * Settings → Recently Deleted with one item of each common kind: a Chat, a
- * file too large for History, an Everywhere Skill, app data whose app is gone
- * (save-only), and a deleted Connected Folder held because its tree carries legacy
- * Workspace records.
+ * file too large for History, an Everywhere Skill, and a deleted Connected
+ * Folder held because its tree carries legacy Workspace records.
  */
 export function buildFixtureRecentlyDeleted(): RecentlyDeletedResponse {
   const chatDeletedAt = "2026-11-03T21:14:00.000Z";
   const fileDeletedAt = "2026-11-01T16:42:00.000Z";
   const skillDeletedAt = "2026-10-27T09:05:00.000Z";
-  const appDataDeletedAt = "2026-10-19T18:30:00.000Z";
   const connectedFolderDeletedAt = "2026-10-02T14:20:00.000Z";
   return {
     retentionDays: 30,
@@ -96,21 +94,6 @@ export function buildFixtureRecentlyDeleted(): RecentlyDeletedResponse {
         restoreBy: keptUntil(skillDeletedAt),
         receiptId: null,
         restorable: "in-place",
-      },
-      {
-        id: "trash-20261019183000-5e71b2c8",
-        kind: "app-storage",
-        reason: "apps.remove",
-        connectedFolderId: "fixture-trip",
-        connectedFolderName: "Japan trip",
-        originalPath: "packing-list",
-        name: "packing-list",
-        sizeBytes: 86_400,
-        deletedAt: appDataDeletedAt,
-        restoreBy: keptUntil(appDataDeletedAt),
-        receiptId: null,
-        restorable: "save-only",
-        note: "That app is no longer installed.",
       },
       {
         id: "trash-20261002142000-d83a6b05",
