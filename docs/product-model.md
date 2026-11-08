@@ -183,8 +183,9 @@ other surface.
 
 With no Connected Folder yet, the window opens on a short first run: a
 welcome that says what AmpleFile is, **Connect Your AI**, **Let Your Worker
-Use Your Mac** when the app includes Chrome, Computer Control, or the
-command line and something is not yet set up, and **Pick a Folder to Start
+Use Your Mac** when the app includes Computer Control or the command line
+and something is not yet set up (Chrome is set up only in Skills &
+Extensions), and **Pick a Folder to Start
 With**, which offers Desktop, Documents, Downloads, and Pictures in one
 click beside Connect Folder and New Connected Folder.
 

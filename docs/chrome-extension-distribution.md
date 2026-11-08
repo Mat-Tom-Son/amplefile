@@ -11,8 +11,8 @@ goes through Google's review before Chrome delivers it.
 
 ## Installation and updates
 
-Chrome setup in AmpleFile (Skills & Extensions → Chrome, or first run's
-optional **Let Your Worker Use Your Mac** step) shows two steps: **Add the
+Chrome setup in AmpleFile (Skills & Extensions → Chrome; first run does not
+offer it) shows two steps: **Add the
 AmpleFile Extension** (**Open Chrome Web Store** registers the app's signed
 native helper and opens the exact Chrome Web Store listing) and **Choose Connect
 in the Extension**. Either order works: at launch the installed app
