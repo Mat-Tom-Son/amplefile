@@ -172,8 +172,6 @@
   min-height: var(--amplefile-list-height);
   padding-block: var(--amplefile-list-padding);
 }
-:root[data-appearance-palette] .app-shell .file-row { color: var(--ui-text); font-size: var(--amplefile-type-sm); }
-:root[data-appearance-palette] .app-shell .file-row.selected { color: var(--ui-text); background: var(--connected-folder-accent-soft-fill, var(--ui-accent-soft)); }
 :root[data-appearance-palette] .app-shell .chat-connected-folder-row-title { color: var(--ui-text); }
 :root[data-appearance-palette] .app-shell .chat-connected-folder-row-time { color: var(--ui-text-muted); }
 :root[data-appearance-palette] .app-shell .settings-window :is(.settings-tab, .settings-field input, .settings-field select, .settings-section p, .context-meta-grid dt, .context-meta-grid dd) { font-size: var(--amplefile-type-sm); }
@@ -201,16 +199,12 @@
 :root[data-appearance-palette] .popover :is(button, input, select, textarea, [tabindex]):focus-visible {
   outline-color: var(--ui-focus);
 }
-:root[data-appearance-palette] .app-shell .file-row:focus-visible { box-shadow: inset 0 0 0 2px var(--connected-folder-accent-border-state, var(--ui-focus)); }
 
 /* The hook combines explicit choices with OS preferences. These selectors also
    cover a native vibrancy/Mica window without changing the native material. */
 :root[data-appearance-transparency="opaque"],
 :root[data-appearance-transparency="opaque"] :is(body, #root),
-:root[data-appearance-transparency="opaque"] .app-shell,
-:root[data-appearance-transparency="opaque"] .app-shell .connected-folder-layout { background: var(--ui-canvas); }
-:root[data-appearance-transparency="opaque"] .app-shell .connected-folder-layout .professional-connected-folder-rail { background: var(--ui-surface-subtle); }
-:root[data-appearance-transparency="opaque"] .app-shell .connected-folder-layout .connected-folder-mode-pane,
+:root[data-appearance-transparency="opaque"] .app-shell { background: var(--ui-canvas); }
 :root[data-appearance-transparency="opaque"] .desktop-titlebar,
 :root[data-appearance-transparency="opaque"] .popover { background: var(--ui-surface); }
 :root[data-appearance-transparency="opaque"] :is(.context-menu, .composer-command-menu, .drop-overlay) { backdrop-filter: none; background: var(--ui-surface); }

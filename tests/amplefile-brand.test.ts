@@ -125,7 +125,7 @@ test("the empty-folder actions, loading, About, and the popover loading state ke
   const [brand, brandCss, onboarding, app, settings, popover, indexHtml, popoverHtml, foundation, popoverCss, mainEntry, constants] = await Promise.all([
     read("web-local/src/components/brand/AmpleFileBrand.tsx"),
     read("web-local/src/brand.css"),
-    read("web-local/src/components/onboarding/OnboardingFlow.tsx"),
+    read("web-local/src/components/file-manager/FileManagerWelcome.tsx"),
     read("web-local/src/App.tsx"),
     read("web-local/src/components/modals/DesktopSettingsModal.tsx"),
     read("web-local/src/popover/PopoverApp.tsx"),

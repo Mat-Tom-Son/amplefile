@@ -1,5 +1,5 @@
 import { X } from "../chrome/icons";
-import { FileTypeIcon } from "../tree/FileTree";
+import { FileTypeIcon } from "../tree/FileTypeIcon";
 
 export function AttachmentChip({ path, name, onRemove }: {
   path: string;

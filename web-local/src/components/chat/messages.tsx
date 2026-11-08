@@ -14,7 +14,7 @@ import { rehypeSingleLineBreaks } from "../../lib/markdown-line-breaks";
 import { collectConnectedFolderPathCandidates, findConnectedFolderPathMentions, connectedFolderPathCandidate } from "../../lib/connected-folder-path-links";
 import type { ChatMessage, ChatMessageLanding, RuntimePreviewEntry } from "../../types";
 import { FluentGlyph } from "../chrome/common";
-import { FileTypeIcon } from "../tree/FileTree";
+import { FileTypeIcon } from "../tree/FileTypeIcon";
 import { RuntimeContextPreview, turnChangedFiles, type TurnChangedFile, type ConnectedFolderPathLinkResolver } from "./activity";
 import { GeneratedImages, turnGeneratedImages } from "./GeneratedImages";
 

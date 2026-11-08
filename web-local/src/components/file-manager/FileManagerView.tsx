@@ -1793,6 +1793,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           sendRequest={panelChat.sendRequest}
           draftRequest={panelChat.draftRequest ?? null}
           variant="panel"
+          // The composer's Model Settings opens AI Models for this Worker, with the model in focus.
+          onOpenModelSettings={() => onOpenSettings("ai-models", "connected-folder", true, chatConnectedFolder.id)}
           fixtureMode={fixtureMode}
           fixtureConversations={panelChat.conversationId ? fixture?.conversations[chatConnectedFolder.id] : undefined}
           fixtureTreeEntries={fixture?.trees[chatConnectedFolder.id]}
@@ -1826,7 +1828,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           if (!references.length && folderSuggestions.length) return folderSuggestions.slice(0, automationsOn ? 2 : 4);
           return fileManagerSuggestions({ selection: references, inSubfolder: Boolean(location.path), automationsOn });
         })() : []}
-        modelRow={<WorkerModelRow connectedFolder={connectedFolder} fixtureMode={fixtureMode} revision={agent?.configured ? 1 : 0} onOpenModelSettings={() => onOpenSettings("ai-models")} />}
+        modelRow={<WorkerModelRow connectedFolder={connectedFolder} fixtureMode={fixtureMode} revision={agent?.configured ? 1 : 0} onOpenModelSettings={() => onOpenSettings("ai-models", "connected-folder", true, connectedFolder.id)} />}
         onRemoveChip={(path) => { setSelection((current) => current.filter((item) => item !== path)); setAttachedPaths((current) => current.filter((item) => item !== path)); }}
         dropActive={composerDrop}
         onDragOverBox={(event) => { if (!connectedFolder || !event.dataTransfer.types.includes("Files")) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setComposerDrop(true); }}
@@ -1869,7 +1871,6 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       onUndoConnectedFolder={connectedFolderCustomizations.undo}
       onResetConnectedFolder={connectedFolderCustomizations.reset}
       // The file manager draws no banner: its Connected Folders are folders in their color, with their icon.
-      bannerControls={false}
       preview={<div className="fm-customize-preview"><TintedFolder {...folderLook(customizingConnectedFolder)} /><span title={customizingConnectedFolder.name}>{customizingConnectedFolder.name}</span></div>}
       onOpenWorkerSettings={(section, returnSection) => {
         const target = customizingConnectedFolder;

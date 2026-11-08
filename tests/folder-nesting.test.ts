@@ -25,7 +25,6 @@ import {
 import { combineActivityStatuses } from "../web-local/src/lib/folder-nesting.js";
 import { backgroundRunningTransition, folderActivityStatuses } from "../web-local/src/hooks/useChatActivity.js";
 import { mentionNames } from "../web-local/src/lib/folder-mentions.js";
-import { connectedFolderTreePathMissing } from "../web-local/src/lib/tree.js";
 
 /**
  * Connected Folders inside Connected Folders (2026-10-01): one shared reading of nesting for the
@@ -159,12 +158,6 @@ test("Folders that share a name are addressed by a qualified name", () => {
   const labeled = folders.map((folder) => ({ id: folder.id, name: names.get(folder.id)! }));
   assert.deepEqual(addressedFolderIds("@projB/docs, please", labeled), ["b"]);
   assert.deepEqual(addressedFolderIds("@docs please", labeled), [], "an ambiguous bare name addresses nobody");
-});
-
-test("a deleted folder is recognized whatever the server's capitalization", () => {
-  assert.equal(connectedFolderTreePathMissing("Requested Connected Folder tree path is not a folder."), true);
-  assert.equal(connectedFolderTreePathMissing("ENOENT: no such file"), true);
-  assert.equal(connectedFolderTreePathMissing("Something else"), false);
 });
 
 test("a parent's Worker learns its nested Connected Folders and the Workers the person addressed", () => {

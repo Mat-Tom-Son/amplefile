@@ -2,7 +2,7 @@ import type React from "react";
 import { connectedFolderPathDragType, connectedFolderPathsDragType } from "../constants";
 import { desktopPlatform, type DesktopPlatform } from "./platform";
 import { fileExtension } from "./tree";
-import type { ChangeEntry, TreeEntry } from "../types";
+import type { TreeEntry } from "../types";
 
 function nativeOpenLabel(entry: TreeEntry, platform: DesktopPlatform = desktopPlatform()): { text: string; office: boolean } {
   if (entry.kind === "folder") return { text: "Open Folder", office: false };
@@ -67,18 +67,4 @@ function draggedConnectedFolderPaths(dataTransfer: DataTransfer): string[] {
   return one ? [one] : [];
 }
 
-function changeStatusText(change: ChangeEntry): string {
-  if (change.kind === "created") return "New local file";
-  if (change.kind === "modified") return "Modified locally";
-  if (change.kind === "remote_deleted") return "Deleted outside AmpleFile. Restore it from History or remove the local record.";
-  return "Deleted locally. You can restore it from History while a restore point is available.";
-}
-
-function treeChangeLabel(change: ChangeEntry): string {
-  if (change.kind === "created") return "New local";
-  if (change.kind === "modified") return "Edited local";
-  if (change.kind === "remote_deleted") return "Deleted outside AmpleFile";
-  return "Deleted local";
-}
-
-export { canOpenDirectly, changeStatusText, draggedConnectedFolderPaths, hasNativeFiles, hasConnectedFolderPathDrag, nativeOpenLabel, revealInFileManagerLabel, treeChangeLabel };
+export { canOpenDirectly, draggedConnectedFolderPaths, hasNativeFiles, hasConnectedFolderPathDrag, nativeOpenLabel, revealInFileManagerLabel };

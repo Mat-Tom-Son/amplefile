@@ -16,10 +16,6 @@ export interface StoredPendingChatSend {
   addressedConnectedFolderIds?: string[];
 }
 
-export function normalizeSearchQuery(value: string): string {
-  return value.toLocaleLowerCase().replace(/\s+/g, " ").trim();
-}
-
 export function splitConfirmMessage(message: string): { title: string; body?: string } {
   const text = message.trim();
   const questionIndex = text.indexOf("?");

@@ -1,16 +1,5 @@
 import { ApiError, apiUrl } from "./api";
 
-/**
- * Reads one Connected Folder file through the raw-file route with the session header
- * and hands back a same-document `blob:` URL. A plain `src` pointing at the
- * local API would carry no session header in the desktop app and would fall
- * outside the renderer's `img-src`/`frame-src` policy; a blob URL has neither
- * problem. The caller revokes the URL when the preview changes.
- */
-export async function connectedFolderRawFileObjectUrl(connectedFolderId: string, path: string, signal?: AbortSignal): Promise<string> {
-  return URL.createObjectURL(await connectedFolderRawFileBlob(connectedFolderId, path, signal));
-}
-
 /** A file through any place's raw-file route (a Connected Folder's or a standard folder's), as a `blob:` URL. */
 export async function rawFileObjectUrlAt(apiBase: string, path: string, signal?: AbortSignal): Promise<string> {
   return URL.createObjectURL(await sessionBlob(apiUrl(`${apiBase}/raw-file?path=${encodeURIComponent(path)}`), signal));

@@ -1005,10 +1005,6 @@
   margin-top: 2px;
 }
 
-.fm-hd-act {
-  margin-top: 12px;
-}
-
 .fm-btn.is-primary {
   background: var(--fm-accent);
   box-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.2);
@@ -1088,14 +1084,6 @@
   background: var(--fm-cap2);
 }
 
-.fm-panel-actions {
-  margin: 4px 0 0;
-}
-
-.fm-panel-actions + .fm-sec {
-  margin-top: 14px;
-}
-
 .fm-btn {
   display: inline-flex;
   align-items: center;
@@ -1116,10 +1104,6 @@
 
 .fm-btn:hover:not(:disabled) {
   background: var(--fm-btn-hover);
-}
-
-.fm-panel-actions .fm-btn {
-  width: 100%;
 }
 
 .fm-panel-empty {
@@ -3113,12 +3097,6 @@
 
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-body blockquote p:last-child {
   margin-bottom: 0;
-}
-
-/* Checklists: the Mac's checkboxes, filled with the accent when done. */
-:root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-body .contains-task-list {
-  padding-left: 0.1em;
-  list-style: none;
 }
 
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-body .task-list-item {

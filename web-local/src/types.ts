@@ -1,31 +1,9 @@
 import type { RestrictedAppCheckGrant, RestrictedAppCheckPermission } from "../../src/shared/restricted-app-checks";
 import type { AccentIdentity, ConnectedFolderAppearanceState } from "../../src/shared/connected-folder-appearance";
-import type {
-  AmpleFileCheckDecisionKind,
-  AmpleFileCheckFinding,
-  AmpleFileCheckRendererDecorations,
-  AmpleFileCheckRendererOverview,
-  AmpleFileCheckStatusSnapshot,
-} from "../../src/local/checks/check-types";
-import type { AmpleFileCheckTaskStatus } from "../../src/local/checks/check-service";
-
-export type ConnectedFolderPane = "files" | "chats" | "history";
-export type ConnectedFolderExtensionRailMode = `app:${string}`;
-/**
- * `automations` is the Connected Folder–owned Automations rail entry. Like Files, it
- * shows a list in the navigator pane, and clicking an automation there opens
- * that automation's own tab (2026-10-11).
- */
-export type ConnectedFolderRailMode = "connected-folders" | ConnectedFolderPane | "automations" | ConnectedFolderExtensionRailMode;
+import type { AmpleFileCheckRendererOverview } from "../../src/local/checks/check-types";
 export type AppTheme = "light" | "dark";
 export type AppThemePreference = AppTheme | "system";
 export type AppTypographyFont = "default" | "stable" | "verdana" | "aptos";
-export type AppTextSize = "compact" | "standard" | "comfortable";
-
-export interface AppTypographyPreference {
-  font: AppTypographyFont;
-  textSize: AppTextSize;
-}
 
 import type { ConnectedFolderSummary } from "../../src/shared/connected-folder-summary";
 export type { ConnectedFolderLocation, ConnectedFolderSummary } from "../../src/shared/connected-folder-summary";
@@ -52,7 +30,6 @@ export type ConnectedFolderCustomizationPatch = ConnectedFolderCustomization;
 export interface ConnectedFolderColorOption { label: string; color: string; soft: string; border: string }
 export interface ConnectedFolderBannerOption { name: string; label: string }
 export type ConnectedFolderBannerImagePosition = "top" | "center" | "bottom";
-export interface ConnectedFolderPaneBounds { min: number; max: number; fallback: number }
 
 export interface TreeEntry {
   name: string;
@@ -67,10 +44,6 @@ export interface TreeEntry {
   /** Its own registered Connected Folder: Files shows it as a door, not a subtree. */
   nestedFolder?: true;
 }
-
-export type ChangeKind = "created" | "modified" | "deleted" | "remote_deleted";
-export interface ChangeEntry { path: string; kind: ChangeKind }
-export type ChangeKindCounts = Record<ChangeKind, number>;
 
 export interface FileContextMenuState {
   entry: TreeEntry;
@@ -149,16 +122,6 @@ export interface RuntimePreviewEntry extends Omit<import("../../src/shared/chat-
   kind: "thinking" | "tool" | "progress" | "command";
 }
 
-export interface ChatActionsState {
-  connectedFolder: ConnectedFolderSummary;
-  conversation: ConversationSummary;
-  x: number;
-  y: number;
-  returnFocusTarget?: HTMLElement | null;
-  /** Opens straight to renaming, as the native menu's Rename… does. */
-  view?: "rename";
-}
-
 export type ChatActivityStatus = "running" | "attention";
 export type ChatLifecycleView = "active" | "snoozed" | "archived";
 
@@ -225,57 +188,7 @@ export interface ConnectedFolderFixtureConversation extends ConversationSummary 
 }
 
 export type SkillsExtensionsView = "installed" | "discover";
-
-interface ConnectedFolderSurfaceTabBase {
-  id: string;
-  connectedFolderId: string;
-  title: string;
-}
-
-export type ConnectedFolderSurfaceTab =
-  | (ConnectedFolderSurfaceTabBase & { kind: "chat"; conversationId: string | null })
-  | (ConnectedFolderSurfaceTabBase & { kind: "file"; path: string })
-  /** A page folder (docs/pages.md): `path` is the folder, `view` the last shown. */
-  | (ConnectedFolderSurfaceTabBase & { kind: "page"; path: string; view?: "preview" | "data" })
-  | (ConnectedFolderSurfaceTabBase & { kind: "history"; checkpointId?: string })
-  | (ConnectedFolderSurfaceTabBase & { kind: "app-studio" })
-  | (ConnectedFolderSurfaceTabBase & { kind: "checks" })
-  | (ConnectedFolderSurfaceTabBase & { kind: "connected-folder-automations" })
-  | (ConnectedFolderSurfaceTabBase & { kind: "connected-folder-automation"; automationId: string })
-  | (ConnectedFolderSurfaceTabBase & { kind: "extension"; surfaceId: string; surfaceExecution: "full-trust-pi"; viewId: string })
-  | (ConnectedFolderSurfaceTabBase & {
-    kind: "restricted-app";
-    appId: string;
-    featureInstallationId: string;
-    digest: string;
-    appTabId: string;
-    route: string;
-    state?: unknown;
-  })
-  | BrowserSurfaceTab;
-
-/**
- * A built-in browser tab (docs/built-in-browser.md). It belongs to no
- * Connected Folder: every Connected Folder's tab strip shows it, and selecting it keeps
- * the Connected Folder that is open.
- */
-export interface BrowserSurfaceTab {
-  id: string;
-  kind: "browser";
-  connectedFolderId: null;
-  title: string;
-  /** The desktop page behind the tab. */
-  pageId: string;
-  /** The page's address; empty for a new tab nothing has loaded in yet. */
-  url: string;
-}
-
-export type ChecksStatus = AmpleFileCheckStatusSnapshot;
 export type ChecksOverview = AmpleFileCheckRendererOverview;
-export type ChecksDecorations = AmpleFileCheckRendererDecorations;
-export type ChecksFinding = AmpleFileCheckFinding;
-export type ChecksDecisionKind = AmpleFileCheckDecisionKind;
-export type ChecksTaskStatus = AmpleFileCheckTaskStatus;
 
 export interface AgentStatus {
   ready: boolean;
@@ -468,19 +381,6 @@ export interface AgentExtensionSurface {
   enabled?: boolean;
   loaded?: boolean;
   status?: AgentCapabilityStatus;
-  views: AgentExtensionSurfaceView[];
-}
-
-export type CapabilitySurfaceExecution = "full-trust-pi";
-
-export interface CapabilitySurface {
-  key: string;
-  id: string;
-  title: string;
-  description?: string;
-  icon?: string;
-  scope: AgentCapabilityScope | "user" | "temporary";
-  execution: "full-trust-pi";
   views: AgentExtensionSurfaceView[];
 }
 
@@ -783,27 +683,6 @@ export interface AppPlatformAuthorityStamp {
   dataGeneration: string;
 }
 
-export interface RestrictedAppViewRequest {
-  connectedFolderId: string;
-  appId: string;
-  featureInstallationId: string;
-  digest: string;
-  mountId: string;
-  placement: "navigator" | "tab";
-  appTabId?: string;
-  route: string;
-  state?: unknown;
-  sequence: number;
-  bounds: { x: number; y: number; width: number; height: number };
-  active: boolean;
-  occluded: boolean;
-  theme: AppTheme;
-  /** The shell's look as `--wf-*` values, read from this placeholder's own styles. */
-  appearance?: Record<string, string>;
-  /** Left-pane views only: the notification click that opened it here. */
-  openedFrom?: { kind: "notification"; permissionId: string };
-}
-
 export interface RestrictedAppProposal {
   id: string;
   connectedFolderId: string;
@@ -1001,6 +880,5 @@ export interface DesktopUpdateStatus {
   message: string;
   error: string | null;
 }
-export type CommandPaletteGroupId = "go-to" | "switch-connected-folder" | "chats" | "files" | "actions";
 export interface ShortcutRow { keys: string[]; action: string }
 export interface ShortcutGroup { title: string; rows: ShortcutRow[] }

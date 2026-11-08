@@ -253,5 +253,5 @@ function loadImageElement(sourceUrl: string): Promise<HTMLImageElement> {
 }
 
 export { readableTextColorOn } from "./color-contrast";
-export { defaultConnectedFolderIconName, processConnectedFolderBannerImageFile, connectedFolderIdentityFor, connectedFolderIdentityStyle };
+export { processConnectedFolderBannerImageFile, connectedFolderIdentityFor, connectedFolderIdentityStyle };
 export type { ConnectedFolderIdentity };

@@ -22,12 +22,9 @@ test("a draft goes to this window's agent panel when it answers, otherwise to th
   assert.deepEqual(popover, ["Set up a Check"], "the popover is not opened when the panel answered");
 });
 
-test("Checks and Automations hand their drafts to the shared router, and the panel opens to take them", async () => {
+test("Automations hand their drafts to the shared router, and Settings closes when a panel takes one", async () => {
   const read = (path: string) => readFile(resolve(import.meta.dirname, "..", path), "utf8");
-  const [checks, automations, app] = await Promise.all([read("web-local/src/components/panes/ChecksPane.tsx"), read("web-local/src/components/modals/AutomationsPane.tsx"), read("web-local/src/App.tsx")]);
-  assert.match(checks, /await openAmpleFileAgentDraft\(draft\);/);
+  const [automations, app] = await Promise.all([read("web-local/src/components/modals/AutomationsPane.tsx"), read("web-local/src/App.tsx")]);
   assert.match(automations, /await openAmpleFileAgentDraft\(draft\);/);
-  assert.match(app, /window\.addEventListener\(ampleFileAgentDraftEvent, takeDraft\);/);
-  assert.match(app, /updateAgentPanel\(\(current\) => \(\{ \.\.\.current, open: true \}\)\);/);
   assert.match(app, /if \(event\.defaultPrevented\) setSettingsOpen\(false\);/, "Settings closes so the panel is visible");
 });

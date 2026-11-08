@@ -2,7 +2,8 @@ import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 
 /**
  * A Connected Folder's `.amplefile/` holds its identity and its Chat transcripts,
- * and a legacy `.workspace/` holds an old app's records. Neither is the
+ * and a legacy `.work-fold/` or `.workspace/` holds a predecessor app's records
+ * and transcripts. None of them is the
  * person's content, but Pi's grep and find search hidden folders, so a broad
  * search kept surfacing transcripts: a child Worker could quote the very Chat
  * that handed it work. This hook leaves both out of grep and find results,
@@ -12,7 +13,7 @@ import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
  * works, and `.pi/` stays searchable because the person may ask a Worker to
  * work on this Connected Folder's own Skills & Extensions.
  */
-export const reservedSearchSegments = [".amplefile", ".workspace"] as const;
+export const reservedSearchSegments = [".amplefile", ".work-fold", ".workspace"] as const;
 
 /** ripgrep's exclusion for a search that names no glob of its own. */
 export const reservedSearchExclusionGlob = `!**/{${reservedSearchSegments.join(",")}}/**`;

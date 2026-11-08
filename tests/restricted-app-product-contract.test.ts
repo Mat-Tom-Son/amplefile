@@ -4,13 +4,10 @@ import { join } from "node:path";
 import test from "node:test";
 
 const root = process.cwd();
-const [capabilities, apps, chat, connectedFolderApp, connectedFolderChrome, viewport, styles, professionalShell, professionalSurfaces, desktopHost, desktopMain, desktopPreload, tooltipOverlay, restrictedAppPreload] = await Promise.all([
+const [capabilities, apps, chat, styles, professionalShell, professionalSurfaces, desktopHost, desktopMain, desktopPreload, tooltipOverlay, restrictedAppPreload] = await Promise.all([
   read("web-local/src/components/panes/CapabilitiesPane.tsx"),
   read("web-local/src/components/panes/RestrictedAppsSection.tsx"),
   read("web-local/src/components/chat/ChatPanel.tsx"),
-  read("web-local/src/App.tsx"),
-  read("web-local/src/components/panes/connectedFolderChrome.tsx"),
-  read("web-local/src/components/panes/RestrictedAppViewport.tsx"),
   read("web-local/src/styles.css"),
   read("web-local/src/styles.css"),
   read("web-local/src/styles.css"),
@@ -94,44 +91,11 @@ test("automation confirmations render above the capability dialog that requested
   assert.ok(confirmationLayer > capabilityLayer, `confirmation layer ${confirmationLayer} must exceed capability layer ${capabilityLayer}`);
 });
 
-test("notification clicks target their exact Connected Folder and stopped native views remount", () => {
-  assert.match(connectedFolderApp, /desktop\.onOpenRequest/);
-  assert.match(connectedFolderApp, /resolveRestrictedAppOpenRequest\(request, connectedFolders\)/);
-  assert.match(connectedFolderApp, /onSwitchConnectedFolder\(target\.connectedFolder\)/);
-  assert.match(connectedFolderApp, /setActiveMode\(target\.mode\)/);
-  // A notification click opens the left pane — never a tab — at the app's
-  // named route and state, and the rail button returns the app to its home.
-  assert.match(connectedFolderApp, /setRestrictedAppNavigatorTarget\(target\.target\)/);
-  assert.match(connectedFolderApp, /placement="navigator"\s+route=\{restrictedAppNavigatorTarget\?\.mode === activeMode \? restrictedAppNavigatorTarget\.route : "\/"\}/);
-  assert.match(connectedFolderApp, /openedFrom: restrictedAppNavigatorTarget\.openedFrom/);
-  assert.match(connectedFolderApp, /function selectRailMode[\s\S]*?setRestrictedAppNavigatorTarget\(null\)/);
-  assert.match(viewport, /latest\.openedFrom && latest\.placement === "navigator"/);
+test("the host opens a notification click only in an app's left-pane view", () => {
   assert.match(desktopHost, /Only the left-pane view opens from a notification\./);
-  assert.match(viewport, /event\.state === "stopped"/);
-  assert.match(viewport, /mountIdRef\.current = crypto\.randomUUID\(\)/);
-  assert.match(viewport, /setGeneration\(\(value\) => value \+ 1\)/);
-  assert.match(viewport, /disposed \|\| mountId !== mountIdRef\.current/);
 });
 
-test("the Connected Folder menu occludes native restricted-app views from the first animation frame", () => {
-  assert.match(connectedFolderChrome, /data-native-view-occluder="true"/);
-  assert.match(viewport, /const explicitOccluder = candidate\.dataset\.nativeViewOccluder === "true"/);
-  assert.match(viewport, /\(!explicitOccluder && Number\(style\.opacity\) === 0\)/);
-  assert.match(viewport, /style\.display === "none" \|\| style\.visibility === "hidden"/);
-});
-
-test("rail controls omit hover tooltips without blanking restricted app views", () => {
-  assert.doesNotMatch(viewport, /railTooltipOcclusionLeadMs|railTooltipTarget|data-rail-tooltip/);
-  assert.doesNotMatch(connectedFolderChrome, /useNativeRailTooltips|data-rail-tooltip/);
-  assert.match(connectedFolderChrome, /aria-label=\{item\.ariaLabel\}/);
-});
-
-test("contributed app canvases share built-in spacing and native rounded corners", () => {
-  assert.match(professionalSurfaces, /\.connected-folder-mode-pane > \.restricted-app-view\s*\{[^}]*height:\s*auto;[^}]*margin:\s*12px;/s);
-  assert.match(viewport, /resolveRestrictedAppCornerRadius\(app\.manifest\.ui\.cornerRadius\)/);
-  assert.match(viewport, /style=\{\{ borderRadius: cornerRadius \}\}/);
-  assert.match(viewport, /rail\.right \+ restrictedAppRailGuard/);
-  assert.match(viewport, /borderLeftWidth/);
+test("native app views keep the app's rounded corners", () => {
   assert.match(desktopHost, /view\.setBorderRadius\(resolveRestrictedAppCornerRadius\(app\.manifest\.ui\.cornerRadius\)\)/);
 });
 
@@ -151,11 +115,6 @@ test("owning Chat shows the added-app receipt with a retry for failures and open
   assert.match(chat, />Try Again</);
   assert.doesNotMatch(chat, /installDisabled=\{running\}|closeLabel="Decline"|RestrictedAppReviewDialog/);
   assert.match(chat, /installRestrictedAppProposal\(connectedFolder\.id, proposal\.conversationId, proposal\.id\)/);
-  assert.match(connectedFolderApp, /restrictedAppsState\.upsertApp\(app\)/);
-  assert.match(connectedFolderApp, /setActiveMode\(restrictedAppRailMode\(targetConnectedFolder\.id, app\.manifest\.id, app\.featureInstallationId\)\)/);
-  assert.match(connectedFolderApp, /<RestrictedAppViewport[^>]+app=\{activeRestrictedApp\} placement="navigator"/);
-  assert.match(connectedFolderApp, /tabs\.openRestrictedAppSurfaceTab/);
-  assert.doesNotMatch(connectedFolderApp, /surface\.execution === "restricted-app"/);
 });
 
 async function read(relativePath: string): Promise<string> {

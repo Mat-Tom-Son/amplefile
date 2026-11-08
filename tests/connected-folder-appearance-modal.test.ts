@@ -45,7 +45,7 @@ test("Customize Connected Folder isolates its popup and routes edits to the Conn
   assert.equal(dialog.getAttribute("aria-modal"), "true");
   // One page with a section each (2026-11-05), no tabs.
   assert.equal(dialog.querySelector('[role="tablist"]'), null);
-  assert.deepEqual([...dialog.querySelectorAll('.connected-folder-appearance-section > h3')].map((heading) => heading.textContent), ["Banner", "Title", "Icon", "Color"]);
+  assert.deepEqual([...dialog.querySelectorAll('.connected-folder-appearance-section > h3')].map((heading) => heading.textContent), ["Icon", "Color"]);
   assert.equal(document.activeElement?.getAttribute("aria-label"), "Close Customize Connected Folder");
   assert.equal(document.getElementById("work")!.getAttribute("aria-hidden"), "true");
   assert.equal(document.getElementById("work")!.inert, true);
@@ -68,7 +68,7 @@ test("Customize Connected Folder isolates its popup and routes edits to the Conn
 });
 
 
-test("banner framing, image/pattern switching, accent colors and icon categories share one Connected Folder editor", async (t) => {
+test("accent colors and icon categories share one Connected Folder editor", async (t) => {
   const iconNames = Object.keys(createRequire(import.meta.url)("@fluentui/react-icons")).filter((name) => /^[A-Za-z_$][\w$]*$/.test(name));
   const assets = registerHooks({
     resolve(specifier, context, next) { return specifier === "@fluentui/react-icons" ? { url: "test:customize-icons", shortCircuit: true } : next(specifier, context); },
@@ -86,7 +86,7 @@ test("banner framing, image/pattern switching, accent colors and icon categories
   const target = { id: "target-folder", name: "Notes", connectedFolderRoot: "/tmp/notes", location: { kind: "local", storage: "linked" } } as ConnectedFolderSummary;
   const changes: ConnectedFolderCustomization[] = [];
   const shortcuts: string[] = [];
-  let saved: ConnectedFolderCustomization = { color: "#0e7490", bannerImagePosition: "bottom", bannerImage: "data:image/png;base64,AA==" };
+  let saved: ConnectedFolderCustomization = { color: "#0e7490" };
   function Editor() {
     const [customization, setCustomization] = useState(saved);
     return createElement(ConnectedFolderAppearanceModal, {
@@ -98,30 +98,9 @@ test("banner framing, image/pattern switching, accent colors and icon categories
   }
   const click = async (selector: string) => dom.act(() => document.querySelector<HTMLButtonElement>(selector)!.click());
   await dom.render(createElement(Editor));
-  assert.equal(document.querySelector('[aria-label="Banner Zoom"]'), null, "framing is on demand");
-  await click('.connected-folder-framing-trigger');
-  assert.equal(document.querySelector<HTMLInputElement>('[aria-label="Banner Vertical Position"]')!.value, "100");
-  // Your Image is the fifth slot; it stays as an empty upload slot once a built-in image replaces it.
-  assert.equal(document.querySelector('[aria-label="Replace Your Image"]')!.getAttribute("aria-pressed"), "true");
-  await click('[aria-label="Use Fold Image"]');
-  assert.ok(document.querySelector('.connected-folder-banner-image-gallery > button.empty[aria-label="Upload an Image"]'));
-  assert.equal(document.querySelectorAll('.connected-folder-banner-image-gallery > button').length, 5);
-  assert.equal(saved.bannerPreset, "fold");
-  assert.equal(saved.bannerImage, undefined);
-  assert.equal(saved.color, "#0e7490");
-  assert.equal(document.querySelector<HTMLInputElement>('[aria-label="Banner Vertical Position"]')!.value, "50");
-  assert.equal(document.querySelector('[aria-label="Use Fold Image"]')!.getAttribute("aria-pressed"), "true");
-  const preview = document.querySelector<HTMLElement>('[data-preview-mode="light"]')!;
-  await dom.act(() => preview.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowDown", shiftKey: true, bubbles: true })));
-  assert.deepEqual(saved.bannerFraming, { x: 50, y: 60, zoom: 1 });
-  assert.equal(changes.length, 2, "one keyboard framing edit commits once");
-  await click('[aria-label="Reset Banner Framing"]');
-  assert.deepEqual(saved.bannerFraming, { x: 50, y: 50, zoom: 1 });
   assert.equal(document.querySelector('[aria-label="Folder color pairs"]'), null);
-  assert.equal(document.querySelector('[aria-label="Choose Second Banner Color"]'), null, "image colors are not exposed as editable pattern colors");
   await click('[aria-label="Use Blue Color"]');
   assert.equal(saved.color, "#3b82f6");
-  assert.equal(saved.bannerPreset, "fold", "the accent does not discard the chosen image");
   const { connectedFolderColorOptions, defaultConnectedFolderColor } = await import("../web-local/src/lib/connected-folder-identity.js");
   const { accentIdentityFromHex, resolveConnectedFolderAppearance } = await import("../src/shared/connected-folder-appearance.js");
   assert.equal(connectedFolderColorOptions.length, 24);
@@ -138,33 +117,8 @@ test("banner framing, image/pattern switching, accent colors and icon categories
   assert.equal(saved.iconName, "leaf");
   for (const group of connectedFolderIconGroups) if (group.id !== "all") assert.equal(filterConnectedFolderIconOptions("", group.id).length, group.names.length, `${group.label} has no missing icons`);
   assert.equal(filterConnectedFolderIconOptions("camping")[0].name, "tent");
-  await click('[aria-label="Use Classic Banner"]');
-  assert.ok(document.querySelector('[aria-label="Choose Second Banner Color"]'));
-  assert.equal(document.querySelector<HTMLButtonElement>('.connected-folder-framing-trigger')!.disabled, true);
-  await click('[aria-label="Use Fold Image"]');
-  await click('.connected-folder-framing-trigger');
-  assert.equal(document.activeElement?.getAttribute('aria-label'), 'Banner Horizontal Position');
-  await dom.press('Escape');
-  assert.equal(document.querySelector('[aria-label="Banner Zoom"]'), null);
-  assert.ok(document.querySelector('[role="dialog"]'), "Escape closes framing before the enclosing dialog");
-  assert.equal(document.activeElement?.className, 'connected-folder-framing-trigger');
-  await click('[aria-label="Use None Banner"]');
-  assert.equal(saved.bannerPreset, undefined);
-  assert.equal(saved.bannerFraming, undefined);
-  assert.equal(document.querySelector('[aria-label="Banner Zoom"]'), null);
-  // Title: the name's background and the icon beside it, shown exactly as the header shows them.
-  const option = (group: string, label: string) => [...document.querySelectorAll<HTMLButtonElement>(`[aria-labelledby="${group}"] button`)].find((button) => button.textContent === label)!;
-  assert.equal(option("folder-appearance-icon-style", "None").getAttribute("aria-checked"), "true", "Card starts without an icon");
-  await dom.act(() => option("folder-appearance-title-fill", "Accent").click());
-  await dom.act(() => option("folder-appearance-icon-style", "Circle").click());
-  assert.equal(saved.bannerTitleFill, "accent");
-  assert.equal(saved.bannerIconStyle, "circle");
-  for (const title of document.querySelectorAll('.connected-folder-appearance-preview .connected-folder-banner-title')) {
-    assert.match(title.className, /fill-accent icon-circle/);
-    assert.ok(title.querySelector('.connected-folder-banner-title-icon'));
-  }
   // Settings returns to the section at the top of the page.
-  const tops: Record<string, number> = { banner: -900, title: -400, icon: 10, color: 500 };
+  const tops: Record<string, number> = { icon: 10, color: 500 };
   for (const [section, top] of Object.entries(tops)) document.getElementById(`folder-appearance-section-${section}`)!.getBoundingClientRect = () => ({ top } as DOMRect);
   document.querySelector<HTMLElement>('.connected-folder-appearance-sections')!.getBoundingClientRect = () => ({ top: 0 } as DOMRect);
   const shortcutBar = document.querySelector('.connected-folder-customize-worker')!;

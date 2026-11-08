@@ -5,13 +5,14 @@ import test from "node:test";
 
 import { fileIconArtworkMarkup, fileIconGlyphs } from "../web-local/src/file-icons-data.js";
 import {
-  allFileTreeIconSpecs,
   fileTreeFileIcon,
-  fileTreeFolderIcon,
   fileTreeIconGlyph,
 } from "../web-local/src/file-tree-icons.js";
 
 const fallback = fileTreeFileIcon("no-extension-here");
+// The glyph ids the icon table references, read the way scripts/generate-file-icons.mjs reads them.
+const iconTableSource = readFileSync(new URL("../web-local/src/file-tree-icons.ts", import.meta.url), "utf8");
+const referencedGlyphs = [...new Set([...iconTableSource.matchAll(/"(vs:[a-z0-9-]+)"/g)].map((match) => match[1]!))];
 
 test("exact file names win over extensions", () => {
   assert.equal(fileTreeFileIcon("package.json").label, "npm package file");
@@ -92,35 +93,19 @@ test("unknown and extensionless files fall back to the plain file icon", () => {
   assert.equal(fallback.glyph, "vs:default-file");
 });
 
-test("every folder gets the same plain closed and open icon", () => {
-  const names = ["docs", "src", "tests", ".github", "node_modules", "Assets", "My Projects", "a/b/scripts", ".pi", "skills"];
-  const closed = fileTreeFolderIcon("anything", false);
-  const open = fileTreeFolderIcon("anything", true);
-  assert.equal(closed.glyph, "vs:default-folder");
-  assert.equal(open.glyph, "vs:default-folder-opened");
-  for (const name of names) {
-    assert.deepEqual(fileTreeFolderIcon(name, false), closed, name);
-    assert.deepEqual(fileTreeFolderIcon(name, true), open, name);
-  }
-  assert.equal(closed.label, "Folder");
-});
-
 test("every referenced glyph is vendored and nothing extra is shipped", () => {
-  const referenced = new Set(allFileTreeIconSpecs().map((spec) => spec.glyph));
-  for (const spec of allFileTreeIconSpecs()) {
-    assert.ok(fileIconGlyphs[spec.glyph], `missing glyph ${spec.glyph}`);
-    const glyph = fileTreeIconGlyph(spec);
+  for (const id of referencedGlyphs) {
+    assert.ok(fileIconGlyphs[id], `missing glyph ${id}`);
+    const glyph = fileTreeIconGlyph({ glyph: id, label: id });
     assert.match(glyph.viewBox, /^-?[\d.]+ -?[\d.]+ [\d.]+ [\d.]+$/);
-    assert.match(glyph.body, /<(path|circle|rect|ellipse|polygon|use|g)\b/, spec.glyph);
+    assert.match(glyph.body, /<(path|circle|rect|ellipse|polygon|use|g)\b/, id);
   }
-  assert.deepEqual(Object.keys(fileIconGlyphs).sort(), [...referenced].sort(), "rerun scripts/generate-file-icons.mjs");
+  assert.deepEqual(Object.keys(fileIconGlyphs).sort(), [...referencedGlyphs].sort(), "rerun scripts/generate-file-icons.mjs");
 });
 
 test("every icon comes from vscode-icons and keeps its own colors", () => {
-  for (const spec of allFileTreeIconSpecs()) {
-    assert.match(spec.glyph, /^vs:/, spec.glyph);
-    assert.equal("tone" in spec, false, spec.glyph);
-  }
+  assert.doesNotMatch(iconTableSource, /\bicon\("(?!vs:)/, "every kind names a vscode-icons glyph");
+  assert.doesNotMatch(iconTableSource, /\btone\b/, "no icon carries a tint");
   const source = readFileSync(new URL("../web-local/src/components/tree/FileIconFrame.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(source, /currentColor|tinted/, "icons are never recolored");
   assert.ok(fileTreeIconGlyph(fileTreeFileIcon("index.js")).light, "JavaScript carries a light-theme variant");

@@ -64,83 +64,8 @@ export function fileManagerShortcutGroups(modifier: string, macOS: boolean, desk
   ];
 }
 
-export function KeyboardShortcutsPane({ layout = "classic" }: { layout?: "classic" | "file-manager" } = {}) {
-  const modifier = desktopShortcutModifierKey();
-  const macOS = isMacOS();
-  if (layout === "file-manager") return <ShortcutGroups groups={fileManagerShortcutGroups(modifier, macOS, Boolean(window.ampleFileDesktop))} />;
-  const shortcutGroups: ShortcutGroup[] = [
-    {
-      title: "Tabs",
-      rows: [
-        { keys: [modifier, "T"], action: "Open a new Chat tab in the current Connected Folder." },
-        { keys: ["Ctrl", "Tab"], action: "Move to the next tab." },
-        { keys: ["Ctrl", "Shift", "Tab"], action: "Move to the previous tab." },
-        { keys: [modifier, "1–9"], action: "Jump to a tab by position; 9 is the last tab." },
-        { keys: macOS ? [modifier, "W"] : ["Ctrl", "W"], action: "Close the active tab." },
-        ...(macOS ? [{ keys: [modifier, "Shift", "W"], action: "Close the window." }] : []),
-        { keys: ["Arrow left"], action: "Move to the previous tab when focus is on the tab list." },
-        { keys: ["Arrow right"], action: "Move to the next tab when focus is on the tab list." },
-        { keys: ["Alt", "Shift", "Arrow left"], action: "Move the focused tab one position left; grouped tabs stay in their Connected Folder." },
-        { keys: ["Alt", "Shift", "Arrow right"], action: "Move the focused tab one position right; grouped tabs stay in their Connected Folder." },
-        { keys: ["Home"], action: "Move to the first tab." },
-        { keys: ["End"], action: "Move to the last tab." },
-      ],
-    },
-    {
-      title: "Chat",
-      rows: [
-        { keys: [modifier, "."], action: "Stop the running Worker turn in the active Chat." },
-      ],
-    },
-    {
-      title: "Navigation Pane",
-      rows: [
-        { keys: ["Arrow left"], action: "Narrow the navigation pane when focus is on the separator." },
-        { keys: ["Arrow right"], action: "Widen the navigation pane when focus is on the separator." },
-        { keys: ["Shift", "Arrow left"], action: "Narrow the navigation pane by a larger step." },
-        { keys: ["Shift", "Arrow right"], action: "Widen the navigation pane by a larger step." },
-        { keys: ["Home"], action: "Move the separator to its minimum width." },
-        { keys: ["End"], action: "Move the separator to its maximum width." },
-        { keys: ["Enter"], action: "Reset the navigation pane width." },
-      ],
-    },
-    {
-      title: "File Search",
-      rows: [
-        { keys: ["Esc"], action: "Clear the file search field when it has text." },
-        { keys: [macOS ? "Option" : "Alt", "Drag"], action: `Drag a file out to ${macOS ? "Finder" : "File Explorer"}. Drag normally to move it inside the Connected Folder.` },
-      ],
-    },
-    {
-      title: "Layout",
-      rows: [
-        { keys: [modifier, "B"], action: "Show or hide the sidebar." },
-        { keys: [modifier, "J"], action: "Open or close the AmpleFile agent." },
-      ],
-    },
-    {
-      title: "Help",
-      rows: [
-        { keys: [modifier, "K"], action: "Command palette." },
-        { keys: [modifier, "/"], action: "Open Shortcut Keys." },
-      ],
-    },
-  ];
-  if (window.ampleFileDesktop) {
-    shortcutGroups.splice(4, 0, {
-      title: "Desktop File Menu",
-      rows: [
-        { keys: [modifier, "N"], action: "Create a new Connected Folder." },
-        { keys: [modifier, "O"], action: "Use an existing folder." },
-        { keys: [modifier, "Shift", "N"], action: "Start a new Chat in the current Connected Folder." },
-        { keys: [modifier, "R"], action: "Refresh the current Connected Folder." },
-        { keys: [modifier, ","], action: "Open Settings." },
-        { keys: [modifier, "Shift", "S"], action: "Open Skills & Extensions." },
-      ],
-    });
-  }
-
-  return <ShortcutGroups groups={shortcutGroups} />;
+export function KeyboardShortcutsPane() {
+  return <ShortcutGroups groups={fileManagerShortcutGroups(desktopShortcutModifierKey(), isMacOS(), Boolean(window.ampleFileDesktop))} />;
 }
 
 function ShortcutGroups({ groups: shortcutGroups }: { groups: ShortcutGroup[] }) {

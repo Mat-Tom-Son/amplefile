@@ -1,19 +1,17 @@
 import assert from "node:assert/strict";
-import React, { createElement, useEffect } from "react";
+import { readFile } from "node:fs/promises";
+import React, { createElement } from "react";
 import { registerHooks } from "node:module";
-import test, { type TestContext } from "node:test";
+import test from "node:test";
 import { createDomHarness } from "./support/dom.js";
 import { fileSelectionLabel } from "../src/shared/file-selection.js";
 import { nativeFileMenuItems, parseNativeFileMenuRequest } from "../desktop/src/file-context-menu.js";
 import { draggedConnectedFolderPaths } from "../web-local/src/lib/file-actions.js";
-import { isSelectionToggleKey, outermostTreePaths, selectableTreePaths, treeSelectionRange, visibleTreePaths } from "../web-local/src/lib/tree-selection.js";
-import { useConnectedFolderTree } from "../web-local/src/hooks/useConnectedFolderTree.js";
-import type { FileContextMenuState, TreeEntry, ConnectedFolderSummary } from "../web-local/src/types.js";
+import type { FileContextMenuState, TreeEntry } from "../web-local/src/types.js";
 
 const assets = registerHooks({
   load(url, context, next) { return /\.svg(?:\?|$)/.test(url) ? { format: "module", source: `export default ${JSON.stringify(url)};`, shortCircuit: true } : next(url, context); },
 });
-const { FileTree } = await import("../web-local/src/components/tree/FileTree.js");
 const { FileContextMenu } = await import("../web-local/src/components/tree/FileContextMenu.js");
 assets.deregister();
 
@@ -26,27 +24,12 @@ const entries: TreeEntry[] = [
   file("readme.md"),
   file("todo.txt"),
 ];
-const connectedFolder = { id: "multi-select", name: "Multi", connectedFolderRoot: "/tmp/multi", location: { storage: "linked" } } as ConnectedFolderSummary;
 
-test("the shown order follows open folders, skips closed ones, and leaves nested Connected Folders out", () => {
-  assert.deepEqual(visibleTreePaths(entries, new Set()), ["Notes", "Notes/a.md", "Notes/b.md", "Reports", "Reports/q3.xlsx", "readme.md", "todo.txt"]);
-  assert.deepEqual(visibleTreePaths(entries, new Set(["Notes"])), ["Notes", "Reports", "Reports/q3.xlsx", "readme.md", "todo.txt"]);
-  const order = visibleTreePaths(entries, new Set());
-  assert.deepEqual(treeSelectionRange(order, "readme.md", "Notes/b.md"), ["Notes/b.md", "Reports", "Reports/q3.xlsx", "readme.md"], "a range runs either way");
-  assert.deepEqual(treeSelectionRange(order, "gone.txt", "readme.md"), []);
-  assert.deepEqual(outermostTreePaths(["Notes/a.md", "Notes", "readme.md", "Notes", ""]), ["Notes", "readme.md"], "a selected folder carries what is selected inside it");
-  assert.deepEqual(outermostTreePaths(["Notes", "Notes 2", "Notes/a.md", "Notes 2/b.md", "Notes-old/c.md"]), ["Notes", "Notes 2", "Notes-old/c.md"], "a sibling whose name sorts between a folder and its rows does not hide them");
-  assert.equal(isSelectionToggleKey({ metaKey: true, ctrlKey: false }, true), true);
-  assert.equal(isSelectionToggleKey({ metaKey: false, ctrlKey: true }, true), false, "Ctrl-click is a right-click on the Mac");
-  assert.equal(isSelectionToggleKey({ metaKey: false, ctrlKey: true }, false), true);
-});
-
-test("finding the outermost rows of a large selection stays fast", () => {
-  const paths = Array.from({ length: 40_000 }, (_, index) => index % 10 === 0 ? `Folder ${index}` : `Folder ${index - (index % 10)}/file ${index}.txt`);
-  const started = performance.now();
-  const outermost = outermostTreePaths(paths);
-  assert.equal(outermost.length, 4_000);
-  assert.ok(performance.now() - started < 1_000, "⌘A then Delete must not freeze the window");
+test("the selection toggle key is Cmd on the Mac and Ctrl elsewhere", async () => {
+  // Ctrl-click is a right-click on the Mac, so only Cmd toggles a row there.
+  const fileManager = await readFile("web-local/src/components/file-manager/FileManagerView.tsx", "utf8");
+  assert.match(fileManager, /const mac = isMacOS\(\);/);
+  assert.match(fileManager, /function clickEntry\(entry: TreeEntry, event: MouseEvent<HTMLElement>\) \{[\s\S]*?const toggle = mac \? event\.metaKey : event\.ctrlKey;[\s\S]*?if \(toggle\) \{/);
 });
 
 test("selection labels name the kinds selected", () => {
@@ -89,114 +72,6 @@ test("the native Mac menu for several rows offers only what applies to all of th
   for (const selection of [{ files: 1, folders: 0 }, { files: -1, folders: 3 }, { files: 1.5, folders: 1 }, { files: 2, folders: 0, label: "x" }, "2"]) {
     assert.throws(() => parseNativeFileMenuRequest({ ...base, selection }), /selection is invalid/);
   }
-});
-
-async function renderFiles(t: TestContext) {
-  const scope = globalThis as unknown as { React?: typeof React };
-  const previousReact = scope.React; scope.React = React;
-  t.after(() => { if (previousReact) scope.React = previousReact; else delete scope.React; });
-  const dom = await createDomHarness();
-  t.after(() => dom.cleanup());
-  const opened: string[] = [], renamed: string[] = [], deleted: string[] = [];
-  let state!: ReturnType<typeof useConnectedFolderTree>;
-  // Wired the way App wires Files.
-  function Files() {
-    state = useConnectedFolderTree(connectedFolder, () => {}, entries);
-    const searching = Boolean(state.query.trim());
-    const order = visibleTreePaths(state.visibleEntries, searching ? new Set() : state.collapsedPaths);
-    useEffect(() => state.keepSelectionWithin(selectableTreePaths(state.tree, order, searching)), [order.join("\n"), searching, state.tree]);
-    return createElement("div", { className: "file-tree-shell" }, createElement(FileTree, {
-      entries: state.visibleEntries, collapsedPaths: searching ? new Set<string>() : state.collapsedPaths, loadingFolderPaths: new Set<string>(), searchQuery: state.query,
-      selectedPath: state.selectedPath, selectedPaths: state.selectedPaths, movingTreePaths: state.movingTreePaths, dropTargetFolderPath: null,
-      onToggleFolder: state.toggleFolder,
-      onSelectFile: (path: string) => { state.setSelectedPath(path); opened.push(path); },
-      onFocusEntry: state.setSelectedPath,
-      onToggleSelected: state.toggleSelectedPath,
-      onSelectRange: (path: string, additive: boolean) => state.selectPathRange(path, order, additive),
-      onSelectAll: () => state.selectPaths(order, state.selectedPath),
-      onOpenFile() {}, onOpenContextMenu() {},
-      onRenameEntry: (path: string) => renamed.push(path), onDeleteEntry: (path: string) => deleted.push(path),
-      onUpdateDropTarget() {}, onDropOnTarget() {}, onDragStartEntry() {}, onDragEndEntry() {},
-    }));
-  }
-  await dom.render(createElement(Files));
-  const row = (path: string) => dom.container.querySelector<HTMLButtonElement>(`[data-tree-path="${path}"]`)!;
-  const click = (path: string, init: MouseEventInit = {}) => dom.act(() => { row(path).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...init })); });
-  const selected = () => [...dom.container.querySelectorAll<HTMLElement>(".file-row.selected")].map((item) => item.dataset.treePath);
-  return { dom, row, click, selected, opened, renamed, deleted, state: () => state };
-}
-
-// jsdom is not the Mac, so Ctrl is the toggle key here.
-test("Ctrl-click adds and removes rows, Shift-click selects the shown run, and only a plain click opens a file", async (t) => {
-  const files = await renderFiles(t);
-  assert.equal(files.dom.container.querySelector('[role="tree"]')?.getAttribute("aria-multiselectable"), "true");
-  await files.click("Notes/b.md");
-  assert.deepEqual(files.selected(), ["Notes/b.md"]);
-  assert.deepEqual(files.opened, ["Notes/b.md"]);
-
-  await files.click("readme.md", { shiftKey: true });
-  assert.deepEqual(files.selected(), ["Notes/b.md", "Reports", "Reports/q3.xlsx", "readme.md"], "the run includes an open folder's rows");
-  assert.equal(files.row("readme.md").getAttribute("aria-selected"), "true");
-  assert.equal(files.row("Reports").getAttribute("aria-selected"), "true", "a selected folder says so");
-
-  await files.click("Reports", { ctrlKey: true });
-  assert.deepEqual(files.selected(), ["Notes/b.md", "Reports/q3.xlsx", "readme.md"]);
-  assert.equal(files.state().collapsedPaths.has("Reports"), false, "Ctrl-click on a folder never opens or closes it");
-
-  await files.click("todo.txt", { ctrlKey: true });
-  await files.click("Notes/a.md", { shiftKey: true });
-  assert.deepEqual(files.selected(), ["Notes/a.md", "Notes/b.md", "Reports", "Reports/q3.xlsx", "readme.md", "todo.txt"], "Shift-click runs from the last Ctrl-clicked row");
-
-  await files.click("Notes/a.md");
-  await files.click("readme.md", { ctrlKey: true });
-  await files.click("todo.txt", { ctrlKey: true, shiftKey: true });
-  assert.deepEqual(files.selected(), ["Notes/a.md", "readme.md", "todo.txt"], "Ctrl+Shift adds the run to what was selected");
-  assert.deepEqual(files.opened, ["Notes/b.md", "Notes/a.md"], "modified clicks never open a tab");
-
-  await files.click("Notes/b.md");
-  assert.deepEqual(files.selected(), ["Notes/b.md"], "a plain click selects just that row again");
-});
-
-test("the keyboard extends, narrows, and clears a selection", async (t) => {
-  const files = await renderFiles(t);
-  await files.click("Notes/a.md");
-  files.row("Notes/a.md").focus();
-  await files.dom.press("ArrowDown", { shiftKey: true });
-  await files.dom.press("ArrowDown", { shiftKey: true });
-  assert.deepEqual(files.selected(), ["Notes/a.md", "Notes/b.md", "Reports"]);
-  await files.dom.press("ArrowUp", { shiftKey: true });
-  assert.deepEqual(files.selected(), ["Notes/a.md", "Notes/b.md"]);
-
-  await files.dom.press("F2");
-  assert.deepEqual(files.renamed, [], "Rename is for one row");
-  await files.dom.press("Delete");
-  assert.deepEqual(files.deleted, ["Notes/b.md"], "Delete reports the focused row; App widens it to the selection");
-
-  await files.dom.press("Escape");
-  assert.deepEqual(files.selected(), ["Notes/b.md"], "Escape keeps only the focused row");
-
-  await files.dom.press("a", { ctrlKey: true });
-  assert.equal(files.selected().length, 7, "Ctrl+A selects every shown row");
-  await files.click("Notes");
-  assert.deepEqual(files.selected(), ["Notes", "Reports", "Reports/q3.xlsx", "readme.md", "todo.txt"], "closing a folder drops its hidden rows from the selection");
-
-  files.row("readme.md").focus();
-  await files.dom.press("ArrowDown");
-  assert.deepEqual(files.selected(), ["todo.txt"], "a plain arrow moves a single selection");
-});
-
-test("a search hides selected rows only for the moment; deleting one still drops it", async (t) => {
-  const files = await renderFiles(t);
-  await files.click("Notes/a.md");
-  await files.click("readme.md", { ctrlKey: true });
-  await files.click("todo.txt", { ctrlKey: true });
-  await files.dom.act(() => files.state().setQuery("todo"));
-  assert.deepEqual(files.selected(), ["todo.txt"], "only the shown match is highlighted");
-  assert.deepEqual([...files.state().selectedPaths].sort(), ["Notes/a.md", "readme.md", "todo.txt"], "rows the search hides stay selected");
-  await files.dom.act(() => files.state().setTree((current) => current.filter((entry) => entry.path !== "readme.md")));
-  assert.deepEqual([...files.state().selectedPaths].sort(), ["Notes/a.md", "todo.txt"], "a deleted row leaves the selection, even mid-search");
-  await files.dom.act(() => files.state().setQuery(""));
-  assert.deepEqual(files.selected(), ["Notes/a.md", "todo.txt"], "clearing the search shows the selection again");
 });
 
 test("the Files menu for several rows offers attach, copy, and delete for all of them", async (t) => {

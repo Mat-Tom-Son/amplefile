@@ -22,17 +22,6 @@
   from { opacity: 0; translate: 0 4px; }
 }
 
-/* Clipped only while it grows, so row focus rings are never cut off after. */
-@keyframes amplefile-folder-open {
-  from { height: 0; opacity: 0; overflow: clip; }
-  to { overflow: clip; }
-}
-
-/* Opacity only: the connected tab frame measures the tab as it arrives. */
-@keyframes amplefile-tab-in {
-  from { opacity: 0; }
-}
-
 @keyframes amplefile-dot-in {
   from { opacity: 0; scale: 0; }
 }
@@ -90,30 +79,17 @@
   animation: amplefile-rise-in var(--amplefile-motion-base) var(--amplefile-ease-smooth);
 }
 
-:where(.surface-tab) {
-  animation: amplefile-tab-in var(--amplefile-motion-base) var(--amplefile-ease-smooth);
-}
-
-/* Only the folder a person just opened grows open (FileTree marks it). */
-
-.file-children.opening {
-  interpolate-size: allow-keywords;
-  animation: amplefile-folder-open 200ms var(--amplefile-ease-smooth);
-}
-
 /* Activity: a running dot pops in; lib/motion.ts plays the reply-landed ring. */
 
 :where(.chat-activity-indicator) {
   animation: amplefile-dot-in 220ms var(--amplefile-ease-pop);
 }
 
-.chat-activity-dot,
-.surface-tab-chat-status {
+.chat-activity-dot {
   position: relative;
 }
 
-.chat-activity-dot::after,
-.surface-tab-chat-status::after {
+.chat-activity-dot::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -125,8 +101,7 @@
 
 /* Copied: the check pops once. */
 
-.is-copied svg,
-.file-details-copy[data-state="copied"] svg {
+.is-copied svg {
   animation: amplefile-confirm-pop 280ms var(--amplefile-ease-smooth);
 }
 

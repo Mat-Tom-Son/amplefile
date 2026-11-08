@@ -1,41 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createDomHarness } from "./support/dom.js";
-import { deleteLocalFileRequest, deleteLocalFilesRequest, pendingDeleteGroups, settledPendingDeletes, type PendingDelete } from "../web-local/src/lib/pending-deletes.js";
+import { deleteLocalFileRequest, deleteLocalFilesRequest, type PendingDelete } from "../web-local/src/lib/pending-deletes.js";
 
 const pending = (path: string, extra: Partial<PendingDelete> = {}): PendingDelete => ({
   connectedFolderId: "space-a", path, name: path.split("/").pop()!, selectedPath: null, deletedTabPaths: new Set(), ...extra,
-});
-
-test("rows deleted together reach the host together; every other row goes on its own", () => {
-  const groups = pendingDeleteGroups([
-    pending("a.txt", { batchId: 1 }),
-    pending("solo.txt"),
-    pending("b.txt", { batchId: 1 }),
-    pending("other.txt", { batchId: 1, connectedFolderId: "space-b" }),
-    pending("c.txt", { batchId: 2 }),
-  ]);
-  assert.deepEqual(groups.map((group) => group.map((item) => item.path)), [["a.txt", "b.txt"], ["solo.txt"], ["other.txt"], ["c.txt"]]);
-});
-
-test("a several-row delete closes only the deleted rows' tabs and names the ones in Recently Deleted", () => {
-  const waiting = [
-    pending("a.txt", { deletedTabPaths: new Set(["a.txt"]) }),
-    pending("bulk", { deletedTabPaths: new Set(["bulk/one.bin"]) }),
-    pending("c.txt", { deletedTabPaths: new Set(["c.txt"]) }),
-  ];
-  const settled = settledPendingDeletes(waiting, {
-    deleted: [
-      { path: "a.txt", kind: "file" },
-      { path: "bulk", kind: "folder", recentlyDeleted: { entryId: "rd-1", restoreBy: "2026-12-05T00:00:00.000Z", uncoveredCount: 1 } },
-    ],
-    safetyCheckpointId: "cp-1",
-    failed: { path: "c.txt", error: "EACCES" },
-    notDeleted: [],
-  });
-  assert.deepEqual(settled.deleted.map((item) => item.path), ["a.txt", "bulk"]);
-  assert.deepEqual([...settled.closedTabPaths], ["a.txt", "bulk/one.bin"], "a row that failed keeps its tab");
-  assert.deepEqual(settled.inRecentlyDeleted, ["bulk"]);
 });
 
 test("several rows go to the host in one request, and one row keeps its own route", async (t) => {

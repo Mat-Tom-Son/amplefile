@@ -11,11 +11,11 @@ import { createDomHarness } from "./support/dom.js";
 
 const assets = registerHooks({
   load(url, context, next) {
-    if (/\.(png|svg)$/.test(url)) return { format: "module", source: `export default ${JSON.stringify(url)};`, shortCircuit: true };
+    if (/\.(png|svg|css)$/.test(url)) return { format: "module", source: /\.css$/.test(url) ? "export {};" : `export default ${JSON.stringify(url)};`, shortCircuit: true };
     return next(url, context);
   },
 });
-const { OnboardingFlow } = await import("../web-local/src/components/onboarding/OnboardingFlow.js");
+const { FileManagerWelcome } = await import("../web-local/src/components/file-manager/FileManagerWelcome.js");
 const { ConnectAi } = await import("../web-local/src/components/onboarding/ConnectAi.js");
 assets.deregister();
 
@@ -46,6 +46,7 @@ function stubApi(t: TestContext, reply: (path: string, body: Record<string, unkn
     const path = String(input);
     if (path.startsWith("/api/agent/models")) return Response.json({ providers, models: [], status: { ...connectedStatus, configured: false, provider: null, model: null } });
     if (path.startsWith("/api/agent/included-tools")) return Response.json({ tools: [] });
+    if (path.startsWith("/api/standard-folders")) return Response.json({ folders: [] });
     const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
     posts.push({ path, body });
     return Response.json(reply(path, body));
@@ -56,6 +57,10 @@ function stubApi(t: TestContext, reply: (path: string, body: Record<string, unkn
 
 const buttons = () => [...document.querySelectorAll("button")];
 const button = (text: string | RegExp) => buttons().find((item) => typeof text === "string" ? item.textContent === text : text.test(item.textContent ?? ""));
+const heading = () => document.querySelector(".fm-welcome-step h2")?.textContent;
+const stepLabel = () => document.querySelector(".fm-welcome-dots")?.getAttribute("aria-label");
+const welcome = (props: { key?: string; agentConfigured: boolean; onAiConnected: (status: AgentStatus) => void; onCreateConnectedFolder: () => void; onOpenFolder: () => void }) =>
+  createElement(FileManagerWelcome, { fixtureMode: false, onPutToWork: async () => {}, ...props });
 
 test("first run says what AmpleFile is, connects AI, then picks the first folder", async (t) => {
   const dom = await createDomHarness();
@@ -63,17 +68,17 @@ test("first run says what AmpleFile is, connects AI, then picks the first folder
   const posts = stubApi(t, () => ({ status: connectedStatus, models: [{ provider: "openrouter", id: "openai/gpt-6-luna", name: "OpenAI: GPT-6 Luna" }] }));
   const connected: AgentStatus[] = [];
   const chosen: string[] = [];
-  await dom.render(createElement(OnboardingFlow, {
+  await dom.render(welcome({
     agentConfigured: false,
     onAiConnected: (status: AgentStatus) => { connected.push(status); },
     onCreateConnectedFolder: () => { chosen.push("create"); },
     onOpenFolder: () => { chosen.push("open"); },
   }));
-  assert.equal(document.querySelector("h1")?.textContent, "Put your folders to work");
+  assert.equal(heading(), "Put your folders to work");
   await dom.act(() => button("Get Started")!.click());
   await dom.waitFor(() => Boolean(button(/^OpenRouter/)));
-  assert.equal(document.querySelector("h1")?.textContent, "Connect Your AI");
-  assert.match(document.body.textContent!, /Step 2 of 3/);
+  assert.equal(heading(), "Connect Your AI");
+  assert.equal(stepLabel(), "Step 2 of 3");
   assert.deepEqual(buttons().filter((item) => item.classList.contains("connect-ai-card")).map((item) => item.querySelector("strong")?.textContent), ["ChatGPT", "Claude", "OpenRouter", "Another Provider"]);
   assert.match(button(/^ChatGPT/)!.textContent!, /Sign in with your ChatGPT account/, "sign-in where the desktop app can run it");
   assert.match(button(/^OpenRouter/)!.textContent!, /Paste your OpenRouter API key/, "a key where it cannot");
@@ -91,8 +96,8 @@ test("first run says what AmpleFile is, connects AI, then picks the first folder
   assert.deepEqual(connected, [connectedStatus]);
 
   await dom.act(() => button("Continue")!.click());
-  assert.equal(document.querySelector("h1")?.textContent, "Pick a Folder to Start With");
-  assert.match(document.body.textContent!, /Step 3 of 3/);
+  assert.equal(heading(), "Pick a Folder to Start With");
+  assert.equal(stepLabel(), "Step 3 of 3");
   await dom.act(() => button(/^Connect Folder/)!.click());
   await dom.act(() => button(/^New Connected Folder/)!.click());
   assert.deepEqual(chosen, ["open", "create"]);
@@ -102,20 +107,20 @@ test("first run skips the AI step when a provider is already connected, and lets
   const dom = await createDomHarness();
   t.after(() => dom.cleanup());
   stubApi(t, () => ({}));
-  await dom.render(createElement(OnboardingFlow, { agentConfigured: true, onAiConnected: () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {} }));
+  await dom.render(welcome({ agentConfigured: true, onAiConnected: () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {} }));
   await dom.act(() => button("Get Started")!.click());
-  assert.equal(document.querySelector("h1")?.textContent, "Pick a Folder to Start With");
-  assert.match(document.body.textContent!, /Step 2 of 2/);
+  assert.equal(heading(), "Pick a Folder to Start With");
+  assert.equal(stepLabel(), "Step 2 of 2");
   assert.doesNotMatch(document.body.textContent!, /No AI connected yet/);
 
-  await dom.render(createElement(OnboardingFlow, { key: "fresh", agentConfigured: false, onAiConnected: () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {} }));
+  await dom.render(welcome({ key: "fresh", agentConfigured: false, onAiConnected: () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {} }));
   await dom.act(() => button("Get Started")!.click());
   await dom.waitFor(() => Boolean(button("Skip for Now")));
   await dom.act(() => button("Skip for Now")!.click());
-  assert.equal(document.querySelector("h1")?.textContent, "Pick a Folder to Start With");
+  assert.equal(heading(), "Pick a Folder to Start With");
   assert.match(document.body.textContent!, /No AI connected yet\. Your Worker will offer to connect one when you need it\./);
   await dom.act(() => button("Back")!.click());
-  assert.equal(document.querySelector("h1")?.textContent, "Connect Your AI");
+  assert.equal(heading(), "Connect Your AI");
 });
 
 test("Connect your AI signs in where it can, searches the rest, and sends Azure to Settings", async (t) => {
@@ -170,5 +175,7 @@ test("first run keeps the App's folder registration contract and the dark defaul
   assert.match(app, /await checksControl\?\.suspend\(\);[\s\S]*?\/api\/connected-folders\/local-folder/);
   assert.match(app, /finally \{ void checksControl\?\.resume\(\); \}/);
   // Set up for me waits for an AI connection instead of sending a turn that cannot start.
-  assert.match(app, /if \(!agent\.configured\) \{ requestConnectAi\(\(\) => void sendSetUp\(mode\)\); return; \}/);
+  const fileManager = await read("web-local/src/components/file-manager/FileManagerView.tsx");
+  assert.match(fileManager, /function setUp\(target: ConnectedFolderSummary, mode: ConnectedFolderSetUpMode\) \{\s*withAi\(\(\) => sendSetUp\(target, mode\)\);/);
+  assert.match(fileManager, /function withAi\(send: \(\) => void\) \{\s*if \(fixtureMode \|\| agent\?\.configured\) \{ send\(\); return; \}\s*requestConnectAi\(send\);/);
 });

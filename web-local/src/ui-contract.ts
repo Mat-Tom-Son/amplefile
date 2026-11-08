@@ -1,13 +1,4 @@
-export const primaryNavigation = [
-  { id: "files", label: "Files" },
-  { id: "chats", label: "Chats" },
-  { id: "history", label: "History" },
-] as const;
 
-export const welcomeActions = {
-  create: "New Connected Folder",
-  linkFolder: "Connect Folder",
-} as const;
 
 /**
  * Settings → Recently Deleted (docs/receipts-not-gates.md, F20).

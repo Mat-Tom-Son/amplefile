@@ -31,36 +31,6 @@ export interface DeleteLocalFilesResult {
   notDeleted?: string[];
 }
 
-export function pendingDeleteKey(pending: Pick<PendingDelete, "connectedFolderId" | "path">): string {
-  return `${pending.connectedFolderId}:${pending.path}`;
-}
-
-/** Waiting rows as the host should receive them: rows deleted together stay together, every other row on its own. */
-export function pendingDeleteGroups(pendings: Iterable<PendingDelete>): PendingDelete[][] {
-  const groups = new Map<string, PendingDelete[]>();
-  for (const pending of pendings) {
-    const group = pending.batchId === undefined ? `one:${pendingDeleteKey(pending)}` : `batch:${pending.connectedFolderId}:${pending.batchId}`;
-    const rows = groups.get(group);
-    if (rows) rows.push(pending); else groups.set(group, [pending]);
-  }
-  return [...groups.values()];
-}
-
-/** What the person sees after a several-row delete: the rows that went, their open tabs to close, and which went to Recently Deleted. */
-export function settledPendingDeletes(waiting: readonly PendingDelete[], result: DeleteLocalFilesResult): {
-  deleted: PendingDelete[];
-  closedTabPaths: Set<string>;
-  inRecentlyDeleted: string[];
-} {
-  const rows = new Map(result.deleted.map((row) => [row.path, row]));
-  const deleted = waiting.filter((pending) => rows.has(pending.path));
-  return {
-    deleted,
-    closedTabPaths: new Set(deleted.flatMap((pending) => [...pending.deletedTabPaths])),
-    inRecentlyDeleted: deleted.filter((pending) => rows.get(pending.path)?.recentlyDeleted).map((pending) => pending.name),
-  };
-}
-
 export async function deleteLocalFileRequest(pending: PendingDelete, keepalive = false): Promise<DeleteLocalFileResult> {
   // A delete History could not fully keep a copy of still succeeds: the
   // entry is waiting in Recently Deleted instead (docs/receipts-not-gates.md).

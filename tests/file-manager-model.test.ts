@@ -29,7 +29,6 @@ import {
   sameLocation,
   sidebarStandardFolders,
 } from "../web-local/src/components/file-manager/file-manager-places.js";
-import { normalizeAppLayout } from "../web-local/src/lib/app-layout.js";
 import type { TreeEntry } from "../web-local/src/types.js";
 
 const file = (name: string, sizeBytes: number, updatedAt: string): TreeEntry => ({ name, path: name, kind: "file", sizeBytes, updatedAt });
@@ -64,8 +63,6 @@ test("stored view choices fall back to safe defaults", () => {
   assert.deepEqual(normalizeFileManagerSort(null), { key: "name", ascending: true });
   assert.equal(normalizeFileManagerView("icons"), "icons");
   assert.equal(normalizeFileManagerView("columns"), "list");
-  assert.equal(normalizeAppLayout("file-manager"), "file-manager");
-  assert.equal(normalizeAppLayout("anything else"), "classic");
 });
 
 test("kinds and icons read like Finder's", () => {

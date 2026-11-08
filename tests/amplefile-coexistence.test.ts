@@ -17,6 +17,10 @@ import {
   type RestrictedAppFileContext,
 } from "../src/local/agent/restricted-app-files.js";
 import { listConversations } from "../src/local/agent/chat-store.js";
+import { reservedSearchSegments } from "../src/local/agent/reserved-path-search.js";
+import { isAlwaysHiddenConnectedFolderEntry } from "../src/local/connected-folder-ignore.js";
+import { isReservedConnectedFolderPathSegment } from "../src/local/connected-folder-path-policy.js";
+import { isHistoryAlwaysSkippedSegment } from "../src/local/history-capture-policy.js";
 import { createLocalDevelopmentApiOptions } from "../src/local/server-dev-options.js";
 import {
   configureAmpleFileStateRoot,
@@ -194,3 +198,18 @@ function restrictedAppContext(connectedFolderRoot: string, root = "."): Restrict
 function isFileDenied(error: unknown): boolean {
   return error instanceof RestrictedAppFileError && error.code === "FILE_DENIED";
 }
+
+test("the predecessors' metadata folders stay hidden from Files, History, and search", () => {
+  // A folder once used with the predecessor keeps its .work-fold/ (or older
+  // .workspace/) folder. AmpleFile never reads it, and it never shows it.
+  for (const name of [".work-fold", ".workspace", ".amplefile", ".pi"]) {
+    assert.equal(isReservedConnectedFolderPathSegment(name), true, `${name} is reserved`);
+    assert.equal(isAlwaysHiddenConnectedFolderEntry(name), true, `${name} is hidden in Files`);
+  }
+  assert.equal(isReservedConnectedFolderPathSegment(".Work-Fold"), true, "matching ignores case");
+  for (const name of [".work-fold", ".workspace", ".amplefile"]) {
+    assert.equal(isHistoryAlwaysSkippedSegment(name), true, `${name} is left out of History`);
+    assert.ok((reservedSearchSegments as readonly string[]).includes(name), `${name} is left out of search`);
+  }
+  assert.equal(isAlwaysHiddenConnectedFolderEntry("Fold notes"), false, "ordinary names stay visible");
+});

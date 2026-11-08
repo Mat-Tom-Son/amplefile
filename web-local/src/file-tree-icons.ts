@@ -1686,18 +1686,8 @@ export function fileTreeFileIcon(path: string): FileTreeIconSpec {
   return extensionIcon(name) ?? fallbackFileIcon;
 }
 
-/** Every folder gets the same plain glyph; the name never changes it. */
-export function fileTreeFolderIcon(_pathOrName: string, expanded: boolean): FileTreeIconSpec {
-  return expanded ? openFolderIcon : closedFolderIcon;
-}
-
 export function fileTreeIconGlyph(iconSpec: FileTreeIconSpec): FileIconGlyph {
   return fileIconGlyphs[iconSpec.glyph] ?? fileIconGlyphs[fallbackFileIcon.glyph]!;
-}
-
-/** All icon specs the resolver can return (for tests and the generator). */
-export function allFileTreeIconSpecs(): FileTreeIconSpec[] {
-  return [fallbackFileIcon, closedFolderIcon, openFolderIcon, ...Object.values(kinds)];
 }
 
 function extensionIcon(name: string): FileTreeIconSpec | undefined {

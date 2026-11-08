@@ -9,12 +9,12 @@ function handlers() {
   return { call: registered.get("tool_call")!, result: registered.get("tool_result")! };
 }
 
-test("grep without its own glob leaves .amplefile and .workspace out at any depth", () => {
+test("grep without its own glob leaves .amplefile, .work-fold, and .workspace out at any depth", () => {
   const { call } = handlers();
   const input: Record<string, unknown> = { pattern: "export bug" };
   call({ toolName: "grep", input });
   assert.equal(input.glob, reservedSearchExclusionGlob);
-  assert.equal(reservedSearchExclusionGlob, "!**/{.amplefile,.workspace}/**");
+  assert.equal(reservedSearchExclusionGlob, "!**/{.amplefile,.work-fold,.workspace}/**");
 
   const own: Record<string, unknown> = { pattern: "export bug", glob: "*.md" };
   call({ toolName: "grep", input: own });

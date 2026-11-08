@@ -22,7 +22,7 @@ const assets = registerHooks({
   },
 });
 const { IncludedComputerSetup } = await import("../web-local/src/components/panes/IncludedComputerSetup.js");
-const { OnboardingFlow } = await import("../web-local/src/components/onboarding/OnboardingFlow.js");
+const { FileManagerWelcome } = await import("../web-local/src/components/file-manager/FileManagerWelcome.js");
 assets.deregister();
 
 const distribution: ChromeDistribution = { version: 1, storeId: "a".repeat(32), nativeHostName: "com.amplefile.chrome_test", bootstrapVersion: 1, extensionVersion: "1.0.0", bridge: { major: 3, minor: 0, capabilities: ["cancellation", "hard-background", "profile-binding"] } };
@@ -114,6 +114,7 @@ function stubSetup(t: TestContext, computer: (action: string) => IncludedToolSta
       return Response.json({ status: computer(String(body.action)) });
     }
     assert.doesNotMatch(String(input), /connectedFolderId/, "first run reads the tools without a Connected Folder");
+    if (String(input).startsWith("/api/standard-folders")) return Response.json({ folders: [] });
     return Response.json({ tools: tools() });
   }) as typeof fetch;
   t.after(() => { globalThis.fetch = original; });
@@ -174,15 +175,16 @@ test("first run offers Chrome and Computer Control when the app includes them", 
     { id: "chrome", state: "setup_required", detail: "", checkedAt: "", chrome: { state: "not_connected", checkedAt: "", hasSelection: false }, chromeSetup: { browserInstalled: true, extensionSeen: false } },
     { id: "computer", state: "unknown", detail: "", checkedAt: "" },
   ]);
-  await dom.render(createElement(OnboardingFlow, { agentConfigured: true, onAiConnected: () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {} }));
+  await dom.render(createElement(FileManagerWelcome, { agentConfigured: true, fixtureMode: false, onAiConnected: () => {}, onPutToWork: async () => {}, onCreateConnectedFolder: () => {}, onOpenFolder: () => {} }));
   const button = (text: RegExp) => [...document.querySelectorAll("button")].find((item) => text.test(item.textContent ?? ""));
+  const heading = () => document.querySelector(".fm-welcome-step h2")?.textContent;
   await dom.act(() => button(/^Get Started$/)!.click());
-  await dom.waitFor(() => document.querySelector("h1")?.textContent === "Let Your Worker Use Your Mac");
-  assert.match(document.body.textContent!, /Step 2 of 3/);
+  await dom.waitFor(() => heading() === "Let Your Worker Use Your Mac");
+  assert.equal(document.querySelector(".fm-welcome-dots")?.getAttribute("aria-label"), "Step 2 of 3");
   await dom.act(() => button(/^Chrome/)!.click());
   await dom.waitFor(() => /Add the AmpleFile Extension/.test(document.body.textContent!));
   await dom.act(() => button(/^Computer Control/)!.click());
   await dom.waitFor(() => Boolean(button(/^Allow Computer Control$/)));
   await dom.act(() => button(/^Continue$/)!.click());
-  assert.equal(document.querySelector("h1")?.textContent, "Pick a Folder to Start With");
+  assert.equal(heading(), "Pick a Folder to Start With");
 });

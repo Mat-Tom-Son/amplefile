@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { validateToolArguments } from "@earendil-works/pi-ai";
-import { pathToFileURL } from "node:url";
 
 import { createBrowserTools, browserToolNames, describeBrowserTab } from "../src/local/agent/browser-tools.js";
 import { parseBrowserKey, parseBrowserKeys } from "../src/shared/browser-keys.js";
@@ -30,17 +29,6 @@ import {
   type BrowserTabSummary,
   type BrowserToolHost,
 } from "../src/shared/browser.js";
-import type { ConnectedFolderSurfaceTab } from "../web-local/src/types";
-
-const surfaceTabsModuleUrl = pathToFileURL(join(process.cwd(), "web-local/src/hooks/useSurfaceTabs.ts")).href;
-const surfaceTabs = await import(surfaceTabsModuleUrl) as {
-  browserSurfaceTab: (pageId: string, url: string, title?: string) => ConnectedFolderSurfaceTab;
-  browserTabTitle: (title: string, url: string) => string;
-  normalizeStoredSurfaceTabsValue: (value: unknown) => { tabs: ConnectedFolderSurfaceTab[]; activeTabId: string | null };
-  restoreStoredSurfaceTabsForConnectedFolders: (state: { tabs: ConnectedFolderSurfaceTab[]; activeTabId: string | null }, connectedFolders: Array<{ id: string }>) => { tabs: ConnectedFolderSurfaceTab[]; activeTabId: string | null };
-  surfaceTabConnectedFolderSwitchTarget: (input: { activeTabId: string | null; activeConnectedFolderId: string; tabs: ConnectedFolderSurfaceTab[]; connectedFolders: Array<{ id: string; name: string }> }) => { id: string } | null;
-  recordActiveSurfaceTabConnectedFolderRecency: (recent: Map<string, string>, tabs: ConnectedFolderSurfaceTab[], activeTabId: string | null) => void;
-};
 
 test("the address bar turns hosts, local servers, and files into addresses and everything else into a search", () => {
   assert.equal(browserAddressFor("https://example.com/a?b=1"), "https://example.com/a?b=1");
@@ -258,49 +246,13 @@ test("a misspelled word gets macOS's own guesses when Electron has none", { skip
   assert.ok((await macSpellingGuesses("sentense", 2)).length <= 2);
 });
 
-test("browser tabs reopen, take a right-click menu, and show which Worker is using them", async () => {
-  const hook = await readFile("web-local/src/hooks/useBrowserTabs.ts", "utf8");
-  assert.match(hook, /closedRef\.current = \[\.\.\.closedRef\.current, \{ \.\.\.known, at: Date\.now\(\) \}\]\.slice\(-25\)/, "closed tabs are remembered for Reopen Closed Tab");
-  const app = await readFile("web-local/src/App.tsx", "utf8");
-  assert.match(app, /event\.shiftKey && event\.key\.toLocaleLowerCase\(\) === "t"[\s\S]*reopenClosedTab\(\)/, "Cmd/Ctrl+Shift+T reopens the tab closed last");
-  assert.match(app, /function reopenClosedTab\(\)[\s\S]*browser\.lastClosedAt\(\) > tabs\.lastClosedSurfaceTabAt\(\)[\s\S]*browser\.reopenClosed\(\)/, "a browser tab closed last comes back first");
-  assert.match(app, /onBrowserTabMenu=\{browser\.openTabMenu\}/);
-  assert.match(app, /conversations\/\$\{conversationId\}\/abort/, "the Worker chip's Stop ends that Chat's turn");
+test("a focused browser page forwards Cmd/Ctrl+Shift+T and offers spelling suggestions", async () => {
   const host = await readFile("desktop/src/built-in-browser.ts", "utf8");
   assert.match(host, /key === "t" && input\.shift\) return this\.#forwardKey/, "a focused page hands Cmd/Ctrl+Shift+T to the tab strip");
   assert.match(host, /replaceMisspelling/, "the page's right-click menu offers spelling suggestions");
 });
 
-test("browser tabs survive a restart and belong to no Connected Folder", () => {
-  const browser = surfaceTabs.browserSurfaceTab("k3j9x2", "https://example.com/docs", "");
-  assert.deepEqual(browser, { id: "browser:k3j9x2", kind: "browser", connectedFolderId: null, pageId: "k3j9x2", url: "https://example.com/docs", title: "example.com" });
-  const chat: ConnectedFolderSurfaceTab = { id: "chat:wf1:new", kind: "chat", connectedFolderId: "wf1", conversationId: null, title: "New Chat" };
-  const stored = surfaceTabs.normalizeStoredSurfaceTabsValue(JSON.parse(JSON.stringify({
-    tabs: [chat, { ...browser, title: "Docs" }, { kind: "browser", id: "browser:bad", pageId: "BAD ID", url: "", title: "x", connectedFolderId: null }],
-    activeTabId: "browser:k3j9x2",
-  })));
-  assert.deepEqual(stored.tabs.map((tab) => tab.id), ["chat:wf1:new", "browser:k3j9x2"]);
-  assert.equal(stored.activeTabId, "browser:k3j9x2");
-
-  // Removing every Connected Folder the tabs belonged to leaves the browser tabs open.
-  const restored = surfaceTabs.restoreStoredSurfaceTabsForConnectedFolders(stored, [{ id: "wf2" }]);
-  assert.deepEqual(restored.tabs.map((tab) => tab.id), ["browser:k3j9x2"]);
-
-  // Selecting a browser tab keeps the open Connected Folder, and is never a Connected Folder's most recent tab.
-  assert.equal(surfaceTabs.surfaceTabConnectedFolderSwitchTarget({ activeTabId: "browser:k3j9x2", activeConnectedFolderId: "wf2", tabs: stored.tabs, connectedFolders: [{ id: "wf1", name: "One" }, { id: "wf2", name: "Two" }] }), null);
-  const recent = new Map<string, string>();
-  surfaceTabs.recordActiveSurfaceTabConnectedFolderRecency(recent, stored.tabs, "browser:k3j9x2");
-  assert.equal(recent.size, 0);
-
-  assert.equal(surfaceTabs.browserTabTitle("", ""), "New Tab");
-  assert.equal(surfaceTabs.browserTabTitle("  Docs  ", "https://example.com/"), "Docs");
-  assert.equal(surfaceTabs.browserTabTitle("", "file:///Users/me/My%20Site/index.html"), "index.html");
-});
-
-test("the tab strip offers a browser tab beside New Chat, and Workers get the tools in every session", async () => {
-  const tabBar = await readFile("web-local/src/components/chat/ConnectedFolderSurfaceTabBar.tsx", "utf8");
-  assert.match(tabBar, /aria-label="Open a Browser Tab"/);
-  assert.match(tabBar, /surface-tab-new-browser[\s\S]*surface-tab-new-chat/, "the browser button sits beside New Chat");
+test("Workers get the browser tools in every session", async () => {
   const piClient = await readFile("src/local/agent/pi-client.ts", "utf8");
   assert.match(piClient, /this\.options\.browser \? createBrowserTools\(\{ host: this\.options\.browser, \.\.\.\(this\.options\.browserOwner \? \{ owner: this\.options\.browserOwner \} : \{\}\) \}\)/);
   const server = await readFile("src/local/server.ts", "utf8");

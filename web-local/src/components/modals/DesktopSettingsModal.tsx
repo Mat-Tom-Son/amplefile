@@ -53,7 +53,7 @@ export function settingsTabForPage(page: SettingsPage, section?: SettingsSection
   return page;
 }
 
-export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, connectedFolder, connectedFolders = [], restrictedApps = null, onChangeApp, onOpenAppBuildChat, onOpenAppResultFile, onOpenAppStudio, agentStatus, fixtureMode = false, initialPage = "appearance", initialSection, initialModelScope, focusAiModel = false, focusWorkerInstructions = false, onAgentConfigured, onModelChanged, onClose, onBackToCustomization, updateStatus, onUpdateAction, layout = "classic" }: {
+export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, connectedFolder, connectedFolders = [], restrictedApps = null, onChangeApp, onOpenAppBuildChat, onOpenAppResultFile, onOpenAppStudio, agentStatus, fixtureMode = false, initialPage = "appearance", initialSection, initialModelScope, focusAiModel = false, focusWorkerInstructions = false, onAgentConfigured, onModelChanged, onClose, onBackToCustomization, updateStatus, onUpdateAction }: {
   appearance: ApplicationAppearanceController;
   onCustomizeConnectedFolder?: (connectedFolderId: string) => void;
   connectedFolder: ConnectedFolderSummary | null;
@@ -66,8 +66,6 @@ export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, c
   onOpenAppStudio?: (connectedFolderId: string, runtimeInstanceId?: string) => void;
   agentStatus: AgentStatus;
   fixtureMode?: boolean;
-  /** Which window layout Settings opened over; Shortcut Keys lists that layout's keys. */
-  layout?: "classic" | "file-manager";
   initialPage?: SettingsPage;
   /** Older callers named a section of the former Desktop tab. */
   initialSection?: SettingsSection;
@@ -230,7 +228,7 @@ export function DesktopSettingsModal({ appearance, onCustomizeConnectedFolder, c
             ) : null}
             {page === "shortcuts" ? (
               <div className="settings-tab-panel" id="settings-panel-shortcuts" role="tabpanel" aria-labelledby="settings-tab-shortcuts">
-                <KeyboardShortcutsPane layout={layout} />
+                <KeyboardShortcutsPane />
               </div>
             ) : null}
             {page === "about" ? (

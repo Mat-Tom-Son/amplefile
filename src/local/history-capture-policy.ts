@@ -43,6 +43,7 @@ export const historyAlwaysSkippedSegments = new Set([
   ".jj",
   ".pi",
   ".amplefile",
+  ".work-fold",
   ".workspace",
   "node_modules",
   "__pycache__",

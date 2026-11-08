@@ -2,7 +2,7 @@ import type { TreeEntry } from "../../types";
 import type { StandardFolderSummary } from "./file-manager-places";
 
 /**
- * The browser preview's Standard Folders (`?fixture=connected-folder&layout=file-manager`).
+ * The browser preview's Standard Folders (`?fixture=connected-folder`).
  * Nothing here touches a real folder.
  */
 export function buildFixtureStandardFolders(): { folders: StandardFolderSummary[]; trees: Record<string, TreeEntry[]> } {

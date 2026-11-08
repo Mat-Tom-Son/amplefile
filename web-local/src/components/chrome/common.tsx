@@ -1,4 +1,4 @@
-import type React from "react";
+
 import { ChatAdd20Filled, ChatAdd20Regular, Globe20Filled, Globe20Regular, GlobeAdd20Filled, GlobeAdd20Regular, bundleIcon, type FluentIcon } from "@fluentui/react-icons";
 import { AlertTriangle, X } from "./icons";
 import type { ConnectedFolderIconOption } from "../../connected-folder-icons";
@@ -49,15 +49,6 @@ function ConnectedFolderIconGlyph({
   );
 }
 
-function PanelTitle({ icon, title, action }: { icon?: React.ReactNode; title: string; action?: React.ReactNode }) {
-  return (
-    <div className="panel-title">
-      <h2>{icon}{title}</h2>
-      {action}
-    </div>
-  );
-}
-
 function Banner({ tone, text, onDismiss }: { tone: "error" | "info"; text: string; onDismiss?: () => void }) {
   return (
     <div className={`banner ${tone}`}>
@@ -72,18 +63,4 @@ function Banner({ tone, text, onDismiss }: { tone: "error" | "info"; text: strin
   );
 }
 
-function EmptyInline({ text }: { text: string }) {
-  return <div className="empty-inline">{text}</div>;
-}
-
-function CenteredState({ icon, title, text }: { icon?: React.ReactNode; title: string; text?: string }) {
-  return (
-    <div className="centered-state">
-      {icon ? <div className="centered-icon">{icon}</div> : null}
-      <h2>{title}</h2>
-      {text ? <p>{text}</p> : null}
-    </div>
-  );
-}
-
-export { Banner, BrowserTabIcon, CenteredState, EmptyInline, FluentGlyph, NewBrowserTabIcon, NewChatIcon, PanelTitle, ConnectedFolderIconGlyph };
+export { Banner, FluentGlyph, ConnectedFolderIconGlyph };

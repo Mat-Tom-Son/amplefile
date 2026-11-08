@@ -28,12 +28,6 @@ function typographyFontForPlatform(font: AppTypographyFont, platform: DesktopPla
   return isMacOS(platform) && font === "stable" ? "default" : font;
 }
 
-function desktopFileDragHint(path: string, platform: DesktopPlatform = desktopPlatform()): string {
-  if (platform === "darwin") return `${path} — drag to move, Option-drag to Finder`;
-  if (platform === "win32") return `${path} — drag to move, Alt+drag to File Explorer`;
-  return `${path} — drag to move`;
-}
-
 function connectedFolderEntryNativePath(rootPath: string, relativePath: string, platform: DesktopPlatform = desktopPlatform()): string {
   if (!relativePath) return rootPath;
   const separator = platform === "win32" ? "\\" : "/";
@@ -42,5 +36,5 @@ function connectedFolderEntryNativePath(rootPath: string, relativePath: string, 
   return [root, ...segments].join(separator);
 }
 
-export { desktopFileDragHint, desktopPlatform, isMacOS, previewPlatform, typographyFontForPlatform, connectedFolderEntryNativePath };
+export { desktopPlatform, isMacOS, previewPlatform, typographyFontForPlatform, connectedFolderEntryNativePath };
 export type { DesktopPlatform };

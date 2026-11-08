@@ -1,5 +1,5 @@
 import { maxConnectedFolderAppearanceBannerImageDataUrlLength, connectedFolderAppearanceBannerNames } from "../../src/shared/connected-folder-appearance";
-import type { AppTypographyFont, CommandPaletteGroupId, ConnectedFolderBannerOption } from "./types";
+import type { AppTypographyFont, ConnectedFolderBannerOption } from "./types";
 
 export const productName = "AmpleFile";
 
@@ -9,23 +9,9 @@ export const desktopTitleBarMenus = [
   { id: "view", label: "View" },
   { id: "help", label: "Help" },
 ] as const;
-
-export const connectedFolderFileRefreshDelayMs = 160;
-export const loadedTreeRefreshConcurrency = 4;
 export const connectedFolderPathDragType = "application/x-amplefile-connected-folder-path";
 /** Several Files rows dragged together, as a JSON list of Connected Folder paths. */
 export const connectedFolderPathsDragType = "application/x-amplefile-connected-folder-paths";
-export const connectedFolderSidebarWidthPreferenceKey = "amplefile.connected-folder.sidebar-width";
-/** Whether the navigation pane (Files, Chats, History) is hidden; the rail stays. */
-export const sidebarCollapsedStorageKey = "amplefile.layout.sidebar-collapsed";
-/** The AmpleFile agent panel beside the work area: open state and width. */
-export const agentPanelStorageKey = "amplefile.layout.agent-panel.v1";
-export const connectedFolderSidebarPreferredMinWidth = 280;
-export const connectedFolderSidebarPreferredMaxWidth = 640;
-export const connectedFolderChatPreferredMinWidth = 430;
-export const connectedFolderPaneResizeHandleWidth = 16;
-export const connectedFolderPaneKeyboardStep = 24;
-export const connectedFolderPaneKeyboardLargeStep = 64;
 export const chatDraftKeyPrefix = "amplefile.connected-folder.chat-draft";
 export const chatDraftNewConversationId = "new-chat";
 export const chatDraftDebounceMs = 300;
@@ -44,9 +30,6 @@ export function typographyFontOptionsForPlatform(platform: NodeJS.Platform | und
   return typographyFontOptions.filter((option) => option.value !== "stable");
 }
 export const untitledChatLabel = "Untitled chat";
-export const commandPaletteGroupOrder: CommandPaletteGroupId[] = ["go-to", "switch-connected-folder", "chats", "files", "actions"];
-export const commandPaletteGroupCap = 8;
-export const commandPaletteOverallCap = 24;
 export const genericChatEmptyGreetings = [
   "What should we work on?",
   "Ready when you are.",

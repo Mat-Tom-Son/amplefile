@@ -3,22 +3,8 @@ import test from "node:test";
 
 import {
   deleteFolderConfirm,
-  primaryNavigation,
   recentlyDeletedSettings,
-  welcomeActions,
 } from "../web-local/src/ui-contract.js";
-
-test("Connected Folder navigation separates the active Connected Folder from its surfaces", () => {
-  assert.deepEqual(primaryNavigation.map(({ id, label }) => [id, label]), [
-    ["files", "Files"],
-    ["chats", "Chats"],
-    ["history", "History"],
-  ]);
-  assert.deepEqual(welcomeActions, {
-    create: "New Connected Folder",
-    linkFolder: "Connect Folder",
-  });
-});
 
 test("Recently deleted says what is waiting, how long, and what AmpleFile never erases", () => {
   // Settings → Recently deleted (docs/receipts-not-gates.md, F20):

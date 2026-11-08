@@ -46,7 +46,7 @@ import type { WorkRequestView } from "../../../../src/shared/request-presentatio
 import { ExtensionQuestions } from "./ExtensionQuestions";
 import { AttachmentChip } from "./AttachmentChip";
 import { Banner, FluentGlyph, ConnectedFolderIconGlyph } from "../chrome/common";
-import { FileTypeIcon } from "../tree/FileTree";
+import { FileTypeIcon } from "../tree/FileTypeIcon";
 import { RuntimeContextPreview } from "./activity";
 import { composerCommandQuery, composerCommandValue, matchingComposerCommands } from "./command-menu";
 import { QueuedMessageSync } from "../../lib/queued-message-sync";

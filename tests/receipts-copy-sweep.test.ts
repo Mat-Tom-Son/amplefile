@@ -93,13 +93,6 @@ test("shared Skills and the AmpleFile agent's materialized instructions stay gat
   assert.match(taskPrompt, /amplefile chat report/);
 });
 
-test("App Studio's Release deletion says where the Release goes instead of promising permanence", async () => {
-  // F20: every destruction is reversible, a Release included.
-  const studio = await read("web-local/src/components/panes/AppStudioPane.tsx");
-  assert.match(studio, /Moves this Release to Recently Deleted, where you can restore it\./);
-  assert.doesNotMatch(studio, /permanently/i);
-});
-
 test("the desktop copy contract never says approve or staged", async () => {
   for (const source of [
     "web-local/src/ui-contract.ts",

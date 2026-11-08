@@ -145,21 +145,6 @@ export interface AutomationHistoryResponse {
   damagedLineCount: number;
 }
 
-export interface AutomationEnableResponse {
-  automationId: string;
-  requestId: string;
-  enabled: true;
-  /** True when this exact automation was already on, so nothing changed. */
-  alreadyEnabled: boolean;
-}
-
-export interface AutomationRunResponse {
-  automationId: string;
-  requestId: string;
-  runId: string;
-  accepted: true;
-}
-
 /** A `*.amplefile-automation.json` file the AmpleFile agent wrote that is not stored yet. */
 export type AutomationProposalView =
   | {
@@ -176,10 +161,6 @@ export type AutomationProposalView =
 export interface AutomationProposalsResponse {
   proposals: AutomationProposalView[];
   truncated: boolean;
-}
-
-export interface AutomationEnableProposalResponse extends AutomationEnableResponse {
-  automation: AutomationSummaryView;
 }
 
 const emptyHistory: AutomationHistoryResponse = { runs: [], truncated: false, damagedLineCount: 0 };

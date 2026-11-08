@@ -9,20 +9,18 @@ import { nextMenuItemIndex } from "../web-local/src/lib/menu-navigation.js";
 import { createConnectedFolderOperationGate } from "../web-local/src/lib/connected-folder-operation-gate.js";
 
 const root = process.cwd();
-const [capabilities, textInputModal, messages, tabBar, connectedFolderChrome, indexHtml, app, _retiredNeedsYou, connectedFolderPanes, ...desktopDialogs] = await Promise.all([
+const [capabilities, textInputModal, messages, connectedFolderChrome, indexHtml, app, _retiredNeedsYou, fileManager, ...desktopDialogs] = await Promise.all([
   read("web-local/src/components/panes/CapabilitiesPane.tsx"),
   read("web-local/src/components/modals/TextInputModal.tsx"),
   read("web-local/src/components/chat/messages.tsx"),
-  read("web-local/src/components/chat/ConnectedFolderSurfaceTabBar.tsx"),
   read("web-local/src/components/panes/connectedFolderChrome.tsx"),
   read("web-local/index.html"),
   read("web-local/src/App.tsx"),
   Promise.resolve(""),
-  read("web-local/src/components/panes/connectedFolderPanes.tsx"),
+  read("web-local/src/components/file-manager/FileManagerView.tsx"),
   read("web-local/src/components/modals/DesktopSettingsModal.tsx"),
   read("web-local/src/components/modals/CreateConnectedFolderModal.tsx"),
   read("web-local/src/components/modals/FileVersionHistoryModal.tsx"),
-  read("web-local/src/components/modals/CommandPaletteHost.tsx"),
 ]);
 
 test("modal focus wrapping handles both boundaries and an escaped focus target", () => {
@@ -96,25 +94,6 @@ test("no surface offers an authority mode, a policy, or a decision card", () => 
   const settings = desktopDialogs[0] ?? "";
   assert.doesNotMatch(settings, /fold-authority|fold-policies|FoldAuthorityPane|FoldPoliciesPane|PolicyMatcherFields|"authority"/);
   assert.doesNotMatch(app, /NeedsYouRailControl|useNeedsYouDecisions|needsYouControl|\/api\/amplefile-agent\/decisions/);
-  assert.match(app, /accountControl=\{<button className="connected-folder-rail-account-button"/);
-});
-
-test("a file tab's header is a labeled toolbar with Copy for text and a More menu", async () => {
-  const [pane, styles] = await Promise.all([
-    read("web-local/src/components/panes/FileDetailsPane.tsx"),
-    read("web-local/src/styles.css"),
-  ]);
-  // Clipboard bytes, freshness, empty files and cancelled reads are covered
-  // by file-details-ui.test.ts against the mounted component.
-  // The everyday actions keep their words; the rest are named items in More,
-  // never a row of unlabeled icons.
-  assert.match(pane, /<span className="file-details-action-label">Attach to Chat<\/span>/);
-  assert.doesNotMatch(pane, /className="ui-control ui-control--icon" type="button" title=\{revealLabel\}/);
-  for (const item of ["Open With", "Copy File Path", "Version History", "Rename"]) assert.match(pane, new RegExp(`label: "${item}"`));
-  assert.match(pane, /aria-haspopup="menu" aria-expanded=\{open\}/);
-  assert.match(pane, /className="context-menu file-details-menu" role="menu"/);
-  // Narrow tabs drop the words before they wrap the row.
-  assert.match(styles, /@container file-details \(max-width: 560px\) \{\n\n\.file-details-action-label \{\n  display: none;/);
 });
 
 test("the main window has no overview panel; the connected-folder-identity header carries no action and Files keeps its actions in the right-click menu", () => {
@@ -127,34 +106,14 @@ test("the main window has no overview panel; the connected-folder-identity heade
   // add files are right-click actions, and a background refresh never dims
   // the tree.
   assert.doesNotMatch(app, /refreshFilesButton|aria-label="Refresh files"|aria-label="Add files"/);
-  assert.match(app, /onRefresh=\{\(\) => void tree\.refresh\(false\)\}/);
-  assert.match(app, /else if \(command === "refresh"\) await tree\.refresh\(false\);/);
+  assert.match(fileManager, /onRefresh=\{\(\) => void listing\.refresh\(\)\}/);
+  assert.match(fileManager, /else if \(command === "refresh"\) await listing\.refresh\(\);/);
   assert.doesNotMatch(app, /refreshing-files/);
   assert.doesNotMatch(app, /primaryItems[\s\S]{0,400}overview/i);
 });
 
-test("Manage folders has a Done exit and an Escape exit back to the previous mode", () => {
-  // Done and Escape return to the mode the person was in before opening
-  // Manage folders; Escape defers to an open menu, dialog, or modal.
-  assert.match(app, /const modeBeforeManagingRef = useRef<ConnectedFolderRailMode>/);
-  assert.match(app, /if \(activeMode !== "connected-folders"\) modeBeforeManagingRef\.current = activeMode;/);
-  assert.match(app, /function leaveManageFolders\(\): void \{\s*selectRailMode\(modeBeforeManagingRef\.current\);/);
-  assert.match(app, /onKeyDown=\{activeMode === "connected-folders" \? leaveManageFoldersOnEscape : undefined\}/);
-  assert.match(app, /event\.currentTarget\.querySelector\('\[aria-expanded="true"\]'\)/);
-  assert.match(app, /closest\?\.\('\[role="menu"\], \[role="dialog"\]'\)/);
-  assert.match(app, /<ConnectedFoldersPane [^\n]*onDone=\{leaveManageFolders\}/);
-  assert.match(connectedFolderPanes, /<button className="connected-folders-pane-done" type="button" onClick=\{onDone\}>Done<\/button>/);
-  // The header looks the same while managing: the menu entry, not the
-  // trigger, marks Manage folders as current.
-  assert.match(connectedFolderChrome, /aria-current=\{managingConnectedFolders \? "true" : undefined\}/);
-  assert.doesNotMatch(connectedFolderChrome, /managingConnectedFolders \? "page"/);
+test("the Connected Folder name editor labels its save while saving", () => {
   assert.match(connectedFolderChrome, /aria-label=\{saving \? "Saving Name" : undefined\}/);
-});
-
-test("file attachment requests stay bound to one Connected Folder–owned Chat tab", () => {
-  assert.match(app, /setContextRequest\(\{\s*id:[^}]+connectedFolderId:\s*connectedFolder\.id,\s*surfaceTabId\s*\}\)/);
-  assert.match(app, /contextPathRequest=\{chatContextRequestForTab\(contextRequest,\s*targetConnectedFolder\.id,\s*tab\.id\)\}/);
-  assert.doesNotMatch(app, /contextPathRequest=\{active\s*&&\s*targetConnectedFolder\.id\s*===\s*connectedFolder\.id\s*\?\s*contextRequest/);
 });
 
 test("Markdown image policy embeds only CSP-compatible sources and links remote HTTPS images", () => {
@@ -205,7 +164,7 @@ test("Connected Folder operation tokens reject stale completions even after swit
   }
 });
 
-test("new-Chat Connected Folder menu has deterministic roving keyboard navigation", () => {
+test("menu roving keyboard navigation is deterministic", () => {
   assert.equal(nextMenuItemIndex(-1, 3, "ArrowDown"), 0);
   assert.equal(nextMenuItemIndex(-1, 3, "ArrowUp"), 2);
   assert.equal(nextMenuItemIndex(2, 3, "ArrowDown"), 0);
@@ -213,19 +172,6 @@ test("new-Chat Connected Folder menu has deterministic roving keyboard navigatio
   assert.equal(nextMenuItemIndex(1, 3, "Home"), 0);
   assert.equal(nextMenuItemIndex(1, 3, "End"), 2);
   assert.equal(nextMenuItemIndex(0, 0, "ArrowDown"), null);
-
-  assert.match(tabBar, /aria-controls="new-chat-connected-folder-menu"/);
-  assert.match(tabBar, /onBlurCapture=/);
-  assert.match(tabBar, /event\.key !== "Escape"[\s\S]*?menuButtonRef\.current\?\.focus\(\)/);
-  assert.match(tabBar, /nextMenuItemIndex\(currentIndex,\s*items\.length/);
-});
-
-test("persistent Connected Folder menu has deterministic roving keyboard navigation", () => {
-  assert.match(connectedFolderChrome, /aria-controls=\{switcherId\}/);
-  assert.match(connectedFolderChrome, /onBlurCapture=/);
-  assert.match(connectedFolderChrome, /aria-label="Connected Folder menu"/);
-  assert.match(connectedFolderChrome, /nextMenuItemIndex\(currentIndex,\s*items\.length/);
-  assert.match(connectedFolderChrome, /event\.key !== "Escape"[\s\S]*?switchTriggerRef\.current\?\.focus\(\)/);
 });
 
 function functionBody(source: string, name: string): string {
@@ -239,33 +185,8 @@ async function read(relativePath: string): Promise<string> {
   return readFile(join(root, relativePath), "utf8");
 }
 
-test("the Connected Folder–owned Automations rail entry sits after History, shows only when an automation touches the Connected Folder, and lists them in the left pane", () => {
-  // docs/automations.md, F15 as amended 2026-09-24: Settings → Automations
-  // stays the management home; the Connected Folder view is a read-mostly window.
-  assert.match(connectedFolderChrome, /\{primaryItems\.map[\s\S]*?\)\)\}\s*\{automations \? \(/);
-  assert.match(connectedFolderChrome, /\{automations \? \([\s\S]*?onClick=\{\(\) => onModeChange\("automations"\)\}[\s\S]*?Flash24Filled[\s\S]*?<span className="connected-folder-rail-label">Automations<\/span>[\s\S]*?\) : null\}\s*\{surfaces\.length \|\| apps\.length \? <span className="connected-folder-rail-app-divider"/);
-  assert.match(app, /const folderAutomations = useFolderAutomations\(connectedFolder\.id, Boolean\(fixture\)\);/);
-  assert.match(app, /automations=\{hasFolderAutomations \? \{ active: !sidebarCollapsed && activeMode === "automations" \} : null\}/);
-  // 2026-10-11: like Files, the rail button shows a list in the left pane and
-  // never opens a tab itself; clicking an automation opens its own tab.
-  assert.doesNotMatch(app, /openConnectedFolderAutomationsSurfaceTab\(connectedFolder\)/);
-  assert.match(app, /\{activeMode === "automations" \? <ConnectedFolderAutomationsNavigator automations=\{folderAutomations\.byConnectedFolder\[connectedFolder\.id\]\}[\s\S]*?onOpen=\{\(automation\) => tabs\.openConnectedFolderAutomationSurfaceTab\(connectedFolder, automation\)\}/);
-  assert.match(app, /tab\.kind === "connected-folder-automations" \|\| tab\.kind === "connected-folder-automation" \? \(\s*<ConnectedFolderAutomationsPane[\s\S]*?automationId: tab\.automationId[\s\S]*?onOpenAllAutomations=\{\(\) => onOpenSettings\("automations"\)\}/);
-  assert.match(app, /return \(\["files", "chats", "history", "automations"\] as ConnectedFolderRailMode\[\]\)\.includes/);
-  assert.match(app, /if \(folderAutomationsLoaded && !hasFolderAutomations\) setActiveMode\("files"\);/, "the pane falls back to Files when nothing is automated here");
-});
-
  test("Keyboard Shortcuts shares Settings navigation and the rail has no shortcuts button", () => {
   assert.match(desktopDialogs[0] ?? "", /id: "shortcuts", label: "Shortcut Keys"/);
-  // Settings passes the window's layout, so the file manager lists its own keys.
-  assert.match(desktopDialogs[0] ?? "", /<KeyboardShortcutsPane layout=\{layout\} \/>/);
   assert.match(app, /openKeyboardShortcuts = useCallback\(\(\) => openSettings\("shortcuts"\)/);
   assert.doesNotMatch(connectedFolderChrome, /onOpenKeyboardShortcuts|<span>Shortcuts<\/span>/);
  });
-
-test("app and Extension rail buttons show their left pane and leave opening tabs to a click inside it", () => {
-  const selectRailMode = /function selectRailMode\(mode: ConnectedFolderRailMode\): void \{([\s\S]*?)\n  \}/.exec(app)?.[1] ?? "";
-  assert.ok(selectRailMode, "selectRailMode is found");
-  assert.doesNotMatch(selectRailMode, /openExtensionSurfaceTab|openRestrictedApp/, "a rail click never opens an Extension or app tab");
-  assert.match(app, /<ExtensionSurfacePane surface=\{activeSurface\}[\s\S]*?onOpenView=\{\(view\) => tabs\.openExtensionSurfaceTab\(connectedFolder, activeSurface, view\)\}/);
-});

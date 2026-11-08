@@ -19,7 +19,6 @@ const { DesktopSettingsModal } = await import("../web-local/src/components/modal
 assets.deregister();
 const { useRestrictedApps } = await import("../web-local/src/hooks/useRestrictedApps.js");
 const { useApplicationAppearance } = await import("../web-local/src/hooks/useApplicationAppearance.js");
-const { useSurfaceTabs } = await import("../web-local/src/hooks/useSurfaceTabs.js");
 
 const source = { id: "source", name: "App source", connectedFolderRoot: "/synthetic/source" } as ConnectedFolderSummary;
 const target = { id: "target", name: "App installation", connectedFolderRoot: "/synthetic/target" } as ConnectedFolderSummary;
@@ -101,7 +100,7 @@ test("each Connected Folder group in Settings Apps opens that Connected Folder's
   assert.deepEqual(opened, [[target.id, undefined]]);
 });
 
-test("an app result file leaves both Settings dialogs and activates the installation's Connected Folder", async (t) => {
+test("an app result file leaves both Settings dialogs and names the installation's Connected Folder", async (t) => {
   const dom = await createDomHarness();
   const originalFetch = globalThis.fetch;
   t.after(async () => { await dom.cleanup(); globalThis.fetch = originalFetch; });
@@ -132,19 +131,14 @@ test("an app result file leaves both Settings dialogs and activates the installa
   function Screen() {
     const appearance = useApplicationAppearance({ fixtureMode: true });
     const [settingsOpen, setSettingsOpen] = useState(true);
-    const [activeConnectedFolder, setActiveConnectedFolder] = useState(unrelated);
-    const tabs = useSurfaceTabs({ connectedFolder: activeConnectedFolder, connectedFolders, fixtureMode: true, onSwitchConnectedFolder: setActiveConnectedFolder });
-    const selectedTab = tabs.surfaceTabs.find((tab) => tab.id === tabs.activeSurfaceTabId);
     return createElement("main", null,
       createElement("button", { id: "shell-navigation" }, "Files"),
-      createElement("output", { "data-active-connected-folder": activeConnectedFolder.id }, selectedTab?.kind === "file" ? selectedTab.path : "Chat"),
       settingsOpen ? createElement(DesktopSettingsModal, {
-        appearance, connectedFolder: activeConnectedFolder, connectedFolders, restrictedApps: installed, initialPage: "apps", updateStatus: null,
+        appearance, connectedFolder: unrelated, connectedFolders, restrictedApps: installed, initialPage: "apps", updateStatus: null,
         agentStatus: { configured: true, ready: true } as AgentStatus, onAgentConfigured() {}, onClose: () => setSettingsOpen(false),
         onOpenAppResultFile(connectedFolderId, path) {
           opened.push([connectedFolderId, path]);
           setSettingsOpen(false);
-          tabs.openFileSurfaceTab(connectedFolders.find((connectedFolder) => connectedFolder.id === connectedFolderId)!, path);
         },
       }) : null);
   }
@@ -157,8 +151,6 @@ test("an app result file leaves both Settings dialogs and activates the installa
   await dom.act(() => dom.container.querySelector<HTMLButtonElement>('[aria-label="Worker result files"] button')!.click());
   await dom.waitFor(() => !dom.container.querySelector('[role="dialog"]'));
   assert.deepEqual(opened, [[target.id, "exports/comparison.md"]]);
-  assert.equal(dom.container.querySelector("output")?.getAttribute("data-active-connected-folder"), target.id);
-  assert.equal(dom.container.querySelector("output")?.textContent, "exports/comparison.md");
   assert.notEqual(dom.container.querySelector<HTMLElement>("#shell-navigation")!.inert, true);
 });
 
@@ -206,7 +198,7 @@ test("a stale saved Connected Folder cannot fetch apps before bootstrap validate
   await dom.settle();
   assert.deepEqual(appReads, [], "the stale persisted selection has not been admitted by bootstrap");
   await dom.act(() => completeBootstrap(Response.json({ connectedFolders: [], agent: { configured: false, ready: false } })));
-  await dom.waitFor(() => Boolean(dom.container.querySelector(".onboarding-flow")));
+  await dom.waitFor(() => Boolean(dom.container.querySelector(".fm-welcome-shell")));
   assert.deepEqual(appReads, [], "the removed Connected Folder is never fetched after the registry is known");
   assert.equal(dom.container.querySelector('[role="alert"]'), null);
 });

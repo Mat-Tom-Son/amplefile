@@ -6,7 +6,7 @@ import test from "node:test";
 import { useBootstrapRefresh } from "../web-local/src/hooks/useBootstrapRefresh.js";
 import { useModelConfigurationRevision } from "../web-local/src/hooks/useModelConfigurationRevision.js";
 import { useRestrictedApps } from "../web-local/src/hooks/useRestrictedApps.js";
-import { useConnectedFolderTree } from "../web-local/src/hooks/useConnectedFolderTree.js";
+import { useFolderListing } from "../web-local/src/components/file-manager/useFolderListing.js";
 import type { ConnectedFolderSummary } from "../web-local/src/types.js";
 import { createDomHarness } from "./support/dom.js";
 
@@ -63,19 +63,6 @@ test("app hints wait for the updated registry and never requery removed Connecte
   await dom.act(async () => { stream.enqueue(new TextEncoder().encode('data: {"type":"apps"}\n\n')); await new Promise(setImmediate); });
   assert.equal(reads.filter((path) => path.includes("/deleted/")).length, 1);
   assert.equal(dom.container.textContent, "survivor");
-});
-
-test("removing a Connected Folder tree cancels pending error delivery to the global banner", async (t) => {
-  const dom = await createDomHarness(); t.after(() => dom.cleanup());
-  const previousFetch = globalThis.fetch; t.after(() => { globalThis.fetch = previousFetch; });
-  let finish!: (response: Response) => void;
-  globalThis.fetch = (async (input, init) => String(input).endsWith("/api/events") ? closedStream(init) : new Promise<Response>((resolve) => { finish = resolve; })) as typeof fetch;
-  const errors: Array<string | null> = [];
-  function Tree() { useConnectedFolderTree(connectedFolder("deleted"), (error) => errors.push(error)); return null; }
-  await dom.render(createElement(Tree));
-  await dom.render(null);
-  await dom.act(() => finish(Response.json({ error: "Connected Folder not found" }, { status: 404 })));
-  assert.deepEqual(errors, []);
 });
 
 test("an external agent hint refreshes draft models while existing Chat sessions keep their model", async (t) => {
@@ -282,7 +269,7 @@ test("file monitoring re-queries edits made while a multiplex connection drains"
   const { createEventSource } = await import("../web-local/src/lib/api.js");
   const dom = await createDomHarness(); const previousFetch = globalThis.fetch;
   t.after(async () => { await dom.cleanup(); globalThis.fetch = previousFetch; });
-  let version = "before.txt"; let connections = 0; let extra: ReturnType<typeof createEventSource> | undefined;
+  let version = "before.txt"; let connections = 0; let reads = 0; let extra: ReturnType<typeof createEventSource> | undefined;
   t.after(() => extra?.close());
   globalThis.fetch = (async (input, init) => {
     if (String(input) === "/api/events") return new Response(new ReadableStream({ start(controller) {
@@ -293,11 +280,13 @@ test("file monitoring re-queries edits made while a multiplex connection drains"
         controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ subscriptionId: item.id, ready: true })}\n\n`));
       }
     } }));
+    reads++;
     return Response.json({ tree: [{ kind: "file", path: version, name: version }] });
   }) as typeof fetch;
-  function Tree() { const state = useConnectedFolderTree(connectedFolder("lab"), () => {}); return createElement("output", null, state.tree.map((item) => item.name).join(",")); }
+  function Tree() { const state = useFolderListing({ kind: "connected-folder", id: "lab" }, ""); return createElement("output", null, state.entries.map((item) => item.name).join(",")); }
   await dom.render(createElement(Tree));
-  await dom.waitFor(() => dom.container.textContent === "before.txt");
+  // The first ready's requery has landed, so a later read can only come from the reconnect's ready.
+  await dom.waitFor(() => reads === 2 && dom.container.textContent === "before.txt");
   await dom.act(() => { extra = createEventSource("/api/connected-folders/lab/conversations/background/events"); });
   await dom.waitFor(() => connections === 2 && dom.container.textContent === "written-during-drain.txt");
 });

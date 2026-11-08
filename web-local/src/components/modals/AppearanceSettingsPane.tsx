@@ -3,7 +3,6 @@ import type { CSSProperties, ReactNode } from "react";
 import { applicationPalettes, builtInAppearancePresets, defaultApplicationAppearance, type ApplicationAppearance, type AppearancePreset } from "../../../../src/shared/application-appearance.js";
 import type { ApplicationAppearanceController } from "../../hooks/useApplicationAppearance";
 import { maximumAppearanceImportBytes } from "../../lib/application-appearance-store";
-import { useAppLayout, writeAppLayout, type AppLayout } from "../../lib/app-layout";
 import { typographyFontOptionsForPlatform } from "../../constants";
 import { desktopPlatform } from "../../lib/platform";
 import type { ConnectedFolderSummary } from "../../types";
@@ -16,7 +15,6 @@ export function AppearanceSettingsPane({ appearance, connectedFolder, onCustomiz
   interfaceExtra?: ReactNode;
 }) {
   const { preferences: p, store } = appearance;
-  const layout = useAppLayout();
   const [presetName, setPresetName] = useState("");
   const [presetError, setPresetError] = useState<string | null>(null);
   const [presetBusy, setPresetBusy] = useState(false);
@@ -57,15 +55,12 @@ export function AppearanceSettingsPane({ appearance, connectedFolder, onCustomiz
     <section className="appearance-settings-section" aria-labelledby="appearance-preview-title">
       <div className="appearance-settings-section-heading"><h3 id="appearance-preview-title">Preview</h3><div className="appearance-settings-actions"><button type="button" disabled={!appearance.canUndo} onClick={store.undo}>Undo</button><button type="button" disabled={atDefaults} onClick={store.reset}>Reset</button></div></div>
       {appearance.error ? <p className="appearance-settings-error" role="alert">{appearance.error}</p> : null}
-      {layout === "file-manager" ? <FileManagerPreview /> : <div className="appearance-settings-preview" aria-label="Appearance preview">
-        <div className="appearance-preview-files"><span>Workshop</span><div>Notes.md</div><div>Next steps.pdf</div></div>
-        <div className="appearance-preview-chat"><p className="appearance-preview-user">Plan a workshop for 12 people.</p><div className="appearance-preview-answer"><p>Your plan is ready. The workshop starts at 10 AM, with a break at noon.</p><code>workshop-plan.md</code></div></div>
-      </div>}
+      <FileManagerPreview />
       <h3 className="appearance-settings-presets-heading" id="appearance-presets-title">Presets</h3>
       <div className="appearance-settings-presets" role="group" aria-labelledby="appearance-presets-title">
         {builtInAppearancePresets.map(({ name, ...patch }) => {
-          // In the file manager, Original is the design's own Finder colors.
-          const fileManagerOriginal = layout === "file-manager" && patch.palette === "original";
+          // Original is the file manager design's own Finder colors.
+          const fileManagerOriginal = patch.palette === "original";
           const grounds = fileManagerOriginal ? fileManagerOriginalGrounds[appearance.theme] : applicationPalettes[patch.palette][appearance.theme];
           const accent = fileManagerOriginal ? fileManagerBlue : applicationPalettes[patch.palette].accent;
           const active = p.palette === patch.palette;
@@ -87,7 +82,6 @@ export function AppearanceSettingsPane({ appearance, connectedFolder, onCustomiz
     </section>
     <section className="appearance-settings-section" aria-labelledby="appearance-interface-title">
       <h3 id="appearance-interface-title">Interface</h3>
-      <Choice<AppLayout> label="Layout" value={layout} onChange={writeAppLayout} options={[["classic", "Classic"], ["file-manager", "File Manager"]]} />
       <Choice label="App Font" value={p.font === "stable" && !fontOptions.some((option) => option.value === "stable") ? "default" : p.font} onChange={(font) => update({ font })} options={fontOptions.map((option) => [option.value, option.label])} />
       <Choice label="Text Size" value={p.textSize} onChange={(textSize) => update({ textSize })} options={[["compact", "Compact · 14 px"], ["standard", "Standard · 15 px"], ["comfortable", "Comfortable · 16 px"], ["large", "Large · 18 px"]]} />
       <Choice label="List Density" value={p.density} onChange={(density) => update({ density })} options={[["compact", "Compact"], ["standard", "Standard"], ["spacious", "Spacious"]]} />

@@ -615,10 +615,11 @@ Text Checks use the AmpleFile agent's configured model in a bounded review reque
 
 Owner direction: AmpleFile is being rebuilt around a smart file manager that
 looks native to macOS and Finder. The approved mockup is the design reference.
-It is built beside the classic layout and chosen in **Settings → Appearance →
-Layout** (Classic or File Manager, stored on this Mac; `?layout=file-manager`
-previews it). It uses the same local API, file events, and desktop bridge as
-Files, so a native front end could later sit on the same server.
+It is the only window layout: the classic rail-and-tabs layout, with its page
+and browser tabs, in-window app views, and App Studio, was removed on
+2026-11-07, before the first AmpleFile release (owner decision), and there is
+no Layout setting. It uses the same local API, file events, and desktop bridge,
+so a native front end could later sit on the same server.
 
 - **Window:** a sidebar, a toolbar (Back and Forward, the folder's name, Icons
   or List, **Organize** at a Connected Folder's top level, the panel button, Search),
@@ -642,11 +643,11 @@ Files, so a native front end could later sit on the same server.
   colors, the other palettes, a chosen accent (which also tints plain folders,
   as on the Mac), the app font, text size, list density, contrast,
   transparency, and message style apply to the window and its dialogs, and the
-  page's preview is a small file manager. Every page is the same Settings page the classic layout uses,
-  and its buttons open their targets here: an app's build Chat opens in the
+  page's preview is a small file manager. Settings' buttons open their targets
+  in the file manager: an app's build Chat opens in the
   panel, a result file is shown selected where it lives,
-  and an app change starts a Chat with the request drafted. App Studio stays in
-  the classic layout, and Shortcut Keys lists the file manager's own keys.
+  and an app change starts a Chat with the request drafted. Shortcut Keys
+  lists the file manager's keys.
   **Customize Connected Folder** keeps Name, Icon, and Color; the file manager draws
   no banner, so Banner and Title are left out, and a chosen icon is stamped on
   the Connected Folder's folder as macOS draws a symbol on a folder.

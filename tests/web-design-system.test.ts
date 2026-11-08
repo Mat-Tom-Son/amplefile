@@ -22,8 +22,8 @@ const [
   customizationCss,
   desktopSettingsSource,
   capabilitiesSource,
-  surfaceTabsSource,
   chatPanelSource,
+  fileManagerViewSource,
 ] = await Promise.all([
   readRenderer("App.tsx"),
   readRenderer("main.tsx"),
@@ -37,84 +37,24 @@ const [
   readRenderer("styles.css"),
   readRenderer("components/modals/DesktopSettingsModal.tsx"),
   readRenderer("components/panes/CapabilitiesPane.tsx"),
-  readRenderer("hooks/useSurfaceTabs.ts"),
   readRenderer("components/chat/ChatPanel.tsx"),
+  readRenderer("components/file-manager/FileManagerView.tsx"),
 ]);
 
-test("Files is the first primary surface and Connected Folder actions live in the persistent header menu", () => {
-  const primaryItems = constArrayBody(connectedFolderChromeSource, "primaryItems");
-  const primaryModes = [...primaryItems.matchAll(/mode:\s*"([^"]+)"/g)].map((match) => match[1]);
-
-  assert.deepEqual(primaryModes, ["files", "chats", "history"]);
-  assert.doesNotMatch(primaryItems, /mode:\s*"connected-folders"/);
-  assert.doesNotMatch(primaryItems, /mode:\s*"library"/, "Library belongs in the Connected Folder–owned tab canvas, not the permanent rail");
-  assert.doesNotMatch(primaryItems, /mode:\s*"capabilities"/, "infrequent tool administration must not occupy the primary rail");
-
-  assert.doesNotMatch(connectedFolderChromeSource, /connected-folder-rail-connected-folder-selector|connected-folder-rail-connected-folder-copy/);
-  assert.match(connectedFolderChromeSource, /primaryItems\.map/);
-  assert.match(connectedFolderChromeSource, /<span>Connect Folder<\/span>/);
-  assert.match(connectedFolderChromeSource, /<span>New Connected Folder<\/span>/);
-  assert.match(connectedFolderChromeSource, /<span>Manage Connected Folders<\/span>/);
-  assert.match(connectedFolderChromeSource, /aria-current=\{shownMode === item\.mode \? "page" : undefined\}/, "the active icon-only destination must be announced");
-  assert.match(connectedFolderChromeSource, /aria-label=\{item\.ariaLabel\}/, "icon-only destinations need accessible names");
-  assert.doesNotMatch(connectedFolderChromeSource, /<span>connected-folder<\/span>|connected-folder-rail-connected-folder-caret/);
-  assert.doesNotMatch(primaryItems, /ChevronRight20Regular/);
-});
-
-test("pane navigation uses Fluent icons with the requested Blocks icon for Skills & Extensions", () => {
-  for (const [name, source] of [
-    ["connectedFolderChrome.tsx", connectedFolderChromeSource],
-    ["connectedFolderPanes.tsx", connectedFolderPanesSource],
-  ] as const) {
-    const navigationSource = name === "connectedFolderChrome.tsx" ? source.replace('import { Blocks } from "lucide-react";', "") : source;
-    assert.doesNotMatch(navigationSource, /from\s+["']lucide-react["']/, `${name} must keep the Blocks exception limited to Skills & Extensions`);
-    assert.match(source, /from\s+["']@fluentui\/react-icons["']/, `${name} must use Fluent icons`);
-  }
-
-  const requiredNavPairs = [
-    "DocumentFolder24",
-    "ChatMultiple24",
-    "History24",
-  ];
-  for (const icon of requiredNavPairs) {
-    assert.match(connectedFolderChromeSource, new RegExp(`\\b${icon}Regular\\b`), `${icon} needs a regular state`);
-    assert.match(connectedFolderChromeSource, new RegExp(`\\b${icon}Filled\\b`), `${icon} needs a filled active state`);
-  }
-
-  assert.match(connectedFolderChromeSource, /professional-connected-folder-rail/);
-  assert.match(connectedFolderChromeSource, /<Blocks size=\{24\} strokeWidth=\{1\.5\} aria-hidden="true" \/>/);
-  // The Add button opens the Skills & Extensions popup directly; there is no Add menu (2026-09-25).
-  assert.match(connectedFolderChromeSource, /aria-label="Skills & Extensions"/);
-  assert.match(connectedFolderChromeSource, /onClick=\{\(\) => onOpenSkillsExtensions\("installed"\)\}/);
-  assert.doesNotMatch(connectedFolderChromeSource, /id="connected-folder-add-menu"|chooseAddAction|onOpenLibrary|onOpenApps/);
-  assert.doesNotMatch(connectedFolderChromeSource, /aria-label="agent"/);
-  assert.doesNotMatch(connectedFolderChromeSource, /mode:\s*"setup"/);
-  assert.doesNotMatch(connectedFolderChromeSource, /<Bot\w*[^>]*>.*agent/s);
-});
-
 test("the Library is retired from the desktop (2026-09-25)", () => {
-  const primaryItems = constArrayBody(connectedFolderChromeSource, "primaryItems");
-  assert.doesNotMatch(primaryItems, /mode:\s*"library"/);
   assert.doesNotMatch(connectedFolderChromeSource, /Your Library|onOpenLibrary/);
   assert.doesNotMatch(appSource, /LibraryPane|openLibrary\(|libraryTree|migrateLegacyLibraryMode/);
   assert.doesNotMatch(connectedFolderPanesSource, /export function LibraryPane|From Library/);
-  assert.doesNotMatch(surfaceTabsSource, /migrateLegacyLibrary|"library"/);
 });
 
 test("Skills & Extensions opens as a popup from the Add button, and apps are managed in Settings", () => {
-  const primaryItems = constArrayBody(connectedFolderChromeSource, "primaryItems");
-  assert.doesNotMatch(primaryItems, /mode:\s*"capabilities"/);
-  assert.doesNotMatch(primaryItems, /mode:\s*"skills"|mode:\s*"extensions"/);
   // The rail's Add button opens one popup: Skills & Extensions. Discovery and
   // management are the same place; apps are managed in Settings → Apps and
   // built by asking a Worker in a Chat, so nothing here seeds a Chat.
   assert.doesNotMatch(connectedFolderChromeSource, /Browse Skills &amp; Extensions|Manage agent tools|Build an app|Your Library|<strong>Apps<\/strong>/);
-  assert.match(appSource, /skillsExtensionsView \? <SkillsExtensionsModal/);
-  assert.match(appSource, /onOpenSkillsExtensions=\{setSkillsExtensionsView\}/);
+  assert.match(fileManagerViewSource, /skillsFor \? <SkillsExtensionsModal[^>]*initialView="installed"/);
   assert.doesNotMatch(appSource, /startAppBuildChat|onBuildApp=|<ConnectedFolderAppsPane|openConnectedFolderAppsSurfaceTab|openAssistantToolsSurfaceTab/);
-  assert.match(appSource, /run: \(\) => onOpenSettings\("apps"\)/);
   assert.match(chatPanelSource, /textarea\.setSelectionRange\(end, end\)/);
-  assert.doesNotMatch(surfaceTabsSource, /"assistant-tools"|"connected-folder-apps"|"library"/);
   assert.match(capabilitiesSource, /<h1>Skills &amp; Extensions<\/h1>/);
   // Where a tool lives is one explicit decision in the review step, shown as
   // the AmpleFile agent above folders hierarchy rather than a bare Personal/This folder toggle.
@@ -130,7 +70,6 @@ test("Skills & Extensions opens as a popup from the Add button, and apps are man
   assert.match(capabilitiesSource, /function GitHubMark/);
   assert.doesNotMatch(capabilitiesSource, />Review<\/button>|Install…/);
   assert.doesNotMatch(capabilitiesSource, /Installation location|Install to</);
-  assert.match(appSource, /setSkillsExtensionsView\("installed"\)/);
   assert.doesNotMatch(appSource, /activeMode === "capabilities"[\s\S]*?<CapabilitiesPane/);
   assert.match(capabilitiesSource, /Installed[\s\S]*Discover/);
   assert.match(capabilitiesSource, /Search installed tools/);
@@ -158,7 +97,6 @@ test("Skills & Extensions opens as a popup from the Add button, and apps are man
   // Sandboxed apps are a different lane with their own authority model: they
   // live in the Connected Folder–owned Apps tab, never inside Skills & Extensions.
   assert.doesNotMatch(capabilitiesSource, /RestrictedAppsSection|restrictedApps|"Apps"/);
-  assert.match(appSource, /id: "go:connected-folder-apps"/);
   // Catalog listings keep provenance readable in text, including its limit.
   assert.doesNotMatch(capabilitiesSource, /capabilities-external-host|"GitHub"|capabilities-official-badge/);
   assert.match(capabilitiesSource, /safety-reviewed\."\>First-Party \/ Reference</);
@@ -197,7 +135,6 @@ test("agent configuration lives in Settings instead of the rail", () => {
   assert.match(desktopSettingsSource, /id:\s*"ai-models"[\s\S]*?label:\s*"AI Models"/);
   assert.match(desktopSettingsSource, /<AiModelsPane[\s\S]*?embedded/);
   assert.match(appSource, /openSettings\("ai-models", scope, true\)/);
-  assert.match(appSource, /onOpenSettings\("ai-models", "connected-folder", true, targetConnectedFolder\.id\)/);
   assert.doesNotMatch(appSource, /activeMode\s*===\s*"setup"/);
   assert.doesNotMatch(connectedFolderChromeSource, /agent ·/);
 });
@@ -246,95 +183,7 @@ test("every referenced elevation and radius token is defined", () => {
   }
 });
 
-test("every used P0 pane class has a CSS selector", () => {
-  const p0Classes = [
-    "ai-models-settings-section",
-    "ai-models-scope-control",
-    "ai-models-refresh",
-    "ai-models-form-fields",
-    "security-note",
-    "trust-banner",
-    "install-panel",
-    "scope-toggle",
-    "package-input",
-    "card-grid",
-    "resource-card",
-    "empty-state",
-    "tool-details",
-    "tool-list",
-    "loading-row",
-    "inline-error",
-    "diagnostics",
-    "history-list",
-    "history-pane-actions",
-    "chat-connected-folder-heading",
-    "professional-surface",
-    "professional-card",
-    "ui-control",
-    "professional-field",
-    "professional-notice",
-    "professional-install-panel",
-    "professional-card-grid",
-    "professional-empty-state",
-  ];
-  const staticClasses = staticClassTokens(connectedFolderPanesSource);
-  const combinedCss = stripCssComments(`${legacyCss}\n${surfacesCss}`);
-  const usedP0Classes = p0Classes.filter((className) => staticClasses.has(className));
-  const missingSelectors = usedP0Classes.filter((className) => !hasClassSelector(combinedCss, className));
-
-  assert.ok(usedP0Classes.length > 0, "the P0 contract must cover classes used by spacePanes");
-  assert.deepEqual(missingSelectors, [], `P0 classes without CSS selectors: ${missingSelectors.join(", ")}`);
-});
-
-test("professional shell keeps compact navigation and the persistent Connected Folder identity header", () => {
-  const layoutRule = cssRuleBody(shellCss, ".app-shell .connected-folder-layout");
-  const modePaneRule = cssRuleBody(shellCss, ".app-shell .connected-folder-mode-pane");
-  const railRule = cssRuleBody(shellCss, ".app-shell .professional-connected-folder-rail");
-  const navButtonRule = cssRuleBody(shellCss, ".app-shell .professional-connected-folder-rail .connected-folder-rail-button");
-  const compactShellCss = shellCss.slice(shellCss.indexOf("@media (max-width: 820px)"));
-  const compactRailRule = cssRuleBody(compactShellCss, ".app-shell .professional-connected-folder-rail");
-  const compactNavRule = cssRuleBody(compactShellCss, ".app-shell .professional-connected-folder-rail .connected-folder-rail-nav");
-  const compactAccountRule = cssRuleBody(compactShellCss, ".app-shell .professional-connected-folder-rail .connected-folder-rail-account");
-  const shortDesktopShellCss = shellCss.slice(shellCss.indexOf("@media (max-height: 720px)"));
-  const shortDesktopRailRule = cssRuleBody(shortDesktopShellCss, ".app-shell .professional-connected-folder-rail");
-  const paneHeaderRule = cssRuleBody(shellCss, ".app-shell .connected-folder-layout .connected-folder-mode-pane .professional-pane-header");
-  const connectedFoldersPaneRule = cssRuleBody(surfacesCss, ".connected-folder-pane-content.professional-connected-folders");
-
-  assert.match(modePaneRule, /border:\s*0/);
-  assert.match(railRule, /border:\s*0/);
-  assert.match(paneHeaderRule, /border:\s*0/);
-  assert.match(paneHeaderRule, /background:\s*var\(--ui-surface\)/);
-  for (const structuralRule of [modePaneRule, railRule, paneHeaderRule]) {
-    assert.doesNotMatch(structuralRule, /--connected-folder-(?:selection|custom)-/, "structural borders must stay independent of Connected Folder accent colors");
-  }
-
-  assert.ok(maxPxValue(customPropertyValue(layoutRule, "--connected-folder-rail-width")) <= 180, "desktop rail must remain compact");
-  assert.equal(maxPxValue(customPropertyValue(layoutRule, "--connected-folder-identity-header-height")), 112, "the Connected Folder banner retains the approved personality and geometry");
-  assert.ok(pxDeclaration(navButtonRule, "min-height") <= 48, "primary navigation targets must stay compact");
-  assert.equal(pxDeclaration(navButtonRule, "width"), pxDeclaration(navButtonRule, "min-height"), "primary navigation uses square icon-only targets");
-  assert.match(shellCss, /\.professional-connected-folder-rail \.connected-folder-rail-label\s*\{[\s\S]*?display:\s*none/, "the desktop rail is icon-only; labels live in tooltips and accessible names");
-  assert.match(compactShellCss, /\.connected-folder-rail-label\s*\{[\s\S]*?display:\s*block/, "the narrow horizontal rail restores text labels");
-  assert.doesNotMatch(`${shellCss}\n${customizationCss}`, /connected-folder-rail-connected-folder-selector|connected-folder-rail-connected-folder-copy|connected-folder-rail-connected-folder-avatar/);
-  assert.match(layoutRule, /--connected-folder-identity-title-size:\s*17px/);
-  assert.match(layoutRule, /--connected-folder-identity-tracking:\s*0\.01em/);
-  assert.match(shortDesktopRailRule, /padding:\s*8px\s+6px\s+6px/, "short desktop layouts must keep navigation compact");
-  assert.match(compactRailRule, /overflow:\s*hidden/, "the narrow rail must contain independent scroll regions");
-  assert.match(compactNavRule, /flex:\s*1\s+1\s+auto/);
-  assert.match(compactNavRule, /overflow-x:\s*auto/, "narrow primary destinations must scroll instead of colliding with tools");
-  assert.match(compactAccountRule, /flex:\s*0\s+0\s+auto/, "Shortcuts and Settings must remain reachable while destinations scroll");
-  assert.doesNotMatch(shellCss, /data-rail-tooltip/, "icon controls use accessible names without persistent hover labels");
-  assert.match(connectedFoldersPaneRule, /scrollbar-gutter:\s*auto/, "the Connected Folders pane must not reserve a dead right-side gutter");
-  assert.match(shellCss, /\.professional-connected-folder-rail \.connected-folder-rail-button svg,[\s\S]*?\{[\s\S]*?width:\s*24px;[\s\S]*?height:\s*24px;/);
-});
-
 test("Connected Folder customization is visible, compact, and separate from structural chrome", () => {
-  assert.match(connectedFolderChromeSource, /"connected-folder-banner-surface"/);
-  assert.match(connectedFolderChromeSource, /"connected-folder-identity-header"/);
-  assert.match(connectedFolderChromeSource, /connected-folder-pane-banner-image/);
-  assert.match(connectedFolderChromeSource, /connectedFolderIdentityStyle\(itemIdentity\)/);
-  assert.match(connectedFolderChromeSource, /<ConnectedFolderIconGlyph icon=\{itemIdentity\.Icon\}/);
-  assert.match(connectedFolderChromeSource, /data-connected-folder-icon=\{itemIdentity\.iconName\}/);
-  assert.match(connectedFolderChromeSource, /<ConnectedFolderBannerPreview/);
   assert.match(connectedFolderChromeSource, /aria-label="Connected Folder color presets"/);
   assert.doesNotMatch(connectedFolderChromeSource, /connectedFolderLookOptions|Connected Folder color pairs/);
   assert.match(connectedFolderChromeSource, /function ConnectedFolderNameEditor/);
@@ -348,46 +197,20 @@ test("Connected Folder customization is visible, compact, and separate from stru
   assert.match(connectedFolderChromeSource, /\}, \[connectedFolderId, identity\.iconName\]\);/);
   assert.doesNotMatch(connectedFolderChromeSource, /Browse all|Show recommended|\$\{connectedFolderIconOptions\.length\}/);
   assert.match(connectedFolderChromeSource, /onResetConnectedFolder/);
-  assert.match(customizationCss, /\.connected-folder-banner-surface\.banner-none/);
 
-  const bannerHeaderRule = cssRuleBody(customizationCss, ".app-shell .connected-folder-layout .connected-folder-mode-pane .professional-pane-header.connected-folder-identity-header");
-  const bannerTitleRule = cssRuleBody(customizationCss, ".app-shell .professional-pane-header.connected-folder-identity-header .connected-folder-pane-current-lockup strong");
-  const previewTitleRule = cssRuleBody(customizationCss, ".connected-folder-appearance-preview-copy strong {");
-  assert.doesNotMatch(bannerHeaderRule, /border:\s*1px/, "banner artwork has no decorative frame");
-  assert.match(bannerTitleRule, /line-height:\s*1\.3/);
-  assert.match(bannerTitleRule, /font-size:\s*var\(--connected-folder-identity-title-size\)/);
-  assert.match(bannerTitleRule, /letter-spacing:\s*var\(--connected-folder-identity-tracking\)/, "the identity title should read as a deliberate display label without replacing the selected font");
-  assert.match(previewTitleRule, /font-size:\s*var\(--connected-folder-identity-title-size\)/, "the appearance preview must match the live identity title scale");
-  assert.match(previewTitleRule, /letter-spacing:\s*var\(--connected-folder-identity-tracking\)/);
-  assert.match(bannerTitleRule, /padding-block:\s*2px/, "identity titles need descender-safe line boxes");
   assert.doesNotMatch(connectedFolderChromeSource, /connected-folder-identity-header-icon|connected-folder-appearance-preview-icon/);
   assert.doesNotMatch(customizationCss, /connected-folder-identity-header-icon|connected-folder-appearance-preview-icon/);
-  assert.match(customizationCss, /\.professional-connected-folder-switcher \.connected-folder-header-switcher-icon[\s\S]*?color:\s*var\(--connected-folder-accent-glyph\)/);
   assert.match(customizationCss, /\.professional-appearance-surface/);
-  assert.match(connectedFolderBannerPreviewSource, /bannerFraming/, "image framing remains part of the real banner preview");
   const colorPickerRule = cssRuleBody(customizationCss, ".app-shell .professional-appearance-surface .connected-folder-color-picker");
   const colorWheelRule = cssRuleBody(customizationCss, ".app-shell .professional-appearance-surface .connected-folder-color-wheel");
-  const colorPairClearRule = cssRuleBody(legacyCss, ".connected-folder-color-pair-clear");
   assert.match(colorPickerRule, /min-height:\s*38px/);
   assert.match(colorPickerRule, /height:\s*auto/, "the custom color wheel must remain inside its control");
   assert.match(colorWheelRule, /width:\s*28px/);
-  assert.match(colorPairClearRule, /padding:\s*0/, "the paired-color clear icon must not overflow its control group");
-  assert.match(connectedFolderChromeSource, /onInput=[\s\S]*?aria-label="Choose Second Banner Color"/);
-  assert.match(customizationCss, /\.connected-folder-banner-surface\.banner-classic[\s\S]*?--connected-folder-banner-secondary-rgb/, "the second color must affect the default banner through its dedicated role");
-  const activeRailMarkerRule = cssRuleBody(customizationCss, ".app-shell .professional-connected-folder-rail .connected-folder-rail-button.active::before");
-  assert.match(activeRailMarkerRule, /background:\s*var\(--connected-folder-accent-indicator(?:,|\))/, "the contrast-solved indicator role must drive the compact active pill");
-  assert.doesNotMatch(activeRailMarkerRule, /box-shadow/, "the active pill must not resurrect the legacy full-row shadow");
-  assert.match(customizationCss, /\.professional-connected-folders \.connected-folder-card-shell\.active[\s\S]*?background:\s*var\(--connected-folder-accent-soft-fill\)/);
-  assert.match(customizationCss, /\.professional-chats \.chat-connected-folder-heading > span:first-child[\s\S]*?color:\s*var\(--connected-folder-accent-glyph\)/);
   assert.match(legacyCss, /\.message\.user \.message-surface/, "the user bubble keeps its semantic style owner");
   assert.match(legacyCss, /\.message-time\s*\{[\s\S]*?color:\s*var\(--ui-text-muted\)/, "message footer metadata uses the neutral appearance role");
   assert.match(connectedFolderIdentitySource, /"--connected-folder-selection-accent":\s*identity\.color/, "transitional aliases must preserve the v1 accent until their consumers are assigned roles");
   assert.match(connectedFolderIdentitySource, /"--connected-folder-selection-border":\s*identity\.borderColor/);
   assert.match(connectedFolderIdentitySource, /"--connected-folder-selection-surface":\s*identity\.softColor/);
-  assert.doesNotMatch(connectedFolderIdentitySource, /"--connected-folder-banner-(?:primary|base)":/, "unused banner string tokens must not be injected at every identity scope");
-  assert.match(connectedFolderBannerPreviewSource, /\(\["light", "dark"\] as const\)\.map/, "the editor must preview both modes together");
-  assert.match(customizationCss, /\.app-shell \.connected-folder-appearance-preview\.preview-light\s*\{[\s\S]*?--connected-folder-banner-base-rgb:\s*255,\s*255,\s*255/, "the light preview must beat the surrounding app theme");
-  assert.match(customizationCss, /\.app-shell \.connected-folder-appearance-preview\.preview-dark\s*\{[\s\S]*?--connected-folder-banner-base-rgb:\s*23,\s*26,\s*33/, "the dark preview must beat the surrounding app theme");
   assert.match(connectedFolderChromeSource, /parseConnectedFolderAppearanceProposal/, "the editor must import the shared bounded proposal");
   assert.match(connectedFolderChromeSource, /createConnectedFolderAppearanceProposal/, "the editor must export the shared bounded proposal");
   assert.doesNotMatch(
@@ -408,64 +231,6 @@ test("Connected Folder customization is visible, compact, and separate from stru
   assert.match(desktopSettingsSource, /from\s+["']@fluentui\/react-icons["']/);
 });
 
-test("Manage Connected Folders is a compact launcher into customization", () => {
-  assert.doesNotMatch(connectedFolderPanesSource, /Where does this work live\?|Use an existing folder or create a clean one|professional-connected-folder-intro/);
-  assert.doesNotMatch(connectedFolderPanesSource, /Turn it into a Connected Folder|Start with a clean folder|professional-connected-folder-action-copy/);
-  assert.match(connectedFolderPanesSource, /className="professional-connected-folder-actions" aria-label="Add a Connected Folder"/);
-  const actionRule = cssRuleBody(surfacesCss, ".professional-connected-folder-actions");
-  assert.match(actionRule, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
-  assert.doesNotMatch(surfacesCss.slice(surfacesCss.indexOf("@container space-pane (max-width: 520px)")), /\.professional-connected-folder-actions,[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/);
-  assert.match(connectedFolderPanesSource, /onClick=\{\(\) => onCustomize\(item\)\}/);
-  assert.doesNotMatch(appSource, /current === "Connected Folders" \? "files" : current/);
-  assert.doesNotMatch(connectedFolderPanesSource, /connected-folder-card-rename|connected-folder-card-customize/);
-  assert.match(connectedFolderPanesSource, /connected-folder-card-delete/);
-  assert.match(connectedFolderPanesSource, /const deletesFolder = item\.location\.storage === "managed"/);
-  assert.match(connectedFolderPanesSource, /aria-label=\{`\$\{deletesFolder \? "Delete" : "Remove"\} \$\{item\.name\}`\}/);
-  assert.doesNotMatch(connectedFolderPanesSource, /"Managed [Ff]older"|"Linked [Ff]older"/);
-  assert.match(connectedFolderPanesSource, /const location = item\.location\.storage === "managed" \? "" : shortFolderLocation\(item\.connectedFolderRoot\);/);
-  assert.match(connectedFolderPanesSource, /<span title=\{item\.connectedFolderRoot \|\| undefined\}>/);
-  assert.match(surfacesCss, /\.app-shell \.professional-connected-folders \.connected-folder-card-actions \.connected-folder-card-delete\s*\{[^}]*color:\s*var\(--ui-text-muted\)/);
-  assert.doesNotMatch(legacyCss, /\.connected-folder-card-actions\s*\{[^}]*linear-gradient/s);
-  assert.match(surfacesCss, /\.professional-connected-folders \.connected-folder-card-main\s*\{[^}]*padding-right:\s*52px/);
-  assert.doesNotMatch(appSource, /Give this Connected Folder a recognizable identity|<h2>Customize \{targetConnectedFolder\.name\}<\/h2>/);
-});
-
-test("the left header is inherited Connected Folder identity on every mode, not a surface title", () => {
-  const headerCall = appSource.match(/<ConnectedFolderPaneHeader[\s\S]*?\/>/)?.[0];
-  assert.ok(headerCall, "App must render the shared Connected Folder identity header");
-  const headerIdentityProps = headerCall.split(" action=")[0]!;
-  assert.match(headerIdentityProps, /connectedFolder=\{connectedFolder\}/);
-  assert.match(headerIdentityProps, /identity=\{identity\}/);
-  assert.doesNotMatch(headerIdentityProps, /switchable=/, "the Connected Folder menu must remain available on management and custom surfaces");
-  assert.doesNotMatch(headerIdentityProps, /title=|paneTitle|onCustomize/);
-
-  assert.match(connectedFolderChromeSource, /<ConnectedFolderBannerTitle identity=\{identity\} name=\{connectedFolder\.name\} caret=\{switcherEnabled\} \/>/);
-  assert.match(connectedFolderChromeSource, /<span className="sr-only">\{detail\}<\/span>/);
-  assert.match(connectedFolderChromeSource, /className="connected-folder-pane-switch-trigger"/);
-  assert.match(connectedFolderChromeSource, /aria-haspopup="menu"/);
-  assert.match(connectedFolderChromeSource, /role="menu" aria-label="Connected Folder menu"/);
-  assert.match(connectedFolderChromeSource, /role="menuitem"/);
-  assert.match(connectedFolderChromeSource, /data-native-view-occluder="true"/);
-  assert.match(connectedFolderChromeSource, /aria-current=\{active \? "page" : undefined\}/);
-  assert.match(connectedFolderChromeSource, /querySelector<HTMLButtonElement>\('\[role="menuitem"\]'\)\?\.focus\(\)/);
-  assert.doesNotMatch(connectedFolderChromeSource, /role=\{switcherEnabled \? "button" : undefined\}/);
-  assert.doesNotMatch(connectedFolderChromeSource, /onClick=\{toggleSwitcher\}[\s\S]{0,180}<ConnectedFolderIconGlyph/);
-  assert.doesNotMatch(connectedFolderChromeSource, /connected-folder-identity-header-icon/);
-  assert.doesNotMatch(connectedFolderChromeSource, /connected-folder-identity-header-text/);
-  assert.doesNotMatch(connectedFolderChromeSource, /Customize Connected Folder.*professional-header-action/s);
-});
-
-test("every left-pane mode keeps content padding below the shared Connected Folder banner", () => {
-  const headerIndex = appSource.indexOf("<ConnectedFolderPaneHeader");
-  const filesContentIndex = appSource.indexOf('activeMode === "files" ? <div className="local-files-panel">');
-  const localFilesRule = cssRuleBody(legacyCss, ".local-files-panel");
-
-  assert.ok(headerIndex >= 0 && filesContentIndex > headerIndex, "the Files content wrapper must render below the shared header");
-  assert.doesNotMatch(appSource, /activeMode === "files" \? "file-panel local-files-panel"/);
-  assert.match(localFilesRule, /flex:\s*1 1 auto/);
-  assert.match(localFilesRule, /padding:\s*12px/);
-});
-
 test("the appearance preview mirrors the Connected Folder header rather than the active surface", () => {
   // Compact, Band and Cover lead with the icon tile; every layout shows the Connected Folder's own name.
   // The preview renders the header's own title component (2026-11-05).
@@ -476,12 +241,6 @@ test("the appearance preview mirrors the Connected Folder header rather than the
 
 async function readRenderer(relativePath: string): Promise<string> {
   return readFile(join(rendererRoot, relativePath), "utf8");
-}
-
-function constArrayBody(source: string, constName: string): string {
-  const match = source.match(new RegExp(`const\\s+${escapeRegExp(constName)}[\\s\\S]*?=\\s*\\[([\\s\\S]*?)\\n\\s*\\];`));
-  assert.ok(match, `could not find ${constName} array`);
-  return match[1];
 }
 
 function functionBody(source: string, functionName: string): string {
@@ -510,28 +269,6 @@ function cssRuleBody(css: string, selector: string): string {
   });
   assert.ok(bodies.length, `could not find CSS selector: ${target}`);
   return bodies.reverse().join("\n");
-}
-
-function customPropertyValue(ruleBody: string, property: string): string {
-  const match = ruleBody.match(new RegExp(`${escapeRegExp(property)}:\\s*([^;]+);`));
-  assert.ok(match, `could not find ${property}`);
-  return match[1];
-}
-
-function maxPxValue(value: string): number {
-  const values = [...value.matchAll(/(\d+(?:\.\d+)?)px/g)].map((match) => Number(match[1]));
-  assert.ok(values.length > 0, `expected a pixel value in: ${value}`);
-  return Math.max(...values);
-}
-
-function pxDeclaration(ruleBody: string, property: string): number {
-  const match = ruleBody.match(new RegExp(`${escapeRegExp(property)}:\\s*(\\d+(?:\\.\\d+)?)px\\s*;`));
-  assert.ok(match, `could not find pixel declaration ${property}`);
-  return Number(match[1]);
-}
-
-function stripCssComments(css: string): string {
-  return css.replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
 function escapeRegExp(value: string): string {

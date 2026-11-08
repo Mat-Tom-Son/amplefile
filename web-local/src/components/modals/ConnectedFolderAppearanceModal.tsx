@@ -16,10 +16,10 @@ export function ConnectedFolderAppearanceModal({ onRenameConnectedFolder, onClos
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useModalDialog({ onClose, initialFocusRef: closeRef });
-  const sections = appearance.bannerControls === false ? ["icon", "color"] as const : ["banner", "title", "icon", "color"] as const;
+  const sections = ["icon", "color"] as const;
   // One scrolling page (2026-11-05): opening at a section scrolls to it.
   useEffect(() => {
-    if (initialSection === "banner" || (appearance.bannerControls === false && initialSection === "title")) return;
+    if (initialSection === "banner" || initialSection === "title") return;
     document.getElementById(`folder-appearance-section-${initialSection}`)?.scrollIntoView({ block: "start" });
   }, [initialSection]);
   /** The section at the top of the page, so Settings can bring the person back to it. */

@@ -125,6 +125,8 @@ export function collect() {
         const after = region.value.slice(match.index + token.length);
         if (/^work-fold\.com$/i.test(token) || (/^work-fold$/i.test(token) && /^(?: repositor|'s (?:Web Access|page service|companion)| builds)/.test(after))) continue;
         if (region.cls === "doc" && token === "com.work_fold.chrome") continue;
+        // The predecessor's portable metadata folder, which AmpleFile hides but never reads.
+        if (/^work-fold$/i.test(token) && region.value[match.index - 1] === ".") continue;
         if (region.value[match.index - 1] === '"' && after[0] === '"' && region.cls === "doc") continue;
         const parts = wordParts(token);
         let concept = concepts.find((candidate) => candidate.test(parts, token));

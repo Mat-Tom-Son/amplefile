@@ -6,12 +6,9 @@ import {
   PAGE_DOCUMENT_CONTENT_SECURITY_POLICY,
   PAGE_FRAME_CONTENT_SECURITY_POLICY,
   PAGE_FRAME_HTML,
-  PAGE_FRAME_MESSAGE,
   PAGE_FRAME_SCRIPT,
   PAGE_RUNTIME_SCRIPT,
 } from "../src/local/pages/frame/page-frame-assets.js";
-import { externalPageLink, mountPageFrame, pageCallFrom, pageFrameMessage, pageFrameSandbox } from "../web-local/src/lib/page-frame-host.js";
-import { PageCallFailure, pageCallErrorFrom } from "../web-local/src/lib/pages.js";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 /** Values made in a JSDOM window, as plain values of this realm. */
@@ -29,8 +26,6 @@ test("the intermediary and the page run under the documented policies", () => {
   assert.doesNotMatch(PAGE_FRAME_CONTENT_SECURITY_POLICY, /allow-same-origin|unsafe-eval|https?:/);
   assert.match(PAGE_FRAME_HTML, /<script src="\/page-frame\.js" defer><\/script>/);
   assert.doesNotMatch(PAGE_FRAME_HTML.replace('<script src="/page-frame.js" defer></script>', ""), /<script/);
-  assert.deepEqual(pageFrameMessage, PAGE_FRAME_MESSAGE, "the host and the sandbox speak the same messages");
-  assert.equal(pageFrameSandbox, "allow-scripts allow-forms");
   assert.doesNotMatch(PAGE_RUNTIME_SCRIPT, /<\/script|<!--|<script/i, "the runtime can be inlined into any page");
   new Function(PAGE_FRAME_SCRIPT);
   new Function(PAGE_RUNTIME_SCRIPT.replace("__AMPLEFILE_PAGE_CONFIG__", "{}"));
@@ -248,119 +243,4 @@ test("web and email links open outside the page; nothing else navigates it", () 
     assert.equal(click("file"), true);
     assert.deepEqual(view.posted.filter((message) => message.type === "amplefile.page.link").map((message) => message.href), ["https://example.com/directions", "mailto:host@example.com"]);
   } finally { view.dom.window.close(); }
-});
-
-test("the page tab's frame answers only its intermediary on its channel, within bounds", async () => {
-  const dom = new JSDOM("<!doctype html><html><body><div id=host></div></body></html>", { url: "http://localhost/", pretendToBeVisual: true });
-  const previous = { window: (globalThis as any).window, document: (globalThis as any).document };
-  Object.assign(globalThis, { window: dom.window, document: dom.window.document });
-  const calls: any[] = [];
-  const waiting: Array<{ resolve: (value: unknown) => void; reject: (error: unknown) => void }> = [];
-  const opened: string[] = [];
-  const mutated: string[] = [];
-  const states: string[] = [];
-  try {
-    const handle = mountPageFrame({
-      container: dom.window.document.getElementById("host")!,
-      frameUrl: "about:blank",
-      title: "Garden Party",
-      html: "<p>RSVP</p>",
-      owner: false,
-      tables: { rsvps: { name: "text" } },
-      channel: "view-1",
-      call: (call) => { calls.push(call); return new Promise((resolve, reject) => waiting.push({ resolve, reject })); },
-      openLink: (href) => opened.push(href),
-      onLoaded: () => states.push("loaded"),
-      onFailed: (reason) => states.push(reason),
-      onMutated: (table) => mutated.push(table),
-      loadTimeoutMs: 60_000,
-    });
-    const frame = handle.frame;
-    assert.equal(frame.getAttribute("sandbox"), "allow-scripts allow-forms");
-    assert.doesNotMatch(frame.getAttribute("sandbox")!, /allow-same-origin/);
-    const intermediary = frame.contentWindow!;
-    const sent: any[] = [];
-    (intermediary as any).postMessage = (message: unknown) => { sent.push(message); };
-    const send = (data: unknown, source: unknown = intermediary) => dom.window.dispatchEvent(new dom.window.MessageEvent("message", { data, source: source as any }));
-
-    send({ type: pageFrameMessage.ready }, dom.window);
-    assert.equal(sent.length, 0, "another window can't take the page");
-    send({ type: pageFrameMessage.ready });
-    assert.deepEqual(sent[0], { type: pageFrameMessage.init, channel: "view-1", html: "<p>RSVP</p>", title: "Garden Party", owner: false, tables: { rsvps: { name: "text" } } });
-    send({ type: pageFrameMessage.ready });
-    assert.equal(sent.length, 1, "the page is handed over once");
-
-    send({ type: pageFrameMessage.loaded, channel: "other" });
-    send({ type: pageFrameMessage.loaded, channel: "view-1" });
-    assert.deepEqual(states, ["loaded"]);
-
-    send({ type: pageFrameMessage.call, channel: "view-1", callId: 1, call: { op: "add", table: "rsvps", values: { name: "Ada" }, requestId: "req-1", viewer: { role: "owner" } } });
-    assert.deepEqual(calls[0], { op: "add", table: "rsvps", values: { name: "Ada" }, requestId: "req-1" }, "a page never chooses who it is");
-    send({ type: pageFrameMessage.call, channel: "view-1", callId: 2, call: { op: "drop", table: "rsvps" } });
-    assert.deepEqual(sent.at(-1), { type: pageFrameMessage.result, channel: "view-1", callId: 2, ok: false, error: { code: "INVALID", message: "That isn't something a page can ask for." } });
-    send({ type: pageFrameMessage.call, channel: "view-2", callId: 3, call: { op: "count", table: "rsvps" } });
-    assert.equal(calls.length, 1);
-
-    waiting[0]!.resolve({ id: "r1", name: "Ada" });
-    await flush();
-    assert.deepEqual(sent.slice(-2), [
-      { type: pageFrameMessage.result, channel: "view-1", callId: 1, ok: true, result: { id: "r1", name: "Ada" } },
-      { type: pageFrameMessage.changed, channel: "view-1", table: "rsvps" },
-    ], "a change from the page reaches its own onChange");
-    assert.deepEqual(mutated, ["rsvps"]);
-
-    for (let callId = 10; callId < 19; callId++) send({ type: pageFrameMessage.call, channel: "view-1", callId, call: { op: "count", table: "rsvps" } });
-    assert.equal(calls.length, 9);
-    assert.equal(sent.at(-1).error.code, "UNAVAILABLE", "at most eight calls at once");
-    waiting[1]!.reject(new PageCallFailure({ code: "NOT_ALLOWED", message: "No.", field: "name" }));
-    await flush();
-    assert.deepEqual(sent.at(-1), { type: pageFrameMessage.result, channel: "view-1", callId: 10, ok: false, error: { code: "NOT_ALLOWED", message: "No.", field: "name" } });
-
-    send({ type: pageFrameMessage.link, channel: "view-1", href: "javascript:alert(1)" });
-    send({ type: pageFrameMessage.link, channel: "view-1", href: "https://example.com/x" });
-    assert.deepEqual(opened, ["https://example.com/x"]);
-    send({ type: pageFrameMessage.navigated, channel: "view-1" });
-    assert.deepEqual(states, ["loaded", "navigated"]);
-
-    handle.notifyChanged("rsvps");
-    assert.deepEqual(sent.at(-1), { type: pageFrameMessage.changed, channel: "view-1", table: "rsvps" });
-    const count = sent.length;
-    handle.destroy();
-    waiting[2]!.resolve(3);
-    await flush();
-    assert.equal(sent.length, count, "a closed view hears nothing more");
-    assert.equal(frame.isConnected, false);
-  } finally {
-    dom.window.close();
-    Object.assign(globalThis, previous);
-  }
-});
-
-test("a page that never starts is reported", async () => {
-  const dom = new JSDOM("<!doctype html><div id=host></div>", { url: "http://localhost/" });
-  const previous = { window: (globalThis as any).window, document: (globalThis as any).document };
-  Object.assign(globalThis, { window: dom.window, document: dom.window.document });
-  try {
-    const states: string[] = [];
-    const handle = mountPageFrame({ container: dom.window.document.getElementById("host")!, frameUrl: "about:blank", title: "P", html: "", owner: false, tables: {}, call: async () => null, openLink() {}, onFailed: (reason) => states.push(reason), loadTimeoutMs: 5 });
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    assert.deepEqual(states, ["timeout"]);
-    handle.destroy();
-  } finally {
-    dom.window.close();
-    Object.assign(globalThis, previous);
-  }
-});
-
-test("calls and refusals keep their documented shapes across the host", () => {
-  assert.equal(pageCallFrom({ op: "isOwner", table: "x" }), null, "isOwner is answered in the page");
-  assert.equal(pageCallFrom({ op: "count", table: "x".repeat(65) }), null);
-  assert.equal(pageCallFrom({ op: "add", table: "rsvps", requestId: 7 }), null);
-  assert.deepEqual(pageCallFrom({ op: "remove", table: "rsvps", id: "r1", extra: true }), { op: "remove", table: "rsvps", id: "r1" });
-  assert.equal(externalPageLink("https://example.com/a b"), "https://example.com/a%20b");
-  assert.equal(externalPageLink("mailto:a@example.com"), "mailto:a@example.com");
-  for (const href of ["javascript:alert(1)", "file:///etc/hosts", "data:text/html,x", "amplefile-desktop://app/index.html", "relative.html"]) assert.equal(externalPageLink(href), null, href);
-  assert.deepEqual(pageCallErrorFrom({ error: "Someone already replied.", code: "DUPLICATE", message: "Someone already replied.", field: "email" }, 409), { code: "DUPLICATE", message: "Someone already replied.", field: "email" });
-  assert.deepEqual(pageCallErrorFrom({ error: { message: "Not found.", code: "NOPE" } }, 404), { code: "NOT_FOUND", message: "Not found." });
-  assert.deepEqual(pageCallErrorFrom(null, 502), { code: "UNAVAILABLE", message: "Something went wrong. Try again." });
 });

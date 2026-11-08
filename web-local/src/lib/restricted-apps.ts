@@ -1,22 +1,5 @@
 import { api } from "./api";
-import type {
-  RestrictedAppAutomationRunReceipt,
-  RestrictedAppConnectionStatus,
-  RestrictedAppCredential,
-  RestrictedAppInstalled,
-  RestrictedAppStorageUsage,
-  RestrictedAppDataRecovery,
-  LocalAppInstallOperation,
-  LocalAppInstance,
-  LocalAppPresentation,
-  LocalAppProject,
-  LocalAppRelease,
-  LocalAppReleaseDeletionResult,
-  LocalAppRetainedData,
-  LocalAppStudioSnapshot,
-  LocalAppConnectedFolderRemovalImpact,
-  LocalAppUpdateOperation,
-} from "../types";
+import type { RestrictedAppAutomationRunReceipt, RestrictedAppConnectionStatus, RestrictedAppCredential, RestrictedAppInstalled, RestrictedAppStorageUsage, RestrictedAppDataRecovery, LocalAppInstallOperation, LocalAppPresentation, LocalAppProject, LocalAppRelease, LocalAppReleaseDeletionResult, LocalAppRetainedData, LocalAppUpdateOperation } from "../types";
 
 function collectionPath(connectedFolderId: string): string {
   return `/api/connected-folders/${encodeURIComponent(connectedFolderId)}/restricted-apps`;
@@ -57,16 +40,6 @@ function proposalPath(connectedFolderId: string, conversationId: string, proposa
 
 function studioPath(connectedFolderId: string): string {
   return `/api/connected-folders/${encodeURIComponent(connectedFolderId)}/app-studio`;
-}
-
-export async function getLocalAppStudio(connectedFolderId: string): Promise<LocalAppStudioSnapshot> {
-  return (await api<{ studio: LocalAppStudioSnapshot }>(studioPath(connectedFolderId))).studio;
-}
-
-export async function getLocalAppConnectedFolderRemovalImpact(connectedFolderId: string): Promise<LocalAppConnectedFolderRemovalImpact> {
-  return (await api<{ impact: LocalAppConnectedFolderRemovalImpact }>(
-    `/api/connected-folders/${encodeURIComponent(connectedFolderId)}/app-removal-impact`,
-  )).impact;
 }
 
 export async function declareLocalAppProject(connectedFolderId: string, presentation: LocalAppPresentation): Promise<LocalAppProject> {
@@ -121,13 +94,6 @@ export async function prepareLocalAppUpdate(
     method: "POST",
     body: { releaseDigest, continuityPolicy },
   })).operation;
-}
-
-export async function activateLocalAppOperation(
-  connectedFolderId: string,
-  operationId: string,
-): Promise<{ instance: LocalAppInstance; apps: RestrictedAppInstalled[] }> {
-  return api(`${studioPath(connectedFolderId)}/operations/${encodeURIComponent(operationId)}/activate`, { method: "POST" });
 }
 
 export async function cancelLocalAppOperation(connectedFolderId: string, operationId: string): Promise<boolean> {
@@ -313,10 +279,6 @@ export async function clearRestrictedAppStorage(app: RestrictedAppInstalled): Pr
 export async function exportRestrictedAppData(app: RestrictedAppInstalled): Promise<unknown> {
   const query = new URLSearchParams({ expectedDigest: app.digest, featureInstallationId: app.featureInstallationId });
   return (await api<{ backup: unknown }>(`${appPath(app.connectedFolderId, app.manifest.id)}/storage/export?${query}`)).backup;
-}
-
-export async function exportRetainedAppData(sourceConnectedFolderId: string, retainedDataId: string): Promise<unknown> {
-  return (await api<{ backup: unknown }>(`${studioPath(sourceConnectedFolderId)}/retained-data/${encodeURIComponent(retainedDataId)}`)).backup;
 }
 
 export async function getRestrictedAppDataRecovery(app: RestrictedAppInstalled): Promise<RestrictedAppDataRecovery | null> {
