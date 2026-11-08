@@ -1,118 +1,118 @@
 {
-  "fill-specializations" : [
+  "fill-specializations": [
     {
-      "value" : {
-        "solid" : "srgb:0.95686,0.96078,0.96471,1.00000"
+      "value": {
+        "solid": "srgb:0.95686,0.96078,0.96471,1.00000"
       }
     },
     {
-      "appearance" : "dark",
-      "value" : {
-        "solid" : "srgb:0.08627,0.12549,0.16863,1.00000"
+      "appearance": "dark",
+      "value": {
+        "solid": "srgb:0.08627,0.12549,0.16863,1.00000"
       }
     }
   ],
-  "groups" : [
+  "groups": [
     {
-      "blur-material" : 0,
-      "layers" : [
+      "name": "Dot",
+      "layers": [
         {
-          "glass" : false,
-          "image-name" : "Dot.svg",
-          "name" : "Dot"
+          "image-name": "Dot.svg",
+          "name": "Dot",
+          "glass": false
         }
       ],
-      "lighting" : "individual",
-      "name" : "Dot",
-      "shadow" : {
-        "kind" : "none",
-        "opacity" : 0
+      "lighting": "individual",
+      "specular": false,
+      "blur-material": 0,
+      "translucency": {
+        "enabled": false,
+        "value": 0
       },
-      "specular" : false,
-      "translucency" : {
-        "enabled" : false,
-        "value" : 0
+      "shadow": {
+        "kind": "none",
+        "opacity": 0
       }
     },
     {
-      "blur-material" : 0,
-      "layers" : [
+      "name": "Folder Front",
+      "layers": [
         {
-          "glass" : true,
-          "image-name" : "Folder Front.svg",
-          "name" : "Folder Front"
+          "image-name": "Folder Front.svg",
+          "name": "Folder Front",
+          "glass": true
         }
       ],
-      "lighting" : "individual",
-      "name" : "Folder Front",
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.12
+      "lighting": "individual",
+      "specular": false,
+      "blur-material": 0,
+      "translucency": {
+        "enabled": false,
+        "value": 0
       },
-      "specular" : false,
-      "translucency" : {
-        "enabled" : false,
-        "value" : 0
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.12
       }
     },
     {
-      "blur-material" : 0,
-      "layers" : [
+      "name": "Folder Back",
+      "layers": [
         {
-          "glass" : true,
-          "image-name" : "Folder Back.svg",
-          "name" : "Folder Back"
+          "image-name": "Folder Back.svg",
+          "name": "Folder Back",
+          "glass": true
         }
       ],
-      "lighting" : "individual",
-      "name" : "Folder Back",
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.08
+      "lighting": "individual",
+      "specular": false,
+      "blur-material": 0,
+      "translucency": {
+        "enabled": false,
+        "value": 0
       },
-      "specular" : false,
-      "translucency" : {
-        "enabled" : false,
-        "value" : 0
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.08
       }
     },
     {
-      "blur-material" : 0,
-      "layers" : [
+      "name": "Background",
+      "layers": [
         {
-          "fill-specializations" : [
+          "image-name": "Background.svg",
+          "name": "Background",
+          "glass": false,
+          "fill-specializations": [
             {
-              "value" : {
-                "solid" : "srgb:0.95686,0.96078,0.96471,1.00000"
+              "value": {
+                "solid": "srgb:0.95686,0.96078,0.96471,1.00000"
               }
             },
             {
-              "appearance" : "dark",
-              "value" : {
-                "solid" : "srgb:0.08627,0.12549,0.16863,1.00000"
+              "appearance": "dark",
+              "value": {
+                "solid": "srgb:0.08627,0.12549,0.16863,1.00000"
               }
             }
-          ],
-          "glass" : false,
-          "image-name" : "Background.svg",
-          "name" : "Background"
+          ]
         }
       ],
-      "lighting" : "individual",
-      "name" : "Background",
-      "shadow" : {
-        "kind" : "none",
-        "opacity" : 0
+      "lighting": "individual",
+      "specular": false,
+      "blur-material": 0,
+      "translucency": {
+        "enabled": false,
+        "value": 0
       },
-      "specular" : false,
-      "translucency" : {
-        "enabled" : false,
-        "value" : 0
+      "shadow": {
+        "kind": "none",
+        "opacity": 0
       }
     }
   ],
-  "supported-platforms" : {
-    "squares" : [
+  "supported-platforms": {
+    "squares": [
       "macOS"
     ]
   }

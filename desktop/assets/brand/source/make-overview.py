@@ -18,7 +18,7 @@ def paste(name,box):
     canvas.paste(im,(box[0],box[1]),im)
 
 
-draw.text((60,40),'AMPLEFILE  /  BRAND SOURCE PACK',fill='#16202B',font=label)
+draw.text((60,40),'AMPLEFILE  /  FINAL G ASSET PACK',fill='#16202B',font=label)
 draw.text((60,112),'FLAT VECTOR MASTER',fill='#536171',font=small)
 draw.text((610,112),'NATIVE DEFAULT',fill='#536171',font=small)
 draw.text((1090,112),'NATIVE DARK',fill='#536171',font=small)
