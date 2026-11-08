@@ -25,9 +25,10 @@ export interface DesktopPiOAuthHost {
  * Adapts Pi's provider-neutral OAuth callbacks to desktop-safe primitives.
  *
  * Browser callbacks complete automatically when a provider supports them.
- * Providers that return a code in the browser use an explicit
- * "Paste from clipboard" action so AmpleFile never reads clipboard contents
- * without a contemporaneous user gesture.
+ * The link a browser sign-in ends on is pasted in the window that started it
+ * (see ProviderSignIns), never in a dialog. Other values a provider asks for
+ * use an explicit "Paste from clipboard" action so AmpleFile never reads
+ * clipboard contents without a contemporaneous user gesture.
  */
 export function createDesktopPiOAuthHooks(host: DesktopPiOAuthHost): PiOAuthHooks {
   return {
@@ -49,12 +50,6 @@ export function createDesktopPiOAuthHooks(host: DesktopPiOAuthHost): PiOAuthHook
     },
     prompt(input) {
       return promptFromClipboard(host, input);
-    },
-    manualCodeInput(signal, input) {
-      return promptFromClipboard(host, {
-        message: input?.message ?? "Paste the OAuth redirect URL or authorization code",
-        placeholder: input?.placeholder ?? "Redirect URL or authorization code", signal,
-      });
     },
     async select(input) {
       input.signal?.throwIfAborted();

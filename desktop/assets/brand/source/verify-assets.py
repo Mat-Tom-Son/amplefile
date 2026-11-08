@@ -87,6 +87,15 @@ for layer in layers:
     check(f'Icon Composer {layer["name"]}: SVG asset exists',path.is_file())
     read_svg(path)
 
+composition=json.loads((root/'source'/'icon-composition.json').read_text())
+check('Final app icon: approved G composition',composition['approvedStudy']=='G / Balanced')
+for name,ident,path_key in [('Folder Back','folder-back','folderBackPath'),('Folder Front','folder-front','folderFrontPath')]:
+    _,ids=read_svg(root/'AmpleFile.icon'/'Assets'/f'{name}.svg')
+    check(f'Final G: exact approved {name} path',ids[ident].get('d')==composition[path_key])
+_,ids=read_svg(root/'AmpleFile.icon'/'Assets'/'Dot.svg')
+check('Final G: exact full-dot placement',
+      all(float(ids['dot'].get(k))==composition['dot'][k] for k in ['cx','cy','r']))
+
 for name,size in [('AmpleFile-macOS-1024.png',(1024,1024)),('amplefile-share-1200x630.png',(1200,630))]:
     with Image.open(root/name) as im:
         check(f'{name}: dimensions',im.size==size,im.size)
@@ -101,11 +110,20 @@ for export in export_report['exports']:
     data=(root/export['file']).read_bytes()
     check(f'Native {export["appearance"]}: successful and matching PNG',export['exitCode']==0 and hashlib.sha256(data).hexdigest()==export['sha256'])
 
+compiler=json.loads((root/'verification'/'compiler-check.json').read_text())
+check('Xcode / electron-builder: successful native asset compilation',compiler['passed'])
+check('Compiled assets: bound to final G package',compiler['sourcePackageSha256']==digest.hexdigest())
+for output in compiler['outputs']:
+    data=(root/output['file']).read_bytes()
+    check(f'Compiled asset: {output["file"]}',len(data)==output['bytes'] and hashlib.sha256(data).hexdigest()==output['sha256'])
+
 report={'passed':True,'checks':checks,'summary':{
     'primaryFiles':7,'socialImage':[1200,630],'svgText':'outlined',
     'svgPaint':'solid palette only','namedFolderShapes':True,
     'independentDots':True,'nativeLayers':4,'nativeAppearances':6,
-    'appBuildVerification':'not run: Xcode first-launch / plugin initialization incomplete',
+    'approvedAppIcon':'G / Balanced',
+    'iconCompilation':{'passed':True,'electronBuilder':compiler['electronBuilderVersion'],'xcode':compiler['xcodeVersion']},
+    'fullApplicationBuild':'not part of the artwork handoff',
 }}
 (root/'verification'/'asset-checks.json').write_text(json.dumps(report,indent=2)+'\n')
 print(f'PASS: {len(checks)} artifact conformance checks; seven primary files, social image, and six native appearances.')

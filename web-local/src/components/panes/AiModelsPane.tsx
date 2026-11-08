@@ -3,6 +3,7 @@ import { ModelCatalogList, modelCatalogKey } from "./ModelCatalogList";
 import { ImageModelSection, type ImageModelSettings } from "./ImageModelSection";
 import { ProviderAccountDetails } from "./ProviderAccountDetails";
 import { ConnectAi, featuredProviders } from "../onboarding/ConnectAi";
+import { ProviderSignInWaiting } from "../onboarding/ProviderSignInWaiting";
 import { RefreshCw } from "../chrome/icons";
 import { Eye20Regular, EyeOff20Regular } from "@fluentui/react-icons";
 import { api, errorText } from "../../lib/api";
@@ -206,6 +207,9 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
   const [connectionFeedback, setConnectionFeedback] = useState<AiModelsFeedback | null>(null);
   const [instructionsFeedback, setInstructionsFeedback] = useState<AiModelsFeedback | null>(null);
   const [saving, setSaving] = useState<"model" | "connection" | "remove" | null>(null);
+  /** Whose browser sign-in is under way here, and whether its Cancel was chosen. */
+  const [signingIn, setSigningIn] = useState<string | null>(null);
+  const signInCancelled = useRef(false);
   const [savingInstructions, setSavingInstructions] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const live = useRef(false);
@@ -434,6 +438,8 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
     const feedback = connection ? setConnectionFeedback : setModelFeedback;
     setSaving(connection ? "connection" : "model");
     feedback(null);
+    signInCancelled.current = false;
+    if (kind === "oauth" && !fixtureMode) setSigningIn(providerName);
     const submittedApiKey = kind === "key" ? apiKey.trim() : "";
     try {
       const result = fixtureMode ? { status: kind === "model" ? { ...scopeStatus, configured: true, provider: modelProvider, model } : scopeStatus, foundry: submittedAzure ? { ...savedFoundry, [provider]: submittedAzure } : undefined, models: undefined }
@@ -462,8 +468,8 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
       if (connection) { setApiKey(""); setEditingApiKey(false); setShowApiKey(false); }
       reportConfigured(result.status);
       feedback({ text: submittedAzure ? provider === AZURE_OPENAI_PROVIDER ? "Azure settings saved" : "Foundry settings saved" : connection ? "Connection saved" : "Model saved" });
-    } catch (caught) { if (live.current) feedback({ error: true, text: errorText(caught) }); }
-    finally { if (live.current) setSaving(null); release(); }
+    } catch (caught) { if (live.current && !(kind === "oauth" && signInCancelled.current)) feedback({ error: true, text: errorText(caught) }); }
+    finally { if (live.current) { setSaving(null); setSigningIn(null); } release(); }
   }
 
   async function removeCredential() {
@@ -637,6 +643,7 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
           {oauthSupported ? <button className="ui-control" type="button" disabled={operationBusy} onClick={() => void configure("oauth")}>{saving === "connection" ? "Connecting…" : providerAuth?.authType === "oauth" ? "Reconnect Account" : selectedProvider?.oauthLabel ?? "Connect Account"}</button> : null}
           {selectedProvider?.guidedSetup ? <button className="ui-control" type="button" disabled={operationBusy} onClick={() => void configure("setup")}>Guided Setup</button> : null}
         </div> : null}
+        {signingIn ? <ProviderSignInWaiting providerName={signingIn} onCancelRequested={() => { signInCancelled.current = true; }} /> : null}
         {accountOnly && !oauthSupported ? <p className="professional-field-hint">Account sign-in is available in the desktop app.</p> : null}
         {!apiKeySupported && !selectedProvider?.oauth ? <p className="professional-field-hint">Uses credentials configured outside AmpleFile.</p> : null}
         {connectionFeedback ? <AiModelsOperationStatus feedback={connectionFeedback} /> : null}

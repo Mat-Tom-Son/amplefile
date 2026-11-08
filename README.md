@@ -46,7 +46,7 @@ Use **Compare** in a file's **Version History** to read saved text beside the cu
 ## Try it
 
 1. [Download AmpleFile](https://www.amplefile.com/download/macos) for an Apple silicon Mac.
-2. Open it. First run connects your AI (sign in with ChatGPT, Claude, or OpenRouter, or paste an API key; provider usage may cost money), optionally sets up Chrome and Computer Control, then asks for your first folder. You can change the model anytime in **Settings → AI Models**.
+2. Open it. First run connects your AI (sign in with ChatGPT, Claude, or OpenRouter, or paste an API key; provider usage may cost money), optionally sets up Computer Control and command-line access for other AI agents, then asks for your first folder. You can change the model anytime in **Settings → AI Models**.
 3. Choose **Set Up for Me** to have the Worker organize the folder and give it a look, or just start a Chat.
 
 Microsoft Foundry chat deployments connect in **Settings → AI Models** using

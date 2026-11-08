@@ -65,7 +65,21 @@
       1024,
       1024
     ],
-    "markScale": 0.74,
+    "approvedStudy": "G / Balanced",
+    "compositionSource": "icon-composition.json",
+    "placement": {
+      "left": 36,
+      "tabTop": 66,
+      "backTop": 188,
+      "frontTop": 274,
+      "bottom": 962,
+      "sourceRight": 1220
+    },
+    "dot": {
+      "cx": 868,
+      "cy": 714,
+      "r": 104
+    },
     "layers": [
       "Background",
       "Folder Back",

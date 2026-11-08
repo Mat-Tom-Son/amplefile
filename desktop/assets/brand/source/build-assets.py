@@ -176,14 +176,15 @@ layers = SOURCE / 'icon-layers'
 layers.mkdir(exist_ok=True)
 (layers / 'Background.svg').write_text(svg(1024,1024,
     f'<rect id="background" fill="{LIGHT}" width="1024" height="1024"/>', 'Background'),encoding='utf-8')
-icon_transform = 'translate(133.12 133.12) scale(0.74)'
+composition = json.loads((SOURCE / 'icon-composition.json').read_text(encoding='utf-8'))
+icon_dot = composition['dot']
 for name, content in [
-    ('Folder Back', f'<path id="folder-back" fill="{BACK}" d="{BACK_D}"/>'),
-    ('Folder Front', f'<path id="folder-front" fill="{FRONT}" d="{FRONT_D}"/>'),
-    ('Dot', f'<circle id="dot" fill="{BLUE}" cx="760" cy="656" r="80"/>'),
+    ('Folder Back', f'<path id="folder-back" fill="{BACK}" d="{composition["folderBackPath"]}"/>'),
+    ('Folder Front', f'<path id="folder-front" fill="{FRONT}" d="{composition["folderFrontPath"]}"/>'),
+    ('Dot', f'<circle id="dot" fill="{BLUE}" cx="{icon_dot["cx"]}" cy="{icon_dot["cy"]}" r="{icon_dot["r"]}"/>'),
 ]:
     (layers / f'{name}.svg').write_text(svg(1024,1024,
-        f'<g transform="{icon_transform}">{content}</g>', name),encoding='utf-8')
+        content, name),encoding='utf-8')
 
 # Social image is fully vector-originated, including its lettering.
 share_scale = 890/lock_width
@@ -203,6 +204,9 @@ share = (f'<rect id="background" fill="{LIGHT}" width="1200" height="630"/>\n'+s
     'smallMark':{'canvas':[32,32],'bounds':[2,6,30,26],'dot':{'cx':24,'cy':20,'r':3}},
     'menuBar':{'canvas':[18,18],'outline':1.5,'dot':{'cx':12.5,'cy':11.25,'r':1.25}},
     'wordmark':{'font':'Plus Jakarta Sans','weight':800,'outlines':True,'kerning':'HarfBuzz','blueDot':'independent circle replacing i tittle'},
-    'icon':{'canvas':[1024,1024],'markScale':0.74,'layers':['Background','Folder Back','Folder Front','Dot'],'target':'macOS','designGeneration':26},
+    'icon':{'canvas':[1024,1024],'approvedStudy':composition['approvedStudy'],
+            'compositionSource':'icon-composition.json','placement':composition['placement'],
+            'dot':icon_dot,'layers':['Background','Folder Back','Folder Front','Dot'],
+            'target':'macOS','designGeneration':26},
 },indent=2)+'\n',encoding='utf-8')
 print('Created five flat SVG masters, four Icon Composer layers, outlined share artwork, and design specification.')

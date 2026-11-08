@@ -143,6 +143,7 @@ import {
   type PiOAuthHooks,
   type PiSetupStatus,
 } from "./agent/pi-runtime-config.js";
+import { ProviderSignIns } from "./agent/provider-sign-in.js";
 import { readOpenAiAccount } from "./agent/openai-account.js";
 import { ImageModelPreference, imageModelPreferencePath, normalizeImageModelChoice } from "./agent/image-model-preference.js";
 import { GeneratedImageStore, isGeneratedImageId } from "./agent/generated-image-store.js";
@@ -618,6 +619,8 @@ interface LocalApiState {
   extensionUi: RoutedPiExtensionUiBridge;
   modelContextInspector: ModelContextInspector;
   piOAuthHooks?: PiOAuthHooks;
+  /** The provider sign-in a window may cancel or finish with a pasted link. */
+  providerSignIns: ProviderSignIns;
   capabilityRegistry: CapabilityRegistryService;
   appearance: ConnectedFolderAppearanceStore;
   kernel: AmpleFileKernel;
@@ -862,6 +865,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     extensionUi,
     modelContextInspector,
     piOAuthHooks: options.piOAuthHooks,
+    providerSignIns: new ProviderSignIns(),
     capabilityRegistry: options.capabilityRegistry ?? new RemoteCapabilityRegistry(),
     appearance,
     kernel,
@@ -1954,6 +1958,23 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     });
     return;
   }
+  if (method === "GET" && url.pathname === "/api/agent/oauth/pending") {
+    sendJson(res, { acceptsPaste: state.providerSignIns.acceptsPaste });
+    return;
+  }
+  if (method === "POST" && url.pathname === "/api/agent/oauth/cancel") {
+    sendJson(res, { cancelled: state.providerSignIns.cancel() });
+    return;
+  }
+  if (method === "POST" && url.pathname === "/api/agent/oauth/paste") {
+    const body = await readJsonBody<{ value?: string }>(state, req);
+    const value = typeof body.value === "string" ? body.value.trim() : "";
+    if (!value) throw badRequest("Paste the link your browser ended on.");
+    if (value.length > 8192) throw badRequest("That link is too long to be a sign-in link.");
+    if (!state.providerSignIns.paste(value)) throw httpError(409, "This sign-in finishes in your browser, so there is no link to paste.");
+    sendJson(res, { accepted: true });
+    return;
+  }
   if (method === "POST" && ["/api/agent/oauth", "/api/agent/login"].includes(url.pathname)) {
     if (!state.piOAuthHooks) throw unavailable("Guided provider setup requires the AmpleFile desktop app.");
     const body = await readJsonBody<{ connectedFolderId?: string; scope?: string; provider?: string; model?: string; method?: string }>(state, req);
@@ -1964,11 +1985,20 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (body.model && !(await listPiModels(scope.connectedFolderRoot, state.runtimeProvider)).some((item) => item.provider === body.provider && item.id === body.model)) {
       throw badRequest(`The selected Pi model is not available for ${scope.label}.`);
     }
-    await runCapabilityMutation(state, scope, "global", async () => {
-      await loginPiProvider(scope.connectedFolderRoot, body.provider!, authMethod, state.piOAuthHooks!, state.runtimeProvider);
-      if (body.model) await setPiDefaultModel(scope.connectedFolderRoot, { provider: body.provider!, id: body.model }, state.runtimeProvider);
-      else await ensurePiDefaultModel(scope.connectedFolderRoot, body.provider!, state.runtimeProvider);
-    }, { requireProjectTrust: false });
+    // Starting a sign-in cancels one left waiting, so it never holds the setup lock.
+    const signIn = await state.providerSignIns.begin(state.piOAuthHooks);
+    try {
+      await runCapabilityMutation(state, scope, "global", async () => {
+        await loginPiProvider(scope.connectedFolderRoot, body.provider!, authMethod, signIn.hooks, state.runtimeProvider);
+        if (body.model) await setPiDefaultModel(scope.connectedFolderRoot, { provider: body.provider!, id: body.model }, state.runtimeProvider);
+        else await ensurePiDefaultModel(scope.connectedFolderRoot, body.provider!, state.runtimeProvider);
+      }, { requireProjectTrust: false });
+    } catch (error) {
+      if (signIn.cancelled()) throw httpError(409, "Sign-in cancelled.");
+      throw error;
+    } finally {
+      signIn.finish();
+    }
     const status = await getPiSetupStatus(scope.connectedFolderRoot, state.runtimeProvider);
     sendJson(res, {
       status: normalizeStatus(status), providers: providerSetupResponse(status, true),

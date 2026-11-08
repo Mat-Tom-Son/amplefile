@@ -1,0 +1,23 @@
+{
+  "approvedStudy": "G / Balanced",
+  "canvas": [
+    1024,
+    1024
+  ],
+  "folderBackPath": "M172 66H426C470 66 490 86 514 120L534 152C552 178 574 188 608 188H1220V962H152C87.934969 962 36 910.065031 36 846V202C36 126.889274 96.889274 66 172 66Z",
+  "folderFrontPath": "M152 274H1220V962H152C87.934969 962 36 910.065031 36 846V390C36 325.934969 87.934969 274 152 274Z",
+  "dot": {
+    "cx": 868,
+    "cy": 714,
+    "r": 104
+  },
+  "placement": {
+    "left": 36,
+    "tabTop": 66,
+    "backTop": 188,
+    "frontTop": 274,
+    "bottom": 962,
+    "sourceRight": 1220
+  },
+  "notes": "Enlarged folder with a slim left/bottom inset, a distinct tab corner, right-edge crop, and a full blue dot."
+}
