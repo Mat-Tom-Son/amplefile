@@ -4363,7 +4363,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
           requestId: input.requestId,
           ...(input.parentTaskId ? { request: { parentTaskId: input.parentTaskId } } : {}),
         });
-        await state.requests.recordAction(input.parentTaskId, {
+        await recordLandedAction(state, input.parentTaskId, {
           command: "chat.send",
           at: new Date().toISOString(),
           connectedFolderId: connectedFolder.id,
@@ -5085,7 +5085,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       const name = input.name.trim();
       if (!name) throw new AmpleFileCliError("usage", "A Connected Folder name is required.");
       const connectedFolder = await runActOperation(() => createConnectedFolderInternal(state, name));
-      await state.requests.recordAction(input.parentTaskId, {
+      await recordLandedAction(state, input.parentTaskId, {
         command: "connected-folders.create",
         at: new Date().toISOString(),
         connectedFolderId: connectedFolder.id,
@@ -5101,7 +5101,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
         throw new AmpleFileCliError("usage", "Provide an absolute folder path to register.");
       }
       const connectedFolder = await runActOperation(() => registerConnectedFolderInternal(state, rootPath));
-      await state.requests.recordAction(input.parentTaskId, {
+      await recordLandedAction(state, input.parentTaskId, {
         command: "connected-folders.register",
         at: new Date().toISOString(),
         connectedFolderId: connectedFolder.id,
@@ -5114,7 +5114,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       const result = await runActOperation(() => addExternalFilesInternal(connectedFolder, input));
-      await state.requests.recordAction(input.parentTaskId, {
+      await recordLandedAction(state, input.parentTaskId, {
         command: "files.add",
         at: new Date().toISOString(),
         connectedFolderId: connectedFolder.id,
@@ -6211,6 +6211,24 @@ function assertAmpleFileAgentParentAccepting(state: LocalApiState, parentTaskId:
 }
 
 /**
+ * Records an act whose effect has already landed. Attribution is the
+ * receipt's story, not the act: if writing it fails, the act still succeeded,
+ * and reporting an error would invite a retry that repeats the effect (a
+ * second copy, a second turn). The failure is logged instead.
+ */
+async function recordLandedAction(
+  state: LocalApiState,
+  parentTaskId: string | undefined,
+  action: Parameters<AmpleFileRequestStore["recordAction"]>[1],
+): Promise<void> {
+  try {
+    await state.requests.recordAction(parentTaskId, action);
+  } catch (error) {
+    console.warn(`AmpleFile could not record ${action.command} on its request; the act itself completed: ${errorMessage(error)}`);
+  }
+}
+
+/**
  * Attributes one applied facade mutation to its explicitly named management
  * request, so the request's recorded story stays complete across every landed
  * verb. Connected Folder–free acts (Everywhere-scope tools) record
@@ -6230,7 +6248,7 @@ async function recordFacadeAction(
   },
 ): Promise<void> {
   if (!parentTaskId) return;
-  await state.requests.recordAction(parentTaskId, {
+  await recordLandedAction(state, parentTaskId, {
     command: input.command,
     at: new Date().toISOString(),
     ...(input.connectedFolder ? { connectedFolderId: input.connectedFolder.id, connectedFolderName: input.connectedFolder.name } : {}),
