@@ -79,6 +79,37 @@ test("Compress makes name.zip for one item and Archive.zip for several", async (
   assert.equal(await compressInto([join(root, "b.txt")], root), join(root, "b.txt.zip"));
 });
 
+test("Compress streams to its name only when complete, and refuses work too large for it", async (t) => {
+  const root = await folder(t);
+  await mkdir(join(root, "Album", "Inner"), { recursive: true });
+  const photo = Buffer.alloc(256 * 1024, 7);
+  await writeFile(join(root, "Album", "one.jpg"), photo);
+  await writeFile(join(root, "Album", "Inner", "two.jpg"), photo);
+  await writeFile(join(root, "Album", ".DS_Store"), "finder");
+  const archive = await compressInto([join(root, "Album")], root);
+  const zip = await JSZip.loadAsync(await readFile(archive));
+  assert.deepEqual(Object.keys(zip.files).sort(), ["Album/", "Album/Inner/", "Album/Inner/two.jpg", "Album/one.jpg"]);
+  assert.deepEqual(await zip.file("Album/Inner/two.jpg")!.async("nodebuffer"), photo);
+  assert.deepEqual((await readdir(root)).sort(), ["Album", "Album.zip"], "no working file is left beside it");
+
+  await assert.rejects(compressInto([join(root, "Album")], root, { maxBytes: 300 * 1024, maxEntries: 100 }),
+    (error: Error & { statusCode?: number }) => error.statusCode === 413 && /too large to compress here/.test(error.message));
+  await assert.rejects(compressInto([join(root, "Album")], root, { maxBytes: 10 * 1024 ** 2, maxEntries: 3 }),
+    (error: Error & { statusCode?: number }) => error.statusCode === 413 && /too many items to compress here/.test(error.message));
+  assert.deepEqual((await readdir(root)).sort(), ["Album", "Album.zip"], "a refused Compress writes nothing");
+});
+
+test("a Compress that fails partway leaves nothing behind", { skip: process.getuid?.() === 0 ? "root reads unreadable files" : false }, async (t) => {
+  const root = await folder(t);
+  await mkdir(join(root, "Album"));
+  await writeFile(join(root, "Album", "a.jpg"), "a");
+  await writeFile(join(root, "Album", "z-locked.jpg"), "locked");
+  await chmod(join(root, "Album", "z-locked.jpg"), 0o000);
+  t.after(() => chmod(join(root, "Album", "z-locked.jpg"), 0o600).catch(() => undefined));
+  await assert.rejects(compressInto([join(root, "Album")], root));
+  assert.deepEqual(await readdir(root), ["Album"]);
+});
+
 test("the transfer route reads its target as a place and a path inside it", async () => {
   const source = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../src/local/server.ts", import.meta.url), "utf8"));
   const body = source.slice(source.indexOf("export async function transferFileEntries"));
