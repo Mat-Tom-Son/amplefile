@@ -58,6 +58,22 @@ test("an asynchronous answer can arrive during independent work and continues ex
   assert.equal(await readFile(join(h.connectedFolder.connectedFolderRoot, "independent.txt"), "utf8"), "independent work finished");
 });
 
+test("an asynchronous answer with a pasted soft line break can be sent again to resume it", async t => {
+  const h = await harness(t);
+  const asked = await h.api.actFacade.chatAsk({ connectedFolder: h.connectedFolder.id, taskId: h.turn.taskId, question: "Which format?", respondent: "person", asynchronous: true });
+  const answer = "/hold PDF\u000bplease";
+  const first = await h.api.actFacade.chatAnswer({ connectedFolder: h.connectedFolder.id, questionId: asked.question.questionId, answer });
+  assert.equal(first.queued, true);
+  assert.equal(h.api.requests.question(asked.question.questionId)!.answer, "/hold PDF\nplease");
+  // The recorded answer is the cleaned text; the same answer as written
+  // still matches it, so the retry resumes instead of being refused.
+  const retry = await h.api.actFacade.chatAnswer({ connectedFolder: h.connectedFolder.id, questionId: asked.question.questionId, answer });
+  assert.equal(retry.queued, true);
+  await assert.rejects(h.api.actFacade.chatAnswer({ connectedFolder: h.connectedFolder.id, questionId: asked.question.questionId, answer: "/hold PDF please" }), /different recorded answer/);
+  h.release();
+  await until(() => { const record = h.api.requests.byTaskId(h.turn.taskId)!; return record.turns.length === 2 && record.state === "done"; });
+});
+
 test("a Worker recovers only its own delegated handles after reading a result", async t => {
   const h = await harness(t);
   const child = await h.api.actFacade.chatHandoff({ connectedFolder: h.connectedFolder.id, taskId: h.turn.taskId, toConnectedFolder: h.connectedFolder.id, message: "/hold", files: [] });

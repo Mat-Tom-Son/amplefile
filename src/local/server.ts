@@ -165,6 +165,8 @@ import {
   ampleFileRequestLimitMessage,
   ampleFileRequestLimitsSection,
   ampleFileRequestStateToAgentPhase,
+  ampleFileAnswerMatchesRecorded,
+  scrubAmpleFileRequestText,
   type AmpleFileRequestActionCommand,
   type AmpleFileRequestJobState,
   type AmpleFileRequestCreatableKind,
@@ -3292,9 +3294,10 @@ function pendingPersonQuestions(
  * answered meanwhile) is left as it is, and the turn still runs.
  */
 async function answerPersonQuestionsWithReply(state: LocalApiState, questionIds: string[], taskId: string, content: string): Promise<void> {
-  const answer = Buffer.byteLength(content, "utf8") > ampleFileRequestLimits.maxAnswerTextBytes
-    ? Buffer.from(content, "utf8").subarray(0, ampleFileRequestLimits.maxAnswerTextBytes).toString("utf8").replace(/\uFFFD+$/u, "")
-    : content;
+  // Cleaned before the cut: cleaning can grow the text (a control byte
+  // becomes a three-byte U+FFFD), so cutting first could leave a reply the
+  // store refuses as too long.
+  const answer = scrubAmpleFileRequestText(content, ampleFileRequestLimits.maxAnswerTextBytes);
   for (const questionId of questionIds) {
     try {
       await state.requests.answer({ questionId, answer });
@@ -4116,7 +4119,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       // and leaving the answer with nowhere to go (one accepted answer starts
       // exactly one linked continuation).
       const resuming = question.state === "answered" && question.continuationTaskId === null;
-      if (resuming && question.asynchronous && question.answer !== answer) throw new AmpleFileCliError("conflict", "That question already has a different recorded answer. Retry the same answer to continue it.");
+      if (resuming && question.asynchronous && !ampleFileAnswerMatchesRecorded(question, answer)) throw new AmpleFileCliError("conflict", "That question already has a different recorded answer. Retry the same answer to continue it.");
       // Every other refusal is named before anything changes: a second
       // answer, an expired question, a closed request, the wrong Connected Folder, a
       // busy Chat.
@@ -8212,7 +8215,7 @@ async function performWorkAction(state: LocalApiState, record: AmpleFileRequestR
       const owner = question && family.find((item) => item.requestId === question.requestId);
       if (!question || !owner || question.respondent !== "person") throw notFound("That question does not belong to this work.");
       // A retry after a lost response acknowledges the existing delivery.
-      if (question.state === "answered" && question.continuationTaskId && question.answer === input.answer.trim()) {
+      if (question.state === "answered" && question.continuationTaskId && ampleFileAnswerMatchesRecorded(question, input.answer.trim())) {
         await state.actReceipts.append({ ...receipt, outcome: "ok", detail: `request ${record.requestId}; answer already delivered` });
         return;
       }
