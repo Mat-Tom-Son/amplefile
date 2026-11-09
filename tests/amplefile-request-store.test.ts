@@ -1219,3 +1219,21 @@ test("questions, answers, choices, checklists, summaries, and turn errors scrub 
   assert.deepEqual(reopened.question(question.questionId), store.question(question.questionId));
   assert.equal((await reopened.results(request.requestId))[0]?.state, "ok");
 });
+
+test("a retried answer matches the recorded one after the store's cleaning", async (t) => {
+  const { ampleFileAnswerMatchesRecorded, scrubAmpleFileRequestControls } = await import("../src/local/requests/request-records.js");
+  const root = await temporaryRoot(t);
+  const store = await AmpleFileRequestStore.open({ rootPath: root });
+  const request = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "main-window", taskId: "task-1" });
+  const question = await store.ask({ requestId: request.requestId, taskId: "task-1", respondent: "person", text: "Format?", asynchronous: true });
+  assert.equal(ampleFileAnswerMatchesRecorded(question, "PDF"), false, "an unanswered question matches nothing");
+
+  const pasted = "PDF,\u000bplease\u0007";
+  const answered = await store.answer({ questionId: question.questionId, answer: pasted, answeredByConnectedFolderId: connectedFolderOwner.connectedFolderId });
+  assert.notEqual(answered.answer, pasted, "the stored answer is the cleaned one");
+  assert.equal(answered.answer, scrubAmpleFileRequestControls(pasted), "and exactly the canonical cleaner's output");
+  // A retry of the same pasted text is the same answer; a different one is not.
+  assert.equal(ampleFileAnswerMatchesRecorded(store.question(question.questionId)!, pasted), true);
+  assert.equal(ampleFileAnswerMatchesRecorded(store.question(question.questionId)!, "PDF,\nplease�"), true);
+  assert.equal(ampleFileAnswerMatchesRecorded(store.question(question.questionId)!, "Word"), false);
+});

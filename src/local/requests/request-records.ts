@@ -665,11 +665,34 @@ export function scrubAmpleFileRequestText(value: string, maxBytes: number): stri
   return bytes.subarray(0, end).toString("utf8");
 }
 
-/** The control-character half of `scrubAmpleFileRequestText`, without a length cut. */
+/**
+ * The canonical cleaner for free text a request record stores: the
+ * control-character half of `scrubAmpleFileRequestText`, without a length
+ * cut. Every free-text field (message, question, answer, choice, checklist
+ * item, result summary, turn error) is stored in this form, and an answer is
+ * stored exactly as `scrubAmpleFileRequestControls(<the text handed to
+ * AmpleFileRequestStore.answer>)` — answers are not cut; past their bound
+ * they are refused.
+ *
+ * A caller that compares text it received with stored text must clean its
+ * side first, or a pasted Word soft line break makes equal text look
+ * different. For a recorded answer, use `ampleFileAnswerMatchesRecorded`.
+ */
 export function scrubAmpleFileRequestControls(value: string): string {
   return value
     .replace(/[\u000b\u000c\u0085]/gu, "\n")
     .replace(/[\u0000-\u0008\u000e-\u001f\u007f-\u0084\u0086-\u009f\u202a-\u202e\u2066-\u2069]/gu, "\uFFFD");
+}
+
+/**
+ * True when `answer` is the answer this question already recorded: the same
+ * text after the store's cleaning. Pass the answer exactly as it would be
+ * handed to `AmpleFileRequestStore.answer` (after any trimming the caller
+ * applies before answering). A question with no recorded answer matches
+ * nothing.
+ */
+export function ampleFileAnswerMatchesRecorded(question: Pick<AmpleFileQuestionRecord, "answer">, answer: string): boolean {
+  return question.answer !== null && question.answer === scrubAmpleFileRequestControls(answer);
 }
 
 /**
