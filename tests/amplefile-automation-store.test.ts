@@ -133,6 +133,26 @@ test("enable is journal-first exact-digest authority: declaration and enable rec
   });
 });
 
+test("a failed state commit leaves no temporary file and keeps the last committed state", async (t) => {
+  const { sandbox, store, statePath } = await createSandbox("amplefile-automation-store-commit-");
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+  const first = await store.enable(enableInput(declarationInput("automation-weekly-handoff"), "request-1"));
+  const committed = await readFile(statePath, "utf8");
+
+  // A directory where the state file must land makes the final rename fail.
+  const blocked = await AmpleFileAutomationStore.create({ path: join(sandbox, "blocked", "automations.json"), now: () => fixedNow });
+  await mkdir(join(sandbox, "blocked", "automations.json", "occupied"), { recursive: true });
+  await assert.rejects(() => blocked.enable(enableInput(declarationInput("automation-other-work"), "request-2")));
+  const { readdir } = await import("node:fs/promises");
+  assert.deepEqual((await readdir(join(sandbox, "blocked"))).filter((name) => name.endsWith(".tmp")), [], "no torn temporary file is left behind");
+
+  await store.enable(enableInput(declarationInput("automation-second-run"), "request-3"));
+  assert.deepEqual((await readdir(join(sandbox, "automations"))).filter((name) => name.endsWith(".tmp")), []);
+  assert.notEqual(await readFile(statePath, "utf8"), committed);
+  const reloaded = await AmpleFileAutomationStore.create({ path: statePath, now: () => fixedNow });
+  assert.deepEqual((await reloaded.list()).map((record) => record.declaration.id).sort(), ["automation-second-run", first.declaration.id].sort());
+});
+
 test("an unwritable journal refuses enablement before any state changes", async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), "amplefile-automation-store-journal-"));
   t.after(() => rm(sandbox, { recursive: true, force: true }));

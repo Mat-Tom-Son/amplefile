@@ -1,5 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { appendFile, mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
@@ -7,6 +7,7 @@ import {
   type AmpleFileCliActSurface,
 } from "../cli/act-receipts.js";
 import type { AutomationCatchUpReason } from "../../shared/automation-presentation.js";
+import { writeFileAtomic } from "../agent/turn-store.js";
 import { ampleFileStateRoot } from "../state-paths.js";
 import {
   assertAmpleFileAutomationAtAdmissionHorizon,
@@ -884,9 +885,10 @@ export class AmpleFileAutomationStore {
 
   async #commit(draft: AutomationStoreFileShape): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    const temporaryPath = `${this.path}.${randomUUID()}.tmp`;
-    await writeFile(temporaryPath, `${JSON.stringify(draft, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-    await rename(temporaryPath, this.path);
+    // fsync the temporary file before the rename and the directory after it:
+    // a torn state file marks the whole store damaged and disables every
+    // Automation, so a crash must leave either the old file or the new one.
+    await writeFileAtomic(this.path, `${JSON.stringify(draft, null, 2)}\n`);
     this.#file = draft;
   }
 
