@@ -833,7 +833,10 @@ disabled. It uses a bounded protocol-v1 file handoff instead:
    atomically writes stdout, stderr, structured result, and exit code under
    `responses`. `jobs output` and `chat compact`, which can take minutes and
    are fenced by their own services, run beside that queue so they never
-   stall other commands.
+   stall other commands. An act that reaches the front of the queue more
+   than five minutes after the shim created it is refused without running
+   and journaled as `rejected`, so a caller that gave up never sees it land
+   late.
 4. The shim returns that output and removes its request and response files.
    The broker also removes stale bounded files during initialization.
 

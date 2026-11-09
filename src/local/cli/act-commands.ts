@@ -241,6 +241,12 @@ export interface AmpleFileCliActExecutorOptions {
   receipts: Pick<AmpleFileCliActReceipts, "append" | "hasAccepted">;
   /** Validates an explicitly named AmpleFile Agent parent while its turn is active. */
   resolveLineageParent?: (taskId: string) => { taskId: string } | null;
+  /**
+   * Refuse, without running it, a request created longer ago than this. The
+   * desktop host sets it for acts that waited in its serial queue, so a
+   * caller that gave up and retried never sees the first attempt land late.
+   */
+  maxQueuedMs?: number;
 }
 
 /**
@@ -1510,6 +1516,23 @@ export async function executeAmpleFileCliActRequest(
         surface: "cli",
       });
       throw new AmpleFileCliError("unavailable", ampleFileCliActUnavailableMessage);
+    }
+    if (options.maxQueuedMs !== undefined) {
+      const waitedMs = (options.now?.() ?? new Date()).getTime() - Date.parse(request.createdAt);
+      if (!(waitedMs <= options.maxQueuedMs)) {
+        await options.receipts.append({
+          requestId: request.id,
+          command: command.name,
+          outcome: "rejected",
+          errorCode: "timeout",
+          surface: "cli",
+          detail: "waited too long behind other commands",
+        });
+        throw new AmpleFileCliError(
+          "timeout",
+          `AmpleFile was busy with other commands for more than ${Math.round(options.maxQueuedMs / 60_000)} minutes, so this command was not run. Run it again.`,
+        );
+      }
     }
     command = await resolveActTextFiles(command, request.cwd);
     // The broker's response-file dedup only covers a pending request; the

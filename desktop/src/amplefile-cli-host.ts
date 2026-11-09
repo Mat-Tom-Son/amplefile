@@ -1,5 +1,5 @@
 import type { AmpleFileCliKernel } from "../../src/local/cli/protocol.js";
-import { AmpleFileCliFileBroker } from "../../src/local/cli/broker.js";
+import { AMPLEFILE_CLI_REQUEST_MAX_AGE_MS, AmpleFileCliFileBroker } from "../../src/local/cli/broker.js";
 import { executeAmpleFileCliRequest } from "../../src/local/cli/commands.js";
 import {
   ampleFileCliActRunsOutsideQueue,
@@ -22,6 +22,8 @@ export interface AmpleFileDesktopCliHostOptions {
   kernel: AmpleFileCliKernel;
   version: string;
   productName?: string;
+  /** How long an act may wait in the serial queue before it is refused; defaults to the broker freshness window. */
+  maxQueuedMs?: number;
   /** Act-lane authority; null while the interactive local API is not running. */
   getActFacade?: () => AmpleFileCliActAuthority | null;
   /** Validates explicit management-turn lineage for act receipts. */
@@ -36,7 +38,10 @@ export interface AmpleFileDesktopCliHostOptions {
  * snapshots never race one another inside a single desktop host. Act-lane
  * requests dispatch to the act executor, which only accepts the queue entry
  * itself — a long turn runs detached inside the interactive API, so it never
- * blocks later status polls. The few act verbs that legitimately take minutes
+ * blocks later status polls. An act that reaches the front of the queue
+ * after the broker's freshness window is refused without running, so a
+ * caller that gave up never sees it land late. The few act verbs that
+ * legitimately take minutes
  * (`ampleFileCliActRunsOutsideQueue`) run beside the queue instead of in it,
  * so one `jobs output --wait` or `chat compact` never stalls every other
  * `amplefile` command.
@@ -51,6 +56,7 @@ export class AmpleFileDesktopCliHost {
   readonly #resolveLineageParent: (taskId: string) => { taskId: string } | null;
   #queue: Promise<unknown> = Promise.resolve();
   readonly #pending = new Set<Promise<void>>();
+  readonly #maxQueuedMs: number;
 
   constructor(options: AmpleFileDesktopCliHostOptions) {
     this.broker = new AmpleFileCliFileBroker({ stateRoot: options.stateRoot });
@@ -60,6 +66,7 @@ export class AmpleFileDesktopCliHost {
     this.#productName = options.productName ?? "AmpleFile";
     this.#getActFacade = options.getActFacade ?? (() => null);
     this.#resolveLineageParent = options.resolveLineageParent ?? (() => null);
+    this.#maxQueuedMs = options.maxQueuedMs ?? AMPLEFILE_CLI_REQUEST_MAX_AGE_MS;
   }
 
   async initialize(): Promise<void> {
@@ -71,14 +78,19 @@ export class AmpleFileDesktopCliHost {
     const id = normalizeAmpleFileCliRequestId(requestId);
     const operation = this.broker.processRequest(id, (request) => {
       if (isAmpleFileCliActRequest(request)) {
-        const execute = () => executeAmpleFileCliActRequest(request, {
+        const execute = (queued: boolean) => executeAmpleFileCliActRequest(request, {
           version: this.#version,
           productName: this.#productName,
           getActFacade: this.#getActFacade,
           receipts: this.receipts,
           resolveLineageParent: this.#resolveLineageParent,
+          // A queued act that reaches the front after the broker's freshness
+          // window is refused, as it was when it could not be claimed that
+          // late: the shim (30 minutes by default) is still waiting, so the
+          // caller learns the outcome instead of retrying into a double effect.
+          ...(queued ? { maxQueuedMs: this.#maxQueuedMs } : {}),
         });
-        return ampleFileCliActRunsOutsideQueue(request.argv) ? execute() : this.#serialize(execute);
+        return ampleFileCliActRunsOutsideQueue(request.argv) ? execute(false) : this.#serialize(() => execute(true));
       }
       return this.#serialize(() => executeAmpleFileCliRequest(request, this.#kernel, {
         version: this.#version,

@@ -242,6 +242,55 @@ test("a long act verb runs beside the serial queue and never stalls other comman
   }
 });
 
+test("an act that waited in the queue past its bound is refused, never run late", async () => {
+  const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-desktop-cli-late-"));
+  const token = "a".repeat(64);
+  let host: AmpleFileDesktopCliHost | null = null;
+  let releaseFirst = () => {};
+  try {
+    const held = new Promise<void>((resolveHeld) => { releaseFirst = resolveHeld; });
+    const created: string[] = [];
+    const facade = {
+      async createConversation(input: { connectedFolder: string }) {
+        if (!created.length) await held;
+        created.push(input.connectedFolder);
+        return {
+          connectedFolder: { id: input.connectedFolder, name: "Act Connected Folder", connectedFolderRoot: join(stateRoot, "connected-folder") },
+          conversation: { id: `chat-${created.length}`, title: "New Chat", createdAt: "2026-07-31T00:00:00.000Z", updatedAt: "2026-07-31T00:00:00.000Z", archivedAt: null, snoozedUntil: null },
+        };
+      },
+    } as unknown as AmpleFileActFacade;
+    host = new AmpleFileDesktopCliHost({ stateRoot, kernel: fixtureKernel(), version: "1.0.0", getActFacade: () => ({ facade, token }), maxQueuedMs: 1_000 });
+    await host.initialize();
+    const [first, late] = ["connected-folder-1", "connected-folder-2"].map((connectedFolder) => createAmpleFileCliActRequest({
+      id: randomUUID(),
+      argv: ["chat", "create", "--connected-folder", connectedFolder, "--json"],
+      cwd: resolve("."),
+      actToken: token,
+    }));
+    await host.broker.writeActRequest(first!);
+    await host.broker.writeActRequest(late!);
+    const running = host.processRequest(first!.id);
+    const queued = host.processRequest(late!.id);
+    await new Promise<void>((resolveDelay) => setTimeout(resolveDelay, 1_200));
+    releaseFirst();
+    await Promise.all([running, queued]);
+
+    assert.equal((await host.broker.readResponse(first!.id)).exitCode, 0);
+    const refused = await host.broker.readResponse(late!.id);
+    assert.notEqual(refused.exitCode, 0);
+    assert.match(refused.stderr, /busy with other commands/);
+    assert.deepEqual(created, ["connected-folder-1"], "the late act never reaches the facade");
+    const { readFile } = await import("node:fs/promises");
+    const receipts = (await readFile(host.receipts.path, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    assert.deepEqual(receipts.filter((line) => line.requestId === late!.id).map((line) => [line.outcome, line.errorCode]), [["rejected", "timeout"]]);
+  } finally {
+    releaseFirst();
+    await host?.whenIdle();
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
 test("desktop CLI host gates act requests on the per-launch authority and records receipts", async () => {
   const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-desktop-cli-act-"));
   const token = "d".repeat(64);
