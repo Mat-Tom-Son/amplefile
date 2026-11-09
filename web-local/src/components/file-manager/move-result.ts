@@ -5,8 +5,13 @@
  *   source (the move stopped removing them).
  * - `failed`: the item whose removal failed and why; it is also the first
  *   entry of `notRemoved`, so it is a reason, never a separate count.
- * - `recentlyDeleted`: what History could not keep from the source, set
- *   aside in Recently Deleted.
+ * - `recentlyDeleted`: items whose originals went to Recently Deleted
+ *   because History could not keep all of them. It can also name the failed
+ *   item, when a release across disks stopped partway: the whole item is then
+ *   kept there too, and the failure's own reason already says so.
+ * - `duplicateIdentities`: target paths of `.amplefile` folders the move could
+ *   not drop from a copy whose original is still in the source, so the same
+ *   Connected Folder identity is in both places.
  *
  * Every item named in the answer is in the target. Anything that does not
  * match this shape is ignored rather than guessed at.
@@ -15,6 +20,7 @@ export interface MoveShortfall {
   notRemoved: string[];
   failed: { path: string; error: string } | null;
   recentlyDeleted: Array<{ path: string; entryId: string; restoreBy: string }>;
+  duplicateIdentities: string[];
 }
 
 export function moveShortfall(result: unknown): MoveShortfall {
@@ -32,13 +38,16 @@ export function moveShortfall(result: unknown): MoveShortfall {
         : [];
     })
     : [];
-  return { notRemoved, failed, recentlyDeleted };
+  const duplicateIdentities = Array.isArray(body.duplicateIdentities)
+    ? body.duplicateIdentities.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+  return { notRemoved, failed, recentlyDeleted, duplicateIdentities };
 }
 
 /** The toast after a move: plain about anything that did not go as asked. */
 export function moveResultMessage(label: string, targetName: string, sourceName: string, result: unknown): { text: string; tone: "success" | "info" } {
-  const { notRemoved, failed, recentlyDeleted } = moveShortfall(result);
-  if (!notRemoved.length && !failed && !recentlyDeleted.length) return { text: `Moved ${label} to ${targetName}`, tone: "success" };
+  const { notRemoved, failed, recentlyDeleted, duplicateIdentities } = moveShortfall(result);
+  if (!notRemoved.length && !failed && !recentlyDeleted.length && !duplicateIdentities.length) return { text: `Moved ${label} to ${targetName}`, tone: "success" };
   const sentences: string[] = [];
   const stillInSource = notRemoved.length ? notRemoved : failed ? [failed.path] : [];
   if (stillInSource.length) {
@@ -48,8 +57,16 @@ export function moveResultMessage(label: string, targetName: string, sourceName:
   } else {
     sentences.push(`Moved ${label} to ${targetName}.`);
   }
-  if (recentlyDeleted.length) sentences.push(`What History could not keep from ${sourceName} is in Recently Deleted: ${names(recentlyDeleted.map((item) => item.path))}.`);
-  return { text: sentences.join(" "), tone: stillInSource.length ? "info" : "success" };
+  // An item still in the source that is also in Recently Deleted is the
+  // failed one; its reason above already says the whole item is kept there.
+  const setAside = recentlyDeleted.filter((item) => !stillInSource.includes(item.path));
+  if (setAside.length) sentences.push(`What History could not keep from ${sourceName} is in Recently Deleted: ${names(setAside.map((item) => item.path))}.`);
+  if (duplicateIdentities.length) {
+    const folders = duplicateIdentities.map((path) => path.replace(/\/?\.amplefile$/, "") || targetName);
+    const shown = `${folders.slice(0, 3).join(", ")}${folders.length > 3 ? ` and ${folders.length - 3} more` : ""}`;
+    sentences.push(`AmpleFile could not remove the Connected Folder identity from the ${folders.length === 1 ? "copy" : "copies"} in ${targetName} (${shown}), so it is also still in ${sourceName}. Connect only one of them.`);
+  }
+  return { text: sentences.join(" "), tone: stillInSource.length || duplicateIdentities.length ? "info" : "success" };
 }
 
 function basename(path: string): string {

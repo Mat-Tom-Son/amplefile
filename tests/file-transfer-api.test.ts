@@ -209,6 +209,7 @@ test("a read-only item that cannot leave its Connected Folder leaves no second i
     });
     assert.equal(moved.status, 200, JSON.stringify(moved.body));
     assert.deepEqual(moved.body!.notRemoved, ["D"]);
+    assert.doesNotMatch(moved.body!.failed.error, /\.\./, "the reason reads as sentences");
     assert.equal(moved.body!.duplicateIdentities, undefined, JSON.stringify(moved.body));
     assert.ok(existsSync(join(item, ".amplefile", "conversations", "chat.jsonl")), "the original keeps its identity and Chats");
     const copy = join(target.connectedFolderRoot, "D");

@@ -6560,7 +6560,7 @@ async function applyConnectedFolderDelete(
     }
     throw new AmpleFileCliError(
       "failure",
-      `AmpleFile could not move ${entry.path} to Recently deleted: ${errorMessage(error)}. Nothing was deleted.`,
+      `AmpleFile could not move ${entry.path} to Recently deleted: ${errorMessage(error).replace(/\.$/u, "")}. Nothing was deleted.`,
       { cause: error },
     );
   }
