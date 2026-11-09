@@ -105,7 +105,7 @@ interface PlaceFileBridge {
  * window"): a Finder-style window over the same local API and desktop bridge
  * Files uses. The sidebar opens the Standard Folders and every Connected Folder.
  */
-export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, onSwitchConnectedFolder, onOpenSettings, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, onError }: {
+export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, onOpenSettings, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, onError }: {
   connectedFolder: ConnectedFolderSummary;
   connectedFolders: ConnectedFolderSummary[];
   agent: AgentStatus;
@@ -113,6 +113,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   desktopAction?: { id: number; command: string; connectedFolderId?: string } | null;
   appearance?: ConnectedFolderAppearanceState;
   fixture: ConnectedFolderUiFixture | null;
+  /** Bumped when a model choice changes in Settings or elsewhere, so model rows re-read it. */
+  modelConfigurationRevision?: number;
   onSwitchConnectedFolder: (connectedFolder: ConnectedFolderSummary) => void;
   onOpenSettings: (page?: SettingsPage, modelScope?: ModelScope, focusAiModel?: boolean, workerConnectedFolderId?: string, focusWorkerInstructions?: boolean, backToCustomization?: () => void) => void;
   onRefreshBootstrap: () => Promise<unknown>;
@@ -1747,6 +1749,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           surfaceTabId={`file-manager:${chatConnectedFolder.id}`}
           connectedFolder={chatConnectedFolder}
           connectedFolderCustomizations={customizations}
+          modelConfigurationRevision={modelConfigurationRevision}
           // A new Chat hands its id back the way a Chat tab does, so ChatPanel
           // keeps it instead of starting over. The preview's sample Chats are
           // looked up by this id, so there a new one stays untargeted.
@@ -1789,7 +1792,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           if (!references.length && folderSuggestions.length) return folderSuggestions.slice(0, automationsOn ? 2 : 4);
           return fileManagerSuggestions({ selection: references, inSubfolder: Boolean(location.path), automationsOn });
         })() : []}
-        modelRow={<WorkerModelRow connectedFolder={connectedFolder} fixtureMode={fixtureMode} revision={agent?.configured ? 1 : 0} onOpenModelSettings={() => onOpenSettings("ai-models", "connected-folder", true, connectedFolder.id)} />}
+        modelRow={<WorkerModelRow connectedFolder={connectedFolder} fixtureMode={fixtureMode} revision={modelConfigurationRevision * 2 + (agent?.configured ? 1 : 0)} onOpenModelSettings={() => onOpenSettings("ai-models", "connected-folder", true, connectedFolder.id)} />}
         onRemoveChip={(path) => { setSelection((current) => current.filter((item) => item !== path)); setAttachedPaths((current) => current.filter((item) => item !== path)); }}
         dropActive={composerDrop}
         onDragOverBox={(event) => { if (!connectedFolder || !event.dataTransfer.types.includes("Files")) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setComposerDrop(true); }}
