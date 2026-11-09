@@ -562,11 +562,13 @@ export async function readConnectedFolderTextFile(connectedFolderRoot: string, r
 }
 
 /**
- * Saves the in-app editor's text by writing a flushed sibling file and renaming
- * it over the original, so a crash leaves either the old or the new text, never
- * a truncated file. When `expectedHashSha256` is given (the hash the editor
- * read), a save over content that changed since, by a Worker or another app,
- * is refused instead of silently overwriting it.
+ * Saves the in-app editor's text over the file in place, so the file keeps its
+ * identity: Finder tags and other extended attributes, ACLs, its creation date,
+ * hard links, and a read-only file's refusal. The server's "Before editing"
+ * restore point covers a write cut short by a crash. When `expectedHashSha256`
+ * is given (the hash the editor read), a save over content that changed since,
+ * by a Worker or another app, is refused with a 409 instead of silently
+ * overwriting it.
  */
 export async function writeConnectedFolderTextFile(
   connectedFolderRoot: string,
@@ -582,25 +584,10 @@ export async function writeConnectedFolderTextFile(
   const bytes = Buffer.from(text, "utf8");
   if (bytes.byteLength > maxPreviewBytes) throw new Error("This file is too large to edit (2 MB maximum).");
   const expected = options.expectedHashSha256?.trim().toLowerCase();
-  const temporary = join(dirname(path), `.${basename(path)}.amplefile-save-${randomUUID()}`);
-  try {
-    const handle = await open(temporary, "wx", info.mode & 0o7777);
-    try {
-      await handle.writeFile(bytes);
-      await handle.chmod(info.mode & 0o7777);
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    // Checked last, just before the swap, so the window for an unseen change is as small as possible.
-    if (expected && await sha256File(path).catch(() => null) !== expected) {
-      throw Object.assign(new Error("This file changed since it was opened. Reopen it to see the latest version, then make your edit again."), { status: 409, statusCode: 409 });
-    }
-    await rename(temporary, path);
-  } finally {
-    await rm(temporary, { force: true }).catch(() => undefined);
+  if (expected && await sha256File(path).catch(() => null) !== expected) {
+    throw Object.assign(new Error("This file changed since it was opened. Reopen it to see the latest version, then make your edit again."), { status: 409, statusCode: 409 });
   }
-  await syncDirectoriesBestEffort([dirname(path)]);
+  await writeFile(path, bytes);
   await touchConnectedFolder(connectedFolderRoot);
   return { path: normalizeRelative(relative(root, path)), text, hashSha256: createHash("sha256").update(bytes).digest("hex") };
 }
