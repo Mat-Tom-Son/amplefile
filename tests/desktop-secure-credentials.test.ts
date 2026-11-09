@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,11 +12,19 @@ import type { PiAuthStorageData } from "../src/local/agent/auth-storage.js";
 class FakeSafeStorage implements SafeStorageLike {
   available = true;
   key = "key-1";
+  /** Replaces decryption with this failure, as Electron reports it. */
+  decryptFailure: string | null = null;
+  /** Secure storage turns out to be unavailable once a decryption fails. */
+  unavailableAfterFailure = false;
   isEncryptionAvailable(): boolean { return this.available; }
   encryptString(plainText: string): Buffer {
     return Buffer.from(`${this.key}:${Buffer.from(plainText, "utf8").toString("base64")}`, "utf8");
   }
   decryptString(encrypted: Buffer): string {
+    if (this.decryptFailure) {
+      if (this.unavailableAfterFailure) this.available = false;
+      throw new Error(this.decryptFailure);
+    }
     const [key, body] = encrypted.toString("utf8").split(":");
     if (key !== this.key || body === undefined) throw new Error("Error while decrypting the ciphertext provided to safeStorage.decryptString.");
     return Buffer.from(body, "base64").toString("utf8");
@@ -121,4 +129,57 @@ test("a failed credential load is retried instead of disabling credentials until
   assert.equal((await runtime.credentials.read("openai"))?.type, "api_key");
   await provider.resolveRuntime(folder);
   assert.equal(attempts, 2, "a successful load stays cached");
+});
+
+async function unreadableNames(root: string): Promise<string[]> {
+  return (await readdir(root)).filter((name) => name.includes("unreadable"));
+}
+
+test("an I/O error on the settings file never sets credentials aside and is retried", async (t) => {
+  const root = await tempRoot(t);
+  const safeStorage = new FakeSafeStorage();
+  const file = join(root, "secure-settings.bin");
+  const first = new SecureSettingsStore(file, { safeStorage });
+  await first.setProviderApiKey("openai", "sk-1");
+  await first.setProviderApiKey("openai", "sk-2");
+
+  // The main file cannot be read as a file (EISDIR stands in for EIO/EMFILE/EACCES)
+  // and the backup is corrupt: the store must refuse, not start empty.
+  await rename(file, join(root, "held.bin"));
+  await mkdir(file);
+  await writeFile(`${file}.bak`, "garbage");
+  const store = new SecureSettingsStore(file, { safeStorage });
+  await assert.rejects(store.load(), /could not read secure settings/);
+  assert.deepEqual(await unreadableNames(root), []);
+
+  await rm(file, { recursive: true });
+  await rename(join(root, "held.bin"), file);
+  assert.equal(await store.getProviderApiKey("openai"), "sk-2");
+});
+
+test("Electron's \"Decryption is not available\" is temporary, not corruption", async (t) => {
+  const root = await tempRoot(t);
+  const safeStorage = new FakeSafeStorage();
+  const file = join(root, "secure-settings.bin");
+  await new SecureSettingsStore(file, { safeStorage }).setProviderApiKey("openai", "sk-1");
+
+  safeStorage.decryptFailure = "Error while decrypting the ciphertext provided to safeStorage.decryptString. Decryption is not available.";
+  const store = new SecureSettingsStore(file, { safeStorage });
+  await assert.rejects(store.load(), /could not decrypt settings right now/);
+  assert.deepEqual(await unreadableNames(root), []);
+
+  safeStorage.decryptFailure = null;
+  assert.equal(await store.getProviderApiKey("openai"), "sk-1");
+});
+
+test("a decryption failure while secure storage goes away leaves the files alone", async (t) => {
+  const root = await tempRoot(t);
+  const safeStorage = new FakeSafeStorage();
+  const file = join(root, "secure-settings.bin");
+  await new SecureSettingsStore(file, { safeStorage }).setProviderApiKey("openai", "sk-1");
+
+  safeStorage.decryptFailure = "Error while decrypting the ciphertext provided to safeStorage.decryptString.";
+  safeStorage.unavailableAfterFailure = true;
+  await assert.rejects(new SecureSettingsStore(file, { safeStorage }).load());
+  assert.deepEqual(await unreadableNames(root), []);
 });

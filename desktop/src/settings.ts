@@ -115,21 +115,46 @@ export class SecureSettingsStore implements PiAuthStorageHost {
     // Unavailable secure storage (for example a denied Keychain prompt) is
     // transient: throw without caching so a later read can try again.
     this.assertEncryptionAvailable();
-    let firstError: unknown;
+    let undecryptable: unknown;
+    let anyRead = false;
     for (const candidate of [this.filePath, this.backupPath()]) {
-      if (!existsSync(candidate)) continue;
+      let bytes: Buffer;
       try {
-        const decrypted = this.safeStorage.decryptString(await readFile(candidate));
+        bytes = await readFile(candidate);
+      } catch (error) {
+        if (errorCode(error) === "ENOENT") continue;
+        // An I/O failure (EMFILE, EIO, EACCES, …) says nothing about the
+        // bytes: never set credentials aside for it, and never cache it.
+        throw new Error(`AmpleFile could not read secure settings: ${errorMessage(error)}`);
+      }
+      anyRead = true;
+      let decrypted: string;
+      try {
+        decrypted = this.safeStorage.decryptString(bytes);
+      } catch (error) {
+        if (isTransientDecryptionError(error) || !this.safeStorage.isEncryptionAvailable()) {
+          throw new Error(`Operating-system secure storage could not decrypt settings right now: ${errorMessage(error)}`);
+        }
+        undecryptable ??= error;
+        continue;
+      }
+      try {
         this.cache = normalizeSettings(JSON.parse(decrypted));
         return structuredClone(this.cache);
       } catch (error) {
-        firstError ??= error;
+        undecryptable ??= error;
       }
     }
-    // Secure storage works but neither copy decrypts: these bytes will never
-    // be readable with this key, and every save would fail on them. Set them
-    // aside (never delete) and start empty so the person can re-enter keys.
-    await this.setAsideUnreadableFiles(firstError);
+    if (!anyRead) {
+      // Both files vanished between the check and the read: nothing is saved.
+      this.cache = emptySettings();
+      return structuredClone(this.cache);
+    }
+    // Every copy that exists was read in full, secure storage works, and
+    // none decrypts to settings: these bytes will never be readable with this
+    // key, and every save would fail on them. Set them aside (never delete)
+    // and start empty so the person can re-enter keys.
+    await this.setAsideUnreadableFiles(undecryptable);
     this.cache = emptySettings();
     return structuredClone(this.cache);
   }
@@ -199,6 +224,19 @@ function normalizeProvider(value: string): string {
   const provider = value.trim().toLocaleLowerCase();
   if (!provider || !/^[a-z0-9._-]+$/.test(provider)) throw new Error("Invalid provider name.");
   return provider;
+}
+
+function errorCode(error: unknown): string | undefined {
+  return error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : undefined;
+}
+
+/**
+ * Electron reports a missing Safe Storage key as "Decryption is not
+ * available", which says the key could not be fetched now, not that the bytes
+ * are corrupt.
+ */
+function isTransientDecryptionError(error: unknown): boolean {
+  return /decryption is not available|encryption is not available|keychain/i.test(errorMessage(error));
 }
 
 function errorMessage(error: unknown): string {
