@@ -103,3 +103,10 @@ test("only the channels the AmpleFile Agent popover preload uses accept the popo
   // The sender-scoped popover check is tied to the popover's own webContents.
   assert.match(main, /if \(ampleFileAgentPopover\?\.owns\(event\.sender\)\) \{/);
 });
+
+test("restarting from the recovery dialog uses the graceful quit path instead of app.exit", () => {
+  assert.doesNotMatch(main, /app\.exit\(/);
+  const dialog = main.slice(main.indexOf("async function showRendererRecoveryFailedDialog"));
+  const body = dialog.slice(0, dialog.indexOf("\n}\n"));
+  assert.match(body, /if \(result\.response === 0\) app\.relaunch\(\);\n\s*app\.quit\(\);/);
+});

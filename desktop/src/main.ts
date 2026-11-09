@@ -2411,12 +2411,10 @@ async function showRendererRecoveryFailedDialog(reason: string): Promise<void> {
   const result = mainWindow && !mainWindow.isDestroyed()
     ? await dialog.showMessageBox(mainWindow, options)
     : await dialog.showMessageBox(options);
-  if (result.response === 0) {
-    app.relaunch();
-    app.exit(0);
-  } else {
-    app.quit();
-  }
+  // Restart goes through the ordinary graceful quit, so turns and History
+  // flush and the CLI act token is revoked before the new instance starts.
+  if (result.response === 0) app.relaunch();
+  app.quit();
 }
 
 function configureWindowNavigation(window: BrowserWindow): void {
