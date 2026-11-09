@@ -70,6 +70,35 @@ test("local API covers Connected Folder files and external restore points", asyn
   }
 });
 
+test("file info hashes a file only when asked or small enough for History to keep versions of it", async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-file-info-hash-"));
+  const api = await startLocalApi({ port: 0, stateBase: join(sandbox, "state"), connectedFolderBase: join(sandbox, "content"), loadEnv: false });
+  const previousCap = process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES;
+  try {
+    const created = await json(`${api.origin}/api/connected-folders`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Info" }),
+    }) as { connectedFolder: { id: string; connectedFolderRoot: string } };
+    await writeFile(join(created.connectedFolder.connectedFolderRoot, "small.txt"), "small");
+    await writeFile(join(created.connectedFolder.connectedFolderRoot, "large.bin"), "x".repeat(64));
+    const info = (path: string, query = "") => json(`${api.origin}/api/connected-folders/${created.connectedFolder.id}/file-info?path=${encodeURIComponent(path)}${query}`) as Promise<{ hashSha256: string | null; modifiedAt: string; sizeBytes: number }>;
+    process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES = "16";
+    assert.match((await info("small.txt")).hashSha256 ?? "", /^[0-9a-f]{64}$/, "a file History versions is hashed by default");
+    const large = await info("large.bin");
+    assert.equal(large.hashSha256, null, "a file too large for History is not read whole");
+    assert.equal(large.sizeBytes, 64);
+    assert.ok(large.modifiedAt);
+    assert.match((await info("large.bin", "&hash=1")).hashSha256 ?? "", /^[0-9a-f]{64}$/, "a caller that asks gets the hash");
+    assert.equal((await info("small.txt", "&hash=0")).hashSha256, null, "a caller that declines gets none");
+  } finally {
+    if (previousCap === undefined) delete process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES;
+    else process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES = previousCap;
+    await api.close();
+    await rm(sandbox, { recursive: true, force: true });
+  }
+});
+
 test("new Connected Folders start in colors no other Connected Folder uses", async () => {
   const sandbox = await mkdtemp(join(tmpdir(), "amplefile-starting-colors-"));
   const api = await startLocalApi({

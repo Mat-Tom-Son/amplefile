@@ -1467,7 +1467,8 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const connectedFolder = await getConnectedFolder(fileInfoMatch[1]);
     const path = url.searchParams.get("path") ?? "";
     if (!path) throw badRequest("Connected Folder item path is required.");
-    sendJson(res, await getConnectedFolderEntryInfo(connectedFolder.connectedFolderRoot, path));
+    const hash = await fileInfoHashWanted(connectedFolder.connectedFolderRoot, path, url.searchParams.get("hash"));
+    sendJson(res, await getConnectedFolderEntryInfo(connectedFolder.connectedFolderRoot, path, { hash }));
     return;
   }
 
@@ -11165,6 +11166,28 @@ async function captureTurnCheckpointSafe(
     });
     return null;
   }
+}
+
+/**
+ * Whether the file-info route reads a whole file to hash it. The Info panel
+ * needs only its dates and size; the hash is compared with History's versions
+ * of the file. A caller says `hash=1` or `hash=0`; otherwise a file is hashed
+ * only when it is small enough for History to keep versions of it (the same
+ * limit as history.ts), so selecting a multi-gigabyte file never reads it all.
+ */
+async function fileInfoHashWanted(connectedFolderRoot: string, path: string, requested: string | null): Promise<boolean> {
+  if (requested === "1" || requested === "true") return true;
+  if (requested === "0" || requested === "false") return false;
+  let absolutePath: string;
+  try { absolutePath = resolveConnectedFolderPath(connectedFolderRoot, path); } catch { return false; }
+  const info = await stat(absolutePath).catch(() => null);
+  return Boolean(info?.isFile() && info.size <= historyVersionedFileLimitBytes());
+}
+
+/** History's per-file limit for keeping versions; history.ts reads the same setting. */
+function historyVersionedFileLimitBytes(): number {
+  const configured = Number(process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES);
+  return Number.isFinite(configured) && configured >= 1 ? Math.floor(configured) : 100 * 1024 * 1024;
 }
 
 async function runWithHistorySafety<T>(connectedFolderRoot: string, checkpointId: string, operation: () => Promise<T>): Promise<T> {
