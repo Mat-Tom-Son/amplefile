@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { Add16Regular, ChevronDown16Regular, ChevronUp16Regular, FolderArrowRight16Regular, Sparkle16Regular, Grid20Regular, MoreHorizontal20Regular, PanelRight20Regular, TextBulletListLtr20Regular } from "@fluentui/react-icons";
 
 import "./file-manager.css";
@@ -1083,12 +1083,17 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }
 
   /** A file a Chat names: show it here, selected, the way the design does. */
-  function showChatFile(path: string) {
+  function showChatFileNow(path: string) {
     if (!connectedFolder) return;
     const folder = parentPath(path);
     if (folder !== location.path) navigate({ place: { kind: "connected-folder", id: connectedFolder.id }, path: folder });
     window.setTimeout(() => select([path]), folder !== location.path ? 300 : 0);
   }
+  // Stable for the Chat's lifetime: every reply's links depend on it, and a new
+  // function per render would re-resolve and re-render every reply.
+  const showChatFileRef = useRef(showChatFileNow);
+  showChatFileRef.current = showChatFileNow;
+  const showChatFile = useCallback((path: string) => showChatFileRef.current(path), []);
 
   function requestRename(entry: TreeEntry | undefined) {
     if (!entry || entry.nestedFolder) return;
