@@ -19,7 +19,7 @@ import { FolderMentionMenu, type MentionFolderOption } from "../components/chat/
 import { AmpleFileLockup } from "../components/brand/AmpleFileBrand";
 import { RuntimeContextPreview } from "../components/chat/activity";
 import { SafeMarkdownAnchor } from "../components/chat/SafeMarkdownAnchor";
-import { TurnAnnouncer } from "../components/chat/TurnAnnouncer";
+import { TurnAnnouncer, type TurnStatus } from "../components/chat/TurnAnnouncer";
 import { savedWorkTrailPreviews } from "../lib/chat-work-trail";
 import type { ChatMessage, ComposerState, ConversationRuntime, ChatStreamEvent, ExtensionUiRequest, RuntimePreviewEntry } from "../types";
 
@@ -114,6 +114,10 @@ const fixtureChats: AmpleFileAgentChat[] = [
 ];
 
 const activePhases = new Set(["working", "handed_off"]);
+/** How a request's phase is announced: a turn that asked or handed work on did not reply. */
+const popoverTurnStatus: Record<AmpleFileAgentRequestView["phase"], TurnStatus> = {
+  working: "working", needs_you: "question", handed_off: "handed_off", done: "replied", failed: "failed", stopped: "stopped",
+};
 const pollIntervalMs = 1_500;
 const idlePollIntervalMs = 5_000;
 const popoverFixtureRequested = new URLSearchParams(window.location.search).get("fixture") === "agent";
@@ -1189,7 +1193,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
             <button className="agent-jump-latest" type="button" onClick={() => followLatest("smooth")}><ArrowDown aria-hidden="true" size={13} />Latest</button>
           ) : null}
         </section>
-          <TurnAnnouncer running={request?.phase === "working"} who="The AmpleFile Agent" />
+          <TurnAnnouncer conversationKey={conversationId} status={request ? popoverTurnStatus[request.phase] : null} who="The AmpleFile Agent" />
           {request && activePhases.has(request.phase) ? (
             <div className="agent-tail">
               {request.phase === "working" ? (

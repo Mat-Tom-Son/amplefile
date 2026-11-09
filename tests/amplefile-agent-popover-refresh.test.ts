@@ -117,7 +117,7 @@ test("the compact popover leaves the overview to the main window and approved we
 
 test("Escape still hides the popover and the AmpleFile Agent turn is announced", async () => {
   const popover = await readFile(resolve(rootDir, "web-local/src/popover/PopoverApp.tsx"), "utf8");
-  assert.match(popover, /<TurnAnnouncer running=\{request\?\.phase === "working"\} who="The AmpleFile Agent" \/>/);
+  assert.match(popover, /<TurnAnnouncer conversationKey=\{conversationId\} status=\{request \? popoverTurnStatus\[request\.phase\] : null\} who="The AmpleFile Agent" \/>/);
   assert.match(popover, /aria-label="AmpleFile Agent chat"/);
   assert.match(popover, /if \(event\.key === "Escape"\) \{[\s\S]*?else bridge\?\.ampleFileAgent\?\.hide\(\);/);
 });

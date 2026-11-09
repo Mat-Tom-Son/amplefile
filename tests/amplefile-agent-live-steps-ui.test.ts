@@ -140,15 +140,29 @@ test("the popover announces a turn's start and end, not every streamed frame or 
   const live = [...dom.container.querySelectorAll('[aria-live="polite"], [role="status"]')].filter((node) => !node.closest("[hidden]"));
   assert.ok(live.every((node) => !node.textContent?.includes("Streaming text")));
 
-  const { TurnAnnouncer } = await import("../web-local/src/components/chat/TurnAnnouncer.js");
+  const { TurnAnnouncer, chatTurnStatus } = await import("../web-local/src/components/chat/TurnAnnouncer.js");
   const host = document.createElement("div"); document.body.append(host);
   const { createRoot } = await import("react-dom/client");
   const root = createRoot(host);
-  await dom.act(() => root.render(createElement(TurnAnnouncer, { running: false, who: "The AmpleFile Agent" })));
-  assert.equal(host.textContent, "");
-  await dom.act(() => root.render(createElement(TurnAnnouncer, { running: true, who: "The AmpleFile Agent" })));
-  assert.equal(host.textContent, "The AmpleFile Agent is working.");
-  await dom.act(() => root.render(createElement(TurnAnnouncer, { running: false, who: "The AmpleFile Agent" })));
-  assert.equal(host.textContent, "The AmpleFile Agent replied.");
+  const say = async (conversationKey: string, status: Parameters<typeof TurnAnnouncer>[0]["status"]) => {
+    await dom.act(() => root.render(createElement(TurnAnnouncer, { conversationKey, status, who: "The AmpleFile Agent" })));
+    return host.textContent;
+  };
+  assert.equal(await say("one", "replied"), "", "what a conversation shows when it opens is not news");
+  assert.equal(await say("one", "working"), "The AmpleFile Agent is working.");
+  assert.equal(await say("one", "handed_off"), "The AmpleFile Agent handed work to Connected Folders and is waiting on it.");
+  assert.equal(await say("one", "question"), "The AmpleFile Agent has a question for you.");
+  assert.equal(await say("one", "working"), "The AmpleFile Agent is working.");
+  assert.equal(await say("one", "failed"), "The AmpleFile Agent could not finish.");
+  assert.equal(await say("one", "working"), "The AmpleFile Agent is working.");
+  assert.equal(await say("two", "replied"), "", "opening another conversation resets without speaking");
+  assert.equal(await say("two", "stopped"), "The AmpleFile Agent stopped.");
+  // A Worker Chat reads its outcome from the durable request, then the last reply.
+  assert.equal(chatTurnStatus(true, "done", undefined), "working");
+  assert.equal(chatTurnStatus(false, "waiting", undefined), "question");
+  assert.equal(chatTurnStatus(false, "partial", undefined), "partial");
+  assert.equal(chatTurnStatus(false, null, { id: "r", role: "assistant", content: "", createdAt: "", interruption: { reason: "cancelled", message: "", retryAttempts: 0, provider: null, model: null, activities: [] } }), "stopped");
+  assert.equal(chatTurnStatus(false, null, { id: "r", role: "assistant", content: "", createdAt: "", interruption: { reason: "provider_error", message: "", retryAttempts: 0, provider: null, model: null, activities: [] } }), "failed");
+  assert.equal(chatTurnStatus(false, null, { id: "r", role: "assistant", content: "Done", createdAt: "" }), "replied");
   await dom.act(() => root.unmount());
 });

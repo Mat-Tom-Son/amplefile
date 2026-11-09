@@ -1,19 +1,67 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
+import type { ChatMessage } from "../../types";
+import type { WorkRequestState } from "../../../../src/shared/request-presentation";
+
 const visuallyHidden: CSSProperties = { position: "absolute", width: 1, height: 1, margin: -1, padding: 0, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 };
 
+/** Where a Chat's turn stands, as a screen reader hears it. */
+export type TurnStatus = "working" | "replied" | "partial" | "question" | "handed_off" | "failed" | "stopped";
+
+export function turnAnnouncement(status: TurnStatus, who: string): string {
+  switch (status) {
+    case "working": return `${who} is working.`;
+    case "replied": return `${who} replied.`;
+    case "partial": return `${who} finished part of the work.`;
+    case "question": return `${who} has a question for you.`;
+    case "handed_off": return `${who} handed work to Connected Folders and is waiting on it.`;
+    case "failed": return `${who} could not finish.`;
+    case "stopped": return `${who} stopped.`;
+  }
+}
+
 /**
- * A polite live region for a Chat transcript. It speaks only when a turn
- * starts and when it ends, never per streamed frame or timer tick, so a
- * screen reader hears that the reply is ready and can read it in place.
+ * A Worker Chat's turn status: the durable request's state when it is known,
+ * otherwise the last reply (an interrupted one did not simply reply).
  */
-export function TurnAnnouncer({ running, who }: { running: boolean; /** "The Worker", "The AmpleFile Agent". */ who: string }) {
+export function chatTurnStatus(busy: boolean, workState: WorkRequestState | null | undefined, lastMessage: ChatMessage | undefined): TurnStatus {
+  if (busy) return "working";
+  switch (workState) {
+    case "working": return "working";
+    case "waiting": return "question";
+    case "handed_off": return "handed_off";
+    case "partial": return "partial";
+    case "failed": return "failed";
+    case "stopped": case "expired": return "stopped";
+    case "done": return "replied";
+    default: break;
+  }
+  const interruption = lastMessage?.role === "assistant" ? lastMessage.interruption : undefined;
+  if (interruption) return interruption.reason === "cancelled" ? "stopped" : "failed";
+  return "replied";
+}
+
+/**
+ * A polite live region for a Chat transcript. It speaks only when the turn's
+ * status changes within one conversation, never per streamed frame or timer
+ * tick, and says how the turn ended. Opening another conversation is not news,
+ * so it resets silently.
+ */
+export function TurnAnnouncer({ conversationKey, status, who }: {
+  /** The conversation shown; a change resets without speaking. */
+  conversationKey: string | null;
+  status: TurnStatus | null;
+  /** "The Worker", "The AmpleFile Agent". */
+  who: string;
+}) {
   const [text, setText] = useState("");
-  const wasRunning = useRef(running);
+  const seen = useRef({ conversationKey, status });
   useEffect(() => {
-    if (running === wasRunning.current) return;
-    wasRunning.current = running;
-    setText(running ? `${who} is working.` : `${who} replied.`);
-  }, [running, who]);
+    const previous = seen.current;
+    seen.current = { conversationKey, status };
+    if (previous.conversationKey !== conversationKey) { setText(""); return; }
+    if (previous.status === status || status === null) return;
+    setText(turnAnnouncement(status, who));
+  }, [conversationKey, status, who]);
   return <div className="turn-announcer" role="status" aria-live="polite" aria-atomic="true" style={visuallyHidden}>{text}</div>;
 }

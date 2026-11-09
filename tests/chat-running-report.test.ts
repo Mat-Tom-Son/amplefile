@@ -68,6 +68,7 @@ test("a running Chat withdraws its running report when it unmounts or shows anot
   assert.equal(dom.container.querySelector(".turn-announcer")?.getAttribute("aria-live"), "polite");
   await render("second");
   await dom.waitFor(() => running.get("first") === false);
+  assert.equal(dom.container.querySelector(".turn-announcer")?.textContent, "", "leaving a running Chat does not announce a reply");
   await startTurn("second");
   await render(null);
   assert.equal(running.get("second"), false, "unmounting a running Chat withdraws its report");
