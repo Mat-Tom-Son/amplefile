@@ -1663,6 +1663,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
             role="columnheader"
             className={`fm-col fm-col-${column.key}${sort.key === column.key ? " is-sorted" : ""}`}
             aria-sort={sort.key === column.key ? (sort.ascending ? "ascending" : "descending") : "none"}
+            // Like Finder's, a header clicked with the mouse leaves focus on
+            // the list, so Return and Space keep acting on the selection; Tab
+            // still reaches it.
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => setSort(nextFileManagerSort(sort, column.key))}
           >
             <span>{column.label}</span>

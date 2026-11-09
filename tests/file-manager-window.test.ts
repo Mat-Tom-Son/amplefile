@@ -139,3 +139,15 @@ test("when a Worker reply ends, the window re-reads its bootstrap so a look the 
   await dom.act(async () => { streams.get(path)!.onmessage!({ data: JSON.stringify({ conversationId: "chat", type: "done", turnId: "turn-1" }) }); await Promise.resolve(); });
   await dom.waitFor(() => refreshes === before + 1);
 });
+
+test("clicking a sort header leaves focus on the list, and the header stays reachable by keyboard", async (t) => {
+  const { dom, module } = await createFileManagerHarness(t, answers());
+  await dom.render(view(module));
+  await dom.waitFor(() => Boolean(dom.container.querySelector('[data-fm-path="a.md"]')));
+  const header = [...dom.container.querySelectorAll<HTMLButtonElement>('[role="columnheader"]')].find((item) => item.textContent?.includes("Size"))!;
+  const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+  await dom.act(() => { header.dispatchEvent(press); });
+  assert.equal(press.defaultPrevented, true, "a mouse press does not move focus to the header");
+  assert.notEqual(header.tabIndex, -1);
+  assert.equal(header.disabled, false);
+});
