@@ -376,6 +376,7 @@ import {
   connectedFolderRemovalPendingResult,
   touchConnectedFolderRoot,
   withConnectedFolderHistoryOperation,
+  withConnectedFolderTouchBatch,
   writeConnectedFolderTextFile,
   writeUploadedFiles,
   type ConnectedFolderMovedEntry,
@@ -6411,7 +6412,9 @@ async function addExternalFilesInternal(
   }
   const copied: string[] = [];
   try {
-    for (const source of sources) copied.push(await copyPathIntoConnectedFolder(source, connectedFolder.connectedFolderRoot, toDir));
+    await withConnectedFolderTouchBatch(async () => {
+      for (const source of sources) copied.push(await copyPathIntoConnectedFolder(source, connectedFolder.connectedFolderRoot, toDir));
+    });
   } catch (error) {
     // A mid-batch failure must not strand earlier copies without a restore
     // point: undo them best-effort, then surface the failure.
@@ -6578,54 +6581,56 @@ async function deleteSettledConnectedFolderEntries(
 ): Promise<AmpleFileBatchDeleteResult> {
   const root = connectedFolder.connectedFolderRoot;
   const paths = outermostConnectedFolderPaths(targets);
-  if (!paths.length) throw badRequest("Select files or folders to delete.");
-  const entries: Array<{ absolutePath: string; path: string; kind: "file" | "folder" }> = [];
-  for (const path of paths) entries.push(await resolveConnectedFolderDeleteTarget(root, path));
-  const safety = await createConnectedFolderMutationCheckpoint(root, {
-    paths: entries.map((entry) => entry.path),
-    reason: "pre_delete",
-    label: entries.length === 1 ? `Before deleting ${entries[0]!.path}` : `Before deleting ${entries.length} items`,
-  });
-  // History names the files it could not keep the way it names its capture
-  // roots; each one belongs to exactly one row.
-  const historyRoot = ensureSafeConnectedFolderRoot(root);
-  const capturedAs = entries.map((entry) => relative(historyRoot, entry.absolutePath).split(sep).join("/"));
-  const uncovered = entries.map((): AmpleFileRecentlyDeletedUncoveredPath[] => []);
-  for (const file of safety.skippedFiles) {
-    const row = capturedAs.findIndex((path) => file.path === path || file.path.startsWith(`${path}/`));
-    if (row < 0) {
-      await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-      throw new AmpleFileCliError("failure", `AmpleFile could not tell which item ${file.path} belongs to. Nothing was deleted.`);
-    }
-    uncovered[row]!.push({ path: file.path, reason: file.reason });
-  }
-  const deleted: AmpleFileBatchDeleteResult["deleted"] = [];
-  for (const [index, entry] of entries.entries()) {
-    try {
-      const row = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
-        const value = await applyConnectedFolderDelete(state, connectedFolder, entry.path, uncovered[index]!, safety.checkpointId, { receiptId: requestId });
-        return {
-          value,
-          detail: value.recovery.kind === "recently-deleted"
-            ? `Connected Folder ${connectedFolder.id}; trash ${value.recovery.entryId}`
-            : `Connected Folder ${connectedFolder.id}; checkpoint ${value.safetyCheckpointId}`,
-        };
-      });
-      deleted.push({ ...row.value, receiptId: row.requestId });
-    } catch (error) {
-      if (!deleted.length) {
+  return withConnectedFolderTouchBatch(async () => {
+    if (!paths.length) throw badRequest("Select files or folders to delete.");
+    const entries: Array<{ absolutePath: string; path: string; kind: "file" | "folder" }> = [];
+    for (const path of paths) entries.push(await resolveConnectedFolderDeleteTarget(root, path));
+    const safety = await createConnectedFolderMutationCheckpoint(root, {
+      paths: entries.map((entry) => entry.path),
+      reason: "pre_delete",
+      label: entries.length === 1 ? `Before deleting ${entries[0]!.path}` : `Before deleting ${entries.length} items`,
+    });
+    // History names the files it could not keep the way it names its capture
+    // roots; each one belongs to exactly one row.
+    const historyRoot = ensureSafeConnectedFolderRoot(root);
+    const capturedAs = entries.map((entry) => relative(historyRoot, entry.absolutePath).split(sep).join("/"));
+    const uncovered = entries.map((): AmpleFileRecentlyDeletedUncoveredPath[] => []);
+    for (const file of safety.skippedFiles) {
+      const row = capturedAs.findIndex((path) => file.path === path || file.path.startsWith(`${path}/`));
+      if (row < 0) {
         await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-        throw error;
+        throw new AmpleFileCliError("failure", `AmpleFile could not tell which item ${file.path} belongs to. Nothing was deleted.`);
       }
-      return {
-        deleted,
-        safetyCheckpointId: safety.checkpointId,
-        failed: { path: entry.path, error: errorMessage(error) },
-        notDeleted: entries.slice(index + 1).map((item) => item.path),
-      };
+      uncovered[row]!.push({ path: file.path, reason: file.reason });
     }
-  }
-  return { deleted, safetyCheckpointId: safety.checkpointId };
+    const deleted: AmpleFileBatchDeleteResult["deleted"] = [];
+    for (const [index, entry] of entries.entries()) {
+      try {
+        const row = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
+          const value = await applyConnectedFolderDelete(state, connectedFolder, entry.path, uncovered[index]!, safety.checkpointId, { receiptId: requestId });
+          return {
+            value,
+            detail: value.recovery.kind === "recently-deleted"
+              ? `Connected Folder ${connectedFolder.id}; trash ${value.recovery.entryId}`
+              : `Connected Folder ${connectedFolder.id}; checkpoint ${value.safetyCheckpointId}`,
+          };
+        });
+        deleted.push({ ...row.value, receiptId: row.requestId });
+      } catch (error) {
+        if (!deleted.length) {
+          await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
+          throw error;
+        }
+        return {
+          deleted,
+          safetyCheckpointId: safety.checkpointId,
+          failed: { path: entry.path, error: errorMessage(error) },
+          notDeleted: entries.slice(index + 1).map((item) => item.path),
+        };
+      }
+    }
+    return { deleted, safetyCheckpointId: safety.checkpointId };
+  });
 }
 
 export interface AmpleFileBatchMoveResult {
@@ -6652,36 +6657,38 @@ async function moveConnectedFolderEntriesWithHistory(
   sourcePaths: readonly string[],
   targetFolderPath: string,
 ): Promise<AmpleFileBatchMoveResult> {
-  const root = connectedFolder.connectedFolderRoot;
-  const sources = outermostConnectedFolderPaths(sourcePaths);
-  if (!sources.length) throw badRequest("Select files or folders to move.");
-  const plans = await checkConnectedFolderMoves(root, sources, targetFolderPath);
-  const label = plans.length === 1 ? `Before moving ${plans[0]!.fromPath}` : `Before moving ${plans.length} items`;
-  const safety = await createConnectedFolderMutationCheckpoint(root, {
-    movesOnRestore: plans.map((plan) => ({ fromPath: plan.toPath, toPath: plan.fromPath })),
-    reason: "pre_move",
-    label,
-  });
-  const moved: ConnectedFolderMovedEntry[] = [];
-  for (const [index, plan] of plans.entries()) {
-    try {
-      moved.push(await moveConnectedFolderEntry(root, { sourcePath: plan.fromPath, targetFolderPath }));
-    } catch (error) {
-      if (!moved.length) {
-        await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-        throw error;
+  return withConnectedFolderTouchBatch(async () => {
+    const root = connectedFolder.connectedFolderRoot;
+    const sources = outermostConnectedFolderPaths(sourcePaths);
+    if (!sources.length) throw badRequest("Select files or folders to move.");
+    const plans = await checkConnectedFolderMoves(root, sources, targetFolderPath);
+    const label = plans.length === 1 ? `Before moving ${plans[0]!.fromPath}` : `Before moving ${plans.length} items`;
+    const safety = await createConnectedFolderMutationCheckpoint(root, {
+      movesOnRestore: plans.map((plan) => ({ fromPath: plan.toPath, toPath: plan.fromPath })),
+      reason: "pre_move",
+      label,
+    });
+    const moved: ConnectedFolderMovedEntry[] = [];
+    for (const [index, plan] of plans.entries()) {
+      try {
+        moved.push(await moveConnectedFolderEntry(root, { sourcePath: plan.fromPath, targetFolderPath }));
+      } catch (error) {
+        if (!moved.length) {
+          await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
+          throw error;
+        }
+        const kept = await restorePointForMoves(root, moved, label, safety.checkpointId, error);
+        return {
+          moved,
+          safetyCheckpointId: kept.checkpointId,
+          historySkippedPaths: kept.skippedLargeFiles,
+          failed: { path: plan.fromPath, error: errorMessage(error) },
+          notMoved: plans.slice(index + 1).map((item) => item.fromPath),
+        };
       }
-      const kept = await restorePointForMoves(root, moved, label, safety.checkpointId, error);
-      return {
-        moved,
-        safetyCheckpointId: kept.checkpointId,
-        historySkippedPaths: kept.skippedLargeFiles,
-        failed: { path: plan.fromPath, error: errorMessage(error) },
-        notMoved: plans.slice(index + 1).map((item) => item.fromPath),
-      };
     }
-  }
-  return { moved, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles };
+    return { moved, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles };
+  });
 }
 
 /**
@@ -10481,9 +10488,11 @@ function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomationHopP
         const absoluteSources = await resolveAutomationFilesSources(from.connectedFolderRoot, source);
         const copied: string[] = [];
         try {
-          for (const sourcePath of absoluteSources) {
-            copied.push(await copyPathIntoConnectedFolder(sourcePath, to.connectedFolderRoot, step.to));
-          }
+          await withConnectedFolderTouchBatch(async () => {
+            for (const sourcePath of absoluteSources) {
+              copied.push(await copyPathIntoConnectedFolder(sourcePath, to.connectedFolderRoot, step.to));
+            }
+          });
         } catch (error) {
           // A mid-batch failure must not strand earlier copies without a
           // restore point: undo them best-effort, then surface the failure.
@@ -11813,7 +11822,8 @@ async function moveBetweenConnectedFolders(
   }
   reserveCapabilityMutation(state, from.id, "project", from.id);
   try {
-    return await runSettledConnectedFolderDeletion(state, from.id, async () => {
+    // One touch of the source when the move ends, not one per item it removes.
+    return await runSettledConnectedFolderDeletion(state, from.id, () => withConnectedFolderTouchBatch(async () => {
       const root = from.connectedFolderRoot;
       const entries: Array<{ absolutePath: string; path: string; kind: "file" | "folder" }> = [];
       for (const path of outermostConnectedFolderPaths(sources.map((source) => source.relativePath))) {
@@ -11911,7 +11921,7 @@ async function moveBetweenConnectedFolders(
         }
       }
       return { mode: "move" as const, written: writtenPaths, restorePoints, ...(recentlyDeleted.length ? { recentlyDeleted } : {}) };
-    });
+    }));
   } finally {
     state.capabilityMutations.delete(from.id);
   }
