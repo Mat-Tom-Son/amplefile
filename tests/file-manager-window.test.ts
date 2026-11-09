@@ -155,3 +155,13 @@ test("clicking a sort header leaves focus on the list, and the header stays reac
   assert.notEqual(header.tabIndex, -1);
   assert.equal(header.disabled, false);
 });
+
+test("a selected file's Info asks for its date without hashing it", async (t) => {
+  const { dom, module, requests } = await createFileManagerHarness(t, answers((path) => path.includes("/file-info") ? { modifiedAt: "2026-09-27T12:00:00Z" } : undefined));
+  await dom.render(view(module));
+  await dom.waitFor(() => Boolean(dom.container.querySelector('[data-fm-path="a.md"]')));
+  await dom.act(() => dom.container.querySelector<HTMLElement>('[data-fm-path="a.md"]')!.click());
+  await dom.waitFor(() => requests.some((item) => item.path.includes("/file-info")));
+  const info = requests.find((item) => item.path.includes("/file-info"))!;
+  assert.equal(new URL(info.path, "http://local").searchParams.get("hash"), "0");
+});
