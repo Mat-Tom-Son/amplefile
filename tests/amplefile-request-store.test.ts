@@ -1021,3 +1021,52 @@ test("only the running turn changes its request's checklist, an empty list clear
   assert.equal(await store.setChecklist("task-checklist", []), null);
   assert.equal(store.byTaskId("task-checklist")?.checklist, undefined);
 });
+
+test("message text with control characters is accepted, scrubbed, and always reloads", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+
+  // Every C0/C1 and bidi control, plus the ones people paste: Word's soft
+  // line break (U+000B), a form feed, an ANSI escape, and U+202B.
+  const controls = [
+    ...Array.from({ length: 0x20 }, (_, code) => String.fromCharCode(code)),
+    ...Array.from({ length: 0x21 }, (_, offset) => String.fromCharCode(0x7f + offset)),
+    "‪", "‫", "‬", "‭", "‮", "⁦", "⁧", "⁨", "⁩",
+  ];
+  const pasted = `Line one\u000bline two\fpage two \u001b[31mred\u001b[0m ‫مرحبا‬\r\n\tend ${controls.join("")}`;
+  const request = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1", content: pasted });
+  assert.equal(request.content, request.assignment);
+  assert.match(request.content, /^Line one\nline two\npage two �\[31mred�\[0m �مرحبا�\r\n\tend /u);
+  assert.doesNotMatch(request.content.replace(/[\n\r\t]/g, " "), /[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/u);
+
+  await store.settleTurn("task-1", { status: "succeeded" });
+  const joined = await store.joinTurn({ requestId: request.requestId, taskId: "task-2", content: `follow-up\u0085next\u0007` });
+  assert.equal(joined.content, "follow-up\nnext�");
+  const child = await store.beginChild({
+    parentTaskId: "task-2", kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: "task-3",
+    content: "handoff\u000c\u009b",
+  });
+  assert.equal(child.assignment, "handoff\n�");
+
+  // Oversized text is cut on a character boundary, after scrubbing.
+  const limit = ampleFileRequestLimits.maxRequestContentBytes;
+  const oversized = await store.beginRoot({
+    kind: "cli", owner: connectedFolderOwner, surface: "cli", taskId: "task-4",
+    content: `${"a".repeat(limit - 2)}é\u0001`,
+  });
+  assert.equal(oversized.content, `${"a".repeat(limit - 2)}é`);
+  const cut = await store.beginRoot({
+    kind: "cli", owner: connectedFolderOwner, surface: "cli", taskId: "task-5",
+    content: `${"a".repeat(limit - 1)}é`,
+  });
+  assert.equal(cut.content, "a".repeat(limit - 1));
+  await store.flush();
+
+  // A record the store accepted always reloads, byte for byte.
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  assert.equal(reopened.damagedRecordCount(), 0);
+  for (const accepted of [store.get(request.requestId)!, store.get(child.requestId)!, store.get(oversized.requestId)!, store.get(cut.requestId)!]) {
+    assert.deepEqual(reopened.get(accepted.requestId), accepted);
+  }
+});

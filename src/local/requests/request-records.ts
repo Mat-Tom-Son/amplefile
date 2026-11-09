@@ -638,6 +638,27 @@ function boundedText(value: unknown, label: string, maxBytes: number, limit?: Am
   return value;
 }
 
+/**
+ * Makes free text safe to store in a record that `boundedText` will re-read:
+ * a vertical tab, form feed, or NEL (Word's soft line break among them)
+ * becomes a line break, and every other C0/C1 or bidi control becomes U+FFFD,
+ * the replacement act receipts use. The result is then cut to `maxBytes` on
+ * a character boundary. Message text arrives from a person, so the store
+ * scrubs it rather than refusing the turn that carries it.
+ */
+export function scrubAmpleFileRequestText(value: string, maxBytes: number): string {
+  const scrubbed = value
+    .replace(/[\u000b\u000c\u0085]/gu, "\n")
+    .replace(/[\u0000-\u0008\u000e-\u001f\u007f-\u0084\u0086-\u009f\u202a-\u202e\u2066-\u2069]/gu, "\uFFFD");
+  const bytes = Buffer.from(scrubbed, "utf8");
+  if (bytes.length <= maxBytes) return scrubbed;
+  // Step back over UTF-8 continuation bytes so the cut never splits a
+  // character, rather than storing a replacement glyph the person never wrote.
+  let end = maxBytes;
+  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1;
+  return bytes.subarray(0, end).toString("utf8");
+}
+
 function enumValue<T extends string>(value: unknown, allowed: readonly T[], label: string): T {
   if (typeof value !== "string" || !(allowed as readonly string[]).includes(value)) throw new Error(`${label} is invalid.`);
   return value as T;

@@ -46,7 +46,6 @@
  *   record is a projection over turns and receipts, so a lost line degrades to
  *   the turn-only view rather than keeping the app from starting.
  */
-import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -63,6 +62,7 @@ import {
   parseAmpleFileChecklistItems,
   parseAmpleFileQuestionRecord,
   parseAmpleFileRequestRecord,
+  scrubAmpleFileRequestText,
   parseAmpleFileResultEnvelope,
   parseAmpleFileResultRecord,
   ampleFileQuestionRecordSchema,
@@ -1432,11 +1432,7 @@ function newId(prefix: "req" | "q" | "res", at: string): string {
 }
 
 function boundContent(content: string): string {
-  const limit = ampleFileRequestLimits.maxRequestContentBytes;
-  if (Buffer.byteLength(content, "utf8") <= limit) return content;
-  // Cut on a byte bound, then drop a trailing partial character rather than
-  // storing a replacement glyph the person never wrote.
-  return Buffer.from(content, "utf8").subarray(0, limit).toString("utf8").replace(/\uFFFD+$/u, "");
+  return scrubAmpleFileRequestText(content, ampleFileRequestLimits.maxRequestContentBytes);
 }
 
 function dedupeAttachments(attachments: readonly AmpleFileAgentAttachmentRef[]): AmpleFileAgentAttachmentRef[] {
