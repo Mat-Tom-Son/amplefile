@@ -1,12 +1,32 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { dirname } from "node:path";
-import { safeStorage } from "electron";
 import type { PiAuthStorageData, PiAuthStorageHost } from "../../src/local/agent/auth-storage.js";
+
+const require = createRequire(import.meta.url);
 
 export interface SecureSettingsStatus {
   encryptionAvailable: boolean;
   configuredProviders: string[];
+  /**
+   * Saved provider credentials could not be decrypted (for example after the
+   * Safe Storage key was reset). They were set aside next to the settings file,
+   * never deleted, and the person needs to re-enter their credentials.
+   */
+  credentialsNeedReentry?: boolean;
+}
+
+/** The slice of Electron's `safeStorage` this store uses; injectable for tests. */
+export interface SafeStorageLike {
+  isEncryptionAvailable(): boolean;
+  encryptString(plainText: string): Buffer;
+  decryptString(encrypted: Buffer): string;
+}
+
+export interface SecureSettingsStoreOptions {
+  safeStorage?: SafeStorageLike;
+  now?: () => Date;
 }
 
 interface SecureSettingsFile {
@@ -23,17 +43,24 @@ const emptySettings = (): SecureSettingsFile => ({
 export class SecureSettingsStore implements PiAuthStorageHost {
   private queue: Promise<void> = Promise.resolve();
   private cache: SecureSettingsFile | undefined;
+  private credentialsSetAside = false;
+  private readonly safeStorage: SafeStorageLike;
+  private readonly now: () => Date;
 
-  constructor(private readonly filePath: string) {}
+  constructor(private readonly filePath: string, options: SecureSettingsStoreOptions = {}) {
+    this.safeStorage = options.safeStorage ?? (require("electron") as typeof import("electron")).safeStorage;
+    this.now = options.now ?? (() => new Date());
+  }
 
   async status(): Promise<SecureSettingsStatus> {
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!this.safeStorage.isEncryptionAvailable()) {
       return { encryptionAvailable: false, configuredProviders: [] };
     }
     const data = await this.read();
     return {
       encryptionAvailable: true,
       configuredProviders: Object.keys(data.credentials).sort(),
+      ...(this.credentialsSetAside ? { credentialsNeedReentry: true } : {}),
     };
   }
 
@@ -85,26 +112,49 @@ export class SecureSettingsStore implements PiAuthStorageHost {
       this.cache = emptySettings();
       return structuredClone(this.cache);
     }
+    // Unavailable secure storage (for example a denied Keychain prompt) is
+    // transient: throw without caching so a later read can try again.
     this.assertEncryptionAvailable();
     let firstError: unknown;
     for (const candidate of [this.filePath, this.backupPath()]) {
       if (!existsSync(candidate)) continue;
       try {
-        const decrypted = safeStorage.decryptString(await readFile(candidate));
+        const decrypted = this.safeStorage.decryptString(await readFile(candidate));
         this.cache = normalizeSettings(JSON.parse(decrypted));
         return structuredClone(this.cache);
       } catch (error) {
         firstError ??= error;
       }
     }
-    throw new Error(`AmpleFile could not read secure settings: ${errorMessage(firstError)}`);
+    // Secure storage works but neither copy decrypts: these bytes will never
+    // be readable with this key, and every save would fail on them. Set them
+    // aside (never delete) and start empty so the person can re-enter keys.
+    await this.setAsideUnreadableFiles(firstError);
+    this.cache = emptySettings();
+    return structuredClone(this.cache);
+  }
+
+  private async setAsideUnreadableFiles(cause: unknown): Promise<void> {
+    const stamp = this.now().toISOString().replace(/[:.]/g, "-");
+    for (const candidate of [this.filePath, this.backupPath()]) {
+      if (!existsSync(candidate)) continue;
+      let target = `${candidate}.unreadable-${stamp}`;
+      for (let suffix = 1; existsSync(target); suffix += 1) target = `${candidate}.unreadable-${stamp}-${suffix}`;
+      try {
+        await rename(candidate, target);
+      } catch (error) {
+        throw new Error(`AmpleFile could not read secure settings (${errorMessage(cause)}) or set them aside: ${errorMessage(error)}`);
+      }
+    }
+    this.credentialsSetAside = true;
+    console.warn(`AmpleFile could not decrypt saved provider credentials and set them aside; re-enter them in Settings → AI Models. (${errorMessage(cause)})`);
   }
 
   private async write(data: SecureSettingsFile): Promise<void> {
     this.assertEncryptionAvailable();
     await mkdir(dirname(this.filePath), { recursive: true });
     const temporaryPath = `${this.filePath}.${Date.now()}.tmp`;
-    await writeFile(temporaryPath, safeStorage.encryptString(JSON.stringify(data)));
+    await writeFile(temporaryPath, this.safeStorage.encryptString(JSON.stringify(data)));
     try {
       if (existsSync(this.filePath)) await copyFile(this.filePath, this.backupPath());
       await rename(temporaryPath, this.filePath);
@@ -120,7 +170,7 @@ export class SecureSettingsStore implements PiAuthStorageHost {
   }
 
   private assertEncryptionAvailable(): void {
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!this.safeStorage.isEncryptionAvailable()) {
       throw new Error("Operating-system secure storage is not available for this session.");
     }
   }
