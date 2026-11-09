@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { PiAuthStorageData, PiAuthStorageHost } from "../../src/local/agent/auth-storage.js";
 
 const require = createRequire(import.meta.url);
@@ -12,9 +12,11 @@ export interface SecureSettingsStatus {
   /**
    * Saved provider credentials could not be decrypted (for example after the
    * Safe Storage key was reset). They were set aside next to the settings file,
-   * never deleted, and the person needs to re-enter their credentials.
+   * never deleted, and the person needs to re-enter their credentials. Derived
+   * from the set-aside files, so it survives a restart; it clears once
+   * credentials are saved again.
    */
-  credentialsNeedReentry?: boolean;
+  credentialsNeedReentry: boolean;
 }
 
 /** The slice of Electron's `safeStorage` this store uses; injectable for tests. */
@@ -43,7 +45,6 @@ const emptySettings = (): SecureSettingsFile => ({
 export class SecureSettingsStore implements PiAuthStorageHost {
   private queue: Promise<void> = Promise.resolve();
   private cache: SecureSettingsFile | undefined;
-  private credentialsSetAside = false;
   private readonly safeStorage: SafeStorageLike;
   private readonly now: () => Date;
 
@@ -54,13 +55,13 @@ export class SecureSettingsStore implements PiAuthStorageHost {
 
   async status(): Promise<SecureSettingsStatus> {
     if (!this.safeStorage.isEncryptionAvailable()) {
-      return { encryptionAvailable: false, configuredProviders: [] };
+      return { encryptionAvailable: false, configuredProviders: [], credentialsNeedReentry: (await this.setAsideFiles()).length > 0 };
     }
     const data = await this.read();
     return {
       encryptionAvailable: true,
       configuredProviders: Object.keys(data.credentials).sort(),
-      ...(this.credentialsSetAside ? { credentialsNeedReentry: true } : {}),
+      credentialsNeedReentry: (await this.setAsideFiles()).length > 0,
     };
   }
 
@@ -171,7 +172,6 @@ export class SecureSettingsStore implements PiAuthStorageHost {
         throw new Error(`AmpleFile could not read secure settings (${errorMessage(cause)}) or set them aside: ${errorMessage(error)}`);
       }
     }
-    this.credentialsSetAside = true;
     console.warn(`AmpleFile could not decrypt saved provider credentials and set them aside; re-enter them in Settings → AI Models. (${errorMessage(cause)})`);
   }
 
@@ -187,6 +187,36 @@ export class SecureSettingsStore implements PiAuthStorageHost {
     } catch (error) {
       await unlink(temporaryPath).catch(() => undefined);
       throw error;
+    }
+    await this.supersedeSetAsideFiles();
+  }
+
+  /** Copies set aside as unreadable that still ask the person to re-enter credentials. */
+  private async setAsideFiles(): Promise<string[]> {
+    const directory = dirname(this.filePath);
+    const pattern = new RegExp(`^${escapeRegExp(basename(this.filePath))}(?:\\.bak)?\\.unreadable-[0-9A-Za-z-]+$`);
+    try {
+      return (await readdir(directory)).filter((name) => pattern.test(name)).map((name) => join(directory, name));
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  /**
+   * Credentials were saved again, so the re-entry request is answered. The
+   * set-aside copies stay on disk, renamed `*.superseded`, for anyone who can
+   * still decrypt them; nothing is deleted.
+   */
+  private async supersedeSetAsideFiles(): Promise<void> {
+    try {
+      for (const path of await this.setAsideFiles()) {
+        await rename(path, `${path}.superseded`).catch((error: unknown) => {
+          if (errorCode(error) !== "ENOENT") throw error;
+        });
+      }
+    } catch (error) {
+      console.warn(`AmpleFile saved credentials but could not mark the set-aside copies as superseded: ${errorMessage(error)}`);
     }
   }
 
@@ -224,6 +254,10 @@ function normalizeProvider(value: string): string {
   const provider = value.trim().toLocaleLowerCase();
   if (!provider || !/^[a-z0-9._-]+$/.test(provider)) throw new Error("Invalid provider name.");
   return provider;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function errorCode(error: unknown): string | undefined {

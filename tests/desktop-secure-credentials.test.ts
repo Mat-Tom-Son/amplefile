@@ -47,7 +47,7 @@ test("secure settings round-trip through the injected safe storage", async (t) =
 
   const reopened = new SecureSettingsStore(file, { safeStorage });
   assert.equal(await reopened.getProviderApiKey("openai"), "sk-test-1");
-  assert.deepEqual(await reopened.status(), { encryptionAvailable: true, configuredProviders: ["openai"] });
+  assert.deepEqual(await reopened.status(), { encryptionAvailable: true, configuredProviders: ["openai"], credentialsNeedReentry: false });
 });
 
 test("undecryptable settings and backup are set aside, never deleted, and a new key can be saved", async (t) => {
@@ -70,11 +70,20 @@ test("undecryptable settings and backup are set aside, never deleted, and a new 
   assert.deepEqual(await readFile(`${file}.unreadable-${stamp}`), oldMain);
   assert.deepEqual(await readFile(`${file}.bak.unreadable-${stamp}`), oldBackup);
 
-  await store.setProviderApiKey("openai", "sk-new");
-  assert.equal(await new SecureSettingsStore(file, { safeStorage }).getProviderApiKey("openai"), "sk-new");
-  const names = (await readdir(root)).sort();
-  assert.ok(names.includes(`secure-settings.bin.unreadable-${stamp}`));
-  assert.ok(names.includes(`secure-settings.bin.bak.unreadable-${stamp}`));
+  // The request to re-enter credentials survives a restart.
+  const restarted = new SecureSettingsStore(file, { safeStorage });
+  assert.deepEqual(await restarted.status(), { encryptionAvailable: true, configuredProviders: [], credentialsNeedReentry: true });
+  safeStorage.available = false;
+  assert.equal((await restarted.status()).credentialsNeedReentry, true);
+  safeStorage.available = true;
+
+  // Saving credentials again answers it; the old copies are kept, marked superseded.
+  await restarted.setProviderApiKey("openai", "sk-new");
+  const reopened = new SecureSettingsStore(file, { safeStorage });
+  assert.equal(await reopened.getProviderApiKey("openai"), "sk-new");
+  assert.deepEqual(await reopened.status(), { encryptionAvailable: true, configuredProviders: ["openai"], credentialsNeedReentry: false });
+  assert.deepEqual(await readFile(`${file}.unreadable-${stamp}.superseded`), oldMain);
+  assert.deepEqual(await readFile(`${file}.bak.unreadable-${stamp}.superseded`), oldBackup);
 });
 
 test("a readable backup still wins over a corrupt main file", async (t) => {
@@ -88,7 +97,7 @@ test("a readable backup still wins over a corrupt main file", async (t) => {
 
   const reopened = new SecureSettingsStore(file, { safeStorage });
   assert.equal(await reopened.getProviderApiKey("openai"), "sk-1");
-  assert.equal((await reopened.status()).credentialsNeedReentry, undefined);
+  assert.equal((await reopened.status()).credentialsNeedReentry, false);
   assert.deepEqual((await readdir(root)).filter((name) => name.includes("unreadable")), []);
 });
 

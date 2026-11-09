@@ -815,7 +815,7 @@ function registerIpc(): void {
     assertTrustedMainRenderer(event);
     return {
       pi: piRuntime ? await piRuntime.health() : { ok: false, configured: false, version: "", message: "Pi is still starting." },
-      settings: secureSettings ? await secureSettings.status() : { encryptionAvailable: false, configuredProviders: [] },
+      settings: secureSettings ? await secureSettings.status() : { encryptionAvailable: false, configuredProviders: [], credentialsNeedReentry: false },
     };
   });
   ipcMain.handle("amplefile:connected-folder:choose-folder", async (event) => {
@@ -1185,7 +1185,7 @@ function registerIpc(): void {
   });
   ipcMain.handle("amplefile:settings:status", (event) => {
     assertTrustedMainRenderer(event);
-    return secureSettings?.status() ?? { encryptionAvailable: false, configuredProviders: [] };
+    return secureSettings?.status() ?? { encryptionAvailable: false, configuredProviders: [], credentialsNeedReentry: false };
   });
   ipcMain.on("amplefile:window:rail-tooltip-show", (event, value: unknown) => {
     assertTrustedMainRenderer(event);
