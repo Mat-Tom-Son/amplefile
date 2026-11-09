@@ -1427,7 +1427,19 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   const suggestionsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/suggestions$/);
   if (method === "GET" && suggestionsMatch) {
     const connectedFolder = await getConnectedFolder(suggestionsMatch[1]);
-    sendJson(res, { suggestions: await folderSuggestions(state, connectedFolder, url.searchParams.get("path") ?? "") });
+    // The window drops this request when the person moves on; the model call
+    // behind it stops with it.
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    req.once("aborted", abort);
+    res.once("close", abort);
+    try {
+      const suggestions = await folderSuggestions(state, connectedFolder, url.searchParams.get("path") ?? "", controller.signal);
+      if (!controller.signal.aborted && !res.destroyed) sendJson(res, { suggestions });
+    } finally {
+      req.off("aborted", abort);
+      res.off("close", abort);
+    }
     return;
   }
 
@@ -11993,7 +12005,7 @@ const folderSuggestionLifetimeMs = 30 * 60 * 1_000;
  * it) and its recent Chat titles. Kept while those stay the same; an empty
  * list means "use the plain ones" (no model, or the call failed).
  */
-async function folderSuggestions(state: LocalApiState, connectedFolder: ConnectedFolderSummary, path: string): Promise<string[]> {
+async function folderSuggestions(state: LocalApiState, connectedFolder: ConnectedFolderSummary, path: string, signal?: AbortSignal): Promise<string[]> {
   const relativePath = normalizeConnectedFolderRelativePath(path);
   const scan = await scanConnectedFolderTree(connectedFolder.connectedFolderRoot, 0, relativePath, { includeIgnored: false, nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(connectedFolder.connectedFolderRoot) }).catch(() => null);
   const entries = (scan?.entries ?? []).slice(0, 80).map((entry) => `${entry.kind === "folder" ? "folder" : "file"}: ${entry.name}${entry.updatedAt ? ` (changed ${entry.updatedAt.slice(0, 10)})` : ""}`);
@@ -12002,6 +12014,7 @@ async function folderSuggestions(state: LocalApiState, connectedFolder: Connecte
   const cacheKey = `${connectedFolder.id}\0${relativePath}`;
   const cached = folderSuggestionCache.get(cacheKey);
   if (cached && cached.key === key && Date.now() - cached.at < folderSuggestionLifetimeMs) return cached.suggestions;
+  if (signal?.aborted) return [];
   try {
     const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, ampleFileInferenceConversationId);
     const outcome = await client.infer({
@@ -12018,7 +12031,10 @@ async function folderSuggestions(state: LocalApiState, connectedFolder: Connecte
         additionalProperties: false,
       } as never,
       maxOutputBytes: 2_048,
+      ...(signal ? { signal } : {}),
     });
+    // A call stopped because the window moved on says nothing about the folder.
+    if (signal?.aborted) return [];
     const suggestions = outcome.kind === "json"
       ? ((outcome.json as { suggestions?: unknown }).suggestions as unknown[] ?? []).filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim().replace(/[.]$/, "")).slice(0, 4)
       : [];
