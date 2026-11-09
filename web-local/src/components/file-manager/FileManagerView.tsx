@@ -84,6 +84,7 @@ import { StandardFolderGlyph } from "./file-manager-glyphs";
 import { TintedFolder } from "./file-manager-folder";
 import type { ConnectedFolderIconOption } from "../../connected-folder-icons";
 import { useFolderAutomations } from "../../hooks/useFolderAutomations";
+import { useCalendarDay } from "../../hooks/useCalendarDay";
 
 const viewStorageKey = "amplefile.file-manager.view.v1";
 const panelStorageKey = "amplefile.file-manager.panel.v1";
@@ -1437,6 +1438,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const worker = useWorkerChanges(connectedFolder, fixture, `${turnsSettled}:${runningHere}`);
   const workerChanges = runningHere ? null : worker.changes;
   const markedPaths = workerChanges?.paths ?? null;
+  // Rows are memoised on their entry; the day keeps "Today at…" true after midnight.
+  const calendarDay = useCalendarDay();
 
   // Row handlers stay the same object for the window's life, so a selection
   // change re-renders only the rows whose own state changed.
@@ -1692,6 +1695,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
               dropTarget={dropTarget === entry.path && entry.path !== location.path}
               marked={Boolean(markedPaths && isMarkedPath(entry.path, markedPaths))}
               kind={kindLabel(entry)}
+              day={calendarDay}
               tintColor={tint?.color}
               tintSymbol={tint?.symbol}
               handlers={entryHandlers}
@@ -2081,7 +2085,12 @@ function entryTint(color: string | undefined, symbol: FolderLook["symbol"] | und
 const changedDot = <span className="fm-changed-dot" title="Changed by the Worker" aria-label="Changed by the Worker" role="img" />;
 
 /** One list row; memoised, since a folder can show thousands. */
-const FileRow = memo(function FileRow({ entry, odd, selected, dropTarget, marked, kind, tintColor, tintSymbol, handlers }: EntryViewProps & { odd: boolean; kind: string }) {
+const FileRow = memo(function FileRow({ entry, odd, selected, dropTarget, marked, kind, tintColor, tintSymbol, handlers }: EntryViewProps & {
+  odd: boolean;
+  kind: string;
+  /** Today's date; a new day redraws the row's relative date. */
+  day: string;
+}) {
   return <div
     id={rowDomId(entry.path)}
     role="row"
