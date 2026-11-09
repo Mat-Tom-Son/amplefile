@@ -1739,7 +1739,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   const checkpointRestoreMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/checkpoints\/([^/]+)\/restore$/);
   if (method === "POST" && checkpointRestoreMatch) {
     const connectedFolder = await getConnectedFolder(checkpointRestoreMatch[1]);
-    sendJson(res, await runHistoryRestore(state, connectedFolder.id, () => restoreConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, checkpointRestoreMatch[2])));
+    sendJson(res, await runHistoryRestore(state, connectedFolder, () => restoreConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, checkpointRestoreMatch[2])));
     return;
   }
 
@@ -1794,7 +1794,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const connectedFolder = await getConnectedFolder(fileVersionsMatch[1]);
     const body = await readJsonBody<{ path?: string; hashSha256?: string }>(state, req);
     if (!body.path?.trim() || !body.hashSha256?.trim()) throw badRequest("A file path and version hash are required.");
-    sendJson(res, { result: await runHistoryRestore(state, connectedFolder.id, () => restoreFileVersion(connectedFolder.connectedFolderRoot, body.path!, body.hashSha256!)) });
+    sendJson(res, { result: await runHistoryRestore(state, connectedFolder, () => restoreFileVersion(connectedFolder.connectedFolderRoot, body.path!, body.hashSha256!)) });
     return;
   }
 
@@ -4902,7 +4902,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
       assertAmpleFileAgentParentAccepting(state, input.parentTaskId);
       const connectedFolder = await resolveConnectedFolder(input.connectedFolder);
       await assertConnectedFolderQuietForHistoryRestore(connectedFolder.id);
-      const result = await runActOperation(() => runHistoryRestore(state, connectedFolder.id, () => restoreConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, input.checkpointId)));
+      const result = await runActOperation(() => runHistoryRestore(state, connectedFolder, () => restoreConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, input.checkpointId)));
       await recordFacadeAction(state, input.parentTaskId, {
         command: "history.restore",
         connectedFolder,
@@ -4948,7 +4948,7 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
         if (target && !target.isFile()) {
           throw new AmpleFileCliError("conflict", "The selected path is currently a folder.");
         }
-        const result = await runHistoryRestore(state, connectedFolder.id, () => restoreFileVersion(connectedFolder.connectedFolderRoot, input.path, input.version.trim()));
+        const result = await runHistoryRestore(state, connectedFolder, () => restoreFileVersion(connectedFolder.connectedFolderRoot, input.path, input.version.trim()));
         await recordFacadeAction(state, input.parentTaskId, {
           command: "history.restore-file",
           connectedFolder,
@@ -9610,14 +9610,27 @@ function capabilityScope(value: unknown): CapabilityScope {
   throw badRequest("Capability scope must be global or project.");
 }
 
-async function runHistoryRestore<T>(state: LocalApiState, connectedFolderId: string, operation: () => Promise<T>): Promise<T> {
-  reserveCapabilityMutation(state, connectedFolderId, "project", connectedFolderId);
-  try {
-    const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
-    if (blockers.length) throw httpError(409, blockers[0]!);
-    await getConnectedFolder(connectedFolderId);
-    return await operation();
-  } finally { state.capabilityMutations.delete(connectedFolderId); }
+/**
+ * A restore queues for its Connected Folder's History turn first and only
+ * then reserves the folder and checks for running work, so a waiting restore
+ * neither holds new turns, instruction saves, or deletions off nor acts on a
+ * stale check. The inner restore joins the same History turn (reentrant).
+ */
+async function runHistoryRestore<T>(
+  state: LocalApiState,
+  connectedFolder: { id: string; connectedFolderRoot: string },
+  operation: () => Promise<T>,
+): Promise<T> {
+  const connectedFolderId = connectedFolder.id;
+  return withConnectedFolderHistoryOperation(connectedFolder.connectedFolderRoot, async () => {
+    reserveCapabilityMutation(state, connectedFolderId, "project", connectedFolderId);
+    try {
+      const blockers = await state.kernel.listExperimentalHistoryRestoreBlockers(connectedFolderId);
+      if (blockers.length) throw httpError(409, blockers[0]!);
+      await getConnectedFolder(connectedFolderId);
+      return await operation();
+    } finally { state.capabilityMutations.delete(connectedFolderId); }
+  });
 }
 
 /** Stop is not settled until its accepted turns have actually drained. */
