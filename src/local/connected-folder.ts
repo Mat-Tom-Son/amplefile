@@ -295,10 +295,11 @@ export async function beginConnectedFolderRemoval(
 ): Promise<ConnectedFolderRemovalIntent> {
   assertId(connectedFolderId);
   const requestedDisposition = options.folderDisposition ?? "delete";
-  return withRegistryOwnershipMutation(async () => {
+  return withRegistryOwnershipMutation(() => registeredRootsForId(connectedFolderId), async (claim) => {
     const registry = await readRegistry();
     const existing = registry.pendingRemovals.find((intent) => intent.connectedFolderId === connectedFolderId);
     if (existing) {
+      claim(existing.connectedFolderRoot);
       // An in-flight intent's folder authority is settled; converting a
       // pending deletion into a preservation (or the reverse) mid-flight
       // would make crash recovery act on an authority the caller never held.
@@ -313,6 +314,7 @@ export async function beginConnectedFolderRemoval(
     }
     const connectedFolder = registry.connectedFolders.find((item) => item.id === connectedFolderId);
     if (!connectedFolder || !existsSync(connectedFolder.connectedFolderRoot)) throw notFound("Connected Folder not found.");
+    claim(connectedFolder.connectedFolderRoot);
     const connectedFolderRoot = ensureSafeConnectedFolderRoot(connectedFolder.connectedFolderRoot);
     // A preserve removal deletes nothing, so it records no managed-content
     // boundary and no root identity: the intent shape itself proves the
@@ -353,10 +355,11 @@ export async function finalizeConnectedFolderRemoval(
   io: Partial<ConnectedFolderRemovalIo> = {},
 ): Promise<ConnectedFolderRemovalResult> {
   assertId(connectedFolderId);
-  return withRegistryOwnershipMutation(async () => {
+  return withRegistryOwnershipMutation(() => registeredRootsForId(connectedFolderId), async (claim) => {
     const registry = await readRegistry();
     const intent = registry.pendingRemovals.find((item) => item.connectedFolderId === connectedFolderId);
     if (!intent) throw new Error("Connected Folder removal intent not found.");
+    claim(intent.connectedFolderRoot);
     const connectedFolder = registry.connectedFolders.find((item) => item.id === connectedFolderId);
     if (!connectedFolder || !samePath(connectedFolder.connectedFolderRoot, intent.connectedFolderRoot)
       || connectedFolder.location.storage !== intent.storage) {
@@ -548,26 +551,45 @@ function maxTreeEntries(): number {
   return Number.isFinite(configured) && configured >= 1 ? Math.floor(configured) : 20_000;
 }
 
-export async function readConnectedFolderTextFile(connectedFolderRoot: string, relativePath: string): Promise<{ text: string }> {
+export async function readConnectedFolderTextFile(connectedFolderRoot: string, relativePath: string): Promise<{ text: string; hashSha256: string }> {
   const path = resolveConnectedFolderPath(connectedFolderRoot, relativePath);
   const info = await stat(path).catch(() => null);
   if (!info?.isFile()) throw notFound("File not found.");
   if (info.size > maxPreviewBytes) throw new Error("This file is too large to preview (2 MB maximum).");
   const bytes = await readFile(path);
   if (looksBinary(bytes)) throw new Error("This file is binary and cannot be previewed as text.");
-  return { text: bytes.toString("utf8") };
+  return { text: bytes.toString("utf8"), hashSha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
-export async function writeConnectedFolderTextFile(connectedFolderRoot: string, relativePath: string, text: string): Promise<{ path: string; text: string }> {
+/**
+ * Saves the in-app editor's text over the file in place, so the file keeps its
+ * identity: Finder tags and other extended attributes, ACLs, its creation date,
+ * hard links, and a read-only file's refusal. The server's "Before editing"
+ * restore point covers a write cut short by a crash. When `expectedHashSha256`
+ * is given (the hash the editor read), a save over content that changed since,
+ * by a Worker or another app, is refused with a 409 instead of silently
+ * overwriting it.
+ */
+export async function writeConnectedFolderTextFile(
+  connectedFolderRoot: string,
+  relativePath: string,
+  text: string,
+  options: { expectedHashSha256?: string } = {},
+): Promise<{ path: string; text: string; hashSha256: string }> {
   const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);
   const path = resolveConnectedFolderPath(root, relativePath);
   await assertOutsideNestedFolders(root, normalizeRelative(relative(root, path)));
   const info = await stat(path).catch(() => null);
   if (!info?.isFile()) throw notFound("File not found.");
-  if (Buffer.byteLength(text, "utf8") > maxPreviewBytes) throw new Error("This file is too large to edit (2 MB maximum).");
-  await writeFile(path, text, "utf8");
+  const bytes = Buffer.from(text, "utf8");
+  if (bytes.byteLength > maxPreviewBytes) throw new Error("This file is too large to edit (2 MB maximum).");
+  const expected = options.expectedHashSha256?.trim().toLowerCase();
+  if (expected && await sha256File(path).catch(() => null) !== expected) {
+    throw Object.assign(new Error("This file changed since it was opened. Reopen it to see the latest version, then make your edit again."), { status: 409, statusCode: 409 });
+  }
+  await writeFile(path, bytes);
   await touchConnectedFolder(connectedFolderRoot);
-  return { path: normalizeRelative(relative(ensureSafeConnectedFolderRoot(connectedFolderRoot), path)), text };
+  return { path: normalizeRelative(relative(root, path)), text, hashSha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
 export async function getConnectedFolderEntryInfo(connectedFolderRoot: string, relativePath: string, options: { hash?: boolean } = {}): Promise<ConnectedFolderEntryInfo> {
@@ -971,9 +993,10 @@ export async function sha256File(path: string): Promise<string> {
 }
 
 async function registerConnectedFolder(input: Omit<ConnectedFolderSummary, "id" | "createdAt" | "updatedAt">): Promise<ConnectedFolderSummary> {
-  return withRegistryOwnershipMutation(async () => {
+  const connectedFolderRoot = resolve(input.connectedFolderRoot);
+  return withRegistryOwnershipMutation(() => registrationRoots(connectedFolderRoot), async (claim) => {
+    claim(connectedFolderRoot);
     const registry = await readRegistry();
-    const connectedFolderRoot = resolve(input.connectedFolderRoot);
     if (registry.pendingRemovals.some((intent) => intent.storage === "managed"
       && intent.folderDisposition !== "preserve" && !samePath(intent.connectedFolderRoot, connectedFolderRoot)
       && pathContains(intent.connectedFolderRoot, connectedFolderRoot))) {
@@ -998,6 +1021,7 @@ async function registerConnectedFolder(input: Omit<ConnectedFolderSummary, "id" 
         if (existsSync(identityOwner.connectedFolderRoot)) {
           throw new Error("This Connected Folder identity is already linked to another folder.");
         }
+        claim(identityOwner.connectedFolderRoot);
         await relocateConnectedFolderState(identityOwner.connectedFolderRoot, connectedFolderRoot, identityOwner.id);
         identityOwner.name = portableIdentity.name;
         identityOwner.connectedFolderRoot = connectedFolderRoot;
@@ -1025,7 +1049,55 @@ async function registerConnectedFolder(input: Omit<ConnectedFolderSummary, "id" 
   });
 }
 
+const touchBatchContext = new AsyncLocalStorage<Set<string>>();
+
+/**
+ * Runs a several-item act so the Connected Folders it changes are touched once
+ * at its end rather than once per item. Each touch commits the registry and the
+ * portable `.amplefile/connected-folder.json` with fsync, so per-item touches
+ * multiply disk work and churn a cloud-synced folder. Nested batches join the
+ * outermost one. The touch is maintenance after content changes that already
+ * happened, so its failure never fails the act.
+ */
+export async function withConnectedFolderTouchBatch<T>(operation: () => Promise<T>): Promise<T> {
+  if (touchBatchContext.getStore()) return operation();
+  const roots = new Set<string>();
+  try {
+    return await touchBatchContext.run(roots, operation);
+  } finally {
+    for (const root of roots) await touchConnectedFolderNow(root).catch(() => undefined);
+  }
+}
+
+/** The root a registration change on this id will touch, from a read before its claim. */
+async function registeredRootsForId(connectedFolderId: string): Promise<string[]> {
+  const registry = await readRegistry();
+  const root = registry.connectedFolders.find((item) => item.id === connectedFolderId)?.connectedFolderRoot
+    ?? registry.pendingRemovals.find((intent) => intent.connectedFolderId === connectedFolderId)?.connectedFolderRoot;
+  return root ? [root] : [];
+}
+
+/** The folder being registered and, when its portable identity belongs to a
+ * registration whose folder moved, that registration's old root. */
+async function registrationRoots(connectedFolderRoot: string): Promise<string[]> {
+  const roots = [connectedFolderRoot];
+  const portableIdentity = await readExistingConnectedFolderManifest(connectedFolderRoot);
+  if (!portableIdentity) return roots;
+  const owner = (await readRegistry()).connectedFolders.find((connectedFolder) => connectedFolder.id === portableIdentity.id);
+  if (owner && !samePath(owner.connectedFolderRoot, connectedFolderRoot)) roots.push(owner.connectedFolderRoot);
+  return roots;
+}
+
 async function touchConnectedFolder(connectedFolderRoot: string): Promise<void> {
+  const batch = touchBatchContext.getStore();
+  if (batch) {
+    batch.add(resolve(connectedFolderRoot));
+    return;
+  }
+  await touchConnectedFolderNow(connectedFolderRoot);
+}
+
+async function touchConnectedFolderNow(connectedFolderRoot: string): Promise<void> {
   await withRegistryMutation(async () => {
     const registry = await readRegistry();
     const connectedFolder = registry.connectedFolders.find((item) => samePath(item.connectedFolderRoot, connectedFolderRoot));
@@ -1216,28 +1288,153 @@ async function syncDirectoriesBestEffort(paths: readonly string[]): Promise<void
 }
 
 const historyContext = new AsyncLocalStorage<Set<string>>();
+const ownershipContext = new AsyncLocalStorage<true>();
 const activeHistoryRoots = new Set<string>();
-let ownershipMutations = 0;
+const activeOwnershipClaims = new Set<HistoryGateClaim & { kind: "ownership" }>();
 
-/** Holds folder ownership stable through a complete capture or restore. Nested
- * captures for the same restore are reentrant; independent writers conflict. */
-export async function withConnectedFolderHistoryOperation<T>(connectedFolderRoot: string, operation: () => Promise<T>): Promise<T> {
-  const root = resolve(connectedFolderRoot);
-  if (historyContext.getStore()?.has(root)) return operation();
-  if (ownershipMutations || activeHistoryRoots.has(root)) {
-    throw Object.assign(new Error("Wait for the current History or Connected Folder registration operation to finish."), { status: 409, statusCode: 409 });
-  }
-  activeHistoryRoots.add(root);
-  try {
-    return await historyContext.run(new Set([...(historyContext.getStore() ?? []), root]), operation);
-  } finally { activeHistoryRoots.delete(root); }
+/**
+ * One History operation on a root, or one change to which folders are
+ * registered. A registration change names the roots it registers, relocates,
+ * or removes.
+ */
+type HistoryGateClaim = { kind: "history"; root: string } | { kind: "ownership"; roots: string[] };
+const historyGateWaiters: Array<{ claim: HistoryGateClaim; grant: () => void }> = [];
+
+/** A capture or restore on `historyRoot` reads the registrations nested in it,
+ * so a registration change conflicts with History on a root that contains one
+ * of its roots, sits inside one, or is one. */
+function ownershipOverlapsHistory(roots: readonly string[], historyRoot: string): boolean {
+  return roots.some((root) => pathContains(root, historyRoot) || pathContains(historyRoot, root));
 }
 
-async function withRegistryOwnershipMutation<T>(operation: () => Promise<T>): Promise<T> {
-  if (activeHistoryRoots.size) throw Object.assign(new Error("Wait for History to finish before changing registered Connected Folders."), { status: 409, statusCode: 409 });
-  ownershipMutations += 1;
-  try { return await withRegistryMutation(operation); }
-  finally { ownershipMutations -= 1; }
+/** History on one root runs one at a time and beside History on other roots;
+ * registration changes run beside each other (the registry queue orders them)
+ * and beside History on unrelated roots. */
+function historyClaimsCompatible(left: HistoryGateClaim, right: HistoryGateClaim): boolean {
+  if (left.kind === "ownership" && right.kind === "ownership") return true;
+  if (left.kind === "ownership") return right.kind === "history" && !ownershipOverlapsHistory(left.roots, right.root);
+  if (right.kind === "ownership") return !ownershipOverlapsHistory(right.roots, left.root);
+  return left.root !== right.root;
+}
+
+function historyClaimCanStart(claim: HistoryGateClaim): boolean {
+  if (claim.kind === "history") {
+    return !activeHistoryRoots.has(claim.root)
+      && [...activeOwnershipClaims].every((active) => !ownershipOverlapsHistory(active.roots, claim.root));
+  }
+  return [...activeHistoryRoots].every((root) => !ownershipOverlapsHistory(claim.roots, root));
+}
+
+function holdHistoryClaim(claim: HistoryGateClaim): void {
+  if (claim.kind === "history") activeHistoryRoots.add(claim.root);
+  else activeOwnershipClaims.add(claim);
+}
+
+function releaseHistoryClaim(claim: HistoryGateClaim): void {
+  if (claim.kind === "history") activeHistoryRoots.delete(claim.root);
+  else activeOwnershipClaims.delete(claim);
+  pumpHistoryGate();
+}
+
+/** Grants waiters in arrival order. A waiter may pass an earlier one only when
+ * the two could run together, so a registration change is never starved by a
+ * stream of captures on the folders it touches, a capture never overtakes a
+ * conflicting earlier one, and work on unrelated folders is never held up. */
+function pumpHistoryGate(): void {
+  const blocked: HistoryGateClaim[] = [];
+  for (let index = 0; index < historyGateWaiters.length;) {
+    const waiter = historyGateWaiters[index]!;
+    if (historyClaimCanStart(waiter.claim) && blocked.every((earlier) => historyClaimsCompatible(earlier, waiter.claim))) {
+      historyGateWaiters.splice(index, 1);
+      holdHistoryClaim(waiter.claim);
+      waiter.grant();
+    } else {
+      blocked.push(waiter.claim);
+      index += 1;
+    }
+  }
+}
+
+async function acquireHistoryClaim(claim: HistoryGateClaim): Promise<void> {
+  await new Promise<void>((grant) => {
+    historyGateWaiters.push({ claim, grant });
+    pumpHistoryGate();
+  });
+}
+
+function historyBusyError(message: string): Error {
+  return Object.assign(new Error(message), { status: 409, statusCode: 409 });
+}
+
+/**
+ * Runs `operation` as the one History operation on `connectedFolderRoot`,
+ * holding folder ownership stable through a complete capture or restore.
+ * Callers queue: an operation on the same root waits for the current one to
+ * finish, one on another root runs alongside it, and a registration change
+ * waits only for History on the folders it touches. Nested calls for the same
+ * root are reentrant. An operation that already holds History or a
+ * registration change and asks for a different, busy claim is refused with a
+ * 409 rather than queued, because waiting while holding a claim could deadlock.
+ */
+export async function withConnectedFolderHistoryOperation<T>(connectedFolderRoot: string, operation: () => Promise<T>): Promise<T> {
+  const root = resolve(connectedFolderRoot);
+  const held = historyContext.getStore();
+  if (held?.has(root)) return operation();
+  const claim: HistoryGateClaim = { kind: "history", root };
+  if (held?.size || ownershipContext.getStore()) {
+    if (!historyClaimCanStart(claim)) throw historyBusyError("Wait for the current History or Connected Folder registration operation to finish.");
+    holdHistoryClaim(claim);
+  } else {
+    await acquireHistoryClaim(claim);
+  }
+  try {
+    return await historyContext.run(new Set([...(held ?? []), root]), operation);
+  } finally { releaseHistoryClaim(claim); }
+}
+
+/** Thrown inside a registration change that found it touches a root its claim did not name. */
+class OwnershipClaimTooNarrow extends Error {
+  constructor(readonly root: string) { super("Connected Folder registration claim must be widened."); }
+}
+
+/**
+ * Runs a change to which folders are registered. `claimRoots` names, from a
+ * registry read before the claim, the roots the change will touch. Inside,
+ * `claim(root)` must be called for every root the change touches before it
+ * changes anything; if the registry moved on in between and a new root turns
+ * up, the change starts over with a wider claim.
+ */
+async function withRegistryOwnershipMutation<T>(
+  claimRoots: () => Promise<string[]>,
+  operation: (claim: (root: string) => void) => Promise<T>,
+): Promise<T> {
+  let roots = (await claimRoots().catch(() => [] as string[])).map((root) => resolve(root));
+  for (let attempt = 0; ; attempt += 1) {
+    const claimed = [...roots];
+    const claimRoot = (root: string): void => {
+      if (!claimed.some((item) => samePath(item, root))) throw new OwnershipClaimTooNarrow(resolve(root));
+    };
+    try {
+      return await withOwnershipClaim({ kind: "ownership", roots: claimed }, () => operation(claimRoot));
+    } catch (error) {
+      if (!(error instanceof OwnershipClaimTooNarrow) || attempt >= 4) {
+        if (error instanceof OwnershipClaimTooNarrow) throw historyBusyError("Connected Folder registrations kept changing. Try again.");
+        throw error;
+      }
+      roots = [...roots, error.root];
+    }
+  }
+}
+
+async function withOwnershipClaim<T>(claim: HistoryGateClaim & { kind: "ownership" }, operation: () => Promise<T>): Promise<T> {
+  if (historyContext.getStore()?.size || ownershipContext.getStore()) {
+    if (!historyClaimCanStart(claim)) throw historyBusyError("Wait for History to finish before changing registered Connected Folders.");
+    holdHistoryClaim(claim);
+  } else {
+    await acquireHistoryClaim(claim);
+  }
+  try { return await ownershipContext.run(true, () => withRegistryMutation(operation)); }
+  finally { releaseHistoryClaim(claim); }
 }
 
 function assertNoNestedConnectedFolderDeletion(registry: ConnectedFolderRegistry, connectedFolderId: string, connectedFolderRoot: string): void {
