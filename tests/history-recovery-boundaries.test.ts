@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { createConnectedFolderCheckpoint, createConnectedFolderMutationCheckpoint, restoreConnectedFolderCheckpoint, restoreFileVersion, listConnectedFolderCheckpoints, previewConnectedFolderCheckpointRestore } from "../src/local/history.js";
 import { configureAmpleFileStateRoot } from "../src/local/state-paths.js";
-import { registerLinkedConnectedFolder, withConnectedFolderHistoryOperation } from "../src/local/connected-folder.js";
+import { registerLinkedConnectedFolder, withConnectedFolderHistoryOperation, withConnectedFolderHistoryOperations } from "../src/local/connected-folder.js";
 
 async function fixture(t: TestContext) {
   const sandbox = await mkdtemp(join(tmpdir(), "history-boundary-"));
@@ -166,4 +166,30 @@ test("relinking a moved Connected Folder waits for History on its old root", asy
   assert.equal(relinked, false, "the state relocation waits for the old root's History");
   release(); await Promise.all([held, relink]);
   assert.equal(relinked, true);
+});
+
+test("History on two roots is claimed together, so a registration queued over both cannot wedge it", async (t) => {
+  const { root } = await fixture(t);
+  const left = join(root, "Left"); const right = join(root, "Right");
+  await mkdir(left); await mkdir(right);
+  await writeFile(join(left, "l.txt"), "l"); await writeFile(join(right, "r.txt"), "r");
+  const order: string[] = [];
+  let release!: () => void;
+  const held = withConnectedFolderHistoryOperation(left, () => new Promise<void>((resolve) => { release = resolve; }));
+  // Waits for Left without holding Right meanwhile.
+  const both = withConnectedFolderHistoryOperations([right, left], async () => {
+    // History on either root is reentrant inside.
+    await createConnectedFolderCheckpoint(left);
+    await createConnectedFolderCheckpoint(right);
+    order.push("both");
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  // A registration over both folders arrives after the pair: it waits, and
+  // the pair, which holds neither root while it waits, is not wedged behind it.
+  const registration = registerLinkedConnectedFolder(root).then(() => order.push("registered"));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.deepEqual(order, []);
+  release();
+  await Promise.all([held, both, registration]);
+  assert.deepEqual(order, ["both", "registered"], "the pair runs first, then the registration over both");
 });

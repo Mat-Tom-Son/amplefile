@@ -1293,11 +1293,11 @@ const activeHistoryRoots = new Set<string>();
 const activeOwnershipClaims = new Set<HistoryGateClaim & { kind: "ownership" }>();
 
 /**
- * One History operation on a root, or one change to which folders are
- * registered. A registration change names the roots it registers, relocates,
- * or removes.
+ * One History operation on one or more roots (taken together, never one
+ * after another), or one change to which folders are registered. A
+ * registration change names the roots it registers, relocates, or removes.
  */
-type HistoryGateClaim = { kind: "history"; root: string } | { kind: "ownership"; roots: string[] };
+type HistoryGateClaim = { kind: "history"; roots: string[] } | { kind: "ownership"; roots: string[] };
 const historyGateWaiters: Array<{ claim: HistoryGateClaim; grant: () => void }> = [];
 
 /** A capture or restore on `historyRoot` reads the registrations nested in it,
@@ -1312,26 +1312,26 @@ function ownershipOverlapsHistory(roots: readonly string[], historyRoot: string)
  * and beside History on unrelated roots. */
 function historyClaimsCompatible(left: HistoryGateClaim, right: HistoryGateClaim): boolean {
   if (left.kind === "ownership" && right.kind === "ownership") return true;
-  if (left.kind === "ownership") return right.kind === "history" && !ownershipOverlapsHistory(left.roots, right.root);
-  if (right.kind === "ownership") return !ownershipOverlapsHistory(right.roots, left.root);
-  return left.root !== right.root;
+  if (left.kind === "ownership") return right.kind === "history" && right.roots.every((root) => !ownershipOverlapsHistory(left.roots, root));
+  if (right.kind === "ownership") return left.roots.every((root) => !ownershipOverlapsHistory(right.roots, root));
+  return left.roots.every((root) => !right.roots.includes(root));
 }
 
 function historyClaimCanStart(claim: HistoryGateClaim): boolean {
   if (claim.kind === "history") {
-    return !activeHistoryRoots.has(claim.root)
-      && [...activeOwnershipClaims].every((active) => !ownershipOverlapsHistory(active.roots, claim.root));
+    return claim.roots.every((root) => !activeHistoryRoots.has(root)
+      && [...activeOwnershipClaims].every((active) => !ownershipOverlapsHistory(active.roots, root)));
   }
   return [...activeHistoryRoots].every((root) => !ownershipOverlapsHistory(claim.roots, root));
 }
 
 function holdHistoryClaim(claim: HistoryGateClaim): void {
-  if (claim.kind === "history") activeHistoryRoots.add(claim.root);
+  if (claim.kind === "history") for (const root of claim.roots) activeHistoryRoots.add(root);
   else activeOwnershipClaims.add(claim);
 }
 
 function releaseHistoryClaim(claim: HistoryGateClaim): void {
-  if (claim.kind === "history") activeHistoryRoots.delete(claim.root);
+  if (claim.kind === "history") for (const root of claim.roots) activeHistoryRoots.delete(root);
   else activeOwnershipClaims.delete(claim);
   pumpHistoryGate();
 }
@@ -1377,10 +1377,22 @@ function historyBusyError(message: string): Error {
  * 409 rather than queued, because waiting while holding a claim could deadlock.
  */
 export async function withConnectedFolderHistoryOperation<T>(connectedFolderRoot: string, operation: () => Promise<T>): Promise<T> {
-  const root = resolve(connectedFolderRoot);
+  return withConnectedFolderHistoryOperations([connectedFolderRoot], operation);
+}
+
+/**
+ * The same, as one History operation on several roots at once, for an act
+ * that changes two Connected Folders (a move between them, an Automation's
+ * files hop). The roots are claimed together when all are free, never one
+ * while waiting for another, so two such acts in opposite directions cannot
+ * hold each other up, and a waiting registration change cannot wedge between
+ * the roots. Inside it, History on any of the roots is reentrant.
+ */
+export async function withConnectedFolderHistoryOperations<T>(connectedFolderRoots: readonly string[], operation: () => Promise<T>): Promise<T> {
   const held = historyContext.getStore();
-  if (held?.has(root)) return operation();
-  const claim: HistoryGateClaim = { kind: "history", root };
+  const roots = [...new Set(connectedFolderRoots.map((root) => resolve(root)))].filter((root) => !held?.has(root));
+  if (!roots.length) return operation();
+  const claim: HistoryGateClaim = { kind: "history", roots };
   if (held?.size || ownershipContext.getStore()) {
     if (!historyClaimCanStart(claim)) throw historyBusyError("Wait for the current History or Connected Folder registration operation to finish.");
     holdHistoryClaim(claim);
@@ -1388,7 +1400,7 @@ export async function withConnectedFolderHistoryOperation<T>(connectedFolderRoot
     await acquireHistoryClaim(claim);
   }
   try {
-    return await historyContext.run(new Set([...(held ?? []), root]), operation);
+    return await historyContext.run(new Set([...(held ?? []), ...roots]), operation);
   } finally { releaseHistoryClaim(claim); }
 }
 

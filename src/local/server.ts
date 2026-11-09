@@ -376,6 +376,7 @@ import {
   connectedFolderRemovalPendingResult,
   touchConnectedFolderRoot,
   withConnectedFolderHistoryOperation,
+  withConnectedFolderHistoryOperations,
   withConnectedFolderTouchBatch,
   writeConnectedFolderTextFile,
   writeUploadedFiles,
@@ -6481,12 +6482,16 @@ async function deleteConnectedFolderEntryWithRecovery(
   target: string,
   context: { receiptId: string | null },
 ): Promise<AmpleFileDeleteResult> {
-  reserveCapabilityMutation(state, connectedFolder.id, "project", connectedFolder.id);
-  try {
-    return await runSettledConnectedFolderDeletion(state, connectedFolder.id, () => deleteSettledConnectedFolderEntryWithRecovery(state, connectedFolder, target, context));
-  } finally {
-    state.capabilityMutations.delete(connectedFolder.id);
-  }
+  // Queue for the folder's History first, then reserve and check for
+  // unsettled work, so a waiting delete holds nothing off and checks late.
+  return withConnectedFolderHistoryOperation(connectedFolder.connectedFolderRoot, async () => {
+    reserveCapabilityMutation(state, connectedFolder.id, "project", connectedFolder.id);
+    try {
+      return await runSettledConnectedFolderDeletion(state, connectedFolder.id, () => deleteSettledConnectedFolderEntryWithRecovery(state, connectedFolder, target, context));
+    } finally {
+      state.capabilityMutations.delete(connectedFolder.id);
+    }
+  });
 }
 
 async function deleteSettledConnectedFolderEntryWithRecovery(
@@ -6602,12 +6607,16 @@ async function deleteConnectedFolderEntriesWithRecovery(
   connectedFolder: ConnectedFolderSummary,
   targets: readonly string[],
 ): Promise<AmpleFileBatchDeleteResult> {
-  reserveCapabilityMutation(state, connectedFolder.id, "project", connectedFolder.id);
-  try {
-    return await runSettledConnectedFolderDeletion(state, connectedFolder.id, () => deleteSettledConnectedFolderEntries(state, connectedFolder, targets));
-  } finally {
-    state.capabilityMutations.delete(connectedFolder.id);
-  }
+  // Queue for the folder's History first, then reserve and check for
+  // unsettled work, so a waiting delete holds nothing off and checks late.
+  return withConnectedFolderHistoryOperation(connectedFolder.connectedFolderRoot, async () => {
+    reserveCapabilityMutation(state, connectedFolder.id, "project", connectedFolder.id);
+    try {
+      return await runSettledConnectedFolderDeletion(state, connectedFolder.id, () => deleteSettledConnectedFolderEntries(state, connectedFolder, targets));
+    } finally {
+      state.capabilityMutations.delete(connectedFolder.id);
+    }
+  });
 }
 
 async function deleteSettledConnectedFolderEntries(
@@ -10509,45 +10518,53 @@ function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomationHopP
       return null;
     },
     async files(step, source, context) {
-      const reserved: string[] = [];
-      try {
-        for (const id of [...new Set([step.fromConnectedFolder, step.toConnectedFolder])].sort()) {
-          reserveCapabilityMutation(state, id, "project", id);
-          reserved.push(id);
-        }
-        // A files hop is deliberately not interruptible mid-copy: it completes
-        // with its restore point or fails as one unit, so the signal is only a
-        // pre-flight refusal here.
-        if (context.signal.aborted) throw new Error("The run was aborted before this hop copied anything.");
-        const from = await getConnectedFolder(step.fromConnectedFolder);
-        const to = await getConnectedFolder(step.toConnectedFolder);
-        const absoluteSources = await resolveAutomationFilesSources(from.connectedFolderRoot, source);
-        const copied: string[] = [];
+      // Both folders' History is claimed at once before either is reserved,
+      // so a hop waiting for History holds no turns off in either folder.
+      const claimed = await Promise.all([getConnectedFolder(step.fromConnectedFolder), getConnectedFolder(step.toConnectedFolder)]);
+      return withConnectedFolderHistoryOperations(claimed.map((connectedFolder) => connectedFolder.connectedFolderRoot), async () => {
+        const reserved: string[] = [];
         try {
-          await withConnectedFolderTouchBatch(async () => {
-            for (const sourcePath of absoluteSources) {
-              copied.push(await copyPathIntoConnectedFolder(sourcePath, to.connectedFolderRoot, step.to));
-            }
+          for (const id of [...new Set([step.fromConnectedFolder, step.toConnectedFolder])].sort()) {
+            reserveCapabilityMutation(state, id, "project", id);
+            reserved.push(id);
+          }
+          // A files hop is deliberately not interruptible mid-copy: it completes
+          // with its restore point or fails as one unit, so the signal is only a
+          // pre-flight refusal here.
+          if (context.signal.aborted) throw new Error("The run was aborted before this hop copied anything.");
+          const from = await getConnectedFolder(step.fromConnectedFolder);
+          const to = await getConnectedFolder(step.toConnectedFolder);
+          if (from.connectedFolderRoot !== claimed[0]!.connectedFolderRoot || to.connectedFolderRoot !== claimed[1]!.connectedFolderRoot) {
+            throw httpError(409, "A Connected Folder in this hop moved while it waited. Try again in a moment.");
+          }
+          const absoluteSources = await resolveAutomationFilesSources(from.connectedFolderRoot, source);
+          const copied: string[] = [];
+          try {
+            await withConnectedFolderTouchBatch(async () => {
+              for (const sourcePath of absoluteSources) {
+                copied.push(await copyPathIntoConnectedFolder(sourcePath, to.connectedFolderRoot, step.to));
+              }
+            });
+          } catch (error) {
+            // A mid-batch failure must not strand earlier copies without a
+            // restore point: undo them best-effort, then surface the failure.
+            await Promise.all(copied.map((path) =>
+              rm(resolveConnectedFolderPath(to.connectedFolderRoot, path), { recursive: true, force: true }).catch(() => undefined)));
+            throw error;
+          }
+          const safety = await checkpointAdditiveWritesOrUndo(to.connectedFolderRoot, copied, {
+            reason: "pre_add",
+            label: `Before automation hop ${step.id} added ${copied.length} item${copied.length === 1 ? "" : "s"}`,
           });
-        } catch (error) {
-          // A mid-batch failure must not strand earlier copies without a
-          // restore point: undo them best-effort, then surface the failure.
-          await Promise.all(copied.map((path) =>
-            rm(resolveConnectedFolderPath(to.connectedFolderRoot, path), { recursive: true, force: true }).catch(() => undefined)));
-          throw error;
-        }
-        const safety = await checkpointAdditiveWritesOrUndo(to.connectedFolderRoot, copied, {
-          reason: "pre_add",
-          label: `Before automation hop ${step.id} added ${copied.length} item${copied.length === 1 ? "" : "s"}`,
-        });
-        const measured = await measureConnectedFolderEntries(to.connectedFolderRoot, copied);
-        return {
-          ...(safety ? { restorePointId: safety.checkpointId } : {}),
-          copiedPaths: copied,
-          fileCount: measured.fileCount,
-          totalBytes: measured.totalBytes,
-        };
-      } finally { for (const id of reserved) state.capabilityMutations.delete(id); }
+          const measured = await measureConnectedFolderEntries(to.connectedFolderRoot, copied);
+          return {
+            ...(safety ? { restorePointId: safety.checkpointId } : {}),
+            copiedPaths: copied,
+            fileCount: measured.fileCount,
+            totalBytes: measured.totalBytes,
+          };
+        } finally { for (const id of reserved) state.capabilityMutations.delete(id); }
+      });
     },
     async checkpointManifest(connectedFolderId, checkpointId) {
       const connectedFolder = await getConnectedFolder(connectedFolderId).catch(() => null);
@@ -11856,119 +11873,124 @@ async function moveBetweenConnectedFolders(
   if (state.requests.list({ connectedFolderId: from.id }).some((request) => requestHasUnsettledWork(state, request))) {
     throw httpError(409, `Finish or stop ${from.name}’s outstanding work before moving items out of it.`);
   }
-  reserveCapabilityMutation(state, from.id, "project", from.id);
-  try {
-    // One touch of the source when the move ends, not one per item it removes.
-    return await runSettledConnectedFolderDeletion(state, from.id, () => withConnectedFolderTouchBatch(async () => {
-      const root = from.connectedFolderRoot;
-      const entries: Array<{ absolutePath: string; path: string; kind: "file" | "folder" }> = [];
-      for (const path of outermostConnectedFolderPaths(sources.map((source) => source.relativePath))) {
-        entries.push(await resolveConnectedFolderDeleteTarget(root, path));
-      }
-      const label = entries.length === 1 ? `Before moving ${basename(entries[0]!.absolutePath)}` : `Before moving ${entries.length} items`;
-      const safety = await createConnectedFolderMutationCheckpoint(root, {
-        paths: entries.map((entry) => entry.path),
-        reason: "pre_move",
-        label: `${label} to ${to.name}`,
-      });
-      // History names the files it could not keep the way it names its
-      // capture roots; each one belongs to exactly one source.
-      const historyRoot = ensureSafeConnectedFolderRoot(root);
-      const capturedAs = entries.map((entry) => relative(historyRoot, entry.absolutePath).split(sep).join("/"));
-      const notKept = entries.map((): AmpleFileRecentlyDeletedUncoveredPath[] => []);
-      for (const file of safety.skippedFiles) {
-        const row = capturedAs.findIndex((path) => file.path === path || file.path.startsWith(`${path}/`));
-        if (row < 0) {
-          await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-          throw new AmpleFileCliError("failure", `AmpleFile could not tell which item ${file.path} belongs to. Nothing was moved.`);
+  // Both Connected Folders' History is claimed at once, before the source is
+  // reserved: a waiting move holds nothing off, and two opposite moves
+  // between the same folders cannot hold each other up.
+  return withConnectedFolderHistoryOperations([from.connectedFolderRoot, to.connectedFolderRoot], async () => {
+    reserveCapabilityMutation(state, from.id, "project", from.id);
+    try {
+      // One touch of the source when the move ends, not one per item it removes.
+      return await runSettledConnectedFolderDeletion(state, from.id, () => withConnectedFolderTouchBatch(async () => {
+        const root = from.connectedFolderRoot;
+        const entries: Array<{ absolutePath: string; path: string; kind: "file" | "folder" }> = [];
+        for (const path of outermostConnectedFolderPaths(sources.map((source) => source.relativePath))) {
+          entries.push(await resolveConnectedFolderDeleteTarget(root, path));
         }
-        notKept[row]!.push({ path: file.path, reason: file.reason });
-      }
-
-      const written: string[] = [];
-      try {
-        // A moved folder keeps its `.amplefile` identity and Chats: registered
-        // nested Connected Folders were refused above, so this is only ever a
-        // disconnected one, and the original is about to go.
-        for (const entry of entries) written.push(await copyInto(entry.absolutePath, target.abs, { withIdentity: true }));
-      } catch (error) {
-        await Promise.all(written.map((path) => rm(path, { recursive: true, force: true }).catch(() => undefined)));
-        await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-        throw error;
-      }
-      const writtenPaths = written.map((path) => relativeTo(to.connectedFolderRoot, path));
-      // What History could not keep is safe when the copy holds all of it (a
-      // `.git`, an ignored build folder, a large file, a link), checked file
-      // by file. Anything else, and any `.amplefile` identity, keeps the item
-      // out of a plain delete: it leaves the source whole, by moving into
-      // Recently Deleted.
-      const uncovered = await Promise.all(entries.map(async (entry, row) => {
-        const missing: AmpleFileRecentlyDeletedUncoveredPath[] = [];
-        for (const file of notKept[row]!) {
-          const inside = (file.path === capturedAs[row] ? "" : file.path.slice(capturedAs[row]!.length + 1)).split("/").filter(Boolean);
-          const identity = inside.some((segment) => segment === ".amplefile");
-          if (identity || !await copyHoldsAll(join(entry.absolutePath, ...inside), join(written[row]!, ...inside))) missing.push(file);
-        }
-        return missing;
-      }));
-      let targetSafety: ConnectedFolderCheckpoint | null;
-      try {
-        targetSafety = await checkpointAdditiveWritesOrUndo(to.connectedFolderRoot, writtenPaths, { reason: "pre_move", label });
-      } catch (error) {
-        await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
-        throw error;
-      }
-      const restorePoints: TransferRestorePoint[] = [
-        ...(targetSafety ? [{ connectedFolderId: to.id, checkpointId: targetSafety.checkpointId }] : []),
-        { connectedFolderId: from.id, checkpointId: safety.checkpointId },
-      ];
-      const recentlyDeleted: Array<{ path: string; entryId: string; restoreBy: string }> = [];
-      for (const [index, entry] of entries.entries()) {
-        try {
-          // Each item leaving the source is that Connected Folder's delete,
-          // with the delete's own receipt, as the delete routes record it.
-          const { value: removed } = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
-            const value = await applyConnectedFolderDelete(state, from, entry.path, uncovered[index]!, safety.checkpointId, { receiptId: requestId });
-            return {
-              value,
-              detail: value.recovery.kind === "recently-deleted"
-                ? `Connected Folder ${from.id}; moved to ${to.id}; trash ${value.recovery.entryId}`
-                : `Connected Folder ${from.id}; moved to ${to.id}; checkpoint ${value.safetyCheckpointId}`,
-            };
-          });
-          if (removed.recovery.kind === "recently-deleted") recentlyDeleted.push({ path: entry.path, entryId: removed.recovery.entryId, restoreBy: removed.recovery.restoreBy });
-        } catch (error) {
-          // A release across volumes that failed partway still left a whole
-          // copy in Recently Deleted; it is listed with the rest.
-          const kept = (error as { recentlyDeleted?: { entryId: string; restoreBy: string } }).recentlyDeleted;
-          if (kept) recentlyDeleted.push({ path: entry.path, entryId: kept.entryId, restoreBy: kept.restoreBy });
-          // Everything is already in the target; what could not leave the
-          // source stays there, and both restore points still apply. A copied
-          // identity whose original is still whole in the source goes from
-          // the copy, so no identity exists twice; one whose original did not
-          // survive stays in the copy. One that could not be removed from the
-          // copy is named, not hidden.
-          const duplicateIdentities: string[] = [];
-          for (const [offset, copy] of written.slice(index).entries()) {
-            const left = await removeIdentityFoldersKeptAt(copy, entries[index + offset]!.absolutePath).catch(() => [copy]);
-            duplicateIdentities.push(...left.map((path) => relativeTo(to.connectedFolderRoot, path)));
+        const label = entries.length === 1 ? `Before moving ${basename(entries[0]!.absolutePath)}` : `Before moving ${entries.length} items`;
+        const safety = await createConnectedFolderMutationCheckpoint(root, {
+          paths: entries.map((entry) => entry.path),
+          reason: "pre_move",
+          label: `${label} to ${to.name}`,
+        });
+        // History names the files it could not keep the way it names its
+        // capture roots; each one belongs to exactly one source.
+        const historyRoot = ensureSafeConnectedFolderRoot(root);
+        const capturedAs = entries.map((entry) => relative(historyRoot, entry.absolutePath).split(sep).join("/"));
+        const notKept = entries.map((): AmpleFileRecentlyDeletedUncoveredPath[] => []);
+        for (const file of safety.skippedFiles) {
+          const row = capturedAs.findIndex((path) => file.path === path || file.path.startsWith(`${path}/`));
+          if (row < 0) {
+            await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
+            throw new AmpleFileCliError("failure", `AmpleFile could not tell which item ${file.path} belongs to. Nothing was moved.`);
           }
-          return {
-            mode: "move" as const,
-            written: writtenPaths,
-            restorePoints,
-            ...(recentlyDeleted.length ? { recentlyDeleted } : {}),
-            failed: { path: entry.path, error: errorMessage(error) },
-            notRemoved: entries.slice(index).map((item) => item.path),
-            ...(duplicateIdentities.length ? { duplicateIdentities } : {}),
-          };
+          notKept[row]!.push({ path: file.path, reason: file.reason });
         }
-      }
-      return { mode: "move" as const, written: writtenPaths, restorePoints, ...(recentlyDeleted.length ? { recentlyDeleted } : {}) };
-    }));
-  } finally {
-    state.capabilityMutations.delete(from.id);
-  }
+
+        const written: string[] = [];
+        try {
+          // A moved folder keeps its `.amplefile` identity and Chats: registered
+          // nested Connected Folders were refused above, so this is only ever a
+          // disconnected one, and the original is about to go.
+          for (const entry of entries) written.push(await copyInto(entry.absolutePath, target.abs, { withIdentity: true }));
+        } catch (error) {
+          await Promise.all(written.map((path) => rm(path, { recursive: true, force: true }).catch(() => undefined)));
+          await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
+          throw error;
+        }
+        const writtenPaths = written.map((path) => relativeTo(to.connectedFolderRoot, path));
+        // What History could not keep is safe when the copy holds all of it (a
+        // `.git`, an ignored build folder, a large file, a link), checked file
+        // by file. Anything else, and any `.amplefile` identity, keeps the item
+        // out of a plain delete: it leaves the source whole, by moving into
+        // Recently Deleted.
+        const uncovered = await Promise.all(entries.map(async (entry, row) => {
+          const missing: AmpleFileRecentlyDeletedUncoveredPath[] = [];
+          for (const file of notKept[row]!) {
+            const inside = (file.path === capturedAs[row] ? "" : file.path.slice(capturedAs[row]!.length + 1)).split("/").filter(Boolean);
+            const identity = inside.some((segment) => segment === ".amplefile");
+            if (identity || !await copyHoldsAll(join(entry.absolutePath, ...inside), join(written[row]!, ...inside))) missing.push(file);
+          }
+          return missing;
+        }));
+        let targetSafety: ConnectedFolderCheckpoint | null;
+        try {
+          targetSafety = await checkpointAdditiveWritesOrUndo(to.connectedFolderRoot, writtenPaths, { reason: "pre_move", label });
+        } catch (error) {
+          await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
+          throw error;
+        }
+        const restorePoints: TransferRestorePoint[] = [
+          ...(targetSafety ? [{ connectedFolderId: to.id, checkpointId: targetSafety.checkpointId }] : []),
+          { connectedFolderId: from.id, checkpointId: safety.checkpointId },
+        ];
+        const recentlyDeleted: Array<{ path: string; entryId: string; restoreBy: string }> = [];
+        for (const [index, entry] of entries.entries()) {
+          try {
+            // Each item leaving the source is that Connected Folder's delete,
+            // with the delete's own receipt, as the delete routes record it.
+            const { value: removed } = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
+              const value = await applyConnectedFolderDelete(state, from, entry.path, uncovered[index]!, safety.checkpointId, { receiptId: requestId });
+              return {
+                value,
+                detail: value.recovery.kind === "recently-deleted"
+                  ? `Connected Folder ${from.id}; moved to ${to.id}; trash ${value.recovery.entryId}`
+                  : `Connected Folder ${from.id}; moved to ${to.id}; checkpoint ${value.safetyCheckpointId}`,
+              };
+            });
+            if (removed.recovery.kind === "recently-deleted") recentlyDeleted.push({ path: entry.path, entryId: removed.recovery.entryId, restoreBy: removed.recovery.restoreBy });
+          } catch (error) {
+            // A release across volumes that failed partway still left a whole
+            // copy in Recently Deleted; it is listed with the rest.
+            const kept = (error as { recentlyDeleted?: { entryId: string; restoreBy: string } }).recentlyDeleted;
+            if (kept) recentlyDeleted.push({ path: entry.path, entryId: kept.entryId, restoreBy: kept.restoreBy });
+            // Everything is already in the target; what could not leave the
+            // source stays there, and both restore points still apply. A copied
+            // identity whose original is still whole in the source goes from
+            // the copy, so no identity exists twice; one whose original did not
+            // survive stays in the copy. One that could not be removed from the
+            // copy is named, not hidden.
+            const duplicateIdentities: string[] = [];
+            for (const [offset, copy] of written.slice(index).entries()) {
+              const left = await removeIdentityFoldersKeptAt(copy, entries[index + offset]!.absolutePath).catch(() => [copy]);
+              duplicateIdentities.push(...left.map((path) => relativeTo(to.connectedFolderRoot, path)));
+            }
+            return {
+              mode: "move" as const,
+              written: writtenPaths,
+              restorePoints,
+              ...(recentlyDeleted.length ? { recentlyDeleted } : {}),
+              failed: { path: entry.path, error: errorMessage(error) },
+              notRemoved: entries.slice(index).map((item) => item.path),
+              ...(duplicateIdentities.length ? { duplicateIdentities } : {}),
+            };
+          }
+        }
+        return { mode: "move" as const, written: writtenPaths, restorePoints, ...(recentlyDeleted.length ? { recentlyDeleted } : {}) };
+      }));
+    } finally {
+      state.capabilityMutations.delete(from.id);
+    }
+  });
 }
 
 async function compressEntries(body: { place?: unknown; paths?: unknown }) {
