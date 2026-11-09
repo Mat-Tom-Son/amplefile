@@ -186,6 +186,39 @@ test("a moved item that cannot leave its Connected Folder stays there, and its c
   assert.ok(!existsSync(join(target.connectedFolderRoot, "Old Trip", ".amplefile")), "the copy is an ordinary copy");
 });
 
+test("a read-only item that cannot leave its Connected Folder leaves no second identity in its copy", { skip: process.getuid?.() === 0 ? "root ignores folder permissions" : false }, async (t) => {
+  const { api, sandbox } = await sandboxApi(t);
+  const call = caller(api);
+  const source = (await call("/api/connected-folders", { method: "POST", body: { name: "Source" } })).body!.connectedFolder;
+  const target = (await call("/api/connected-folders", { method: "POST", body: { name: "Target" } })).body!.connectedFolder;
+  // The item itself is read-only, so it cannot be renamed out of its source,
+  // and its copy keeps the same mode.
+  const item = join(source.connectedFolderRoot, "D");
+  await mkdir(join(item, ".amplefile", "conversations"), { recursive: true });
+  await writeFile(join(item, ".amplefile", "connected-folder.json"), "{\"id\":\"space-0123456789abcdef\"}");
+  await writeFile(join(item, ".amplefile", "conversations", "chat.jsonl"), "{\"role\":\"user\"}\n");
+  await writeFile(join(item, "plan.md"), "plan");
+  await chmod(join(item, ".amplefile", "conversations"), 0o555);
+  await chmod(join(item, ".amplefile"), 0o555);
+  await chmod(item, 0o555);
+  try {
+    const moved = await call("/api/file-transfer", {
+      method: "POST",
+      body: { mode: "move", sources: [{ place: { kind: "connected-folder", id: source.id }, path: "D" }], target: { place: { kind: "connected-folder", id: target.id }, path: "" } },
+    });
+    assert.equal(moved.status, 200, JSON.stringify(moved.body));
+    assert.deepEqual(moved.body!.notRemoved, ["D"]);
+    assert.equal(moved.body!.duplicateIdentities, undefined, JSON.stringify(moved.body));
+    assert.ok(existsSync(join(item, ".amplefile", "conversations", "chat.jsonl")), "the original keeps its identity and Chats");
+    const copy = join(target.connectedFolderRoot, "D");
+    assert.equal(await readFile(join(copy, "plan.md"), "utf8"), "plan");
+    assert.ok(!existsSync(join(copy, ".amplefile")), "the read-only copy carries no second identity");
+    assert.equal((await lstat(copy)).mode & 0o777, 0o555, "the copy keeps its mode");
+  } finally {
+    await makeWritable(sandbox);
+  }
+});
+
 test("a disconnected Connected Folder's Chats survive a move whose source cannot be removed in one go", { skip: process.getuid?.() === 0 ? "root ignores folder permissions" : false }, async (t) => {
   const { api, sandbox } = await sandboxApi(t);
   const call = caller(api);

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { cp, link, lstat, readdir, readlink, rename, rm } from "node:fs/promises";
+import { chmod, cp, link, lstat, readdir, readlink, rename, rm } from "node:fs/promises";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -72,17 +72,59 @@ export async function copyHoldsAll(source: string, copy: string): Promise<boolea
  * still there with the same files, so no identity exists twice. One whose
  * source counterpart is gone or different stays in the copy, which may be the
  * only place it is whole. Links are not followed.
+ *
+ * The copy is the move's own, so a read-only folder in it (a copy keeps its
+ * source's modes) is made writable for the removal, and the folder holding the
+ * identity gets its mode back afterwards. Returns the `.amplefile` folders, or
+ * the folders it could not look inside, that may still hold an identity that
+ * is also whole in the source; an empty list means none.
  */
-export async function removeIdentityFoldersKeptAt(copy: string, source: string): Promise<void> {
+export async function removeIdentityFoldersKeptAt(copy: string, source: string): Promise<string[]> {
   const info = await lstat(copy).catch(() => null);
-  if (!info?.isDirectory()) return;
-  for (const entry of await readdir(copy)) {
+  if (!info?.isDirectory()) return [];
+  let entries: string[];
+  try {
+    entries = await readdir(copy);
+  } catch {
+    // A folder of the copy that cannot be read may hold an identity; only
+    // say so when the source has something there to duplicate.
+    return await lstat(source).then((item) => item.isDirectory(), () => false) ? [copy] : [];
+  }
+  const left: string[] = [];
+  for (const entry of entries) {
     const copied = join(copy, entry);
     const original = join(source, entry);
-    if (!identityFolders.has(entry)) { await removeIdentityFoldersKeptAt(copied, original); continue; }
-    const originalInfo = await lstat(original).catch(() => null);
-    if (originalInfo?.isDirectory() && await treeHeld(copied, original, { identity: true })) await rm(copied, { recursive: true, force: true });
+    if (!identityFolders.has(entry)) { left.push(...await removeIdentityFoldersKeptAt(copied, original)); continue; }
+    try {
+      const originalInfo = await lstat(original).catch(() => null);
+      if (!originalInfo?.isDirectory() || !await treeHeld(copied, original, { identity: true })) continue;
+      await removeOwnedFolder(copy, copied);
+    } catch {
+      left.push(copied);
+    }
   }
+  return left;
+}
+
+/** Removes `path`, a folder inside `parent`, both written by this app, whatever modes they were copied with. */
+async function removeOwnedFolder(parent: string, path: string): Promise<void> {
+  const parentMode = (await lstat(parent)).mode & 0o7777;
+  const parentWritable = (parentMode & 0o300) === 0o300;
+  if (!parentWritable) await chmod(parent, parentMode | 0o300);
+  try {
+    await makeFoldersWritable(path);
+    await rm(path, { recursive: true, force: true });
+  } finally {
+    if (!parentWritable) await chmod(parent, parentMode).catch(() => undefined);
+  }
+}
+
+async function makeFoldersWritable(path: string): Promise<void> {
+  const info = await lstat(path);
+  if (!info.isDirectory()) return;
+  const mode = info.mode & 0o7777;
+  if ((mode & 0o700) !== 0o700) await chmod(path, mode | 0o700);
+  for (const entry of await readdir(path)) await makeFoldersWritable(join(path, entry));
 }
 
 /** Whether everything at `from` is also at `into`, the same. */

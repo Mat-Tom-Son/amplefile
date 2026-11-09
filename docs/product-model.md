@@ -114,7 +114,8 @@ other surface.
   Chats. An item whose copy did not carry everything History could not
   keep leaves its source through Recently Deleted rather than being erased,
   and an item that cannot leave its source stays there and the move says
-  so. Any other move across places copies and says the original stays.
+  so; its copy then drops the `.amplefile/` the source still holds, and the
+  move names any it could not drop. Any other move across places copies and says the original stays.
   Compress writes the archive beside the items under a hidden working name
   and refuses more than 2 GB of files or 60,000 items, pointing to Finder.
 - **Path bar and Go to Folder:** clicking an item in the path bar copies its

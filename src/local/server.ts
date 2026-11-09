@@ -11930,9 +11930,12 @@ async function moveBetweenConnectedFolders(
           // source stays there, and both restore points still apply. A copied
           // identity whose original is still whole in the source goes from
           // the copy, so no identity exists twice; one whose original did not
-          // survive stays in the copy.
+          // survive stays in the copy. One that could not be removed from the
+          // copy is named, not hidden.
+          const duplicateIdentities: string[] = [];
           for (const [offset, copy] of written.slice(index).entries()) {
-            await removeIdentityFoldersKeptAt(copy, entries[index + offset]!.absolutePath).catch(() => undefined);
+            const left = await removeIdentityFoldersKeptAt(copy, entries[index + offset]!.absolutePath).catch(() => [copy]);
+            duplicateIdentities.push(...left.map((path) => relativeTo(to.connectedFolderRoot, path)));
           }
           return {
             mode: "move" as const,
@@ -11941,6 +11944,7 @@ async function moveBetweenConnectedFolders(
             ...(recentlyDeleted.length ? { recentlyDeleted } : {}),
             failed: { path: entry.path, error: errorMessage(error) },
             notRemoved: entries.slice(index).map((item) => item.path),
+            ...(duplicateIdentities.length ? { duplicateIdentities } : {}),
           };
         }
       }

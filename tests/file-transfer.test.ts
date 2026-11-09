@@ -110,10 +110,25 @@ test("a copied identity goes only when its original is still whole in the source
   for (const name of ["Intact", "Gone", "Changed"]) copies.set(name, await copyInto(join(root, "source", name), join(root, "target"), { withIdentity: true }));
   await rm(join(root, "source", "Gone", "Trip", ".amplefile"), { recursive: true });
   await writeFile(join(root, "source", "Changed", "Trip", ".amplefile", "conversations", "chat.jsonl"), "chat, then more");
-  for (const name of ["Intact", "Gone", "Changed"]) await removeIdentityFoldersKeptAt(copies.get(name)!, join(root, "source", name));
+  for (const name of ["Intact", "Gone", "Changed"]) assert.deepEqual(await removeIdentityFoldersKeptAt(copies.get(name)!, join(root, "source", name)), []);
   assert.ok(!existsSync(join(copies.get("Intact")!, "Trip", ".amplefile")), "the source still has it, so the copy is an ordinary copy");
   assert.equal(await readFile(join(copies.get("Gone")!, "Trip", ".amplefile", "conversations", "chat.jsonl"), "utf8"), "chat", "the only whole copy stays");
   assert.ok(existsSync(join(copies.get("Changed")!, "Trip", ".amplefile")), "a source that differs does not stand in for the copy");
+});
+
+test("a copied identity it cannot reach is reported, not hidden", { skip: process.getuid?.() === 0 ? "root ignores folder permissions" : false }, async (t) => {
+  const root = await folder(t);
+  await mkdir(join(root, "source", "Trip", "Inner", ".amplefile"), { recursive: true });
+  await writeFile(join(root, "source", "Trip", "Inner", ".amplefile", "connected-folder.json"), "{}");
+  await mkdir(join(root, "target"));
+  const copy = await copyInto(join(root, "source", "Trip"), join(root, "target"), { withIdentity: true });
+  // A folder of the copy that cannot be read may still hold the identity.
+  await chmod(join(copy, "Inner"), 0o000);
+  try {
+    assert.deepEqual(await removeIdentityFoldersKeptAt(copy, join(root, "source", "Trip")), [join(copy, "Inner")]);
+  } finally {
+    await chmod(join(copy, "Inner"), 0o755);
+  }
 });
 
 test("Compress makes name.zip for one item and Archive.zip for several", async (t) => {
