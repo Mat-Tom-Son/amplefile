@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import JSZip from "jszip";
 
-import { compressInto, copyInto, finderCopyName, moveInto } from "../src/local/file-transfer.js";
+import { abandonedCompressAfterMs, compressInto, copyInto, finderCopyName, moveInto } from "../src/local/file-transfer.js";
 
 async function folder(t: test.TestContext): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "file-transfer-"));
@@ -108,6 +108,21 @@ test("a Compress that fails partway leaves nothing behind", { skip: process.getu
   t.after(() => chmod(join(root, "Album", "z-locked.jpg"), 0o600).catch(() => undefined));
   await assert.rejects(compressInto([join(root, "Album")], root));
   assert.deepEqual(await readdir(root), ["Album"]);
+});
+
+test("Compress clears working files an interrupted Compress left, never one still being written", async (t) => {
+  const root = await folder(t);
+  await writeFile(join(root, "notes.txt"), "notes");
+  const abandoned = join(root, ".AmpleFile-compress-0011223344556677.partial");
+  const active = join(root, ".AmpleFile-compress-8899aabbccddeeff.partial");
+  const lookalike = join(root, ".AmpleFile-compress-notes.txt");
+  for (const path of [abandoned, active, lookalike]) await writeFile(path, "partial");
+  const old = new Date(Date.now() - abandonedCompressAfterMs - 60_000);
+  await utimes(abandoned, old, old);
+  await utimes(lookalike, old, old);
+  await compressInto([join(root, "notes.txt")], root);
+  assert.deepEqual((await readdir(root)).sort(), [".AmpleFile-compress-8899aabbccddeeff.partial", ".AmpleFile-compress-notes.txt", "notes.txt", "notes.txt.zip"],
+    "the abandoned working file is gone; one changed recently and anything else stay");
 });
 
 test("the transfer route reads its target as a place and a path inside it", async () => {

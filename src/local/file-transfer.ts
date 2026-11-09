@@ -125,7 +125,9 @@ export async function compressInto(
     else zip.file(entry.name, openWhenRead(entry.path), { date: entry.date, binary: true });
   }
   const name = sources.length === 1 ? `${basename(sources[0]!)}.zip` : "Archive.zip";
-  const partial = join(targetFolder, `.AmpleFile-compress-${randomBytes(8).toString("hex")}.partial`);
+  await removeAbandonedCompressFiles(targetFolder);
+  const partial = join(targetFolder, `${compressWorkingPrefix}${randomBytes(8).toString("hex")}${compressWorkingSuffix}`);
+  compressingNow.add(resolve(partial));
   try {
     await pipeline(
       zip.generateNodeStream({ type: "nodebuffer", streamFiles: true, compression: "DEFLATE", compressionOptions: { level: 6 } }),
@@ -133,7 +135,32 @@ export async function compressInto(
     );
     return await placeWithoutReplacing(partial, targetFolder, name);
   } finally {
+    compressingNow.delete(resolve(partial));
     await rm(partial, { force: true }).catch(() => undefined);
+  }
+}
+
+const compressWorkingPrefix = ".AmpleFile-compress-";
+const compressWorkingSuffix = ".partial";
+/** Working files this process is writing right now. */
+const compressingNow = new Set<string>();
+/** A working file untouched this long belongs to a Compress that ended without finishing (the app quit or crashed). */
+export const abandonedCompressAfterMs = 10 * 60 * 1_000;
+
+/**
+ * Removes the hidden working files a Compress left in a folder when the app
+ * quit or crashed partway. One being written now, here or by another running
+ * copy of the app (its file keeps changing), is left alone.
+ */
+async function removeAbandonedCompressFiles(folder: string): Promise<void> {
+  const names = await readdir(folder).catch(() => [] as string[]);
+  for (const name of names) {
+    if (!name.startsWith(compressWorkingPrefix) || !name.endsWith(compressWorkingSuffix)) continue;
+    const path = join(folder, name);
+    if (compressingNow.has(resolve(path))) continue;
+    const info = await lstat(path).catch(() => null);
+    if (!info?.isFile() || Date.now() - info.mtimeMs < abandonedCompressAfterMs) continue;
+    await rm(path, { force: true }).catch(() => undefined);
   }
 }
 
