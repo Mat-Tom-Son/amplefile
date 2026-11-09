@@ -250,9 +250,13 @@ test("an act that waited in the queue past its bound is refused, never run late"
   try {
     const held = new Promise<void>((resolveHeld) => { releaseFirst = resolveHeld; });
     const created: string[] = [];
+    let firstStarted = false;
     const facade = {
       async createConversation(input: { connectedFolder: string }) {
-        if (!created.length) await held;
+        if (!created.length && !firstStarted) {
+          firstStarted = true;
+          await held;
+        }
         created.push(input.connectedFolder);
         return {
           connectedFolder: { id: input.connectedFolder, name: "Act Connected Folder", connectedFolderRoot: join(stateRoot, "connected-folder") },
@@ -260,19 +264,36 @@ test("an act that waited in the queue past its bound is refused, never run late"
         };
       },
     } as unknown as AmpleFileActFacade;
-    host = new AmpleFileDesktopCliHost({ stateRoot, kernel: fixtureKernel(), version: "1.0.0", getActFacade: () => ({ facade, token }), maxQueuedMs: 1_000 });
-    await host.initialize();
+    // The executor's clock is the test's: it stands still until the test
+    // moves it, so how long the machine takes never decides the outcome.
     const [first, late] = ["connected-folder-1", "connected-folder-2"].map((connectedFolder) => createAmpleFileCliActRequest({
       id: randomUUID(),
       argv: ["chat", "create", "--connected-folder", connectedFolder, "--json"],
       cwd: resolve("."),
       actToken: token,
     }));
+    let clock = Date.parse(first!.createdAt);
+    host = new AmpleFileDesktopCliHost({
+      stateRoot,
+      kernel: fixtureKernel(),
+      version: "1.0.0",
+      getActFacade: () => ({ facade, token }),
+      maxQueuedMs: 60_000,
+      now: () => new Date(clock),
+    });
+    await host.initialize();
     await host.broker.writeActRequest(first!);
     await host.broker.writeActRequest(late!);
     const running = host.processRequest(first!.id);
+    const deadline = Date.now() + 10_000;
+    while (!firstStarted) {
+      if (Date.now() > deadline) throw new Error("Timed out waiting for the first act to start.");
+      await new Promise<void>((resolveTick) => setTimeout(resolveTick, 5));
+    }
     const queued = host.processRequest(late!.id);
-    await new Promise<void>((resolveDelay) => setTimeout(resolveDelay, 1_200));
+    // The second act waits behind the first for longer than its bound,
+    // measured from its own creation time.
+    clock = Date.parse(late!.createdAt) + 60_001;
     releaseFirst();
     await Promise.all([running, queued]);
 

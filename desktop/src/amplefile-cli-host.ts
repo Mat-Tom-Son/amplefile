@@ -24,6 +24,8 @@ export interface AmpleFileDesktopCliHostOptions {
   productName?: string;
   /** How long an act may wait in the serial queue before it is refused; defaults to the broker freshness window. */
   maxQueuedMs?: number;
+  /** The act executor's clock, which judges that wait; replaceable in tests. */
+  now?: () => Date;
   /** Act-lane authority; null while the interactive local API is not running. */
   getActFacade?: () => AmpleFileCliActAuthority | null;
   /** Validates explicit management-turn lineage for act receipts. */
@@ -57,6 +59,7 @@ export class AmpleFileDesktopCliHost {
   #queue: Promise<unknown> = Promise.resolve();
   readonly #pending = new Set<Promise<void>>();
   readonly #maxQueuedMs: number;
+  readonly #now: (() => Date) | undefined;
 
   constructor(options: AmpleFileDesktopCliHostOptions) {
     this.broker = new AmpleFileCliFileBroker({ stateRoot: options.stateRoot });
@@ -67,6 +70,7 @@ export class AmpleFileDesktopCliHost {
     this.#getActFacade = options.getActFacade ?? (() => null);
     this.#resolveLineageParent = options.resolveLineageParent ?? (() => null);
     this.#maxQueuedMs = options.maxQueuedMs ?? AMPLEFILE_CLI_REQUEST_MAX_AGE_MS;
+    this.#now = options.now;
   }
 
   async initialize(): Promise<void> {
@@ -84,6 +88,7 @@ export class AmpleFileDesktopCliHost {
           getActFacade: this.#getActFacade,
           receipts: this.receipts,
           resolveLineageParent: this.#resolveLineageParent,
+          ...(this.#now ? { now: this.#now } : {}),
           // A queued act that reaches the front after the broker's freshness
           // window is refused, as it was when it could not be claimed that
           // late: the shim (30 minutes by default) is still waiting, so the
