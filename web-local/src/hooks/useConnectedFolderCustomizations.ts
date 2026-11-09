@@ -38,14 +38,19 @@ export function useConnectedFolderCustomizations({ fixtureCustomizations, appear
   customizationsRef.current = customizations;
   // The host's appearance revision this window last matched, its own queued
   // writes, and the Connected Folders whose last save failed (kept for this
-  // session only). A newer host copy is adopted only while nothing is queued,
-  // so a look applied by the Worker or the CLI shows here, and Customize
-  // edits that look rather than a stale copy.
+  // session only). A newer host copy (a bootstrap read, or the whole state a
+  // save returns) is adopted only while nothing is queued, so a look applied
+  // by the Worker or the CLI shows here, and Customize edits that look rather
+  // than a stale copy.
   const hostRevisionRef = useRef(appearance?.revision ?? 0);
   const pendingWritesRef = useRef(0);
   const unsavedRef = useRef(new Set<string>());
   const latestAppearanceRef = useRef(appearance);
   latestAppearanceRef.current = appearance;
+  // The host's whole appearance as this window's newest save returned it. It
+  // can carry looks the Worker or the CLI saved meanwhile, so it is adopted
+  // like any other host copy once nothing is queued.
+  const savedResponseRef = useRef<ConnectedFolderAppearanceState | null>(null);
 
   function setAll(next: ConnectedFolderCustomizationMap) {
     customizationsRef.current = next;
@@ -100,8 +105,8 @@ export function useConnectedFolderCustomizations({ fixtureCustomizations, appear
           ? await api<{ appearance: ConnectedFolderAppearanceState }>(`/api/connected-folders/${connectedFolderId}/appearance`, { method: "PUT", body: { customization } })
           : await api<{ appearance: ConnectedFolderAppearanceState }>(`/api/connected-folders/${connectedFolderId}/appearance`, { method: "DELETE" });
         unsavedRef.current.delete(connectedFolderId);
-        const revision = saved?.appearance?.revision;
-        if (typeof revision === "number") hostRevisionRef.current = Math.max(hostRevisionRef.current, revision);
+        const state = saved?.appearance;
+        if (state && typeof state.revision === "number" && state.revision > (savedResponseRef.current?.revision ?? -1)) savedResponseRef.current = state;
       })
       .catch((caught) => {
         unsavedRef.current.add(connectedFolderId);
@@ -111,8 +116,13 @@ export function useConnectedFolderCustomizations({ fixtureCustomizations, appear
       })
       .finally(() => {
         pendingWritesRef.current--;
-        // A newer host copy that arrived while this window was saving.
-        if (pendingWritesRef.current === 0) adoptHostAppearance(latestAppearanceRef.current);
+        if (pendingWritesRef.current > 0) return;
+        // The newest host copy: the last save's answer, or a read that arrived
+        // while this window was saving.
+        const response = savedResponseRef.current;
+        savedResponseRef.current = null;
+        const latest = latestAppearanceRef.current;
+        adoptHostAppearance(response && (!latest || response.revision >= latest.revision) ? response : latest);
       });
   }
 
