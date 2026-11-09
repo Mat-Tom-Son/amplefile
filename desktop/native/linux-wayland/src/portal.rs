@@ -1,5 +1,5 @@
 //! One explicitly selected monitor, with a shared capture/input session.
-use crate::{capture::{Capture, Frame}, ei::Sender};
+use crate::{capture::{Capture, Frame}, input::Sender};
 use anyhow::{anyhow, ensure, Context, Result};
 use ashpd::desktop::{remote_desktop::{DeviceType, RemoteDesktop, SelectDevicesOptions},
     screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType}, PersistMode, Session};
@@ -63,7 +63,8 @@ async fn monitor_screen_lock(connection: &zbus::Connection, service: LockService
 }
 
 pub struct SharedScreen {
-    session: Arc<Session<RemoteDesktop>>,
+    session: Option<Arc<Session<RemoteDesktop>>>,
+    cast_session: Option<Arc<Session<Screencast>>>,
     closed: watch::Receiver<bool>,
     watchers: Vec<tokio::task::JoinHandle<()>>,
     capture: Option<Capture>,
@@ -81,6 +82,7 @@ impl Drop for SharedScreen {
 
 impl SharedScreen {
     pub async fn request(cancel: impl std::future::Future<Output = ()>) -> Result<Self> {
+        if std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().split(':').any(|name|name.eq_ignore_ascii_case("niri")) { return Self::request_niri(cancel).await; }
         let lock_service = lock_service(&std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default())?;
         let remote = RemoteDesktop::new().await?;
         let cast = Screencast::with_connection(remote.connection().clone()).await?;
@@ -101,7 +103,7 @@ impl SharedScreen {
             closed_sender.send_replace(true);
         });
         ready.await.context("Portal watcher ended before subscription")??;
-        let mut screen = Self { session, closed, watchers: vec![watcher], capture: None, input: None,
+        let mut screen = Self { session: Some(session.clone()), cast_session: None, closed, watchers: vec![watcher], capture: None, input: None,
             mapping_id: None, logical_size: None, logical_position: None, devices: 0, alive: true };
         let connection = remote.connection().clone();
         let (lock_ready, lock_subscribed) = oneshot::channel();
@@ -117,16 +119,16 @@ impl SharedScreen {
         }
         let mut revoked = screen.closed.clone();
         let operation = async {
-            remote.select_devices(&screen.session, SelectDevicesOptions::default()
+            remote.select_devices(&session, SelectDevicesOptions::default()
                 .set_devices(DeviceType::Keyboard | DeviceType::Pointer).set_persist_mode(PersistMode::DoNot)).await?.response()?;
-            cast.select_sources(&screen.session, SelectSourcesOptions::default()
+            cast.select_sources(&session, SelectSourcesOptions::default()
                 // KDE's RemoteDesktop portal merges all monitors into one
                 // workspace stream when multiple=false. Request individual
                 // streams there so the one-monitor check below cannot admit
                 // a combined desktop before any pixels reach the application.
                 .set_sources(Some(SourceType::Monitor.into())).set_multiple(lock_service == KDE_LOCK)
                 .set_cursor_mode(CursorMode::Embedded).set_persist_mode(PersistMode::DoNot)).await?.response()?;
-            let selection = remote.start(&screen.session, None, Default::default()).await?.response()?;
+            let selection = remote.start(&session, None, Default::default()).await?.response()?;
             if lock_service == KDE_LOCK {
                 ensure!(selection.streams().len() == 1,
                     "KDE screen sharing currently requires one connected monitor; stop sharing and use a single-monitor desktop");
@@ -137,12 +139,12 @@ impl SharedScreen {
             screen.logical_position = stream.position();
             screen.mapping_id = stream.mapping_id().map(str::to_owned);
             screen.devices = selection.devices().bits();
-            let fd = cast.open_pipe_wire_remote(&screen.session, Default::default()).await?;
+            let fd = cast.open_pipe_wire_remote(&session, Default::default()).await?;
             screen.capture = Some(Capture::portal(fd.into(), stream.pipe_wire_node_id()).await?);
             // Never publish Active before a usable frame arrives.
             screen.capture.as_ref().unwrap().frame().await?;
             if remote.version() >= 2 && !selection.devices().is_empty() {
-                let fd = remote.connect_to_eis(&screen.session, Default::default()).await?;
+                let fd = remote.connect_to_eis(&session, Default::default()).await?;
                 screen.input = Some(Sender::new(fd.into())?);
                 let sender = screen.input.as_mut().unwrap();
                 tokio::time::timeout(Duration::from_secs(5), async {
@@ -157,7 +159,7 @@ impl SharedScreen {
             Ok::<_, anyhow::Error>(())
         };
         let result = tokio::select! {
-            result = tokio::time::timeout(Duration::from_secs(60), operation) => result.context("Desktop chooser timed out").and_then(|r| r),
+            result = tokio::time::timeout(Duration::from_secs(180), operation) => result.context("Desktop sharing setup timed out").and_then(|r| r),
             _ = cancel => Err(anyhow!("Desktop sharing cancelled")),
             _ = revoked.changed() => Err(anyhow!("Desktop sharing was revoked")),
         };
@@ -173,6 +175,51 @@ impl SharedScreen {
 
     /// Pump transport events before every observation and action. Revocation
     /// invalidates this object; callers must never turn it into an auto-retry.
+    async fn request_niri(cancel: impl std::future::Future<Output = ()>) -> Result<Self> {
+        let cast = Screencast::new().await?;
+        let session = Arc::new(cast.create_session(Default::default()).await?);
+        let (closed_sender, closed) = watch::channel(false);
+        let watched = session.clone();
+        let (subscribed,ready) = oneshot::channel();
+        let portal_closed = closed_sender.clone();
+        let watcher = tokio::spawn(async move {
+            let stream = match watched.receive_closed().await {
+                Ok(stream) => {let _ = subscribed.send(Ok::<_,anyhow::Error>(()));stream}
+                Err(error) => {let _ = subscribed.send(Err(error.into()));return;}
+            };
+            let mut stream = std::pin::pin!(stream);stream.next().await;portal_closed.send_replace(true);
+        });
+        ready.await.context("Portal watcher ended before subscription")??;
+        let mut screen = Self {session:None,cast_session:Some(session.clone()),closed,watchers:vec![watcher],capture:None,input:None,mapping_id:None,logical_size:None,logical_position:None,devices:0,alive:true};
+        let (lock_ready,lock_subscribed) = oneshot::channel();
+        screen.watchers.push(tokio::spawn(async move {crate::session_lock::monitor_niri(lock_ready).await;closed_sender.send_replace(true);}));
+        if let Err(error) = lock_subscribed.await.context("niri lock monitor ended").and_then(|r|r) {screen.close().await.ok();return Err(error.context("Desktop lock monitoring is unavailable"));}
+        let mut revoked = screen.closed.clone();
+        let operation = async {
+            cast.select_sources(&session,SelectSourcesOptions::default().set_sources(Some(SourceType::Monitor.into())).set_multiple(false).set_cursor_mode(CursorMode::Embedded).set_persist_mode(PersistMode::DoNot)).await?.response()?;
+            let selection = cast.start(&session,None,Default::default()).await?.response()?;
+            ensure!(selection.streams().len() == 1,"Select exactly one monitor");
+            let stream = &selection.streams()[0];
+            let position = stream.position().context("The screen portal supplied no monitor position")?;
+            let size = stream.size().context("The screen portal supplied no monitor size")?;
+            let fd = cast.open_pipe_wire_remote(&session,Default::default()).await?;
+            screen.capture = Some(Capture::portal_linear(fd.into(),stream.pipe_wire_node_id()).await?);
+            let frame = screen.capture.as_ref().unwrap().frame().await?;
+            let input = Sender::niri(position,size,(frame.info.width,frame.info.height))?;
+            screen.mapping_id = input.regions()?.first().and_then(|r|r.mapping_id.clone());
+            screen.logical_size = Some(size);screen.logical_position = Some(position);
+            screen.input = Some(input);screen.devices = 3;
+            Ok::<_,anyhow::Error>(())
+        };
+        let result = tokio::select! {
+            result = tokio::time::timeout(Duration::from_secs(180),operation) => result.context("Desktop sharing setup timed out").and_then(|r|r),
+            _ = cancel => Err(anyhow!("Desktop sharing cancelled")),
+            _ = revoked.changed() => Err(anyhow!("Desktop sharing was revoked")),
+        };
+        if let Err(error) = result {screen.close().await.ok();return Err(error);}
+        screen.check()?;Ok(screen)
+    }
+
     pub fn check(&mut self) -> Result<()> {
         if *self.closed.borrow() || self.closed.has_changed().is_err() { self.alive = false; }
         ensure!(self.alive, "Desktop sharing ended; start a new sharing session");
@@ -195,7 +242,7 @@ impl SharedScreen {
     pub fn input_mapping(&self, frame: &Frame) -> Result<&str> {
         ensure!(self.alive && self.devices & 3 == 3, "Pointer and keyboard permission are required");
         let mapping = self.mapping_id.as_deref().context("The portal supplied no input mapping")?;
-        let input = self.input.as_ref().context("No EIS input connection")?;
+        let input = self.input.as_ref().context("No input connection")?;
         let regions: Vec<_> = input.regions()?.into_iter().filter(|r| r.mapping_id.as_deref() == Some(mapping)).collect();
         ensure!(regions.len() == 1, "The shared monitor has no unique input geometry");
         let region = &regions[0];
@@ -216,7 +263,10 @@ impl SharedScreen {
         self.input.take();
         // Revoke the PipeWire remote first, so a blocked native transition can
         // unwind. Pipeline teardown has a separate host kill-and-reap deadline.
-        let closed = tokio::time::timeout(Duration::from_secs(3), self.session.close()).await;
+        let closed = tokio::time::timeout(Duration::from_secs(3), async {
+            if let Some(session) = &self.session { session.close().await }
+            else { self.cast_session.as_ref().unwrap().close().await }
+        }).await;
         let confirmed = matches!(closed, Ok(Ok(()))) || *self.closed.borrow()
             || (tokio::time::timeout(Duration::from_millis(250), self.closed.changed()).await.is_ok() && *self.closed.borrow());
         if let Some(capture) = self.capture.take() {

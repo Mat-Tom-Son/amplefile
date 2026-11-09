@@ -29,8 +29,20 @@ export interface DesktopPiOAuthHost {
  * "Paste from clipboard" action so AmpleFile never reads clipboard contents
  * without a contemporaneous user gesture.
  */
-export function createDesktopPiOAuthHooks(host: DesktopPiOAuthHost): PiOAuthHooks {
+export function createDesktopPiOAuthHooks(host: DesktopPiOAuthHost): PiOAuthHooks & { pasteCallback(): Promise<void> } {
+  type Pending = { input: { message: string; placeholder?: string; signal?: AbortSignal }; resolve(value: string): void; reject(error: unknown): void };
+  const pending = new Set<Pending>();
+  let pasting = false;
   return {
+    async pasteCallback() {
+      if (pasting) return;
+      if (pending.size !== 1) throw new Error(pending.size ? "Finish the other provider sign-in first." : "No sign-in is waiting for a callback. It may have completed automatically.");
+      const item = [...pending][0]!;
+      pasting = true;
+      try { item.resolve(await promptFromClipboard(host, item.input)); }
+      catch (error) { item.reject(error); }
+      finally { pasting = false; }
+    },
     async openUrl(info) {
       await host.openExternal(info.url);
     },
@@ -51,9 +63,19 @@ export function createDesktopPiOAuthHooks(host: DesktopPiOAuthHost): PiOAuthHook
       return promptFromClipboard(host, input);
     },
     manualCodeInput(signal, input) {
-      return promptFromClipboard(host, {
-        message: input?.message ?? "Paste the OAuth redirect URL or authorization code",
-        placeholder: input?.placeholder ?? "Redirect URL or authorization code", signal,
+      signal?.throwIfAborted();
+      // Pi races this optional fallback against its loopback callback server.
+      // Wait quietly until the person explicitly asks to paste a callback.
+      return new Promise<string>((resolve, reject) => {
+        const finish = (operation: () => void) => { pending.delete(item); signal?.removeEventListener("abort", abort); operation(); };
+        const item: Pending = {
+          input: { message: input?.message ?? "Paste the OAuth redirect URL or authorization code", placeholder: input?.placeholder ?? "Redirect URL or authorization code", signal },
+          resolve: value => finish(() => resolve(value)), reject: error => finish(() => reject(error)),
+        };
+        const abort = () => item.reject(signal?.reason ?? new Error("Provider sign-in cancelled."));
+        pending.add(item);
+        signal?.addEventListener("abort", abort, { once: true });
+        if (signal?.aborted) abort();
       });
     },
     async select(input) {

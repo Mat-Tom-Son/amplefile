@@ -81,7 +81,8 @@ is not rendered as a desktop component.
 ## Included tools and limits
 
 The [Linux candidate](linux-build.md#computer-control) includes the reviewed
-AT-SPI helper and native Wayland portal/PipeWire/libei sharing helper. Screen
+AT-SPI helper and native Wayland sharing helper: portal/PipeWire capture, with
+libei input on GNOME/KDE and output-bound virtual input on niri. Screen
 sharing is an explicit OS setup action, available before any Chat exists;
 an app-wide grant permits one accepted turn to control the desktop at a time.
 Full-trust Extensions receive the same optional versioned host facilities for

@@ -1,15 +1,15 @@
 # Linux builds
 
 AmpleFile has a Linux x64 preview lane producing DEB, RPM and AppImage
-packages. [Linux test preview 0.1.3](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.3)
+packages. [Linux test preview 0.1.4](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.4)
 uses a separate prerelease tag in the source repository. The public Mac release
 and updater remain separate; Linux previews have no automatic update feed.
 The build command itself never publishes.
 
 The window fits its own display’s work area on startup and after display-scale
 changes, including when restoring a placement from a larger screen. The Linux
-menu bar appears with Alt; the sidebar does not reserve space for Mac window
-buttons. First-run setup uses the Linux Computer Control surface.
+title bar follows Appearance and contains the application menus; the sidebar does
+not reserve space for Mac window buttons. First-run setup uses the Linux Computer Control surface.
 
 ## Build and run
 
@@ -49,6 +49,13 @@ Linux app data lives in `$XDG_CONFIG_HOME/AmpleFile` (normally
 variables in [Development](development.md#development-state-and-model-access)
 also apply on Linux. Provider and Service Connection credentials require a real
 libsecret or KWallet backend; Chromium's `basic_text` fallback is refused.
+Outside KDE/Plasma, startup explicitly selects the standard Secret Service
+backend so desktops such as niri, Sway and Hyprland can use their running keyring.
+KDE/Plasma retain Chromium's native KWallet selection; an explicit
+`--password-store` choice is respected. Start and unlock GNOME Keyring,
+KWallet or another Secret Service implementation before signing in. If it was
+started after AmpleFile, quit and reopen the app. No credentials are saved
+using Chromium's plaintext fallback.
 
 ## Sidebar and desktop
 
@@ -65,7 +72,7 @@ desktops that do not display tray icons. Closing the last Linux window keeps
 the host and accepted work alive; reopening AmpleFile brings back its window.
 Use Quit to end the app. Where X11/XWayland is available, Electron uses it by
 default for trusted background browser input and screenshots. Wayland desktop
-sharing still uses the native portal. Native Wayland-only windowing is not
+sharing still uses the native portal. Native Wayland-only Electron windowing is not
 qualified by this lane.
 
 ## Computer Control
@@ -85,7 +92,20 @@ lock, sleep, helper failure, removal of the controlling Chat, and Quit revoke
 the appropriate control session. Catalog reads do not launch helpers or ask
 for screen permission.
 
-GNOME is the baseline. KDE's helper path requires one connected monitor;
+GNOME and niri 26.04 are supported. On niri, **Share and Allow Control** opens
+the screen portal. After a display is selected, the helper uses niri’s native
+virtual-pointer and virtual-keyboard protocols, bound to that display, without a
+privileged input daemon. It requires the current user’s active Wayland logind
+session and revokes access on `LockedHint`, session deactivation or service loss.
+The selected stream must match exactly one monitor’s logical geometry; output
+changes invalidate input and require sharing again. Keyboard input uses the
+compositor’s keymap, with the same bounded typing rules as the libei path.
+Capture requests linear XRGB DMA-BUFs, validates their kernel allocation and
+plane layout, and brackets CPU access with the Linux DMA-BUF synchronization
+API before producing bounded RGBA/PNG observations. A driver must support
+exporting CPU-readable linear buffers.
+
+KDE's helper path requires one connected monitor;
 multi-monitor KDE responses are refused. Portal/backend availability, a desktop
 accessibility bus, and a session screen-lock service are required. DEB/RPM
 declare desktop runtime dependencies. For AppImage, install libei,
@@ -112,10 +132,18 @@ The native Rust suites and the `computer-session`, `wayland-pi-tools`,
 tests exercise cancellation, ownership, stale observations, setup and native
 transport. [Private desktop acceptance](../scripts/linux-wayland-probe/README.md)
 tests the actual portal, compositor, capture/input and Pi tool path in an
-isolated GNOME seat. These fixtures do not establish hardware GPU, physical
+isolated GNOME seat. [Private niri acceptance](../scripts/linux-niri-probe/README.md)
+checks native input and lock revocation at 100% and 125% scale. Real niri capture
+was also checked on a 1920×1200 display at 125%, including exact PNG pixels and
+selected-output coordinate mapping. These fixtures do not establish hardware GPU, physical
 sleep, IME, paid-provider or public signed-repository qualification.
 
 The integration combines the Linux action-safety work in `609ddebc` with the
 Mac reliability fixes in `d8c90fc7`, `5543df03` and `9a24cd0e` from the source
 project. The Mac helper's reviewed bytes and common text-result verification
 remain intact; shared-screen support extends the native Extension entrypoint.
+
+Provider sign-in waits for the browser callback automatically. **Paste Callback URL…**
+is an optional fallback in first-run setup and AI Models; it opens only when
+chosen. Required provider codes and device-code instructions still appear.
+Chrome is omitted from Linux first-run setup.

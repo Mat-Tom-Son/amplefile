@@ -1,3 +1,4 @@
+import { OAuthCallbackFallback } from "../onboarding/OAuthCallbackFallback";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { ModelCatalogList, modelCatalogKey } from "./ModelCatalogList";
 import { ImageModelSection, type ImageModelSettings } from "./ImageModelSection";
@@ -205,6 +206,7 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
   const [modelFeedback, setModelFeedback] = useState<AiModelsFeedback | null>(null);
   const [connectionFeedback, setConnectionFeedback] = useState<AiModelsFeedback | null>(null);
   const [instructionsFeedback, setInstructionsFeedback] = useState<AiModelsFeedback | null>(null);
+  const [oauthBusy, setOAuthBusy] = useState(false);
   const [saving, setSaving] = useState<"model" | "connection" | "remove" | null>(null);
   const [savingInstructions, setSavingInstructions] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -433,6 +435,7 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
     const connection = kind !== "model";
     const feedback = connection ? setConnectionFeedback : setModelFeedback;
     setSaving(connection ? "connection" : "model");
+    setOAuthBusy(kind === "oauth");
     feedback(null);
     const submittedApiKey = kind === "key" ? apiKey.trim() : "";
     try {
@@ -463,7 +466,7 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
       reportConfigured(result.status);
       feedback({ text: submittedAzure ? provider === AZURE_OPENAI_PROVIDER ? "Azure settings saved" : "Foundry settings saved" : connection ? "Connection saved" : "Model saved" });
     } catch (caught) { if (live.current) feedback({ error: true, text: errorText(caught) }); }
-    finally { if (live.current) setSaving(null); release(); }
+    finally { if (live.current) setSaving(null); setOAuthBusy(false); release(); }
   }
 
   async function removeCredential() {
@@ -500,7 +503,7 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
       setModelFeedback(null);
       setConnectionFeedback({ text: providerAuth?.authType === "oauth" ? "Account disconnected" : "API key removed" });
     } catch (caught) { if (live.current) setConnectionFeedback({ error: true, text: errorText(caught) }); }
-    finally { if (live.current) setSaving(null); release(); }
+    finally { if (live.current) setSaving(null); setOAuthBusy(false); release(); }
   }
 
   async function refreshModels() {
@@ -633,6 +636,7 @@ function AiModelsScopeSettings({ connectedFolder, status, scope, fixtureMode = f
           </label>
           <div className="ai-models-form-actions ai-models-connection-actions"><button className="ui-control ui-control--primary" type="submit" disabled={operationBusy || (isAzure ? !parseAzureDeploymentNames(azure.deployments).length || !azure.baseUrl.trim() || (!authConfigured && !apiKey.trim()) || (authConfigured && !azureChanged && !apiKey.trim()) : !apiKey.trim())}>{saving === "connection" ? "Saving…" : isAzure ? provider === AZURE_OPENAI_PROVIDER ? "Save Azure Settings" : "Save Foundry Settings" : editingApiKey ? "Save API Key" : "Connect Provider"}</button></div>
         </form> : null}
+        <OAuthCallbackFallback active={oauthBusy} onError={(message) => setConnectionFeedback({ error: true, text: message })} />
         {oauthSupported || selectedProvider?.guidedSetup ? <div className="ai-models-provider-actions">
           {oauthSupported ? <button className="ui-control" type="button" disabled={operationBusy} onClick={() => void configure("oauth")}>{saving === "connection" ? "Connecting…" : providerAuth?.authType === "oauth" ? "Reconnect Account" : selectedProvider?.oauthLabel ?? "Connect Account"}</button> : null}
           {selectedProvider?.guidedSetup ? <button className="ui-control" type="button" disabled={operationBusy} onClick={() => void configure("setup")}>Guided Setup</button> : null}

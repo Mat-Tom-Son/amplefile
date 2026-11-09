@@ -169,7 +169,7 @@ test("a failed status read clears once the next read succeeds", async (t) => {
 });
 
 for (const platform of ["darwin", "linux"] as const) {
-  test(`first run offers Chrome and Computer Control on ${platform}`, async (t) => {
+  test(`first run offers the platform-specific tools on ${platform}`, async (t) => {
     const dom = await createDomHarness();
     t.after(() => dom.cleanup());
     stubSetup(t, () => ({ id: "computer", state: "setup_required", detail: "", checkedAt: "" }), () => [
@@ -183,8 +183,13 @@ for (const platform of ["darwin", "linux"] as const) {
     await dom.act(() => button(/^Get Started$/)!.click());
     await dom.waitFor(() => heading() === `Let Your Worker Use Your ${platform === "darwin" ? "Mac" : "Computer"}`);
     assert.equal(document.querySelector(".fm-welcome-dots")?.getAttribute("aria-label"), "Step 2 of 3");
-    await dom.act(() => button(/^Chrome/)!.click());
-    await dom.waitFor(() => /Add the AmpleFile Extension/.test(document.body.textContent!));
+    if (platform === "darwin") {
+      await dom.act(() => button(/^Chrome/)!.click());
+      await dom.waitFor(() => /Add the AmpleFile Extension/.test(document.body.textContent!));
+    } else {
+      assert.equal(button(/^Chrome/), undefined);
+      assert.doesNotMatch(document.body.textContent!, /own Chrome/);
+    }
     await dom.act(() => button(/^Computer Control/)!.click());
     await dom.waitFor(() => Boolean(button(platform === "darwin" ? /^Allow Computer Control$/ : /^Start and Check$/)));
     await dom.act(() => button(/^Continue$/)!.click());

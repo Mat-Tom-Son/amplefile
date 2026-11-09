@@ -77,7 +77,7 @@ Motion confirms what happened and where things went; it never decorates. Entranc
 
 ## Linux chrome
 
-- Use the native frame and an Alt-accessible application menu without a second permanent menu strip.
+- Use a theme-matched title bar with native window controls and integrated application menus. Keep its background and control symbols aligned with Appearance.
 - Keep the sidebar’s top inset small; Linux does not need space for Mac traffic lights.
 - Fit new and restored windows to their own display’s work area, and refresh minimum-size hints after display scaling changes.
 - Center first-run steps when they fit; taller setup panels scroll from a reachable top edge.

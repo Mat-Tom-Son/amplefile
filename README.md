@@ -18,7 +18,7 @@ AmpleFile is an open-source Mac app that brings your files, AI conversations, an
 
 For example: open a folder of vendor quotes, ask for a comparison, and have the Worker write a decision brief beside the originals. Come back tomorrow and pick up the same conversation.
 
-A [Linux preview build lane](docs/linux-build.md) also produces x64 RPM, DEB and AppImage candidates, including Linux Computer Control. Download the [Linux 0.1.3 prerelease](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.3). These previews are separate from the Mac release and updater.
+A [Linux preview build lane](docs/linux-build.md) also produces x64 RPM, DEB and AppImage candidates, including Linux Computer Control. Download the [Linux 0.1.4 prerelease](https://github.com/Mat-Tom-Son/amplefile/releases/tag/linux-test-0.1.4). These previews are separate from the Mac release and updater.
 
 ## Connected Folders and Workers
 

@@ -68,8 +68,10 @@ export function useApplicationAppearance({ fixtureMode = false, store: suppliedS
     root.dataset.appearanceContrast = effective.contrast ? "more" : "system";
     root.dataset.appearanceMotion = effective.motion ? "reduce" : "system";
     root.dataset.appearanceTransparency = effective.transparency ? "opaque" : "system";
-    for (const [key, value] of Object.entries(applicationAppearanceVariables(resolved, theme, fixtureMode ? null : systemAccent, effective.contrast))) root.style.setProperty(key, value);
-    if (!fixtureMode) window.ampleFileDesktop?.window?.setTheme?.(theme, preferences.mode);
+    const variables = applicationAppearanceVariables(resolved, theme, fixtureMode ? null : systemAccent, effective.contrast);
+    for (const [key, value] of Object.entries(variables)) root.style.setProperty(key, value);
+    if (!fixtureMode) window.ampleFileDesktop?.window?.setTheme?.(theme, preferences.mode,
+      window.ampleFileDesktop?.app?.platform === "linux" ? { color: variables["--ui-surface"]!, symbolColor: variables["--ui-text"]! } : undefined);
   }, [preferences, theme, systemAccent, fixtureMode, effective.contrast, effective.motion, effective.transparency]);
 
   return { ...snapshot, store, theme, device, effective };

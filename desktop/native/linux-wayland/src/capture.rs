@@ -39,12 +39,24 @@ pub struct Frame { pub info: FrameInfo, pixels: Arc<[u8]> }
 
 impl Frame {
     pub fn from_sample(sample: &gst::Sample) -> Result<Self> {
-        let info = gstreamer_video::VideoInfo::from_caps(sample.caps().context("Missing video caps")?)?;
-        ensure!(info.format() == gstreamer_video::VideoFormat::Rgba, "Unsupported frame format");
+        let caps=sample.caps().context("Missing video caps")?;
+        let structure=caps.structure(0).context("Missing video structure")?;
+        let buffer=sample.buffer().context("Missing frame buffer")?;
+        if structure.get::<String>("format")? == "DMA_DRM" {
+            ensure!(caps.features(0).is_some_and(|features|features.contains("memory:DMABuf")) && structure.get::<String>("drm-format")? == "XR24","Only explicitly linear XRGB DMA-BUFs are CPU readable");
+            let width:u32=structure.get::<i32>("width")?.try_into()?;let height:u32=structure.get::<i32>("height")?.try_into()?;
+            let meta=buffer.meta::<gstreamer_video::VideoMeta>().context("DMA-BUF has no video layout")?;
+            ensure!(meta.format()==gstreamer_video::VideoFormat::Bgrx && meta.width()==width && meta.height()==height && meta.n_planes()==1,"DMA-BUF layout disagrees with its format");
+            let stride=usize::try_from(meta.stride()[0])?;
+            let pixels=crate::linear_frame::read(buffer,width,height,stride,meta.offset()[0])?;
+            return Self::rgba(width,height,stride,pixels);
+        }
+        let info=gstreamer_video::VideoInfo::from_caps(caps)?;
+        ensure!(info.format()==gstreamer_video::VideoFormat::Rgba && buffer.size()<=MAX_BYTES,"Unsupported frame format or buffer size");
         ensure!(info.width() > 0 && info.height() > 0 && info.width() <= MAX_DIMENSION
             && info.height() <= MAX_DIMENSION && info.size() <= MAX_BYTES, "Frame exceeds limits");
         let frame = gstreamer_video::VideoFrameRef::from_buffer_ref_readable(
-            sample.buffer().context("Missing frame buffer")?, &info).context("Frame is not CPU readable")?;
+            buffer, &info).context("Frame is not CPU readable")?;
         // VideoMeta may change a buffer's plane offset and stride. Use the
         // framework's mapped frame, never assume tightly packed buffer bytes.
         let info = frame.info();
@@ -53,11 +65,15 @@ impl Frame {
         let row = info.width() as usize * 4;
         ensure!(map.len() <= MAX_BYTES && stride >= row
             && stride.checked_mul(info.height() as usize).is_some_and(|size| size <= map.len()), "Invalid frame stride");
-        let pixels: Vec<u8> = map.chunks(stride).take(info.height() as usize)
-            .flat_map(|row| row[..info.width() as usize * 4].iter().copied()).collect();
-        Ok(Self { info: FrameInfo { width: info.width(), height: info.height(), stride,
-            format: "RGBA", bytes: pixels.len(), sha256: format!("{:x}", Sha256::digest(&pixels)),
-            captured_at_ms: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis().try_into()? }, pixels: pixels.into() })
+        let mut pixels=Vec::with_capacity(row*info.height() as usize);
+        for row_data in map.chunks(stride).take(info.height() as usize) {
+            pixels.extend_from_slice(&row_data[..row]);
+        }
+        Self::rgba(info.width(),info.height(),stride,pixels)
+    }
+    fn rgba(width:u32,height:u32,stride:usize,pixels:Vec<u8>)->Result<Self> {
+        ensure!(pixels.len()==width as usize*height as usize*4 && pixels.len()<=MAX_BYTES,"Invalid RGBA frame size");
+        Ok(Self {info:FrameInfo {width,height,stride,format:"RGBA",bytes:pixels.len(),sha256:format!("{:x}",Sha256::digest(&pixels)),captured_at_ms:SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis().try_into()?},pixels:pixels.into()})
     }
 
     pub fn png(&self) -> Result<Vec<u8>> {
@@ -72,22 +88,53 @@ impl Frame {
 }
 
 impl Capture {
-    fn pipeline(source: gst::Element, remote: Option<OwnedFd>) -> Result<Self> {
+    fn pipeline(source: gst::Element, remote: Option<OwnedFd>, linear_dmabuf: bool) -> Result<Self> {
+        if std::env::var_os("AMPLEFILE_LIVE_SHARE_DIAGNOSTIC").is_some() {
+            if let Some(pad) = source.static_pad("src") {
+                pad.add_probe(gst::PadProbeType::BUFFER, |pad, info| {
+                    if let Some(buffer) = info.buffer() {
+                        let allocators:Vec<_> = buffer.iter_memories().map(|memory|memory.allocator().map(|allocator|allocator.name().to_string())).collect();
+                        eprintln!("Capture metadata: caps={:?}, allocators={:?}, video_format={:?}",pad.current_caps(),allocators,buffer.meta::<gstreamer_video::VideoMeta>().map(|meta|meta.format()));
+                    }
+                    gst::PadProbeReturn::Remove
+                });
+            }
+        }
         let pipeline = gst::Pipeline::new();
         let convert = gst::ElementFactory::make("videoconvert").build()?;
-        let sink = AppSink::builder().caps(&gst::Caps::builder("video/x-raw")
-            .field("format", "RGBA")
-            .field("width", gst::IntRange::<i32>::new(1, MAX_DIMENSION as i32))
-            .field("height", gst::IntRange::<i32>::new(1, MAX_DIMENSION as i32)).build())
-            .max_buffers(1).drop(true).sync(false).build();
-        let capture = Self { pipeline, sink, _remote: remote, latest: Mutex::new(None) };
-        capture.pipeline.add_many([&source, &convert, capture.sink.upcast_ref()])?;
-        gst::Element::link_many([&source, &convert, capture.sink.upcast_ref()])?;
-        capture.pipeline.set_state(gst::State::Playing)?;
+        let caps = if linear_dmabuf {
+            gst::Caps::builder("video/x-raw").features(["memory:DMABuf"])
+                .field("format","DMA_DRM").field("drm-format","XR24")
+                .field("width",gst::IntRange::<i32>::new(1,MAX_DIMENSION as i32))
+                .field("height",gst::IntRange::<i32>::new(1,MAX_DIMENSION as i32)).build()
+        } else {
+            gst::Caps::builder("video/x-raw").field("format","RGBA")
+                .field("width",gst::IntRange::<i32>::new(1,MAX_DIMENSION as i32))
+                .field("height",gst::IntRange::<i32>::new(1,MAX_DIMENSION as i32)).build()
+        };
+        let sink=AppSink::builder().caps(&caps).max_buffers(1).drop(true).sync(false).build();
+        let capture=Self {pipeline,sink,_remote:remote,latest:Mutex::new(None)};
+        if linear_dmabuf {
+            // Request an explicit linear XRGB DMA-BUF. A tiled/compressed
+            // modifier must never reach the CPU frame mapper.
+            capture.pipeline.add_many([&source,capture.sink.upcast_ref()])?;
+            gst::Element::link_many([&source,capture.sink.upcast_ref()])?;
+        } else {
+            capture.pipeline.add_many([&source,&convert,capture.sink.upcast_ref()])?;
+            gst::Element::link_many([&source,&convert,capture.sink.upcast_ref()])?;
+        }
+        if capture.pipeline.set_state(gst::State::Playing).is_err() {
+            let detail = capture.pipeline.bus().and_then(|bus| bus.pop_filtered(&[gst::MessageType::Error])).and_then(|message| {
+                if let gst::MessageView::Error(error) = message.view() { Some(error.error().to_string()) } else { None }
+            }).unwrap_or_else(|| "The media service refused the capture stream".to_owned());
+            anyhow::bail!("Screen capture could not start: {detail}");
+        }
         Ok(capture)
     }
 
-    pub async fn portal(remote: OwnedFd, node: u32) -> Result<Self> {
+    pub async fn portal(remote: OwnedFd, node: u32) -> Result<Self> {Self::portal_memory(remote,node,false).await}
+    pub async fn portal_linear(remote: OwnedFd, node: u32) -> Result<Self> {Self::portal_memory(remote,node,true).await}
+    async fn portal_memory(remote: OwnedFd, node: u32, linear_dmabuf: bool) -> Result<Self> {
         // Native state changes can block on a failed media service. Keep the
         // async portal-close path runnable; the owning process also requires
         // an independent kill-and-reap deadline from its desktop host.
@@ -95,14 +142,14 @@ impl Capture {
             let source = gst::ElementFactory::make("pipewiresrc")
                 .property("fd", remote.as_raw_fd()).property("path", node.to_string())
                 .property("do-timestamp", true).build()?;
-            Self::pipeline(source, Some(remote))
+            Self::pipeline(source, Some(remote),linear_dmabuf)
         }).await?
     }
 
     pub fn test_pattern() -> Result<Self> {
         let source = gst::ElementFactory::make("videotestsrc")
             .property("num-buffers", 1i32).property_from_str("pattern", "smpte").build()?;
-        Self::pipeline(source, None)
+        Self::pipeline(source, None,false)
     }
 
     pub async fn frame(&self) -> Result<Frame> {
@@ -113,10 +160,10 @@ impl Capture {
                 *self.latest.lock().map_err(|_| anyhow::anyhow!("Frame cache failed"))? = Some(frame.clone());
                 return Ok(frame);
             }
-            ensure!(!self.sink.is_eos(), "Capture ended before a frame arrived");
             if let Some(message) = self.pipeline.bus().and_then(|bus| bus.pop_filtered(&[gst::MessageType::Error])) {
-                anyhow::bail!("Capture pipeline failed: {:?}", message.type_());
+                if let gst::MessageView::Error(error) = message.view() { anyhow::bail!("Screen capture failed: {}",error.error()); }
             }
+            ensure!(!self.sink.is_eos(), "Capture ended before a frame arrived");
             // PipeWire can send frames only when pixels change. Reuse only
             // this live stream's latest image, retaining its real timestamp.
             if let Some(frame) = self.latest.lock().map_err(|_| anyhow::anyhow!("Frame cache failed"))?.as_ref() {

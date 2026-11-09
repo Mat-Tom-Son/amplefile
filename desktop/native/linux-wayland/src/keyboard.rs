@@ -37,6 +37,8 @@ impl Keyboard {
         })
     }
 
+    pub fn state(&self) -> xkb::State { xkb::State::new(&self.keymap) }
+
     fn idle(&self) -> Result<()> {
         ensure!(
             self.modifiers[0] == 0 && self.modifiers[1] == 0,

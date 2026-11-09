@@ -167,7 +167,7 @@ impl Host {
     }
 }
 
-fn validate(action: &Action, frame: &Frame, input: &amplefile_wayland::ei::Sender) -> Result<()> {
+fn validate(action: &Action, frame: &Frame, input: &amplefile_wayland::input::Sender) -> Result<()> {
     let point = |x: f64, y: f64| -> Result<()> {
         ensure!(x.is_finite() && y.is_finite() && x >= 0.0 && y >= 0.0
             && x < f64::from(frame.info.width) && y < f64::from(frame.info.height), "Point lies outside the observed screen"); Ok(())

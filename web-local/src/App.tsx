@@ -77,7 +77,7 @@ export function App() {
   const [pendingConnectedFolderOpen, setPendingConnectedFolderOpen] = useState<{ id: number; connectedFolderId: string } | null>(null);
   const [desktopAction, setDesktopAction] = useState<DesktopAction | null>(null);
   const [updateStatus, setUpdateStatus] = useState<DesktopUpdateStatus | null>(null);
-  const showDesktopTitleBar = window.ampleFileDesktop?.app.platform === "win32";
+  const showDesktopTitleBar = ["win32", "linux"].includes(window.ampleFileDesktop?.app.platform ?? "");
 
   const openSettings = useCallback((page: SettingsPage = "appearance", modelScope?: ModelScope, focusAiModel = false, workerConnectedFolderId?: string, focusWorkerInstructions = false, backToCustomization?: () => void) => {
     const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;

@@ -48,13 +48,13 @@ if ((process.env.AMPLEFILE_DESKTOP_RELEASE_PLATFORM || process.platform) === "li
   await copyFile(join(waylandTarget, "release/amplefile-wayland"), join(wayland, "amplefile-wayland"));
   await chmod(join(wayland, "amplefile-wayland"), 0o755);
   await writeCargoNotices(waylandManifest, join(wayland, "THIRD-PARTY-LICENSES.txt"));
-  const waylandFiles = ["Cargo.toml", "Cargo.lock", "build.rs", "src/lib.rs", "src/main.rs", "src/capture.rs", "src/ei.rs", "src/keyboard.rs", "src/portal.rs", "src/seat.rs"];
+  const waylandFiles = ["Cargo.toml", "Cargo.lock", "build.rs", "src/lib.rs", "src/main.rs", "src/capture.rs", "src/ei.rs", "src/keyboard.rs", "src/portal.rs", "src/seat.rs", "src/niri.rs", "src/input.rs", "src/session_lock.rs", "src/linear_frame.rs"];
   await writeFile(join(wayland, "source.json"), JSON.stringify({
     schema: "amplefile.wayland-helper-source.v1", protocolVersion: 1, target: "x86_64-unknown-linux-gnu",
     compiler: provenance.compiler,
     binarySha256: createHash("sha256").update(await readFile(join(wayland, "amplefile-wayland"))).digest("hex"),
     sources: await Promise.all(waylandFiles.map(async path => ({ path, sha256: createHash("sha256").update(await readFile(join(root, "desktop/native/linux-wayland", path))).digest("hex") }))),
-    systemLibraries: Object.fromEntries(["gstreamer-1.0", "gstreamer-app-1.0", "gstreamer-video-1.0", "libei-1.0", "xkbcommon"].map(name => [name,
+    systemLibraries: Object.fromEntries(["gstreamer-1.0", "gstreamer-app-1.0", "gstreamer-video-1.0", "gstreamer-allocators-1.0", "libei-1.0", "xkbcommon"].map(name => [name,
       execFileSync("pkg-config", ["--modversion", name], { encoding: "utf8" }).trim()])),
   }, null, 2) + "\n");
   console.log("Built the Wayland portal/capture/input helper with source and dependency evidence.");

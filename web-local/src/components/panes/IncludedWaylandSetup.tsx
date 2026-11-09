@@ -44,6 +44,7 @@ export function IncludedWaylandSetup({ connectedFolderId, enabled, onStatusChang
     } catch (error) { if (!controller.signal.aborted) setError(errorText(error)); }
     finally { if (activeRequest.current === controller) { activeRequest.current = null; if (!controller.signal.aborted) setBusy(false); } }
   }
+  const niri = window.ampleFileDesktop?.app.desktopEnvironment?.split(":").some(name => name.toLowerCase() === "niri");
   const sharing = status?.computerSession;
   const current = sharing?.owner;
   const live = sharing && ["requesting", "active", "stopping"].includes(sharing.state);
@@ -51,12 +52,12 @@ export function IncludedWaylandSetup({ connectedFolderId, enabled, onStatusChang
   const active = sharing?.state === "active";
   return <section className="included-tool-optional" aria-label="Wayland screen sharing">
     <p>{active ? "Shared with all chats and the amplefile agent." : "Share your screen with any chat."}</p>
-    {!live ? <p>Choose <strong>Allow interaction</strong> to enable clicks and typing.</p> : null}
+    {!live ? niri ? <p>Sharing lets AmpleFile see the selected display and control its mouse and keyboard. Locking the screen or Stop Sharing ends access.</p> : <p>Choose <strong>Allow interaction</strong> to enable clicks and typing.</p> : null}
     {active && (!sharing.pointer || !sharing.keyboard) ? <p>Full control is off. Share again with <strong>Allow interaction</strong>.</p> : null}
     {current ? <p role="status">{current.scope === "management" ? "amplefile agent" : "Worker"} is using your screen.</p> : null}
     {sharing?.state === "requesting" ? <p role="status">Choose a screen in the Linux dialog.</p> : sharing?.state === "stopping" ? <p role="status">Stopping sharing…</p> : null}
     <div className="included-tool-actions">
-      {!live ? <button className="ui-control ui-control--primary" type="button" disabled={busy || !enabled} onClick={() => void act("share-screen")}>Share desktop</button> : null}
+      {!live ? <button className="ui-control ui-control--primary" type="button" disabled={busy || !enabled} onClick={() => void act("share-screen")}>{niri ? "Share and Allow Control" : "Share desktop"}</button> : null}
       {live || busy ? <button className="ui-control" type="button" disabled={sharing?.state === "stopping"} onClick={() => void act("stop-sharing")}>Stop sharing</button> : null}
     </div>
     {failure ? <p className="included-tool-error" role="alert">{failure}</p> : null}

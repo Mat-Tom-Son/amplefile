@@ -92,7 +92,7 @@ export class NativeWaylandTransport implements WaylandTransport {
     try {
       const result = new Promise<T>((resolve, reject) => {
         this.#pending = { id, resolve: value => resolve(value as T), reject };
-        const timeout = method === "start" ? 68_000 : method === "act" ? 35_000 : method === "observe" ? 15_000 : 5_000;
+        const timeout = method === "start" ? 188_000 : method === "act" ? 35_000 : method === "observe" ? 15_000 : 5_000;
         timer = setTimeout(abort, timeout);
         signal?.addEventListener("abort", abort, { once: true });
         this.#child.stdin.write(bytes, error => { if (error) abort(); });

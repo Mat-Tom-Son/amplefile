@@ -119,6 +119,7 @@ declare global {
   interface Window {
     ampleFileDesktop?: {
       desktop: true;
+      oauth?: { pasteCallback(): Promise<void> };
       clipboard?: import("../../src/shared/clipboard").ClipboardWriter;
       api: {
         baseUrl: string;
@@ -128,6 +129,7 @@ declare global {
         name: string;
         version: string;
         platform: NodeJS.Platform;
+        desktopEnvironment?: string;
         iconUrl: string;
       };
       runtime: {
@@ -236,7 +238,7 @@ declare global {
       };
       window: {
         material: "mica" | "vibrancy" | "none";
-        setTheme: (theme: "light" | "dark", source?: "light" | "dark" | "system") => void;
+        setTheme: (theme: "light" | "dark", source?: "light" | "dark" | "system", chrome?: { color: string; symbolColor: string }) => void;
         railTooltip: {
           show: (request: {
             text: string;

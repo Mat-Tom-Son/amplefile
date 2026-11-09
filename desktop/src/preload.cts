@@ -20,6 +20,7 @@ const windowMaterial = rawWindowMaterial === "mica" || rawWindowMaterial === "vi
 
 contextBridge.exposeInMainWorld("ampleFileDesktop", {
   desktop: true,
+  oauth: { pasteCallback: () => ipcRenderer.invoke("amplefile:oauth:paste-callback") },
   clipboard: {
     write: (content: { text: string; html?: string }) => ipcRenderer.invoke("amplefile:clipboard:write", content),
   },
@@ -31,6 +32,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
     name: productName,
     version: appVersion,
     platform: process.platform,
+    desktopEnvironment: argumentValue("desktop-environment") ?? "",
     iconUrl: internalProtocol ? `${internalProtocol}://app/_desktop-assets/icon-32.png` : "",
   },
   runtime: {
@@ -199,7 +201,7 @@ contextBridge.exposeInMainWorld("ampleFileDesktop", {
   },
   window: {
     material: windowMaterial,
-    setTheme: (theme: "light" | "dark", source?: "light" | "dark" | "system") => ipcRenderer.send("amplefile:window:set-theme", theme, source),
+    setTheme: (theme: "light" | "dark", source?: "light" | "dark" | "system", chrome?: { color: string; symbolColor: string }) => ipcRenderer.send("amplefile:window:set-theme", theme, source, chrome),
     railTooltip: {
       show: (request: unknown) => ipcRenderer.send("amplefile:window:rail-tooltip-show", request),
       hide: () => ipcRenderer.send("amplefile:window:rail-tooltip-hide"),

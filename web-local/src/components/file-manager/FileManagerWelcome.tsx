@@ -118,7 +118,7 @@ export function FileManagerWelcome({ agentConfigured, fixtureMode, onAiConnected
 
           {step === "tools" ? <>
             <h2>Let Your Worker Use Your {computerName}</h2>
-            <p>Optional. When you ask, your Worker can browse with your own Chrome and use apps on your {computerNoun}, and other AI agents can use {productIdentity.productName} too. You can set these up later in Skills &amp; Extensions and Settings → Command Line.</p>
+            <p>Optional. When you ask, your Worker can {macTools.includes("chrome") ? "browse with your own Chrome and " : ""}use apps on your {computerNoun}, and other AI agents can use {productIdentity.productName} too. You can set these up later in Skills &amp; Extensions and Settings → Command Line.</p>
             <div className="fm-welcome-list">
               {macTools.map((tool) => <div key={tool} className={`fm-welcome-tool${openTool === tool ? " is-open" : ""}`}>
                 <button type="button" className="fm-welcome-row" aria-expanded={openTool === tool} onClick={() => setOpenTool((current) => current === tool ? null : tool)}>

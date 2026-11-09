@@ -5,3 +5,9 @@ pub mod capture;
 pub mod portal;
 pub mod seat;
 mod keyboard;
+
+pub mod niri;
+pub mod input;
+pub mod session_lock;
+
+mod linear_frame;

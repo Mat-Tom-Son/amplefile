@@ -1,4 +1,5 @@
 import { fitWindowToWorkArea } from "./window-bounds.js";
+import { configureLinuxPasswordStore } from "./linux-password-store.js";
 import { ComputerSessionService } from "../../src/local/agent/computer-session.js";
 import { NativeWaylandTransport } from "../../src/local/agent/wayland-transport.js";
 import { createEncryptedMcpCredentialBackend } from "./pi-mcp-credentials.js";
@@ -129,6 +130,7 @@ if (process.platform === "linux" && app.commandLine.hasSwitch("no-sandbox")) {
 
 // Hidden browser views need X11's native parent for trusted input and capture.
 // Desktop sharing still uses the Wayland portal in a Wayland login session.
+configureLinuxPasswordStore(app.commandLine, process.platform, process.env);
 if (process.platform === "linux" && process.env.DISPLAY && !app.commandLine.hasSwitch("ozone-platform")) {
   app.commandLine.appendSwitch("ozone-platform", "x11");
 }
@@ -206,6 +208,7 @@ let modelContextWindow: ModelContextWindow | null = null;
 const localApiLifetime = new AppLifetimeResource<Awaited<ReturnType<typeof startLocalApi>>>();
 let piRuntime: PackagedPiRuntimeProvider | null = null;
 let secureSettings: SecureSettingsStore | null = null;
+let desktopOAuthHooks: ReturnType<typeof createDesktopPiOAuthHooks> | null = null;
 let apiSessionToken = "";
 let actFacade: AmpleFileActFacade | null = null;
 let actToken = "";
@@ -583,7 +586,7 @@ function ensureInteractiveLocalApi(): Promise<Awaited<ReturnType<typeof startLoc
       sessionToken: apiSessionToken,
       allowedOrigins: [`${appProtocol}://app`],
       piRuntimeProvider: host.runtime,
-      piOAuthHooks: createDesktopPiOAuthHooks({
+      piOAuthHooks: desktopOAuthHooks = createDesktopPiOAuthHooks({
         openExternal,
         readClipboard: () => clipboard.readText(),
         writeClipboard: (value) => clipboard.writeText(value),
@@ -640,9 +643,9 @@ async function createMainWindow(): Promise<void> {
     minHeight: Math.min(minimumWindowState.height, workArea.height),
     title: productName,
     icon: resolveWindowIcon(),
-    autoHideMenuBar: process.platform !== "darwin",
+    autoHideMenuBar: process.platform === "win32",
     ...(process.platform === "linux" ? { darkTheme: nativeTheme.shouldUseDarkColors } : {}),
-    ...(process.platform === "win32" ? {
+    ...(["win32", "linux"].includes(process.platform) ? {
       ...(micaSupported ? { backgroundMaterial: "mica" as const } : {}),
       titleBarStyle: "hidden",
       titleBarOverlay: titleBarOverlayFor(nativeTheme.shouldUseDarkColors ? "dark" : "light"),
@@ -680,6 +683,7 @@ async function createMainWindow(): Promise<void> {
       ],
     },
   });
+  if (process.platform === "linux") mainWindow.setMenuBarVisibility(false);
   railTooltipOverlay = new RailTooltipOverlay(mainWindow);
 
   applyNativeActiveConnectedFolderToWindow(mainWindow);
@@ -833,6 +837,11 @@ function registerIpc(): void {
     writeDesktopClipboard(value, (content) => clipboard.write(content.image !== undefined
       ? { image: nativeImage.createFromDataURL(content.image) }
       : { text: content.text, ...(content.html !== undefined ? { html: content.html } : {}) }));
+  });
+  ipcMain.handle("amplefile:oauth:paste-callback", async (event) => {
+    assertTrustedRenderer(event);
+    if (!desktopOAuthHooks) throw new Error("Provider sign-in is not running.");
+    await desktopOAuthHooks.pasteCallback();
   });
   ipcMain.handle("amplefile:diagnostics:request", (event, input: unknown) => {
     if (!modelContextWindow) throw new Error("The developer inspector is not open.");
@@ -1167,15 +1176,18 @@ function registerIpc(): void {
     updateDesktopPreferences({ closeToTray: value });
     return closeToTrayStatus();
   });
-  ipcMain.on("amplefile:window:set-theme", (event, value: unknown, source: unknown) => {
+  ipcMain.on("amplefile:window:set-theme", (event, value: unknown, source: unknown, chrome: unknown) => {
     assertTrustedRenderer(event);
     if (value !== "light" && value !== "dark") return;
     // Keep the OS-drawn chrome (Mica backdrop, frame, menus) on the app theme.
     // "system" preserves prefers-color-scheme change events in the renderer.
     nativeTheme.themeSource = source === "light" || source === "dark" || source === "system" ? source : value;
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (process.platform === "win32") {
-      mainWindow.setTitleBarOverlay(titleBarOverlayFor(value));
+    if (process.platform === "win32" || process.platform === "linux") {
+      const colors = process.platform === "linux" && isRecord(chrome) && typeof chrome.color === "string" && /^#[0-9a-f]{6}$/i.test(chrome.color)
+        && typeof chrome.symbolColor === "string" && /^#[0-9a-f]{6}$/i.test(chrome.symbolColor)
+        ? { color: chrome.color, symbolColor: chrome.symbolColor } : {};
+      mainWindow.setTitleBarOverlay({ ...titleBarOverlayFor(value), ...colors });
       if (!micaSupported) mainWindow.setBackgroundColor(windowBackgroundColors[value]);
     } else if (process.platform === "darwin" && nativeWindowMaterial === "none") {
       mainWindow.setBackgroundColor(windowBackgroundColors[value]);
@@ -1678,7 +1690,7 @@ function configureCliEnvironment(): void {
   // installed AmpleFile CLI on PATH.
   process.env.AMPLEFILE_CLI_STATE_DIR = app.getPath("userData");
   if (process.platform === "linux" && !app.isPackaged) {
-    const launch = prepareLinuxDevelopmentCli({ repoRoot: app.getAppPath(), stateDirectory: app.getPath("userData"), electronPath: process.execPath });
+    const launch = prepareLinuxDevelopmentCli({ repoRoot, stateDirectory: app.getPath("userData"), electronPath: process.execPath });
     process.env.PATH = `${launch.binDirectory}${delimiter}${process.env.PATH ?? ""}`;
     process.env.AMPLEFILE_CLI_APP = launch.appPath;
     return;
@@ -2581,6 +2593,7 @@ function productRendererArguments(): string[] {
   return [
     rendererArgument("product-name", productName),
     rendererArgument("internal-protocol", appProtocol),
+    rendererArgument("desktop-environment", process.platform === "linux" ? process.env.XDG_CURRENT_DESKTOP ?? "" : ""),
   ];
 }
 

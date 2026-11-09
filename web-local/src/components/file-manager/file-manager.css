@@ -8,6 +8,22 @@
   display: none;
 }
 
+:root[data-platform="linux"] .desktop-chrome-shell .fm-shell {
+  top: var(--desktop-titlebar-height);
+}
+
+:root[data-platform="linux"] .app-shell .desktop-titlebar {
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  border-bottom-color: var(--ui-border);
+  box-shadow: none;
+}
+
+:root[data-platform="linux"] .app-shell .desktop-titlebar-name,
+:root[data-platform="linux"] .app-shell .desktop-titlebar-menu-button {
+  color: var(--ui-text);
+}
+
 .fm-shell {
   position: fixed;
   inset: 0;

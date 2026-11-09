@@ -122,7 +122,9 @@ export class SecureSettingsStore implements PiAuthStorageHost {
 
   private assertEncryptionAvailable(): void {
     if (!secureStorageAvailable(safeStorage)) {
-      throw new Error("Operating-system secure storage is not available for this session.");
+      throw new Error(process.platform === "linux"
+        ? "Secure credential storage is unavailable. Start and unlock your desktop keyring (GNOME Keyring or KWallet), then quit and reopen AmpleFile."
+        : "Operating-system secure storage is not available for this session.");
     }
   }
 }
