@@ -45,6 +45,7 @@ const emptySettings = (): SecureSettingsFile => ({
 export class SecureSettingsStore implements PiAuthStorageHost {
   private queue: Promise<void> = Promise.resolve();
   private cache: SecureSettingsFile | undefined;
+  private pendingRead: Promise<SecureSettingsFile> | null = null;
   private readonly safeStorage: SafeStorageLike;
   private readonly now: () => Date;
 
@@ -107,7 +108,18 @@ export class SecureSettingsStore implements PiAuthStorageHost {
     await operation;
   }
 
+  /**
+   * status(), load(), and key reads run outside the save queue; at startup
+   * the Pi credential load and the Settings status read arrive together.
+   * They share one uncached read, so only one of them can set files aside.
+   */
   private async read(): Promise<SecureSettingsFile> {
+    if (this.cache) return structuredClone(this.cache);
+    this.pendingRead ??= this.readUncached().finally(() => { this.pendingRead = null; });
+    return structuredClone(await this.pendingRead);
+  }
+
+  private async readUncached(): Promise<SecureSettingsFile> {
     if (this.cache) return structuredClone(this.cache);
     if (!existsSync(this.filePath) && !existsSync(this.backupPath())) {
       this.cache = emptySettings();
@@ -169,6 +181,8 @@ export class SecureSettingsStore implements PiAuthStorageHost {
       try {
         await rename(candidate, target);
       } catch (error) {
+        // Already moved (or removed) by someone else: nothing left to set aside.
+        if (errorCode(error) === "ENOENT") continue;
         throw new Error(`AmpleFile could not read secure settings (${errorMessage(cause)}) or set them aside: ${errorMessage(error)}`);
       }
     }

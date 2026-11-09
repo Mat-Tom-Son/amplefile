@@ -192,3 +192,23 @@ test("a decryption failure while secure storage goes away leaves the files alone
   await assert.rejects(new SecureSettingsStore(file, { safeStorage }).load());
   assert.deepEqual(await unreadableNames(root), []);
 });
+
+test("concurrent first reads share one read and set unreadable files aside once", async (t) => {
+  const root = await tempRoot(t);
+  const safeStorage = new FakeSafeStorage();
+  const file = join(root, "secure-settings.bin");
+  const first = new SecureSettingsStore(file, { safeStorage });
+  await first.setProviderApiKey("openai", "sk-1");
+  await first.setProviderApiKey("openai", "sk-2");
+
+  safeStorage.key = "key-2";
+  const store = new SecureSettingsStore(file, { safeStorage, now: fixedNow });
+  const [status, loaded, key] = await Promise.all([store.status(), store.load(), store.getProviderApiKey("openai")]);
+  assert.equal(status.credentialsNeedReentry, true);
+  assert.equal(loaded, undefined);
+  assert.equal(key, undefined);
+  assert.deepEqual((await unreadableNames(root)).sort(), [
+    "secure-settings.bin.bak.unreadable-2026-11-09T12-00-00-000Z",
+    "secure-settings.bin.unreadable-2026-11-09T12-00-00-000Z",
+  ]);
+});
