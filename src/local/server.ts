@@ -6541,6 +6541,18 @@ async function applyConnectedFolderDelete(
       uncovered,
     });
   } catch (error) {
+    // An error naming an entry means a complete copy already landed in
+    // Recently Deleted (across volumes) and only releasing the original
+    // failed, possibly partway. The error says so and names the entry, so a
+    // caller can list it with what it kept.
+    if (error instanceof AmpleFileRecentlyDeletedError && error.entryId !== undefined) {
+      const kept = await state.recentlyDeleted.get(error.entryId).catch(() => null);
+      throw Object.assign(new AmpleFileCliError(
+        "failure",
+        `AmpleFile copied ${entry.path} into Recently Deleted but could not remove all of it from here: ${errorMessage(error.cause ?? error)}. The whole item is kept in Recently Deleted, and what could not be removed stays here.`,
+        { cause: error },
+      ), kept ? { recentlyDeleted: { entryId: kept.id, restoreBy: kept.restoreBy } } : {});
+    }
     throw new AmpleFileCliError(
       "failure",
       `AmpleFile could not move ${entry.path} to Recently deleted: ${errorMessage(error)}. Nothing was deleted.`,
@@ -11926,6 +11938,10 @@ async function moveBetweenConnectedFolders(
           });
           if (removed.recovery.kind === "recently-deleted") recentlyDeleted.push({ path: entry.path, entryId: removed.recovery.entryId, restoreBy: removed.recovery.restoreBy });
         } catch (error) {
+          // A release across volumes that failed partway still left a whole
+          // copy in Recently Deleted; it is listed with the rest.
+          const kept = (error as { recentlyDeleted?: { entryId: string; restoreBy: string } }).recentlyDeleted;
+          if (kept) recentlyDeleted.push({ path: entry.path, entryId: kept.entryId, restoreBy: kept.restoreBy });
           // Everything is already in the target; what could not leave the
           // source stays there, and both restore points still apply. A copied
           // identity whose original is still whole in the source goes from

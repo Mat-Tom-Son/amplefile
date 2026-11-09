@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { ampleFileCliBrokerPaths } from "../src/local/cli/broker.js";
+import { AmpleFileRecentlyDeletedStore } from "../src/local/recently-deleted-store.js";
 import { startLocalApi } from "../src/local/server.js";
 
 /**
@@ -253,6 +254,58 @@ test("a disconnected Connected Folder's Chats survive a move whose source cannot
       assert.equal(inTrash.length, 1, "and Recently Deleted keeps the original whole");
       assert.equal(await readFile(inTarget[0]!, "utf8"), "{\"role\":\"user\"}\n");
     }
+  } finally {
+    await makeWritable(sandbox);
+  }
+});
+
+test("a move whose release across volumes fails partway says so and lists the copy kept in Recently Deleted", { skip: process.getuid?.() === 0 ? "root ignores folder permissions" : false }, async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-cross-volume-move-"));
+  const recentlyDeletedRoot = join(root, "recently-deleted");
+  // Recently Deleted on another volume: a rename from outside it fails with
+  // EXDEV, so the store copies in and then releases the original.
+  const recentlyDeletedStore = await AmpleFileRecentlyDeletedStore.open({
+    rootPath: recentlyDeletedRoot,
+    io: {
+      rename: async (from, to) => {
+        if (!from.startsWith(recentlyDeletedRoot)) throw Object.assign(new Error("EXDEV: cross-device link not permitted"), { code: "EXDEV" });
+        await rename(from, to);
+      },
+    },
+  });
+  const { api, sandbox } = await sandboxApi(t, { recentlyDeletedStore });
+  t.after(async () => { await makeWritable(root); await rm(root, { recursive: true, force: true }); });
+  const call = caller(api);
+  const source = (await call("/api/connected-folders", { method: "POST", body: { name: "Source" } })).body!.connectedFolder;
+  const target = (await call("/api/connected-folders", { method: "POST", body: { name: "Target" } })).body!.connectedFolder;
+  const old = join(source.connectedFolderRoot, "Old");
+  await mkdir(join(old, ".amplefile", "conversations"), { recursive: true });
+  await writeFile(join(old, ".amplefile", "connected-folder.json"), "{\"id\":\"space-0123456789abcdef\"}");
+  await writeFile(join(old, ".amplefile", "conversations", "chat.jsonl"), "{\"role\":\"user\"}\n");
+  await writeFile(join(old, "a.txt"), "a");
+  await mkdir(join(old, "locked"));
+  await writeFile(join(old, "locked", "f.txt"), "f");
+  // Releasing Old stops partway at locked/f.txt.
+  await chmod(join(old, "locked"), 0o555);
+  try {
+    const moved = await call("/api/file-transfer", {
+      method: "POST",
+      body: { mode: "move", sources: [{ place: { kind: "connected-folder", id: source.id }, path: "Old" }], target: { place: { kind: "connected-folder", id: target.id }, path: "" } },
+    });
+    assert.equal(moved.status, 200, JSON.stringify(moved.body));
+    assert.equal(moved.body!.failed?.path, "Old");
+    assert.match(moved.body!.failed!.error, /copied Old into Recently Deleted but could not remove all of it/);
+    assert.doesNotMatch(moved.body!.failed!.error, /Nothing was deleted/);
+    assert.deepEqual(moved.body!.notRemoved, ["Old"]);
+    assert.equal(moved.body!.recentlyDeleted?.length, 1, JSON.stringify(moved.body));
+    const kept = moved.body!.recentlyDeleted[0]!;
+    assert.equal(kept.path, "Old");
+    const entry = await recentlyDeletedStore.get(kept.entryId);
+    assert.ok(entry, "the listed entry is in Recently Deleted");
+    assert.equal(kept.restoreBy, entry!.restoreBy);
+    assert.equal(await readFile(join(entry!.payloadPath, ".amplefile", "conversations", "chat.jsonl"), "utf8"), "{\"role\":\"user\"}\n");
+    assert.equal(await readFile(join(entry!.payloadPath, "locked", "f.txt"), "utf8"), "f", "the copy in Recently Deleted is whole");
+    assert.equal(await readFile(join(target.connectedFolderRoot, "Old", "locked", "f.txt"), "utf8"), "f");
   } finally {
     await makeWritable(sandbox);
   }
