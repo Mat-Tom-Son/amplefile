@@ -295,10 +295,11 @@ export async function beginConnectedFolderRemoval(
 ): Promise<ConnectedFolderRemovalIntent> {
   assertId(connectedFolderId);
   const requestedDisposition = options.folderDisposition ?? "delete";
-  return withRegistryOwnershipMutation(async () => {
+  return withRegistryOwnershipMutation(() => registeredRootsForId(connectedFolderId), async (claim) => {
     const registry = await readRegistry();
     const existing = registry.pendingRemovals.find((intent) => intent.connectedFolderId === connectedFolderId);
     if (existing) {
+      claim(existing.connectedFolderRoot);
       // An in-flight intent's folder authority is settled; converting a
       // pending deletion into a preservation (or the reverse) mid-flight
       // would make crash recovery act on an authority the caller never held.
@@ -313,6 +314,7 @@ export async function beginConnectedFolderRemoval(
     }
     const connectedFolder = registry.connectedFolders.find((item) => item.id === connectedFolderId);
     if (!connectedFolder || !existsSync(connectedFolder.connectedFolderRoot)) throw notFound("Connected Folder not found.");
+    claim(connectedFolder.connectedFolderRoot);
     const connectedFolderRoot = ensureSafeConnectedFolderRoot(connectedFolder.connectedFolderRoot);
     // A preserve removal deletes nothing, so it records no managed-content
     // boundary and no root identity: the intent shape itself proves the
@@ -353,10 +355,11 @@ export async function finalizeConnectedFolderRemoval(
   io: Partial<ConnectedFolderRemovalIo> = {},
 ): Promise<ConnectedFolderRemovalResult> {
   assertId(connectedFolderId);
-  return withRegistryOwnershipMutation(async () => {
+  return withRegistryOwnershipMutation(() => registeredRootsForId(connectedFolderId), async (claim) => {
     const registry = await readRegistry();
     const intent = registry.pendingRemovals.find((item) => item.connectedFolderId === connectedFolderId);
     if (!intent) throw new Error("Connected Folder removal intent not found.");
+    claim(intent.connectedFolderRoot);
     const connectedFolder = registry.connectedFolders.find((item) => item.id === connectedFolderId);
     if (!connectedFolder || !samePath(connectedFolder.connectedFolderRoot, intent.connectedFolderRoot)
       || connectedFolder.location.storage !== intent.storage) {
@@ -1003,9 +1006,10 @@ export async function sha256File(path: string): Promise<string> {
 }
 
 async function registerConnectedFolder(input: Omit<ConnectedFolderSummary, "id" | "createdAt" | "updatedAt">): Promise<ConnectedFolderSummary> {
-  return withRegistryOwnershipMutation(async () => {
+  const connectedFolderRoot = resolve(input.connectedFolderRoot);
+  return withRegistryOwnershipMutation(() => registrationRoots(connectedFolderRoot), async (claim) => {
+    claim(connectedFolderRoot);
     const registry = await readRegistry();
-    const connectedFolderRoot = resolve(input.connectedFolderRoot);
     if (registry.pendingRemovals.some((intent) => intent.storage === "managed"
       && intent.folderDisposition !== "preserve" && !samePath(intent.connectedFolderRoot, connectedFolderRoot)
       && pathContains(intent.connectedFolderRoot, connectedFolderRoot))) {
@@ -1030,6 +1034,7 @@ async function registerConnectedFolder(input: Omit<ConnectedFolderSummary, "id" 
         if (existsSync(identityOwner.connectedFolderRoot)) {
           throw new Error("This Connected Folder identity is already linked to another folder.");
         }
+        claim(identityOwner.connectedFolderRoot);
         await relocateConnectedFolderState(identityOwner.connectedFolderRoot, connectedFolderRoot, identityOwner.id);
         identityOwner.name = portableIdentity.name;
         identityOwner.connectedFolderRoot = connectedFolderRoot;
@@ -1075,6 +1080,25 @@ export async function withConnectedFolderTouchBatch<T>(operation: () => Promise<
   } finally {
     for (const root of roots) await touchConnectedFolderNow(root).catch(() => undefined);
   }
+}
+
+/** The root a registration change on this id will touch, from a read before its claim. */
+async function registeredRootsForId(connectedFolderId: string): Promise<string[]> {
+  const registry = await readRegistry();
+  const root = registry.connectedFolders.find((item) => item.id === connectedFolderId)?.connectedFolderRoot
+    ?? registry.pendingRemovals.find((intent) => intent.connectedFolderId === connectedFolderId)?.connectedFolderRoot;
+  return root ? [root] : [];
+}
+
+/** The folder being registered and, when its portable identity belongs to a
+ * registration whose folder moved, that registration's old root. */
+async function registrationRoots(connectedFolderRoot: string): Promise<string[]> {
+  const roots = [connectedFolderRoot];
+  const portableIdentity = await readExistingConnectedFolderManifest(connectedFolderRoot);
+  if (!portableIdentity) return roots;
+  const owner = (await readRegistry()).connectedFolders.find((connectedFolder) => connectedFolder.id === portableIdentity.id);
+  if (owner && !samePath(owner.connectedFolderRoot, connectedFolderRoot)) roots.push(owner.connectedFolderRoot);
+  return roots;
 }
 
 async function touchConnectedFolder(connectedFolderRoot: string): Promise<void> {
@@ -1279,40 +1303,56 @@ async function syncDirectoriesBestEffort(paths: readonly string[]): Promise<void
 const historyContext = new AsyncLocalStorage<Set<string>>();
 const ownershipContext = new AsyncLocalStorage<true>();
 const activeHistoryRoots = new Set<string>();
-let ownershipMutations = 0;
+const activeOwnershipClaims = new Set<HistoryGateClaim & { kind: "ownership" }>();
 
-/** One History operation on a root, or one change to which folders are registered. */
-type HistoryGateClaim = { kind: "history"; root: string } | { kind: "ownership" };
+/**
+ * One History operation on a root, or one change to which folders are
+ * registered. A registration change names the roots it registers, relocates,
+ * or removes.
+ */
+type HistoryGateClaim = { kind: "history"; root: string } | { kind: "ownership"; roots: string[] };
 const historyGateWaiters: Array<{ claim: HistoryGateClaim; grant: () => void }> = [];
 
-/** History on different roots runs side by side; History on one root runs one
- * at a time; a registration change runs only while no History runs, because a
- * capture or restore reads the nested registrations it must not cross. */
+/** A capture or restore on `historyRoot` reads the registrations nested in it,
+ * so a registration change conflicts with History on a root that contains one
+ * of its roots, sits inside one, or is one. */
+function ownershipOverlapsHistory(roots: readonly string[], historyRoot: string): boolean {
+  return roots.some((root) => pathContains(root, historyRoot) || pathContains(historyRoot, root));
+}
+
+/** History on one root runs one at a time and beside History on other roots;
+ * registration changes run beside each other (the registry queue orders them)
+ * and beside History on unrelated roots. */
 function historyClaimsCompatible(left: HistoryGateClaim, right: HistoryGateClaim): boolean {
-  if (left.kind === "ownership" || right.kind === "ownership") return left.kind === right.kind;
+  if (left.kind === "ownership" && right.kind === "ownership") return true;
+  if (left.kind === "ownership") return right.kind === "history" && !ownershipOverlapsHistory(left.roots, right.root);
+  if (right.kind === "ownership") return !ownershipOverlapsHistory(right.roots, left.root);
   return left.root !== right.root;
 }
 
 function historyClaimCanStart(claim: HistoryGateClaim): boolean {
-  return claim.kind === "history"
-    ? ownershipMutations === 0 && !activeHistoryRoots.has(claim.root)
-    : activeHistoryRoots.size === 0;
+  if (claim.kind === "history") {
+    return !activeHistoryRoots.has(claim.root)
+      && [...activeOwnershipClaims].every((active) => !ownershipOverlapsHistory(active.roots, claim.root));
+  }
+  return [...activeHistoryRoots].every((root) => !ownershipOverlapsHistory(claim.roots, root));
 }
 
 function holdHistoryClaim(claim: HistoryGateClaim): void {
   if (claim.kind === "history") activeHistoryRoots.add(claim.root);
-  else ownershipMutations += 1;
+  else activeOwnershipClaims.add(claim);
 }
 
 function releaseHistoryClaim(claim: HistoryGateClaim): void {
   if (claim.kind === "history") activeHistoryRoots.delete(claim.root);
-  else ownershipMutations -= 1;
+  else activeOwnershipClaims.delete(claim);
   pumpHistoryGate();
 }
 
 /** Grants waiters in arrival order. A waiter may pass an earlier one only when
  * the two could run together, so a registration change is never starved by a
- * stream of captures and a capture never overtakes a conflicting earlier one. */
+ * stream of captures on the folders it touches, a capture never overtakes a
+ * conflicting earlier one, and work on unrelated folders is never held up. */
 function pumpHistoryGate(): void {
   const blocked: HistoryGateClaim[] = [];
   for (let index = 0; index < historyGateWaiters.length;) {
@@ -1340,12 +1380,14 @@ function historyBusyError(message: string): Error {
 }
 
 /**
- * Holds folder ownership stable through a complete capture or restore.
- * Independent operations queue: one on the same root waits for the current one
- * to finish, and one on another root runs alongside it. Nested captures for the
- * same restore are reentrant. An operation that already holds History or a
- * registration change and asks for a different, busy claim is refused rather
- * than queued, because waiting while holding a claim could deadlock.
+ * Runs `operation` as the one History operation on `connectedFolderRoot`,
+ * holding folder ownership stable through a complete capture or restore.
+ * Callers queue: an operation on the same root waits for the current one to
+ * finish, one on another root runs alongside it, and a registration change
+ * waits only for History on the folders it touches. Nested calls for the same
+ * root are reentrant. An operation that already holds History or a
+ * registration change and asks for a different, busy claim is refused with a
+ * 409 rather than queued, because waiting while holding a claim could deadlock.
  */
 export async function withConnectedFolderHistoryOperation<T>(connectedFolderRoot: string, operation: () => Promise<T>): Promise<T> {
   const root = resolve(connectedFolderRoot);
@@ -1363,11 +1405,47 @@ export async function withConnectedFolderHistoryOperation<T>(connectedFolderRoot
   } finally { releaseHistoryClaim(claim); }
 }
 
-async function withRegistryOwnershipMutation<T>(operation: () => Promise<T>): Promise<T> {
-  const claim: HistoryGateClaim = { kind: "ownership" };
-  if (historyContext.getStore()?.size) throw historyBusyError("Wait for History to finish before changing registered Connected Folders.");
-  if (ownershipContext.getStore()) holdHistoryClaim(claim);
-  else await acquireHistoryClaim(claim);
+/** Thrown inside a registration change that found it touches a root its claim did not name. */
+class OwnershipClaimTooNarrow extends Error {
+  constructor(readonly root: string) { super("Connected Folder registration claim must be widened."); }
+}
+
+/**
+ * Runs a change to which folders are registered. `claimRoots` names, from a
+ * registry read before the claim, the roots the change will touch. Inside,
+ * `claim(root)` must be called for every root the change touches before it
+ * changes anything; if the registry moved on in between and a new root turns
+ * up, the change starts over with a wider claim.
+ */
+async function withRegistryOwnershipMutation<T>(
+  claimRoots: () => Promise<string[]>,
+  operation: (claim: (root: string) => void) => Promise<T>,
+): Promise<T> {
+  let roots = (await claimRoots().catch(() => [] as string[])).map((root) => resolve(root));
+  for (let attempt = 0; ; attempt += 1) {
+    const claimed = [...roots];
+    const claimRoot = (root: string): void => {
+      if (!claimed.some((item) => samePath(item, root))) throw new OwnershipClaimTooNarrow(resolve(root));
+    };
+    try {
+      return await withOwnershipClaim({ kind: "ownership", roots: claimed }, () => operation(claimRoot));
+    } catch (error) {
+      if (!(error instanceof OwnershipClaimTooNarrow) || attempt >= 4) {
+        if (error instanceof OwnershipClaimTooNarrow) throw historyBusyError("Connected Folder registrations kept changing. Try again.");
+        throw error;
+      }
+      roots = [...roots, error.root];
+    }
+  }
+}
+
+async function withOwnershipClaim<T>(claim: HistoryGateClaim & { kind: "ownership" }, operation: () => Promise<T>): Promise<T> {
+  if (historyContext.getStore()?.size || ownershipContext.getStore()) {
+    if (!historyClaimCanStart(claim)) throw historyBusyError("Wait for History to finish before changing registered Connected Folders.");
+    holdHistoryClaim(claim);
+  } else {
+    await acquireHistoryClaim(claim);
+  }
   try { return await ownershipContext.run(true, () => withRegistryMutation(operation)); }
   finally { releaseHistoryClaim(claim); }
 }
