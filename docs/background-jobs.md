@@ -85,7 +85,8 @@ amplefile jobs stop   --connected-folder <id> --job <id> [--parent-task <id>] --
   request's action trail as `jobs.start` and `jobs.stop`. `start` requires
   `--task` to be the caller's own running turn, as `chat report` does.
 - `list`, `show`, and `output` are act reads. A job is readable only through
-  its own Connected Folder. A read counts as delivery only when `--task` names
+  its own Connected Folder. One `output` call waits at most 600 seconds; a
+  longer `--wait` is capped, so read again to keep waiting. A read counts as delivery only when `--task` names
   the reader's running turn in the job's own Chat; `jobs stop` takes no
   `--task`, so a job stopped from the CLI still wakes its Chat once.
 - The AmpleFile Agent reaches its own jobs through the tools; `requests show`
