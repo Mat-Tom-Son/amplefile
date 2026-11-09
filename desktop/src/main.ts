@@ -72,6 +72,7 @@ import { createJiti } from "jiti";
 import { applyLoginShellEnvironment, formatLoginShellEnvironmentResult, type LoginShellEnvironmentResult } from "./shell-environment.js";
 import { SecureSettingsStore } from "./settings.js";
 import { DesktopUpdater, type DesktopUpdateStatus } from "./updater.js";
+import { HeadlessQuitSequence } from "./headless-quit.js";
 import {
   ampleFileDesktopUserDataPath,
   ampleFileDesktopStateOverride,
@@ -495,6 +496,9 @@ async function startInteractiveApp(): Promise<void> {
   interactiveRequested = true;
   if (interactiveStartupPromise) return interactiveStartupPromise;
   interactiveStartupPromise = (async () => {
+    // A headless CLI host may be tearing down; it re-checks for this launch
+    // afterwards and stays up, but the new act token must not race it.
+    await headlessQuit.whenTeardownSettled();
     const host = await ensureDesktopHost();
     await host.chromeConnection.startIfEnabled().catch(() => console.warn("Chrome connection startup requires setup."));
     const api = await ensureInteractiveLocalApi();
@@ -516,29 +520,32 @@ async function startInteractiveApp(): Promise<void> {
   return interactiveStartupPromise;
 }
 
-async function quitAfterCliRequest(): Promise<void> {
-  const host = await ensureDesktopHost();
-  while (!interactiveRequested) {
-    const observedGeneration = cliRequestGeneration;
+const headlessQuit = new HeadlessQuitSequence({
+  interactiveRequested: () => interactiveRequested,
+  cliRequestGeneration: () => cliRequestGeneration,
+  waitForIdle: async () => {
+    const host = await ensureDesktopHost();
     await host.cli.whenIdle();
     await host.runtime.flush();
     await new Promise<void>((resolveDelay) => setTimeout(resolveDelay, headlessCliIdleGraceMs));
-    if (observedGeneration === cliRequestGeneration) break;
-  }
-  if (interactiveRequested) {
-    await startInteractiveApp();
-    return;
-  }
-  await host.chromeConnection.close();
+  },
   // A headless boot proves no interactive app holds the single-instance lock,
   // so any act-token file on disk is stale crash residue; removing it lets
   // shims fail fast instead of booting another headless host per attempt.
-  await removeAmpleFileCliActTokenFile(app.getPath("userData")).catch(() => undefined);
-  quitting = true;
-  // Exit synchronously after the queue and host-backed auth storage are both
-  // drained so a new process cannot hand work to a half-shutdown primary.
-  quitCoordinator.allowNativeQuit();
-  app.quit();
+  removeActToken: () => removeAmpleFileCliActTokenFile(app.getPath("userData")).catch(() => undefined),
+  closeChromeConnection: async () => { await (await ensureDesktopHost()).chromeConnection.close(); },
+  quit: () => {
+    quitting = true;
+    // Exit synchronously after the queue and host-backed auth storage are both
+    // drained so a new process cannot hand work to a half-shutdown primary.
+    quitCoordinator.allowNativeQuit();
+    app.quit();
+  },
+});
+
+async function quitAfterCliRequest(): Promise<void> {
+  await ensureDesktopHost();
+  if (await headlessQuit.run() === "interactive") await startInteractiveApp();
 }
 
 function reportStartupError(error: unknown): void {
