@@ -1,76 +1,62 @@
 /**
- * What a move between places left undone, read from the file-transfer
- * answer. The fields are optional and their exact shapes may vary (an array
- * of items, one item, a count), so every reading is defensive and lives here.
+ * What a move between places left undone, from the file-transfer answer.
+ *
+ * - `notRemoved`: paths copied to the target that are also still in the
+ *   source (the move stopped removing them).
+ * - `failed`: the item whose removal failed and why; it is also the first
+ *   entry of `notRemoved`, so it is a reason, never a separate count.
+ * - `recentlyDeleted`: what History could not keep from the source, set
+ *   aside in Recently Deleted.
+ *
+ * Every item named in the answer is in the target. Anything that does not
+ * match this shape is ignored rather than guessed at.
  */
 export interface MoveShortfall {
-  /** Items that were not moved. */
-  failed: string[] | number;
-  /** Items copied to the target but not removed from where they were. */
-  notRemoved: string[] | number;
-  /** Items (or what History could not keep of them) set aside in Recently Deleted. */
-  recentlyDeleted: string[] | number;
+  notRemoved: string[];
+  failed: { path: string; error: string } | null;
+  recentlyDeleted: Array<{ path: string; entryId: string; restoreBy: string }>;
 }
 
 export function moveShortfall(result: unknown): MoveShortfall {
   const body = result && typeof result === "object" ? result as Record<string, unknown> : {};
-  return { failed: itemsOf(body.failed), notRemoved: itemsOf(body.notRemoved), recentlyDeleted: itemsOf(body.recentlyDeleted) };
+  const notRemoved = Array.isArray(body.notRemoved) ? body.notRemoved.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+  const failedValue = body.failed as Record<string, unknown> | undefined;
+  const failed = failedValue && typeof failedValue === "object" && typeof failedValue.path === "string" && typeof failedValue.error === "string"
+    ? { path: failedValue.path, error: failedValue.error }
+    : null;
+  const recentlyDeleted = Array.isArray(body.recentlyDeleted)
+    ? body.recentlyDeleted.flatMap((item) => {
+      const entry = item as Record<string, unknown> | null;
+      return entry && typeof entry.path === "string" && typeof entry.entryId === "string" && typeof entry.restoreBy === "string"
+        ? [{ path: entry.path, entryId: entry.entryId, restoreBy: entry.restoreBy }]
+        : [];
+    })
+    : [];
+  return { notRemoved, failed, recentlyDeleted };
 }
 
 /** The toast after a move: plain about anything that did not go as asked. */
-export function moveResultMessage(label: string, targetName: string, result: unknown): { text: string; tone: "success" | "info" } {
-  const { failed, notRemoved, recentlyDeleted } = moveShortfall(result);
-  const notes: string[] = [];
-  if (count(failed)) notes.push(`${phrase(failed, "was", "were")} not moved${names(failed)}.`);
-  if (count(notRemoved)) notes.push(`${phrase(notRemoved, "was", "were")} copied but not removed from where ${count(notRemoved) === 1 ? "it was" : "they were"}${names(notRemoved)}.`);
-  if (count(recentlyDeleted)) notes.push(`What History could not keep from the original place is in Recently Deleted${names(recentlyDeleted)}.`);
-  if (!notes.length) return { text: `Moved ${label} to ${targetName}`, tone: "success" };
-  const opening = count(failed) || count(notRemoved) ? `Moved what it could of ${label} to ${targetName}.` : `Moved ${label} to ${targetName}.`;
-  return { text: [opening, ...notes].join(" "), tone: count(failed) || count(notRemoved) ? "info" : "success" };
-}
-
-function itemsOf(value: unknown): string[] | number {
-  if (value === undefined || value === null || value === false) return 0;
-  if (typeof value === "number") return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
-  if (Array.isArray(value)) {
-    const named = value.map(itemName);
-    return named.every((name): name is string => name !== null) ? named : value.length;
+export function moveResultMessage(label: string, targetName: string, sourceName: string, result: unknown): { text: string; tone: "success" | "info" } {
+  const { notRemoved, failed, recentlyDeleted } = moveShortfall(result);
+  if (!notRemoved.length && !failed && !recentlyDeleted.length) return { text: `Moved ${label} to ${targetName}`, tone: "success" };
+  const sentences: string[] = [];
+  const stillInSource = notRemoved.length ? notRemoved : failed ? [failed.path] : [];
+  if (stillInSource.length) {
+    const count = stillInSource.length === 1 ? "1 item is" : `${stillInSource.length} items are`;
+    sentences.push(`Copied ${label} to ${targetName}, but ${count} also still in ${sourceName}: ${names(stillInSource)}.`);
+    if (failed) sentences.push(`Removing ${basename(failed.path)} failed: ${failed.error.replace(/\.$/, "")}.`);
+  } else {
+    sentences.push(`Moved ${label} to ${targetName}.`);
   }
-  const name = itemName(value);
-  if (name !== null) return [name];
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    for (const key of ["count", "uncoveredCount"]) {
-      if (typeof record[key] === "number" && (record[key] as number) > 0) return Math.floor(record[key] as number);
-    }
-  }
-  return value === true || typeof value === "object" ? 1 : 0;
-}
-
-function itemName(item: unknown): string | null {
-  if (typeof item === "string" && item) return basename(item);
-  if (!item || typeof item !== "object") return null;
-  const record = item as Record<string, unknown>;
-  if (typeof record.name === "string" && record.name) return record.name;
-  for (const key of ["path", "from", "fromPath"]) if (typeof record[key] === "string" && record[key]) return basename(record[key] as string);
-  return null;
+  if (recentlyDeleted.length) sentences.push(`What History could not keep from ${sourceName} is in Recently Deleted: ${names(recentlyDeleted.map((item) => item.path))}.`);
+  return { text: sentences.join(" "), tone: stillInSource.length ? "info" : "success" };
 }
 
 function basename(path: string): string {
   return path.replace(/\/+$/, "").split("/").pop() || path;
 }
 
-function count(items: string[] | number): number {
-  return typeof items === "number" ? items : items.length;
-}
-
-function phrase(items: string[] | number, one: string, many: string): string {
-  const total = count(items);
-  return total === 1 ? `1 item ${one}` : `${total} items ${many}`;
-}
-
-function names(items: string[] | number): string {
-  if (typeof items === "number" || !items.length) return "";
-  const shown = items.slice(0, 3).join(", ");
-  return `: ${shown}${items.length > 3 ? ` and ${items.length - 3} more` : ""}`;
+function names(paths: readonly string[]): string {
+  const shown = paths.slice(0, 3).map(basename).join(", ");
+  return `${shown}${paths.length > 3 ? ` and ${paths.length - 3} more` : ""}`;
 }

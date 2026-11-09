@@ -3,25 +3,33 @@ import test from "node:test";
 import { moveResultMessage, moveShortfall } from "../web-local/src/components/file-manager/move-result.js";
 
 test("a move that carried everything says Moved, as before", () => {
-  assert.deepEqual(moveResultMessage("2 items", "Archive", { mode: "move", written: ["a", "b"] }), { text: "Moved 2 items to Archive", tone: "success" });
+  assert.deepEqual(moveResultMessage("2 items", "Archive", "Inbox", { mode: "move", written: ["a", "b"] }), { text: "Moved 2 items to Archive", tone: "success" });
 });
 
-test("a move says plainly what was not moved, not removed, or went to Recently Deleted", () => {
-  const partial = moveResultMessage("3 items", "Archive", {
-    failed: [{ path: "Notes/big.mov", error: "Disk full" }],
-    notRemoved: [{ name: "draft.md" }, "Notes/other.md"],
-    recentlyDeleted: [{ path: "Notes/huge.iso" }],
-  });
-  assert.equal(partial.tone, "info");
-  assert.equal(partial.text, "Moved what it could of 3 items to Archive. 1 item was not moved: big.mov. 2 items were copied but not removed from where they were: draft.md, other.md. What History could not keep from the original place is in Recently Deleted: huge.iso.");
-  const parked = moveResultMessage("a.md", "Archive", { recentlyDeleted: { entryId: "x", restoreBy: "2026-10-01", uncoveredCount: 2 } });
-  assert.deepEqual(parked, { text: "Moved a.md to Archive. What History could not keep from the original place is in Recently Deleted.", tone: "success" });
+test("a move that stopped removing says everything is in the target, what is also still in the source, and why", () => {
+  // The file-transfer answer exactly: the failed item is in the target and is
+  // the first entry of notRemoved; it is a reason, not a second count.
+  const answer = {
+    mode: "move",
+    written: ["Archive/a.md", "Archive/b.md", "Archive/c.md"],
+    failed: { path: "Notes/b.md", error: "Operation not permitted" },
+    notRemoved: ["Notes/b.md", "Notes/c.md"],
+    recentlyDeleted: [{ path: "Notes/a.md", entryId: "rd-1", restoreBy: "2026-12-09T12:00:00.000Z" }],
+  };
+  const message = moveResultMessage("3 items", "Archive", "Inbox", answer);
+  assert.equal(message.tone, "info");
+  assert.equal(message.text, "Copied 3 items to Archive, but 2 items are also still in Inbox: b.md, c.md. Removing b.md failed: Operation not permitted. What History could not keep from Inbox is in Recently Deleted: a.md.");
+  assert.doesNotMatch(message.text, /not moved/);
 });
 
-test("unknown or malformed shortfall fields are read defensively", () => {
-  assert.deepEqual(moveShortfall(null), { failed: 0, notRemoved: 0, recentlyDeleted: 0 });
-  assert.deepEqual(moveShortfall({ failed: { path: "a/b.txt", error: "x" }, notRemoved: [1, 2], recentlyDeleted: null }), { failed: ["b.txt"], notRemoved: 2, recentlyDeleted: 0 });
-  assert.deepEqual(moveShortfall({ failed: [], notRemoved: false, recentlyDeleted: "weird" }), { failed: [], notRemoved: 0, recentlyDeleted: ["weird"] });
-  const many = moveResultMessage("6 items", "Archive", { failed: ["a", "b", "c", "d", "e"] });
-  assert.match(many.text, /5 items were not moved: a, b, c and 2 more\./);
+test("a complete move whose originals History could not keep says where they went", () => {
+  const message = moveResultMessage("a.md", "Archive", "Inbox", { recentlyDeleted: [{ path: "Notes/a.md", entryId: "rd-1", restoreBy: "2026-12-09T12:00:00.000Z" }] });
+  assert.deepEqual(message, { text: "Moved a.md to Archive. What History could not keep from Inbox is in Recently Deleted: a.md.", tone: "success" });
+});
+
+test("the shortfall reader takes only the known shape", () => {
+  assert.deepEqual(moveShortfall(null), { notRemoved: [], failed: null, recentlyDeleted: [] });
+  assert.deepEqual(moveShortfall({ failed: [{ path: "a" }], notRemoved: [1, "Notes/x.md"], recentlyDeleted: [{ path: "a" }, "b"] }), { notRemoved: ["Notes/x.md"], failed: null, recentlyDeleted: [] });
+  const many = moveResultMessage("6 items", "Archive", "Inbox", { notRemoved: ["a", "b", "c", "d", "e"] });
+  assert.equal(many.text, "Copied 6 items to Archive, but 5 items are also still in Inbox: a, b, c and 2 more.");
 });

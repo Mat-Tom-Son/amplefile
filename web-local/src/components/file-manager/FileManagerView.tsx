@@ -181,6 +181,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     ?? standardFolder?.name
     ?? standardFolderNames[place.id] ?? place.id;
   const placeRoot = connectedFolder?.connectedFolderRoot ?? standardFolder?.root ?? "";
+  /** Any place's name, for messages about files moved from it. */
+  const nameOfPlace = (target: FileManagerPlace): string => target.kind === "connected-folder"
+    ? connectedFolders.find((item) => item.id === target.id)?.name ?? "the original Connected Folder"
+    : standard.folders.find((item) => item.id === target.id)?.name ?? standardFolderNames[target.id] ?? target.id;
   const apiBase = placeApiBase(place);
   const fixtureTree = fixture
     ? place.kind === "connected-folder" ? fixture.trees[place.id] ?? [] : place.kind === "standard" ? standard.fixtureTrees?.[place.id] ?? [] : []
@@ -464,7 +468,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         await afterTransfer(result, target, `Move ${transferLabel(sources)}`, options.select ?? samePlace(target.place, place));
         showToast(result.copiedInstead
           ? { text: `Copied ${transferLabel(sources)} to ${targetName}. The original stays where it was.`, tone: "success" }
-          : moveResultMessage(transferLabel(sources), targetName, result));
+          : moveResultMessage(transferLabel(sources), targetName, nameOfPlace(movingPlace), result));
         return result.written;
       }
       if (nativePaths.length) {
@@ -619,7 +623,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       if (result.copiedInstead) showToast({ text: `Copied ${label}. The original stays where it was.`, tone: "info" });
       else if (moved) {
         // A plain move says nothing, as Finder's does; one that left something behind says so.
-        const message = moveResultMessage(label, target.path ? target.path.slice(target.path.lastIndexOf("/") + 1) : placeName, result);
+        const message = moveResultMessage(label, target.path ? target.path.slice(target.path.lastIndexOf("/") + 1) : placeName, internal ? nameOfPlace(internal.place) : "the original folder", result);
         if (message.tone !== "success" || message.text.includes("Recently Deleted")) showToast(message);
       }
     } catch (caught) {
