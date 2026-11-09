@@ -115,3 +115,15 @@ test("the transcript keeps following the newest entry when a picture loads or a 
   await dom.settle();
   assert.deepEqual(writes, [640], "so does an opened step");
 });
+
+test("a relative link in an AmpleFile Agent reply is plain text, so a click cannot navigate the popover away", async (t) => {
+  const { dom } = await agentHarness(t, [
+    { id: "ask", role: "user", content: "Where are the notes?", createdAt: "2026-10-11T12:00:00Z" },
+    { id: "answer", role: "assistant", content: "They are in [notes.md](notes.md); background at [the site](https://example.com/guide).", createdAt: "2026-10-11T12:00:01Z" },
+  ], null);
+  await dom.waitFor(() => /They are in/.test(dom.container.textContent ?? ""));
+  const anchors = [...dom.container.querySelectorAll<HTMLAnchorElement>(".popover-message a")];
+  assert.deepEqual(anchors.map((anchor) => anchor.getAttribute("href")), ["https://example.com/guide"]);
+  assert.equal(anchors[0]!.target, "_blank");
+  assert.match(dom.container.querySelector(".popover-message.assistant")?.textContent ?? "", /notes\.md/);
+});

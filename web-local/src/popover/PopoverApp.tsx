@@ -2,11 +2,11 @@ import { ExtensionQuestions } from "../components/chat/ExtensionQuestions";
 import { WorkRequest } from "../components/chat/WorkRequest";
 import { useApplicationAppearance } from "../hooks/useApplicationAppearance";
 import { useWorkRequest } from "../hooks/useWorkRequest";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Chat16Regular } from "@fluentui/react-icons";
 import { ArrowDown, ArrowLeft, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, File, Folder, History, Link2, MoreHorizontal, Search, Square, SquarePen, X } from "../components/chrome/icons";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { ApiError, api, createEventSource, errorText } from "../lib/api";
@@ -18,6 +18,7 @@ import { folderTreeRows } from "../lib/folder-nesting";
 import { FolderMentionMenu, type MentionFolderOption } from "../components/chat/FolderMentionMenu";
 import { AmpleFileLockup } from "../components/brand/AmpleFileBrand";
 import { RuntimeContextPreview } from "../components/chat/activity";
+import { SafeMarkdownAnchor } from "../components/chat/SafeMarkdownAnchor";
 import { savedWorkTrailPreviews } from "../lib/chat-work-trail";
 import type { ChatMessage, ComposerState, ConversationRuntime, ChatStreamEvent, ExtensionUiRequest, RuntimePreviewEntry } from "../types";
 
@@ -1160,7 +1161,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
               {message.role === "assistant" && message.kind !== "assistant_continuation" ? <RuntimeContextPreview entries={savedWorkTrailPreviews(message as ChatMessage)} renderText={renderStepText} /> : null}
               <div className="popover-message-body">
                 {message.kind === "assistant_continuation" ? "Continuing with the results from delegated work." : message.role === "assistant"
-                  ? <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSingleLineBreaks]}>{message.content}</ReactMarkdown>
+                  ? <PopoverMarkdown text={message.content} />
                   : message.content}
               </div>
             </article>
@@ -1171,7 +1172,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
           {streamingAssistant ? (
             <article className="popover-message assistant streaming" aria-label="amplefile is replying">
               <div className="popover-message-body">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSingleLineBreaks]}>{streamingAssistant}</ReactMarkdown>
+                <PopoverMarkdown text={streamingAssistant} />
               </div>
             </article>
           ) : null}
@@ -1326,9 +1327,22 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
   );
 }
 
+const popoverRemarkPlugins = [remarkGfm];
+const popoverRehypePlugins = [rehypeSingleLineBreaks];
+// A link opens in the default browser when it is safe and is plain text
+// otherwise: a relative link such as notes.md would replace the popover.
+const popoverMarkdownComponents: Components = {
+  a: ({ href, children }) => <SafeMarkdownAnchor href={href}>{children}</SafeMarkdownAnchor>,
+};
+
+/** Replies and progress notes; memoised so unchanged text is not re-parsed. */
+const PopoverMarkdown = memo(function PopoverMarkdown({ text }: { text: string }) {
+  return <ReactMarkdown remarkPlugins={popoverRemarkPlugins} rehypePlugins={popoverRehypePlugins} components={popoverMarkdownComponents}>{text}</ReactMarkdown>;
+});
+
 /** Progress notes inside the steps render with the same Markdown as replies. */
 function renderStepText(text: string) {
-  return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSingleLineBreaks]}>{text}</ReactMarkdown>;
+  return <PopoverMarkdown text={text} />;
 }
 
 /** Today's and yesterday's chats show their time, since the group already names the day; older ones their date. */

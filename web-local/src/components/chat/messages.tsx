@@ -3,8 +3,6 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Checkmark20Regular, Copy20Regular, Sparkle20Regular } from "@fluentui/react-icons";
 
-import { safeExternalHref } from "../../lib/api";
-import { localServerHref } from "../../lib/browser-links";
 import { copyToClipboard } from "../../lib/clipboard";
 import { requestConnectAi } from "../../lib/connect-ai";
 import { formatDateTime } from "../../lib/format";
@@ -17,6 +15,7 @@ import { FluentGlyph } from "../chrome/common";
 import { FileTypeIcon } from "../tree/FileTypeIcon";
 import { RuntimeContextPreview, turnChangedFiles, type TurnChangedFile, type ConnectedFolderPathLinkResolver } from "./activity";
 import { GeneratedImages, turnGeneratedImages } from "./GeneratedImages";
+import { SafeMarkdownAnchor } from "./SafeMarkdownAnchor";
 
 export type { ConnectedFolderPathLinkResolver };
 
@@ -410,19 +409,6 @@ const markdownComponents: Components = {
     return <span className="message-image-unavailable">{alt ? `${alt} (image unavailable)` : "Image Unavailable"}</span>;
   },
 };
-
-/**
- * A Markdown link outside the Connected Folder: a server on this computer
- * (such as a Worker's dev server) or a safe external address opens in the
- * default browser; anything else, including a relative path, stays plain text
- * so a click can never navigate the app's own window away.
- */
-export function SafeMarkdownAnchor({ href, children }: { href?: string; children?: ReactNode }) {
-  const localServer = localServerHref(href);
-  if (localServer) return <a className="message-external-link" href={localServer} target="_blank" rel="noreferrer">{children}</a>;
-  const safeHref = safeExternalHref(href);
-  return safeHref ? <a className="message-external-link" href={safeHref} target="_blank" rel="noreferrer">{children}</a> : <>{children}</>;
-}
 
 export const MarkdownMessage = memo(function MarkdownMessage({
   content,

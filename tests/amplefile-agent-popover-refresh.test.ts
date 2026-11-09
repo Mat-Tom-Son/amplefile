@@ -13,7 +13,7 @@ test("the persistent menu-bar popover reconciles replies whenever it becomes vis
   assert.match(source, /refreshConversation\(\)/);
   assert.match(source, /api<\{ messages: AmpleFileAgentMessage\[\] \}>\(`\/api\/amplefile-agent\/conversations\/\$\{encodeURIComponent\(nextConversationId\)\}`\)/);
   assert.match(source, /messages\.map\(\(message\) =>/);
-  assert.match(source, /message\.role === "assistant"[\s\S]*?<ReactMarkdown remarkPlugins=\{\[remarkGfm\]\} rehypePlugins=\{\[rehypeSingleLineBreaks\]\}>\{message\.content\}<\/ReactMarkdown>/);
+  assert.match(source, /message\.role === "assistant"[\s\S]*?<PopoverMarkdown text=\{message\.content\} \/>/);
   assert.doesNotMatch(source, /\{request\.reply\.content\}/);
 });
 
@@ -105,7 +105,7 @@ test("the popover renders the live agent response and reconciles the durable tra
   assert.match(popover, /event\.type === "assistant_message" && typeof event\.text === "string"[\s\S]*replaceStreamingAssistant\(event\.text\)/);
   assert.match(popover, /window\.requestAnimationFrame\(flushStreamingAssistant\)/);
   assert.match(popover, /className="popover-message assistant streaming" aria-label="amplefile is replying"/);
-  assert.match(popover, /<ReactMarkdown remarkPlugins=\{\[remarkGfm\]\} rehypePlugins=\{\[rehypeSingleLineBreaks\]\}>\{streamingAssistant\}<\/ReactMarkdown>/);
+  assert.match(popover, /<PopoverMarkdown text=\{streamingAssistant\} \/>/);
   assert.match(popover, /if \(!summary\.latestRequest \|\| !activePhases\.has\(summary\.latestRequest\.phase\)\) \{\s*replaceStreamingAssistant\(""\);/);
 });
 
