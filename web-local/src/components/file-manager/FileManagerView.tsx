@@ -80,6 +80,7 @@ import { PaneResizer, panelWidthSpec, sidebarWidthSpec, usePaneWidth } from "./P
 import { GoToFolderSheet, type GoToFolderLookup } from "./GoToFolderSheet";
 import { isMarkedPath, useWorkerChanges, workerChangesSummary } from "./useWorkerChanges";
 import { useFolderSuggestions } from "./useFolderSuggestions";
+import { moveResultMessage } from "./move-result";
 import { StandardFolderGlyph } from "./file-manager-glyphs";
 import { TintedFolder } from "./file-manager-folder";
 import type { ConnectedFolderIconOption } from "../../connected-folder-icons";
@@ -461,7 +462,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         if (!sources.length) return [];
         const result = await transfer({ mode: "move", sources: sources.map((path) => ({ place: movingPlace, path })), target });
         await afterTransfer(result, target, `Move ${transferLabel(sources)}`, options.select ?? samePlace(target.place, place));
-        showToast({ text: result.copiedInstead ? `Copied ${transferLabel(sources)} to ${targetName}. The original stays where it was.` : `Moved ${transferLabel(sources)} to ${targetName}`, tone: "success" });
+        showToast(result.copiedInstead
+          ? { text: `Copied ${transferLabel(sources)} to ${targetName}. The original stays where it was.`, tone: "success" }
+          : moveResultMessage(transferLabel(sources), targetName, result));
         return result.written;
       }
       if (nativePaths.length) {
@@ -614,6 +617,11 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       await afterTransfer(result, target, `${moved ? "Move" : "Paste"} ${label}`, true);
       if (moved) fileClipboardRef.current = null;
       if (result.copiedInstead) showToast({ text: `Copied ${label}. The original stays where it was.`, tone: "info" });
+      else if (moved) {
+        // A plain move says nothing, as Finder's does; one that left something behind says so.
+        const message = moveResultMessage(label, target.path ? target.path.slice(target.path.lastIndexOf("/") + 1) : placeName, result);
+        if (message.tone !== "success" || message.text.includes("Recently Deleted")) showToast(message);
+      }
     } catch (caught) {
       onError(errorText(caught).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, ""));
     }
