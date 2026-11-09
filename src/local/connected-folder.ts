@@ -548,26 +548,58 @@ function maxTreeEntries(): number {
   return Number.isFinite(configured) && configured >= 1 ? Math.floor(configured) : 20_000;
 }
 
-export async function readConnectedFolderTextFile(connectedFolderRoot: string, relativePath: string): Promise<{ text: string }> {
+export async function readConnectedFolderTextFile(connectedFolderRoot: string, relativePath: string): Promise<{ text: string; hashSha256: string }> {
   const path = resolveConnectedFolderPath(connectedFolderRoot, relativePath);
   const info = await stat(path).catch(() => null);
   if (!info?.isFile()) throw notFound("File not found.");
   if (info.size > maxPreviewBytes) throw new Error("This file is too large to preview (2 MB maximum).");
   const bytes = await readFile(path);
   if (looksBinary(bytes)) throw new Error("This file is binary and cannot be previewed as text.");
-  return { text: bytes.toString("utf8") };
+  return { text: bytes.toString("utf8"), hashSha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
-export async function writeConnectedFolderTextFile(connectedFolderRoot: string, relativePath: string, text: string): Promise<{ path: string; text: string }> {
+/**
+ * Saves the in-app editor's text by writing a flushed sibling file and renaming
+ * it over the original, so a crash leaves either the old or the new text, never
+ * a truncated file. When `expectedHashSha256` is given (the hash the editor
+ * read), a save over content that changed since, by a Worker or another app,
+ * is refused instead of silently overwriting it.
+ */
+export async function writeConnectedFolderTextFile(
+  connectedFolderRoot: string,
+  relativePath: string,
+  text: string,
+  options: { expectedHashSha256?: string } = {},
+): Promise<{ path: string; text: string; hashSha256: string }> {
   const root = ensureSafeConnectedFolderRoot(connectedFolderRoot);
   const path = resolveConnectedFolderPath(root, relativePath);
   await assertOutsideNestedFolders(root, normalizeRelative(relative(root, path)));
   const info = await stat(path).catch(() => null);
   if (!info?.isFile()) throw notFound("File not found.");
-  if (Buffer.byteLength(text, "utf8") > maxPreviewBytes) throw new Error("This file is too large to edit (2 MB maximum).");
-  await writeFile(path, text, "utf8");
+  const bytes = Buffer.from(text, "utf8");
+  if (bytes.byteLength > maxPreviewBytes) throw new Error("This file is too large to edit (2 MB maximum).");
+  const expected = options.expectedHashSha256?.trim().toLowerCase();
+  const temporary = join(dirname(path), `.${basename(path)}.amplefile-save-${randomUUID()}`);
+  try {
+    const handle = await open(temporary, "wx", info.mode & 0o7777);
+    try {
+      await handle.writeFile(bytes);
+      await handle.chmod(info.mode & 0o7777);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    // Checked last, just before the swap, so the window for an unseen change is as small as possible.
+    if (expected && await sha256File(path).catch(() => null) !== expected) {
+      throw Object.assign(new Error("This file changed since it was opened. Reopen it to see the latest version, then make your edit again."), { status: 409, statusCode: 409 });
+    }
+    await rename(temporary, path);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
+  await syncDirectoriesBestEffort([dirname(path)]);
   await touchConnectedFolder(connectedFolderRoot);
-  return { path: normalizeRelative(relative(ensureSafeConnectedFolderRoot(connectedFolderRoot), path)), text };
+  return { path: normalizeRelative(relative(root, path)), text, hashSha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
 export async function getConnectedFolderEntryInfo(connectedFolderRoot: string, relativePath: string, options: { hash?: boolean } = {}): Promise<ConnectedFolderEntryInfo> {

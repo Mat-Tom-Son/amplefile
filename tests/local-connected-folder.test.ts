@@ -772,3 +772,39 @@ test("ignore rule changes in flight each land, and the rules file is replaced wh
   await setConnectedFolderIgnoreState(connectedFolder.connectedFolderRoot, [names[0]!], false);
   assert.equal((await readConnectedFolderIgnoreState(connectedFolder.connectedFolderRoot)).patterns.includes(names[0]!), false);
 });
+
+test("an in-app text save replaces the file whole and keeps its permissions", async () => {
+  const connectedFolder = await createManagedConnectedFolder("Atomic save", contentRoot);
+  const file = join(connectedFolder.connectedFolderRoot, "draft.txt");
+  await writeFile(file, "before", "utf8");
+  await chmod(file, 0o640);
+  const before = await stat(file);
+  const read = await readConnectedFolderTextFile(connectedFolder.connectedFolderRoot, "draft.txt");
+
+  const saved = await writeConnectedFolderTextFile(connectedFolder.connectedFolderRoot, "draft.txt", "after", { expectedHashSha256: read.hashSha256 });
+  const after = await stat(file);
+  assert.equal(await readFile(file, "utf8"), "after");
+  assert.notEqual(after.ino, before.ino, "the new text is renamed into place, not written over the live file");
+  assert.equal(after.mode & 0o777, 0o640);
+  assert.equal(saved.hashSha256, (await readConnectedFolderTextFile(connectedFolder.connectedFolderRoot, "draft.txt")).hashSha256);
+  assert.deepEqual((await readdir(connectedFolder.connectedFolderRoot)).filter((name) => name.includes("amplefile-save")), []);
+});
+
+test("an in-app text save refuses to overwrite a change made after the editor read the file", async () => {
+  const connectedFolder = await createManagedConnectedFolder("Guarded save", contentRoot);
+  const file = join(connectedFolder.connectedFolderRoot, "draft.txt");
+  await writeFile(file, "loaded", "utf8");
+  const read = await readConnectedFolderTextFile(connectedFolder.connectedFolderRoot, "draft.txt");
+  await writeFile(file, "a Worker's edit", "utf8");
+
+  await assert.rejects(
+    writeConnectedFolderTextFile(connectedFolder.connectedFolderRoot, "draft.txt", "stale editor text", { expectedHashSha256: read.hashSha256 }),
+    (error: unknown) => (error as { statusCode?: number }).statusCode === 409 && /changed since it was opened/.test((error as Error).message),
+  );
+  assert.equal(await readFile(file, "utf8"), "a Worker's edit");
+  assert.deepEqual((await readdir(connectedFolder.connectedFolderRoot)).filter((name) => name.includes("amplefile-save")), []);
+
+  // Without an expected hash the save keeps its earlier behavior.
+  await writeConnectedFolderTextFile(connectedFolder.connectedFolderRoot, "draft.txt", "unguarded");
+  assert.equal(await readFile(file, "utf8"), "unguarded");
+});
