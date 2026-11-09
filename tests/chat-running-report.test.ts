@@ -73,3 +73,42 @@ test("a running Chat withdraws its running report when it unmounts or shows anot
   await render(null);
   assert.equal(running.get("second"), false, "unmounting a running Chat withdraws its report");
 });
+
+// Opening a saved Chat is not news, whatever its last turn did: the request
+// record arrives after the transcript and must not be spoken as an ending.
+for (const state of ["done", "failed", "stopped", "partial", "waiting"] as const) {
+  test(`opening a Worker Chat whose last turn is ${state} announces nothing`, async (t) => {
+    const dom = await createDomHarness();
+    const realApi = await import("../web-local/src/lib/api.js");
+    const stamp = "2026-09-27T12:00:00Z";
+    let answerWork!: () => void;
+    const workRead = new Promise<void>((resolve) => { answerWork = resolve; });
+    const work = { version: 1, requestId: "request", taskId: "task", owner: { kind: "worker", connectedFolderId: "folder", connectedFolderName: "Notes" }, state, label: state, detail: null,
+      canStop: false, canContinue: false, questions: [], questionCount: 0, children: [], result: null };
+    const api = async (path: string) => {
+      if (path === "/api/connected-folders/folder/conversations") return { conversations: [{ id: "saved", title: "Saved", updatedAt: stamp }] };
+      if (path.endsWith("/conversations/saved")) return { messages: [{ id: "m", role: "assistant", content: "Earlier reply", createdAt: stamp }] };
+      if (path.endsWith("/runtime")) return { runtime: null };
+      if (path.endsWith("/work")) { await workRead; return { work }; }
+      if (path.includes("/agent/catalog")) return { commands: [] };
+      if (path.includes("/agent/status")) return { status: { ready: true, configured: true } };
+      if (path.includes("/agent/composer")) return { composer: null };
+      if (path.includes("/paths-exist")) return { existing: [] };
+      throw new Error(`Unexpected UI request: ${path}`);
+    };
+    const scope = globalThis as unknown as Record<string, unknown>;
+    scope.__runningReportApi = { ...realApi, api, createEventSource: () => ({ onmessage: null, onopen: null, onerror: null, lastEventId: "", close() {} }) };
+    t.after(async () => { await dom.cleanup(); delete scope.__runningReportApi; });
+    HTMLElement.prototype.scrollIntoView = () => {};
+    HTMLElement.prototype.scrollTo = () => {};
+    const { ChatPanel } = await import("../web-local/src/components/chat/ChatPanel.js");
+    await dom.render(createElement(ChatPanel, {
+      surfaceTabId: "chat-tab", connectedFolder: { id: "folder", name: "Notes", connectedFolderRoot: "/folder" } as ConnectedFolderSummary,
+      connectedFolderCustomizations: {}, targetConversationId: "saved", contextPathRequest: null, onAgentFinished() {},
+    }));
+    await dom.waitFor(() => /Earlier reply/.test(dom.container.textContent ?? ""));
+    await dom.act(async () => { answerWork(); await new Promise((resolve) => setTimeout(resolve, 30)); });
+    await dom.settle();
+    assert.equal(dom.container.querySelector(".turn-announcer")?.textContent, "");
+  });
+}

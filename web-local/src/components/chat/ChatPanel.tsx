@@ -1886,7 +1886,8 @@ export function ChatPanel({
       <div className="chat-scroll-shell">
         <TurnAnnouncer
           conversationKey={conversation?.id ?? null}
-          status={chatTurnStatus(running || requestBusy || settlementPending, workState.work?.state, messages[messages.length - 1])}
+          // Unknown until the Chat's transcript and request record have been read.
+          status={openingConversationId || !workState.loaded ? null : chatTurnStatus(running || requestBusy || settlementPending, workState.work?.state, messages[messages.length - 1])}
           who="The Worker"
         />
         <div className="message-list" ref={messageListRef} onScroll={updateScrollPosition}>

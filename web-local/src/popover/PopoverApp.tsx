@@ -1193,7 +1193,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
             <button className="agent-jump-latest" type="button" onClick={() => followLatest("smooth")}><ArrowDown aria-hidden="true" size={13} />Latest</button>
           ) : null}
         </section>
-          <TurnAnnouncer conversationKey={conversationId} status={request ? popoverTurnStatus[request.phase] : null} who="The AmpleFile Agent" />
+          <TurnAnnouncer conversationKey={conversationId} status={request && !loadingChat ? popoverTurnStatus[request.phase] : null} who="The AmpleFile Agent" />
           {request && activePhases.has(request.phase) ? (
             <div className="agent-tail">
               {request.phase === "working" ? (

@@ -149,13 +149,16 @@ test("the popover announces a turn's start and end, not every streamed frame or 
     return host.textContent;
   };
   assert.equal(await say("one", "replied"), "", "what a conversation shows when it opens is not news");
+  assert.equal(await say("one", "question"), "", "an ending is spoken only when it follows work");
   assert.equal(await say("one", "working"), "The AmpleFile Agent is working.");
   assert.equal(await say("one", "handed_off"), "The AmpleFile Agent handed work to Connected Folders and is waiting on it.");
   assert.equal(await say("one", "question"), "The AmpleFile Agent has a question for you.");
   assert.equal(await say("one", "working"), "The AmpleFile Agent is working.");
   assert.equal(await say("one", "failed"), "The AmpleFile Agent could not finish.");
   assert.equal(await say("one", "working"), "The AmpleFile Agent is working.");
-  assert.equal(await say("two", "replied"), "", "opening another conversation resets without speaking");
+  assert.equal(await say("two", null), "", "opening another conversation resets without speaking");
+  assert.equal(await say("two", "failed"), "", "the first status read after opening is a silent baseline");
+  assert.equal(await say("two", "working"), "The AmpleFile Agent is working.");
   assert.equal(await say("two", "stopped"), "The AmpleFile Agent stopped.");
   // A Worker Chat reads its outcome from the durable request, then the last reply.
   assert.equal(chatTurnStatus(true, "done", undefined), "working");
@@ -178,3 +181,41 @@ test("AmpleFile Agent replies render GitHub tables and one line per hard break, 
   assert.ok(paragraph, "a hard break is a <br>");
   assert.equal(paragraph.innerHTML, "First line<br>Second line", "no newline is left after the break to draw a blank line");
 });
+
+for (const phase of ["done", "needs_you", "failed", "stopped", "handed_off"] as const) {
+  test(`choosing a saved AmpleFile Agent chat whose last request is ${phase} announces nothing`, async (t) => {
+    const dom = await createDomHarness();
+    const realApi = await import("../web-local/src/lib/api.js");
+    const stamp = "2026-10-11T12:00:00Z";
+    const ended = { ...request, conversationId: "second", phase, endedAt: phase === "handed_off" ? null : stamp };
+    const api = async (path: string) => {
+      if (path === "/api/amplefile-agent/summary") return { available: true, conversation: { id: "first", title: "First chat" }, state: "idle", latestRequest: null };
+      if (path === "/api/amplefile-agent/summary?conversationId=first") return { available: true, conversation: { id: "first", title: "First chat" }, state: "idle", latestRequest: null };
+      if (path === "/api/amplefile-agent/summary?conversationId=second") return { available: true, conversation: { id: "second", title: "Second chat" }, state: "idle", latestRequest: ended };
+      if (path === "/api/amplefile-agent/conversations") return { conversations: [
+        { id: "first", title: "First chat", updatedAt: stamp, requestState: null },
+        { id: "second", title: "Second chat", updatedAt: stamp, requestState: phase },
+      ] };
+      if (path === "/api/amplefile-agent/conversations/first") return { messages: [{ id: "a1", role: "assistant", content: "First reply", createdAt: stamp }] };
+      if (path === "/api/amplefile-agent/conversations/second") return { messages: [{ id: "b1", role: "assistant", content: "Second reply", createdAt: stamp }] };
+      if (path.endsWith("/runtime")) return { runtime: null };
+      if (path.endsWith("/work")) return { work: null };
+      if (path.startsWith("/api/agent/composer")) return { composer: null };
+      if (path === "/api/connected-folders/outline") return { connectedFolders: [] };
+      throw new Error(`Unexpected request: ${path}`);
+    };
+    const scope = globalThis as unknown as Record<string, unknown>;
+    scope.__agentChatApi = { ...realApi, api, createEventSource: () => ({ onmessage: null, onopen: null, onerror: null, lastEventId: "", close() {} }) };
+    t.after(async () => { await dom.cleanup(); delete scope.__agentChatApi; });
+    const controls = document.createElement("div"); document.body.append(controls);
+    const { AmpleFileAgentChat } = await import("../web-local/src/popover/PopoverApp.js");
+    await dom.render(createElement(AmpleFileAgentChat, { host: "panel", controlsTarget: controls, visible: true }));
+    await dom.waitFor(() => /First reply/.test(dom.container.textContent ?? ""));
+    await dom.act(() => (document.querySelector<HTMLButtonElement>('[aria-controls="agent-chat-history"]'))!.click());
+    await dom.waitFor(() => [...document.querySelectorAll<HTMLButtonElement>(".agent-chat-row")].some((row) => row.textContent?.includes("Second chat")));
+    await dom.act(() => [...document.querySelectorAll<HTMLButtonElement>(".agent-chat-row")].find((row) => row.textContent?.includes("Second chat"))!.click());
+    await dom.waitFor(() => /Second reply/.test(dom.container.textContent ?? ""));
+    await dom.act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    assert.equal(dom.container.querySelector(".turn-announcer")?.textContent, "");
+  });
+}

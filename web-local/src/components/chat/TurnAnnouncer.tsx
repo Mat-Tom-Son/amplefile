@@ -44,23 +44,32 @@ export function chatTurnStatus(busy: boolean, workState: WorkRequestState | null
 /**
  * A polite live region for a Chat transcript. It speaks only when the turn's
  * status changes within one conversation, never per streamed frame or timer
- * tick, and says how the turn ended. Opening another conversation is not news,
- * so it resets silently.
+ * tick, and says how the turn ended. What a conversation shows when it opens
+ * is not news: after a key change the first known status is a silent
+ * baseline (callers pass null while they are still loading), and an ending
+ * is spoken only when it follows work (working or handed off).
  */
 export function TurnAnnouncer({ conversationKey, status, who }: {
   /** The conversation shown; a change resets without speaking. */
   conversationKey: string | null;
+  /** Null while unknown (loading, or no turn yet). */
   status: TurnStatus | null;
   /** "The Worker", "The AmpleFile Agent". */
   who: string;
 }) {
   const [text, setText] = useState("");
-  const seen = useRef({ conversationKey, status });
+  const seen = useRef<{ conversationKey: string | null; status: TurnStatus | null }>({ conversationKey, status: null });
   useEffect(() => {
     const previous = seen.current;
+    if (previous.conversationKey !== conversationKey) {
+      seen.current = { conversationKey, status };
+      setText("");
+      return;
+    }
+    if (status === null || status === previous.status) return;
     seen.current = { conversationKey, status };
-    if (previous.conversationKey !== conversationKey) { setText(""); return; }
-    if (previous.status === status || status === null) return;
+    if (previous.status === null) return;
+    if (status !== "working" && previous.status !== "working" && previous.status !== "handed_off") return;
     setText(turnAnnouncement(status, who));
   }, [conversationKey, status, who]);
   return <div className="turn-announcer" role="status" aria-live="polite" aria-atomic="true" style={visuallyHidden}>{text}</div>;
