@@ -250,8 +250,8 @@ export interface AmpleFileCliActExecutorOptions {
 }
 
 /**
- * The longest `jobs output --wait` one call may hold. A longer wait is a
- * repeat read, so no single CLI request outlives the shim's transport
+ * The longest `jobs output --wait` one call holds; a longer `--wait` is
+ * capped to it, and waiting longer is a repeat read, so no single CLI request outlives the shim's transport
  * timeout or keeps a broker response pending for an unbounded time.
  */
 export const AMPLEFILE_CLI_JOBS_OUTPUT_MAX_WAIT_SECONDS = 600;
@@ -1452,9 +1452,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
       if (waitSeconds !== undefined && (!Number.isFinite(waitSeconds) || waitSeconds < 0)) {
         throw usageError("--wait must be a number of seconds, 0 or more.");
       }
-      if (waitSeconds !== undefined && waitSeconds > AMPLEFILE_CLI_JOBS_OUTPUT_MAX_WAIT_SECONDS) {
-        throw usageError(`--wait is at most ${AMPLEFILE_CLI_JOBS_OUTPUT_MAX_WAIT_SECONDS} seconds; read again to keep waiting.`);
-      }
+
       const offset = optionalInteger("--offset", 1, Number.MAX_SAFE_INTEGER);
       const limit = optionalInteger("--limit", 1, Number.MAX_SAFE_INTEGER);
       const until = optionalBoundedFlag("--until", "pattern", 4_096);
@@ -1466,7 +1464,9 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
         job: requireBoundedFlag("--job", "job-id"),
         ...(offset !== undefined ? { offset } : {}),
         ...(limit !== undefined ? { limit } : {}),
-        ...(waitSeconds !== undefined ? { waitSeconds } : {}),
+        // A longer wait is capped: a wait that runs out already answers
+        // "still running", so the caller simply reads again.
+        ...(waitSeconds !== undefined ? { waitSeconds: Math.min(waitSeconds, AMPLEFILE_CLI_JOBS_OUTPUT_MAX_WAIT_SECONDS) } : {}),
         ...(until ? { until } : {}),
         ...(task ? { task } : {}),
       };

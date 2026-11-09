@@ -132,8 +132,8 @@ test("jobs verbs parse with explicit selection and refuse what they cannot take"
   assert.throws(() => parseAmpleFileCliActArgv(["jobs", "start", "--connected-folder", "Site", "--task", "t", "--command", "true", "--command-file", "c.sh"]), /either --command/);
   assert.throws(() => parseAmpleFileCliActArgv(["jobs", "start", "--connected-folder", "Site", "--task", "t", "--command", "true", "--timeout", "0"]), /--timeout/);
   assert.throws(() => parseAmpleFileCliActArgv(["jobs", "output", "--connected-folder", "Site", "--job", "j", "--wait", "-1"]), /--wait/);
-  // One call waits at most ten minutes; a longer wait is a repeat read.
-  assert.throws(() => parseAmpleFileCliActArgv(["jobs", "output", "--connected-folder", "Site", "--job", "j", "--wait", "601"]), /--wait is at most 600 seconds/);
+  // One call waits at most ten minutes; a longer --wait is capped, not refused.
+  assert.equal(parseAmpleFileCliActArgv(["jobs", "output", "--connected-folder", "Site", "--job", "j", "--wait", "3600"]).waitSeconds, 600);
   assert.equal(parseAmpleFileCliActArgv(["jobs", "output", "--connected-folder", "Site", "--job", "j", "--wait", "600"]).waitSeconds, 600);
   assert.throws(() => parseAmpleFileCliActArgv(["jobs", "show", "--connected-folder", "Site", "--job", "j", "--parent-task", "x"]), /--parent-task/);
   const output = parseAmpleFileCliActArgv(["jobs", "output", "--connected-folder", "Site", "--job", "j", "--offset", "10", "--limit", "5000", "--until", "ready|listening", "--wait", "30"]);

@@ -339,7 +339,7 @@ export function ampleFileCliHelp(productName = "AmpleFile", topic?: string): str
       "ran in. A job has no time limit unless you give --timeout.",
       "output prints the end of the output (at most 2,000 lines or 50 KB), or",
       "a page from --offset; nextOffset reads on from there. --wait waits up",
-      "to that many seconds (at most 600; read again to keep waiting) for the",
+      "to that many seconds (capped at 600; read again to keep waiting) for the",
       "job to end, and --until returns as soon as a line matches the pattern",
       "(a JavaScript regular expression).",
       "stop sends SIGTERM to the job's whole process group, then SIGKILL after",

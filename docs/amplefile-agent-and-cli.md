@@ -367,12 +367,12 @@ re-run; the job joins that turn's request, which reads `working` while it
 runs. Every verb names the job's Connected Folder, so a Worker reaches only
 its own Connected Folder's jobs; the AmpleFile Agent's own jobs are reached
 through its tools and listed by `requests show`. `jobs output` reads the end
-of the output or a page from `--offset`, can `--wait` up to 600 seconds for
-the end or until `--until` matches a line (read again to keep waiting), and
-with `--task` naming a running turn in the job's own Chat counts as the job's
-delivery. When a job ends, the host
-captures History for its Connected Folder and brings the exit status, that
-coverage, and the end of the output back to its Chat once: through a read,
+of the output or a page from `--offset`, can `--wait` for the job to end or
+for `--until` to match a line (one call waits at most 600 seconds; read again
+to keep waiting), and with `--task` naming a running turn in the job's own
+Chat counts as the job's delivery. When a job ends, the host captures History
+for its Connected Folder and brings the exit status, that coverage, and the
+end of the output back to its Chat once: through a read,
 the next turn's context, or one follow-up turn. Stop on the request and
 quitting AmpleFile stop jobs; a restart records a running job `interrupted`
 and wakes nothing. Output lives under the state root's `jobs/` directory and
