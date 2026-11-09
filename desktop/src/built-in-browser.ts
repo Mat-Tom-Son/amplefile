@@ -35,6 +35,7 @@ import {
   type Rectangle,
   type Session,
   type WebContents,
+  type WebFrameMain,
   type WebContentsViewConstructorOptions,
   type WindowOpenHandlerResponse,
 } from "electron";
@@ -59,6 +60,7 @@ import {
   browserPopupWindowTitle,
   isBrowserAddress,
   isPageReachableUrl,
+  browserOpenerAddress,
   type BrowserPermissionRequest,
   type BrowserSiteDecision,
   type BrowserSitePermission,
@@ -508,8 +510,8 @@ export class BuiltInBrowser {
     contents.on("enter-html-full-screen", () => this.#enterFullScreen(page));
     contents.on("leave-html-full-screen", () => this.#leaveFullScreen(page));
     contents.on("will-attach-webview", (event) => event.preventDefault());
-    contents.on("will-navigate", (event) => this.#guardNavigation(event, contents, event.url));
-    contents.on("will-redirect", (event) => this.#guardNavigation(event, contents, event.url));
+    contents.on("will-navigate", (event) => this.#guardNavigation(event, contents, event.url, event.initiator ?? event.frame));
+    contents.on("will-redirect", (event) => this.#guardNavigation(event, contents, event.url, event.initiator ?? event.frame));
     contents.on("context-menu", (_event, params) => { void this.#contextMenu(page, params); });
     contents.on("before-input-event", (event, input) => {
       if (input.type !== "keyDown") return;
@@ -528,9 +530,13 @@ export class BuiltInBrowser {
     });
   }
 
-  /** Navigations the page itself starts; a web page never reaches a local file. */
-  #guardNavigation(event: Electron.Event, contents: WebContents, url: string): void {
-    if (isPageReachableUrl(contents.getURL(), url)) return;
+  /**
+   * Navigations the page itself starts; a web page never reaches a local file.
+   * Judged from the frame that started it, so a web frame inside a local page
+   * cannot send the page to a file.
+   */
+  #guardNavigation(event: Electron.Event, contents: WebContents, url: string, initiator: WebFrameMain | null | undefined): void {
+    if (isPageReachableUrl(frameAddress(initiator) ?? openerAddress(contents), url)) return;
     event.preventDefault();
     void this.#openOutside(url);
   }
@@ -542,7 +548,7 @@ export class BuiltInBrowser {
   }
 
   #windowOpen(opener: BrowserPage, details: HandlerDetails): WindowOpenHandlerResponse {
-    if (!isPageReachableUrl(opener.view.webContents.getURL(), details.url) && details.url !== "") {
+    if (!isPageReachableUrl(openerAddress(opener.view.webContents), details.url) && details.url !== "") {
       void this.#openOutside(details.url);
       return { action: "deny" };
     }
@@ -584,7 +590,7 @@ export class BuiltInBrowser {
 
   /** Pop-up windows use the original tab's bar, retaining the site that actually asked. */
   #blockPopup(page: BrowserPage, contents: WebContents, url: string): void {
-    if (page.closed || !url || !isPageReachableUrl(contents.getURL(), url)) return;
+    if (page.closed || !url || !isPageReachableUrl(openerAddress(contents), url)) return;
     page.blockedPopup = { url, origin: siteOrigin(contents.getURL()) };
     this.#emit(page);
   }
@@ -612,7 +618,7 @@ export class BuiltInBrowser {
       if (event.isMainFrame && !event.isSameDocument) input.lastInputAt = 0;
     });
     contents.setWindowOpenHandler((details) => {
-      if (!isPageReachableUrl(contents.getURL(), details.url)) {
+      if (!isPageReachableUrl(openerAddress(contents), details.url)) {
         void this.#openOutside(details.url);
       } else if (this.#canOpenPopup(contents, input)) {
         this.#openTab(details.url, true, "person");
@@ -621,8 +627,8 @@ export class BuiltInBrowser {
       }
       return { action: "deny" };
     });
-    contents.on("will-navigate", (event) => this.#guardNavigation(event, contents, event.url));
-    contents.on("will-redirect", (event) => this.#guardNavigation(event, contents, event.url));
+    contents.on("will-navigate", (event) => this.#guardNavigation(event, contents, event.url, event.initiator ?? event.frame));
+    contents.on("will-redirect", (event) => this.#guardNavigation(event, contents, event.url, event.initiator ?? event.frame));
     contents.on("will-attach-webview", (event) => event.preventDefault());
   }
 
@@ -1016,8 +1022,10 @@ export class BuiltInBrowser {
       : params.dictionarySuggestions.slice(0, 5);
     if (contents.isDestroyed() || page.closed) return;
     const template: MenuItemConstructorOptions[] = [];
-    // The link and image addresses come from the page, so they follow the page's own reach.
-    if (params.linkURL && isPageReachableUrl(contents.getURL(), params.linkURL)) {
+    // The link and image addresses come from the frame the menu was opened
+    // in, so they follow that frame's reach, not the top page's.
+    const menuFrameAddress = params.frameURL || contents.getURL();
+    if (params.linkURL && isPageReachableUrl(menuFrameAddress, params.linkURL)) {
       template.push(
         { label: "Open Link in New Tab", click: () => { this.#openTab(params.linkURL, false, "person"); } },
         { label: "Open Link in Your Web Browser", click: () => { void this.#options.openExternal(params.linkURL).catch(() => undefined); } },
@@ -1027,7 +1035,7 @@ export class BuiltInBrowser {
     }
     if (params.mediaType === "image" && params.srcURL) {
       template.push(
-        ...(isPageReachableUrl(contents.getURL(), params.srcURL) ? [{ label: "Open Image in New Tab", click: () => { this.#openTab(params.srcURL, false, "person"); } }] : []),
+        ...(isPageReachableUrl(menuFrameAddress, params.srcURL) ? [{ label: "Open Image in New Tab", click: () => { this.#openTab(params.srcURL, false, "person"); } }] : []),
         { label: "Copy Image", click: () => contents.copyImageAt(params.x, params.y) },
         { label: "Copy Image Address", click: () => clipboard.writeText(params.srcURL) },
         { type: "separator" },
@@ -1818,3 +1826,22 @@ const selectFocusedContentsExpression = `(() => {
   if (element.isContentEditable) { const range = document.createRange(); range.selectNodeContents(element); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); return true; }
   return false;
 })()`;
+
+/** A frame's address, or null once it is gone. */
+function frameAddress(frame: WebFrameMain | null | undefined): string | null {
+  try {
+    return frame && !frame.isDestroyed() ? frame.url || null : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What a page-supplied target is judged from when Electron names no frame. */
+function openerAddress(contents: WebContents): string {
+  const pageUrl = contents.getURL();
+  try {
+    return browserOpenerAddress(pageUrl, contents.mainFrame.framesInSubtree.map((frame) => frameAddress(frame) ?? ""));
+  } catch {
+    return pageUrl;
+  }
+}

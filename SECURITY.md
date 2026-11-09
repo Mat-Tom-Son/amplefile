@@ -82,7 +82,7 @@ trusted renderer for the app's IPC checks. Non-web schemes are refused (mail
 links go to the mail app). A local `file:` address opens only when the person
 types it in the address bar or a Worker opens it; a web page cannot navigate,
 redirect, or open a pop-up to a local file, and its links to local files get no
-"Open Link in New Tab". A local page may still link to other local files. Camera, microphone, location, notifications, MIDI,
+"Open Link in New Tab". A local page may still link to other local files; that decision follows the frame that supplied the link, so a web frame embedded in a local page gets no local-file reach. Camera, microphone, location, notifications, MIDI,
 clipboard reading, window placement, and activity status are granted only after
 the person allows them for that site, never by a Worker; USB, serial, HID, and
 Bluetooth devices are refused. Workers drive pages with the Chrome DevTools

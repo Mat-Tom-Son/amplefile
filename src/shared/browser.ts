@@ -362,6 +362,25 @@ export function siteOrigin(url: string): string | null {
   }
 }
 
+/**
+ * The address a page-supplied target is judged from when the opening frame is
+ * not known (Electron's window-open handler names no frame): the first frame
+ * in the page that is not a local file or a blank page, else the page itself.
+ * A local page with a web frame inside therefore cannot open local files.
+ */
+export function browserOpenerAddress(pageUrl: string, frameUrls: readonly string[]): string {
+  for (const url of frameUrls) {
+    let protocol: string;
+    try {
+      protocol = new URL(url).protocol;
+    } catch {
+      return url;
+    }
+    if (protocol !== "file:" && protocol !== "about:") return url;
+  }
+  return pageUrl;
+}
+
 const titleControlPattern = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 /**

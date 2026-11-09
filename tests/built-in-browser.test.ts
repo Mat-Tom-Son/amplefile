@@ -18,6 +18,7 @@ import { localServerHref } from "../web-local/src/lib/browser-links.js";
 import {
   browserAddressFor,
   browserConnection,
+  browserOpenerAddress,
   browserPopupWindowTitle,
   browserDisplayAddress,
   browserPermissionPhrase,
@@ -380,16 +381,27 @@ test("a job's own announcement of a local server reaches the Worker, and Chat li
   assert.equal(localServerHref("file:///etc/hosts"), null);
 });
 
-test("page-supplied addresses follow the page's reach; only the address bar, Workers, and restored tabs use local-file addresses", async () => {
+test("page-supplied addresses follow the reach of the frame that supplied them; only the address bar, Workers, and restored tabs use local-file addresses", async () => {
+  // A web frame inside a local page decides for window.open, since Electron names no frame there.
+  assert.equal(browserOpenerAddress("file:///Users/me/site/index.html", ["file:///Users/me/site/index.html", "about:blank"]), "file:///Users/me/site/index.html");
+  assert.equal(browserOpenerAddress("file:///Users/me/site/index.html", ["file:///Users/me/site/index.html", "https://ads.example/frame"]), "https://ads.example/frame");
+  assert.equal(browserOpenerAddress("file:///Users/me/site/index.html", ["file:///Users/me/site/index.html", "data:text/html,hi"]), "data:text/html,hi");
+  assert.equal(browserOpenerAddress("https://example.com/", ["https://example.com/"]), "https://example.com/");
+  assert.equal(isPageReachableUrl(browserOpenerAddress("file:///a/index.html", ["file:///a/index.html", "https://ads.example/"]), "file:///etc/hosts"), false);
+
   const host = await readFile("desktop/src/built-in-browser.ts", "utf8");
-  // Context-menu links and images come from the page.
-  assert.match(host, /if \(params\.linkURL && isPageReachableUrl\(contents\.getURL\(\), params\.linkURL\)\)/);
-  assert.match(host, /isPageReachableUrl\(contents\.getURL\(\), params\.srcURL\)/);
-  // Navigations, redirects, and window.open in tabs and pop-ups.
-  assert.match(host, /#guardNavigation\(event: Electron\.Event, contents: WebContents, url: string\): void \{\n\s*if \(isPageReachableUrl\(contents\.getURL\(\), url\)\) return;/);
-  assert.equal((host.match(/contents\.on\("will-redirect", \(event\) => this\.#guardNavigation\(event, contents, event\.url\)\)/g) ?? []).length, 2);
-  assert.match(host, /if \(!isPageReachableUrl\(opener\.view\.webContents\.getURL\(\), details\.url\) && details\.url !== ""\)/);
-  assert.match(host, /if \(!isPageReachableUrl\(contents\.getURL\(\), details\.url\)\) \{/);
+  // Context-menu links and images come from the frame the menu was opened in.
+  assert.match(host, /const menuFrameAddress = params\.frameURL \|\| contents\.getURL\(\);\n\s*if \(params\.linkURL && isPageReachableUrl\(menuFrameAddress, params\.linkURL\)\)/);
+  assert.match(host, /isPageReachableUrl\(menuFrameAddress, params\.srcURL\)/);
+  // Navigations and redirects are judged from the frame that started them.
+  assert.match(host, /if \(isPageReachableUrl\(frameAddress\(initiator\) \?\? openerAddress\(contents\), url\)\) return;/);
+  assert.equal((host.match(/contents\.on\("will-navigate", \(event\) => this\.#guardNavigation\(event, contents, event\.url, event\.initiator \?\? event\.frame\)\)/g) ?? []).length, 2);
+  assert.equal((host.match(/contents\.on\("will-redirect", \(event\) => this\.#guardNavigation\(event, contents, event\.url, event\.initiator \?\? event\.frame\)\)/g) ?? []).length, 2);
+  // window.open in tabs and pop-ups, and the blocked pop-up offer.
+  assert.match(host, /if \(!isPageReachableUrl\(openerAddress\(opener\.view\.webContents\), details\.url\) && details\.url !== ""\)/);
+  assert.match(host, /if \(!isPageReachableUrl\(openerAddress\(contents\), details\.url\)\) \{/);
+  assert.match(host, /!isPageReachableUrl\(openerAddress\(contents\), url\)\) return;/);
+  assert.doesNotMatch(host, /isPageReachableUrl\(contents\.getURL\(\)/);
   // Trusted sources.
   assert.equal((host.match(/!isBrowserAddress\(address\)\) throw new Error/g) ?? []).length, 2);
   assert.doesNotMatch(host, /\bisBrowserUrl\(/);
