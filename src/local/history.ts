@@ -720,11 +720,22 @@ async function pruneHistory(root: string): Promise<void> {
   const names = await readdir(checkpointsDir(root)).catch(() => [] as string[]);
   if (names.filter((name) => name.endsWith(".json")).length <= maxRetainedCheckpoints()) return;
   const { checkpoints, damaged } = await readCheckpointLedger(root);
-  const retained = checkpoints.slice(0, maxRetainedCheckpoints());
-  const removed = checkpoints.slice(retained.length);
+  // A damaged manifest takes a place in the retention window by the time in
+  // its id (or its file's time), so its content is kept while it would have
+  // been and is let go when it would have aged out.
+  const ledger = [
+    ...checkpoints.map((checkpoint) => ({ createdAt: checkpoint.createdAt, name: `${checkpoint.checkpointId}.json`, checkpoint, damaged: null })),
+    ...damaged.map((manifest) => ({ createdAt: manifest.createdAt, name: manifest.name, checkpoint: null, damaged: manifest })),
+  ].sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.name.localeCompare(left.name));
+  const retained = ledger.slice(0, maxRetainedCheckpoints());
+  const removed = ledger.slice(retained.length);
   if (!removed.length) return;
-  for (const checkpoint of removed) await rm(join(checkpointsDir(root), `${checkpoint.checkpointId}.json`), { force: true });
-  await garbageCollectObjects(root, retained, damaged);
+  for (const entry of removed) {
+    await rm(join(checkpointsDir(root), entry.name), { force: true, recursive: entry.damaged !== null }).catch(() => undefined);
+  }
+  await garbageCollectObjects(root,
+    retained.flatMap((entry) => entry.checkpoint ? [entry.checkpoint] : []),
+    retained.flatMap((entry) => entry.damaged ? [entry.damaged] : []));
 }
 
 /**
@@ -790,6 +801,30 @@ async function stageCheckpointContent(
 interface DamagedCheckpointManifest {
   name: string;
   text: string | null;
+  /** From the time stamped in its id, else the file's modification time. */
+  createdAt: string;
+}
+
+const reportedDamagedManifests = new Set<string>();
+
+/** Says once per manifest and run that History is setting a manifest aside, so the
+ * condition reaches the app's log instead of passing silently. */
+function reportDamagedManifest(root: string, manifest: DamagedCheckpointManifest): void {
+  const key = `${root}\u0000${manifest.name}`;
+  if (reportedDamagedManifests.has(key)) return;
+  reportedDamagedManifests.add(key);
+  console.warn(manifest.text === null
+    ? `History for ${root} could not read restore point ${manifest.name}; unused saved content is not cleaned up until retention drops it.`
+    : `History for ${root} could not use restore point ${manifest.name}; the content it names is kept until retention drops it.`);
+}
+
+function damagedManifestTime(name: string, modifiedAt: Date | null): string {
+  const stamp = /^cp-(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})-/.exec(name);
+  if (stamp) {
+    const iso = `${stamp[1]}-${stamp[2]}-${stamp[3]}T${stamp[4]}:${stamp[5]}:${stamp[6]}.000Z`;
+    if (Number.isFinite(Date.parse(iso))) return iso;
+  }
+  return (modifiedAt ?? new Date(0)).toISOString();
 }
 
 async function readCheckpointLedger(root: string): Promise<{ checkpoints: ConnectedFolderCheckpoint[]; damaged: DamagedCheckpointManifest[] }> {
@@ -800,7 +835,12 @@ async function readCheckpointLedger(root: string): Promise<{ checkpoints: Connec
     if (!name.endsWith(".json")) continue;
     const read = await readCheckpointManifestFile(join(checkpointsDir(root), name));
     if (read.checkpoint) checkpoints.push(read.checkpoint);
-    else if (read.exists) damaged.push({ name, text: read.text });
+    else if (read.exists) {
+      const modifiedAt = (await lstat(join(checkpointsDir(root), name)).catch(() => null))?.mtime ?? null;
+      const manifest = { name, text: read.text, createdAt: damagedManifestTime(name, modifiedAt) };
+      damaged.push(manifest);
+      reportDamagedManifest(root, manifest);
+    }
   }
   return { checkpoints: sortCheckpoints(checkpoints), damaged };
 }

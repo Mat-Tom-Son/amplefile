@@ -217,3 +217,59 @@ test("a bulk capture flushes only a bounded number of blobs one by one", async (
   await createConnectedFolderCheckpoint(root, { label: "Bulk" });
   assert.ok(syncs >= 200 && syncs <= 210, `at most 200 blobs are flushed one by one, plus the manifest (${syncs})`);
 });
+
+async function withMaxCheckpoints(t: TestContext, value: string): Promise<void> {
+  const old = process.env.AMPLEFILE_HISTORY_MAX_CHECKPOINTS;
+  process.env.AMPLEFILE_HISTORY_MAX_CHECKPOINTS = value;
+  t.after(() => { if (old === undefined) delete process.env.AMPLEFILE_HISTORY_MAX_CHECKPOINTS; else process.env.AMPLEFILE_HISTORY_MAX_CHECKPOINTS = old; });
+}
+
+test("retention drops a damaged manifest once it ages out, and History says so", async (t) => {
+  const root = await fixture(t);
+  await withMaxCheckpoints(t, "3");
+  const warnings: string[] = [];
+  mock.method(console, "warn", (message: string) => { warnings.push(String(message)); });
+  t.after(() => mock.restoreAll());
+
+  await writeFile(join(root, "note.txt"), "only the damaged manifest names this");
+  const old = await createConnectedFolderCheckpoint(root, { label: "Old" });
+  const oldHash = hashOf(old, "note.txt");
+  const text = await readFile(manifestPath(root, old.checkpointId), "utf8");
+  await rm(manifestPath(root, old.checkpointId));
+  const damagedName = "cp-20250101000000-0000dead";
+  await writeFile(manifestPath(root, damagedName), text.slice(0, text.lastIndexOf(oldHash) + oldHash.length));
+
+  for (const value of ["one", "two"]) {
+    await writeFile(join(root, "note.txt"), value);
+    await createConnectedFolderCheckpoint(root, { label: value });
+  }
+  assert.equal(existsSync(manifestPath(root, damagedName)), true, "inside the window the damaged manifest stays");
+  assert.equal(existsSync(blobPath(root, oldHash)), true, "and its content is kept");
+  assert.equal((await listConnectedFolderCheckpoints(root, 100)).length, 2, "the History list leaves the damaged manifest out");
+  assert.ok(warnings.some((message) => message.includes(damagedName)), "and reports it");
+
+  await writeFile(join(root, "note.txt"), "three");
+  await createConnectedFolderCheckpoint(root, { label: "three" });
+  assert.equal(existsSync(manifestPath(root, damagedName)), false, "past the window the damaged manifest is dropped");
+  assert.equal(existsSync(blobPath(root, oldHash)), false, "and its content is collected");
+  assert.equal((await listConnectedFolderCheckpoints(root, 100)).length, 3);
+});
+
+test("an unreadable manifest stops cleanup only until retention drops it", async (t) => {
+  const root = await fixture(t);
+  await withMaxCheckpoints(t, "2");
+  mock.method(console, "warn", () => undefined);
+  t.after(() => mock.restoreAll());
+  const unreadable = join(connectedFolderHistoryRoot(root), "checkpoints", "cp-20250101000000-unreadable.json");
+
+  await writeFile(join(root, "note.txt"), "first");
+  const first = await createConnectedFolderCheckpoint(root, { label: "first" });
+  await mkdir(unreadable);
+  await writeFile(join(root, "note.txt"), "second");
+  await createConnectedFolderCheckpoint(root, { label: "second" });
+  assert.equal(existsSync(unreadable), false, "the unreadable manifest is the oldest and ages out first");
+
+  await writeFile(join(root, "note.txt"), "third");
+  await createConnectedFolderCheckpoint(root, { label: "third" });
+  assert.equal(existsSync(blobPath(root, hashOf(first, "note.txt"))), false, "cleanup runs again");
+});
