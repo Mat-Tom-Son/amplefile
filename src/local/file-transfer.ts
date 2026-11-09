@@ -41,13 +41,7 @@ export async function freeDestination(folder: string, name: string, options: { d
 export async function copyInto(source: string, targetFolder: string, options: { duplicate?: boolean } = {}): Promise<string> {
   if (isInside(source, targetFolder)) throw badRequest(`“${basename(source)}” can’t be copied into itself.`);
   const destination = await freeDestination(targetFolder, basename(source), options);
-  await cp(source, destination, {
-    recursive: true,
-    errorOnExist: true,
-    force: false,
-    preserveTimestamps: true,
-    filter: (path) => path === source || !identityFolders.has(basename(path)),
-  });
+  await copyTree(source, destination, (path) => path === source || !identityFolders.has(basename(path)));
   return destination;
 }
 
@@ -59,10 +53,27 @@ export async function moveInto(source: string, targetFolder: string): Promise<st
     await rename(source, destination);
   } catch (error) {
     if ((error as { code?: string }).code !== "EXDEV") throw error;
-    await cp(source, destination, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true });
+    await copyTree(source, destination);
     await rm(source, { recursive: true, force: true });
   }
   return destination;
+}
+
+/**
+ * Copies to a destination that was free a moment ago. A copy that fails
+ * partway takes back what it wrote, so a failed paste or move never leaves a
+ * half-written item behind; a destination that turned out to be taken is
+ * someone else's and stays.
+ */
+async function copyTree(source: string, destination: string, filter?: (path: string) => boolean): Promise<void> {
+  try {
+    await cp(source, destination, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true, ...(filter ? { filter } : {}) });
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    const taken = (code === "ERR_FS_CP_EEXIST" || code === "EEXIST") && resolve((error as { path?: string }).path ?? destination) === resolve(destination);
+    if (!taken) await rm(destination, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 /**

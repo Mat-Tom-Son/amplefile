@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -47,6 +47,22 @@ test("a copied folder leaves a Connected Folder's identity behind, and a move la
   const moved = await moveInto(join(root, "plan.md"), join(root, "Archive"));
   assert.equal(moved, join(root, "Archive", "plan copy.md"));
   assert.ok(!existsSync(join(root, "plan.md")));
+});
+
+test("a copy that fails partway leaves nothing half-written behind", { skip: process.getuid?.() === 0 ? "root reads unreadable files" : false }, async (t) => {
+  const root = await folder(t);
+  await mkdir(join(root, "Trip", "Photos"), { recursive: true });
+  await writeFile(join(root, "Trip", "a.txt"), "a");
+  await writeFile(join(root, "Trip", "Photos", "b.jpg"), "b");
+  await writeFile(join(root, "Trip", "Photos", "z-locked.jpg"), "locked");
+  await chmod(join(root, "Trip", "Photos", "z-locked.jpg"), 0o000);
+  t.after(() => chmod(join(root, "Trip", "Photos", "z-locked.jpg"), 0o600).catch(() => undefined));
+  await mkdir(join(root, "Archive"));
+  await writeFile(join(root, "Archive", "kept.txt"), "kept");
+  await assert.rejects(copyInto(join(root, "Trip"), join(root, "Archive")));
+  assert.deepEqual(await readdir(join(root, "Archive")), ["kept.txt"], "the partial copy is gone and what was there stays");
+  await assert.rejects(copyInto(join(root, "Trip"), join(root, "Trip", "Photos")), /into itself/);
+  assert.ok(existsSync(join(root, "Trip", "a.txt")), "the source is untouched");
 });
 
 test("Compress makes name.zip for one item and Archive.zip for several", async (t) => {
