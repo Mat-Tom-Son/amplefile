@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { ampleFileCliBrokerPaths } from "../src/local/cli/broker.js";
 import { startLocalApi } from "../src/local/server.js";
 
 /**
@@ -78,6 +79,12 @@ test("a move between Connected Folders never erases a nested Connected Folder an
   assert.equal(plain.body!.recentlyDeleted, undefined, "History kept all of it");
   assert.ok(!existsSync(join(sourceRoot, "Projects", "plain.txt")));
   assert.equal(await readFile(join(target.connectedFolderRoot, "plain.txt"), "utf8"), "plain");
+  // The item leaving the source is that Connected Folder's delete, with its receipt.
+  const receipts = (await readFile(join(ampleFileCliBrokerPaths(join(sandbox, "state")).root, "receipts", "act.jsonl"), "utf8"))
+    .trim().split("\n").map((line) => JSON.parse(line) as { requestId: string; command: string; outcome: string; detail?: string });
+  const removal = receipts.find((receipt) => receipt.command === "files.delete" && receipt.outcome === "ok" && receipt.detail?.includes(`moved to ${target.id}`));
+  assert.ok(removal, JSON.stringify(receipts));
+  assert.ok(receipts.some((receipt) => receipt.requestId === removal.requestId && receipt.outcome === "accepted"), "journaled before the effect");
 
   // A project folder whose parts History does not keep (a `.git`, installed
   // packages, an ignored build folder, a link, a file over History's limit)

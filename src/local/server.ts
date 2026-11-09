@@ -11860,7 +11860,17 @@ async function moveBetweenConnectedFolders(
       const recentlyDeleted: Array<{ path: string; entryId: string; restoreBy: string }> = [];
       for (const [index, entry] of entries.entries()) {
         try {
-          const removed = await applyConnectedFolderDelete(state, from, entry.path, uncovered[index]!, safety.checkpointId, { receiptId: null });
+          // Each item leaving the source is that Connected Folder's delete,
+          // with the delete's own receipt, as the delete routes record it.
+          const { value: removed } = await runDesktopSettingsAct(state, "files.delete", async (requestId) => {
+            const value = await applyConnectedFolderDelete(state, from, entry.path, uncovered[index]!, safety.checkpointId, { receiptId: requestId });
+            return {
+              value,
+              detail: value.recovery.kind === "recently-deleted"
+                ? `Connected Folder ${from.id}; moved to ${to.id}; trash ${value.recovery.entryId}`
+                : `Connected Folder ${from.id}; moved to ${to.id}; checkpoint ${value.safetyCheckpointId}`,
+            };
+          });
           if (removed.recovery.kind === "recently-deleted") recentlyDeleted.push({ path: entry.path, entryId: removed.recovery.entryId, restoreBy: removed.recovery.restoreBy });
         } catch (error) {
           // Everything is already in the target; what could not leave the
