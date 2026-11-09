@@ -111,20 +111,28 @@ async function removeOwnedFolder(parent: string, path: string): Promise<void> {
   const parentMode = (await lstat(parent)).mode & 0o7777;
   const parentWritable = (parentMode & 0o300) === 0o300;
   if (!parentWritable) await chmod(parent, parentMode | 0o300);
+  const widened: Array<{ path: string; mode: number }> = [];
   try {
-    await makeFoldersWritable(path);
+    await makeFoldersWritable(path, widened);
     await rm(path, { recursive: true, force: true });
   } finally {
+    // Whatever a failed removal left keeps the modes it was copied with:
+    // deepest first, so every folder is still reachable when its mode returns.
+    for (const folder of widened.reverse()) await chmod(folder.path, folder.mode).catch(() => undefined);
     if (!parentWritable) await chmod(parent, parentMode).catch(() => undefined);
   }
 }
 
-async function makeFoldersWritable(path: string): Promise<void> {
+/** Gives each folder at and under `path` u+rwx, recording the ones it changed. */
+async function makeFoldersWritable(path: string, widened: Array<{ path: string; mode: number }>): Promise<void> {
   const info = await lstat(path);
   if (!info.isDirectory()) return;
   const mode = info.mode & 0o7777;
-  if ((mode & 0o700) !== 0o700) await chmod(path, mode | 0o700);
-  for (const entry of await readdir(path)) await makeFoldersWritable(join(path, entry));
+  if ((mode & 0o700) !== 0o700) {
+    await chmod(path, mode | 0o700);
+    widened.push({ path, mode });
+  }
+  for (const entry of await readdir(path)) await makeFoldersWritable(join(path, entry), widened);
 }
 
 /** Whether everything at `from` is also at `into`, the same. */

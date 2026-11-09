@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import JSZip from "jszip";
 
 import { abandonedCompressAfterMs, compressInto, copyHoldsAll, copyInto, finderCopyName, moveInto, removeIdentityFoldersKeptAt } from "../src/local/file-transfer.js";
+
+const exec = promisify(execFile);
 
 async function folder(t: test.TestContext): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "file-transfer-"));
@@ -128,6 +132,29 @@ test("a copied identity it cannot reach is reported, not hidden", { skip: proces
     assert.deepEqual(await removeIdentityFoldersKeptAt(copy, join(root, "source", "Trip")), [join(copy, "Inner")]);
   } finally {
     await chmod(join(copy, "Inner"), 0o755);
+  }
+});
+
+test("an identity whose removal stops partway keeps the folder modes it was copied with", { skip: process.platform !== "darwin" || process.getuid?.() === 0 ? "needs macOS file flags and a non-root user" : false }, async (t) => {
+  const root = await folder(t);
+  const identity = join(root, "source", "Trip", ".amplefile");
+  await mkdir(join(identity, "conversations"), { recursive: true });
+  await writeFile(join(identity, "conversations", "chat.jsonl"), "chat");
+  await mkdir(join(root, "target"));
+  const copy = await copyInto(join(root, "source", "Trip"), join(root, "target"), { withIdentity: true });
+  const copiedChats = join(copy, ".amplefile", "conversations");
+  await chmod(copiedChats, 0o555);
+  await chmod(join(copy, ".amplefile"), 0o555);
+  // A locked file stops the removal partway, whatever the folder modes.
+  await exec("chflags", ["uchg", join(copiedChats, "chat.jsonl")]);
+  try {
+    assert.deepEqual(await removeIdentityFoldersKeptAt(copy, join(root, "source", "Trip")), [join(copy, ".amplefile")]);
+    assert.equal((await lstat(copiedChats)).mode & 0o777, 0o555, "a folder the removal left keeps its mode");
+    assert.equal((await lstat(join(copy, ".amplefile"))).mode & 0o777, 0o555);
+  } finally {
+    await exec("chflags", ["nouchg", join(copiedChats, "chat.jsonl")]);
+    await chmod(copiedChats, 0o755).catch(() => undefined);
+    await chmod(join(copy, ".amplefile"), 0o755).catch(() => undefined);
   }
 });
 
