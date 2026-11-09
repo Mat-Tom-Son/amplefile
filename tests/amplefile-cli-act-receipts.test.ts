@@ -254,3 +254,50 @@ test("every read-journal verb is a real act verb", async () => {
     }
   }
 });
+
+test("a partial first append to a fresh journal is cut back, and a failed stat after a durable append still succeeds", async (t) => {
+  const sandbox = await receiptsSandbox(t);
+  const { appendFile, stat } = await import("node:fs/promises");
+  const now = () => new Date("2026-07-31T12:00:00.000Z");
+  let tearNext = false;
+  let failStat = false;
+  const receipts = new AmpleFileCliActReceipts({
+    stateRoot: sandbox,
+    now,
+    io: {
+      appendFile: (async (path: Parameters<typeof appendFile>[0], data: string, options?: Parameters<typeof appendFile>[2]) => {
+        if (tearNext) {
+          tearNext = false;
+          await appendFile(path, data.slice(0, 20), options);
+          throw Object.assign(new Error("no space left"), { code: "ENOSPC" });
+        }
+        await appendFile(path, data, options);
+      }) as typeof appendFile,
+      stat: (async (...args: Parameters<typeof stat>) => {
+        if (failStat) {
+          failStat = false;
+          throw Object.assign(new Error("interrupted"), { code: "EINTR" });
+        }
+        return await stat(...args);
+      }) as typeof stat,
+    },
+  });
+
+  // The journal does not exist yet; the torn first line is the whole file.
+  tearNext = true;
+  assert.equal(await receipts.append({ requestId: randomUUID(), command: "files.add", outcome: "accepted" }), false);
+  assert.equal(await readFile(receipts.path, "utf8"), "", "the fragment is cut back to an empty journal");
+  const next = randomUUID();
+  assert.equal(await receipts.append({ requestId: next, command: "files.add", outcome: "accepted" }), true);
+  assert.equal(await receipts.hasAccepted(randomUUID()), false, "no damage: the next line stands on its own");
+  assert.equal(await receipts.hasAccepted(next), true);
+
+  // A stat failure after the line is durable is not an append failure.
+  const durable = randomUUID();
+  failStat = true;
+  assert.equal(await receipts.append({ requestId: durable, command: "files.add", outcome: "accepted" }), true);
+  assert.equal(await receipts.hasAccepted(durable), true);
+  assert.equal(await receipts.append({ requestId: durable, command: "files.add", outcome: "ok" }), true);
+  const lines = (await readFile(receipts.path, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { requestId: string; outcome: string });
+  assert.deepEqual(lines.map((line) => line.outcome), ["accepted", "accepted", "ok"]);
+});

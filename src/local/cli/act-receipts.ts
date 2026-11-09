@@ -59,9 +59,16 @@ export interface AmpleFileCliActUndoRef {
 /** Journal lines are written and read at version 3, the version every AmpleFile build writes. */
 export type AmpleFileCliActReceipt = AmpleFileCliActReceiptV3;
 
+export interface AmpleFileCliActReceiptsIo {
+  appendFile: typeof appendFile;
+  stat: typeof stat;
+}
+
 export interface AmpleFileCliActReceiptsOptions {
   stateRoot: string;
   maxBytes?: number;
+  /** File operations behind an append, replaceable only to inject faults in tests. */
+  io?: Partial<AmpleFileCliActReceiptsIo>;
   now?: () => Date;
 }
 
@@ -136,6 +143,7 @@ export class AmpleFileCliActReceipts {
   readonly #directory: string;
   readonly #maxBytes: number;
   readonly #now: () => Date;
+  readonly #io: AmpleFileCliActReceiptsIo;
   readonly #acts: ReceiptJournal;
   readonly #reads: ReceiptJournal;
   #queue: Promise<unknown> = Promise.resolve();
@@ -148,6 +156,7 @@ export class AmpleFileCliActReceipts {
     this.readsRotatedPath = join(this.#directory, "act-reads.1.jsonl");
     this.#maxBytes = options.maxBytes ?? AMPLEFILE_CLI_ACT_RECEIPTS_MAX_BYTES;
     this.#now = options.now ?? (() => new Date());
+    this.#io = { appendFile, stat, ...options.io };
     this.#acts = new ReceiptJournal(this.path, this.rotatedPath);
     this.#reads = new ReceiptJournal(this.readsPath, this.readsRotatedPath);
   }
@@ -178,16 +187,20 @@ export class AmpleFileCliActReceipts {
         const line = `${JSON.stringify(record)}\n`;
         const before = journal.live?.size ?? 0;
         try {
-          await appendFile(journal.path, line, { mode: 0o600, flush: true });
+          await this.#io.appendFile(journal.path, line, { mode: 0o600, flush: true });
         } catch (error) {
           await this.#discardTornAppend(journal);
           throw error;
         }
         if (record.outcome === "accepted") journal.liveIds.add(record.requestId);
         journal.liveFirstAt ??= Date.parse(record.at);
-        const info = await stat(journal.path);
+        // The line is durable now, so the append succeeded whatever happens
+        // next; a file this process cannot stat is simply read again later.
+        const info = await this.#io.stat(journal.path).catch(() => null);
         const expected = before + Buffer.byteLength(line, "utf8");
-        if (journal.live === null || info.ino === journal.live.ino) {
+        if (info === null) {
+          journal.loaded = false;
+        } else if (journal.live === null || info.ino === journal.live.ino) {
           // A size other than expected means another writer appended too;
           // the next read picks its lines up from where this one began.
           journal.live = { ino: info.ino, size: info.size === expected ? expected : before };
@@ -300,14 +313,30 @@ export class AmpleFileCliActReceipts {
     journal.live = { ino, size: offset + scan.completeBytes };
   }
 
-  /** Cuts back a line this process failed to finish appending. */
+  /**
+   * Cuts back a line this process failed to finish appending, including the
+   * first line of a journal the append itself created (a fresh journal, or
+   * the first append after a rotation), so the next line never runs into it.
+   */
   async #discardTornAppend(journal: ReceiptJournal): Promise<void> {
     const info = await stat(journal.path).catch(() => null);
     if (!info) return;
     if (journal.live && info.ino === journal.live.ino && info.size > journal.live.size) {
       await truncate(journal.path, journal.live.size).catch(() => undefined);
-    } else if (!journal.live) {
+    } else if (!journal.live && journal.loaded) {
+      // The journal was absent when this append began, so all of it is the
+      // unfinished line.
+      try {
+        await truncate(journal.path, 0);
+        journal.live = { ino: info.ino, size: 0 };
+      } catch {
+        journal.loaded = false;
+        journal.repaired = false;
+      }
+    } else {
+      // Unknown state: read it whole next time and cut an unfinished tail.
       journal.loaded = false;
+      journal.repaired = false;
     }
   }
 
