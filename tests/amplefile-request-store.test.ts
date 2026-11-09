@@ -1151,3 +1151,25 @@ test("an oversized attribution list is truncated with a count, never thrown afte
   assert.equal(reopened.damagedRecordCount(), 0);
   assert.deepEqual(reopened.get(request.requestId)!.actions, store.get(request.requestId)!.actions);
 });
+
+test("every declared limit name reads back from a stored limit hit", async (t) => {
+  const { ampleFileRequestLimitNames, parseAmpleFileRequestRecord } = await import("../src/local/requests/request-records.js");
+  // The type and the parser share one list; this pins that the list is the
+  // whole type, so a new name cannot be declared without being readable.
+  const everyName: Record<AmpleFileRequestLimitName, true> = {
+    childTasks: true, depth: true, concurrentChildren: true, continuations: true, providerBudget: true,
+    questionLifetime: true, questionText: true, questionOptions: true, questionOptionText: true, answerText: true,
+    checklistItems: true, checklistItemText: true, resultSummary: true, resultData: true, resultFiles: true,
+    questionsPerRequest: true, resultsPerRequest: true, turnsPerRequest: true, actionsPerRequest: true,
+  };
+  assert.deepEqual([...ampleFileRequestLimitNames].sort(), Object.keys(everyName).sort());
+
+  const root = await temporaryRoot(t);
+  const store = await AmpleFileRequestStore.open({ rootPath: root });
+  const request = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1" });
+  for (const limit of ampleFileRequestLimitNames) {
+    const parsed = parseAmpleFileRequestRecord({ ...request, limitHit: { limit, at: request.createdAt } });
+    assert.equal(parsed.limitHit?.limit, limit);
+  }
+  assert.throws(() => parseAmpleFileRequestRecord({ ...request, limitHit: { limit: "noSuchLimit", at: request.createdAt } }), /limit name/);
+});

@@ -162,26 +162,30 @@ export interface AmpleFileRequestResultRef {
   fileCount: number;
 }
 
-export type AmpleFileRequestLimitName =
-  | "childTasks"
-  | "depth"
-  | "concurrentChildren"
-  | "continuations"
-  | "providerBudget"
-  | "questionLifetime"
-  | "questionText"
-  | "questionOptions"
-  | "questionOptionText"
-  | "answerText"
-  | "checklistItems"
-  | "checklistItemText"
-  | "resultSummary"
-  | "resultData"
-  | "resultFiles"
-  | "questionsPerRequest"
-  | "resultsPerRequest"
-  | "turnsPerRequest"
-  | "actionsPerRequest";
+/** Every bound a request refusal or a recorded limit hit can name; the parser reads exactly these. */
+export const ampleFileRequestLimitNames = [
+  "childTasks",
+  "depth",
+  "concurrentChildren",
+  "continuations",
+  "providerBudget",
+  "questionLifetime",
+  "questionText",
+  "questionOptions",
+  "questionOptionText",
+  "answerText",
+  "checklistItems",
+  "checklistItemText",
+  "resultSummary",
+  "resultData",
+  "resultFiles",
+  "questionsPerRequest",
+  "resultsPerRequest",
+  "turnsPerRequest",
+  "actionsPerRequest",
+] as const;
+
+export type AmpleFileRequestLimitName = (typeof ampleFileRequestLimitNames)[number];
 
 export type AmpleFileChecklistItemStatus = "todo" | "doing" | "done";
 
@@ -937,15 +941,7 @@ function parseLimitHit(value: unknown, label: string): AmpleFileRequestLimitHit 
   const record = objectValue(value, `${label} limit`);
   assertClosedShape(record, ["limit", "at"], `${label} limit`);
   return {
-    limit: enumValue(
-      record.limit,
-      [
-        "childTasks", "depth", "concurrentChildren", "continuations", "providerBudget", "questionLifetime",
-        "questionText", "answerText", "resultSummary", "resultData", "resultFiles", "questionsPerRequest",
-        "resultsPerRequest", "turnsPerRequest", "actionsPerRequest",
-      ] as const,
-      `${label} limit name`,
-    ),
+    limit: enumValue(record.limit, ampleFileRequestLimitNames, `${label} limit name`),
     at: isoDate(record.at, `${label} limit time`),
   };
 }
