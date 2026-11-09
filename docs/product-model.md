@@ -104,8 +104,19 @@ other surface.
   Files dropped on a sidebar place go to its top. Every change keeps a
   History restore point in each Connected Folder it touches (a Standard
   Folder has none), and ⌘Z and ⇧⌘Z undo and redo the last file change. A
-  move between Connected Folders keeps a restore point on both sides; any
-  other move across places copies and says the original stays.
+  move between Connected Folders copies the items, then deletes each from
+  its source with that delete's receipt, and keeps a restore point on both
+  sides. It refuses, before copying anything, while the source Connected
+  Folder has unfinished work (a running turn or a question waiting on an
+  answer), and for an item that is, holds, or sits inside a nested
+  Connected Folder. A copy leaves a folder's `.amplefile/` behind; a move
+  carries it, so a disconnected Connected Folder keeps its identity and
+  Chats. An item whose copy did not carry everything History could not
+  keep leaves its source through Recently Deleted rather than being erased,
+  and an item that cannot leave its source stays there and the move says
+  so. Any other move across places copies and says the original stays.
+  Compress writes the archive beside the items under a hidden working name
+  and refuses more than 2 GB of files or 60,000 items, pointing to Finder.
 - **Path bar and Go to Folder:** clicking an item in the path bar copies its
   path; double-clicking a folder opens it; a long path keeps the disk and its
   last four items whole with "…" between. The button at the bar's start, or
