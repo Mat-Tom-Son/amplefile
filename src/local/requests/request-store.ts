@@ -1138,7 +1138,9 @@ export class AmpleFileRequestStore {
       openQuestions: this.#openQuestionCount(record.requestId),
       openBlockingQuestions: this.questions(record.requestId).filter(question => !question.asynchronous && (question.state === "open" || (question.state === "answered" && question.continuationTaskId === null))).length,
       openDescendantQuestions: record.childRequestIds.reduce((total, id) => total + this.#openQuestionCount(id, true), 0),
-      childStates: record.childRequestIds.map((id) => this.#records.get(id)?.state ?? null),
+      // A child the read cache trimmed is still on record with its settled
+      // state; only a child on record nowhere reads as lost.
+      childStates: record.childRequestIds.map((id) => this.#records.get(id)?.state ?? this.#trimmed.get(id)?.state ?? null),
       resultOutcomes: record.results.filter((ref) => ref.taskId === record.turns.at(-1)!.taskId).slice(-1).map((ref) => ref.outcome),
       limitHit: record.limitHit,
       jobStates: (record.jobs ?? []).filter(job => !job.service).map((job) => job.state),
@@ -1336,15 +1338,22 @@ export class AmpleFileRequestStore {
 
   /**
    * The in-memory map is a bounded READ CACHE, never the record itself. Past
-   * the bound the oldest settled records leave memory; they stay in the
+   * the bound the oldest records of wholly settled families leave memory; they stay in the
    * journal, come back on the next start, and `#trimmed` keeps the three
    * fields retention needs so they still leave on their own window rather
    * than on a cache bound (docs/act-ledger.md).
    */
   #trimMemory(): void {
     if (this.#records.size <= this.#maxRecords) return;
+    // A family leaves memory only once all of it has settled: an open
+    // parent still reads its children's states, results, and questions, and
+    // a child missing from memory would read as lost.
+    const settled = (record: AmpleFileRequestRecord) =>
+      isAmpleFileRequestTerminalState(record.state) && !(record.jobs ?? []).some(job => job.state === "running");
+    const openRoots = new Set<string>();
+    for (const record of this.#records.values()) if (!settled(record)) openRoots.add(record.rootId);
     const records = [...this.#records.values()]
-      .filter((record) => isAmpleFileRequestTerminalState(record.state) && !(record.jobs ?? []).some(job => job.state === "running"))
+      .filter((record) => settled(record) && !openRoots.has(record.rootId))
       .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
     for (const record of records.slice(0, Math.max(0, this.#records.size - this.#maxRecords))) {
       for (const turn of record.turns) this.#byTask.delete(turn.taskId);

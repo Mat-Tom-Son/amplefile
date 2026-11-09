@@ -1070,3 +1070,45 @@ test("message text with control characters is accepted, scrubbed, and always rel
     assert.deepEqual(reopened.get(accepted.requestId), accepted);
   }
 });
+
+test("the read cache never trims a settled child while its family is open, and a trimmed child keeps its state", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now, maxRecords: 2 });
+
+  const parent = await store.beginRoot({ kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-parent" });
+  const children = [];
+  for (const index of [1, 2]) {
+    clock.advance(1_000);
+    const child = await store.beginChild({ parentTaskId: "task-parent", kind: "connected-folder", owner: connectedFolderOwner, surface: "cli", taskId: `task-child-${index}` });
+    await store.settleTurn(`task-child-${index}`, { status: "succeeded" });
+    children.push(child);
+  }
+  // Unrelated settled work pushes the cache past its bound.
+  for (const index of [1, 2, 3]) {
+    clock.advance(1_000);
+    await store.beginRoot({ kind: "cli", owner: connectedFolderOwner, surface: "cli", taskId: `task-other-${index}` });
+    await store.settleTurn(`task-other-${index}`, { status: "succeeded" });
+  }
+  for (const child of children) assert.equal(store.get(child.requestId)?.state, "done", "an open family keeps its settled children");
+  assert.equal(store.children(parent.requestId).length, 2);
+  await store.settleTurn("task-parent", { status: "succeeded" });
+  assert.equal(store.get(parent.requestId)?.state, "done", "a successful parent never reads as failed");
+
+  // Once the family has settled, its children may leave memory; the parent
+  // reopening later still reads their settled state rather than a loss.
+  for (const index of [4, 5, 6]) {
+    clock.advance(1_000);
+    await store.beginRoot({ kind: "cli", owner: connectedFolderOwner, surface: "cli", taskId: `task-other-${index}` });
+    await store.settleTurn(`task-other-${index}`, { status: "succeeded" });
+  }
+  await store.flush();
+  // Nine records, room for seven: the two oldest, the children, leave memory
+  // while the parent, touched last in its family, stays.
+  const withParent = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now, maxRecords: 7 });
+  assert.ok(withParent.get(parent.requestId));
+  for (const child of children) assert.equal(withParent.get(child.requestId), null);
+  await withParent.joinTurn({ requestId: parent.requestId, taskId: "task-parent-2", content: "And one more thing." });
+  await withParent.settleTurn("task-parent-2", { status: "succeeded" });
+  assert.equal(withParent.get(parent.requestId)?.state, "done");
+});
