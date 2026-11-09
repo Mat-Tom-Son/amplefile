@@ -133,7 +133,7 @@ declare global {
       runtime: {
         getHealth: () => Promise<{
           pi: { ok: boolean; configured?: boolean; version?: string; message?: string };
-          settings: { encryptionAvailable: boolean; configuredProviders: string[] };
+          settings: { encryptionAvailable: boolean; configuredProviders: string[]; credentialsNeedReentry?: boolean };
         }>;
         onRendererRecovered: (listener: () => void) => () => void;
       };
@@ -261,7 +261,11 @@ declare global {
         onStatusChanged: (listener: (status: AmpleFileDesktopUpdateStatus) => void) => () => void;
       };
       settings: {
-        getStatus: () => Promise<{ encryptionAvailable: boolean; configuredProviders: string[] }>;
+        /**
+         * `credentialsNeedReentry`: saved provider credentials could not be
+         * decrypted and were set aside, so the person must connect again.
+         */
+        getStatus: () => Promise<{ encryptionAvailable: boolean; configuredProviders: string[]; credentialsNeedReentry?: boolean }>;
       };
       /** Other AI agents: the command on Terminal's PATH and the skill file (Settings → Command Line). */
       commandLine?: {

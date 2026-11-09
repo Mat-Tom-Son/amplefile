@@ -823,3 +823,20 @@ test("a newer control-event refresh supersedes a cached scope's older quiet read
   assert.equal(selectedModel(ui.dom), "model-b");
   assert.equal(ui.dom.container.querySelector<HTMLTextAreaElement>("textarea")?.value, "Updated externally");
 });
+
+test("AI Models asks the person to connect again when saved credentials could not be read", async t => {
+  const ui = await setup(t);
+  let status: { encryptionAvailable: boolean; configuredProviders: string[]; credentialsNeedReentry?: boolean } = { encryptionAvailable: true, configuredProviders: [], credentialsNeedReentry: true };
+  const desktop = window as unknown as { ampleFileDesktop?: unknown };
+  desktop.ampleFileDesktop = { api: { getSessionHeaders: async () => ({}) }, settings: { getStatus: async () => status } };
+  t.after(() => { delete desktop.ampleFileDesktop; });
+  await ui.render(connectedFolder("a"));
+  await ui.dom.waitFor(() => ui.requests.length > 0);
+  await ui.finish(ui.requests[0]!, modelResponse());
+  await ui.dom.waitFor(() => /connect your AI provider again/i.test(ui.dom.container.textContent ?? ""));
+  assert.equal(ui.dom.container.querySelector(".ai-models-credentials-notice")?.getAttribute("role"), "status");
+  // Once the person connects again the desktop app stops reporting it.
+  status = { encryptionAvailable: true, configuredProviders: ["openrouter"] };
+  await ui.dom.act(() => { window.dispatchEvent(new window.Event("focus")); });
+  await ui.dom.waitFor(() => !ui.dom.container.querySelector(".ai-models-credentials-notice"));
+});
