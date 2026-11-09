@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, type Rectangle } from "electron";
+import { BrowserWindow, screen, type Rectangle, type WebContents } from "electron";
 
 import { trayPopoverToggleAction } from "./tray-popover-toggle.js";
 
@@ -124,6 +124,12 @@ export class AmpleFileAgentPopover {
     this.#pendingStaged.push(...safe);
     await this.show(anchor);
     this.#flushStaged();
+  }
+
+  /** Whether an IPC sender is this popover's own renderer. */
+  owns(contents: WebContents): boolean {
+    const window = this.#window;
+    return Boolean(window && !window.isDestroyed() && !window.webContents.isDestroyed() && window.webContents === contents);
   }
 
   /** Pushes a host notification to the loaded popover; a window not yet loaded reads current state itself. */
