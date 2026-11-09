@@ -97,3 +97,12 @@ test("interactive startup waits for a teardown in flight, then the host stays up
   assert.equal(await run, "interactive");
   assert.equal(state.quits, 0);
 });
+
+test("a headless host never closes a Chrome connection it did not start", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const main = await readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8");
+  // Closing is permanent for the process, so an interactive launch during teardown would find it dead.
+  assert.match(main, /closeChromeConnection: async \(\) => \{\n\s*if \(!chromeConnectionStartRequested\) return;\n\s*await \(await ensureDesktopHost\(\)\)\.chromeConnection\.close\(\);/);
+  assert.match(main, /chromeConnectionStartRequested = true;\n\s*await host\.chromeConnection\.startIfEnabled\(\)/);
+  assert.equal((main.match(/chromeConnectionStartRequested = true;/g) ?? []).length, 1);
+});

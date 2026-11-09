@@ -223,6 +223,7 @@ let desktopHostPromise: Promise<DesktopHost> | null = null;
 let interactiveStartupPromise: Promise<void> | null = null;
 let activateRegistered = false;
 let interactiveRequested = false;
+let chromeConnectionStartRequested = false;
 let cliRequestGeneration = 0;
 let activeNativeConnectedFolder: { id: string; name: string; connectedFolderRoot: string } | null = null;
 let activeNativeConnectedFolderGeneration = 0;
@@ -500,6 +501,7 @@ async function startInteractiveApp(): Promise<void> {
     // afterwards and stays up, but the new act token must not race it.
     await headlessQuit.whenTeardownSettled();
     const host = await ensureDesktopHost();
+    chromeConnectionStartRequested = true;
     await host.chromeConnection.startIfEnabled().catch(() => console.warn("Chrome connection startup requires setup."));
     const api = await ensureInteractiveLocalApi();
     loadDesktopPreferences();
@@ -533,7 +535,14 @@ const headlessQuit = new HeadlessQuitSequence({
   // so any act-token file on disk is stale crash residue; removing it lets
   // shims fail fast instead of booting another headless host per attempt.
   removeActToken: () => removeAmpleFileCliActTokenFile(app.getPath("userData")).catch(() => undefined),
-  closeChromeConnection: async () => { await (await ensureDesktopHost()).chromeConnection.close(); },
+  // Only interactive startup starts the Chrome connection, and closing it is
+  // permanent for this process (the Pi runtime holds the same service). A
+  // headless host that never started it leaves it alone, so a person who
+  // opens AmpleFile during teardown still gets a working Chrome connection.
+  closeChromeConnection: async () => {
+    if (!chromeConnectionStartRequested) return;
+    await (await ensureDesktopHost()).chromeConnection.close();
+  },
   quit: () => {
     quitting = true;
     // Exit synchronously after the queue and host-backed auth storage are both
