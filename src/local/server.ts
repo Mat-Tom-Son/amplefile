@@ -5219,6 +5219,8 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
         const result = applied.customizations[connectedFolder.id] ?? null;
         appearanceUndoSlots.set(connectedFolder.id, { displaced, result });
         await recordFacadeAction(state, input.parentTaskId, { command: "connected-folders.appearance.apply", connectedFolder });
+        // An open window re-reads its startup state and shows the new look now.
+        publishControlHint(state, "connected-folders");
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
           applied: true as const,
@@ -5245,6 +5247,8 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
         await state.appearance.removeConnectedFolder(connectedFolder.id);
         appearanceUndoSlots.set(connectedFolder.id, { displaced, result: null });
         await recordFacadeAction(state, input.parentTaskId, { command: "connected-folders.appearance.reset", connectedFolder });
+        // An open window re-reads its startup state and shows the new look now.
+        publishControlHint(state, "connected-folders");
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
           reset: true as const,
@@ -5278,6 +5282,8 @@ function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
         // Undo is its own inverse: the displaced and restored refs swap.
         appearanceUndoSlots.set(connectedFolder.id, { displaced: slot.result, result: restored });
         await recordFacadeAction(state, input.parentTaskId, { command: "connected-folders.appearance.undo", connectedFolder });
+        // An open window re-reads its startup state and shows the new look now.
+        publishControlHint(state, "connected-folders");
         return {
           connectedFolder: toActConnectedFolderRef(connectedFolder),
           restored: true as const,
