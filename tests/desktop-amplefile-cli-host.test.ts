@@ -131,6 +131,117 @@ test("desktop CLI host serializes overlapping requests and exposes an idle drain
   }
 });
 
+test("a long act verb runs beside the serial queue and never stalls other commands", async () => {
+  const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-desktop-cli-long-"));
+  const token = "f".repeat(64);
+  const { access, readFile } = await import("node:fs/promises");
+  const exists = (path: string) => access(path).then(() => true, () => false);
+  const waitFor = async (condition: () => boolean | Promise<boolean>, label: string) => {
+    const deadline = Date.now() + 10_000;
+    while (!await condition()) {
+      if (Date.now() > deadline) throw new Error(`Timed out waiting for ${label}.`);
+      await new Promise<void>((resolveTick) => setTimeout(resolveTick, 5));
+    }
+  };
+  let host: AmpleFileDesktopCliHost | null = null;
+  let releaseAll = () => {};
+  try {
+    let releaseWait!: () => void;
+    const waitHeld = new Promise<void>((resolveWait) => { releaseWait = resolveWait; });
+    let releaseCreate!: () => void;
+    const createHeld = new Promise<void>((resolveCreate) => { releaseCreate = resolveCreate; });
+    releaseAll = () => { releaseWait(); releaseCreate(); };
+    const order: string[] = [];
+    const connectedFolder = { id: "connected-folder-1", name: "Act Connected Folder", connectedFolderRoot: join(stateRoot, "connected-folder") };
+    const facade = {
+      async jobsOutput() {
+        order.push("jobs.output:start");
+        await waitHeld;
+        order.push("jobs.output:end");
+        return { connectedFolder, job: { jobId: "job-20260731000000-00000000", state: "running" }, output: { text: "" }, wait: { outcome: "timed_out" } };
+      },
+      async createConversation() {
+        order.push("chat.create:start");
+        await createHeld;
+        order.push("chat.create:end");
+        return {
+          connectedFolder,
+          conversation: { id: "chat-1", title: "New Chat", createdAt: "2026-07-31T00:00:00.000Z", updatedAt: "2026-07-31T00:00:00.000Z", archivedAt: null, snoozedUntil: null },
+        };
+      },
+    } as unknown as AmpleFileActFacade;
+    host = new AmpleFileDesktopCliHost({
+      stateRoot,
+      kernel: fixtureKernel(),
+      version: "1.0.0",
+      getActFacade: () => ({ facade, token }),
+    });
+    await host.initialize();
+    const waitRequest = createAmpleFileCliActRequest({
+      id: randomUUID(),
+      argv: ["jobs", "output", "--connected-folder", "connected-folder-1", "--job", "job-20260731000000-00000000", "--wait", "600", "--json"],
+      cwd: resolve("."),
+      actToken: token,
+    });
+    await host.broker.writeActRequest(waitRequest);
+    const waiting = host.processRequest(waitRequest.id);
+    await waitFor(() => order.includes("jobs.output:start"), "the held wait");
+    assert.deepEqual(order, ["jobs.output:start"]);
+
+    // A read and an ordinary act still complete while the wait is held.
+    const read = createAmpleFileCliRequest({ id: randomUUID(), argv: ["version", "--json"], cwd: resolve(".") });
+    await host.broker.writeRequest(read);
+    await host.processRequest(read.id);
+    assert.equal((await host.broker.readResponse(read.id)).exitCode, 0);
+
+    // Ordinary acts stay serialized, and a request behind one is claimed on
+    // arrival, so its freshness is judged then rather than after the wait.
+    const create = createAmpleFileCliActRequest({
+      id: randomUUID(),
+      argv: ["chat", "create", "--connected-folder", "connected-folder-1", "--json"],
+      cwd: resolve("."),
+      actToken: token,
+    });
+    const behind = createAmpleFileCliRequest({ id: randomUUID(), argv: ["version", "--json"], cwd: resolve(".") });
+    await host.broker.writeActRequest(create);
+    await host.broker.writeRequest(behind);
+    const creating = host.processRequest(create.id);
+    await waitFor(() => order.includes("chat.create:start"), "the held act");
+    const queuedBehind = host.processRequest(behind.id);
+    const behindPaths = host.broker.requestPaths(behind.id);
+    await waitFor(async () => !await exists(behindPaths.request), "the queued request's claim");
+    assert.equal(await exists(behindPaths.claim), true, "the queued request is already claimed");
+    assert.equal(await exists(behindPaths.response), false, "and still waits its turn in line");
+    releaseCreate();
+    await creating;
+    await queuedBehind;
+    assert.equal((await host.broker.readResponse(create.id)).exitCode, 0);
+    assert.equal((await host.broker.readResponse(behind.id)).exitCode, 0);
+    assert.deepEqual(order, ["jobs.output:start", "chat.create:start", "chat.create:end"]);
+
+    let idle = false;
+    const draining = host.whenIdle().then(() => { idle = true; });
+    await new Promise<void>((resolveTick) => setImmediate(resolveTick));
+    assert.equal(idle, false, "the idle drain waits for the long verb too");
+    releaseWait();
+    await waiting;
+    await draining;
+    const waitResponse = await host.broker.readResponse(waitRequest.id);
+    assert.equal(waitResponse.exitCode, 0, waitResponse.stderr);
+
+    const receipts = (await readFile(host.receipts.path, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    for (const id of [waitRequest.id, create.id]) {
+      assert.deepEqual(receipts.filter((line) => line.requestId === id).map((line) => line.outcome), ["accepted", "ok"]);
+    }
+  } finally {
+    // Release anything a failed assertion left held, and let it drain, so
+    // cleanup never races a request still writing its response.
+    releaseAll();
+    await host?.whenIdle();
+    await rm(stateRoot, { recursive: true, force: true });
+  }
+});
+
 test("desktop CLI host gates act requests on the per-launch authority and records receipts", async () => {
   const stateRoot = await mkdtemp(join(tmpdir(), "amplefile-desktop-cli-act-"));
   const token = "d".repeat(64);

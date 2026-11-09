@@ -367,9 +367,10 @@ re-run; the job joins that turn's request, which reads `working` while it
 runs. Every verb names the job's Connected Folder, so a Worker reaches only
 its own Connected Folder's jobs; the AmpleFile Agent's own jobs are reached
 through its tools and listed by `requests show`. `jobs output` reads the end
-of the output or a page from `--offset`, can `--wait` for the end or
-`--until` a line matches, and with `--task` naming a running turn in the
-job's own Chat counts as the job's delivery. When a job ends, the host
+of the output or a page from `--offset`, can `--wait` up to 600 seconds for
+the end or until `--until` matches a line (read again to keep waiting), and
+with `--task` naming a running turn in the job's own Chat counts as the job's
+delivery. When a job ends, the host
 captures History for its Connected Folder and brings the exit status, that
 coverage, and the end of the output back to its Chat once: through a read,
 the next turn's context, or one follow-up turn. Stop on the request and
@@ -827,9 +828,12 @@ disabled. It uses a bounded protocol-v1 file handoff instead:
 2. It starts or contacts the exact installed app executable with that request
    id. Electron's single-instance handoff routes the request to the running
    desktop host when the app is already open.
-3. The desktop host claims and serializes the request, executes it through
-   `AmpleFileCliKernelAdapter`, and atomically writes stdout, stderr,
-   structured result, and exit code under `responses`.
+3. The desktop host claims the request on arrival, executes it through
+   `AmpleFileCliKernelAdapter` or the act executor in one serial queue, and
+   atomically writes stdout, stderr, structured result, and exit code under
+   `responses`. `jobs output` and `chat compact`, which can take minutes and
+   are fenced by their own services, run beside that queue so they never
+   stall other commands.
 4. The shim returns that output and removes its request and response files.
    The broker also removes stale bounded files during initialization.
 

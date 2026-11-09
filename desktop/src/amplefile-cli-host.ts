@@ -2,6 +2,7 @@ import type { AmpleFileCliKernel } from "../../src/local/cli/protocol.js";
 import { AmpleFileCliFileBroker } from "../../src/local/cli/broker.js";
 import { executeAmpleFileCliRequest } from "../../src/local/cli/commands.js";
 import {
+  ampleFileCliActRunsOutsideQueue,
   executeAmpleFileCliActRequest,
   type AmpleFileCliActAuthority,
 } from "../../src/local/cli/act-commands.js";
@@ -29,11 +30,16 @@ export interface AmpleFileDesktopCliHostOptions {
 
 /**
  * Desktop-owned bridge between the stable request-file protocol and the
- * reusable AmpleFile kernel. Requests are serialized so catalog discovery and
- * task snapshots never race one another inside a single desktop host. Act-lane
+ * reusable AmpleFile kernel. Every request is claimed as soon as it arrives,
+ * so the broker judges its freshness on arrival rather than after it waited
+ * in line. Execution is then serialized so catalog discovery and task
+ * snapshots never race one another inside a single desktop host. Act-lane
  * requests dispatch to the act executor, which only accepts the queue entry
- * itself — a long turn runs detached inside the interactive API, so
- * it never blocks later status polls.
+ * itself — a long turn runs detached inside the interactive API, so it never
+ * blocks later status polls. The few act verbs that legitimately take minutes
+ * (`ampleFileCliActRunsOutsideQueue`) run beside the queue instead of in it,
+ * so one `jobs output --wait` or `chat compact` never stalls every other
+ * `amplefile` command.
  */
 export class AmpleFileDesktopCliHost {
   readonly broker: AmpleFileCliFileBroker;
@@ -43,7 +49,8 @@ export class AmpleFileDesktopCliHost {
   readonly #productName: string;
   readonly #getActFacade: () => AmpleFileCliActAuthority | null;
   readonly #resolveLineageParent: (taskId: string) => { taskId: string } | null;
-  #queue: Promise<void> = Promise.resolve();
+  #queue: Promise<unknown> = Promise.resolve();
+  readonly #pending = new Set<Promise<void>>();
 
   constructor(options: AmpleFileDesktopCliHostOptions) {
     this.broker = new AmpleFileCliFileBroker({ stateRoot: options.stateRoot });
@@ -62,27 +69,36 @@ export class AmpleFileDesktopCliHost {
 
   processRequest(requestId: string): Promise<void> {
     const id = normalizeAmpleFileCliRequestId(requestId);
-    const operation = this.#queue.catch(() => undefined).then(async () => {
-      await this.broker.processRequest(id, (request) => isAmpleFileCliActRequest(request)
-        ? executeAmpleFileCliActRequest(request, {
-            version: this.#version,
-            productName: this.#productName,
-            getActFacade: this.#getActFacade,
-            receipts: this.receipts,
-            resolveLineageParent: this.#resolveLineageParent,
-          })
-        : executeAmpleFileCliRequest(request, this.#kernel, {
-            version: this.#version,
-            productName: this.#productName,
-          }));
-    });
-    this.#queue = operation;
+    const operation = this.broker.processRequest(id, (request) => {
+      if (isAmpleFileCliActRequest(request)) {
+        const execute = () => executeAmpleFileCliActRequest(request, {
+          version: this.#version,
+          productName: this.#productName,
+          getActFacade: this.#getActFacade,
+          receipts: this.receipts,
+          resolveLineageParent: this.#resolveLineageParent,
+        });
+        return ampleFileCliActRunsOutsideQueue(request.argv) ? execute() : this.#serialize(execute);
+      }
+      return this.#serialize(() => executeAmpleFileCliRequest(request, this.#kernel, {
+        version: this.#version,
+        productName: this.#productName,
+      }));
+    }).then(() => undefined);
+    this.#pending.add(operation);
+    void operation.catch(() => undefined).finally(() => this.#pending.delete(operation));
     return operation;
   }
 
   /** Resolves only after every request observed so far has completed. */
-  whenIdle(): Promise<void> {
-    return this.#queue.catch(() => undefined);
+  async whenIdle(): Promise<void> {
+    await Promise.allSettled([...this.#pending]);
+  }
+
+  #serialize<T>(execute: () => Promise<T>): Promise<T> {
+    const operation = this.#queue.catch(() => undefined).then(execute);
+    this.#queue = operation;
+    return operation;
   }
 }
 
