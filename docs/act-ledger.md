@@ -64,7 +64,10 @@ record only per-verb additions.
 1. **Who journals it.** The act executor
    (`src/local/cli/act-commands.ts`) appends an `accepted` line to
    `cli/receipts/act.jsonl` (`src/local/cli/act-receipts.ts`) **before** the
-   mutation runs; an unwritable journal refuses the command. The owning
+   mutation runs; an unwritable journal refuses the command. Reads of
+   AmpleFile's own recorded state (status, lists, shows, the overview) write
+   the same lines to `cli/receipts/act-reads.jsonl`, so polling never crowds
+   real acts out of the journal. The owning
    domain service keeps its own durable records exactly as it does for the
    desktop (History checkpoints, transcript lifecycle events, Automation run
    receipts).
@@ -92,8 +95,10 @@ record only per-verb additions.
 5. **How replay is prevented.** The broker's freshness window and pending
    response dedup, then the journal's `accepted` records as the durable
    at-most-once ledger: a duplicated request id is refused outright, and a
-   damaged journal fails closed rather than risk re-execution. Journal
-   rotation holds entries at least as long as the freshness window.
+   damaged journal fails closed rather than risk re-execution — an
+   unreadable file always, an unreadable line until the freshness window
+   and clock-skew allowance have passed since the line written after it.
+   Journal rotation holds entries at least as long as the freshness window.
 
 Act-protocol conventions: the versioned act envelope
 (`src/local/cli/act-protocol.ts`), the per-launch act token, explicit
@@ -396,7 +401,8 @@ optional fields beyond the baseline:
 
 The journal is append-only and journal-first, rotation never drops an entry
 younger than the broker freshness window, and duplicate detection fails
-closed. Renaming a CLI command, flag, or JSON key is a compatibility change:
+closed. The host keeps accepted ids in memory, reading only what was appended
+since it last looked, and cuts an unfinished final line at startup. Renaming a CLI command, flag, or JSON key is a compatibility change:
 update the implementation, help, tests, and these docs together.
 
 ## Where it lives

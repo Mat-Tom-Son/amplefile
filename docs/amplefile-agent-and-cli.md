@@ -872,14 +872,19 @@ that is honest for a personal, local product:
   `accepted` records refuse a duplicated id outright. The broker refuses
   requests older than its freshness window, and journal rotation holds
   entries at least that long, so the two compose into a durable at-most-once
-  guarantee.
+  guarantee. The host reads the journal once, keeps the accepted ids in
+  memory, cuts an unfinished final line at startup, and refuses acts while
+  an unreadable line could still name a request the broker would accept.
 - **Explicit scope.** Every act command names its Connected Folder; writes
   never resolve from the working directory. Chat commands also name their
   conversation or task.
 - **Journal-first receipts.** Every authorized act command appends an
   `accepted` line to `cli/receipts/act.jsonl` **before** its mutation runs
   (an unwritable journal refuses the command) and a terminal `ok` or `error`
-  line after. Receipts record the initiating surface (`cli`, `popover`,
+  line after. Status, list, show, and overview reads journal the same pair
+  in `cli/receipts/act-reads.jsonl` instead, so a `chat wait` poll never
+  crowds real acts out of the journal or the overview. Receipts record the
+  initiating surface (`cli`, `popover`,
   `main-window`) and typed undo references, including Recently Deleted entry
   ids: identifiers and digests only, never content. A crash can separate the
   pair, but an applied action can never be missing its `accepted` trace; a
