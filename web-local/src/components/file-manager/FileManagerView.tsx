@@ -1785,7 +1785,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           onRunningChange={(conversationId, running) => activity.setRunning(chatKey(conversationId), running)}
           onSettled={(conversationId, needsAttention) => { activity.setAttention(chatKey(conversationId), needsAttention && !(panelChat.open && conversationId === panelChatId)); setTurnsSettled((value) => value + 1); }}
           onViewed={(conversationId) => activity.setAttention(chatKey(conversationId), false)}
-          onAgentFinished={() => listing.refresh()}
+          // A reply can change more than files: a look the Worker applied
+          // (Just the Look, Set Up for Me) arrives with the bootstrap read.
+          onAgentFinished={() => Promise.all([listing.refresh(), onRefreshBootstrap()]).then(() => undefined)}
         />,
       } : null}
       searchItem={recentChosen && !searchMode ? {

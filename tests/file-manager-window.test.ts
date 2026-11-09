@@ -115,3 +115,27 @@ test("every list names its active row, and icon view keeps grid, row and cell ro
   assert.ok(active, "Recents names its active row");
   assert.equal(document.getElementById(active)?.getAttribute("aria-selected"), "true");
 });
+
+test("when a Worker reply ends, the window re-reads its bootstrap so a look the Worker applied shows", async (t) => {
+  const stamp = "2026-09-27T12:00:00Z";
+  const { dom, module, streams } = await createFileManagerHarness(t, answers((path) => {
+    if (path.endsWith("/conversations")) return { conversations: [{ id: "chat", title: "Make it look nice", createdAt: stamp, updatedAt: stamp }] };
+    if (path.endsWith("/conversations/chat")) return { messages: [] };
+    if (path.endsWith("/runtime")) return { runtime: null };
+    if (path.endsWith("/work")) return { work: null };
+    if (path.includes("/agent/catalog")) return { commands: [] };
+    if (path.includes("/paths-exist")) return { existing: [] };
+    return undefined;
+  }));
+  let refreshes = 0;
+  await dom.render(view(module, { onRefreshBootstrap: async () => { refreshes++; } }));
+  const historyTab = [...dom.container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((tab) => tab.textContent?.includes("History"))!;
+  await dom.act(() => historyTab.click());
+  await dom.waitFor(() => Boolean([...dom.container.querySelectorAll<HTMLButtonElement>(".fm-crow-btn")].find((row) => row.textContent?.includes("Make it look nice"))));
+  await dom.act(() => [...dom.container.querySelectorAll<HTMLButtonElement>(".fm-crow-btn")].find((row) => row.textContent?.includes("Make it look nice"))!.click());
+  const path = "/api/connected-folders/lab/conversations/chat/events";
+  await dom.waitFor(() => Boolean(streams.get(path)?.onmessage));
+  const before = refreshes;
+  await dom.act(async () => { streams.get(path)!.onmessage!({ data: JSON.stringify({ conversationId: "chat", type: "done", turnId: "turn-1" }) }); await Promise.resolve(); });
+  await dom.waitFor(() => refreshes === before + 1);
+});

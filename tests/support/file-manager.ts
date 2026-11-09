@@ -13,6 +13,8 @@ export interface FileManagerHarness {
   dom: DomHarness;
   module: typeof import("../../web-local/src/components/file-manager/FileManagerView.js");
   requests: Array<{ path: string; method: string; body?: unknown }>;
+  /** The event streams the window opened, by path; a test sends frames through `onmessage`. */
+  streams: Map<string, { onmessage: ((event: { data: string }) => void) | null }>;
 }
 
 export type ApiAnswer = (path: string, options: { method?: string; body?: unknown; signal?: AbortSignal }) => unknown;
@@ -32,7 +34,12 @@ export async function createFileManagerHarness(t: { after: (cleanup: () => void 
     if (value === undefined) throw new Error(`Unexpected UI request: ${path}`);
     return value;
   };
-  const createEventSource = () => ({ onmessage: null, onopen: null, onerror: null, lastEventId: "", close() {} });
+  const streams = new Map<string, { onmessage: ((event: { data: string }) => void) | null }>();
+  const createEventSource = (path: string) => {
+    const stream = { onmessage: null, onopen: null, onerror: null, lastEventId: "", close() {} };
+    streams.set(path, stream);
+    return stream;
+  };
   const mocked = { ...realApi, api, createEventSource };
   const scope = globalThis as unknown as Record<string, unknown>;
   scope.__fileManagerApi = mocked;
@@ -70,7 +77,7 @@ export async function createFileManagerHarness(t: { after: (cleanup: () => void 
   HTMLElement.prototype.scrollIntoView = () => {};
   HTMLElement.prototype.scrollTo = () => {};
   const module = await import("../../web-local/src/components/file-manager/FileManagerView.js");
-  return { dom, module, requests, calls };
+  return { dom, module, requests, calls, streams };
 }
 
 export { createElement };

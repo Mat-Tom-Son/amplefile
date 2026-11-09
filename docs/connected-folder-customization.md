@@ -86,7 +86,8 @@ saves that choice as its primary accent only when it differs from the id's own p
 already carried a Connected Folder identity keeps its color, and a saved choice always wins.
 
 An open window adopts the saved appearance whenever the host's copy is newer than the one it shows: on
-its next bootstrap read (when the window regains focus or Connected Folders change) and from the full state each of its own saves returns. It never adopts a copy while
+its next bootstrap read (when the window regains focus, when Connected Folders change, and when a
+Worker reply ends) and from the full state each of its own saves returns. It never adopts a copy while
 one of its own saves is still queued, so a look the Worker or `amplefile connected-folders appearance
 apply` saved is what Customize Connected Folder edits next. A look whose save failed stays in that
 window for the session.
