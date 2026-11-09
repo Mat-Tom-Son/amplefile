@@ -1788,27 +1788,7 @@ async function validateNativeFileMenuEntry(request: NativeFileMenuRequest): Prom
 }
 
 function popupNativeFileMenu(request: NativeFileMenuRequest): Promise<NativeFileMenuCommand | null> {
-  const window = mainWindow;
-  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
-    return Promise.reject(new Error("The AmpleFile window is not available."));
-  }
-  return new Promise((resolveCommand) => {
-    let settled = false;
-    const finish = (command: NativeFileMenuCommand | null) => {
-      if (settled) return;
-      settled = true;
-      resolveCommand(command);
-    };
-    const template = nativeFileMenuItems(request).map<MenuItemConstructorOptions>((item) => item.type === "separator"
-      ? { type: "separator" }
-      : { label: nativeMenuLabel(item.label), click: () => finish(item.command), ...(item.icon === "amplefile" ? ampleFileMenuIcon() : {}) });
-    Menu.buildFromTemplate(template).popup({
-      window,
-      x: request.point.x,
-      y: request.point.y,
-      callback: () => finish(null),
-    });
-  });
+  return popupNativeCommandMenu(nativeFileMenuItems(request), request.point);
 }
 
 function popupNativeTabMenu(request: NativeTabMenuRequest): Promise<NativeTabMenuCommand | null> {
@@ -1817,10 +1797,9 @@ function popupNativeTabMenu(request: NativeTabMenuRequest): Promise<NativeTabMen
 
 type NativeCommandMenuItem<Command extends string> =
   | { type: "separator" }
-  | { type: "item"; label: string; command: Command; sublabel?: string; enabled?: false }
+  | { type: "item"; label: string; command: Command; sublabel?: string; enabled?: false; icon?: "amplefile" }
   | { type: "submenu"; label: string; items: NativeCommandMenuItem<Command>[] };
 
-/** Shows a native menu at a point in the app's CSS pixels; resolves with the chosen command, or null. */
 /** The files on the system pasteboard (Finder's Copy), newest format first; empty when it holds no files. */
 function readPasteboardFilePaths(): string[] {
   if (process.platform !== "darwin") return [];
@@ -1858,6 +1837,10 @@ function nativeMenuLabel(label: string): string {
   return label.replace(/&/g, "&&");
 }
 
+/**
+ * Shows a native menu at a point in the app's CSS pixels; resolves with the
+ * chosen command, or null. Every native context menu goes through here.
+ */
 function popupNativeCommandMenu<Command extends string>(items: NativeCommandMenuItem<Command>[], point: { x: number; y: number }): Promise<Command | null> {
   const window = mainWindow;
   if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
@@ -1873,7 +1856,13 @@ function popupNativeCommandMenu<Command extends string>(items: NativeCommandMenu
     const template = (entries: NativeCommandMenuItem<Command>[]): MenuItemConstructorOptions[] => entries.map((item) => {
       if (item.type === "separator") return { type: "separator" };
       if (item.type === "submenu") return { label: nativeMenuLabel(item.label), submenu: template(item.items) };
-      return { label: nativeMenuLabel(item.label), ...(item.sublabel ? { sublabel: item.sublabel } : {}), enabled: item.enabled !== false, click: () => finish(item.command) };
+      return {
+        label: nativeMenuLabel(item.label),
+        ...(item.sublabel ? { sublabel: item.sublabel } : {}),
+        ...(item.icon === "amplefile" ? ampleFileMenuIcon() : {}),
+        enabled: item.enabled !== false,
+        click: () => finish(item.command),
+      };
     });
     // The point is in the app's CSS pixels; the menu goes where the pointer is in the zoomed window.
     const zoom = window.webContents.getZoomFactor() || 1;

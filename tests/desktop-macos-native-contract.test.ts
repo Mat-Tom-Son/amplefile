@@ -22,6 +22,18 @@ test("Darwin tab menus require the trusted main renderer and build their items i
   assert.match(preload, /popupTabMenu: \(request[\s\S]*?ipcRenderer\.invoke\("amplefile:connected-folder:popup-tab-menu", request\)/);
 });
 
+test("the Darwin file menu shares the command-menu helper: zoom-scaled point, deferred close, and its icon", () => {
+  assert.match(main, /function popupNativeFileMenu\(request: NativeFileMenuRequest\): Promise<NativeFileMenuCommand \| null> \{\n\s*return popupNativeCommandMenu\(nativeFileMenuItems\(request\), request\.point\);\n\}/);
+  const helper = main.slice(main.indexOf("function popupNativeCommandMenu"));
+  const body = helper.slice(0, helper.indexOf("\n}\n"));
+  assert.match(body, /const zoom = window\.webContents\.getZoomFactor\(\) \|\| 1;/);
+  assert.match(body, /x: Math\.round\(point\.x \* zoom\)/);
+  assert.match(body, /callback: \(\) => setTimeout\(\(\) => finish\(null\), 0\)/);
+  assert.match(body, /item\.icon === "amplefile" \? ampleFileMenuIcon\(\) : \{\}/);
+  // Every native context menu pops up through the one helper.
+  assert.equal((main.match(/Menu\.buildFromTemplate\([^)]*\)\)?\.popup\(\{\n\s*window,\n\s*x:/g) ?? []).length, 1);
+});
+
 test("the Darwin Connected Folder header menu requires the trusted main renderer and builds its items in the host", () => {
   assert.match(
     main,
