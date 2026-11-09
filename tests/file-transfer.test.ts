@@ -7,7 +7,7 @@ import test from "node:test";
 
 import JSZip from "jszip";
 
-import { abandonedCompressAfterMs, compressInto, copyInto, finderCopyName, moveInto } from "../src/local/file-transfer.js";
+import { abandonedCompressAfterMs, compressInto, copyHoldsAll, copyInto, finderCopyName, moveInto, removeIdentityFoldersKeptAt } from "../src/local/file-transfer.js";
 
 async function folder(t: test.TestContext): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "file-transfer-"));
@@ -63,6 +63,42 @@ test("a copy that fails partway leaves nothing half-written behind", { skip: pro
   assert.deepEqual(await readdir(join(root, "Archive")), ["kept.txt"], "the partial copy is gone and what was there stays");
   await assert.rejects(copyInto(join(root, "Trip"), join(root, "Trip", "Photos")), /into itself/);
   assert.ok(existsSync(join(root, "Trip", "a.txt")), "the source is untouched");
+});
+
+test("a copy holds its source only when every file is there the same, and never when it holds an identity", async (t) => {
+  const root = await folder(t);
+  await mkdir(join(root, "App", "node_modules", "pkg"), { recursive: true });
+  await writeFile(join(root, "App", "node_modules", "pkg", "index.js"), "1");
+  await mkdir(join(root, "Target"));
+  const copy = await copyInto(join(root, "App"), join(root, "Target"), { withIdentity: true });
+  assert.equal(await copyHoldsAll(join(root, "App", "node_modules"), join(copy, "node_modules")), true);
+  await writeFile(join(root, "App", "node_modules", "pkg", "late.js"), "added after the copy");
+  assert.equal(await copyHoldsAll(join(root, "App", "node_modules"), join(copy, "node_modules")), false, "a file added after the copy is not held");
+  await rm(join(root, "App", "node_modules", "pkg", "late.js"));
+  await writeFile(join(root, "App", "node_modules", "pkg", "index.js"), "12");
+  assert.equal(await copyHoldsAll(join(root, "App", "node_modules"), join(copy, "node_modules")), false, "a changed file is not held");
+  await mkdir(join(root, "App", "node_modules", "pkg", ".amplefile"));
+  await mkdir(join(copy, "node_modules", "pkg", ".amplefile"));
+  await writeFile(join(copy, "node_modules", "pkg", "index.js"), "12");
+  assert.equal(await copyHoldsAll(join(root, "App", "node_modules"), join(copy, "node_modules")), false, "an identity is never counted as held");
+});
+
+test("a copied identity goes only when its original is still whole in the source", async (t) => {
+  const root = await folder(t);
+  const plant = async (path: string, chat: string) => {
+    await mkdir(join(path, "Trip", ".amplefile", "conversations"), { recursive: true });
+    await writeFile(join(path, "Trip", ".amplefile", "conversations", "chat.jsonl"), chat);
+  };
+  for (const name of ["Intact", "Gone", "Changed"]) await plant(join(root, "source", name), "chat");
+  await mkdir(join(root, "target"));
+  const copies = new Map<string, string>();
+  for (const name of ["Intact", "Gone", "Changed"]) copies.set(name, await copyInto(join(root, "source", name), join(root, "target"), { withIdentity: true }));
+  await rm(join(root, "source", "Gone", "Trip", ".amplefile"), { recursive: true });
+  await writeFile(join(root, "source", "Changed", "Trip", ".amplefile", "conversations", "chat.jsonl"), "chat, then more");
+  for (const name of ["Intact", "Gone", "Changed"]) await removeIdentityFoldersKeptAt(copies.get(name)!, join(root, "source", name));
+  assert.ok(!existsSync(join(copies.get("Intact")!, "Trip", ".amplefile")), "the source still has it, so the copy is an ordinary copy");
+  assert.equal(await readFile(join(copies.get("Gone")!, "Trip", ".amplefile", "conversations", "chat.jsonl"), "utf8"), "chat", "the only whole copy stays");
+  assert.ok(existsSync(join(copies.get("Changed")!, "Trip", ".amplefile")), "a source that differs does not stand in for the copy");
 });
 
 test("Compress makes name.zip for one item and Archive.zip for several", async (t) => {

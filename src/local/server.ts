@@ -46,7 +46,7 @@ import {
   type StandardFolderId,
 } from "./standard-folders.js";
 import { goToFolder } from "./go-to-folder.js";
-import { compressInto, copyInto, isInside, moveInto, relativeTo, removeIdentityFolders } from "./file-transfer.js";
+import { compressInto, copyHoldsAll, copyInto, isInside, moveInto, relativeTo, removeIdentityFoldersKeptAt } from "./file-transfer.js";
 import { homedir as userHomedir } from "node:os";
 import { lstat, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -11835,14 +11835,17 @@ async function moveBetweenConnectedFolders(
         throw error;
       }
       const writtenPaths = written.map((path) => relativeTo(to.connectedFolderRoot, path));
-      // What History could not keep is safe when the copy carried it (a
-      // `.git`, an ignored build folder, a large file, a link): only what did
-      // not reach the target leaves the source through Recently Deleted.
+      // What History could not keep is safe when the copy holds all of it (a
+      // `.git`, an ignored build folder, a large file, a link), checked file
+      // by file. Anything else, and any `.amplefile` identity, keeps the item
+      // out of a plain delete: it leaves the source whole, by moving into
+      // Recently Deleted.
       const uncovered = await Promise.all(entries.map(async (entry, row) => {
         const missing: AmpleFileRecentlyDeletedUncoveredPath[] = [];
         for (const file of notKept[row]!) {
-          const inside = file.path === capturedAs[row] ? "" : file.path.slice(capturedAs[row]!.length + 1);
-          if (!await carriedByCopy(join(entry.absolutePath, ...inside.split("/").filter(Boolean)), join(written[row]!, ...inside.split("/").filter(Boolean)))) missing.push(file);
+          const inside = (file.path === capturedAs[row] ? "" : file.path.slice(capturedAs[row]!.length + 1)).split("/").filter(Boolean);
+          const identity = inside.some((segment) => segment === ".amplefile");
+          if (identity || !await copyHoldsAll(join(entry.absolutePath, ...inside), join(written[row]!, ...inside))) missing.push(file);
         }
         return missing;
       }));
@@ -11874,9 +11877,13 @@ async function moveBetweenConnectedFolders(
           if (removed.recovery.kind === "recently-deleted") recentlyDeleted.push({ path: entry.path, entryId: removed.recovery.entryId, restoreBy: removed.recovery.restoreBy });
         } catch (error) {
           // Everything is already in the target; what could not leave the
-          // source stays there, and both restore points still apply. Its copy
-          // becomes an ordinary copy, so no identity exists twice.
-          for (const copy of written.slice(index)) await removeIdentityFolders(copy).catch(() => undefined);
+          // source stays there, and both restore points still apply. A copied
+          // identity whose original is still whole in the source goes from
+          // the copy, so no identity exists twice; one whose original did not
+          // survive stays in the copy.
+          for (const [offset, copy] of written.slice(index).entries()) {
+            await removeIdentityFoldersKeptAt(copy, entries[index + offset]!.absolutePath).catch(() => undefined);
+          }
           return {
             mode: "move" as const,
             written: writtenPaths,
@@ -11892,17 +11899,6 @@ async function moveBetweenConnectedFolders(
   } finally {
     state.capabilityMutations.delete(from.id);
   }
-}
-
-/** Whether a path the copy should have carried is at its destination as it is at its source. */
-async function carriedByCopy(sourcePath: string, copiedPath: string): Promise<boolean> {
-  const [source, copy] = await Promise.all([lstat(sourcePath).catch(() => null), lstat(copiedPath).catch(() => null)]);
-  if (!copy) return false;
-  if (!source) return true;
-  if (source.isFile()) return copy.isFile() && copy.size === source.size;
-  if (source.isDirectory()) return copy.isDirectory();
-  if (source.isSymbolicLink()) return copy.isSymbolicLink();
-  return false;
 }
 
 async function compressEntries(body: { place?: unknown; paths?: unknown }) {

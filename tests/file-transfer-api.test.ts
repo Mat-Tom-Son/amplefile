@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -184,6 +184,62 @@ test("a moved item that cannot leave its Connected Folder stays there, and its c
   assert.equal(await readFile(join(target.connectedFolderRoot, "Old Trip", "plan.md"), "utf8"), "plan");
   assert.ok(!existsSync(join(target.connectedFolderRoot, "Old Trip", ".amplefile")), "the copy is an ordinary copy");
 });
+
+test("a disconnected Connected Folder's Chats survive a move whose source cannot be removed in one go", { skip: process.getuid?.() === 0 ? "root ignores folder permissions" : false }, async (t) => {
+  const { api, sandbox } = await sandboxApi(t);
+  const call = caller(api);
+  const source = (await call("/api/connected-folders", { method: "POST", body: { name: "Source" } })).body!.connectedFolder;
+  const target = (await call("/api/connected-folders", { method: "POST", body: { name: "Target" } })).body!.connectedFolder;
+  const old = join(source.connectedFolderRoot, "Old");
+  await mkdir(join(old, ".amplefile", "conversations"), { recursive: true });
+  await writeFile(join(old, ".amplefile", "connected-folder.json"), "{\"id\":\"space-0123456789abcdef\"}");
+  await writeFile(join(old, ".amplefile", "conversations", "chat.jsonl"), "{\"role\":\"user\"}\n");
+  await mkdir(join(old, "locked"));
+  await writeFile(join(old, "locked", "f.txt"), "f");
+  // A plain delete of Old would stop partway at locked/f.txt.
+  await chmod(join(old, "locked"), 0o555);
+  try {
+    const moved = await call("/api/file-transfer", {
+      method: "POST",
+      body: { mode: "move", sources: [{ place: { kind: "connected-folder", id: source.id }, path: "Old" }], target: { place: { kind: "connected-folder", id: target.id }, path: "" } },
+    });
+    assert.equal(moved.status, 200, JSON.stringify(moved.body));
+    const chats = await findFiles(sandbox, "chat.jsonl");
+    const inSource = chats.filter((path) => path.startsWith(source.connectedFolderRoot));
+    const inTarget = chats.filter((path) => path.startsWith(target.connectedFolderRoot));
+    const inTrash = chats.filter((path) => !path.startsWith(source.connectedFolderRoot) && !path.startsWith(target.connectedFolderRoot));
+    assert.ok(chats.length, "the Chat log is somewhere it can be recovered from");
+    if (moved.body!.failed) {
+      assert.ok(inSource.length, "an item that could not leave keeps its Chats in the source");
+    } else {
+      // The identity leaves the source whole, through Recently Deleted, never a plain delete.
+      assert.equal(moved.body!.recentlyDeleted?.length, 1, JSON.stringify(moved.body));
+      assert.ok(!existsSync(old));
+      assert.equal(inTarget.length, 1, "the moved folder keeps its Chats");
+      assert.equal(inTrash.length, 1, "and Recently Deleted keeps the original whole");
+      assert.equal(await readFile(inTarget[0]!, "utf8"), "{\"role\":\"user\"}\n");
+    }
+  } finally {
+    await makeWritable(sandbox);
+  }
+});
+
+async function findFiles(root: string, name: string): Promise<string[]> {
+  const found: string[] = [];
+  for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) found.push(...await findFiles(path, name));
+    else if (entry.name === name) found.push(path);
+  }
+  return found;
+}
+
+async function makeWritable(root: string): Promise<void> {
+  const info = await lstat(root).catch(() => null);
+  if (!info?.isDirectory()) return;
+  await chmod(root, 0o755);
+  for (const entry of await readdir(root)) await makeWritable(join(root, entry));
+}
 
 test("a move out of a Connected Folder waits for that Connected Folder's outstanding work, as a delete does", async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), "amplefile-file-transfer-busy-"));

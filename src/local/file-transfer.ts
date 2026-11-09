@@ -54,16 +54,56 @@ export async function copyInto(source: string, targetFolder: string, options: { 
   return destination;
 }
 
-/** Turns a copy made `withIdentity` into an ordinary copy: every `.amplefile` folder in it goes. Links are not followed. */
-export async function removeIdentityFolders(path: string): Promise<void> {
-  const info = await lstat(path).catch(() => null);
+/**
+ * Whether a copy holds everything its source does, so the source can go with
+ * nothing lost: every folder, every file at the same size and modification
+ * time (the copy keeps timestamps), every link. An `.amplefile` folder
+ * anywhere in the source never counts as held: a Connected Folder's identity
+ * and Chats leave their source only by moving whole into Recently Deleted.
+ * A source that is no longer there has nothing left to lose.
+ */
+export async function copyHoldsAll(source: string, copy: string): Promise<boolean> {
+  return treeHeld(source, copy, { identity: false });
+}
+
+/**
+ * After a move could not take an item out of its source: removes each
+ * `.amplefile` folder from the item's copy whose counterpart in the source is
+ * still there with the same files, so no identity exists twice. One whose
+ * source counterpart is gone or different stays in the copy, which may be the
+ * only place it is whole. Links are not followed.
+ */
+export async function removeIdentityFoldersKeptAt(copy: string, source: string): Promise<void> {
+  const info = await lstat(copy).catch(() => null);
   if (!info?.isDirectory()) return;
-  for (const entry of await readdir(path)) {
-    const child = join(path, entry);
-    if (identityFolders.has(entry)) await rm(child, { recursive: true, force: true });
-    else await removeIdentityFolders(child);
+  for (const entry of await readdir(copy)) {
+    const copied = join(copy, entry);
+    const original = join(source, entry);
+    if (!identityFolders.has(entry)) { await removeIdentityFoldersKeptAt(copied, original); continue; }
+    const originalInfo = await lstat(original).catch(() => null);
+    if (originalInfo?.isDirectory() && await treeHeld(copied, original, { identity: true })) await rm(copied, { recursive: true, force: true });
   }
 }
+
+/** Whether everything at `from` is also at `into`, the same. */
+async function treeHeld(from: string, into: string, options: { identity: boolean }): Promise<boolean> {
+  const [original, other] = await Promise.all([lstat(from).catch(() => null), lstat(into).catch(() => null)]);
+  if (!original) return true;
+  if (!other) return false;
+  if (original.isSymbolicLink()) return other.isSymbolicLink();
+  if (original.isFile()) {
+    return other.isFile() && other.size === original.size && Math.abs(other.mtimeMs - original.mtimeMs) <= sameTimeToleranceMs;
+  }
+  if (!original.isDirectory() || !other.isDirectory()) return false;
+  for (const entry of await readdir(from)) {
+    if (!options.identity && identityFolders.has(entry)) return false;
+    if (!await treeHeld(join(from, entry), join(into, entry), options)) return false;
+  }
+  return true;
+}
+
+/** Disks that keep coarse times (FAT keeps two seconds) may round a copied time. */
+const sameTimeToleranceMs = 2_000;
 
 /** Moves a file or folder into a folder on the same computer (copying across disks), returning where it landed. */
 export async function moveInto(source: string, targetFolder: string): Promise<string> {
