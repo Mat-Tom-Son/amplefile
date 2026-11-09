@@ -295,6 +295,10 @@ export interface AmpleFileRequestAction {
   sources?: string[];
   /** Connected Folder–relative destinations reported by files.add. */
   copied?: string[];
+  /** How many `sources` the trail left out to stay inside its bound; absent when none. */
+  sourcesOmitted?: number;
+  /** How many `copied` destinations the trail left out to stay inside its bound; absent when none. */
+  copiedOmitted?: number;
   checkpointId?: string | null;
   /** Registered or created Connected Folder root. */
   connectedFolderRoot?: string;
@@ -690,11 +694,22 @@ export function parseAmpleFileAttachmentRef(value: unknown, label: string): Ampl
   };
 }
 
+/** The most `sources` or `copied` entries one action keeps; the rest are counted, not listed. */
+export const ampleFileRequestActionListMaxEntries = 256;
+
+/** The longest path one `sources` or `copied` entry keeps. */
+export const ampleFileRequestActionPathMaxLength = maximumResultFilePathLength;
+
+function positiveInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) throw new Error(`${label} is invalid.`);
+  return value;
+}
+
 export function parseAmpleFileRequestAction(value: unknown, label = "Request action"): AmpleFileRequestAction {
   const record = objectValue(value, label);
   assertClosedShape(
     record,
-    ["command", "at", "connectedFolderId", "connectedFolderName", "sources", "copied", "checkpointId", "connectedFolderRoot", "conversationId", "taskId"],
+    ["command", "at", "connectedFolderId", "connectedFolderName", "sources", "copied", "sourcesOmitted", "copiedOmitted", "checkpointId", "connectedFolderRoot", "conversationId", "taskId"],
     label,
   );
   const action: AmpleFileRequestAction = {
@@ -703,8 +718,10 @@ export function parseAmpleFileRequestAction(value: unknown, label = "Request act
   };
   if (record.connectedFolderId !== undefined) action.connectedFolderId = stableId(record.connectedFolderId, `${label} Connected Folder id`);
   if (record.connectedFolderName !== undefined) action.connectedFolderName = boundedText(record.connectedFolderName, `${label} Connected Folder name`, 1_024);
-  if (record.sources !== undefined) action.sources = stringArray(record.sources, `${label} sources`, 256);
-  if (record.copied !== undefined) action.copied = stringArray(record.copied, `${label} destinations`, 256);
+  if (record.sources !== undefined) action.sources = stringArray(record.sources, `${label} sources`, ampleFileRequestActionListMaxEntries);
+  if (record.copied !== undefined) action.copied = stringArray(record.copied, `${label} destinations`, ampleFileRequestActionListMaxEntries);
+  if (record.sourcesOmitted !== undefined) action.sourcesOmitted = positiveInteger(record.sourcesOmitted, `${label} omitted sources`);
+  if (record.copiedOmitted !== undefined) action.copiedOmitted = positiveInteger(record.copiedOmitted, `${label} omitted destinations`);
   if (record.checkpointId !== undefined) {
     action.checkpointId = record.checkpointId === null ? null : stableId(record.checkpointId, `${label} restore point`);
   }

@@ -1112,3 +1112,42 @@ test("the read cache never trims a settled child while its family is open, and a
   await withParent.settleTurn("task-parent-2", { status: "succeeded" });
   assert.equal(withParent.get(parent.requestId)?.state, "done");
 });
+
+test("an oversized attribution list is truncated with a count, never thrown after the act landed", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  const attached = "/tmp/inbox/file-299.pdf";
+  const request = await store.beginRoot({
+    kind: "agent", owner: ampleFileAgentOwner, surface: "popover", taskId: "task-1",
+    attachments: [{ kind: "file", target: attached, name: "file-299.pdf" }],
+  });
+  const sources = Array.from({ length: 300 }, (_, index) => `/tmp/inbox/file-${index}.pdf`);
+  const copied = Array.from({ length: 300 }, (_, index) => `Inbox/file-${index}.pdf`);
+  assert.equal(await store.recordAction("task-1", {
+    command: "files.add", at: clock.now().toISOString(), connectedFolderId: "connected-folder-audits", connectedFolderName: "Audits",
+    sources: [...sources, "", `/${"x".repeat(2_000)}`], copied, checkpointId: "checkpoint-1",
+  }), request.requestId);
+  const action = store.get(request.requestId)!.actions[0]!;
+  assert.equal(action.sources!.length, 256);
+  assert.equal(action.sourcesOmitted, 46, "300 sources plus two unusable entries, 256 kept");
+  assert.ok(action.sources!.includes(attached), "an attachment's own source survives the cut");
+  assert.deepEqual(action.sources!.slice(0, 3), sources.slice(0, 3), "the act's own order is kept");
+  assert.deepEqual(action.copied, copied.slice(0, 256));
+  assert.equal(action.copiedOmitted, 44);
+
+  // A list inside the bound carries no marker.
+  await store.recordAction("task-1", { command: "files.add", at: clock.now().toISOString(), sources: ["/tmp/a.pdf"], copied: ["a.pdf"] });
+  const small = store.get(request.requestId)!.actions[1]!;
+  assert.equal(small.sourcesOmitted, undefined);
+  assert.equal(small.copiedOmitted, undefined);
+
+  // An action the trail cannot hold at all credits nothing instead of throwing.
+  assert.equal(await store.recordAction("task-1", { command: "files.add", at: "not a time" }), null);
+  assert.equal(store.get(request.requestId)!.actions.length, 2);
+
+  await store.flush();
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  assert.equal(reopened.damagedRecordCount(), 0);
+  assert.deepEqual(reopened.get(request.requestId)!.actions, store.get(request.requestId)!.actions);
+});

@@ -61,11 +61,14 @@ import {
   isAmpleFileRequestTerminalState,
   parseAmpleFileChecklistItems,
   parseAmpleFileQuestionRecord,
+  parseAmpleFileRequestAction,
   parseAmpleFileRequestRecord,
   scrubAmpleFileRequestText,
   parseAmpleFileResultEnvelope,
   parseAmpleFileResultRecord,
   ampleFileQuestionRecordSchema,
+  ampleFileRequestActionListMaxEntries,
+  ampleFileRequestActionPathMaxLength,
   ampleFileRequestIdPattern,
   ampleFileRequestLimitError,
   AmpleFileRequestLineageError,
@@ -597,8 +600,11 @@ export class AmpleFileRequestStore {
 
   /**
    * Attributes one landed act to the request that named it. Returns the
-   * request id it credited, or `null` when nothing was named or the trail is
-   * already at its bound — attribution never refuses the act itself.
+   * request id it credited, or `null` when nothing was named or the action
+   * cannot be recorded — attribution never refuses the act itself, which has
+   * already happened. A `sources` or `copied` list past its bound keeps the
+   * entries that match the request's attachments first, then the earliest,
+   * and counts the rest in `sourcesOmitted`/`copiedOmitted`.
    */
   recordAction(parentTaskId: string | undefined, action: AmpleFileRequestAction): Promise<string | null> {
     if (!parentTaskId) return Promise.resolve(null);
@@ -606,7 +612,13 @@ export class AmpleFileRequestStore {
       const requestId = this.#byTask.get(parentTaskId);
       const record = requestId ? this.#records.get(requestId) : undefined;
       if (!record) return null;
-      await this.#writeRequest({ ...record, actions: [...record.actions, structuredClone(action)] });
+      let bounded: AmpleFileRequestAction;
+      try {
+        bounded = parseAmpleFileRequestAction(boundActionLists(structuredClone(action), record.attachments));
+      } catch {
+        return null;
+      }
+      await this.#writeRequest({ ...record, actions: [...record.actions, bounded] });
       return record.requestId;
     });
   }
@@ -1442,6 +1454,38 @@ function newId(prefix: "req" | "q" | "res", at: string): string {
 
 function boundContent(content: string): string {
   return scrubAmpleFileRequestText(content, ampleFileRequestLimits.maxRequestContentBytes);
+}
+
+/**
+ * Keeps an action's path lists inside the record's bounds. Entries the parser
+ * would refuse (empty, or longer than a path entry may be) are counted as
+ * omitted rather than failing the whole action.
+ */
+function boundActionLists(action: AmpleFileRequestAction, attachments: readonly AmpleFileAgentAttachmentRef[]): AmpleFileRequestAction {
+  const targets = new Set(attachments.map((attachment) => attachment.target));
+  const bound = (entries: string[] | undefined, previouslyOmitted: number | undefined, preferAttachments: boolean) => {
+    if (entries === undefined) return { entries: undefined, omitted: previouslyOmitted };
+    const valid = entries.filter((entry) => typeof entry === "string" && entry.length > 0 && entry.length <= ampleFileRequestActionPathMaxLength);
+    const indexes = valid.map((_, index) => index);
+    // Attachment matches come first only to survive the cut; the record
+    // keeps the act's own order.
+    const ordered = preferAttachments
+      ? [...indexes.filter((index) => targets.has(valid[index]!)), ...indexes.filter((index) => !targets.has(valid[index]!))]
+      : indexes;
+    const kept = ordered.slice(0, ampleFileRequestActionListMaxEntries).sort((left, right) => left - right).map((index) => valid[index]!);
+    const omitted = (previouslyOmitted ?? 0) + (entries.length - kept.length);
+    return { entries: kept, omitted: omitted || undefined };
+  };
+  const sources = bound(action.sources, action.sourcesOmitted, true);
+  const copied = bound(action.copied, action.copiedOmitted, false);
+  const next: AmpleFileRequestAction = { ...action };
+  delete next.sourcesOmitted;
+  delete next.copiedOmitted;
+  if (sources.entries !== undefined) next.sources = sources.entries;
+  if (sources.omitted !== undefined) next.sourcesOmitted = sources.omitted;
+  if (copied.entries !== undefined) next.copied = copied.entries;
+  if (copied.omitted !== undefined) next.copiedOmitted = copied.omitted;
+  return next;
 }
 
 function dedupeAttachments(attachments: readonly AmpleFileAgentAttachmentRef[]): AmpleFileAgentAttachmentRef[] {
