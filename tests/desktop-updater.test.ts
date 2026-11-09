@@ -8,6 +8,7 @@ import {
   hasDownloadedUpdatePayload,
   DesktopUpdater,
   stageSquirrelMacUpdate,
+  UpdateStagingTimeoutError,
   type DesktopUpdateCheckResultLike,
   type DesktopUpdateInstallFailure,
   type DesktopUpdateMessage,
@@ -83,6 +84,7 @@ class FakeHost implements DesktopUpdaterHost {
   events: string[] = [];
   stageError: Error | null = null;
   stageCalls = 0;
+  stageTimeouts: number[] = [];
 
   isSupported(): boolean { return this.supported; }
   platform(): NodeJS.Platform { return this.platformValue; }
@@ -95,8 +97,9 @@ class FakeHost implements DesktopUpdaterHost {
   }
   setProgress(value: number): void { this.progress.push(value); }
   emitStatus(status: DesktopUpdateStatus): void { this.statuses.push(status); }
-  async stageDownloadedUpdate(): Promise<void> {
+  async stageDownloadedUpdate(timeoutMs: number): Promise<void> {
     this.stageCalls += 1;
+    this.stageTimeouts.push(timeoutMs);
     this.events.push("stage");
     if (this.stageError) throw this.stageError;
   }
@@ -358,6 +361,37 @@ test("Squirrel staging rejects on error, no update, or timeout", async () => {
   native.outcome = "not-available";
   await assert.rejects(stageSquirrelMacUpdate(native, 1_000), /no downloaded update/);
   native.outcome = "silent";
-  await assert.rejects(stageSquirrelMacUpdate(native, 5), /in time/);
+  await assert.rejects(stageSquirrelMacUpdate(native, 5), (error: unknown) => error instanceof UpdateStagingTimeoutError && /in time/.test(error.message));
   assert.equal(native.listenerCount("error"), 0);
+});
+
+test("install on quit stages with a short timeout and Restart with the long one", async () => {
+  const quit = createHarness({ platform: "darwin" });
+  quit.adapter.emit("update-downloaded", { version: "1.1.0" });
+  await nextTurn();
+  await quit.updater.installDownloadedUpdateOnQuit();
+  assert.deepEqual(quit.host.stageTimeouts, [60_000]);
+  quit.updater.dispose();
+
+  const restart = createHarness({ platform: "darwin" });
+  restart.adapter.emit("update-downloaded", { version: "1.1.0" });
+  await nextTurn();
+  await restart.updater.install();
+  assert.deepEqual(restart.host.stageTimeouts, [5 * 60_000]);
+  restart.updater.dispose();
+});
+
+test("a staging timeout says the update may still install on a later quit", async () => {
+  const { adapter, host, updater, prepareCalls } = createHarness({ platform: "darwin" });
+  host.stageError = new UpdateStagingTimeoutError();
+  adapter.emit("update-downloaded", { version: "1.1.0" });
+  await nextTurn();
+
+  const status = await updater.installDownloadedUpdateOnQuit();
+
+  assert.equal(prepareCalls(), 0, "the ordinary quit continues instead");
+  assert.equal(status.phase, "error");
+  assert.match(status.message, /took too long/);
+  assert.match(status.message, /may still .* install it the next time AmpleFile quits/);
+  updater.dispose();
 });

@@ -9,6 +9,20 @@ const defaultStartupDelayMs = 5_000;
 const defaultUpdateIntervalMs = 4 * 60 * 60 * 1_000;
 const defaultTransientRetryDelayMs = 60_000;
 const defaultSquirrelStageTimeoutMs = 5 * 60 * 1_000;
+/** Install on quit stages after the tray is gone, with the person waiting for the app to close. */
+const defaultQuitSquirrelStageTimeoutMs = 60 * 1_000;
+
+/**
+ * Squirrel did not finish in time. Its fetch cannot be cancelled, so it may
+ * still finish later, and Squirrel.Mac then installs the update when the app
+ * next quits.
+ */
+export class UpdateStagingTimeoutError extends Error {
+  constructor(message = "Squirrel.Mac did not finish preparing the update in time.") {
+    super(message);
+    this.name = "UpdateStagingTimeoutError";
+  }
+}
 
 export type DesktopUpdatePhase =
   | "unsupported"
@@ -85,7 +99,7 @@ export interface DesktopUpdaterHost {
    * Squirrel.Mac otherwise only fetches inside `quitAndInstall()`, after the
    * app has already shut its backend down. Absent means nothing to stage.
    */
-  stageDownloadedUpdate?(): Promise<void>;
+  stageDownloadedUpdate?(timeoutMs: number): Promise<void>;
 }
 
 export interface DesktopUpdateInstallFailure {
@@ -110,6 +124,8 @@ export interface DesktopUpdaterOptions {
     startupDelayMs: number;
     updateIntervalMs: number;
     transientRetryDelayMs: number;
+    stageTimeoutMs: number;
+    quitStageTimeoutMs: number;
   }>;
 }
 
@@ -148,6 +164,8 @@ export class DesktopUpdater {
   private readonly startupDelayMs: number;
   private readonly updateIntervalMs: number;
   private readonly transientRetryDelayMs: number;
+  private readonly stageTimeoutMs: number;
+  private readonly quitStageTimeoutMs: number;
   private status: DesktopUpdateStatus;
   private configured = false;
   private disposed = false;
@@ -175,6 +193,8 @@ export class DesktopUpdater {
     this.startupDelayMs = options.timings?.startupDelayMs ?? defaultStartupDelayMs;
     this.updateIntervalMs = options.timings?.updateIntervalMs ?? defaultUpdateIntervalMs;
     this.transientRetryDelayMs = options.timings?.transientRetryDelayMs ?? defaultTransientRetryDelayMs;
+    this.stageTimeoutMs = options.timings?.stageTimeoutMs ?? defaultSquirrelStageTimeoutMs;
+    this.quitStageTimeoutMs = options.timings?.quitStageTimeoutMs ?? defaultQuitSquirrelStageTimeoutMs;
     this.status = {
       supported: this.supported,
       phase: this.supported ? "idle" : "unsupported",
@@ -384,10 +404,10 @@ export class DesktopUpdater {
       if (!this.downloadedUpdateStaged && this.host.stageDownloadedUpdate) {
         this.installStage = "staging";
         try {
-          await this.host.stageDownloadedUpdate();
+          await this.host.stageDownloadedUpdate(options.forceRunAfter ? this.stageTimeoutMs : this.quitStageTimeoutMs);
           this.downloadedUpdateStaged = true;
         } catch (error) {
-          return this.failBeforeShutdown(errorMessage(error));
+          return this.failBeforeShutdown(error);
         }
       }
       this.installStage = "shutting_down";
@@ -404,8 +424,8 @@ export class DesktopUpdater {
     return this.installPromise;
   }
 
-  /** The platform installer rejected the payload; the app is untouched. */
-  private failBeforeShutdown(message: string): DesktopUpdateStatus {
+  /** The platform installer rejected the payload, or ran out of time; the app is untouched. */
+  private failBeforeShutdown(error: unknown): DesktopUpdateStatus {
     this.installPromise = null;
     this.installStage = "idle";
     this.installOnQuit = false;
@@ -414,8 +434,12 @@ export class DesktopUpdater {
     return this.setStatus({
       phase: "error",
       progressPercent: null,
-      message: "The downloaded update could not be prepared for installation.",
-      error: message,
+      // A timed-out fetch keeps running and Squirrel.Mac installs whatever it
+      // finishes preparing on a later quit, so do not claim the update is gone.
+      message: error instanceof UpdateStagingTimeoutError
+        ? "The update took too long to prepare and was not installed now. macOS may still finish preparing it and install it the next time AmpleFile quits."
+        : "The downloaded update could not be prepared for installation.",
+      error: errorMessage(error),
     });
   }
 
@@ -659,7 +683,7 @@ export function stageSquirrelMacUpdate(native: NativeSquirrelUpdaterLike, timeou
     native.on("error", onError);
     timer = setTimeout(() => {
       cleanup();
-      reject(new Error("Squirrel.Mac did not finish preparing the update in time."));
+      reject(new UpdateStagingTimeoutError());
     }, timeoutMs);
     timer.unref?.();
     try {
@@ -673,8 +697,8 @@ export function stageSquirrelMacUpdate(native: NativeSquirrelUpdaterLike, timeou
 function defaultElectronHost(getWindow: () => BrowserWindow | null): DesktopUpdaterHost {
   const electron = require("electron") as typeof import("electron");
   return {
-    stageDownloadedUpdate: () => process.platform === "darwin"
-      ? stageSquirrelMacUpdate(electron.autoUpdater)
+    stageDownloadedUpdate: (timeoutMs) => process.platform === "darwin"
+      ? stageSquirrelMacUpdate(electron.autoUpdater, timeoutMs)
       : Promise.resolve(),
     isSupported: () => hasPackagedDesktopUpdateFeed({
       isPackaged: electron.app.isPackaged,
