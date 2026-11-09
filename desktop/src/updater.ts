@@ -8,6 +8,7 @@ const require = createRequire(import.meta.url);
 const defaultStartupDelayMs = 5_000;
 const defaultUpdateIntervalMs = 4 * 60 * 60 * 1_000;
 const defaultTransientRetryDelayMs = 60_000;
+const defaultSquirrelStageTimeoutMs = 5 * 60 * 1_000;
 
 export type DesktopUpdatePhase =
   | "unsupported"
@@ -78,11 +79,30 @@ export interface DesktopUpdaterHost {
   showMessage(options: DesktopUpdateMessage): Promise<{ response: number }>;
   setProgress(value: number): void;
   emitStatus(status: DesktopUpdateStatus): void;
+  /**
+   * Hand the downloaded update to the platform installer and wait until it
+   * has fetched and validated it, while the app is still fully running.
+   * Squirrel.Mac otherwise only fetches inside `quitAndInstall()`, after the
+   * app has already shut its backend down. Absent means nothing to stage.
+   */
+  stageDownloadedUpdate?(): Promise<void>;
+}
+
+export interface DesktopUpdateInstallFailure {
+  message: string;
+  /** True when the person chose to restart into the update; false at quit. */
+  relaunch: boolean;
 }
 
 export interface DesktopUpdaterOptions {
   getWindow?: () => BrowserWindow | null;
   prepareToInstall: () => Promise<void>;
+  /**
+   * Called when an install fails after `prepareToInstall` has shut the
+   * backend down. The window can no longer work, so the host must relaunch
+   * or quit rather than show the update as ready again.
+   */
+  onInstallFailedAfterShutdown?: (failure: DesktopUpdateInstallFailure) => void;
   updater?: DesktopUpdaterAdapter;
   host?: DesktopUpdaterHost;
   automaticChecks?: boolean;
@@ -123,6 +143,7 @@ export class DesktopUpdater {
   private readonly updater: DesktopUpdaterAdapter;
   private readonly host: DesktopUpdaterHost;
   private readonly prepareToInstall: () => Promise<void>;
+  private readonly onInstallFailedAfterShutdown: (failure: DesktopUpdateInstallFailure) => void;
   private readonly automaticChecks: boolean;
   private readonly startupDelayMs: number;
   private readonly updateIntervalMs: number;
@@ -134,6 +155,11 @@ export class DesktopUpdater {
   private installAfterDownload = false;
   private installOnQuit = false;
   private downloadedUpdateReady = false;
+  /** The platform installer has fetched and validated the downloaded update. */
+  private downloadedUpdateStaged = false;
+  /** Where an in-flight install is; errors mean different things in each stage. */
+  private installStage: "idle" | "staging" | "shutting_down" | "handed_off" | "failed_after_shutdown" = "idle";
+  private installRelaunches = false;
   private checkPromise: Promise<DesktopUpdateStatus> | null = null;
   private installPromise: Promise<DesktopUpdateStatus> | null = null;
   private retryTimer: NodeJS.Timeout | null = null;
@@ -144,6 +170,7 @@ export class DesktopUpdater {
     this.updater = options.updater ?? defaultUpdaterAdapter();
     this.host = options.host ?? defaultElectronHost(options.getWindow ?? (() => null));
     this.prepareToInstall = options.prepareToInstall;
+    this.onInstallFailedAfterShutdown = options.onInstallFailedAfterShutdown ?? (() => undefined);
     this.automaticChecks = options.automaticChecks !== false;
     this.startupDelayMs = options.timings?.startupDelayMs ?? defaultStartupDelayMs;
     this.updateIntervalMs = options.timings?.updateIntervalMs ?? defaultUpdateIntervalMs;
@@ -206,7 +233,10 @@ export class DesktopUpdater {
   check(interactive = true): Promise<DesktopUpdateStatus> {
     if (!this.supported || this.disposed) return Promise.resolve(this.getStatus());
     const current = this.getStatus();
-    if (current.phase === "ready" || current.phase === "installing") return Promise.resolve(current);
+    // A wake or periodic check must not flip the status (or the downloaded
+    // payload state) while a download or install is in flight.
+    if (current.phase === "ready" || current.phase === "installing" || current.phase === "downloading") return Promise.resolve(current);
+    if (this.installPromise) return Promise.resolve(current);
     if (!interactive && current.phase === "available") return Promise.resolve(current);
     if (this.checkPromise) return this.checkPromise;
     if (this.retryTimer) {
@@ -244,7 +274,7 @@ export class DesktopUpdater {
   }
 
   install(): Promise<DesktopUpdateStatus> {
-    return this.beginInstall({ forceRunAfter: true, runShutdown: true });
+    return this.beginInstall({ forceRunAfter: true });
   }
 
   shouldInstallOnQuit(): boolean {
@@ -253,7 +283,7 @@ export class DesktopUpdater {
 
   installDownloadedUpdateOnQuit(): Promise<DesktopUpdateStatus> {
     if (!this.shouldInstallOnQuit()) return Promise.resolve(this.getStatus());
-    return this.beginInstall({ forceRunAfter: false, runShutdown: false });
+    return this.beginInstall({ forceRunAfter: false });
   }
 
   dispose(): void {
@@ -314,7 +344,12 @@ export class DesktopUpdater {
     }
   }
 
-  private beginInstall(options: { forceRunAfter: boolean; runShutdown: boolean }): Promise<DesktopUpdateStatus> {
+  /**
+   * Order matters: stage and validate while everything still runs, then shut
+   * down, then hand off. A failure before shutdown leaves a working app; a
+   * failure after it can only relaunch or quit, never report "ready".
+   */
+  private beginInstall(options: { forceRunAfter: boolean }): Promise<DesktopUpdateStatus> {
     if (!this.supported || this.disposed || this.status.phase !== "ready") return Promise.resolve(this.getStatus());
     if (this.installPromise) return this.installPromise;
 
@@ -338,6 +373,7 @@ export class DesktopUpdater {
     }
 
     this.installOnQuit = false;
+    this.installRelaunches = options.forceRunAfter;
     this.setStatus({
       phase: "installing",
       progressPercent: 100,
@@ -345,42 +381,59 @@ export class DesktopUpdater {
       error: null,
     });
     this.installPromise = (async () => {
+      if (!this.downloadedUpdateStaged && this.host.stageDownloadedUpdate) {
+        this.installStage = "staging";
+        try {
+          await this.host.stageDownloadedUpdate();
+          this.downloadedUpdateStaged = true;
+        } catch (error) {
+          return this.failBeforeShutdown(errorMessage(error));
+        }
+      }
+      this.installStage = "shutting_down";
       try {
-        if (options.runShutdown) await this.prepareToInstall();
+        await this.prepareToInstall();
+        if (this.installStage !== "shutting_down") return this.getStatus();
+        this.installStage = "handed_off";
         this.updater.quitAndInstall(true, options.forceRunAfter);
       } catch (error) {
-        this.restoreReadyAfterInstallFailure(errorMessage(error));
+        this.failAfterShutdown(errorMessage(error));
       }
       return this.getStatus();
     })();
     return this.installPromise;
   }
 
-  private restoreReadyAfterInstallFailure(message: string): DesktopUpdateStatus {
+  /** The platform installer rejected the payload; the app is untouched. */
+  private failBeforeShutdown(message: string): DesktopUpdateStatus {
     this.installPromise = null;
-    const installerPath = this.downloadedInstallerPath();
-    if (hasDownloadedUpdatePayload({
-      platform: this.host.platform(),
-      updateDownloadedEventReceived: this.downloadedUpdateReady,
-      installerPath,
-      installerExists: Boolean(installerPath && this.host.installerExists(installerPath)),
-    })) {
-      this.installOnQuit = true;
-      return this.setStatus({
-        phase: "ready",
-        progressPercent: 100,
-        message: "The downloaded update is still ready to install.",
-        error: message,
-      });
-    }
+    this.installStage = "idle";
     this.installOnQuit = false;
     this.downloadedUpdateReady = false;
+    this.downloadedUpdateStaged = false;
     return this.setStatus({
       phase: "error",
       progressPercent: null,
-      message: "Update install failed before restart.",
+      message: "The downloaded update could not be prepared for installation.",
       error: message,
     });
+  }
+
+  /** The backend is already shut down: report the failure and let the host relaunch or quit. */
+  private failAfterShutdown(message: string): DesktopUpdateStatus {
+    if (this.installStage === "failed_after_shutdown") return this.getStatus();
+    this.installStage = "failed_after_shutdown";
+    this.installOnQuit = false;
+    const status = this.setStatus({
+      phase: "error",
+      progressPercent: null,
+      message: this.installRelaunches
+        ? "The update could not be installed. AmpleFile is restarting."
+        : "The update could not be installed.",
+      error: message,
+    });
+    this.onInstallFailedAfterShutdown({ message, relaunch: this.installRelaunches });
+    return status;
   }
 
   private downloadedInstallerPath(): string | null {
@@ -416,6 +469,7 @@ export class DesktopUpdater {
   private readonly onUpdateAvailable = (info: DesktopUpdateInfoLike): void => {
     this.installOnQuit = false;
     this.downloadedUpdateReady = false;
+    this.downloadedUpdateStaged = false;
     this.setStatus({
       phase: "available",
       availableVersion: info.version,
@@ -429,6 +483,7 @@ export class DesktopUpdater {
   private readonly onUpdateNotAvailable = (info: DesktopUpdateInfoLike): void => {
     this.installOnQuit = false;
     this.downloadedUpdateReady = false;
+    this.downloadedUpdateStaged = false;
     this.setStatus({
       phase: "not_available",
       availableVersion: null,
@@ -451,6 +506,7 @@ export class DesktopUpdater {
   private readonly onUpdateDownloaded = (info: DesktopUpdateInfoLike): void => {
     this.installOnQuit = true;
     this.downloadedUpdateReady = true;
+    this.downloadedUpdateStaged = false;
     this.setStatus({
       phase: "ready",
       availableVersion: info.version,
@@ -470,21 +526,28 @@ export class DesktopUpdater {
     this.installAfterDownload = false;
     this.installOnQuit = false;
     this.downloadedUpdateReady = false;
+    this.downloadedUpdateStaged = false;
     this.setStatus({ phase: "idle", progressPercent: null, message: "The update download was cancelled.", error: null });
   };
 
   private readonly onError = (error: Error): void => {
     const message = errorMessage(error);
     console.warn(`AmpleFile updater error: ${message}`);
-    if (this.status.phase === "installing" || this.installPromise) {
-      this.restoreReadyAfterInstallFailure(message);
+    if (this.installPromise) {
+      // While staging, the staging promise rejects with this same error and
+      // reports it; nothing has shut down yet.
+      if (this.installStage === "staging") return;
+      if (this.installStage === "shutting_down" || this.installStage === "handed_off") this.failAfterShutdown(message);
       return;
     }
     if ((this.backgroundCheckInFlight || this.isDeferredNetworkStatus()) && isTransientNetworkUpdateError(message)) {
       this.deferTransientCheck(message);
       return;
     }
-    if (this.status.phase === "downloading") this.downloadedUpdateReady = false;
+    if (this.status.phase === "downloading") {
+      this.downloadedUpdateReady = false;
+      this.downloadedUpdateStaged = false;
+    }
     this.setStatus({ phase: "error", progressPercent: null, message: "Update check failed.", error: message });
   };
 
@@ -563,9 +626,56 @@ function defaultUpdaterAdapter(): DesktopUpdaterAdapter {
   return updaterModule.autoUpdater;
 }
 
+/** The slice of Electron's native `autoUpdater` (Squirrel.Mac) staging uses. */
+export interface NativeSquirrelUpdaterLike {
+  on(event: string, listener: (...args: any[]) => void): unknown;
+  removeListener(event: string, listener: (...args: any[]) => void): unknown;
+  checkForUpdates(): void;
+}
+
+/**
+ * electron-updater's MacUpdater points Squirrel.Mac at a local proxy for the
+ * downloaded ZIP when `update-downloaded` fires, but with
+ * `autoInstallOnAppQuit = false` it only asks Squirrel to fetch it inside
+ * `quitAndInstall()`. Asking here makes Squirrel fetch, unpack, and verify the
+ * code signature now; MacUpdater observes the same native `update-downloaded`
+ * and its later `quitAndInstall()` installs immediately.
+ */
+export function stageSquirrelMacUpdate(native: NativeSquirrelUpdaterLike, timeoutMs = defaultSquirrelStageTimeoutMs): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let timer: NodeJS.Timeout | null = null;
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      native.removeListener("update-downloaded", onDownloaded);
+      native.removeListener("update-not-available", onNotAvailable);
+      native.removeListener("error", onError);
+    };
+    const onDownloaded = () => { cleanup(); resolve(); };
+    const onNotAvailable = () => { cleanup(); reject(new Error("Squirrel.Mac found no downloaded update to install.")); };
+    const onError = (error: unknown) => { cleanup(); reject(error instanceof Error ? error : new Error(String(error))); };
+    native.on("update-downloaded", onDownloaded);
+    native.on("update-not-available", onNotAvailable);
+    native.on("error", onError);
+    timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("Squirrel.Mac did not finish preparing the update in time."));
+    }, timeoutMs);
+    timer.unref?.();
+    try {
+      native.checkForUpdates();
+    } catch (error) {
+      onError(error);
+    }
+  });
+}
+
 function defaultElectronHost(getWindow: () => BrowserWindow | null): DesktopUpdaterHost {
   const electron = require("electron") as typeof import("electron");
   return {
+    stageDownloadedUpdate: () => process.platform === "darwin"
+      ? stageSquirrelMacUpdate(electron.autoUpdater)
+      : Promise.resolve(),
     isSupported: () => hasPackagedDesktopUpdateFeed({
       isPackaged: electron.app.isPackaged,
       platform: process.platform,

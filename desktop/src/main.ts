@@ -358,12 +358,11 @@ app.on("before-quit", (event) => {
 async function prepareForApplicationQuit(): Promise<QuitPreparationOutcome> {
   destroyTray();
   if (desktopUpdater?.shouldInstallOnQuit()) {
-    await shutdownForUpdateInstall();
+    // The updater stages and validates the payload first, then runs the
+    // update shutdown, then hands off. If staging fails nothing has shut down
+    // yet and the ordinary quit below continues; `shutdown()` is idempotent.
     const status = await desktopUpdater.installDownloadedUpdateOnQuit();
     if (status.phase === "installing") return "handoff";
-    desktopUpdater.dispose();
-    desktopUpdater = null;
-    return "quit";
   }
   await shutdown();
   desktopUpdater?.dispose();
@@ -1533,6 +1532,13 @@ function configureUpdater(): void {
   desktopUpdater = new DesktopUpdater({
     getWindow: () => mainWindow,
     prepareToInstall: shutdownForUpdateInstall,
+    // The local API, Pi runtime, and act token are already gone, so the
+    // window cannot work again: never offer the update as ready here.
+    onInstallFailedAfterShutdown: ({ message, relaunch }) => {
+      console.error(`${productName} update install failed after shutdown; ${relaunch ? "restarting" : "quitting"}: ${message}`);
+      if (relaunch) app.relaunch();
+      app.quit();
+    },
   });
   desktopUpdater.start();
 }
