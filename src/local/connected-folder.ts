@@ -1057,7 +1057,36 @@ async function registerConnectedFolder(input: Omit<ConnectedFolderSummary, "id" 
   });
 }
 
+const touchBatchContext = new AsyncLocalStorage<Set<string>>();
+
+/**
+ * Runs a several-item act so the Connected Folders it changes are touched once
+ * at its end rather than once per item. Each touch commits the registry and the
+ * portable `.amplefile/connected-folder.json` with fsync, so per-item touches
+ * multiply disk work and churn a cloud-synced folder. Nested batches join the
+ * outermost one. The touch is maintenance after content changes that already
+ * happened, so its failure never fails the act.
+ */
+export async function withConnectedFolderTouchBatch<T>(operation: () => Promise<T>): Promise<T> {
+  if (touchBatchContext.getStore()) return operation();
+  const roots = new Set<string>();
+  try {
+    return await touchBatchContext.run(roots, operation);
+  } finally {
+    for (const root of roots) await touchConnectedFolderNow(root).catch(() => undefined);
+  }
+}
+
 async function touchConnectedFolder(connectedFolderRoot: string): Promise<void> {
+  const batch = touchBatchContext.getStore();
+  if (batch) {
+    batch.add(resolve(connectedFolderRoot));
+    return;
+  }
+  await touchConnectedFolderNow(connectedFolderRoot);
+}
+
+async function touchConnectedFolderNow(connectedFolderRoot: string): Promise<void> {
   await withRegistryMutation(async () => {
     const registry = await readRegistry();
     const connectedFolder = registry.connectedFolders.find((item) => samePath(item.connectedFolderRoot, connectedFolderRoot));
