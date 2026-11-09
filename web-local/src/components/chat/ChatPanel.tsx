@@ -246,8 +246,16 @@ export function ChatPanel({
     [connectedFolder, connectedFolderCustomizations, connectedFolderIdentityFor],
   );
 
+  // A Chat reports running only while it is mounted and showing that
+  // conversation. Leaving it (unmount, or another conversation) withdraws the
+  // report; the host activity report keeps the dot for a turn still running.
   useEffect(() => {
-    if (conversation?.id) onRunningChangeRef.current?.(conversation.id, running || requestBusy);
+    const conversationId = conversation?.id;
+    if (!conversationId) return;
+    const busy = running || requestBusy;
+    onRunningChangeRef.current?.(conversationId, busy);
+    if (!busy) return;
+    return () => { onRunningChangeRef.current?.(conversationId, false); };
   }, [conversation?.id, running, requestBusy]);
 
   useEffect(() => {
