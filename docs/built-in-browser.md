@@ -43,7 +43,8 @@ way**).
 - A site opens a new page or window only within five seconds of a press in the
   page, and one press opens one, as in Chrome. A sized pop-up such as "Sign in
   with…" opens as its own small window that keeps its link to the page that
-  opened it, which sign-in flows rely on. Mail links open the mail app; other
+  opened it, which sign-in flows rely on. Its title always starts with the
+  site it is showing, which the page cannot change. Mail links open the mail app; other
   non-web addresses are refused.
 - Downloads go to the Downloads folder and never replace a file there, even
   when two with the same name arrive at once.

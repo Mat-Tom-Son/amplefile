@@ -362,6 +362,30 @@ export function siteOrigin(url: string): string | null {
   }
 }
 
+const titleControlPattern = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/**
+ * The title of a pop-up window a site opened. A pop-up has no address bar and
+ * its page controls its own title, so the real site always leads: "https"
+ * sites by host, anything else by its full origin or kind, then the page's
+ * title with direction and control characters removed.
+ */
+export function browserPopupWindowTitle(url: string, pageTitle: string): string {
+  let site: string;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "https:") site = parsed.host;
+    else if (parsed.protocol === "http:") site = parsed.origin;
+    else if (parsed.protocol === "file:") site = "Local File";
+    else if (parsed.protocol === "about:") site = "about:blank";
+    else site = parsed.protocol.replace(/:$/, "");
+  } catch {
+    site = "Pop-up";
+  }
+  const title = pageTitle.replace(titleControlPattern, "").replace(/\s+/g, " ").trim().slice(0, 200);
+  return title && title !== site ? `${site} — ${title}` : site;
+}
+
 /** A long address keeps its start and end: "example.com/very/…/page.html". */
 export function bubbleText(url: string, limit = 120): string {
   const text = url.replace(/^https?:\/\//, "");

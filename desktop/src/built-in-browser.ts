@@ -56,6 +56,7 @@ import {
   browserSearchUrl,
   browserSitePermissions,
   isBrowserPageId,
+  browserPopupWindowTitle,
   isBrowserAddress,
   isPageReachableUrl,
   type BrowserPermissionRequest,
@@ -591,6 +592,18 @@ export class BuiltInBrowser {
   /** Pop-up windows a page opened: links in them become tabs under the same popup rules. */
   #configurePopup(window: BrowserWindow, opener: BrowserPage): void {
     const contents = window.webContents;
+    // A pop-up has no address bar, so its title always starts with the site
+    // actually shown; the page cannot set the window title on its own.
+    const retitle = () => {
+      if (!window.isDestroyed() && !contents.isDestroyed()) window.setTitle(browserPopupWindowTitle(contents.getURL(), contents.getTitle()));
+    };
+    window.on("page-title-updated", (event, title) => {
+      event.preventDefault();
+      if (!window.isDestroyed() && !contents.isDestroyed()) window.setTitle(browserPopupWindowTitle(contents.getURL(), title));
+    });
+    contents.on("did-navigate", retitle);
+    contents.on("did-navigate-in-page", retitle);
+    retitle();
     const input = { lastInputAt: 0 };
     contents.on("input-event", (_event, event) => {
       if (gestureInputTypes.has(event.type)) input.lastInputAt = Date.now();

@@ -18,6 +18,7 @@ import { localServerHref } from "../web-local/src/lib/browser-links.js";
 import {
   browserAddressFor,
   browserConnection,
+  browserPopupWindowTitle,
   browserDisplayAddress,
   browserPermissionPhrase,
   browserUserAgent,
@@ -392,4 +393,19 @@ test("page-supplied addresses follow the page's reach; only the address bar, Wor
   // Trusted sources.
   assert.equal((host.match(/!isBrowserAddress\(address\)\) throw new Error/g) ?? []).length, 2);
   assert.doesNotMatch(host, /\bisBrowserUrl\(/);
+});
+
+test("a pop-up window's title always leads with the site it shows, not what the page claims", async () => {
+  assert.equal(browserPopupWindowTitle("https://accounts.example.com/signin?x=1", "Sign in"), "accounts.example.com — Sign in");
+  assert.equal(browserPopupWindowTitle("https://evil.example/", "accounts.google.com — Sign in"), "evil.example — accounts.google.com — Sign in");
+  assert.equal(browserPopupWindowTitle("http://192.168.1.4:8080/login", "Router"), "http://192.168.1.4:8080 — Router");
+  assert.equal(browserPopupWindowTitle("https://xn--80ak6aa92e.com/", "Apple"), "xn--80ak6aa92e.com — Apple", "lookalike hosts stay in their ASCII form");
+  assert.equal(browserPopupWindowTitle("https://evil.example/", "\u202egoogle.com\u202c"), "evil.example — google.com", "direction overrides are dropped");
+  assert.equal(browserPopupWindowTitle("https://example.com/", ""), "example.com");
+  assert.equal(browserPopupWindowTitle("about:blank", ""), "about:blank");
+  assert.equal(browserPopupWindowTitle("not a url", "Hi"), "Pop-up — Hi");
+  const host = await readFile("desktop/src/built-in-browser.ts", "utf8");
+  const popup = host.slice(host.indexOf("#configurePopup(window: BrowserWindow"));
+  assert.match(popup, /window\.on\("page-title-updated", \(event, title\) => \{\n\s*event\.preventDefault\(\);\n[^\n]*window\.setTitle\(browserPopupWindowTitle\(contents\.getURL\(\), title\)\);/);
+  assert.match(popup, /contents\.on\("did-navigate", retitle\);/);
 });
