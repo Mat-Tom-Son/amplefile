@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { Add16Regular, ChevronDown16Regular, ChevronUp16Regular, FolderArrowRight16Regular, Sparkle16Regular, Grid20Regular, MoreHorizontal20Regular, PanelRight20Regular, TextBulletListLtr20Regular } from "@fluentui/react-icons";
 
 import "./file-manager.css";
@@ -1438,6 +1438,22 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const workerChanges = runningHere ? null : worker.changes;
   const markedPaths = workerChanges?.paths ?? null;
 
+  // Row handlers stay the same object for the window's life, so a selection
+  // change re-renders only the rows whose own state changed.
+  const entryHandlersRef = useRef<EntryHandlers | null>(null);
+  entryHandlersRef.current = {
+    click: clickEntry,
+    open: (entry) => void openEntry(entry),
+    contextMenu: (entry, event) => void openContextMenu(entry, event),
+    dragStart: startDrag,
+  };
+  const entryHandlers = useMemo<EntryHandlers>(() => ({
+    click: (entry, event) => entryHandlersRef.current!.click(entry, event),
+    open: (entry) => entryHandlersRef.current!.open(entry),
+    contextMenu: (entry, event) => entryHandlersRef.current!.contextMenu(entry, event),
+    dragStart: (entry, event) => entryHandlersRef.current!.dragStart(entry, event),
+  }), []);
+
   // Suggestions written from the folder, when AI is connected; the plain ones cover a selection and the wait.
 
   const references = [
@@ -1662,45 +1678,35 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         {status === "ready" && !visible.length ? <p className="fm-empty">{query.trim() ? `No items match “${query.trim()}”` : "This folder is empty."}</p> : null}
 
         {view === "list" ? <div className="fm-rows" role="rowgroup">
-          {visible.map((entry, index) => <div
-            key={entry.path}
-            id={rowDomId(entry.path)}
-            role="row"
-            aria-selected={selected.has(entry.path)}
-            data-fm-path={entry.path}
-            className={`fm-row${index % 2 ? " is-odd" : ""}${selected.has(entry.path) ? " is-selected" : ""}${entry.ignored ? " is-ignored" : ""}${dropTarget === entry.path && entry.path !== location.path ? " is-drop-target" : ""}`}
-            draggable={entry.kind === "file"}
-            onClick={(event) => clickEntry(entry, event)}
-            onDoubleClick={() => void openEntry(entry)}
-            onContextMenu={(event) => void openContextMenu(entry, event)}
-            onDragStart={(event) => startDrag(entry, event)}
-          >
-            <span role="gridcell" className="fm-cell fm-col-name">
-              <span className="fm-row-icon"><EntryIcon entry={entry} tint={nestedTint(entry)} /></span>
-              <span className="fm-row-name" title={entry.name}>{entry.name}</span>
-              {markedPaths && isMarkedPath(entry.path, markedPaths) ? <span className="fm-changed-dot" title="Changed by the Worker" aria-label="Changed by the Worker" role="img" /> : null}
-            </span>
-            <span role="gridcell" className="fm-cell fm-col-modified">{formatFileManagerDate(entry.updatedAt)}</span>
-            <span role="gridcell" className="fm-cell fm-col-size">{sizeText(entry)}</span>
-            <span role="gridcell" className="fm-cell fm-col-kind" title={kindLabel(entry)}>{kindLabel(entry)}</span>
-          </div>)}
+          {visible.map((entry, index) => {
+            const tint = nestedTint(entry);
+            return <FileRow
+              key={entry.path}
+              entry={entry}
+              odd={index % 2 === 1}
+              selected={selected.has(entry.path)}
+              dropTarget={dropTarget === entry.path && entry.path !== location.path}
+              marked={Boolean(markedPaths && isMarkedPath(entry.path, markedPaths))}
+              kind={kindLabel(entry)}
+              tintColor={tint?.color}
+              tintSymbol={tint?.symbol}
+              handlers={entryHandlers}
+            />;
+          })}
         </div> : <div className="fm-grid" role="row">
-          {visible.map((entry) => <div
-            key={entry.path}
-            id={rowDomId(entry.path)}
-            role="gridcell"
-            aria-selected={selected.has(entry.path)}
-            data-fm-path={entry.path}
-            className={`fm-tile${selected.has(entry.path) ? " is-selected" : ""}${entry.ignored ? " is-ignored" : ""}${dropTarget === entry.path && entry.path !== location.path ? " is-drop-target" : ""}`}
-            draggable={entry.kind === "file"}
-            onClick={(event) => clickEntry(entry, event)}
-            onDoubleClick={() => void openEntry(entry)}
-            onContextMenu={(event) => void openContextMenu(entry, event)}
-            onDragStart={(event) => startDrag(entry, event)}
-          >
-            <span className="fm-tile-icon"><EntryIcon entry={entry} tint={nestedTint(entry)} /></span>
-            <span className="fm-tile-name" title={entry.name}>{markedPaths && isMarkedPath(entry.path, markedPaths) ? <span className="fm-changed-dot" title="Changed by the Worker" aria-label="Changed by the Worker" role="img" /> : null}{middleTruncate(entry.name)}</span>
-          </div>)}
+          {visible.map((entry) => {
+            const tint = nestedTint(entry);
+            return <FileTile
+              key={entry.path}
+              entry={entry}
+              selected={selected.has(entry.path)}
+              dropTarget={dropTarget === entry.path && entry.path !== location.path}
+              marked={Boolean(markedPaths && isMarkedPath(entry.path, markedPaths))}
+              tintColor={tint?.color}
+              tintSymbol={tint?.symbol}
+              handlers={entryHandlers}
+            />;
+          })}
         </div>}
         </>}
         {listing.truncated ? <p className="fm-note">Some items are not shown. This folder holds more than AmpleFile lists at once.</p> : null}
@@ -2043,3 +2049,71 @@ function SuggestingComposer({ connectedFolderId, path, writtenSuggestions, showS
     : fileManagerSuggestions({ selection: references, inSubfolder: Boolean(path), automationsOn });
   return <FileManagerComposer {...composer} suggestions={suggestions} />;
 }
+
+interface EntryHandlers {
+  click: (entry: TreeEntry, event: MouseEvent<HTMLElement>) => void;
+  open: (entry: TreeEntry) => void;
+  contextMenu: (entry: TreeEntry, event: MouseEvent<HTMLElement>) => void;
+  dragStart: (entry: TreeEntry, event: DragEvent<HTMLElement>) => void;
+}
+
+interface EntryViewProps {
+  entry: TreeEntry;
+  selected: boolean;
+  dropTarget: boolean;
+  /** Changed by the Worker's last reply. */
+  marked: boolean;
+  tintColor?: string;
+  tintSymbol?: FolderLook["symbol"];
+  handlers: EntryHandlers;
+}
+
+function entryTint(color: string | undefined, symbol: FolderLook["symbol"] | undefined): FolderLook | undefined {
+  return color === undefined ? undefined : { color, symbol: symbol ?? null };
+}
+
+const changedDot = <span className="fm-changed-dot" title="Changed by the Worker" aria-label="Changed by the Worker" role="img" />;
+
+/** One list row; memoised, since a folder can show thousands. */
+const FileRow = memo(function FileRow({ entry, odd, selected, dropTarget, marked, kind, tintColor, tintSymbol, handlers }: EntryViewProps & { odd: boolean; kind: string }) {
+  return <div
+    id={rowDomId(entry.path)}
+    role="row"
+    aria-selected={selected}
+    data-fm-path={entry.path}
+    className={`fm-row${odd ? " is-odd" : ""}${selected ? " is-selected" : ""}${entry.ignored ? " is-ignored" : ""}${dropTarget ? " is-drop-target" : ""}`}
+    draggable={entry.kind === "file"}
+    onClick={(event) => handlers.click(entry, event)}
+    onDoubleClick={() => handlers.open(entry)}
+    onContextMenu={(event) => handlers.contextMenu(entry, event)}
+    onDragStart={(event) => handlers.dragStart(entry, event)}
+  >
+    <span role="gridcell" className="fm-cell fm-col-name">
+      <span className="fm-row-icon"><EntryIcon entry={entry} tint={entryTint(tintColor, tintSymbol)} /></span>
+      <span className="fm-row-name" title={entry.name}>{entry.name}</span>
+      {marked ? changedDot : null}
+    </span>
+    <span role="gridcell" className="fm-cell fm-col-modified">{formatFileManagerDate(entry.updatedAt)}</span>
+    <span role="gridcell" className="fm-cell fm-col-size">{sizeText(entry)}</span>
+    <span role="gridcell" className="fm-cell fm-col-kind" title={kind}>{kind}</span>
+  </div>;
+});
+
+/** One icon-view tile; memoised like FileRow. */
+const FileTile = memo(function FileTile({ entry, selected, dropTarget, marked, tintColor, tintSymbol, handlers }: EntryViewProps) {
+  return <div
+    id={rowDomId(entry.path)}
+    role="gridcell"
+    aria-selected={selected}
+    data-fm-path={entry.path}
+    className={`fm-tile${selected ? " is-selected" : ""}${entry.ignored ? " is-ignored" : ""}${dropTarget ? " is-drop-target" : ""}`}
+    draggable={entry.kind === "file"}
+    onClick={(event) => handlers.click(entry, event)}
+    onDoubleClick={() => handlers.open(entry)}
+    onContextMenu={(event) => handlers.contextMenu(entry, event)}
+    onDragStart={(event) => handlers.dragStart(entry, event)}
+  >
+    <span className="fm-tile-icon"><EntryIcon entry={entry} tint={entryTint(tintColor, tintSymbol)} /></span>
+    <span className="fm-tile-name" title={entry.name}>{marked ? changedDot : null}{middleTruncate(entry.name)}</span>
+  </div>;
+});

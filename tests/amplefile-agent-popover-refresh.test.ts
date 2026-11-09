@@ -70,7 +70,7 @@ test("the AmpleFile Agent streams its steps and keeps one compact line for deleg
   assert.match(popover, /\{request && activePhases\.has\(request\.phase\) \? \(\s*<div className="agent-tail">/);
   // The agent's own turn shows its thinking and tool steps the way a Worker's Chat does.
   assert.match(popover, /<RuntimeContextPreview entries=\{liveSteps\} running=\{request\?\.phase === "working"\} replyStarted=\{Boolean\(streamingAssistant\)\}/);
-  assert.match(popover, /<RuntimeContextPreview entries=\{savedWorkTrailPreviews\(message as ChatMessage\)\}/);
+  assert.match(popover, /savedWorkTrailPreviews\(message as ChatMessage\)[\s\S]*?<RuntimeContextPreview entries=\{steps\}/);
   assert.match(popover, /<span className="working-elapsed">\{elapsedLabel\}<\/span>/);
   assert.match(popover, /Working in \{request\.children\.filter\(\(child\) => child\.state === "running"\)\.length === 1 \? "a Connected Folder" : "Connected Folders"\}…/);
   assert.match(popover, /className="working-line" role="status" aria-live="polite"/);

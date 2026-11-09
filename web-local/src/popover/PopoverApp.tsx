@@ -1153,20 +1153,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
           }}
         >
           {loadingChat ? <p className="agent-chat-loading" role="status">Loading chat…</p> : !messages.length && !streamingAssistant && !request ? <div className="agent-chat-empty"><p>What would you like to work on?</p><span>Pick up a saved chat, or start here.</span></div> : null}
-          {messages.map((message) => (
-            <article
-              className={message.kind === "assistant_continuation" || message.kind === "context_compaction" ? "work-continuation" : `popover-message ${message.role}`}
-              key={message.id}
-              title={timestampTitle(message.createdAt)}
-            >
-              {message.role === "assistant" && message.kind !== "assistant_continuation" ? <RuntimeContextPreview entries={savedWorkTrailPreviews(message as ChatMessage)} renderText={renderStepText} /> : null}
-              <div className="popover-message-body">
-                {message.kind === "assistant_continuation" ? "Continuing with the results from delegated work." : message.role === "assistant"
-                  ? <PopoverMarkdown text={message.content} />
-                  : message.content}
-              </div>
-            </article>
-          ))}
+          {messages.map((message) => <SavedPopoverMessage message={message} key={message.id} />)}
           {request?.phase === "working" || liveSteps.length ? (
             <RuntimeContextPreview entries={liveSteps} running={request?.phase === "working"} replyStarted={Boolean(streamingAssistant)} renderText={renderStepText} />
           ) : null}
@@ -1340,6 +1327,27 @@ const popoverMarkdownComponents: Components = {
 /** Replies and progress notes; memoised so unchanged text is not re-parsed. */
 const PopoverMarkdown = memo(function PopoverMarkdown({ text }: { text: string }) {
   return <ReactMarkdown remarkPlugins={popoverRemarkPlugins} rehypePlugins={popoverRehypePlugins} components={popoverMarkdownComponents}>{text}</ReactMarkdown>;
+});
+
+/**
+ * One saved message. Memoised: a streamed frame or a keystroke in the
+ * composer re-renders the popover, but never re-parses a saved reply.
+ */
+const SavedPopoverMessage = memo(function SavedPopoverMessage({ message }: { message: AmpleFileAgentMessage }) {
+  const steps = useMemo(() => message.role === "assistant" && message.kind !== "assistant_continuation" ? savedWorkTrailPreviews(message as ChatMessage) : null, [message]);
+  return (
+    <article
+      className={message.kind === "assistant_continuation" || message.kind === "context_compaction" ? "work-continuation" : `popover-message ${message.role}`}
+      title={timestampTitle(message.createdAt)}
+    >
+      {steps ? <RuntimeContextPreview entries={steps} renderText={renderStepText} /> : null}
+      <div className="popover-message-body">
+        {message.kind === "assistant_continuation" ? "Continuing with the results from delegated work." : message.role === "assistant"
+          ? <PopoverMarkdown text={message.content} />
+          : message.content}
+      </div>
+    </article>
+  );
 });
 
 /** Progress notes inside the steps render with the same Markdown as replies. */
