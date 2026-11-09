@@ -613,6 +613,8 @@ interface LocalApiState {
   appMode: "dev" | "desktop";
   connectedFolderBase?: string;
   allowedOrigins: string[];
+  /** The address the API listens on, accepted in a request's Host alongside this computer's loopback names. */
+  listenHost: string;
   sessionToken?: string;
   maxBodyBytes: number;
   runtimeProvider: PiRuntimeProvider;
@@ -859,6 +861,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     ...(options.browser ? { browser: options.browser } : {}),
     connectedFolderBase: options.connectedFolderBase ? resolve(options.connectedFolderBase) : undefined,
     allowedOrigins: options.allowedOrigins ?? ["http://127.0.0.1:5173", "http://localhost:5173"],
+    listenHost: host,
     sessionToken: options.sessionToken,
     maxBodyBytes: options.maxBodyBytes ?? numberFromEnv("AMPLEFILE_LOCAL_MAX_BODY_BYTES", 100 * 1024 * 1024),
     runtimeProvider,
@@ -11454,9 +11457,40 @@ function parseRelativePaths(value: string | undefined, fileCount: number): Array
 }
 
 function authorize(state: LocalApiState, req: IncomingMessage): void {
+  if (!hostAllowed(state, req)) throw forbidden("Host is not allowed.");
   const origin = req.headers.origin;
   if (origin && !state.allowedOrigins.includes(origin)) throw forbidden("Origin is not allowed.");
   if (state.sessionToken && req.headers["x-amplefile-session"] !== state.sessionToken) throw unauthorized("Unauthorized.");
+}
+
+const loopbackHostNames = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+/**
+ * Refuses DNS rebinding: a page on another site whose name has been pointed
+ * at this computer reaches the API with that site's name in Host, and sends
+ * no Origin on a simple same-origin read. A request must name this computer
+ * (a loopback name or the address the API listens on) on the port it arrived
+ * at, which is what `local:dev`'s Vite proxy and the packaged app send, or be
+ * the host of an allowed origin, for a proxy that keeps the page's own Host.
+ */
+function hostAllowed(state: LocalApiState, req: IncomingMessage): boolean {
+  const host = req.headers.host?.trim().toLowerCase();
+  if (!host) return false;
+  const portSeparator = host.lastIndexOf(":");
+  const hasPort = portSeparator > host.lastIndexOf("]");
+  const name = hasPort ? host.slice(0, portSeparator) : host;
+  const port = hasPort ? host.slice(portSeparator + 1) : "";
+  const listenName = state.listenHost.includes(":") ? `[${state.listenHost.toLowerCase()}]` : state.listenHost.toLowerCase();
+  const thisComputer = loopbackHostNames.has(name) || (name === listenName && !["0.0.0.0", "[::]"].includes(listenName));
+  if (thisComputer && req.socket.localPort !== undefined && port === String(req.socket.localPort)) return true;
+  return state.allowedOrigins.some((origin) => {
+    try {
+      const url = new URL(origin);
+      return (url.protocol === "http:" || url.protocol === "https:") && url.host === host;
+    } catch {
+      return false;
+    }
+  });
 }
 
 function setCorsHeaders(state: LocalApiState, req: IncomingMessage, res: ServerResponse): void {

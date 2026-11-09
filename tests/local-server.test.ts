@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -95,6 +95,53 @@ test("file info hashes a file only when asked or small enough for History to kee
     if (previousCap === undefined) delete process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES;
     else process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES = previousCap;
     await api.close();
+    await rm(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("the local API answers only requests that name this computer or an allowed origin's host", async () => {
+  const sandbox = await mkdtemp(join(tmpdir(), "amplefile-host-check-"));
+  const dev = await startLocalApi({ port: 0, stateBase: join(sandbox, "dev-state"), connectedFolderBase: join(sandbox, "dev-content"), loadEnv: false });
+  const desktop = await startLocalApi({
+    appMode: "desktop",
+    port: 0,
+    stateBase: join(sandbox, "desktop-state"),
+    connectedFolderBase: join(sandbox, "desktop-content"),
+    loadEnv: false,
+    sessionToken: "session-token",
+    allowedOrigins: ["amplefile-desktop://app"],
+  });
+  try {
+    const status = (port: number, host: string | null, headers: Record<string, string> = {}) => new Promise<number>((resolveStatus, reject) => {
+      const request = httpRequest({ host: "127.0.0.1", port, path: "/api/health", method: "GET", setHost: false, headers: { ...(host === null ? {} : { host }), ...headers } }, (response) => {
+        response.resume();
+        resolveStatus(response.statusCode ?? 0);
+      });
+      request.once("error", reject);
+      request.end();
+    });
+    // The development API on its own port, by any loopback name.
+    for (const host of [`127.0.0.1:${dev.port}`, `localhost:${dev.port}`, `LOCALHOST:${dev.port}`, `[::1]:${dev.port}`]) {
+      assert.equal(await status(dev.port, host), 200, host);
+    }
+    // A proxy that keeps the development page's own host (Vite's rewrites it to the API's).
+    assert.equal(await status(dev.port, "localhost:5173"), 200);
+    assert.equal(await status(dev.port, "127.0.0.1:5173"), 200);
+    // A rebound name, another port, or no Host at all is refused before any route runs.
+    for (const host of [`attacker.example:${dev.port}`, "attacker.example", `127.0.0.1:${dev.port + 1}`, "localhost", "attacker.example:5173", `127.0.0.1.attacker.example:${dev.port}`]) {
+      assert.equal(await status(dev.port, host), 403, host);
+    }
+    assert.ok([400, 403].includes(await status(dev.port, null)), "no Host (Node itself turns away an HTTP/1.1 request without one)");
+
+    // The packaged app's token flow is unchanged, and a rebound name is refused even with the token.
+    assert.equal(await status(desktop.port, `127.0.0.1:${desktop.port}`, { "x-amplefile-session": "session-token", origin: "amplefile-desktop://app" }), 200);
+    assert.equal(await status(desktop.port, `127.0.0.1:${desktop.port}`), 401);
+    assert.equal(await status(desktop.port, `attacker.example:${desktop.port}`, { "x-amplefile-session": "session-token" }), 403);
+    // Every in-app caller uses the origin the API reports.
+    assert.equal((await fetch(`${desktop.origin}/api/health`, { headers: { "x-amplefile-session": "session-token" } })).status, 200);
+  } finally {
+    await dev.close();
+    await desktop.close();
     await rm(sandbox, { recursive: true, force: true });
   }
 });
