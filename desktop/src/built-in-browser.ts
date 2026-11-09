@@ -56,7 +56,8 @@ import {
   browserSearchUrl,
   browserSitePermissions,
   isBrowserPageId,
-  isBrowserUrl,
+  isBrowserAddress,
+  isPageReachableUrl,
   type BrowserPermissionRequest,
   type BrowserSiteDecision,
   type BrowserSitePermission,
@@ -439,7 +440,9 @@ export class BuiltInBrowser {
   #load(page: BrowserPage, url: string): Promise<void> {
     page.error = null;
     page.crashed = false;
-    if (!isBrowserUrl(url)) {
+    // Callers are the address bar, a Worker, a restored tab, or a page-opened
+    // tab that was already checked with isPageReachableUrl.
+    if (!isBrowserAddress(url)) {
       void this.#openOutside(url);
       return Promise.resolve();
     }
@@ -504,8 +507,8 @@ export class BuiltInBrowser {
     contents.on("enter-html-full-screen", () => this.#enterFullScreen(page));
     contents.on("leave-html-full-screen", () => this.#leaveFullScreen(page));
     contents.on("will-attach-webview", (event) => event.preventDefault());
-    contents.on("will-navigate", (event) => this.#guardNavigation(event, event.url));
-    contents.on("will-redirect", (event) => this.#guardNavigation(event, event.url));
+    contents.on("will-navigate", (event) => this.#guardNavigation(event, contents, event.url));
+    contents.on("will-redirect", (event) => this.#guardNavigation(event, contents, event.url));
     contents.on("context-menu", (_event, params) => { void this.#contextMenu(page, params); });
     contents.on("before-input-event", (event, input) => {
       if (input.type !== "keyDown") return;
@@ -524,8 +527,9 @@ export class BuiltInBrowser {
     });
   }
 
-  #guardNavigation(event: Electron.Event, url: string): void {
-    if (isBrowserUrl(url)) return;
+  /** Navigations the page itself starts; a web page never reaches a local file. */
+  #guardNavigation(event: Electron.Event, contents: WebContents, url: string): void {
+    if (isPageReachableUrl(contents.getURL(), url)) return;
     event.preventDefault();
     void this.#openOutside(url);
   }
@@ -537,7 +541,7 @@ export class BuiltInBrowser {
   }
 
   #windowOpen(opener: BrowserPage, details: HandlerDetails): WindowOpenHandlerResponse {
-    if (!isBrowserUrl(details.url) && details.url !== "") {
+    if (!isPageReachableUrl(opener.view.webContents.getURL(), details.url) && details.url !== "") {
       void this.#openOutside(details.url);
       return { action: "deny" };
     }
@@ -579,7 +583,7 @@ export class BuiltInBrowser {
 
   /** Pop-up windows use the original tab's bar, retaining the site that actually asked. */
   #blockPopup(page: BrowserPage, contents: WebContents, url: string): void {
-    if (page.closed || !url || !isBrowserUrl(url)) return;
+    if (page.closed || !url || !isPageReachableUrl(contents.getURL(), url)) return;
     page.blockedPopup = { url, origin: siteOrigin(contents.getURL()) };
     this.#emit(page);
   }
@@ -595,7 +599,7 @@ export class BuiltInBrowser {
       if (event.isMainFrame && !event.isSameDocument) input.lastInputAt = 0;
     });
     contents.setWindowOpenHandler((details) => {
-      if (!isBrowserUrl(details.url)) {
+      if (!isPageReachableUrl(contents.getURL(), details.url)) {
         void this.#openOutside(details.url);
       } else if (this.#canOpenPopup(contents, input)) {
         this.#openTab(details.url, true, "person");
@@ -604,7 +608,8 @@ export class BuiltInBrowser {
       }
       return { action: "deny" };
     });
-    contents.on("will-navigate", (event) => this.#guardNavigation(event, event.url));
+    contents.on("will-navigate", (event) => this.#guardNavigation(event, contents, event.url));
+    contents.on("will-redirect", (event) => this.#guardNavigation(event, contents, event.url));
     contents.on("will-attach-webview", (event) => event.preventDefault());
   }
 
@@ -998,7 +1003,8 @@ export class BuiltInBrowser {
       : params.dictionarySuggestions.slice(0, 5);
     if (contents.isDestroyed() || page.closed) return;
     const template: MenuItemConstructorOptions[] = [];
-    if (params.linkURL && isBrowserUrl(params.linkURL)) {
+    // The link and image addresses come from the page, so they follow the page's own reach.
+    if (params.linkURL && isPageReachableUrl(contents.getURL(), params.linkURL)) {
       template.push(
         { label: "Open Link in New Tab", click: () => { this.#openTab(params.linkURL, false, "person"); } },
         { label: "Open Link in Your Web Browser", click: () => { void this.#options.openExternal(params.linkURL).catch(() => undefined); } },
@@ -1008,7 +1014,7 @@ export class BuiltInBrowser {
     }
     if (params.mediaType === "image" && params.srcURL) {
       template.push(
-        ...(isBrowserUrl(params.srcURL) ? [{ label: "Open Image in New Tab", click: () => { this.#openTab(params.srcURL, false, "person"); } }] : []),
+        ...(isPageReachableUrl(contents.getURL(), params.srcURL) ? [{ label: "Open Image in New Tab", click: () => { this.#openTab(params.srcURL, false, "person"); } }] : []),
         { label: "Copy Image", click: () => contents.copyImageAt(params.x, params.y) },
         { label: "Copy Image Address", click: () => clipboard.writeText(params.srcURL) },
         { type: "separator" },
@@ -1105,7 +1111,7 @@ export class BuiltInBrowser {
       tabs: async () => this.#tabSummaries(),
       open: async ({ url, show, signal, owner }) => {
         const address = browserAddressFor(url);
-        if (!address || !isBrowserUrl(address)) throw new Error(`"${url}" is not a web address this browser can open.`);
+        if (!address || !isBrowserAddress(address)) throw new Error(`"${url}" is not a web address this browser can open.`);
         signal?.throwIfAborted();
         const page = this.#openTab(address, show === true, "agent", owner ?? null);
         return await this.#using(page, owner, async () => {
@@ -1130,7 +1136,7 @@ export class BuiltInBrowser {
             contents.reload();
           } else {
             const address = browserAddressFor(to);
-            if (!address || !isBrowserUrl(address)) throw new Error(`"${to}" is not a web address this browser can open.`);
+            if (!address || !isBrowserAddress(address)) throw new Error(`"${to}" is not a web address this browser can open.`);
             void this.#load(page, address);
           }
           await delay(50);
@@ -1457,7 +1463,7 @@ export class BuiltInBrowser {
     const live = this.#pages.get(pageId);
     if (live && !live.closed && !live.view.webContents.isDestroyed()) return live;
     const restored = this.#synced.tabs.find((item) => item.pageId === pageId);
-    if (restored && restored.url && isBrowserUrl(restored.url)) {
+    if (restored && restored.url && isBrowserAddress(restored.url)) {
       const page = this.#createPage(pageId, restored.url, "person");
       await delay(50);
       await this.#waitForLoad(page, signal);
@@ -1664,7 +1670,7 @@ export function parseBrowserViewRequest(value: unknown): BrowserViewRequest {
   if (typeof record.sequence !== "number" || !Number.isSafeInteger(record.sequence) || record.sequence < 0) throw new Error("The browser view sequence is invalid.");
   return {
     pageId: record.pageId,
-    url: record.url && isBrowserUrl(record.url) ? record.url : "",
+    url: record.url && isBrowserAddress(record.url) ? record.url : "",
     sequence: record.sequence,
     bounds: { x: bounds.x as number, y: bounds.y as number, width: Math.max(0, bounds.width as number), height: Math.max(0, bounds.height as number) },
     active: record.active === true,

@@ -242,7 +242,19 @@ export function isBrowserPageId(value: unknown): value is string {
   return typeof value === "string" && pageIdPattern.test(value);
 }
 
-/** Schemes a browser tab may show. Anything else is handed to the system or refused. */
+function urlProtocol(value: string): string | null {
+  try {
+    return new URL(value).protocol;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Web addresses: what any page may reach on its own (a link, a redirect, a
+ * pop-up, "Open Link in New Tab"). Anything else is handed to the system or
+ * refused.
+ */
 export function isBrowserUrl(value: string): boolean {
   let url: URL;
   try {
@@ -250,8 +262,26 @@ export function isBrowserUrl(value: string): boolean {
   } catch {
     return false;
   }
-  if (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "file:") return true;
+  if (url.protocol === "http:" || url.protocol === "https:") return true;
   return url.protocol === "about:" && url.pathname === "blank";
+}
+
+/**
+ * What a tab may show when the person types it in the address bar or a Worker
+ * opens it: a web address or a local file on this computer.
+ */
+export function isBrowserAddress(value: string): boolean {
+  return isBrowserUrl(value) || urlProtocol(value) === "file:";
+}
+
+/**
+ * Whether a page showing `from` may itself open `to`. Web addresses always; a
+ * local file only from another local file (a saved page linking to its own
+ * files), never from a web page, as in Chrome.
+ */
+export function isPageReachableUrl(from: string, to: string): boolean {
+  if (isBrowserUrl(to)) return true;
+  return urlProtocol(to) === "file:" && urlProtocol(from) === "file:";
 }
 
 const schemePattern = /^[a-z][a-z0-9+.-]*:/i;

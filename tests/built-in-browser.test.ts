@@ -21,8 +21,10 @@ import {
   browserDisplayAddress,
   browserPermissionPhrase,
   browserUserAgent,
+  isBrowserAddress,
   isBrowserPageId,
   isBrowserUrl,
+  isPageReachableUrl,
   permissionKinds,
   bubbleText,
   siteOrigin,
@@ -48,10 +50,10 @@ test("the address bar turns hosts, local servers, and files into addresses and e
   assert.equal(browserAddressFor("   "), null);
 });
 
-test("browser tabs show only web pages, files, and a blank page", () => {
+test("pages reach only web addresses; the address bar and Workers may also open local files", () => {
   assert.equal(isBrowserUrl("https://example.com/"), true);
   assert.equal(isBrowserUrl("http://localhost:3000/"), true);
-  assert.equal(isBrowserUrl("file:///Users/me/index.html"), true);
+  assert.equal(isBrowserUrl("file:///Users/me/index.html"), false, "a local file is not a web address");
   assert.equal(isBrowserUrl("about:blank"), true);
   assert.equal(isBrowserUrl("about:settings"), false);
   assert.equal(isBrowserUrl("javascript:alert(1)"), false);
@@ -59,6 +61,16 @@ test("browser tabs show only web pages, files, and a blank page", () => {
   assert.equal(isBrowserUrl("amplefile-desktop://app/index.html"), false);
   assert.equal(isBrowserUrl("chrome://settings"), false);
   assert.equal(isBrowserUrl("not a url"), false);
+  assert.equal(isBrowserAddress("file:///Users/me/index.html"), true);
+  assert.equal(isBrowserAddress("https://example.com/"), true);
+  assert.equal(isBrowserAddress("mailto:someone@example.com"), false);
+  assert.equal(isBrowserAddress("chrome://settings"), false);
+  // A web page never reaches a local file; a saved local page may link to its own files.
+  assert.equal(isPageReachableUrl("https://evil.example/", "file:///Users/me/.ssh/id_ed25519"), false);
+  assert.equal(isPageReachableUrl("about:blank", "file:///etc/hosts"), false);
+  assert.equal(isPageReachableUrl("file:///Users/me/site/index.html", "file:///Users/me/site/about.html"), true);
+  assert.equal(isPageReachableUrl("file:///Users/me/site/index.html", "https://example.com/"), true);
+  assert.equal(isPageReachableUrl("https://example.com/", "javascript:alert(1)"), false);
   assert.equal(browserDisplayAddress("about:blank"), "");
   assert.equal(isBrowserPageId("k3j9x2"), true);
   assert.equal(isBrowserPageId("browser:k3j9x2"), false);
@@ -365,4 +377,19 @@ test("a job's own announcement of a local server reaches the Worker, and Chat li
   assert.equal(localServerHref("http://my-app.localhost:3000/"), "http://my-app.localhost:3000/");
   assert.equal(localServerHref("https://example.com/"), null);
   assert.equal(localServerHref("file:///etc/hosts"), null);
+});
+
+test("page-supplied addresses follow the page's reach; only the address bar, Workers, and restored tabs use local-file addresses", async () => {
+  const host = await readFile("desktop/src/built-in-browser.ts", "utf8");
+  // Context-menu links and images come from the page.
+  assert.match(host, /if \(params\.linkURL && isPageReachableUrl\(contents\.getURL\(\), params\.linkURL\)\)/);
+  assert.match(host, /isPageReachableUrl\(contents\.getURL\(\), params\.srcURL\)/);
+  // Navigations, redirects, and window.open in tabs and pop-ups.
+  assert.match(host, /#guardNavigation\(event: Electron\.Event, contents: WebContents, url: string\): void \{\n\s*if \(isPageReachableUrl\(contents\.getURL\(\), url\)\) return;/);
+  assert.equal((host.match(/contents\.on\("will-redirect", \(event\) => this\.#guardNavigation\(event, contents, event\.url\)\)/g) ?? []).length, 2);
+  assert.match(host, /if \(!isPageReachableUrl\(opener\.view\.webContents\.getURL\(\), details\.url\) && details\.url !== ""\)/);
+  assert.match(host, /if \(!isPageReachableUrl\(contents\.getURL\(\), details\.url\)\) \{/);
+  // Trusted sources.
+  assert.equal((host.match(/!isBrowserAddress\(address\)\) throw new Error/g) ?? []).length, 2);
+  assert.doesNotMatch(host, /\bisBrowserUrl\(/);
 });

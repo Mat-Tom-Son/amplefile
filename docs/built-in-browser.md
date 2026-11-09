@@ -35,7 +35,9 @@ way**).
 
 - An address can be a full address, a bare host (`example.com`, opened over
   https), this computer's servers (`localhost:3000`, `127.0.0.1:5173`, over
-  http), or an absolute file path.
+  http), or an absolute file path. Only the person's address bar and Workers
+  open local files: a web page's links, redirects, and pop-ups never reach a
+  file on this computer, though a local page may link to other local files.
 - History keeps every web page the browser reaches, Workers' visits included,
   in machine-local app data.
 - A site opens a new page or window only within five seconds of a press in the
