@@ -83,8 +83,14 @@ A Connected Folder with nothing saved shows one of twelve starting colors, picke
 (`defaultConnectedFolderAccent`). A newly created or newly registered Connected Folder instead starts in
 the starting color the fewest other Connected Folders use, so the first twelve all differ; the local API
 saves that choice as its primary accent only when it differs from the id's own pick. A folder that
-already carried a Connected Folder identity keeps its color, and a saved choice always wins. A window
-that loaded earlier takes saved appearance only for Connected Folders it has none for.
+already carried a Connected Folder identity keeps its color, and a saved choice always wins.
+
+An open window adopts the saved appearance whenever the host's copy is newer than the one it shows: on
+its next bootstrap read (when the window regains focus, when Connected Folders change, and when a
+Worker reply ends) and from the full state each of its own saves returns. It never adopts a copy while
+one of its own saves is still queued, so a look the Worker or `amplefile connected-folders appearance
+apply` saved is what Customize Connected Folder edits next. A look whose save failed stays in that
+window for the session.
 
 ## Agent and harness workflow
 

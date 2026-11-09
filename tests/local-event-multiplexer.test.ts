@@ -113,3 +113,23 @@ test("backpressure is bounded on the physical stream rather than independently p
   assert.equal(parent.closed, true);
   assert.equal(child.closed, true);
 });
+
+test("a subscription opened and closed before reconciling leaves the open connection alone", async () => {
+  const connections: Array<{ closing: boolean }> = [];
+  const pool = createLocalEventMultiplexer(() => {
+    const connection = { closing: false };
+    connections.push(connection);
+    return { close: async () => { connection.closing = true; } };
+  });
+  const kept = pool.subscribe("/api/connected-folders/lab/file-events");
+  await settle();
+  assert.equal(connections.length, 1);
+  const transient = pool.subscribe("/api/connected-folders/lab/conversations/chat/events");
+  transient.close();
+  await settle();
+  assert.equal(connections.length, 1, "no rebuild when the subscription set is unchanged");
+  assert.equal(connections[0]!.closing, false);
+  kept.close();
+  await settle();
+  assert.equal(connections[0]!.closing, true, "closing the last consumer still closes the connection");
+});

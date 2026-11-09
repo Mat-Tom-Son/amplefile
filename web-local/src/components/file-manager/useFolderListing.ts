@@ -61,6 +61,14 @@ export function useFolderListing(place: FileManagerPlace, path: string, fixtureT
     void load();
   }, [key, load]);
 
+  // The subscription lives as long as the place (a Connected Folder's events
+  // cover all of it), not the folder shown: navigating inside it must not
+  // rebuild the shared event connection. The handler reads the folder shown.
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  const pathRef = useRef(path);
+  pathRef.current = path;
+
   // File watchers have no replay cursor, so every "ready" requeries too.
   useEffect(() => {
     if (fixtureTree) return;
@@ -72,7 +80,7 @@ export function useFolderListing(place: FileManagerPlace, path: string, fixtureT
     };
     const schedule = () => {
       if (timer !== null) window.clearTimeout(timer);
-      timer = window.setTimeout(() => { timer = null; void load(); }, refreshDelayMs);
+      timer = window.setTimeout(() => { timer = null; void loadRef.current(); }, refreshDelayMs);
     };
     const source = createEventSource(eventsUrl);
     source.onmessage = (event) => {
@@ -81,13 +89,13 @@ export function useFolderListing(place: FileManagerPlace, path: string, fixtureT
         if (parsed.type === "ready") return schedule();
         if (parsed.type !== "file_event") return;
         noteChange();
-        if (!parsed.path || eventPathTouchesFolder(parsed.path, path)) schedule();
+        if (!parsed.path || eventPathTouchesFolder(parsed.path, pathRef.current)) schedule();
       } catch {
         schedule();
       }
     };
     return () => { source.close(); if (timer !== null) window.clearTimeout(timer); if (changeTimer !== null) window.clearTimeout(changeTimer); };
-  }, [eventsUrl, fixtureTree, load, path]);
+  }, [eventsUrl, fixtureTree]);
 
   const shown = state.key === key ? state : { key, entries: [], status: "loading" as const, truncated: false, error: null };
 

@@ -2,11 +2,11 @@ import { ExtensionQuestions } from "../components/chat/ExtensionQuestions";
 import { WorkRequest } from "../components/chat/WorkRequest";
 import { useApplicationAppearance } from "../hooks/useApplicationAppearance";
 import { useWorkRequest } from "../hooks/useWorkRequest";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Chat16Regular } from "@fluentui/react-icons";
 import { ArrowDown, ArrowLeft, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, File, Folder, History, Link2, MoreHorizontal, Search, Square, SquarePen, X } from "../components/chrome/icons";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { ApiError, api, createEventSource, errorText } from "../lib/api";
@@ -18,6 +18,8 @@ import { folderTreeRows } from "../lib/folder-nesting";
 import { FolderMentionMenu, type MentionFolderOption } from "../components/chat/FolderMentionMenu";
 import { AmpleFileLockup } from "../components/brand/AmpleFileBrand";
 import { RuntimeContextPreview } from "../components/chat/activity";
+import { SafeMarkdownAnchor } from "../components/chat/SafeMarkdownAnchor";
+import { TurnAnnouncer, type TurnStatus } from "../components/chat/TurnAnnouncer";
 import { savedWorkTrailPreviews } from "../lib/chat-work-trail";
 import type { ChatMessage, ComposerState, ConversationRuntime, ChatStreamEvent, ExtensionUiRequest, RuntimePreviewEntry } from "../types";
 
@@ -112,6 +114,10 @@ const fixtureChats: AmpleFileAgentChat[] = [
 ];
 
 const activePhases = new Set(["working", "handed_off"]);
+/** How a request's phase is announced: a turn that asked or handed work on did not reply. */
+const popoverTurnStatus: Record<AmpleFileAgentRequestView["phase"], TurnStatus> = {
+  working: "working", needs_you: "question", handed_off: "handed_off", done: "replied", failed: "failed", stopped: "stopped",
+};
 const pollIntervalMs = 1_500;
 const idlePollIntervalMs = 5_000;
 const popoverFixtureRequested = new URLSearchParams(window.location.search).get("fixture") === "agent";
@@ -1140,7 +1146,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
           className="popover-transcript"
           id="popover-conversation"
           ref={attachTranscript}
-          aria-label="AmpleFile Agent chat" aria-live="polite"
+          aria-label="AmpleFile Agent chat"
           tabIndex={-1}
           onScroll={(event) => {
             const target = event.currentTarget;
@@ -1151,27 +1157,14 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
           }}
         >
           {loadingChat ? <p className="agent-chat-loading" role="status">Loading chat…</p> : !messages.length && !streamingAssistant && !request ? <div className="agent-chat-empty"><p>What would you like to work on?</p><span>Pick up a saved chat, or start here.</span></div> : null}
-          {messages.map((message) => (
-            <article
-              className={message.kind === "assistant_continuation" || message.kind === "context_compaction" ? "work-continuation" : `popover-message ${message.role}`}
-              key={message.id}
-              title={timestampTitle(message.createdAt)}
-            >
-              {message.role === "assistant" && message.kind !== "assistant_continuation" ? <RuntimeContextPreview entries={savedWorkTrailPreviews(message as ChatMessage)} renderText={renderStepText} /> : null}
-              <div className="popover-message-body">
-                {message.kind === "assistant_continuation" ? "Continuing with the results from delegated work." : message.role === "assistant"
-                  ? <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSingleLineBreaks]}>{message.content}</ReactMarkdown>
-                  : message.content}
-              </div>
-            </article>
-          ))}
+          {messages.map((message) => <SavedPopoverMessage message={message} key={message.id} />)}
           {request?.phase === "working" || liveSteps.length ? (
             <RuntimeContextPreview entries={liveSteps} running={request?.phase === "working"} replyStarted={Boolean(streamingAssistant)} renderText={renderStepText} />
           ) : null}
           {streamingAssistant ? (
             <article className="popover-message assistant streaming" aria-label="amplefile is replying">
               <div className="popover-message-body">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSingleLineBreaks]}>{streamingAssistant}</ReactMarkdown>
+                <PopoverMarkdown text={streamingAssistant} />
               </div>
             </article>
           ) : null}
@@ -1200,11 +1193,12 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
             <button className="agent-jump-latest" type="button" onClick={() => followLatest("smooth")}><ArrowDown aria-hidden="true" size={13} />Latest</button>
           ) : null}
         </section>
+          <TurnAnnouncer conversationKey={conversationId} status={request && !loadingChat ? popoverTurnStatus[request.phase] : null} who="The AmpleFile Agent" />
           {request && activePhases.has(request.phase) ? (
             <div className="agent-tail">
               {request.phase === "working" ? (
                 // The steps above show what is happening; this line keeps the time.
-                elapsedLabel ? <p className="working-line" role="status" aria-live="polite"><span className="working-elapsed">{elapsedLabel}</span></p> : null
+                elapsedLabel ? <p className="working-line" aria-live="off"><span className="working-elapsed">{elapsedLabel}</span></p> : null
               ) : !workState.work ? (
                 <p className="working-line" role="status" aria-live="polite"><span className="popover-dot is-run" aria-hidden="true" /><span className="working-copy">Working in {request.children.filter((child) => child.state === "running").length === 1 ? "a Connected Folder" : "Connected Folders"}…</span></p>
               ) : null}
@@ -1326,9 +1320,43 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
   );
 }
 
+const popoverRemarkPlugins = [remarkGfm];
+const popoverRehypePlugins = [rehypeSingleLineBreaks];
+// A link opens in the default browser when it is safe and is plain text
+// otherwise: a relative link such as notes.md would replace the popover.
+const popoverMarkdownComponents: Components = {
+  a: ({ href, children }) => <SafeMarkdownAnchor href={href}>{children}</SafeMarkdownAnchor>,
+};
+
+/** Replies and progress notes; memoised so unchanged text is not re-parsed. */
+const PopoverMarkdown = memo(function PopoverMarkdown({ text }: { text: string }) {
+  return <ReactMarkdown remarkPlugins={popoverRemarkPlugins} rehypePlugins={popoverRehypePlugins} components={popoverMarkdownComponents}>{text}</ReactMarkdown>;
+});
+
+/**
+ * One saved message. Memoised: a streamed frame or a keystroke in the
+ * composer re-renders the popover, but never re-parses a saved reply.
+ */
+const SavedPopoverMessage = memo(function SavedPopoverMessage({ message }: { message: AmpleFileAgentMessage }) {
+  const steps = useMemo(() => message.role === "assistant" && message.kind !== "assistant_continuation" ? savedWorkTrailPreviews(message as ChatMessage) : null, [message]);
+  return (
+    <article
+      className={message.kind === "assistant_continuation" || message.kind === "context_compaction" ? "work-continuation" : `popover-message ${message.role}`}
+      title={timestampTitle(message.createdAt)}
+    >
+      {steps ? <RuntimeContextPreview entries={steps} renderText={renderStepText} /> : null}
+      <div className="popover-message-body">
+        {message.kind === "assistant_continuation" ? "Continuing with the results from delegated work." : message.role === "assistant"
+          ? <PopoverMarkdown text={message.content} />
+          : message.content}
+      </div>
+    </article>
+  );
+});
+
 /** Progress notes inside the steps render with the same Markdown as replies. */
 function renderStepText(text: string) {
-  return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSingleLineBreaks]}>{text}</ReactMarkdown>;
+  return <PopoverMarkdown text={text} />;
 }
 
 /** Today's and yesterday's chats show their time, since the group already names the day; older ones their date. */
