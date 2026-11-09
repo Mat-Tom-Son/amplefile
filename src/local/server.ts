@@ -1456,14 +1456,20 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   }
   if (method === "PUT" && fileMatch) {
     const connectedFolder = await getConnectedFolder(fileMatch[1]);
-    const body = await readJsonBody<{ path?: string; text?: string }>(state, req);
+    const body = await readJsonBody<{ path?: string; text?: string; expectedHashSha256?: unknown }>(state, req);
     if (!body.path?.trim() || typeof body.text !== "string") throw badRequest("A file path and text are required.");
+    // The hash the editor read (GET returns it, and each save returns the
+    // new one): a save over content that changed since is a 409, file untouched.
+    const expectedHashSha256 = body.expectedHashSha256;
+    if (expectedHashSha256 !== undefined && (typeof expectedHashSha256 !== "string" || !/^[0-9a-f]{64}$/iu.test(expectedHashSha256))) {
+      throw badRequest("expectedHashSha256 must be the file's SHA-256 hash.");
+    }
     const safety = await createConnectedFolderMutationCheckpoint(connectedFolder.connectedFolderRoot, {
       paths: [body.path],
       reason: "pre_edit",
       label: `Before editing ${body.path}`,
     });
-    const file = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => writeConnectedFolderTextFile(connectedFolder.connectedFolderRoot, body.path!, body.text!));
+    const file = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => writeConnectedFolderTextFile(connectedFolder.connectedFolderRoot, body.path!, body.text!, expectedHashSha256 === undefined ? {} : { expectedHashSha256 }));
     sendJson(res, { file, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles });
     return;
   }
