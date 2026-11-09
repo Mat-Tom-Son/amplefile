@@ -145,9 +145,13 @@ test("clicking a sort header leaves focus on the list, and the header stays reac
   await dom.render(view(module));
   await dom.waitFor(() => Boolean(dom.container.querySelector('[data-fm-path="a.md"]')));
   const header = [...dom.container.querySelectorAll<HTMLButtonElement>('[role="columnheader"]')].find((item) => item.textContent?.includes("Size"))!;
+  const search = dom.container.querySelector<HTMLInputElement>('input[type="search"], .fm-search input')!;
+  assert.ok(search, "the toolbar search field");
+  await dom.act(() => search.focus());
   const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
   await dom.act(() => { header.dispatchEvent(press); });
   assert.equal(press.defaultPrevented, true, "a mouse press does not move focus to the header");
+  assert.equal(document.activeElement, dom.container.querySelector('[role="grid"]'), "focus moves to the list, as in Finder");
   assert.notEqual(header.tabIndex, -1);
   assert.equal(header.disabled, false);
 });
