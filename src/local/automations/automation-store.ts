@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { appendFile, mkdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { appendFile, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
@@ -7,7 +7,7 @@ import {
   type AmpleFileCliActSurface,
 } from "../cli/act-receipts.js";
 import type { AutomationCatchUpReason } from "../../shared/automation-presentation.js";
-import { writeFileAtomic } from "../agent/turn-store.js";
+import { syncDirectory } from "../agent/turn-store.js";
 import { ampleFileStateRoot } from "../state-paths.js";
 import {
   assertAmpleFileAutomationAtAdmissionHorizon,
@@ -888,8 +888,27 @@ export class AmpleFileAutomationStore {
     // fsync the temporary file before the rename and the directory after it:
     // a torn state file marks the whole store damaged and disables every
     // Automation, so a crash must leave either the old file or the new one.
-    await writeFileAtomic(this.path, `${JSON.stringify(draft, null, 2)}\n`);
+    const temporaryPath = `${this.path}.${randomUUID()}.tmp`;
+    try {
+      const handle = await open(temporaryPath, "w", 0o600);
+      try {
+        await handle.writeFile(`${JSON.stringify(draft, null, 2)}\n`, "utf8");
+        await handle.sync();
+      } finally {
+        await handle.close().catch(() => undefined);
+      }
+      await rename(temporaryPath, this.path);
+    } catch (error) {
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    // Once the rename lands the new state is what the next start reads, so
+    // memory follows it before anything else can fail. A directory sync
+    // failure after that only weakens durability across power loss.
     this.#file = draft;
+    await syncDirectory(dirname(this.path)).catch((error: unknown) => {
+      console.warn(`AmpleFile saved the automations state but could not flush its folder: ${error instanceof Error ? error.message : String(error)}`);
+    });
   }
 
   async #mutate<T>(operation: () => Promise<T>): Promise<T> {
