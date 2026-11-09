@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, truncate, writeFile } from "node:fs/promises";
+import fsPromises, { mkdir, mkdtemp, readFile, readdir, rm, truncate, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test, { type TestContext } from "node:test";
+import test, { mock, type TestContext } from "node:test";
 
 import {
   createConnectedFolderCheckpoint,
+  createConnectedFolderMutationCheckpoint,
   discardConnectedFolderCheckpoint,
+  listConnectedFolderCheckpoints,
   restoreConnectedFolderCheckpoint,
   type ConnectedFolderCheckpoint,
 } from "../src/local/history.js";
@@ -134,4 +137,45 @@ test("checkpoint writes leave no staging files behind", async (t) => {
   };
   await walk(history);
   assert.deepEqual(leftovers, []);
+});
+
+test("a checkpoint reads only the newest manifests and the whole ledger only when over the limit", async (t) => {
+  const root = await fixture(t);
+  const oldMax = process.env.AMPLEFILE_HISTORY_MAX_CHECKPOINTS;
+  process.env.AMPLEFILE_HISTORY_MAX_CHECKPOINTS = "50";
+  t.after(() => { if (oldMax === undefined) delete process.env.AMPLEFILE_HISTORY_MAX_CHECKPOINTS; else process.env.AMPLEFILE_HISTORY_MAX_CHECKPOINTS = oldMax; });
+  await writeFile(join(root, "note.txt"), "one");
+  const newest = await createConnectedFolderCheckpoint(root, { label: "Newest" });
+  const template = JSON.parse(await readFile(manifestPath(root, newest.checkpointId), "utf8")) as ConnectedFolderCheckpoint;
+  for (let index = 0; index < 40; index += 1) {
+    const second = String(index).padStart(2, "0");
+    const checkpointId = `cp-202501010000${second}-${String(index).padStart(8, "0")}`;
+    await writeFile(manifestPath(root, checkpointId), JSON.stringify({ ...template, checkpointId, createdAt: `2025-01-01T00:00:${second}.000Z`, label: `Old ${index}` }));
+  }
+
+  const checkpointsDirectory = join(connectedFolderHistoryRoot(root), "checkpoints");
+  const reads: string[] = [];
+  const original = fsPromises.readFile;
+  mock.method(fsPromises, "readFile", (async (...args: Parameters<typeof original>) => {
+    if (String(args[0]).startsWith(checkpointsDirectory)) reads.push(String(args[0]));
+    return original(...args);
+  }) as typeof original);
+  syncBuiltinESMExports();
+  t.after(() => { mock.restoreAll(); syncBuiltinESMExports(); });
+
+  const same = await createConnectedFolderCheckpoint(root, { label: "Unchanged" });
+  assert.equal(same.checkpointId, newest.checkpointId, "an unchanged full capture still reuses the newest manifest");
+  assert.deepEqual(reads, [manifestPath(root, newest.checkpointId)], "only the newest second's manifest is read");
+
+  reads.length = 0;
+  await writeFile(join(root, "note.txt"), "two");
+  await createConnectedFolderMutationCheckpoint(root, { paths: ["note.txt"] });
+  assert.deepEqual(reads, [], "a targeted checkpoint under the limit reads no manifest");
+
+  for (let index = 0; index < 10; index += 1) {
+    await writeFile(join(root, "note.txt"), `more ${index}`);
+    await createConnectedFolderMutationCheckpoint(root, { paths: ["note.txt"] });
+  }
+  assert.equal((await listConnectedFolderCheckpoints(root, 1000)).length, 50, "pruning still runs once the ledger is over the limit");
+  assert.equal((await listConnectedFolderCheckpoints(root, 1000)).some((checkpoint) => checkpoint.label === "Old 0"), false, "the oldest are pruned first");
 });

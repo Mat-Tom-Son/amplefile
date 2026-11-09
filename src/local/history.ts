@@ -535,7 +535,7 @@ async function persistCheckpoint(root: string, input: {
     skippedFiles: input.skippedFiles,
   };
   const manifestHash = sha256(Buffer.from(stableJson(material), "utf8"));
-  const [latest] = await listConnectedFolderCheckpoints(root, 1);
+  const latest = input.scope === "full" ? await readLatestCheckpoint(root) : null;
   if (input.scope === "full" && latest?.scope === "full" && latest.manifestHash === manifestHash) return latest;
 
   const createdAt = new Date().toISOString();
@@ -641,7 +641,36 @@ function validateCheckpointPaths(root: string, checkpoint: ConnectedFolderCheckp
   }
 }
 
+/**
+ * The newest checkpoint without parsing the whole ledger. A checkpoint id
+ * starts with its creation time to the second, so only the newest second's
+ * manifests (and any id without that stamp) need reading; an older second is
+ * read only when every newer manifest is damaged.
+ */
+async function readLatestCheckpoint(root: string): Promise<ConnectedFolderCheckpoint | null> {
+  const names = (await readdir(checkpointsDir(root)).catch(() => [] as string[])).filter((name) => name.endsWith(".json"));
+  const bySecond = new Map<string, string[]>();
+  const unstamped: string[] = [];
+  for (const name of names) {
+    const stamp = /^cp-(\d{14})-/.exec(name)?.[1];
+    if (stamp) bySecond.set(stamp, [...(bySecond.get(stamp) ?? []), name]);
+    else unstamped.push(name);
+  }
+  const read = async (group: string[]): Promise<ConnectedFolderCheckpoint[]> =>
+    (await Promise.all(group.map((name) => readCheckpointManifest(join(checkpointsDir(root), name)))))
+      .filter((checkpoint): checkpoint is ConnectedFolderCheckpoint => checkpoint !== null);
+  const unstampedCheckpoints = await read(unstamped);
+  for (const stamp of [...bySecond.keys()].sort().reverse()) {
+    const group = await read(bySecond.get(stamp)!);
+    if (group.length) return sortCheckpoints([...group, ...unstampedCheckpoints])[0]!;
+  }
+  return sortCheckpoints(unstampedCheckpoints)[0] ?? null;
+}
+
+/** Reads the ledger only once it holds more manifests than History keeps. */
 async function pruneHistory(root: string): Promise<void> {
+  const names = await readdir(checkpointsDir(root)).catch(() => [] as string[]);
+  if (names.filter((name) => name.endsWith(".json")).length <= maxRetainedCheckpoints()) return;
   const { checkpoints, damaged } = await readCheckpointLedger(root);
   const retained = checkpoints.slice(0, maxRetainedCheckpoints());
   const removed = checkpoints.slice(retained.length);
