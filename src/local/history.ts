@@ -83,6 +83,35 @@ const checkpointIdPattern = /^cp-[A-Za-z0-9-]{10,80}$/;
 const captureHashConcurrency = 8;
 /** Files at or above this size are hashed from a stream instead of being read whole. */
 const captureStreamHashBytes = 8 * 1024 * 1024;
+/**
+ * How many new blobs one capture, or restored files one restore, flushes to
+ * disk one by one. On macOS a flush is a full device flush (F_FULLFSYNC), about
+ * 4 ms per small file, so flushing all 10,000 files of a first capture would
+ * add some 40 s while the folder's History is held. Writes past this budget
+ * are renamed into place unflushed; the manifest, which is the commit point,
+ * is always flushed with its directory. The trade-off: after a power loss a
+ * bulk capture's newest blobs may be cut short or lost. A blob of the wrong
+ * size is rewritten by the next capture of the same content, a blob whose
+ * bytes fail their hash is deleted at restore time so the next capture
+ * rewrites it, and a restore never uses content that fails its hash. A bulk
+ * restore's later files may likewise be cut short by a power loss; its
+ * "Before restoring" restore point still holds what was there.
+ */
+const individuallyFlushedWritesPerOperation = 200;
+
+/** The flushes one capture or restore may still spend; absent for a single write, which always flushes. */
+interface FlushBudget { remaining: number }
+
+function newFlushBudget(): FlushBudget {
+  return { remaining: individuallyFlushedWritesPerOperation };
+}
+
+function spendFlush(budget: FlushBudget | undefined): boolean {
+  if (!budget) return true;
+  if (budget.remaining <= 0) return false;
+  budget.remaining -= 1;
+  return true;
+}
 
 export async function storeConnectedFolderBlob(connectedFolderRoot: string, bytes: Buffer): Promise<StoredBlobRef> {
   const root = ensureHistoryRoot(connectedFolderRoot);
@@ -92,14 +121,14 @@ export async function storeConnectedFolderBlob(connectedFolderRoot: string, byte
 }
 
 /** Stores bytes by hash; the caller ensures the History metadata once. */
-async function writeConnectedFolderBlob(root: string, bytes: Buffer): Promise<StoredBlobRef> {
+async function writeConnectedFolderBlob(root: string, bytes: Buffer, budget?: FlushBudget): Promise<StoredBlobRef> {
   const hashSha256 = sha256(bytes);
   const blobPath = connectedFolderBlobPath(root, hashSha256);
   if (!await storedBlobIntact(blobPath, bytes.byteLength)) {
     await mkdir(dirname(blobPath), { recursive: true });
     const stagingPath = `${blobPath}.tmp-${randomUUID().slice(0, 8)}`;
     try {
-      await writeDurably(stagingPath, bytes);
+      await writeNewFile(stagingPath, bytes, spendFlush(budget));
       await rename(stagingPath, blobPath);
     } catch (error) {
       await rm(stagingPath, { force: true }).catch(() => undefined);
@@ -120,12 +149,12 @@ async function storedBlobIntact(blobPath: string, sizeBytes: number): Promise<bo
   return Boolean(info?.isFile() && info.size === sizeBytes);
 }
 
-/** Writes a new file and flushes it to disk before anyone can rename it into place. */
-async function writeDurably(path: string, bytes: Buffer | string): Promise<void> {
+/** Writes a new file and, when asked, flushes it to disk before anyone can rename it into place. */
+async function writeNewFile(path: string, bytes: Buffer | string, flush: boolean): Promise<void> {
   const handle = await open(path, "wx");
   try {
     await handle.writeFile(bytes);
-    await handle.sync();
+    if (flush) await handle.sync();
   } finally {
     await handle.close();
   }
@@ -153,9 +182,9 @@ async function syncDirectoryBestEffort(path: string): Promise<void> {
  * hashed again from that copy, so the stored bytes always match the recorded
  * hash even if the source file changes mid-capture.
  */
-async function storeConnectedFolderBlobFromFile(root: string, absolutePath: string, sizeBytes: number): Promise<StoredBlobRef> {
+async function storeConnectedFolderBlobFromFile(root: string, absolutePath: string, sizeBytes: number, budget?: FlushBudget): Promise<StoredBlobRef> {
   if (sizeBytes < captureStreamHashBytes) {
-    return writeConnectedFolderBlob(root, await readFile(absolutePath));
+    return writeConnectedFolderBlob(root, await readFile(absolutePath), budget);
   }
   const hashSha256 = await sha256File(absolutePath);
   const blobPath = connectedFolderBlobPath(root, hashSha256);
@@ -164,7 +193,7 @@ async function storeConnectedFolderBlobFromFile(root: string, absolutePath: stri
   const stagingPath = `${blobPath}.tmp-${randomUUID().slice(0, 8)}`;
   try {
     await copyFile(absolutePath, stagingPath);
-    await syncFile(stagingPath);
+    if (spendFlush(budget)) await syncFile(stagingPath);
     const stagedHash = await sha256File(stagingPath);
     const stagedInfo = await stat(stagingPath);
     const finalPath = connectedFolderBlobPath(root, stagedHash);
@@ -198,9 +227,26 @@ function sha256File(path: string): Promise<string> {
 export async function readConnectedFolderBlob(connectedFolderRoot: string, hashSha256: string): Promise<Buffer | null> {
   const root = ensureHistoryRoot(connectedFolderRoot);
   const normalized = normalizeHash(hashSha256);
-  const bytes = await readFile(connectedFolderBlobPath(root, normalized)).catch(() => null);
-  if (!bytes || sha256(bytes) !== normalized) return null;
-  return bytes;
+  const blobPath = connectedFolderBlobPath(root, normalized);
+  const before = await stat(blobPath).catch(() => null);
+  const bytes = await readFile(blobPath).catch(() => null);
+  if (!bytes) return null;
+  if (sha256(bytes) === normalized) return bytes;
+  await discardDamagedBlob(blobPath, before);
+  return null;
+}
+
+/**
+ * Deletes a blob whose bytes do not match its hash, so the next capture of the
+ * same content writes it again instead of skipping an existing path of the
+ * right size. Only the exact file that was read is deleted: if a capture has
+ * already replaced it, the replacement stays.
+ */
+async function discardDamagedBlob(blobPath: string, read: Awaited<ReturnType<typeof stat>> | null): Promise<void> {
+  const current = await stat(blobPath).catch(() => null);
+  if (!read || !current || current.ino !== read.ino || current.dev !== read.dev
+    || current.size !== read.size || current.mtimeMs !== read.mtimeMs) return;
+  await rm(blobPath, { force: true }).catch(() => undefined);
 }
 
 async function createConnectedFolderCheckpointUnlocked(
@@ -334,6 +380,7 @@ async function restoreConnectedFolderCheckpointUnlocked(connectedFolderRoot: str
       ? new Map(safety.files.map((file) => [file.path, file]))
       : new Map<string, CheckpointFileEntry>();
     const restoredFiles: string[] = [];
+    const flushBudget = newFlushBudget();
     let unchangedFiles = 0;
     for (const file of checkpoint.files) {
       if (current.get(file.path)?.hashSha256 === file.hashSha256) {
@@ -343,7 +390,7 @@ async function restoreConnectedFolderCheckpointUnlocked(connectedFolderRoot: str
       const bytes = await readFile(staged.pathsByHash.get(file.hashSha256)!);
       const target = canonicalPath(root, file.path, true).absolutePath;
       await mkdir(dirname(target), { recursive: true });
-      await atomicRestoreFile(root, file.path, bytes);
+      await atomicRestoreFile(root, file.path, bytes, flushBudget);
       restoredFiles.push(file.path);
     }
 
@@ -437,6 +484,7 @@ async function capturePaths(root: string, requestedPaths: string[], policy: Hist
   const skipped = new Map<string, CheckpointSkippedFile>();
   const nestedPaths = await nestedRegisteredConnectedFolderPaths(root);
   const pendingFiles: Array<{ path: string; absolutePath: string; sizeBytes: number; modifiedAt: string }> = [];
+  const flushBudget = newFlushBudget();
 
   const visit = async (absolutePath: string): Promise<void> => {
     const path = toPosix(relative(root, absolutePath));
@@ -495,7 +543,7 @@ async function capturePaths(root: string, requestedPaths: string[], policy: Hist
       const file = pendingFiles[next]!;
       next += 1;
       try {
-        const blob = persistBlobs ? await storeConnectedFolderBlobFromFile(root, file.absolutePath, file.sizeBytes)
+        const blob = persistBlobs ? await storeConnectedFolderBlobFromFile(root, file.absolutePath, file.sizeBytes, flushBudget)
           : { hashSha256: await sha256File(file.absolutePath), sizeBytes: file.sizeBytes };
         files.set(file.path, { path: file.path, hashSha256: blob.hashSha256, sizeBytes: blob.sizeBytes, modifiedAt: file.modifiedAt });
       } catch {
@@ -586,12 +634,12 @@ async function assertRestoreOwnership(root: string, checkpoint: ConnectedFolderC
   }
 }
 
-async function atomicRestoreFile(root: string, path: string, bytes: Buffer): Promise<void> {
+async function atomicRestoreFile(root: string, path: string, bytes: Buffer, budget?: FlushBudget): Promise<void> {
   const target = canonicalPath(root, path, true).absolutePath;
   await mkdir(dirname(target), { recursive: true });
   const temporary = `${target}.amplefile-restore-${randomUUID()}`;
   try {
-    await writeDurably(temporary, bytes);
+    await writeNewFile(temporary, bytes, spendFlush(budget));
     canonicalPath(root, path, true);
     await rename(temporary, target);
   } finally { await rm(temporary, { force: true }); }
@@ -836,7 +884,7 @@ async function atomicJsonWrite(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
   try {
-    await writeDurably(temporary, `${JSON.stringify(value, null, 2)}\n`);
+    await writeNewFile(temporary, `${JSON.stringify(value, null, 2)}\n`, true);
     await rename(temporary, path);
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => undefined);

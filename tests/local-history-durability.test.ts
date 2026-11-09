@@ -179,3 +179,41 @@ test("a checkpoint reads only the newest manifests and the whole ledger only whe
   assert.equal((await listConnectedFolderCheckpoints(root, 1000)).length, 50, "pruning still runs once the ledger is over the limit");
   assert.equal((await listConnectedFolderCheckpoints(root, 1000)).some((checkpoint) => checkpoint.label === "Old 0"), false, "the oldest are pruned first");
 });
+
+test("a restore deletes a blob whose bytes fail their hash so the next capture rewrites it", async (t) => {
+  const root = await fixture(t);
+  await writeFile(join(root, "note.txt"), "the original words");
+  const first = await createConnectedFolderCheckpoint(root, { label: "First" });
+  const blob = blobPath(root, hashOf(first, "note.txt"));
+  await writeFile(blob, "the 0riginal words"); // Same size, wrong bytes.
+
+  await writeFile(join(root, "note.txt"), "changed");
+  await assert.rejects(restoreConnectedFolderCheckpoint(root, first.checkpointId), /missing saved content/);
+  assert.equal(existsSync(blob), false, "the damaged blob is deleted");
+
+  await writeFile(join(root, "copy.txt"), "the original words");
+  await createConnectedFolderCheckpoint(root, { label: "Second" });
+  await restoreConnectedFolderCheckpoint(root, first.checkpointId);
+  assert.equal(await readFile(join(root, "note.txt"), "utf8"), "the original words");
+});
+
+test("a bulk capture flushes only a bounded number of blobs one by one", async (t) => {
+  const root = await fixture(t);
+  const probe = await fsPromises.open(join(root, "..", "probe"), "w");
+  const handlePrototype = Object.getPrototypeOf(probe) as { sync: () => Promise<void> };
+  await probe.close();
+  let syncs = 0;
+  const original = handlePrototype.sync;
+  mock.method(handlePrototype, "sync", function (this: unknown) { syncs += 1; return original.call(this); });
+  t.after(() => mock.restoreAll());
+
+  for (let index = 0; index < 5; index += 1) await writeFile(join(root, `small-${index}.txt`), `small ${index}`);
+  await createConnectedFolderCheckpoint(root, { label: "Few" });
+  assert.ok(syncs >= 5 + 2, `each of a few new blobs is flushed, and the manifest too (${syncs})`);
+
+  syncs = 0;
+  await mkdir(join(root, "bulk"));
+  for (let index = 0; index < 260; index += 1) await writeFile(join(root, "bulk", `file-${index}.txt`), `bulk ${index}`);
+  await createConnectedFolderCheckpoint(root, { label: "Bulk" });
+  assert.ok(syncs >= 200 && syncs <= 210, `at most 200 blobs are flushed one by one, plus the manifest (${syncs})`);
+});
