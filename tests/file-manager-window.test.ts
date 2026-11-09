@@ -42,3 +42,37 @@ test("a model change made in Settings re-reads the Worker's model row", async (t
   await dom.render(view(module, { modelConfigurationRevision: 1 }));
   await dom.waitFor(() => statusReads() === 2);
 });
+
+test("folder suggestions are asked for only while Info shows them, once the folder has stayed shown", async (t) => {
+  const { dom, module, requests } = await createFileManagerHarness(t, answers((path) => path.includes("/suggestions") ? { suggestions: ["Summarize the notes"] } : undefined));
+  const suggestionReads = () => requests.filter((item) => item.path.includes("/suggestions")).length;
+  await dom.render(view(module));
+  const historyTab = [...dom.container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((tab) => tab.textContent?.includes("History"))!;
+  await dom.act(() => historyTab.click());
+  await dom.act(async () => { await new Promise((resolve) => setTimeout(resolve, 800)); });
+  assert.equal(suggestionReads(), 0, "History hides the suggestions, so no model call is made");
+  const infoTab = [...dom.container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((tab) => tab.textContent === "Info")!;
+  await dom.act(() => infoTab.click());
+  assert.equal(suggestionReads(), 0, "the call waits for the folder to stay shown");
+  await dom.waitFor(() => suggestionReads() === 1);
+  await dom.waitFor(() => dom.container.textContent?.includes("Summarize the notes") === true);
+});
+
+test("moving to another folder abandons the previous folder's suggestion request", async (t) => {
+  const asked: Array<{ path: string; signal: AbortSignal }> = [];
+  const { dom } = await createFileManagerHarness(t, (path, options) => {
+    asked.push({ path: new URL(path, "http://local").searchParams.get("path") ?? "", signal: options.signal! });
+    return new Promise(() => {});
+  });
+  const { useFolderSuggestions } = await import("../web-local/src/components/file-manager/useFolderSuggestions.js");
+  function Probe({ path }: { path: string }) { useFolderSuggestions("abandon", path, true); return null; }
+  await dom.render(createElement(Probe, { path: "One" }));
+  await dom.render(createElement(Probe, { path: "Two" }));
+  await dom.render(createElement(Probe, { path: "Three" }));
+  await dom.waitFor(() => asked.length >= 1, 2_000);
+  await dom.act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0]!.path, "Three", "folders passed through quickly are never asked for");
+  await dom.render(createElement(Probe, { path: "Four" }));
+  assert.equal(asked[0]!.signal.aborted, true);
+});

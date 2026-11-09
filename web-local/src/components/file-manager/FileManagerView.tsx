@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { Add16Regular, ChevronDown16Regular, ChevronUp16Regular, FolderArrowRight16Regular, Sparkle16Regular, Grid20Regular, MoreHorizontal20Regular, PanelRight20Regular, TextBulletListLtr20Regular } from "@fluentui/react-icons";
 
 import "./file-manager.css";
@@ -1435,7 +1435,6 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const markedPaths = workerChanges?.paths ?? null;
 
   // Suggestions written from the folder, when AI is connected; the plain ones cover a selection and the wait.
-  const folderSuggestions = useFolderSuggestions(connectedFolder?.id ?? null, location.path, Boolean(connectedFolder) && !fixtureMode && Boolean(agent?.configured) && panelOpen);
 
   const references = [
     ...visible.filter((entry) => selected.has(entry.path) && !entry.nestedFolder),
@@ -1784,14 +1783,14 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         entry: { name: searchChosen.name, path: searchChosen.path, kind: searchChosen.kind, ...(searchChosen.sizeBytes !== undefined ? { sizeBytes: searchChosen.sizeBytes } : {}), ...(searchChosen.updatedAt ? { updatedAt: searchChosen.updatedAt } : {}) },
         where: [searchChosenConnectedFolder.name, ...searchChosen.path.split("/").slice(0, -1)].join(" › "),
       } : null}
-      composer={connectedFolder ? ({ showSuggestions }) => <FileManagerComposer
+      composer={connectedFolder ? ({ showSuggestions }) => <SuggestingComposer
+        connectedFolderId={connectedFolder.id}
+        path={location.path}
+        writtenSuggestions={!fixtureMode && Boolean(agent?.configured)}
+        showSuggestions={showSuggestions}
+        automationsOn={(folderAutomations.byConnectedFolder[connectedFolder.id] ?? []).some((automation) => automation.state === "on" || automation.state === "running")}
         placeholder={composerPlaceholder}
         chips={references}
-        suggestions={showSuggestions ? (() => {
-          const automationsOn = (folderAutomations.byConnectedFolder[connectedFolder.id] ?? []).some((automation) => automation.state === "on" || automation.state === "running");
-          if (!references.length && folderSuggestions.length) return folderSuggestions.slice(0, automationsOn ? 2 : 4);
-          return fileManagerSuggestions({ selection: references, inSubfolder: Boolean(location.path), automationsOn });
-        })() : []}
         modelRow={<WorkerModelRow connectedFolder={connectedFolder} fixtureMode={fixtureMode} revision={modelConfigurationRevision * 2 + (agent?.configured ? 1 : 0)} onOpenModelSettings={() => onOpenSettings("ai-models", "connected-folder", true, connectedFolder.id)} />}
         onRemoveChip={(path) => { setSelection((current) => current.filter((item) => item !== path)); setAttachedPaths((current) => current.filter((item) => item !== path)); }}
         dropActive={composerDrop}
@@ -2012,3 +2011,22 @@ function sameFolder(first: string, second: string): boolean {
   return normalize(first) === normalize(second);
 }
 
+/**
+ * The panel's message box. Its suggestions are written by the Worker's model
+ * only while they would show: Info is the tab shown and nothing is selected.
+ */
+function SuggestingComposer({ connectedFolderId, path, writtenSuggestions, showSuggestions, automationsOn, ...composer }: Omit<ComponentProps<typeof FileManagerComposer>, "suggestions"> & {
+  connectedFolderId: string;
+  path: string;
+  /** The Worker can write suggestions here (AI connected, not the preview). */
+  writtenSuggestions: boolean;
+  showSuggestions: boolean;
+  automationsOn: boolean;
+}) {
+  const references = composer.chips;
+  const written = useFolderSuggestions(connectedFolderId, path, writtenSuggestions && showSuggestions && !references.length);
+  const suggestions = !showSuggestions ? []
+    : !references.length && written.length ? written.slice(0, automationsOn ? 2 : 4)
+    : fileManagerSuggestions({ selection: references, inSubfolder: Boolean(path), automationsOn });
+  return <FileManagerComposer {...composer} suggestions={suggestions} />;
+}
