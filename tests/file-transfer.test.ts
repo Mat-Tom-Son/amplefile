@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -81,6 +81,21 @@ test("a copy holds its source only when every file is there the same, and never 
   await mkdir(join(copy, "node_modules", "pkg", ".amplefile"));
   await writeFile(join(copy, "node_modules", "pkg", "index.js"), "12");
   assert.equal(await copyHoldsAll(join(root, "App", "node_modules"), join(copy, "node_modules")), false, "an identity is never counted as held");
+});
+
+test("a copy keeps relative links as written, and a link counts as held only when it points where its original does", async (t) => {
+  const root = await folder(t);
+  await mkdir(join(root, "Proj", "v2"), { recursive: true });
+  await writeFile(join(root, "Proj", "v2", "app.txt"), "v2");
+  await symlink("v2", join(root, "Proj", "current"));
+  await mkdir(join(root, "Target"));
+  const copy = await copyInto(join(root, "Proj"), join(root, "Target"));
+  assert.equal(await readlink(join(copy, "current")), "v2", "the link is not pointed back into the source");
+  assert.equal(await readFile(join(copy, "current", "app.txt"), "utf8"), "v2");
+  assert.equal(await copyHoldsAll(join(root, "Proj", "current"), join(copy, "current")), true);
+  await rm(join(copy, "current"));
+  await symlink(join(root, "Proj", "v2"), join(copy, "current"));
+  assert.equal(await copyHoldsAll(join(root, "Proj", "current"), join(copy, "current")), false, "a link pointing elsewhere is not held");
 });
 
 test("a copied identity goes only when its original is still whole in the source", async (t) => {

@@ -114,6 +114,7 @@ test("a move between Connected Folders never erases a nested Connected Folder an
     assert.equal(await readFile(join(moved, "build", "out.js"), "utf8"), "built\n");
     assert.equal((await readFile(join(moved, "big.bin"), "utf8")).length, 64);
     assert.ok((await lstat(join(moved, "entry.js"))).isSymbolicLink());
+    assert.equal(await readFile(join(moved, "entry.js"), "utf8"), "console.log(1);\n", "a relative link still resolves once the source is gone");
     assert.deepEqual((await api.recentlyDeleted.list()).entries, [], "nothing was parked in Recently Deleted");
   } finally {
     if (previousCap === undefined) delete process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES;

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { cp, link, lstat, readdir, rename, rm } from "node:fs/promises";
+import { cp, link, lstat, readdir, readlink, rename, rm } from "node:fs/promises";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -57,7 +57,7 @@ export async function copyInto(source: string, targetFolder: string, options: { 
 /**
  * Whether a copy holds everything its source does, so the source can go with
  * nothing lost: every folder, every file at the same size and modification
- * time (the copy keeps timestamps), every link. An `.amplefile` folder
+ * time (the copy keeps timestamps), every link pointing where it did. An `.amplefile` folder
  * anywhere in the source never counts as held: a Connected Folder's identity
  * and Chats leave their source only by moving whole into Recently Deleted.
  * A source that is no longer there has nothing left to lose.
@@ -90,7 +90,11 @@ async function treeHeld(from: string, into: string, options: { identity: boolean
   const [original, other] = await Promise.all([lstat(from).catch(() => null), lstat(into).catch(() => null)]);
   if (!original) return true;
   if (!other) return false;
-  if (original.isSymbolicLink()) return other.isSymbolicLink();
+  if (original.isSymbolicLink()) {
+    if (!other.isSymbolicLink()) return false;
+    const [written, copied] = await Promise.all([readlink(from).catch(() => null), readlink(into).catch(() => null)]);
+    return written !== null && written === copied;
+  }
   if (original.isFile()) {
     return other.isFile() && other.size === original.size && Math.abs(other.mtimeMs - original.mtimeMs) <= sameTimeToleranceMs;
   }
@@ -127,7 +131,9 @@ export async function moveInto(source: string, targetFolder: string): Promise<st
  */
 async function copyTree(source: string, destination: string, filter?: (path: string) => boolean): Promise<void> {
   try {
-    await cp(source, destination, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true, ...(filter ? { filter } : {}) });
+    // A link is copied as written: Node would otherwise point a relative
+    // link back into the source, where a move then leaves it dangling.
+    await cp(source, destination, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true, verbatimSymlinks: true, ...(filter ? { filter } : {}) });
   } catch (error) {
     const code = (error as { code?: string }).code;
     const taken = (code === "ERR_FS_CP_EEXIST" || code === "EEXIST") && resolve((error as { path?: string }).path ?? destination) === resolve(destination);
