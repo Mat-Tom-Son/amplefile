@@ -36,6 +36,16 @@ export function useConnectedFolderCustomizations({ fixtureCustomizations, appear
   const historyRef = useRef(new Map<string, ConnectedFolderCustomization[]>());
   const [, setHistoryVersion] = useState(0);
   customizationsRef.current = customizations;
+  // The host's appearance revision this window last matched, its own queued
+  // writes, and the Connected Folders whose last save failed (kept for this
+  // session only). A newer host copy is adopted only while nothing is queued,
+  // so a look applied by the Worker or the CLI shows here, and Customize
+  // edits that look rather than a stale copy.
+  const hostRevisionRef = useRef(appearance?.revision ?? 0);
+  const pendingWritesRef = useRef(0);
+  const unsavedRef = useRef(new Set<string>());
+  const latestAppearanceRef = useRef(appearance);
+  latestAppearanceRef.current = appearance;
 
   function setAll(next: ConnectedFolderCustomizationMap) {
     customizationsRef.current = next;
@@ -50,15 +60,22 @@ export function useConnectedFolderCustomizations({ fixtureCustomizations, appear
     if (JSON.stringify(next) !== JSON.stringify(customizationsRef.current)) setAll(next);
   }, [connectedFolderIds]);
 
-  useEffect(() => {
-    // A Connected Folder created after this window loaded may arrive with a saved
-    // starting color. Only Connected Folders this window has no appearance for
-    // take the saved one, so nothing here is overwritten.
-    const saved = appearance?.customizations ?? {};
-    const arriving = Object.entries(saved).filter(([id]) => !customizationsRef.current[id]);
-    if (!arriving.length) return;
-    setAll(normalizeConnectedFolderCustomizations({ ...customizationsRef.current, ...Object.fromEntries(arriving) }, undefined, supportedConnectedFolderIconNames));
-  }, [appearance?.revision]);
+  function adoptHostAppearance(saved: ConnectedFolderAppearanceState | undefined) {
+    if (fixture || !saved || pendingWritesRef.current > 0 || saved.revision <= hostRevisionRef.current) return;
+    hostRevisionRef.current = saved.revision;
+    const merged = { ...saved.customizations } as ConnectedFolderCustomizationMap;
+    for (const id of unsavedRef.current) {
+      const local = customizationsRef.current[id];
+      if (local) merged[id] = local;
+      else delete merged[id];
+    }
+    const next = normalizeConnectedFolderCustomizations(merged, undefined, supportedConnectedFolderIconNames);
+    if (JSON.stringify(next) !== JSON.stringify(customizationsRef.current)) setAll(next);
+  }
+
+  // A newer saved appearance (a Connected Folder created with a starting
+  // color, a look the Worker or the CLI applied) replaces this window's copy.
+  useEffect(() => { adoptHostAppearance(appearance); }, [appearance?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function remember(connectedFolderId: string) {
     const history = historyRef.current.get(connectedFolderId) ?? [];
@@ -75,19 +92,27 @@ export function useConnectedFolderCustomizations({ fixtureCustomizations, appear
     else delete next[connectedFolderId];
     setAll(next);
     if (fixture) return;
+    pendingWritesRef.current++;
     writeQueueRef.current = writeQueueRef.current
       .catch(() => undefined)
       .then(async () => {
-        if (customization && Object.keys(customization).length) {
-          await api<{ appearance: ConnectedFolderAppearanceState }>(`/api/connected-folders/${connectedFolderId}/appearance`, { method: "PUT", body: { customization } });
-        } else {
-          await api<{ appearance: ConnectedFolderAppearanceState }>(`/api/connected-folders/${connectedFolderId}/appearance`, { method: "DELETE" });
-        }
+        const saved = customization && Object.keys(customization).length
+          ? await api<{ appearance: ConnectedFolderAppearanceState }>(`/api/connected-folders/${connectedFolderId}/appearance`, { method: "PUT", body: { customization } })
+          : await api<{ appearance: ConnectedFolderAppearanceState }>(`/api/connected-folders/${connectedFolderId}/appearance`, { method: "DELETE" });
+        unsavedRef.current.delete(connectedFolderId);
+        const revision = saved?.appearance?.revision;
+        if (typeof revision === "number") hostRevisionRef.current = Math.max(hostRevisionRef.current, revision);
       })
       .catch((caught) => {
+        unsavedRef.current.add(connectedFolderId);
         if (storageWarningShownRef.current) return;
         storageWarningShownRef.current = true;
         showToast({ text: `This appearance works for this session, but AmpleFile could not save it on this computer. ${errorText(caught)}`, tone: "info" });
+      })
+      .finally(() => {
+        pendingWritesRef.current--;
+        // A newer host copy that arrived while this window was saving.
+        if (pendingWritesRef.current === 0) adoptHostAppearance(latestAppearanceRef.current);
       });
   }
 
