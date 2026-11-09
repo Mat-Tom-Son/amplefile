@@ -10600,7 +10600,10 @@ async function waitForSettledRequest(
       // A stop fences the graph before native abort cleanup finishes. A
       // automation's terminal receipt must wait for that cleanup, so its next
       // observer cannot see completed automation work with live kernel tasks.
-      if (request && request.state !== "waiting" && isAmpleFileRequestTerminalState(request.state)
+      // Asking a question puts the request in `waiting` without ending the
+      // asking turn (docs/collaboration-contract.md), so a waiting hop also
+      // returns only once no turn in its graph is still running.
+      if (request && (request.state === "waiting" || isAmpleFileRequestTerminalState(request.state))
         && [request, ...state.requests.subtree(request.requestId)].some((item) => item.turns.some((turn) => state.activeTurnTasks.has(turn.taskId)))) {
         await settleDelay(25);
         continue;
