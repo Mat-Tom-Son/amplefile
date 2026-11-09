@@ -801,18 +801,18 @@ function registerIpc(): void {
     modelContextWindow.closeFrom(event);
   });
   ipcMain.handle("amplefile:api:session-headers", (event) => {
-    assertTrustedRenderer(event);
+    assertMainOrAgentPopoverRenderer(event);
     return { "x-amplefile-session": apiSessionToken };
   });
   ipcMain.handle("amplefile:runtime:health", async (event) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     return {
       pi: piRuntime ? await piRuntime.health() : { ok: false, configured: false, version: "", message: "Pi is still starting." },
       settings: secureSettings ? await secureSettings.status() : { encryptionAvailable: false, configuredProviders: [] },
     };
   });
   ipcMain.handle("amplefile:connected-folder:choose-folder", async (event) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     const result = mainWindow
       ? await dialog.showOpenDialog(mainWindow, { title: "Choose a Folder", properties: ["openDirectory", "createDirectory"] })
       : await dialog.showOpenDialog({ title: "Choose a Folder", properties: ["openDirectory", "createDirectory"] });
@@ -876,14 +876,14 @@ function registerIpc(): void {
     return facade.delete(automationId!);
   });
   ipcMain.handle("amplefile:connected-folder:reveal-folder", async (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     if (typeof value !== "string") throw new Error("A Connected Folder id is required.");
     const connectedFolder = await getConnectedFolder(value);
     const error = await shell.openPath(connectedFolder.connectedFolderRoot);
     if (error) throw new Error(`AmpleFile could not show this folder. ${error}`);
   });
   ipcMain.handle("amplefile:connected-folder:open-path", async (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertMainOrAgentPopoverRenderer(event);
     const request = connectedFolderPathRequest(value);
     const filePath = await resolveConnectedFolderItem(request.connectedFolderId, request.path);
     if (request.action === "reveal") {
@@ -894,7 +894,7 @@ function registerIpc(): void {
     if (result) throw new Error(`${productName} could not open this item. ${result}`);
   });
   ipcMain.handle("amplefile:connected-folder:open-path-with", async (event, value: unknown): Promise<{ opened: boolean; canceled: boolean; appName: string | null }> => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     const request = connectedFolderPathRequest(value, false);
     return openFileWithPickedApp(process.platform, {
       resolveFile: async () => {
@@ -913,7 +913,7 @@ function registerIpc(): void {
     });
   });
   ipcMain.handle("amplefile:connected-folder:start-drag", async (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     const request = connectedFolderPathRequest(value, false);
     const filePath = await resolveConnectedFolderItem(request.connectedFolderId, request.path);
     const info = await stat(filePath);
@@ -939,7 +939,7 @@ function registerIpc(): void {
   // the same open, Quick Look, and drag paths as a Connected Folder's files, and
   // Move to Trash where a Connected Folder would use Recently deleted.
   ipcMain.handle("amplefile:standard-folder:open-path", async (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     const request = standardFolderPathRequest(value, true);
     const filePath = await resolveStandardFolderItem(request.standardFolderId, request.path);
     if (request.action === "reveal" && request.path) {
@@ -950,7 +950,7 @@ function registerIpc(): void {
     if (result) throw new Error(`${productName} could not open this item. ${result}`);
   });
   ipcMain.handle("amplefile:standard-folder:open-path-with", async (event, value: unknown): Promise<{ opened: boolean; canceled: boolean; appName: string | null }> => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     const request = standardFolderPathRequest(value);
     return openFileWithPickedApp(process.platform, {
       resolveFile: async () => {
@@ -968,7 +968,7 @@ function registerIpc(): void {
     });
   });
   ipcMain.handle("amplefile:standard-folder:start-drag", async (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     const request = standardFolderPathRequest(value);
     const filePath = await resolveStandardFolderItem(request.standardFolderId, request.path);
     if (!(await stat(filePath)).isFile()) throw new Error("Only files can be dragged out.");
@@ -1083,12 +1083,12 @@ function registerIpc(): void {
     if (typeof value === "string" && pendingOpenConnectedFolderRequest?.token === value) pendingOpenConnectedFolderRequest = null;
   });
   ipcMain.handle("amplefile:shell:open-external", async (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     if (typeof value !== "string") throw new Error("A URL is required.");
     await openExternal(value);
   });
   ipcMain.handle("amplefile:window:accent-color", (event) => {
-    assertTrustedRenderer(event);
+    assertMainOrAgentPopoverRenderer(event);
     return getSystemAccentColor();
   });
   ipcMain.handle("amplefile:agent:open-agent-draft", async (event, value: unknown) => {
@@ -1098,17 +1098,17 @@ function registerIpc(): void {
     return true;
   });
   ipcMain.on("amplefile:agent:hide", (event) => {
-    assertTrustedRenderer(event);
+    assertMainOrAgentPopoverRenderer(event);
     ampleFileAgentPopover?.hide();
   });
   ipcMain.handle("amplefile:agent:open-main", (event) => {
-    assertTrustedRenderer(event);
+    assertMainOrAgentPopoverRenderer(event);
     ampleFileAgentPopover?.hide();
     showWindow();
     return true;
   });
   ipcMain.handle("amplefile:agent:open-ai-models-settings", async (event) => {
-    assertTrustedRenderer(event);
+    assertMainOrAgentPopoverRenderer(event);
     ampleFileAgentPopover?.hide();
     await ensureMainWindow();
     showWindow();
@@ -1116,17 +1116,17 @@ function registerIpc(): void {
     return true;
   });
   ipcMain.handle("amplefile:window:get-close-to-tray", (event) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     return closeToTrayStatus();
   });
   ipcMain.handle("amplefile:window:set-close-to-tray", (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     if (typeof value !== "boolean") throw new Error("Close-to-background preference must be a boolean.");
     updateDesktopPreferences({ closeToTray: value });
     return closeToTrayStatus();
   });
   ipcMain.on("amplefile:window:set-theme", (event, value: unknown, source: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     if (value !== "light" && value !== "dark") return;
     // Keep the OS-drawn chrome (Mica backdrop, frame, menus) on the app theme.
     // "system" preserves prefers-color-scheme change events in the renderer.
@@ -1140,11 +1140,11 @@ function registerIpc(): void {
     }
   });
   ipcMain.on("amplefile:menu:set-state", (event, value: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     updateApplicationMenuState(value);
   });
   ipcMain.handle("amplefile:menu:popup", (event, menuId: unknown, bounds: unknown) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     popupApplicationSubmenu(menuId, bounds);
   });
   // Other AI agents (Settings → Command Line): the command on Terminal's PATH
@@ -1177,7 +1177,7 @@ function registerIpc(): void {
     return outsideAgentSkill();
   });
   ipcMain.handle("amplefile:settings:status", (event) => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     return secureSettings?.status() ?? { encryptionAvailable: false, configuredProviders: [] };
   });
   ipcMain.on("amplefile:window:rail-tooltip-show", (event, value: unknown) => {
@@ -1270,19 +1270,19 @@ function registerIpc(): void {
     ensureBuiltInBrowser().showDownload(path);
   });
   ipcMain.handle("amplefile:updates:status", (event): DesktopUpdateStatus => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     return getUpdateStatus();
   });
   ipcMain.handle("amplefile:updates:check", async (event): Promise<DesktopUpdateStatus> => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     return checkForUpdates();
   });
   ipcMain.handle("amplefile:updates:install", async (event): Promise<DesktopUpdateStatus> => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     return desktopUpdater?.install() ?? getUpdateStatus();
   });
   ipcMain.handle("amplefile:updates:update-now", async (event): Promise<DesktopUpdateStatus> => {
-    assertTrustedRenderer(event);
+    assertTrustedMainRenderer(event);
     return desktopUpdater?.updateNow() ?? getUpdateStatus();
   });
 }
@@ -2485,6 +2485,24 @@ function buildSelectionContextMenuTemplate(params: ContextMenuParams): MenuItemC
 function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
   if (modelContextWindow?.owns(event.sender)) throw new Error("The developer inspector has diagnostics-only access.");
   if (!event.senderFrame || !isTrustedRendererUrl(event.senderFrame.url)) throw new Error("Untrusted renderer IPC request.");
+}
+
+/**
+ * The handful of channels the AmpleFile Agent popover's narrow preload uses.
+ * Every other handler requires the main renderer, so popover isolation does
+ * not rest on its preload alone.
+ */
+function assertMainOrAgentPopoverRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
+  if (ampleFileAgentPopover?.owns(event.sender)) {
+    assertTrustedRenderer(event);
+    const frame = event.senderFrame;
+    const mainFrame = event.sender.mainFrame;
+    if (!frame || frame.processId !== mainFrame.processId || frame.routingId !== mainFrame.routingId) {
+      throw new Error("This request requires the AmpleFile Agent popover's main frame.");
+    }
+    return;
+  }
+  assertTrustedMainRenderer(event);
 }
 
 function assertTrustedMainRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
