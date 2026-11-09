@@ -1173,3 +1173,49 @@ test("every declared limit name reads back from a stored limit hit", async (t) =
   }
   assert.throws(() => parseAmpleFileRequestRecord({ ...request, limitHit: { limit: "noSuchLimit", at: request.createdAt } }), /limit name/);
 });
+
+test("questions, answers, choices, checklists, summaries, and turn errors scrub pasted control characters", async (t) => {
+  const root = await temporaryRoot(t);
+  const clock = clockFrom("2026-09-11T09:00:00.000Z");
+  const store = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  const request = await store.beginRoot({ kind: "connected-folder", owner: connectedFolderOwner, surface: "main-window", taskId: "task-1" });
+
+  const question = await store.ask({
+    requestId: request.requestId, taskId: "task-1", respondent: "person",
+    text: "Which \u001b[1mformat\u001b[0m?\u000bPick one.", options: ["PDF‮", "Word"],
+  });
+  assert.equal(question.text, "Which �[1mformat�[0m?\nPick one.");
+  assert.deepEqual(question.options, ["PDF�", "Word"]);
+  await store.settleTurn("task-1", { status: "succeeded" });
+  assert.equal(store.get(request.requestId)?.state, "waiting");
+
+  // A person's pasted reply with a Word soft line break answers the question.
+  const answered = await store.answer({ questionId: question.questionId, answer: "PDF,\u000bplease\f", answeredByConnectedFolderId: connectedFolderOwner.connectedFolderId });
+  assert.equal(answered.state, "answered");
+  assert.equal(answered.answer, "PDF,\nplease\n");
+  await store.joinTurn({ requestId: request.requestId, taskId: "task-2", content: "PDF, please" });
+  await store.linkContinuation(question.questionId, "task-2");
+  assert.equal((await store.setChecklist("task-2", [{ text: "Export\u000bthe\u0007file", status: "doing" }]))?.items[0]?.text, "Export the�file");
+  const result = await store.recordResult({ requestId: request.requestId, taskId: "task-2", receiptId: "receipt-1", envelope: { summary: "Exported\u0085done ⁦ok⁩", outcome: "succeeded" } });
+  assert.equal(result.envelope.summary, "Exported\ndone �ok�");
+
+  // The size bound still refuses rather than cutting a question.
+  await assert.rejects(
+    () => store.ask({ requestId: request.requestId, taskId: "task-2", respondent: "person", text: "x".repeat(ampleFileRequestLimits.maxQuestionTextBytes + 1) }),
+    (error: unknown) => error instanceof AmpleFileRequestLimitError,
+  );
+
+  // A provider error with ANSI colour and multi-byte text still settles the turn.
+  await store.settleTurn("task-2", { status: "failed", error: `\u001b[31m${"é".repeat(2_000)}\u001b[0m` });
+  const failedTurn = store.get(request.requestId)!.turns.at(-1)!;
+  assert.equal(failedTurn.state, "failed");
+  assert.ok(Buffer.byteLength(failedTurn.error!, "utf8") <= 2_048);
+  assert.ok(failedTurn.error!.startsWith("�[31mé"));
+
+  await store.flush();
+  const reopened = await AmpleFileRequestStore.open({ rootPath: root, now: clock.now });
+  assert.equal(reopened.damagedRecordCount(), 0);
+  assert.deepEqual(reopened.get(request.requestId), store.get(request.requestId));
+  assert.deepEqual(reopened.question(question.questionId), store.question(question.questionId));
+  assert.equal((await reopened.results(request.requestId))[0]?.state, "ok");
+});

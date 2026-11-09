@@ -499,7 +499,7 @@ export class AmpleFileRequestStore {
           state: input.status,
           settledAt: this.#now().toISOString(),
           messageId: input.messageId ?? turn.messageId,
-          error: input.error ? input.error.slice(0, maximumErrorLength) : turn.error,
+          error: input.error ? scrubAmpleFileRequestText(input.error, maximumErrorLength) : turn.error,
         };
       }, input.usage);
       if (!record) return null;
@@ -906,7 +906,7 @@ export class AmpleFileRequestStore {
             state: (recovered?.status ?? "interrupted") as AmpleFileRequestTurnState,
             settledAt: recovered?.updatedAt ?? now.toISOString(),
             messageId: recovered?.messageId ?? turn.messageId,
-            error: recovered?.error ?? (recovered ? turn.error : interruptedByShutdown),
+            error: recovered?.error != null ? scrubAmpleFileRequestText(recovered.error, maximumErrorLength) : recovered ? turn.error : interruptedByShutdown,
           };
         });
         // Nothing runs across a restart: a job still recorded running was
