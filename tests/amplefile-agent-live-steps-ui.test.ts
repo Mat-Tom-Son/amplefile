@@ -166,3 +166,15 @@ test("the popover announces a turn's start and end, not every streamed frame or 
   assert.equal(chatTurnStatus(false, null, { id: "r", role: "assistant", content: "Done", createdAt: "" }), "replied");
   await dom.act(() => root.unmount());
 });
+
+test("AmpleFile Agent replies render GitHub tables and one line per hard break, like Worker replies", async (t) => {
+  const { dom } = await agentHarness(t, [
+    { id: "ask", role: "user", content: "Compare them", createdAt: "2026-10-11T12:00:00Z" },
+    { id: "answer", role: "assistant", content: "| Quote | Total |\n|---|---|\n| North | 4,200 |\n\nFirst line  \nSecond line", createdAt: "2026-10-11T12:00:01Z" },
+  ], null);
+  await dom.waitFor(() => Boolean(dom.container.querySelector(".popover-message.assistant table")));
+  assert.equal(dom.container.querySelector(".popover-message.assistant td")?.textContent, "North");
+  const paragraph = [...dom.container.querySelectorAll(".popover-message.assistant p")].find((item) => item.querySelector("br"))!;
+  assert.ok(paragraph, "a hard break is a <br>");
+  assert.equal(paragraph.innerHTML, "First line<br>Second line", "no newline is left after the break to draw a blank line");
+});
