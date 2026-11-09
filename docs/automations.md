@@ -374,8 +374,8 @@ delivered file count.
 ### A Chat or agent hop and its request
 
 A Chat or agent hop follows its durable request through answer and synthesis
-turns. A question ends this automation at that hop with a visible failure and a
-Chat reference; answering continues the request, never the remaining
+turns. A question ends this automation at that hop, once the asking turn has
+ended, with a visible failure and a Chat reference; answering continues the request, never the remaining
 automation effects. A completed hop carries the selected result envelope
 internally, while its receipt keeps identifiers and attribution rather than
 copying the report's content. Created-file steps still use their declared
