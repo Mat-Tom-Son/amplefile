@@ -46,7 +46,7 @@ import {
   type StandardFolderId,
 } from "./standard-folders.js";
 import { goToFolder } from "./go-to-folder.js";
-import { compressInto, copyInto, isInside, moveInto, relativeTo } from "./file-transfer.js";
+import { compressInto, copyInto, isInside, moveInto, relativeTo, removeIdentityFolders } from "./file-transfer.js";
 import { homedir as userHomedir } from "node:os";
 import { lstat, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -11771,7 +11771,8 @@ export async function transferFileEntries(
 }
 
 /**
- * A move between two Connected Folders: a copy into the target, then the
+ * A move between two Connected Folders: a copy into the target, carrying any
+ * `.amplefile` identity a disconnected Connected Folder keeps, then the
  * source's own delete. Every source passes the delete's checks before
  * anything is copied (never the Connected Folder itself, never a nested
  * Connected Folder or anything inside one, whose Chats and History are its
@@ -11824,7 +11825,10 @@ async function moveBetweenConnectedFolders(
 
       const written: string[] = [];
       try {
-        for (const entry of entries) written.push(await copyInto(entry.absolutePath, target.abs));
+        // A moved folder keeps its `.amplefile` identity and Chats: registered
+        // nested Connected Folders were refused above, so this is only ever a
+        // disconnected one, and the original is about to go.
+        for (const entry of entries) written.push(await copyInto(entry.absolutePath, target.abs, { withIdentity: true }));
       } catch (error) {
         await Promise.all(written.map((path) => rm(path, { recursive: true, force: true }).catch(() => undefined)));
         await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
@@ -11849,7 +11853,9 @@ async function moveBetweenConnectedFolders(
           if (removed.recovery.kind === "recently-deleted") recentlyDeleted.push({ path: entry.path, entryId: removed.recovery.entryId, restoreBy: removed.recovery.restoreBy });
         } catch (error) {
           // Everything is already in the target; what could not leave the
-          // source stays there, and both restore points still apply.
+          // source stays there, and both restore points still apply. Its copy
+          // becomes an ordinary copy, so no identity exists twice.
+          for (const copy of written.slice(index)) await removeIdentityFolders(copy).catch(() => undefined);
           return {
             mode: "move" as const,
             written: writtenPaths,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -95,6 +95,70 @@ test("a move between Connected Folders never erases a nested Connected Folder an
     if (previousCap === undefined) delete process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES;
     else process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES = previousCap;
   }
+});
+
+test("a disconnected Connected Folder keeps its identity and Chats when moved, and a copy leaves them behind", async (t) => {
+  const { api } = await sandboxApi(t);
+  const call = caller(api);
+  const source = (await call("/api/connected-folders", { method: "POST", body: { name: "Source" } })).body!.connectedFolder;
+  const target = (await call("/api/connected-folders", { method: "POST", body: { name: "Target" } })).body!.connectedFolder;
+  const identity = (root: string) => ({
+    manifest: join(root, ".amplefile", "connected-folder.json"),
+    chat: join(root, ".amplefile", "conversations", "chat.jsonl"),
+  });
+  const plant = async (root: string) => {
+    const { manifest, chat } = identity(root);
+    await mkdir(join(chat, ".."), { recursive: true });
+    await writeFile(manifest, "{\"id\":\"space-0123456789abcdef\"}");
+    await writeFile(chat, "{\"role\":\"user\"}\n");
+    await writeFile(join(root, "plan.md"), "plan");
+  };
+  await plant(join(source.connectedFolderRoot, "Old Trip"));
+  const transfer = (mode: string, path: string) => call("/api/file-transfer", {
+    method: "POST",
+    body: { mode, sources: [{ place: { kind: "connected-folder", id: source.id }, path }], target: { place: { kind: "connected-folder", id: target.id }, path: "" } },
+  });
+
+  const copied = await transfer("copy", "Old Trip");
+  assert.equal(copied.status, 200, JSON.stringify(copied.body));
+  assert.ok(!existsSync(join(target.connectedFolderRoot, "Old Trip", ".amplefile")), "a copy is not the same Connected Folder");
+  await rm(join(target.connectedFolderRoot, "Old Trip"), { recursive: true });
+
+  const moved = await transfer("move", "Old Trip");
+  assert.equal(moved.status, 200, JSON.stringify(moved.body));
+  const landed = identity(join(target.connectedFolderRoot, "Old Trip"));
+  assert.equal(await readFile(landed.manifest, "utf8"), "{\"id\":\"space-0123456789abcdef\"}");
+  assert.equal(await readFile(landed.chat, "utf8"), "{\"role\":\"user\"}\n");
+  assert.ok(!existsSync(join(source.connectedFolderRoot, "Old Trip")));
+});
+
+test("a moved item that cannot leave its Connected Folder stays there, and its copy carries no identity", { skip: process.getuid?.() === 0 ? "root ignores folder permissions" : false }, async (t) => {
+  const { api } = await sandboxApi(t);
+  const call = caller(api);
+  const source = (await call("/api/connected-folders", { method: "POST", body: { name: "Source" } })).body!.connectedFolder;
+  const target = (await call("/api/connected-folders", { method: "POST", body: { name: "Target" } })).body!.connectedFolder;
+  const locked = join(source.connectedFolderRoot, "Locked");
+  await mkdir(join(locked, "Old Trip", ".amplefile"), { recursive: true });
+  await writeFile(join(locked, "Old Trip", ".amplefile", "connected-folder.json"), "{}");
+  await writeFile(join(locked, "Old Trip", "plan.md"), "plan");
+  await chmod(locked, 0o555);
+  let moved: Awaited<ReturnType<typeof call>>;
+  try {
+    moved = await call("/api/file-transfer", {
+      method: "POST",
+      body: { mode: "move", sources: [{ place: { kind: "connected-folder", id: source.id }, path: "Locked/Old Trip" }], target: { place: { kind: "connected-folder", id: target.id }, path: "" } },
+    });
+  } finally {
+    await chmod(locked, 0o755);
+  }
+  assert.equal(moved.status, 200, JSON.stringify(moved.body));
+  assert.deepEqual(moved.body!.written, ["Old Trip"]);
+  assert.equal(moved.body!.failed?.path, "Locked/Old Trip");
+  assert.equal(typeof moved.body!.failed?.error, "string");
+  assert.deepEqual(moved.body!.notRemoved, ["Locked/Old Trip"]);
+  assert.ok(existsSync(join(locked, "Old Trip", ".amplefile", "connected-folder.json")), "the original keeps its identity");
+  assert.equal(await readFile(join(target.connectedFolderRoot, "Old Trip", "plan.md"), "utf8"), "plan");
+  assert.ok(!existsSync(join(target.connectedFolderRoot, "Old Trip", ".amplefile")), "the copy is an ordinary copy");
 });
 
 test("a move out of a Connected Folder waits for that Connected Folder's outstanding work, as a delete does", async (t) => {

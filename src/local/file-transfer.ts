@@ -41,12 +41,28 @@ export async function freeDestination(folder: string, name: string, options: { d
   throw Object.assign(new Error(`There are too many copies of “${name}” here already.`), { status: 409, statusCode: 409 });
 }
 
-/** Copies a file or folder into a folder and returns where it landed. */
-export async function copyInto(source: string, targetFolder: string, options: { duplicate?: boolean } = {}): Promise<string> {
+/**
+ * Copies a file or folder into a folder and returns where it landed. The copy
+ * leaves every `.amplefile` folder behind unless `withIdentity` is set, which
+ * only a move does: the original is about to go, so its identity and Chats
+ * travel with it instead of being duplicated.
+ */
+export async function copyInto(source: string, targetFolder: string, options: { duplicate?: boolean; withIdentity?: boolean } = {}): Promise<string> {
   if (isInside(source, targetFolder)) throw badRequest(`“${basename(source)}” can’t be copied into itself.`);
   const destination = await freeDestination(targetFolder, basename(source), options);
-  await copyTree(source, destination, (path) => path === source || !identityFolders.has(basename(path)));
+  await copyTree(source, destination, options.withIdentity ? undefined : (path) => path === source || !identityFolders.has(basename(path)));
   return destination;
+}
+
+/** Turns a copy made `withIdentity` into an ordinary copy: every `.amplefile` folder in it goes. Links are not followed. */
+export async function removeIdentityFolders(path: string): Promise<void> {
+  const info = await lstat(path).catch(() => null);
+  if (!info?.isDirectory()) return;
+  for (const entry of await readdir(path)) {
+    const child = join(path, entry);
+    if (identityFolders.has(entry)) await rm(child, { recursive: true, force: true });
+    else await removeIdentityFolders(child);
+  }
 }
 
 /** Moves a file or folder into a folder on the same computer (copying across disks), returning where it landed. */
