@@ -91,7 +91,8 @@ names that outcome, and the item's `ref` carries the request id so a surface
 can read the results handed back through `requests show` — a result's
 summary, structured data, and files are never in the digest),
 `chat-lifecycle`, `chat-renamed`, `act-performed` (every receipted verb,
-including the ones that install code, widen a power, or delete), and
+including the ones that install code, widen a power, or delete; status, list,
+show, and overview reads are journaled apart and not listed), and
 `automation-run-settled`. An answered question adds no kind of its own: it
 leaves **Needs you**, and the request's own settle carries the story. Bounded
 twice: at most 128 items per kind and 512 total. The `cursor` identifies the

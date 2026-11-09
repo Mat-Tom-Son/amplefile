@@ -241,6 +241,44 @@ export interface AmpleFileCliActExecutorOptions {
   receipts: Pick<AmpleFileCliActReceipts, "append" | "hasAccepted">;
   /** Validates an explicitly named AmpleFile Agent parent while its turn is active. */
   resolveLineageParent?: (taskId: string) => { taskId: string } | null;
+  /**
+   * Refuse, without running it, a request created longer ago than this. The
+   * desktop host sets it for acts that waited in its serial queue, so a
+   * caller that gave up and retried never sees the first attempt land late.
+   */
+  maxQueuedMs?: number;
+}
+
+/**
+ * The longest `jobs output --wait` one call holds; a longer `--wait` is
+ * capped to it, and waiting longer is a repeat read, so no single CLI request outlives the shim's transport
+ * timeout or keeps a broker response pending for an unbounded time.
+ */
+export const AMPLEFILE_CLI_JOBS_OUTPUT_MAX_WAIT_SECONDS = 600;
+
+/**
+ * Act verbs the desktop host runs beside its serial CLI queue rather than in
+ * it. Each may legitimately take minutes — `jobs output` waits on a job, and
+ * `chat compact` runs one model compaction — and both are already fenced by
+ * their domain service exactly as when the window asks (the job service and
+ * the Chat's compaction fence), so serializing them would only stall every
+ * other `amplefile` command behind them. Replay protection does not depend on
+ * the queue: the broker dedups an id in flight and claims it once, and the
+ * receipts journal accepts an id at most once.
+ */
+const ampleFileCliActVerbsOutsideQueue: ReadonlySet<AmpleFileCliActParsedCommand["name"]> = new Set([
+  "jobs.output",
+  "chat.compact",
+]);
+
+/** True when the host may run this act request outside its serial queue. */
+export function ampleFileCliActRunsOutsideQueue(argv: readonly string[]): boolean {
+  try {
+    return ampleFileCliActVerbsOutsideQueue.has(parseAmpleFileCliActArgv(argv).name);
+  } catch {
+    // An argv the parser refuses is answered quickly, so it stays in line.
+    return false;
+  }
 }
 
 export const ampleFileCliActUnavailableMessage =
@@ -1414,6 +1452,7 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
       if (waitSeconds !== undefined && (!Number.isFinite(waitSeconds) || waitSeconds < 0)) {
         throw usageError("--wait must be a number of seconds, 0 or more.");
       }
+
       const offset = optionalInteger("--offset", 1, Number.MAX_SAFE_INTEGER);
       const limit = optionalInteger("--limit", 1, Number.MAX_SAFE_INTEGER);
       const until = optionalBoundedFlag("--until", "pattern", 4_096);
@@ -1425,7 +1464,9 @@ export function parseAmpleFileCliActArgv(argv: readonly string[]): AmpleFileCliA
         job: requireBoundedFlag("--job", "job-id"),
         ...(offset !== undefined ? { offset } : {}),
         ...(limit !== undefined ? { limit } : {}),
-        ...(waitSeconds !== undefined ? { waitSeconds } : {}),
+        // A longer wait is capped: a wait that runs out already answers
+        // "still running", so the caller simply reads again.
+        ...(waitSeconds !== undefined ? { waitSeconds: Math.min(waitSeconds, AMPLEFILE_CLI_JOBS_OUTPUT_MAX_WAIT_SECONDS) } : {}),
         ...(until ? { until } : {}),
         ...(task ? { task } : {}),
       };
@@ -1475,6 +1516,23 @@ export async function executeAmpleFileCliActRequest(
         surface: "cli",
       });
       throw new AmpleFileCliError("unavailable", ampleFileCliActUnavailableMessage);
+    }
+    if (options.maxQueuedMs !== undefined) {
+      const waitedMs = (options.now?.() ?? new Date()).getTime() - Date.parse(request.createdAt);
+      if (!(waitedMs <= options.maxQueuedMs)) {
+        await options.receipts.append({
+          requestId: request.id,
+          command: command.name,
+          outcome: "rejected",
+          errorCode: "timeout",
+          surface: "cli",
+          detail: "waited too long behind other commands",
+        });
+        throw new AmpleFileCliError(
+          "timeout",
+          `AmpleFile was busy with other commands for more than ${Math.round(options.maxQueuedMs / 60_000)} minutes, so this command was not run. Run it again.`,
+        );
+      }
     }
     command = await resolveActTextFiles(command, request.cwd);
     // The broker's response-file dedup only covers a pending request; the
