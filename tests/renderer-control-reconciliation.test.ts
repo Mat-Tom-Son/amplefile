@@ -260,3 +260,36 @@ test("file monitoring re-queries edits made while a multiplex connection drains"
   await dom.act(() => { extra = createEventSource("/api/connected-folders/lab/conversations/background/events"); });
   await dom.waitFor(() => connections === 2 && dom.container.textContent === "written-during-drain.txt");
 });
+
+test("navigating inside a Connected Folder keeps its one file subscription and reads the folder shown", async (t) => {
+  const dom = await createDomHarness(); const previousFetch = globalThis.fetch;
+  t.after(async () => { await dom.cleanup(); globalThis.fetch = previousFetch; });
+  let connections = 0; const reads: string[] = [];
+  let send!: (event: unknown) => void;
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input);
+    if (url === "/api/events") return new Response(new ReadableStream({ start(controller) {
+      connections++;
+      init?.signal?.addEventListener("abort", () => controller.close(), { once: true });
+      for (const item of JSON.parse(String(init?.body)).subscriptions) {
+        send = (event) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ subscriptionId: item.id, event })}\n\n`));
+        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ subscriptionId: item.id, ready: true })}\n\n`));
+      }
+    } }));
+    reads.push(new URL(url, "http://local").searchParams.get("path") ?? "");
+    return Response.json({ tree: [] });
+  }) as typeof fetch;
+  function Tree({ path }: { path: string }) { useFolderListing({ kind: "connected-folder", id: "lab" }, path); return null; }
+  await dom.render(createElement(Tree, { path: "" }));
+  await dom.waitFor(() => connections === 1 && Boolean(send));
+  await dom.render(createElement(Tree, { path: "Notes" }));
+  await dom.render(createElement(Tree, { path: "Notes/Drafts" }));
+  await dom.waitFor(() => reads.includes("Notes/Drafts"));
+  await dom.act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+  assert.equal(connections, 1, "navigation does not rebuild the shared event connection");
+  const before = reads.length;
+  await dom.act(() => send({ type: "file_event", path: "Elsewhere/other.txt" }));
+  await dom.act(() => send({ type: "file_event", path: "Notes/Drafts/new.txt" }));
+  await dom.waitFor(() => reads.length === before + 1);
+  assert.equal(reads.at(-1), "Notes/Drafts", "a change in the folder shown requeries that folder");
+});
