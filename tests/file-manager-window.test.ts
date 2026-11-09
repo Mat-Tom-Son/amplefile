@@ -76,3 +76,42 @@ test("moving to another folder abandons the previous folder's suggestion request
   await dom.render(createElement(Probe, { path: "Four" }));
   assert.equal(asked[0]!.signal.aborted, true);
 });
+
+test("Enter on a sort header sorts instead of renaming the selected item", async (t) => {
+  const { dom, module } = await createFileManagerHarness(t, answers());
+  await dom.render(view(module));
+  await dom.waitFor(() => Boolean(dom.container.querySelector('[data-fm-path="a.md"]')));
+  await dom.act(() => dom.container.querySelector<HTMLElement>('[data-fm-path="a.md"]')!.click());
+  const header = [...dom.container.querySelectorAll<HTMLButtonElement>('[role="columnheader"]')].find((item) => item.textContent?.includes("Size"))!;
+  await dom.act(() => header.focus());
+  await dom.press("Enter");
+  assert.equal(document.querySelector('[role="dialog"]'), null, "the selected file is not put into Rename");
+  const grid = dom.container.querySelector<HTMLElement>('[role="grid"]')!;
+  await dom.act(() => grid.focus());
+  await dom.press("Enter");
+  await dom.waitFor(() => Boolean(document.querySelector('[role="dialog"]')));
+});
+
+test("every list names its active row, and icon view keeps grid, row and cell roles in order", async (t) => {
+  const { dom, module } = await createFileManagerHarness(t, answers((path) => path === "/api/recents"
+    ? { recents: [{ place: { kind: "connected-folder", id: "lab" }, path: "Notes/a.md", name: "a.md", kind: "file", updatedAt: "2026-09-27T12:00:00Z", where: "Lab" }] }
+    : undefined));
+  await dom.render(view(module));
+  await dom.waitFor(() => Boolean(dom.container.querySelector('[data-fm-path="a.md"]')));
+  const grid = () => dom.container.querySelector<HTMLElement>('[role="grid"]')!;
+  await dom.act(() => dom.container.querySelector<HTMLElement>('[data-fm-path="b.md"]')!.click());
+  assert.ok(document.getElementById(grid().getAttribute("aria-activedescendant")!)?.textContent?.includes("b.md"));
+
+  await dom.act(() => dom.container.querySelector<HTMLButtonElement>('button[aria-label="Icons"]')!.click());
+  const cells = [...grid().querySelectorAll('[role="gridcell"]')];
+  assert.ok(cells.length >= 2);
+  assert.ok(cells.every((cell) => cell.parentElement?.getAttribute("role") === "row"), "a gridcell sits in a row");
+
+  const recents = [...dom.container.querySelectorAll<HTMLButtonElement>(".fm-sidebar-item")].find((item) => item.textContent?.includes("Recents"))!;
+  await dom.act(() => recents.click());
+  await dom.waitFor(() => Boolean(grid().querySelector('.fm-rows [role="row"]')));
+  await dom.act(() => grid().querySelector<HTMLElement>('.fm-rows [role="row"]')!.click());
+  const active = grid().getAttribute("aria-activedescendant");
+  assert.ok(active, "Recents names its active row");
+  assert.equal(document.getElementById(active)?.getAttribute("aria-selected"), "true");
+});

@@ -1334,6 +1334,10 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    // Enter and Space belong to a control inside the list (a sort header, Ask
+    // the Worker), never to the selection behind it.
+    const onControl = event.target !== event.currentTarget && Boolean((event.target as HTMLElement).closest?.("button, a[href], input, textarea, select, [contenteditable='true']"));
+    if (onControl && (event.key === "Enter" || event.key === " ")) return;
     if (searchMode) { handleSearchKey(event); return; }
     if (recentsOpen) { handleRecentsKey(event); return; }
     const command = mac ? event.metaKey : event.ctrlKey;
@@ -1560,7 +1564,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         role="grid"
         aria-label={`${folderName} contents`}
         aria-multiselectable="true"
-        aria-activedescendant={focusPath ? rowDomId(focusPath) : undefined}
+        aria-activedescendant={recentsOpen && !searchMode ? (recentSelection ? listItemDomId("recent", recentSelection) : undefined)
+          : searchMode ? (searchSelection ? listItemDomId("result", searchSelection) : undefined)
+          : focusPath ? rowDomId(focusPath) : undefined}
         onKeyDown={handleKeyDown}
         onClick={(event) => { if (!(event.target as HTMLElement).closest("[data-fm-path]")) select([]); }}
         onContextMenu={(event) => { if (!(event.target as HTMLElement).closest("[data-fm-path]")) void openContextMenu(null, event); }}
@@ -1578,6 +1584,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
               const entry: TreeEntry = { name: item.name, path: item.path, kind: "file", ...(item.sizeBytes !== undefined ? { sizeBytes: item.sizeBytes } : {}) };
               return <div
                 key={key}
+                id={listItemDomId("recent", key)}
                 role="row"
                 aria-selected={recentSelection === key}
                 className={`fm-row${index % 2 ? " is-odd" : ""}${recentSelection === key ? " is-selected" : ""}`}
@@ -1607,6 +1614,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
               const where = connectedFolders.find((item) => item.id === result.connectedFolderId);
               return <div
                 key={result.key}
+                id={listItemDomId("result", result.key)}
                 role="row"
                 aria-selected={searchSelection === result.key}
                 data-fm-result={result.key}
@@ -1676,7 +1684,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
             <span role="gridcell" className="fm-cell fm-col-size">{sizeText(entry)}</span>
             <span role="gridcell" className="fm-cell fm-col-kind" title={kindLabel(entry)}>{kindLabel(entry)}</span>
           </div>)}
-        </div> : <div className="fm-grid" role="rowgroup">
+        </div> : <div className="fm-grid" role="row">
           {visible.map((entry) => <div
             key={entry.path}
             id={rowDomId(entry.path)}
@@ -1996,6 +2004,11 @@ function hiddenKey(place: FileManagerPlace, path: string): string {
 
 function rowDomId(path: string): string {
   return `fm-item-${encodeURIComponent(path).replace(/%/g, "_")}`;
+}
+
+/** A Recents or search row's id, for the list's aria-activedescendant. */
+function listItemDomId(kind: "recent" | "result", key: string): string {
+  return `fm-${kind}-${encodeURIComponent(key).replace(/%/g, "_")}`;
 }
 
 function cssEscape(value: string): string {

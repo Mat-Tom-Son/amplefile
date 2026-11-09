@@ -50,6 +50,7 @@ import { RuntimeContextPreview } from "./activity";
 import { composerCommandQuery, composerCommandValue, matchingComposerCommands } from "./command-menu";
 import { QueuedMessageSync } from "../../lib/queued-message-sync";
 import { ChatMessageRow, MarkdownMessage, continueInterruptedTurnMessage, copyMarkdownToClipboard } from "./messages";
+import { TurnAnnouncer } from "./TurnAnnouncer";
 import { showToast } from "../../ui/feedback";
 
 const emptyFixtureTreeEntries: TreeEntry[] = [];
@@ -1883,6 +1884,7 @@ export function ChatPanel({
         </div>
       </div>
       <div className="chat-scroll-shell">
+        <TurnAnnouncer running={running} who="The Worker" />
         <div className="message-list" ref={messageListRef} onScroll={updateScrollPosition}>
           {messages.map((message) => {
             const isLatestAssistantAtRest = message.role === "assistant" && message.id === latestAssistantMessageId && !running && !settlementPending && !streamingAssistant;

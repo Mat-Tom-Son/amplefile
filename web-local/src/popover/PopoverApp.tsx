@@ -19,6 +19,7 @@ import { FolderMentionMenu, type MentionFolderOption } from "../components/chat/
 import { AmpleFileLockup } from "../components/brand/AmpleFileBrand";
 import { RuntimeContextPreview } from "../components/chat/activity";
 import { SafeMarkdownAnchor } from "../components/chat/SafeMarkdownAnchor";
+import { TurnAnnouncer } from "../components/chat/TurnAnnouncer";
 import { savedWorkTrailPreviews } from "../lib/chat-work-trail";
 import type { ChatMessage, ComposerState, ConversationRuntime, ChatStreamEvent, ExtensionUiRequest, RuntimePreviewEntry } from "../types";
 
@@ -1141,7 +1142,7 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
           className="popover-transcript"
           id="popover-conversation"
           ref={attachTranscript}
-          aria-label="AmpleFile Agent chat" aria-live="polite"
+          aria-label="AmpleFile Agent chat"
           tabIndex={-1}
           onScroll={(event) => {
             const target = event.currentTarget;
@@ -1201,11 +1202,12 @@ export function AmpleFileAgentChat({ host, fixtureMode = false, controlsTarget =
             <button className="agent-jump-latest" type="button" onClick={() => followLatest("smooth")}><ArrowDown aria-hidden="true" size={13} />Latest</button>
           ) : null}
         </section>
+          <TurnAnnouncer running={request?.phase === "working"} who="The AmpleFile Agent" />
           {request && activePhases.has(request.phase) ? (
             <div className="agent-tail">
               {request.phase === "working" ? (
                 // The steps above show what is happening; this line keeps the time.
-                elapsedLabel ? <p className="working-line" role="status" aria-live="polite"><span className="working-elapsed">{elapsedLabel}</span></p> : null
+                elapsedLabel ? <p className="working-line" aria-live="off"><span className="working-elapsed">{elapsedLabel}</span></p> : null
               ) : !workState.work ? (
                 <p className="working-line" role="status" aria-live="polite"><span className="popover-dot is-run" aria-hidden="true" /><span className="working-copy">Working in {request.children.filter((child) => child.state === "running").length === 1 ? "a Connected Folder" : "Connected Folders"}…</span></p>
               ) : null}

@@ -127,3 +127,28 @@ test("a relative link in an AmpleFile Agent reply is plain text, so a click cann
   assert.equal(anchors[0]!.target, "_blank");
   assert.match(dom.container.querySelector(".popover-message.assistant")?.textContent ?? "", /notes\.md/);
 });
+
+test("the popover announces a turn's start and end, not every streamed frame or timer tick", async (t) => {
+  const { dom, emit } = await agentHarness(t);
+  await emit({ type: "turn_state", running: true, turnId: "turn-1" });
+  await emit({ type: "assistant_delta", turnId: "turn-1", text: "Streaming text", order: 0 });
+  const transcript = dom.container.querySelector(".popover-transcript")!;
+  assert.equal(transcript.getAttribute("aria-live"), null, "the transcript is not re-read as it streams");
+  for (const line of dom.container.querySelectorAll(".working-line")) {
+    if (line.querySelector(".working-elapsed")) assert.notEqual(line.getAttribute("role"), "status", "the elapsed timer is not a live region");
+  }
+  const live = [...dom.container.querySelectorAll('[aria-live="polite"], [role="status"]')].filter((node) => !node.closest("[hidden]"));
+  assert.ok(live.every((node) => !node.textContent?.includes("Streaming text")));
+
+  const { TurnAnnouncer } = await import("../web-local/src/components/chat/TurnAnnouncer.js");
+  const host = document.createElement("div"); document.body.append(host);
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(host);
+  await dom.act(() => root.render(createElement(TurnAnnouncer, { running: false, who: "The AmpleFile Agent" })));
+  assert.equal(host.textContent, "");
+  await dom.act(() => root.render(createElement(TurnAnnouncer, { running: true, who: "The AmpleFile Agent" })));
+  assert.equal(host.textContent, "The AmpleFile Agent is working.");
+  await dom.act(() => root.render(createElement(TurnAnnouncer, { running: false, who: "The AmpleFile Agent" })));
+  assert.equal(host.textContent, "The AmpleFile Agent replied.");
+  await dom.act(() => root.unmount());
+});
