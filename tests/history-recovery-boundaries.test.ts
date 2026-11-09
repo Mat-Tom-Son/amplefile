@@ -90,13 +90,44 @@ test("relinking a moved Connected Folder preserves its machine-local History", a
   assert.equal(existsSync(root), false);
 });
 
-test("History holds ownership stable and refuses independent concurrent writers", async (t) => {
+test("History holds ownership stable and queues independent writers instead of refusing them", async (t) => {
   const { root, sandbox } = await fixture(t);
   const child = join(sandbox, "other"); await mkdir(child);
+  await writeFile(join(root, "note.txt"), "before");
+  const order: string[] = [];
+  let release!: () => void;
+  const held = withConnectedFolderHistoryOperation(root, () => new Promise<void>((resolve) => { release = resolve; }))
+    .then(() => order.push("held"));
+  const registration = registerLinkedConnectedFolder(child).then((value) => { order.push("registered"); return value; });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const checkpoint = createConnectedFolderCheckpoint(root).then((value) => { order.push("checkpoint"); return value; });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.deepEqual(order, [], "both wait while History holds the root");
+  release();
+  const [, registered, captured] = await Promise.all([held, registration, checkpoint]);
+  assert.equal(registered.connectedFolderRoot, child);
+  assert.equal(captured.files.some((file) => file.path === "note.txt"), true);
+  assert.deepEqual(order, ["held", "registered", "checkpoint"], "a waiting registration is not overtaken by a later capture");
+});
+
+test("History on different Connected Folders runs side by side", async (t) => {
+  const { root, sandbox } = await fixture(t);
+  const other = join(sandbox, "other"); await mkdir(other);
   let release!: () => void;
   const held = withConnectedFolderHistoryOperation(root, () => new Promise<void>((resolve) => { release = resolve; }));
-  await assert.rejects(registerLinkedConnectedFolder(child), /Wait for History/);
-  await assert.rejects(createConnectedFolderCheckpoint(root), /current History/);
+  await writeFile(join(other, "a.txt"), "a");
+  const captured = await createConnectedFolderCheckpoint(other);
+  assert.equal(captured.files.length, 1);
   release(); await held;
+});
+
+test("History refuses a nested claim it would deadlock waiting for", async (t) => {
+  const { root, sandbox } = await fixture(t);
+  const child = join(sandbox, "other"); await mkdir(child);
+  await withConnectedFolderHistoryOperation(root, async () => {
+    await assert.rejects(registerLinkedConnectedFolder(child), /Wait for History/);
+    // The same root is reentrant for a restore's own safety capture.
+    await createConnectedFolderCheckpoint(root);
+  });
   await registerLinkedConnectedFolder(child);
 });

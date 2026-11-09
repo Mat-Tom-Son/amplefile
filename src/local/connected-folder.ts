@@ -1216,28 +1216,99 @@ async function syncDirectoriesBestEffort(paths: readonly string[]): Promise<void
 }
 
 const historyContext = new AsyncLocalStorage<Set<string>>();
+const ownershipContext = new AsyncLocalStorage<true>();
 const activeHistoryRoots = new Set<string>();
 let ownershipMutations = 0;
 
-/** Holds folder ownership stable through a complete capture or restore. Nested
- * captures for the same restore are reentrant; independent writers conflict. */
+/** One History operation on a root, or one change to which folders are registered. */
+type HistoryGateClaim = { kind: "history"; root: string } | { kind: "ownership" };
+const historyGateWaiters: Array<{ claim: HistoryGateClaim; grant: () => void }> = [];
+
+/** History on different roots runs side by side; History on one root runs one
+ * at a time; a registration change runs only while no History runs, because a
+ * capture or restore reads the nested registrations it must not cross. */
+function historyClaimsCompatible(left: HistoryGateClaim, right: HistoryGateClaim): boolean {
+  if (left.kind === "ownership" || right.kind === "ownership") return left.kind === right.kind;
+  return left.root !== right.root;
+}
+
+function historyClaimCanStart(claim: HistoryGateClaim): boolean {
+  return claim.kind === "history"
+    ? ownershipMutations === 0 && !activeHistoryRoots.has(claim.root)
+    : activeHistoryRoots.size === 0;
+}
+
+function holdHistoryClaim(claim: HistoryGateClaim): void {
+  if (claim.kind === "history") activeHistoryRoots.add(claim.root);
+  else ownershipMutations += 1;
+}
+
+function releaseHistoryClaim(claim: HistoryGateClaim): void {
+  if (claim.kind === "history") activeHistoryRoots.delete(claim.root);
+  else ownershipMutations -= 1;
+  pumpHistoryGate();
+}
+
+/** Grants waiters in arrival order. A waiter may pass an earlier one only when
+ * the two could run together, so a registration change is never starved by a
+ * stream of captures and a capture never overtakes a conflicting earlier one. */
+function pumpHistoryGate(): void {
+  const blocked: HistoryGateClaim[] = [];
+  for (let index = 0; index < historyGateWaiters.length;) {
+    const waiter = historyGateWaiters[index]!;
+    if (historyClaimCanStart(waiter.claim) && blocked.every((earlier) => historyClaimsCompatible(earlier, waiter.claim))) {
+      historyGateWaiters.splice(index, 1);
+      holdHistoryClaim(waiter.claim);
+      waiter.grant();
+    } else {
+      blocked.push(waiter.claim);
+      index += 1;
+    }
+  }
+}
+
+async function acquireHistoryClaim(claim: HistoryGateClaim): Promise<void> {
+  await new Promise<void>((grant) => {
+    historyGateWaiters.push({ claim, grant });
+    pumpHistoryGate();
+  });
+}
+
+function historyBusyError(message: string): Error {
+  return Object.assign(new Error(message), { status: 409, statusCode: 409 });
+}
+
+/**
+ * Holds folder ownership stable through a complete capture or restore.
+ * Independent operations queue: one on the same root waits for the current one
+ * to finish, and one on another root runs alongside it. Nested captures for the
+ * same restore are reentrant. An operation that already holds History or a
+ * registration change and asks for a different, busy claim is refused rather
+ * than queued, because waiting while holding a claim could deadlock.
+ */
 export async function withConnectedFolderHistoryOperation<T>(connectedFolderRoot: string, operation: () => Promise<T>): Promise<T> {
   const root = resolve(connectedFolderRoot);
-  if (historyContext.getStore()?.has(root)) return operation();
-  if (ownershipMutations || activeHistoryRoots.has(root)) {
-    throw Object.assign(new Error("Wait for the current History or Connected Folder registration operation to finish."), { status: 409, statusCode: 409 });
+  const held = historyContext.getStore();
+  if (held?.has(root)) return operation();
+  const claim: HistoryGateClaim = { kind: "history", root };
+  if (held?.size || ownershipContext.getStore()) {
+    if (!historyClaimCanStart(claim)) throw historyBusyError("Wait for the current History or Connected Folder registration operation to finish.");
+    holdHistoryClaim(claim);
+  } else {
+    await acquireHistoryClaim(claim);
   }
-  activeHistoryRoots.add(root);
   try {
-    return await historyContext.run(new Set([...(historyContext.getStore() ?? []), root]), operation);
-  } finally { activeHistoryRoots.delete(root); }
+    return await historyContext.run(new Set([...(held ?? []), root]), operation);
+  } finally { releaseHistoryClaim(claim); }
 }
 
 async function withRegistryOwnershipMutation<T>(operation: () => Promise<T>): Promise<T> {
-  if (activeHistoryRoots.size) throw Object.assign(new Error("Wait for History to finish before changing registered Connected Folders."), { status: 409, statusCode: 409 });
-  ownershipMutations += 1;
-  try { return await withRegistryMutation(operation); }
-  finally { ownershipMutations -= 1; }
+  const claim: HistoryGateClaim = { kind: "ownership" };
+  if (historyContext.getStore()?.size) throw historyBusyError("Wait for History to finish before changing registered Connected Folders.");
+  if (ownershipContext.getStore()) holdHistoryClaim(claim);
+  else await acquireHistoryClaim(claim);
+  try { return await ownershipContext.run(true, () => withRegistryMutation(operation)); }
+  finally { releaseHistoryClaim(claim); }
 }
 
 function assertNoNestedConnectedFolderDeletion(registry: ConnectedFolderRegistry, connectedFolderId: string, connectedFolderRoot: string): void {
