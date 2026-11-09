@@ -11813,14 +11813,14 @@ async function moveBetweenConnectedFolders(
       // capture roots; each one belongs to exactly one source.
       const historyRoot = ensureSafeConnectedFolderRoot(root);
       const capturedAs = entries.map((entry) => relative(historyRoot, entry.absolutePath).split(sep).join("/"));
-      const uncovered = entries.map((): AmpleFileRecentlyDeletedUncoveredPath[] => []);
+      const notKept = entries.map((): AmpleFileRecentlyDeletedUncoveredPath[] => []);
       for (const file of safety.skippedFiles) {
         const row = capturedAs.findIndex((path) => file.path === path || file.path.startsWith(`${path}/`));
         if (row < 0) {
           await discardConnectedFolderCheckpoint(root, safety.checkpointId).catch(() => undefined);
           throw new AmpleFileCliError("failure", `AmpleFile could not tell which item ${file.path} belongs to. Nothing was moved.`);
         }
-        uncovered[row]!.push({ path: file.path, reason: file.reason });
+        notKept[row]!.push({ path: file.path, reason: file.reason });
       }
 
       const written: string[] = [];
@@ -11835,6 +11835,17 @@ async function moveBetweenConnectedFolders(
         throw error;
       }
       const writtenPaths = written.map((path) => relativeTo(to.connectedFolderRoot, path));
+      // What History could not keep is safe when the copy carried it (a
+      // `.git`, an ignored build folder, a large file, a link): only what did
+      // not reach the target leaves the source through Recently Deleted.
+      const uncovered = await Promise.all(entries.map(async (entry, row) => {
+        const missing: AmpleFileRecentlyDeletedUncoveredPath[] = [];
+        for (const file of notKept[row]!) {
+          const inside = file.path === capturedAs[row] ? "" : file.path.slice(capturedAs[row]!.length + 1);
+          if (!await carriedByCopy(join(entry.absolutePath, ...inside.split("/").filter(Boolean)), join(written[row]!, ...inside.split("/").filter(Boolean)))) missing.push(file);
+        }
+        return missing;
+      }));
       let targetSafety: ConnectedFolderCheckpoint | null;
       try {
         targetSafety = await checkpointAdditiveWritesOrUndo(to.connectedFolderRoot, writtenPaths, { reason: "pre_move", label });
@@ -11871,6 +11882,17 @@ async function moveBetweenConnectedFolders(
   } finally {
     state.capabilityMutations.delete(from.id);
   }
+}
+
+/** Whether a path the copy should have carried is at its destination as it is at its source. */
+async function carriedByCopy(sourcePath: string, copiedPath: string): Promise<boolean> {
+  const [source, copy] = await Promise.all([lstat(sourcePath).catch(() => null), lstat(copiedPath).catch(() => null)]);
+  if (!copy) return false;
+  if (!source) return true;
+  if (source.isFile()) return copy.isFile() && copy.size === source.size;
+  if (source.isDirectory()) return copy.isDirectory();
+  if (source.isSymbolicLink()) return copy.isSymbolicLink();
+  return false;
 }
 
 async function compressEntries(body: { place?: unknown; paths?: unknown }) {

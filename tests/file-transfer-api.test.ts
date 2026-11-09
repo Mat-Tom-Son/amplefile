@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -32,7 +32,7 @@ function caller(api: Api) {
   };
 }
 
-test("a move between Connected Folders never erases a nested Connected Folder and keeps what History cannot", async (t) => {
+test("a move between Connected Folders never erases a nested Connected Folder and parks nothing the copy carried", async (t) => {
   const { api, sandbox } = await sandboxApi(t);
   const call = caller(api);
   const sourceRoot = join(sandbox, "source");
@@ -79,18 +79,35 @@ test("a move between Connected Folders never erases a nested Connected Folder an
   assert.ok(!existsSync(join(sourceRoot, "Projects", "plain.txt")));
   assert.equal(await readFile(join(target.connectedFolderRoot, "plain.txt"), "utf8"), "plain");
 
-  // A file History cannot keep leaves through Recently Deleted, not an erase.
+  // A project folder whose parts History does not keep (a `.git`, installed
+  // packages, an ignored build folder, a link, a file over History's limit)
+  // moves whole: the copy carried all of it, so nothing is parked in Recently Deleted.
+  const project = join(sourceRoot, "App");
+  await mkdir(join(project, ".git"), { recursive: true });
+  await mkdir(join(project, "node_modules", "left-pad"), { recursive: true });
+  await mkdir(join(project, "build"), { recursive: true });
+  await writeFile(join(project, ".git", "HEAD"), "ref: refs/heads/main\n");
+  await writeFile(join(project, "node_modules", "left-pad", "index.js"), "module.exports = 1;\n");
+  await writeFile(join(project, "build", "out.js"), "built\n");
+  await writeFile(join(project, ".gitignore"), "build/\n");
+  await writeFile(join(project, "index.js"), "console.log(1);\n");
+  await symlink("index.js", join(project, "entry.js"));
+  await rename(join(sourceRoot, "big.bin"), join(project, "big.bin"));
   const previousCap = process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES;
-  process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES = "8";
+  process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES = "32";
   try {
-    const big = await move("big.bin");
-    assert.equal(big.status, 200, JSON.stringify(big.body));
-    assert.equal(big.body!.recentlyDeleted?.length, 1);
-    assert.equal(big.body!.recentlyDeleted[0].path, "big.bin");
-    assert.ok(!existsSync(join(sourceRoot, "big.bin")));
-    assert.equal((await readFile(join(target.connectedFolderRoot, "big.bin"), "utf8")).length, 64);
-    const trash = await api.recentlyDeleted.list();
-    assert.ok(trash.entries.some((entry) => entry.id === big.body!.recentlyDeleted[0].entryId && entry.originalPath === "big.bin"));
+    const app = await move("App");
+    assert.equal(app.status, 200, JSON.stringify(app.body));
+    assert.equal(app.body!.recentlyDeleted, undefined, "the copy carried everything History does not keep");
+    assert.equal(app.body!.failed, undefined);
+    assert.ok(!existsSync(project), "the source is gone");
+    const moved = join(target.connectedFolderRoot, "App");
+    assert.equal(await readFile(join(moved, ".git", "HEAD"), "utf8"), "ref: refs/heads/main\n");
+    assert.equal(await readFile(join(moved, "node_modules", "left-pad", "index.js"), "utf8"), "module.exports = 1;\n");
+    assert.equal(await readFile(join(moved, "build", "out.js"), "utf8"), "built\n");
+    assert.equal((await readFile(join(moved, "big.bin"), "utf8")).length, 64);
+    assert.ok((await lstat(join(moved, "entry.js"))).isSymbolicLink());
+    assert.deepEqual((await api.recentlyDeleted.list()).entries, [], "nothing was parked in Recently Deleted");
   } finally {
     if (previousCap === undefined) delete process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES;
     else process.env.AMPLEFILE_HISTORY_MAX_FILE_BYTES = previousCap;
