@@ -577,9 +577,23 @@ test("a checkpoint built in one stage cannot be resumed or published in another"
   const saved = { descriptor: bridge, fingerprint };
   assertCompatibleReleaseState(saved, bridge, fingerprint);
   // The packaged feed is the same in these two stages; only the stage differs.
-  assert.throws(() => assertCompatibleReleaseState(saved, descriptor(feedAt("source-repository")), fingerprint), /Run a fresh release build/);
-  assert.throws(() => assertCompatibleReleaseState(saved, descriptor(feedAt("separate-repository")), fingerprint), /Run a fresh release build/);
+  assert.throws(
+    () => assertCompatibleReleaseState(saved, descriptor(feedAt("source-repository")), fingerprint),
+    /belongs to release 0\.1\.5 arm64 checking Mat-Tom-Son\/amplefile at the bridge stage, not release 0\.1\.5 arm64 checking Mat-Tom-Son\/amplefile at the source-repository stage \(it differs in feedStage\)\. Run a fresh release build/,
+  );
+  assert.throws(
+    () => assertCompatibleReleaseState(saved, descriptor(feedAt("separate-repository")), fingerprint),
+    /at the bridge stage, not release 0\.1\.5 arm64 checking Mat-Tom-Son\/amplefile-mac-releases at the separate-repository stage \(it differs in feedRepo, feedStage\)/,
+  );
   // A checkpoint from before the stage existed.
   const { feedStage: _feedStage, ...before } = descriptor(feedAt("separate-repository"));
-  assert.throws(() => assertCompatibleReleaseState({ descriptor: before, fingerprint }, descriptor(feedAt("separate-repository")), fingerprint), /Run a fresh release build/);
+  assert.throws(
+    () => assertCompatibleReleaseState({ descriptor: before, fingerprint }, descriptor(feedAt("separate-repository")), fingerprint),
+    /checking Mat-Tom-Son\/amplefile-mac-releases at the unrecorded stage, not .* at the separate-repository stage \(it differs in feedStage\)/,
+  );
+  assert.throws(
+    () => assertCompatibleReleaseState(saved, { ...bridge, nodeVersion: "v24.1.0" }, fingerprint),
+    /\(it differs in nodeVersion\)/,
+    "two descriptions that read the same still say what differs",
+  );
 });

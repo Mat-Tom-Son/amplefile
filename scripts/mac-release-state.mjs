@@ -107,8 +107,10 @@ export function assertCompatibleReleaseState(state, descriptor, fingerprint) {
   const expected = normalizeDescriptor(descriptor);
   const actual = normalizeDescriptor(state.descriptor ?? {});
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    const differing = Object.keys(expected).filter((key) => actual[key] !== expected[key]);
     throw new Error(
-      `The saved macOS release belongs to ${describeDescriptor(actual)}, not ${describeDescriptor(expected)}. Run a fresh release build.`,
+      `The saved macOS release belongs to ${describeDescriptor(actual)}, not ${describeDescriptor(expected)} `
+      + `(it differs in ${differing.join(", ")}). Run a fresh release build.`,
     );
   }
   if (state.fingerprint !== fingerprint) {
@@ -207,5 +209,7 @@ function normalizeDescriptor(descriptor) {
 }
 
 function describeDescriptor(descriptor) {
-  return `${descriptor.mode || "unknown"} ${descriptor.version || "unknown"} ${descriptor.arch || "unknown"}`;
+  const feed = descriptor.feedOwner && descriptor.feedRepo ? `${descriptor.feedOwner}/${descriptor.feedRepo}` : "an unrecorded feed";
+  return `${descriptor.mode || "unknown"} ${descriptor.version || "unknown"} ${descriptor.arch || "unknown"} `
+    + `checking ${feed} at the ${descriptor.feedStage || "unrecorded"} stage`;
 }
