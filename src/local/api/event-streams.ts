@@ -34,7 +34,7 @@ import {
 } from "../connected-folder-ignore.js";
 import { canonicalConnectedFolderWatchRoot } from "../connected-folder-watch.js";
 import { getConnectedFolder, resolveConnectedFolderPath } from "../connected-folder.js";
-import { assertAmpleFileAgentReadyForRoutes } from "../server.js";
+import { assertAmpleFileAgentReadyForRoutes } from "./amplefile-agent-routes.js";
 import { extensionSnapshot } from "./extension-ui.js";
 import { badRequest, errorMessage, httpError, notFound, readJsonBody } from "./http.js";
 import {
