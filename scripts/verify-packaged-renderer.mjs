@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { extractFile, getRawHeader } from "@electron/asar";
 
@@ -13,13 +14,18 @@ const pages = [
 const pageOrigin = "https://app";
 
 /** The main window and the AmpleFile Agent popover must run only code that
- * Electron's ASAR integrity validation covers. That holds when both pages and
- * every script and stylesheet they name are archived in `app.asar` as regular
- * files, none of them is unpacked or a link, and no loose copy ships beside
- * the archive.
+ * Electron's ASAR integrity validation covers, and all of the renderer that
+ * was built. That holds when `dist/web-local` in `app.asar` is the local
+ * renderer build file for file, every entry is a regular archived file
+ * (not unpacked, not a link), both pages name their scripts and stylesheets
+ * by path inside it, and no loose copy ships beside the archive.
+ *
+ * `rendererBuildDir` is the `dist/web-local` the package was built from. The
+ * comparison covers what the pages never name: lazily loaded chunks, fonts
+ * and images, and stale files the build did not produce.
  * Returns the failures; an empty list means the renderer is covered.
  */
-export function verifyPackagedRenderer({ asarPath, resourcesDir }) {
+export function verifyPackagedRenderer({ asarPath, resourcesDir, rendererBuildDir }) {
   const failures = [];
   const archived = new Map();
   collect(rendererDirectory(getRawHeader(asarPath).header), rendererRoot, false, archived);
@@ -54,10 +60,47 @@ export function verifyPackagedRenderer({ asarPath, resourcesDir }) {
     if (entry.link) failures.push(`Renderer file must be a regular file in app.asar, not a link: /${path}.`);
     else if (entry.unpacked) failures.push(`Renderer file must stay inside app.asar, not unpacked: /${path}.`);
   }
+  compareWithBuild({ asarPath, archived, rendererBuildDir, failures });
   for (const loose of [join(resourcesDir, "web-local"), join(resourcesDir, "app.asar.unpacked", "dist", "web-local")]) {
     if (existsSync(loose)) failures.push(`Renderer files must not ship outside app.asar: ${loose}.`);
   }
   return failures;
+}
+
+/** The archive must hold exactly the files of the renderer build, byte for byte. */
+function compareWithBuild({ asarPath, archived, rendererBuildDir, failures }) {
+  if (!existsSync(join(rendererBuildDir, "index.html"))) {
+    failures.push(`The renderer build to compare app.asar with was not found at ${rendererBuildDir}. Verify a package from the tree that built it.`);
+    return;
+  }
+  const built = new Map();
+  collectBuild(rendererBuildDir, rendererRoot, built, failures);
+  for (const [path, file] of built) {
+    const entry = archived.get(path);
+    if (!entry) failures.push(`app.asar is missing a file of the renderer build: /${path}.`);
+    // Links and unpacked files are reported on their own.
+    else if (!entry.link && !entry.unpacked && sha256(extractFile(asarPath, path)) !== sha256(readFileSync(file))) {
+      failures.push(`Renderer file in app.asar differs from the renderer build: /${path}.`);
+    }
+  }
+  for (const path of archived.keys()) {
+    if (!built.has(path)) failures.push(`app.asar holds a renderer file the renderer build does not: /${path}.`);
+  }
+}
+
+function collectBuild(directory, prefix, built, failures) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    // Finder's folder metadata is not part of the build and is never packaged.
+    if (entry.name === ".DS_Store") continue;
+    const path = `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) collectBuild(join(directory, entry.name), path, built, failures);
+    else if (entry.isFile()) built.set(path, join(directory, entry.name));
+    else failures.push(`The renderer build holds something other than a regular file: /${path}.`);
+  }
+}
+
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function rendererDirectory(header) {

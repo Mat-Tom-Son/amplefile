@@ -96,41 +96,95 @@ test("the internal scheme answers renderer files and the one desktop icon, and n
   assert.deepEqual(fetched, [], "refused and HEAD requests never read a file");
 });
 
-test("packaged renderer verification accepts an archived renderer and rejects every loose or missing form", async (t) => {
+test("packaged renderer verification accepts the archived build and rejects every loose, missing, or different form", async (t) => {
   const temporary = await mkdtemp(join(tmpdir(), "amplefile-packaged-renderer-"));
   t.after(() => rm(temporary, { recursive: true, force: true }));
 
-  async function packageRenderer(name: string, change?: (appRoot: string, resourcesDir: string) => Promise<void>, unpack?: string) {
+  type Change = (appRoot: string) => Promise<unknown>;
+  /** `build` shapes the renderer build and so the archive made from it;
+   * `archive` then changes only what is packaged, and `local` only the build
+   * left on disk, the two ways a package and its build can come apart. */
+  async function packageRenderer(name: string, { build, archive, local, resources, unpack }: {
+    build?: Change; archive?: Change; local?: Change; resources?: (resourcesDir: string) => Promise<unknown>; unpack?: string;
+  } = {}): Promise<string[]> {
+    const buildRoot = join(temporary, name, "build");
     const appRoot = join(temporary, name, "app");
     const resourcesDir = join(temporary, name, "Resources");
     await mkdir(resourcesDir, { recursive: true });
-    await writeRendererBuild(appRoot);
-    await change?.(appRoot, resourcesDir);
+    for (const root of [buildRoot, appRoot]) {
+      await writeRendererBuild(root);
+      await build?.(root);
+    }
+    await archive?.(appRoot);
+    await local?.(buildRoot);
+    await resources?.(resourcesDir);
     const asarPath = join(resourcesDir, "app.asar");
     if (unpack) await createPackageWithOptions(appRoot, asarPath, { unpack });
     else await createPackage(appRoot, asarPath);
-    return verifyPackagedRenderer({ asarPath, resourcesDir });
+    return verifyPackagedRenderer({ asarPath, resourcesDir, rendererBuildDir: rendererBuildDirectory(buildRoot) });
   }
   const renderer = (appRoot: string, ...path: string[]) => join(appRoot, "dist", "web-local", ...path);
+  // What a page never names: a lazily imported chunk and a font from CSS.
+  const addUnnamedFiles = async (appRoot: string) => {
+    await writeFile(renderer(appRoot, "assets", "settings-777aaa.js"), "export const settings = true;\n");
+    await writeFile(renderer(appRoot, "assets", "inter-888bbb.woff2"), Buffer.from([0x77, 0x4f, 0x46, 0x32, 0, 1]));
+  };
 
   assert.deepEqual(await packageRenderer("archived"), []);
+  assert.deepEqual(await packageRenderer("archived-with-unnamed-files", { build: addUnnamedFiles }), []);
+  assert.deepEqual(
+    await packageRenderer("finder-metadata", { local: (appRoot) => writeFile(renderer(appRoot, "assets", ".DS_Store"), "finder") }),
+    [],
+    "Finder metadata in the build folder is not part of the renderer",
+  );
 
+  // The archive and the build it came from must be the same files.
+  assert.deepEqual(
+    await packageRenderer("no-lazy-chunk", { build: addUnnamedFiles, archive: (appRoot) => rm(renderer(appRoot, "assets", "settings-777aaa.js")) }),
+    ["app.asar is missing a file of the renderer build: /dist/web-local/assets/settings-777aaa.js."],
+  );
+  assert.deepEqual(
+    await packageRenderer("no-font", { build: addUnnamedFiles, archive: (appRoot) => rm(renderer(appRoot, "assets", "inter-888bbb.woff2")) }),
+    ["app.asar is missing a file of the renderer build: /dist/web-local/assets/inter-888bbb.woff2."],
+  );
+  assert.deepEqual(
+    await packageRenderer("stale-file", { archive: (appRoot) => writeFile(renderer(appRoot, "assets", "index-000old.js"), "stale();\n") }),
+    ["app.asar holds a renderer file the renderer build does not: /dist/web-local/assets/index-000old.js."],
+  );
+  assert.deepEqual(
+    await packageRenderer("different-bytes", { archive: (appRoot) => writeFile(renderer(appRoot, "assets", "index-abc123.js"), 'document.documentElement.dataset.loaded = "other";\n') }),
+    ["Renderer file in app.asar differs from the renderer build: /dist/web-local/assets/index-abc123.js."],
+  );
   assert.match(
-    (await packageRenderer("no-popover", (appRoot) => rm(renderer(appRoot, "popover.html")))).join("\n"),
+    (await packageRenderer("no-build", { local: (appRoot) => rm(join(appRoot, "dist"), { recursive: true }) })).join("\n"),
+    /^The renderer build to compare app\.asar with was not found at .*build\/dist\/web-local\. Verify a package from the tree that built it\.$/,
+  );
+  assert.match(
+    (await packageRenderer("linked-build", { local: async (appRoot) => {
+      await rm(renderer(appRoot, "assets", "popover-def456.js"));
+      await symlink("index-abc123.js", renderer(appRoot, "assets", "popover-def456.js"));
+    } })).join("\n"),
+    /The renderer build holds something other than a regular file: \/dist\/web-local\/assets\/popover-def456\.js/,
+  );
+
+  const failuresOf = async (...input: Parameters<typeof packageRenderer>) => (await packageRenderer(...input)).join("\n");
+  assert.match(
+    await failuresOf("no-popover", { archive: (appRoot) => rm(renderer(appRoot, "popover.html")) }),
     /app\.asar is missing the AmpleFile Agent popover renderer: \/dist\/web-local\/popover\.html/,
   );
   assert.match(
-    (await packageRenderer("no-renderer", (appRoot) => rm(join(appRoot, "dist"), { recursive: true }))).join("\n"),
+    await failuresOf("no-renderer", { archive: (appRoot) => rm(join(appRoot, "dist"), { recursive: true }) }),
     /app\.asar is missing the renderer index: \/dist\/web-local\/index\.html/,
   );
   assert.match(
-    (await packageRenderer("no-script", (appRoot) => rm(renderer(appRoot, "assets", "popover-def456.js")))).join("\n"),
+    await failuresOf("no-script", { archive: (appRoot) => rm(renderer(appRoot, "assets", "popover-def456.js")) }),
     /popover\.html loads \/assets\/popover-def456\.js, which is not inside app\.asar/,
   );
   assert.match(
-    (await packageRenderer("no-stylesheet", (appRoot) => rm(renderer(appRoot, "assets", "index-abc123.css")))).join("\n"),
+    await failuresOf("no-stylesheet", { archive: (appRoot) => rm(renderer(appRoot, "assets", "index-abc123.css")) }),
     /index\.html loads \/assets\/index-abc123\.css, which is not inside app\.asar/,
   );
+
   // Only a path stays inside the internal scheme: a scheme or a host leaves
   // it, even one that names the app's own host.
   for (const [name, reference] of [
@@ -141,47 +195,51 @@ test("packaged renderer verification accepts an archived renderer and rejects ev
     ["file-script", "file:///assets/index-abc123.js"],
   ]) {
     assert.deepEqual(
-      await packageRenderer(name, (appRoot) => writeFile(renderer(appRoot, "index.html"), page(reference))),
+      await packageRenderer(name, { build: (appRoot) => writeFile(renderer(appRoot, "index.html"), page(reference)) }),
       [`index.html loads ${reference} from outside the app.`],
     );
   }
   assert.deepEqual(
-    await packageRenderer("relative-script", (appRoot) => writeFile(renderer(appRoot, "index.html"), page("./assets/index-abc123.js"))),
+    await packageRenderer("relative-script", { build: (appRoot) => writeFile(renderer(appRoot, "index.html"), page("./assets/index-abc123.js")) }),
     [],
   );
   // A reference inside another attribute's value is not the one the page loads.
   assert.deepEqual(
-    await packageRenderer("hidden-script", (appRoot) => writeFile(
+    await packageRenderer("hidden-script", { build: (appRoot) => writeFile(
       renderer(appRoot, "index.html"),
       '<!doctype html><script type="module" data-note=" src=/assets/index-abc123.js >" src="https://example.com/app.js"></script>',
-    )),
+    ) }),
     ["index.html loads https://example.com/app.js from outside the app."],
   );
-  assert.match(
-    (await packageRenderer("unpacked", undefined, "**/dist/web-local/assets/*.js")).join("\n"),
-    /Renderer file must stay inside app\.asar, not unpacked: \/dist\/web-local\/assets\/index-abc123\.js/,
-  );
-  assert.match(
-    (await packageRenderer("linked-script", async (appRoot) => {
+
+  const unpacked = await packageRenderer("unpacked", { unpack: "**/dist/web-local/assets/*.js" });
+  assert.deepEqual(unpacked.slice(0, 2), [
+    "Renderer file must stay inside app.asar, not unpacked: /dist/web-local/assets/index-abc123.js.",
+    "Renderer file must stay inside app.asar, not unpacked: /dist/web-local/assets/popover-def456.js.",
+  ]);
+  assert.match(unpacked[2], /^Renderer files must not ship outside app\.asar: .*Resources\/app\.asar\.unpacked\/dist\/web-local\.$/);
+  assert.equal(unpacked.length, 3);
+  assert.deepEqual(
+    await packageRenderer("linked-script", { archive: async (appRoot) => {
       await rm(renderer(appRoot, "assets", "popover-def456.js"));
       await symlink("index-abc123.js", renderer(appRoot, "assets", "popover-def456.js"));
-    })).join("\n"),
-    /Renderer file must be a regular file in app\.asar, not a link: \/dist\/web-local\/assets\/popover-def456\.js/,
+    } }),
+    ["Renderer file must be a regular file in app.asar, not a link: /dist/web-local/assets/popover-def456.js."],
   );
   assert.deepEqual(
-    await packageRenderer("linked-page", async (appRoot) => {
+    await packageRenderer("linked-page", { archive: async (appRoot) => {
       await mkdir(join(appRoot, "other"));
       await writeFile(join(appRoot, "other", "page.html"), page("/assets/popover-def456.js"));
       await rm(renderer(appRoot, "popover.html"));
       await symlink("../../other/page.html", renderer(appRoot, "popover.html"));
-    }),
+    } }),
     ["Renderer file must be a regular file in app.asar, not a link: /dist/web-local/popover.html."],
   );
   assert.match(
-    (await packageRenderer("loose-copy", async (_appRoot, resourcesDir) => {
+    await failuresOf("loose-copy", { resources: async (resourcesDir) => {
       await mkdir(join(resourcesDir, "web-local"));
       await writeFile(join(resourcesDir, "web-local", "index.html"), page("/assets/index-abc123.js"));
-    })).join("\n"),
+    } }),
     /Renderer files must not ship outside app\.asar: .*Resources\/web-local/,
   );
 });
@@ -252,9 +310,9 @@ test("Electron loads the main window and the popover through the internal scheme
 
   const archive = join(temporary, "Resources", "app.asar");
   await createPackage(stage, archive);
+  assert.deepEqual(verifyPackagedRenderer({ asarPath: archive, resourcesDir: dirname(archive), rendererBuildDir: rendererBuildDirectory(stage) }), []);
   // Nothing loose remains for a load to fall back on.
   await rm(stage, { recursive: true });
-  assert.deepEqual(verifyPackagedRenderer({ asarPath: archive, resourcesDir: dirname(archive) }), []);
 
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
   const { stdout } = await promisify(execFile)(require("electron"), [archive], { env, timeout: 30_000, killSignal: "SIGKILL", maxBuffer: 512 * 1024 });
