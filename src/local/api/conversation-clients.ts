@@ -15,14 +15,10 @@ import { ampleFileAgentScopeId, ampleFileStateRoot } from "../state-paths.js";
 import { ManagedWorktrees } from "../managed-worktrees.js";
 import { resolveAmpleFileCliConnectedFolderSelector } from "../amplefile-cli-adapter.js";
 import { getConnectedFolder, listConnectedFolders } from "../connected-folder.js";
-import {
-  assertAmpleFileAgentInstructionsReady,
-  assertCallerHandedWorkTo,
-  assertOwnTask,
-  createAmpleFileActFacade,
-  createBackgroundJobToolHost,
-} from "../server.js";
+import { assertAmpleFileAgentInstructionsReady, createAmpleFileActFacade } from "../server.js";
+import { createBackgroundJobToolHost } from "./background-jobs.js";
 import { broadcast, publishControlHint } from "./event-streams.js";
+import { assertCallerHandedWorkTo, assertOwnTask } from "./request-records.js";
 import { clientKey, type LocalApiState, rememberConnectedFolderRoot, streamKey } from "./state.js";
 import { assistantFailurePublicDetail, isModelSetupError } from "./turn-run.js";
 

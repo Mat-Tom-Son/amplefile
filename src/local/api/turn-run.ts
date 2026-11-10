@@ -36,10 +36,11 @@ import { createConnectedFolderCheckpoint } from "../history.js";
 import { normalizeGeneratedConversationTitle } from "../../shared/chat-title.js";
 import { ampleFileAgentRoot, ampleFileAgentScopeId } from "../state-paths.js";
 import { getConnectedFolder, registeredConnectedFolderOutline } from "../connected-folder.js";
-import { backgroundJobsForTurn, composeContinuationMessage, queueRequestGraphSettle } from "../server.js";
+import { backgroundJobsForTurn } from "./background-jobs.js";
 import { getClient, refreshClientIfMarked } from "./conversation-clients.js";
 import { broadcast, flushTurnCheckpoint, publishControlHint, turnStateEvent } from "./event-streams.js";
 import { errorMessage } from "./http.js";
+import { composeContinuationMessage, queueRequestGraphSettle } from "./request-routes.js";
 import { type BackgroundCompaction, clientKey, type LocalApiState, type SettledTurnRecord, streamKey } from "./state.js";
 import { changeQueuedMessage, queuedMessageEvent, sendQueuedMessage } from "./turn-acceptance.js";
 

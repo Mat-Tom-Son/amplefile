@@ -28,15 +28,11 @@ import {
   registeredConnectedFolderOutline,
   type ConnectedFolderSummary,
 } from "../connected-folder.js";
-import {
-  normalizeConnectedFolderRelativePath,
-  queueConversationRequestEvaluation,
-  runDesktopSettingsAct,
-  stopAmpleFileAgentRequest,
-} from "../server.js";
+import { normalizeConnectedFolderRelativePath, runDesktopSettingsAct } from "../server.js";
 import { getClient, refreshClientIfMarked } from "./conversation-clients.js";
 import { broadcast, openChatStream, publishControlHint } from "./event-streams.js";
 import { badRequest, errorMessage, httpError, match, notFound, readJsonBody, sendJson } from "./http.js";
+import { queueConversationRequestEvaluation, stopAmpleFileAgentRequest } from "./request-routes.js";
 import { assertNoCapabilityMutationForTurn, requestHasUnsettledWork } from "./reservations.js";
 import { clientKey, type LocalApiRequest, type LocalApiState, rememberConnectedFolderRoot, streamKey } from "./state.js";
 import {
