@@ -1,7 +1,7 @@
 /*
  * The menu-bar popover: the AmpleFile Agent's chat, drawn as a Chat in the
  * file manager's panel (file-manager.css): a back button and title over a
- * hairline, plain replies with the person's message in a solid accent
+ * hairline, plain replies with the person's message in a soft accent
  * bubble, and a rounded message box with Send inside and the model under it.
  * Colors, sizes, and font come from the file manager's own tokens
  * (components/file-manager/file-manager-tokens.css), so Settings →
@@ -292,14 +292,14 @@
 .popover-message.assistant .work-steps { margin: 0 0 10px; }
 
 .popover-message { min-width: 0; line-height: 1.5; }
-/* The design draws the person's message in solid accent. */
+/* The person's message: a soft tint of the accent, with the window's text on it. */
 .popover-message.user {
   align-self: flex-end;
   max-width: 85%;
   padding: 7px 12px;
   border-radius: 16px;
-  background: var(--fm-accent);
-  color: var(--fm-on-accent);
+  background: var(--fm-bubble);
+  color: var(--fm-text);
   line-height: 1.4;
 }
 .popover-message.assistant {
@@ -323,8 +323,9 @@
 .popover-message-body th, .popover-message-body td { padding: 5px 6px; border: 0.5px solid var(--fm-card-line); text-align: left; vertical-align: top; }
 .popover-message-body a { color: var(--fm-link); text-decoration: none; }
 .popover-message-body a:hover { text-decoration: underline; text-underline-offset: 2px; }
-.popover-message.user .popover-message-body :is(a, code) { color: inherit; }
-.popover-message.user .popover-message-body code { background: color-mix(in srgb, var(--fm-on-accent) 18%, transparent); }
+.popover-message.user .popover-message-body code { color: inherit; }
+/* On the tint a link is a shade deeper than elsewhere, which keeps it at 4.5:1. */
+.popover-message.user .popover-message-body a { color: color-mix(in srgb, var(--fm-link) 85%, var(--fm-text)); }
 
 /* The message box, as the file manager's: on the panel's own ground, a
    rounded field with Send inside, and the model in a small row beneath. */

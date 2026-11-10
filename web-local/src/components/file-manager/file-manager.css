@@ -22,6 +22,11 @@
   user-select: none;
 }
 
+/* Headings are drawn in the font around them, not the wider app's display face. */
+.fm-shell :is(h1, h2, h3) {
+  font-family: inherit;
+}
+
 /* Under the Mac window material the window itself is see-through; the
    sidebar panel lets a little of it show, the content stays solid. */
 :root[data-window-material="vibrancy"] .fm-shell {
@@ -1511,21 +1516,26 @@
   max-width: 85%;
 }
 
-/* Above the appearance palette's soft bubble: the design draws the person's message in solid accent. */
+/* A person's message: a soft tint of the accent, with the window's own text
+   color on it, so it marks who spoke without outshouting the reply. */
 :root .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-surface {
   padding: 7px 12px;
   border-radius: 16px;
-  background: var(--fm-accent);
-  color: var(--fm-on-accent);
+  background: var(--fm-bubble);
+  color: var(--fm-text);
   line-height: 1.4;
 }
 
-
-/* The palette colors message text itself; in the panel the design's colors win. */
+/* The palette colors message text itself; in the panel the window's colors win. */
 :root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body,
-:root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, a, code, strong, em),
+:root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, code, strong, em),
 :root .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body {
-  color: var(--fm-on-accent);
+  color: var(--fm-text);
+}
+
+/* On the tint a link is a shade deeper than elsewhere, which keeps it at 4.5:1. */
+:root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body :is(a, .connected-folder-file-link) {
+  color: color-mix(in srgb, var(--fm-link) 85%, var(--fm-text));
 }
 
 :root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.assistant .message-body,
@@ -1574,6 +1584,7 @@
   background: transparent;
   box-shadow: none;
   color: var(--fm-text);
+  font-family: var(--fm-font);
   font-size: calc(13px * var(--fm-scale));
   line-height: 20px;
 }
@@ -2014,7 +2025,7 @@
   background: var(--fm-window);
 }
 
-/* Your Messages: Quiet draws the person's message as a plain card instead of the accent bubble. */
+/* Your Messages: Quiet draws the person's message as a plain card instead of the tinted bubble. */
 :root[data-appearance-messages="quiet"] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-surface {
   background: var(--fm-card);
   box-shadow: 0 0 0 0.5px var(--fm-card-line);
@@ -2858,7 +2869,7 @@
   margin: 0.8em 0;
   overflow: hidden;
   border: 0.5px solid var(--fm-card-line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--fm-card);
   box-shadow: none;
 }
@@ -2918,12 +2929,13 @@
   font-size: inherit;
 }
 
-/* Tables: a white card with a gray header row and hairlines between rows; a wide one scrolls sideways. */
+/* Tables: a white card with a gray header row and hairlines between rows; a wide one scrolls sideways.
+   Table, code, and files cards share the History cards' 10px corners and hairline. */
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-table-scroll {
   margin: 0.8em 0;
   overflow-x: auto;
   border: 0.5px solid var(--fm-card-line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--fm-card);
 }
 

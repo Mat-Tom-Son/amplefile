@@ -662,7 +662,7 @@ tools, taught to prefer receipted `amplefile` commands for work that touches
 Connected Folders. It is reached through `amplefile agent …` and the
 menu-bar popover. The popover is drawn as a Chat in the file manager's
 panel, in the same design tokens, so Settings → Appearance restyles both:
-the person's messages are solid accent bubbles on the right and agent
+the person's messages are soft accent-tinted bubbles on the right and agent
 replies are unboxed on the left. Its header shows the current Chat title
 over a hairline, with icon buttons for **Chats** and **New Chat**; **Chats**
 replaces the title with a back button and lists saved Chats by day in

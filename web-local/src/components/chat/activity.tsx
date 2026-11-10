@@ -1,20 +1,22 @@
 import { useEffect, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+// The window's rows use the 16px glyphs, so the steps do too. Thinking and
+// WindowConsole are drawn only at 20px and are scaled down.
 import {
-  BookOpen20Regular,
-  Chat20Regular,
-  Checkmark20Regular,
-  ChevronRight20Regular,
-  Copy20Regular,
-  DocumentAdd20Regular,
-  DocumentEdit20Regular,
-  Folder20Regular,
-  Globe20Regular,
-  Search20Regular,
+  BookOpen16Regular,
+  Chat16Regular,
+  Checkmark16Regular,
+  ChevronRight16Regular,
+  Copy16Regular,
+  DocumentAdd16Regular,
+  DocumentEdit16Regular,
+  Folder16Regular,
+  Globe16Regular,
+  Search16Regular,
   Thinking20Regular,
   WindowConsole20Regular,
-  Wrench20Regular,
+  Wrench16Regular,
   type FluentIcon,
 } from "@fluentui/react-icons";
 
@@ -87,7 +89,7 @@ export function RuntimeContextPreview({
         <button type="button" className="work-steps-summary" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
           <FluentGlyph icon={summaryIcon(steps)} size={16} filled={false} className="work-steps-icon" />
           <span className="work-steps-label">{summary}</span>
-          <FluentGlyph icon={ChevronRight20Regular} size={14} filled={false} className="work-steps-chevron" />
+          <FluentGlyph icon={ChevronRight16Regular} size={14} filled={false} className="work-steps-chevron" />
         </button>
       ) : null}
       <div className="work-steps-rows" inert={settled && !expanded ? true : undefined}>
@@ -211,7 +213,7 @@ function StepCommand({ command }: { command: string }) {
       <div className="work-step-command-bar">
         <span>Command</span>
         <button className={copied ? "work-step-copy is-copied" : "work-step-copy"} type="button" onClick={() => void copyCommand()} aria-label={copied ? "Copied Command" : "Copy Command"} title={copied ? "Copied" : "Copy Command"}>
-          <FluentGlyph icon={copied ? Checkmark20Regular : Copy20Regular} size={13} />
+          <FluentGlyph icon={copied ? Checkmark16Regular : Copy16Regular} size={13} />
           <span>{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
@@ -223,7 +225,7 @@ function StepCommand({ command }: { command: string }) {
 function TextStep({ entry, rendered }: { entry: RuntimePreviewEntry; rendered?: ReactNode }) {
   return (
     <div className={`work-step progress${isActivePhase(entry.phase) ? " active" : ""}`}>
-      <FluentGlyph icon={Chat20Regular} size={16} filled={false} className="work-step-icon" />
+      <FluentGlyph icon={Chat16Regular} size={16} filled={false} className="work-step-icon" />
       <div className="work-step-body work-step-progress">
         {rendered ?? <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSingleLineBreaks]} components={{
           a: ({ href, children }) => { const safe = safeExternalHref(href); return safe ? <a href={safe} target="_blank" rel="noreferrer">{children}</a> : <>{children}</>; },
@@ -410,15 +412,15 @@ const browserActionTools = new Set(["browser_tabs", "browser_click", "browser_ho
 
 function toolIcon(key: string): FluentIcon {
   switch (key) {
-    case "read": return BookOpen20Regular;
-    case "write": return DocumentAdd20Regular;
-    case "edit": return DocumentEdit20Regular;
+    case "read": return BookOpen16Regular;
+    case "write": return DocumentAdd16Regular;
+    case "edit": return DocumentEdit16Regular;
     case "bash": return WindowConsole20Regular;
     case "grep":
     case "search":
-    case "find": return Search20Regular;
-    case "ls": return Folder20Regular;
-    default: return key.startsWith("browser") ? Globe20Regular : Wrench20Regular;
+    case "find": return Search16Regular;
+    case "ls": return Folder16Regular;
+    default: return key.startsWith("browser") ? Globe16Regular : Wrench16Regular;
   }
 }
 
