@@ -1,13 +1,23 @@
 import { boundedLiveTurnPresentation } from "./agent/turn-live-presentation.js";
-import { createLocalEventSink, createLocalEventChannel, localEventTarget, parseLocalEventSubscriptions, type LocalEventSink } from "./local-event-stream.js";
+import {
+  createLocalEventSink,
+  createLocalEventChannel,
+  localEventTarget,
+  parseLocalEventSubscriptions,
+  type LocalEventSink,
+} from "./local-event-stream.js";
 import { localEventStreamLimits, type LocalEventEnvelope } from "../shared/local-event-stream.js";
 import { createIncludedMcpSetup } from "./agent/included-mcp-setup.js";
 import { prepareResourceEnable, resourceEnableAdapter } from "./agent/resource-enable-act.js";
-import { listIncludedToolStatus, setupIncludedTool, shutdownIncludedToolHost, type IncludedSetupAction } from "./agent/included-tool-setup.js";
+import {
+  listIncludedToolStatus,
+  setupIncludedTool,
+  shutdownIncludedToolHost,
+  type IncludedSetupAction,
+} from "./agent/included-tool-setup.js";
 import { includedToolDefinitions, type IncludedToolId } from "../shared/included-tools.js";
-import type { BrowserToolHost } from "../shared/browser.js";
 import { ModelContextInspector } from "./agent/model-context-inspector.js";
-import { type NativeResourceKind } from "./agent/resource-lifecycle.js";
+import type { NativeResourceKind } from "./agent/resource-lifecycle.js";
 import { observeAmpleFileAutomationFiles, ampleFileAutomationFileObserverBounds } from "./automations/automation-file-observer.js";
 import { isConnectedFolderFileVisible } from "./connected-folder-file-visibility.js";
 import { turnFileChanges } from "./agent/turn-file-changes.js";
@@ -24,7 +34,7 @@ import {
   type FolderAutomationView,
   type AutomationTriggerView,
 } from "../shared/automation-presentation.js";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createReadStream, existsSync, statSync, watch } from "node:fs";
 import { automationTemplateAutomationId, isAutomationTemplateId } from "../shared/automation-templates.js";
@@ -52,9 +62,7 @@ import { lstat, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
-
 import JSZip from "jszip";
-
 import {
   PiConversationClient,
   copyPiConversationSession,
@@ -99,12 +107,7 @@ import {
   type ChatMessageAttachmentRef,
   type ConversationSummary,
 } from "./agent/chat-store.js";
-import {
-  RemoteCapabilityRegistry,
-  type CapabilityRegistryService,
-  type CapabilitySort,
-  type CapabilityType,
-} from "./agent/capability-registry.js";
+import { RemoteCapabilityRegistry, type CapabilitySort, type CapabilityType } from "./agent/capability-registry.js";
 import {
   importPiSkillBundle,
   importPiSkillBundleVerified,
@@ -140,7 +143,6 @@ import {
   setPiDefaultThinkingLevel,
   setPiWorkerInstructions,
   updatePiPackages,
-  type PiOAuthHooks,
   type PiSetupStatus,
 } from "./agent/pi-runtime-config.js";
 import { ProviderSignIns } from "./agent/provider-sign-in.js";
@@ -192,7 +194,11 @@ import { AmpleFileJobStore } from "./jobs/job-store.js";
 import { parseUntilPattern, type BackgroundJobToolHost } from "./agent/job-tools.js";
 import { ampleFileRequestLimits, ampleFileAutomationDeclarationBounds } from "../shared/amplefile-limits.js";
 import { connectedFolderOperationsGuideForScope } from "./agent/connected-folder-operations-guide.js";
-import { buildConnectedFolderTurnContext, connectedFolderTurnHistory, connectedFolderTurnParentHandle, type PiConnectedFolderTurnContext } from "./agent/connected-folder-turn-context.js";
+import {
+  buildConnectedFolderTurnContext,
+  connectedFolderTurnHistory,
+  connectedFolderTurnParentHandle,
+} from "./agent/connected-folder-turn-context.js";
 import {
   createConnectedFolderCheckpoint,
   createConnectedFolderMutationCheckpoint,
@@ -265,20 +271,15 @@ import {
   type AmpleFileAutomationDeclaration,
   type AmpleFileAutomationFilesStep,
 } from "./automations/automation-declarations.js";
-import {
-  resolveAmpleFileAutomationProposalPath,
-  scanAmpleFileAutomationProposals,
-} from "./automations/automation-proposal-scan.js";
+import { resolveAmpleFileAutomationProposalPath, scanAmpleFileAutomationProposals } from "./automations/automation-proposal-scan.js";
 import {
   AmpleFileAutomationService,
-  AmpleFileAutomationServiceError,
   type AmpleFileAutomationHopPorts,
   type AmpleFileAutomationProjection,
   type AmpleFileAutomationServiceStatus,
 } from "./automations/automation-service.js";
 import {
   AmpleFileAutomationStore,
-  AmpleFileAutomationStoreError,
   ampleFileAutomationReceiptsFile,
   ampleFileAutomationReceiptsRotatedFile,
   type AmpleFileAutomationReceiptV1,
@@ -337,11 +338,13 @@ import type {
   AmpleFileActTurnStatus,
 } from "./cli/act-facade.js";
 import { resolveAmpleFileCliConnectedFolderSelector } from "./amplefile-cli-adapter.js";
+import { createLocalDevelopmentApiOptions, loadLocalEnvironmentFile } from "./server-dev-options.js";
 import {
-  createLocalDevelopmentApiOptions,
-  loadLocalEnvironmentFile,
-} from "./server-dev-options.js";
-import { isAlwaysHiddenConnectedFolderEntry, isConnectedFolderIgnored, readConnectedFolderIgnoreState, setConnectedFolderIgnoreState } from "./connected-folder-ignore.js";
+  isAlwaysHiddenConnectedFolderEntry,
+  isConnectedFolderIgnored,
+  readConnectedFolderIgnoreState,
+  setConnectedFolderIgnoreState,
+} from "./connected-folder-ignore.js";
 import { canonicalConnectedFolderWatchRoot } from "./connected-folder-watch.js";
 import {
   beginConnectedFolderRemoval,
@@ -386,86 +389,47 @@ import {
   type TreeEntry,
   type ConnectedFolderSummary,
 } from "./connected-folder.js";
+import {
+  authorize,
+  automationErrorStatus,
+  badRequest,
+  boundedOptionalId,
+  closeServer,
+  errorMessage,
+  forbidden,
+  httpError,
+  listen,
+  match,
+  notFound,
+  numberFromEnv,
+  optionalBoundedInteger,
+  parseRelativePaths,
+  readJsonBody,
+  readMultipartBody,
+  sendError,
+  sendJson,
+  setCorsHeaders,
+  unavailable,
+} from "./api/http.js";
+import {
+  type BackgroundCompaction,
+  type ChatEventLog,
+  type ChatEventLogEntry,
+  clientKey,
+  connectedFolderIdForRoot,
+  connectedFolderRootKey,
+  conversationRuntimeState,
+  type LocalApiOptions,
+  type LocalApiRequest,
+  type LocalApiState,
+  type QueuedChatMessage,
+  rememberConnectedFolderRoot,
+  type SettledTurnRecord,
+  streamKey,
+  type TurnCheckpointEvent,
+} from "./api/state.js";
 
-export interface LocalFolderGrantProvider {
-  consumeLocalFolderGrant(input: { connectedFolderRoot: string; grantId: string }): boolean | Promise<boolean>;
-}
-
-export interface LocalApiOptions {
-  host?: "127.0.0.1";
-  port?: number;
-  appMode?: "dev" | "desktop";
-  /** Root used only for managed Connected Folder content. */
-  connectedFolderBase?: string;
-  /** AmpleFile app data: registry, chats, Pi sessions, resources, history. */
-  stateBase?: string;
-  allowedOrigins?: string[];
-  sessionToken?: string;
-  piRuntimeProvider?: PiRuntimeProvider;
-  extensionUiBridge?: RoutedPiExtensionUiBridge;
-  piOAuthHooks?: PiOAuthHooks;
-  capabilityRegistry?: CapabilityRegistryService;
-  /** Machine-local Connected Folder appearance state, shared by the renderer and test harnesses. */
-  appearanceStore?: ConnectedFolderAppearanceStore;
-  /** A supplied kernel must use a provider wrapped by the same spaceTrustAuthority. */
-  kernel?: AmpleFileKernel;
-  /**
-   * The act lane's durable receipts journal (the AmpleFile Agent's one ledger). Supply
-   * the desktop CLI host's instance so decisions, Settings acts, and CLI acts
-   * share one file and one at-most-once gate; when absent, the API constructs
-   * one over the same state-root path the host uses.
-   */
-  actReceipts?: AmpleFileCliActReceipts;
-  /** Test seam for the machine-local durable agent-turn journal. */
-  turnStore?: AmpleFileTurnStore;
-  /** Test seam for the durable request graph (docs/collaboration-contract.md). */
-  requestStore?: AmpleFileRequestStore;
-  /** Test seam for the background job journal (docs/background-jobs.md). */
-  jobStore?: AmpleFileJobStore;
-  /** Shared with the desktop kernel so registry trust changes apply everywhere. */
-  connectedFolderTrustAuthority?: RegisteredConnectedFolderTrustAuthority;
-  localFolderGrantProvider?: LocalFolderGrantProvider;
-  /** Failure-injection seam for the durable connected-folder-removal coordinator. */
-  connectedFolderRemovalIo?: Partial<ConnectedFolderRemovalIo>;
-  /** Test seam for the machine-local trash behind Recently deleted (docs/act-ledger.md). */
-  recentlyDeletedStore?: AmpleFileRecentlyDeletedStore;
-  /**
-   * The desktop's built-in browser (docs/built-in-browser.md). With it, every
-   * Worker and the AmpleFile Agent carry the browser_* tools; a development API
-   * without Electron has none.
-   */
-  browser?: BrowserToolHost;
-  /** Failure-injection seam that runs immediately before mandatory post-reservation Connected Folder validation. */
-  beforeConnectedFolderMutationRevalidation?: (connectedFolderId: string) => Promise<void>;
-  maxBodyBytes?: number;
-  loadEnv?: boolean;
-  onAgentTurnActivity?: (activeTurns: number) => void;
-  /**
-   * Failure-injection seam immediately before a Pi prompt starts. A Connected Folder
-   * turn's event carries the host-composed turn context so a test can
-   * observe it without a second option.
-   */
-  beforeAgentPrompt?: (event: {
-    connectedFolderId: string;
-    conversationId: string;
-    taskId: string;
-    connectedFolderTurn?: PiConnectedFolderTurnContext;
-    automation?: { title: string };
-  }) => Promise<void>;
-  /**
-   * Failure-injection seam between the parent check and child acceptance of
-   * a delegated `chat send`. The child is not accepted yet when it runs, so
-   * a parent stop inside it refuses the child at acceptance.
-   */
-  beforeAmpleFileAgentActionRecord?: (event: { parentTaskId: string; command: "chat.send"; taskId: string }) => Promise<void>;
-  onHistoryCheckpoint?: (event: {
-    connectedFolderId: string;
-    conversationId: string;
-    reason: "pre_turn" | "post_turn";
-    checkpointId: string;
-    skippedLargeFiles: string[];
-  }) => void;
-}
+export type { LocalFolderGrantProvider, LocalApiOptions } from "./api/state.js";
 
 export type AmpleFileAutomationSettingsOutcome =
   | "accepted"
@@ -611,171 +575,6 @@ export interface LocalApiHandle {
   /** Recently deleted: the machine-local trash every destructive verb writes to first. */
   recentlyDeleted: AmpleFileRecentlyDeletedStore;
   close: () => Promise<void>;
-}
-
-interface LocalApiState {
-  appMode: "dev" | "desktop";
-  connectedFolderBase?: string;
-  allowedOrigins: string[];
-  /** The address the API listens on, accepted in a request's Host alongside this computer's loopback names. */
-  listenHost: string;
-  sessionToken?: string;
-  maxBodyBytes: number;
-  runtimeProvider: PiRuntimeProvider;
-  extensionUi: RoutedPiExtensionUiBridge;
-  modelContextInspector: ModelContextInspector;
-  piOAuthHooks?: PiOAuthHooks;
-  /** The provider sign-in a window may cancel or finish with a pasted link. */
-  providerSignIns: ProviderSignIns;
-  capabilityRegistry: CapabilityRegistryService;
-  appearance: ConnectedFolderAppearanceStore;
-  kernel: AmpleFileKernel;
-  actReceipts: AmpleFileCliActReceipts;
-  turnStore: AmpleFileTurnStore;
-  overviewSeen: AmpleFileOverviewSeenStore;
-  /**
-   * Constructed in a second phase after the state object exists, because the
-   * prepared-act fence, adapters, and automation hop ports close over this
-   * state. Both are assigned before the server accepts a request.
-   */
-  preparedActs: PreparedActExecutor;
-  automations: AmpleFileAutomationService;
-  connectedFolderTrustAuthority: RegisteredConnectedFolderTrustAuthority;
-  ampleFileAgentInstructionsError: string | null;
-  localFolderGrantProvider?: LocalFolderGrantProvider;
-  connectedFolderRemovalIo: Partial<ConnectedFolderRemovalIo>;
-  /** Recently deleted (docs/act-ledger.md). */
-  recentlyDeleted: AmpleFileRecentlyDeletedStore;
-  beforeConnectedFolderMutationRevalidation?: (connectedFolderId: string) => Promise<void>;
-  /** Every accepted turn's request record (docs/collaboration-contract.md). */
-  requests: AmpleFileRequestStore;
-  /**
-   * Turns that settled in this app run, as opposed to ones startup recovery
-   * settled from the journal. A root continuation narrates only settles
-   * from this set, which is what makes "a restart never starts a
-   * continuation" hold without a second durable marker. Bounded.
-   */
-  turnsSettledThisRun: Set<string>;
-  /** Serializes request-graph settle evaluations so two settles never race one continuation. */
-  requestSettleChain: Promise<void>;
-  /**
-   * Background jobs (docs/background-jobs.md). Constructed in the second
-   * phase with the prepared-act executor: its ports close over this state.
-   */
-  jobs: AmpleFileJobService;
-  /** Jobs that settled in this app run; like turnsSettledThisRun, only these can wake a Chat. Bounded. */
-  jobsSettledThisRun: Set<string>;
-  /** Per-launch salt behind the opaque parent handle a delegated Connected Folder turn sees. */
-  connectedFolderTurnHandleSalt: string;
-  chatStreams: Map<string, Set<LocalEventSink>>;
-  controlStreams: Set<LocalEventSink>;
-  localEventStreams: Set<LocalEventSink>;
-  /** In-process subscribers riding the same publish point as the SSE streams. */
-  chatEventListeners: Map<string, Set<(event: unknown) => void>>;
-  chatEventLogs: Map<string, ChatEventLog>;
-  activeTurnIdsByKey: Map<string, string>;
-  /** Mid-turn steering messages already appended, keyed by client key + request id, for idempotent retries. */
-  steeredMessages: Map<string, ChatMessage>;
-  /** A steer still being delivered, so a concurrent retry with its request id waits for it instead of steering twice. */
-  steeringInFlight: Map<string, Promise<ChatMessage>>;
-  turnCheckpointWriter: TurnCheckpointWriter;
-  clients: Map<string, PiConversationClient>;
-  runningTurns: Set<string>;
-  activeTurnPromises: Set<Promise<void>>;
-  /** Acceptances past the closing check whose turns are not yet in activeTurnPromises; close() waits for them. */
-  turnAcceptances: Set<Promise<unknown>>;
-  activeTurnTasks: Map<string, { connectedFolderId: string; conversationId: string }>;
-  cancelledTurnTasks: Set<string>;
-  settledTurns: Map<string, SettledTurnRecord>;
-  compactingConversations: Set<string>;
-  /**
-   * Idle Chats being summarized ahead of time. Deliberately not in
-   * `compactingConversations`: a background summary never refuses the person.
-   * Anything that needs the Chat's Pi session cancels it first.
-   */
-  backgroundCompactions: Map<string, BackgroundCompaction>;
-  /**
-   * One queued message per Chat, held by the app rather than a window, so
-   * every window shows it and it outlives the window that queued it. It is
-   * sent when the running turn ends, unless that turn was stopped. It lives
-   * in the running app only: quitting drops it.
-   */
-  queuedMessages: Map<string, QueuedChatMessage>;
-  /**
-   * Each queue change gets a higher number, kept per Chat after the message
-   * leaves, so a window can tell a stale echo from the newest change.
-   */
-  queueRevisions: Map<string, number>;
-  lastQueueRevision: number;
-  capabilityMutations: Set<string>;
-  /** Turn clients whose Connected Folder changed under them; rebuilt when their turn settles. */
-  clientsToRefresh: Set<string>;
-  /** Settings → AI Models → Image model: one machine-wide choice, absent for Automatic. */
-  imageModelPreference: ImageModelPreference;
-  /** Pictures generate_image made, kept outside every Connected Folder for Chats to show. */
-  generatedImages: GeneratedImageStore;
-  /** The desktop's built-in browser, shared by every Worker and the AmpleFile Agent. */
-  browser?: BrowserToolHost;
-  connectedFolderIdsByRoot: Map<string, string>;
-  extensionRequests: Map<string, PiExtensionUiRequest>;
-  fileStreams: Map<() => void, string>;
-  /** In-process observers of turn-boundary History checkpoints (automation chat hops). */
-  turnCheckpointListeners: Set<(event: TurnCheckpointEvent) => void>;
-  activeTurns: number;
-  acceptingTurns: boolean;
-  onAgentTurnActivity?: (activeTurns: number) => void;
-  beforeAgentPrompt?: LocalApiOptions["beforeAgentPrompt"];
-  beforeAmpleFileAgentActionRecord?: LocalApiOptions["beforeAmpleFileAgentActionRecord"];
-  onHistoryCheckpoint?: LocalApiOptions["onHistoryCheckpoint"];
-}
-
-/**
- * Terminal outcome of one accepted turn, kept (bounded, in memory)
- * so the CLI act lane's task-scoped wait/result can distinguish this turn's
- * outcome from whatever happens to be the newest transcript message. Records
- * live for the app run; the portable transcript remains the durable record.
- */
-interface SettledTurnRecord {
-  taskId: string;
-  connectedFolderId: string;
-  conversationId: string;
-  status: "succeeded" | "failed" | "aborted";
-  endedAt: string;
-  messageId?: string;
-  error?: string;
-}
-
-interface ChatEventLogEntry {
-  id: number;
-  data: unknown;
-  bytes: number;
-}
-
-interface ChatEventLog {
-  nextId: number;
-  turnId?: string;
-  events: ChatEventLogEntry[];
-  bytes: number;
-  assistantText: string;
-}
-
-interface TurnCheckpointEvent {
-  connectedFolderId: string;
-  conversationId: string;
-  reason: "pre_turn" | "post_turn";
-  checkpointId: string;
-}
-
-interface MultipartFile {
-  fieldName: string;
-  fileName: string;
-  contentType: string;
-  data: Buffer;
-}
-
-interface MultipartBody {
-  fields: Map<string, string>;
-  files: MultipartFile[];
 }
 
 const repoRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -1117,19 +916,6 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
       await drainRetention();
     },
   };
-}
-
-/**
- * One authorized request as a route group sees it: the API's shared state and
- * the request being answered. A route group answers the request and returns
- * true, or returns false when the request is not one of its routes.
- */
-interface LocalApiRequest {
-  state: LocalApiState;
-  req: IncomingMessage;
-  res: ServerResponse;
-  url: URL;
-  method: string;
 }
 
 async function handleRequest(state: LocalApiState, req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -3029,7 +2815,6 @@ async function handleExtensionUiRoutes({ state, req, res, url, method }: LocalAp
   }
   return false;
 }
-
 
 /**
  * Shared turn-acceptance path for the renderer route and the CLI act facade.
@@ -6268,8 +6053,6 @@ function requestLimitStopMessage(limit: AmpleFileRequestLimitName): string {
   }
 }
 
-
-
 /**
  * Request-level stop. Aborting the request's own turn does not implicitly
  * stop a review already running in a Connected Folder — only turns recorded under this
@@ -8845,13 +8628,6 @@ function clampUtf8(text: string, maxBytes: number): string {
   return `${Buffer.from(text, "utf8").subarray(0, Math.max(0, maxBytes - Buffer.byteLength("…"))).toString("utf8").replace(/�+$/u, "")}…`;
 }
 
-function conversationRuntimeState(state: LocalApiState, connectedFolderId: string, conversationId: string): AmpleFileActChatState {
-  const key = clientKey(connectedFolderId, conversationId);
-  if (state.runningTurns.has(key)) return "running";
-  if (state.compactingConversations.has(key)) return "compacting";
-  return "idle";
-}
-
 function toActConnectedFolderRef(connectedFolder: Pick<ConnectedFolderSummary, "id" | "name" | "connectedFolderRoot">): AmpleFileActConnectedFolderRef {
   return { id: connectedFolder.id, name: connectedFolder.name, connectedFolderRoot: connectedFolder.connectedFolderRoot };
 }
@@ -9228,17 +9004,6 @@ function resolveTurnRequestId(state: LocalApiState, taskId: string): string {
     ?? taskId;
 }
 
-interface QueuedChatMessage {
-  content: string;
-  /** Files attached in the composer, for a Connected Folder Chat. */
-  contextPaths: string[];
-  /** Workers the message addresses with @. */
-  addressedConnectedFolderIds: string[];
-  updatedAt: string;
-  /** Set by a Stop: kept for the person to take back, never sent. A new queue write arms it again. */
-  held?: true;
-}
-
 /** Every change to a Chat's queued message goes through here and gets the next number. */
 function changeQueuedMessage(state: LocalApiState, key: string, next: QueuedChatMessage | null): number {
   state.lastQueueRevision += 1;
@@ -9316,14 +9081,6 @@ async function sendQueuedMessage(state: LocalApiState, connectedFolderId: string
       broadcast(state, streamKey(connectedFolderId, conversationId), queuedMessageEvent(state, connectedFolderId, conversationId));
     }
   }
-}
-
-interface BackgroundCompaction {
-  timer: NodeJS.Timeout | null;
-  /** Present while the summary is being written. */
-  run: { client: PiConversationClient; done: Promise<void> } | null;
-  /** Set when something that needs the Chat cancelled it; that is not a failure. */
-  yielded: boolean;
 }
 
 /** How long a Chat stays idle after a reply before it is summarized ahead of time. */
@@ -9752,14 +9509,6 @@ function capabilityRegistrySort(value: string | null): CapabilitySort | undefine
   if (!value) return undefined;
   if (value === "official" || value === "downloads" || value === "recent" || value === "name") return value;
   throw badRequest("Capability sort must be official, downloads, recent, or name.");
-}
-
-function optionalBoundedInteger(value: string | null, label: "offset" | "limit" | "offsetBytes" | "lengthBytes"): number | undefined {
-  if (value === null || value === "") return undefined;
-  const parsed = Number(value);
-  const minimum = label === "limit" ? 1 : 0;
-  if (!Number.isInteger(parsed) || parsed < minimum) throw badRequest(`${label} is invalid.`);
-  return parsed;
 }
 
 function capabilityScope(value: unknown): CapabilityScope {
@@ -11525,7 +11274,6 @@ async function flushAllTurnCheckpoints(state: LocalApiState): Promise<void> {
   await state.turnCheckpointWriter.close();
 }
 
-
 function writeSseEntry(response: LocalEventSink, entry: ChatEventLogEntry): void {
   writeSseData(response, entry.data, entry.id);
 }
@@ -11566,133 +11314,6 @@ function broadcast(state: LocalApiState, key: string, event: unknown): void {
   if (!streams.size) state.chatStreams.delete(key);
 }
 
-async function readJsonBody<T>(
-  state: LocalApiState,
-  req: IncomingMessage,
-  maximumBytes?: number,
-): Promise<T> {
-  const bytes = await readBody(state, req, maximumBytes);
-  if (!bytes.length) return {} as T;
-  try { return JSON.parse(bytes.toString("utf8")) as T; } catch { throw badRequest("Request body must be valid JSON."); }
-}
-
-async function readMultipartBody(state: LocalApiState, req: IncomingMessage): Promise<MultipartBody> {
-  const contentType = req.headers["content-type"] ?? "";
-  const boundary = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType)?.slice(1).find(Boolean)?.trim();
-  if (!boundary) throw badRequest("File upload must use multipart/form-data.");
-  const body = await readBody(state, req);
-  const encoded = body.toString("latin1");
-  const fields = new Map<string, string>();
-  const files: MultipartFile[] = [];
-  for (const rawPart of encoded.split(`--${boundary}`).slice(1)) {
-    if (rawPart.startsWith("--")) break;
-    const part = rawPart.replace(/^\r\n/, "").replace(/\r\n$/, "");
-    const headerEnd = part.indexOf("\r\n\r\n");
-    if (headerEnd < 0) continue;
-    const headers = part.slice(0, headerEnd);
-    const data = Buffer.from(part.slice(headerEnd + 4), "latin1");
-    const disposition = /^content-disposition:\s*form-data;([^\r\n]+)$/im.exec(headers)?.[1] ?? "";
-    const name = /(?:^|;)\s*name="([^"]*)"/i.exec(disposition)?.[1];
-    if (!name) continue;
-    const fileName = /(?:^|;)\s*filename="([^"]*)"/i.exec(disposition)?.[1];
-    if (fileName !== undefined) {
-      files.push({
-        fieldName: name,
-        fileName: basename(fileName.replace(/\\/g, "/")),
-        contentType: /^content-type:\s*([^\r\n]+)/im.exec(headers)?.[1]?.trim() ?? "application/octet-stream",
-        data,
-      });
-    } else {
-      fields.set(name, data.toString("utf8"));
-    }
-  }
-  return { fields, files };
-}
-
-/** A route's own bound applies under the general body cap. */
-async function readBody(
-  state: LocalApiState,
-  req: IncomingMessage,
-  maximumBytes = state.maxBodyBytes,
-): Promise<Buffer> {
-  const limit = Math.min(maximumBytes, state.maxBodyBytes);
-  const declared = Number(req.headers["content-length"] ?? 0);
-  if (Number.isFinite(declared) && declared > limit) throw tooLarge("Request body is too large.");
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += bytes.length;
-    if (size > limit) throw tooLarge("Request body is too large.");
-    chunks.push(bytes);
-  }
-  return Buffer.concat(chunks);
-}
-
-function parseRelativePaths(value: string | undefined, fileCount: number): Array<string | undefined> {
-  if (!value) return Array.from({ length: fileCount }, () => undefined);
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string")) throw new Error();
-    return Array.from({ length: fileCount }, (_, index) => parsed[index] as string | undefined);
-  } catch {
-    throw badRequest("Upload relative paths are invalid.");
-  }
-}
-
-function authorize(state: LocalApiState, req: IncomingMessage): void {
-  if (!hostAllowed(state, req)) throw forbidden("Host is not allowed.");
-  const origin = req.headers.origin;
-  if (origin && !state.allowedOrigins.includes(origin)) throw forbidden("Origin is not allowed.");
-  if (state.sessionToken && req.headers["x-amplefile-session"] !== state.sessionToken) throw unauthorized("Unauthorized.");
-}
-
-const loopbackHostNames = new Set(["127.0.0.1", "localhost", "[::1]"]);
-
-/**
- * Refuses DNS rebinding: a page on another site whose name has been pointed
- * at this computer reaches the API with that site's name in Host, and sends
- * no Origin on a simple same-origin read. A request must name this computer
- * (a loopback name or the address the API listens on) on the port it arrived
- * at, which is what `local:dev`'s Vite proxy and the packaged app send, or be
- * the host of an allowed origin, for a proxy that keeps the page's own Host.
- */
-function hostAllowed(state: LocalApiState, req: IncomingMessage): boolean {
-  const host = req.headers.host?.trim().toLowerCase();
-  if (!host) return false;
-  const portSeparator = host.lastIndexOf(":");
-  const hasPort = portSeparator > host.lastIndexOf("]");
-  const name = hasPort ? host.slice(0, portSeparator) : host;
-  const port = hasPort ? host.slice(portSeparator + 1) : "";
-  const listenName = state.listenHost.includes(":") ? `[${state.listenHost.toLowerCase()}]` : state.listenHost.toLowerCase();
-  const thisComputer = loopbackHostNames.has(name) || (name === listenName && !["0.0.0.0", "[::]"].includes(listenName));
-  if (thisComputer && req.socket.localPort !== undefined && port === String(req.socket.localPort)) return true;
-  return state.allowedOrigins.some((origin) => {
-    try {
-      const url = new URL(origin);
-      return (url.protocol === "http:" || url.protocol === "https:") && url.host === host;
-    } catch {
-      return false;
-    }
-  });
-}
-
-function setCorsHeaders(state: LocalApiState, req: IncomingMessage, res: ServerResponse): void {
-  const origin = req.headers.origin;
-  if (origin && state.allowedOrigins.includes(origin)) res.setHeader("access-control-allow-origin", origin);
-  res.setHeader("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-  res.setHeader("access-control-allow-headers", "content-type,last-event-id,x-amplefile-session");
-  res.setHeader("vary", "Origin");
-  res.setHeader("x-content-type-options", "nosniff");
-}
-
-function sendJson(res: ServerResponse, payload: unknown, status = 200): void {
-  if (res.headersSent) return;
-  const body = JSON.stringify(payload);
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(body) });
-  res.end(body);
-}
-
 /** Content-free hints only. Reconnect always sends reset; no events are replayed. */
 function publishControlHint(state: LocalApiState, type: "connected-folders" | "models" | "activity"): void {
   for (const response of state.controlStreams) {
@@ -11701,100 +11322,6 @@ function publishControlHint(state: LocalApiState, type: "connected-folders" | "m
     try { if (!response.send({ type })) response.close(); }
     catch { response.close(); }
   }
-}
-
-function sendError(res: ServerResponse, error: unknown): void {
-  if (res.headersSent) { res.end(); return; }
-  const explicit = typeof (error as { statusCode?: unknown })?.statusCode === "number" ? (error as { statusCode: number }).statusCode : null;
-  const status = explicit
-    ?? ampleFileCliErrorStatus(error)
-    ?? automationErrorStatus(error)
-    ?? 500;
-  sendJson(res, {
-    error: errorMessage(error),
-    ...((error instanceof AmpleFileAutomationServiceError || error instanceof AmpleFileAutomationStoreError) ? { code: error.code } : {}),
-  }, status);
-}
-
-function ampleFileCliErrorStatus(error: unknown): number | null {
-  if (!(error instanceof AmpleFileCliError)) return null;
-  switch (error.code) {
-    case "usage":
-    case "protocolError": return 400;
-    case "permissionDenied": return 403;
-    case "notFound": return 404;
-    case "conflict": return 409;
-    case "unavailable": return 503;
-    case "timeout": return 504;
-    case "failure": return 500;
-  }
-}
-
-function automationErrorStatus(error: unknown): number | null {
-  if (error instanceof AmpleFileAutomationServiceError) {
-    switch (error.code) {
-      case "INPUT_INVALID": return 400;
-      case "NOT_FOUND": return 404;
-      case "HEALTH_INVALID": return 409;
-      case "SERVICE_DAMAGED": return 503;
-    }
-  }
-  if (error instanceof AmpleFileAutomationStoreError) {
-    switch (error.code) {
-      case "INPUT_INVALID": return 400;
-      case "NOT_FOUND": return 404;
-      case "BOUND_EXCEEDED":
-      case "HEALTH_INVALID":
-      case "DIGEST_MISMATCH": return 409;
-      case "STORE_DAMAGED":
-      case "JOURNAL_UNAVAILABLE":
-      case "JOURNAL_DAMAGED": return 503;
-    }
-  }
-  return null;
-}
-
-function httpError(statusCode: number, message: string): Error {
-  return Object.assign(new Error(message), { statusCode });
-}
-function boundedOptionalId(value: unknown, name: string): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") throw badRequest(`${name} must be a string.`);
-  const id = value.trim();
-  if (!id || id.length > 256) throw badRequest(`${name} must be between 1 and 256 characters.`);
-  if (/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(id)) {
-    throw badRequest(`${name} contains unsupported control characters.`);
-  }
-  return id;
-}
-
-function badRequest(message: string): Error { return httpError(400, message); }
-function unauthorized(message: string): Error { return httpError(401, message); }
-function forbidden(message: string): Error { return httpError(403, message); }
-function notFound(message: string): Error { return httpError(404, message); }
-function tooLarge(message: string): Error { return httpError(413, message); }
-function unavailable(message: string): Error { return httpError(503, message); }
-function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
-
-function match(path: string, pattern: RegExp): string[] | null {
-  const result = pattern.exec(path);
-  return result ? result.map((value) => value === undefined ? "" : decodeURIComponent(value)) : null;
-}
-
-function streamKey(connectedFolderId: string, conversationId: string): string { return `${connectedFolderId}:${conversationId}`; }
-function clientKey(connectedFolderId: string, conversationId: string): string { return streamKey(connectedFolderId, conversationId); }
-
-function rememberConnectedFolderRoot(state: LocalApiState, connectedFolderId: string, rootPath: string): void {
-  state.connectedFolderIdsByRoot.set(connectedFolderRootKey(rootPath), connectedFolderId);
-}
-
-function connectedFolderIdForRoot(state: LocalApiState, rootPath: string): string | null {
-  return state.connectedFolderIdsByRoot.get(connectedFolderRootKey(rootPath)) ?? null;
-}
-
-function connectedFolderRootKey(rootPath: string): string {
-  const normalized = resolve(rootPath);
-  return process.platform === "win32" ? normalized.toLocaleLowerCase() : normalized;
 }
 
 function changeTurnCount(state: LocalApiState, delta: number): void {
@@ -11809,22 +11336,6 @@ function changeTurnCount(state: LocalApiState, delta: number): void {
 
 function turnStateEvent(conversationId: string, running: boolean, turnId?: string | null): { type: "turn_state"; conversationId: string; running: boolean; turnId?: string | null } {
   return { type: "turn_state", conversationId, running, ...(turnId === undefined ? {} : { turnId }) };
-}
-
-function numberFromEnv(name: string, fallback: number): number {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value >= 0 ? value : fallback;
-}
-
-function listen(server: Server, port: number, host: string): Promise<void> {
-  return new Promise((resolvePromise, reject) => {
-    server.once("error", reject);
-    server.listen(port, host, () => { server.off("error", reject); resolvePromise(); });
-  });
-}
-
-function closeServer(server: Server): Promise<void> {
-  return new Promise((resolvePromise, reject) => server.close((error) => error ? reject(error) : resolvePromise()));
 }
 
 // ---------------------------------------------------------------------------
