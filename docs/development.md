@@ -7,14 +7,14 @@ contributor rules; this guide explains how to run and navigate the checkout.
 
 Run commands from the repository root with Node 24 (`.nvmrc`) and npm 11.16.0
 or newer. The install requirement and dependency-script policy are explained
-in [Contributing](../CONTRIBUTING.md#first-run). `npm ci` uses the
+in [Contributing](../CONTRIBUTING.md#prerequisites). `npm ci` uses the
 committed lockfile. Git, Node, and npm are enough to run the repository checks;
 model credentials and Apple signing credentials are separate.
 
 | Surface | Command | What to expect |
 |---|---|---|
-| Browser UI + local API | `npm run local:dev` | Vite at `http://localhost:5173`, local API at `http://127.0.0.1:4327`; live renderer updates |
-| Inert UI preview | `npm run local:dev`, then open `http://localhost:5173/?fixture=connected-folder` | Sample Connected Folders drawn as the Mac app shows them; no API or model needed |
+| Browser UI + local API | `npm run local:dev` | Vite at `http://localhost:5173`, local API at `http://127.0.0.1:4327`; live renderer updates. The local API accepts the UI only from port 5173, so free that port if Vite reports another one |
+| Inert UI preview | `npm run local:dev`, then open `http://localhost:5173/?fixture=connected-folder` | Sample Connected Folders drawn as the Mac app shows them; no API or model needed, any port works |
 | Native, unpackaged Electron | `npm run desktop:smoke` | Builds and verifies the desktop, then opens Electron; restart after native changes |
 | Packaged Mac candidate | See [Mac build lanes](macos-build.md) | Packaging, signing, and publication are separate from everyday development |
 
@@ -113,14 +113,19 @@ for capture stages, coverage and bounds.
 |---|---|
 | `web-local/src/` | React UI, client state, styles, and inert UI fixtures |
 | `src/local/server.ts`, `src/local/api/` | The local API: its entry and the [route modules](#local-api-modules) it serves requests through |
+| `src/local/server-dev.ts` | The browser development host's entry (`npm run local:api`, started by `local:dev`) |
 | `src/local/agent/` | Pi integration, Chat turns, and agent services |
 | `src/local/connected-folder*.ts` | Connected Folder registration, path policy, ignore rules, watching, and appearance |
-| `src/local/automations/`, `src/local/requests/` | Automations (including their folder target resolver) and durable request records |
+| `src/local/automations/`, `src/local/requests/`, `src/local/jobs/` | Automations (including their folder target resolver), durable request records, and background jobs |
+| `src/local/history*.ts`, `src/local/recently-deleted-store.ts`, `src/local/prepared-acts.ts` | History capture and review, Recently Deleted, and prepared acts ([act ledger](act-ledger.md)) |
 | `src/local/overview.ts`, `src/local/amplefile-agent-*.ts` | The AmpleFile Agent's overview, attachments, and instructions |
 | [Kernel](../src/local/amplefile-kernel.ts), [CLI](../src/local/cli/), [adapter](../src/local/amplefile-cli-adapter.ts) | Shared context, tasks, and control-plane contracts |
 | `src/shared/` | Shared types and the product identity contract |
 | `desktop/src/` | Electron windows, lifecycle, preloads, the built-in browser, and updater |
-| `tests/` | Application regression tests |
+| `desktop/cli/`, `desktop/assets/` | The installed `amplefile` command's shims; icons and brand artwork |
+| `resources/included-tools/`, `patches/included-tools/` | The five included tools and the reviewed patches to their dependencies ([Extensions and computer work](extension-foundation.md)) |
+| `examples/packages/` | Example Pi packages, not installed by default |
+| `tests/` | Application regression tests (`*.test.ts`; see [Verification](#verification)) |
 | `scripts/` | Shared development, validation, and release commands |
 | `site/` | The amplefile.com page and its build ([Website](website.md)) |
 | `docs/`, `.agents/skills/` | Product contracts and task-specific contributor workflows |
