@@ -22,8 +22,6 @@ The Computer app retains its product icon and `com.amplefile.desktop.computer`
 identity. After signing, a bounded packaging probe uses the archived
 installation code to verify a standalone copy in a temporary private directory,
 without launching it or requesting permissions.
-Automatic startup may update an owned registration, but a removed or changed
-registration requires explicit Connect to repair. No profile files are read.
 
 ```bash
 npm ci

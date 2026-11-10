@@ -138,11 +138,12 @@ second model. Computer control captures selected native
 observations using macOS permissions granted to its helper.
 
 An earlier AmpleFile could register a Native Messaging helper with Google
-Chrome. At launch, the installed app removes that registration once, together
-with the helper copy and connection records in its own application-data
-directory, and only when the registration names AmpleFile's host and points
-into that directory; any other file is left as it is. It reads no Chrome
-profile.
+Chrome. At launch, the installed app removes the helper copy and connection
+records from its own application-data directory, and removes Chrome's
+registration file only when it names AmpleFile's host and points into that
+directory; any other file is left as it is. It reads no Chrome profile. You can
+remove the AmpleFile extension from Chrome; removing it deletes its local
+connection storage.
 
 Optional Brave credentials use the existing
 machine-local Pi CredentialStore. Native MCP definitions use the configured Pi
