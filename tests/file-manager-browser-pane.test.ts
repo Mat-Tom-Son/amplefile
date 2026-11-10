@@ -119,7 +119,7 @@ test("the Browser button opens the pane under the folder with a new tab, and the
   const files = view.container.querySelector<HTMLElement>(".fm-files")!;
   const pane = view.pane()!;
   assert.ok(files.compareDocumentPosition(pane) & Node.DOCUMENT_POSITION_FOLLOWING, "the browser sits under the folder's contents");
-  assert.ok(view.container.querySelector('.fm-browser-resize[role="separator"][aria-orientation="horizontal"]'), "with a slider between them");
+  assert.ok(view.container.querySelector('.fm-browser-divide.fm-browser-resize[role="separator"][aria-orientation="horizontal"]'), "with the band between them as the slider");
   assert.equal(view.button("Browser")!.getAttribute("aria-pressed"), "true");
   assert.deepEqual(view.tabs().map((tab) => tab.getAttribute("aria-label")), ["New Tab"]);
   assert.equal(host.named("mount").length, 0, "a new tab has no page yet");
@@ -154,6 +154,9 @@ test("a tab a Worker opens arrives as the tab strip alone, and the person decide
   assert.equal(view.layout(), "collapsed");
   const pane = view.pane()!;
   assert.equal(pane.querySelector(".fm-browser-page"), null, "only the tab strip shows");
+  const band = view.container.querySelector<HTMLElement>(".fm-browser-divide")!;
+  assert.ok(band.compareDocumentPosition(pane) & Node.DOCUMENT_POSITION_FOLLOWING, "a band separates the folder from the strip");
+  assert.equal(band.getAttribute("role"), null, "with nothing to slide while the browser is folded away");
   assert.equal(host.named("mount").length, 0, "the page stays in the background");
   assert.equal(view.tabs()[0]!.getAttribute("aria-label"), "Supplier, a Worker is using it");
   assert.equal(view.tabs()[0]!.getAttribute("aria-selected"), "false");
@@ -179,7 +182,7 @@ test("a tab a Worker opens arrives as the tab strip alone, and the person decide
   assert.equal(view.layout(), "full");
   const files = view.container.querySelector<HTMLElement>(".fm-files")!;
   assert.equal(files.hasAttribute("inert"), true);
-  assert.equal(view.container.querySelector(".fm-browser-resize"), null);
+  assert.equal(view.container.querySelector(".fm-browser-divide"), null, "no band when the folder is folded away");
   await view.press("Show Folder");
   assert.equal(view.layout(), "split");
   assert.equal(files.hasAttribute("inert"), false);

@@ -25,9 +25,12 @@ keeps the Connected Folder shown and its Chat.
   while no tab is open. A tab a Worker opens arrives as the tab strip alone;
   choosing the tab shows its page. A link the person follows into a new tab,
   or a page a Worker opens with `show`, opens the pane.
-- **Sharing the area.** The pane has three sizes, chosen with the two buttons
-  at the end of its tab strip. Beside the folder, a slider between them sets
-  the browser's share of the height (kept between 15 and 85 percent, and
+- **Sharing the area.** A band between two lines separates the folder above
+  from the browser below, and the browser's tab strip and address row are
+  one surface over the page. The pane has three sizes, chosen with the two
+  buttons at the end of its tab strip. Beside the folder, the band is a
+  slider with a grip at its middle that sets the browser's share of the
+  height (kept between 15 and 85 percent, and
   remembered; double-click resets it, and the arrow keys move it). **Hide
   Folder** folds the folder up so the page has the whole area, and **Show
   Folder** brings it back. **Hide Browser** folds the browser down to its tab

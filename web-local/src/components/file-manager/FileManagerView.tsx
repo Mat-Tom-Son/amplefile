@@ -1836,7 +1836,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         <span className="fm-status">{statusText}</span>
       </footer>
       </div>
-      {browserLayout === "split" ? <BrowserSplitResizer fraction={browserFraction} mainRef={mainRef} onCommit={setBrowserFraction} /> : null}
+      {/* The band between the folder and the browser: the slider beside the folder, a plain band over the folded strip. */}
+      {browserLayout === "split" ? <BrowserSplitResizer fraction={browserFraction} mainRef={mainRef} onCommit={setBrowserFraction} />
+        : browserLayout === "collapsed" ? <div className="fm-browser-divide" aria-hidden="true" /> : null}
       {browserLayout !== "hidden" ? <BrowserPane
         browser={browser}
         layout={browserLayout}

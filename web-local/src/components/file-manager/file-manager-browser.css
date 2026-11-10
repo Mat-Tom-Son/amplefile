@@ -21,14 +21,13 @@
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  border-top: 1px solid var(--fm-line);
   background: var(--fm-window);
   /* Folding the folder or the browser away slides the edge between them. */
   transition: height 220ms var(--amplefile-ease-smooth);
 }
 
 .fm-browser[data-layout="collapsed"] {
-  height: calc(var(--fm-browser-bar-height) + 1px);
+  height: var(--fm-browser-bar-height);
 }
 
 /* The slider's share of the height under the toolbar; the folder keeps 132px and the browser 180px. */
@@ -36,49 +35,68 @@
   height: clamp(180px, calc(var(--fm-browser-fraction, 0.55) * (100% - var(--fm-toolbar-height))), max(180px, calc(100% - var(--fm-toolbar-height) - 132px)));
 }
 
+/* With the folder folded away there is no band above; a line under the toolbar stands in. */
 .fm-browser[data-layout="full"] {
   height: calc(100% - var(--fm-toolbar-height));
+  border-top: 1px solid var(--fm-line);
 }
 
 .fm-main:has(.fm-browser-resize.is-dragging) .fm-browser {
   transition: none;
 }
 
-/* The slider between the folder and the browser, as the edges beside the sidebar and the panel are. */
-.fm-browser-resize {
+/* The band between the folder and the browser: the panel's ground between two
+   lines, so the folder above and the browser below read as two panes. Beside
+   the folder it is the slider, with a grip at its middle. */
+.fm-browser-divide {
   position: relative;
   z-index: 5;
   flex: none;
-  height: 0;
+  height: 9px;
+  box-sizing: border-box;
+  border-top: 1px solid var(--fm-line);
+  border-bottom: 1px solid var(--fm-line);
+  background: var(--fm-panel);
   outline: none;
 }
 
+.fm-browser-resize {
+  cursor: row-resize;
+}
+
+/* A little more to take hold of than the band itself. */
 .fm-browser-resize::before {
   position: absolute;
-  top: -4px;
+  top: -3px;
   right: 0;
+  bottom: -3px;
   left: 0;
-  height: 9px;
-  cursor: row-resize;
   content: "";
 }
 
 .fm-browser-resize::after {
   position: absolute;
-  top: -1px;
-  right: 8px;
-  left: 8px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--fm-accent);
-  opacity: 0;
+  top: 50%;
+  left: 50%;
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--fm-text3);
+  opacity: 0.45;
+  translate: -50% -50%;
   content: "";
-  transition: opacity 120ms ease;
+  transition: opacity 120ms ease, background-color 120ms ease, width 160ms var(--amplefile-ease-smooth);
+}
+
+.fm-browser-resize:hover::after {
+  opacity: 0.8;
 }
 
 .fm-browser-resize:focus-visible::after,
 .fm-browser-resize.is-dragging::after {
-  opacity: 0.55;
+  width: 52px;
+  background: var(--fm-accent);
+  opacity: 1;
 }
 
 .fm-shell:has(.fm-browser-resize.is-dragging),
@@ -317,13 +335,15 @@
   animation: fm-fade-in var(--amplefile-motion-base) ease-out;
 }
 
+/* The tab strip and the address row are one surface, the browser's own, over the page. */
 .fm-browser-nav {
   display: flex;
   flex: none;
   align-items: center;
   gap: 8px;
-  height: 40px;
-  padding: 0 10px;
+  height: 38px;
+  padding: 0 10px 2px;
+  background: var(--fm-stripe);
 }
 
 .fm-browser-nav > .fm-capsule {

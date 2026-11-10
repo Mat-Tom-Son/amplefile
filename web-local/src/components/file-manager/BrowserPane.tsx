@@ -735,7 +735,7 @@ export function BrowserSplitResizer({ fraction, mainRef, onCommit }: {
   }
 
   return <div
-    className={`fm-browser-resize${dragging ? " is-dragging" : ""}`}
+    className={`fm-browser-divide fm-browser-resize${dragging ? " is-dragging" : ""}`}
     role="separator"
     aria-orientation="horizontal"
     aria-label="Resize the Browser"
