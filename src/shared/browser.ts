@@ -85,6 +85,8 @@ export interface BrowserPageState {
   blockedPopup: { url: string; origin: string | null } | null;
   /** The Chat whose Worker is using this page right now; `owner` is `<connected-folder id>/<conversation id>`. */
   worker: { owner: string } | null;
+  /** The page asked to be confirmed before it is left, and the person has not said yet. */
+  leaveQuestion: { requestId: string } | null;
 }
 
 /** What a browser tab's right-click menu asks the tab strip to do; the page's own actions run in the desktop host. */
@@ -179,6 +181,8 @@ export interface BrowserTabSummary {
   error?: string;
   /** What the page is waiting for the person to allow, in words. */
   asking?: string;
+  /** The Worker's action left a page that had asked to be confirmed first. */
+  leftUnconfirmed?: boolean;
 }
 
 export interface BrowserActionResult {

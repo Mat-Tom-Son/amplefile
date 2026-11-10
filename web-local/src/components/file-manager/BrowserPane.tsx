@@ -37,11 +37,11 @@ import {
   type BrowserViewRequest,
 } from "../../../../src/shared/browser";
 import type { BrowserPages } from "../../hooks/useBrowserPages";
-import { browserAddressToOpen, browserErrorText, browserHost, browserQuestionGuardMs, browserSplitLimits, browserTabTitle, clampBrowserFraction, type BrowserPaneLayout, type BrowserTab } from "../../lib/browser-pages";
+import { browserAddressToOpen, browserErrorText, browserHost, browserLoadErrorText, browserQuestionGuardMs, browserSplitLimits, browserTabTitle, clampBrowserFraction, type BrowserPaneLayout, type BrowserTab } from "../../lib/browser-pages";
 import { requestConfirm } from "../../ui/feedback";
 import { nativeViewBounds, nativeViewOccluded } from "../../lib/native-view";
 import { isMacOS } from "../../lib/platform";
-import { createTabChromeMotion } from "../../lib/tab-chrome-motion";
+import { createTabChromeMotion, settleTabStrip } from "../../lib/tab-chrome-motion";
 
 type BrowserBridge = NonNullable<BrowserPages["bridge"]>;
 type HistoryEntry = Awaited<ReturnType<BrowserBridge["recent"]>>[number];
@@ -109,8 +109,24 @@ export function BrowserPane({ browser, layout, onLayout, onViewing, sample = fal
     const tab = shownId ? strip?.querySelector<HTMLElement>(`[data-browser-tab="${shownId}"]`) ?? null : null;
     motionRef.current?.select(tab, Boolean(shownRef.current && shownId && shownRef.current !== shownId));
     shownRef.current = shownId;
-    tab?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [shownId, tabs.length]);
+
+  // With more tabs than fit, the strip scrolls. The tab in front always stays inside it, and a fade at an edge says
+  // there are more tabs that way.
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const front = () => activeId ? strip.querySelector<HTMLElement>(`[data-browser-tab="${activeId}"]`) : null;
+    const settle = () => settleTabStrip(strip, front());
+    settle();
+    // A new tab grows in and a closed one shrinks away, so the strip is measured again when they have.
+    const timer = window.setTimeout(settle, 260);
+    const observer = typeof window.ResizeObserver === "function" ? new window.ResizeObserver(settle) : null;
+    observer?.observe(strip);
+    const scrolled = () => settleTabStrip(strip, null);
+    strip.addEventListener("scroll", scrolled, { passive: true });
+    return () => { window.clearTimeout(timer); observer?.disconnect(); strip.removeEventListener("scroll", scrolled); };
+  }, [activeId, tabs.length, layout]);
 
   // Notices rise from the bottom of the window, where the page is: keep them above it.
   useLayoutEffect(() => {
@@ -244,7 +260,7 @@ export function BrowserPane({ browser, layout, onLayout, onViewing, sample = fal
           const page = pages[tab.pageId];
           const title = browserTabTitle(tab, page);
           const selected = !collapsed && tab.pageId === activeId;
-          const state = [page?.permissionRequest ? "the site is waiting for your answer" : "", page?.worker ? "a Worker is using it" : "", page?.audible && !page.muted ? "playing sound" : ""].filter(Boolean).join(", ");
+          const state = [page?.permissionRequest ? "the site is waiting for your answer" : "", page?.blockedPopup ? "a pop-up was held" : "", page?.worker ? "a Worker is using it" : "", page?.audible && !page.muted ? "playing sound" : ""].filter(Boolean).join(", ");
           return <div
             key={tab.pageId}
             className={`fm-browser-tab${selected ? " is-on" : ""}`}
@@ -270,6 +286,7 @@ export function BrowserPane({ browser, layout, onLayout, onViewing, sample = fal
               </span>
               <span className="fm-browser-tab-title">{title}</span>
               {page?.muted ? <SpeakerMute16Regular className="fm-browser-tab-sound" aria-hidden="true" /> : page?.audible ? <Speaker216Regular className="fm-browser-tab-sound" aria-hidden="true" /> : null}
+              {page?.blockedPopup && !page.permissionRequest ? <WindowNew16Regular className="fm-browser-tab-sound fm-browser-tab-held" aria-hidden="true" /> : null}
               {page?.permissionRequest ? <span className="fm-dot is-ask" aria-hidden="true" /> : page?.worker ? <span className="fm-dot is-run" aria-hidden="true" /> : null}
             </button>
             <button type="button" className="fm-browser-tab-close" aria-label={`Close ${title}`} title="Close Tab" tabIndex={-1} onClick={() => browser.close(tab.pageId)}><Dismiss12Regular /></button>
@@ -338,6 +355,11 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, action
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const suggestRequestRef = useRef(0);
   const [recent, setRecent] = useState<HistoryEntry[] | null>(null);
+  /** The address the person asked for, shown while it loads; the page's own address returns when it arrives or the load stops. */
+  const [pending, setPending] = useState<string | null>(null);
+  const pendingSeenLoadingRef = useRef(false);
+  /** A click that brings the keyboard to the address field selects the address, as ⌘L does. */
+  const selectOnMouseUpRef = useRef(false);
   const url = page?.url || tab.url;
   // A new tab has no page yet; the first address typed creates it.
   const hasPage = Boolean(page) || Boolean(tab.url);
@@ -502,11 +524,14 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, action
 
   function go(address: string): void {
     const target = browserAddressToOpen(address);
-    if (!target) return;
     closeSuggestions();
+    // Nothing but spaces: the field goes back to the page's address.
     setDraft(null);
+    if (!target) return;
     addressRef.current?.blur();
-    run(onNavigate(target.url).then(() => bridge.command(tab.pageId, { type: "focus" })), "The page could not open.");
+    pendingSeenLoadingRef.current = false;
+    setPending(target.url);
+    run(onNavigate(target.url).then(() => bridge.command(tab.pageId, { type: "focus" })).catch((caught) => { setPending(null); throw caught; }), "The page could not open.");
   }
 
   /** The answer goes to the question the bar was drawn for, never to whichever question the page has by now. */
@@ -559,7 +584,15 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, action
   }
 
   const loading = page?.loading ?? false;
-  const address = draft ?? browserDisplayAddress(url);
+  // The pending address lasts as long as its load: it goes when the page arrives, fails, is stopped, or asks to stay.
+  useEffect(() => {
+    if (!pending) return;
+    if (loading) { pendingSeenLoadingRef.current = true; return; }
+    if (pendingSeenLoadingRef.current || page?.url === pending || page?.leaveQuestion) { setPending(null); return; }
+    const timer = window.setTimeout(() => setPending(null), 1_500);
+    return () => window.clearTimeout(timer);
+  }, [pending, loading, page?.url, page?.leaveQuestion]);
+  const address = draft ?? browserDisplayAddress(pending ?? url);
   const external = /^https?:/i.test(url);
   const connection = hasPage ? browserConnection(url) : "none";
   const connectionText = connection === "secure"
@@ -608,6 +641,13 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, action
             {...(suggestions[selectedSuggestion] ? { "aria-activedescendant": `fm-browser-suggestion-${tab.pageId}-${selectedSuggestion}` } : {})}
             value={address}
             onChange={(event) => typed(event.target.value)}
+            onMouseDown={(event) => { selectOnMouseUpRef.current = document.activeElement !== event.currentTarget; }}
+            onMouseUp={(event) => {
+              // The press that brings the keyboard here selects the whole address; its release must not undo that.
+              if (!selectOnMouseUpRef.current) return;
+              selectOnMouseUpRef.current = false;
+              if (event.currentTarget.selectionStart === event.currentTarget.selectionEnd) { event.preventDefault(); event.currentTarget.select(); }
+            }}
             onFocus={(event) => event.currentTarget.select()}
             onBlur={() => { setDraft(null); closeSuggestions(); }}
             onKeyDown={addressKeyDown}
@@ -679,7 +719,12 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, action
       <button type="button" className="fm-browser-tool" disabled={!findResult?.matches} onClick={() => find(findText, { forward: true, newSearch: false })} aria-label="Next Match" title="Next Match"><ChevronDown16Regular /></button>
       <button type="button" className="fm-browser-tool" onClick={closeFind} aria-label="Close Find" title="Close Find"><Dismiss16Regular /></button>
     </div> : null}
-    <div className="fm-browser-viewport" ref={viewportRef}>
+    <div
+      className="fm-browser-viewport"
+      ref={viewportRef}
+      // Tab reaches the page: this stop hands the keyboard to it. ⌘L brings the keyboard back to the address field.
+      {...(hasPage && !blocked && !sample ? { tabIndex: 0, role: "group", "aria-label": `Page: ${browserTabTitle(tab, page)}`, onFocus: (event: React.FocusEvent<HTMLDivElement>) => { if (event.target === event.currentTarget) run(bridge.command(tab.pageId, { type: "focus" }), "The page could not take the keyboard."); } } : {})}
+    >
       {!hasPage ? <div className="fm-browser-state is-new">
         {recent?.length ? <div className="fm-browser-recent">
           <h2 className="fm-sec-h">Recent</h2>
@@ -701,8 +746,8 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, action
         <button type="button" className="fm-btn" onClick={() => command("reload")}>Reload</button>
       </div> : page?.error ? <div className="fm-browser-state">
         <strong>This Page Couldn’t Load</strong>
-        <span>{page.error.description || "The site didn’t respond."}</span>
-        <code>{page.error.url}</code>
+        <span>{browserLoadErrorText(page.error)}</span>
+        <code>{[page.error.description, page.error.url].filter(Boolean).join(" · ")}</code>
         <button type="button" className="fm-btn" onClick={() => command("reload")}>Try Again</button>
       </div> : sample ? <div className="fm-browser-sample">The page shows here in the Mac app.</div> : null}
     </div>

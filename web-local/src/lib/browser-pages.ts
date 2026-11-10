@@ -182,3 +182,29 @@ export function browserErrorText(caught: unknown, fallback: string): string {
 
 /** How long a site's question ignores presses after it appears or changes, so a press meant for something else never answers it. */
 export const browserQuestionGuardMs = 500;
+
+/**
+ * Why a page did not load, in plain words. Chromium's own name for the
+ * failure (`ERR_NAME_NOT_RESOLVED`) is kept as supporting detail beside it.
+ */
+export function browserLoadErrorText(error: { code: number; description: string }): string {
+  const code = error.code;
+  if (code === -105 || code === -137) return "This site’s address couldn’t be found.";
+  if (code === -106) return "This Mac isn’t connected to the internet.";
+  if (code === -102) return "The site refused the connection.";
+  if (code === -7 || code === -118) return "The site took too long to respond.";
+  if (code === -100 || code === -101 || code === -324) return "The connection to the site was interrupted.";
+  if (code === -109 || code === -104) return "The site can’t be reached.";
+  if (code === -312) return "This address uses a port that browsers block.";
+  if (code === -310) return "The site sent the browser in a circle of redirects.";
+  if (code === -6) return "There’s no file at that path.";
+  if (code === -10) return "The browser isn’t allowed to open that address.";
+  if (code === -107 || code === -113 || code === -112) return "A secure connection to the site couldn’t be made.";
+  if (code <= -200 && code > -300) return "This site’s security certificate isn’t trusted, so the page was not loaded.";
+  return "The page couldn’t be loaded.";
+}
+
+/** The name a downloaded file was saved under, which differs from the name asked for when that one was taken. */
+export function savedFileName(path: string, fallback: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) || fallback;
+}

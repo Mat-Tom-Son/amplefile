@@ -6,6 +6,7 @@ import {
   browserAddressToOpen,
   browserErrorText,
   browserHost,
+  browserLoadErrorText,
   browserTabTitle,
   browserTabsReducer,
   browserWorkerChat,
@@ -13,6 +14,7 @@ import {
   effectiveBrowserLayout,
   emptyBrowserTabs,
   newBrowserPageId,
+  savedFileName,
   type BrowserTabsAction,
   type BrowserTabsState,
 } from "../web-local/src/lib/browser-pages.js";
@@ -20,7 +22,7 @@ import {
 function page(pageId: string, extra: Partial<BrowserPageState> = {}): BrowserPageState {
   return {
     pageId, url: `https://${pageId}.example.com/`, title: pageId, favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, crashed: false,
-    audible: false, sitePermissions: [], permissionRequest: null, notice: null, muted: false, zoomPercent: 100, blockedPopup: null, worker: null, ...extra,
+    audible: false, sitePermissions: [], permissionRequest: null, notice: null, muted: false, zoomPercent: 100, blockedPopup: null, worker: null, leaveQuestion: null, ...extra,
   };
 }
 
@@ -147,4 +149,23 @@ test("a failed browser call is said in the desktop's own words", () => {
   assert.equal(browserErrorText(new Error("The page stopped."), "fallback"), "The page stopped.");
   assert.equal(browserErrorText(new Error(""), "The page could not open."), "The page could not open.");
   assert.equal(browserErrorText(undefined, "The page could not open."), "The page could not open.");
+});
+
+test("why a page did not load is said in plain words, whatever Chromium calls it", () => {
+  const say = (code: number, description = "") => browserLoadErrorText({ code, description });
+  assert.equal(say(-105, "ERR_NAME_NOT_RESOLVED"), "This site’s address couldn’t be found.");
+  assert.equal(say(-106, "ERR_INTERNET_DISCONNECTED"), "This Mac isn’t connected to the internet.");
+  assert.equal(say(-102, "ERR_CONNECTION_REFUSED"), "The site refused the connection.");
+  assert.equal(say(-118, "ERR_CONNECTION_TIMED_OUT"), "The site took too long to respond.");
+  assert.equal(say(-312, "ERR_UNSAFE_PORT"), "This address uses a port that browsers block.");
+  assert.equal(say(-202, "ERR_CERT_AUTHORITY_INVALID"), "This site’s security certificate isn’t trusted, so the page was not loaded.");
+  assert.equal(say(-6, "ERR_FILE_NOT_FOUND"), "There’s no file at that path.");
+  assert.equal(say(-999, "ERR_SOMETHING_NEW"), "The page couldn’t be loaded.");
+  for (const code of [-105, -106, -102, -118, -312, -202, -6, -999]) assert.doesNotMatch(say(code), /ERR_|net::/);
+});
+
+test("a download is named as it was saved", () => {
+  assert.equal(savedFileName("/Users/me/Downloads/same (1).bin", "same.bin"), "same (1).bin");
+  assert.equal(savedFileName("C:\\Users\\me\\Downloads\\report (2).txt", "report.txt"), "report (2).txt");
+  assert.equal(savedFileName("", "same.bin"), "same.bin");
 });

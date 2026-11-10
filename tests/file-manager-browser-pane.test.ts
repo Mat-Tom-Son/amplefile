@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement, Fragment } from "react";
 import { createFileManagerHarness } from "./support/file-manager.js";
-import type { BrowserOpenTabCommand, BrowserPageState, BrowserShortcut, BrowserTabsSync, BrowserViewRequest } from "../src/shared/browser.js";
+import type { BrowserDownload, BrowserOpenTabCommand, BrowserPageState, BrowserShortcut, BrowserTabsSync, BrowserViewRequest } from "../src/shared/browser.js";
 import type { ConnectedFolderSummary } from "../web-local/src/types.js";
 
 // The Browser pane in the real file manager window (jsdom, a mocked local API)
@@ -33,14 +33,14 @@ const answer = (path: string) => {
 function page(pageId: string, extra: Partial<BrowserPageState> = {}): BrowserPageState {
   return {
     pageId, url: `https://${pageId}.example.com/`, title: `Page ${pageId}`, favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, crashed: false,
-    audible: false, sitePermissions: [], permissionRequest: null, notice: null, muted: false, zoomPercent: 100, blockedPopup: null, worker: null, ...extra,
+    audible: false, sitePermissions: [], permissionRequest: null, notice: null, muted: false, zoomPercent: 100, blockedPopup: null, worker: null, leaveQuestion: null, ...extra,
   };
 }
 
 /** A stand-in for the desktop's `browser` bridge that records every call and lets a test speak as the host. */
 function createBridge(initial: BrowserPageState[] = []) {
   const calls: Array<{ name: string; args: unknown[] }> = [];
-  const listeners = { state: new Set<(value: BrowserPageState) => void>(), open: new Set<(value: BrowserOpenTabCommand) => void>(), close: new Set<(value: { pageId: string }) => void>(), shortcut: new Set<(value: BrowserShortcut) => void>() };
+  const listeners = { state: new Set<(value: BrowserPageState) => void>(), open: new Set<(value: BrowserOpenTabCommand) => void>(), close: new Set<(value: { pageId: string }) => void>(), shortcut: new Set<(value: BrowserShortcut) => void>(), download: new Set<(value: BrowserDownload) => void>() };
   /** What the next calls of one kind answer with, for a test that makes the desktop refuse. */
   const failures = new Map<string, Error>();
   const menuAnswers: Array<string | null> = [];
@@ -66,10 +66,11 @@ function createBridge(initial: BrowserPageState[] = []) {
     onCloseTab: subscribe(listeners.close),
     onShortcut: subscribe(listeners.shortcut),
     onFindResult: () => () => undefined,
-    onDownload: () => () => undefined,
+    onDownload: subscribe(listeners.download),
   };
   return {
     bridge,
+    download: (value: BrowserDownload) => { for (const listener of listeners.download) listener(value); },
     calls,
     failures,
     menuAnswers,
@@ -625,4 +626,154 @@ test("the panel button is the toolbar's last control, after Search, and the Brow
   assert.equal(toggle().getAttribute("title"), "Show Panel");
   await view.dom.act(() => toggle().click());
   assert.ok(view.container.querySelector("aside.fm-panel"));
+});
+
+test("a page that asks before it is left: the window asks, and tells the desktop Leave or Stay", async (t) => {
+  const host = createBridge([page("first1")]);
+  const view = await mountWindow(t, host);
+  await view.dom.waitFor(() => view.tabs().length === 1);
+  await view.press("Show Browser");
+  const dialog = () => document.querySelector<HTMLElement>('[role="alertdialog"], [role="dialog"]');
+  const choose = async (label: string) => { await view.dom.act(async () => { [...dialog()!.querySelectorAll("button")].find((item) => item.textContent === label)!.click(); }); };
+  const commands = () => host.named("command").map((call) => [call.args[0], (call.args[1] as { type: string }).type]);
+
+  // The person typed another address, pressed Reload, or closed the tab, and the page asked to be confirmed.
+  await view.dom.act(() => host.state(page("first1", { leaveQuestion: { requestId: "leave-1" } })));
+  await view.dom.waitFor(() => Boolean(dialog()));
+  assert.match(dialog()!.textContent ?? "", /Leave This Page\?[\s\S]*Changes you made on first1\.example\.com may not be saved\./);
+  assert.deepEqual(commands().filter(([, type]) => type === "leave-page" || type === "stay-on-page"), [], "nothing leaves until the person says");
+  // The same question is asked once, however often the page's state arrives.
+  await view.dom.act(() => host.state(page("first1", { leaveQuestion: { requestId: "leave-1" }, loading: true })));
+  assert.equal(document.querySelectorAll('[role="alertdialog"], [role="dialog"]').length, 1);
+  await choose("Cancel");
+  await view.dom.waitFor(() => commands().some(([, type]) => type === "stay-on-page"));
+  assert.deepEqual(commands().filter(([, type]) => type === "leave-page"), []);
+
+  // Asked again, and this time the person leaves.
+  await view.dom.act(() => host.state(page("first1", { leaveQuestion: { requestId: "leave-2" } })));
+  await view.dom.waitFor(() => Boolean(dialog()));
+  await choose("Leave");
+  await view.dom.waitFor(() => commands().some(([, type]) => type === "leave-page"));
+  assert.deepEqual(commands().filter(([, type]) => type === "leave-page"), [["first1", "leave-page"]]);
+});
+
+test("the address field shows the address being loaded, takes a click as select-all, and gives back whitespace", async (t) => {
+  const host = createBridge([page("first1")]);
+  const view = await mountWindow(t, host);
+  await view.dom.waitFor(() => view.tabs().length === 1);
+  await view.press("Show Browser");
+  const address = () => view.pane()!.querySelector<HTMLInputElement>('input[aria-label="Address"]')!;
+  const type = (text: string) => view.dom.act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(address(), text);
+    address().dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  const enter = () => view.dom.act(async () => { address().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); });
+
+  // A click that brings the keyboard to the field selects the whole address, so typing replaces it.
+  assert.equal(address().value, "https://first1.example.com/");
+  await view.dom.act(async () => {
+    address().dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    address().focus();
+    address().setSelectionRange(5, 5);
+    address().dispatchEvent(new window.MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+  });
+  assert.deepEqual([address().selectionStart, address().selectionEnd], [0, address().value.length]);
+  // A second click, with the keyboard already there, places the caret as usual.
+  await view.dom.act(async () => {
+    address().dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    address().setSelectionRange(5, 5);
+    address().dispatchEvent(new window.MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+  });
+  assert.deepEqual([address().selectionStart, address().selectionEnd], [5, 5]);
+
+  // Nothing but spaces: Return gives the page's address back and opens nothing.
+  await type("   ");
+  await enter();
+  assert.equal(address().value, "https://first1.example.com/");
+  assert.equal(host.named("navigate").length, 0);
+
+  // A typed address shows while it loads, in place of the page still there.
+  await type("slow.example.com/report");
+  await enter();
+  await view.dom.waitFor(() => host.named("navigate").length === 1);
+  await view.dom.act(() => host.state(page("first1", { loading: true })));
+  assert.equal(address().value, "https://slow.example.com/report");
+  // The load is stopped: the field says where the tab still is.
+  await view.dom.act(() => host.state(page("first1", { loading: false })));
+  await view.dom.waitFor(() => address().value === "https://first1.example.com/");
+});
+
+test("a page that did not load says why in plain words, with Chromium's own name as detail", async (t) => {
+  const host = createBridge([page("first1", { url: "http://no-such-host.invalid/", error: { code: -105, description: "ERR_NAME_NOT_RESOLVED", url: "http://no-such-host.invalid/" } })]);
+  const view = await mountWindow(t, host);
+  await view.dom.waitFor(() => view.tabs().length === 1);
+  await view.press("Show Browser");
+  const message = view.pane()!.querySelector<HTMLElement>(".fm-browser-state")!;
+  assert.equal(message.querySelector("strong")!.textContent, "This Page Couldn’t Load");
+  assert.equal(message.querySelector("span")!.textContent, "This site’s address couldn’t be found.");
+  assert.equal(message.querySelector("code")!.textContent, "ERR_NAME_NOT_RESOLVED · http://no-such-host.invalid/");
+  assert.equal(view.pane()!.querySelector(".fm-browser-viewport")!.hasAttribute("tabindex"), false, "there is no page to hand the keyboard to");
+});
+
+test("Tab reaches the page, a held pop-up shows on its tab, and a download is named as saved", async (t) => {
+  const host = createBridge([page("first1"), page("second", { blockedPopup: { url: "https://ads.example.com/", origin: "https://second.example.com" } })]);
+  const view = await mountWindow(t, host);
+  await view.dom.waitFor(() => view.tabs().length === 2);
+  await view.press("Show Browser");
+  await view.dom.waitFor(() => host.named("mount").length === 1);
+
+  // The page is a stop in the keyboard's order, after the address row; arriving there hands the keyboard to the page.
+  const stop = view.pane()!.querySelector<HTMLElement>(".fm-browser-viewport")!;
+  assert.equal(stop.getAttribute("tabindex"), "0");
+  assert.equal(stop.getAttribute("aria-label"), "Page: Page first1");
+  const order = [...view.pane()!.querySelectorAll<HTMLElement>("button, input, [tabindex]")].filter((item) => item.tabIndex >= 0);
+  assert.equal(order.at(-1), stop);
+  await view.dom.act(async () => { stop.focus(); });
+  await view.dom.waitFor(() => host.named("command").some((call) => call.args[0] === "first1" && (call.args[1] as { type: string }).type === "focus"));
+
+  // The tab behind holds a pop-up its site tried to open: the tab says so without being opened.
+  assert.equal(view.tabs()[1]!.getAttribute("aria-label"), "Page second, a pop-up was held");
+  assert.equal(view.tabs()[0]!.getAttribute("aria-label"), "Page first1");
+
+  // Two files asked for under one name: each notice names the file as it was saved.
+  await view.dom.act(async () => {
+    host.download({ filename: "same.bin", path: "/Users/me/Downloads/same.bin", state: "completed" });
+    host.download({ filename: "same.bin", path: "/Users/me/Downloads/same (1).bin", state: "completed" });
+  });
+  await view.dom.waitFor(() => view.toasts().length === 2);
+  assert.deepEqual(view.toasts().map((toast) => toast.querySelector(".toast-text, .toast-message, span:not(.toast-icon)")?.textContent ?? toast.textContent).map((text) => /Downloaded (.*?bin)/.exec(text ?? "")?.[1]), ["same.bin", "same (1).bin"]);
+});
+
+test("a window closed and reopened, or reloaded, shows the pane as it was left, with the same tab in front", async (t) => {
+  const host = createBridge([page("first1"), page("second"), page("third1")]);
+  const stored = new Map<string, string>();
+  const harnessWindow = () => window as unknown as { localStorage?: unknown };
+  const view = await mountWindow(t, host);
+  // The test window has no storage of its own; this one lasts as long as the test, as the app's lasts between windows.
+  Object.defineProperty(harnessWindow(), "localStorage", { configurable: true, value: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => { stored.set(key, value); }, removeItem: (key: string) => { stored.delete(key); } } });
+  await view.dom.waitFor(() => view.tabs().length === 3);
+  await view.press("Show Browser");
+  await view.dom.act(() => view.tabs()[2]!.click());
+  await view.press("Hide Folder");
+  assert.equal(view.layout(), "full");
+  await view.dom.waitFor(() => /"layout":"full"/.test(stored.get("amplefile.file-manager.browser-pane.v1") ?? ""));
+  assert.match(stored.get("amplefile.file-manager.browser-pane.v1")!, /"activePageId":"third1"/);
+
+  // The window goes and comes back; the desktop still has the three pages.
+  await view.dom.render(null);
+  await view.render();
+  await view.dom.waitFor(() => view.tabs().length === 3);
+  await view.dom.waitFor(() => view.layout() === "full");
+  assert.equal(view.tabs()[2]!.getAttribute("aria-selected"), "true", "the tab that was in front");
+  await view.dom.waitFor(() => host.named("mount").some((call, index, all) => index === all.length - 1 && (call.args[0] as BrowserViewRequest).pageId === "third1"));
+
+  // After a quit there are no pages, so nothing is brought back, and the next tab a Worker opens arrives as the strip alone.
+  await view.dom.render(null);
+  const fresh = createBridge();
+  (window as unknown as { ampleFileDesktop: { browser: unknown } }).ampleFileDesktop.browser = fresh.bridge;
+  await view.render();
+  await view.dom.waitFor(() => Boolean(view.container.querySelector("nav.fm-sidebar")));
+  assert.equal(view.pane(), null);
+  await view.dom.act(() => { fresh.open({ pageId: "worker9", url: "https://worker9.example.com/", title: "Worker", show: false }); });
+  assert.equal(view.layout(), "collapsed");
 });

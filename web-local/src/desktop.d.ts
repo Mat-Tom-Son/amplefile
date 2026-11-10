@@ -110,7 +110,7 @@ interface AmpleFileBrowserHistoryEntry {
 }
 
 type AmpleFileBrowserCommand =
-  | { type: "back" | "forward" | "reload" | "stop" | "focus" | "stop-find" | "inspect" | "zoom-in" | "zoom-out" | "zoom-reset" | "dismiss-notice" | "print" | "save-pdf" | "open-blocked-popup" | "allow-popups" | "dismiss-blocked-popup" }
+  | { type: "back" | "forward" | "reload" | "stop" | "focus" | "stop-find" | "inspect" | "zoom-in" | "zoom-out" | "zoom-reset" | "dismiss-notice" | "print" | "save-pdf" | "open-blocked-popup" | "allow-popups" | "dismiss-blocked-popup" | "leave-page" | "stay-on-page" }
   | { type: "mute"; muted: boolean }
   | { type: "find"; text: string; forward: boolean; newSearch: boolean }
   | { type: "forget-permission" | "open-privacy-settings"; kind: import("../../src/shared/browser").BrowserSitePermission };

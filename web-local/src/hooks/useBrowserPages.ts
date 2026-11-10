@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import type { BrowserPageState } from "../../../src/shared/browser";
-import { browserTabsReducer, emptyBrowserTabs, newBrowserPageId, type BrowserTab } from "../lib/browser-pages";
+import { browserTabsReducer, emptyBrowserTabs, newBrowserPageId, savedFileName, type BrowserTab } from "../lib/browser-pages";
 import { isMacOS } from "../lib/platform";
 import { showToast } from "../ui/feedback";
 
@@ -10,6 +10,8 @@ export type BrowserBridge = NonNullable<NonNullable<Window["ampleFileDesktop"]>[
 export interface BrowserPages {
   /** False where there is no browser: a development API without the desktop app. */
   available: boolean;
+  /** True once the desktop's open pages have been read: pages that outlived the window are tabs by then. */
+  ready: boolean;
   bridge: BrowserBridge | null;
   tabs: BrowserTab[];
   activeId: string | null;
@@ -37,6 +39,7 @@ export interface BrowserPages {
  */
 export function useBrowserPages({ bridge, viewingPageId: shownPageId, onShow }: { bridge: BrowserBridge | null; viewingPageId: string | null; onShow: () => void }): BrowserPages {
   const [state, dispatch] = useReducer(browserTabsReducer, emptyBrowserTabs);
+  const [ready, setReady] = useState(false);
   const onShowRef = useRef(onShow);
   onShowRef.current = onShow;
   const stateRef = useRef(state);
@@ -53,7 +56,8 @@ export function useBrowserPages({ bridge, viewingPageId: shownPageId, onShow }: 
     const offDownload = bridge.onDownload((download) => {
       if (download.state === "completed") {
         showToast({
-          text: `Downloaded ${download.filename}`,
+          // The name it was saved under: a second "report.txt" is "report (1).txt".
+          text: `Downloaded ${savedFileName(download.path, download.filename)}`,
           tone: "success",
           actionLabel: isMacOS() ? "Show in Finder" : "Show in Folder",
           onAction: () => { void bridge.showDownload(download.path).catch(() => undefined); },
@@ -64,7 +68,7 @@ export function useBrowserPages({ bridge, viewingPageId: shownPageId, onShow }: 
       }
     });
     // Pages outlive a window reload, and a Worker may have opened some before the window existed.
-    void bridge.states().then((pages) => { for (const page of pages) dispatch({ type: "page-state", state: page }); }).catch(() => undefined);
+    void bridge.states().then((pages) => { for (const page of pages) dispatch({ type: "page-state", state: page }); }).catch(() => undefined).then(() => setReady(true));
     return () => { offState(); offOpen(); offClose(); offDownload(); };
   }, [bridge]);
 
@@ -95,5 +99,5 @@ export function useBrowserPages({ bridge, viewingPageId: shownPageId, onShow }: 
     dispatch({ type: "page-state", state: await bridge.navigate(pageId, address) });
   }, [bridge]);
 
-  return { available: Boolean(bridge), bridge, tabs: state.tabs, activeId: state.activeId, pages: state.pages, canReopen: state.closed.length > 0, newTab, select, close, reopenClosed, navigate };
+  return { available: Boolean(bridge), ready, bridge, tabs: state.tabs, activeId: state.activeId, pages: state.pages, canReopen: state.closed.length > 0, newTab, select, close, reopenClosed, navigate };
 }

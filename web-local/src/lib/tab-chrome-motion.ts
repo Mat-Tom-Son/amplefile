@@ -94,3 +94,19 @@ export function createTabChromeMotion(strip: HTMLElement, chrome: HTMLElement) {
     },
   };
 }
+
+/**
+ * With more tabs than fit, the strip scrolls. This keeps the tab in front
+ * inside the strip and marks which edges hold more tabs (`data-more`: none,
+ * start, end, or both), which the stylesheet fades.
+ */
+export function settleTabStrip(strip: HTMLElement, front: HTMLElement | null): void {
+  if (front) {
+    const box = strip.getBoundingClientRect();
+    const tab = front.getBoundingClientRect();
+    if (tab.left < box.left) strip.scrollLeft -= box.left - tab.left + 12;
+    else if (tab.right > box.right) strip.scrollLeft += tab.right - box.right + 12;
+  }
+  const more = strip.scrollWidth - strip.clientWidth;
+  strip.dataset.more = more <= 1 ? "none" : strip.scrollLeft <= 1 ? "end" : strip.scrollLeft >= more - 1 ? "start" : "both";
+}

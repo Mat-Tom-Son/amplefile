@@ -89,7 +89,7 @@ export const browserChannels = {
 } as const;
 
 export type BrowserCommand =
-  | { type: "back" | "forward" | "reload" | "stop" | "focus" | "stop-find" | "inspect" | "zoom-in" | "zoom-out" | "zoom-reset" | "dismiss-notice" | "print" | "save-pdf" | "open-blocked-popup" | "allow-popups" | "dismiss-blocked-popup" }
+  | { type: "back" | "forward" | "reload" | "stop" | "focus" | "stop-find" | "inspect" | "zoom-in" | "zoom-out" | "zoom-reset" | "dismiss-notice" | "print" | "save-pdf" | "open-blocked-popup" | "allow-popups" | "dismiss-blocked-popup" | "leave-page" | "stay-on-page" }
   | { type: "mute"; muted: boolean }
   | { type: "find"; text: string; forward: boolean; newSearch: boolean }
   | { type: "forget-permission" | "open-privacy-settings"; kind: BrowserSitePermission };
@@ -111,6 +111,8 @@ export interface BuiltInBrowserOptions {
   onViewAttached?: () => void;
   /** How long a Worker's script waits on a site's unanswered question before it is told the person has to answer. */
   questionWaitMs?: number;
+  /** Whether this build declares to macOS why it uses location; the packaged app does, an unpackaged run does not. */
+  declaresLocationUse?: boolean;
   partition?: string;
 }
 
@@ -146,6 +148,16 @@ interface BrowserPage {
   worker: { owner: string } | null;
   workerSteps: Map<string, number>;
   workerLinger: ReturnType<typeof setTimeout> | null;
+  /** Who is leaving the page right now and how to do it again, for a page that asks to be confirmed first (beforeunload). */
+  leaving: { by: "person" | "agent"; redo: () => void; at: number } | null;
+  /** The person is being asked, in the window, whether to leave; Leave runs `redo`. */
+  leaveQuestion: { requestId: string; redo: () => void } | null;
+  /** The person chose Leave: the unload that follows goes through. */
+  leaveAllowedUntil: number;
+  /** A Worker's step left a page that had asked to be confirmed; its result says so. */
+  leftUnconfirmed: boolean;
+  /** How many of a Worker's or the AmpleFile Agent's actions are acting on the page right now: a click, a key, a script. */
+  agentActs: number;
 }
 
 /** A page a Worker opened but no window has shown yet still lays out at this size. */
@@ -161,6 +173,12 @@ const isolatedWorldId = 1_001;
 const popupGestureMs = 5_000;
 /** How long a Worker's script waits on a site's unanswered question; the person may be about to answer. */
 const questionWaitMs = 30_000;
+/** A page asks to be confirmed within moments of what made it leave; later than this, it was something else. */
+const leaveIntentMs = 1_500;
+/** How long the person's Leave still counts when the page asks again as it is left. */
+const leaveGraceMs = 5_000;
+/** How long a tab the person closed may take to close on its own before it is closed anyway. */
+const closeGraceMs = 1_500;
 /** How long the Worker marker stays after a Worker's last step on a page. */
 const workerLingerMs = 3_000;
 const gestureInputTypes = new Set(["mouseDown", "keyDown", "rawKeyDown", "touchStart", "gestureTap"]);
@@ -219,7 +237,7 @@ export class BuiltInBrowser {
     if (!url) throw new Error("Type an address or something to search for.");
     const existing = this.#pages.get(pageId);
     if (!existing) return this.#state(this.#createPage(pageId, url, "person"));
-    this.#load(existing, url);
+    this.#leave(existing, "person", () => { void this.#load(existing, url); });
     return this.#state(existing);
   }
 
@@ -228,12 +246,26 @@ export class BuiltInBrowser {
     if (!page) return;
     const contents = page.view.webContents;
     switch (command.type) {
-      case "back": if (contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack(); break;
-      case "forward": if (contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward(); break;
+      case "back": if (contents.navigationHistory.canGoBack()) this.#leave(page, "person", () => contents.navigationHistory.goBack()); break;
+      case "forward": if (contents.navigationHistory.canGoForward()) this.#leave(page, "person", () => contents.navigationHistory.goForward()); break;
       case "reload":
-        page.error = null;
         page.crashed = false;
-        contents.reload();
+        this.#leave(page, "person", () => contents.reload());
+        break;
+      // The person's answer to "Leave This Page?": Leave does again what was asked, and the page lets go this time.
+      case "leave-page": {
+        const question = page.leaveQuestion;
+        page.leaveQuestion = null;
+        this.#emit(page);
+        if (question) {
+          page.leaveAllowedUntil = Date.now() + leaveGraceMs;
+          question.redo();
+        }
+        break;
+      }
+      case "stay-on-page":
+        page.leaveQuestion = null;
+        this.#emit(page);
         break;
       case "stop": contents.stop(); break;
       case "focus": contents.focus(); break;
@@ -329,11 +361,51 @@ export class BuiltInBrowser {
     this.#emit(page);
   }
 
-  /** The person closed the tab. */
+  /** The person closed the tab. A page that asks to be confirmed first gets to ask; any other closes at once. */
   close(pageId: string): void {
     const page = this.#pages.get(pageId);
     this.#synced = { ...this.#synced, tabs: this.#synced.tabs.filter((tab) => tab.pageId !== pageId) };
-    if (page) this.#destroy(page);
+    if (!page || page.closed) return;
+    const contents = page.view.webContents;
+    if (contents.isDestroyed() || page.crashed) { this.#destroy(page); return; }
+    const intent = { by: "person" as const, redo: () => this.#destroy(page), at: Date.now() };
+    page.leaving = intent;
+    contents.close({ waitForBeforeUnload: true });
+    // A page that never answers is closed anyway. One that asked has taken the intent, and waits on the person.
+    setTimeout(() => { if (!page.closed && page.leaving === intent) this.#destroy(page); }, closeGraceMs);
+  }
+
+  /** Starts something that leaves the page, remembering who asked and how to do it again once the person agrees. */
+  #leave(page: BrowserPage, by: "person" | "agent", action: () => void): void {
+    page.leaving = { by, redo: action, at: Date.now() };
+    action();
+  }
+
+  /**
+   * A page asked to be confirmed before it is left. When the person started
+   * the leaving from the window (an address, Reload, Back, Close Tab), the
+   * page stays and the window asks; nothing leaves until they say. Every
+   * other leaving goes ahead: a Worker's action runs when called, and its
+   * result says the page had asked; and a leaving the page itself starts (a
+   * link or a form pressed inside it) cannot be asked about here, because the
+   * answer is needed at once and waiting for it would stop every Worker, and
+   * it cannot be done again later because where the page was going is not
+   * known.
+   */
+  #confirmLeaving(page: BrowserPage, event: Electron.Event): void {
+    const now = Date.now();
+    const leaving = page.leaving && now - page.leaving.at < leaveIntentMs ? page.leaving : null;
+    page.leaving = null;
+    if (leaving?.by === "person" && now >= page.leaveAllowedUntil) {
+      // A tab the person closed has left the window's strip; it comes back with the question.
+      if (!this.#synced.tabs.some((tab) => tab.pageId === page.pageId)) this.#announce(page, true);
+      page.leaveQuestion = { requestId: randomBytes(8).toString("hex"), redo: leaving.redo };
+      this.#emit(page);
+      return;
+    }
+    page.leaveAllowedUntil = 0;
+    if (leaving?.by === "agent" || (!leaving && page.agentActs > 0)) page.leftUnconfirmed = true;
+    event.preventDefault();
   }
 
   /** The renderer's open browser tabs. Pages a Worker opened that it has not shown are offered again. */
@@ -420,6 +492,11 @@ export class BuiltInBrowser {
       worker: null,
       workerSteps: new Map(),
       workerLinger: null,
+      leaving: null,
+      leaveQuestion: null,
+      leaveAllowedUntil: 0,
+      leftUnconfirmed: false,
+      agentActs: 0,
     };
     this.#pages.set(pageId, page);
     this.#wire(page);
@@ -445,8 +522,8 @@ export class BuiltInBrowser {
   }
 
   #load(page: BrowserPage, url: string): Promise<void> {
-    page.error = null;
-    page.crashed = false;
+    // What the tab shows (a page, or why one did not load) stays until the new address commits or fails:
+    // a load the person stops leaves the tab as it was, never a blank page under the old address.
     // Callers are the address bar, a Worker, a restored tab, or a page-opened
     // tab that was already checked with isPageReachableUrl.
     if (!isBrowserAddress(url)) {
@@ -461,9 +538,16 @@ export class BuiltInBrowser {
     const emit = () => this.#emit(page);
     contents.on("did-start-loading", emit);
     contents.on("did-stop-loading", emit);
+    contents.on("will-prevent-unload", (event) => this.#confirmLeaving(page, event));
     contents.on("did-navigate", (_event, url) => {
       page.error = null;
       page.crashed = false;
+      page.leaving = null;
+      page.leaveQuestion = null;
+      // The person's Leave was for the page that has now gone.
+      page.leaveAllowedUntil = 0;
+      // The icon belongs to the site that set it; another site starts without one.
+      if (page.faviconUrl && siteOrigin(page.faviconUrl) !== siteOrigin(url)) { page.favicon = null; page.faviconUrl = null; }
       this.#history.record(url, contents.getTitle());
       emit();
     });
@@ -496,6 +580,8 @@ export class BuiltInBrowser {
       // -3 is an aborted load, which another navigation replaced.
       if (!isMainFrame || code === -3) return;
       page.error = { code, description, url };
+      page.favicon = null;
+      page.faviconUrl = null;
       emit();
     });
     contents.on("render-process-gone", () => {
@@ -528,6 +614,12 @@ export class BuiltInBrowser {
       if (this.#pages.get(page.pageId) !== page) return;
       this.#pages.delete(page.pageId);
       if (!page.closed) {
+        // The page closed on its own or was let go by the person's Close Tab: what #destroy tidies is tidied here.
+        if (page.debuggerIdle) clearTimeout(page.debuggerIdle);
+        if (page.workerLinger) clearTimeout(page.workerLinger);
+        const window = this.#options.window();
+        if (page.fullscreen?.restoreWindowFullScreen && window && !window.isDestroyed() && window.isFullScreen()) window.setFullScreen(false);
+        page.fullscreen = null;
         page.closed = true;
         this.#options.send(browserChannels.closeTab, { pageId: page.pageId });
       }
@@ -729,8 +821,20 @@ export class BuiltInBrowser {
     const restore = page.fullscreen?.restoreWindowFullScreen;
     page.fullscreen = null;
     const window = this.#options.window();
-    if (restore && window && !window.isDestroyed() && window.isFullScreen()) window.setFullScreen(false);
+    if (restore && window && !window.isDestroyed() && window.isFullScreen()) {
+      // While the window is still on its way out of full screen the page is told it has full screen yet, and it is
+      // told nothing more once the window arrives. One more size change then lets the page hear that it left.
+      window.once("leave-full-screen", () => this.#afterFullScreen(page));
+      window.setFullScreen(false);
+    }
     if (!page.closed) this.#applyLayout(page);
+  }
+
+  #afterFullScreen(page: BrowserPage): void {
+    if (page.closed || page.fullscreen || page.view.webContents.isDestroyed()) return;
+    const bounds = page.view.getBounds();
+    page.view.setBounds({ ...bounds, height: bounds.height + 1 });
+    setTimeout(() => { if (!page.closed && !page.fullscreen) this.#applyLayout(page); }, 50);
   }
 
   // ── State ─────────────────────────────────────────────────────────────────
@@ -738,7 +842,7 @@ export class BuiltInBrowser {
   #state(page: BrowserPage): BrowserPageState {
     const contents = page.view.webContents;
     if (contents.isDestroyed()) {
-      return { pageId: page.pageId, url: "", title: "", favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, crashed: true, audible: false, sitePermissions: [], permissionRequest: null, notice: null, muted: false, zoomPercent: 100, blockedPopup: null, worker: null };
+      return { pageId: page.pageId, url: "", title: "", favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, crashed: true, audible: false, sitePermissions: [], permissionRequest: null, notice: null, muted: false, zoomPercent: 100, blockedPopup: null, worker: null, leaveQuestion: null };
     }
     const origin = siteOrigin(contents.getURL());
     return {
@@ -759,6 +863,7 @@ export class BuiltInBrowser {
       zoomPercent: Math.round(contents.getZoomFactor() * 100),
       blockedPopup: page.blockedPopup,
       worker: page.worker ? { owner: page.worker.owner } : null,
+      leaveQuestion: page.leaveQuestion ? { requestId: page.leaveQuestion.requestId } : null,
     };
   }
 
@@ -946,6 +1051,15 @@ export class BuiltInBrowser {
   async #systemAllows(kinds: BrowserSitePermission[], page: BrowserPage | null): Promise<boolean> {
     if (process.platform !== "darwin") return true;
     for (const kind of kinds) {
+      // macOS asks for location itself, from the usage string the packaged app declares. A build without one
+      // (unpackaged development) can never be granted it, and the site would wait without an answer.
+      if (kind === "location" && !this.#options.declaresLocationUse) {
+        if (page) {
+          page.notice = { kind, text: "macOS keeps location off for this development build. The installed AmpleFile can ask for it." };
+          this.#emit(page);
+        }
+        return false;
+      }
       if (kind !== "camera" && kind !== "microphone") continue;
       const status = systemPreferences.getMediaAccessStatus(kind);
       if (status === "granted") continue;
@@ -1007,6 +1121,7 @@ export class BuiltInBrowser {
 
   /** Marks the page as used by a Worker while a step runs, so the person sees it and can stop that Chat. */
   async #using<T>(page: BrowserPage, owner: string | undefined, step: () => Promise<T>): Promise<T> {
+    page.leftUnconfirmed = false;
     if (!owner) return await step();
     if (page.workerLinger) clearTimeout(page.workerLinger);
     page.workerLinger = null;
@@ -1125,11 +1240,11 @@ export class BuiltInBrowser {
     const contents = page.view.webContents;
     if (command && !input.alt) {
       if (key === "r") {
-        if (input.shift) contents.reloadIgnoringCache(); else contents.reload();
+        this.#leave(page, "person", () => { if (input.shift) contents.reloadIgnoringCache(); else contents.reload(); });
         return true;
       }
-      if (key === "[" && !input.shift) { if (contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack(); return true; }
-      if (key === "]" && !input.shift) { if (contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward(); return true; }
+      if (key === "[" && !input.shift) { if (contents.navigationHistory.canGoBack()) this.#leave(page, "person", () => contents.navigationHistory.goBack()); return true; }
+      if (key === "]" && !input.shift) { if (contents.navigationHistory.canGoForward()) this.#leave(page, "person", () => contents.navigationHistory.goForward()); return true; }
       if (key === "=" || key === "+") { this.command(page.pageId, { type: "zoom-in" }); return true; }
       if (key === "-") { this.command(page.pageId, { type: "zoom-out" }); return true; }
       if (key === "0") { this.command(page.pageId, { type: "zoom-reset" }); return true; }
@@ -1189,19 +1304,20 @@ export class BuiltInBrowser {
         return await this.#exclusive(page, signal, async () => {
           const contents = page.view.webContents;
           const target = to.trim().toLowerCase();
+          page.leftUnconfirmed = false;
           if (target === "back") {
             if (!contents.navigationHistory.canGoBack()) throw new Error("This tab has no earlier page.");
-            contents.navigationHistory.goBack();
+            this.#leave(page, "agent", () => contents.navigationHistory.goBack());
           } else if (target === "forward") {
             if (!contents.navigationHistory.canGoForward()) throw new Error("This tab has no later page.");
-            contents.navigationHistory.goForward();
+            this.#leave(page, "agent", () => contents.navigationHistory.goForward());
           } else if (target === "reload") {
             page.error = null;
-            contents.reload();
+            this.#leave(page, "agent", () => contents.reload());
           } else {
             const address = browserAddressFor(to);
             if (!address || !isBrowserAddress(address)) throw new Error(`"${to}" is not a web address this browser can open.`);
-            void this.#load(page, address);
+            this.#leave(page, "agent", () => { void this.#load(page, address); });
           }
           await delay(50);
           await this.#waitForLoad(page, signal);
@@ -1433,7 +1549,9 @@ export class BuiltInBrowser {
           result?: { type?: string; value?: unknown; description?: string };
           exceptionDetails?: { text?: string; exception?: { description?: string } };
         }>;
-        const outcome = await this.#unlessAsking(page, abortable(evaluation, signal));
+        // A script can leave the page too; while it runs, leaving is the Worker's doing.
+        page.agentActs += 1;
+        const outcome = await this.#unlessAsking(page, abortable(evaluation, signal)).finally(() => { page.agentActs -= 1; });
         this.#touch(page);
         if (outcome.exceptionDetails) throw new Error(`The script failed: ${outcome.exceptionDetails.exception?.description ?? outcome.exceptionDetails.text ?? "unknown error"}`);
         const value = outcome.result?.value;
@@ -1507,6 +1625,9 @@ export class BuiltInBrowser {
   }
 
   #summary(page: BrowserPage): BrowserTabSummary {
+    // Said once, in the first result after the Worker's action left the page.
+    const leftUnconfirmed = page.leftUnconfirmed;
+    page.leftUnconfirmed = false;
     const contents = page.view.webContents;
     const destroyed = contents.isDestroyed();
     return {
@@ -1518,6 +1639,7 @@ export class BuiltInBrowser {
       ...(page.error ? { error: `${page.error.description || "The page did not load"} (${page.error.url})` } : {}),
       ...(page.crashed ? { error: "The page stopped unexpectedly. Reload it to try again." } : {}),
       ...(page.permissions[0] ? { asking: `The page is waiting for the person to let it ${browserPermissionPhrase(page.permissions[0].request.kinds)}.` } : {}),
+      ...(leftUnconfirmed ? { leftUnconfirmed: true } : {}),
     };
   }
 
@@ -1594,7 +1716,12 @@ export class BuiltInBrowser {
     try {
       await abortable(previous, signal);
       signal?.throwIfAborted();
-      return await operation();
+      page.agentActs += 1;
+      try {
+        return await operation();
+      } finally {
+        page.agentActs -= 1;
+      }
     } finally {
       finish();
     }
@@ -1769,7 +1896,7 @@ export function parseBrowserCommand(value: unknown): BrowserCommand {
     if (typeof record.muted !== "boolean") throw new Error("The browser command is invalid.");
     return { type: "mute", muted: record.muted };
   }
-  const simple = ["back", "forward", "reload", "stop", "focus", "stop-find", "inspect", "zoom-in", "zoom-out", "zoom-reset", "dismiss-notice", "print", "save-pdf", "open-blocked-popup", "allow-popups", "dismiss-blocked-popup"] as const;
+  const simple = ["back", "forward", "reload", "stop", "focus", "stop-find", "inspect", "zoom-in", "zoom-out", "zoom-reset", "dismiss-notice", "print", "save-pdf", "open-blocked-popup", "allow-popups", "dismiss-blocked-popup", "leave-page", "stay-on-page"] as const;
   const type = simple.find((item) => item === record.type);
   if (!type) throw new Error("The browser command is invalid.");
   return { type };

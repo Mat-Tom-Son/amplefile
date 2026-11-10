@@ -133,6 +133,27 @@
   display: none;
 }
 
+/* More tabs than fit: the strip scrolls, and fades at the edge that holds more. */
+.fm-browser-tabs[data-more="end"] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+.fm-browser-tabs[data-more="start"] {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+}
+
+.fm-browser-tabs[data-more="both"] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+
+/* The tab in front keeps room for its name however many tabs share the strip. */
+.fm-browser-tab.is-on {
+  min-width: min(132px, 100%);
+}
+
 /* The frame behind the tab in front; lib/tab-chrome-motion.ts slides it to the tab chosen. */
 .fm-browser-tab-chrome {
   position: absolute;
@@ -227,6 +248,11 @@
   flex: none;
   width: 13px;
   height: 13px;
+}
+
+/* A pop-up the site tried to open is held on this tab. */
+.fm-browser-tab-held {
+  color: var(--ui-attention, #c26a00);
 }
 
 .fm-browser-tab-close {
@@ -406,6 +432,12 @@
   outline: none;
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* One ring: the field's capsule draws it, so the input inside draws none. */
+.fm-shell .fm-browser-address input:focus-visible,
+.fm-shell .fm-browser-strip.is-find input:focus-visible {
+  outline: none;
 }
 
 .fm-browser-address input::placeholder {
@@ -669,6 +701,10 @@
 }
 
 /* The placeholder the desktop host draws the page over; what shows here is the window's own. */
+.fm-browser-viewport:focus-visible {
+  outline: none;
+}
+
 .fm-browser-viewport {
   position: relative;
   flex: 1;

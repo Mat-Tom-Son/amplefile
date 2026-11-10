@@ -72,6 +72,8 @@ export function describeBrowserTab(tab: BrowserTabSummary): string {
   if (tab.error) lines.push(`The page did not load: ${tab.error}`);
   // Only the person answers a site's request; a Worker says what is waiting.
   if (tab.asking) lines.push(`${tab.asking} Only the person can answer; tell them it is waiting in the tab.`);
+  // The action ran as called; the receipt says what it cost.
+  if (tab.leftUnconfirmed) lines.push("The page left behind had asked to be confirmed before leaving, as a page with unsaved changes does. It was left as this action asked; anything unsaved there is gone.");
   return lines.join("\n");
 }
 

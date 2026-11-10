@@ -26,6 +26,7 @@ export function createFixtureBrowserBridge(workerOwner: string): BrowserBridge {
       sitePermissions: [], notice: null, muted: false, zoomPercent: 100, blockedPopup: null,
       permissionRequest: url.startsWith("https://maps.example.com") ? { requestId: `${pageId}-location`, origin: "https://maps.example.com", kinds: ["location"] } : null,
       worker: url.startsWith("https://supplier.example.com") ? { owner: workerOwner } : null,
+      leaveQuestion: null,
     };
     emit(state);
     return state;

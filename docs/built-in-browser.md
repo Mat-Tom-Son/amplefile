@@ -44,12 +44,16 @@ keeps the Connected Folder shown and its Chat.
   browser never closes a page. Choosing a place in the sidebar, searching, or
   opening Recents brings a folded folder back.
 - **Tabs.** The strip shows each tab's site icon and title, and tabs share
-  its width: each takes up to 200px and gives way as more open. A frame
+  its width: each takes up to 200px and gives way as more open. With more
+  tabs than fit, the strip scrolls: the tab in front keeps room for its name
+  and always stays inside the strip, and the strip fades at the edge that
+  holds more tabs. A frame
   slides behind the tab in front to the tab chosen, a new tab grows in, and a
   closed tab shrinks away; both reduce-motion switches turn that off. A tab
   shows a spinner while it loads, a speaker while it plays sound, the running
-  dot while a Worker is using it, and an amber dot while its site waits on
-  the person. **+** opens a new tab. A tab's × or a middle click closes it,
+  dot while a Worker is using it, an amber dot while its site waits on the
+  person, and a small window mark while it holds a pop-up its site tried to
+  open. **+** opens a new tab. A tab's × or a middle click closes it,
   and its page with it. Right-clicking a tab offers Reload, Duplicate, Copy
   Address, Open in Your Web Browser, Mute Tab, Print…, Save as PDF…, Close
   Tab, Close Other Browser Tabs, and Reopen Closed Tab. A duplicated or
@@ -57,8 +61,12 @@ keeps the Connected Folder shown and its Chat.
 - **The page.** Above the page are Back, Forward, Reload (Stop while
   loading), and the address field with **Site Information**, which says how
   the page reached the browser and lists what the person allowed or blocked
-  for the site, each with **Ask Again**. Typing lists matching pages from
-  history. An address the browser cannot show (`chrome://…`, `data:…`,
+  for the site, each with **Ask Again**. A click in the address field selects
+  the address. The field shows an address the person typed while it loads,
+  and the tab's own address again if the load is stopped. A page that did
+  not load says why in plain words, with Chromium's name for the failure and
+  the address beneath, and that message stays until another page arrives.
+  Typing lists matching pages from history. An address the browser cannot show (`chrome://…`, `data:…`,
   `mailto:…`) is searched for instead, so Return always leads somewhere.
   **Find in Page** and **Open in Your Web Browser** end the row.
 - **A Worker is using a page.** The tab carries the running dot, and beside
@@ -83,6 +91,10 @@ keeps the Connected Folder shown and its Chat.
   and a line saying sign-ins are shared by every Worker and the AmpleFile
   Agent. Clear Browsing History… asks first and says it cannot be undone;
   sign-ins stay.
+- **Tab and the keyboard.** The page is a stop in the window's Tab order,
+  after the address row: arriving there hands the keyboard to the page. Tab
+  and Shift-Tab then move inside the page, which Chromium keeps there, and ⌘L
+  brings the keyboard back to the address field.
 - **Keys.** These act while the Browser pane or a page in it has the
   keyboard, and keep their own meaning elsewhere in the window: ⌘T opens a
   tab and ⇧⌘T reopens the one closed last, ⌘W closes the tab in front, ⌘L
@@ -94,8 +106,9 @@ keeps the Connected Folder shown and its Chat.
   page; a tab chosen from a page gives its page the keyboard.
 - **What the desktop owns.** The tab list is the desktop's open pages: pages
   that outlived a window reload and tabs a Worker opened before the window
-  existed come back as tabs. Nothing is restored after quitting except
-  sign-ins and history. The page is drawn by the desktop above everything the
+  existed come back as tabs. A window that is closed and reopened, or
+  reloaded, shows the pane at the size it was left with the same tab in
+  front. Nothing is restored after quitting except sign-ins and history. The page is drawn by the desktop above everything the
   window draws, over a placeholder in the pane, so it steps aside for as long
   as a dialog (or the dimmed backdrop behind one), menu, sheet, or notice of
   the window's crosses it. Notices sit above the pane's top edge for the same
@@ -147,11 +160,28 @@ way**).
   site it is showing, which the page cannot change. Mail links open the mail app; other
   non-web addresses are refused.
 - Downloads go to the Downloads folder and never replace a file there, even
-  when two with the same name arrive at once.
+  when two with the same name arrive at once. The window's notice names each
+  file as it was saved.
+- A page may ask to be confirmed before it is left, as one with unsaved
+  changes does. When the person leaves it from the window (a typed address,
+  Reload, Back, Forward, or closing its tab), the page stays and the window
+  asks **Leave This Page?**; nothing leaves until they choose **Leave**. A
+  closed tab comes back into the strip with the question. A Worker's action
+  runs when called: the page is left, and the action's result says it had
+  asked. A link or form pressed inside such a page leaves it without a
+  question, because the desktop cannot ask and wait there without stopping
+  every Worker, and cannot do the leaving again afterward.
+- A page that leaves full screen is told so, so its own full-screen view
+  ends with it.
 - A site that wants the camera, microphone, location, notifications, MIDI
   devices, the clipboard, window placement, or activity status needs the
   person's answer, and the answer is remembered for that site. Only the person
-  answers; a Worker using that page is told the person has to answer. A
+  answers; a Worker using that page is told the person has to answer. macOS
+  has its own switches. AmpleFile can read the camera and microphone ones,
+  and says above the page when one is off. It cannot read the location one:
+  the installed app declares why it wants location, so macOS asks in its own
+  dialog the first time, while an unpackaged development build declares
+  nothing, so it refuses location and says so above the page. A
   Worker's script that waits on such a question is told the same after 30
   seconds instead of waiting on, and the question stays for the person.
 - Full screen, copying from the page, pointer and keyboard lock, saving to a
@@ -243,8 +273,11 @@ with no window, structure and refs, trusted clicks and typing, lists, waiting,
 scripts, the console, three kinds of screenshot, scrolling, new-page links,
 downloads, back and forward, a site's question answered, remembered,
 forgotten, blocked, and dropped on navigation, history, pop-up rules, and
-overlapping Chats, the keys a page hands to the window with the keyboard, and
-a script that waits on an unanswered question. Its window is off screen and
+overlapping Chats, the keys a page hands to the window with the keyboard, a
+script that waits on an unanswered question, a page that asks before it is
+left (the person's address, Reload and Close Tab, Stay and Leave, a link
+pressed inside it, and a Worker's navigation and click), and a load stopped
+after a page that did not load. Its window is off screen and
 cannot hold the keyboard, so which web contents has the keyboard is checked
 in the running app, not there. `tests/built-in-browser.test.ts` covers addresses, the user
 agent, the structure format, keys, the tools, site decisions, history, and

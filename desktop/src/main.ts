@@ -1516,6 +1516,7 @@ function updateApplicationMenuState(value: unknown): void {
   const menu = Menu.getApplicationMenu();
   setMenuItemEnabled(menu, "new-chat", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "refresh-connected-folder", rendererMenuState.connectedFolderOpen);
+  setMenuItemEnabled(menu, "close-tab", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "open-capabilities", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "toggle-sidebar", rendererMenuState.connectedFolderOpen);
   setMenuItemEnabled(menu, "toggle-agent-panel", rendererMenuState.connectedFolderOpen);
@@ -1962,6 +1963,7 @@ function ensureBuiltInBrowser(): BuiltInBrowser {
     // The app names itself, as Claude's browser does; Google's sign-in refuses a browser posing as plain Chrome.
     userAgentProduct: `${productionProductName}/${applicationVersion}`,
     onViewAttached: () => railTooltipOverlay?.raise(),
+    declaresLocationUse: app.isPackaged,
   });
   return builtInBrowser;
 }

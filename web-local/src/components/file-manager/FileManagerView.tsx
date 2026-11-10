@@ -98,6 +98,14 @@ const sortStorageKey = "amplefile.file-manager.sort.v1";
 const sidebarOpenStorageKey = "amplefile.file-manager.sidebar-open.v1";
 /** The Browser pane's share of the main area when the folder and the browser are both shown. */
 const browserSplitStorageKey = "amplefile.file-manager.browser-split.v1";
+/** How the Browser pane was left, so a window closed and reopened, or reloaded, shows the same tab the same way. Pages do not outlive a quit, so neither does this. */
+const browserPaneStorageKey = "amplefile.file-manager.browser-pane.v1";
+function readStoredBrowserPane(parsed: unknown): { layout: BrowserPaneLayout; activePageId: string | null } | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  const { layout, activePageId } = parsed as { layout?: unknown; activePageId?: unknown };
+  if (layout !== "collapsed" && layout !== "split" && layout !== "full") return null;
+  return { layout, activePageId: typeof activePageId === "string" ? activePageId : null };
+}
 const typeSelectResetMs = 900;
 const noSetUpOffers: readonly string[] = [];
 
@@ -322,7 +330,36 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const browserLayout = effectiveBrowserLayout(browserLayoutChoice, browser.tabs.length);
   const browserShown = browserLayout === "split" || browserLayout === "full";
   // With its last tab closed the pane goes away, and the next tab a Worker opens arrives as the strip alone.
-  useEffect(() => { if (!browser.tabs.length) setBrowserLayout("collapsed"); }, [browser.tabs.length]);
+  useEffect(() => { if (browser.ready && !browser.tabs.length) setBrowserLayout("collapsed"); }, [browser.ready, browser.tabs.length]);
+  // The window was closed and reopened, or reloaded, with pages still running: the pane comes back as it was left,
+  // with the same tab in front. Read once, when the desktop's pages are known.
+  const browserRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!browser.ready || browserRestoredRef.current) return;
+    browserRestoredRef.current = true;
+    const stored = readStoredJsonValue(browserPaneStorageKey, readStoredBrowserPane, null);
+    if (!stored || !browser.tabs.length) return;
+    if (stored.activePageId && browser.tabs.some((tab) => tab.pageId === stored.activePageId)) browser.select(stored.activePageId);
+    setBrowserLayout(stored.layout);
+  }, [browser.ready]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!browserRestoredRef.current) return;
+    writeStoredJsonValue(browserPaneStorageKey, browser.tabs.length ? { layout: browserLayout === "hidden" ? "collapsed" : browserLayout, activePageId: browser.activeId } : null);
+  }, [browserLayout, browser.activeId, browser.tabs.length]);
+  // A page asked to be confirmed before it is left (a form half filled in), and the person started the leaving:
+  // the window asks, and tells the desktop the answer. Nothing leaves until they say.
+  const browserLeaveAskedRef = useRef(new Set<string>());
+  useEffect(() => {
+    for (const page of Object.values(browser.pages)) {
+      const question = page.leaveQuestion;
+      if (!question || browserLeaveAskedRef.current.has(question.requestId)) continue;
+      browserLeaveAskedRef.current.add(question.requestId);
+      const site = browserHost(page.url);
+      void requestConfirm({ title: "Leave This Page?", body: `Changes you made${site ? ` on ${site}` : ""} may not be saved.`, confirmLabel: "Leave" })
+        .then((leave) => browser.bridge?.command(page.pageId, { type: leave ? "leave-page" : "stay-on-page" }))
+        .catch((caught) => onError(errorText(caught)));
+    }
+  }, [browser.pages]); // eslint-disable-line react-hooks/exhaustive-deps
   function toggleBrowser() {
     if (browserLayout === "hidden") { browser.newTab(); setBrowserLayout("split"); }
     else setBrowserLayout(browserShown ? "collapsed" : "split");
