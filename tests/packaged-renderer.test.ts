@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -138,6 +138,22 @@ test("packaged renderer verification accepts an archived renderer and rejects ev
   assert.match(
     (await packageRenderer("unpacked", undefined, "**/dist/web-local/assets/*.js")).join("\n"),
     /Renderer file must stay inside app\.asar, not unpacked: \/dist\/web-local\/assets\/index-abc123\.js/,
+  );
+  assert.match(
+    (await packageRenderer("linked-script", async (appRoot) => {
+      await rm(renderer(appRoot, "assets", "popover-def456.js"));
+      await symlink("index-abc123.js", renderer(appRoot, "assets", "popover-def456.js"));
+    })).join("\n"),
+    /Renderer file must be a regular file in app\.asar, not a link: \/dist\/web-local\/assets\/popover-def456\.js/,
+  );
+  assert.deepEqual(
+    await packageRenderer("linked-page", async (appRoot) => {
+      await mkdir(join(appRoot, "other"));
+      await writeFile(join(appRoot, "other", "page.html"), page("/assets/popover-def456.js"));
+      await rm(renderer(appRoot, "popover.html"));
+      await symlink("../../other/page.html", renderer(appRoot, "popover.html"));
+    }),
+    ["Renderer file must be a regular file in app.asar, not a link: /dist/web-local/popover.html."],
   );
   assert.match(
     (await packageRenderer("loose-copy", async (_appRoot, resourcesDir) => {

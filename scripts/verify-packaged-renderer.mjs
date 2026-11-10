@@ -13,8 +13,9 @@ const pageOrigin = "https://app";
 
 /** The main window and the AmpleFile Agent popover must run only code that
  * Electron's ASAR integrity validation covers. That holds when both pages and
- * every script and stylesheet they name are archived in `app.asar`, none of
- * them is unpacked, and no loose copy ships beside the archive.
+ * every script and stylesheet they name are archived in `app.asar` as regular
+ * files, none of them is unpacked or a link, and no loose copy ships beside
+ * the archive.
  * Returns the failures; an empty list means the renderer is covered.
  */
 export function verifyPackagedRenderer({ asarPath, resourcesDir }) {
@@ -28,6 +29,8 @@ export function verifyPackagedRenderer({ asarPath, resourcesDir }) {
       failures.push(`app.asar is missing the ${label}: /${pagePath}.`);
       continue;
     }
+    // A link is reported below; it has no bytes of its own to read here.
+    if (archived.get(pagePath).link) continue;
     const html = extractFile(asarPath, pagePath).toString("utf8");
     for (const reference of loadedReferences(html)) {
       const url = new URL(reference, `${pageOrigin}/${page}`);
@@ -41,8 +44,11 @@ export function verifyPackagedRenderer({ asarPath, resourcesDir }) {
     }
   }
 
-  for (const [path, unpacked] of archived) {
-    if (unpacked) failures.push(`Renderer file must stay inside app.asar, not unpacked: /${path}.`);
+  for (const [path, entry] of archived) {
+    // A link can point at an unpacked file or outside the renderer build, so
+    // the renderer holds regular archived files only.
+    if (entry.link) failures.push(`Renderer file must be a regular file in app.asar, not a link: /${path}.`);
+    else if (entry.unpacked) failures.push(`Renderer file must stay inside app.asar, not unpacked: /${path}.`);
   }
   for (const loose of [join(resourcesDir, "web-local"), join(resourcesDir, "app.asar.unpacked", "dist", "web-local")]) {
     if (existsSync(loose)) failures.push(`Renderer files must not ship outside app.asar: ${loose}.`);
@@ -61,7 +67,7 @@ function collect(directory, prefix, parentUnpacked, archived) {
     const path = `${prefix}/${name}`;
     const unpacked = parentUnpacked || entry.unpacked === true;
     if (entry.files) collect(entry, path, unpacked, archived);
-    else archived.set(path, unpacked);
+    else archived.set(path, { unpacked, link: entry.link !== undefined });
   }
 }
 
