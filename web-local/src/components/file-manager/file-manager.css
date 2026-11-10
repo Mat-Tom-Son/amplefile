@@ -1533,9 +1533,10 @@
   color: var(--fm-text);
 }
 
-/* On the tint a link is a shade deeper than elsewhere, which keeps it at 4.5:1. */
+/* On the tint a link is mixed toward the text color. At 68 percent it stays
+   above 4.5:1 on every palette, in both modes (application-appearance-surfaces.test.ts measures it). */
 :root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body :is(a, .connected-folder-file-link) {
-  color: color-mix(in srgb, var(--fm-link) 85%, var(--fm-text));
+  color: color-mix(in srgb, var(--fm-link) 68%, var(--fm-text));
 }
 
 :root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.assistant .message-body,
