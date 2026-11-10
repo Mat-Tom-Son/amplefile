@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
-import { leftoverChromeExtensionOrigin, leftoverChromeHostName, removeLeftoverChromeRegistration } from "../desktop/src/chrome-registration-cleanup.js";
+import { leftoverChromeCleanupApplies, leftoverChromeExtensionOrigin, leftoverChromeHostName, removeLeftoverChromeRegistration } from "../desktop/src/chrome-registration-cleanup.js";
 
 const helperName = `amplefile-chrome-host-${"0123456789abcdef01234567"}`;
 
@@ -86,4 +86,64 @@ test("a linked registration is never followed or removed, and a missing one is f
   const missing = await leftovers(t, () => undefined);
   assert.deepEqual(await removeLeftoverChromeRegistration(missing), { registration: "absent", helper: "removed" });
   await gone(join(missing.stateRoot, "chrome"));
+});
+
+test("a registration folder that cannot be read still lets AmpleFile remove its own leftovers, once", async (t) => {
+  // NativeMessagingHosts is a file, so the manifest path runs through something that is not a folder.
+  const notFolder = await leftovers(t, () => undefined);
+  const hosts = join(notFolder.chromeUserDataRoot, "NativeMessagingHosts");
+  await rm(hosts, { recursive: true });
+  await writeFile(hosts, "not a folder");
+  assert.deepEqual(await removeLeftoverChromeRegistration(notFolder), { registration: "absent", helper: "removed" });
+  assert.equal(await readFile(hosts, "utf8"), "not a folder");
+  await gone(join(notFolder.stateRoot, "chrome"));
+  await gone(join(notFolder.stateRoot, "chrome-companion"));
+
+  // A manifest that is a folder is not AmpleFile's plain JSON.
+  const folder = await leftovers(t, () => undefined);
+  await mkdir(folder.manifestPath);
+  assert.deepEqual(await removeLeftoverChromeRegistration(folder), { registration: "kept", helper: "removed" });
+  await access(folder.manifestPath);
+
+  // Unreadable registrations are left as they are; AmpleFile's own folders go, so no later launch looks again.
+  if (process.getuid?.() === 0) return;
+  const lockedFolder = await leftovers(t);
+  const lockedHosts = join(lockedFolder.chromeUserDataRoot, "NativeMessagingHosts");
+  await chmod(lockedHosts, 0o000);
+  try {
+    assert.deepEqual(await removeLeftoverChromeRegistration(lockedFolder), { registration: "unreadable", helper: "removed" });
+    await gone(join(lockedFolder.stateRoot, "chrome"));
+    assert.deepEqual(await removeLeftoverChromeRegistration(lockedFolder), { registration: "not-checked", helper: "absent" });
+  } finally { await chmod(lockedHosts, 0o700); }
+  assert.deepEqual(JSON.parse(await readFile(lockedFolder.manifestPath, "utf8")), lockedFolder.own);
+
+  const lockedFile = await leftovers(t);
+  await chmod(lockedFile.manifestPath, 0o000);
+  try {
+    assert.deepEqual(await removeLeftoverChromeRegistration(lockedFile), { registration: "unreadable", helper: "removed" });
+  } finally { await chmod(lockedFile.manifestPath, 0o600); }
+  assert.deepEqual(JSON.parse(await readFile(lockedFile.manifestPath, "utf8")), lockedFile.own);
+  await gone(join(lockedFile.stateRoot, "chrome"));
+});
+
+test("only the installed Mac app with its normal profile cleans up, and only at interactive startup", async () => {
+  const installed = { platform: "darwin" as const, isPackaged: true, localSmokeBuild: false, environment: {} };
+  assert.equal(leftoverChromeCleanupApplies(installed), true);
+  assert.equal(leftoverChromeCleanupApplies({ ...installed, environment: { AMPLEFILE_DESKTOP_STATE_DIR: "  " } }), true, "a blank override chooses the normal profile");
+  for (const [label, launch] of [
+    ["Local Smoke", { ...installed, localSmokeBuild: true }],
+    ["a state folder override", { ...installed, environment: { AMPLEFILE_DESKTOP_STATE_DIR: "/tmp/amplefile-state" } }],
+    ["the unpackaged app", { ...installed, isPackaged: false }],
+    ["Windows", { ...installed, platform: "win32" as const }],
+    ["Linux", { ...installed, platform: "linux" as const }],
+  ] as const) assert.equal(leftoverChromeCleanupApplies(launch), false, label);
+
+  // A headless CLI host never reaches it: the one call sits in interactive startup, behind the gate.
+  const main = await readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8");
+  assert.equal(main.match(/removeLeftoverChromeRegistrationOnce\(\);/g)?.length, 1);
+  assert.equal(main.match(/removeLeftoverChromeRegistration\(/g)?.length, 1);
+  const startup = main.slice(main.indexOf("async function startInteractiveApp()"), main.indexOf("function removeLeftoverChromeRegistrationOnce()"));
+  assert.match(startup, /await ensureDesktopHost\(\);\n\s*removeLeftoverChromeRegistrationOnce\(\);/);
+  const helper = main.slice(main.indexOf("function removeLeftoverChromeRegistrationOnce()"), main.indexOf("const headlessQuit = new HeadlessQuitSequence"));
+  assert.match(helper, /if \(!leftoverChromeCleanupApplies\(\{ platform: process\.platform, isPackaged: app\.isPackaged, localSmokeBuild: localMacSmokeBuild, environment: process\.env \}\)\) return;/);
 });

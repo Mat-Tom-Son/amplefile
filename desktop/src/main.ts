@@ -63,7 +63,7 @@ import { writeDesktopClipboard } from "./clipboard.js";
 import { PackagedPiRuntimeProvider } from "./pi-runtime.js";
 import { includedToolsRoot } from "../../src/local/agent/included-tools.js";
 import { ComputerHelperInstallation } from "./computer-helper-installation.js";
-import { removeLeftoverChromeRegistration } from "./chrome-registration-cleanup.js";
+import { leftoverChromeCleanupApplies, removeLeftoverChromeRegistration } from "./chrome-registration-cleanup.js";
 import { applyLoginShellEnvironment, formatLoginShellEnvironmentResult, type LoginShellEnvironmentResult } from "./shell-environment.js";
 import { SecureSettingsStore } from "./settings.js";
 import { DesktopUpdater, type DesktopUpdateStatus } from "./updater.js";
@@ -492,13 +492,12 @@ async function startInteractiveApp(): Promise<void> {
 
 /**
  * Removes the Google Chrome registration and helper copy an earlier AmpleFile
- * left, only where an earlier AmpleFile could have written them: the
- * installed app with its normal profile.
+ * left. Only interactive startup calls it, never a headless CLI host.
  */
 function removeLeftoverChromeRegistrationOnce(): void {
-  if (process.platform !== "darwin" || !app.isPackaged || localMacSmokeBuild || ampleFileDesktopStateOverride(process.env)) return;
+  if (!leftoverChromeCleanupApplies({ platform: process.platform, isPackaged: app.isPackaged, localSmokeBuild: localMacSmokeBuild, environment: process.env })) return;
   void removeLeftoverChromeRegistration({ stateRoot: join(app.getPath("userData"), "assistant-tools") })
-    .catch((error) => console.warn(`${productName} left an earlier Chrome registration in place: ${errorMessage(error)}`));
+    .catch((error) => console.warn(`${productName} could not remove an earlier Chrome helper copy: ${errorMessage(error)}`));
 }
 
 const headlessQuit = new HeadlessQuitSequence({

@@ -1,6 +1,7 @@
 import { lstat, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { ampleFileDesktopStateOverride } from "./user-data-path.js";
 
 /** The Native Messaging host name and Store extension origin AmpleFile 0.1.6 and earlier registered. */
 export const leftoverChromeHostName = "com.amplefile.chrome";
@@ -13,9 +14,32 @@ export interface LeftoverChromeRegistrationOptions {
   chromeUserDataRoot?: string;
 }
 
+export interface LeftoverChromeCleanupLaunch {
+  platform: NodeJS.Platform;
+  isPackaged: boolean;
+  /** The ad hoc `AmpleFile Local Smoke` build, which never registered. */
+  localSmokeBuild: boolean;
+  environment: Readonly<Record<string, string | undefined>>;
+}
+
+/**
+ * Only where an earlier AmpleFile could have registered: the installed Mac app
+ * with its normal profile. Development, Local Smoke and an
+ * `AMPLEFILE_DESKTOP_STATE_DIR` profile never touch Chrome's directory; the
+ * override counts exactly when it chooses the profile's folder.
+ */
+export function leftoverChromeCleanupApplies(launch: LeftoverChromeCleanupLaunch): boolean {
+  return launch.platform === "darwin" && launch.isPackaged && !launch.localSmokeBuild && !ampleFileDesktopStateOverride(launch.environment)?.trim();
+}
+
 export interface LeftoverChromeRegistrationResult {
-  /** Removed only when its contents prove it is this installation's. */
-  registration: "removed" | "kept" | "absent" | "not-checked";
+  /**
+   * Removed only when its contents prove it is this installation's. `unreadable`
+   * means Chrome's side could not be read; it is left as it is, and AmpleFile's
+   * own leftovers are still removed, so a launch never retries a state that will
+   * not change by itself.
+   */
+  registration: "removed" | "kept" | "absent" | "unreadable" | "not-checked";
   helper: "removed" | "absent";
 }
 
@@ -39,25 +63,27 @@ export async function removeLeftoverChromeRegistration(options: LeftoverChromeRe
 
   const chromeRoot = options.chromeUserDataRoot ?? join(homedir(), "Library/Application Support/Google/Chrome");
   const manifestPath = join(chromeRoot, "NativeMessagingHosts", `${leftoverChromeHostName}.json`);
-  let registration: LeftoverChromeRegistrationResult["registration"];
-  let manifest: unknown;
-  try {
-    const info = await lstat(manifestPath);
-    // A link or an oversized file is not the plain JSON AmpleFile wrote.
-    if (!info.isFile() || info.size > 4096) registration = "kept";
-    else {
-      try { manifest = JSON.parse(await readFile(manifestPath, "utf8")); }
-      catch (error) { if (!(error instanceof SyntaxError)) throw error; }
-      registration = isOwnRegistration(manifest, join(stateRoot, "chrome", "native-host")) ? "removed" : "kept";
-    }
-  } catch (error) {
-    // An unreadable registration leaves everything for the next launch to retry.
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    registration = "absent";
-  }
+  const registration = await inspectRegistration(manifestPath, join(stateRoot, "chrome", "native-host"));
   if (registration === "removed") await rm(manifestPath, { force: true });
   for (const path of leftovers) await rm(path, { recursive: true, force: true });
   return { registration, helper: "removed" };
+}
+
+async function inspectRegistration(manifestPath: string, helperDirectory: string): Promise<LeftoverChromeRegistrationResult["registration"]> {
+  let manifest: unknown;
+  try {
+    const info = await lstat(manifestPath);
+    // A link, a folder or an oversized file is not the plain JSON AmpleFile wrote.
+    if (!info.isFile() || info.size > 4096) return "kept";
+    try { manifest = JSON.parse(await readFile(manifestPath, "utf8")); }
+    catch (error) { if (!(error instanceof SyntaxError)) throw error; }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // A missing file, or a path through something that is not a folder, holds no registration.
+    if (code === "ENOENT" || code === "ENOTDIR") return "absent";
+    return "unreadable";
+  }
+  return isOwnRegistration(manifest, helperDirectory) ? "removed" : "kept";
 }
 
 function isOwnRegistration(manifest: unknown, helperDirectory: string): boolean {
