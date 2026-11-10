@@ -60,7 +60,7 @@ test("each feed stage decides the packaged feed and the publication targets sepa
 });
 
 test("the environment names the separate repository and may override the stage for a candidate", () => {
-  const overridden = resolveMacReleaseFeed(identity, {
+  const overridden = resolveMacReleaseFeed({ ...identity, macUpdateFeedStage: "separate-repository" }, {
     AMPLEFILE_MAC_RELEASE_OWNER: " Example ",
     AMPLEFILE_MAC_RELEASE_REPO: "example-mac-releases",
     AMPLEFILE_MAC_UPDATE_FEED_STAGE: "bridge",
@@ -134,8 +134,10 @@ test("every release script takes the feed from the one resolver", () => {
 
 test("a public release must use the feed stage its tagged source records", () => {
   assertCheckedInFeedStage(resolveMacReleaseFeed(identity, {}));
+  const recorded = { ...identity, macUpdateFeedStage: "separate-repository" };
+  assertCheckedInFeedStage(resolveMacReleaseFeed(recorded, { AMPLEFILE_MAC_UPDATE_FEED_STAGE: "separate-repository" }));
   assert.throws(
-    () => assertCheckedInFeedStage(resolveMacReleaseFeed(identity, { AMPLEFILE_MAC_UPDATE_FEED_STAGE: "bridge" })),
+    () => assertCheckedInFeedStage(resolveMacReleaseFeed(recorded, { AMPLEFILE_MAC_UPDATE_FEED_STAGE: "bridge" })),
     /uses the Mac update feed stage bridge, but the release source records separate-repository/,
   );
   assert.match(read("scripts/publish-mac-release.mjs"), /async \(lockToken\) => \{\n  assertCheckedInFeedStage\(feed\);/);
