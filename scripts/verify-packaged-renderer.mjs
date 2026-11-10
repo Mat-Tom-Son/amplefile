@@ -7,8 +7,9 @@ const pages = [
   ["index.html", "renderer index"],
   ["popover.html", "AmpleFile Agent popover renderer"],
 ];
-// Any origin works here: it only resolves a page's relative references the
-// way the internal scheme does.
+// Resolves a page's relative references the way the internal scheme does.
+// Only references without a scheme or host are resolved against it, so the
+// origin itself never matches anything a page could name.
 const pageOrigin = "https://app";
 
 /** The main window and the AmpleFile Agent popover must run only code that
@@ -33,12 +34,15 @@ export function verifyPackagedRenderer({ asarPath, resourcesDir }) {
     if (archived.get(pagePath).link) continue;
     const html = extractFile(asarPath, pagePath).toString("utf8");
     for (const reference of loadedReferences(html)) {
-      const url = new URL(reference, `${pageOrigin}/${page}`);
-      if (url.protocol === "data:") continue;
-      if (url.origin !== pageOrigin) {
+      if (/^data:/i.test(reference)) continue;
+      // In the app, only a path stays inside the internal scheme: a
+      // reference with a scheme or a host goes somewhere else, whatever it
+      // names.
+      if (/^[a-z][a-z0-9+.-]*:/i.test(reference) || /^[\\/]{2}/.test(reference)) {
         failures.push(`${page} loads ${reference} from outside the app.`);
         continue;
       }
+      const url = new URL(reference, `${pageOrigin}/${page}`);
       const target = `${rendererRoot}${decodeURIComponent(url.pathname)}`;
       if (!archived.has(target)) failures.push(`${page} loads ${reference}, which is not inside app.asar.`);
     }
@@ -74,10 +78,14 @@ function collect(directory, prefix, parentUnpacked, archived) {
 /** The `src` and `href` targets of a page's script and link elements. */
 function loadedReferences(html) {
   const references = [];
-  for (const element of html.matchAll(/<(?:script|link)\b[^>]*>/gi)) {
-    const attribute = /\s(?:src|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i.exec(element[0]);
-    const value = attribute?.[1] ?? attribute?.[2] ?? attribute?.[3];
-    if (value) references.push(value);
+  // Quoted attribute values are consumed whole, so a `>` or a `src=` inside
+  // one is never read as markup.
+  for (const element of html.matchAll(/<(?:script|link)\b((?:[^>"']|"[^"]*"|'[^']*')*)>/gi)) {
+    for (const attribute of element[1].matchAll(/([^\s"'<>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)) {
+      const name = attribute[1].toLowerCase();
+      const value = (attribute[2] ?? attribute[3] ?? attribute[4] ?? "").trim();
+      if ((name === "src" || name === "href") && value) references.push(value);
+    }
   }
   return references;
 }

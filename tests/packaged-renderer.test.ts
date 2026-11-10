@@ -131,9 +131,31 @@ test("packaged renderer verification accepts an archived renderer and rejects ev
     (await packageRenderer("no-stylesheet", (appRoot) => rm(renderer(appRoot, "assets", "index-abc123.css")))).join("\n"),
     /index\.html loads \/assets\/index-abc123\.css, which is not inside app\.asar/,
   );
-  assert.match(
-    (await packageRenderer("remote-script", (appRoot) => writeFile(renderer(appRoot, "index.html"), page("https://example.com/app.js")))).join("\n"),
-    /index\.html loads https:\/\/example\.com\/app\.js from outside the app/,
+  // Only a path stays inside the internal scheme: a scheme or a host leaves
+  // it, even one that names the app's own host.
+  for (const [name, reference] of [
+    ["remote-script", "https://example.com/app.js"],
+    ["app-host-script", "https://app/assets/index-abc123.js"],
+    ["protocol-relative-script", "//app/assets/index-abc123.js"],
+    ["backslash-host-script", "\\\\app\\assets\\index-abc123.js"],
+    ["file-script", "file:///assets/index-abc123.js"],
+  ]) {
+    assert.deepEqual(
+      await packageRenderer(name, (appRoot) => writeFile(renderer(appRoot, "index.html"), page(reference))),
+      [`index.html loads ${reference} from outside the app.`],
+    );
+  }
+  assert.deepEqual(
+    await packageRenderer("relative-script", (appRoot) => writeFile(renderer(appRoot, "index.html"), page("./assets/index-abc123.js"))),
+    [],
+  );
+  // A reference inside another attribute's value is not the one the page loads.
+  assert.deepEqual(
+    await packageRenderer("hidden-script", (appRoot) => writeFile(
+      renderer(appRoot, "index.html"),
+      '<!doctype html><script type="module" data-note=" src=/assets/index-abc123.js >" src="https://example.com/app.js"></script>',
+    )),
+    ["index.html loads https://example.com/app.js from outside the app."],
   );
   assert.match(
     (await packageRenderer("unpacked", undefined, "**/dist/web-local/assets/*.js")).join("\n"),
