@@ -43,7 +43,8 @@ import {
   type TreeEntry,
   type ConnectedFolderSummary,
 } from "../connected-folder.js";
-import { registerConnectedFolderInternal, runDesktopSettingsAct } from "../server.js";
+import { runDesktopSettingsAct } from "../server.js";
+import { registerConnectedFolderInternal } from "./connected-folder-routes.js";
 import { openStandardFolderFileStream } from "./event-streams.js";
 import { applyConnectedFolderDelete, moveConnectedFolderEntriesWithHistory, normalizeConnectedFolderRelativePath } from "./file-changes.js";
 import { sendConnectedFolderRawFile } from "./file-routes.js";
