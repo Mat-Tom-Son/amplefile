@@ -1061,7 +1061,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   extensionUi.on("event", eventListener);
   extensionUi.on("settled", settledListener);
   const address = server.address() as AddressInfo;
-  openLocalApiStates.push(state);
+  rememberOpenLocalApi(state);
   return {
     origin: `http://${host}:${address.port}`,
     port: address.port,
@@ -1075,8 +1075,7 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
     recentlyDeleted,
     close: async () => {
       state.acceptingTurns = false;
-      const open = openLocalApiStates.indexOf(state);
-      if (open >= 0) openLocalApiStates.splice(open, 1);
+      forgetOpenLocalApi(state);
       // Withdraw the cadence before any await; already-admitted filesystem
       // cleanup remains owned until the close promise settles below.
       clearInterval(retentionTimer);
@@ -1120,6 +1119,19 @@ export async function startLocalApi(options: LocalApiOptions = {}): Promise<Loca
   };
 }
 
+/**
+ * One authorized request as a route group sees it: the API's shared state and
+ * the request being answered. A route group answers the request and returns
+ * true, or returns false when the request is not one of its routes.
+ */
+interface LocalApiRequest {
+  state: LocalApiState;
+  req: IncomingMessage;
+  res: ServerResponse;
+  url: URL;
+  method: string;
+}
+
 async function handleRequest(state: LocalApiState, req: IncomingMessage, res: ServerResponse): Promise<void> {
   setCorsHeaders(state, req, res);
   if (req.method === "OPTIONS") {
@@ -1130,7 +1142,32 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   authorize(state, req);
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const method = req.method ?? "GET";
+  const request: LocalApiRequest = { state, req, res, url, method };
 
+  // Route groups are tried in this order; the first one that owns the request answers it.
+  if (await handleModelContextRoutes(request)) return;
+  if (await handleConnectedFolderRegistryRoutes(request)) return;
+  if (await handleConnectedFolderAutomationRoutes(request)) return;
+  if (await handleConnectedFolderAppearanceRoutes(request)) return;
+  if (await handleSearchRoutes(request)) return;
+  if (await handlePlaceRoutes(request)) return;
+  if (await handleFileRoutes(request)) return;
+  if (await handleHistoryRoutes(request)) return;
+  if (await handleAiModelRoutes(request)) return;
+  if (await handleCapabilityRoutes(request)) return;
+  if (await handleChatRoutes(request)) return;
+  if (await handleAmpleFileAgentRoutes(request)) return;
+  if (await handleRequestRoutes(request)) return;
+  if (await handleEventStreamRoutes(request)) return;
+  if (await handleOverviewRoutes(request)) return;
+  if (await handleSettingsRoutes(request)) return;
+  if (await handleExtensionUiRoutes(request)) return;
+
+  throw notFound("Not found.");
+}
+
+/** Model context inspection: trusted local diagnostics over retained snapshots. */
+async function handleModelContextRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   // Trusted local diagnostics only. These routes read retained snapshots and
   // never create clients/sessions or enter the CLI facade.
   const contextInspectionMatch = match(url.pathname, /^\/api\/model-context(?:\/([^/]+))?$/);
@@ -1151,7 +1188,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       } else {
         sendJson(res, state.modelContextInspector.inspect(filter));
       }
-      return;
+      return true;
     }
     if (id) throw badRequest("Context captures are read-only.");
     const body = await readJsonBody<{ enabled?: unknown; clear?: unknown }>(state, req);
@@ -1160,19 +1197,23 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     else if (body.clear === true) state.modelContextInspector.clear();
     else throw badRequest("Specify enabled as a boolean or clear as true.");
     sendJson(res, state.modelContextInspector.inspect(filter));
-    return;
+    return true;
   }
+  return false;
+}
 
+/** Health, the bootstrap read, and the Connected Folder registry: listing, creating, connecting, renaming, and removing Connected Folders. */
+async function handleConnectedFolderRegistryRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   if (method === "GET" && url.pathname === "/api/health") {
     sendJson(res, { ok: true, app: "amplefile", mode: state.appMode });
-    return;
+    return true;
   }
 
   if (method === "GET" && url.pathname === "/api/bootstrap") {
     const connectedFolders = (await state.kernel.getConnectedFolders({ kind: "renderer" })).connectedFolders;
     const agent = connectedFolders[0] ? await safeAgentStatus(connectedFolders[0].connectedFolderRoot, state.runtimeProvider) : emptyAgentStatus();
     sendJson(res, { connectedFolders, agent, appearance: state.appearance.snapshot() });
-    return;
+    return true;
   }
 
   // Which Connected Folder Workers are mid-turn right now, including turns no Chat tab
@@ -1184,7 +1225,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   if (method === "GET" && url.pathname === "/api/connected-folders/outline") {
     const connectedFolders = (await registeredConnectedFolderOutline()).filter((connectedFolder) => existsSync(connectedFolder.connectedFolderRoot));
     sendJson(res, { connectedFolders });
-    return;
+    return true;
   }
 
   if (method === "GET" && url.pathname === "/api/connected-folders/activity") {
@@ -1192,19 +1233,19 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       .filter((task) => task.connectedFolderId !== ampleFileAgentScopeId)
       .map((task) => ({ connectedFolderId: task.connectedFolderId, conversationId: task.conversationId }));
     sendJson(res, { running });
-    return;
+    return true;
   }
 
   if (method === "GET" && url.pathname === "/api/appearance") {
     sendJson(res, { appearance: state.appearance.snapshot() });
-    return;
+    return true;
   }
 
   if (method === "POST" && url.pathname === "/api/connected-folders") {
     const body = await readJsonBody<{ name?: string }>(state, req);
     const connectedFolder = await createConnectedFolderInternal(state, body.name ?? "Personal Connected Folder");
     sendJson(res, { connectedFolder }, 201);
-    return;
+    return true;
   }
 
   if (method === "POST" && url.pathname === "/api/connected-folders/local-folder") {
@@ -1219,7 +1260,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     }
     const connectedFolder = await registerConnectedFolderInternal(state, body.connectedFolderRoot!, body.providerHint);
     sendJson(res, { connectedFolder }, 201);
-    return;
+    return true;
   }
 
   // "Connect This Folder": a person registers a folder inside
@@ -1235,7 +1276,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const target = await resolveNestableFolderPath(parent.connectedFolderRoot, body.path);
     const connectedFolder = await registerConnectedFolderInternal(state, target);
     sendJson(res, { connectedFolder }, 201);
-    return;
+    return true;
   }
 
   const connectedFolderMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)$/);
@@ -1244,7 +1285,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (!body.name?.trim()) throw badRequest("A Connected Folder name is required.");
     sendJson(res, { connectedFolder: await renameConnectedFolder(connectedFolderMatch[1], body.name) });
     publishControlHint(state, "connected-folders");
-    return;
+    return true;
   }
   if (connectedFolderMatch && method === "DELETE") {
     const connectedFolder = await getConnectedFolder(connectedFolderMatch[1]);
@@ -1261,9 +1302,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       };
     });
     sendJson(res, removal.value);
-    return;
+    return true;
   }
+  return false;
+}
 
+/** The Automations that name one Connected Folder, and their enable, disable, and run acts. */
+async function handleConnectedFolderAutomationRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   // The Connected Folder–owned Automations view (docs/automations.md): a read
   // of the automations that name this Connected Folder, and the same
   // Settings enable/disable/run acts — same facade, same receipts — refused
@@ -1272,7 +1317,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   if (spaceAutomationsMatch && method === "GET") {
     const connectedFolder = await getConnectedFolder(spaceAutomationsMatch[1]);
     sendJson(res, await createAmpleFileAutomationSettingsFacade(state).forConnectedFolder(connectedFolder.id));
-    return;
+    return true;
   }
   const spaceAutomationActMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/automations\/([^/]+)\/(enable|disable|run)$/);
   if (spaceAutomationActMatch && method === "POST") {
@@ -1287,9 +1332,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       : action === "disable"
         ? await facade.disable(automationId)
         : await facade.run(automationId));
-    return;
+    return true;
   }
+  return false;
+}
 
+/** A Connected Folder's look: applying and resetting its appearance. */
+async function handleConnectedFolderAppearanceRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   const connectedFolderAppearanceMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/appearance$/);
   if (connectedFolderAppearanceMatch && method === "PUT") {
     const connectedFolder = await getConnectedFolder(connectedFolderAppearanceMatch[1]);
@@ -1302,14 +1351,18 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       body.customization,
     );
     sendJson(res, { appearance });
-    return;
+    return true;
   }
   if (connectedFolderAppearanceMatch && method === "DELETE") {
     const connectedFolder = await getConnectedFolder(connectedFolderAppearanceMatch[1]);
     sendJson(res, { appearance: await state.appearance.removeConnectedFolder(connectedFolder.id) });
-    return;
+    return true;
   }
+  return false;
+}
 
+/** Search inside one Connected Folder. */
+async function handleSearchRoutes({ req, res, url, method }: LocalApiRequest): Promise<boolean> {
   const searchMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/search$/);
   if (method === "GET" && searchMatch) {
     const connectedFolder = await getConnectedFolder(searchMatch[1]);
@@ -1335,44 +1388,48 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       req.off("aborted", abort);
       res.off("close", abort);
     }
-    return;
+    return true;
   }
+  return false;
+}
 
+/** The file manager's places beyond one Connected Folder: Standard Folders, transfers between places, Compress, Recents, and Go to Folder. */
+async function handlePlaceRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   // Standard Folders (docs/product-model.md, "The file manager window"):
   // Desktop, Documents, and Downloads for the file manager's sidebar. The host
   // resolves each from the home folder; nothing here writes `.amplefile/` data.
   if (method === "GET" && url.pathname === "/api/standard-folders") {
     sendJson(res, { folders: await listStandardFolders(await listConnectedFolders()) });
-    return;
+    return true;
   }
   // Copy, paste, duplicate, and move across the file manager's places.
   if (method === "POST" && url.pathname === "/api/file-transfer") {
     const body = await readJsonBody<{ mode?: unknown; sources?: unknown; target?: unknown }>(state, req);
     sendJson(res, await transferFileEntries(body, state));
-    return;
+    return true;
   }
   // Compress: one item becomes "name.zip" beside it, several become "Archive.zip".
   if (method === "POST" && url.pathname === "/api/file-transfer/compress") {
     const body = await readJsonBody<{ place?: unknown; paths?: unknown }>(state, req);
     sendJson(res, await compressEntries(body), 201);
-    return;
+    return true;
   }
   // Recents: what changed lately across the Connected Folders and the top of Desktop, Documents, and Downloads.
   if (method === "GET" && url.pathname === "/api/recents") {
     sendJson(res, { recents: await recentFiles(await listConnectedFolders()) });
-    return;
+    return true;
   }
   // Go to Folder (⇧⌘G): a typed path opens the Connected Folder or Standard Folder holding it, with completions.
   if (method === "GET" && url.pathname === "/api/go-to-folder") {
     sendJson(res, await goToFolder(url.searchParams.get("path") ?? "", await listConnectedFolders()));
-    return;
+    return true;
   }
   // Remove from Sidebar: a folder the person added with + leaves the list; the folder stays as it is.
   const sidebarFolderMatch = match(url.pathname, /^\/api\/standard-folders\/(added-[0-9a-f]{16})$/);
   if (method === "DELETE" && sidebarFolderMatch) {
     removeSidebarFolder(sidebarFolderMatch[1]);
     sendJson(res, { removed: true });
-    return;
+    return true;
   }
   const standardFolderMatch = match(url.pathname, /^\/api\/standard-folders\/([^/]+)\/(tree|file-info|raw-file|events|rename-local-entry|folders|connected-folders)$/);
   if (standardFolderMatch) {
@@ -1382,34 +1439,34 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const path = url.searchParams.get("path") ?? "";
     if (method === "GET" && route === "tree") {
       sendJson(res, await scanStandardFolder(standardFolderId, path));
-      return;
+      return true;
     }
     if (method === "GET" && route === "file-info") {
       if (!path) throw badRequest("A path inside the folder is required.");
       sendJson(res, await standardFolderEntryInfo(standardFolderId, path));
-      return;
+      return true;
     }
     if (method === "GET" && route === "raw-file") {
       if (!path) throw badRequest("File path is required.");
       await sendConnectedFolderRawFile(res, standardFolderRoot(standardFolderId), path);
-      return;
+      return true;
     }
     if (method === "GET" && route === "events") {
       await openStandardFolderFileStream(state, createLocalEventSink(res), standardFolderId, path);
-      return;
+      return true;
     }
     if (method === "POST" && route === "rename-local-entry") {
       const body = await readJsonBody<{ path?: unknown; newName?: unknown }>(state, req);
       if (typeof body.path !== "string" || typeof body.newName !== "string") throw badRequest("An item and a new name are required.");
       sendJson(res, await renameStandardFolderEntry(standardFolderId, body.path, body.newName));
-      return;
+      return true;
     }
     if (method === "POST" && route === "folders") {
       const body = await readJsonBody<{ parentPath?: unknown; name?: unknown }>(state, req);
       if (typeof body.name !== "string") throw badRequest("Enter a name.");
       if (body.parentPath !== undefined && typeof body.parentPath !== "string") throw badRequest("Choose where the folder goes.");
       sendJson(res, await createStandardFolderFolder(standardFolderId, body.parentPath ?? "", body.name), 201);
-      return;
+      return true;
     }
     // "Connect This Folder": the click is the registration act, as choosing
     // a folder in the picker is; the host resolved the standard folder itself.
@@ -1419,10 +1476,14 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       const target = await standardFolderRegistrationTarget(standardFolderId, body.path ?? "");
       const connectedFolder = await registerConnectedFolderInternal(state, target);
       sendJson(res, { connectedFolder }, 201);
-      return;
+      return true;
     }
   }
+  return false;
+}
 
+/** One Connected Folder's files: suggestions, the tree, reading and saving, generated pictures, moves, renames, new folders, added files, deletes, ignore rules, file events, and uploads. */
+async function handleFileRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   // Suggested messages written from the folder: one bounded model call on the
   // Connected Folder's model over its names and recent Chat titles, kept until the folder or its Chats change.
   const suggestionsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/suggestions$/);
@@ -1441,7 +1502,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       req.off("aborted", abort);
       res.off("close", abort);
     }
-    return;
+    return true;
   }
 
   const treeMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/tree$/);
@@ -1456,7 +1517,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       { includeIgnored: url.searchParams.get("includeIgnored") !== "0", nestedFolderPaths: await nestedRegisteredConnectedFolderPaths(connectedFolder.connectedFolderRoot) },
     );
     sendJson(res, { tree: scan.entries, truncated: scan.truncated });
-    return;
+    return true;
   }
 
   const fileMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/file$/);
@@ -1465,7 +1526,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const path = url.searchParams.get("path") ?? "";
     if (!path) throw badRequest("File path is required.");
     sendJson(res, await readConnectedFolderTextFile(connectedFolder.connectedFolderRoot, path));
-    return;
+    return true;
   }
   if (method === "PUT" && fileMatch) {
     const connectedFolder = await getConnectedFolder(fileMatch[1]);
@@ -1484,7 +1545,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     });
     const file = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => writeConnectedFolderTextFile(connectedFolder.connectedFolderRoot, body.path!, body.text!, expectedHashSha256 === undefined ? {} : { expectedHashSha256 }));
     sendJson(res, { file, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles });
-    return;
+    return true;
   }
 
   const fileInfoMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/file-info$/);
@@ -1494,7 +1555,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (!path) throw badRequest("Connected Folder item path is required.");
     const hash = await fileInfoHashWanted(connectedFolder.connectedFolderRoot, path, url.searchParams.get("hash"));
     sendJson(res, await getConnectedFolderEntryInfo(connectedFolder.connectedFolderRoot, path, { hash }));
-    return;
+    return true;
   }
 
   const filePreviewMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/file-preview$/);
@@ -1503,7 +1564,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const path = url.searchParams.get("path") ?? "";
     if (!path) throw badRequest("Connected Folder item path is required.");
     sendJson(res, { preview: await getConnectedFolderFilePreview(connectedFolder.connectedFolderRoot, path) });
-    return;
+    return true;
   }
 
   const pathsExistMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/paths-exist$/);
@@ -1514,7 +1575,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       throw badRequest("Connected Folder paths must be an array of strings.");
     }
     sendJson(res, { existing: await findExistingConnectedFolderFilePaths(connectedFolder.connectedFolderRoot, body.paths) });
-    return;
+    return true;
   }
 
   // Pictures generate_image made: their bytes for a Chat to show,
@@ -1530,7 +1591,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       "cache-control": "private, max-age=31536000, immutable",
     });
     res.end(found.bytes);
-    return;
+    return true;
   }
   const connectedFolderImageMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/generated-images\/([^/]+)(\/add)?$/);
   if (connectedFolderImageMatch && (method === "GET" || (method === "POST" && connectedFolderImageMatch[3]))) {
@@ -1542,10 +1603,10 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const stillThere = addedPath ? await state.generatedImages.matches(record, resolveConnectedFolderPath(connectedFolder.connectedFolderRoot, addedPath)).catch(() => false) : false;
     if (method === "GET") {
       sendJson(res, { name: record.name, mimeType: record.mimeType, ...(stillThere ? { addedPath } : {}) });
-      return;
+      return true;
     }
     // Add to folder: the same additive write and restore point as an upload.
-    if (stillThere) { sendJson(res, { path: addedPath, added: false }); return; }
+    if (stillThere) { sendJson(res, { path: addedPath, added: false }); return true; }
     const found = await state.generatedImages.read(imageId);
     if (!found) throw notFound("This picture is not on this computer.");
     const [written] = await writeUploadedFiles(connectedFolder.connectedFolderRoot, "", [{ fileName: record.name, data: found.bytes }]);
@@ -1555,7 +1616,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     });
     await state.generatedImages.noteAdded(imageId, connectedFolder.id, written!.path);
     sendJson(res, { path: written!.path, added: true }, 201);
-    return;
+    return true;
   }
 
   const rawFileMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/raw-file$/);
@@ -1564,7 +1625,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const path = url.searchParams.get("path") ?? "";
     if (!path) throw badRequest("File path is required.");
     await sendConnectedFolderRawFile(res, connectedFolder.connectedFolderRoot, path);
-    return;
+    return true;
   }
 
   const moveMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/move-local-entry$/);
@@ -1585,7 +1646,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       targetFolderPath: body.targetFolderPath ?? "",
     }));
     sendJson(res, { moved, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles });
-    return;
+    return true;
   }
 
   // Several Files rows into one folder under one restore point.
@@ -1597,7 +1658,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (body.targetFolderPath !== undefined && typeof body.targetFolderPath !== "string") throw badRequest("Choose a folder to move them into.");
     const result = await moveConnectedFolderEntriesWithHistory(connectedFolder, sourcePaths, body.targetFolderPath ?? "");
     sendJson(res, result);
-    return;
+    return true;
   }
 
   const renameMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/rename-local-entry$/);
@@ -1615,7 +1676,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     });
     const renamed = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => renameConnectedFolderEntry(connectedFolder.connectedFolderRoot, { path: body.path!, newName: body.newName! }));
     sendJson(res, { renamed, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles });
-    return;
+    return true;
   }
 
   const foldersMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/folders$/);
@@ -1631,7 +1692,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     });
     const folder = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => createConnectedFolderFolder(connectedFolder.connectedFolderRoot, body.parentPath ?? "", body.name!));
     sendJson(res, { folder, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles }, 201);
-    return;
+    return true;
   }
 
   const filesMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/files$/);
@@ -1647,7 +1708,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     });
     const file = await runWithHistorySafety(connectedFolder.connectedFolderRoot, safety.checkpointId, () => createConnectedFolderTextFile(connectedFolder.connectedFolderRoot, body.parentPath ?? "", body.name!, body.text ?? ""));
     sendJson(res, { file, safetyCheckpointId: safety.checkpointId, historySkippedPaths: safety.skippedLargeFiles }, 201);
-    return;
+    return true;
   }
 
   const deleteMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/local-file$/);
@@ -1675,7 +1736,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
         ? { recentlyDeleted: { entryId: recovery.entryId, restoreBy: recovery.restoreBy, uncoveredCount: recovery.uncovered.length } }
         : {}),
     });
-    return;
+    return true;
   }
 
   // Several Files rows under one restore point: each row still
@@ -1697,14 +1758,14 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       historySkippedPaths: result.deleted.flatMap((row) => row.recovery.kind === "recently-deleted" ? row.recovery.uncovered.map((file) => file.path) : []),
       ...(result.failed ? { failed: result.failed, notDeleted: result.notDeleted } : {}),
     });
-    return;
+    return true;
   }
 
   const ignoreMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/ignore-paths$/);
   if (method === "GET" && ignoreMatch) {
     const connectedFolder = await getConnectedFolder(ignoreMatch[1]);
     sendJson(res, await readConnectedFolderIgnoreState(connectedFolder.connectedFolderRoot));
-    return;
+    return true;
   }
   if (method === "POST" && ignoreMatch) {
     const connectedFolder = await getConnectedFolder(ignoreMatch[1]);
@@ -1713,14 +1774,14 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       throw badRequest("Connected Folder paths and an ignore decision are required.");
     }
     sendJson(res, await setConnectedFolderIgnoreState(connectedFolder.connectedFolderRoot, body.paths, body.ignored));
-    return;
+    return true;
   }
 
   const fileEventsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/file-events$/);
   if (method === "GET" && fileEventsMatch) {
     const connectedFolder = await getConnectedFolder(fileEventsMatch[1]);
     await openConnectedFolderFileStream(state, createLocalEventSink(res), connectedFolder.connectedFolderRoot, fileEventsMatch[1]);
-    return;
+    return true;
   }
 
   const uploadMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/upload-local-files$/);
@@ -1738,14 +1799,18 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       label: `Before uploading ${uploaded.length} file${uploaded.length === 1 ? "" : "s"}`,
     });
     sendJson(res, { uploaded, safetyCheckpointId: safety?.checkpointId ?? null, historySkippedPaths: safety?.skippedLargeFiles ?? [] }, 201);
-    return;
+    return true;
   }
+  return false;
+}
 
+/** History: restore points, previews, reading and comparing versions, and restoring files. */
+async function handleHistoryRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   const checkpointCollectionMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/checkpoints$/);
   if (checkpointCollectionMatch && method === "GET") {
     const connectedFolder = await getConnectedFolder(checkpointCollectionMatch[1]);
     sendJson(res, await listConnectedFolderCheckpointPage(connectedFolder.connectedFolderRoot, { cursor: url.searchParams.get("cursor") ?? undefined, limit: optionalBoundedInteger(url.searchParams.get("limit"), "limit") }));
-    return;
+    return true;
   }
   if (checkpointCollectionMatch && method === "POST") {
     const connectedFolder = await getConnectedFolder(checkpointCollectionMatch[1]);
@@ -1754,20 +1819,20 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const checkpoint = await createConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, { label: body.label, reason: "manual" });
     const created = !existingIds.has(checkpoint.checkpointId);
     sendJson(res, { checkpoint, created }, created ? 201 : 200);
-    return;
+    return true;
   }
   const checkpointRestoreMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/checkpoints\/([^/]+)\/restore$/);
   if (method === "POST" && checkpointRestoreMatch) {
     const connectedFolder = await getConnectedFolder(checkpointRestoreMatch[1]);
     sendJson(res, await runHistoryRestore(state, connectedFolder, () => restoreConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, checkpointRestoreMatch[2])));
-    return;
+    return true;
   }
 
   const checkpointPreviewMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/checkpoints\/([^/]+)\/preview$/);
   if (method === "GET" && checkpointPreviewMatch) {
     const connectedFolder = await getConnectedFolder(checkpointPreviewMatch[1]);
     sendJson(res, { preview: await previewConnectedFolderCheckpointRestore(connectedFolder.connectedFolderRoot, checkpointPreviewMatch[2]) });
-    return;
+    return true;
   }
 
   const historyReviewMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/(read|diff)$/);
@@ -1799,7 +1864,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
         path, fromCheckpointId, ...(toCheckpointId ? { toCheckpointId } : {}),
       }) });
     }
-    return;
+    return true;
   }
 
   const fileVersionsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/history\/file-versions$/);
@@ -1808,22 +1873,26 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const path = url.searchParams.get("path")?.trim();
     if (!path) throw badRequest("A Connected Folder–relative file path is required.");
     sendJson(res, { path, ...await listFileVersionPage(connectedFolder.connectedFolderRoot, path, { cursor: url.searchParams.get("cursor") ?? undefined, limit: optionalBoundedInteger(url.searchParams.get("limit"), "limit") }) });
-    return;
+    return true;
   }
   if (method === "POST" && fileVersionsMatch) {
     const connectedFolder = await getConnectedFolder(fileVersionsMatch[1]);
     const body = await readJsonBody<{ path?: string; hashSha256?: string }>(state, req);
     if (!body.path?.trim() || !body.hashSha256?.trim()) throw badRequest("A file path and version hash are required.");
     sendJson(res, { result: await runHistoryRestore(state, connectedFolder, () => restoreFileVersion(connectedFolder.connectedFolderRoot, body.path!, body.hashSha256!)) });
-    return;
+    return true;
   }
+  return false;
+}
 
+/** Settings → AI Models and a Worker's own settings: the image model, model lists, provider setup and sign-in, Worker instructions, and thinking level. */
+async function handleAiModelRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   // Settings → AI Models → Image model: one choice for every Worker
   // and the AmpleFile Agent; null is Automatic. Credentials are machine-wide, so
   // the AmpleFile Agent's runtime lists what every scope can use.
   if (method === "GET" && url.pathname === "/api/agent/image-models") {
     sendJson(res, await imageModelSettings(state));
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/image-model") {
     const body = await readJsonBody<{ model?: unknown }>(state, req);
@@ -1839,7 +1908,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       await state.imageModelPreference.set(model);
     }
     sendJson(res, await imageModelSettings(state));
-    return;
+    return true;
   }
   if (method === "GET" && url.pathname === "/api/agent/provider-account") {
     const provider = url.searchParams.get("provider");
@@ -1849,7 +1918,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const account = await readOpenAiAccount(runtime, provider);
     res.setHeader("Cache-Control", "no-store");
     sendJson(res, { account });
-    return;
+    return true;
   }
   if (method === "GET" && url.pathname === "/api/agent/models") {
     const connectedFolderId = url.searchParams.get("connectedFolderId");
@@ -1871,7 +1940,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       // The Image model section rides this load, so opening Settings costs no extra request.
       ...(await imageModelSettings(state).then((imageModels) => ({ imageModels }), () => ({}))),
     });
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/models/refresh") {
     const body = await readJsonBody<{ connectedFolderId?: string; scope?: string; provider?: string }>(state, req);
@@ -1884,19 +1953,19 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       status: normalizeStatus(await getPiSetupStatus(scope.connectedFolderRoot, state.runtimeProvider)),
       catalogs: await listPiModelCatalogs(state.runtimeProvider),
     });
-    return;
+    return true;
   }
   if (method === "GET" && url.pathname === "/api/agent/status") {
     const connectedFolderId = url.searchParams.get("connectedFolderId");
     const scope = await modelScope(url.searchParams.get("scope"), connectedFolderId);
     sendJson(res, { status: await safeAgentStatus(scope.connectedFolderRoot, state.runtimeProvider) });
-    return;
+    return true;
   }
   if (method === "GET" && url.pathname === "/api/agent/composer") {
     const connectedFolderId = url.searchParams.get("connectedFolderId");
     const scope = await modelScope(url.searchParams.get("scope"), connectedFolderId);
     sendJson(res, { composer: await getPiComposerState(scope.connectedFolderRoot, state.runtimeProvider) });
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/instructions") {
     const body = await readJsonBody<{ connectedFolderId?: string; scope?: string; instructions?: unknown }>(state, req);
@@ -1911,7 +1980,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     }
     await saveWorkerInstructions(state, scope, instructions);
     sendJson(res, { instructions });
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/thinking") {
     const body = await readJsonBody<{ connectedFolderId?: string; scope?: string; level?: unknown }>(state, req);
@@ -1922,7 +1991,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     } catch (error) {
       throw badRequest(errorMessage(error));
     }
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/configure") {
     const body = await readJsonBody<{ connectedFolderId?: string; scope?: string; provider?: string; model?: string; apiKey?: string; azure?: unknown; foundry?: unknown }>(state, req);
@@ -1969,7 +2038,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       })),
       ...(azure ? await getFoundrySettings(scope.connectedFolderRoot, state.runtimeProvider) : {}),
     });
-    return;
+    return true;
   }
   if (method === "DELETE" && url.pathname === "/api/agent/auth") {
     const body = await readJsonBody<{ connectedFolderId?: string; scope?: string; provider?: string }>(state, req);
@@ -1985,15 +2054,15 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       providers: providerSetupResponse(status, Boolean(state.piOAuthHooks)),
       ...(foundryProvider(body.provider) ? await getFoundrySettings(scope.connectedFolderRoot, state.runtimeProvider) : {}),
     });
-    return;
+    return true;
   }
   if (method === "GET" && url.pathname === "/api/agent/oauth/pending") {
     sendJson(res, { acceptsPaste: state.providerSignIns.acceptsPaste });
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/oauth/cancel") {
     sendJson(res, { cancelled: state.providerSignIns.cancel() });
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/oauth/paste") {
     const body = await readJsonBody<{ value?: string }>(state, req);
@@ -2002,7 +2071,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (value.length > 8192) throw badRequest("That link is too long to be a sign-in link.");
     if (!state.providerSignIns.paste(value)) throw httpError(409, "This sign-in finishes in your browser, so there is no link to paste.");
     sendJson(res, { accepted: true });
-    return;
+    return true;
   }
   if (method === "POST" && ["/api/agent/oauth", "/api/agent/login"].includes(url.pathname)) {
     if (!state.piOAuthHooks) throw unavailable("Guided provider setup requires the AmpleFile desktop app.");
@@ -2033,8 +2102,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       status: normalizeStatus(status), providers: providerSetupResponse(status, true),
       models: await listPiModels(scope.connectedFolderRoot, state.runtimeProvider),
     });
-    return;
+    return true;
   }
+  return false;
+}
+
+/** Skills & Extensions: discovery, installs, the included tools and their setup, enabling resources, packages, Skills, and a Connected Folder's catalog. */
+async function handleCapabilityRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   if (method === "GET" && url.pathname === "/api/agent/capabilities/discover") {
     const result = await state.capabilityRegistry.search({
       query: url.searchParams.get("query") ?? undefined,
@@ -2044,13 +2118,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       limit: optionalBoundedInteger(url.searchParams.get("limit"), "limit"),
     });
     sendJson(res, { ...result, catalogUrl: "https://pi.dev/packages" });
-    return;
+    return true;
   }
   if (method === "GET" && url.pathname === "/api/agent/capabilities/details") {
     const id = url.searchParams.get("id")?.trim();
     if (!id) throw badRequest("Capability id is required.");
     sendJson(res, { item: await state.capabilityRegistry.details(id) });
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/capabilities/install") {
     const body = await readJsonBody<{ connectedFolderId?: string; id?: string; scope?: "global" | "project" }>(state, req);
@@ -2081,7 +2155,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       return { kind: "package" as const, item, source: installSource! };
     });
     sendJson(res, { installed }, 201);
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/mcp-setup") {
     const body = await readJsonBody<{ connectedFolderId?: string; sessionId?: string; operation?: string; scope?: "global" | "project"; name?: string; definition?: unknown; token?: string; jobId?: string; expectedRevision?: string; enabled?: unknown }>(state, req);
@@ -2090,8 +2164,8 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (!sessions) { sessions = new Map(); mcpSetupSessions.set(state, sessions); }
     if (body.operation === "close") {
       const entry = body.sessionId ? sessions.get(body.sessionId) : undefined;
-      if (!entry || entry.connectedFolderId !== body.connectedFolderId) { sendJson(res, { closed: true }); return; }
-      clearTimeout(entry.timer); sessions.delete(body.sessionId!); await entry.service.dispose(); sendJson(res, { closed: true }); return;
+      if (!entry || entry.connectedFolderId !== body.connectedFolderId) { sendJson(res, { closed: true }); return true; }
+      clearTimeout(entry.timer); sessions.delete(body.sessionId!); await entry.service.dispose(); sendJson(res, { closed: true }); return true;
     }
     const connectedFolder = await getConnectedFolder(body.connectedFolderId);
     if (body.operation === "open") {
@@ -2130,14 +2204,14 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       sessions.set(id, entry); resetMcpSetupExpiry(state, id, entry);
       try { sendJson(res, { sessionId: id, servers: await service.list() }); }
       catch (error) { clearTimeout(entry.timer); sessions.delete(id); await service.dispose().catch(() => undefined); throw error; }
-      return;
+      return true;
     }
     const entry = body.sessionId ? sessions.get(body.sessionId) : undefined;
     if (!entry || entry.connectedFolderId !== connectedFolder.id) throw badRequest("This connection setup has closed. Open it again.");
     resetMcpSetupExpiry(state, body.sessionId!, entry);
-    if (body.operation === "list") { sendJson(res, { servers: await entry.service.list({ inspectCredentials: true }) }); return; }
-    if (body.operation === "oauth-status") { sendJson(res, { job: entry.service.oauthStatus(body.jobId ?? "") }); return; }
-    if (body.operation === "oauth-cancel") { await entry.service.cancelOAuth(body.jobId ?? ""); sendJson(res, { cancelled: true }); return; }
+    if (body.operation === "list") { sendJson(res, { servers: await entry.service.list({ inspectCredentials: true }) }); return true; }
+    if (body.operation === "oauth-status") { sendJson(res, { job: entry.service.oauthStatus(body.jobId ?? "") }); return true; }
+    if (body.operation === "oauth-cancel") { await entry.service.cancelOAuth(body.jobId ?? ""); sendJson(res, { cancelled: true }); return true; }
     if (!body.name || !["global", "project"].includes(body.scope ?? "")) throw badRequest("Choose a service and scope.");
     if (["check", "remove", "enabled", "bearer", "disconnect", "oauth"].includes(body.operation) && !body.expectedRevision) throw badRequest("Refresh service setup before changing this connection.");
     if (body.expectedRevision !== undefined && (typeof body.expectedRevision !== "string" || !/^[a-f0-9]{64}$/.test(body.expectedRevision))) throw badRequest("Invalid service configuration revision.");
@@ -2149,7 +2223,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
         res.once("close", close);
         try { sendJson(res, { probe: await entry.service.probe(selection, { signal: controller.signal }) }); }
         finally { res.off("close", close); }
-        return;
+        return true;
       }
       case "save": await entry.service.saveServer({ ...selection, definition: body.definition as never }); break;
       case "enabled": {
@@ -2159,16 +2233,16 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       case "remove": await entry.service.removeServer(selection); break;
       case "bearer": await entry.service.saveBearer({ ...selection, token: body.token! }); break;
       case "disconnect": await entry.service.disconnect(selection); break;
-      case "oauth": sendJson(res, { job: await entry.service.startOAuth(selection) }); return;
+      case "oauth": sendJson(res, { job: await entry.service.startOAuth(selection) }); return true;
       default: throw badRequest("Unknown service setup operation.");
     }
-    sendJson(res, { servers: await entry.service.list({ inspectCredentials: true }) }); return;
+    sendJson(res, { servers: await entry.service.list({ inspectCredentials: true }) }); return true;
   }
   if (method === "GET" && url.pathname === "/api/agent/included-tools") {
     // The included tools are machine-wide; first run sets them up before any Connected Folder exists.
     const connectedFolder = await includedToolScope(url.searchParams.get("connectedFolderId"));
     sendJson(res, { tools: await listIncludedToolStatus(connectedFolder.connectedFolderRoot, state.runtimeProvider) });
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/included-tools/setup") {
     const body = await readJsonBody<{ connectedFolderId?: string; id?: IncludedToolId; action?: IncludedSetupAction; secret?: string }>(state, req);
@@ -2185,7 +2259,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       const result = body.action === "check" || body.id === "computer" && body.action === "start-check" ? await operation() : await runCapabilityMutation(state, connectedFolder, "global", operation);
       sendJson(res, result);
     } finally { res.off("close", closed); }
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/resources/enabled") {
     const body = await readJsonBody<{ connectedFolderId?: string; path?: string; kind?: NativeResourceKind; enabled?: boolean; scope?: "global" | "project" }>(state, req);
@@ -2203,7 +2277,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       return { value, detail: `Turned ${body.enabled ? "on" : "off"} ${body.kind} resource ${body.path}.` };
     });
     sendJson(res, { ...result.value, requestId: result.requestId });
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/packages/install") {
     const body = await readJsonBody<{ connectedFolderId?: string; source?: string; scope?: "global" | "project" }>(state, req);
@@ -2217,7 +2291,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       });
     });
     sendJson(res, { installed: true }, 201);
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/packages/update") {
     const body = await readJsonBody<{ connectedFolderId?: string; source?: string; scope?: "global" | "project" }>(state, req);
@@ -2233,7 +2307,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       });
     });
     sendJson(res, { updated: true });
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/packages/remove") {
     const body = await readJsonBody<{ connectedFolderId?: string; source?: string; scope?: "global" | "project" }>(state, req);
@@ -2248,7 +2322,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
         runtimeProvider: state.runtimeProvider,
       }));
     sendJson(res, { removed });
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/skills/remove") {
     const body = await readJsonBody<{ connectedFolderId?: string; path?: string; scope?: "global" | "project" }>(state, req);
@@ -2260,7 +2334,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       return { value, detail: `${scope === "project" ? `Connected Folder ${connectedFolder.id}` : "everywhere"}; skill ${value.skillName}; trash ${value.recentlyDeleted.entryId}` };
     });
     sendJson(res, { removed: true, path: removed.value.removedPath, recentlyDeleted: removed.value.recentlyDeleted });
-    return;
+    return true;
   }
   if (method === "POST" && url.pathname === "/api/agent/skills/import") {
     const multipart = await readMultipartBody(state, req);
@@ -2281,20 +2355,25 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       },
     );
     sendJson(res, { imported }, 201);
-    return;
+    return true;
   }
 
   const catalogMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/agent\/catalog$/);
   if (method === "GET" && catalogMatch) {
     const snapshot = await state.kernel.getCapabilities({ kind: "renderer", connectedFolderId: catalogMatch[1] });
     sendJson(res, snapshot.catalog);
-    return;
+    return true;
   }
+  return false;
+}
+
+/** A Connected Folder's Chats: listing, creating, changing, and deleting them, their runtime, context attachments, event stream, queue, messages, Stop, Make a Copy, and compaction. */
+async function handleChatRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   const conversationsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations$/);
   if (conversationsMatch && method === "GET") {
     const connectedFolder = await getConnectedFolder(conversationsMatch[1]);
     sendJson(res, { conversations: await listConversations(connectedFolder.connectedFolderRoot) });
-    return;
+    return true;
   }
   if (conversationsMatch && method === "POST") {
     const connectedFolder = await getConnectedFolder(conversationsMatch[1]);
@@ -2307,7 +2386,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       : await runConversationMutation(state, connectedFolder.id, conversationId, () =>
         createConversation(connectedFolder.connectedFolderRoot, undefined, conversationId));
     sendJson(res, { conversation }, 201);
-    return;
+    return true;
   }
 
   const conversationMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)$/);
@@ -2340,7 +2419,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       return updated;
     });
     sendJson(res, { conversation });
-    return;
+    return true;
   }
   if (conversationMatch && method === "DELETE") {
     const connectedFolder = await getConnectedFolder(conversationMatch[1]);
@@ -2349,7 +2428,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       return { value, detail: `Connected Folder ${connectedFolder.id}; conversation ${value.conversationId}; trash ${value.recentlyDeleted.entryId}` };
     });
     sendJson(res, { deleted: deleted.value });
-    return;
+    return true;
   }
 
   const conversationRuntimeMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/runtime$/);
@@ -2359,7 +2438,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (!(await readConversation(connectedFolder.connectedFolderRoot, conversationId)).length) throw notFound("Conversation not found.");
     const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, conversationId);
     sendJson(res, { runtime: await client.getState() });
-    return;
+    return true;
   }
 
   const conversationThinkingMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/thinking$/);
@@ -2379,7 +2458,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       throw badRequest(errorMessage(error));
     }
     sendJson(res, { thinking: result, runtime: await client.getState() });
-    return;
+    return true;
   }
 
   const contextAttachmentMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/context-attachments$/);
@@ -2388,7 +2467,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const body = await readJsonBody<{ path?: string }>(state, req);
     if (!body.path?.trim()) throw badRequest("A file path is required.");
     sendJson(res, { attachment: await previewConversationContextReference(connectedFolder.connectedFolderRoot, { path: body.path }) }, 201);
-    return;
+    return true;
   }
 
   const eventsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/events$/);
@@ -2396,7 +2475,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const connectedFolder = await getConnectedFolder(eventsMatch[1]);
     rememberConnectedFolderRoot(state, connectedFolder.id, connectedFolder.connectedFolderRoot);
     openChatStream(state, createLocalEventSink(res), eventsMatch[1], eventsMatch[2], req.headers["last-event-id"]);
-    return;
+    return true;
   }
   const queueMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/queue$/);
   if (queueMatch && (method === "PUT" || method === "DELETE")) {
@@ -2404,7 +2483,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (!(await readConversationSummary(connectedFolder.connectedFolderRoot, queueMatch[2]))) throw notFound("Conversation not found.");
     if (method === "DELETE") {
       sendJson(res, cancelQueuedMessage(state, connectedFolder.id, queueMatch[2]));
-      return;
+      return true;
     }
     const body = await readJsonBody<{ content?: string; contextPaths?: string[]; addressedConnectedFolderIds?: unknown }>(state, req);
     const content = body.content?.trim();
@@ -2413,7 +2492,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     // Workers the message addresses with @ travel with it, as on the ordinary message route.
     const addressedConnectedFolderIds = await normalizeAddressedConnectedFolderIds(body.addressedConnectedFolderIds, connectedFolder.id);
     sendJson(res, queueChatMessage(state, connectedFolder.id, queueMatch[2], { content, contextPaths, addressedConnectedFolderIds }));
-    return;
+    return true;
   }
   const messagesPostMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/messages$/);
   if (method === "POST" && messagesPostMatch) {
@@ -2439,7 +2518,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
         userMessageId: optionalTurnIdentity(body.userMessageId, "userMessageId"),
       });
       sendJson(res, { accepted: true, delivery: "steer", message: steered.message, taskId: steered.taskId, replayed: steered.replayed }, 202);
-      return;
+      return true;
     }
     const contextPaths = normalizeContextPaths(connectedFolder.connectedFolderRoot, body.contextPaths);
     const addressedConnectedFolderIds = await normalizeAddressedConnectedFolderIds(body.addressedConnectedFolderIds, connectedFolder.id);
@@ -2452,7 +2531,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       userMessageId: optionalTurnIdentity(body.userMessageId, "userMessageId"),
     });
     sendJson(res, { accepted: true, message, taskId, replayed }, 202);
-    return;
+    return true;
   }
   const abortMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/abort$/);
   if (method === "POST" && abortMatch) {
@@ -2464,7 +2543,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       const stopped = await stopAmpleFileAgentRequest(state, request.turns.at(-1)!.taskId);
       sendJson(res, { aborted: stopped.ampleFileAgentAborted || stopped.children.some((child) => child.aborted), stopped });
     } else sendJson(res, { aborted: client ? await client.abort() : false });
-    return;
+    return true;
   }
 
   // Make a Copy: a new Chat with this one's history as of its
@@ -2476,7 +2555,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const copied = await copyConversation(state, connectedFolder, copyMatch[2], typeof body.title === "string" ? body.title : undefined);
     publishControlHint(state, "connected-folders");
     sendJson(res, { conversation: copied.conversation, copiedMessages: copied.copiedMessages });
-    return;
+    return true;
   }
 
   const compactMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/compact$/);
@@ -2507,21 +2586,26 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       queueConversationRequestEvaluation(state, connectedFolder.id, compactMatch[2]);
     }
     sendJson(res, { compacted: true });
-    return;
+    return true;
   }
   const messagesGetMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)$/);
   if (method === "GET" && messagesGetMatch) {
     const connectedFolder = await getConnectedFolder(messagesGetMatch[1]);
     sendJson(res, { messages: await readConversation(connectedFolder.connectedFolderRoot, messagesGetMatch[2]) });
-    return;
+    return true;
   }
+  return false;
+}
+
+/** The AmpleFile Agent's conversation surface: the same acceptance path, task records, and event stream as Connected Folder Chats, under the AmpleFile Agent scope id. */
+async function handleAmpleFileAgentRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   // Management conversation surface: the same acceptance path, task records,
   // and event stream as Connected Folder Chats, exposed for renderer clients (the
   // menu-bar popover) under the AmpleFile Agent scope id instead of a Connected Folder id.
   if (url.pathname === "/api/amplefile-agent/summary" && method === "GET") {
     if (state.ampleFileAgentInstructionsError) {
       sendJson(res, { available: false, reason: state.ampleFileAgentInstructionsError, conversation: null, state: "idle", latestRequest: null });
-      return;
+      return true;
     }
     const selectedId = url.searchParams.get("conversationId");
     const conversation = selectedId
@@ -2537,7 +2621,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       state: conversation ? conversationRuntimeState(state, ampleFileAgentScopeId, conversation.id) : "idle",
       latestRequest: latest ? await ampleFileAgentRequestView(state, latest.turns.at(-1)!.taskId) : null,
     });
-    return;
+    return true;
   }
   if (url.pathname === "/api/amplefile-agent/conversations" && method === "GET") {
     assertAmpleFileAgentReadyForRoutes(state);
@@ -2546,7 +2630,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       ...toActConversationRef(conversation),
       ...await ampleFileAgentConversationAttention(state, conversation.id),
     }))) });
-    return;
+    return true;
   }
   if (url.pathname === "/api/amplefile-agent/messages" && method === "POST") {
     assertAmpleFileAgentReadyForRoutes(state);
@@ -2576,7 +2660,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
         userMessageId: optionalTurnIdentity(body.userMessageId, "userMessageId"),
       });
       sendJson(res, { accepted: true, delivery: "steer", conversationId: steerConversationId, message: steered.message, taskId: steered.taskId, replayed: steered.replayed }, 202);
-      return;
+      return true;
     }
     const addressedConnectedFolderIds = await normalizeAddressedConnectedFolderIds(body.addressedConnectedFolderIds, ampleFileAgentScopeId);
     const rawAttachments = Array.isArray(body.attachments) ? body.attachments : [];
@@ -2641,7 +2725,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       userMessageId,
     });
     sendJson(res, { accepted: true, conversationId, message, taskId, attachments }, 202);
-    return;
+    return true;
   }
   const ampleFileAgentRequestMatch = match(url.pathname, /^\/api\/amplefile-agent\/requests\/([^/]+)$/);
   if (ampleFileAgentRequestMatch && method === "GET") {
@@ -2649,7 +2733,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const request = await ampleFileAgentRequestView(state, ampleFileAgentRequestMatch[1]);
     if (!request) throw notFound(`Request not found. Requests are kept for ${state.requests.retentionDays()} days.`);
     sendJson(res, { request });
-    return;
+    return true;
   }
   const ampleFileAgentStopMatch = match(url.pathname, /^\/api\/amplefile-agent\/requests\/([^/]+)\/stop$/);
   if (ampleFileAgentStopMatch && method === "POST") {
@@ -2661,13 +2745,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       if (error instanceof AmpleFileCliError && error.code === "notFound") throw notFound(error.message);
       throw error;
     }
-    return;
+    return true;
   }
   const ampleFileAgentConversationMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)$/);
   if (ampleFileAgentConversationMatch && method === "GET") {
     assertAmpleFileAgentReadyForRoutes(state);
     sendJson(res, { messages: await readConversation(ampleFileAgentRoot(), ampleFileAgentConversationMatch[1]) });
-    return;
+    return true;
   }
   const ampleFileAgentConversationTitleMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)\/title$/);
   if (ampleFileAgentConversationTitleMatch && method === "POST") {
@@ -2683,13 +2767,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       conversation: toActConversationRef(conversation),
       state: conversationRuntimeState(state, ampleFileAgentScopeId, conversationId),
     });
-    return;
+    return true;
   }
   if (ampleFileAgentConversationMatch && method === "DELETE") {
     assertAmpleFileAgentReadyForRoutes(state);
     const deleted = await deleteAmpleFileAgentConversation(state, ampleFileAgentConversationMatch[1], { receiptId: null });
     sendJson(res, { deleted });
-    return;
+    return true;
   }
   const ampleFileAgentRuntimeMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)\/runtime$/);
   if (ampleFileAgentRuntimeMatch && method === "GET") {
@@ -2698,7 +2782,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     if (!(await readConversation(ampleFileAgentRoot(), conversationId)).length) throw notFound("Conversation not found.");
     const client = await getClient(state, ampleFileAgentScopeId, ampleFileAgentRoot(), conversationId);
     sendJson(res, { runtime: await client.getState() });
-    return;
+    return true;
   }
   const ampleFileAgentThinkingMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)\/thinking$/);
   if (ampleFileAgentThinkingMatch && method === "POST") {
@@ -2717,15 +2801,19 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       throw badRequest(errorMessage(error));
     }
     sendJson(res, { thinking: result, runtime: await client.getState() });
-    return;
+    return true;
   }
   const ampleFileAgentEventsMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)\/events$/);
   if (ampleFileAgentEventsMatch && method === "GET") {
     assertAmpleFileAgentReadyForRoutes(state);
     openChatStream(state, createLocalEventSink(res), ampleFileAgentScopeId, ampleFileAgentEventsMatch[1], req.headers["last-event-id"]);
-    return;
+    return true;
   }
+  return false;
+}
 
+/** The work a request has under way, and a person's answer, Stop, or Continue on it. */
+async function handleRequestRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   const connectedFolderWorkMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/work$/);
   const ampleFileAgentWorkMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)\/work$/);
   const taskWorkMatch = match(url.pathname, /^\/api\/tasks\/([^/]+)\/work$/);
@@ -2735,7 +2823,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       : state.requests.latestForConversation(connectedFolderWorkMatch?.[2] ?? ampleFileAgentWorkMatch![1],
         connectedFolderWorkMatch ? { connectedFolderId: connectedFolderWorkMatch[1] } : {});
     sendJson(res, { work: record ? await requestPresentation(state, record) : null });
-    return;
+    return true;
   }
   const workActionMatch = match(url.pathname, /^\/api\/requests\/([^/]+)\/(answer|stop|continue)$/);
   if (method === "POST" && workActionMatch) {
@@ -2744,9 +2832,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const input = await readJsonBody<Record<string, unknown>>(state, req);
     await performWorkAction(state, record, workActionMatch[2], input);
     sendJson(res, { work: await requestPresentation(state, state.requests.get(record.requestId)!) });
-    return;
+    return true;
   }
+  return false;
+}
 
+/** The renderer's event connection and the content-free control hints. */
+async function handleEventStreamRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   // One renderer connection carries only its explicitly subscribed read streams.
   // The same local session/origin authorization above protects this endpoint.
   if (url.pathname === "/api/events" && method === "POST") {
@@ -2796,7 +2888,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
         channel.close();
       }
     }));
-    return;
+    return true;
   }
 
   // Content-free control hints for the renderer: which registry changed, so
@@ -2804,8 +2896,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   if (url.pathname === "/api/amplefile-agent/control-events" && method === "GET") {
     if (state.controlStreams.size >= 64) throw httpError(429, "Too many control event connections.");
     openControlEventStream(state, createLocalEventSink(res));
-    return;
+    return true;
   }
+  return false;
+}
+
+/** The AmpleFile Agent's overview and what a person has seen of it. */
+async function handleOverviewRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   // The overview (docs/amplefile-agent-overview.md): the app-composed digest for the popover
   // and the main window, on the renderer session. Deliberately no
   // management-readiness gate — the digest reads recorded state, not the
@@ -2813,7 +2910,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   // commands fail closed; only narration needs the conversation.
   if (url.pathname === "/api/amplefile-agent/overview" && method === "GET") {
     sendJson(res, { overview: await state.kernel.getOverview({ kind: "renderer" }) });
-    return;
+    return true;
   }
   if (url.pathname === "/api/amplefile-agent/overview/seen" && method === "POST") {
     const body = await readJsonBody<{ surface?: unknown; cursor?: unknown }>(state, req);
@@ -2829,9 +2926,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     // or backward advance is a no-op, and a failed write only leaves items
     // rendering as new.
     sendJson(res, await state.overviewSeen.advance(body.surface, body.cursor));
-    return;
+    return true;
   }
+  return false;
+}
 
+/** Settings → Recently Deleted, and the request setting under Settings → Automations → Limits. */
+async function handleSettingsRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   // Settings → Recently deleted (docs/act-ledger.md).
   // Listing is a plain read; restoring, removing one item, and changing how
   // long items are kept are journaled acts with the main-window surface, like
@@ -2842,7 +2943,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const entries = [];
     for (const entry of listing.entries) entries.push(await recentlyDeletedEntryView(entry, registered));
     sendJson(res, { entries, damaged: listing.damaged, retentionDays: listing.retentionDays });
-    return;
+    return true;
   }
   if (url.pathname === "/api/settings/recently-deleted/retention" && method === "PUT") {
     const body = await readJsonBody<{ retentionDays?: unknown }>(state, req);
@@ -2855,14 +2956,14 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       return { value: { retentionDays: state.recentlyDeleted.retentionDays() }, detail: `days ${days}` };
     });
     sendJson(res, updated.value);
-    return;
+    return true;
   }
   // Settings → Automations → Limits: the one adjustable request setting.
   // Turning follow-up turns off changes nothing about what is recorded; it
   // only stops the host from bringing the results back as a turn.
   if (url.pathname === "/api/settings/requests" && method === "GET") {
     sendJson(res, { continuationsEnabled: state.requests.continuationsEnabled() });
-    return;
+    return true;
   }
   if (url.pathname === "/api/settings/requests/continuations" && method === "PUT") {
     const body = await readJsonBody<{ enabled?: unknown }>(state, req);
@@ -2873,7 +2974,7 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       return { value: { continuationsEnabled: state.requests.continuationsEnabled() }, detail: enabled ? "on" : "off" };
     });
     sendJson(res, updated.value);
-    return;
+    return true;
   }
   const recentlyDeletedEntryMatch = match(url.pathname, /^\/api\/settings\/recently-deleted\/([^/]+)$/);
   if (recentlyDeletedEntryMatch && method === "DELETE") {
@@ -2888,11 +2989,11 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     } catch (error) {
       if (error instanceof AmpleFileRecentlyDeletedError && error.code === "HELD") {
         sendJson(res, { error: error.message }, 409);
-        return;
+        return true;
       }
       throw error;
     }
-    return;
+    return true;
   }
   const recentlyDeletedRestoreMatch = match(url.pathname, /^\/api\/settings\/recently-deleted\/([^/]+)\/restore$/);
   if (recentlyDeletedRestoreMatch && method === "POST") {
@@ -2902,8 +3003,13 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
       return { value, detail: `entry ${recentlyDeletedRestoreMatch[1]}; kind ${value.kind}` };
     });
     sendJson(res, { restored: restored.value });
-    return;
+    return true;
   }
+  return false;
+}
+
+/** An Extension's questions to a person in a Chat: the pending ones, and an answer. */
+async function handleExtensionUiRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   const extensionResponseMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/extension-ui(?:\/([^/]+))?$/);
   const ampleFileAgentExtensionMatch = match(url.pathname, /^\/api\/amplefile-agent\/conversations\/([^/]+)\/extension-ui(?:\/([^/]+))?$/);
   if ((extensionResponseMatch || ampleFileAgentExtensionMatch) && (method === "GET" || method === "POST")) {
@@ -2913,17 +3019,17 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
     const id = extensionResponseMatch?.[3] ?? ampleFileAgentExtensionMatch?.[2];
     if (!id && method === "GET") {
       sendJson(res, { requests: extensionSnapshot(state, scope) });
-      return;
+      return true;
     }
     if (!id || method !== "POST") throw notFound("Extension request not found.");
     const body = await readJsonBody<{ value?: unknown; cancelled?: boolean }>(state, req);
     const accepted = answerExtensionRequest(state, scope, id, body);
     sendJson(res, { accepted });
-    return;
+    return true;
   }
-
-  throw notFound("Not found.");
+  return false;
 }
+
 
 /**
  * Shared turn-acceptance path for the renderer route and the CLI act facade.
@@ -11734,6 +11840,18 @@ type TransferPlaceRef = { kind: "connected-folder" | "standard"; id: string };
  * uses the open API's.
  */
 const openLocalApiStates: LocalApiState[] = [];
+
+/** Records a started local API as the newest open one. */
+function rememberOpenLocalApi(state: LocalApiState): void {
+  openLocalApiStates.push(state);
+}
+
+/** Forgets a local API that is closing. */
+function forgetOpenLocalApi(state: LocalApiState): void {
+  const open = openLocalApiStates.indexOf(state);
+  if (open >= 0) openLocalApiStates.splice(open, 1);
+}
+
 type TransferRestorePoint = { connectedFolderId: string; checkpointId: string };
 
 interface ResolvedTransferItem {
