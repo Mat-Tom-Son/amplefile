@@ -29,8 +29,11 @@ steps; in development, `&script=fixture-chat-1` replays a Chat
 (`&scriptDelay=` sets the pause in milliseconds). `&update=` shows an update
 phase—`available`, `downloading`, `ready`, `installing`, `error`, or
 `not_available`—in the sidebar's update indicator and Settings → About,
-from the sample statuses in `web-local/src/fixtures/settings-fixture.ts`; the
-live transitions between them need the desktop updater. Actions that would change
+from the sample statuses in `web-local/src/fixtures/settings-fixture.ts`.
+Clicking an update asks the same restart question as the app (add
+`&agentState=running` to have it name a working Chat) and then says
+updating is disabled. The live transitions between phases need the desktop
+updater. Actions that would change
 files, settings, or History explain that they are disabled in the preview.
 
 The browser preview cannot prove native dialogs, secure storage, preloads, or

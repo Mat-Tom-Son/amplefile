@@ -69,16 +69,33 @@ other surface.
   turns green when a Chat has a reply nobody has read; the same dots mark
   History's Chat rows and the History tab.
 - **Update indicator:** while an update needs the person, the foot of the
-  sidebar, below its scrolling lists, holds one button with a dot in the
-  window's accent: **Update Available** with the version (a click downloads
-  it, and AmpleFile restarts into it when the download finishes),
-  **Downloading** with its progress (a click opens Settings → About),
-  **Restart to Update** (a click installs it now), **Restarting to Update**
-  while AmpleFile quits, or a quiet **Update Failed** that opens Settings →
-  About, where the detail and **Retry** are. Each click does what the same
-  phase's button in Settings → About does. While AmpleFile is up to date,
-  checking, or has no updater, the sidebar shows nothing there. **AmpleFile >
-  Check for Updates…** and Settings → About stay the places to check.
+  sidebar holds one button with a dot in the window's accent. The foot sits
+  below the scrolling lists, in a band level with the path bar. It shows one
+  of these:
+  - **Update Available** with the version. A click downloads the update, and
+    AmpleFile then restarts into it on its own.
+  - **Downloading** with its progress. A click opens Settings → About.
+  - **Restart to Update**. A click installs it now.
+  - **Restarting to Update** while AmpleFile quits.
+  - A quiet **Update Failed** when a download, staging step, or install
+    failed. A click opens Settings → About, which has the detail and
+    **Retry**.
+
+  A click either uses the same updater action as Settings → About's update
+  button or opens About. Before any update that ends in a restart, from
+  either place, AmpleFile asks **Restart AmpleFile to Update?**. The question
+  names the Worker Chats that are working, with their Connected Folders, and
+  says when the AmpleFile Agent is working. It says that restarting stops
+  that work, which is not run again, and that queued messages are dropped.
+  Cancel does nothing.
+
+  A failed check, with nothing being updated, appears only in Settings →
+  About, and retrying it only checks again. During a check the indicator
+  keeps what it showed before. A screen reader hears when an update becomes
+  available, becomes ready, or fails. At the sidebar's narrowest the label
+  shortens (Update, Restart, Restarting, Failed). While AmpleFile is up to
+  date or has no updater, the sidebar shows nothing there. **AmpleFile >
+  Check for Updates…** and Settings → About are where to check.
 - **Nested Connected Folders:** a Connected Folder registered inside another
   sits under it, indented, behind a caret in the left gutter. The caret (or
   the arrow keys) shows and hides the Connected Folders inside, the sidebar
