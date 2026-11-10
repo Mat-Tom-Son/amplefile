@@ -1,23 +1,11 @@
 import { prepareResourceEnable, resourceEnableAdapter } from "./agent/resource-enable-act.js";
 import { shutdownIncludedToolHost } from "./agent/included-tool-setup.js";
 import { ModelContextInspector } from "./agent/model-context-inspector.js";
-import { observeAmpleFileAutomationFiles, ampleFileAutomationFileObserverBounds } from "./automations/automation-file-observer.js";
+import { observeAmpleFileAutomationFiles } from "./automations/automation-file-observer.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import {
-  automationCatchUpReasons,
-  automationCatchUpSentence,
-  automationTriggerSummary,
-  type AutomationCatchUpReason,
-  type FolderAutomationState,
-  type FolderAutomationsResponse,
-  type FolderAutomationView,
-  type AutomationTriggerView,
-} from "../shared/automation-presentation.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { automationTemplateAutomationId, isAutomationTemplateId } from "../shared/automation-templates.js";
-import { automationTemplateDeclaration } from "./automations/automation-templates.js";
-import { lstat, readFile, readdir, rm, stat } from "node:fs/promises";
+import { lstat, readFile, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
@@ -76,7 +64,6 @@ import { parseUntilPattern } from "./agent/job-tools.js";
 import {
   createConnectedFolderCheckpoint,
   createConnectedFolderMutationCheckpoint,
-  getConnectedFolderCheckpoint,
   listConnectedFolderCheckpoints,
   listConnectedFolderCheckpointPage,
   listFileVersionPage,
@@ -101,7 +88,6 @@ import {
   type ConnectedFolderAppearanceCustomization,
   type ConnectedFolderAppearanceProposal,
 } from "../shared/connected-folder-appearance.js";
-import { resolveFolderTargets } from "./automations/folder-targets.js";
 import {
   PreparedActError,
   PreparedActExecutor,
@@ -116,34 +102,13 @@ import {
 import { AmpleFileOverviewSeenStore } from "./overview-seen-store.js";
 import { ensureAmpleFileAgentInstructions } from "./amplefile-agent-instructions.js";
 import {
-  assertAmpleFileAutomationAtAdmissionHorizon,
-  contentAddressedAmpleFileAutomationDeclaration,
-  normalizeAmpleFileAutomationDeclaration,
-  normalizeAmpleFileAutomationProposal,
-  readAmpleFileAutomationDocument,
-  ampleFileAutomationBounds,
-  ampleFileAutomationDeclarationKind,
   ampleFileAutomationDigest,
-  ampleFileAutomationProposalKind,
   ampleFileAutomationReferencedConnectedFolderIds,
-  ampleFileAutomationConnectedFolderRoles,
   type AmpleFileAutomationDeclaration,
   type AmpleFileAutomationFilesStep,
 } from "./automations/automation-declarations.js";
-import { resolveAmpleFileAutomationProposalPath, scanAmpleFileAutomationProposals } from "./automations/automation-proposal-scan.js";
-import {
-  AmpleFileAutomationService,
-  type AmpleFileAutomationHopPorts,
-  type AmpleFileAutomationProjection,
-  type AmpleFileAutomationServiceStatus,
-} from "./automations/automation-service.js";
-import {
-  AmpleFileAutomationStore,
-  ampleFileAutomationReceiptsFile,
-  ampleFileAutomationReceiptsRotatedFile,
-  type AmpleFileAutomationReceiptV1,
-  type AmpleFileAutomationRecord,
-} from "./automations/automation-store.js";
+import { AmpleFileAutomationService } from "./automations/automation-service.js";
+import { AmpleFileAutomationStore, type AmpleFileAutomationRecord } from "./automations/automation-store.js";
 import {
   configureAmpleFileStateRoot,
   ampleFileAgentRoot,
@@ -155,7 +120,7 @@ import {
 } from "./state-paths.js";
 import { AmpleFileRecentlyDeletedStore, ampleFileRecentlyDeletedEntryIdPattern } from "./recently-deleted-store.js";
 import { AmpleFileKernel } from "./amplefile-kernel.js";
-import { AMPLEFILE_CLI_ACT_SURFACES, AmpleFileCliActReceipts, type AmpleFileCliActSurface } from "./cli/act-receipts.js";
+import { AmpleFileCliActReceipts, type AmpleFileCliActSurface } from "./cli/act-receipts.js";
 import { AmpleFileCliError } from "./cli/protocol.js";
 import type {
   AmpleFileActChatLifecycleState,
@@ -163,16 +128,12 @@ import type {
   AmpleFileActConversationRef,
   AmpleFileActFacade,
   AmpleFileActFileVersionRef,
-  AmpleFileActAutomationReceipt,
-  AmpleFileActAutomationSummary,
-  AmpleFileActAutomationTriggerRef,
   AmpleFileActConnectedFolderRef,
   AmpleFileActRecentlyDeletedEntry,
 } from "./cli/act-facade.js";
 import { resolveAmpleFileCliConnectedFolderSelector } from "./amplefile-cli-adapter.js";
 import { createLocalDevelopmentApiOptions, loadLocalEnvironmentFile } from "./server-dev-options.js";
 import {
-  copyPathIntoConnectedFolder,
   createConnectedFolderFolder,
   createConnectedFolderTextFile,
   getConnectedFolder,
@@ -183,8 +144,6 @@ import {
   renameConnectedFolderEntry,
   renameConnectedFolder,
   resolveConnectedFolderPath,
-  withConnectedFolderHistoryOperations,
-  withConnectedFolderTouchBatch,
   type ConnectedFolderRemovalResult,
   type ConnectedFolderSummary,
 } from "./connected-folder.js";
@@ -199,6 +158,15 @@ import {
   resolveAmpleFileAgentConversation,
   resolveAmpleFileAgentLineageParent,
 } from "./api/amplefile-agent-routes.js";
+import { createAutomationHopPorts } from "./api/automation-hops.js";
+import { readAutomationReceiptProjection, toActAutomationFilesSource, toActAutomationSummary } from "./api/automation-receipts.js";
+import {
+  type AmpleFileAutomationSettingsFacade,
+  createAmpleFileAutomationSettingsFacade,
+  enableStoredAutomationDeclaration,
+  handleConnectedFolderAutomationRoutes,
+  readAutomationStagingFile,
+} from "./api/automation-settings.js";
 import {
   createBackgroundJobService,
   createBackgroundJobToolHost,
@@ -235,14 +203,10 @@ import {
   automationErrorStatus,
   closeServer,
   errorMessage,
-  httpError,
   listen,
-  match,
   notFound,
   numberFromEnv,
-  readJsonBody,
   sendError,
-  sendJson,
   setCorsHeaders,
 } from "./api/http.js";
 import { createServerOverviewSources, handleOverviewRoutes } from "./api/overview-routes.js";
@@ -254,7 +218,6 @@ import {
   assertOwnTask,
   assertRequestsAboveConnectedFolders,
   collaborationRefusal,
-  completedRequestEnvelope,
   conversationResultForScope,
   readReportDataFile,
   requestDetailView,
@@ -265,17 +228,13 @@ import {
   toActQuestionRef,
   toActRequestRef,
   toActRequestRefForConnectedFolder,
-  turnReportedResult,
   turnResultForScope,
   turnStatusFor,
-  waitForSettledRequest,
   waitingRefForTask,
 } from "./api/request-records.js";
 import { handleRequestRoutes, queueConversationRequestEvaluation, stopAmpleFileAgentRequest } from "./api/request-routes.js";
 import {
   assertNoCapabilityMutationForTurn,
-  checkpointAdditiveWritesOrUndo,
-  reserveCapabilityMutation,
   runCapabilityMutation,
   runConnectedFolderMutation,
   runHistoryRestore,
@@ -288,11 +247,18 @@ import {
   type LocalApiRequest,
   type LocalApiState,
   streamKey,
-  type TurnCheckpointEvent,
 } from "./api/state.js";
 import { acceptConversationTurn, steerConversationTurn } from "./api/turn-acceptance.js";
 import { recoverDurableTurnState, yieldBackgroundCompaction } from "./api/turn-run.js";
 
+export type {
+  AmpleFileAutomationSettingsOutcome,
+  AmpleFileAutomationSettingsConnectedFolderRef,
+  AmpleFileAutomationSettingsRunView,
+  AmpleFileAutomationSettingsSummary,
+  AmpleFileAutomationSettingsProposalView,
+  AmpleFileAutomationSettingsFacade,
+} from "./api/automation-settings.js";
 export type {
   AmpleFileDeleteRecovery,
   AmpleFileDeleteResult,
@@ -302,127 +268,6 @@ export type {
 export { transferFileEntries } from "./api/place-routes.js";
 export type { AmpleFileRecentlyDeletedEntryView, AmpleFileRecentlyDeletedRestoreResult } from "./api/recently-deleted-routes.js";
 export type { LocalFolderGrantProvider, LocalApiOptions } from "./api/state.js";
-
-export type AmpleFileAutomationSettingsOutcome =
-  | "accepted"
-  | "succeeded"
-  | "failed"
-  | "stopped"
-  | "interrupted"
-  | "skipped"
-  | "lapsed";
-
-export interface AmpleFileAutomationSettingsConnectedFolderRef {
-  connectedFolderId: string;
-  connectedFolderName?: string;
-}
-
-export interface AmpleFileAutomationSettingsRunView {
-  runId: string;
-  outcome: AmpleFileAutomationSettingsOutcome;
-  startedAt: string;
-  finishedAt?: string;
-  cause?: string;
-  detail?: string;
-  /** Succeeded, but a step's Worker reported finishing only partly. */
-  partial?: true;
-  hops: Array<{
-    hopId: string;
-    kind: "chat" | "files" | "agent";
-    outcome: AmpleFileAutomationSettingsOutcome;
-    partial?: true;
-    connectedFolderName?: string;
-    detail?: string;
-    evidence?: Array<{ label: string; value: string }>;
-  }>;
-}
-
-export interface AmpleFileAutomationSettingsSummary {
-  automationId: string;
-  title: string;
-  health: "enabled" | "disabled" | "suspended" | "completed";
-  trigger: AmpleFileActAutomationTriggerRef;
-  fileWatch?: import("./automations/automation-file-observer.js").AmpleFileAutomationFileWatchStatus;
-  stepCount: number;
-  /** Every Connected Folder the trigger or a step names, for the Settings Connected Folder filter. */
-  connectedFolders: AmpleFileAutomationSettingsConnectedFolderRef[];
-  nextScheduledAt?: string;
-  lastScheduledAt?: string;
-  activeRun?: { runId: string; startedAt: string };
-  lastRun?: Omit<AmpleFileAutomationSettingsRunView, "hops" | "cause" | "detail">;
-  /** The newest run that caught up on files changed while AmpleFile could not watch (`"ifMissed": "run"`). */
-  lastCatchUp?: { runId: string; at: string; count: number; reason: AutomationCatchUpReason };
-  suspension?: { at: string; reason?: string; missingConnectedFolders?: AmpleFileAutomationSettingsConnectedFolderRef[] };
-}
-
-/**
- * One `*.amplefile-automation.json` file at the top level of the AmpleFile
- * agent's working folder that is not already a stored automation
- * (docs/automations.md, "Where automations live in the product").
- */
-export type AmpleFileAutomationSettingsProposalView =
-  | {
-    valid: true;
-    path: string;
-    fileName: string;
-    automationId: string;
-    digest: string;
-    title: string;
-    trigger: AmpleFileActAutomationTriggerRef;
-  }
-  | { valid: false; path: string; fileName: string; problem: string };
-
-export interface AmpleFileAutomationSettingsFacade {
-  list(): Promise<{ automations: AmpleFileAutomationSettingsSummary[]; status: AmpleFileAutomationServiceStatus }>;
-  proposals(): Promise<{ proposals: AmpleFileAutomationSettingsProposalView[]; truncated: boolean }>;
-  /** Turns on one pending proposal by its absolute path, through the CLI's enable path. */
-  enableProposal(path: string): Promise<{
-    automationId: string;
-    requestId: string;
-    enabled: true;
-    alreadyEnabled: boolean;
-    automation: AmpleFileAutomationSettingsSummary;
-  }>;
-  show(automationId: string): Promise<{
-    automation: AmpleFileAutomationSettingsSummary & {
-      createdAt: string;
-      connectedFolders: AmpleFileAutomationSettingsConnectedFolderRef[];
-      steps: Array<
-        | { id: string; kind: "chat"; connectedFolder: AmpleFileAutomationSettingsConnectedFolderRef; message: string; model?: { provider: string; id: string } }
-        | {
-          id: string;
-          kind: "files";
-          fromConnectedFolder: AmpleFileAutomationSettingsConnectedFolderRef;
-          toConnectedFolder: AmpleFileAutomationSettingsConnectedFolderRef;
-          to: string;
-          source: ReturnType<typeof toActAutomationFilesSource>;
-        }
-        | { id: string; kind: "agent"; message: string; model?: { provider: string; id: string } }
-      >;
-      completedAt?: string;
-    };
-  }>;
-  history(automationId: string): Promise<{ runs: AmpleFileAutomationSettingsRunView[]; truncated: boolean; damagedLineCount: number }>;
-  enable(automationId: string): Promise<{ automationId: string; requestId: string; enabled: true; alreadyEnabled: boolean }>;
-  /**
-   * Turns on a ready-made Automation for one Connected Folder (the file manager's
-   * Info panel): the stored one when it was on before, else a new
-   * declaration built by the host, through the same receipted enable path.
-   */
-  enableTemplate(connectedFolderId: string, templateId: string): Promise<{ automationId: string; requestId: string; enabled: true; alreadyEnabled: boolean }>;
-  run(automationId: string): Promise<{ automationId: string; requestId: string; runId: string; accepted: true }>;
-  stop(automationId: string): Promise<{ automationId: string; requestId: string; runId: string; stopped: true }>;
-  disable(automationId: string): Promise<{ automationId: string; requestId: string; disabled: true; stoppedRunId: string | null }>;
-  delete(automationId: string): Promise<{ automationId: string; requestId: string; deleted: true }>;
-  /**
-   * The Connected Folder–owned Automations view (docs/automations.md): the
-   * automations whose trigger or any step names this Connected Folder, with
-   * what each does there. Served at `GET /api/connected-folders/:id/automations`.
-   */
-  forConnectedFolder(connectedFolderId: string): Promise<FolderAutomationsResponse>;
-  /** Refuses with notFound unless the automation names this Connected Folder; the gate for the Connected Folder view's actions. */
-  requireConnectedFolderAutomation(connectedFolderId: string, automationId: string): Promise<void>;
-}
 
 export interface LocalApiHandle {
   origin: string;
@@ -822,36 +667,6 @@ async function handleRequest(state: LocalApiState, req: IncomingMessage, res: Se
   if (await handleExtensionUiRoutes(request)) return;
 
   throw notFound("Not found.");
-}
-
-/** The Automations that name one Connected Folder, and their enable, disable, and run acts. */
-async function handleConnectedFolderAutomationRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
-  // The Connected Folder–owned Automations view (docs/automations.md): a read
-  // of the automations that name this Connected Folder, and the same
-  // Settings enable/disable/run acts — same facade, same receipts — refused
-  // for an automation that does not name it.
-  const spaceAutomationsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/automations$/);
-  if (spaceAutomationsMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(spaceAutomationsMatch[1]);
-    sendJson(res, await createAmpleFileAutomationSettingsFacade(state).forConnectedFolder(connectedFolder.id));
-    return true;
-  }
-  const spaceAutomationActMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/automations\/([^/]+)\/(enable|disable|run)$/);
-  if (spaceAutomationActMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(spaceAutomationActMatch[1]);
-    await readJsonBody<Record<string, never>>(state, req);
-    const automationId = spaceAutomationActMatch[2];
-    const facade = createAmpleFileAutomationSettingsFacade(state);
-    await facade.requireConnectedFolderAutomation(connectedFolder.id, automationId);
-    const action = spaceAutomationActMatch[3];
-    sendJson(res, action === "enable"
-      ? await facade.enable(automationId)
-      : action === "disable"
-        ? await facade.disable(automationId)
-        : await facade.run(automationId));
-    return true;
-  }
-  return false;
 }
 
 /**
@@ -2761,802 +2576,6 @@ function appearanceCustomizationsEqual(
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
 
-function toActAutomationTriggerRef(trigger: AmpleFileAutomationDeclaration["trigger"]): AmpleFileActAutomationTriggerRef {
-  if (trigger.kind === "files-changed") {
-    return {
-      kind: trigger.kind,
-      connectedFolderId: trigger.connectedFolder,
-      watch: structuredClone(trigger.watch),
-      debounceSeconds: trigger.debounceSeconds,
-      cooldownMinutes: trigger.cooldownMinutes,
-      ...(trigger.ifMissed !== undefined ? { ifMissed: trigger.ifMissed } : {}),
-    };
-  }
-  if (trigger.kind === "interval") return { kind: "interval", intervalMinutes: trigger.intervalMinutes };
-  if (trigger.kind === "at") return { kind: "at", at: trigger.at, ifMissed: trigger.ifMissed };
-  return { kind: "manual" };
-}
-
-function toActAutomationSummary(projection: AmpleFileAutomationProjection): AmpleFileActAutomationSummary {
-  return {
-    automationId: projection.declaration.id,
-    title: projection.declaration.title,
-    health: projection.health,
-    digest: projection.digest,
-    trigger: toActAutomationTriggerRef(projection.declaration.trigger),
-    ...(projection.fileWatch ? { fileWatch: projection.fileWatch } : {}),
-    stepCount: projection.declaration.steps.length,
-    referencedConnectedFolderIds: ampleFileAutomationReferencedConnectedFolderIds(projection.declaration),
-    ...(projection.health === "enabled" && projection.grants.length > 0
-      ? { enabledAt: projection.grants[projection.grants.length - 1]!.enabledAt }
-      : {}),
-    ...(projection.disabledAt ? { disabledAt: projection.disabledAt } : {}),
-    ...(projection.suspension
-      ? {
-        suspension: {
-          at: projection.suspension.at,
-          missingConnectedFolderIds: [...projection.suspension.missingConnectedFolderIds],
-          reRegisteredConnectedFolderIds: [...projection.suspension.reRegisteredConnectedFolderIds],
-        },
-      }
-      : {}),
-    ...(projection.lastScheduledAt ? { lastScheduledAt: projection.lastScheduledAt } : {}),
-    ...(projection.nextScheduledAt ? { nextScheduledAt: projection.nextScheduledAt } : {}),
-    ...(projection.atOccurrence?.finishedAt
-      ? { completedAt: projection.atOccurrence.finishedAt }
-      : projection.atOccurrence?.consumedAt
-        ? { completedAt: projection.atOccurrence.consumedAt }
-        : {}),
-  };
-}
-
-function toActAutomationFilesSource(
-  source: Extract<AmpleFileAutomationDeclaration["steps"][number], { kind: "files" }>["from"],
-): { kind: "paths"; paths: string[] }
-  | { kind: "tree"; path: string; recursive: boolean; extensions: string[] }
-  | { kind: "step-created-files"; step: string; extensions?: string[]; maxFiles: number; maxTotalBytes: number } {
-  if (source.kind === "paths") return { kind: "paths", paths: [...source.paths] };
-  if (source.kind === "tree") return { kind: "tree", path: source.path, recursive: source.recursive, extensions: [...source.extensions] };
-  return {
-    kind: "step-created-files",
-    step: source.step,
-    ...(source.extensions ? { extensions: [...source.extensions] } : {}),
-    maxFiles: source.maxFiles,
-    maxTotalBytes: source.maxTotalBytes,
-  };
-}
-
-const automationReceiptProjectionLimit = 500;
-const automationReceiptTextLimit = 4_096;
-const automationReceiptListLimit = 128;
-
-async function readAutomationReceiptProjection(automationId?: string): Promise<{
-  receipts: AmpleFileActAutomationReceipt[];
-  truncated: boolean;
-  damagedLineCount: number;
-}> {
-  const matching: AmpleFileActAutomationReceipt[] = [];
-  const damagedLineCount = await visitAutomationReceipts((projected) => {
-    if (automationId === undefined || projected.automationId === automationId) matching.push(projected);
-  });
-  return {
-    receipts: matching.slice(-automationReceiptProjectionLimit).reverse(),
-    truncated: matching.length > automationReceiptProjectionLimit,
-    damagedLineCount,
-  };
-}
-
-async function readAutomationReceiptProjectionsByAutomation(): Promise<{
-  receipts: AmpleFileActAutomationReceipt[];
-  truncated: boolean;
-  damagedLineCount: number;
-}> {
-  const matchingByAutomation = new Map<string, AmpleFileActAutomationReceipt[]>();
-  let truncated = false;
-  const damagedLineCount = await visitAutomationReceipts((projected) => {
-    const bucket = matchingByAutomation.get(projected.automationId) ?? [];
-    bucket.push(projected);
-    if (bucket.length > automationReceiptProjectionLimit) {
-      bucket.shift();
-      truncated = true;
-    }
-    matchingByAutomation.set(projected.automationId, bucket);
-  });
-  return {
-    receipts: [...matchingByAutomation.values()].flat().sort((left, right) => Date.parse(right.at) - Date.parse(left.at)),
-    truncated,
-    damagedLineCount,
-  };
-}
-
-async function visitAutomationReceipts(visitor: (receipt: AmpleFileActAutomationReceipt) => void): Promise<number> {
-  let damagedLineCount = 0;
-  for (const path of [ampleFileAutomationReceiptsRotatedFile(), ampleFileAutomationReceiptsFile()]) {
-    const text = await readFile(path, "utf8").catch((error: unknown) => {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw new AmpleFileCliError("failure", "AmpleFile could not read the automation run history.", { cause: error });
-    });
-    if (text === null) continue;
-    for (const line of text.split("\n")) {
-      if (!line.trim()) continue;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line) as unknown;
-      } catch {
-        damagedLineCount += 1;
-        continue;
-      }
-      const projected = projectAutomationReceipt(parsed);
-      if (!projected) {
-        damagedLineCount += 1;
-        continue;
-      }
-      visitor(projected);
-    }
-  }
-  return damagedLineCount;
-}
-
-function projectAutomationReceipt(value: unknown): AmpleFileActAutomationReceipt | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const receipt = value as Partial<AmpleFileAutomationReceiptV1>;
-  const at = automationReceiptTimestamp(receipt.at);
-  const automationId = automationReceiptText(receipt.automationId);
-  const outcome = automationReceiptText(receipt.outcome);
-  if (!at || !automationId || !outcome || (receipt.scope !== "automation" && receipt.scope !== "run" && receipt.scope !== "hop")) {
-    return null;
-  }
-  const projected: AmpleFileActAutomationReceipt = { at, scope: receipt.scope, outcome, automationId };
-  const addText = (key: keyof AmpleFileActAutomationReceipt, candidate: unknown) => {
-    const text = automationReceiptText(candidate);
-    if (text !== undefined) (projected as unknown as Record<string, unknown>)[key] = text;
-  };
-  addText("runId", receipt.runId);
-  addText("hopId", receipt.hopId);
-  // Lines an earlier build wrote may name a `check` hop; it is not projected.
-  if (receipt.hopKind === "chat" || receipt.hopKind === "files" || receipt.hopKind === "agent") {
-    projected.hopKind = receipt.hopKind;
-  }
-  addText("title", receipt.title);
-  addText("digest", receipt.digest);
-  addText("detail", receipt.detail);
-  if (receipt.partial === true && outcome === "succeeded") projected.partial = true;
-  const cause = projectAutomationReceiptCause(receipt.cause);
-  if (cause !== undefined) projected.cause = cause;
-  addText("connectedFolderId", receipt.connectedFolderId);
-  addText("fromConnectedFolderId", receipt.fromConnectedFolderId);
-  addText("toConnectedFolderId", receipt.toConnectedFolderId);
-  addText("conversationId", receipt.conversationId);
-  addText("taskId", receipt.taskId);
-  addText("restorePointId", receipt.restorePointId);
-  addText("failedHopId", receipt.failedHopId);
-  addText("surface", receipt.surface);
-  addText("requestId", receipt.requestId);
-  addText("occurrenceId", receipt.occurrenceId);
-  addText("scheduledRunId", receipt.scheduledRunId);
-  const addList = (key: keyof AmpleFileActAutomationReceipt, candidate: unknown) => {
-    const list = automationReceiptTextList(candidate);
-    if (list !== undefined) (projected as unknown as Record<string, unknown>)[key] = list;
-  };
-  addList("checkpointIds", receipt.checkpointIds);
-  addList("sourcePaths", receipt.sourcePaths);
-  addList("copiedPaths", receipt.copiedPaths);
-  addList("stoppedHopTaskIds", receipt.stoppedHopTaskIds);
-  addList("missingConnectedFolderIds", receipt.missingConnectedFolderIds);
-  const addCount = (key: keyof AmpleFileActAutomationReceipt, candidate: unknown) => {
-    if (typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0) {
-      (projected as unknown as Record<string, unknown>)[key] = Math.floor(candidate);
-    }
-  };
-  addCount("fileCount", receipt.fileCount);
-  addCount("totalBytes", receipt.totalBytes);
-  addCount("messageBytes", receipt.messageBytes);
-  const placeholders = projectAutomationReceiptPlaceholders(receipt.placeholders);
-  if (placeholders) projected.placeholders = placeholders;
-  return projected;
-}
-
-/**
- * What AmpleFile filled into a hop's message, bounded exactly as the executor
- * bounded it. Text keeps its newlines — it is a list — so it is length-bounded
- * rather than run through the single-line text projector.
- */
-function projectAutomationReceiptPlaceholders(
-  value: unknown,
-): Array<{ name: string; text: string; bytes: number; truncated: boolean }> | undefined {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 32) return undefined;
-  const projected: Array<{ name: string; text: string; bytes: number; truncated: boolean }> = [];
-  for (const entry of value) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return undefined;
-    const placeholder = entry as Record<string, unknown>;
-    const name = automationReceiptText(placeholder.name);
-    if (!name || name.length > 128) return undefined;
-    if (typeof placeholder.text !== "string" || placeholder.text.length > ampleFileAutomationBounds.maxPlaceholderTextBytes) {
-      return undefined;
-    }
-    if (!Number.isSafeInteger(placeholder.bytes) || (placeholder.bytes as number) < 0) return undefined;
-    if (typeof placeholder.truncated !== "boolean") return undefined;
-    projected.push({
-      name,
-      text: placeholder.text,
-      bytes: placeholder.bytes as number,
-      truncated: placeholder.truncated,
-    });
-  }
-  return projected;
-}
-
-function projectAutomationReceiptCause(value: unknown): unknown {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const cause = value as Record<string, unknown>;
-  if ((cause.kind === "scheduled" || cause.kind === "resume") && automationReceiptTimestamp(cause.slotAt)) {
-    return { kind: cause.kind, slotAt: automationReceiptTimestamp(cause.slotAt)! };
-  }
-  // A live change and a catch-up both list at most the observer's files on
-  // each side of the comparison, so the true count never exceeds twice that.
-  if (cause.kind === "files-changed" && typeof cause.snapshotDigest === "string" && /^[a-f0-9]{64}$/.test(cause.snapshotDigest) && Number.isSafeInteger(cause.changedCount) && (cause.changedCount as number) > 0 && (cause.changedCount as number) <= 2 * ampleFileAutomationFileObserverBounds.maxFiles && automationReceiptText(cause.connectedFolderId)) {
-    const changedPaths = automationReceiptTextList(cause.changedPaths);
-    const catchUp = automationReceiptCatchUp(cause.catchUp, cause.changedCount as number);
-    return {
-      kind: cause.kind,
-      connectedFolderId: automationReceiptText(cause.connectedFolderId),
-      snapshotDigest: cause.snapshotDigest,
-      changedCount: cause.changedCount,
-      ...(changedPaths?.length ? { changedPaths } : {}),
-      ...(catchUp ? { catchUp } : {}),
-    };
-  }
-  if (cause.kind === "run-now") {
-    const surface = typeof cause.surface === "string" && AMPLEFILE_CLI_ACT_SURFACES.includes(cause.surface as never)
-      ? cause.surface
-      : undefined;
-    return {
-      kind: "run-now",
-      ...(automationReceiptText(cause.requestId) ? { requestId: automationReceiptText(cause.requestId) } : {}),
-      ...(surface ? { surface } : {}),
-    };
-  }
-  // An `on-settled` cause older builds wrote (a Check run or a Connected
-  // Folder app's automation settling) is not projected.
-  return undefined;
-}
-
-function automationReceiptText(value: unknown): string | undefined {
-  if (typeof value !== "string" || !value || value.length > automationReceiptTextLimit) return undefined;
-  if (/\p{Cc}|\p{Cf}/u.test(value)) return undefined;
-  return value;
-}
-
-function automationReceiptTimestamp(value: unknown): string | undefined {
-  const text = automationReceiptText(value);
-  return text && Number.isFinite(Date.parse(text)) ? new Date(text).toISOString() : undefined;
-}
-
-/** A recorded catch-up, or undefined when the field is absent or not the closed shape. */
-function automationReceiptCatchUp(value: unknown, changedCount: number): { reason: AutomationCatchUpReason; count: number } | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const { reason, count } = value as Record<string, unknown>;
-  if (typeof reason !== "string" || !(automationCatchUpReasons as readonly string[]).includes(reason)) return undefined;
-  if (!Number.isSafeInteger(count) || (count as number) < 1 || (count as number) > changedCount) return undefined;
-  return { reason: reason as AutomationCatchUpReason, count: count as number };
-}
-
-function automationReceiptTextList(value: unknown): string[] | undefined {
-  if (!Array.isArray(value) || value.length > automationReceiptListLimit) return undefined;
-  const values = value.map(automationReceiptText);
-  return values.every((item): item is string => item !== undefined) ? values : undefined;
-}
-
-function createAmpleFileAutomationSettingsFacade(state: LocalApiState): AmpleFileAutomationSettingsFacade {
-  return {
-    async list() {
-      const projections = await runActOperation(() => state.automations.listAutomations());
-      const receiptProjection = await readAutomationReceiptProjectionsByAutomation();
-      const historyByAutomation = new Map<string, AmpleFileAutomationSettingsHistory>();
-      for (const projection of projections) {
-        const history = await automationSettingsHistoryFromProjection(
-          projection.declaration.id,
-          receiptProjection,
-        );
-        historyByAutomation.set(projection.declaration.id, history);
-      }
-      return {
-        automations: await Promise.all(projections.map(async (projection) =>
-          await automationSettingsSummary(projection, historyByAutomation.get(projection.declaration.id) ?? { runs: [] }))),
-        status: state.automations.status(),
-      };
-    },
-    async proposals() {
-      const scan = await scanAmpleFileAutomationProposals(ampleFileAgentRoot());
-      // A proposal already stored at the same digest shows once, in the main
-      // list, whatever its health.
-      const stored = new Set((await runActOperation(() => state.automations.listAutomations()))
-        .map((projection) => `${projection.declaration.id}\n${projection.digest}`));
-      const proposals: AmpleFileAutomationSettingsProposalView[] = [];
-      for (const entry of scan.entries) {
-        const normalized = entry.valid ? entry : entry.normalized;
-        if (normalized && stored.has(`${normalized.declaration.id}\n${normalized.digest}`)) continue;
-        if (!entry.valid) {
-          proposals.push({ valid: false, path: entry.path, fileName: entry.fileName, problem: entry.problem });
-          continue;
-        }
-        const missing: string[] = [];
-        for (const connectedFolderId of ampleFileAutomationReferencedConnectedFolderIds(entry.declaration)) {
-          if (!await getConnectedFolder(connectedFolderId).catch(() => null)) missing.push(connectedFolderId);
-        }
-        if (missing.length) {
-          proposals.push({
-            valid: false,
-            path: entry.path,
-            fileName: entry.fileName,
-            problem: `Names a Connected Folder that is not on this computer (${missing.join(", ")}).`,
-          });
-          continue;
-        }
-        proposals.push({
-          valid: true,
-          path: entry.path,
-          fileName: entry.fileName,
-          automationId: entry.declaration.id,
-          digest: entry.digest,
-          title: entry.declaration.title,
-          trigger: toActAutomationTriggerRef(entry.declaration.trigger),
-        });
-      }
-      return { proposals, truncated: scan.truncated };
-    },
-    async enableProposal(path) {
-      let proposalPath: string;
-      try {
-        proposalPath = resolveAmpleFileAutomationProposalPath(ampleFileAgentRoot(), path);
-      } catch (error) {
-        throw new AmpleFileCliError("usage", errorMessage(error), { cause: error });
-      }
-      // The exact CLI enable path: read and digest the file now, then the
-      // journaled prepared-act enablement pinned to that digest.
-      const result = await runDesktopSettingsAct(state, "automations.enable", async (requestId) => {
-        const { declaration, digest } = await readAutomationStagingFile(proposalPath, ampleFileAgentRoot());
-        const enabled = await enableStoredAutomationDeclaration(state, declaration, digest, {
-          requestId,
-          surface: "main-window",
-        });
-        return { value: enabled, detail: `Enabled automation ${enabled.automationId} from ${basename(proposalPath)}.` };
-      });
-      const projection = await requireSettingsAutomation(state, result.value.automationId);
-      const history = await automationSettingsHistory(projection.declaration.id);
-      return {
-        automationId: result.value.automationId,
-        requestId: result.requestId,
-        enabled: true as const,
-        alreadyEnabled: result.value.alreadyEnabled,
-        automation: await automationSettingsSummary(projection, history),
-      };
-    },
-    async show(automationId) {
-      const projection = await requireSettingsAutomation(state, automationId);
-      const history = await automationSettingsHistory(projection.declaration.id);
-      const summary = await automationSettingsSummary(projection, history);
-      const connectedFolders = summary.connectedFolders;
-      const byId = new Map(connectedFolders.map((connectedFolder) => [connectedFolder.connectedFolderId, connectedFolder]));
-      const named = (connectedFolderId: string): AmpleFileAutomationSettingsConnectedFolderRef => byId.get(connectedFolderId) ?? { connectedFolderId };
-      return {
-        automation: {
-          ...summary,
-          createdAt: projection.declaration.createdAt,
-          connectedFolders,
-          steps: projection.declaration.steps.map((step) => step.kind === "chat"
-            ? { id: step.id, kind: "chat" as const, connectedFolder: named(step.connectedFolder), message: step.message, ...(step.model ? { model: step.model } : {}) }
-            : step.kind === "files"
-              ? {
-                id: step.id,
-                kind: "files" as const,
-                fromConnectedFolder: named(step.fromConnectedFolder),
-                toConnectedFolder: named(step.toConnectedFolder),
-                to: step.to,
-                source: toActAutomationFilesSource(step.from),
-              }
-              : { id: step.id, kind: "agent" as const, message: step.message, ...(step.model ? { model: step.model } : {}) }),
-          ...(projection.atOccurrence?.finishedAt
-            ? { completedAt: projection.atOccurrence.finishedAt }
-            : projection.atOccurrence?.consumedAt
-              ? { completedAt: projection.atOccurrence.consumedAt }
-              : {}),
-        },
-      };
-    },
-    async history(automationId) {
-      await requireSettingsAutomation(state, automationId);
-      return await automationSettingsHistory(automationId);
-    },
-    async enable(automationId) {
-      const projection = await requireSettingsAutomation(state, automationId);
-      if (projection.health === "enabled") {
-        throw new AmpleFileCliError("conflict", "This automation is already on.");
-      }
-      if (projection.health === "completed") {
-        throw new AmpleFileCliError(
-          "conflict",
-          "This one-time automation is complete. Ask the AmpleFile Agent to set up a new automation for another time.",
-        );
-      }
-      const result = await runDesktopSettingsAct(state, "automations.enable", async (requestId) => {
-        const enabled = await enableStoredAutomationDeclaration(state, projection.declaration, projection.digest, {
-          requestId,
-          surface: "main-window",
-        });
-        return {
-          value: {
-            automationId: enabled.automationId,
-            requestId,
-            enabled: true as const,
-            alreadyEnabled: enabled.alreadyEnabled,
-          },
-          detail: `Enabled automation ${enabled.automationId}.`,
-        };
-      });
-      return result.value;
-    },
-    async enableTemplate(connectedFolderId, templateId) {
-      if (!isAutomationTemplateId(templateId)) throw new AmpleFileCliError("usage", "That ready-made Automation doesn't exist.");
-      const connectedFolder = await getConnectedFolder(connectedFolderId);
-      const automationId = automationTemplateAutomationId(templateId, connectedFolder.id);
-      const stored = await runActOperation(() => state.automations.getAutomation(automationId));
-      if (stored?.health === "enabled") return { automationId, requestId: "", enabled: true as const, alreadyEnabled: true };
-      // A ready-made Automation turned off earlier keeps its declaration, so Turn on is the same Automation.
-      const { declaration, digest } = stored && stored.health !== "completed"
-        ? { declaration: stored.declaration, digest: stored.digest }
-        : automationTemplateDeclaration(templateId, connectedFolder.id);
-      const result = await runDesktopSettingsAct(state, "automations.enable", async (requestId) => {
-        const enabled = await enableStoredAutomationDeclaration(state, declaration, digest, { requestId, surface: "main-window" });
-        return {
-          value: { automationId: enabled.automationId, requestId, enabled: true as const, alreadyEnabled: enabled.alreadyEnabled },
-          detail: `Enabled the ready-made automation ${enabled.automationId} in ${connectedFolder.name}.`,
-        };
-      });
-      return result.value;
-    },
-    async run(automationId) {
-      const projection = await requireSettingsAutomation(state, automationId);
-      if (projection.health !== "enabled") throw automationHealthConflict(projection.health);
-      const requestId = `settings:${randomUUID()}`;
-      const receipt = { requestId, command: "automations.run", surface: "main-window" as const };
-      if (!await state.actReceipts.append({ ...receipt, outcome: "accepted" })) {
-        throw new AmpleFileCliError(
-          "failure",
-          "AmpleFile could not journal this Settings action, so nothing was changed.",
-        );
-      }
-      let admission;
-      try {
-        admission = await runActOperation(() => state.automations.runNowAdmission(projection.declaration.id, {
-          requestId,
-          surface: "main-window",
-        }));
-      } catch (error) {
-        await state.actReceipts.append({
-          ...receipt,
-          outcome: "error",
-          ...(error instanceof AmpleFileCliError ? { errorCode: error.code } : {}),
-          detail: errorMessage(error),
-        }).catch(() => false);
-        throw error;
-      }
-      void admission.result.then(async (result) => {
-        await state.actReceipts.append({
-          ...receipt,
-          outcome: "ok",
-          detail: `Automation ${projection.declaration.id} settled ${result.outcome} as run ${result.runId}.`,
-        }).catch(() => false);
-      });
-      return {
-        automationId: projection.declaration.id,
-        requestId,
-        runId: admission.runId,
-        accepted: true,
-      };
-    },
-    async stop(automationId) {
-      const projection = await requireSettingsAutomation(state, automationId);
-      const result = await runDesktopSettingsAct(state, "automations.stop", async (requestId) => {
-        const stopped = state.automations.stopRun(projection.declaration.id, { requestId, surface: "main-window" });
-        if (!stopped) throw new AmpleFileCliError("conflict", "This automation has no active run.");
-        return {
-          value: stopped,
-          detail: `Stopped automation ${projection.declaration.id} run ${stopped.runId}.`,
-        };
-      });
-      return {
-        automationId: projection.declaration.id,
-        requestId: result.requestId,
-        runId: result.value.runId,
-        stopped: true,
-      };
-    },
-    async disable(automationId) {
-      const projection = await requireSettingsAutomation(state, automationId);
-      const result = await runDesktopSettingsAct(state, "automations.disable", async (requestId) => {
-        const disabled = await runActOperation(() => state.automations.disable(projection.declaration.id, {
-          requestId,
-          surface: "main-window",
-        }));
-        return {
-          value: disabled,
-          detail: `Disabled automation ${projection.declaration.id}.`,
-        };
-      });
-      return {
-        automationId: projection.declaration.id,
-        requestId: result.requestId,
-        disabled: true,
-        stoppedRunId: result.value.stoppedRunId,
-      };
-    },
-    async delete(automationId) {
-      const projection = await requireSettingsAutomation(state, automationId);
-      if (projection.health === "enabled") {
-        throw new AmpleFileCliError("conflict", "Turn this automation off before deleting it.");
-      }
-      if (projection.activeRunId) {
-        throw new AmpleFileCliError("conflict", "Stop this automation's active run before deleting it.");
-      }
-      const result = await runDesktopSettingsAct(state, "automations.delete", async (requestId) => {
-        await runActOperation(() => state.automations.deleteAutomation(projection.declaration.id, {
-          requestId,
-          surface: "main-window",
-        }));
-        return { value: true, detail: `Deleted automation ${projection.declaration.id}; its run history was retained.` };
-      });
-      return { automationId: projection.declaration.id, requestId: result.requestId, deleted: true };
-    },
-    async forConnectedFolder(connectedFolderId) {
-      const projections = (await runActOperation(() => state.automations.listAutomations()))
-        .filter((projection) => ampleFileAutomationReferencedConnectedFolderIds(projection.declaration).includes(connectedFolderId));
-      if (!projections.length) return { automations: [] };
-      const receiptProjection = await readAutomationReceiptProjectionsByAutomation();
-      const automations: FolderAutomationView[] = [];
-      for (const projection of projections) {
-        const history = await automationSettingsHistoryFromProjection(projection.declaration.id, receiptProjection);
-        const summary = await automationSettingsSummary(projection, history);
-        automations.push(folderAutomationView(projection, summary, connectedFolderId));
-      }
-      return { automations };
-    },
-    async requireConnectedFolderAutomation(connectedFolderId, automationId) {
-      const projection = await requireSettingsAutomation(state, automationId);
-      if (!ampleFileAutomationReferencedConnectedFolderIds(projection.declaration).includes(connectedFolderId)) {
-        throw new AmpleFileCliError("notFound", "This automation does not touch this folder.");
-      }
-    },
-  };
-}
-
-function folderAutomationView(
-  projection: AmpleFileAutomationProjection,
-  summary: AmpleFileAutomationSettingsSummary,
-  connectedFolderId: string,
-): FolderAutomationView {
-  // The act-lane trigger ref is the loose superset of the discriminated view
-  // Settings already renders over IPC.
-  const trigger = summary.trigger as AutomationTriggerView;
-  const state: FolderAutomationState = summary.activeRun
-    ? "running"
-    : ({ enabled: "on", disabled: "off", suspended: "suspended", completed: "completed" } as const)[summary.health];
-  return {
-    automationId: summary.automationId,
-    title: summary.title,
-    state,
-    triggerSummary: automationTriggerSummary(trigger),
-    nextRunAt: summary.nextScheduledAt ?? null,
-    lastRun: summary.lastRun
-      ? { at: summary.lastRun.startedAt, outcome: summary.lastRun.outcome, ...(summary.lastRun.partial ? { partial: true as const } : {}) }
-      : null,
-    roles: ampleFileAutomationConnectedFolderRoles(projection.declaration, connectedFolderId),
-  };
-}
-
-async function requireSettingsAutomation(state: LocalApiState, automationId: string): Promise<AmpleFileAutomationProjection> {
-  const id = automationId.trim();
-  if (!id) throw new AmpleFileCliError("usage", "An automation id is required.");
-  const projection = await runActOperation(() => state.automations.getAutomation(id));
-  if (!projection) throw new AmpleFileCliError("notFound", "No automation has this id on this machine.");
-  return projection;
-}
-
-function automationHealthConflict(health: AmpleFileAutomationProjection["health"]): AmpleFileCliError {
-  return new AmpleFileCliError(
-    "conflict",
-    health === "completed"
-      ? "This one-time automation is complete."
-      : health === "suspended"
-        ? "This automation is suspended because a referenced Connected Folder was removed."
-        : "This automation is off.",
-  );
-}
-
-async function automationSettingsConnectedFolderRefs(connectedFolderIds: string[]): Promise<AmpleFileAutomationSettingsConnectedFolderRef[]> {
-  return await Promise.all(connectedFolderIds.map(async (connectedFolderId) => {
-    const connectedFolder = await getConnectedFolder(connectedFolderId).catch(() => null);
-    return { connectedFolderId, ...(connectedFolder ? { connectedFolderName: connectedFolder.name } : {}) };
-  }));
-}
-
-async function automationSettingsSummary(
-  projection: AmpleFileAutomationProjection,
-  history: Pick<AmpleFileAutomationSettingsHistory, "runs" | "lastCatchUp">,
-): Promise<AmpleFileAutomationSettingsSummary> {
-  const runs = history.runs;
-  const lastRun = runs[0];
-  const active = projection.activeRunId ? runs.find((run) => run.runId === projection.activeRunId) : undefined;
-  const missingConnectedFolders = projection.suspension
-    ? await automationSettingsConnectedFolderRefs(projection.suspension.missingConnectedFolderIds)
-    : undefined;
-  return {
-    automationId: projection.declaration.id,
-    title: projection.declaration.title,
-    health: projection.health,
-    trigger: toActAutomationTriggerRef(projection.declaration.trigger),
-    ...(projection.fileWatch ? { fileWatch: projection.fileWatch } : {}),
-    stepCount: projection.declaration.steps.length,
-    connectedFolders: await automationSettingsConnectedFolderRefs(ampleFileAutomationReferencedConnectedFolderIds(projection.declaration)),
-    ...(projection.nextScheduledAt ? { nextScheduledAt: projection.nextScheduledAt } : {}),
-    ...(projection.lastScheduledAt ? { lastScheduledAt: projection.lastScheduledAt } : {}),
-    ...(projection.activeRunId && active ? { activeRun: { runId: projection.activeRunId, startedAt: active.startedAt } } : {}),
-    ...(lastRun
-      ? {
-        lastRun: {
-          runId: lastRun.runId,
-          outcome: lastRun.outcome,
-          startedAt: lastRun.startedAt,
-          ...(lastRun.finishedAt ? { finishedAt: lastRun.finishedAt } : {}),
-          ...(lastRun.partial ? { partial: true as const } : {}),
-        },
-      }
-      : {}),
-    ...(history.lastCatchUp ? { lastCatchUp: history.lastCatchUp } : {}),
-    ...(projection.suspension
-      ? {
-        suspension: {
-          at: projection.suspension.at,
-          reason: "A referenced Connected Folder was removed. Review the automation before turning it on again.",
-          ...(missingConnectedFolders?.length ? { missingConnectedFolders } : {}),
-        },
-      }
-      : {}),
-  };
-}
-
-type AmpleFileAutomationSettingsHistory = {
-  runs: AmpleFileAutomationSettingsRunView[];
-  truncated: boolean;
-  damagedLineCount: number;
-  lastCatchUp?: AmpleFileAutomationSettingsSummary["lastCatchUp"];
-};
-
-async function automationSettingsHistory(automationId: string): Promise<AmpleFileAutomationSettingsHistory> {
-  const projected = await readAutomationReceiptProjection(automationId);
-  return await automationSettingsHistoryFromProjection(automationId, projected);
-}
-
-async function automationSettingsHistoryFromProjection(
-  automationId: string,
-  projection: Awaited<ReturnType<typeof readAutomationReceiptProjection>>,
-): Promise<AmpleFileAutomationSettingsHistory> {
-  const projected = {
-    ...projection,
-    receipts: projection.receipts.filter((receipt) => receipt.automationId === automationId),
-  };
-  const connectedFolderIds = new Set<string>();
-  for (const receipt of projected.receipts) {
-    if (receipt.connectedFolderId) connectedFolderIds.add(receipt.connectedFolderId);
-    if (receipt.fromConnectedFolderId) connectedFolderIds.add(receipt.fromConnectedFolderId);
-    if (receipt.toConnectedFolderId) connectedFolderIds.add(receipt.toConnectedFolderId);
-  }
-  const connectedFolders = await automationSettingsConnectedFolderRefs([...connectedFolderIds]);
-  const connectedFolderNames = new Map(connectedFolders.filter((connectedFolder) => connectedFolder.connectedFolderName).map((connectedFolder) => [connectedFolder.connectedFolderId, connectedFolder.connectedFolderName!]));
-  const runs = new Map<string, AmpleFileAutomationSettingsRunView & { hopsById: Map<string, AmpleFileAutomationSettingsRunView["hops"][number]> }>();
-  let lastCatchUp: AmpleFileAutomationSettingsHistory["lastCatchUp"];
-  for (const receipt of [...projected.receipts].reverse()) {
-    if (!receipt.runId || (receipt.scope !== "run" && receipt.scope !== "hop")) continue;
-    if (receipt.scope === "run" && receipt.outcome === "accepted") {
-      const caughtUp = automationSettingsCatchUp(receipt.cause);
-      if (caughtUp && (!lastCatchUp || Date.parse(receipt.at) > Date.parse(lastCatchUp.at))) {
-        lastCatchUp = { runId: receipt.runId, at: receipt.at, ...caughtUp };
-      }
-    }
-    let run = runs.get(receipt.runId);
-    if (!run) {
-      run = {
-        runId: receipt.runId,
-        outcome: "accepted",
-        startedAt: receipt.at,
-        hops: [],
-        hopsById: new Map(),
-      };
-      runs.set(receipt.runId, run);
-    }
-    if (receipt.scope === "run") {
-      if (receipt.outcome === "accepted") {
-        run.startedAt = receipt.at;
-        const cause = automationSettingsCause(receipt.cause);
-        if (cause) run.cause = cause;
-      } else if (isAutomationSettingsOutcome(receipt.outcome)) {
-        run.outcome = receipt.outcome;
-        run.finishedAt = receipt.at;
-        if (receipt.detail) run.detail = receipt.detail;
-        if (receipt.partial) run.partial = true;
-      }
-      continue;
-    }
-    if (!receipt.hopId || !receipt.hopKind) continue;
-    let hop = run.hopsById.get(receipt.hopId);
-    if (!hop) {
-      hop = { hopId: receipt.hopId, kind: receipt.hopKind, outcome: "accepted" };
-      run.hopsById.set(receipt.hopId, hop);
-      run.hops.push(hop);
-    }
-    if (isAutomationSettingsOutcome(receipt.outcome)) hop.outcome = receipt.outcome;
-    if (receipt.partial) hop.partial = true;
-    const connectedFolderId = receipt.connectedFolderId ?? receipt.toConnectedFolderId ?? receipt.fromConnectedFolderId;
-    if (connectedFolderId && connectedFolderNames.has(connectedFolderId)) hop.connectedFolderName = connectedFolderNames.get(connectedFolderId);
-    if (receipt.detail) hop.detail = receipt.detail;
-    const evidence = automationSettingsEvidence(receipt);
-    if (evidence.length) hop.evidence = evidence;
-  }
-  return {
-    runs: [...runs.values()]
-      .sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt))
-      .slice(0, 50)
-      .map(({ hopsById: _hopsById, ...run }) => run),
-    truncated: projected.truncated || runs.size > 50,
-    damagedLineCount: projected.damagedLineCount,
-    ...(lastCatchUp ? { lastCatchUp } : {}),
-  };
-}
-
-function automationSettingsCatchUp(value: unknown): { count: number; reason: AutomationCatchUpReason } | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const cause = value as Record<string, unknown>;
-  return cause.kind === "files-changed" ? automationReceiptCatchUp(cause.catchUp, Number(cause.changedCount)) : undefined;
-}
-
-function isAutomationSettingsOutcome(value: string): value is AmpleFileAutomationSettingsOutcome {
-  return value === "accepted"
-    || value === "succeeded"
-    || value === "failed"
-    || value === "stopped"
-    || value === "interrupted"
-    || value === "skipped"
-    || value === "lapsed";
-}
-
-function automationSettingsCause(value: unknown): string | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const cause = value as Record<string, unknown>;
-  if (cause.kind === "files-changed") {
-    const catchUp = automationReceiptCatchUp(cause.catchUp, Number(cause.changedCount));
-    return catchUp ? automationCatchUpSentence(catchUp.count, catchUp.reason) : `Folder changed · ${cause.changedCount} file(s)`;
-  }
-  if (cause.kind === "run-now") return "Run Now";
-  if ((cause.kind === "scheduled" || cause.kind === "resume") && typeof cause.slotAt === "string") {
-    return cause.kind === "resume" ? `Caught up from ${cause.slotAt}` : `Scheduled for ${cause.slotAt}`;
-  }
-  return undefined;
-}
-
-function automationSettingsEvidence(receipt: AmpleFileActAutomationReceipt): Array<{ label: string; value: string }> {
-  const evidence: Array<{ label: string; value: string }> = [];
-  if (receipt.conversationId) evidence.push({ label: "Chat", value: receipt.conversationId });
-  if (receipt.taskId) evidence.push({ label: "Task", value: receipt.taskId });
-  if (receipt.checkpointIds?.length) evidence.push({ label: "History", value: receipt.checkpointIds.join(", ") });
-  if (receipt.restorePointId) evidence.push({ label: "Restore point", value: receipt.restorePointId });
-  if (receipt.fileCount !== undefined) evidence.push({ label: "Files", value: String(receipt.fileCount) });
-  if (receipt.totalBytes !== undefined) evidence.push({ label: "Bytes", value: String(receipt.totalBytes) });
-  if (receipt.placeholders?.length) {
-    evidence.push({ label: "Filled in", value: receipt.placeholders.map((placeholder) => placeholder.name).join(", ") });
-  }
-  return evidence;
-}
-
 export async function runActOperation<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
@@ -3692,7 +2711,7 @@ function capabilityGlobalMutationScope(): { id: string; connectedFolderRoot: str
 // ---------------------------------------------------------------------------
 
 /** Attribution the prepared-act verbs thread into automation grants: the initiating surface (docs/act-ledger.md). */
-function preparedActAttribution(surface: AmpleFileCliActSurface): PreparedActAttribution {
+export function preparedActAttribution(surface: AmpleFileCliActSurface): PreparedActAttribution {
   return { surface };
 }
 
@@ -3708,135 +2727,13 @@ function mapPreparedActError(error: PreparedActError): AmpleFileCliError {
   }
 }
 
-async function runPreparedActOperation<T>(operation: () => Promise<T>): Promise<T> {
+export async function runPreparedActOperation<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
   } catch (error) {
     if (error instanceof PreparedActError) throw mapPreparedActError(error);
     throw error;
   }
-}
-
-/**
- * The shared automation enablement door for the act lane and trusted desktop
- * Settings (docs/automations.md): normalize the declaration, check the
- * one-time horizon, verify the pinned digest and that every referenced
- * Connected Folder is registered, then run the `automation.enable` prepared act with the
- * normalized declaration as execution context. Keeping this outside the
- * act-facade closure prevents Settings from growing a second, subtly
- * different enablement path.
- */
-async function enableStoredAutomationDeclaration(
-  state: LocalApiState,
-  declaration: AmpleFileAutomationDeclaration,
-  digest: string,
-  context: {
-    surface: AmpleFileCliActSurface;
-    parentTaskId?: string;
-    requestId?: string;
-  },
-): Promise<{
-  automationId: string;
-  declarationDigest: string;
-  title: string;
-  referencedConnectedFolderIds: string[];
-  health: "enabled";
-  enabledAt: string;
-  /** True when this exact declaration was already on, so nothing changed. */
-  alreadyEnabled: boolean;
-  /** A run that was executing the previous declaration and was stopped. */
-  stoppedRunId: string | null;
-}> {
-  const normalized = normalizeAmpleFileAutomationDeclaration(declaration);
-  try {
-    assertAmpleFileAutomationAtAdmissionHorizon(normalized, new Date());
-  } catch (error) {
-    throw new AmpleFileCliError("conflict", errorMessage(error), { cause: error });
-  }
-  const actualDigest = ampleFileAutomationDigest(normalized);
-  if (actualDigest !== digest) {
-    throw new AmpleFileCliError(
-      "conflict",
-      "The automation declaration no longer matches its digest; nothing was enabled.",
-    );
-  }
-  const referencedConnectedFolderIds = ampleFileAutomationReferencedConnectedFolderIds(normalized);
-  for (const connectedFolderId of referencedConnectedFolderIds) {
-    const registered = await getConnectedFolder(connectedFolderId).catch(() => null);
-    if (!registered) {
-      throw new AmpleFileCliError(
-        "conflict",
-        `The Automation references a Connected Folder that is not registered on this machine (${connectedFolderId}).`,
-      );
-    }
-  }
-  const requestId = context.requestId?.trim() || randomUUID();
-  const before = await runActOperation(() => state.automations.getAutomation(normalized.id));
-  const alreadyEnabled = before?.health === "enabled" && before.digest === digest;
-  const automationContext: AutomationEnableContext = {
-    declaration: normalized,
-    requestId,
-    attribution: preparedActAttribution(context.surface),
-  };
-  await runActOperation(() => runPreparedActOperation(async () => {
-    const act = prepareAct({
-      kind: "automation.enable",
-      parameters: { automationId: normalized.id },
-      pins: { automationId: normalized.id, declarationDigest: digest },
-    });
-    await state.preparedActs.run({ act, requestId, context: automationContext });
-  }));
-  const record = automationContext.outcome;
-  return {
-    automationId: normalized.id,
-    declarationDigest: digest,
-    title: normalized.title,
-    referencedConnectedFolderIds,
-    health: "enabled",
-    enabledAt: record?.grants[record.grants.length - 1]?.enabledAt ?? new Date().toISOString(),
-    alreadyEnabled,
-    // Enabling a changed declaration stops the run still executing the prior
-    // one: revocation stops stale work before the change reads as complete.
-    stoppedRunId: !alreadyEnabled && before?.activeRunId !== undefined ? before.activeRunId : null,
-  };
-}
-
-/**
- * Reads one inert typed automation file — a proposal or a full declaration —
- * and normalizes it into the declaration enablement will verify. A proposal
- * gains a deterministic content-derived automation id, so identical content
- * always names one automation.
- */
-async function readAutomationStagingFile(
-  proposalPath: string,
-  cwd: string,
-): Promise<{ declaration: AmpleFileAutomationDeclaration; digest: string }> {
-  const path = isAbsolute(proposalPath) ? resolve(proposalPath) : resolve(cwd, proposalPath);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await readAmpleFileAutomationDocument(path));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT" || errorMessage(error).includes("ordinary file")) {
-      throw new AmpleFileCliError("notFound", "The automation proposal must be a regular file on this machine.", { cause: error });
-    }
-    throw new AmpleFileCliError("usage", `The automation proposal is not readable JSON: ${errorMessage(error)}`, { cause: error });
-  }
-  const kind = (parsed as { kind?: unknown } | null)?.kind;
-  try {
-    if (kind === ampleFileAutomationProposalKind) {
-      return contentAddressedAmpleFileAutomationDeclaration(normalizeAmpleFileAutomationProposal(parsed));
-    }
-    if (kind === ampleFileAutomationDeclarationKind) {
-      const declaration = normalizeAmpleFileAutomationDeclaration(parsed);
-      return { declaration, digest: ampleFileAutomationDigest(declaration) };
-    }
-  } catch (error) {
-    throw new AmpleFileCliError("usage", errorMessage(error), { cause: error });
-  }
-  throw new AmpleFileCliError(
-    "usage",
-    `The file is not a typed automation proposal (${ampleFileAutomationProposalKind}) or declaration (${ampleFileAutomationDeclarationKind}); nothing else is accepted.`,
-  );
 }
 
 /**
@@ -3948,7 +2845,7 @@ interface PreparedActOutcome<T> {
   requestId?: string;
 }
 
-interface AutomationEnableContext extends PreparedActOutcome<AmpleFileAutomationRecord> {
+export interface AutomationEnableContext extends PreparedActOutcome<AmpleFileAutomationRecord> {
   declaration: AmpleFileAutomationDeclaration;
   requestId: string;
   attribution: PreparedActAttribution;
@@ -4199,223 +3096,4 @@ function createManagedConnectedFolderDeletionAdapter(
       };
     },
   };
-}
-
-/**
- * The automation executor's hop ports: the same in-process internals the act
- * facade uses — turn acceptance in a fresh Chat, a new thread of the
- * AmpleFile Agent, and the files-add copy with its restore point — honoring
- * aborts through each domain's own abort path,
- * and returning identifiers and counts only. The executor fills every
- * placeholder before it calls a message port, so `message` is exactly what
- * the hop sends.
- */
-function createAutomationHopPorts(state: LocalApiState): AmpleFileAutomationHopPorts {
-  return {
-    async chat(step, message, context) {
-      const connectedFolder = await getConnectedFolder(step.connectedFolder);
-      const conversation = await createConversation(connectedFolder.connectedFolderRoot);
-      // A step's own model applies to this new Chat only: Pi records it in the
-      // session without touching the Connected Folder's or anyone's defaults.
-      if (step.model) await (await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, conversation.id)).setModel(step.model.provider, step.model.id);
-      const checkpoints: { pre?: string; post?: string } = {};
-      const observer = (event: TurnCheckpointEvent): void => {
-        if (event.connectedFolderId !== connectedFolder.id || event.conversationId !== conversation.id) return;
-        if (event.reason === "pre_turn") checkpoints.pre ??= event.checkpointId;
-        else checkpoints.post = event.checkpointId;
-      };
-      state.turnCheckpointListeners.add(observer);
-      try {
-        const { taskId } = await acceptConversationTurn(state, connectedFolder, conversation.id, {
-          content: message,
-          contextPaths: [],
-          actorKind: "system",
-          automationSource: { automationId: context.automationId, title: context.title },
-        });
-        const settled = await waitForSettledRequest(state, connectedFolder.id, conversation.id, taskId, context.signal);
-        const result = await completedRequestEnvelope(state, taskId);
-        return {
-          conversationId: conversation.id,
-          turnTaskId: taskId,
-          outcome: settled.status,
-          result,
-          ...(result && turnReportedResult(state, taskId) ? { reported: result } : {}),
-          ...(settled.error !== undefined ? { error: settled.error } : {}),
-          ...(checkpoints.pre !== undefined ? { preCheckpointId: checkpoints.pre } : {}),
-          ...(checkpoints.post !== undefined ? { postCheckpointId: checkpoints.post } : {}),
-        };
-      } finally {
-        state.turnCheckpointListeners.delete(observer);
-      }
-    },
-    // An agent hop always opens a *new* thread, never the person's live
-    // management thread: standing behavior must not entangle a conversation
-    // someone is in the middle of, and turn-conflict rejection stays exact.
-    // The acceptance shape is byte-for-byte the one `agent send` uses.
-    async ampleFileAgent(step, message, context) {
-      if (state.ampleFileAgentInstructionsError) {
-        throw new Error("The AmpleFile Agent is unavailable because AmpleFile could not prepare its instructions.");
-      }
-      const scope = ampleFileAgentScopeForRoutes(state);
-      const conversation = await createConversation(scope.rootPath);
-      if (step.model) await (await getClient(state, scope.id, scope.rootPath, conversation.id)).setModel(step.model.provider, step.model.id);
-      const { taskId } = await acceptConversationTurn(state, { id: scope.id, connectedFolderRoot: scope.rootPath }, conversation.id, {
-        content: message,
-        contextPaths: [],
-        actorKind: "system",
-        ampleFileAgentAttachments: [],
-        automationSource: { automationId: context.automationId, title: context.title },
-      });
-      const settled = await waitForSettledRequest(state, scope.id, conversation.id, taskId, context.signal);
-      return {
-        conversationId: conversation.id,
-        turnTaskId: taskId,
-        outcome: settled.status,
-        result: await completedRequestEnvelope(state, taskId),
-        ...(settled.error !== undefined ? { error: settled.error } : {}),
-      };
-    },
-    async modelProblem(model, scope) {
-      const root = "connectedFolder" in scope ? (await getConnectedFolder(scope.connectedFolder)).connectedFolderRoot : ampleFileAgentScopeForRoutes(state).rootPath;
-      const known = (await listPiModels(root, state.runtimeProvider)).find((item) => item.provider === model.provider && item.id === model.id);
-      if (!known) return `AmpleFile does not know the model ${model.id} from ${model.provider}. Choose one Settings → AI Models lists.`;
-      if (!known.configured) return `${known.name} needs ${known.providerName} connected in Settings → AI Models first.`;
-      return null;
-    },
-    async files(step, source, context) {
-      // Both folders' History is claimed at once before either is reserved,
-      // so a hop waiting for History holds no turns off in either folder.
-      const claimed = await Promise.all([getConnectedFolder(step.fromConnectedFolder), getConnectedFolder(step.toConnectedFolder)]);
-      return withConnectedFolderHistoryOperations(claimed.map((connectedFolder) => connectedFolder.connectedFolderRoot), async () => {
-        const reserved: string[] = [];
-        try {
-          for (const id of [...new Set([step.fromConnectedFolder, step.toConnectedFolder])].sort()) {
-            reserveCapabilityMutation(state, id, "project", id);
-            reserved.push(id);
-          }
-          // A files hop is deliberately not interruptible mid-copy: it completes
-          // with its restore point or fails as one unit, so the signal is only a
-          // pre-flight refusal here.
-          if (context.signal.aborted) throw new Error("The run was aborted before this hop copied anything.");
-          const from = await getConnectedFolder(step.fromConnectedFolder);
-          const to = await getConnectedFolder(step.toConnectedFolder);
-          if (from.connectedFolderRoot !== claimed[0]!.connectedFolderRoot || to.connectedFolderRoot !== claimed[1]!.connectedFolderRoot) {
-            throw httpError(409, "A Connected Folder in this hop moved while it waited. Try again in a moment.");
-          }
-          const absoluteSources = await resolveAutomationFilesSources(from.connectedFolderRoot, source);
-          const copied: string[] = [];
-          try {
-            await withConnectedFolderTouchBatch(async () => {
-              for (const sourcePath of absoluteSources) {
-                copied.push(await copyPathIntoConnectedFolder(sourcePath, to.connectedFolderRoot, step.to));
-              }
-            });
-          } catch (error) {
-            // A mid-batch failure must not strand earlier copies without a
-            // restore point: undo them best-effort, then surface the failure.
-            await Promise.all(copied.map((path) =>
-              rm(resolveConnectedFolderPath(to.connectedFolderRoot, path), { recursive: true, force: true }).catch(() => undefined)));
-            throw error;
-          }
-          const safety = await checkpointAdditiveWritesOrUndo(to.connectedFolderRoot, copied, {
-            reason: "pre_add",
-            label: `Before automation hop ${step.id} added ${copied.length} item${copied.length === 1 ? "" : "s"}`,
-          });
-          const measured = await measureConnectedFolderEntries(to.connectedFolderRoot, copied);
-          return {
-            ...(safety ? { restorePointId: safety.checkpointId } : {}),
-            copiedPaths: copied,
-            fileCount: measured.fileCount,
-            totalBytes: measured.totalBytes,
-          };
-        } finally { for (const id of reserved) state.capabilityMutations.delete(id); }
-      });
-    },
-    async checkpointManifest(connectedFolderId, checkpointId) {
-      const connectedFolder = await getConnectedFolder(connectedFolderId).catch(() => null);
-      if (!connectedFolder) return null;
-      const checkpoint = await getConnectedFolderCheckpoint(connectedFolder.connectedFolderRoot, checkpointId);
-      if (!checkpoint) return null;
-      return {
-        files: checkpoint.files.map((file) => ({
-          path: file.path,
-          hashSha256: file.hashSha256,
-          sizeBytes: file.sizeBytes,
-        })),
-        skippedFilePaths: checkpoint.skippedFiles.map((file) => file.path),
-      };
-    },
-  };
-}
-
-/**
- * Resolves an automation files hop's source selection inside the source Connected Folder:
- * exact paths under the ordinary Connected Folder path policy (no symbolic links, no
- * reserved segments), or the bounded tree selector through the folder target
- * resolver's discipline and the automation handoff bounds.
- */
-async function resolveAutomationFilesSources(
-  fromConnectedFolderRoot: string,
-  source: Parameters<AmpleFileAutomationHopPorts["files"]>[1],
-): Promise<string[]> {
-  if (source.kind === "paths") {
-    if (source.paths.length === 0) throw new Error("The files hop resolved no source paths.");
-    if (source.paths.length > ampleFileAutomationBounds.maxHandoffFiles) {
-      throw new Error(`The files hop names ${source.paths.length} paths, more than the ${ampleFileAutomationBounds.maxHandoffFiles}-file bound.`);
-    }
-    const absolute: string[] = [];
-    for (const raw of source.paths) {
-      const path = resolveConnectedFolderPath(fromConnectedFolderRoot, raw);
-      const info = await lstat(path).catch(() => null);
-      if (!info) throw new Error(`Source not found in the source Connected Folder: ${raw}.`);
-      if (info.isSymbolicLink()) throw new Error(`Symbolic-link sources cannot be copied: ${raw}.`);
-      if (!info.isFile() && !info.isDirectory()) throw new Error(`Only files and folders can be copied: ${raw}.`);
-      absolute.push(path);
-    }
-    return absolute;
-  }
-  const resolution = await resolveFolderTargets(fromConnectedFolderRoot, [{
-    kind: "tree",
-    role: "primary",
-    path: source.path,
-    recursive: source.recursive,
-    extensions: [...source.extensions],
-  }], {
-    limits: {
-      maxFiles: ampleFileAutomationBounds.maxHandoffFiles,
-      maxTotalBytes: ampleFileAutomationBounds.maxHandoffTotalBytes,
-    },
-  });
-  return resolution.files.map((file) => file.absolutePath);
-}
-
-const maxAutomationMeasureEntries = 10_000;
-
-/** Bounded evidence measurement of copied destinations: files and bytes. */
-async function measureConnectedFolderEntries(
-  connectedFolderRoot: string,
-  relativePaths: string[],
-): Promise<{ fileCount: number; totalBytes: number }> {
-  let fileCount = 0;
-  let totalBytes = 0;
-  let visited = 0;
-  const visit = async (path: string): Promise<void> => {
-    if (visited >= maxAutomationMeasureEntries) return;
-    visited += 1;
-    const info = await lstat(path).catch(() => null);
-    if (!info || info.isSymbolicLink()) return;
-    if (info.isFile()) {
-      fileCount += 1;
-      totalBytes += info.size;
-      return;
-    }
-    if (!info.isDirectory()) return;
-    for (const entry of await readdir(path).catch(() => [] as string[])) {
-      await visit(join(path, entry));
-    }
-  };
-  for (const relativePath of relativePaths) {
-    await visit(resolveConnectedFolderPath(connectedFolderRoot, relativePath));
-  }
-  return { fileCount, totalBytes };
 }
