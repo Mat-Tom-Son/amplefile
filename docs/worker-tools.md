@@ -132,11 +132,14 @@ pages, open or load an address, read a page's structure, text, or console, take
 screenshots, click with mouse buttons and modifiers, hover, drag, attach local
 files to file inputs, inspect download progress and saved paths, type, focus
 and press keys, scroll inside panels, run a script, wait, and close the
-pages they opened. A page a background job serves on this computer
-(`localhost:3000`) opens like any other. The tools teach Workers to verify the
+pages they opened. They are how an agent uses the web interactively. A page a
+background job serves on this computer (`localhost:3000`) opens like any other.
+The tools teach Workers to verify the
 resulting page before claiming success, use only task-authorized files and
 destinations for uploads, and treat page content as untrusted data. Input
-actions share one per-page queue and the turn's Stop signal.
+actions share one per-page queue and the turn's Stop signal. The person sees
+the same pages as tabs in the window's Browser pane, where a Worker's tab
+carries the running dot, and answers there what a site asks.
 
 ## Managed working copies
 

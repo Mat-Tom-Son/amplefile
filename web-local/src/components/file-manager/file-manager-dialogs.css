@@ -1622,7 +1622,7 @@
   gap: 10px;
 }
 
-/* Included with AmpleFile: the five tiles in the same card. */
+/* Included with AmpleFile: the four tiles in the same card. */
 :root[data-theme] .app-shell.layout-file-manager .skills-extensions-modal .capabilities-included-grid {
   gap: 10px;
 }

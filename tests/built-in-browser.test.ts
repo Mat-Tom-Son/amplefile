@@ -181,11 +181,24 @@ test("the browser tools name tabs plainly and follow the tab a Chat used", async
   await owned.get("browser_click")!.execute("call", { tab: "mine01", ref: "e3" } as never, undefined as never, undefined as never, undefined as never);
   assert.deepEqual(calls.at(-1), { method: "click", input: { tab: "mine01", ref: "e3", owner: "af-1/chat-1" } });
 
+  // Closing a tab runs as called; when its page had asked to be confirmed first, the result says what that cost.
+  const closeText = async (closed: { leftUnconfirmed?: boolean }) => {
+    const tool = createBrowserTools({ host: { ...host, close: async () => closed }, owner: "af-1/chat-1" }).find((item) => item.name === "browser_close")!;
+    const result = await tool.execute("call", { tab: "mine01" } as never, undefined as never, undefined as never, undefined as never) as { content: Array<{ text?: string }> };
+    return result.content[0]!.text;
+  };
+  assert.equal(await closeText({}), "Closed tab mine01.");
+  assert.equal(await closeText({ leftUnconfirmed: true }), "Closed tab mine01. The page had asked to be confirmed before closing, as a page with unsaved changes does; anything unsaved there is gone.");
+
   const empty = createBrowserTools({ host: { ...host, tabs: async () => [] } });
   await assert.rejects(
     empty.find((tool) => tool.name === "browser_read")!.execute("call", {} as never, undefined as never, undefined as never, undefined as never) as Promise<unknown>,
     /No browser tab is in use yet/,
   );
+  // A Worker's action that left a page which had asked to be confirmed says so in its result: the action ran, and this is what it cost.
+  assert.match(describeBrowserTab({ tab: "t1abcd", url: "https://example.com/next", title: "Next", loading: false, viewing: false, leftUnconfirmed: true }),
+    /^Tab t1abcd "Next" · https:\/\/example\.com\/next\nThe page left behind had asked to be confirmed before leaving, as a page with unsaved changes does\. It was left as this action asked; anything unsaved there is gone\.$/);
+  assert.doesNotMatch(describeBrowserTab({ tab: "t1abcd", url: "https://example.com/next", title: "Next", loading: false, viewing: false }), /asked to be confirmed/);
   assert.equal(describeBrowserTab({ tab: "t1abcd", url: "", title: "", loading: true, viewing: false, error: "net::ERR_NAME_NOT_RESOLVED (https://nowhere.invalid/)" }),
     "Tab t1abcd · blank (still loading)\nThe page did not load: net::ERR_NAME_NOT_RESOLVED (https://nowhere.invalid/)");
 });

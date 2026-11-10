@@ -81,7 +81,7 @@ interface InstalledCapability {
   flags: string[];
   configurable?: boolean;
   included?: IncludedToolDefinition;
-  /** Shipped with AmpleFile outside the five included tools: turned off, never removed. */
+  /** Shipped with AmpleFile outside the four included tools: turned off, never removed. */
   bundled?: true;
 }
 
@@ -306,7 +306,7 @@ export function CapabilitiesPane({
     () => filterAndSortCapabilities(resources, query, typeFilter),
     [resources, query, typeFilter],
   );
-  // The strip holds the five included Extensions; an included Skill (like document-work) is an ordinary Everywhere row.
+  // The strip holds the four included Extensions; an included Skill (like document-work) is an ordinary Everywhere row.
   const includedResources = visibleResources.filter((item) => item.scope === "global" && item.included && item.kind === "extension");
   const everywhereResources = visibleResources.filter((item) => item.scope === "global" && !(item.included && item.kind === "extension"));
   const connectedFolderResources = visibleResources.filter((item) => item.scope === "project");
@@ -739,8 +739,8 @@ function ScopeGroup({ scope, connectedFolderName, items, hiddenByQuery, onSelect
   );
 }
 
-/** The five tools that ship with AmpleFile, in the order they are shown. */
-const includedToolOrder: IncludedToolId[] = ["chrome", "computer", "web", "documents", "mcp"];
+/** The four tools that ship with AmpleFile, in the order they are shown. */
+const includedToolOrder: IncludedToolId[] = ["computer", "web", "documents", "mcp"];
 
 /** Every included tool with its status word, so setup state is visible without opening anything. */
 function IncludedToolsStrip({ items, statuses, onSelect }: {
@@ -1430,7 +1430,6 @@ function fixtureCatalog(): AgentCatalog {
 function fixtureIncludedToolStatuses(): IncludedToolStatus[] {
   const checkedAt = "2026-07-10T18:30:00.000Z";
   return [
-    { id: "chrome", state: "setup_required", detail: "Preview Chrome connection", checkedAt, chrome: { state: "not_connected", hasSelection: true, checkedAt } },
     { id: "computer", state: "ready", detail: "Preview computer check", checkedAt, stale: true },
     { id: "web", state: "ready", detail: "Preview Web readiness", checkedAt },
     { id: "documents", state: "ready", detail: "Preview Documents readiness", checkedAt },

@@ -1,6 +1,7 @@
 import type { AgentExtensionSurface, AgentStatus, TreeEntry, ConnectedFolderCheckpoint, ConnectedFolderCustomizationMap, ConnectedFolderFixtureConversation, ConnectedFolderSummary } from "../types";
 import { automationTriggerSummary, type FolderAutomationView } from "../../../src/shared/automation-presentation";
 import { buildFixtureFileContents, buildFixtureRestorePoints, type FixtureRestorePoint } from "./connected-folder-files";
+import { createFixtureBrowserBridge } from "./browser-fixture";
 
 export interface ConnectedFolderUiFixture {
   connectedFolders: ConnectedFolderSummary[];
@@ -15,6 +16,8 @@ export interface ConnectedFolderUiFixture {
   fileContents: Record<string, Record<string, string>>;
   surfaces: Record<string, AgentExtensionSurface[]>;
   agent: AgentStatus;
+  /** The Browser pane's sample pages; the preview has no desktop host. */
+  browser: NonNullable<NonNullable<Window["ampleFileDesktop"]>["browser"]>;
 }
 
 export function buildConnectedFolderFixture(): ConnectedFolderUiFixture {
@@ -35,6 +38,7 @@ export function buildConnectedFolderFixture(): ConnectedFolderUiFixture {
       [bathroom.id]: { color: "#0f8a8a", color2: "#5c7c2e", iconName: "wrench", bannerName: "horizon" },
     },
     agent: { ready: true, configured: true, provider: "openrouter", model: "anthropic/claude-sonnet-4", piVersion: "1.1.0", projectTrusted: true, error: null },
+    browser: createFixtureBrowserBridge(`${home.id}/fixture-chat-1`),
     trees: {
       [home.id]: [
         { name: "Kitchen refresh", path: "Kitchen refresh", kind: "folder", hasChildren: true, children: [{ name: "ideas.md", path: "Kitchen refresh/ideas.md", kind: "file", sizeBytes: 5240, updatedAt: now }, { name: "budget.xlsx", path: "Kitchen refresh/budget.xlsx", kind: "file", sizeBytes: 48200, updatedAt: now }] },

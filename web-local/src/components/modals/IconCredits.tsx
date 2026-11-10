@@ -3,7 +3,7 @@ export function IconCredits() {
     <details className="capability-technical-details icon-credits">
       <summary>Icon Credits</summary>
       <p>
-        Chrome, Computer Control, Web, and Documents icons by the{" "}
+        Computer Control, Web, and Documents icons by the{" "}
         <a href="https://github.com/Arcticons-Team/Arcticons" target="_blank" rel="noreferrer">Arcticons Team and contributors</a>,{" "}
         licensed under <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>.
         Adapted for React and theme colors, with wider strokes and simplified path data.

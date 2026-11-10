@@ -85,6 +85,8 @@ export interface BrowserPageState {
   blockedPopup: { url: string; origin: string | null } | null;
   /** The Chat whose Worker is using this page right now; `owner` is `<connected-folder id>/<conversation id>`. */
   worker: { owner: string } | null;
+  /** The page asked to be confirmed before it is left, and the person has not said yet. */
+  leaveQuestion: { requestId: string } | null;
 }
 
 /** What a browser tab's right-click menu asks the tab strip to do; the page's own actions run in the desktop host. */
@@ -119,7 +121,7 @@ export interface BrowserViewBounds {
 /** The renderer's placeholder for one browser tab: where the page shows, and whether it should. */
 export interface BrowserViewRequest {
   pageId: string;
-  /** Loaded when the page does not exist yet, as for a tab restored after a restart. */
+  /** Loaded when the page does not exist yet, as for a duplicated or reopened tab the window has not shown. */
   url: string;
   sequence: number;
   bounds: BrowserViewBounds;
@@ -150,7 +152,12 @@ export interface BrowserFindResult {
   final: boolean;
 }
 
-/** A browser key the renderer handles while the page has keyboard focus. */
+/**
+ * A browser key the renderer handles while the page has keyboard focus. `key`
+ * is `KeyboardReturned`, with nothing pressed, when a page that had the
+ * keyboard was taken out of the window: the window then puts the keyboard
+ * somewhere that takes no typing.
+ */
 export interface BrowserShortcut {
   pageId: string;
   key: string;
@@ -179,6 +186,8 @@ export interface BrowserTabSummary {
   error?: string;
   /** What the page is waiting for the person to allow, in words. */
   asking?: string;
+  /** The Worker's action left a page that had asked to be confirmed first. */
+  leftUnconfirmed?: boolean;
 }
 
 export interface BrowserActionResult {
@@ -233,7 +242,7 @@ export interface BrowserToolHost {
   evaluate(input: BrowserCaller & { tab: string; script: string; signal?: AbortSignal }): Promise<{ tab: BrowserTabSummary; result: string }>;
   wait(input: BrowserCaller & { tab: string; text?: string; seconds: number; signal?: AbortSignal }): Promise<{ tab: BrowserTabSummary; found: boolean | null }>;
   console(input: BrowserCaller & { tab: string }): Promise<{ tab: BrowserTabSummary; entries: string[] }>;
-  close(input: BrowserCaller & { tab: string }): Promise<void>;
+  close(input: BrowserCaller & { tab: string }): Promise<{ leftUnconfirmed?: boolean }>;
 }
 
 const pageIdPattern = /^[a-z0-9]{6,32}$/;

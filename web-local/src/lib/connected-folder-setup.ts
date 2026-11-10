@@ -1,22 +1,16 @@
 /**
- * Set up for me: one click asks the Connected Folder's Worker to look
- * the folder over and set it up, through the included set-up-connected-folder
- * Skill. "Set up for me" organizes it, writes Worker instructions, and gives
- * it a look; "Just the look" sets the banner, icon, and color and never
- * touches a file.
+ * Set Up for Me: one click asks the Connected Folder's Worker to look the
+ * folder over and set it up, through the included set-up-connected-folder
+ * Skill: it organizes the folder, writes Worker instructions, and gives it a
+ * look. It is offered once, on a card in the panel right after a folder is
+ * connected.
  */
 import { readStoredJsonValue, writeStoredJsonValue } from "./storage";
 
-export type ConnectedFolderSetUpMode = "full" | "look";
+/** The message Set Up for Me sends; the Skill does the rest. */
+export const connectedFolderSetUpMessage = "Set up this Connected Folder for me.";
 
-/** The first message each choice sends; the Skill does the rest. */
-export function connectedFolderSetUpMessage(mode: ConnectedFolderSetUpMode): string {
-  return mode === "full"
-    ? "Set up this Connected Folder for me."
-    : "Just the look: give this Connected Folder a banner, icon, and color that fit it, without changing any of its files.";
-}
-
-/** Connected Folders just added whose setup card is still showing; × or either choice removes one for good. */
+/** Connected Folders just added whose set-up card is still showing; either button removes one for good. */
 export const connectedFolderSetUpOffersKey = "amplefile.connected-folder.setup-offers.v1";
 
 export function readConnectedFolderSetUpOffers(): string[] {

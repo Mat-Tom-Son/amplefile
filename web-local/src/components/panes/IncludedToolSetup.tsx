@@ -1,5 +1,4 @@
 import { IncludedMcpSetup } from "./IncludedMcpSetup";
-import { IncludedChromeSetup } from "./IncludedChromeSetup";
 import { IncludedComputerSetup } from "./IncludedComputerSetup";
 import { DocumentsEngineSetup } from "./IncludedDocumentsSetup";
 import { useEffect, useRef, useState } from "react";
@@ -13,7 +12,6 @@ type Result = { status: IncludedToolStatus };
 type SetupProps = { connectedFolderId: string; tool: IncludedToolDefinition; enabled: boolean; onStatusChange?: (status: IncludedToolStatus | null) => void };
 
 export function IncludedToolSetup(props: SetupProps) {
-  if (props.tool.id === "chrome") return <IncludedChromeSetup connectedFolderId={props.connectedFolderId} enabled={props.enabled} onStatusChange={props.onStatusChange} />;
   if (props.tool.id === "computer") return <IncludedComputerSetup key={props.connectedFolderId} connectedFolderId={props.connectedFolderId} enabled={props.enabled} onStatusChange={props.onStatusChange} />;
   return <IncludedToolSetupSession key={`${props.connectedFolderId}:${props.tool.id}`} {...props} />;
 }

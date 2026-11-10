@@ -5,8 +5,6 @@
 .included-tool-setup .ui-control { height: auto; max-width: 100%; min-height: 36px; padding-block: 8px; white-space: normal; line-height: 1.35; }
 .included-tool-status { justify-content: space-between; }
 .included-tool-status strong { font-size: var(--amplefile-type-base); }
-.included-chrome-actions { margin-top: 12px; }
-.included-chrome-actions:empty { display: none; }
 .included-tool-setup .included-tool-error { color: var(--ui-danger, #b13b3b); overflow-wrap: anywhere; }
 .included-tool-facts { font-size: var(--amplefile-type-xs); margin-top: 16px; }
 .included-tool-facts div { display: grid; grid-template-columns: minmax(0, 125px) minmax(0, 1fr); gap: 12px; margin: 6px 0; }
@@ -31,7 +29,7 @@
 .included-mcp-form summary { cursor: default; }
 .included-mcp-auth { padding: 8px 0; }
 
-/* Computer Control's permission checklist and Chrome's two steps. */
+/* Computer Control's permission checklist. */
 .setup-checklist { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 8px; }
 .setup-checklist li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface); }
 .setup-checklist li > svg { color: var(--ui-text-subtle); }
@@ -43,13 +41,6 @@
 .setup-checklist .ui-control { min-height: 30px; padding-block: 4px; }
 .included-tool-setup .setup-hint { color: var(--ui-text-muted); font-size: var(--amplefile-type-sm); }
 .included-tool-setup .setup-waiting { display: inline-flex; align-items: center; gap: 8px; color: var(--ui-text-muted); }
-.setup-steps { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 10px; }
-.setup-steps li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface); }
-.setup-steps li > div { display: grid; gap: 4px; justify-items: start; }
-.setup-steps li > div > span { color: var(--ui-text-muted); line-height: 1.45; }
-.setup-steps li .ui-control { margin-top: 6px; }
-.setup-step-mark { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--ui-border-strong); color: var(--ui-text-muted); font-size: var(--amplefile-type-xs); font-weight: 700; }
-.setup-steps li.done .setup-step-mark { color: var(--ui-surface); background: var(--ui-success); border-color: var(--ui-success); }
 
 /* Documents: the programs that let a Worker check its documents. */
 .setup-checklist .setup-checklist-state.problem { color: var(--ui-attention); }

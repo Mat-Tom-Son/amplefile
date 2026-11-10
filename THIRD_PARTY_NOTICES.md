@@ -7,7 +7,7 @@ available in Settings → About → Icon Credits.
 
 ## Arcticons
 
-The Chrome, Computer Control, Web, and Documents artwork in
+The Computer Control, Web, and Documents artwork in
 `web-local/src/components/panes/IncludedToolIcon.tsx` is derived from
 [Arcticons](https://github.com/Arcticons-Team/Arcticons) by the **Arcticons Team
 and contributors**.
@@ -21,9 +21,8 @@ Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)**:
 
 The original artwork collection is available in the upstream
 [icons directory](https://github.com/Arcticons-Team/Arcticons/tree/8866512cc4edbc2650a6478c6264d88db778fe8d/icons).
-The Chrome, Computer Control, and Documents originals are respectively
-`icons/white/google_chrome.svg`, `icons/white/emoji_desktop_computer.svg`, and
-`icons/white/documents.svg`.
+The Computer Control and Documents originals are respectively
+`icons/white/emoji_desktop_computer.svg` and `icons/white/documents.svg`.
 
 Changes in AmpleFile: SVG markup was converted to React; stroke colors use
 `currentColor`; stroke width was increased to 2.6; and paths were combined,

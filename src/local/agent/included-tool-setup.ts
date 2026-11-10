@@ -1,7 +1,6 @@
 import { join } from "node:path";
 import { createJiti } from "jiti";
 import { resolvePiRuntime, type PiRuntimeProvider } from "./pi-runtime-config.js";
-import type { ChromeConnectionState, ChromeConnectionSummary, ChromeSetupAction } from "../../shared/chrome-connection.js";
 import { includedToolDefinitions, type IncludedToolId, type IncludedToolStatus } from "../../shared/included-tools.js";
 import { checkDocumentEngines, discoverDocumentEngines, includedComputerStatus, includedDocumentsStatus } from "../../../resources/included-tools/readiness.js";
 import { beginIncludedToolObservation, includedToolObservation } from "./included-tool-observations.js";
@@ -9,35 +8,7 @@ import { loadIncludedMcpConfig } from "./included-mcp-setup.js";
 
 const jiti = createJiti(import.meta.url, { moduleCache: true });
 
-/** Explicit projection: native leases, profile identities and bootstrap proofs stay in the host. */
-function chromeStatus(summary?: ChromeConnectionSummary, environment?: { browserInstalled: boolean; extensionSeen: boolean }): IncludedToolStatus {
-  const source = summary ?? { state: "native_host_missing", checkedAt: new Date().toISOString() };
-  const chrome: ChromeConnectionSummary = {
-    state: source.state, checkedAt: source.checkedAt,
-    ...(source.extensionVersion ? { extensionVersion: source.extensionVersion } : {}),
-    ...(typeof source.hasSelection === "boolean" ? { hasSelection: source.hasSelection } : {}),
-    ...(["transport_unavailable", "native_host_unavailable"].includes(source.problem ?? "") ? { problem: source.problem } : {}),
-  };
-  const details: Record<ChromeConnectionState, string> = {
-    not_connected: "Chrome is not connected.", connecting: "Connecting to Chrome.", connected: "Chrome is connected.",
-    app_not_running: "Open AmpleFile.", native_host_missing: "Chrome setup requires the desktop app.",
-    update_app: "Update AmpleFile.", update_extension: "Update the Chrome extension.",
-    profile_conflict: "Another Chrome profile is connected.", busy: "Chrome is in use. Stop its work before changing the connection.",
-    store_unavailable: "The Chrome extension is not available yet.", connection_error: "The Chrome connection could not be verified.",
-  };
-  return {
-    id: "chrome", state: !summary ? "unavailable" : chrome.state === "connected" ? "ready"
-      : ["app_not_running", "update_app", "update_extension", "store_unavailable", "connection_error"].includes(chrome.state) ? "unavailable" : "setup_required",
-    detail: chrome.problem === "transport_unavailable" ? "The local Chrome connection could not start. Another local browser automation host may be using its port. Quit that host, then restart AmpleFile."
-      : chrome.problem === "native_host_unavailable" ? "The Chrome native helper could not be registered. Open Chrome setup to repair the connection."
-      : chrome.state === "not_connected" && chrome.hasSelection ? "Open Chrome. Your selected profile reconnects automatically."
-      : environment && !environment.browserInstalled && chrome.state !== "connected" ? "Install Google Chrome to let your Worker browse with it."
-      : details[chrome.state], checkedAt: chrome.checkedAt, chrome,
-    ...(environment ? { chromeSetup: { browserInstalled: environment.browserInstalled, extensionSeen: environment.extensionSeen } } : {}),
-  };
-}
-
-/** Catalog inspection never starts a helper, a browser connection, or an MCP server. */
+/** Catalog inspection never starts a helper or an MCP server. */
 export async function listIncludedToolStatus(cwd: string, provider?: PiRuntimeProvider): Promise<IncludedToolStatus[]> {
   const runtime = await resolvePiRuntime(cwd, provider, { requestProjectTrust: false });
   if (!runtime.config.includedTools) return [];
@@ -55,10 +26,6 @@ export async function listIncludedToolStatus(cwd: string, provider?: PiRuntimePr
   const documentEngines = await discoverDocumentEngines(runtime.config.includedTools.documentEngineSearch);
   return includedToolDefinitions.map(({ id }) => {
     if (id === "mcp") return mcp;
-    if (id === "chrome") {
-      const connection = runtime.config.includedTools?.chromeConnection;
-      return chromeStatus(connection?.status(), connection?.environment?.());
-    }
     const now = new Date().toISOString();
     if (id === "web") return braveCredential?.type === "api_key"
       ? { id, state: "unknown", detail: "Brave Search key saved. The connection is verified when you search. Public page reading is available.", checkedAt: now }
@@ -70,7 +37,7 @@ export async function listIncludedToolStatus(cwd: string, provider?: PiRuntimePr
   });
 }
 
-export type IncludedSetupAction = ChromeSetupAction | "start-check" | "request-permissions" | "accessibility" | "screen-recording" | "recheck" | "connect-brave" | "disconnect-brave";
+export type IncludedSetupAction = "check" | "start-check" | "request-permissions" | "accessibility" | "screen-recording" | "recheck" | "connect-brave" | "disconnect-brave";
 export interface IncludedSetupResult { status: IncludedToolStatus }
 
 /** Trusted local setup only. Secrets and permission prompts never enter a turn. */
@@ -78,22 +45,7 @@ export async function setupIncludedTool(cwd: string, id: IncludedToolId, action:
   const runtime = await resolvePiRuntime(cwd, provider, { requestProjectTrust: false });
   const config = runtime.config.includedTools;
   if (!config) throw new Error("Included tools are unavailable in this host.");
-  if (id === "chrome") {
-    if (!["connect-chrome", "disconnect-chrome", "change-chrome-profile", "check"].includes(action)) throw new Error("Unknown Chrome setup action.");
-    const service = config.chromeConnection;
-    if (!service) throw new Error("Chrome setup requires the desktop app.");
-    let summary: ChromeConnectionSummary;
-    switch (action) {
-      case "connect-chrome": summary = await service.prepare(); break;
-      case "disconnect-chrome": summary = await service.disconnect(); break;
-      case "change-chrome-profile": summary = await service.changeProfile(); break;
-      case "check": summary = await service.check(); break;
-      default: throw new Error("Unknown Chrome setup action.");
-    }
-    // Its app-owned observation already accounts for profile generation and
-    // handshake freshness. Never retain a second five-minute Ready cache.
-    return { status: chromeStatus(summary, service.environment?.()) };
-  }
+  if (!includedToolDefinitions.some((definition) => definition.id === id)) throw new Error("Unknown included tool.");
   // Starting an explicit recheck invalidates earlier evidence even if this
   // attempt throws before it can produce a new structured result.
   const finishObservation = beginIncludedToolObservation(runtime, id, true);

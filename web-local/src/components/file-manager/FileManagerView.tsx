@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
-import { Add16Regular, ChevronDown16Regular, ChevronUp16Regular, FolderArrowRight16Regular, Sparkle16Regular, Grid20Regular, MoreHorizontal20Regular, PanelRight20Regular, TextBulletListLtr20Regular } from "@fluentui/react-icons";
+import { Add16Regular, ChevronDown16Regular, ChevronUp16Regular, FolderArrowRight16Regular, Globe20Regular, Sparkle16Regular, Grid20Regular, MoreHorizontal20Regular, PanelRight20Regular, TextBulletListLtr20Regular } from "@fluentui/react-icons";
 
 import "./file-manager.css";
 import "./file-manager-dialogs.css";
@@ -9,7 +9,7 @@ import { TextInputModal } from "../modals/TextInputModal";
 import { NewFolderModal, type NewFolderTarget } from "../modals/NewFolderModal";
 import { FileVersionHistoryModal } from "../modals/FileVersionHistoryModal";
 import { SkillsExtensionsModal } from "../modals/SkillsExtensionsModal";
-import { connectedFolderSetUpMessage, type ConnectedFolderSetUpMode } from "../../lib/connected-folder-setup";
+import { connectedFolderSetUpMessage } from "../../lib/connected-folder-setup";
 import { requestConnectAi } from "../../lib/connect-ai";
 import { queueHistoryRequest } from "../../lib/history-queue";
 import type { SettingsPage } from "../modals/DesktopSettingsModal";
@@ -77,6 +77,9 @@ import { chatActivityKey } from "../../lib/chat-lifecycle";
 import { FileManagerComposer, FileManagerPanel } from "./FileManagerPanel";
 import { ChatPanel, WorkerModelRow } from "../chat/ChatPanel";
 import { PaneResizer, panelWidthSpec, sidebarWidthSpec, usePaneWidth } from "./PaneResizer";
+import { BrowserPane, BrowserSplitResizer, type BrowserPaneWorker } from "./BrowserPane";
+import { useBrowserPages } from "../../hooks/useBrowserPages";
+import { browserHost, browserWorkerChat, clampBrowserFraction, effectiveBrowserLayout, type BrowserPaneLayout } from "../../lib/browser-pages";
 import { GoToFolderSheet, type GoToFolderLookup } from "./GoToFolderSheet";
 import { UpdateIndicator } from "./UpdateIndicator";
 import { isMarkedPath, useWorkerChanges, workerChangesSummary } from "./useWorkerChanges";
@@ -93,7 +96,18 @@ const panelStorageKey = "amplefile.file-manager.panel.v1";
 const sortStorageKey = "amplefile.file-manager.sort.v1";
 /** Connected Folders whose nested Connected Folders are shown in the sidebar. */
 const sidebarOpenStorageKey = "amplefile.file-manager.sidebar-open.v1";
+/** The Browser pane's share of the main area when the folder and the browser are both shown. */
+const browserSplitStorageKey = "amplefile.file-manager.browser-split.v1";
+/** How the Browser pane was left, so a window closed and reopened, or reloaded, shows the same tab the same way. Pages do not outlive a quit, so neither does this. */
+const browserPaneStorageKey = "amplefile.file-manager.browser-pane.v1";
+function readStoredBrowserPane(parsed: unknown): { layout: BrowserPaneLayout; activePageId: string | null } | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  const { layout, activePageId } = parsed as { layout?: unknown; activePageId?: unknown };
+  if (layout !== "collapsed" && layout !== "split" && layout !== "full") return null;
+  return { layout, activePageId: typeof activePageId === "string" ? activePageId : null };
+}
 const typeSelectResetMs = 900;
+const noSetUpOffers: readonly string[] = [];
 
 /** The desktop calls for one place's files. */
 interface PlaceFileBridge {
@@ -108,7 +122,7 @@ interface PlaceFileBridge {
  * window"): a Finder-style window over the same local API and desktop bridge
  * Files uses. The sidebar opens the Standard Folders and every Connected Folder.
  */
-export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, onOpenSettings, updateStatus = null, onUpdateAction, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, onError }: {
+export function FileManagerView({ connectedFolder: activeConnectedFolder, connectedFolders, appearance, agent, fixture, desktopAction, modelConfigurationRevision = 0, onSwitchConnectedFolder, onOpenSettings, updateStatus = null, onUpdateAction, onRefreshBootstrap, onCreateConnectedFolder, onOpenFolder, setUpOffers = noSetUpOffers, newSetUpOffers = noSetUpOffers, onOfferSetUp, onCloseSetUpOffer, onError }: {
   connectedFolder: ConnectedFolderSummary;
   connectedFolders: ConnectedFolderSummary[];
   agent: AgentStatus;
@@ -128,6 +142,14 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   /** The + beside Connected Folders: New Connected Folder and Connect Folder, as in the File menu. */
   onCreateConnectedFolder: () => void;
   onOpenFolder: () => void;
+  /** Connected Folders just connected whose Set Up for Me card is still showing. */
+  setUpOffers?: readonly string[];
+  /** Those of them connected since AmpleFile was opened: their card is brought into view, even when this window is only now appearing. */
+  newSetUpOffers?: readonly string[];
+  /** A folder was connected from this window: offer to set it up. */
+  onOfferSetUp?: (connectedFolderId: string) => void;
+  /** The card was answered, either way: it does not come back. */
+  onCloseSetUpOffer?: (connectedFolderId: string) => void;
   onError: (message: string | null) => void;
 }) {
   const fixtureMode = Boolean(fixture);
@@ -209,6 +231,19 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const panelArriving = panelOpen && Date.now() < panelArrivalRef.current;
   useEffect(() => { panelSeenOpenRef.current = panelOpen; }, [panelOpen]);
   const setPanelOpen = (next: boolean) => { setPanelOpenState(next); writeStoredJsonValue(panelStorageKey, next); };
+  // A folder connected while the window is open brings its Set Up for Me card into view: the panel opens on Info.
+  // An offer left from an earlier day waits quietly where it is. One made just now is shown, including the first
+  // folder connected from the welcome, when this window appears with the offer already made.
+  const seenSetUpOffersRef = useRef(new Set(setUpOffers.filter((id) => !newSetUpOffers.includes(id))));
+  const [infoRequest, setInfoRequest] = useState(0);
+  useEffect(() => {
+    // The card is at the top of the Connected Folder it is for, so it is brought into view when that one is shown.
+    const shown = connectedFolder?.id;
+    if (!shown || !setUpOffers.includes(shown) || seenSetUpOffersRef.current.has(shown)) return;
+    seenSetUpOffersRef.current.add(shown);
+    setPanelOpen(true);
+    setInfoRequest((value) => value + 1);
+  }, [setUpOffers, connectedFolder?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const folderAutomations = useFolderAutomations(connectedFolder?.id ?? activeConnectedFolder.id, fixtureMode);
   const [query, setQuery] = useState("");
   const [searchScope, setSearchScope] = useState<FileManagerSearchScope>("here");
@@ -281,6 +316,143 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   // message box keeps it null (as a new Chat tab does) and learns `activeId`.
   const [panelChat, setPanelChat] = useState<{ key: number; connectedFolderId: string; conversationId: string | null; activeId: string | null; title: string; sendRequest: ChatSendRequest | null; open: boolean } | null>(null);
 
+  // The Browser pane (docs/built-in-browser.md): the built-in browser's tabs,
+  // under the folder's contents. The tabs belong to no Connected Folder, so
+  // they stay as the folder shown changes. A tab a Worker opens arrives as the
+  // tab strip alone; the person decides how much of the area the page takes.
+  const mainRef = useRef<HTMLElement | null>(null);
+  const [browserLayoutChoice, setBrowserLayout] = useState<BrowserPaneLayout>("collapsed");
+  const [browserFraction, setBrowserFractionState] = useState(() => readStoredJsonValue(browserSplitStorageKey, clampBrowserFraction, clampBrowserFraction(null)));
+  const setBrowserFraction = (next: number) => { setBrowserFractionState(next); writeStoredJsonValue(browserSplitStorageKey, next); };
+  // The page the person can see right now, as the pane reports it: Workers are told only that.
+  const [browserViewingPageId, setBrowserViewingPageId] = useState<string | null>(null);
+  const browser = useBrowserPages({
+    bridge: fixture ? fixture.browser ?? null : window.ampleFileDesktop?.browser ?? null,
+    viewingPageId: browserViewingPageId,
+    // A link the person followed, or a page a Worker was asked to show, opens the pane if it is folded away.
+    onShow: () => setBrowserLayout((current) => current === "collapsed" || current === "hidden" ? "split" : current),
+  });
+  const browserLayout = effectiveBrowserLayout(browserLayoutChoice, browser.tabs.length);
+  const browserShown = browserLayout === "split" || browserLayout === "full";
+  // With its last tab closed the pane goes away, and the next tab a Worker opens arrives as the strip alone.
+  useEffect(() => { if (browser.ready && !browser.tabs.length) setBrowserLayout("collapsed"); }, [browser.ready, browser.tabs.length]);
+  // The window was closed and reopened, or reloaded, with pages still running: the pane comes back as it was left,
+  // with the same tab in front. Read once, when the desktop's pages are known.
+  const browserRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!browser.ready || browserRestoredRef.current) return;
+    browserRestoredRef.current = true;
+    const stored = readStoredJsonValue(browserPaneStorageKey, readStoredBrowserPane, null);
+    // Pages do not outlive a quit, so the tab that was in front still being here is what says this is the same
+    // launch. A size saved in an earlier launch is not applied: a page the person never opened arrives as the strip.
+    if (!stored?.activePageId || !browser.tabs.some((tab) => tab.pageId === stored.activePageId)) return;
+    browser.select(stored.activePageId);
+    setBrowserLayout(stored.layout);
+  }, [browser.ready]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!browserRestoredRef.current) return;
+    writeStoredJsonValue(browserPaneStorageKey, browser.tabs.length ? { layout: browserLayout === "hidden" ? "collapsed" : browserLayout, activePageId: browser.activeId } : null);
+  }, [browserLayout, browser.activeId, browser.tabs.length]);
+  // A page asked to be confirmed before it is left (a form half filled in), and the person started the leaving:
+  // the window asks, and tells the desktop the answer. Nothing leaves until they say.
+  const browserLeaveAskedRef = useRef(new Map<string, AbortController | null>());
+  useEffect(() => {
+    const asked = browserLeaveAskedRef.current;
+    const standing = new Set<string>();
+    for (const page of Object.values(browser.pages)) {
+      const question = page.leaveQuestion;
+      if (!question) continue;
+      standing.add(question.requestId);
+      if (asked.has(question.requestId)) continue;
+      const withdraw = new AbortController();
+      asked.set(question.requestId, withdraw);
+      const site = browserHost(page.url);
+      // The keyboard starts on Cancel: the Return that asked for the address must not also answer Leave.
+      void requestConfirm({ title: "Leave This Page?", body: `Changes you made${site ? ` on ${site}` : ""} may not be saved.`, confirmLabel: "Leave", tone: "danger", signal: withdraw.signal })
+        .then((leave) => {
+          // Withdrawn: the page has already gone, or stayed, without the person. There is nothing left to answer.
+          if (withdraw.signal.aborted) return;
+          asked.set(question.requestId, null);
+          return browser.bridge?.command(page.pageId, { type: leave ? "leave-page" : "stay-on-page" });
+        })
+        .catch((caught) => onError(errorText(caught)));
+    }
+    // The question went away on the desktop (a Worker moved the page on, it redirected itself, its tab closed):
+    // the dialog goes with it.
+    for (const [requestId, withdraw] of asked) {
+      if (standing.has(requestId)) continue;
+      withdraw?.abort();
+      asked.delete(requestId);
+    }
+  }, [browser.pages]); // eslint-disable-line react-hooks/exhaustive-deps
+  function toggleBrowser() {
+    if (browserLayout === "hidden") { browser.newTab(); setBrowserLayout("split"); }
+    else setBrowserLayout(browserShown ? "collapsed" : "split");
+  }
+  /** Whose Worker is using a page, and the way to its Chat: the Chat opens in the panel, in its own Connected Folder. */
+  function describeBrowserWorker(owner: string): BrowserPaneWorker | null {
+    const chat = browserWorkerChat(owner);
+    const folder = chat ? connectedFolders.find((item) => item.id === chat.connectedFolderId) : undefined;
+    if (!chat || !folder) return { label: "A Worker is using this page", title: "A Worker is using this page" };
+    return {
+      label: `Worker in ${folder.name}`,
+      title: `The ${folder.name} Worker is using this page`,
+      onOpen: () => {
+        setPanelOpen(true);
+        if (!(panelChat && panelChat.connectedFolderId === folder.id && (panelChat.activeId ?? panelChat.conversationId) === chat.conversationId)) {
+          setPanelChat({ key: Date.now(), connectedFolderId: folder.id, conversationId: chat.conversationId, activeId: chat.conversationId, title: untitledChatLabel, sendRequest: null, open: true });
+        } else setPanelChat({ ...panelChat, open: true });
+        // A Chat belongs to its Connected Folder, so the window goes there when another is shown.
+        // Already in it, the person keeps their place, whichever of its folders they are in.
+        if (folder.id === connectedFolder?.id) return;
+        // The folder stays beside the browser only if it was already there.
+        const keep = browserLayout;
+        navigate({ place: { kind: "connected-folder", id: folder.id }, path: "" }, "push", folder);
+        setBrowserLayout(keep);
+      },
+    };
+  }
+  // Searching or opening Recents brings the folder back when the browser had the whole area.
+  useEffect(() => {
+    if (query.trim() || recentsOpen) setBrowserLayout((current) => current === "full" ? "split" : current);
+  }, [query, recentsOpen]);
+  /** Brings one browser tab into view, from a notice; a tab closed since has nothing to show. */
+  function showBrowserTab(pageId: string) {
+    if (!browserTabsRef.current.some((tab) => tab.pageId === pageId)) return;
+    browser.select(pageId);
+    setBrowserLayout((current) => current === "full" ? current : "split");
+  }
+  const browserTabsRef = useRef(browser.tabs);
+  browserTabsRef.current = browser.tabs;
+  // A site is waiting on the person and its page is not in view: the window says so once for each question, and
+  // takes the notice down when the question is answered, dropped by the page, or brought into view.
+  const browserAskedRef = useRef(new Map<string, { pageId: string; dismiss: (() => void) | null }>());
+  useEffect(() => {
+    const asked = browserAskedRef.current;
+    const pending = new Set<string>();
+    for (const page of Object.values(browser.pages)) {
+      const request = page.permissionRequest;
+      if (!request) continue;
+      pending.add(request.requestId);
+      const inView = browserViewingPageId === page.pageId;
+      const known = asked.get(request.requestId);
+      if (known) {
+        // In view, the question is in front of the person, above the page.
+        if (inView && known.dismiss) { known.dismiss(); known.dismiss = null; }
+        continue;
+      }
+      asked.set(request.requestId, {
+        pageId: page.pageId,
+        dismiss: inView ? null : showToast({ text: `${browserHost(request.origin)} is waiting for your answer`, tone: "info", actionLabel: "Show Page", onAction: () => showBrowserTab(page.pageId), durationMs: 12_000 }),
+      });
+    }
+    for (const [requestId, entry] of asked) {
+      if (pending.has(requestId)) continue;
+      entry.dismiss?.();
+      asked.delete(requestId);
+    }
+  }, [browser.pages, browserViewingPageId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Another part of the app (the menu bar, a notification) chose a different
   // Connected Folder: show its top level, as choosing it in the sidebar would.
   useEffect(() => {
@@ -318,6 +490,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   function navigate(next: FileManagerLocation, history: "push" | "back" | "forward" = "push", switchTo?: ConnectedFolderSummary) {
     setRecentsOpen(false);
+    // Going somewhere brings the folder back when the browser had the whole area.
+    setBrowserLayout((current) => current === "full" ? "split" : current);
     if (sameLocation(next, location)) return;
     navMotionRef.current = { key: `${placeKey(next.place)}\0${next.path}`, from: navigationSide({ placeKey: placeKey(location.place), path: location.path }, { placeKey: placeKey(next.place), path: next.path }, history) };
     if (history === "push") { setBack((items) => [...items, location]); setForward([]); }
@@ -820,6 +994,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         : `/api/standard-folders/${encodeURIComponent(target.id)}/connected-folders`;
       const { connectedFolder: created } = await api<{ connectedFolder: ConnectedFolderSummary }>(url, { method: "POST", body: { path } });
       await Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
+      onOfferSetUp?.(created.id);
       const open = () => navigate({ place: { kind: "connected-folder", id: created.id }, path: "" }, "push", created);
       if (target.kind === "standard" && !path) {
         // The folder itself is a Connected Folder now, and the sidebar lists it there.
@@ -900,6 +1075,16 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       window.requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".fm-comp .fm-field input")?.focus());
     } else if (command === "reload-connected-folder-state") void Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
     else if (command === "customize-connected-folder" && desktopAction.connectedFolderId) setCustomizing({ connectedFolderId: desktopAction.connectedFolderId, section: "banner" });
+    // Close Tab (⌘W) from the menu closes the browser tab in front only while the Browser pane has the keyboard and
+    // no dialog is open: never from a Chat's message box, the folder's list, or behind Settings. A page that has the
+    // keyboard sends its own Close Tab through the desktop host, naming itself.
+    else if (command === "close-tab" && browserShown && browser.activeId
+      && document.activeElement instanceof HTMLElement && document.activeElement.closest(".fm-browser")
+      && !document.querySelector('[role="dialog"], .modal-backdrop')) {
+      browser.close(browser.activeId);
+      // The keyboard stays in the tab strip, so the next ⌘W closes the next tab.
+      window.requestAnimationFrame(() => document.querySelector<HTMLElement>('.fm-browser-tab [role="tab"][tabindex="0"]')?.focus());
+    }
   }, [desktopAction?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function renameConnectedFolder(target: ConnectedFolderSummary, name: string) {
@@ -999,7 +1184,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       : { x: Math.round(anchor.left), y: Math.round(anchor.bottom + 4) };
     const popup = window.ampleFileDesktop?.connectedFolder.popupHeaderMenu;
     if (mac && popup) {
-      try { run(await popup({ actions: { newChat: false, customize: false, setUp: false, reveal: false, manage: false, ...actions }, point })); }
+      try { run(await popup({ actions: { newChat: false, customize: false, organize: false, reveal: false, manage: false, ...actions }, point })); }
       catch (caught) { onError(errorText(caught)); }
       return;
     }
@@ -1067,7 +1252,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     if (mac && popup) {
       try {
         const command = await popup({
-          actions: { newChat: false, customize: Boolean(target), setUp: Boolean(target) && !fixtureMode, reveal: Boolean(bridge) || Boolean(target), skills: Boolean(target), settings: true, manage: false, remove: Boolean(target), removeDeletes: target?.location.storage === "managed" },
+          actions: { newChat: false, customize: Boolean(target), organize: Boolean(target) && !fixtureMode, reveal: Boolean(bridge) || Boolean(target), skills: Boolean(target), settings: true, manage: false, remove: Boolean(target), removeDeletes: target?.location.storage === "managed" },
           point,
         });
         runActionCommand(command, target);
@@ -1082,24 +1267,30 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     else if (command === "customize" && target) setCustomizing({ connectedFolderId: target.id, section: "banner" });
     else if (command === "remove-connected-folder" && target) void removeConnectedFolder(target);
     else if (command === "skills" && target) setSkillsFor(target);
-    else if ((command === "set-up" || command === "look") && target) setUp(target, command === "set-up" ? "full" : "look");
+    else if (command === "organize" && target) organize(target);
     else if (command === "reveal") {
       if (target) void window.ampleFileDesktop?.connectedFolder.revealFolder(target.id).catch((caught) => onError(errorText(caught)));
       else void openLocal("", "reveal");
     }
   }
 
-  /** Set Up for Me or Just the Look: a Chat in the panel whose first message the set-up Skill answers. */
-  function setUp(target: ConnectedFolderSummary, mode: ConnectedFolderSetUpMode) {
-    withAi(() => sendSetUp(target, mode));
+  /** Organize, from the Action menu or a Connected Folder's right-click menu: a Chat in the panel asking its Worker to organize it. */
+  function organize(target: ConnectedFolderSummary) {
+    withAi(() => sendToWorker(target, "Organize this folder.", "Organize this folder."));
   }
 
-  function sendSetUp(target: ConnectedFolderSummary, mode: ConnectedFolderSetUpMode) {
+  /** Set Up for Me, from the card shown after a folder is connected: a Chat in the panel whose first message the set-up Skill answers. */
+  function setUp(target: ConnectedFolderSummary) {
+    // The offer closes when the message goes, so backing out of Set Up AI leaves the card where it was.
+    withAi(() => { onCloseSetUpOffer?.(target.id); sendToWorker(target, connectedFolderSetUpMessage, "Set Up for Me"); });
+  }
+
+  /** A new Chat with one message for a Connected Folder's Worker, going to that Connected Folder first if it is not the one shown. */
+  function sendToWorker(target: ConnectedFolderSummary, text: string, title: string) {
     if (target.id !== connectedFolder?.id) navigate({ place: { kind: "connected-folder", id: target.id }, path: "" }, "push", target);
     setPanelOpen(true);
     const id = Date.now();
-    const text = connectedFolderSetUpMessage(mode);
-    setPanelChat({ key: id, connectedFolderId: target.id, conversationId: null, activeId: null, title: mode === "full" ? "Set Up for Me" : "Just the Look", sendRequest: { id, text, paths: [] }, open: true });
+    setPanelChat({ key: id, connectedFolderId: target.id, conversationId: null, activeId: null, title, sendRequest: { id, text, paths: [] }, open: true });
   }
 
   /** A file a Chat names: show it here, selected, the way the design does. */
@@ -1484,6 +1675,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     ? `Work on this ${references[0]!.kind === "folder" ? "folder" : "file"}`
     : references.length > 1 ? `Work on these ${references.length} items` : `Work in ${folderName}`;
   const chatConnectedFolder = panelChat ? connectedFolders.find((item) => item.id === panelChat.connectedFolderId) ?? null : null;
+  // Set Up for Me is offered once, at the top of a Connected Folder just connected, until it is answered.
+  const setUpOffered = Boolean(connectedFolder && setUpOffers.includes(connectedFolder.id)) && !location.path && !searchMode && !recentsOpen && !selection.length;
   const panelChatId = panelChat ? panelChat.activeId ?? panelChat.conversationId : null;
   const chatKey = (conversationId: string) => panelChat ? chatActivityKey(panelChat.connectedFolderId, conversationId) : "";
 
@@ -1554,7 +1747,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     </nav>
 
     <PaneResizer spec={sidebarWidthSpec} side="left" width={sidebarWidth} label="Resize the sidebar" shellRef={shellRef} otherPaneWidth={panelOpen ? panelWidth : 0} onCommit={setSidebarWidth} />
-    <section className="fm-main" aria-label={folderName}>
+    <section className="fm-main" aria-label={folderName} ref={mainRef} data-browser={browserLayout} style={{ "--fm-browser-fraction": browserFraction } as CSSProperties}>
       <header className="fm-toolbar">
         <div className="fm-capsule">
           <button type="button" className="fm-tool" onClick={goBack} disabled={!back.length} aria-label="Back" title="Back"><ChevronLeft size={16} /></button>
@@ -1569,22 +1762,24 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           <button type="button" className={`fm-tool${view === "icons" ? " is-on" : ""}`} aria-pressed={view === "icons"} aria-label="Icons" title="Icons" onClick={() => setView("icons")}><Grid20Regular /></button>
           <button type="button" className={`fm-tool${view === "list" ? " is-on" : ""}`} aria-pressed={view === "list"} aria-label="List" title="List" onClick={() => setView("list")}><TextBulletListLtr20Regular /></button>
         </div>
-        {connectedFolder && !location.path && !query.trim() && !recentsOpen ? <button type="button" className="fm-tool fm-tool-wide" title="Organize" onClick={() => { setPanelOpen(true); startChat("Organize this folder.", []); }}>
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2.5 9.5h3l1 1.5h3l1-1.5h3" /><path d="M2.5 9.5v3.25h11V9.5" /><path d="M4.5 6.5h7M5.75 3.75h4.5" /></svg>
-          <span className="fm-tool-wide-t">Organize</span>
-        </button> : null}
         <div className="fm-capsule">
           <button type="button" className="fm-tool" aria-label="Action" title="Action" aria-haspopup="menu" onClick={(event) => void openActionMenu(connectedFolder, event)}><MoreHorizontal20Regular /></button>
         </div>
-        <div className="fm-capsule">
-          <button type="button" className={`fm-tool${panelOpen ? " is-on" : ""}`} aria-pressed={panelOpen} aria-label="Show or hide the panel" title={panelOpen ? "Hide Panel" : "Show Panel"} onClick={() => setPanelOpen(!panelOpen)}><PanelRight20Regular /></button>
-        </div>
+        {browser.available ? <div className="fm-capsule">
+          <button type="button" className={`fm-tool${browserShown ? " is-on" : ""}`} aria-pressed={browserShown} aria-label="Browser" title={browserShown ? "Hide Browser" : "Show Browser"} onClick={toggleBrowser}><Globe20Regular /></button>
+        </div> : null}
         <label className="fm-search">
           <Search size={14} />
           <input ref={searchFieldRef} type="search" value={query} placeholder="Search names and contents" aria-label={`Search ${folderName}`} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); contentRef.current?.focus(); } }} />
           {query ? <button type="button" className="fm-search-clear" aria-label="Clear search" onClick={() => { setQuery(""); contentRef.current?.focus(); }}><X size={12} /></button> : null}
         </label>
+        {/* The last control, nearest the panel it shows and hides. */}
+        <div className="fm-capsule">
+          <button type="button" className={`fm-tool${panelOpen ? " is-on" : ""}`} aria-pressed={panelOpen} aria-label="Show or hide the panel" title={panelOpen ? "Hide Panel" : "Show Panel"} onClick={() => setPanelOpen(!panelOpen)}><PanelRight20Regular /></button>
+        </div>
       </header>
+      {/* The folder's half of the main area. With the browser given the whole area it folds away, still mounted. */}
+      <div className="fm-files" inert={browserLayout === "full"}>
       {searching ? <div className="fm-scope" role="group" aria-label="Search">
         <span>Search:</span>
         <button type="button" className={`fm-pill${searchScope === "all" ? " is-on" : ""}`} aria-pressed={searchScope === "all"} onClick={() => setSearchScope("all")}>All Connected Folders</button>
@@ -1756,11 +1951,25 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         </nav>
         <span className="fm-status">{statusText}</span>
       </footer>
+      </div>
+      {/* The band between the folder and the browser: the slider beside the folder, a plain band over the folded strip. */}
+      {browserLayout === "split" ? <BrowserSplitResizer fraction={browserFraction} mainRef={mainRef} onCommit={setBrowserFraction} />
+        : browserLayout === "collapsed" ? <div className="fm-browser-divide" aria-hidden="true" /> : null}
+      {browserLayout !== "hidden" ? <BrowserPane
+        browser={browser}
+        layout={browserLayout}
+        onLayout={setBrowserLayout}
+        onViewing={setBrowserViewingPageId}
+        sample={fixtureMode}
+        describeWorker={describeBrowserWorker}
+        onError={onError}
+      /> : null}
     </section>
 
     {panelOpen ? <PaneResizer spec={panelWidthSpec} side="right" width={panelWidth} label="Resize the panel" shellRef={shellRef} otherPaneWidth={sidebarWidth} onCommit={setPanelWidth} /> : null}
     {panelOpen ? <FileManagerPanel
       arriving={panelArriving}
+      infoRequest={infoRequest}
       place={place}
       connectedFolder={connectedFolder}
       placeName={placeName}
@@ -1769,7 +1978,11 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       folderName={folderName}
       folderColor={!location.path && placeIdentity ? placeIdentity.color : null}
       folderSymbol={!location.path && connectedFolder ? folderLook(connectedFolder).symbol : null}
-      receipt={workerChanges && connectedFolder && !searchMode && !recentsOpen && !selection.length ? <WorkerReceipt
+      receipt={setUpOffered && connectedFolder ? <SetUpOffer
+        name={connectedFolder.name}
+        onSetUp={() => setUp(connectedFolder)}
+        onDismiss={() => onCloseSetUpOffer?.(connectedFolder.id)}
+      /> : workerChanges && connectedFolder && !searchMode && !recentsOpen && !selection.length ? <WorkerReceipt
         changes={workerChanges}
         onShow={(path) => { const folder = parentPath(path); if (folder !== location.path) navigate({ place: { kind: "connected-folder", id: connectedFolder.id }, path: folder }); window.setTimeout(() => select([path]), folder !== location.path ? 300 : 0); }}
         onUndo={() => void undoWorkerChanges()}
@@ -1812,7 +2025,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
           onSettled={(conversationId, needsAttention) => { activity.setAttention(chatKey(conversationId), needsAttention && !(panelChat.open && conversationId === panelChatId)); setTurnsSettled((value) => value + 1); }}
           onViewed={(conversationId) => activity.setAttention(chatKey(conversationId), false)}
           // A reply can change more than files: a look the Worker applied
-          // (Just the Look, Set Up for Me) arrives with the bootstrap read.
+          // (Set Up for Me, or a look asked for in words) arrives with the bootstrap read.
           onAgentFinished={() => Promise.all([listing.refresh(), onRefreshBootstrap()]).then(() => undefined)}
         />,
       } : null}
@@ -1854,8 +2067,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       <div className="fm-menu" role="menu" style={{ left: actionMenu.x, top: actionMenu.y }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setActionMenu(null); } }}>
         {actionMenu.target ? <>
           <button type="button" className="fm-menu-i" role="menuitem" autoFocus onClick={() => { const target = actionMenu.target; setActionMenu(null); runActionCommand("customize", target); }}>Customize Connected Folder</button>
-          <button type="button" className="fm-menu-i" role="menuitem" onClick={() => { const target = actionMenu.target; setActionMenu(null); runActionCommand("set-up", target); }}>Set Up for Me</button>
-          <button type="button" className="fm-menu-i" role="menuitem" onClick={() => { const target = actionMenu.target; setActionMenu(null); runActionCommand("look", target); }}>Just the Look</button>
+          <button type="button" className="fm-menu-i" role="menuitem" onClick={() => { const target = actionMenu.target; setActionMenu(null); runActionCommand("organize", target); }}>Organize</button>
           <button type="button" className="fm-menu-i" role="menuitem" onClick={() => { const target = actionMenu.target; setActionMenu(null); runActionCommand("skills", target); }}>Skills &amp; Extensions…</button>
           <div className="fm-menu-sep" />
           <button type="button" className="fm-menu-i" role="menuitem" onClick={() => { const target = actionMenu.target; setActionMenu(null); runActionCommand("remove-connected-folder", target); }}>{actionMenu.target.location.storage === "linked" ? "Disconnect…" : "Delete Connected Folder…"}</button>
@@ -1957,6 +2169,20 @@ function WorkerReceipt({ changes, onShow, onUndo, onDone }: {
     <div className="fm-receipt-actions">
       <button type="button" className="fm-btn is-small" onClick={onUndo}>Undo</button>
       <button type="button" className="fm-btn is-small" onClick={onDone}>Done</button>
+    </div>
+  </section>;
+}
+
+/** The one place Set Up for Me is offered: a card at the top of Info, right after a folder is connected. Either button closes it for good. */
+function SetUpOffer({ name, onSetUp, onDismiss }: { name: string; onSetUp: () => void; onDismiss: () => void }) {
+  return <section className="fm-receipt fm-setup-offer" data-exit-motion="collapse" aria-label={`Set up ${name}`}>
+    <div className="fm-receipt-head">
+      <span className="fm-receipt-title">Set Up This Folder</span>
+    </div>
+    <p className="fm-setup-offer-s">Your Worker can look this folder over, organize it, and give it a look that fits.</p>
+    <div className="fm-receipt-actions">
+      <button type="button" className="fm-btn is-small is-primary" onClick={onSetUp}>Set Up for Me</button>
+      <button type="button" className="fm-btn is-small" onClick={onDismiss}>No Thanks</button>
     </div>
   </section>;
 }

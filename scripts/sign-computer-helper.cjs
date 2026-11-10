@@ -26,15 +26,6 @@ module.exports = async function signComputerHelper(context) {
   args.push("--sign", identity, helper);
   execFileSync("codesign", args, { stdio: "inherit" });
   execFileSync("codesign", ["--verify", "--strict", helper], { stdio: "inherit" });
-  const chrome = join(app, "Contents", "Resources", "chrome-native-host", "amplefile-chrome-host");
-  const chromeSource = JSON.parse(readFileSync(join(app, "Contents", "Resources", "chrome-native-host", "source.json"), "utf8"));
-  if (chromeSource.schema !== "amplefile.chrome-native-host-source.v1" || chromeSource.bootstrapVersion !== 1) throw new Error("Missing Chrome bootstrap provenance.");
-  const chromeArgs = ["--force", "--identifier", "com.amplefile.desktop.chrome-native-host"];
-  if (release) chromeArgs.push("--options", "runtime", "--timestamp");
-  else chromeArgs.push("--timestamp=none");
-  chromeArgs.push("--sign", identity, chrome);
-  execFileSync("codesign", chromeArgs, { stdio: "inherit" });
-  execFileSync("codesign", ["--verify", "--strict", chrome], { stdio: "inherit" });
   const { verifyPackagedNativeHelpers } = await import("./verify-packaged-native-tools.mjs");
   console.log(await verifyPackagedNativeHelpers(resources));
 };

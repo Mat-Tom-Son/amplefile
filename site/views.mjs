@@ -21,7 +21,6 @@ export const glyph = {
   sortUp: sv('<path d="M4 10 8 6l4 4"/>', 1.5),
   grid: sv('<rect x="2.5" y="2.5" width="4.25" height="4.25" rx="1.1"/><rect x="9.25" y="2.5" width="4.25" height="4.25" rx="1.1"/><rect x="2.5" y="9.25" width="4.25" height="4.25" rx="1.1"/><rect x="9.25" y="9.25" width="4.25" height="4.25" rx="1.1"/>', 1.1),
   list: sv('<path d="M6 4.25h7.5M6 8h7.5M6 11.75h7.5"/><circle cx="3" cy="4.25" r=".55"/><circle cx="3" cy="8" r=".55"/><circle cx="3" cy="11.75" r=".55"/>', 1.15),
-  organize: sv('<path d="M2.5 9.5h3l1 1.5h3l1-1.5h3"/><path d="M2.5 9.5v3.25h11V9.5"/><path d="M4.5 6.5h7M5.75 3.75h4.5"/>', 1.4),
   more: sv('<circle cx="3.75" cy="8" r=".55"/><circle cx="8" cy="8" r=".55"/><circle cx="12.25" cy="8" r=".55"/>', 1.3),
   panel: sv('<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M10 3v10"/>', 1.1),
   search: sv('<circle cx="7" cy="7" r="4.5"/><path d="m10.4 10.4 3.1 3.1"/>', 1.5),
@@ -113,14 +112,18 @@ function sidebar({ std, con }) {
 <div class="mw-sh"><span>Connected Folders</span>${glyph.plus}</div><ul class="mw-sl">${c}</ul></aside>`;
 }
 
-/** The toolbar. title: name; icon: HTML (or swap parts); organize: true, false, or {in, press}. */
-function toolbar({ title, icon, organize = true, more, menu = "" }) {
-  const org = organize ? `<span class="mw-wide${organize.in != null ? " a-fade" : ""}"${organize === true ? "" : at(organize)}>${glyph.organize}<span>Organize</span></span>` : "";
+/** The Action menu's items for a Connected Folder; null is the separator. */
+const ACTIONS = ["Customize Connected Folder", "Organize", "Skills & Extensions…", null, "Disconnect…", "Settings…"];
+/** The Action menu, open from step `open` until `choose`, when the pointer chooses `item`. */
+const actionMenu = ({ open, choose, item }) => `<div class="mw-menu a-menu"${at({ in: open, out: choose })}>${ACTIONS.map((t) => (t == null ? '<i class="sep"></i>' : `<span class="mi"${t === item ? at({ press: choose }) : ""}>${t.replace("&", "&amp;")}</span>`)).join("")}</div>`;
+
+/** The toolbar. title: name; icon: HTML (or swap parts); more: when Action is pressed; menu: the Action menu's HTML. */
+function toolbar({ title, icon, more, menu = "" }) {
   return `<header class="mw-tb"><span class="mw-cap"><span class="mw-tool dis">${glyph.chevL}</span><span class="mw-tool dis">${glyph.chevR}</span></span>
 <span class="mw-title">${icon}<span class="tt">${title}</span></span><span class="mw-space"></span>
-<span class="mw-cap"><span class="mw-tool">${glyph.grid}</span><span class="mw-tool on">${glyph.list}</span></span>${org}
-<span class="mw-cap${menu ? " mw-anchor" : ""}"><span class="mw-tool"${at(more)}>${glyph.more}</span>${menu}</span><span class="mw-cap"><span class="mw-tool on">${glyph.panel}</span></span>
-<span class="mw-search">${glyph.search}<span>Search names and contents</span></span></header>`;
+<span class="mw-cap"><span class="mw-tool">${glyph.grid}</span><span class="mw-tool on">${glyph.list}</span></span>
+<span class="mw-cap${menu ? " mw-anchor" : ""}"><span class="mw-tool"${at(more)}>${glyph.more}</span>${menu}</span><span class="mw-cap"><span class="mw-tool">${glyph.globe}</span></span>
+<span class="mw-search">${glyph.search}<span>Search names and contents</span></span><span class="mw-cap"><span class="mw-tool on">${glyph.panel}</span></span></header>`;
 }
 
 const head = `<div class="mw-cols"><span class="mw-col on">Name ${glyph.sortUp}</span><span class="mw-col">Date Modified</span><span class="mw-col s">Size</span></div>`;
@@ -141,8 +144,8 @@ function pathbar(parts, count) {
   return `<footer class="mw-path"><span class="mw-goto">${glyph.goto}</span><span class="mw-crumbs">${parts.map((p) => `<span class="cr">${p}</span>`).join(`<span class="sep">${glyph.chevR}</span>`)}</span><span class="ct">${count}</span></footer>`;
 }
 
-function main({ title, icon, organize, more, menu, lists, path, count }) {
-  return `<section class="mw-main">${toolbar({ title, icon, organize, more, menu })}${head}<div class="mw-rows">${lists}</div>${pathbar(path, count)}</section>`;
+function main({ title, icon, more, menu, lists, path, count }) {
+  return `<section class="mw-main">${toolbar({ title, icon, more, menu })}${head}<div class="mw-rows">${lists}</div>${pathbar(path, count)}</section>`;
 }
 
 const folderTitle = (name) => fi("folder", COLORS[name]);
@@ -226,26 +229,26 @@ const DL_PATH = ["Macintosh HD", "Users", "you", "Downloads"];
 const CON = ["Client Work", "Downloads", "Home Renovation", "Taxes 2026"];
 const STD_ALL = ["desktop", "documents", "pictures", "home", "icloud"];
 
-/** Downloads: press Organize; the Worker makes five folders and moves the loose files in three batches, as the list shows them; the dots come when the turn ends. */
+/** Downloads: choose Organize from the Action menu; the Worker makes five folders and moves the loose files in three batches, as the list shows them; the dots come when the turn ends. */
 export function viewOrganizeLive() {
-  // 1 press Organize; 2 thought; 3 listed; 4 reading; 5 mkdir running; 6 folders appear, first mv; 7–9 a batch leaves per mv; 10 the turn ends.
-  const steps = [1200, 800, 550, 600, 1000, 850, 700, 700, 700, 650];
-  const batch = { "document (3).pdf": 7, "invoice-2026-10-internet.pdf": 7, "order-113-4492.pdf": 7, "receipt-0931.pdf": 7, "IMG_4471.HEIC": 8, "Screenshot 2026-11-06 at 8.02.51 AM.png": 8, "garden-plan.jpg": 8, "lease-renewal-412-maple.pdf": 8, "PhotoTool-Installer.dmg": 9, "printer-driver-5.2.pkg": 9, "kickoff-notes.docx": 9, "slides-final-v3.pptx": 9 };
-  const folders = DL_FOLDERS.map((n, i) => ({ n, k: "folder", d: "Today at 9:41 AM", s: "--", at: { in: 6, d: i * 28 }, dot: { in: 10, d: 80 + i * 45 } }));
+  // 1 press Action; 2 choose Organize; 3 thought; 4 listed; 5 reading; 6 mkdir running; 7 folders appear, first mv; 8–10 a batch leaves per mv; 11 the turn ends.
+  const steps = [1100, 900, 800, 550, 600, 1000, 850, 700, 700, 700, 650];
+  const batch = { "document (3).pdf": 8, "invoice-2026-10-internet.pdf": 8, "order-113-4492.pdf": 8, "receipt-0931.pdf": 8, "IMG_4471.HEIC": 9, "Screenshot 2026-11-06 at 8.02.51 AM.png": 9, "garden-plan.jpg": 9, "lease-renewal-412-maple.pdf": 9, "PhotoTool-Installer.dmg": 10, "printer-driver-5.2.pkg": 10, "kickoff-notes.docx": 10, "slides-final-v3.pptx": 10 };
+  const folders = DL_FOLDERS.map((n, i) => ({ n, k: "folder", d: "Today at 9:41 AM", s: "--", at: { in: 7, d: i * 28 }, dot: { in: 11, d: 80 + i * 45 } }));
   // The listing sorts by name alone, so the new folders land among the files.
   const all = [...DL_BEFORE.map((r) => ({ ...r, gone: batch[r.n] })), ...folders].sort((a, b) => a.n.localeCompare(b.n, "en", { sensitivity: "base" }));
   const list = `<div class="mw-rlist">${all.map((r) => row(r).replace(/^<div class="mw-row"/, r.gone ? `<div class="mw-row" data-gone="${r.gone}"` : '<div class="mw-row"')).join("")}</div>`;
-  const sidebarHtml = sidebar({ std: STD_ALL.map((id) => ({ id })), con: CON.map((name) => ({ name, cur: name === "Downloads", dots: name === "Downloads" ? [["run", { in: 1, out: 10 }]] : [] })) });
-  const info = `<div class="mw-pane info"${at({ out: 1 })}>${tabs("Info")}<div class="mw-pscroll">${pv("Downloads", "12 items", "--cf-1")}${automations()}</div>${infoComp({ placeholder: "Work in Downloads" })}</div>`;
+  const sidebarHtml = sidebar({ std: STD_ALL.map((id) => ({ id })), con: CON.map((name) => ({ name, cur: name === "Downloads", dots: name === "Downloads" ? [["run", { in: 2, out: 11 }]] : [] })) });
+  const info = `<div class="mw-pane info"${at({ out: 2 })}>${tabs("Info")}<div class="mw-pscroll">${pv("Downloads", "12 items", "--cf-1")}${automations()}</div>${infoComp({ placeholder: "Work in Downloads" })}</div>`;
   const msgs = `<div class="mw-ub a-send">Organize this folder.</div>
-<div class="mw-working shim"${at({ in: 1, out: 2 })}>Working…</div>
-<div class="mw-steps"${at({ in: 2, out: 10 })}>${step({ icon: "thought", done: "Thought for 2s", inAt: 2 })}${step({ icon: "listed", done: "Listed", target: ".", inAt: 3 })}${step({ icon: "read", run: "Reading", done: "Read", target: "document (3).pdf", inAt: 4, doneAt: 5 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mkdir Home Installers Photos Receipts Work", cmd: true, inAt: 5, doneAt: 6 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mv 'document (3).pdf' invoice-2026-10-internet.pdf order-113-4492.pdf receipt-0931.pdf Receipts/", cmd: true, inAt: 6, doneAt: 7 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mv IMG_4471.HEIC 'Screenshot 2026-11-06 at 8.02.51 AM.png' Photos/; mv garden-plan.jpg lease-renewal-412-maple.pdf Home/", cmd: true, inAt: 7, doneAt: 8 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mv PhotoTool-Installer.dmg printer-driver-5.2.pkg Installers/; mv kickoff-notes.docx slides-final-v3.pptx Work/", cmd: true, inAt: 8, doneAt: 9 })}</div>
-<span class="mw-pill a-fade"${at({ in: 10 })}>${glyph.listed}<span>Listed files, read a file, ran commands</span>${glyph.chevR}</span>
-<div class="mw-as a-rise"${at({ in: 10, d: 120 })}><p>I sorted the 12 loose files into five new folders:</p><ul><li><b>Home</b>: the lease renewal and the garden plan</li><li><b>Installers</b>: PhotoTool and the printer driver</li><li><b>Photos</b>: IMG_4471.HEIC and yesterday’s screenshot</li><li><b>Receipts</b>: three receipts and the October internet invoice</li><li><b>Work</b>: the kickoff notes and the slides</li></ul><p>Nothing was renamed or deleted. ${fileLink("document (3).pdf")} turned out to be a receipt from Barrow Tile, so it’s in Receipts.</p></div>`;
-  const chat = chatPane({ title: "Organize this folder", a: { in: 1 }, msgs, comp: chatComp(10) });
-  const count = swap([["12 items", { out: 6 }], ["17 items", { in: 6, out: 7 }], ["13 items", { in: 7, out: 8 }], ["9 items", { in: 8, out: 9 }], ["5 items", { in: 9 }]]);
-  const body = `${sidebarHtml}${main({ title: "Downloads", icon: folderTitle("Downloads"), organize: { press: 1 }, lists: list, path: DL_PATH, count })}<aside class="mw-panel">${info}${chat}</aside>`;
-  return win({ label: "AmpleFile organizing Downloads: Organize is pressed, the Worker makes five folders and moves the twelve loose files into them, and the list follows along", steps, start: "64,72", body });
+<div class="mw-working shim"${at({ in: 2, out: 3 })}>Working…</div>
+<div class="mw-steps"${at({ in: 3, out: 11 })}>${step({ icon: "thought", done: "Thought for 2s", inAt: 3 })}${step({ icon: "listed", done: "Listed", target: ".", inAt: 4 })}${step({ icon: "read", run: "Reading", done: "Read", target: "document (3).pdf", inAt: 5, doneAt: 6 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mkdir Home Installers Photos Receipts Work", cmd: true, inAt: 6, doneAt: 7 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mv 'document (3).pdf' invoice-2026-10-internet.pdf order-113-4492.pdf receipt-0931.pdf Receipts/", cmd: true, inAt: 7, doneAt: 8 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mv IMG_4471.HEIC 'Screenshot 2026-11-06 at 8.02.51 AM.png' Photos/; mv garden-plan.jpg lease-renewal-412-maple.pdf Home/", cmd: true, inAt: 8, doneAt: 9 })}${step({ icon: "ran", run: "Running", done: "Ran", target: "mv PhotoTool-Installer.dmg printer-driver-5.2.pkg Installers/; mv kickoff-notes.docx slides-final-v3.pptx Work/", cmd: true, inAt: 9, doneAt: 10 })}</div>
+<span class="mw-pill a-fade"${at({ in: 11 })}>${glyph.listed}<span>Listed files, read a file, ran commands</span>${glyph.chevR}</span>
+<div class="mw-as a-rise"${at({ in: 11, d: 120 })}><p>I sorted the 12 loose files into five new folders:</p><ul><li><b>Home</b>: the lease renewal and the garden plan</li><li><b>Installers</b>: PhotoTool and the printer driver</li><li><b>Photos</b>: IMG_4471.HEIC and yesterday’s screenshot</li><li><b>Receipts</b>: three receipts and the October internet invoice</li><li><b>Work</b>: the kickoff notes and the slides</li></ul><p>Nothing was renamed or deleted. ${fileLink("document (3).pdf")} turned out to be a receipt from Barrow Tile, so it’s in Receipts.</p></div>`;
+  const chat = chatPane({ title: "Organize this folder", a: { in: 2 }, msgs, comp: chatComp(11) });
+  const count = swap([["12 items", { out: 7 }], ["17 items", { in: 7, out: 8 }], ["13 items", { in: 8, out: 9 }], ["9 items", { in: 9, out: 10 }], ["5 items", { in: 10 }]]);
+  const body = `${sidebarHtml}${main({ title: "Downloads", icon: folderTitle("Downloads"), more: { press: 1 }, menu: actionMenu({ open: 1, choose: 2, item: "Organize" }), lists: list, path: DL_PATH, count })}<aside class="mw-panel">${info}${chat}</aside>`;
+  return win({ label: "AmpleFile organizing Downloads: Organize is chosen from the Action menu, the Worker makes five folders and moves the twelve loose files into them, and the list follows along", steps, start: "58,60", body });
 }
 
 // ---------- Desktop: connect it ----------
@@ -271,7 +274,7 @@ export function viewConnect({ h = 680 } = {}) {
   const icon = `<span class="sw"${at({ out: 1 })}>${fi("folder")}</span><span class="sw"${at({ in: 1 })}>${folderTitle("Desktop")}</span>`;
   const before = `<div class="mw-pane info"${at({ out: 1 })}><div class="mw-pscroll untabbed">${pv("Desktop", "7 items")}<section class="mw-sec"><div class="mw-cta"><div class="t">No Worker here yet</div><div class="s">Adds a Worker and History. Nothing moves.</div><span class="mw-btn primary"${at({ press: 1 })}>Connect This Folder</span></div></section></div></div>`;
   const after = `<div class="mw-pane info a-fade"${at({ in: 1 })}>${tabs("Info")}<div class="mw-pscroll">${pv("Desktop", "7 items", "--cf-5")}${automations()}</div>${infoComp({ placeholder: "Work in Desktop", sugRise: true })}</div>`;
-  const body = `${side}${main({ title: "Desktop", icon, organize: { in: 1 }, lists: rows(DESK), path: DESK_PATH, count: "7 items" })}<aside class="mw-panel">${before}${after}</aside>`;
+  const body = `${side}${main({ title: "Desktop", icon, lists: rows(DESK), path: DESK_PATH, count: "7 items" })}<aside class="mw-panel">${before}${after}</aside>`;
   return win({ label: "AmpleFile connecting Desktop: Connect This Folder turns it into a Connected Folder with a Worker, and nothing moves", h, steps, start: "52,86", body, extra: toast("Desktop is now a Connected Folder.", { in: 1, fade: 2 }) });
 }
 
@@ -330,8 +333,6 @@ export function viewAsk({ h = 620 } = {}) {
 
 // ---------- Home Renovation: Skills & Extensions ----------
 
-const ACTIONS = ["Customize Connected Folder", "Set Up for Me", "Just the Look", "Skills & Extensions…", null, "Disconnect…", "Settings…"];
-
 /** The Action menu opens Skills & Extensions: the tools every Worker has, then what's installed everywhere and for this Connected Folder. */
 export function viewSkills({ h = 680 } = {}) {
   // 1 press Action, and its menu opens; 2 choose Skills & Extensions…, and the dialog rises over the dimmed window.
@@ -348,7 +349,7 @@ export function viewSkills({ h = 680 } = {}) {
     { n: "tile-sample.png", k: "img", d: "Oct 27, 2026 at 6:33 PM", s: "2.3 MB" },
   ];
   const side = sidebar({ std: STD_ALL.map((id) => ({ id })), con: CON.map((name) => ({ name, cur: name === "Home Renovation" })) });
-  const menu = `<div class="mw-menu a-menu"${at({ in: 1, out: 2 })}>${ACTIONS.map((t) => (t == null ? '<i class="sep"></i>' : `<span class="mi"${t.startsWith("Skills") ? at({ press: 2 }) : ""}>${t.replace("&", "&amp;")}</span>`)).join("")}</div>`;
+  const menu = actionMenu({ open: 1, choose: 2, item: "Skills & Extensions…" });
   const info = `<div class="mw-pane info">${tabs("Info")}<div class="mw-pscroll">${pv("Home Renovation", "9 items", "--cf-2")}${automations()}</div>${infoComp({ placeholder: "Work in Home Renovation" })}</div>`;
   const seg = (items, on) => `<span class="se-seg">${items.map((t) => `<span${t === on ? ' class="on"' : ""}>${t}</span>`).join("")}</span>`;
   const tile = (icon, name, status, tone, setup = false) => `<div class="se-tile"><span class="ic">${glyph[icon]}</span><b>${name}</b><span class="se-st ${tone}"><i></i>${status}</span>${setup ? `<span class="se-set">Set Up${glyph.chevR}</span>` : ""}</div>`;
@@ -554,8 +555,6 @@ export const WINDOW_CSS_PX = `
 .mw-title .fi { font-size:17px; }
 .mw-title .tt { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .mw-space { flex:1 1 0; }
-.mw-wide { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 13px 0 11px; border-radius:999px; background:var(--fm-cap); font-weight:500; white-space:nowrap; transition:background-color 110ms ease-out, scale 160ms var(--es); }
-.mw-wide svg { width:16px; height:16px; }
 .mw-search { display:flex; flex:0 1 236px; align-items:center; gap:6px; min-width:34px; height:32px; padding:0 6px 0 11px; border-radius:999px; background:var(--fm-cap); color:var(--fm-text3); white-space:nowrap; overflow:hidden; }
 .mw-search svg { width:14px; height:14px; color:var(--fm-text2); }
 .mw-cols, .mw-row { display:grid; grid-template-columns:minmax(160px, 1fr) 172px 76px; align-items:center; }
@@ -772,7 +771,6 @@ export const WINDOW_CSS_PX = `
 .mw-cursor svg { width:100%; height:100%; transition:scale 120ms var(--es); transform-origin:30% 15%; }
 .mw-cursor.down svg { scale:.86; }
 .mw .is-press { scale:.95; }
-.mw .mw-wide.is-press { background:var(--fm-cap2); }
 .mw .mw-btn.primary.is-press { filter:brightness(.9); scale:.97; }
 .mw .mw-row.is-press { scale:1; }
 

@@ -30,6 +30,10 @@ steps; in development, `&script=fixture-chat-1` replays a Chat
 phase—`available`, `downloading`, `ready`, `installing`, `error`, or
 `not_available`—in the sidebar's update indicator and Settings → About,
 from the sample statuses in `web-local/src/fixtures/settings-fixture.ts`.
+`&setUp=offer` shows the Set Up for Me card on the Connected Folder shown
+first. The toolbar's Browser button opens the Browser pane over the sample pages in
+`web-local/src/fixtures/browser-fixture.ts`; no page is drawn, and two of the
+recent pages show a Worker's marker and a site's question.
 Clicking an update asks the same restart question as the app (add
 `&agentState=running` to have it name a working Chat) and then says
 updating is disabled. The live transitions between phases need the desktop
@@ -37,7 +41,8 @@ updater. Actions that would change
 files, settings, or History explain that they are disabled in the preview.
 
 The browser preview cannot prove native dialogs, secure storage, preloads, or
-built-in browser behavior. Use the native lane for those changes.
+built-in browser behavior, including where a page is drawn in the Browser
+pane. Use the native lane for those changes.
 `desktop:prepare` alone builds and runs automated probes; it does not launch the
 normal interactive app or create an installer.
 
@@ -64,7 +69,11 @@ npm run local:dev
 Use `npm run desktop:smoke` in place of the last command for Electron. The
 variables apply to this shell and its children. Stop the host before removing
 its temporary profile; keep test folders you want to retain. A data-directory
-override does **not** isolate macOS Keychain. A signed Mac candidate uses the
+override does **not** isolate macOS Keychain. In an unpackaged build, opening
+**Settings → AI Models** can make macOS ask to let "Electron" use the
+installed app's **AmpleFile Safe Storage** Keychain item, and the build stops
+responding until the dialog is answered. Choose **Deny**: Always Allow would
+give a development build the installed app's storage key. A signed Mac candidate uses the
 production identity by default—follow the [candidate guidance](macos-build.md#interactive-packaged-smoke)
 before launching one.
 
@@ -130,7 +139,7 @@ for capture stages, coverage and bounds.
 | `src/shared/` | Shared types and the product identity contract |
 | `desktop/src/` | Electron windows, lifecycle, preloads, the built-in browser, and updater |
 | `desktop/cli/`, `desktop/assets/` | The installed `amplefile` command's shims; icons and brand artwork |
-| `resources/included-tools/`, `patches/included-tools/` | The five included tools and the reviewed patches to their dependencies ([Extensions and computer work](extension-foundation.md)) |
+| `resources/included-tools/`, `patches/included-tools/` | The four included tools and the reviewed patches to their dependencies ([Extensions and computer work](extension-foundation.md)) |
 | `examples/packages/` | Example Pi packages, not installed by default |
 | `tests/` | Application regression tests (`*.test.ts`; see [Verification](#verification)) |
 | `scripts/` | Shared development, validation, and release commands |

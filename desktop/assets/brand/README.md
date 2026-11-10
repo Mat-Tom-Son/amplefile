@@ -2,9 +2,9 @@
 
 The **Manila** brand: a manila folder with one Signal dot, which
 stands for the Worker. These files are the only source of the mark. Every
-installed icon, the menu-bar template, the favicons, the Chrome extension
-icons, the installer background, and the in-app lockups are generated from
-them; nothing else in the repository carries its own copy.
+installed icon, the menu-bar template, the favicons, the installer
+background, and the in-app lockups are generated from them; nothing else in
+the repository carries its own copy.
 
 ## Colors
 

@@ -7,7 +7,6 @@ export interface HeadlessQuitHost {
   waitForIdle(): Promise<void>;
   /** Removes crash-residue act tokens; must not throw. */
   removeActToken(): Promise<void>;
-  closeChromeConnection(): Promise<void>;
   /** Exits synchronously; called with no await between the last check and it. */
   quit(): void;
 }
@@ -42,10 +41,7 @@ export class HeadlessQuitSequence {
 
       const observed = host.cliRequestGeneration();
       const stillIdle = () => !host.interactiveRequested() && observed === host.cliRequestGeneration();
-      const teardown = (async () => {
-        await host.removeActToken();
-        if (stillIdle()) await host.closeChromeConnection();
-      })();
+      const teardown = host.removeActToken();
       this.#teardown = teardown.then(() => undefined, () => undefined);
       try {
         await teardown;

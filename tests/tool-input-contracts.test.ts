@@ -2,11 +2,6 @@ import assert from "node:assert/strict";
 import { createJiti } from "jiti";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import test from "node:test";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { tmpdir } from "node:os";
-import { FileCredentialStore, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { PiConversationClient } from "../src/local/agent/pi-client.js";
 import { withInputContract } from "../resources/included-tools/input-contracts.mjs";
 
 const jiti = createJiti(import.meta.url, { fsCache: false });
@@ -40,38 +35,6 @@ test("native validation enforces each document operation before engine execution
     assert.equal(validate(tool, { operation, source: "input.png", output: "out.txt" }).source, "input.png");
   }
   assert.match(tool.description, /"source":"\.worker\/task\/page.png"/);
-});
-
-test("Chrome element, pointer, drag and upload requirements are declared without removing valid defaults", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "amplefile-tool-contracts-"));
-  const agentDir = join(root, "pi"), cwd = join(root, "folder");
-  await mkdir(agentDir); await mkdir(cwd);
-  const client = new PiConversationClient("contract-audit", cwd, { resolveRuntime: async () => ({ agentDir, credentials: FileCredentialStore.inMemory(), settingsManager: SettingsManager.inMemory(), projectTrust: { override: true }, includedTools: { rootPath: resolve("resources/included-tools"), stateRoot: join(root, "state"), helperAppPath: join(root, "Missing Computer.app") } }) });
-  t.after(async () => { await client.stop(); await rm(root, { recursive: true, force: true }); });
-  await client.getCatalog();
-  const session = (client as any).session;
-  const chromeTools = new Map<string, any>(session.agent.state.tools.map((tool: any) => [tool.name, tool]));
-  for (const name of ["chrome_inspect", "chrome_click", "chrome_hover", "chrome_tap", "chrome_drag", "chrome_upload_file"]) {
-    const tool = chromeTools.get(name);
-    assert.ok(tool, name);
-    assert.throws(() => validate(tool, name === "chrome_upload_file" ? { paths: ["file.pdf"] } : {}), /Validation failed/, name);
-  }
-  for (const name of ["chrome_click", "chrome_hover", "chrome_tap"]) {
-    const tool = chromeTools.get(name);
-    assert.equal(validate(tool, { uid: "observed-ref" }).uid, "observed-ref");
-    assert.equal(validate(tool, { selector: "#target" }).selector, "#target");
-    assert.deepEqual(validate(tool, { x: 0, y: 0 }), { x: 0, y: 0 });
-    assert.throws(() => validate(tool, { x: 10 }), /Validation failed/);
-    assert.throws(() => validate(tool, { uid: "" }), /Validation failed/);
-  }
-  for (const from of [{ fromUid: "from" }, { fromSelector: "#from" }, { fromX: 0, fromY: 0 }]) {
-    for (const to of [{ toUid: "to" }, { toSelector: "#to" }, { toX: 0, toY: 0 }]) validate(chromeTools.get("chrome_drag"), { ...from, ...to });
-    assert.throws(() => validate(chromeTools.get("chrome_drag"), from), /Validation failed/);
-  }
-  validate(chromeTools.get("chrome_upload_file"), { selector: "input[type=file]", paths: ["file.pdf"] });
-  // Native defaults remain useful: blank new tab, viewport scrolling, focused
-  // input typing/filling (including clearing), and observation without a target.
-  for (const [name, args] of [["chrome_tab", { action: "new" }], ["chrome_scroll", {}], ["chrome_snapshot", {}], ["chrome_type", { text: "" }], ["chrome_fill", { text: "" }]] as const) validate(chromeTools.get(name), args);
 });
 
 test("input contracts forward exact inputs and native lifecycle arguments without repairs", () => {

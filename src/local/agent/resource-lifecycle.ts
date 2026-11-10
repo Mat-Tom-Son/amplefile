@@ -9,7 +9,7 @@ export type NativeResourceKind = "extensions" | "skills" | "prompts" | "themes";
 export interface NativeResource extends ResolvedResource {
   kind: NativeResourceKind;
   included?: IncludedToolDefinition;
-  /** A Skill AmpleFile ships outside the five included tools: it can be turned off, never removed. */
+  /** A Skill AmpleFile ships outside the four included tools: it can be turned off, never removed. */
   bundled?: true;
 }
 const resourceKinds: NativeResourceKind[] = ["extensions", "skills", "prompts", "themes"];

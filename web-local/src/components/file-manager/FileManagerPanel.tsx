@@ -36,7 +36,7 @@ interface HistoryRow { id: string; kind: "chat" | "change"; conversationId?: str
  * the selection is and History lists its Chats and changes. A standard folder
  * offers to put the folder to work.
  */
-export function FileManagerPanel({ place, connectedFolder, placeName, folderPath, folderName, folderColor, folderSymbol, receipt = null, arriving = false, itemCount, selection, automations, fixture, chat, composer, chatStatuses, searchItem, historyRefreshKey, onPutToWork, onOpenChat, onRestored, onError }: {
+export function FileManagerPanel({ place, connectedFolder, placeName, folderPath, folderName, folderColor, folderSymbol, receipt = null, infoRequest = 0, arriving = false, itemCount, selection, automations, fixture, chat, composer, chatStatuses, searchItem, historyRefreshKey, onPutToWork, onOpenChat, onRestored, onError }: {
   place: FileManagerPlace;
   connectedFolder: ConnectedFolderSummary | null;
   placeName: string;
@@ -47,8 +47,10 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
   folderColor: string | null;
   /** The icon chosen in Customize Connected Folder, stamped on the folder. */
   folderSymbol?: ConnectedFolderIconOption["Icon"] | null;
-  /** What the Worker's last reply changed, at the top of Info. */
+  /** What the Worker's last reply changed, or the Set Up for Me offer, at the top of Info. */
   receipt?: ReactNode;
+  /** Bumped to bring Info forward: a folder was just connected and its set-up card is there. */
+  infoRequest?: number;
   itemCount: number;
   selection: TreeEntry[];
   automations: FolderAutomationView[];
@@ -75,6 +77,7 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
 }) {
   const [storedTab, setTabState] = useState<PanelTab>(() => readStoredJsonValue(tabStorageKey, (value) => value === "history" ? "history" : "info", "info"));
   const setTab = (next: PanelTab) => { setTabState(next); writeStoredJsonValue(tabStorageKey, next); };
+  useEffect(() => { if (infoRequest) setTab("info"); }, [infoRequest]);
   // Only a Connected Folder has a Worker and History; elsewhere the panel is Info alone.
   const tabsShown = Boolean(connectedFolder);
   const tab = tabsShown ? storedTab : "info";

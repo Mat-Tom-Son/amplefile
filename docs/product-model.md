@@ -41,14 +41,18 @@ Finder. It uses the same local API, file events, and desktop bridge as every
 other surface.
 
 - **Window:** a sidebar, a toolbar (Back and Forward, the folder's name,
-  Icons or List, **Organize** at a Connected Folder's top level, the panel
-  button, Search), the folder's contents, and Finder's path bar (the disk down
-  to the selected item) with an item count. Organize opens a Chat in the
-  panel asking the Worker to organize the folder. The toolbar's **Action**
-  button (⋯) and right-clicking a Connected Folder in the sidebar offer
-  **Customize Connected Folder**, **Set Up for Me**, **Just the Look**,
-  **Skills & Extensions…**, **Disconnect…** (or **Delete Connected Folder…**
-  for a managed one), and **Settings…**. Dragging the edge beside the
+  Icons or List, Action, the **Browser** button, Search, and the panel
+  button), the folder's contents, and Finder's path bar (the disk down to
+  the selected item) with an item count, then the Browser pane while a
+  browser tab is open, and the right panel. The panel button is the
+  toolbar's last control, to the right of Search and nearest the panel: it
+  hides the panel (**Hide Panel**) and shows it again (**Show Panel**). The
+  toolbar's **Action** button (⋯) and right-clicking a Connected Folder in
+  the sidebar offer **Customize Connected Folder**, **Organize**, **Show in
+  Finder**, **Skills & Extensions…**, **Disconnect…** (or **Delete Connected
+  Folder…** for a managed one), and **Settings…**. **Organize** opens the
+  panel and starts a Chat asking that Connected Folder's Worker to organize
+  it, going to that Connected Folder first when another is shown. Dragging the edge beside the
   sidebar or the panel resizes it (double-click resets it; the widths are
   kept); a narrower window takes room from the panel first, so the folder
   list keeps 360px.
@@ -160,6 +164,22 @@ other surface.
   Standard Folder searches its names only. Selection is accent-colored while
   the contents have focus. The last row of results asks the Worker to find it
   by what the person remembers; Return with nothing chosen does the same.
+- **Browser pane:** the built-in browser's tabs, under the folder's contents
+  ([Built-in browser](built-in-browser.md#the-browser-pane)). The toolbar's
+  **Browser** button opens it with a new tab and shows or folds it afterward;
+  with no tab open the window has no pane. Its tab strip is always there
+  while a tab is open, and two buttons at the strip's end share the area: a
+  slider sets how much the folder and the browser each take, **Hide Folder**
+  gives the page the whole area, and **Hide Browser** folds the browser down
+  to its tab strip. The tabs belong to no Connected Folder: the sidebar and
+  the panel keep the Connected Folder shown, so a Chat can be watched beside
+  the page its Worker is using. A tab a Worker opens arrives as the strip
+  alone, with the running dot; the page shows a **Worker in …** marker that
+  opens that Chat. A site's question shows in a bar above the page with
+  **Block** and **Allow**, and only the person answers it; with the page out
+  of view, a notice offers **Show Page**. Pages show only here: with no
+  Connected Folder there is no file manager window to hold the pane, so a
+  page the AmpleFile Agent opens then runs unseen.
 - **Right panel:** **Info** shows the selection (a picture shows itself;
   files show Where, Modified, and Size) or, at a Connected Folder's top
   level, its Automations with their on/off switches, followed by the
@@ -194,6 +214,14 @@ other surface.
   opens with a receipt ("The Worker changed 14 items · 3 added · 9 moved · 2
   changed") listing the first few, with **Undo** (History's restore) and
   **Done**.
+- **Set Up for Me:** right after a folder is connected, Info opens with a
+  card at its top, **Set Up This Folder**, with **Set Up for Me** and **No
+  Thanks**. Either answer closes the card for good; the card is the only
+  place the window offers it ([Set Up for Me](#set-up-for-me)). With no AI
+  connected, the card stays until Set Up AI is finished and the message is
+  sent. A folder
+  connected while the window is open brings the panel to Info, so the card
+  is in view.
 - **A message needs AI:** with no AI connected, sending from the message box,
   a suggestion, Organize, or Set Up for Me opens Set Up AI first and then
   sends.
@@ -224,8 +252,7 @@ other surface.
 With no Connected Folder yet, the window opens on a short first run: a
 welcome that says what AmpleFile is, **Connect Your AI**, **Let Your Worker
 Use Your Mac** when the app includes Computer Control or the command line
-and something is not yet set up (Chrome is set up only in Skills &
-Extensions), and **Pick a Folder to Start
+and something is not yet set up, and **Pick a Folder to Start
 With**, which offers Desktop, Documents, Downloads, and Pictures in one
 click beside Connect Folder and New Connected Folder.
 
@@ -245,19 +272,23 @@ first model), so every Worker without its own choice and the status agree on
 the model in use. ChatGPT sign-in defaults to the direct OpenAI connection.
 The included tools' setup works with or without a Connected Folder.
 
-### Set Up for Me and Just the Look
+### Set Up for Me
 
-Both start a new Chat in the panel with one message, and the included
-`set-up-connected-folder` Skill does the rest. **Set Up for Me** looks the
-folder over, organizes it when that helps (moves and renames only, never
-deletes, each through a restore-pointed `amplefile files` verb that refuses
-to overwrite; a deliberate structure stays; projects, app-managed folders,
-and hidden files are left as they are), writes the Connected Folder's Worker
-instructions, and sets an icon and a color. **Just the Look** reads the
-folder and sets only the look; it never touches a file. The Chat's own reply
-says what changed and how to undo it. The Skill is listed under
-**Everywhere** as Included with AmpleFile; it can be turned off but not
-removed, and a request such as "set up this folder" in any Chat uses it too.
+**Set Up for Me** is offered once for each Connected Folder, on the card
+Info shows right after the folder is connected, whichever way it was
+connected: New Connected Folder, Connect Folder, Connect This Folder, or
+first run. It starts a new Chat in the panel with one message, and the
+included `set-up-connected-folder` Skill does the rest: it looks the folder
+over, organizes it when that helps (moves and renames only, never deletes,
+each through a restore-pointed `amplefile files` verb that refuses to
+overwrite; a deliberate structure stays; projects, app-managed folders, and
+hidden files are left as they are), writes the Connected Folder's Worker
+instructions, and sets an icon and a color. The Chat's own reply says what
+changed and how to undo it. The Skill is listed under **Everywhere** as
+Included with AmpleFile; it can be turned off but not removed. A request in
+any Chat uses it too: "set up this folder" for the whole pass, or asking
+only for a look, which sets the banner, icon, and color and never touches a
+file.
 
 ## Chats
 
@@ -638,15 +669,14 @@ tools, commands, providers, events, and a static `surface.json` contribution
 ([Declarative Extension surfaces](extension-surfaces.md)); its code owns its
 network and operating-system access.
 
-**Included tools.** The five included tools (Chrome, Computer Control, Web,
+**Included tools.** The four included tools (Computer Control, Web,
 Documents, and Service Connections) show observed readiness separately from
 native loading. The Skills & Extensions dialog refreshes cold host status
 automatically; opening it never launches a helper or connects a server.
 Successful use can supply readiness evidence. A computer-permission check
 stays visible as Last Check Passed with its timestamp, while Documents proof
 belongs to the running build. Service Connections says No Connections or
-Configured and leaves actual health to each connection. A selected Chrome
-profile reconnects automatically. Check observes; helper repair is a separate
+Configured and leaves actual health to each connection. Check observes; helper repair is a separate
 explicit setup operation and never silently disposes idle Chats
 ([the extension contract](extension-foundation.md#readiness-and-lifecycle)).
 
@@ -662,8 +692,11 @@ installs an engine only when the person asks. See
 
 **Built-in browser.** Every Worker and the AmpleFile Agent can use AmpleFile's
 own browser through the `browser_*` tools, with one persistent machine-local
-profile apart from Chrome and from every Connected Folder. The tools come
-with the app and are not one of the five included tools. See
+profile apart from any other browser on the Mac and from every Connected
+Folder. It is how an agent uses the web interactively. The person sees
+and uses the same pages in the file manager window's Browser pane, where they
+sign in to a site and answer a site's question. The tools come with the app
+and are not one of the four included tools. See
 [Built-in browser](built-in-browser.md).
 
 ## Shared semantic layer
@@ -840,6 +873,9 @@ not a complete or transactional backup.
   files, or delete a managed Connected Folder into Recently Deleted.
 - Browse Connected Folder and Standard Folder files in a Finder-style file
   manager, run Connected Folder Chats in the panel, and view History.
+- See and use the built-in browser's pages in the window's Browser pane,
+  once a folder is connected: watch a Worker's page, sign in to a site, and
+  answer a site's question.
 - Search a Connected Folder by name and by content inside ordinary files and
   Chat transcripts, honouring ignore rules, skipping binary content, and
   saying when a bound stopped the search.
@@ -901,8 +937,7 @@ not a complete or transactional backup.
 
 ### Next product layer
 
-- Show the built-in browser's pages and full-width Chats inside the file
-  manager window.
+- Show full-width Chats inside the file manager window.
 - Make Connected Folder location, storage ownership, History coverage, and
   executable capability class easier to inspect at a glance.
 - Add named-pack selection for Anthropic marketplace bundles instead of
@@ -913,8 +948,8 @@ not a complete or transactional backup.
   event source, handoff condition, or recovery behavior. Coordination across
   Connected Folders stays with the AmpleFile Agent; Connected Folder Chats
   stay local to their own work.
-- Offer Chrome and Computer Control setup in a Chat the first time a Worker
-  needs them; deepen accessibility, renderer interaction tests, recovery,
+- Offer Computer Control setup in a Chat the first time a Worker
+  needs it; deepen accessibility, renderer interaction tests, recovery,
   export, and diagnostics.
 
 ### Later adapters
