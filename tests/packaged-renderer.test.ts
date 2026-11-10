@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 import { createPackage, createPackageWithOptions } from "@electron/asar";
 import ts from "typescript";
 import { handleRendererRequest, rendererBuildDirectory } from "../desktop/src/renderer-protocol.ts";
-import { verifyPackagedRenderer } from "../scripts/verify-packaged-renderer.mjs";
+import { builderExcludedNames, verifyPackagedRenderer } from "../scripts/verify-packaged-renderer.mjs";
 
 const rootDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const require = createRequire(import.meta.url);
@@ -132,10 +132,26 @@ test("packaged renderer verification accepts the archived build and rejects ever
 
   assert.deepEqual(await packageRenderer("archived"), []);
   assert.deepEqual(await packageRenderer("archived-with-unnamed-files", { build: addUnnamedFiles }), []);
+  // Electron Builder never packages these names, so a build folder that
+  // holds them still matches a correct archive.
   assert.deepEqual(
-    await packageRenderer("finder-metadata", { local: (appRoot) => writeFile(renderer(appRoot, "assets", ".DS_Store"), "finder") }),
+    [...builderExcludedNames].sort(),
+    (require("app-builder-lib/out/fileMatcher").excludedNames as string).split(",").sort(),
+    "the verifier's list mirrors the installed Electron Builder's excludedNames",
+  );
+  assert.deepEqual(
+    await packageRenderer("tool-metadata", { local: async (appRoot) => {
+      for (const name of [".DS_Store", "._index-abc123.js", "thumbs.db", ".gitkeep", ".gitignore"]) await writeFile(renderer(appRoot, "assets", name), "metadata");
+      await mkdir(renderer(appRoot, ".git"));
+      await writeFile(renderer(appRoot, ".git", "HEAD"), "ref: refs/heads/main\n");
+    } }),
     [],
-    "Finder metadata in the build folder is not part of the renderer",
+    "tool and system metadata in the build folder is not part of the renderer",
+  );
+  // An extension the builder drops is different: the renderer would miss it.
+  assert.deepEqual(
+    await packageRenderer("dropped-extension", { local: (appRoot) => writeFile(renderer(appRoot, "assets", "model-999ccc.obj"), "v 0 0 0\n") }),
+    ["app.asar is missing a file of the renderer build: /dist/web-local/assets/model-999ccc.obj."],
   );
 
   // The archive and the build it came from must be the same files.
@@ -193,12 +209,24 @@ test("packaged renderer verification accepts the archived build and rejects ever
     ["protocol-relative-script", "//app/assets/index-abc123.js"],
     ["backslash-host-script", "\\\\app\\assets\\index-abc123.js"],
     ["file-script", "file:///assets/index-abc123.js"],
+    // A browser drops tabs and newlines inside a URL, and control characters
+    // around it, before parsing it.
+    ["tab-host-script", "/\t/evil.example/assets/index-abc123.js"],
+    ["newline-host-script", "/\n/evil.example/assets/index-abc123.js"],
+    ["tab-scheme-script", "h\tttps://evil.example/assets/index-abc123.js"],
+    ["control-prefix-script", "\x01https://app/assets/index-abc123.js"],
   ]) {
     assert.deepEqual(
       await packageRenderer(name, { build: (appRoot) => writeFile(renderer(appRoot, "index.html"), page(reference)) }),
-      [`index.html loads ${reference} from outside the app.`],
+      [`index.html loads ${/[\0-\x1f]/.test(reference) ? JSON.stringify(reference) : reference} from outside the app.`],
+      name,
     );
   }
+  assert.deepEqual(
+    await packageRenderer("tab-in-path-script", { build: (appRoot) => writeFile(renderer(appRoot, "index.html"), page("/assets/index\t-abc123.js")) }),
+    [],
+    "a tab inside a path is dropped, and the path still names the archived file",
+  );
   assert.deepEqual(
     await packageRenderer("relative-script", { build: (appRoot) => writeFile(renderer(appRoot, "index.html"), page("./assets/index-abc123.js")) }),
     [],

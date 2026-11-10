@@ -13,6 +13,26 @@ const pages = [
 // origin itself never matches anything a page could name.
 const pageOrigin = "https://app";
 
+// Names Electron Builder never packages, wherever they sit: its
+// `excludedNames` list in app-builder-lib's `fileMatcher.js` (26.15.3),
+// which it applies as `!**/{names}`, plus its `!**/._*` pattern. A file or
+// folder with one of these names in the build folder is tool or system
+// metadata (Finder's .DS_Store and ._ files, thumbs.db, a .gitkeep), not
+// part of the renderer, and its absence from the archive is correct.
+// tests/packaged-renderer.test.ts fails if the builder's list changes.
+//
+// The builder's excluded extensions (.orig, .obj, .a, .d.ts and the rest) are
+// deliberately not mirrored: a renderer file with one of those would be
+// dropped from the package and then be missing at run time, which is a
+// failure this check exists to report.
+export const builderExcludedNames = new Set([
+  ".git", ".hg", ".svn", "CVS", "RCS", "SCCS",
+  "__pycache__", ".DS_Store", "thumbs.db", ".gitignore", ".gitkeep", ".gitattributes", ".npmignore",
+  ".idea", ".vs", ".flowconfig", ".jshintrc", ".eslintrc", ".circleci",
+  ".yarn-integrity", ".yarn-metadata.json", "yarn-error.log", "yarn.lock", "package-lock.json", "npm-debug.log", "pnpm-lock.yaml", "bun.lock", "bun.lockb",
+  "appveyor.yml", ".travis.yml", "circle.yml", ".nyc_output", ".husky", ".github", "electron-builder.env",
+]);
+
 /** The main window and the AmpleFile Agent popover must run only code that
  * Electron's ASAR integrity validation covers, and all of the renderer that
  * was built. That holds when `dist/web-local` in `app.asar` is the local
@@ -39,18 +59,24 @@ export function verifyPackagedRenderer({ asarPath, resourcesDir, rendererBuildDi
     // A link is reported below; it has no bytes of its own to read here.
     if (archived.get(pagePath).link) continue;
     const html = extractFile(asarPath, pagePath).toString("utf8");
-    for (const reference of loadedReferences(html)) {
+    for (const written of loadedReferences(html)) {
+      // Read the reference as a browser does before judging it: tabs and
+      // newlines anywhere in it, and control characters and spaces around
+      // it, are dropped before the URL is parsed.
+      const reference = written.replace(/[\t\n\r]/g, "").replace(/^[\0-\x20]+|[\0-\x20]+$/g, "");
+      const shown = /[\0-\x1f]/.test(written) ? JSON.stringify(written) : written;
       if (/^data:/i.test(reference)) continue;
       // In the app, only a path stays inside the internal scheme: a
       // reference with a scheme or a host goes somewhere else, whatever it
-      // names.
-      if (/^[a-z][a-z0-9+.-]*:/i.test(reference) || /^[\\/]{2}/.test(reference)) {
-        failures.push(`${page} loads ${reference} from outside the app.`);
+      // names. The resolved origin is a second guard for any spelling the
+      // prefix checks do not anticipate.
+      const url = /^[a-z][a-z0-9+.-]*:/i.test(reference) || /^[\\/]{2}/.test(reference) ? undefined : new URL(reference, `${pageOrigin}/${page}`);
+      if (url?.origin !== pageOrigin || url.host !== "app") {
+        failures.push(`${page} loads ${shown} from outside the app.`);
         continue;
       }
-      const url = new URL(reference, `${pageOrigin}/${page}`);
       const target = `${rendererRoot}${decodeURIComponent(url.pathname)}`;
-      if (!archived.has(target)) failures.push(`${page} loads ${reference}, which is not inside app.asar.`);
+      if (!archived.has(target)) failures.push(`${page} loads ${shown}, which is not inside app.asar.`);
     }
   }
 
@@ -90,8 +116,8 @@ function compareWithBuild({ asarPath, archived, rendererBuildDir, failures }) {
 
 function collectBuild(directory, prefix, built, failures) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    // Finder's folder metadata is not part of the build and is never packaged.
-    if (entry.name === ".DS_Store") continue;
+    // Never packaged, and not part of the renderer: see builderExcludedNames.
+    if (builderExcludedNames.has(entry.name) || entry.name.startsWith("._")) continue;
     const path = `${prefix}/${entry.name}`;
     if (entry.isDirectory()) collectBuild(join(directory, entry.name), path, built, failures);
     else if (entry.isFile()) built.set(path, join(directory, entry.name));
