@@ -112,7 +112,7 @@ for capture stages, coverage and bounds.
 | Path | Responsibility |
 |---|---|
 | `web-local/src/` | React UI, client state, styles, and inert UI fixtures |
-| `src/local/server.ts` | Local API routes and domain-service composition |
+| `src/local/server.ts`, `src/local/api/` | The local API: its entry and the [route modules](#local-api-modules) it serves requests through |
 | `src/local/agent/` | Pi integration, Chat turns, and agent services |
 | `src/local/connected-folder*.ts` | Connected Folder registration, path policy, ignore rules, watching, and appearance |
 | `src/local/automations/`, `src/local/requests/` | Automations (including their folder target resolver) and durable request records |
@@ -124,6 +124,35 @@ for capture stages, coverage and bounds.
 | `scripts/` | Shared development, validation, and release commands |
 | `site/` | The amplefile.com page and its build ([Website](website.md)) |
 | `docs/`, `.agents/skills/` | Product contracts and task-specific contributor workflows |
+
+### Local API modules
+
+`src/local/server.ts` is the entry. `startLocalApi` builds one
+`LocalApiState`, constructs the services that close over it, and listens;
+`handleRequest` authorizes each request and tries the route groups in a fixed
+order. A route group takes a `LocalApiRequest` (the state and the request),
+answers and returns `true`, or returns `false` when the request is not one of
+its routes. Every module under `src/local/api/` receives the state as an
+argument; none imports from `server.ts`.
+
+| Path under `src/local/api/` | Holds |
+|---|---|
+| `state.ts`, `http.ts` | `LocalApiState`, `LocalApiOptions`, and `LocalApiRequest`; request authorization, body reading, and JSON and error responses |
+| `event-streams.ts`, `extension-ui.ts` | The event connection, control hints, Chat event logs, and file-change streams; an Extension's questions in a Chat |
+| `reservations.ts` | Capability and Connected Folder mutation reservations, the settled-deletion check, and the History restore and safety wrappers |
+| `conversation-clients.ts`, `turn-acceptance.ts`, `turn-run.ts`, `chat-routes.ts` | A Chat's Pi client, turn acceptance with steering and the queued message, running a turn to its settled record, and a Connected Folder's Chat routes |
+| `request-routes.ts`, `request-records.ts`, `background-jobs.ts` | Request routes, the request-level stop, and settle evaluation; the collaboration verbs' ownership rules, views, and results; the host side of background jobs |
+| `file-routes.ts`, `file-changes.ts`, `place-routes.ts` | A Connected Folder's file routes; deletes, moves, and added files with their recovery; Standard Folders, transfers, Compress, Recents, and Go to Folder |
+| `history-routes.ts`, `recently-deleted-routes.ts` | History routes; Settings → Recently Deleted and its restores |
+| `connected-folder-routes.ts` | Health, the bootstrap read, and creating, connecting, renaming, removing, and customizing Connected Folders |
+| `ai-model-routes.ts`, `capability-routes.ts` | Settings → AI Models and Worker instructions; Skills & Extensions and the included tools |
+| `amplefile-agent-routes.ts`, `overview-routes.ts` | The AmpleFile Agent's conversations and request view; the overview and its source readers |
+| `automation-settings.ts`, `automation-receipts.ts`, `automation-hops.ts` | The Automations settings facade and Connected Folder routes; run-receipt projection; the hop ports |
+| `act-lane.ts`, `act-support.ts`, `prepared-act-adapters.ts` | The act facade; what it shares with the routes; the prepared-act fence and adapters |
+
+Add a route to the group that owns its area. Groups are tried in the order
+`handleRequest` lists them, so a new group's routes must not match a request
+an earlier group answers.
 
 Use the [docs map](README.md) to find the document that owns an area. Files
 in `docs/reference-skills/` are examples; app-generated AmpleFile Agent instructions are runtime resources. Neither is an

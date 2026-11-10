@@ -219,7 +219,7 @@ test("Compress clears working files an interrupted Compress left, never one stil
 });
 
 test("the transfer route reads its target as a place and a path inside it", async () => {
-  const source = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../src/local/server.ts", import.meta.url), "utf8"));
+  const source = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../src/local/api/place-routes.ts", import.meta.url), "utf8"));
   const body = source.slice(source.indexOf("export async function transferFileEntries"));
   assert.match(body, /transferPlace\(targetRecord\?\.place\)/);
 });
