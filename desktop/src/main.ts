@@ -63,6 +63,7 @@ import { writeDesktopClipboard } from "./clipboard.js";
 import { PackagedPiRuntimeProvider } from "./pi-runtime.js";
 import { includedToolsRoot } from "../../src/local/agent/included-tools.js";
 import { ComputerHelperInstallation } from "./computer-helper-installation.js";
+import { removeLeftoverChromeRegistration } from "./chrome-registration-cleanup.js";
 import { applyLoginShellEnvironment, formatLoginShellEnvironmentResult, type LoginShellEnvironmentResult } from "./shell-environment.js";
 import { SecureSettingsStore } from "./settings.js";
 import { DesktopUpdater, type DesktopUpdateStatus } from "./updater.js";
@@ -469,6 +470,7 @@ async function startInteractiveApp(): Promise<void> {
     // afterwards and stays up, but the new act token must not race it.
     await headlessQuit.whenTeardownSettled();
     await ensureDesktopHost();
+    removeLeftoverChromeRegistrationOnce();
     const api = await ensureInteractiveLocalApi();
     loadDesktopPreferences();
     registerRendererProtocol();
@@ -486,6 +488,17 @@ async function startInteractiveApp(): Promise<void> {
     await drainPendingMacOpenPaths();
   })();
   return interactiveStartupPromise;
+}
+
+/**
+ * Removes the Google Chrome registration and helper copy an earlier AmpleFile
+ * left, only where an earlier AmpleFile could have written them: the
+ * installed app with its normal profile.
+ */
+function removeLeftoverChromeRegistrationOnce(): void {
+  if (process.platform !== "darwin" || !app.isPackaged || localMacSmokeBuild || ampleFileDesktopStateOverride(process.env)) return;
+  void removeLeftoverChromeRegistration({ stateRoot: join(app.getPath("userData"), "assistant-tools") })
+    .catch((error) => console.warn(`${productName} left an earlier Chrome registration in place: ${errorMessage(error)}`));
 }
 
 const headlessQuit = new HeadlessQuitSequence({
