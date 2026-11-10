@@ -8,7 +8,7 @@
 <p align="center">Workers for the folders you work in.</p>
 
 <p align="center">
-  <a href="https://github.com/Mat-Tom-Son/amplefile-mac-releases/releases/latest">Download for Mac</a> ·
+  <a href="https://github.com/Mat-Tom-Son/amplefile/releases/latest">Download for Mac</a> ·
   <a href="https://www.amplefile.com/">Website</a> ·
   <a href="docs/README.md">Docs</a> ·
   <a href="CONTRIBUTING.md">Contribute</a>
@@ -30,7 +30,7 @@ same conversation.
 
 ## Install
 
-1. [Download the latest release](https://github.com/Mat-Tom-Son/amplefile-mac-releases/releases/latest)
+1. [Download the latest release](https://github.com/Mat-Tom-Son/amplefile/releases/latest)
    for an Apple-silicon Mac and drag AmpleFile to Applications.
 2. Open it. First run connects your AI (sign in with ChatGPT, Claude, or
    OpenRouter, or paste an API key; provider usage may cost money), then asks

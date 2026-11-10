@@ -1,8 +1,8 @@
 # macOS release runbook
 
-This runbook publishes the Apple-silicon AmpleFile desktop release. From 0.1.5 on, the packaged app checks GitHub Releases in the source repository, [`Mat-Tom-Son/amplefile`](https://github.com/Mat-Tom-Son/amplefile), which also holds the source and the release tags. Versions 0.1.0 through 0.1.4 check the separate public feed at [`Mat-Tom-Son/amplefile-mac-releases`](https://github.com/Mat-Tom-Son/amplefile-mac-releases).
+This runbook publishes the Apple-silicon AmpleFile desktop release to GitHub Releases in the source repository, [`Mat-Tom-Son/amplefile`](https://github.com/Mat-Tom-Son/amplefile), which also holds the source and the release tags. It is the feed every version from 0.1.5 on checks. Versions 0.1.0 through 0.1.4 check the separate public feed at [`Mat-Tom-Son/amplefile-mac-releases`](https://github.com/Mat-Tom-Son/amplefile-mac-releases), whose last release is the bridge, 0.1.5.
 
-The feed is moving from the separate repository to the source repository. 0.1.5 is the bridge release, published to both; [Update feed](#update-feed) describes the stages and [Moving the feed to the source repository](#moving-the-feed-to-the-source-repository) is the procedure.
+[Update feed](#update-feed) describes the stages, and [Moving the feed to the source repository](#moving-the-feed-to-the-source-repository) is the procedure the feed moved by.
 
 ## One-time workstation setup
 
@@ -34,10 +34,10 @@ configuration and every release script, from the feed stage:
 | `bridge` | `Mat-Tom-Son/amplefile` | `Mat-Tom-Son/amplefile`, then `Mat-Tom-Son/amplefile-mac-releases` |
 | `source-repository` | `Mat-Tom-Son/amplefile` | `Mat-Tom-Son/amplefile` |
 
-**The checked-in stage is `bridge`.** A release cut from this source, 0.1.5,
-checks `Mat-Tom-Son/amplefile` and is published there and then to
-`Mat-Tom-Son/amplefile-mac-releases`. Versions 0.1.0 through 0.1.4 check
-`Mat-Tom-Son/amplefile-mac-releases`.
+**The checked-in stage is `source-repository`.** A release cut from this
+source checks `Mat-Tom-Son/amplefile` and is published there alone. 0.1.5
+was the bridge, published to both repositories; versions 0.1.0 through
+0.1.4 check `Mat-Tom-Son/amplefile-mac-releases`.
 
 `AMPLEFILE_MAC_RELEASE_OWNER` and `AMPLEFILE_MAC_RELEASE_REPO` name the
 separate release repository in every stage; they never select the source
@@ -188,6 +188,15 @@ Apple submission.
   November 9, 2026, from the annotated source tag `v0.1.4` (commit
   `16eae93`): the renderer inside `app.asar`, the redrawn Chat, and an
   update staged before the app shuts down to install it.
+- **0.1.5**, the bridge release, was published on November 10, 2026, from
+  the annotated source tag `v0.1.5` (commit `360ed59`), first to
+  `Mat-Tom-Son/amplefile` and then to `Mat-Tom-Son/amplefile-mac-releases`.
+  Copies of it check `Mat-Tom-Son/amplefile`. It adds the update indicator
+  at the foot of the sidebar, asks before an update restarts the app, and
+  reworks the Skills & Extensions dialog.
+- The update from the separate feed to the bridge, installed `0.1.4` to
+  `0.1.5`, passed on November 10, 2026. See
+  [Updater evidence](#updater-evidence).
 
 ## Release procedure
 
@@ -705,6 +714,38 @@ app named, the feed the higher app names, and the output of
 - Not observed in this proof: the Settings update surface during the update,
   and a later full quit and reopen.
 
+**0.1.4 → 0.1.5, November 10, 2026: separate feed to bridge**
+
+- The installed `0.1.4` passed
+  `npm run desktop:verify:installed:mac -- --version 0.1.4 --feed Mat-Tom-Son/amplefile-mac-releases`:
+  Developer ID-signed for team `464JD5K8DC`, under `/Applications`, with an
+  `app-update.yml` naming `Mat-Tom-Son/amplefile-mac-releases`.
+- Before the bridge reached the separate repository, a copy of the signed
+  `0.1.5` candidate with its own profile failed its check with "No published
+  versions on GitHub" while `Mat-Tom-Son/amplefile` had no latest release,
+  and reported "AmpleFile 0.1.5 is up to date." once the bridge was
+  published there.
+- `npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile-mac-releases --version 0.1.5`
+  reported that the feed offers AmpleFile 0.1.5 from `v0.1.5`.
+- The installed `0.1.4` reported "AmpleFile 0.1.5 is available." at launch.
+  The update was started through the app's own update action, the one the
+  Settings button calls, over a local debugging port rather than by a click.
+- Both the cached `pending/AmpleFile-0.1.5-mac-arm64.zip` and `update.zip`
+  hashed to SHA-256 `3c2020db09c63a0978aa68c4cb5cd6aa899c4021a2c7ed7180c568b4a888acc7`,
+  the published asset digest in both repositories.
+- ShipIt logged `Installation completed successfully` and relaunched
+  `/Applications/AmpleFile.app`, which reported `0.1.5`, about 13 seconds
+  after the download began. The existing profile and its registered
+  Connected Folder were kept. This was the first update performed by the
+  updater that stages with Squirrel.Mac before shutting down, which shipped
+  in `0.1.4`.
+- `npm run desktop:verify:installed:mac -- --version 0.1.5 --feed Mat-Tom-Son/amplefile`
+  passed without requesting Keychain secret data.
+- After a full quit and reopen, the installed `0.1.5` checked
+  `Mat-Tom-Son/amplefile` and reported "AmpleFile 0.1.5 is up to date."
+- Not observed in this proof: the Settings update surface and the menu
+  command on screen, and whether a Keychain prompt appeared on reopen.
+
 ## Recovery rules
 
 - Never replace assets in a published release. Correct a bad release with a higher shared version.
@@ -719,7 +760,7 @@ app named, the feed the higher app names, and the output of
 
 ## Release ownership
 
-The source repository owns code, exact release tags, issues, and documentation, and from the bridge release, 0.1.5, its GitHub Releases are the Mac update feed. `amplefile-mac-releases` receives the bridge as its last release and stays public for copies that have not updated yet. Do not develop or hand-edit release metadata in either repository's releases, and do not add a competing tag publisher.
+The source repository owns code, exact release tags, issues, and documentation, and its GitHub Releases are the Mac update feed. `amplefile-mac-releases` holds the bridge, 0.1.5, as its last release and stays public for copies that have not updated yet; nothing more is published there. Do not develop or hand-edit release metadata in either repository's releases, and do not add a competing tag publisher.
 
 The source repository's GitHub Releases also hold `linux-test-*` prereleases. Its latest release is what every installed Mac copy from 0.1.5 on is offered, so two rules hold for anything else published in it:
 

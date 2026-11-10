@@ -32,7 +32,7 @@ function feedAt(stage: string) {
 // The one line that pins the checked-in stage. Change it in the commit that
 // changes `macUpdateFeedStage`; the last test in this file then says which
 // links, policy text, and statements of the stage have to follow.
-const CHECKED_IN_STAGE = "bridge";
+const CHECKED_IN_STAGE = "source-repository";
 
 test("the checked-in Mac update feed stage is the pinned one, with the feeds that stage means", () => {
   assert.equal(identity.macUpdateFeedStage, CHECKED_IN_STAGE);

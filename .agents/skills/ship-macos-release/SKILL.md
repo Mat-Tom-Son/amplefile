@@ -35,13 +35,12 @@ that proves the requested behavior.
 7. Read the update feed stage before building.
    `npm run desktop:release:mac:status` prints the stage, the feed the
    packaged app checks, and where a release would be published. The
-   checked-in stage is `bridge`: the packaged app checks
-   `Mat-Tom-Son/amplefile`, and 0.1.5, the bridge release, is published
-   there and then, in a second run, to `Mat-Tom-Son/amplefile-mac-releases`.
-   Changing `macUpdateFeedStage` to `source-repository` completes the move
-   of the feed to the source repository's GitHub Releases and is the
-   owner's decision; do it only when asked, in a release commit, following
-   "Moving the feed to the source repository" in the runbook. Never set a feed in a script or in the environment for a
+   checked-in stage is `source-repository`, so both are
+   `Mat-Tom-Son/amplefile`: its GitHub Releases. The feed moved there
+   through the bridge release, 0.1.5. Changing `macUpdateFeedStage` again
+   is only for a replacement bridge and is the owner's decision; do it only
+   when asked, in a release commit, following "Moving the feed to the
+   source repository" in the runbook. Never set a feed in a script or in the environment for a
    public release.
 8. The full signed build requires a valid local receipt before it starts.
    Publication requires source-bound signed artifacts built after that receipt
