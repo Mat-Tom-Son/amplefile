@@ -1975,7 +1975,7 @@ async function openExternal(value: string): Promise<void> {
 async function shutdown(): Promise<void> {
   if (shutdownPromise) return shutdownPromise;
   modelContextWindow?.dispose();
-  // Closing pages for quit must not close their tabs: they come back next launch.
+  // Quitting closes every page. Tabs are not kept: sign-ins and history are what the next launch has.
   builtInBrowser?.dispose();
   if (rendererRecoveryTimer) clearTimeout(rendererRecoveryTimer);
   rendererRecoveryTimer = null;

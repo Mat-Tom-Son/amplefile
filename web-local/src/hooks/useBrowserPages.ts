@@ -31,10 +31,11 @@ export interface BrowserPages {
  * list in step with it (pages that survive a window reload, tabs a Worker or
  * a link opens, pages the host closes), tells it which tab is in front, and
  * says when a download lands. `bridge` is the desktop's, or the preview's
- * sample one; `viewing` is whether the page in front is on screen; `onShow`
+ * sample one; `viewingPageId` is the page the person can see right now, if
+ * any (not one under a dialog, in a hidden window, or folded away); `onShow`
  * runs when the host asks for a tab to be brought forward.
  */
-export function useBrowserPages({ bridge, viewing, onShow }: { bridge: BrowserBridge | null; viewing: boolean; onShow: () => void }): BrowserPages {
+export function useBrowserPages({ bridge, viewingPageId: shownPageId, onShow }: { bridge: BrowserBridge | null; viewingPageId: string | null; onShow: () => void }): BrowserPages {
   const [state, dispatch] = useReducer(browserTabsReducer, emptyBrowserTabs);
   const onShowRef = useRef(onShow);
   onShowRef.current = onShow;
@@ -70,7 +71,7 @@ export function useBrowserPages({ bridge, viewing, onShow }: { bridge: BrowserBr
   // Workers list the same tabs, in the same order, and learn which one the person has in front.
   // A new tab nobody has typed an address into has no page, so Workers are not told about it.
   const synced = useMemo(() => state.tabs.filter((tab) => tab.url).map((tab) => ({ pageId: tab.pageId, url: state.pages[tab.pageId]?.url || tab.url, title: state.pages[tab.pageId]?.title || tab.title })), [state.tabs, state.pages]);
-  const viewingPageId = viewing && synced.some((tab) => tab.pageId === state.activeId) ? state.activeId : null;
+  const viewingPageId = shownPageId && shownPageId === state.activeId && synced.some((tab) => tab.pageId === shownPageId) ? shownPageId : null;
   const syncKey = JSON.stringify([viewingPageId, synced]);
   useEffect(() => {
     bridge?.sync({ tabs: synced, viewingPageId });

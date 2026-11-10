@@ -24,13 +24,19 @@ function pixels(value: string): number {
 }
 
 /**
- * What the window draws over other content: every dialog and sheet, the
- * in-window menus, notices, and anything that names itself with
- * `data-native-view-occluder` (the address bar's suggestions, a site's menu).
+ * What the window draws over other content: every dialog and sheet with the
+ * backdrop behind it (a dimmed backdrop must dim the page too, and a click on
+ * it must close the dialog, not land in the page), the in-window menus,
+ * notices, and anything that names itself with `data-native-view-occluder`
+ * (the address bar's suggestions, a site's menu).
  */
 const occluderSelector = [
   "[data-native-view-occluder='true']",
   ".modal-backdrop",
+  ".publish-review-backdrop",
+  ".model-context-backdrop",
+  ".fm-goto-back",
+  ".fm-menu-back",
   ".context-menu",
   ".toast",
   ".fm-goto",

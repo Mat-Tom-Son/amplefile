@@ -177,7 +177,9 @@ other surface.
   alone, with the running dot; the page shows a **Worker in …** marker that
   opens that Chat. A site's question shows in a bar above the page with
   **Block** and **Allow**, and only the person answers it; with the page out
-  of view, a notice offers **Show Page**.
+  of view, a notice offers **Show Page**. Pages show only here: with no
+  Connected Folder there is no file manager window to hold the pane, so a
+  page the AmpleFile Agent opens then runs unseen.
 - **Right panel:** **Info** shows the selection (a picture shows itself;
   files show Where, Modified, and Size) or, at a Connected Folder's top
   level, its Automations with their on/off switches, followed by the
@@ -872,8 +874,9 @@ not a complete or transactional backup.
   files, or delete a managed Connected Folder into Recently Deleted.
 - Browse Connected Folder and Standard Folder files in a Finder-style file
   manager, run Connected Folder Chats in the panel, and view History.
-- See and use the built-in browser's pages in the window's Browser pane:
-  watch a Worker's page, sign in to a site, and answer a site's question.
+- See and use the built-in browser's pages in the window's Browser pane,
+  once a folder is connected: watch a Worker's page, sign in to a site, and
+  answer a site's question.
 - Search a Connected Folder by name and by content inside ordinary files and
   Chat transcripts, honouring ignore rules, skipping binary content, and
   saying when a bound stopped the search.

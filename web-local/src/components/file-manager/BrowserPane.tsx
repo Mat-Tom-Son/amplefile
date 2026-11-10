@@ -27,18 +27,18 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as Rea
 
 import "./file-manager-browser.css";
 import {
-  browserAddressFor,
   browserConnection,
   browserDisplayAddress,
   browserPermissionNames,
   browserPermissionPhrase,
-  browserSearchUrl,
   type BrowserFindResult,
   type BrowserPageState,
+  type BrowserPermissionRequest,
   type BrowserViewRequest,
 } from "../../../../src/shared/browser";
 import type { BrowserPages } from "../../hooks/useBrowserPages";
-import { browserHost, browserSplitLimits, browserTabTitle, clampBrowserFraction, type BrowserPaneLayout, type BrowserTab } from "../../lib/browser-pages";
+import { browserAddressToOpen, browserErrorText, browserHost, browserQuestionGuardMs, browserSplitLimits, browserTabTitle, clampBrowserFraction, type BrowserPaneLayout, type BrowserTab } from "../../lib/browser-pages";
+import { requestConfirm } from "../../ui/feedback";
 import { nativeViewBounds, nativeViewOccluded } from "../../lib/native-view";
 import { isMacOS } from "../../lib/platform";
 import { createTabChromeMotion } from "../../lib/tab-chrome-motion";
@@ -68,8 +68,10 @@ interface AddressSuggestion {
  * the pane is collapsed. The page itself is the desktop host's, drawn over
  * the placeholder at the bottom, and keeps running whatever is shown here.
  */
-export function BrowserPane({ browser, layout, onLayout, sample = false, describeWorker, onError }: {
+export function BrowserPane({ browser, layout, onLayout, onViewing, sample = false, describeWorker, onError }: {
   browser: BrowserPages;
+  /** The page the person can see right now, or null: folded away, under a dialog, in a hidden window, or showing an error instead. */
+  onViewing: (pageId: string | null) => void;
   /** The preview: no host draws a page, so the placeholder says where one would be. */
   sample?: boolean;
   layout: Exclude<BrowserPaneLayout, "hidden">;
@@ -85,6 +87,12 @@ export function BrowserPane({ browser, layout, onLayout, sample = false, describ
   const chromeRef = useRef<HTMLSpanElement>(null);
   const motionRef = useRef<ReturnType<typeof createTabChromeMotion> | null>(null);
   const shownRef = useRef<string | null>(null);
+  /** What the tab in front can do for the pane's keys: go to its address field, open its find bar. */
+  const pageActionsRef = useRef<{ focusAddress: () => void; openFind: () => void } | null>(null);
+  /** A tab chosen with a key pressed in a page: the page that comes forward takes the keyboard, as the one that had it did. */
+  const focusNextPageRef = useRef(false);
+  useEffect(() => { if (collapsed) onViewing(null); }, [collapsed]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onViewing(null), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The frame behind the tab in front slides to the tab you choose.
   useLayoutEffect(() => {
@@ -109,22 +117,37 @@ export function BrowserPane({ browser, layout, onLayout, sample = false, describ
     const pane = paneRef.current;
     if (!pane) return;
     const root = document.documentElement.style;
-    // Beside the folder they sit over the folder's list; with the folder folded away, just above the page.
-    const viewport = layout === "full" ? pane.querySelector<HTMLElement>(".fm-browser-viewport") : null;
+    // Above the pane's top edge in every size: over the folder's list beside the folder, and over the toolbar with
+    // the folder folded away, never over the address row or a site's question.
     const place = () => {
-      root.setProperty("--fm-notice-bottom", `${Math.max(40, Math.round(window.innerHeight - (viewport ?? pane).getBoundingClientRect().top + 10))}px`);
+      root.setProperty("--fm-notice-bottom", `${Math.max(40, Math.round(window.innerHeight - pane.getBoundingClientRect().top + 10))}px`);
     };
     place();
     const observer = typeof window.ResizeObserver === "function" ? new window.ResizeObserver(place) : null;
     observer?.observe(pane);
-    if (viewport) observer?.observe(viewport);
     window.addEventListener("resize", place);
     return () => {
       observer?.disconnect();
       window.removeEventListener("resize", place);
       root.removeProperty("--fm-notice-bottom");
     };
-  }, [layout, activeId]);
+  }, [layout]);
+
+  // The page had the keyboard, so the browser's own keys arrive from the host, which hands the keyboard back to the window.
+  const keysRef = useRef<(shortcut: { pageId: string; key: string; shiftKey: boolean; ctrlKey: boolean }) => void>(() => undefined);
+  keysRef.current = (shortcut) => {
+    const key = shortcut.key.toLowerCase();
+    // Close Tab closes the tab the key was pressed in, and the tab that comes forward takes the keyboard, so the
+    // next ⌘W closes that one.
+    if (key === "w") { focusNextPageRef.current = shortcut.pageId === activeId; browser.close(shortcut.pageId); return; }
+    if (key === "t") { if (shortcut.shiftKey) reopenClosed(); else newTab(); return; }
+    if (shortcut.pageId !== activeId) return;
+    if (key === "l") pageActionsRef.current?.focusAddress();
+    else if (key === "f") pageActionsRef.current?.openFind();
+    else if (key === "tab" && shortcut.ctrlKey) cycle(shortcut.shiftKey ? -1 : 1, true);
+    else if (/^[1-9]$/.test(key)) chooseByNumber(key, true);
+  };
+  useEffect(() => bridge?.onShortcut((shortcut) => keysRef.current(shortcut)), [bridge]);
 
   function choose(tab: BrowserTab): void {
     browser.select(tab.pageId);
@@ -137,11 +160,36 @@ export function BrowserPane({ browser, layout, onLayout, sample = false, describ
     const others = tabs.filter((item) => item.pageId !== tab.pageId);
     const url = pages[tab.pageId]?.url || tab.url;
     void bridge.popupTabMenu(tab.pageId, url, { x: event.clientX, y: event.clientY }, { canReopen: browser.canReopen, hasOthers: others.length > 0 }).then((command) => {
-      if (command === "duplicate" && url) browser.newTab(url);
+      if (command === "duplicate" && url) { browser.newTab(url); if (collapsed) onLayout("split"); }
       else if (command === "close") browser.close(tab.pageId);
       else if (command === "close-others") for (const other of others) browser.close(other.pageId);
-      else if (command === "reopen-closed") browser.reopenClosed();
-    }).catch(() => undefined);
+      else if (command === "reopen-closed") reopenClosed();
+    }).catch((caught) => onError(browserErrorText(caught, "The tab’s menu could not open.")));
+  }
+
+  /** A tab that comes to the front is shown, as a new one is: a duplicated or reopened tab has no page until then. */
+  function reopenClosed(): void {
+    if (!browser.canReopen) return;
+    browser.reopenClosed();
+    if (collapsed) onLayout("split");
+  }
+
+  function cycle(step: 1 | -1, fromPage = false): void {
+    if (tabs.length < 2) return;
+    const index = tabs.findIndex((tab) => tab.pageId === activeId);
+    const next = tabs[(index + step + tabs.length) % tabs.length];
+    if (!next) return;
+    focusNextPageRef.current = fromPage;
+    choose(next);
+  }
+
+  /** ⌘1 to ⌘8 choose a tab by its place, and ⌘9 the last one, as browsers do. */
+  function chooseByNumber(key: string, fromPage = false): boolean {
+    const tab = key === "9" ? tabs.at(-1) : tabs[Number(key) - 1];
+    if (!tab) return false;
+    focusNextPageRef.current = fromPage && tab.pageId !== activeId;
+    choose(tab);
+    return true;
   }
 
   function tabKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number): void {
@@ -159,29 +207,32 @@ export function BrowserPane({ browser, layout, onLayout, sample = false, describ
     if (collapsed) onLayout("split");
   }
 
-  // The app's own browser keys while the pane has focus; the same keys arrive from the host while a page has it.
+  // The browser's own keys while the pane has the keyboard, wherever in the pane it is; the same keys arrive from
+  // the host while a page has it.
   function paneKeyDown(event: ReactKeyboardEvent<HTMLElement>): void {
     if (event.key === "Tab" && event.ctrlKey && !event.metaKey && !event.altKey && tabs.length > 1) {
       event.preventDefault();
-      const index = tabs.findIndex((tab) => tab.pageId === activeId);
-      const next = tabs[(index + (event.shiftKey ? -1 : 1) + tabs.length) % tabs.length];
-      if (next) choose(next);
+      cycle(event.shiftKey ? -1 : 1);
       return;
     }
     const command = isMacOS() ? event.metaKey : event.ctrlKey;
     if (!command || event.altKey) return;
     const key = event.key.toLowerCase();
+    const mine = () => { event.preventDefault(); event.nativeEvent.stopPropagation(); };
     if (key === "t") {
-      event.preventDefault();
-      event.nativeEvent.stopPropagation();
-      if (event.shiftKey) browser.reopenClosed(); else newTab();
-    } else if (/^[1-9]$/.test(key) && !event.shiftKey) {
-      // ⌘1 to ⌘8 choose a tab by its place, and ⌘9 the last one, as browsers do.
-      const tab = key === "9" ? tabs.at(-1) : tabs[Number(key) - 1];
-      if (!tab) return;
-      event.preventDefault();
-      event.nativeEvent.stopPropagation();
-      choose(tab);
+      mine();
+      if (event.shiftKey) reopenClosed(); else newTab();
+    } else if (event.shiftKey) {
+      return;
+    } else if (/^[1-9]$/.test(key)) {
+      if (chooseByNumber(key)) mine();
+    } else if (key === "l" && pageActionsRef.current) {
+      mine();
+      pageActionsRef.current.focusAddress();
+    } else if (key === "f" && pageActionsRef.current && (pages[activeId ?? ""] || active?.url)) {
+      // Find in Page, not the folder's Search, wherever in the pane the keyboard is.
+      mine();
+      pageActionsRef.current.openFind();
     }
   }
 
@@ -244,10 +295,9 @@ export function BrowserPane({ browser, layout, onLayout, sample = false, describ
       page={pages[active.pageId]}
       worker={pages[active.pageId]?.worker ? describeWorker(pages[active.pageId]!.worker!.owner) : null}
       onNavigate={(address) => browser.navigate(active.pageId, address)}
-      onNewTab={newTab}
-      onReopenClosed={browser.reopenClosed}
-      onSelectIndex={(index) => { const tab = index === 8 ? tabs.at(-1) : tabs[index]; if (tab) browser.select(tab.pageId); }}
-      onCycle={(step) => { const index = tabs.findIndex((tab) => tab.pageId === active.pageId); const next = tabs[(index + step + tabs.length) % tabs.length]; if (next) browser.select(next.pageId); }}
+      actionsRef={pageActionsRef}
+      takeKeyboard={() => { const take = focusNextPageRef.current; focusNextPageRef.current = false; return take; }}
+      onShown={(shown) => onViewing(shown ? active.pageId : null)}
       onError={onError}
     /> : null}
   </section>;
@@ -258,7 +308,7 @@ export function BrowserPane({ browser, layout, onLayout, sample = false, describ
  * a Worker has to say, and the placeholder the desktop host draws the page
  * over. Only the person answers a site's question, and only here.
  */
-function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewTab, onReopenClosed, onSelectIndex, onCycle, onError }: {
+function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, actionsRef, takeKeyboard, onShown, onError }: {
   bridge: BrowserBridge;
   tab: BrowserTab;
   sample: boolean;
@@ -266,10 +316,12 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
   page: BrowserPageState | undefined;
   worker: BrowserPaneWorker | null;
   onNavigate: (address: string) => Promise<void>;
-  onNewTab: () => void;
-  onReopenClosed: () => void;
-  onSelectIndex: (index: number) => void;
-  onCycle: (step: 1 | -1) => void;
+  /** Where the pane's keys find this tab's address field and find bar. */
+  actionsRef: RefObject<{ focusAddress: () => void; openFind: () => void } | null>;
+  /** True once, when this tab was chosen with a key pressed in a page: its page takes the keyboard. */
+  takeKeyboard: () => boolean;
+  /** Whether the page is drawn where the person can see it. */
+  onShown: (shown: boolean) => void;
   onError: (message: string) => void;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -292,8 +344,12 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
   const blocked = Boolean(page?.error || page?.crashed);
   const latestRef = useRef({ pageId: tab.pageId, url: tab.url, blocked });
   latestRef.current = { pageId: tab.pageId, url: tab.url, blocked };
-  const callbacksRef = useRef({ onNewTab, onReopenClosed, onSelectIndex, onCycle });
-  callbacksRef.current = { onNewTab, onReopenClosed, onSelectIndex, onCycle };
+  const onShownRef = useRef(onShown);
+  onShownRef.current = onShown;
+  /** Places the page now rather than on the next frame: a bar that just appeared above the page must not be drawn over. */
+  const placeNowRef = useRef<() => void>(() => undefined);
+  /** A failed call says why in the window's notice, in the desktop's own words. */
+  const run = (work: Promise<unknown>, fallback: string) => { void work.catch((caught) => onError(browserErrorText(caught, fallback))); };
 
   // Keeps the host's page over the placeholder: placed on mount, moved on every change of size or overlay.
   useLayoutEffect(() => {
@@ -310,11 +366,13 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
       frame = 0;
       if (disposed || !mounted) return;
       const next = request();
+      onShownRef.current(next.active && !next.occluded);
       const key = JSON.stringify([next.bounds, next.active, next.occluded]);
       if (key === sent) return;
       sent = key;
       bridge.layout(next);
     };
+    placeNowRef.current = () => { if (frame) { window.cancelAnimationFrame(frame); } update(); };
     const schedule = () => { if (!frame) frame = window.requestAnimationFrame(update); };
     const resizeObserver = typeof window.ResizeObserver === "function" ? new window.ResizeObserver(schedule) : null;
     const mutationObserver = typeof window.MutationObserver === "function" ? new window.MutationObserver(schedule) : null;
@@ -326,11 +384,14 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
       if (disposed) return;
       mounted = true;
       schedule();
+      if (takeKeyboard()) run(bridge.command(tab.pageId, { type: "focus" }), "The page could not take the keyboard.");
     }).catch((caught) => {
-      if (!disposed) onError(caught instanceof Error ? caught.message : "The page could not open.");
+      if (!disposed) onError(browserErrorText(caught, "The page could not open."));
     });
     return () => {
       disposed = true;
+      placeNowRef.current = () => undefined;
+      onShownRef.current(false);
       if (frame) window.cancelAnimationFrame(frame);
       resizeObserver?.disconnect();
       mutationObserver?.disconnect();
@@ -361,16 +422,14 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
     if (result.pageId === tab.pageId) setFindResult(result);
   }), [bridge, tab.pageId]);
 
-  // The page had the keyboard, so the browser's own keys arrive from the host.
-  useEffect(() => bridge.onShortcut((shortcut) => {
-    if (shortcut.pageId !== tab.pageId) return;
-    const key = shortcut.key.toLowerCase();
-    if (key === "tab" && shortcut.ctrlKey) callbacksRef.current.onCycle(shortcut.shiftKey ? -1 : 1);
-    else if (key === "l") focusAddress();
-    else if (key === "f") openFind();
-    else if (key === "t") { if (shortcut.shiftKey) callbacksRef.current.onReopenClosed(); else callbacksRef.current.onNewTab(); }
-    else if (/^[1-9]$/.test(key)) callbacksRef.current.onSelectIndex(Number(key) - 1);
-  }), [bridge, tab.pageId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A bar above the page appears or goes: the page moves in the same frame, so it is never drawn over the bar.
+  const question = page?.permissionRequest ?? null;
+  useLayoutEffect(() => { placeNowRef.current(); }, [question?.requestId, page?.notice?.text, page?.blockedPopup?.url, findOpen, blocked]);
+
+  useEffect(() => {
+    actionsRef.current = { focusAddress, openFind };
+    return () => { actionsRef.current = null; };
+  });
 
   // A new tab is ready to type into, and lists the pages visited lately.
   useEffect(() => {
@@ -397,17 +456,17 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
   function closeFind(): void {
     setFindOpen(false);
     setFindResult(null);
-    void bridge.command(tab.pageId, { type: "stop-find" });
-    void bridge.command(tab.pageId, { type: "focus" });
+    run(bridge.command(tab.pageId, { type: "stop-find" }), "Find could not be closed.");
+    run(bridge.command(tab.pageId, { type: "focus" }), "The page could not take the keyboard.");
   }
 
   function find(text: string, options: { forward: boolean; newSearch: boolean }): void {
     if (!text) {
       setFindResult(null);
-      void bridge.command(tab.pageId, { type: "stop-find" });
+      run(bridge.command(tab.pageId, { type: "stop-find" }), "Find could not be closed.");
       return;
     }
-    void bridge.command(tab.pageId, { type: "find", text, ...options });
+    run(bridge.command(tab.pageId, { type: "find", text, ...options }), "The page could not be searched.");
   }
 
   /** What someone typed: Return's own row first (the address, or a search), then matching pages from history. */
@@ -420,9 +479,10 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
       setSuggestions([]);
       return;
     }
-    const target = browserAddressFor(text);
+    // An address the browser cannot show is searched for, so Return always leads somewhere.
+    const target = browserAddressToOpen(text);
     const first: AddressSuggestion[] = target
-      ? [target.startsWith(browserSearchUrl) ? { key: "search", url: target, label: `Search Google for “${text}”` } : { key: "go", url: target, label: target }]
+      ? [target.search ? { key: "search", url: target.url, label: `Search Google for “${text}”` } : { key: "go", url: target.url, label: target.url }]
       : [];
     setSuggestions(first);
     void bridge.suggest(text).then((entries) => {
@@ -441,23 +501,32 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
   }
 
   function go(address: string): void {
-    if (!address.trim()) return;
+    const target = browserAddressToOpen(address);
+    if (!target) return;
     closeSuggestions();
     setDraft(null);
     addressRef.current?.blur();
-    void onNavigate(address)
-      .then(() => bridge.command(tab.pageId, { type: "focus" }))
-      .catch((caught) => onError(caught instanceof Error ? caught.message : "The page could not open."));
+    run(onNavigate(target.url).then(() => bridge.command(tab.pageId, { type: "focus" })), "The page could not open.");
   }
 
-  function answer(decision: "allow" | "block"): void {
-    const request = page?.permissionRequest;
-    if (!request) return;
-    void bridge.respondPermission(tab.pageId, request.requestId, decision).catch((caught) => onError(caught instanceof Error ? caught.message : "The site’s request could not be answered."));
+  /** The answer goes to the question the bar was drawn for, never to whichever question the page has by now. */
+  function answer(request: BrowserPermissionRequest, decision: "allow" | "block"): void {
+    run(bridge.respondPermission(tab.pageId, request.requestId, decision), "The site’s request could not be answered.");
   }
 
   function command(type: "back" | "forward" | "reload" | "stop"): void {
-    void bridge.command(tab.pageId, { type }).catch((caught) => onError(caught instanceof Error ? caught.message : "The browser could not do that."));
+    run(bridge.command(tab.pageId, { type }), "The browser could not do that.");
+  }
+
+  async function clearHistory(): Promise<void> {
+    const confirmed = await requestConfirm({
+      title: "Clear Browsing History?",
+      body: "This removes every page the browser remembers visiting, for you and for your Workers. Sign-ins stay. It can’t be undone.",
+      confirmLabel: "Clear History",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    run(bridge.clearHistory().then(() => setRecent([])), "History could not be cleared.");
   }
 
   function addressKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
@@ -475,7 +544,7 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
       event.preventDefault();
       setDraft(null);
       event.currentTarget.blur();
-      if (hasPage) void bridge.command(tab.pageId, { type: "focus" });
+      if (hasPage) run(bridge.command(tab.pageId, { type: "focus" }), "The page could not take the keyboard.");
     }
   }
 
@@ -489,29 +558,16 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
     }
   }
 
-  // ⌘L and ⌘F while the pane's own controls have the keyboard.
-  function viewKeyDown(event: ReactKeyboardEvent<HTMLElement>): void {
-    const meta = isMacOS() ? event.metaKey : event.ctrlKey;
-    if (!meta || event.altKey || event.shiftKey) return;
-    const key = event.key.toLowerCase();
-    if (key !== "l" && key !== "f") return;
-    if (key === "f" && !hasPage) return;
-    event.preventDefault();
-    event.nativeEvent.stopPropagation();
-    if (key === "l") focusAddress(); else openFind();
-  }
-
   const loading = page?.loading ?? false;
   const address = draft ?? browserDisplayAddress(url);
   const external = /^https?:/i.test(url);
-  const request = page?.permissionRequest ?? null;
   const connection = hasPage ? browserConnection(url) : "none";
   const connectionText = connection === "secure"
     ? "Connection is secure"
     : connection === "insecure"
       ? "Connection is not secure. Don’t enter passwords or payment details on this site."
       : /^file:/i.test(url) ? "This is a file on this computer" : "This page is served by this computer";
-  return <div className="fm-browser-page" onKeyDown={viewKeyDown}>
+  return <div className="fm-browser-page">
     <div className="fm-browser-nav">
       <div className="fm-capsule">
         <button type="button" className="fm-tool" disabled={!page?.canGoBack} onClick={() => command("back")} aria-label="Back" title="Back"><ArrowLeft16Regular /></button>
@@ -556,7 +612,7 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
             onBlur={() => { setDraft(null); closeSuggestions(); }}
             onKeyDown={addressKeyDown}
           />
-          {page && page.zoomPercent !== 100 ? <button type="button" className="fm-browser-zoom" onClick={() => { void bridge.command(tab.pageId, { type: "zoom-reset" }); }} title="Reset Zoom" aria-label={`Zoom ${page.zoomPercent}%. Reset zoom`}>{page.zoomPercent}%</button> : null}
+          {page && page.zoomPercent !== 100 ? <button type="button" className="fm-browser-zoom" onClick={() => run(bridge.command(tab.pageId, { type: "zoom-reset" }), "Zoom could not be reset.")} title="Reset Zoom" aria-label={`Zoom ${page.zoomPercent}%. Reset zoom`}>{page.zoomPercent}%</button> : null}
         </div>
         {siteOpen ? <div className="fm-browser-site-menu" ref={siteMenuRef} role="menu" aria-label={`Settings for ${browserHost(url)}`} data-native-view-occluder="true">
           <span className="fm-browser-site-menu-h">{browserHost(url) || url}</span>
@@ -564,7 +620,7 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
           {page?.sitePermissions.map((item) => <div className="fm-browser-site-menu-row" key={item.kind}>
             <span>{browserPermissionNames[item.kind]}</span>
             <span className="fm-browser-site-menu-decision">{item.decision === "allow" ? "Allowed" : "Blocked"}</span>
-            <button type="button" className="fm-btn is-small" role="menuitem" onClick={() => { void bridge.command(tab.pageId, { type: "forget-permission", kind: item.kind }); }} title="The site asks again the next time it needs this">Ask Again</button>
+            <button type="button" className="fm-btn is-small" role="menuitem" onClick={() => run(bridge.command(tab.pageId, { type: "forget-permission", kind: item.kind }), "The site’s setting could not be changed.")} title="The site asks again the next time it needs this">Ask Again</button>
           </div>)}
         </div> : null}
         {suggestions.length ? <ul className="fm-browser-suggestions" id={`fm-browser-suggestions-${tab.pageId}`} role="listbox" aria-label="Suggestions" data-native-view-occluder="true">
@@ -591,26 +647,21 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
         {worker.onOpen ? <button type="button" className="fm-browser-tool" onClick={worker.onOpen} aria-label="Open the Chat" title="Open the Chat"><Chat16Regular /></button> : null}
       </div> : null}
       <button type="button" className="fm-browser-tool" disabled={!hasPage} onClick={openFind} aria-label="Find in Page" title="Find in Page"><Search16Regular /></button>
-      <button type="button" className="fm-browser-tool" disabled={!external} onClick={() => { void window.ampleFileDesktop?.shell.openExternal(url).catch((caught) => onError(caught instanceof Error ? caught.message : "The page could not open.")); }} aria-label="Open in Your Web Browser" title="Open in Your Web Browser"><Open16Regular /></button>
+      <button type="button" className="fm-browser-tool" disabled={!external} onClick={() => { const open = window.ampleFileDesktop?.shell.openExternal(url); if (open) run(open, "The page could not open."); }} aria-label="Open in Your Web Browser" title="Open in Your Web Browser"><Open16Regular /></button>
     </div>
-    {request ? <div className="fm-browser-strip is-question" role="alert">
-      <ShieldQuestion20Regular aria-hidden="true" />
-      <span className="fm-browser-strip-text"><strong>{browserHost(request.origin)}</strong> wants to {browserPermissionPhrase(request.kinds)}.</span>
-      <button type="button" className="fm-btn is-small" onClick={() => answer("block")}>Block</button>
-      <button type="button" className="fm-btn is-small is-primary" onClick={() => answer("allow")}>Allow</button>
-    </div> : null}
+    {question ? <SiteQuestion key={question.requestId} request={question} onAnswer={(decision) => answer(question, decision)} /> : null}
     {page?.notice ? <div className="fm-browser-strip" role="status">
       <Warning16Regular aria-hidden="true" />
       <span className="fm-browser-strip-text">{page.notice.text}</span>
-      {isMacOS() ? <button type="button" className="fm-btn is-small" onClick={() => { void bridge.command(tab.pageId, { type: "open-privacy-settings", kind: page.notice!.kind }); }}>Open System Settings</button> : null}
-      <button type="button" className="fm-browser-tool" onClick={() => { void bridge.command(tab.pageId, { type: "dismiss-notice" }); }} aria-label="Dismiss" title="Dismiss"><Dismiss16Regular /></button>
+      {isMacOS() ? <button type="button" className="fm-btn is-small" onClick={() => run(bridge.command(tab.pageId, { type: "open-privacy-settings", kind: page.notice!.kind }), "System Settings could not open.")}>Open System Settings</button> : null}
+      <button type="button" className="fm-browser-tool" onClick={() => run(bridge.command(tab.pageId, { type: "dismiss-notice" }), "The notice could not be dismissed.")} aria-label="Dismiss" title="Dismiss"><Dismiss16Regular /></button>
     </div> : null}
     {page?.blockedPopup ? <div className="fm-browser-strip" role="status">
       <WindowNew16Regular aria-hidden="true" />
       <span className="fm-browser-strip-text">Pop-up blocked{page.blockedPopup.origin ? ` from ${browserHost(page.blockedPopup.origin)}` : ""}: <span className="fm-browser-strip-url">{page.blockedPopup.url}</span></span>
-      <button type="button" className="fm-btn is-small" disabled={!page.blockedPopup.origin} onClick={() => { void bridge.command(tab.pageId, { type: "allow-popups" }); }}>Always Allow on This Site</button>
-      <button type="button" className="fm-btn is-small is-primary" onClick={() => { void bridge.command(tab.pageId, { type: "open-blocked-popup" }); }}>Open It</button>
-      <button type="button" className="fm-browser-tool" onClick={() => { void bridge.command(tab.pageId, { type: "dismiss-blocked-popup" }); }} aria-label="Dismiss" title="Dismiss"><Dismiss16Regular /></button>
+      <button type="button" className="fm-btn is-small" disabled={!page.blockedPopup.origin} onClick={() => run(bridge.command(tab.pageId, { type: "allow-popups" }), "The pop-up could not open.")}>Always Allow on This Site</button>
+      <button type="button" className="fm-btn is-small is-primary" onClick={() => run(bridge.command(tab.pageId, { type: "open-blocked-popup" }), "The pop-up could not open.")}>Open It</button>
+      <button type="button" className="fm-browser-tool" onClick={() => run(bridge.command(tab.pageId, { type: "dismiss-blocked-popup" }), "The notice could not be dismissed.")} aria-label="Dismiss" title="Dismiss"><Dismiss16Regular /></button>
     </div> : null}
     {findOpen ? <div className="fm-browser-strip is-find" role="search">
       <input
@@ -618,6 +669,7 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
         type="search"
         aria-label="Find in Page"
         placeholder="Find in Page"
+        maxLength={1000}
         value={findText}
         onChange={(event) => { setFindText(event.target.value); find(event.target.value, { forward: true, newSearch: true }); }}
         onKeyDown={findKeyDown}
@@ -638,7 +690,7 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
               <span className="fm-browser-recent-host">{browserHost(entry.url)}</span>
             </button>)}
           </div>
-          <button type="button" className="fm-text-button" onClick={() => { void bridge.clearHistory().then(() => setRecent([])).catch((caught) => onError(caught instanceof Error ? caught.message : "History could not be cleared.")); }}>Clear Browsing History</button>
+          <button type="button" className="fm-text-button" onClick={() => void clearHistory()}>Clear Browsing History…</button>
         </div> : <>
           <strong>Search or Type a Web Address</strong>
         </>}
@@ -654,6 +706,33 @@ function BrowserPageView({ bridge, tab, sample, page, worker, onNavigate, onNewT
         <button type="button" className="fm-btn" onClick={() => command("reload")}>Try Again</button>
       </div> : sample ? <div className="fm-browser-sample">The page shows here in the Mac app.</div> : null}
     </div>
+  </div>;
+}
+
+/**
+ * A site's question, above its page. Each question is its own bar with its
+ * own buttons, and the buttons take no press for a moment after the bar
+ * appears: a second press of a double-click, or a press aimed at what was
+ * there a moment ago, never answers a question the person has not read. The
+ * answer is kept for the site, so a stray one would last.
+ */
+function SiteQuestion({ request, onAnswer }: { request: BrowserPermissionRequest; onAnswer: (decision: "allow" | "block") => void }) {
+  const [armed, setArmed] = useState(false);
+  const answered = useRef(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setArmed(true), browserQuestionGuardMs);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const answer = (decision: "allow" | "block") => {
+    if (!armed || answered.current) return;
+    answered.current = true;
+    onAnswer(decision);
+  };
+  return <div className="fm-browser-strip is-question" role="alert">
+    <ShieldQuestion20Regular aria-hidden="true" />
+    <span className="fm-browser-strip-text"><strong>{browserHost(request.origin)}</strong> wants to {browserPermissionPhrase(request.kinds)}.</span>
+    <button type="button" className="fm-btn is-small" disabled={!armed} onClick={() => answer("block")}>Block</button>
+    <button type="button" className="fm-btn is-small is-primary" disabled={!armed} onClick={() => answer("allow")}>Allow</button>
   </div>;
 }
 

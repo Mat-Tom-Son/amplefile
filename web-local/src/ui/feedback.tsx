@@ -39,6 +39,7 @@ export interface ToastEntry extends ToastOptions {
 let confirmDialogDispatch: ((request: ConfirmDialogRequest) => void) | null = null;
 let confirmDialogRequestId = 0;
 let toastDispatch: ((toast: ToastEntry) => void) | null = null;
+let toastDismiss: ((id: number) => void) | null = null;
 let toastId = 0;
 
 export function requestConfirm(options: ConfirmDialogOptions): Promise<boolean> {
@@ -58,12 +59,15 @@ export function requestConfirm(options: ConfirmDialogOptions): Promise<boolean> 
   });
 }
 
-export function showToast(options: ToastOptions): void {
+/** Shows a notice. The function it returns takes the notice down early, when what it said is no longer true. */
+export function showToast(options: ToastOptions): () => void {
+  const id = ++toastId;
   toastDispatch?.({
     ...options,
-    id: ++toastId,
+    id,
     tone: options.tone ?? "info",
   });
+  return () => toastDismiss?.(id);
 }
 
 export function ConfirmDialogHost() {
@@ -170,6 +174,10 @@ export function ToastHost() {
   const dismissToast = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
+  useEffect(() => {
+    toastDismiss = dismissToast;
+    return () => { toastDismiss = null; };
+  }, [dismissToast]);
 
   return (
     <div className="toast-stack" data-above-modals="" aria-live="polite" aria-atomic="false">

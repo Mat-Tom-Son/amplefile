@@ -5,7 +5,7 @@
  * them between its messages. Pure, so it is tested without a window.
  */
 
-import type { BrowserOpenTabCommand, BrowserPageState } from "../../../src/shared/browser";
+import { browserAddressFor, browserSearchUrl, isBrowserAddress, type BrowserOpenTabCommand, type BrowserPageState } from "../../../src/shared/browser";
 
 /** One tab in the Browser pane. `url` is empty for a new tab nobody has typed an address into. */
 export interface BrowserTab {
@@ -159,3 +159,26 @@ export const browserSplitLimits = { defaultFraction: 0.55 } as const;
 export function clampBrowserFraction(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.round(Math.max(0.15, Math.min(0.85, value)) * 1000) / 1000 : browserSplitLimits.defaultFraction;
 }
+
+/**
+ * What the address field opens for what was typed: a web address, a file on
+ * this computer, or a search. Anything else the browser cannot show
+ * (`chrome://…`, `data:…`, `mailto:…`) is searched for, as `javascript:` is,
+ * so Return always leads somewhere and no tab is left blank.
+ */
+export function browserAddressToOpen(typed: string): { url: string; search: boolean } | null {
+  const text = typed.trim();
+  const target = browserAddressFor(text);
+  if (!target) return null;
+  if (isBrowserAddress(target)) return { url: target, search: target.startsWith(browserSearchUrl) };
+  return { url: `${browserSearchUrl}${encodeURIComponent(text)}`, search: true };
+}
+
+/** What a failed browser call says, without the prefix Electron puts in front of the desktop's own words. */
+export function browserErrorText(caught: unknown, fallback: string): string {
+  const text = caught instanceof Error ? caught.message : typeof caught === "string" ? caught : "";
+  return text.replace(/^Error invoking remote method '[^']*': (?:Error: )?/, "").trim() || fallback;
+}
+
+/** How long a site's question ignores presses after it appears or changes, so a press meant for something else never answers it. */
+export const browserQuestionGuardMs = 500;

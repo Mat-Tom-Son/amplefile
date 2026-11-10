@@ -108,6 +108,8 @@ async function run() {
     historyPath: join(downloads, "history.json"),
     userAgentProduct: "AmpleFile/9.9.9",
     partition: `browser-smoke-${randomUUID()}`,
+    // A Worker's script gives up waiting on an unanswered question this soon here.
+    questionWaitMs: 1_200,
   });
   const host = browser.toolHost;
   try {
@@ -351,6 +353,27 @@ async function run() {
     assert.equal(window.contentView.children.length, 2, "it stays in the window, ready for the next link");
     bubble.close();
     assert.equal(window.contentView.children.length, 1);
+    // A key the window acts on, pressed in a page: the window is told which page, and is given the keyboard,
+    // so what is typed next goes to its address or find field and never into the page. This window is off screen
+    // and cannot hold the keyboard, so what shows here is the host asking the window to take it.
+    const shownPage = window.contentView.children[0].webContents;
+    const forwarded = (key) => events.filter((event) => event.channel === "amplefile:browser:shortcut" && event.payload.key.toLowerCase() === key);
+    const command = process.platform === "darwin" ? "meta" : "control";
+    let windowAskedToFocus = 0;
+    const focusWindow = window.webContents.focus.bind(window.webContents);
+    window.webContents.focus = () => { windowAskedToFocus += 1; focusWindow(); };
+    for (const [index, key] of ["l", "f", "t", "w"].entries()) {
+      shownPage.sendInputEvent({ type: "keyDown", keyCode: key, modifiers: [command] });
+      await until(() => forwarded(key).length === 1, `the window hears Command-${key.toUpperCase()}`);
+      assert.equal(forwarded(key)[0].payload.pageId, restoredId, "with the page it was pressed in");
+      assert.equal(windowAskedToFocus, index + 1, `the window is given the keyboard with Command-${key.toUpperCase()}`);
+    }
+    // A key that is the page's own is not the window's business.
+    shownPage.sendInputEvent({ type: "keyDown", keyCode: "a", modifiers: [command] });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(forwarded("a").length, 0);
+    assert.equal(windowAskedToFocus, 4);
+    window.webContents.focus = focusWindow;
     browser.detachWindow(window);
     assert.equal(window.contentView.children.length, 0, "a closing window gives its pages back");
     assert.equal((await host.read({ tab: restoredId, mode: "text" })).text.includes("Second page"), true, "the page outlives its window");
@@ -379,6 +402,16 @@ async function run() {
     await until(() => browser.states().find((state) => state.pageId === "perm01")?.permissionRequest, "the site asks again");
     browser.respondPermission("perm01", browser.states().find((state) => state.pageId === "perm01").permissionRequest.requestId, "block");
     assert.equal((await blocked).result, "denied");
+    // A Worker's script that waits on a question is not left waiting: it is told the person has to answer,
+    // and the question stays for the person.
+    await assert.rejects(
+      host.evaluate({ tab: "perm01", script: "navigator.permissions.query({ name: 'midi' }).then(() => navigator.requestMIDIAccess()).then(() => 'granted', () => 'denied')" }),
+      /The script has not finished: the page is waiting for the person to let it use your MIDI devices\. Only the person can answer/,
+    );
+    const waitingQuestion = browser.states().find((state) => state.pageId === "perm01").permissionRequest;
+    assert.deepEqual(waitingQuestion?.kinds, ["midi"], "the question is still the person's to answer");
+    await host.navigate({ tab: "perm01", to: `${base}/two` });
+    assert.equal(browser.states().find((state) => state.pageId === "perm01").permissionRequest, null);
     // Leaving the page drops a question nobody answered.
     // The script is still waiting when the page goes: the dropped question denies it, or the call ends with the page.
     const unanswered = host.evaluate({ tab: "perm01", script: "navigator.permissions.query({ name: 'midi' }).then(() => navigator.requestMIDIAccess()).then(() => 'granted', () => 'denied')" })

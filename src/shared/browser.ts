@@ -119,7 +119,7 @@ export interface BrowserViewBounds {
 /** The renderer's placeholder for one browser tab: where the page shows, and whether it should. */
 export interface BrowserViewRequest {
   pageId: string;
-  /** Loaded when the page does not exist yet, as for a tab restored after a restart. */
+  /** Loaded when the page does not exist yet, as for a duplicated or reopened tab the window has not shown. */
   url: string;
   sequence: number;
   bounds: BrowserViewBounds;

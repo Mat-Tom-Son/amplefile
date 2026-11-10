@@ -3,6 +3,8 @@ import test from "node:test";
 
 import { isBrowserPageId, type BrowserPageState } from "../src/shared/browser.js";
 import {
+  browserAddressToOpen,
+  browserErrorText,
   browserHost,
   browserTabTitle,
   browserTabsReducer,
@@ -123,4 +125,26 @@ test("the pane is not drawn without a tab, and its share of the area stays betwe
   assert.equal(clampBrowserFraction(3), 0.85);
   assert.equal(clampBrowserFraction("wide"), 0.55);
   assert.equal(clampBrowserFraction(Number.NaN), 0.55);
+});
+
+test("what the address field opens: web addresses and files as they are, a search for anything else", () => {
+  assert.deepEqual(browserAddressToOpen(" example.com "), { url: "https://example.com", search: false });
+  assert.deepEqual(browserAddressToOpen("localhost:3000"), { url: "http://localhost:3000", search: false });
+  assert.deepEqual(browserAddressToOpen("/Users/me/My Site/index.html"), { url: "file:///Users/me/My%20Site/index.html", search: false });
+  assert.deepEqual(browserAddressToOpen("https://example.com/a?b=c"), { url: "https://example.com/a?b=c", search: false });
+  assert.deepEqual(browserAddressToOpen("how tall is a giraffe"), { url: "https://www.google.com/search?q=how%20tall%20is%20a%20giraffe", search: true });
+  // Addresses only another program could open are searched for, so Return always leads somewhere and no tab is left blank.
+  for (const typed of ["chrome://settings", "data:text/html,<h1>hi</h1>", "view-source:https://example.com", "about:config", "ftp://example.com/file", "mailto:someone@example.com"]) {
+    assert.deepEqual(browserAddressToOpen(typed), { url: `https://www.google.com/search?q=${encodeURIComponent(typed)}`, search: true }, typed);
+  }
+  assert.deepEqual(browserAddressToOpen("javascript:alert(1)"), { url: "https://www.google.com/search?q=javascript%3Aalert(1)", search: true });
+  assert.equal(browserAddressToOpen("   "), null);
+});
+
+test("a failed browser call is said in the desktop's own words", () => {
+  assert.equal(browserErrorText(new Error("Error invoking remote method 'amplefile:browser:navigate': Error: Type an address or something to search for."), "fallback"), "Type an address or something to search for.");
+  assert.equal(browserErrorText(new Error("Error invoking remote method 'amplefile:browser:command': The text to find is invalid."), "fallback"), "The text to find is invalid.");
+  assert.equal(browserErrorText(new Error("The page stopped."), "fallback"), "The page stopped.");
+  assert.equal(browserErrorText(new Error(""), "The page could not open."), "The page could not open.");
+  assert.equal(browserErrorText(undefined, "The page could not open."), "The page could not open.");
 });

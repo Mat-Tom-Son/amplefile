@@ -109,6 +109,8 @@ export interface BuiltInBrowserOptions {
   userAgentProduct: string;
   /** Runs after a page joins the window, so host overlays stay above it. */
   onViewAttached?: () => void;
+  /** How long a Worker's script waits on a site's unanswered question before it is told the person has to answer. */
+  questionWaitMs?: number;
   partition?: string;
 }
 
@@ -157,6 +159,8 @@ const fullPageMaxHeight = 8_000;
 const isolatedWorldId = 1_001;
 /** A page may open a tab or pop-up this long after a press, as Chrome allows after a click. */
 const popupGestureMs = 5_000;
+/** How long a Worker's script waits on a site's unanswered question; the person may be about to answer. */
+const questionWaitMs = 30_000;
 /** How long the Worker marker stays after a Worker's last step on a page. */
 const workerLingerMs = 3_000;
 const gestureInputTypes = new Set(["mouseDown", "keyDown", "rawKeyDown", "touchStart", "gestureTap"]);
@@ -705,6 +709,8 @@ export class BuiltInBrowser {
 
   #hide(page: BrowserPage): void {
     if (page.attachedTo) this.#bubble.hide();
+    // A page that leaves the window while it has the keyboard would take the keyboard with it.
+    if (page.attachedTo && !page.view.webContents.isDestroyed() && page.view.webContents.isFocused()) this.#focusWindow(page);
     page.view.setVisible(false);
     if (page.attachedTo && !page.attachedTo.isDestroyed()) page.attachedTo.contentView.removeChildView(page.view);
     page.attachedTo = null;
@@ -902,6 +908,32 @@ export class BuiltInBrowser {
     };
     const result = window && !window.isDestroyed() ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options);
     return result.response === 0 ? "allow" : "block";
+  }
+
+  /**
+   * A script may wait on something only the person can allow. The person may
+   * not be there, or no window may show the page, so the wait is bounded: once
+   * a question has stood unanswered this long, the Worker is told who has to
+   * answer instead of waiting on. The question stays for the person.
+   */
+  async #unlessAsking<T>(page: BrowserPage, work: Promise<T>): Promise<T> {
+    let askedAt = 0;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const waiting = new Promise<never>((_resolve, reject) => {
+      timer = setInterval(() => {
+        const first = page.permissions[0];
+        if (!first) { askedAt = 0; return; }
+        askedAt ||= Date.now();
+        if (Date.now() - askedAt < (this.#options.questionWaitMs ?? questionWaitMs)) return;
+        reject(new Error(`The script has not finished: the page is waiting for the person to let it ${browserPermissionPhrase(first.request.kinds)}. Only the person can answer; tell them it is waiting in the tab.`));
+      }, 250);
+    });
+    try {
+      return await Promise.race([work, waiting]);
+    } finally {
+      clearInterval(timer);
+      work.catch(() => undefined);
+    }
   }
 
   #dropPermissions(page: BrowserPage): void {
@@ -1102,7 +1134,8 @@ export class BuiltInBrowser {
       if (key === "-") { this.command(page.pageId, { type: "zoom-out" }); return true; }
       if (key === "0") { this.command(page.pageId, { type: "zoom-reset" }); return true; }
       if (key === "p" && !input.shift) { this.#print(page); return true; }
-      if ((key === "l" || key === "f" || key === "t") && !input.shift) return this.#forwardKey(page, input);
+      // Close Tab closes this page's tab: sent to the window with the page it came from, never to whichever tab the menu would pick.
+      if ((key === "l" || key === "f" || key === "t" || key === "w") && !input.shift) return this.#forwardKey(page, input);
       // Cmd/Ctrl+Shift+T reopens the last closed browser tab, which the tab strip remembers.
       if (key === "t" && input.shift) return this.#forwardKey(page, input);
       if (/^[1-9]$/.test(key) && !input.shift) return this.#forwardKey(page, input);
@@ -1122,7 +1155,17 @@ export class BuiltInBrowser {
       altKey: input.alt,
     };
     this.#options.send(browserChannels.shortcut, shortcut);
+    // The key is the window's to act on (its address field, its find field, its
+    // tabs), so the keyboard goes back to the window; left in the page, what the
+    // person types next would land in the page's own fields.
+    this.#focusWindow(page);
     return true;
+  }
+
+  /** Hands the keyboard from a page back to the window that shows it. */
+  #focusWindow(page: BrowserPage): void {
+    const window = page.attachedTo ?? this.#options.window();
+    if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.focus();
   }
 
   // ── Worker operations ─────────────────────────────────────────────────────
@@ -1390,7 +1433,7 @@ export class BuiltInBrowser {
           result?: { type?: string; value?: unknown; description?: string };
           exceptionDetails?: { text?: string; exception?: { description?: string } };
         }>;
-        const outcome = await abortable(evaluation, signal);
+        const outcome = await this.#unlessAsking(page, abortable(evaluation, signal));
         this.#touch(page);
         if (outcome.exceptionDetails) throw new Error(`The script failed: ${outcome.exceptionDetails.exception?.description ?? outcome.exceptionDetails.text ?? "unknown error"}`);
         const value = outcome.result?.value;

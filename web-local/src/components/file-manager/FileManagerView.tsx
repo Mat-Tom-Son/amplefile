@@ -311,9 +311,11 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   const [browserLayoutChoice, setBrowserLayout] = useState<BrowserPaneLayout>("collapsed");
   const [browserFraction, setBrowserFractionState] = useState(() => readStoredJsonValue(browserSplitStorageKey, clampBrowserFraction, clampBrowserFraction(null)));
   const setBrowserFraction = (next: number) => { setBrowserFractionState(next); writeStoredJsonValue(browserSplitStorageKey, next); };
+  // The page the person can see right now, as the pane reports it: Workers are told only that.
+  const [browserViewingPageId, setBrowserViewingPageId] = useState<string | null>(null);
   const browser = useBrowserPages({
     bridge: fixture ? fixture.browser ?? null : window.ampleFileDesktop?.browser ?? null,
-    viewing: browserLayoutChoice === "split" || browserLayoutChoice === "full",
+    viewingPageId: browserViewingPageId,
     // A link the person followed, or a page a Worker was asked to show, opens the pane if it is folded away.
     onShow: () => setBrowserLayout((current) => current === "collapsed" || current === "hidden" ? "split" : current),
   });
@@ -338,6 +340,9 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         if (!(panelChat && panelChat.connectedFolderId === folder.id && (panelChat.activeId ?? panelChat.conversationId) === chat.conversationId)) {
           setPanelChat({ key: Date.now(), connectedFolderId: folder.id, conversationId: chat.conversationId, activeId: chat.conversationId, title: untitledChatLabel, sendRequest: null, open: true });
         } else setPanelChat({ ...panelChat, open: true });
+        // A Chat belongs to its Connected Folder, so the window goes there when another is shown.
+        // Already in it, the person keeps their place, whichever of its folders they are in.
+        if (folder.id === connectedFolder?.id) return;
         // The folder stays beside the browser only if it was already there.
         const keep = browserLayout;
         navigate({ place: { kind: "connected-folder", id: folder.id }, path: "" }, "push", folder);
@@ -349,23 +354,42 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   useEffect(() => {
     if (query.trim() || recentsOpen) setBrowserLayout((current) => current === "full" ? "split" : current);
   }, [query, recentsOpen]);
-  /** Brings one browser tab into view, from a notice. */
+  /** Brings one browser tab into view, from a notice; a tab closed since has nothing to show. */
   function showBrowserTab(pageId: string) {
+    if (!browserTabsRef.current.some((tab) => tab.pageId === pageId)) return;
     browser.select(pageId);
     setBrowserLayout((current) => current === "full" ? current : "split");
   }
-  // A site is waiting on the person and its page is not in view: the window says so once per question.
-  const browserAskedRef = useRef(new Set<string>());
+  const browserTabsRef = useRef(browser.tabs);
+  browserTabsRef.current = browser.tabs;
+  // A site is waiting on the person and its page is not in view: the window says so once for each question, and
+  // takes the notice down when the question is answered, dropped by the page, or brought into view.
+  const browserAskedRef = useRef(new Map<string, { pageId: string; dismiss: (() => void) | null }>());
   useEffect(() => {
+    const asked = browserAskedRef.current;
+    const pending = new Set<string>();
     for (const page of Object.values(browser.pages)) {
       const request = page.permissionRequest;
-      if (!request || browserAskedRef.current.has(request.requestId)) continue;
-      browserAskedRef.current.add(request.requestId);
-      // In view, the question is already in front of the person, above the page.
-      if (browserShown && browser.activeId === page.pageId) continue;
-      showToast({ text: `${browserHost(request.origin)} is waiting for your answer`, tone: "info", actionLabel: "Show Page", onAction: () => showBrowserTab(page.pageId), durationMs: 12_000 });
+      if (!request) continue;
+      pending.add(request.requestId);
+      const inView = browserViewingPageId === page.pageId;
+      const known = asked.get(request.requestId);
+      if (known) {
+        // In view, the question is in front of the person, above the page.
+        if (inView && known.dismiss) { known.dismiss(); known.dismiss = null; }
+        continue;
+      }
+      asked.set(request.requestId, {
+        pageId: page.pageId,
+        dismiss: inView ? null : showToast({ text: `${browserHost(request.origin)} is waiting for your answer`, tone: "info", actionLabel: "Show Page", onAction: () => showBrowserTab(page.pageId), durationMs: 12_000 }),
+      });
     }
-  }, [browser.pages, browser.activeId, browserShown]); // eslint-disable-line react-hooks/exhaustive-deps
+    for (const [requestId, entry] of asked) {
+      if (pending.has(requestId)) continue;
+      entry.dismiss?.();
+      asked.delete(requestId);
+    }
+  }, [browser.pages, browserViewingPageId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Another part of the app (the menu bar, a notification) chose a different
   // Connected Folder: show its top level, as choosing it in the sidebar would.
@@ -989,8 +1013,16 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       window.requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".fm-comp .fm-field input")?.focus());
     } else if (command === "reload-connected-folder-state") void Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
     else if (command === "customize-connected-folder" && desktopAction.connectedFolderId) setCustomizing({ connectedFolderId: desktopAction.connectedFolderId, section: "banner" });
-    // Close Tab (⌘W) closes the browser tab in front while the Browser pane shows one.
-    else if (command === "close-tab" && browserShown && browser.activeId) browser.close(browser.activeId);
+    // Close Tab (⌘W) from the menu closes the browser tab in front only while the Browser pane has the keyboard and
+    // no dialog is open: never from a Chat's message box, the folder's list, or behind Settings. A page that has the
+    // keyboard sends its own Close Tab through the desktop host, naming itself.
+    else if (command === "close-tab" && browserShown && browser.activeId
+      && document.activeElement instanceof HTMLElement && document.activeElement.closest(".fm-browser")
+      && !document.querySelector('[role="dialog"], .modal-backdrop')) {
+      browser.close(browser.activeId);
+      // The keyboard stays in the tab strip, so the next ⌘W closes the next tab.
+      window.requestAnimationFrame(() => document.querySelector<HTMLElement>('.fm-browser-tab [role="tab"][tabindex="0"]')?.focus());
+    }
   }, [desktopAction?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function renameConnectedFolder(target: ConnectedFolderSummary, name: string) {
@@ -1865,6 +1897,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         browser={browser}
         layout={browserLayout}
         onLayout={setBrowserLayout}
+        onViewing={setBrowserViewingPageId}
         sample={fixtureMode}
         describeWorker={describeBrowserWorker}
         onError={onError}

@@ -53,6 +53,10 @@ test("a dialog, menu, sheet, or notice across the placeholder makes the page ste
 
   for (const [name, setup] of [
     ["a dialog's backdrop", (element: HTMLElement) => { element.className = "modal-backdrop"; }],
+    ["Version History's backdrop", (element: HTMLElement) => { element.className = "publish-review-backdrop"; }],
+    ["the Model Context inspector's backdrop", (element: HTMLElement) => { element.className = "model-context-backdrop"; }],
+    ["the backdrop behind Go to Folder", (element: HTMLElement) => { element.className = "fm-goto-back"; }],
+    ["the backdrop behind the window's own Action menu", (element: HTMLElement) => { element.className = "fm-menu-back"; }],
     ["an in-window menu", (element: HTMLElement) => { element.setAttribute("role", "menu"); }],
     ["Go to Folder", (element: HTMLElement) => { element.className = "fm-goto"; element.setAttribute("role", "dialog"); }],
     ["the address bar's suggestions", (element: HTMLElement) => { element.dataset.nativeViewOccluder = "true"; }],

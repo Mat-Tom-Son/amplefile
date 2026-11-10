@@ -51,15 +51,17 @@ export function fileManagerShortcutGroups(modifier: string, macOS: boolean, desk
       ],
     },
     ...(desktop ? [{
-      title: "Browser",
+      // These act while the Browser pane or a page in it has the keyboard; elsewhere the same keys keep their own meaning.
+      title: "Browser, While It Has the Keyboard",
       rows: [
         { keys: [modifier, "T"], action: "Open a new browser tab." },
         { keys: [modifier, "Shift", "T"], action: "Reopen the browser tab closed last." },
         { keys: [modifier, "W"], action: "Close the browser tab in front." },
         { keys: [modifier, "L"], action: "Go to the address field." },
-        { keys: [modifier, "F"], action: "Find in the page, while the Browser has the keyboard." },
-        { keys: [modifier, "R"], action: "Reload the page, while the page has the keyboard." },
+        { keys: [modifier, "F"], action: "Find in the page." },
+        { keys: [modifier, "R"], action: "Reload the page, from the page itself." },
         { keys: ["Control", "Tab"], action: "Show the next browser tab." },
+        { keys: [modifier, "1"], action: "Show the first browser tab; 2 to 8 the next ones, and 9 the last." },
       ],
     }] : []),
     ...(desktop ? [{

@@ -13,6 +13,12 @@ file manager window's **Browser pane**: to watch what a Worker does in a page,
 to sign in to a site, and to answer a site's question. The desktop process
 owns the pages; the window only places them and shows their state.
 
+Pages show only in the file manager window, which needs a Connected Folder.
+On first run, or after the last Connected Folder is disconnected, there is no
+Browser pane: a page the AmpleFile Agent opens then runs unseen, and a
+question its site asks waits until the page leaves or a Connected Folder is
+connected and the pane shows it.
+
 ## The Browser pane
 
 The Browser pane sits under the folder's contents in the file manager window,
@@ -46,38 +52,59 @@ keeps the Connected Folder shown and its Chat.
   the person. **+** opens a new tab. A tab's × or a middle click closes it,
   and its page with it. Right-clicking a tab offers Reload, Duplicate, Copy
   Address, Open in Your Web Browser, Mute Tab, Print…, Save as PDF…, Close
-  Tab, Close Other Browser Tabs, and Reopen Closed Tab.
+  Tab, Close Other Browser Tabs, and Reopen Closed Tab. A duplicated or
+  reopened tab comes to the front and the browser shows it.
 - **The page.** Above the page are Back, Forward, Reload (Stop while
   loading), and the address field with **Site Information**, which says how
   the page reached the browser and lists what the person allowed or blocked
   for the site, each with **Ask Again**. Typing lists matching pages from
-  history. **Find in Page** and **Open in Your Web Browser** end the row.
+  history. An address the browser cannot show (`chrome://…`, `data:…`,
+  `mailto:…`) is searched for instead, so Return always leads somewhere.
+  **Find in Page** and **Open in Your Web Browser** end the row.
 - **A Worker is using a page.** The tab carries the running dot, and beside
   the address field a marker says **Worker in** and the Connected Folder's
-  name, with a button that opens that Chat in the panel, in its own Connected
-  Folder. The page stays in view beside the Chat.
+  name, with a button that opens that Chat in the panel. The window goes to
+  that Connected Folder when another is shown; already in it, the person
+  keeps their place. The page stays in view beside the Chat.
 - **A site's question.** A bar directly above the page says what the site
   wants, with **Block** and **Allow**. The bar is the window's own, never the
-  page's, and only a press there answers it. When the page is not in view,
-  the window's notice says the site is waiting, with **Show Page**, once for
-  each question. A pop-up a site tried to open without a press, and a
-  permission macOS itself keeps off, show in the same place.
+  page's, and only a press there answers it. Each question is its own bar,
+  and its buttons take no press for half a second after it appears, so the
+  second press of a double-click, or a press aimed at what was there a moment
+  before, never answers a question the person has not read; the answer is
+  kept for the site. The page moves down in the same frame the bar appears.
+  When the page is not in view, the window's notice says the site is
+  waiting, with **Show Page**, once for each question, and the notice goes
+  when the question is answered, dropped by the page, or brought into view. A
+  pop-up a site tried to open without a press, and a permission macOS itself
+  keeps off, show in the same place.
 - **No page.** A new tab has the address field ready under **Search or Type
-  a Web Address**, the pages visited lately with **Clear Browsing History**,
+  a Web Address**, the pages visited lately with **Clear Browsing History…**,
   and a line saying sign-ins are shared by every Worker and the AmpleFile
-  Agent.
-- **Keys.** ⌘T opens a tab and ⇧⌘T reopens the one closed last, ⌘L goes to
-  the address field, and ⌘F finds in the page, while the browser has the
-  keyboard. ⌘W closes the tab in front while the pane shows a page. ⌘1 to ⌘9
-  and Control-Tab change tabs.
+  Agent. Clear Browsing History… asks first and says it cannot be undone;
+  sign-ins stay.
+- **Keys.** These act while the Browser pane or a page in it has the
+  keyboard, and keep their own meaning elsewhere in the window: ⌘T opens a
+  tab and ⇧⌘T reopens the one closed last, ⌘W closes the tab in front, ⌘L
+  goes to the address field, ⌘F finds in the page, and ⌘1 to ⌘9 and
+  Control-Tab change tabs. ⌘W does nothing to the browser from a Chat's
+  message box, the folder's list, or while a dialog is open. A key pressed
+  in a page that the window acts on brings the keyboard back to the window,
+  so what is typed next goes to the address or find field and not to the
+  page; a tab chosen from a page gives its page the keyboard.
 - **What the desktop owns.** The tab list is the desktop's open pages: pages
   that outlived a window reload and tabs a Worker opened before the window
   existed come back as tabs. Nothing is restored after quitting except
   sign-ins and history. The page is drawn by the desktop above everything the
   window draws, over a placeholder in the pane, so it steps aside for as long
-  as a dialog, menu, sheet, or notice of the window's crosses it. Notices sit
-  above the page for the same reason. A page shown in the pane takes the
-  pane's size; folded away, it keeps its last size.
+  as a dialog (or the dimmed backdrop behind one), menu, sheet, or notice of
+  the window's crosses it. Notices sit above the pane's top edge for the same
+  reason: over the folder's list beside the folder, and over the toolbar with
+  the folder folded away. A page shown in the pane takes the pane's size;
+  folded away, it keeps its last size. Workers are told the person has a tab
+  in front only while its page is drawn where the person can see it: not
+  folded away, under a dialog, in a hidden or minimized window, or replaced
+  by an error.
 
 The browser preview (`/?fixture=connected-folder`) shows the pane over sample
 pages with no page drawn; two of its recent pages show a Worker's marker and a
@@ -124,7 +151,9 @@ way**).
 - A site that wants the camera, microphone, location, notifications, MIDI
   devices, the clipboard, window placement, or activity status needs the
   person's answer, and the answer is remembered for that site. Only the person
-  answers; a Worker using that page is told the person has to answer.
+  answers; a Worker using that page is told the person has to answer. A
+  Worker's script that waits on such a question is told the same after 30
+  seconds instead of waiting on, and the question stays for the person.
 - Full screen, copying from the page, pointer and keyboard lock, saving to a
   file the person picked, and protected media need no question, as in Chrome.
   USB, serial, HID, and Bluetooth devices stay unavailable.
@@ -197,9 +226,13 @@ has no browser and no browser tools.
 ## Verification
 
 `tests/file-manager-browser-pane.test.ts` mounts the file manager window over
-a stand-in for the desktop bridge: opening the pane, a Worker's tab arriving,
-the three sizes, the slider, a site's question and its answer, closing tabs,
-and where the Browser and panel buttons sit in the toolbar. `tests/browser-pages.test.ts` covers
+a stand-in for the desktop bridge, with the page's placeholder given a real
+box: opening the pane, a Worker's tab arriving and which Chat its marker
+opens, the three sizes, the slider, the placements sent to the desktop and
+the overlays the page steps aside for, a site's question and the presses it
+ignores, a second queued question, the waiting notice, keys pressed in a page
+and in the pane, Close Tab with the keyboard elsewhere or a dialog open,
+closing tabs, and where the Browser and panel buttons sit in the toolbar. `tests/browser-pages.test.ts` covers
 the tab list, `tests/native-view.test.ts` the page's placement and the
 overlays it steps aside for, and `tests/tab-chrome-motion.test.ts` the tab
 strip's layout and motion in Chromium.
@@ -210,6 +243,9 @@ with no window, structure and refs, trusted clicks and typing, lists, waiting,
 scripts, the console, three kinds of screenshot, scrolling, new-page links,
 downloads, back and forward, a site's question answered, remembered,
 forgotten, blocked, and dropped on navigation, history, pop-up rules, and
-overlapping Chats. `tests/built-in-browser.test.ts` covers addresses, the user
+overlapping Chats, the keys a page hands to the window with the keyboard, and
+a script that waits on an unanswered question. Its window is off screen and
+cannot hold the keyboard, so which web contents has the keyboard is checked
+in the running app, not there. `tests/built-in-browser.test.ts` covers addresses, the user
 agent, the structure format, keys, the tools, site decisions, history, and
 local server addresses.
