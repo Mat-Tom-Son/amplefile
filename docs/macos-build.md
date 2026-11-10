@@ -237,17 +237,16 @@ a new version or an Apple submission.
 
 The public release is the signed, notarized Apple-silicon Mac build. The
 source repository, `Mat-Tom-Son/amplefile`, carries the exact source tag
-and, from 0.1.5 on, the release itself: its GitHub Releases are the feed the
-packaged app checks. The separate feed, `Mat-Tom-Son/amplefile-mac-releases`,
-is the one versions through 0.1.4 check; it receives 0.1.5, the bridge
-release, as its last release.
+and the release itself: its GitHub Releases are the feed the packaged app
+checks. The separate feed, `Mat-Tom-Son/amplefile-mac-releases`, is the one
+versions through 0.1.4 check; its last release is 0.1.5, the bridge.
 
 Which feed the packaged app checks and where a release is published both
 follow the feed stage, `macUpdateFeedStage` in
 `src/shared/product-identity.json`. The checked-in stage is
-`bridge`: the app checks the source repository, and the release is published
-to both repositories, the source repository first. The `source-repository`
-stage, for every later release, publishes to the source repository alone. See
+`source-repository`: the app checks the source repository and releases are
+published there alone. The `bridge` stage, which published 0.1.5 to both
+repositories, is used again only to replace a bridge. See
 [Update feed](macos-release.md#update-feed) and
 [Moving the feed to the source repository](macos-release.md#moving-the-feed-to-the-source-repository).
 

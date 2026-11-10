@@ -24,7 +24,7 @@ npm run site:build
 ```
 
 Download links open the latest release in
-`Mat-Tom-Son/amplefile-mac-releases`. When the page loads, it asks GitHub for
+`Mat-Tom-Son/amplefile`. When the page loads, it asks GitHub for
 that release and points every Download link straight at its DMG, so a new
 release needs no rebuild and an unpublished version is never linked.
 
