@@ -57,9 +57,9 @@ marks latest. It offers that version when it is higher than its own.
 
 - Drafts, prereleases, and tags without a release are never offered.
 - A repository with no latest release is an error, not "up to date": the
-  check ends with "Update check failed." The source repository is in that
-  state: its `v<version>` tags have no releases, and its `linux-test-*`
-  releases are prereleases.
+  check ends with "Update check failed." A repository whose only releases
+  are prereleases, as the source repository's `linux-test-*` releases are,
+  is in that state, however many tags it has.
 - Whatever is marked latest is what every copy is offered. A latest release
   without `latest-mac.yml` fails every check. Once copies check the source
   repository, every other release there has to be a prerelease, never the
@@ -342,13 +342,30 @@ serves a Mac release as its latest.
 A stage change is part of the release commit for the version that ships it:
 
 1. Set `macUpdateFeedStage` in `src/shared/product-identity.json`.
-2. Update the test that pins the stage, the first one in
-   `tests/mac-release-feed.test.ts`. The last test in that file then fails
-   until the README download links, the built site (`npm run site:build`),
-   `PRIVACY.md`, and `SECURITY.md` name the feeds of the new stage.
-3. Update what this runbook, [the build lanes](macos-build.md),
-   [the website guide](website.md), and `AGENTS.md` say the current stage
-   is, and add the release to the [Release record](#release-record).
+2. Set `CHECKED_IN_STAGE` in `tests/mac-release-feed.test.ts` to the same
+   value. The last test in that file then fails until every place below
+   follows.
+3. Update the places that name a feed or state the stage:
+   - `PRIVACY.md`, "Application updates": the feed installed copies check.
+   - `SECURITY.md`, "Release integrity": where public Mac releases are
+     published.
+   - `AGENTS.md`, Releases: the first bullet (where artifacts and automatic
+     updates belong), the bullet that states the checked-in stage, and the
+     automatic-updates bullet's repositories.
+   - `.agents/skills/ship-macos-release/SKILL.md`, step 7 of "Establish the
+     release context": the checked-in stage and what it means.
+   - This runbook: the opening paragraphs, the paragraph under the stage
+     table that states the checked-in stage, and
+     [Release ownership](#release-ownership).
+   - [The build lanes](macos-build.md), "Public releases": the two
+     paragraphs about the feeds and the stage.
+   - When download links move, in the `source-repository` stage only: the
+     two `releases/latest` links in `README.md`, the sentence in
+     [the website guide](website.md) that names the repository, and the
+     built site, with `npm run site:build`.
+4. Add the release to the [Release record](#release-record).
+
+The two procedures below list the exact edits for 0.1.5 and 0.1.6.
 
 ### The bridge release: 0.1.5
 
@@ -382,6 +399,30 @@ feed the plain command reads changes with the stage.
    alone, and finishing the move needs a higher bridge version with a new
    tag, build, and notarization. No installed copy is harmed by that, since
    copies stay on the separate feed at their version, but 0.1.5 is spent.
+
+   The commit holds exactly these edits besides the version and the
+   release record:
+
+   - `src/shared/product-identity.json`: `"macUpdateFeedStage": "bridge"`.
+   - `tests/mac-release-feed.test.ts`: `CHECKED_IN_STAGE = "bridge"`.
+   - `PRIVACY.md`: installed Mac builds check the
+     `Mat-Tom-Son/amplefile` feed; versions through 0.1.4 check
+     `Mat-Tom-Son/amplefile-mac-releases`.
+   - `SECURITY.md`: public Mac releases are published to
+     `Mat-Tom-Son/amplefile`, and the bridge also to
+     `Mat-Tom-Son/amplefile-mac-releases`.
+   - `AGENTS.md`: artifacts and automatic updates belong in both
+     repositories for the bridge; the stage it states becomes `bridge`,
+     with the move under way; the automatic-updates bullet names both
+     repositories.
+   - `.agents/skills/ship-macos-release/SKILL.md`: the stage it states
+     becomes `bridge`, with the feed and the two publication targets.
+   - `docs/macos-release.md`: the opening paragraphs, the checked-in stage
+     paragraph, and Release ownership.
+   - `docs/macos-build.md`: "Public releases".
+
+   The README, the website guide, and the built site do not change:
+   download links stay on the separate repository through the bridge.
 
    Merge and push the commit to `main`, then check and build:
 
@@ -475,9 +516,37 @@ gh release delete v0.1.5 --repo <owner>/<repo> --yes
 ### The first release in the source repository: 0.1.6
 
 1. Make the 0.1.6 release commit: the version, the `source-repository`
-   stage, and what [Changing the stage](#changing-the-stage) lists,
-   including the README download links and `npm run site:build`. Merge and
-   push it to `main`, then check and build:
+   stage, and what [Changing the stage](#changing-the-stage) lists. It
+   holds exactly these edits besides the version and the release record:
+
+   - `src/shared/product-identity.json`:
+     `"macUpdateFeedStage": "source-repository"`.
+   - `tests/mac-release-feed.test.ts`:
+     `CHECKED_IN_STAGE = "source-repository"`.
+   - `README.md`: both `releases/latest` links, the "Download for Mac" link
+     at the top and "Download the latest release" under Install, point at
+     `https://github.com/Mat-Tom-Son/amplefile/releases/latest`.
+   - `site/public/`: rebuilt with `npm run site:build`, so its Download and
+     Releases links and its GitHub request use `Mat-Tom-Son/amplefile`.
+   - `docs/website.md`: download links open the latest release in
+     `Mat-Tom-Son/amplefile`.
+   - `SECURITY.md`: public Mac releases are published to
+     `Mat-Tom-Son/amplefile` alone; the separate repository keeps the
+     bridge as its last release.
+   - `AGENTS.md`: artifacts and automatic updates belong in the source
+     repository's GitHub Releases; the stage it states becomes
+     `source-repository`; the automatic-updates bullet names
+     `Mat-Tom-Son/amplefile`.
+   - `.agents/skills/ship-macos-release/SKILL.md`: the stage it states
+     becomes `source-repository`.
+   - `docs/macos-release.md`: the opening paragraphs, the checked-in stage
+     paragraph, and Release ownership.
+   - `docs/macos-build.md`: "Public releases".
+
+   `PRIVACY.md` already names the source repository from the bridge.
+
+   **`main` is frozen from the push of this commit** until step 2 has
+   finished. Merge and push it to `main`, then check and build:
 
    ```bash
    npm run check

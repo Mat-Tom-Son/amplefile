@@ -29,16 +29,24 @@ function feedAt(stage: string) {
   return resolveMacReleaseFeed({ ...identity, macUpdateFeedStage: stage }, {});
 }
 
-// The one test that pins the checked-in stage. Change it in the commit that
+// The one line that pins the checked-in stage. Change it in the commit that
 // changes `macUpdateFeedStage`; the last test in this file then says which
-// links and policy text have to follow.
-test("the checked-in Mac update feed is the separate release repository, as 0.1.4 shipped", () => {
-  assert.equal(identity.macUpdateFeedStage, "separate-repository");
+// links, policy text, and statements of the stage have to follow.
+const CHECKED_IN_STAGE = "separate-repository";
+
+test("the checked-in Mac update feed stage is the pinned one, with the feeds that stage means", () => {
+  assert.equal(identity.macUpdateFeedStage, CHECKED_IN_STAGE);
+  const expected = {
+    // As 0.1.4 shipped: the app checks the separate repository and the release goes there alone.
+    "separate-repository": { packaged: separateSlug, targets: [separateSlug], downloads: separateSlug },
+    bridge: { packaged: sourceSlug, targets: [sourceSlug, separateSlug], downloads: separateSlug },
+    "source-repository": { packaged: sourceSlug, targets: [sourceSlug], downloads: sourceSlug },
+  }[CHECKED_IN_STAGE];
   const feed = resolveMacReleaseFeed(identity, {});
-  assert.equal(feed.stage, "separate-repository");
-  assert.equal(feed.packaged.slug, separateSlug, "the packaged app checks the separate release repository");
-  assert.deepEqual(feed.targets.map((target: { slug: string }) => target.slug), [separateSlug], "and the release is published only there");
-  assert.equal(feed.downloads.slug, separateSlug);
+  assert.equal(feed.stage, CHECKED_IN_STAGE);
+  assert.equal(feed.packaged.slug, expected.packaged, "the feed the packaged app checks");
+  assert.deepEqual(feed.targets.map((target: { slug: string }) => target.slug), expected.targets, "where the release is published, in order");
+  assert.equal(feed.downloads.slug, expected.downloads, "where download links point");
 });
 
 test("each feed stage decides the packaged feed and the publication targets separately", () => {
@@ -412,6 +420,21 @@ test("download links and policy text name the feeds of the checked-in stage", ()
   assert.ok(read("PRIVACY.md").includes(`\`${feed.packaged.slug}\` feed`), "PRIVACY.md names the feed installed copies check");
   const security = read("SECURITY.md");
   for (const target of feed.targets) assert.ok(security.includes(`\`${target.slug}\``), `SECURITY.md names ${target.slug} as a release feed`);
+
+  // Every place that states the checked-in stage.
+  const stated = new RegExp(`checked-in stage is\\s+\`${feed.stage}\``);
+  for (const document of ["docs/macos-release.md", "docs/macos-build.md", "AGENTS.md", ".agents/skills/ship-macos-release/SKILL.md"]) {
+    const text = read(document);
+    assert.match(text, stated, `${document} states the checked-in stage`);
+    for (const stage of MAC_UPDATE_FEED_STAGES) {
+      if (stage !== feed.stage) assert.doesNotMatch(text, new RegExp(`checked-in stage is\\s+\`${stage}\``), `${document} does not also state ${stage}`);
+    }
+  }
+  assert.match(
+    read("docs/website.md"),
+    new RegExp(`Download links open the latest release in\\s+\`${feed.downloads.slug}\``),
+    "docs/website.md names the repository download links open",
+  );
 });
 
 function read(path: string): string {
