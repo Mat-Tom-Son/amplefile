@@ -197,6 +197,14 @@ Apple submission.
 - The update from the separate feed to the bridge, installed `0.1.4` to
   `0.1.5`, passed on November 10, 2026. See
   [Updater evidence](#updater-evidence).
+- **0.1.6** was published to `Mat-Tom-Son/amplefile` alone on November 10,
+  2026, from the annotated source tag `v0.1.6` (commit `86f3249`): the first
+  release in the `source-repository` stage, with download links moved to
+  the source repository and no other application change.
+- The update from the bridge to the first release in the source repository,
+  installed `0.1.5` to `0.1.6`, passed on November 10, 2026. Both proofs the
+  feed move requires are recorded, and the move is complete. See
+  [Updater evidence](#updater-evidence).
 
 ## Release procedure
 
@@ -379,9 +387,11 @@ The two procedures below list the exact edits for 0.1.5 and 0.1.6.
 
 ### The bridge release: 0.1.5
 
-The owner has chosen 0.1.5 as the bridge and 0.1.6 as the first release in
-the source repository. Every feed check below names its feed, because the
-feed the plain command reads changes with the stage.
+0.1.5 is the bridge and 0.1.6 is the first release in the source repository.
+Both were published on November 10, 2026, by the two procedures below, which
+stay here as the record of the move and as the model for moving a feed.
+Every feed check below names its feed, because the feed the plain command
+reads changes with the stage.
 
 1. Confirm the starting state. The separate feed offers 0.1.4, the source
    repository has no latest release (the second command is expected to fail
@@ -745,6 +755,40 @@ app named, the feed the higher app names, and the output of
   `Mat-Tom-Son/amplefile` and reported "AmpleFile 0.1.5 is up to date."
 - Not observed in this proof: the Settings update surface and the menu
   command on screen, and whether a Keychain prompt appeared on reopen.
+
+**0.1.5 → 0.1.6, November 10, 2026: bridge to the source repository**
+
+- The installed `0.1.5` passed
+  `npm run desktop:verify:installed:mac -- --version 0.1.5 --feed Mat-Tom-Son/amplefile`,
+  and its `app-update.yml` named `Mat-Tom-Son/amplefile`.
+- `npm run desktop:verify:feed:mac -- --feed Mat-Tom-Son/amplefile --version 0.1.6`
+  reported that the feed offers AmpleFile 0.1.6 from `v0.1.6`, and the
+  separate repository still offered the bridge, `0.1.5`. The annotated tag
+  `v0.1.6` was the same object before and after publication.
+- A check from the installed `0.1.5` within about a minute of publication
+  still reported "AmpleFile 0.1.5 is up to date."; a check a minute later
+  reported "AmpleFile 0.1.6 is available." GitHub serves the latest release
+  to anonymous readers with a short delay.
+- The sidebar's update indicator then showed "Update Available 0.1.6" at the
+  foot of the sidebar and announced it. Activating it opened "Restart
+  AmpleFile to Update?"; the updater was not called until **Update and
+  Restart** was chosen. The indicator showed the download's progress and
+  then "Restarting to Update". The indicator and the dialog were driven
+  over a local debugging port rather than by a click.
+- Both the cached `pending/AmpleFile-0.1.6-mac-arm64.zip` and `update.zip`
+  hashed to SHA-256 `571dc453e5c059d6969010faf57a5ac26454d9c915fb6c6cc699ddf409977cc0`,
+  the published asset digest.
+- ShipIt logged `Installation completed successfully` and relaunched
+  `/Applications/AmpleFile.app`, which reported `0.1.6`, about 13 seconds
+  after the download began. The existing profile and its registered
+  Connected Folder were kept. This was the first update the bridge's own
+  updater performed.
+- `npm run desktop:verify:installed:mac -- --version 0.1.6 --feed Mat-Tom-Son/amplefile`
+  passed without requesting Keychain secret data.
+- Not observed in this proof: the indicator and the dialog on screen, the
+  confirmation naming running work (nothing was running), a later check
+  from the installed `0.1.6`, and whether a Keychain prompt appeared on
+  reopen.
 
 ## Recovery rules
 
