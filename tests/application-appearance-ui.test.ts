@@ -30,6 +30,9 @@ test("appearance controls affect the shared document, preserve explicit Connecte
   await dom.act(() => document.querySelector<HTMLButtonElement>('[aria-label="Paper Preset"]')!.click());
   assert.equal(document.querySelector(".appearance-settings-status-row"), null, "applying a preset does not reserve a notice strip above Preview");
   assert.equal(document.documentElement.dataset.appearancePalette, "paper");
+  assert.equal(document.documentElement.getAttribute("data-appearance-reading-font"), "serif", "the stylesheets can tell which Reading Font is chosen");
+  assert.equal(document.documentElement.getAttribute("data-amplefile-font"), "default", "App Font reaches the attribute the stylesheets select");
+  assert.equal(document.documentElement.getAttribute("data-amplefile-text-size"), "standard", "Text Size reaches the attribute the stylesheets select");
   assert.match(document.documentElement.style.getPropertyValue("--amplefile-reading-font"), /Georgia/);
   await dom.act(() => { changeSelect("Reading Size", "22"); changeSelect("List Density", "spacious"); changeSelect("Your Messages", "quiet"); });
   assert.equal(document.documentElement.style.getPropertyValue("--amplefile-reading-size"), "22px");

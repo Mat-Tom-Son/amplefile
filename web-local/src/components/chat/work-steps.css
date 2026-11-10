@@ -1,10 +1,14 @@
 /* The steps a Worker or the AmpleFile Agent takes in one turn (RuntimeContextPreview
-   in components/chat/activity.tsx). Shared by the main window and the menu-bar popover. */
+   in components/chat/activity.tsx). Shared by the main window and the menu-bar popover.
+
+   Colors are the file manager's text tokens, so a steps list reads like the
+   window's other lists: labels in --fm-text, what they name in --fm-text2,
+   icons in --fm-text2. Each fallback serves a surface without those tokens. */
 
 .work-steps {
   min-width: 0;
   margin: 0 0 14px;
-  color: #667386;
+  color: var(--fm-text2, #5b6676);
   font-size: var(--amplefile-type-sm);
 }
 
@@ -20,40 +24,47 @@
   border-radius: 4px;
   background: none;
   font: inherit;
-  font-weight: 600;
-  color: #475569;
+  font-weight: 500;
+  color: var(--fm-text2, #475569);
+  text-align: left;
   cursor: default;
 }
 
 .work-steps-summary:hover .work-steps-label,
 .work-steps-summary:focus-visible .work-steps-label {
-  color: #253044;
+  color: var(--fm-text, #253044);
 }
 
 .work-steps-summary:focus-visible,
 .work-step-toggle:focus-visible,
+.work-step-copy:focus-visible,
 .work-step-target.file:focus-visible {
   outline: 2px solid var(--connected-folder-custom-color, #356fa3);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
+/* The whole sentence, on two lines when one is too narrow for it. */
 .work-steps-label {
+  display: -webkit-box;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .work-steps-icon,
 .work-step-icon {
   flex: 0 0 auto;
-  color: #8792a3;
+  color: var(--fm-text2, #5b6676);
 }
 
 .work-steps-chevron {
   flex: 0 0 auto;
-  color: #9aa4b2;
+  color: var(--fm-text3, #667386);
   transition: transform 0.2s var(--amplefile-ease-smooth);
 }
 
@@ -124,25 +135,22 @@
   cursor: default;
 }
 
-.work-step-toggle:hover .work-step-verb,
-.work-step-toggle:focus-visible .work-step-verb {
-  color: #253044;
-}
-
+/* Medium, not bold: bold is for the window's section headers. */
 .work-step-verb {
   flex: 0 0 auto;
-  color: #475569;
-  font-weight: 600;
+  color: var(--fm-text, #253044);
+  font-weight: 500;
 }
 
 .work-step.thinking .work-step-verb {
-  color: #526072;
+  color: var(--fm-text2, #475569);
 }
 
+/* File names, commands, and thought previews. */
 .work-step-target {
   min-width: 0;
   overflow: hidden;
-  color: #8792a3;
+  color: var(--fm-text2, #566173);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -152,7 +160,7 @@
   border: 0;
   background: none;
   font: inherit;
-  color: #6d8db0;
+  color: var(--fm-link, #2f6497);
   text-align: left;
   cursor: default;
 }
@@ -162,6 +170,12 @@
   text-decoration: underline;
 }
 
+/* A row that opens says so by darkening what it will show. */
+.work-step-toggle:hover :is(.work-step-verb, .work-step-target),
+.work-step-toggle:focus-visible :is(.work-step-verb, .work-step-target) {
+  color: var(--fm-text, #253044);
+}
+
 .work-step-target.command {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--amplefile-type-xs);
@@ -169,8 +183,66 @@
 
 .work-step-timer {
   flex: 0 0 auto;
-  color: #8792a3;
+  color: var(--fm-text2, #566173);
   font-variant-numeric: tabular-nums;
+}
+
+/* An opened command step: the whole command, wrapped, under a bar with Copy. */
+.work-step-command {
+  min-width: 0;
+  margin: 5px 0 3px;
+  border-radius: 8px;
+  background: var(--fm-cap, rgba(37, 48, 68, 0.06));
+}
+
+.work-step-command-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 4px 0 10px;
+  color: var(--fm-text2, #566173);
+  font-size: var(--amplefile-type-xs);
+}
+
+.work-step-copy {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font: inherit;
+  color: var(--fm-text2, #475569);
+  cursor: default;
+}
+
+.work-step-copy:hover {
+  background: var(--fm-cap2, rgba(37, 48, 68, 0.1));
+  color: var(--fm-text, #253044);
+}
+
+.work-step-command pre {
+  margin: 0;
+  padding: 3px 10px 8px;
+  border: 0;
+  background: none;
+  color: var(--fm-text, #253044);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--amplefile-type-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.work-step-command code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
 }
 
 .work-step-status {
@@ -187,7 +259,7 @@
 .work-step-thought {
   min-width: 0;
   margin: 5px 0 3px;
-  color: #667386;
+  color: var(--fm-text2, #5b6676);
   font-size: var(--amplefile-type-sm);
   line-height: 1.55;
   overflow-wrap: anywhere;
@@ -222,8 +294,8 @@
 .work-step-thought pre {
   margin: 0.45em 0;
   padding: 8px 10px;
-  border-radius: 6px;
-  background: rgba(37, 48, 68, 0.06);
+  border-radius: 8px;
+  background: var(--fm-cap, rgba(37, 48, 68, 0.06));
   font-size: var(--amplefile-type-xs);
   line-height: 1.45;
   white-space: pre-wrap;
@@ -245,8 +317,10 @@
 }
 
 .work-steps .work-step-shimmer {
+  --work-step-shimmer-base: var(--fm-text2, #5b6b80);
+  --work-step-shimmer-glint: color-mix(in srgb, var(--fm-text2, #5b6b80) 30%, transparent);
   color: transparent !important;
-  background: linear-gradient(90deg, #5b6b80 0%, #5b6b80 38%, #cdd4de 50%, #5b6b80 62%, #5b6b80 100%);
+  background: linear-gradient(90deg, var(--work-step-shimmer-base) 0%, var(--work-step-shimmer-base) 38%, var(--work-step-shimmer-glint) 50%, var(--work-step-shimmer-base) 62%, var(--work-step-shimmer-base) 100%);
   background-size: 260% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -274,7 +348,7 @@ from {
 
 @media (prefers-reduced-motion: reduce) {
 .work-steps .work-step-shimmer {
-  color: #5b6b80 !important;
+  color: var(--work-step-shimmer-base) !important;
   background: none;
   animation: none;
 }
@@ -332,45 +406,59 @@ from {
   background: color-mix(in srgb, #c33e3e 12%, transparent);
 }
 
-:root[data-theme="dark"] .work-steps {
-  color: #94a3b8;
-}
-
+:root[data-theme="dark"] .work-steps,
 :root[data-theme="dark"] .work-steps-summary,
-:root[data-theme="dark"] .work-step-verb,
-:root[data-theme="dark"] .work-step.thinking .work-step-verb {
-  color: #c4cedb;
-}
-
-:root[data-theme="dark"] .work-steps-summary:hover .work-steps-label,
-:root[data-theme="dark"] .work-steps-summary:focus-visible .work-steps-label,
-:root[data-theme="dark"] .work-step-toggle:hover .work-step-verb,
-:root[data-theme="dark"] .work-step-toggle:focus-visible .work-step-verb {
-  color: #e2e8f0;
-}
-
 :root[data-theme="dark"] .work-steps-icon,
 :root[data-theme="dark"] .work-step-icon,
-:root[data-theme="dark"] .work-steps-chevron,
+:root[data-theme="dark"] .work-step.thinking .work-step-verb,
 :root[data-theme="dark"] .work-step-target,
-:root[data-theme="dark"] .work-step-timer {
-  color: #7f8b9c;
+:root[data-theme="dark"] .work-step-timer,
+:root[data-theme="dark"] .work-step-command-bar,
+:root[data-theme="dark"] .work-step-thought {
+  color: var(--fm-text2, #a3aebd);
+}
+
+:root[data-theme="dark"] .work-steps-chevron {
+  color: var(--fm-text3, #94a3b8);
+}
+
+:root[data-theme="dark"] .work-step-verb,
+:root[data-theme="dark"] .work-steps-summary:hover .work-steps-label,
+:root[data-theme="dark"] .work-steps-summary:focus-visible .work-steps-label,
+:root[data-theme="dark"] .work-step-toggle:hover :is(.work-step-verb, .work-step-target),
+:root[data-theme="dark"] .work-step-toggle:focus-visible :is(.work-step-verb, .work-step-target) {
+  color: var(--fm-text, #e2e8f0);
 }
 
 :root[data-theme="dark"] .work-step-target.file {
-  color: #8fb0d6;
-}
-
-:root[data-theme="dark"] .work-step-thought {
-  color: #9aa8b9;
+  color: var(--fm-link, #8fb0d6);
 }
 
 :root[data-theme="dark"] .work-step-thought pre {
-  background: rgba(226, 232, 240, 0.08);
+  background: var(--fm-cap, rgba(226, 232, 240, 0.08));
 }
 
+/* On a dark ground the glint is the brighter color, not the fainter one. */
 :root[data-theme="dark"] .work-steps .work-step-shimmer {
-  background-image: linear-gradient(90deg, #8b98ab 0%, #8b98ab 38%, #e2e8f0 50%, #8b98ab 62%, #8b98ab 100%);
+  --work-step-shimmer-base: var(--fm-text3, #8b98ab);
+  --work-step-shimmer-glint: var(--fm-text, #e2e8f0);
+}
+
+:root[data-theme="dark"] .work-step-command {
+  background: var(--fm-cap, rgba(226, 232, 240, 0.08));
+}
+
+:root[data-theme="dark"] .work-step-copy {
+  color: var(--fm-text2, #c4cedb);
+}
+
+:root[data-theme="dark"] .work-step-copy:hover {
+  background: var(--fm-cap2, rgba(226, 232, 240, 0.14));
+  color: var(--fm-text, #e2e8f0);
+}
+
+:root[data-theme="dark"] .work-step-command pre {
+  color: var(--fm-text, #e2e8f0);
 }
 
 :root[data-theme="dark"] .work-step.error .work-step-verb,

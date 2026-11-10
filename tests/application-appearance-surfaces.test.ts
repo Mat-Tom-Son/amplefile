@@ -95,8 +95,16 @@ test("actual desktop and popover CSS honor appearance roles, reading, density an
         result.popoverPrimary = [p('button.primary').backgroundColor,p('button.primary').color];
         result.popoverReading = [p('.popover-message-body').fontSize,p('.popover-message-body').fontFamily]; result.popoverCode = p('code').fontFamily;
         result.popoverRow = p('.agent-chat-row').minHeight; result.surfaces.push(p('body').backgroundColor);
+        // A person's message is a soft accent tint under the popover's own text, and Reading Font: App Font is the font the popover is drawn in.
+        result.popoverBubble = [p('.popover-message.user').backgroundColor, p('.popover-message.user').color, color(p('.popover').getPropertyValue('--fm-bubble')), color(p('.popover').getPropertyValue('--fm-text'))];
+        frame.contentDocument.documentElement.setAttribute('data-appearance-reading-font','app');
+        result.popoverAppFont = [p('.popover-message-body').fontFamily, p('.popover').fontFamily];
+        frame.contentDocument.documentElement.setAttribute('data-amplefile-font','verdana');
+        result.popoverAppFont.push(p('.popover-message-body').fontFamily, p('.popover').fontFamily);
         const popoverQuiet = fixture(payload.popoverCss, payload.popoverBody, spaciousScenario);
         result.quiet.push(popoverQuiet('.popover-message.user').backgroundColor,popoverQuiet('.popover-message.user').color);
+        // In the popover a quiet message is the file manager's card, in the tokens the popover wears.
+        result.popoverCard = ['--fm-card','--fm-text'].map((name) => color(popoverQuiet('.popover').getPropertyValue(name)));
         result.spacious.push(popoverQuiet('.agent-chat-row').minHeight);
         const feedbackBody = '<div class="app-shell"><button id="neutral" class="ui-control">Open</button><button id="primary" class="ui-control ui-control--primary">Save</button><button id="icon" class="ui-control ui-control--icon">Icon</button><button id="disabled" class="ui-control" disabled>Disabled</button><button id="danger" class="ui-control danger">Delete</button><button id="commands" class="composer-command-trigger">Commands</button><div class="context-menu"><button id="menu">Rename</button></div><button id="nameSave" class="connected-folder-name-save">Save</button><button id="upload" class="connected-folder-banner-upload-button">Upload</button><button id="modelTrigger" class="model-catalog-trigger">Model</button><button id="modelOption" class="model-catalog-option">Model option</button><div class="composer-menu"><button id="composerOption">Reasoning</button></div><button id="send" class="send-button">Send</button><div class="composer-command-menu"><button id="model">Model</button></div><button id="copy" class="message-copy-button">Copy</button><button id="included" class="capabilities-included-tile">Tool</button><button id="resource" class="capabilities-resource-card">Skill</button><button id="automation" class="automation-list-row">Automation</button><section class="settings-window"><button id="settingsTab" class="settings-tab">Appearance</button></section></div>';
         const feedback = fixture(payload.chatStateCss,feedbackBody,scenario);
@@ -142,7 +150,11 @@ test("actual desktop and popover CSS honor appearance roles, reading, density an
       assert.equal(item.measure, "600px"); assert.equal(Number.parseFloat(item.paragraph), 26.4);
       assert.deepEqual(item.surfaces, [expected["--ui-canvas"], expected["--ui-canvas"]], item.name + " opaque covers native material");
       assert.deepEqual(item.tinted, [item.expectedConnectedFolder[0], item.expectedConnectedFolder[2]], item.name + " tint keeps Connected Folder identity");
-      assert.deepEqual(item.quiet, [expected["--ui-surface-subtle"], expected["--ui-text"], expected["--ui-surface-subtle"], expected["--ui-text"]], item.name + " quiet messages");
+      assert.deepEqual(item.quiet, [expected["--ui-surface-subtle"], expected["--ui-text"], ...item.popoverCard], item.name + " quiet messages");
+      assert.deepEqual(item.popoverBubble.slice(0, 2), item.popoverBubble.slice(2), item.name + " tinted popover message is the accent tint under the popover's text");
+      assert.equal(item.popoverAppFont[0], item.popoverAppFont[1], item.name + " Reading Font: App Font is the popover's own font");
+      assert.equal(item.popoverAppFont[2], item.popoverAppFont[3], item.name + " and follows a chosen App Font");
+      assert.notEqual(item.popoverAppFont[2], item.popoverAppFont[0]);
       assert.deepEqual(item.spacious, ["38px", "38px"]); assert.equal(item.motion, "1e-05s"); assert.equal(item.timeOpacity, "1");
       assert.deepEqual(item.steps, ["grid", "grid", "none", "grid"], item.name + " current-step view hides finished rows while running");
       assert.equal(item.design.shellOutline, "solid", item.name + " whole composer owns focus");

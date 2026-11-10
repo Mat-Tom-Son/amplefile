@@ -79,7 +79,11 @@ test("the summary names tool kinds in first-use order and counts what they touch
   const browser = (id: string, toolName: string, detail = ""): RuntimePreviewEntry => ({ id, kind: "tool", toolName, text: "finished", detail, phase: "complete" });
   assert.equal(workStepsSummary([read("r1", "docs/a.md")]), "Read a.md");
   assert.equal(workStepsSummary([bash("b1", "ls -la")]), "Ran ls -la");
-  assert.equal(workStepsSummary([read("r1", "a.md"), read("r2", "b.md"), bash("b1", "ls"), bash("b2", "ls -la"), edit]), "Read files, ran commands, edited a file");
+  assert.equal(workStepsSummary([read("r1", "a.md"), read("r2", "b.md"), bash("b1", "ls"), bash("b2", "ls -la"), edit]), "Read 2 files, ran 2 commands, edited a file");
+  // The same file read twice is one file; a search names a pattern, so it stays uncounted.
+  assert.equal(workStepsSummary([read("r1", "a.md"), read("r2", "a.md"), read("r3", "b.md"), edit]), "Read 2 files, edited a file");
+  const grep = (id: string, detail: string): RuntimePreviewEntry => ({ id, kind: "tool", toolName: "grep", text: "Grep finished", detail, phase: "complete" });
+  assert.equal(workStepsSummary([grep("g1", "total"), grep("g2", "budget"), read("r1", "a.md")]), "Searched files, read a file");
   assert.equal(workStepsSummary([read("r1", "a.md"), thought("t1", "Thinking text.")]), "Read a.md");
   assert.equal(workStepsSummary([thought("t1", "Only reasoning.")]), "Thought it through");
   assert.equal(workStepsSummary([thought("t1", "", { durationMs: 2_400 }), thought("t2", "", { durationMs: 1_100 })]), "Thought for 4s");
@@ -87,6 +91,7 @@ test("the summary names tool kinds in first-use order and counts what they touch
   // The built-in browser's steps read as plain actions on web pages.
   assert.equal(workStepsSummary([browser("o1", "browser_open", "https://example.com/docs/")]), "Opened example.com/docs");
   assert.equal(workStepsSummary([browser("o1", "browser_open", "https://a.example"), browser("r1", "browser_read"), browser("c1", "browser_click", "e12"), browser("t1", "browser_type", "e13")]), "Opened a web page, read a web page, used the browser");
+  assert.equal(workStepsSummary([browser("o1", "browser_open", "https://a.example"), browser("o2", "browser_open", "https://b.example"), browser("r1", "browser_read"), browser("r2", "browser_read")]), "Opened 2 web pages, read web pages");
   assert.equal(workStepsSummary([browser("c1", "browser_click", "e12")]), "Used the browser");
   assert.equal(workStepsSummary([browser("r1", "browser_read")]), "Read a web page");
   assert.equal(workStepsSummary([browser("s1", "browser_screenshot")]), "Looked at a web page");
@@ -126,6 +131,14 @@ test("a finished thought shows its first sentence until opened, and file targets
   assert.doesNotMatch(html, /long code line/);
   assert.match(html, /<button type="button" class="work-step-target file" title="Kitchen refresh\/ideas\.md">ideas\.md<\/button>/);
   assert.match(html, /<span class="work-step-target" title="\/elsewhere\/secret\.txt">secret\.txt<\/span>/);
+});
+
+test("a command step is a closed row that can open; a step with nothing more to show is plain text", () => {
+  const html = render({ entries: [bash("b1", "rg -n total budget.csv"), read("r1", "/elsewhere/a.md"), { id: "b2", kind: "tool", toolName: "bash", text: "Bash finished", detail: "", phase: "complete" }] });
+  assert.match(html, /<button type="button" class="work-step-line work-step-toggle" aria-expanded="false"><span class="work-step-verb">Ran<\/span><span class="work-step-target command" title="rg -n total budget\.csv">rg -n total budget\.csv<\/span><\/button>/);
+  assert.doesNotMatch(html, /work-step-command"/, "the whole command stays out of the closed row");
+  assert.match(html, /<div class="work-step-line"><span class="work-step-verb">Read<\/span>/);
+  assert.match(html, /<div class="work-step-line"><span class="work-step-verb">Ran<\/span><\/div>/, "a command step with no recorded command has nothing to open");
 });
 
 test("tool paths become Connected Folder–relative only when they sit inside the Connected Folder", () => {

@@ -22,6 +22,13 @@ const [app, fileManager, chatPanel, messages, workTrail, activity, panes, settin
   read("src/local/agent/pi-client.ts"),
   read("web-local/src/components/chrome/ActivityDot.tsx"),
 ]);
+const [panelStyles, popoverStyles, workStepStyles, fileManagerTokens, appearanceHook] = await Promise.all([
+  read("web-local/src/components/file-manager/file-manager.css"),
+  read("web-local/src/popover/popover.css"),
+  read("web-local/src/components/chat/work-steps.css"),
+  read("web-local/src/components/file-manager/file-manager-tokens.css"),
+  read("web-local/src/hooks/useApplicationAppearance.ts"),
+]);
 
 test("mid-turn Enter steers the running turn; ⌘Enter queues one visible, cancellable draft the app sends on settle", () => {
   // Plain Enter while a turn runs delivers the text through Pi's steering
@@ -273,6 +280,74 @@ test("reasoning and real tool calls form one chronological steps strip", () => {
   assert.match(styles, /\.work-step-thought pre \{[^}]*white-space: pre-wrap;/);
   assert.match(styles, /\.work-steps\.settled:not\(\.open\) \.work-steps-rows \{[^}]*grid-template-rows: 0fr;/);
   assert.doesNotMatch(styles, /\.runtime-preview|\.runtime-tool-|\.runtime-thinking|\.typing-line/);
+});
+
+test("step rows read at the panel's text contrast, the summary shows its whole sentence, and a command opens wrapped", () => {
+  // File names, commands, thought previews, and the timer take the panel's
+  // text tokens (4.5:1 or better on the panel), with a fallback for a surface
+  // that has no file-manager tokens.
+  assert.match(styles, /\.work-step-target \{[^}]*color: var\(--fm-text2, #[0-9a-f]{6}\);/);
+  assert.match(styles, /\.work-step-target\.file \{[^}]*color: var\(--fm-link, #[0-9a-f]{6}\);/);
+  assert.match(styles, /\.work-step-timer \{[^}]*color: var\(--fm-text2, #[0-9a-f]{6}\);/);
+  assert.match(styles, /:root\[data-theme="dark"\] \.work-step-target,\s*:root\[data-theme="dark"\] \.work-step-timer,[^{]*\{\s*color: var\(--fm-text2, #[0-9a-f]{6}\);/);
+  // Every step color is a file manager text token; only the failure red and the edit tints are literal.
+  for (const literal of workStepStyles.matchAll(/^\s*(?:color|background(?:-image)?):[^;]*;/gm)) {
+    if (/#a94444|#f0a1a1|#278044|#c33e3e/.test(literal[0])) continue;
+    assert.match(literal[0], /var\(--(?:fm|work-step)-|transparent|none|inherit/, `${literal[0].trim()} should come from a token`);
+  }
+  // Step labels are medium weight in the window's text color: semibold stays with section headers.
+  assert.match(workStepStyles, /\.work-step-verb \{[^}]*color: var\(--fm-text, #[0-9a-f]{6}\);\s*font-weight: 500;/);
+  // The window's rows use 16px glyphs; only the two glyphs drawn at 20px alone stay scaled down.
+  assert.deepEqual([...new Set(activity.match(/\b\w+20Regular\b/g))].sort(), ["Thinking20Regular", "WindowConsole20Regular"]);
+  assert.doesNotMatch(styles, /\.work-step-(?:target|timer)[^{]*\{[^}]*color: #/);
+  assert.match(styles, /\.work-steps-label \{[^}]*-webkit-line-clamp: 2;/);
+  assert.doesNotMatch(styles, /\.work-steps-label \{[^}]*white-space: nowrap/);
+  for (const sheet of [panelStyles, popoverStyles]) {
+    assert.doesNotMatch(sheet, /\.work-steps-label \{[^}]*white-space: nowrap/, "no surface cuts the summary to one line");
+    assert.match(sheet, /\.work-steps-summary \{[^}]*min-height: 24px;/);
+    assert.doesNotMatch(sheet, /\.work-steps-summary \{[^}]*[^-]height: 24px;/);
+  }
+  assert.match(styles, /\.work-step-command pre \{[^}]*white-space: pre-wrap;[^}]*overflow-wrap: anywhere;/);
+  assert.match(activity, /aria-expanded=\{open\} onClick=\{onToggle\}>\s*<span className=\{`work-step-verb\$\{shimmer\}`\}>/);
+});
+
+test("the panel lays a task's words out as inline text, shows a message's time with Copy, and keeps the toolbar off the panel", () => {
+  const rule = (selector: string) => panelStyles.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{[^}]*\\}`))?.[0] ?? "";
+  const panel = ":root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel";
+  // A flex task item turns a file link into its own flex item and drops it to a new line.
+  assert.match(rule(`${panel} .message-body .task-list-item`), /position: relative;\s*padding-left: 22px;/);
+  assert.doesNotMatch(rule(`${panel} .message-body .task-list-item`), /display: flex/);
+  assert.match(rule(`${panel} .message-body .task-list-item input[type="checkbox"]`), /position: absolute;/);
+  assert.doesNotMatch(rule(`${panel} .message-time`), /display: none/);
+  assert.doesNotMatch(rule(`${panel} .message.user .message-footer`), /display: none/);
+  assert.match(styles, /\.message-table-scroll\[data-more="end"\] \{[^}]*mask-image: linear-gradient\(90deg, #000 calc\(100% - 32px\), transparent\);/);
+  assert.match(styles, /\.message-table-scroll\[data-more="both"\] \{/);
+  // Table and code cards share the files card's and the History cards' corners.
+  assert.match(rule(`${panel} .message-table-scroll`), /border: 0\.5px solid var\(--fm-card-line\);\s*border-radius: 10px;/);
+  assert.match(rule(`${panel} .message-code-block`), /border: 0\.5px solid var\(--fm-card-line\);\s*border-radius: 10px;/);
+  // Below 620px of list the search narrows first, then the folder's name.
+  assert.match(panelStyles, /@container fm-main \(max-width: 620px\) \{[\s\S]*?\.fm-search \{\s*flex: 1 1000 236px;\s*\}\s*\.fm-title \{\s*flex-shrink: 1;\s*\}/);
+});
+
+test("a Chat in the panel is drawn in the window's font and greys, and a person's message is a soft tint", () => {
+  // Reading Font: App Font follows the font the window is drawn in; Serif and System keep their own stacks.
+  assert.match(fileManagerTokens, /:root\[data-appearance-reading-font="app"\] :is\(\.app-shell\.layout-file-manager, \.popover\) \{\s*--amplefile-reading-font: var\(--fm-font\);/);
+  assert.match(appearanceHook, /root\.dataset\.appearanceReadingFont = preferences\.readingFont;/);
+  // The attributes the stylesheets select are data-amplefile-font and data-amplefile-text-size.
+  assert.match(appearanceHook, /root\.dataset\.amplefileFont = resolved\.font;/);
+  assert.match(appearanceHook, /root\.dataset\.amplefileTextSize = preferences\.textSize;/);
+  assert.match(`${styles}\n${fileManagerTokens}`, /:root\[data-amplefile-font\]/);
+  assert.doesNotMatch(appearanceHook, /dataset\.ampleFile/);
+  assert.match(panelStyles, /\.fm-shell :is\(h1, h2, h3\) \{\s*font-family: inherit;/);
+  assert.match(panelStyles, /\.fm-chat \.composer-input-shell textarea:focus-visible \{[^}]*font-family: var\(--fm-font\);/);
+  // The shared Chat styles ask for the wider app's text colors; in the panel those are the file manager's.
+  assert.match(fileManagerTokens, /\.app-shell\.layout-file-manager \.fm-chat \{\s*--ui-text: var\(--fm-text\);\s*--ui-text-muted: var\(--fm-text2\);\s*--ui-text-subtle: var\(--fm-text3\);/);
+  // Tinted is a soft accent tint under the window's text, in the panel, the popover, and the Appearance preview.
+  assert.match(fileManagerTokens, /--fm-bubble: var\(--fm-accent-soft\);/);
+  assert.match(fileManagerTokens, /--fm-bubble: color-mix\(in srgb, var\(--fm-accent\) 30%, transparent\);/);
+  assert.match(panelStyles, /\.message\.user \.message-surface \{[^}]*background: var\(--fm-bubble\);\s*color: var\(--fm-text\);/);
+  assert.match(popoverStyles, /\.popover-message\.user \{[^}]*background: var\(--fm-bubble\);\s*color: var\(--fm-text\);/);
+  assert.doesNotMatch(`${panelStyles}\n${popoverStyles}`, /\.message\.user[^{]*\{[^}]*var\(--fm-on-accent\)/, "no message text is left in the on-accent color, in either message style");
 });
 
 test("manual restore points distinguish a new snapshot from already-covered files", () => {

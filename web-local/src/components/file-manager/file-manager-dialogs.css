@@ -1046,16 +1046,7 @@
 }
 
 /* The preview's own text keeps its colors over the page's quieter paragraph style. */
-:root[data-theme] .app-shell.layout-file-manager .settings-modal.settings-window .settings-tab-panel .fmp p.fmp-you {
-  color: var(--fm-on-accent);
-  font-size: inherit;
-}
-
-:root[data-appearance-messages="quiet"] :root[data-theme] .app-shell.layout-file-manager .settings-modal.settings-window .settings-tab-panel .fmp p.fmp-you {
-  color: var(--fm-text);
-}
-
-:root[data-theme] .app-shell.layout-file-manager .settings-modal.settings-window .settings-tab-panel .fmp p.fmp-answer {
+:root[data-theme] .app-shell.layout-file-manager .settings-modal.settings-window .settings-tab-panel .fmp p:is(.fmp-you, .fmp-answer) {
   color: var(--fm-text);
   font-size: inherit;
 }
@@ -1264,13 +1255,14 @@
   line-height: 1.35;
 }
 
+/* The person's message as the panel draws it: a soft accent tint, or a card for Quiet. */
 .fmp-you {
   align-self: flex-end;
   max-width: 92%;
   padding: 4px 8px;
   border-radius: 10px;
-  background: var(--fm-accent);
-  color: var(--fm-on-accent);
+  background: var(--fm-bubble);
+  color: var(--fm-text);
 }
 
 :root[data-appearance-messages="quiet"] .fmp-you {

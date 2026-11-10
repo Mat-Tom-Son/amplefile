@@ -22,6 +22,11 @@
   user-select: none;
 }
 
+/* Headings are drawn in the font around them, not the wider app's display face. */
+.fm-shell :is(h1, h2, h3) {
+  font-family: inherit;
+}
+
 /* Under the Mac window material the window itself is see-through; the
    sidebar panel lets a little of it show, the content stays solid. */
 :root[data-window-material="vibrancy"] .fm-shell {
@@ -1208,8 +1213,42 @@
     display: none;
   }
 
+  /* Search narrows to its icon first; only then does the folder's name give
+     way, so the toolbar never spills onto the panel. */
   .fm-search {
-    flex: 1 1 236px;
+    flex: 1 1000 236px;
+  }
+
+  .fm-title {
+    flex-shrink: 1;
+  }
+
+  .fm-title > :first-child {
+    flex: none;
+  }
+}
+
+/* The narrowest list, beside a panel dragged wide: the toolbar tightens, and
+   the title keeps at least its icon. */
+@container fm-main (max-width: 480px) {
+  .fm-toolbar {
+    gap: 6px;
+  }
+
+  .fm-title {
+    min-width: 20px;
+  }
+}
+
+/* With no room for more than a letter, the name stays only for assistive technology. */
+@container fm-main (max-width: 384px) {
+  .fm-title-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
 }
 
@@ -1477,21 +1516,26 @@
   max-width: 85%;
 }
 
-/* Above the appearance palette's soft bubble: the design draws the person's message in solid accent. */
+/* A person's message: a soft tint of the accent, with the window's own text
+   color on it, so it marks who spoke without outshouting the reply. */
 :root .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-surface {
   padding: 7px 12px;
   border-radius: 16px;
-  background: var(--fm-accent);
-  color: var(--fm-on-accent);
+  background: var(--fm-bubble);
+  color: var(--fm-text);
   line-height: 1.4;
 }
 
-
-/* The palette colors message text itself; in the panel the design's colors win. */
+/* The palette colors message text itself; in the panel the window's colors win. */
 :root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body,
-:root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, a, code, strong, em),
+:root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body :is(h1, h2, h3, h4, h5, h6, code, strong, em),
 :root .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body {
-  color: var(--fm-on-accent);
+  color: var(--fm-text);
+}
+
+/* On the tint a link is a shade deeper than elsewhere, which keeps it at 4.5:1. */
+:root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-body :is(a, .connected-folder-file-link) {
+  color: color-mix(in srgb, var(--fm-link) 85%, var(--fm-text));
 }
 
 :root[data-appearance-palette] .app-shell .fm-chat .chat-panel.is-in-panel .message.assistant .message-body,
@@ -1540,6 +1584,7 @@
   background: transparent;
   box-shadow: none;
   color: var(--fm-text);
+  font-family: var(--fm-font);
   font-size: calc(13px * var(--fm-scale));
   line-height: 20px;
 }
@@ -1980,7 +2025,7 @@
   background: var(--fm-window);
 }
 
-/* Your Messages: Quiet draws the person's message as a plain card instead of the accent bubble. */
+/* Your Messages: Quiet draws the person's message as a plain card instead of the tinted bubble. */
 :root[data-appearance-messages="quiet"] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-surface {
   background: var(--fm-card);
   box-shadow: 0 0 0 0.5px var(--fm-card-line);
@@ -2824,7 +2869,7 @@
   margin: 0.8em 0;
   overflow: hidden;
   border: 0.5px solid var(--fm-card-line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--fm-card);
   box-shadow: none;
 }
@@ -2884,12 +2929,13 @@
   font-size: inherit;
 }
 
-/* Tables: a white card with a gray header row and hairlines between rows; a wide one scrolls sideways. */
+/* Tables: a white card with a gray header row and hairlines between rows; a wide one scrolls sideways.
+   Table, code, and files cards share the History cards' 10px corners and hairline. */
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-table-scroll {
   margin: 0.8em 0;
   overflow-x: auto;
   border: 0.5px solid var(--fm-card-line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--fm-card);
 }
 
@@ -2936,17 +2982,17 @@
   margin-bottom: 0;
 }
 
+/* A task's words stay ordinary inline text, so a file link keeps its place in
+   the sentence; the checkbox hangs in the indent beside the first line. */
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-body .task-list-item {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 2px 8px;
+  position: relative;
+  padding-left: 22px;
 }
 
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-body .task-list-item input[type="checkbox"] {
-  position: relative;
-  top: 2px;
-  flex: none;
+  position: absolute;
+  top: calc(0.75em - 7px);
+  left: 0;
   width: 14px;
   height: 14px;
   margin: 0;
@@ -2972,10 +3018,11 @@
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  height: 24px;
-  padding: 0 9px;
+  min-height: 24px;
+  padding: 3px 9px;
   border: 0;
-  border-radius: 999px;
+  /* Half the one-line height: a pill on one line, a rounded card on two. */
+  border-radius: 12px;
   background: var(--fm-cap);
   color: var(--fm-text2);
   font-size: calc(12px * var(--fm-scale));
@@ -2991,12 +3038,6 @@
   flex: none;
   width: 12px;
   height: 12px;
-}
-
-:root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .work-steps-label {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .work-steps-rows {
@@ -3079,7 +3120,7 @@
   font-weight: 500;
 }
 
-/* A reply's Copy shows while the pointer is on it; the time stays out of the way. */
+/* A message's Copy and its time show while the pointer or the keyboard is on it. */
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-footer {
   display: flex;
   min-height: 20px;
@@ -3094,7 +3135,10 @@
 }
 
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-time {
-  display: none;
+  color: var(--fm-text3);
+  font-size: calc(11px * var(--fm-scale));
+  font-weight: 400;
+  opacity: 1;
 }
 
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message-copy-button {
@@ -3114,8 +3158,10 @@
   color: var(--fm-text);
 }
 
+/* A person's own message has the same footer, under the bubble's right edge
+   and tucked partly into the gap below so the reply stays close. */
 :root[data-theme] .app-shell .fm-chat .chat-panel.is-in-panel .message.user .message-footer {
-  display: none;
+  margin-bottom: -8px;
 }
 
 /* Nested Connected Folders: each sits under its parent, indented, and a
