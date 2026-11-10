@@ -7216,14 +7216,6 @@ textarea:focus-visible,
 
 .skills-extensions-modal { container-name: skills-and-extensions; container-type: inline-size; }
 
-.capabilities-navigation {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
 :root[data-theme] .app-shell .capabilities-view-tabs {
   display: inline-flex;
   width: fit-content;
@@ -7320,13 +7312,6 @@ textarea:focus-visible,
 }
 :root[data-theme] .app-shell .capabilities-search input:focus-visible { outline: 0; }
 
-:root[data-theme] .app-shell .capabilities-filter-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
 :root[data-theme] .app-shell .capabilities-type-chips {
   display: inline-flex;
   gap: 2px;
@@ -7375,19 +7360,6 @@ textarea:focus-visible,
   font: .8rem/1.3 var(--amplefile-ui-font);
 }
 
-:root[data-theme] .app-shell .capabilities-view-heading {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0;
-}
-:root[data-theme] .app-shell .capabilities-view-heading h2 { margin: 0; font-size: var(--amplefile-type-base); }
-:root[data-theme] .app-shell .capabilities-view-actions { display: flex; align-items: center; }
-:root[data-theme] .app-shell .capabilities-view-actions a { font-size: var(--amplefile-type-xs); }
-
-:root[data-theme] .app-shell .capabilities-discover-panel { padding: 0; gap: 0; }
 :root[data-theme] .app-shell .capabilities-discover-list {
   display: grid;
   gap: 2px;
@@ -7443,12 +7415,9 @@ textarea:focus-visible,
 
 @container skills-and-extensions (max-width: 860px) {
   :root[data-theme] .app-shell .capabilities-toolbar { grid-template-columns: minmax(0, 1fr); }
-  :root[data-theme] .app-shell .capabilities-filter-row { justify-content: space-between; flex-wrap: wrap; }
 }
 @container skills-and-extensions (max-width: 540px) {
   :root[data-theme] .app-shell .connected-folder-pane-content.capabilities-pane.skills-extensions-pane { padding: 20px; }
-  .capabilities-navigation { flex-wrap: wrap; }
-  :root[data-theme] .app-shell .capabilities-view-heading { flex-wrap: wrap; }
   :root[data-theme] .app-shell .capabilities-discover-card { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   :root[data-theme] .app-shell .capabilities-discover-card > .ui-control { justify-self: start; }
 }
@@ -7471,26 +7440,12 @@ textarea:focus-visible,
   gap: 24px;
 }
 
-.skills-extensions-header > div {
-  min-width: 0;
-  display: grid;
-  gap: 6px;
-}
-
 .skills-extensions-header h1 {
   margin: 0;
   color: var(--ui-text);
   font-size: clamp(24px, 2.6vw, 30px);
   font-weight: 600;
   letter-spacing: -0.025em;
-}
-
-.skills-extensions-header p {
-  max-width: 600px;
-  margin: 0;
-  color: var(--ui-text-muted);
-  font-size: var(--amplefile-type-sm);
-  line-height: 1.5;
 }
 
 .capabilities-scope-group {
@@ -7890,24 +7845,6 @@ textarea:focus-visible,
   min-width: 0;
   display: grid;
   gap: 12px;
-}
-
-.capabilities-supporting-heading {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.capabilities-supporting-heading h3 {
-  margin: 0;
-  color: var(--ui-text);
-  font-size: var(--amplefile-type-md);
-  font-weight: 600;
-}
-
-.capabilities-supporting-heading p {
-  color: var(--ui-text-muted);
-  font-size: var(--amplefile-type-2xs);
 }
 
 .capabilities-supporting-list {
@@ -8498,21 +8435,6 @@ textarea:focus-visible,
   height: 100%;
   overflow: auto;
   padding: 24px 28px 28px;
-}
-
-/* The close control sits in the window corner, above the title row. */
-
-.skills-extensions-close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  z-index: 2;
-  width: 36px;
-  height: 36px;
-}
-
-.skills-extensions-modal .skills-extensions-header {
-  padding-right: 52px;
 }
 
 /* Installed view: included tools first, then the two homes side by side. */
