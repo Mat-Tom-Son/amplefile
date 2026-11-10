@@ -1,13 +1,12 @@
 import type { McpExtensionOptions } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { ChromeHostFacilities } from "../../src/shared/chrome-connection.js";
 import type { IncludedToolStatus } from "../../src/shared/included-tools.js";
 
 /** Optional native host context. It never crosses a renderer bridge. */
 export function hostContext(pi: ExtensionAPI) {
-  const query: { version: 1; context?: Partial<ChromeHostFacilities> & {
+  const query: { version: 1; context?: {
     version: 1; mode: "catalog" | "session"; cwd: string; agentDir: string; stateRoot: string;
-    companionPath: string; helperAppPath?: string;
+    helperAppPath?: string;
     /** Where Documents looks for its optional engines; the same place the Documents status looks. */
     documentEngineSearch?: { path?: string; home?: string; platform?: string; candidates?: Record<string, string[]> };
     prepareComputerHelper?: () => Promise<void>;

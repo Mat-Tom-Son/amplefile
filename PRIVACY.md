@@ -42,7 +42,7 @@ By default, AmpleFile stores:
 - A hidden `.amplefile/` directory inside each Connected Folder. Its `connected-folder.json` file stores the portable Connected Folder identity, and its `conversations/` directory stores that Connected Folder's append-only Chat records, including title, archive, and snooze lifecycle events.
 - The Connected Folder registry, History objects, ignore rules, application settings, per–Connected Folder model defaults and Connected Folder instructions, and machine-local Chat attention acknowledgements under the local AmpleFile application-data directory or browser-backed application storage.
 - Pi settings, sessions, Pi's independent trust decisions, personal Skills, Extensions, and packages under the configured Pi agent directory, normally `~/.pi/agent`.
-- The built-in browser's profile — cookies, sign-ins, site storage, cache, the pages the browser's tabs visited (`browser-history.json`), and what you allowed or blocked for each site (`browser-site-permissions.json`) — under the local AmpleFile application-data directory, apart from Chrome and from every Connected Folder. Open browser tabs are not kept: quitting AmpleFile closes them. A site gets the camera, microphone, location, notifications, or similar access only after you allow it. Its cookies are encrypted with the operating system's keychain. Files it downloads go to the Downloads folder. Nothing is imported from Chrome or another browser ([built-in browser](docs/built-in-browser.md)).
+- The built-in browser's profile — cookies, sign-ins, site storage, cache, the pages the browser's tabs visited (`browser-history.json`), and what you allowed or blocked for each site (`browser-site-permissions.json`) — under the local AmpleFile application-data directory, apart from any other browser on the Mac and from every Connected Folder. Open browser tabs are not kept: quitting AmpleFile closes them. A site gets the camera, microphone, location, notifications, or similar access only after you allow it. Its cookies are encrypted with the operating system's keychain. Files it downloads go to the Downloads folder. Nothing is imported from Chrome or another browser ([built-in browser](docs/built-in-browser.md)).
 - Provider credentials in an application-scoped file encrypted through Electron's operating-system-backed `safeStorage`. AmpleFile refuses credential operations when that encryption is unavailable. When encryption works but a credential file no longer decrypts, AmpleFile keeps it beside the original, still encrypted, as `*.unreadable-<time>` (renamed with a `.superseded` suffix once credentials are saved again) and never deletes it. Microsoft Foundry connections keep each format's API key, endpoint, deployment names, and optional Pi base-model selections in this same machine-local credential store. Settings reads back only the endpoint, names, and selections. Saving does not send an inference request or discover Azure resources.
 - Short-lived CLI request, claim, and response files under the owning app's application-data directory: `~/Library/Application Support/AmpleFile/cli` for the installed Mac app, or the separately identified smoke app's own directory.
 - The AmpleFile Agent's machine-local transcript under the application-data `management/` root. When a request includes attachments, its user message stores their typed absolute local paths or http(s) links. Request records — the turns and Connected Folders one ask spans, its questions and answers, and the results handed back — are durable machine-local app state under the application-data `requests/` directory, reconciled after a restart and never replayed, and kept for 30 days after the request settles; act lineage stays metadata in the receipt journal. Like the other records below, nothing in `requests/` is written into a Connected Folder's folder, captured by History, or synchronized by anything that synchronizes a Connected Folder.
@@ -134,42 +134,16 @@ to the model; the recent transfer records stay in memory for this app launch.
 Web sends search terms to DuckDuckGo by default, or Brave when that connection
 is selected by saved setup, and fetches explicitly requested URLs. The included
 baseline does not import browser cookies, initialize media services or call a
-second model. Chrome operates the connected signed-in profile through an
-explicitly prepared companion; account content and external actions carry
-that profile's normal permissions. Computer control captures selected native
+second model. Computer control captures selected native
 observations using macOS permissions granted to its helper.
 
-The Chrome extension's random installation ID and connection proof stay in
-trusted-only local extension storage, never Chrome sync. AmpleFile stores the
-selected installation and proof hash under its private application-data
-directory. A signed Native Messaging helper authenticates the exact extension
-ID and forwards setup requests to the running app; it does not identify the
-Chrome profile by itself. When Chrome is set up on the Mac and has no AmpleFile
-registration yet, the installed app writes that helper's registration (a small
-file naming the helper and the extension ID) into Chrome's
-`NativeMessagingHosts` folder at launch, so the extension can connect whenever
-the person chooses Connect; it never replaces another installation's
-registration. To say whether Chrome is installed, setup checks only for the
-Google Chrome app, never a Chrome profile. Temporary connection credentials stay in the browser
-service worker's memory and native host runtime, outside Chat and setup status.
-
-The Chrome extension can process requested tab URLs/titles, page text and
-structure, form inputs, screenshots, and page console/network observations.
-Depending on the page and task, these may contain identifiers, communications,
-authentication information, financial or health information, or location data.
-It sends the requested observations over authenticated localhost transport to
-the desktop agent. The desktop sends selected tool results to the model
-provider configured for that Chat and may retain them in local Pi sessions.
-Browser actions use the connected profile's existing website sessions. The
-extension does not continuously record browsing, sell data, serve advertising,
-or use data for credit decisions. Removing the extension removes its local
-connection storage; Disconnect revokes the desktop selection and current lease.
-Existing Chat/model-provider records follow their respective retention rules.
-
-All extension scripts are packaged. For requested page inspection and actions,
-the desktop can supply JavaScript evaluated in the targeted page through
-Chrome's Debugger API, not as extension service-worker or popup code. Chrome's
-own debugger and extension permission controls continue to apply.
+An earlier AmpleFile could register a Native Messaging helper with Google
+Chrome. At launch, the installed app removes the helper copy and connection
+records from its own application-data directory, and removes Chrome's
+registration file only when it names AmpleFile's host and points into that
+directory; any other file is left as it is. It reads no Chrome profile. You can
+remove the AmpleFile extension from Chrome; removing it deletes its local
+connection storage.
 
 Optional Brave credentials use the existing
 machine-local Pi CredentialStore. Native MCP definitions use the configured Pi

@@ -78,7 +78,7 @@ native app, tests, and what to do when the toolchain is wrong.
 - **Tools.** Workers can use a [built-in browser](docs/built-in-browser.md),
   run long commands as [background jobs](docs/background-jobs.md), use
   [collaboration and Git tools](docs/worker-tools.md), and use the
-  included Computer Control, Chrome, Web, Documents, and Service Connections
+  included Computer Control, Web, Documents, and Service Connections
   tools, managed with any Skills and Extensions you add in
   **Skills & Extensions** ([details](docs/skills-and-extensions.md)).
 - **Other agents.** **Settings → Command Line** adds the `amplefile` command so

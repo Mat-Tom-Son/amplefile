@@ -5,8 +5,8 @@
  * Starts the local API in-process with the included tools (Documents and its
  * document-work Skill), an isolated Pi agent folder, and disposable app state,
  * so `npm run amplefile:drive -- --attach <origin>` drives real Worker turns
- * with the same tools a packaged app has. Computer Control and Chrome load but
- * cannot act: no helper is permitted and no browser is attached.
+ * with the same tools a packaged app has. Computer Control loads but cannot
+ * act: no helper is permitted.
  *
  * Run it under `sandbox-exec -f scripts/document-eval/no-engines.sb` to hide
  * LibreOffice, Tesseract and Microsoft Office from the host and every tool it

@@ -33,8 +33,8 @@ try {
     const catalog = await loadAgentSkillCatalog(join(root, connectedFolder), provider);
     assert.deepEqual(catalog.diagnostics.filter(item => item.type === "error" || item.type === "collision"), []);
     const included = catalog.extensions.filter(item => item.source.source === "Included with AmpleFile");
-    assert.equal(included.length, 5, JSON.stringify(catalog.extensions));
-    for (const name of ["find_roots", "chrome_tab", "web_search", "codemode", "tool_search", "document_run"]) assert.ok(catalog.tools.some(tool => tool.name === name), `Missing native tool ${name}`);
+    assert.equal(included.length, 4, JSON.stringify(catalog.extensions));
+    for (const name of ["find_roots", "web_search", "codemode", "tool_search", "document_run"]) assert.ok(catalog.tools.some(tool => tool.name === name), `Missing native tool ${name}`);
     assert.ok(catalog.skills.some(skill => skill.name === "document-work"), "Ordinary document Skill is present");
     const setUp = catalog.skills.find(skill => skill.name === "set-up-connected-folder");
     assert.ok(setUp, "The Set up for me Skill ships with AmpleFile");
@@ -43,7 +43,7 @@ try {
   }
   assert.deepEqual(events, [], "Catalog/session_start never starts a helper, bridge, MCP process, or network request");
   assert.deepEqual(await snapshot(root), before, "Catalog never writes credentials, capture files, or app-owned state");
-  console.log("PASS included catalog: five native Extensions, the document and set-up Skills, two Connected Folders and repeat catalog, no process/listener/network or filesystem effects");
+  console.log("PASS included catalog: four native Extensions, the document and set-up Skills, two Connected Folders and repeat catalog, no process/listener/network or filesystem effects");
 } finally {
   for (const action of restore.reverse()) action(); syncBuiltinESMExports();
   await rm(root, { recursive: true, force: true });

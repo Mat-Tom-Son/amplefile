@@ -41,7 +41,7 @@ app.dock?.hide();
       const catalog = await value.getCatalog();
       assert.deepEqual(catalog.diagnostics.filter(item => item.type === "error" || item.type === "collision"), [], "Native session must have no loader errors");
       const state = await value.getState();
-      for (const name of ["find_roots", "chrome_tab", "web_search", "codemode", "tool_search", "document_run", "document_engine"]) assert.ok(state.activeTools.includes(name), `Missing active packaged tool ${name}`);
+      for (const name of ["find_roots", "web_search", "codemode", "tool_search", "document_run", "document_engine"]) assert.ok(state.activeTools.includes(name), `Missing active packaged tool ${name}`);
       return { value, cwd };
     }
     async function call(owner, name, args) {

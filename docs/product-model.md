@@ -252,8 +252,7 @@ other surface.
 With no Connected Folder yet, the window opens on a short first run: a
 welcome that says what AmpleFile is, **Connect Your AI**, **Let Your Worker
 Use Your Mac** when the app includes Computer Control or the command line
-and something is not yet set up (Chrome is set up only in Skills &
-Extensions), and **Pick a Folder to Start
+and something is not yet set up, and **Pick a Folder to Start
 With**, which offers Desktop, Documents, Downloads, and Pictures in one
 click beside Connect Folder and New Connected Folder.
 
@@ -670,15 +669,14 @@ tools, commands, providers, events, and a static `surface.json` contribution
 ([Declarative Extension surfaces](extension-surfaces.md)); its code owns its
 network and operating-system access.
 
-**Included tools.** The five included tools (Chrome, Computer Control, Web,
+**Included tools.** The four included tools (Computer Control, Web,
 Documents, and Service Connections) show observed readiness separately from
 native loading. The Skills & Extensions dialog refreshes cold host status
 automatically; opening it never launches a helper or connects a server.
 Successful use can supply readiness evidence. A computer-permission check
 stays visible as Last Check Passed with its timestamp, while Documents proof
 belongs to the running build. Service Connections says No Connections or
-Configured and leaves actual health to each connection. A selected Chrome
-profile reconnects automatically. Check observes; helper repair is a separate
+Configured and leaves actual health to each connection. Check observes; helper repair is a separate
 explicit setup operation and never silently disposes idle Chats
 ([the extension contract](extension-foundation.md#readiness-and-lifecycle)).
 
@@ -694,10 +692,11 @@ installs an engine only when the person asks. See
 
 **Built-in browser.** Every Worker and the AmpleFile Agent can use AmpleFile's
 own browser through the `browser_*` tools, with one persistent machine-local
-profile apart from Chrome and from every Connected Folder. The person sees
+profile apart from any other browser on the Mac and from every Connected
+Folder. It is how an agent uses the web interactively. The person sees
 and uses the same pages in the file manager window's Browser pane, where they
 sign in to a site and answer a site's question. The tools come with the app
-and are not one of the five included tools. See
+and are not one of the four included tools. See
 [Built-in browser](built-in-browser.md).
 
 ## Shared semantic layer
@@ -949,8 +948,8 @@ not a complete or transactional backup.
   event source, handoff condition, or recovery behavior. Coordination across
   Connected Folders stays with the AmpleFile Agent; Connected Folder Chats
   stay local to their own work.
-- Offer Chrome and Computer Control setup in a Chat the first time a Worker
-  needs them; deepen accessibility, renderer interaction tests, recovery,
+- Offer Computer Control setup in a Chat the first time a Worker
+  needs it; deepen accessibility, renderer interaction tests, recovery,
   export, and diagnostics.
 
 ### Later adapters

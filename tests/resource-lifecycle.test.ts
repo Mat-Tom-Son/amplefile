@@ -247,3 +247,23 @@ test("relative Skill aliases shared by .pi and ancestor .agents roots preserve s
     assert.equal(catalog.skills.some((item) => item.path === ancestor), expectedAncestor);
   }
 });
+
+test("a saved filter for an included tool that no longer ships is ignored without an error", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "amplefile-retired-included-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const connectedFolder = join(root, "connected-folder"), agentDir = join(root, "agent"), included = join(root, "included");
+  await mkdir(connectedFolder, { recursive: true });
+  await mkdir(agentDir, { recursive: true });
+  for (const id of ["computer", "web", "mcp", "documents"]) {
+    await mkdir(join(included, id), { recursive: true });
+    await writeFile(join(included, id, "index.ts"), "export default function () {}");
+  }
+  // Settings saved while an earlier included tool was turned off name its path.
+  await writeFile(join(agentDir, "settings.json"), JSON.stringify({ extensions: [`-${join(included, "chrome", "index.ts")}`, `-${join(included, "web", "index.ts")}`] }));
+  const provider = { resolveRuntime: async () => ({ agentDir, projectTrust: { override: true }, includedTools: { rootPath: included, stateRoot: join(root, "state") } }) };
+  const resources = (await listNativeResources(connectedFolder, provider)).filter((item) => item.included);
+  assert.deepEqual(resources.map((item) => [item.included!.id, item.enabled]), [["computer", true], ["web", false], ["mcp", true], ["documents", true]]);
+  const catalog = await loadAgentSkillCatalog(connectedFolder, provider);
+  assert.deepEqual(catalog.diagnostics.filter((item) => item.type === "error"), []);
+  assert.equal(catalog.extensions.filter((item) => item.source.source === "Included with AmpleFile").length, 3, "the turned-off tool stays off and nothing else is missing");
+});

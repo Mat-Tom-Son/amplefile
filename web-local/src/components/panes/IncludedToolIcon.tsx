@@ -12,14 +12,6 @@ export function IncludedToolIcon({ id, size = 20 }: { id: IncludedToolId; size?:
   const line = { fill: "none", stroke: "currentColor", strokeWidth: 2.6, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   const frame = { width: size, height: size, "aria-hidden": true as const, focusable: "false" as const };
   switch (id) {
-    case "chrome":
-      return (
-        <svg viewBox="0 0 48 48" {...frame}>
-          <circle cx="24" cy="24" r="21.5" {...line} />
-          <circle cx="24.18" cy="24.02" r="9" {...line} />
-          <path {...line} d="M24.18 15.02h19.36m-27.154 13.5l-9.68-16.766M31.974 28.52l-9.68 16.766" />
-        </svg>
-      );
     case "computer":
       return (
         <svg viewBox="0 0 48 48" {...frame}>

@@ -38,9 +38,8 @@ preview first in the menu bar's Download menu.
 
 The menu bar that arrives on scroll has two menus: **Download**, with the Mac
 release, the Linux preview, and all releases, and **Help**, with the docs,
-Contributing, Privacy, and the license. The page shows the app's included
-tools without Chrome, although the app's Skills & Extensions dialog lists
-Chrome first.
+Contributing, Privacy, and the license. The page shows the app's four
+included tools in the order the Skills & Extensions dialog lists them.
 
 The build takes the Mac repository from the checked-in update feed stage
 ([Update feed](macos-release.md#update-feed)), not from a constant: the

@@ -28,11 +28,3 @@ export function withInputContract(tool, { variants, examples }) {
     execute(id, args, ...rest) { return tool.execute.call(tool, id, args.input, ...rest); },
   };
 }
-
-/** Preserve the native API and lifecycle; decorate only reviewed declarations. */
-export function withToolContracts(pi, contracts) {
-  return new Proxy(pi, { get(target, key, receiver) {
-    if (key !== "registerTool") return Reflect.get(target, key, receiver);
-    return tool => target.registerTool(contracts[tool.name] ? withInputContract(tool, contracts[tool.name]) : tool);
-  } });
-}
