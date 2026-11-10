@@ -251,9 +251,11 @@ test("a long multi-line command reaches its step as a one-line record marked as 
   const emitted: Array<Record<string, unknown>> = [];
   client.on("event", (event) => emitted.push(event));
   const command = [
-    "cd ~/Projects/site",
+    // The key sits inside the part the record keeps, so the redaction check
+    // below cannot pass merely because the cut removed it.
+    "cd ~/Projects/site && export API_KEY=sk-live-0123456789abcdef",
     "# rebuild from scratch",
-    `rm -rf "/Users/me/Documents/Clients/Northwind Traders/site/dist" "/Users/me/Documents/Clients/Northwind Traders/tmp" && API_KEY=sk-live-0123456789abcdef npm run build`,
+    `rm -rf "/Users/me/Documents/Clients/Northwind Traders/site/dist" "/Users/me/Documents/Clients/Northwind Traders/tmp" && npm run build`,
   ].join("\n");
   assert.ok(command.length > 160);
   (client as unknown as { handleSessionEvent(event: unknown): void }).handleSessionEvent({ type: "tool_execution_start", toolCallId: "bash-1", toolName: "bash", args: { command } });
@@ -263,6 +265,7 @@ test("a long multi-line command reaches its step as a one-line record marked as 
   assert.ok(record.endsWith("…"), "a record that was cut says so");
   assert.doesNotMatch(record, /\n/);
   assert.doesNotMatch(record, /sk-live-0123456789abcdef/);
+  assert.match(record, /API_KEY=\[redacted\]/, "the key is redacted in the kept part, not merely cut off");
   assert.notEqual(record, command);
   // A command that fits is recorded whole, with no mark.
   (client as unknown as { handleSessionEvent(event: unknown): void }).handleSessionEvent({ type: "tool_execution_start", toolCallId: "bash-2", toolName: "bash", args: { command: "ls -la" } });
