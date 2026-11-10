@@ -30,7 +30,8 @@ import {
   type ConnectedFolderRemovalResult,
   type ConnectedFolderSummary,
 } from "../connected-folder.js";
-import { emptyAgentStatus, runDesktopSettingsAct, safeAgentStatus } from "../server.js";
+import { runDesktopSettingsAct } from "../server.js";
+import { emptyAgentStatus, safeAgentStatus } from "./ai-model-routes.js";
 import { invalidateAmpleFileClients } from "./conversation-clients.js";
 import { closeConnectedFolderStreams, publishControlHint } from "./event-streams.js";
 import { badRequest, forbidden, match, readJsonBody, sendJson } from "./http.js";
