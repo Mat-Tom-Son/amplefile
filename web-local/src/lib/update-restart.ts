@@ -35,7 +35,7 @@ function countedChats(count: number) {
 
 /** The question asked before an updater call that ends in a restart. */
 export function updateRestartConfirm(call: Exclude<UpdateCall, "check">, status: DesktopUpdateStatus | null, work: RunningWork | null, connectedFolders: readonly Pick<ConnectedFolderSummary, "id" | "name">[]): ConfirmDialogOptions {
-  const version = status?.availableVersion ? `AmpleFile ${status.availableVersion}` : "the update";
+  const version = status?.availableVersion ? `version ${status.availableVersion}` : "the update";
   const sentences = [call === "install"
     ? `AmpleFile quits and opens again on its own to install ${version}.`
     : `AmpleFile downloads ${version}, then quits and opens again on its own to install it.`];

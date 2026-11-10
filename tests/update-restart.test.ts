@@ -32,12 +32,12 @@ test("available reaches updateNow and ready reaches install, each only after the
   assert.equal(available.asked.length, 1);
   assert.equal(available.asked[0]!.title, "Restart AmpleFile to Update?");
   assert.equal(available.asked[0]!.confirmLabel, "Update and Restart");
-  assert.match(available.asked[0]!.body!, /^AmpleFile downloads AmpleFile 0\.1\.5, then quits and opens again on its own/);
+  assert.match(available.asked[0]!.body!, /^AmpleFile downloads version 0\.1\.5, then quits and opens again on its own/);
   assert.equal(available.result?.phase, "downloading");
 
   const ready = await click(status("ready"));
   assert.deepEqual(ready.calls, ["install"]);
-  assert.match(ready.asked[0]!.body!, /^AmpleFile quits and opens again on its own to install AmpleFile 0\.1\.5\./);
+  assert.match(ready.asked[0]!.body!, /^AmpleFile quits and opens again on its own to install version 0\.1\.5\./);
 
   const failedDownload = await click(status("error"));
   assert.deepEqual(failedDownload.calls, ["updateNow"], "retrying a failed download asks too");
