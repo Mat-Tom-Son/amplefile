@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -596,4 +597,28 @@ test("a checkpoint built in one stage cannot be resumed or published in another"
     /\(it differs in nodeVersion\)/,
     "two descriptions that read the same still say what differs",
   );
+});
+
+test("a signed build refuses an overridden stage before it signs anything", { skip: process.platform !== "darwin" }, () => {
+  // An unsupported architecture stops the script right after the stage
+  // check, so neither half of this test can reach a build.
+  const build = (stage: string) => spawnSync(process.execPath, [join(rootDir, "scripts", "build-mac-desktop.mjs"), "--release", "--arch", "bogus"], {
+    cwd: rootDir,
+    env: { ...process.env, AMPLEFILE_MAC_UPDATE_FEED_STAGE: stage },
+    encoding: "utf8",
+    timeout: 60_000,
+  });
+  const other = identity.macUpdateFeedStage === "bridge" ? "source-repository" : "bridge";
+  const overridden = build(other);
+  assert.notEqual(overridden.status, 0);
+  assert.match(overridden.stderr, new RegExp(`uses the Mac update feed stage ${other}, but the release source records ${identity.macUpdateFeedStage}`));
+  const checkedIn = build(identity.macUpdateFeedStage);
+  assert.notEqual(checkedIn.status, 0);
+  assert.match(checkedIn.stderr, /Unsupported macOS architecture: bogus/, "the checked-in stage passes the check");
+
+  // The ad hoc lane keeps the override, for inspecting a candidate's packaged feed.
+  const smoke = spawnSync(process.execPath, [join(rootDir, "scripts", "build-mac-desktop.mjs"), "--unsigned-smoke", "--arch", "bogus"], {
+    cwd: rootDir, env: { ...process.env, AMPLEFILE_MAC_UPDATE_FEED_STAGE: other }, encoding: "utf8", timeout: 60_000,
+  });
+  assert.match(smoke.stderr, /Unsupported macOS architecture: bogus/);
 });

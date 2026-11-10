@@ -7,6 +7,7 @@ import { assertLocalReleaseVerification, assertVerifiedBuildOrder, withReleaseVe
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import feedModule from "./mac-release-feed.cjs";
+import { assertCheckedInFeedStage } from "./mac-release-publication.mjs";
 import {
   assertArtifactReceipt,
   assertCompatibleReleaseState,
@@ -52,6 +53,9 @@ const verifiedArtifacts = [...packageArtifacts, ...manifestArtifacts, "out/build
 if (process.platform !== "darwin") throw new Error(`${identity.productName} macOS artifacts must be built on a Mac host.`);
 if (releaseBuild && process.argv.includes("--unsigned-smoke")) throw new Error("Use either --release or --unsigned-smoke, not both.");
 if (resumeBuild && !releaseBuild) throw new Error("Only a signed macOS release build can be resumed.");
+// A signed build with an overridden stage could never be published; refuse
+// it here, before any signing or notarization. The ad hoc lane may override.
+if (releaseBuild) assertCheckedInFeedStage(feed);
 if (arch !== "arm64" && arch !== "x64") throw new Error(`Unsupported macOS architecture: ${arch}.`);
 if (!version) throw new Error("package.json does not declare a macOS release version.");
 if (releaseBuild) assertReleaseCredentials();
