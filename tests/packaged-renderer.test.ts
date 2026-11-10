@@ -77,6 +77,10 @@ test("the internal scheme answers renderer files and the one desktop icon, and n
   for (const method of ["POST", "PUT", "DELETE"]) assert.equal((await answer("/index.html", method)).status, 405, method);
   for (const outside of [
     "/missing.js",
+    "/assets",
+    "/assets/",
+    "//",
+    "//assets//",
     "/_desktop-assets/icon.png",
     "/_desktop-assets/..%2ficon.png",
     "/..%2f..%2fpackage.json",
@@ -84,6 +88,10 @@ test("the internal scheme answers renderer files and the one desktop icon, and n
     `/${encodeURIComponent(join(temporary, "package.json"))}`,
   ]) {
     assert.equal((await answer(outside)).status, 404, outside);
+  }
+  assert.equal((await answer("/assets", "HEAD")).status, 404, "a directory has no bytes to answer with");
+  for (const malformed of ["/%E0%A4%A", "/assets/%", "/_desktop-assets/%ZZ"]) {
+    assert.equal((await answer(malformed)).status, 400, malformed);
   }
   assert.deepEqual(fetched, [], "refused and HEAD requests never read a file");
 });
@@ -193,6 +201,10 @@ test("Electron loads the main window and the popover through the internal scheme
           otherHost: await status("index.html", "GET", "other"),
           otherAsset: await status("_desktop-assets/icon.png"),
           missing: await status("assets/missing.js"),
+          directory: await status("assets"),
+          directorySlash: await status("assets/"),
+          doubleSlash: await status("/"),
+          malformed: await status("%E0%A4%A"),
           escaped: await status("..%2f..%2fpackage.json"),
         }));
         app.exit(0);
@@ -220,5 +232,9 @@ test("Electron loads the main window and the popover through the internal scheme
   assert.equal(result.otherHost, 404);
   assert.equal(result.otherAsset, 404);
   assert.equal(result.missing, 404);
+  assert.equal(result.directory, 404);
+  assert.equal(result.directorySlash, 404);
+  assert.equal(result.doubleSlash, 404, "app// names the renderer directory, not a page");
+  assert.equal(result.malformed, 400);
   assert.equal(result.escaped, 404);
 });

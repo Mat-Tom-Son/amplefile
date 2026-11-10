@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -35,7 +35,13 @@ export function handleRendererRequest(request: { url: string; method: string }, 
   const url = new URL(request.url);
   if (url.hostname !== rendererHost) return new Response("Not found", { status: 404 });
   if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
-  const requestedPath = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
+  let requestedPath: string;
+  try {
+    requestedPath = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
+  } catch {
+    // A malformed percent escape names no file.
+    return new Response("Bad request", { status: 400 });
+  }
   if (requestedPath.startsWith(desktopAssetRoutePrefix)) {
     if (requestedPath !== `${desktopAssetRoutePrefix}${desktopAssetFile}`) return new Response("Not found", { status: 404 });
     return serveProtocolFile(sources.desktopAssets, desktopAssetFile, request.method, sources.fetchFile);
@@ -57,7 +63,17 @@ function serveProtocolFile(
   const candidate = resolve(rootDir, requestedPath);
   const relativeCandidate = relative(rootDir, candidate);
   if (/^\.\.(?:[\\/]|$)/.test(relativeCandidate) || isAbsolute(relativeCandidate)) return new Response("Not found", { status: 404 });
-  if (!existsSync(candidate)) return new Response("Not found", { status: 404 });
+  // Only a file has bytes to answer with; a directory, like a missing path,
+  // is not found rather than an error from the file: loader.
+  if (!isFile(candidate)) return new Response("Not found", { status: 404 });
   if (method === "HEAD") return new Response(null, { status: 200 });
   return fetchFile(pathToFileURL(candidate).href);
+}
+
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
 }
