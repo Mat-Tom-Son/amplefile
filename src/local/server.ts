@@ -12,10 +12,8 @@ import { ModelContextInspector } from "./agent/model-context-inspector.js";
 import type { NativeResourceKind } from "./agent/resource-lifecycle.js";
 import { observeAmpleFileAutomationFiles, ampleFileAutomationFileObserverBounds } from "./automations/automation-file-observer.js";
 import { isConnectedFolderFileVisible } from "./connected-folder-file-visibility.js";
-import { turnFileChanges } from "./agent/turn-file-changes.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { workRequestLabel, type WorkRequestView } from "../shared/request-presentation.js";
-import { childFolderPaths } from "../shared/folder-nesting.js";
 import {
   automationCatchUpReasons,
   automationCatchUpSentence,
@@ -28,7 +26,7 @@ import {
 } from "../shared/automation-presentation.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { automationTemplateAutomationId, isAutomationTemplateId } from "../shared/automation-templates.js";
 import { automationTemplateDeclaration } from "./automations/automation-templates.js";
 import {
@@ -53,19 +51,8 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
-import {
-  PiConversationClient,
-  copyPiConversationSession,
-  isPiTurnNotRunningError,
-  isPiTurnTimeoutError,
-  PiTurnFailure,
-  PiTurnDrainingError,
-  isPiTurnCancelledError,
-  type PiChatEvent,
-  type PiRuntimeProvider,
-} from "./agent/pi-client.js";
-import { parseAssistantPresentation } from "./agent/turn-presentation.js";
-import { AmpleFileTurnReplayConflictError, AmpleFileTurnStore, type AmpleFileDurableTurnRecord } from "./agent/turn-store.js";
+import type { PiRuntimeProvider } from "./agent/pi-client.js";
+import { AmpleFileTurnStore } from "./agent/turn-store.js";
 import { TurnCheckpointWriter } from "./agent/turn-checkpoint-writer.js";
 import {
   RoutedPiExtensionUiBridge,
@@ -74,19 +61,14 @@ import {
   type PiExtensionUiSettled,
 } from "./agent/extension-ui.js";
 import {
-  appendMessage,
-  conversationNeedsGeneratedTitle,
   conversationsDir,
   createConversation,
   listConversations,
-  markConversationTitleAttempted,
   readConversation,
   readConversationSummary,
   renameConversation,
-  setGeneratedConversationTitle,
   updateConversationLifecycle,
   type ChatMessage,
-  type ChatMessageAttachmentRef,
   type ConversationSummary,
 } from "./agent/chat-store.js";
 import { RemoteCapabilityRegistry, type CapabilitySort, type CapabilityType } from "./agent/capability-registry.js";
@@ -133,12 +115,9 @@ import { ImageModelPreference, imageModelPreferencePath, normalizeImageModelChoi
 import { GeneratedImageStore, isGeneratedImageId } from "./agent/generated-image-store.js";
 import { getFoundrySettings, saveFoundryConnection } from "./agent/foundry-connection.js";
 import { AZURE_OPENAI_PROVIDER, foundryProvider, normalizeFoundryConnection, type FoundryConnection } from "../shared/foundry.js";
-import { loadConversationContextReferencesForTurn, previewConversationContextReference } from "./conversation-context.js";
 import {
   classifyAmpleFileAgentAttachments,
-  loadAmpleFileAgentAttachmentsForTurn,
   ampleFileAgentAttachmentDispositions,
-  ampleFileAgentAttachmentLinks,
   maxAmpleFileAgentAttachments,
   type AmpleFileAgentAttachmentRef,
 } from "./amplefile-agent-attachments.js";
@@ -150,13 +129,10 @@ import {
   ampleFileRequestLimitsSection,
   ampleFileRequestStateToAgentPhase,
   ampleFileAnswerMatchesRecorded,
-  scrubAmpleFileRequestText,
   type AmpleFileRequestActionCommand,
   type AmpleFileRequestJobState,
-  type AmpleFileRequestCreatableKind,
   type AmpleFileRequestLimitName,
   type AmpleFileRequestRecord,
-  type AmpleFileRequestSurface,
   type AmpleFileQuestionRecord,
   type AmpleFileResultEnvelope,
 } from "./requests/request-records.js";
@@ -175,12 +151,7 @@ import { reapOrphanedJobProcesses, AmpleFileJobService, type AmpleFileJobShell }
 import { AmpleFileJobStore } from "./jobs/job-store.js";
 import { parseUntilPattern, type BackgroundJobToolHost } from "./agent/job-tools.js";
 import { ampleFileRequestLimits, ampleFileAutomationDeclarationBounds } from "../shared/amplefile-limits.js";
-import { connectedFolderOperationsGuideForScope } from "./agent/connected-folder-operations-guide.js";
-import {
-  buildConnectedFolderTurnContext,
-  connectedFolderTurnHistory,
-  connectedFolderTurnParentHandle,
-} from "./agent/connected-folder-turn-context.js";
+import { connectedFolderTurnHistory, connectedFolderTurnParentHandle } from "./agent/connected-folder-turn-context.js";
 import {
   createConnectedFolderCheckpoint,
   createConnectedFolderMutationCheckpoint,
@@ -204,7 +175,7 @@ import {
   connectedFolderAppearancePartsLabel,
   ConnectedFolderAppearancePartsError,
 } from "./connected-folder-appearance-parts.js";
-import { normalizeConversationTitle, normalizeGeneratedConversationTitle } from "../shared/chat-title.js";
+import { normalizeConversationTitle } from "../shared/chat-title.js";
 import {
   accentIdentityFromHex,
   defaultConnectedFolderAccent,
@@ -287,7 +258,6 @@ import {
   type AmpleFileRecentlyDeletedUncoveredPath,
 } from "./recently-deleted-store.js";
 import { AmpleFileKernel } from "./amplefile-kernel.js";
-import { ManagedWorktrees } from "./managed-worktrees.js";
 import {
   AMPLEFILE_CLI_ACT_SURFACES,
   AmpleFileCliActReceipts,
@@ -365,19 +335,24 @@ import {
   type TreeEntry,
   type ConnectedFolderSummary,
 } from "./connected-folder.js";
+import { copyConversation, handleChatRoutes, normalizeAddressedConnectedFolderIds, runConversationMutation } from "./api/chat-routes.js";
+import {
+  createWorktreeToolHost,
+  getClient,
+  invalidateAllClients,
+  invalidateAmpleFileClients,
+  refreshClientIfMarked,
+} from "./api/conversation-clients.js";
 import {
   broadcast,
   chatEventLog,
   closeConnectedFolderStreams,
   flushAllTurnCheckpoints,
-  flushTurnCheckpoint,
   handleEventStreamRoutes,
   openChatStream,
   openConnectedFolderFileStream,
   openStandardFolderFileStream,
   publishControlHint,
-  resetChatEventTurn,
-  turnStateEvent,
 } from "./api/event-streams.js";
 import {
   extensionSnapshot,
@@ -423,19 +398,18 @@ import {
   runWithHistorySafety,
 } from "./api/reservations.js";
 import {
-  type BackgroundCompaction,
   clientKey,
   connectedFolderRootKey,
   conversationRuntimeState,
   type LocalApiOptions,
   type LocalApiRequest,
   type LocalApiState,
-  type QueuedChatMessage,
-  rememberConnectedFolderRoot,
   type SettledTurnRecord,
   streamKey,
   type TurnCheckpointEvent,
 } from "./api/state.js";
+import { acceptConversationTurn, changeQueuedMessage, optionalTurnIdentity, steerConversationTurn } from "./api/turn-acceptance.js";
+import { recoverDurableTurnState, yieldBackgroundCompaction } from "./api/turn-run.js";
 
 export type { LocalFolderGrantProvider, LocalApiOptions } from "./api/state.js";
 
@@ -2161,236 +2135,6 @@ async function handleCapabilityRoutes({ state, req, res, url, method }: LocalApi
   return false;
 }
 
-/** A Connected Folder's Chats: listing, creating, changing, and deleting them, their runtime, context attachments, event stream, queue, messages, Stop, Make a Copy, and compaction. */
-async function handleChatRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
-  const conversationsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations$/);
-  if (conversationsMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(conversationsMatch[1]);
-    sendJson(res, { conversations: await listConversations(connectedFolder.connectedFolderRoot) });
-    return true;
-  }
-  if (conversationsMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(conversationsMatch[1]);
-    const body = await readJsonBody<{ conversationId?: unknown }>(state, req);
-    const conversationId = body.conversationId === undefined
-      ? undefined
-      : conversationIdentity(body.conversationId);
-    const conversation = conversationId === undefined
-      ? await createConversation(connectedFolder.connectedFolderRoot)
-      : await runConversationMutation(state, connectedFolder.id, conversationId, () =>
-        createConversation(connectedFolder.connectedFolderRoot, undefined, conversationId));
-    sendJson(res, { conversation }, 201);
-    return true;
-  }
-
-  const conversationMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)$/);
-  if (conversationMatch && (method === "PUT" || method === "PATCH")) {
-    const connectedFolder = await getConnectedFolder(conversationMatch[1]);
-    const conversationId = conversationMatch[2];
-    const body = await readJsonBody<{ title?: string; archived?: boolean; snoozedUntil?: string | null }>(state, req);
-    const changes = [
-      body.title !== undefined,
-      body.archived !== undefined,
-      body.snoozedUntil !== undefined,
-    ].filter(Boolean).length;
-    if (changes !== 1) throw badRequest("Change exactly one Chat title, archive state, or snooze time.");
-    if (body.title !== undefined && typeof body.title !== "string") throw badRequest("Chat title must be text.");
-    if (body.archived !== undefined && typeof body.archived !== "boolean") throw badRequest("Archived state must be true or false.");
-    if (body.snoozedUntil !== undefined && body.snoozedUntil !== null) {
-      if (typeof body.snoozedUntil !== "string" || !Number.isFinite(Date.parse(body.snoozedUntil))) {
-        throw badRequest("Snooze time is invalid.");
-      }
-      if (Date.parse(body.snoozedUntil) <= Date.now()) throw badRequest("Choose a future snooze time.");
-    }
-    const conversation = await runConversationMutation(state, connectedFolder.id, conversationId, async () => {
-      const updated = body.title !== undefined
-        ? await renameConversation(connectedFolder.connectedFolderRoot, conversationId, body.title)
-        : await updateConversationLifecycle(connectedFolder.connectedFolderRoot, conversationId, {
-            ...(body.archived !== undefined ? { archived: body.archived } : {}),
-            ...(body.snoozedUntil !== undefined ? { snoozedUntil: body.snoozedUntil } : {}),
-          });
-      if (body.title !== undefined) state.clients.get(clientKey(connectedFolder.id, conversationId))?.setSessionName(updated.title);
-      return updated;
-    });
-    sendJson(res, { conversation });
-    return true;
-  }
-  if (conversationMatch && method === "DELETE") {
-    const connectedFolder = await getConnectedFolder(conversationMatch[1]);
-    const deleted = await runDesktopSettingsAct(state, "chats.delete", async (requestId) => {
-      const value = await deleteConnectedFolderConversation(state, connectedFolder, conversationMatch[2], { receiptId: requestId });
-      return { value, detail: `Connected Folder ${connectedFolder.id}; conversation ${value.conversationId}; trash ${value.recentlyDeleted.entryId}` };
-    });
-    sendJson(res, { deleted: deleted.value });
-    return true;
-  }
-
-  const conversationRuntimeMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/runtime$/);
-  if (conversationRuntimeMatch && method === "GET") {
-    const connectedFolder = await getConnectedFolder(conversationRuntimeMatch[1]);
-    const conversationId = conversationRuntimeMatch[2];
-    if (!(await readConversation(connectedFolder.connectedFolderRoot, conversationId)).length) throw notFound("Conversation not found.");
-    const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, conversationId);
-    sendJson(res, { runtime: await client.getState() });
-    return true;
-  }
-
-  const conversationThinkingMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/thinking$/);
-  if (conversationThinkingMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(conversationThinkingMatch[1]);
-    const conversationId = conversationThinkingMatch[2];
-    if (!(await readConversation(connectedFolder.connectedFolderRoot, conversationId)).length) throw notFound("Conversation not found.");
-    const body = await readJsonBody<{ level?: unknown }>(state, req);
-    if (typeof body.level !== "string" || !body.level.trim()) throw badRequest("A thinking level is required.");
-    const key = clientKey(connectedFolder.id, conversationId);
-    if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current agent turn to finish before changing the thinking level.");
-    const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, conversationId);
-    let result: { level: string; available: string[] };
-    try {
-      result = await client.setThinkingLevel(body.level);
-    } catch (error) {
-      throw badRequest(errorMessage(error));
-    }
-    sendJson(res, { thinking: result, runtime: await client.getState() });
-    return true;
-  }
-
-  const contextAttachmentMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/context-attachments$/);
-  if (contextAttachmentMatch && method === "POST") {
-    const connectedFolder = await getConnectedFolder(contextAttachmentMatch[1]);
-    const body = await readJsonBody<{ path?: string }>(state, req);
-    if (!body.path?.trim()) throw badRequest("A file path is required.");
-    sendJson(res, { attachment: await previewConversationContextReference(connectedFolder.connectedFolderRoot, { path: body.path }) }, 201);
-    return true;
-  }
-
-  const eventsMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/events$/);
-  if (method === "GET" && eventsMatch) {
-    const connectedFolder = await getConnectedFolder(eventsMatch[1]);
-    rememberConnectedFolderRoot(state, connectedFolder.id, connectedFolder.connectedFolderRoot);
-    openChatStream(state, createLocalEventSink(res), eventsMatch[1], eventsMatch[2], req.headers["last-event-id"]);
-    return true;
-  }
-  const queueMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/queue$/);
-  if (queueMatch && (method === "PUT" || method === "DELETE")) {
-    const connectedFolder = await getConnectedFolder(queueMatch[1]);
-    if (!(await readConversationSummary(connectedFolder.connectedFolderRoot, queueMatch[2]))) throw notFound("Conversation not found.");
-    if (method === "DELETE") {
-      sendJson(res, cancelQueuedMessage(state, connectedFolder.id, queueMatch[2]));
-      return true;
-    }
-    const body = await readJsonBody<{ content?: string; contextPaths?: string[]; addressedConnectedFolderIds?: unknown }>(state, req);
-    const content = body.content?.trim();
-    if (!content) throw badRequest("Message content is required.");
-    const contextPaths = normalizeContextPaths(connectedFolder.connectedFolderRoot, body.contextPaths);
-    // Workers the message addresses with @ travel with it, as on the ordinary message route.
-    const addressedConnectedFolderIds = await normalizeAddressedConnectedFolderIds(body.addressedConnectedFolderIds, connectedFolder.id);
-    sendJson(res, queueChatMessage(state, connectedFolder.id, queueMatch[2], { content, contextPaths, addressedConnectedFolderIds }));
-    return true;
-  }
-  const messagesPostMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/messages$/);
-  if (method === "POST" && messagesPostMatch) {
-    const connectedFolder = await getConnectedFolder(messagesPostMatch[1]);
-    const conversationId = messagesPostMatch[2];
-    const body = await readJsonBody<{
-      content?: string;
-      contextPaths?: string[];
-      /** Ignored: the file selected in Files never reaches the Worker. */
-      selectedPath?: unknown;
-      requestId?: unknown;
-      userMessageId?: unknown;
-      delivery?: unknown;
-      addressedConnectedFolderIds?: unknown;
-    }>(state, req);
-    const content = body.content?.trim();
-    if (!content) throw badRequest("Message content is required.");
-    if (body.delivery !== undefined && body.delivery !== "steer") throw badRequest("Message delivery must be \"steer\" when present.");
-    if (body.delivery === "steer") {
-      const steered = await steerConversationTurn(state, connectedFolder, conversationId, {
-        content,
-        requestId: optionalTurnIdentity(body.requestId, "requestId"),
-        userMessageId: optionalTurnIdentity(body.userMessageId, "userMessageId"),
-      });
-      sendJson(res, { accepted: true, delivery: "steer", message: steered.message, taskId: steered.taskId, replayed: steered.replayed }, 202);
-      return true;
-    }
-    const contextPaths = normalizeContextPaths(connectedFolder.connectedFolderRoot, body.contextPaths);
-    const addressedConnectedFolderIds = await normalizeAddressedConnectedFolderIds(body.addressedConnectedFolderIds, connectedFolder.id);
-    const { message, taskId, replayed } = await acceptConversationTurn(state, connectedFolder, conversationId, {
-      content,
-      contextPaths,
-      actorKind: "assistant",
-      ...(addressedConnectedFolderIds.length ? { addressedConnectedFolderIds } : {}),
-      requestId: optionalTurnIdentity(body.requestId, "requestId"),
-      userMessageId: optionalTurnIdentity(body.userMessageId, "userMessageId"),
-    });
-    sendJson(res, { accepted: true, message, taskId, replayed }, 202);
-    return true;
-  }
-  const abortMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/abort$/);
-  if (method === "POST" && abortMatch) {
-    const connectedFolder = await getConnectedFolder(abortMatch[1]);
-    const key = clientKey(connectedFolder.id, abortMatch[2]);
-    const client = state.clients.get(key);
-    const request = state.requests.latestForConversation(abortMatch[2], { connectedFolderId: connectedFolder.id });
-    if (request) {
-      const stopped = await stopAmpleFileAgentRequest(state, request.turns.at(-1)!.taskId);
-      sendJson(res, { aborted: stopped.ampleFileAgentAborted || stopped.children.some((child) => child.aborted), stopped });
-    } else sendJson(res, { aborted: client ? await client.abort() : false });
-    return true;
-  }
-
-  // Make a Copy: a new Chat with this one's history as of its
-  // last finished reply. The same copy the act lane's `chat copy` makes.
-  const copyMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/copy$/);
-  if (method === "POST" && copyMatch) {
-    const connectedFolder = await getConnectedFolder(copyMatch[1]);
-    const body = await readJsonBody<{ title?: unknown }>(state, req);
-    const copied = await copyConversation(state, connectedFolder, copyMatch[2], typeof body.title === "string" ? body.title : undefined);
-    publishControlHint(state, "connected-folders");
-    sendJson(res, { conversation: copied.conversation, copiedMessages: copied.copiedMessages });
-    return true;
-  }
-
-  const compactMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)\/compact$/);
-  if (method === "POST" && compactMatch) {
-    const connectedFolder = await getConnectedFolder(compactMatch[1]);
-    if (!(await readConversation(connectedFolder.connectedFolderRoot, compactMatch[2])).length) throw notFound("Conversation not found.");
-    const key = clientKey(connectedFolder.id, compactMatch[2]);
-    const body = await readJsonBody<{ customInstructions?: string }>(state, req);
-    await yieldBackgroundCompaction(state, key);
-    assertNoCapabilityMutationForTurn(state, connectedFolder.id);
-    if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current agent turn to finish.");
-    if (state.compactingConversations.has(key)) throw httpError(409, "Wait for the current Chat compaction to finish.");
-    state.compactingConversations.add(key);
-    const task = state.kernel.startTask({
-      kind: "compaction",
-      connectedFolderId: connectedFolder.id,
-      conversationId: compactMatch[2],
-      actor: { kind: "assistant", cwd: connectedFolder.connectedFolderRoot, connectedFolderId: connectedFolder.id, conversationId: compactMatch[2] },
-    });
-    try {
-      const client = await getClient(state, connectedFolder.id, connectedFolder.connectedFolderRoot, compactMatch[2]);
-      await client.compact(body.customInstructions?.trim() || undefined);
-      broadcast(state, streamKey(connectedFolder.id, compactMatch[2]), { type: "done", conversationId: compactMatch[2] });
-    } finally {
-      state.compactingConversations.delete(key);
-      await refreshClientIfMarked(state, key);
-      state.kernel.finishTask(task.id);
-      queueConversationRequestEvaluation(state, connectedFolder.id, compactMatch[2]);
-    }
-    sendJson(res, { compacted: true });
-    return true;
-  }
-  const messagesGetMatch = match(url.pathname, /^\/api\/connected-folders\/([^/]+)\/conversations\/([^/]+)$/);
-  if (method === "GET" && messagesGetMatch) {
-    const connectedFolder = await getConnectedFolder(messagesGetMatch[1]);
-    sendJson(res, { messages: await readConversation(connectedFolder.connectedFolderRoot, messagesGetMatch[2]) });
-    return true;
-  }
-  return false;
-}
-
 /** The AmpleFile Agent's conversation surface: the same acceptance path, task records, and event stream as Connected Folder Chats, under the AmpleFile Agent scope id. */
 async function handleAmpleFileAgentRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
   // Management conversation surface: the same acceptance path, task records,
@@ -2736,526 +2480,6 @@ async function handleSettingsRoutes({ state, req, res, url, method }: LocalApiRe
     return true;
   }
   return false;
-}
-
-/**
- * Shared turn-acceptance path for the renderer route and the CLI act facade.
- * Owns the conflict checks, runningTurns bookkeeping, kernel task record, user
- * message persistence with rollback, and the detached Pi turn start, so every
- * caller obeys identical concurrency and persistence rules.
- */
-/**
- * Request lineage for one accepted turn. Absent means "a Connected Folder turn with no
- * parent": the turn is its own root. `parentTaskId` makes it a child request
- * under the request that task belongs to; `joinRequestId` makes it a further
- * turn of an existing request (a reply to a question, a follow-up turn).
- */
-interface AcceptedTurnRequestInput {
-  kind?: AmpleFileRequestCreatableKind;
-  surface?: AmpleFileRequestSurface;
-  parentTaskId?: string;
-  joinRequestId?: string;
-  /** The assignment text when it differs from this turn's message (an answer continuation). */
-  assignment?: string;
-  /**
-   * `chat answer`: the one question this turn answers, already flipped to
-   * `answered` before acceptance. The free-text reply path then leaves every
-   * other open question alone rather than answering it with the same text.
-   */
-  answeringQuestionId?: string;
-}
-
-async function acceptConversationTurn(
-  ...args: Parameters<typeof admitConversationTurn>
-): ReturnType<typeof admitConversationTurn> {
-  const [state] = args;
-  if (!state.acceptingTurns) throw httpError(503, "AmpleFile is closing and cannot accept another turn.");
-  // An acceptance already past this check finishes before close() drains
-  // turns, so its turn is drained too rather than dispatched afterwards and
-  // left running unseen.
-  const acceptance = admitConversationTurn(...args);
-  state.turnAcceptances.add(acceptance);
-  try {
-    return await acceptance;
-  } finally {
-    state.turnAcceptances.delete(acceptance);
-  }
-}
-
-async function admitConversationTurn(
-  state: LocalApiState,
-  connectedFolder: { id: string; connectedFolderRoot: string; name?: string },
-  conversationId: string,
-  input: {
-    content: string;
-    contextPaths: string[];
-    /** `system` marks turns app code dispatches (automation chat hops). */
-    actorKind: "assistant" | "cli" | "renderer" | "system";
-    /** Management-scope reference attachments; never used for Connected Folder Chats. */
-    ampleFileAgentAttachments?: AmpleFileAgentAttachmentRef[];
-    /** Previous needs-you request whose audit trail this reply continues. */
-    continuedFromAmpleFileAgentTaskId?: string;
-    /** An automation's chat or agent step: its turn learns that no one is watching and how to report. */
-    automationSource?: { automationId: string; title: string };
-    /** Stable caller identity. Replays with the same input return the original acceptance. */
-    requestId?: string;
-    /** Stable optimistic message identity supplied by renderer clients. */
-    userMessageId?: string;
-    /** Host-composed selected reports already present in this continuation message. */
-    releasedChildTaskIds?: string[];
-    /** Which durable request this turn creates or joins (docs/collaboration-contract.md). */
-    request?: AcceptedTurnRequestInput;
-    /** Connected Folder Workers the person addressed with @; registered ids, never this scope's own. */
-    addressedConnectedFolderIds?: string[];
-  },
-): Promise<{ message: { id: string; role: "user"; content: string; createdAt: string; attachments?: ChatMessageAttachmentRef[] }; taskId: string; replayed: boolean }> {
-  const turnKey = clientKey(connectedFolder.id, conversationId);
-  await yieldBackgroundCompaction(state, turnKey);
-  const fileAttachments = connectedFolder.id === ampleFileAgentScopeId ? [] : contextPathAttachments(connectedFolder.connectedFolderRoot, input.contextPaths);
-  const attachmentFields = fileAttachments.length ? { attachments: fileAttachments } : {};
-  const existing = await readConversationSummary(connectedFolder.connectedFolderRoot, conversationId);
-  if (!existing) throw notFound("Conversation not found.");
-  const requestId = turnIdentity(input.requestId ?? `request-${randomUUID()}`, "request id");
-  const requestDigest = assistantTurnRequestDigest(input);
-  const prior = state.turnStore.findRequest(connectedFolder.id, conversationId, requestId);
-  let durable: AmpleFileDurableTurnRecord | null = null;
-  if (prior) {
-    if (prior.requestDigest !== requestDigest) throw httpError(409, "This turn request id was already used for different input.");
-    if (!prior.userMessagePersisted) {
-      if (state.runningTurns.has(turnKey)) throw httpError(409, "This turn is still being accepted.");
-      durable = await state.turnStore.resumeUnpersisted(prior.turnId);
-      if (!durable || durable.userMessagePersisted) throw httpError(409, "This turn can no longer be resumed safely.");
-      state.settledTurns.delete(prior.turnId);
-    } else {
-      const messages = await readConversation(connectedFolder.connectedFolderRoot, conversationId);
-      const persisted = messages.find((candidate) => candidate.id === prior.userMessageId && candidate.role === "user");
-      return {
-        message: persisted
-          ? { id: persisted.id, role: "user", content: persisted.content, createdAt: persisted.createdAt, ...(persisted.attachments?.length ? { attachments: persisted.attachments } : {}) }
-          : { id: prior.userMessageId, role: "user", content: input.content, createdAt: prior.userMessageCreatedAt, ...attachmentFields },
-        taskId: prior.turnId,
-        replayed: true,
-      };
-    }
-  }
-  if (existing.archivedAt) throw httpError(409, "Restore this Chat before sending another message.");
-  if (existing.snoozedUntil && Date.parse(existing.snoozedUntil) > Date.now()) {
-    throw httpError(409, "Resume this Chat before sending another message.");
-  }
-  assertNoCapabilityMutationForTurn(state, connectedFolder.id);
-  if (state.compactingConversations.has(turnKey)) throw httpError(409, "Wait for the current Chat compaction to finish.");
-  if (state.runningTurns.has(turnKey)) throw httpError(409, "Wait for the current agent turn to finish.");
-  if (input.request?.joinRequestId) {
-    try { state.requests.assertCanContinue(input.request.joinRequestId); }
-    catch (error) { throw requestRefusal(error); }
-  }
-  // A delegated child is refused by name before anything durable exists for
-  // it: the parent must still be accepting, and every request bound is
-  // checked here rather than after a turn was already accepted.
-  if (input.request?.parentTaskId && !durable) {
-    try {
-      state.requests.assertCanAddChild(input.request.parentTaskId);
-    } catch (error) {
-      throw requestRefusal(error);
-    }
-  }
-  // The summary read above can overlap a completed deletion. Recheck the
-  // transcript synchronously at admission so accepting a stale send cannot
-  // recreate the Chat after its recoverable copy has moved into Recently deleted.
-  if (!existsSync(join(conversationsDir(connectedFolder.connectedFolderRoot), `${conversationId}.jsonl`))) {
-    throw notFound("Conversation not found.");
-  }
-  state.runningTurns.add(turnKey);
-  // Clear the settled turn's retained stream state in the same synchronous
-  // admission step that marks this Chat running. A reconnect can never observe
-  // `running: true` paired with the previous reply's text.
-  resetChatEventTurn(state, turnKey);
-  const userMessageId = turnIdentity(input.userMessageId ?? `message-${randomUUID()}`, "user message id");
-  const userMessageCreatedAt = new Date().toISOString();
-  try {
-    if (durable) {
-      // The durable reservation was reopened above after an explicit retry.
-    } else {
-      const accepted = await state.turnStore.accept({
-        requestId,
-        requestDigest,
-        userMessageId,
-        userMessageCreatedAt,
-        connectedFolderId: connectedFolder.id,
-        conversationId,
-        actorKind: input.actorKind,
-      });
-      if (accepted.replayed) {
-        state.runningTurns.delete(turnKey);
-        return {
-          message: { id: accepted.record.userMessageId, role: "user", content: input.content, createdAt: accepted.record.userMessageCreatedAt, ...attachmentFields },
-          taskId: accepted.record.turnId,
-          replayed: true,
-        };
-      }
-      durable = accepted.record;
-    }
-  } catch (error) {
-    state.runningTurns.delete(turnKey);
-    if (error instanceof AmpleFileTurnReplayConflictError) throw httpError(409, error.message);
-    throw error;
-  }
-  if (!durable) throw new Error("Turn reservation was not created.");
-  const task = state.kernel.startTask({
-    id: durable.turnId,
-    kind: "assistant_turn",
-    connectedFolderId: connectedFolder.id,
-    conversationId,
-    actor: { kind: input.actorKind, cwd: connectedFolder.connectedFolderRoot, connectedFolderId: connectedFolder.id, conversationId },
-  });
-  state.activeTurnTasks.set(task.id, { connectedFolderId: connectedFolder.id, conversationId });
-  state.activeTurnIdsByKey.set(turnKey, task.id);
-  publishControlHint(state, "activity");
-  const ampleFileAgentAttachments = connectedFolder.id === ampleFileAgentScopeId
-    ? input.ampleFileAgentAttachments ?? []
-    : undefined;
-  const message = {
-    id: durable.userMessageId,
-    role: "user" as const,
-    content: input.content,
-    ...(input.actorKind === "system" && input.request?.joinRequestId ? { kind: "assistant_continuation" as const } : {}),
-    createdAt: durable.userMessageCreatedAt,
-    turnId: task.id,
-    requestId,
-    ...(ampleFileAgentAttachments?.length
-      ? { attachments: ampleFileAgentAttachments.map((ref) => ({ kind: ref.kind, target: ref.target, name: ref.name })) }
-      : attachmentFields),
-  };
-  let answeredQuestionIds: string[] = [];
-  try {
-    // Every accepted turn belongs to exactly one request record. The
-    // record is created before the user message lands so a refused child
-    // never leaves a message behind; a failure here rolls back with the rest.
-    const lineage = await recordAcceptedTurnRequest(state, connectedFolder, conversationId, task.id, input, ampleFileAgentAttachments);
-    answeredQuestionIds = lineage.answers;
-    await appendMessage(connectedFolder.connectedFolderRoot, conversationId, message);
-    await state.turnStore.markRunning(task.id);
-    await state.requests.markTurnRunning(task.id);
-    // A person's free-text reply is a supported way to answer: once
-    // the message is the transcript's, it answers each open question that
-    // was waiting on the person and is that answer's one continuation.
-    await answerPersonQuestionsWithReply(state, lineage.answers, task.id, input.content);
-    if (input.request?.joinRequestId && input.releasedChildTaskIds?.length) {
-      await state.requests.noteChildDelivery(input.request.joinRequestId, input.releasedChildTaskIds);
-    }
-  } catch (error) {
-    state.runningTurns.delete(turnKey);
-    state.activeTurnTasks.delete(task.id);
-    state.cancelledTurnTasks.delete(task.id);
-    state.activeTurnIdsByKey.delete(turnKey);
-    state.kernel.finishTask(task.id);
-    publishControlHint(state, "activity");
-    const detail = error instanceof AmpleFileRequestLimitError || error instanceof AmpleFileRequestLineageError
-      ? error.message
-      : "The accepted user message could not be persisted.";
-    await state.turnStore.settle(task.id, { status: "failed", error: detail }).catch(() => undefined);
-    await state.requests.settleTurn(task.id, { status: "failed", error: detail }).catch(() => undefined);
-    broadcast(state, turnKey, turnStateEvent(conversationId, false));
-    throw requestRefusal(error);
-  }
-  const answeredQuestionId = input.request?.answeringQuestionId ?? answeredQuestionIds[0];
-  // A live surface may re-read the transcript on this transition. Publish it
-  // only after its accepted user message is durable, including answer turns.
-  broadcast(state, turnKey, turnStateEvent(conversationId, true));
-  const turn = runAgentTurn(
-    state,
-    connectedFolder.id,
-    connectedFolder.connectedFolderRoot,
-    conversationId,
-    input.content,
-    input.contextPaths,
-    task.id,
-    {
-      ...(ampleFileAgentAttachments ? { ampleFileAgentAttachments } : {}),
-      ...(input.request?.parentTaskId ? { parentTaskId: input.request.parentTaskId } : {}),
-      ...(input.request?.assignment !== undefined ? { assignment: input.request.assignment } : {}),
-      // The continuation's own link to the question it answers, built
-      // by the host rather than read back out of the travelling transcript:
-      // `chat answer` names the question, and a person's free-text reply
-      // answers whichever of this request's questions were waiting on them.
-      ...(answeredQuestionId ? { answeredQuestionId } : {}),
-      ...(input.addressedConnectedFolderIds?.length ? { addressedConnectedFolderIds: input.addressedConnectedFolderIds } : {}),
-      ...(input.automationSource ? { automation: { title: input.automationSource.title } } : {}),
-    },
-  );
-  state.activeTurnPromises.add(turn);
-  void turn.then(
-    () => state.activeTurnPromises.delete(turn),
-    (error) => {
-      state.activeTurnPromises.delete(turn);
-      console.error(`Accepted turn escaped its settlement path: ${errorMessage(error)}`);
-    },
-  );
-  return { message, taskId: task.id, replayed: false };
-}
-
-/**
- * A request bound or lineage refusal reaches the caller verbatim as a
- * conflict, so the limit's own text — number and Settings section — is what
- * the person or agent reads. Anything else passes through unchanged.
- */
-function requestRefusal(error: unknown): unknown {
-  if (error instanceof AmpleFileRequestLimitError || error instanceof AmpleFileRequestLineageError) {
-    return httpError(409, error.message);
-  }
-  return error;
-}
-
-/**
- * Creates or joins the durable request record for one accepted turn. Kind
- * and surface default from the scope and actor when the caller names none:
- *
- *   AmpleFile Agent scope, renderer                    → management / popover
- *   AmpleFile Agent scope, cli                         → management / cli
- *   AmpleFile Agent scope, system (automation agent hop)   → automation / system
- *   Connected Folder scope, system (automation chat hop)        → automation / system
- *   Connected Folder scope, cli                              → cli / cli
- *   Connected Folder scope, assistant (renderer Connected Folder Chat)  → Connected Folder / renderer
- *
- * A child of an explicit parent keeps the parent's root; a needs-you reply
- * joins its earlier request instead of copying its trail into a second one.
- */
-async function recordAcceptedTurnRequest(
-  state: LocalApiState,
-  connectedFolder: { id: string; connectedFolderRoot: string; name?: string },
-  conversationId: string,
-  taskId: string,
-  input: {
-    content: string;
-    actorKind: "assistant" | "cli" | "renderer" | "system";
-    continuedFromAmpleFileAgentTaskId?: string;
-    request?: AcceptedTurnRequestInput;
-  },
-  ampleFileAgentAttachments: AmpleFileAgentAttachmentRef[] | undefined,
-): Promise<{ record: AmpleFileRequestRecord; answers: string[] }> {
-  const isAmpleFileAgent = connectedFolder.id === ampleFileAgentScopeId;
-  // This Chat's newest request is waiting on the person and no parent was
-  // named: the reply joins that request rather than opening a second root,
-  // whether the caller named the request it continues or not.
-  const pending = input.request?.parentTaskId || input.request?.answeringQuestionId
-    ? null
-    : pendingPersonQuestions(state, conversationId, isAmpleFileAgent ? {} : { connectedFolderId: connectedFolder.id });
-  const joinRequestId = input.request?.joinRequestId ?? pending?.requestId;
-  const answers = pending && pending.requestId === joinRequestId ? pending.questionIds : [];
-  const request: AcceptedTurnRequestInput | undefined = joinRequestId
-    ? { ...input.request, joinRequestId }
-    : input.request;
-  input = { ...input, request };
-  const owner = isAmpleFileAgent
-    ? { conversationId }
-    : { connectedFolderId: connectedFolder.id, ...(connectedFolder.name ? { connectedFolderName: connectedFolder.name } : {}), conversationId };
-  const kind: AmpleFileRequestCreatableKind = input.request?.kind
-    ?? (isAmpleFileAgent
-      ? (input.actorKind === "system" ? "automation" : "agent")
-      : input.actorKind === "system"
-        ? "automation"
-        : input.actorKind === "cli"
-          ? "cli"
-          : "connected-folder");
-  const surface: AmpleFileRequestSurface = input.request?.surface
-    ?? (input.actorKind === "system"
-      ? "system"
-      : input.actorKind === "cli"
-        ? "cli"
-        : isAmpleFileAgent
-          ? "popover"
-          : "renderer");
-  const attachments = ampleFileAgentAttachments ?? [];
-  const record = input.request?.joinRequestId
-    ? await state.requests.joinTurn({
-      requestId: input.request.joinRequestId,
-      taskId,
-      role: "continuation",
-      content: input.content,
-      attachments,
-    })
-    : input.request?.parentTaskId
-      ? await state.requests.beginChild({
-        parentTaskId: input.request.parentTaskId,
-        kind,
-        owner,
-        surface,
-        taskId,
-        content: input.content,
-        attachments,
-      })
-      : await state.requests.beginRoot({
-        kind,
-        owner,
-        surface,
-        taskId,
-        content: input.content,
-        attachments,
-        ...(input.continuedFromAmpleFileAgentTaskId ? { continuedFromTaskId: input.continuedFromAmpleFileAgentTaskId } : {}),
-      });
-  // A retried acceptance whose earlier attempt could not persist its message
-  // reopens the same turn: a task id belongs to exactly one request.
-  const turn = record.turns.find((candidate) => candidate.taskId === taskId);
-  if (turn && turn.state !== "accepted" && turn.state !== "running") {
-    return { record: (await state.requests.reopenTurn(taskId)) ?? record, answers };
-  }
-  return { record, answers };
-}
-
-/**
- * The open questions addressed to the person on this Chat's newest request,
- * if it is waiting on them. Scoped to the owner: a conversation id lives in
- * the Connected Folder's folder and travels with it, so two registered Connected Folders can hold the
- * same id and a reply must never join the other one's request.
- */
-function pendingPersonQuestions(
-  state: LocalApiState,
-  conversationId: string,
-  owner: { connectedFolderId?: string },
-): { requestId: string; questionIds: string[] } | null {
-  const latest = state.requests.latestForConversation(conversationId, owner);
-  if (!latest || latest.state !== "waiting") return null;
-  const open = state.requests.questions(latest.requestId)
-    .filter((question) => question.state === "open" && question.respondent === "person");
-  return open.length ? { requestId: latest.requestId, questionIds: open.map((question) => question.questionId) } : null;
-}
-
-/**
- * Records the person's reply as the one answer to each question it was
- * waiting on and links this turn as that answer's continuation. Attribution
- * only: a question that can no longer take an answer (expired, withdrawn,
- * answered meanwhile) is left as it is, and the turn still runs.
- */
-async function answerPersonQuestionsWithReply(state: LocalApiState, questionIds: string[], taskId: string, content: string): Promise<void> {
-  // Cleaned before the cut: cleaning can grow the text (a control byte
-  // becomes a three-byte U+FFFD), so cutting first could leave a reply the
-  // store refuses as too long.
-  const answer = scrubAmpleFileRequestText(content, ampleFileRequestLimits.maxAnswerTextBytes);
-  for (const questionId of questionIds) {
-    try {
-      await state.requests.answer({ questionId, answer });
-      await state.requests.linkContinuation(questionId, taskId);
-    } catch (error) {
-      console.warn(`A reply could not be recorded as the answer to question ${questionId}: ${errorMessage(error)}`);
-    }
-  }
-}
-
-/**
- * Delivers a message into the Chat's running turn through Pi's steering queue
- * and records it in the transcript as part of that turn. When no turn is
- * running (or it settles first) the caller receives 409 and sends normally;
- * nothing is appended in that case.
- */
-async function steerConversationTurn(
-  state: LocalApiState,
-  connectedFolder: { id: string; connectedFolderRoot: string },
-  conversationId: string,
-  input: { content: string; requestId?: string; userMessageId?: string },
-): Promise<{ message: ChatMessage; taskId: string; replayed: boolean }> {
-  const key = clientKey(connectedFolder.id, conversationId);
-  const taskId = state.activeTurnIdsByKey.get(key);
-  const client = state.clients.get(key);
-  if (!taskId || !client || !state.runningTurns.has(key)) {
-    throw httpError(409, "No turn is running in this Chat; send the message normally.");
-  }
-  const requestId = turnIdentity(input.requestId ?? `steer-${randomUUID()}`, "request id");
-  const replayKey = `${key}\u0000${requestId}`;
-  const prior = state.steeredMessages.get(replayKey);
-  if (prior) return { message: prior, taskId, replayed: true };
-  const inFlight = state.steeringInFlight.get(replayKey);
-  if (inFlight) return { message: await inFlight, taskId, replayed: true };
-  const delivery = deliverSteer(state, connectedFolder, conversationId, client, taskId, requestId, replayKey, input);
-  state.steeringInFlight.set(replayKey, delivery);
-  try {
-    return { message: await delivery, taskId, replayed: false };
-  } finally {
-    state.steeringInFlight.delete(replayKey);
-  }
-}
-
-async function deliverSteer(
-  state: LocalApiState,
-  connectedFolder: { id: string; connectedFolderRoot: string },
-  conversationId: string,
-  client: PiConversationClient,
-  taskId: string,
-  requestId: string,
-  replayKey: string,
-  input: { content: string; userMessageId?: string },
-): Promise<ChatMessage> {
-  const message: ChatMessage = {
-    id: turnIdentity(input.userMessageId ?? `message-${randomUUID()}`, "user message id"),
-    role: "user",
-    content: input.content,
-    createdAt: new Date().toISOString(),
-    turnId: taskId,
-    requestId,
-    delivery: "steer",
-  };
-  try {
-    await client.steer(input.content);
-  } catch (error) {
-    if (isPiTurnNotRunningError(error)) throw httpError(409, errorMessage(error));
-    throw error;
-  }
-  await appendMessage(connectedFolder.connectedFolderRoot, conversationId, message);
-  state.steeredMessages.set(replayKey, message);
-  if (state.steeredMessages.size > maxRememberedSteeredMessages) {
-    const oldest = state.steeredMessages.keys().next().value;
-    if (oldest !== undefined) state.steeredMessages.delete(oldest);
-  }
-  broadcast(state, streamKey(connectedFolder.id, conversationId), {
-    type: "status",
-    conversationId,
-    message: "Your message will reach the agent after its current step.",
-  });
-  return message;
-}
-
-const maxRememberedSteeredMessages = 500;
-
-function assistantTurnRequestDigest(input: {
-  content: string;
-  contextPaths: string[];
-  ampleFileAgentAttachments?: AmpleFileAgentAttachmentRef[];
-  actorKind?: string;
-  continuedFromAmpleFileAgentTaskId?: string;
-}): string {
-  // Addressed Workers are deliberately outside the digest: they are a hint for
-  // this turn's context, and a retry must replay even if one of them was
-  // removed in between.
-  return createHash("sha256").update(JSON.stringify({
-    content: input.content,
-    contextPaths: input.contextPaths,
-    // Kept constant so digests from before the selected path was dropped still match.
-    selectedPath: null,
-    actorKind: input.actorKind ?? null,
-    continuedFromAmpleFileAgentTaskId: input.continuedFromAmpleFileAgentTaskId ?? null,
-    ampleFileAgentAttachments: (input.ampleFileAgentAttachments ?? []).map((attachment) => ({
-      kind: attachment.kind,
-      target: attachment.target,
-      name: attachment.name,
-    })),
-  })).digest("hex");
-}
-
-function optionalTurnIdentity(value: unknown, label: string): string | undefined {
-  return value === undefined ? undefined : turnIdentity(value, label);
-}
-
-function turnIdentity(value: unknown, label: string): string {
-  if (typeof value !== "string" || value.length < 1 || value.length > 160 || !/^[A-Za-z0-9._:-]+$/.test(value)) {
-    throw badRequest(`${label} is invalid.`);
-  }
-  return value;
-}
-
-function conversationIdentity(value: unknown): string {
-  if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(value)) {
-    throw badRequest("conversationId is invalid.");
-  }
-  return value;
 }
 
 async function createConnectedFolderInternal(state: LocalApiState, name: string): Promise<ConnectedFolderSummary> {
@@ -3865,7 +3089,7 @@ const ampleFileInferenceConversationId = "amplefile.inference";
  * through the act lane deliberately has no renderer folder-picker grant:
  * possession of the per-launch act token is that caller's authorization.
  */
-function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
+export function createAmpleFileActFacade(state: LocalApiState): AmpleFileActFacade {
   const resolveConnectedFolder = async (selector: string): Promise<ConnectedFolderSummary> => {
     const resolved = resolveAmpleFileCliConnectedFolderSelector(await listConnectedFolders(), selector.trim() || undefined);
     if (!resolved) throw new AmpleFileCliError("usage", "Act commands require an explicit --connected-folder <id-or-name>.");
@@ -5636,7 +4860,7 @@ function ampleFileAgentScope(state?: LocalApiState): { id: string; rootPath: str
   return { id: ampleFileAgentScopeId, rootPath: ampleFileAgentRoot() };
 }
 
-function assertAmpleFileAgentInstructionsReady(state: LocalApiState): void {
+export function assertAmpleFileAgentInstructionsReady(state: LocalApiState): void {
   if (!state.ampleFileAgentInstructionsError) return;
   throw new AmpleFileCliError(
     "unavailable",
@@ -5726,85 +4950,6 @@ async function deleteAmpleFileAgentConversation(
     }
     state.clients.delete(key);
     return { conversationId, recentlyDeleted: { entryId: entry.id, restoreBy: entry.restoreBy } };
-  } finally {
-    state.compactingConversations.delete(key);
-  }
-}
-
-/**
- * A Worker Chat's transcript is portable `.amplefile/` metadata, which History
- * never captures, so deletion moves the exact validated transcript into
- * Recently deleted. The Pi session stays in machine-local state, so a restored
- * Chat resumes where it was. It deliberately never accepts a path.
- */
-async function deleteConnectedFolderConversation(
-  state: LocalApiState,
-  connectedFolder: ConnectedFolderSummary,
-  conversationId: string,
-  context: { receiptId: string | null },
-): Promise<{ conversationId: string; recentlyDeleted: { entryId: string; restoreBy: string } }> {
-  const key = clientKey(connectedFolder.id, conversationId);
-  await yieldBackgroundCompaction(state, key);
-  changeQueuedMessage(state, key, null);
-  if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current turn to finish.");
-  if (state.compactingConversations.has(key)) throw httpError(409, "Wait for the current Chat compaction to finish.");
-  // The same conflict fence compaction uses: a transcript move must not race
-  // a new turn, rename, lifecycle change, or real compaction.
-  state.compactingConversations.add(key);
-  try {
-    const summary = await readConversationSummary(connectedFolder.connectedFolderRoot, conversationId).catch((error) => {
-      throw badRequest(errorMessage(error));
-    });
-    if (!summary) throw notFound("Conversation not found.");
-    if (state.requests.list().some((request) =>
-      request.owner.connectedFolderId === connectedFolder.id
-      && request.owner.conversationId === conversationId
-      && requestHasUnsettledWork(state, request))) {
-      throw httpError(409, "Finish or stop this Chat's outstanding work before deleting it.");
-    }
-    await state.clients.get(key)?.stop();
-    // `readConversationSummary` validated the id before this join.
-    const relativePath = `.amplefile/conversations/${conversationId}.jsonl`;
-    const sourcePath = join(conversationsDir(connectedFolder.connectedFolderRoot), `${conversationId}.jsonl`);
-    let entry: AmpleFileRecentlyDeletedEntry;
-    try {
-      entry = await state.recentlyDeleted.moveTreeToRecentlyDeleted({
-        kind: "file",
-        reason: "chats.delete",
-        sourcePath,
-        connectedFolderId: connectedFolder.id,
-        connectedFolderName: connectedFolder.name,
-        displayName: summary.title,
-        originalPath: relativePath,
-        receiptId: context.receiptId,
-      });
-    } catch (error) {
-      throw new AmpleFileCliError(
-        "failure",
-        `AmpleFile could not move this Chat to Recently deleted: ${errorMessage(error)}. Nothing was deleted.`,
-        { cause: error },
-      );
-    }
-    state.clients.delete(key);
-    return { conversationId, recentlyDeleted: { entryId: entry.id, restoreBy: entry.restoreBy } };
-  } finally {
-    state.compactingConversations.delete(key);
-  }
-}
-
-/** Reserve every transcript mutation through its final write, including CLI writes and restores. */
-async function runConversationMutation<T>(
-  state: LocalApiState,
-  connectedFolderId: string,
-  conversationId: string,
-  operation: () => Promise<T>,
-): Promise<T> {
-  const key = clientKey(connectedFolderId, conversationId);
-  if (state.runningTurns.has(key)) throw httpError(409, "Wait for the current turn to finish.");
-  if (state.compactingConversations.has(key)) throw httpError(409, "Wait for the current Chat compaction to finish.");
-  state.compactingConversations.add(key);
-  try {
-    return await operation();
   } finally {
     state.compactingConversations.delete(key);
   }
@@ -5983,7 +5128,7 @@ function requestLimitStopMessage(limit: AmpleFileRequestLimitName): string {
  * request is marked, its open questions are withdrawn, and its running turn
  * is cancelled (docs/collaboration-contract.md).
  */
-async function stopAmpleFileAgentRequest(
+export async function stopAmpleFileAgentRequest(
   state: LocalApiState,
   taskId: string,
 ): Promise<{ taskId: string; ampleFileAgentAborted: boolean; children: Array<{ taskId: string; conversationId: string; connectedFolderId: string; aborted: boolean }> }> {
@@ -7519,7 +6664,7 @@ async function closeMcpSetups(state: LocalApiState): Promise<void> {
   await Promise.allSettled([...(entries?.values() ?? [])].map(async (entry) => { clearTimeout(entry.timer); await entry.service.dispose(); }));
 }
 
-async function runDesktopSettingsAct<T>(
+export async function runDesktopSettingsAct<T>(
   state: LocalApiState,
   command: string,
   operation: (requestId: string) => Promise<{ value: T; detail: string }>,
@@ -7569,7 +6714,7 @@ const maxTurnsRememberedThisRun = 4_000;
  * request the named Connected Folder owns — checked exactly as `--parent-task` is. The
  * store's lineage refusal reaches the caller as a conflict by name.
  */
-function assertOwnTask(state: LocalApiState, connectedFolderId: string, taskId: string): AmpleFileRequestRecord {
+export function assertOwnTask(state: LocalApiState, connectedFolderId: string, taskId: string): AmpleFileRequestRecord {
   try {
     return state.requests.assertOwnAcceptingTurn(taskId, connectedFolderId === ampleFileAgentScopeId ? {} : { connectedFolderId });
   } catch (error) {
@@ -7590,7 +6735,7 @@ function assertCallerTurn(state: LocalApiState, callerTaskId: string): AmpleFile
  * an unrelated Chat (docs/collaboration-contract.md). The caller's task must be
  * its own turn that is still running.
  */
-function assertCallerHandedWorkTo(state: LocalApiState, callerTaskId: string, target: { connectedFolderId: string; conversationId: string }): AmpleFileRequestRecord {
+export function assertCallerHandedWorkTo(state: LocalApiState, callerTaskId: string, target: { connectedFolderId: string; conversationId: string }): AmpleFileRequestRecord {
   const caller = assertCallerTurn(state, callerTaskId);
   const callerScope = caller.owner.connectedFolderId ?? ampleFileAgentScopeId;
   const handedTo = state.requests.list().some((record) => {
@@ -7604,46 +6749,6 @@ function assertCallerHandedWorkTo(state: LocalApiState, callerTaskId: string, ta
     throw new AmpleFileCliError("conflict", "That Chat is not one this Chat handed work to. Hand off new work with chat handoff instead.");
   }
   return caller;
-}
-
-/**
- * Copies a Chat as of its last finished reply into a new Chat in the same
- * Connected Folder (`chat copy`): the visible transcript up to that
- * reply, and the Pi session along the same path, so the copy starts with the
- * same context. Copied messages get new ids and lose their turn and request
- * identities, which belong to the original Chat; the original is never
- * written. A turn still running in the original is left out.
- */
-async function copyConversation(
-  state: LocalApiState,
-  connectedFolder: { id: string; connectedFolderRoot: string },
-  sourceConversationId: string,
-  title?: string,
-): Promise<{ conversation: ConversationSummary; copiedMessages: number }> {
-  await yieldBackgroundCompaction(state, clientKey(connectedFolder.id, sourceConversationId));
-  const summary = await readConversationSummary(connectedFolder.connectedFolderRoot, sourceConversationId);
-  if (!summary) throw new AmpleFileCliError("notFound", "Conversation not found.");
-  if (state.compactingConversations.has(clientKey(connectedFolder.id, sourceConversationId))) {
-    throw new AmpleFileCliError("conflict", "That Chat is being compacted. Copy it once that finishes.");
-  }
-  const messages = await readConversation(connectedFolder.connectedFolderRoot, sourceConversationId);
-  const lastReply = messages.reduce((found, message, index) => message.role === "assistant" ? index : found, -1);
-  const carried = messages.slice(0, lastReply + 1).filter((message) => message.role !== "system");
-  const forkTitle = (title?.trim() || `${summary.title} (copy)`).slice(0, 200);
-  const conversation = await createConversation(connectedFolder.connectedFolderRoot, forkTitle);
-  for (const message of carried) {
-    const { turnId: _turnId, requestId: _requestId, delivery: _delivery, ...content } = message;
-    await appendMessage(connectedFolder.connectedFolderRoot, conversation.id, { ...content, id: randomUUID() });
-  }
-  if (carried.length) {
-    await copyPiConversationSession({
-      connectedFolderRoot: connectedFolder.connectedFolderRoot,
-      runtimeProvider: state.runtimeProvider,
-      sourceConversationId,
-      targetConversationId: conversation.id,
-    });
-  }
-  return { conversation: (await readConversationSummary(connectedFolder.connectedFolderRoot, conversation.id)) ?? conversation, copiedMessages: carried.length };
 }
 
 /** A request bound or lineage refusal is a conflict that carries the store's own sentence; anything else passes through. */
@@ -7881,7 +6986,7 @@ function resolveHandoffSource(connectedFolder: ConnectedFolderSummary, raw: stri
  * children settling in the same tick can never start two continuations.
  * Failures are logged; a settle never fails because of a continuation.
  */
-function queueRequestGraphSettle(state: LocalApiState, taskId: string): void {
+export function queueRequestGraphSettle(state: LocalApiState, taskId: string): void {
   state.turnsSettledThisRun.add(taskId);
   while (state.turnsSettledThisRun.size > maxTurnsRememberedThisRun) {
     const oldest = state.turnsSettledThisRun.values().next().value;
@@ -7896,7 +7001,7 @@ function queueRequestGraphSettle(state: LocalApiState, taskId: string): void {
 }
 
 /** Releasing compaction makes pending deliveries eligible without inventing a new turn settlement. */
-function queueConversationRequestEvaluation(state: LocalApiState, connectedFolderId: string, conversationId: string): void {
+export function queueConversationRequestEvaluation(state: LocalApiState, connectedFolderId: string, conversationId: string): void {
   state.requestSettleChain = state.requestSettleChain
     .then(async () => {
       for (const request of state.requests.list({ connectedFolderId })) {
@@ -8165,7 +7270,7 @@ async function maybeStartRequestContinuation(state: LocalApiState, requestId: st
  * names each settled child, its reported outcome or failure, the files it
  * named, and any question still open beneath it, then points at the record.
  */
-async function composeContinuationMessage(
+export async function composeContinuationMessage(
   state: LocalApiState,
   root: AmpleFileRequestRecord,
   batch: AmpleFileRequestRecord[],
@@ -8364,7 +7469,7 @@ async function composeBackgroundJobLines(state: LocalApiState, jobs: readonly Am
  * that finished in this run without reaching the Chat yet, which this turn
  * now delivers. Delivery reserved by a follow-up is respected.
  */
-async function backgroundJobsForTurn(
+export async function backgroundJobsForTurn(
   state: LocalApiState,
   connectedFolderId: string,
   conversationId: string,
@@ -8501,7 +7606,7 @@ function toActJobRef(job: AmpleFileJobRecord): AmpleFileActJobRef {
 }
 
 /** job_start, job_output, and job_stop for one Chat: jobs of this scope only. */
-function createBackgroundJobToolHost(state: LocalApiState, scopeId: string, conversationId: string): BackgroundJobToolHost {
+export function createBackgroundJobToolHost(state: LocalApiState, scopeId: string, conversationId: string): BackgroundJobToolHost {
   const connectedFolderId = scopeId === ampleFileAgentScopeId ? undefined : scopeId;
   const owned = (jobId: string): AmpleFileJobRecord => {
     const job = state.jobs.get(jobId);
@@ -8613,811 +7718,6 @@ function pathContainsPath(parent: string, candidate: string): boolean {
   return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
-async function runAgentTurn(
-  state: LocalApiState,
-  connectedFolderId: string,
-  connectedFolderRoot: string,
-  conversationId: string,
-  content: string,
-  contextPaths: string[],
-  taskId: string,
-  options: {
-    ampleFileAgentAttachments?: AmpleFileAgentAttachmentRef[];
-    /** The task that delegated this Connected Folder turn; decorates its context, never its acceptance. */
-    parentTaskId?: string;
-    /** The assignment when it differs from this turn's message. */
-    assignment?: string;
-    /** The question this turn's message answers, when it is a continuation. */
-    answeredQuestionId?: string;
-    /** Connected Folder Workers the person addressed with @ in this message. */
-    addressedConnectedFolderIds?: string[];
-    /** The automation that sent this message; nobody is watching the turn. */
-    automation?: { title: string };
-  } = {},
-): Promise<void> {
-  const { ampleFileAgentAttachments, answeredQuestionId } = options;
-  const request = state.requests.byTaskId(taskId);
-  const parentTaskId = request?.parentTaskId ?? options.parentTaskId;
-  const assignment = request?.assignment ?? options.assignment;
-  const key = clientKey(connectedFolderId, conversationId);
-  let client: PiConversationClient | null = null;
-  let promptStarted = false;
-  let settledStatus: SettledTurnRecord["status"] = "succeeded";
-  // Quitting mid-turn is recorded like a crash (interrupted), never as a Stop the person asked for.
-  let closedByApp = false;
-  let settledMessageId: string | undefined;
-  let settledError: string | undefined;
-  let capturedWorkTrail: ReturnType<PiConversationClient["getTurnWorkTrail"]> = [];
-  let capturedPresentation: ReturnType<PiConversationClient["getTurnPresentation"]>;
-  let beforeCheckpoint: import("./history.js").ConnectedFolderCheckpoint | null = null;
-  let afterCheckpoint: import("./history.js").ConnectedFolderCheckpoint | null = null;
-  changeTurnCount(state, 1);
-  try {
-    client = await getClient(state, connectedFolderId, connectedFolderRoot, conversationId);
-    const loadContextAttachments = (budgetTokens: number) => ampleFileAgentAttachments
-      ? loadAmpleFileAgentAttachmentsForTurn(ampleFileAgentAttachments, budgetTokens)
-      : loadConversationContextReferencesForTurn(connectedFolderRoot, contextPaths, budgetTokens);
-    const attachedLinks = ampleFileAgentAttachments ? ampleFileAgentAttachmentLinks(ampleFileAgentAttachments) : [];
-    const ampleFileAgentRegistry = connectedFolderId === ampleFileAgentScopeId
-      ? (await state.kernel.getConnectedFolders({ kind: "renderer" })).connectedFolders
-      : null;
-    // Connected Folder turns read nesting from the registry file only — never listConnectedFolders(),
-    // which rewrites every Connected Folder's portable manifest — and a failed read just
-    // leaves the nesting context out instead of failing the turn.
-    const registeredConnectedFolders: Array<{ id: string; name: string; connectedFolderRoot: string }> = ampleFileAgentRegistry
-      ?? await registeredConnectedFolderOutline().catch(() => []);
-    const ampleFileAgentConnectedFolders = ampleFileAgentRegistry
-      ? ampleFileAgentRegistry.map((connectedFolder) => ({
-          id: connectedFolder.id,
-          name: connectedFolder.name,
-          connectedFolderRoot: connectedFolder.connectedFolderRoot,
-          ...(connectedFolder.parentConnectedFolderId ? { parentConnectedFolderId: connectedFolder.parentConnectedFolderId } : {}),
-        }))
-      : undefined;
-    // Connected Folders inside Connected Folders: the person's @ mentions resolve to
-    // the ids handoff and send take, and a parent's Worker learns which of
-    // its own subfolders belong to another Worker.
-    const addressedFolders = (options.addressedConnectedFolderIds ?? []).flatMap((id) => {
-      const connectedFolder = registeredConnectedFolders.find((item) => item.id === id);
-      return connectedFolder ? [{ connectedFolderId: connectedFolder.id, name: connectedFolder.name }] : [];
-    });
-    // A Connected Folder turn's own identity: its ids, and when delegated, an
-    // opaque handle for the request that asked. Never for the AmpleFile Agent
-    // scope, which carries the registry snapshot instead.
-    const connectedFolderTurn = connectedFolderId === ampleFileAgentScopeId
-      ? undefined
-      : buildConnectedFolderTurnContext({
-        connectedFolderId,
-        taskId,
-        requestId: resolveTurnRequestId(state, taskId),
-        handleSalt: state.connectedFolderTurnHandleSalt,
-        ...(answeredQuestionId ? { answeredQuestionId } : {}),
-        ...(parentTaskId ? { parentTaskId } : {}),
-        ...(assignment !== undefined && assignment !== content ? { assignment } : {}),
-        ...(parentTaskId && (assignment === undefined || assignment === content) ? { assignmentIsThisMessage: true } : {}),
-      });
-    if (connectedFolderTurn && request) {
-      const children = state.requests.children(request.requestId).filter((child) => {
-        const latest = child.turns.at(-1)!;
-        return latest.settledAt !== null && !request.deliveredChildTaskIds.includes(latest.taskId);
-      });
-      if (children.length) {
-        connectedFolderTurn.releasedChildResults = await composeContinuationMessage(state, request, children);
-        await state.requests.noteChildDelivery(request.requestId, children.map((child) => child.turns.at(-1)!.taskId));
-      }
-    }
-    const backgroundJobs = await backgroundJobsForTurn(state, connectedFolderId, conversationId, taskId);
-    beforeCheckpoint = await captureTurnCheckpointSafe(state, connectedFolderId, connectedFolderRoot, conversationId, "pre_turn");
-    if (connectedFolderTurn) connectedFolderTurn.history = connectedFolderTurnHistory(beforeCheckpoint);
-    const ownConnectedFolder = registeredConnectedFolders.find((item) => item.id === connectedFolderId);
-    if (connectedFolderTurn && ownConnectedFolder) {
-      const nested = [...childFolderPaths(ownConnectedFolder, registeredConnectedFolders)].map(([path, child]) => ({ connectedFolderId: child.id, name: child.name, path }));
-      if (nested.length) connectedFolderTurn.nestedFolders = nested;
-    }
-    await state.beforeAgentPrompt?.({
-      connectedFolderId, conversationId, taskId,
-      ...(connectedFolderTurn ? { connectedFolderTurn } : {}),
-      ...(options.automation ? { automation: options.automation } : {}),
-    });
-    throwIfTurnCancelled(state, taskId);
-    promptStarted = true;
-    const finalText = await client.prompt(content, {
-      loadContextAttachments,
-      ...(connectedFolderId === ampleFileAgentScopeId ? { ampleFileAgentTaskId: taskId } : {}),
-      ...(ampleFileAgentConnectedFolders ? { ampleFileAgentConnectedFolders } : {}),
-      ...(connectedFolderTurn ? { connectedFolderTurn } : {}),
-      ...(attachedLinks.length ? { attachedLinks } : {}),
-      ...(addressedFolders.length ? { addressedFolders } : {}),
-      ...(options.automation ? { automation: options.automation } : {}),
-      ...(backgroundJobs.length ? { backgroundJobs } : {}),
-      // A later turn of the same request picks up the checklist where it was left.
-      ...(request?.checklist?.items.length ? { checklist: request.checklist.items } : {}),
-    });
-    // Capture synchronously with prompt completion. Shutdown may dispose the
-    // client while the server awaits checkpoint persistence below.
-    capturedPresentation = parseAssistantPresentation(client.getTurnPresentation(), finalText);
-    capturedWorkTrail = client.getTurnWorkTrail();
-    promptStarted = false;
-    afterCheckpoint = await captureTurnCheckpointSafe(state, connectedFolderId, connectedFolderRoot, conversationId, "post_turn");
-    await flushTurnCheckpoint(state, key, taskId);
-    const durable = state.turnStore.get(taskId);
-    const workTrail = capturedWorkTrail;
-    const assistantMessage = {
-      id: randomUUID(),
-      role: "assistant" as const,
-      content: finalText,
-      ...(capturedPresentation ? { assistantPresentation: capturedPresentation } : {}),
-      createdAt: new Date().toISOString(),
-      turnId: taskId,
-      ...(durable?.requestId ? { requestId: durable.requestId } : {}),
-      ...(workTrail.length ? { workTrail } : {}),
-    };
-    await appendMessage(connectedFolderRoot, conversationId, assistantMessage);
-    settledMessageId = assistantMessage.id;
-    try {
-      const transcript = await readConversation(connectedFolderRoot, conversationId);
-      if (conversationNeedsGeneratedTitle(transcript)) {
-        // Record the one naming attempt before the isolated request. A crash or
-        // provider failure must not turn every later Chat turn into another
-        // hidden title request.
-        await markConversationTitleAttempted(connectedFolderRoot, conversationId);
-        const firstUserMessage = transcript.find((message) => message.role === "user")?.content;
-        const modelTitle = firstUserMessage
-          ? normalizeGeneratedConversationTitle(
-            await client.generateConversationTitle(firstUserMessage, finalText),
-          )
-          : null;
-        if (modelTitle) {
-          const titledConversation = await setGeneratedConversationTitle(connectedFolderRoot, conversationId, modelTitle);
-          client.setSessionName(titledConversation.title);
-        }
-      }
-    } catch (error) {
-      // Naming is deliberately best-effort: a title provider failure must not
-      // turn a successfully persisted agent response into a failed turn.
-      console.warn(`Could not persist a generated Chat title: ${errorMessage(error)}`);
-    }
-  } catch (error) {
-    // A reused client still holds its previous turn until prompt resets it.
-    // Pre-prompt cancellation/failure must never inherit that turn's evidence.
-    if (promptStarted) {
-      capturedPresentation ??= client?.getTurnPresentation();
-      capturedWorkTrail = client?.getTurnWorkTrail() ?? [];
-    }
-    const cancelled = isPiTurnCancelledError(error);
-    closedByApp = cancelled && !state.cancelledTurnTasks.has(taskId) && !state.acceptingTurns;
-    if (promptStarted) {
-      promptStarted = false;
-      afterCheckpoint = await captureTurnCheckpointSafe(state, connectedFolderId, connectedFolderRoot, conversationId, "post_turn");
-    }
-    await flushTurnCheckpoint(state, key, taskId);
-    const durable = state.turnStore.get(taskId);
-    let failureResultPreserved = false;
-    if (!cancelled) {
-      console.warn(`Turn failed in ${connectedFolderId}/${conversationId}: ${providerCreditFailureDetail(error) ?? errorMessage(error)}`);
-    }
-    const publicDetail = closedByApp
-      ? appClosedTurnDetail
-      : cancelled
-        ? "The agent was stopped before it completed this response."
-        : assistantFailurePublicDetail(error);
-    const workTrail = capturedWorkTrail;
-    const interruptedContent = closedByApp
-      ? durable?.assistantText.trim() || appClosedTurnDetail
-      : assistantFailureTranscriptContent(error, durable?.assistantText ?? "", cancelled);
-    const interruptedPresentation = parseAssistantPresentation(capturedPresentation, interruptedContent);
-    const interruptedMessage = {
-      id: randomUUID(),
-      role: "assistant" as const,
-      content: interruptedContent,
-      ...(interruptedPresentation ? { assistantPresentation: interruptedPresentation } : {}),
-      createdAt: new Date().toISOString(),
-      turnId: taskId,
-      ...(durable?.requestId ? { requestId: durable.requestId } : {}),
-      ...(workTrail.length ? { workTrail } : {}),
-      interruption: {
-        reason: closedByApp ? "app_interrupted" as const : cancelled ? "cancelled" as const : assistantFailureReason(error),
-        message: publicDetail,
-        retryAttempts: error instanceof PiTurnFailure ? error.retryAttempts : 0,
-        provider: error instanceof PiTurnFailure ? error.provider : null,
-        model: error instanceof PiTurnFailure ? error.model : null,
-        activities: error instanceof PiTurnFailure ? error.activities : [],
-      },
-    };
-    try {
-      await appendMessage(connectedFolderRoot, conversationId, interruptedMessage);
-      failureResultPreserved = true;
-      settledMessageId = interruptedMessage.id;
-    } catch (preservationError) {
-      console.error(`Could not preserve an interrupted Worker result: ${errorMessage(preservationError)}`);
-    }
-    const message = closedByApp ? appClosedTurnDetail : assistantTurnFailureMessage(error, failureResultPreserved);
-    settledStatus = cancelled && !closedByApp ? "aborted" : "failed";
-    settledError = message;
-    // A provider failure settles the Pi session cleanly after its bounded retry
-    // path. Keep that live session so the next user message can continue from
-    // completed tool results. Unexpected runtime failures still rebuild the
-    // client from the durable Pi session on the next turn.
-    if (!(error instanceof PiTurnFailure)) {
-      await client?.stop().catch(() => undefined);
-      state.clients.delete(key);
-    }
-  } finally {
-    if (promptStarted) afterCheckpoint = await captureTurnCheckpointSafe(state, connectedFolderId, connectedFolderRoot, conversationId, "post_turn");
-    await flushTurnCheckpoint(state, key, taskId);
-    const durableText = state.turnStore.get(taskId)?.assistantText ?? "";
-    // Attribution, recorded with the outcome: the model that actually ran this
-    // turn and what Pi reported it used.
-    const turnUsage = client?.getTurnUsage() ?? null;
-    await state.turnStore.settle(taskId, {
-      status: closedByApp ? "interrupted" : settledStatus,
-      ...(settledMessageId ? { messageId: settledMessageId } : {}),
-      ...(settledError ? { error: settledError } : {}),
-      assistantText: durableText,
-      fileChanges: turnFileChanges(beforeCheckpoint, afterCheckpoint),
-      ...(turnUsage ? { usage: turnUsage } : {}),
-      ...(client?.getTurnHelperRuns().length ? { helpers: client.getTurnHelperRuns() } : {}),
-    }).catch((error) => {
-      console.error(`Could not persist turn settlement: ${errorMessage(error)}`);
-      return null;
-    });
-    // The request record settles with the same outcome and usage, before the
-    // task-scoped record, so a waiter or the overview reads a current request
-    // state on the next tick.
-    await state.requests.settleTurn(taskId, {
-      status: closedByApp ? "interrupted" : settledStatus,
-      ...(settledMessageId ? { messageId: settledMessageId } : {}),
-      ...(settledError ? { error: settledError } : {}),
-      ...(turnUsage ? { usage: turnUsage } : {}),
-      ...(client?.getTurnHelperRuns().length ? { helpers: client.getTurnHelperRuns() } : {}),
-    }).catch((error: unknown) => {
-      console.error(`Could not persist request settlement: ${errorMessage(error)}`);
-      return null;
-    });
-    state.runningTurns.delete(key);
-    state.cancelledTurnTasks.delete(taskId);
-    state.activeTurnIdsByKey.delete(key);
-    state.kernel.finishTask(taskId);
-    // The Connected Folder's Worker instructions changed during this turn (Set up
-    // for me). Rebuild this Chat's client so its next turn sees them.
-    await refreshClientIfMarked(state, key);
-    settleTurnTask(state, taskId, {
-      connectedFolderId,
-      conversationId,
-      status: settledStatus,
-      ...(settledMessageId ? { messageId: settledMessageId } : {}),
-      ...(settledError ? { error: settledError } : {}),
-    });
-    broadcast(state, key, settledStatus === "succeeded"
-      ? { type: "done", conversationId, turnId: taskId }
-      : { type: "error", conversationId, turnId: taskId, message: settledError ?? "The turn did not finish." });
-    broadcast(state, key, turnStateEvent(conversationId, false, taskId));
-    changeTurnCount(state, -1);
-    // A Stop, from any surface, holds the queued message: it stays for the
-    // person to take back and no later turn's end sends it.
-    const queued = state.queuedMessages.get(key);
-    if (queued && settledStatus === "aborted") {
-      if (!queued.held) {
-        changeQueuedMessage(state, key, { ...queued, held: true });
-        broadcast(state, streamKey(connectedFolderId, conversationId), queuedMessageEvent(state, connectedFolderId, conversationId));
-      }
-    } else if (queued && !queued.held) void sendQueuedMessage(state, connectedFolderId, connectedFolderRoot, conversationId, queued);
-    else if (settledStatus === "succeeded") scheduleBackgroundCompaction(state, connectedFolderId, connectedFolderRoot, conversationId);
-    // Once this turn's own settlement is fully visible, the request
-    // graph above it may owe the AmpleFile Agent one continuation turn. Fire-and-forget
-    // with its own catch, the way activeTurnPromises are: a settle never
-    // fails because a continuation could not start.
-    queueRequestGraphSettle(state, taskId);
-  }
-}
-
-const maxSettledTurnRecords = 10_000;
-
-/**
- * The request id a Connected Folder turn names in its context: the durable request
- * record's id when the store holds one, otherwise the turn journal's own
- * acceptance identity — for an undelegated Connected Folder turn that is its own root —
- * and finally the task id for a turn accepted before either existed. Nothing
- * here invents a request id.
- */
-function resolveTurnRequestId(state: LocalApiState, taskId: string): string {
-  return state.requests.byTaskId(taskId)?.requestId
-    ?? state.turnStore.get(taskId)?.requestId
-    ?? taskId;
-}
-
-/** Every change to a Chat's queued message goes through here and gets the next number. */
-function changeQueuedMessage(state: LocalApiState, key: string, next: QueuedChatMessage | null): number {
-  state.lastQueueRevision += 1;
-  state.queueRevisions.set(key, state.lastQueueRevision);
-  if (next) state.queuedMessages.set(key, next);
-  else state.queuedMessages.delete(key);
-  return state.lastQueueRevision;
-}
-
-export function queuedMessageEvent(state: LocalApiState, connectedFolderId: string, conversationId: string, sent?: QueuedChatMessage) {
-  const key = clientKey(connectedFolderId, conversationId);
-  const queued = state.queuedMessages.get(key);
-  return {
-    type: "queued_message" as const,
-    conversationId,
-    revision: state.queueRevisions.get(key) ?? 0,
-    queued: queued ? { content: queued.content, updatedAt: queued.updatedAt, ...(queued.held ? { held: true } : {}) } : null,
-    // The files that went out with a sent queued message, so windows unstage them.
-    ...(sent ? { sentContextPaths: sent.contextPaths } : {}),
-  };
-}
-
-/**
- * Replaces a Chat's queued message while its turn runs. A Chat with no running
- * turn is refused (409) so the caller sends the message now instead.
- */
-function queueChatMessage(
-  state: LocalApiState,
-  connectedFolderId: string,
-  conversationId: string,
-  input: { content: string; contextPaths: string[]; addressedConnectedFolderIds: string[] },
-): { queued: { content: string; updatedAt: string }; revision: number } {
-  const key = clientKey(connectedFolderId, conversationId);
-  if (!state.runningTurns.has(key)) throw httpError(409, "No turn is running in this Chat; send the message now.");
-  const queued: QueuedChatMessage = { ...input, updatedAt: new Date().toISOString() };
-  const revision = changeQueuedMessage(state, key, queued);
-  broadcast(state, streamKey(connectedFolderId, conversationId), queuedMessageEvent(state, connectedFolderId, conversationId));
-  return { queued: { content: queued.content, updatedAt: queued.updatedAt }, revision };
-}
-
-/** Removes a Chat's queued message and returns it, so it can go back to a composer. */
-function cancelQueuedMessage(state: LocalApiState, connectedFolderId: string, conversationId: string): { queued: { content: string; updatedAt: string } | null; revision: number } {
-  const key = clientKey(connectedFolderId, conversationId);
-  const queued = state.queuedMessages.get(key);
-  if (!queued) return { queued: null, revision: state.queueRevisions.get(key) ?? 0 };
-  const revision = changeQueuedMessage(state, key, null);
-  broadcast(state, streamKey(connectedFolderId, conversationId), queuedMessageEvent(state, connectedFolderId, conversationId));
-  return { queued: { content: queued.content, updatedAt: queued.updatedAt }, revision };
-}
-
-/**
- * Sends a Chat's queued message as an ordinary new turn once the turn it
- * waited on has ended. If the Chat cannot take it yet (another turn started
- * first), it stays queued for the next turn's end.
- */
-async function sendQueuedMessage(state: LocalApiState, connectedFolderId: string, connectedFolderRoot: string, conversationId: string, queued: QueuedChatMessage): Promise<void> {
-  const key = clientKey(connectedFolderId, conversationId);
-  if (!state.acceptingTurns || state.queuedMessages.get(key) !== queued) return;
-  // Leaves the queue as it becomes the Chat's message, so no window shows both.
-  changeQueuedMessage(state, key, null);
-  broadcast(state, streamKey(connectedFolderId, conversationId), queuedMessageEvent(state, connectedFolderId, conversationId, queued));
-  try {
-    const agentScope = connectedFolderId === ampleFileAgentScopeId;
-    await acceptConversationTurn(state, { id: connectedFolderId, connectedFolderRoot }, conversationId, {
-      content: queued.content,
-      contextPaths: agentScope ? [] : queued.contextPaths,
-      actorKind: agentScope ? "renderer" : "assistant",
-      ...(agentScope ? { ampleFileAgentAttachments: [] } : {}),
-      ...(queued.addressedConnectedFolderIds.length ? { addressedConnectedFolderIds: queued.addressedConnectedFolderIds } : {}),
-    });
-  } catch (error) {
-    console.warn(`A queued message stays queued: ${errorMessage(error)}`);
-    if (!state.queuedMessages.has(key)) {
-      changeQueuedMessage(state, key, queued);
-      broadcast(state, streamKey(connectedFolderId, conversationId), queuedMessageEvent(state, connectedFolderId, conversationId));
-    }
-  }
-}
-
-/** How long a Chat stays idle after a reply before it is summarized ahead of time. */
-function backgroundCompactionIdleMs(env: NodeJS.ProcessEnv = process.env): number {
-  const parsed = Number(env.AMPLEFILE_PI_BACKGROUND_COMPACTION_IDLE_MS);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 10_000;
-}
-
-/**
- * Summarizes an idle Chat in the background once it nears Pi's own automatic
- * compaction point, so the next turn does not wait on that summary. It runs
- * as its own kernel compaction task, only on a client that already exists,
- * and only after the Chat has been quiet for a moment; anything that needs the Chat first calls
- * yieldBackgroundCompaction. A failed or cancelled summary changes nothing:
- * Pi still compacts mid-turn when it must.
- */
-function scheduleBackgroundCompaction(state: LocalApiState, connectedFolderId: string, connectedFolderRoot: string, conversationId: string): void {
-  const key = clientKey(connectedFolderId, conversationId);
-  const pending = state.backgroundCompactions.get(key);
-  if (pending?.run) return;
-  if (pending?.timer) clearTimeout(pending.timer);
-  const entry: BackgroundCompaction = { timer: null, run: null, yielded: false };
-  entry.timer = setTimeout(() => {
-    entry.timer = null;
-    const client = state.clients.get(key);
-    if (!client || !state.acceptingTurns || state.runningTurns.has(key) || state.compactingConversations.has(key)
-      || state.capabilityMutations.size > 0 || !client.backgroundCompactionDue()) {
-      if (state.backgroundCompactions.get(key) === entry) state.backgroundCompactions.delete(key);
-      return;
-    }
-    const task = state.kernel.startTask({
-      kind: "compaction",
-      connectedFolderId,
-      conversationId,
-      actor: { kind: "system", cwd: connectedFolderRoot, connectedFolderId, conversationId },
-    });
-    const done = client.compact(undefined, { quiet: true })
-      .catch((error: unknown) => {
-        if (!entry.yielded) console.warn(`A background Chat summary did not finish: ${errorMessage(error)}`);
-      })
-      .finally(() => {
-        state.kernel.finishTask(task.id);
-        if (state.backgroundCompactions.get(key) === entry) state.backgroundCompactions.delete(key);
-      });
-    entry.run = { client, done };
-  }, backgroundCompactionIdleMs());
-  entry.timer.unref?.();
-  state.backgroundCompactions.set(key, entry);
-}
-
-/** Cancels a Chat's pending or running background summary and waits for it to stop. */
-async function yieldBackgroundCompaction(state: LocalApiState, key: string): Promise<void> {
-  const entry = state.backgroundCompactions.get(key);
-  if (!entry) return;
-  if (entry.timer) clearTimeout(entry.timer);
-  entry.timer = null;
-  if (!entry.run) {
-    state.backgroundCompactions.delete(key);
-    return;
-  }
-  entry.yielded = true;
-  entry.run.client.abortCompaction();
-  await entry.run.done;
-}
-
-const appClosedTurnDetail = "AmpleFile closed before this turn finished. It was not run again because completed tools may already have changed something.";
-
-async function recoverDurableTurnState(state: LocalApiState): Promise<void> {
-  const records = state.turnStore.list().sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
-  for (const record of records.filter((candidate) => candidate.status !== "accepted" && candidate.status !== "running").slice(-maxSettledTurnRecords)) {
-    rememberDurableSettledTurn(state, record);
-  }
-  for (const record of records.filter((candidate) => candidate.status === "accepted" || candidate.status === "running")) {
-    const rootPath = record.connectedFolderId === ampleFileAgentScopeId
-      ? ampleFileAgentRoot()
-      : await getConnectedFolder(record.connectedFolderId).then((connectedFolder) => connectedFolder.connectedFolderRoot).catch(() => null);
-    if (!rootPath) {
-      const settled = await state.turnStore.settle(record.turnId, {
-        status: "interrupted",
-        error: "The app closed before this turn finished, and its Connected Folder is no longer registered.",
-      });
-      if (settled) rememberDurableSettledTurn(state, settled);
-      continue;
-    }
-    const messages = await readConversation(rootPath, record.conversationId).catch(() => []);
-    const existingResponse = messages.find((message) => message.role === "assistant" && message.turnId === record.turnId);
-    if (existingResponse) {
-      const status = existingResponse.interruption?.reason === "cancelled"
-        ? "aborted" as const
-        : existingResponse.interruption ? "failed" as const : "succeeded" as const;
-      const settled = await state.turnStore.settle(record.turnId, {
-        status,
-        messageId: existingResponse.id,
-        ...(existingResponse.interruption ? { error: existingResponse.interruption.message } : {}),
-      });
-      if (settled) rememberDurableSettledTurn(state, settled);
-      continue;
-    }
-    const userMessage = messages.find((message) => message.role === "user" && message.id === record.userMessageId);
-    if (!userMessage) {
-      const settled = await state.turnStore.settle(record.turnId, {
-        status: "interrupted",
-        error: "Turn acceptance was interrupted before the user message was saved.",
-      });
-      if (settled) rememberDurableSettledTurn(state, settled);
-      continue;
-    }
-    const detail = appClosedTurnDetail;
-    const recoveredMessage: ChatMessage = {
-      id: randomUUID(),
-      role: "assistant",
-      content: record.assistantText.trim() || detail,
-      createdAt: new Date().toISOString(),
-      turnId: record.turnId,
-      requestId: record.requestId,
-      interruption: {
-        reason: "app_interrupted",
-        message: detail,
-        retryAttempts: 0,
-        provider: null,
-        model: null,
-        activities: [],
-      },
-    };
-    let messageId: string | undefined;
-    try {
-      await appendMessage(rootPath, record.conversationId, recoveredMessage);
-      messageId = recoveredMessage.id;
-    } catch (error) {
-      console.error(`Could not append an interrupted Worker result during startup recovery: ${errorMessage(error)}`);
-    }
-    const settled = await state.turnStore.settle(record.turnId, {
-      status: "interrupted",
-      ...(messageId ? { messageId } : {}),
-      error: detail,
-    });
-    if (settled) rememberDurableSettledTurn(state, settled);
-  }
-}
-
-function rememberDurableSettledTurn(state: LocalApiState, record: AmpleFileDurableTurnRecord): void {
-  const status: SettledTurnRecord["status"] = record.status === "succeeded"
-    ? "succeeded"
-    : record.status === "aborted" ? "aborted" : "failed";
-  state.settledTurns.set(record.turnId, {
-    taskId: record.turnId,
-    connectedFolderId: record.connectedFolderId,
-    conversationId: record.conversationId,
-    status,
-    endedAt: record.updatedAt,
-    ...(record.messageId ? { messageId: record.messageId } : {}),
-    ...(record.error ? { error: record.error } : {}),
-  });
-  while (state.settledTurns.size > maxSettledTurnRecords) {
-    const oldest = state.settledTurns.keys().next().value;
-    if (oldest === undefined) break;
-    state.settledTurns.delete(oldest);
-  }
-}
-
-function settleTurnTask(
-  state: LocalApiState,
-  taskId: string,
-  record: Omit<SettledTurnRecord, "taskId" | "endedAt">,
-): void {
-  state.activeTurnTasks.delete(taskId);
-  state.cancelledTurnTasks.delete(taskId);
-  state.settledTurns.set(taskId, { taskId, endedAt: new Date().toISOString(), ...record });
-  publishControlHint(state, "activity");
-  while (state.settledTurns.size > maxSettledTurnRecords) {
-    const oldest = state.settledTurns.keys().next().value;
-    if (oldest === undefined) break;
-    state.settledTurns.delete(oldest);
-  }
-}
-
-function throwIfTurnCancelled(state: LocalApiState, taskId: string): void {
-  // Closing stops a turn that has not prompted yet too. Stopping clients
-  // reaches only a prompt already in flight; this turn would otherwise start a
-  // fresh provider request on its stopped client, and close() would wait on it.
-  const reason = state.cancelledTurnTasks.has(taskId)
-    ? "Agent turn cancelled by the user."
-    : state.acceptingTurns ? null : "The turn stopped because AmpleFile is closing.";
-  if (!reason) return;
-  const error = new Error(reason);
-  error.name = "PiTurnCancelledError";
-  throw error;
-}
-
-function assistantTurnFailureMessage(error: unknown, partialResponsePreserved: boolean): string {
-  if (isPiTurnCancelledError(error)) return "Turn cancelled.";
-  if (!(error instanceof PiTurnFailure)) return assistantFailurePublicDetail(error);
-  const creditFailure = providerCreditFailureDetail(error);
-  if (creditFailure) return partialResponsePreserved
-    ? `${creditFailure} AmpleFile saved the partial response and completed activity below.`
-    : `${creditFailure} AmpleFile could not save the partial response.`;
-  const retrySummary = error.retryAttempts > 0
-    ? ` after ${error.retryAttempts} automatic ${error.retryAttempts === 1 ? "retry" : "retries"}`
-    : "";
-  return partialResponsePreserved
-    ? `The model stopped responding${retrySummary}. AmpleFile saved the partial response and completed activity below.`
-    : `The model stopped responding${retrySummary}, and AmpleFile could not save the partial response.`;
-}
-
-function assistantFailureReason(error: unknown): "provider_error" | "setup_error" | "assistant_error" {
-  if (error instanceof PiTurnFailure) return "provider_error";
-  return isModelSetupError(error) ? "setup_error" : "assistant_error";
-}
-
-function assistantFailureTranscriptContent(error: unknown, checkpointText = "", cancelled = false): string {
-  const checkpoint = checkpointText.trim();
-  if (error instanceof PiTurnFailure) {
-    return error.partialText || checkpoint || providerCreditFailureDetail(error) || "The model stopped responding before it could finish a response.";
-  }
-  if (checkpoint) return checkpoint;
-  if (cancelled) return "The agent was stopped before it completed a response.";
-  return assistantFailurePublicDetail(error);
-}
-
-function assistantFailurePublicDetail(error: unknown): string {
-  if (error instanceof PiTurnDrainingError) return error.message;
-  const creditFailure = providerCreditFailureDetail(error);
-  if (creditFailure) return creditFailure;
-  if (error instanceof PiTurnFailure) {
-    const retrySummary = error.retryAttempts > 0
-      ? ` after ${error.retryAttempts} automatic ${error.retryAttempts === 1 ? "retry" : "retries"}`
-      : "";
-    return `The model stopped responding${retrySummary}.`;
-  }
-  if (isModelSetupError(error)) {
-    return "The Worker couldn’t reach an AI model. Connect an AI provider, or check the one in Settings → AI Models, then try again.";
-  }
-  if (isPiTurnTimeoutError(error)) {
-    return `${errorMessage(error)} Raise or clear that limit to let long turns finish.`;
-  }
-  if (/timed?\s*out|timeout/i.test(errorMessage(error))) {
-    return "The agent took too long to respond. Try again when you’re ready.";
-  }
-  return "The agent couldn’t complete this request. Try again. If it keeps happening, check Settings → AI Models.";
-}
-
-/** Preserve the actionable provider status without echoing its raw body, URLs or account data. */
-function providerCreditFailureDetail(error: unknown): string | null {
-  const message = errorMessage(error);
-  const paymentRequired = /^\s*(?:HTTP(?:\/[\d.]+)?\s+)?402\b/i.test(message)
-    || /"(?:code|status|statusCode)"\s*:\s*402\b/.test(message);
-  if (!paymentRequired) return null;
-  return "The model provider reported a credit or billing limit (HTTP 402). Check its available credit or reduce the maximum response length before trying again.";
-}
-
-function isModelSetupError(error: unknown): boolean {
-  return /api[- ]?key|credential|auth(?:entication|orization)?|no (?:available |configured )?models?|model (?:was )?not (?:found|available|configured)|select (?:a )?model|choose (?:a )?(?:provider|model)|provider .{0,40}(?:not configured|unavailable)/i
-    .test(errorMessage(error));
-}
-
-const managedWorktreeServices = new WeakMap<LocalApiState, ManagedWorktrees>();
-function createWorktreeToolHost(state: LocalApiState, connectedFolderId: string): import("./agent/worktree-tool.js").WorktreeToolHost {
-  let service = managedWorktreeServices.get(state);
-  if (!service) { service = new ManagedWorktrees(join(ampleFileStateRoot(), "worktrees"), `${ampleFileStateRoot()}-working-copies`); managedWorktreeServices.set(state, service); }
-  const facade = createAmpleFileActFacade(state);
-  return { async invoke(taskId, input) {
-    assertOwnTask(state, connectedFolderId, taskId);
-    const ports = {
-      register: async (path: string) => (await facade.registerConnectedFolder({ connectedFolderRoot: path })).connectedFolder.id,
-      unregister: async (id: string, path: string) => {
-        if (resolve((await getConnectedFolder(id)).connectedFolderRoot) !== resolve(path)) throw new Error("The managed Connected Folder registration changed.");
-        await facade.connectedFoldersUnregister({ connectedFolder: id });
-      },
-    };
-    if (input.action === "list") return service!.list(connectedFolderId);
-    await state.requests.recordAction(taskId, { command: `worktrees.${input.action}`, at: new Date().toISOString(), connectedFolderId, taskId });
-    if (input.action === "create") return service!.create(connectedFolderId, (await getConnectedFolder(connectedFolderId)).connectedFolderRoot, input.ref ?? "HEAD", ports.register);
-    if (!input.id) throw new Error("id is required for archive and restore.");
-    return service!.change(connectedFolderId, input.id, input.action, ports);
-  } };
-}
-
-function createCollaborationToolHost(state: LocalApiState, connectedFolderId: string, conversationId: string): import("./agent/collaboration-tools.js").CollaborationToolHost {
-  const facade = createAmpleFileActFacade(state);
-  return { async invoke(operation, taskId, input, signal) {
-    assertOwnTask(state, connectedFolderId, taskId);
-    const target = typeof input.connectedFolder === "string" ? input.connectedFolder : connectedFolderId;
-    const required = (name: string): string => {
-      const value = input[name];
-      if (typeof value !== "string" || !value.trim()) throw new Error(`${name} is required.`);
-      return value;
-    };
-    const files = Array.isArray(input.files) ? input.files as string[] : [];
-    switch (operation) {
-      case "children": return facade.chatChildren({ connectedFolder: connectedFolderId, taskId });
-      case "handoff": return facade.chatHandoff({ connectedFolder: connectedFolderId, taskId, toConnectedFolder: target, message: required("message"), files, ...(typeof input.conversation === "string" ? { toConversationId: input.conversation } : {}) });
-      case "steer": return facade.chatSteer({ connectedFolder: target, taskId, conversationId: required("conversation"), message: required("message") });
-      case "copy": return facade.chatCopy({ connectedFolder: target, taskId, conversationId: typeof input.conversation === "string" ? input.conversation : conversationId, ...(typeof input.message === "string" ? { message: input.message } : {}), ...(typeof input.title === "string" ? { title: input.title } : {}) });
-      case "stop": {
-        const destination = resolveAmpleFileCliConnectedFolderSelector(await listConnectedFolders(), target)!;
-        assertCallerHandedWorkTo(state, taskId, { connectedFolderId: destination.id, conversationId: required("conversation") });
-        return facade.abortTurn({ connectedFolder: destination.id, conversationId: required("conversation") });
-      }
-      case "report": return facade.chatReport({ connectedFolder: connectedFolderId, taskId, summary: required("summary"), files, outcome: input.outcome as "succeeded" | "partial" | "failed", ...(input.data !== undefined ? { data: input.data } : {}) });
-      case "ask": return facade.chatAsk({ connectedFolder: connectedFolderId, taskId, question: required("question"), respondent: input.to === "parent" ? "parent" : "person", ...(Array.isArray(input.options) ? { options: input.options as string[] } : {}), ...(input.asynchronous === true ? { asynchronous: true } : {}) });
-      case "answer": return facade.chatAnswer({ connectedFolder: target, questionId: required("question"), answer: required("answer") });
-      case "wait": {
-        const followed = state.requests.byTaskId(required("task"));
-        if (!followed?.owner.connectedFolderId) throw new Error("That delegated task is not on record.");
-        assertCallerHandedWorkTo(state, taskId, { connectedFolderId: followed.owner.connectedFolderId, conversationId: followed.owner.conversationId });
-        const seconds = input.seconds === undefined ? 30 : Number(input.seconds);
-        if (!Number.isFinite(seconds) || seconds < 0 || seconds > 120) throw new Error("seconds must be between 0 and 120.");
-        const deadline = Date.now() + seconds * 1000;
-        for (;;) {
-          signal?.throwIfAborted();
-          const status = await facade.turnStatus({ connectedFolder: followed.owner.connectedFolderId, taskId: required("task") });
-          if (status.waiting || status.task.state !== "running" || Date.now() >= deadline) {
-            return status.task.state === "succeeded" ? facade.turnResult({ connectedFolder: followed.owner.connectedFolderId, taskId: required("task") }) : status;
-          }
-          await new Promise(done => setTimeout(done, 100));
-        }
-      }
-    }
-  } };
-}
-
-async function getClient(
-  state: LocalApiState,
-  connectedFolderId: string,
-  connectedFolderRoot: string,
-  conversationId: string,
-): Promise<PiConversationClient> {
-  if (connectedFolderId === ampleFileAgentScopeId) assertAmpleFileAgentInstructionsReady(state);
-  const key = clientKey(connectedFolderId, conversationId);
-  rememberConnectedFolderRoot(state, connectedFolderId, connectedFolderRoot);
-  const existing = state.clients.get(key);
-  if (existing) return existing;
-  // The AmpleFile Agent scope loads personal Pi capabilities and its two app-owned
-  // project instructions. It belongs to no Connected Folder.
-  const hostCapabilities = connectedFolderId === ampleFileAgentScopeId
-    ? undefined
-    : { connectedFolderId };
-  // Connected Folder scopes carry the compact operations guide after their own Connected Folder
-  // instructions; the AmpleFile Agent scope has its own taught text.
-  const operationsGuide = connectedFolderOperationsGuideForScope(connectedFolderId);
-  const client = new PiConversationClient(conversationId, connectedFolderRoot, state.runtimeProvider, hostCapabilities, {
-    role: connectedFolderId === ampleFileAgentScopeId ? "amplefile-agent" : "worker",
-    async onContextCompacted() {
-      const chatMessage: ChatMessage = {
-        id: randomUUID(), role: "system", kind: "context_compaction",
-        content: "Conversation context compacted. Earlier messages were summarized to make room; your chat history is still available.",
-        createdAt: new Date().toISOString(),
-      };
-      await appendMessage(connectedFolderRoot, conversationId, chatMessage);
-      broadcast(state, streamKey(connectedFolderId, conversationId), { type: "context_compacted", conversationId, chatMessage });
-    },
-    ...(operationsGuide ? { operationsGuide } : {}),
-    imageModel: () => state.imageModelPreference.get(),
-    // A Worker Chat shows its pictures inline; the AmpleFile Agent's panel does not yet.
-    ...(connectedFolderId === ampleFileAgentScopeId ? {} : { imageStore: state.generatedImages }),
-    backgroundJobs: createBackgroundJobToolHost(state, connectedFolderId, conversationId),
-    ...(state.browser ? { browser: state.browser, browserOwner: `${connectedFolderId}/${conversationId}` } : {}),
-    ...(connectedFolderId === ampleFileAgentScopeId ? {} : { collaboration: createCollaborationToolHost(state, connectedFolderId, conversationId) }),
-    helperTool: connectedFolderId !== ampleFileAgentScopeId,
-    recoveryScope: taskId => {
-      const request = state.requests.byTaskId(taskId);
-      if (!request || request.owner.conversationId !== conversationId
-        || (request.owner.connectedFolderId ?? ampleFileAgentScopeId) !== connectedFolderId
-        || !request.turns.some(turn => turn.taskId === taskId && turn.state === "running")) return null;
-      return { requestId: request.requestId, taskIds: request.turns.map(turn => turn.taskId) };
-    },
-    ...(connectedFolderId === ampleFileAgentScopeId ? {} : { worktrees: createWorktreeToolHost(state, connectedFolderId) }),
-    checklist: {
-      async set({ taskId, items }) {
-        try {
-          const saved = await state.requests.setChecklist(taskId, items);
-          // The Chat's work view re-reads the request and shows the new list.
-          publishControlHint(state, "connected-folders");
-          return saved;
-        } catch (error) {
-          if (error instanceof AmpleFileRequestLimitError || error instanceof AmpleFileRequestLineageError) throw new Error(error.message);
-          throw error;
-        }
-      },
-    },
-  });
-  client.on("event", (event: PiChatEvent) => {
-    broadcast(state, streamKey(connectedFolderId, conversationId), assistantEventForRenderer(event));
-  });
-  state.clients.set(key, client);
-  return client;
-}
-
-function assistantEventForRenderer(event: PiChatEvent): Omit<PiChatEvent, "raw"> {
-  const { raw: _raw, ...safeEvent } = event;
-  if (!safeEvent.message) return safeEvent;
-  if (safeEvent.type === "error") {
-    return { ...safeEvent, message: assistantFailurePublicDetail(new Error(safeEvent.message)) };
-  }
-  if (safeEvent.type === "status" && isModelSetupError(safeEvent.message)) {
-    return { ...safeEvent, message: "agent setup is needed. Open Settings → AI Models." };
-  }
-  return safeEvent;
-}
-
-export async function invalidateAmpleFileClients(state: LocalApiState, connectedFolderId: string): Promise<void> {
-  for (const [key, client] of [...state.clients]) {
-    if (!key.startsWith(`${connectedFolderId}:`)) continue;
-    await client.stop().catch(() => undefined);
-    state.clients.delete(key);
-  }
-}
-
-export async function invalidateAllClients(state: LocalApiState): Promise<void> {
-  for (const [key, client] of [...state.clients]) {
-    await client.stop().catch(() => undefined);
-    state.clients.delete(key);
-  }
-}
-
 function capabilityRegistryType(value: string | null): "all" | CapabilityType | undefined {
   if (!value) return undefined;
   if (value === "all" || value === "skill" || value === "extension") return value;
@@ -9473,15 +7773,6 @@ async function imageModelSettings(state: LocalApiState) {
     automatic,
     models,
   };
-}
-
-/** Rebuilds a Chat's client that was marked while it was busy. */
-async function refreshClientIfMarked(state: LocalApiState, key: string): Promise<void> {
-  if (!state.clientsToRefresh.delete(key)) return;
-  const stale = state.clients.get(key);
-  if (!stale) return;
-  await stale.stop().catch(() => undefined);
-  state.clients.delete(key);
 }
 
 async function recoverPendingConnectedFolderRemovals(
@@ -10515,89 +8806,6 @@ async function sendConnectedFolderRawFile(res: ServerResponse, connectedFolderRo
 }
 
 /**
- * The Connected Folder Workers a person addressed with @: at most eight
- * distinct registered Connected Folder ids in a stable order, never the sending scope's
- * own. An id that is no longer registered is dropped rather than refused, so a
- * retried send still replays after a Connected Folder was removed.
- */
-async function normalizeAddressedConnectedFolderIds(value: unknown, ownScopeId: string): Promise<string[]> {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim() || item.length > 512)) {
-    throw badRequest("addressedConnectedFolderIds must be a list of Connected Folder ids.");
-  }
-  const ids = [...new Set((value as string[]).map((item) => item.trim()))].filter((id) => id !== ownScopeId);
-  if (!ids.length) return [];
-  const registered = new Set((await registeredConnectedFolderOutline()).map((connectedFolder) => connectedFolder.id));
-  return ids.filter((id) => registered.has(id)).sort();
-}
-
-/** A Connected Folder Chat's attached files and folders, kept on its message so the Chat shows what was sent. */
-function contextPathAttachments(connectedFolderRoot: string, contextPaths: string[]): ChatMessageAttachmentRef[] {
-  return contextPaths.slice(0, 32).map((path) => {
-    let folder = false;
-    try { folder = statSync(resolveConnectedFolderPath(connectedFolderRoot, path)).isDirectory(); } catch { /* a missing path stays a file reference */ }
-    return { kind: folder ? "folder" : "file", target: path, name: path.slice(path.lastIndexOf("/") + 1) || path };
-  });
-}
-
-function normalizeContextPaths(connectedFolderRoot: string, value: unknown): string[] {
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw badRequest("Chat context paths must be an array of strings.");
-  const paths = [...new Set(value.map((item) => normalizeConnectedFolderRelativePath(item)).filter(Boolean))];
-  for (const path of paths) {
-    try { resolveConnectedFolderPath(connectedFolderRoot, path); } catch (error) { throw badRequest(errorMessage(error)); }
-  }
-  return paths;
-}
-
-async function captureTurnCheckpointSafe(
-  state: LocalApiState,
-  connectedFolderId: string,
-  connectedFolderRoot: string,
-  conversationId: string,
-  reason: "pre_turn" | "post_turn",
-): Promise<import("./history.js").ConnectedFolderCheckpoint | null> {
-  // History is a Connected Folder concept. The AmpleFile Agent scope's root holds only
-  // conversation records in app state, so turn checkpoints do not apply.
-  if (connectedFolderId === ampleFileAgentScopeId) return null;
-  try {
-    const checkpoint = await createConnectedFolderCheckpoint(connectedFolderRoot, {
-      reason,
-      label: reason === "pre_turn" ? "Before turn" : "After turn",
-    });
-    state.onHistoryCheckpoint?.({
-      connectedFolderId,
-      conversationId,
-      reason,
-      checkpointId: checkpoint.checkpointId,
-      skippedLargeFiles: checkpoint.skippedLargeFiles,
-    });
-    for (const listener of [...state.turnCheckpointListeners]) {
-      try {
-        listener({ connectedFolderId, conversationId, reason, checkpointId: checkpoint.checkpointId });
-      } catch {
-        // Observers never affect the turn.
-      }
-    }
-    if (checkpoint.skippedLargeFiles.length) {
-      broadcast(state, streamKey(connectedFolderId, conversationId), {
-        type: "status",
-        conversationId,
-        message: `History skipped ${checkpoint.skippedLargeFiles.length} oversized file${checkpoint.skippedLargeFiles.length === 1 ? "" : "s"}.`,
-      });
-    }
-    return checkpoint;
-  } catch (error) {
-    broadcast(state, streamKey(connectedFolderId, conversationId), {
-      type: "status",
-      conversationId,
-      message: `History checkpoint warning: ${errorMessage(error)}`,
-    });
-    return null;
-  }
-}
-
-/**
  * Whether the file-info route reads a whole file to hash it. The Info panel
  * needs only its dates and size; the hash is compared with History's versions
  * of the file. A caller says `hash=1` or `hash=0`; otherwise a file is hashed
@@ -10619,7 +8827,7 @@ function historyVersionedFileLimitBytes(): number {
   return Number.isFinite(configured) && configured >= 1 ? Math.floor(configured) : 100 * 1024 * 1024;
 }
 
-function normalizeConnectedFolderRelativePath(value: string): string {
+export function normalizeConnectedFolderRelativePath(value: string): string {
   return value.trim().replace(/\\/g, "/").replace(/^(?:\.\/)+/, "").replace(/^\/+|\/+$/g, "");
 }
 
@@ -10639,16 +8847,6 @@ function contentTypeForPath(path: string): string {
     case ".gif": return "image/gif";
     case ".svg": return "image/svg+xml";
     default: return "application/octet-stream";
-  }
-}
-
-function changeTurnCount(state: LocalApiState, delta: number): void {
-  state.activeTurns = Math.max(0, state.activeTurns + delta);
-  try {
-    state.onAgentTurnActivity?.(state.activeTurns);
-  } catch {
-    // Desktop power/tray integration must never be able to strand a turn in
-    // the server's running set if its observer fails.
   }
 }
 

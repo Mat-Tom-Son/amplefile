@@ -12,7 +12,7 @@ import { isPiProjectMutationTrusted } from "../agent/pi-runtime-config.js";
 import { isAmpleFileRequestTerminalState, type AmpleFileRequestRecord } from "../requests/request-records.js";
 import { createConnectedFolderMutationCheckpoint, discardConnectedFolderCheckpoint, type ConnectedFolderCheckpoint } from "../history.js";
 import { getConnectedFolder, resolveConnectedFolderPath, withConnectedFolderHistoryOperation } from "../connected-folder.js";
-import { invalidateAllClients, invalidateAmpleFileClients } from "../server.js";
+import { invalidateAllClients, invalidateAmpleFileClients } from "./conversation-clients.js";
 import { publishControlHint } from "./event-streams.js";
 import { badRequest, errorMessage, forbidden, httpError } from "./http.js";
 import type { LocalApiState } from "./state.js";

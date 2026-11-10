@@ -34,7 +34,7 @@ import {
 } from "../connected-folder-ignore.js";
 import { canonicalConnectedFolderWatchRoot } from "../connected-folder-watch.js";
 import { getConnectedFolder, resolveConnectedFolderPath } from "../connected-folder.js";
-import { assertAmpleFileAgentReadyForRoutes, queuedMessageEvent } from "../server.js";
+import { assertAmpleFileAgentReadyForRoutes } from "../server.js";
 import { extensionSnapshot } from "./extension-ui.js";
 import { badRequest, errorMessage, httpError, notFound, readJsonBody } from "./http.js";
 import {
@@ -45,6 +45,7 @@ import {
   rememberConnectedFolderRoot,
   streamKey,
 } from "./state.js";
+import { queuedMessageEvent } from "./turn-acceptance.js";
 
 /** The renderer's event connection and the content-free control hints. */
 export async function handleEventStreamRoutes({ state, req, res, url, method }: LocalApiRequest): Promise<boolean> {
