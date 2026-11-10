@@ -5,8 +5,8 @@ import type { ShortcutGroup } from "../../types";
 /**
  * The file manager layout's keys (docs/product-model.md, the file
  * manager window): Finder's keys for the list and search, and the menu bar's
- * AmpleFile commands. It has no tabs, command palette, or agent panel, so
- * their keys are not listed.
+ * AmpleFile commands, and the Browser pane's keys in the desktop app. It has
+ * no command palette or agent panel, so their keys are not listed.
  */
 export function fileManagerShortcutGroups(modifier: string, macOS: boolean, desktop: boolean): ShortcutGroup[] {
   return [
@@ -50,6 +50,18 @@ export function fileManagerShortcutGroups(modifier: string, macOS: boolean, desk
         { keys: [modifier, "."], action: "Stop the Worker's reply." },
       ],
     },
+    ...(desktop ? [{
+      title: "Browser",
+      rows: [
+        { keys: [modifier, "T"], action: "Open a new browser tab." },
+        { keys: [modifier, "Shift", "T"], action: "Reopen the browser tab closed last." },
+        { keys: [modifier, "W"], action: "Close the browser tab in front." },
+        { keys: [modifier, "L"], action: "Go to the address field." },
+        { keys: [modifier, "F"], action: "Find in the page, while the Browser has the keyboard." },
+        { keys: [modifier, "R"], action: "Reload the page, while the page has the keyboard." },
+        { keys: ["Control", "Tab"], action: "Show the next browser tab." },
+      ],
+    }] : []),
     ...(desktop ? [{
       title: "AmpleFile",
       rows: [

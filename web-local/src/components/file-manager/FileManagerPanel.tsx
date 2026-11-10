@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from "react";
-import { Chat16Regular, ChevronLeft20Regular, ChevronRight16Regular, History16Regular } from "@fluentui/react-icons";
+import { Chat16Regular, ChevronLeft20Regular, ChevronRight16Regular, History16Regular, PanelRightContract20Regular } from "@fluentui/react-icons";
 
 import { api, errorText } from "../../lib/api";
 import { formatBytes } from "../../lib/format";
@@ -36,7 +36,7 @@ interface HistoryRow { id: string; kind: "chat" | "change"; conversationId?: str
  * the selection is and History lists its Chats and changes. A standard folder
  * offers to put the folder to work.
  */
-export function FileManagerPanel({ place, connectedFolder, placeName, folderPath, folderName, folderColor, folderSymbol, receipt = null, arriving = false, itemCount, selection, automations, fixture, chat, composer, chatStatuses, searchItem, historyRefreshKey, onPutToWork, onOpenChat, onRestored, onError }: {
+export function FileManagerPanel({ place, connectedFolder, placeName, folderPath, folderName, folderColor, folderSymbol, receipt = null, arriving = false, onHide, itemCount, selection, automations, fixture, chat, composer, chatStatuses, searchItem, historyRefreshKey, onPutToWork, onOpenChat, onRestored, onError }: {
   place: FileManagerPlace;
   connectedFolder: ConnectedFolderSummary | null;
   placeName: string;
@@ -60,6 +60,8 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
   chat: { open: boolean; title: string; onBack: () => void; content: ReactNode } | null;
   /** The panel was just shown: it slides in. */
   arriving?: boolean;
+  /** Hides the panel; the toolbar's Show Panel brings it back. */
+  onHide?: () => void;
   /** The message box at the panel's foot in a Connected Folder; its suggestions show on Info only. */
   composer: ((options: { showSuggestions: boolean }) => ReactNode) | null;
   /** Changes whenever the Connected Folder's files change, so History reloads. */
@@ -119,6 +121,7 @@ export function FileManagerPanel({ place, connectedFolder, placeName, folderPath
   if (paneFrom) paneFromRef.current = paneFrom;
   useEffect(() => { shownRef.current = { tab, chat: chatShown }; });
   return <aside className={`fm-panel${chatShown ? " is-chat" : ""}${arriving ? " is-arriving" : ""}`} aria-label={chatShown ? "Chat" : tabsShown ? "Info and History" : "Info"}>
+    {onHide ? <button type="button" className="fm-capbtn fm-panel-hide" onClick={onHide} aria-label="Hide Panel" title="Hide Panel"><PanelRightContract20Regular /></button> : null}
     {chatShown && chat ? <div className="fm-ph">
       <button type="button" className="fm-capbtn" onClick={chat.onBack} aria-label="Back to Info" title="Back"><ChevronLeft20Regular /></button>
       <div className="fm-ph-t" title={chat.title}>{chat.title}</div>

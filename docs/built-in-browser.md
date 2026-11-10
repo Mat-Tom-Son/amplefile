@@ -1,14 +1,84 @@
 # Built-in browser
 
 `desktop/src/built-in-browser.ts`, `src/shared/browser*.ts`,
-`src/local/agent/browser-tools.ts`, and their suites are the implementation
-authority.
+`src/local/agent/browser-tools.ts`,
+`web-local/src/components/file-manager/BrowserPane.tsx`,
+`web-local/src/hooks/useBrowserPages.ts`, `web-local/src/lib/browser-pages.ts`,
+and their suites are the implementation authority.
 
 AmpleFile's desktop process hosts a browser of its own: Chromium pages in one
-persistent profile, driven by Workers and the AmpleFile Agent through the
-`browser_*` tools. The file manager window does not show browser pages, so the
-person cannot see or use them directly; the pages run in the background for the
-agents that open them.
+persistent profile. Workers and the AmpleFile Agent drive them through the
+`browser_*` tools, and the person sees and uses the same pages as tabs in the
+file manager window's **Browser pane**: to watch what a Worker does in a page,
+to sign in to a site, and to answer a site's question. The desktop process
+owns the pages; the window only places them and shows their state.
+
+## The Browser pane
+
+The Browser pane sits under the folder's contents in the file manager window,
+between the sidebar and the right panel. Its tabs belong to no Connected
+Folder, so they stay as the folder shown changes, and the panel beside it
+keeps the Connected Folder shown and its Chat.
+
+- **Opening it.** The toolbar's **Browser** button opens the pane with a new
+  tab, and shows or folds the pane when tabs are open. The window has no pane
+  while no tab is open. A tab a Worker opens arrives as the tab strip alone;
+  choosing the tab shows its page. A link the person follows into a new tab,
+  or a page a Worker opens with `show`, opens the pane.
+- **Sharing the area.** The pane has three sizes, chosen with the two buttons
+  at the end of its tab strip. Beside the folder, a slider between them sets
+  the browser's share of the height (kept between 15 and 85 percent, and
+  remembered; double-click resets it, and the arrow keys move it). **Hide
+  Folder** folds the folder up so the page has the whole area, and **Show
+  Folder** brings it back. **Hide Browser** folds the browser down to its tab
+  strip, and **Show Browser** or choosing a tab brings it back. Folding the
+  browser never closes a page. Choosing a place in the sidebar, searching, or
+  opening Recents brings a folded folder back.
+- **Tabs.** The strip shows each tab's site icon and title, and tabs share
+  its width: each takes up to 200px and gives way as more open. A frame
+  slides behind the tab in front to the tab chosen, a new tab grows in, and a
+  closed tab shrinks away; both reduce-motion switches turn that off. A tab
+  shows a spinner while it loads, a speaker while it plays sound, the running
+  dot while a Worker is using it, and an amber dot while its site waits on
+  the person. **+** opens a new tab. A tab's × or a middle click closes it,
+  and its page with it. Right-clicking a tab offers Reload, Duplicate, Copy
+  Address, Open in Your Web Browser, Mute Tab, Print…, Save as PDF…, Close
+  Tab, Close Other Browser Tabs, and Reopen Closed Tab.
+- **The page.** Above the page are Back, Forward, Reload (Stop while
+  loading), and the address field with **Site Information**, which says how
+  the page reached the browser and lists what the person allowed or blocked
+  for the site, each with **Ask Again**. Typing lists matching pages from
+  history. **Find in Page** and **Open in Your Web Browser** end the row.
+- **A Worker is using a page.** The tab carries the running dot, and beside
+  the address field a marker says **Worker in** and the Connected Folder's
+  name, with a button that opens that Chat in the panel, in its own Connected
+  Folder. The page stays in view beside the Chat.
+- **A site's question.** A bar directly above the page says what the site
+  wants, with **Block** and **Allow**. The bar is the window's own, never the
+  page's, and only a press there answers it. When the page is not in view,
+  the window's notice says the site is waiting, with **Show Page**, once for
+  each question. A pop-up a site tried to open without a press, and a
+  permission macOS itself keeps off, show in the same place.
+- **No page.** A new tab has the address field ready under **Search or Type
+  a Web Address**, the pages visited lately with **Clear Browsing History**,
+  and a line saying sign-ins are shared by every Worker and the AmpleFile
+  Agent.
+- **Keys.** ⌘T opens a tab and ⇧⌘T reopens the one closed last, ⌘L goes to
+  the address field, and ⌘F finds in the page, while the browser has the
+  keyboard. ⌘W closes the tab in front while the pane shows a page. ⌘1 to ⌘9
+  and Control-Tab change tabs.
+- **What the desktop owns.** The tab list is the desktop's open pages: pages
+  that outlived a window reload and tabs a Worker opened before the window
+  existed come back as tabs. Nothing is restored after quitting except
+  sign-ins and history. The page is drawn by the desktop above everything the
+  window draws, over a placeholder in the pane, so it steps aside for as long
+  as a dialog, menu, sheet, or notice of the window's crosses it. Notices sit
+  above the page for the same reason. A page shown in the pane takes the
+  pane's size; folded away, it keeps its last size.
+
+The browser preview (`/?fixture=connected-folder`) shows the pane over sample
+pages with no page drawn; two of its recent pages show a Worker's marker and a
+site's question.
 
 ## Profile and sign-ins
 
@@ -122,6 +192,14 @@ has no browser and no browser tools.
   reaches the model provider like any other tool result.
 
 ## Verification
+
+`tests/file-manager-browser-pane.test.ts` mounts the file manager window over
+a stand-in for the desktop bridge: opening the pane, a Worker's tab arriving,
+the three sizes, the slider, a site's question and its answer, closing tabs,
+and the panel's own Hide Panel button. `tests/browser-pages.test.ts` covers
+the tab list, `tests/native-view.test.ts` the page's placement and the
+overlays it steps aside for, and `tests/tab-chrome-motion.test.ts` the tab
+strip's layout and motion in Chromium.
 
 `npm run desktop:browser:smoke`, part of `npm run desktop:prepare`, drives the
 real host in Electron against pages served from a loopback server: opening

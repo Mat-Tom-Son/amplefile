@@ -2227,10 +2227,11 @@
   flex: 0 1 auto;
 }
 
-/* Notices rise from the bottom center of the window, clear of the panel's message box. */
+/* Notices rise from the bottom center of the window, clear of the panel's message box
+   and above the Browser pane's page, which the desktop draws over everything here. */
 :root[data-theme] .app-shell.layout-file-manager .toast-stack {
   right: auto;
-  bottom: 40px;
+  bottom: var(--fm-notice-bottom, 40px);
   /* Centered over the folder list, between the sidebar and the panel. */
   left: calc(var(--fm-notice-left, 228px) + (100vw - var(--fm-notice-left, 228px) - var(--fm-notice-right, 320px)) / 2);
   justify-items: center;

@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
-import { Add16Regular, ChevronDown16Regular, ChevronUp16Regular, FolderArrowRight16Regular, Sparkle16Regular, Grid20Regular, MoreHorizontal20Regular, PanelRight20Regular, TextBulletListLtr20Regular } from "@fluentui/react-icons";
+import { Add16Regular, ChevronDown16Regular, ChevronUp16Regular, FolderArrowRight16Regular, Globe20Regular, Sparkle16Regular, Grid20Regular, MoreHorizontal20Regular, PanelRight20Regular, TextBulletListLtr20Regular } from "@fluentui/react-icons";
 
 import "./file-manager.css";
 import "./file-manager-dialogs.css";
@@ -77,6 +77,9 @@ import { chatActivityKey } from "../../lib/chat-lifecycle";
 import { FileManagerComposer, FileManagerPanel } from "./FileManagerPanel";
 import { ChatPanel, WorkerModelRow } from "../chat/ChatPanel";
 import { PaneResizer, panelWidthSpec, sidebarWidthSpec, usePaneWidth } from "./PaneResizer";
+import { BrowserPane, BrowserSplitResizer, type BrowserPaneWorker } from "./BrowserPane";
+import { useBrowserPages } from "../../hooks/useBrowserPages";
+import { browserHost, browserWorkerChat, clampBrowserFraction, effectiveBrowserLayout, type BrowserPaneLayout } from "../../lib/browser-pages";
 import { GoToFolderSheet, type GoToFolderLookup } from "./GoToFolderSheet";
 import { UpdateIndicator } from "./UpdateIndicator";
 import { isMarkedPath, useWorkerChanges, workerChangesSummary } from "./useWorkerChanges";
@@ -93,6 +96,8 @@ const panelStorageKey = "amplefile.file-manager.panel.v1";
 const sortStorageKey = "amplefile.file-manager.sort.v1";
 /** Connected Folders whose nested Connected Folders are shown in the sidebar. */
 const sidebarOpenStorageKey = "amplefile.file-manager.sidebar-open.v1";
+/** The Browser pane's share of the main area when the folder and the browser are both shown. */
+const browserSplitStorageKey = "amplefile.file-manager.browser-split.v1";
 const typeSelectResetMs = 900;
 
 /** The desktop calls for one place's files. */
@@ -281,6 +286,70 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
   // message box keeps it null (as a new Chat tab does) and learns `activeId`.
   const [panelChat, setPanelChat] = useState<{ key: number; connectedFolderId: string; conversationId: string | null; activeId: string | null; title: string; sendRequest: ChatSendRequest | null; open: boolean } | null>(null);
 
+  // The Browser pane (docs/built-in-browser.md): the built-in browser's tabs,
+  // under the folder's contents. The tabs belong to no Connected Folder, so
+  // they stay as the folder shown changes. A tab a Worker opens arrives as the
+  // tab strip alone; the person decides how much of the area the page takes.
+  const mainRef = useRef<HTMLElement | null>(null);
+  const [browserLayoutChoice, setBrowserLayout] = useState<BrowserPaneLayout>("collapsed");
+  const [browserFraction, setBrowserFractionState] = useState(() => readStoredJsonValue(browserSplitStorageKey, clampBrowserFraction, clampBrowserFraction(null)));
+  const setBrowserFraction = (next: number) => { setBrowserFractionState(next); writeStoredJsonValue(browserSplitStorageKey, next); };
+  const browser = useBrowserPages({
+    bridge: fixture ? fixture.browser ?? null : window.ampleFileDesktop?.browser ?? null,
+    viewing: browserLayoutChoice === "split" || browserLayoutChoice === "full",
+    // A link the person followed, or a page a Worker was asked to show, opens the pane if it is folded away.
+    onShow: () => setBrowserLayout((current) => current === "collapsed" || current === "hidden" ? "split" : current),
+  });
+  const browserLayout = effectiveBrowserLayout(browserLayoutChoice, browser.tabs.length);
+  const browserShown = browserLayout === "split" || browserLayout === "full";
+  // With its last tab closed the pane goes away, and the next tab a Worker opens arrives as the strip alone.
+  useEffect(() => { if (!browser.tabs.length) setBrowserLayout("collapsed"); }, [browser.tabs.length]);
+  function toggleBrowser() {
+    if (browserLayout === "hidden") { browser.newTab(); setBrowserLayout("split"); }
+    else setBrowserLayout(browserShown ? "collapsed" : "split");
+  }
+  /** Whose Worker is using a page, and the way to its Chat: the Chat opens in the panel, in its own Connected Folder. */
+  function describeBrowserWorker(owner: string): BrowserPaneWorker | null {
+    const chat = browserWorkerChat(owner);
+    const folder = chat ? connectedFolders.find((item) => item.id === chat.connectedFolderId) : undefined;
+    if (!chat || !folder) return { label: "A Worker is using this page", title: "A Worker is using this page" };
+    return {
+      label: `Worker in ${folder.name}`,
+      title: `The ${folder.name} Worker is using this page`,
+      onOpen: () => {
+        setPanelOpen(true);
+        if (!(panelChat && panelChat.connectedFolderId === folder.id && (panelChat.activeId ?? panelChat.conversationId) === chat.conversationId)) {
+          setPanelChat({ key: Date.now(), connectedFolderId: folder.id, conversationId: chat.conversationId, activeId: chat.conversationId, title: untitledChatLabel, sendRequest: null, open: true });
+        } else setPanelChat({ ...panelChat, open: true });
+        // The folder stays beside the browser only if it was already there.
+        const keep = browserLayout;
+        navigate({ place: { kind: "connected-folder", id: folder.id }, path: "" }, "push", folder);
+        setBrowserLayout(keep);
+      },
+    };
+  }
+  // Searching or opening Recents brings the folder back when the browser had the whole area.
+  useEffect(() => {
+    if (query.trim() || recentsOpen) setBrowserLayout((current) => current === "full" ? "split" : current);
+  }, [query, recentsOpen]);
+  /** Brings one browser tab into view, from a notice. */
+  function showBrowserTab(pageId: string) {
+    browser.select(pageId);
+    setBrowserLayout((current) => current === "full" ? current : "split");
+  }
+  // A site is waiting on the person and its page is not in view: the window says so once per question.
+  const browserAskedRef = useRef(new Set<string>());
+  useEffect(() => {
+    for (const page of Object.values(browser.pages)) {
+      const request = page.permissionRequest;
+      if (!request || browserAskedRef.current.has(request.requestId)) continue;
+      browserAskedRef.current.add(request.requestId);
+      // In view, the question is already in front of the person, above the page.
+      if (browserShown && browser.activeId === page.pageId) continue;
+      showToast({ text: `${browserHost(request.origin)} is waiting for your answer`, tone: "info", actionLabel: "Show Page", onAction: () => showBrowserTab(page.pageId), durationMs: 12_000 });
+    }
+  }, [browser.pages, browser.activeId, browserShown]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Another part of the app (the menu bar, a notification) chose a different
   // Connected Folder: show its top level, as choosing it in the sidebar would.
   useEffect(() => {
@@ -318,6 +387,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   function navigate(next: FileManagerLocation, history: "push" | "back" | "forward" = "push", switchTo?: ConnectedFolderSummary) {
     setRecentsOpen(false);
+    // Going somewhere brings the folder back when the browser had the whole area.
+    setBrowserLayout((current) => current === "full" ? "split" : current);
     if (sameLocation(next, location)) return;
     navMotionRef.current = { key: `${placeKey(next.place)}\0${next.path}`, from: navigationSide({ placeKey: placeKey(location.place), path: location.path }, { placeKey: placeKey(next.place), path: next.path }, history) };
     if (history === "push") { setBack((items) => [...items, location]); setForward([]); }
@@ -900,6 +971,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
       window.requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".fm-comp .fm-field input")?.focus());
     } else if (command === "reload-connected-folder-state") void Promise.all([onRefreshBootstrap(), standard.refresh(), listing.refresh()]);
     else if (command === "customize-connected-folder" && desktopAction.connectedFolderId) setCustomizing({ connectedFolderId: desktopAction.connectedFolderId, section: "banner" });
+    // Close Tab (⌘W) closes the browser tab in front while the Browser pane shows one.
+    else if (command === "close-tab" && browserShown && browser.activeId) browser.close(browser.activeId);
   }, [desktopAction?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function renameConnectedFolder(target: ConnectedFolderSummary, name: string) {
@@ -1554,7 +1627,7 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
     </nav>
 
     <PaneResizer spec={sidebarWidthSpec} side="left" width={sidebarWidth} label="Resize the sidebar" shellRef={shellRef} otherPaneWidth={panelOpen ? panelWidth : 0} onCommit={setSidebarWidth} />
-    <section className="fm-main" aria-label={folderName}>
+    <section className="fm-main" aria-label={folderName} ref={mainRef} data-browser={browserLayout} style={{ "--fm-browser-fraction": browserFraction } as CSSProperties}>
       <header className="fm-toolbar">
         <div className="fm-capsule">
           <button type="button" className="fm-tool" onClick={goBack} disabled={!back.length} aria-label="Back" title="Back"><ChevronLeft size={16} /></button>
@@ -1576,15 +1649,21 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         <div className="fm-capsule">
           <button type="button" className="fm-tool" aria-label="Action" title="Action" aria-haspopup="menu" onClick={(event) => void openActionMenu(connectedFolder, event)}><MoreHorizontal20Regular /></button>
         </div>
-        <div className="fm-capsule">
-          <button type="button" className={`fm-tool${panelOpen ? " is-on" : ""}`} aria-pressed={panelOpen} aria-label="Show or hide the panel" title={panelOpen ? "Hide Panel" : "Show Panel"} onClick={() => setPanelOpen(!panelOpen)}><PanelRight20Regular /></button>
-        </div>
+        {browser.available ? <div className="fm-capsule">
+          <button type="button" className={`fm-tool${browserShown ? " is-on" : ""}`} aria-pressed={browserShown} aria-label="Browser" title={browserShown ? "Hide Browser" : "Show Browser"} onClick={toggleBrowser}><Globe20Regular /></button>
+        </div> : null}
         <label className="fm-search">
           <Search size={14} />
           <input ref={searchFieldRef} type="search" value={query} placeholder="Search names and contents" aria-label={`Search ${folderName}`} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setQuery(""); contentRef.current?.focus(); } }} />
           {query ? <button type="button" className="fm-search-clear" aria-label="Clear search" onClick={() => { setQuery(""); contentRef.current?.focus(); }}><X size={12} /></button> : null}
         </label>
+        {/* The panel hides from its own corner; hidden, it is shown again from here. */}
+        {panelOpen ? null : <div className="fm-capsule">
+          <button type="button" className="fm-tool" aria-label="Show Panel" title="Show Panel" onClick={() => setPanelOpen(true)}><PanelRight20Regular /></button>
+        </div>}
       </header>
+      {/* The folder's half of the main area. With the browser given the whole area it folds away, still mounted. */}
+      <div className="fm-files" inert={browserLayout === "full"}>
       {searching ? <div className="fm-scope" role="group" aria-label="Search">
         <span>Search:</span>
         <button type="button" className={`fm-pill${searchScope === "all" ? " is-on" : ""}`} aria-pressed={searchScope === "all"} onClick={() => setSearchScope("all")}>All Connected Folders</button>
@@ -1756,11 +1835,22 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
         </nav>
         <span className="fm-status">{statusText}</span>
       </footer>
+      </div>
+      {browserLayout === "split" ? <BrowserSplitResizer fraction={browserFraction} mainRef={mainRef} onCommit={setBrowserFraction} /> : null}
+      {browserLayout !== "hidden" ? <BrowserPane
+        browser={browser}
+        layout={browserLayout}
+        onLayout={setBrowserLayout}
+        sample={fixtureMode}
+        describeWorker={describeBrowserWorker}
+        onError={onError}
+      /> : null}
     </section>
 
     {panelOpen ? <PaneResizer spec={panelWidthSpec} side="right" width={panelWidth} label="Resize the panel" shellRef={shellRef} otherPaneWidth={sidebarWidth} onCommit={setPanelWidth} /> : null}
     {panelOpen ? <FileManagerPanel
       arriving={panelArriving}
+      onHide={() => setPanelOpen(false)}
       place={place}
       connectedFolder={connectedFolder}
       placeName={placeName}

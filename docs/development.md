@@ -30,6 +30,9 @@ steps; in development, `&script=fixture-chat-1` replays a Chat
 phase—`available`, `downloading`, `ready`, `installing`, `error`, or
 `not_available`—in the sidebar's update indicator and Settings → About,
 from the sample statuses in `web-local/src/fixtures/settings-fixture.ts`.
+The toolbar's Browser button opens the Browser pane over the sample pages in
+`web-local/src/fixtures/browser-fixture.ts`; no page is drawn, and two of the
+recent pages show a Worker's marker and a site's question.
 Clicking an update asks the same restart question as the app (add
 `&agentState=running` to have it name a working Chat) and then says
 updating is disabled. The live transitions between phases need the desktop
@@ -37,7 +40,8 @@ updater. Actions that would change
 files, settings, or History explain that they are disabled in the preview.
 
 The browser preview cannot prove native dialogs, secure storage, preloads, or
-built-in browser behavior. Use the native lane for those changes.
+built-in browser behavior, including where a page is drawn in the Browser
+pane. Use the native lane for those changes.
 `desktop:prepare` alone builds and runs automated probes; it does not launch the
 normal interactive app or create an installer.
 
