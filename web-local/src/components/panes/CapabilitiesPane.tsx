@@ -168,7 +168,7 @@ export function CapabilitiesPane({
     setBusy(false);
     setPackageBusy(null);
     setReviewingItemId(null);
-    void loadCatalog(operationGateRef.current.capture());
+    void loadCatalog(operationGateRef.current.capture(), { firstLoad: true });
   }, [fixtureMode, connectedFolder.id]);
 
   useEffect(() => {
@@ -223,7 +223,12 @@ export function CapabilitiesPane({
     });
   }
 
-  async function loadCatalog(operation: ConnectedFolderOperationToken = operationGateRef.current.capture()) {
+  /**
+   * A first load (opening, a new Connected Folder, or Try Again) reports a failure in
+   * place; a reload after a change keeps what is shown and reports it. Callers say
+   * which, because this render's catalog can belong to the previous Connected Folder.
+   */
+  async function loadCatalog(operation: ConnectedFolderOperationToken = operationGateRef.current.capture(), { firstLoad = false }: { firstLoad?: boolean } = {}) {
     const requestId = ++catalogRequestRef.current;
     setCatalogError(null);
     if (fixtureMode) {
@@ -242,9 +247,8 @@ export function CapabilitiesPane({
       }
     } catch (caught) {
       if (catalogRequestRef.current === requestId && operationGateRef.current.isCurrent(operation)) {
-        // A first load that fails says so in place; a failed reload keeps what is shown and reports it.
-        if (catalog) onError(errorText(caught));
-        else setCatalogError(errorText(caught));
+        if (firstLoad) setCatalogError(errorText(caught));
+        else onError(errorText(caught));
       }
     }
   }
@@ -559,7 +563,7 @@ export function CapabilitiesPane({
             onTypeChange={changeTypeFilter}
           />
           {!catalog && !catalogError ? <CapabilityLoading label="Loading Skills & Extensions" /> : null}
-          {!catalog && catalogError ? <CapabilityError title="Couldn’t Load Skills & Extensions" detail={catalogError} onRetry={() => void loadCatalog()} /> : null}
+          {!catalog && catalogError ? <CapabilityError title="Couldn’t Load Skills & Extensions" detail={catalogError} onRetry={() => void loadCatalog(undefined, { firstLoad: true })} /> : null}
           {readiness?.connectedFolderId === connectedFolder.id && readiness.error ? <div className="inline-error" role="alert">Setup status could not be loaded: {readiness.error}</div> : null}
           {catalog ? (
             <>
@@ -941,7 +945,7 @@ function DiscoverCapabilities({ items, total, pending, loading, error, diagnosti
           </div>
         )}
       {error?.more ? <CapabilityError title="Couldn’t Load More" detail={error.message} onRetry={onRetry} /> : null}
-      {items.length && items.length < total && !failed && !error?.more ? <button className="ui-control capabilities-load-more" type="button" disabled={loading} onClick={onLoadMore}>{loading ? <ArrowSync16Regular className="spin" /> : null}Load More</button> : null}
+      {items.length && items.length < total && !pending && !failed && !error?.more ? <button className="ui-control capabilities-load-more" type="button" disabled={loading} onClick={onLoadMore}>{loading ? <ArrowSync16Regular className="spin" /> : null}Load More</button> : null}
       {truncated && !pending ? <p className="capabilities-results-summary capabilities-window-note">First {npmSearchWindowSize} npm matches</p> : null}
     </div>
   );
@@ -966,7 +970,7 @@ function DiscoverCapabilityCard({ item, busy, disabled, onOpen }: { item: Capabi
             : <strong>{item.name}</strong>}
           <KindChips types={item.types} />
         </span>
-        {item.description ? <span className="capabilities-resource-detail capabilities-discover-description" title={item.description}>{item.description}</span> : null}
+        {item.description ? <span className="capabilities-resource-detail capabilities-discover-description">{item.description}</span> : null}
         <span className="capabilities-resource-meta">
           {item.author ? <span>{item.author}</span> : null}
           {item.official ? <span title="On Pi's first-party / reference list. That says where it comes from, not that it was safety-reviewed.">First-Party / Reference</span> : null}

@@ -609,3 +609,41 @@ test("Installed says when its catalog cannot load and offers Try Again instead o
   await dom.waitFor(() => dom.container.querySelectorAll(".capabilities-scope-group").length === 2);
   assert.equal(dom.container.querySelector(".capabilities-state-card.error"), null);
 });
+
+test("Load More waits for a new search, and a Connected Folder switch reports its own failed load in place", async (t) => {
+  const dom = await createDomHarness(); t.after(() => dom.cleanup());
+  const originalFetch = globalThis.fetch; t.after(() => { globalThis.fetch = originalFetch; });
+  const row = { id: "one", name: "First result", description: "One of many.", types: ["skill"], sourceKind: "npm", installSource: "npm:first", official: false };
+  const offsets: string[] = [];
+  let failCatalogFor = "";
+  globalThis.fetch = (async (input) => {
+    const url = String(input);
+    if (url.includes("/capabilities/discover")) {
+      offsets.push(new URL(url, "http://local").searchParams.get("offset") ?? "");
+      return Response.json({ items: [row], total: 30, offset: 0, limit: 24, catalogUrl: "" });
+    }
+    if (url.includes("included-tools")) return Response.json({ tools: [] });
+    if (failCatalogFor && url.includes(`/connected-folders/${failCatalogFor}/`)) return Response.json({ error: "Pi did not start." }, { status: 500 });
+    return Response.json({ diagnostics: [], packages: [], skills: [], extensions: [], resources: [], tools: [] });
+  }) as typeof fetch;
+  const loadMore = () => [...dom.container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Load More");
+  const props = { status: { configured: true } as never, onError(message: string | null) { assert.fail(message ?? "A first load reports in place"); }, onViewChange() {} };
+  await dom.render(createElement(CapabilitiesPane, { ...props, connectedFolder: { id: "first", name: "Workshop" } as never, view: "discover" }));
+  await dom.waitFor(() => Boolean(loadMore()));
+  const search = dom.container.querySelector<HTMLInputElement>('input[type="search"]')!;
+  await dom.act(() => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(search, "x");
+    search.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  assert.equal(loadMore(), undefined, "Load More is gone while the rows answer an older search");
+  await dom.waitFor(() => offsets.length === 2 && Boolean(loadMore()));
+  assert.deepEqual(offsets, ["0", "0"], "only fresh searches were requested");
+
+  // The pane's catalog belongs to "first"; a failed first load for "second" still reports in place.
+  await dom.render(createElement(CapabilitiesPane, { ...props, connectedFolder: { id: "first", name: "Workshop" } as never, view: "installed" }));
+  await dom.waitFor(() => dom.container.querySelectorAll(".capabilities-scope-group").length === 2);
+  failCatalogFor = "second";
+  await dom.render(createElement(CapabilitiesPane, { ...props, connectedFolder: { id: "second", name: "Garden" } as never, view: "installed" }));
+  await dom.waitFor(() => Boolean(dom.container.querySelector(".capabilities-state-card.error")));
+  assert.match(dom.container.textContent!, /Couldn’t Load Skills & Extensions/);
+});
