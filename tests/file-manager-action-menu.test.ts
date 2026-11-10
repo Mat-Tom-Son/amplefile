@@ -102,6 +102,23 @@ test("Set Up for Me is offered once, on a card after a folder is connected, with
   await view.dom.waitFor(() => view.chatTitle() === "Set Up for Me");
 });
 
+test("with no AI connected, Set Up for Me asks for it first and the card stays until the message goes", async (t) => {
+  const closed: string[] = [];
+  const view = await mountWindow(t, { setUpOffers: ["lab"], onCloseSetUpOffer: (id: string) => { closed.push(id); }, agent: { ready: true, configured: false } });
+  const { onConnectAiRequested } = await import("../web-local/src/lib/connect-ai.js");
+  const asked: Array<() => void> = [];
+  const stop = onConnectAiRequested((then) => { if (then) asked.push(then); });
+  await view.dom.act(async () => { view.container.querySelector<HTMLButtonElement>(".fm-setup-offer .is-primary")!.click(); });
+  assert.equal(asked.length, 1, "Set Up AI comes first");
+  assert.deepEqual(closed, [], "backing out of it leaves the offer where it was");
+  assert.equal(view.chatTitle(), null);
+  // AI is connected: the message goes and the offer closes.
+  await view.dom.act(async () => { asked[0]!(); });
+  assert.deepEqual(closed, ["lab"]);
+  await view.dom.waitFor(() => view.chatTitle() === "Set Up for Me");
+  stop();
+});
+
 test("No Thanks closes the offer, and a folder connected while the window is open brings its card into view", async (t) => {
   const closed: string[] = [];
   const onCloseSetUpOffer = (id: string) => { closed.push(id); };

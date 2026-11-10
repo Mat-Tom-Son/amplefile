@@ -1187,8 +1187,8 @@ export function FileManagerView({ connectedFolder: activeConnectedFolder, connec
 
   /** Set Up for Me, from the card shown after a folder is connected: a Chat in the panel whose first message the set-up Skill answers. */
   function setUp(target: ConnectedFolderSummary) {
-    onCloseSetUpOffer?.(target.id);
-    withAi(() => sendToWorker(target, connectedFolderSetUpMessage, "Set Up for Me"));
+    // The offer closes when the message goes, so backing out of Set Up AI leaves the card where it was.
+    withAi(() => { onCloseSetUpOffer?.(target.id); sendToWorker(target, connectedFolderSetUpMessage, "Set Up for Me"); });
   }
 
   /** A new Chat with one message for a Connected Folder's Worker, going to that Connected Folder first if it is not the one shown. */

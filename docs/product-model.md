@@ -215,7 +215,9 @@ other surface.
 - **Set Up for Me:** right after a folder is connected, Info opens with a
   card at its top, **Set Up This Folder**, with **Set Up for Me** and **No
   Thanks**. Either answer closes the card for good; the card is the only
-  place the window offers it ([Set Up for Me](#set-up-for-me)). A folder
+  place the window offers it ([Set Up for Me](#set-up-for-me)). With no AI
+  connected, the card stays until Set Up AI is finished and the message is
+  sent. A folder
   connected while the window is open brings the panel to Info, so the card
   is in view.
 - **A message needs AI:** with no AI connected, sending from the message box,
