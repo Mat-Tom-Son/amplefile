@@ -68,6 +68,21 @@ test("a failed check draws nothing in the sidebar and retrying it only checks ag
   assert.equal(updateCallFor(null), "check");
 });
 
+test("an unknown phase or a missing percent never draws an empty button or NaN", () => {
+  const unknown = status("verifying" as UpdatePhase);
+  assert.equal(updateIndicatorFor(unknown), null);
+  assert.equal(updateCallFor(unknown), "check");
+  assert.equal(updateActionLabel(unknown), "Check for Updates", "Settings never shows an empty, enabled button");
+  for (const progressPercent of [undefined, Number.NaN, "42" as unknown]) {
+    const downloading = status("downloading", { progressPercent: progressPercent as number | null });
+    assert.equal(updateIndicatorFor(downloading)!.detail, null);
+    assert.equal(updateIndicatorFor(downloading)!.progressPercent, null);
+    assert.equal(updateIndicatorFor(downloading)!.accessibleName, "Downloading Update");
+    assert.equal(updateActionLabel(downloading), "Downloading");
+  }
+  assert.equal(updateIndicatorFor(status("downloading", { progressPercent: 140 }))!.detail, "100%");
+});
+
 test("the indicator names the version and progress the status carries, and hides off the desktop", () => {
   assert.equal(updateIndicatorFor(null), null);
   assert.equal(updateIndicatorFor(status("available", { supported: false })), null, "an unsupported updater shows nothing");

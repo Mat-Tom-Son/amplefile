@@ -32,6 +32,8 @@ export function updateCallFor(status: Pick<DesktopUpdateStatus, "phase" | "avail
     case "unsupported":
     case "idle":
     case "not_available": return "check";
+    // A phase this renderer does not know (a newer desktop): a check is harmless.
+    default: return "check";
   }
 }
 
@@ -40,8 +42,15 @@ export function updateIsBusy(phase: UpdatePhase): boolean {
   return updateCallFor({ phase, availableVersion: null }) === null;
 }
 
+/** The download's progress as a number from 0 to 100, or null when the status carries none. */
+function progressOf(status: DesktopUpdateStatus): number | null {
+  const percent: unknown = status.progressPercent;
+  return typeof percent === "number" && Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : null;
+}
+
 function percentText(status: DesktopUpdateStatus): string | null {
-  return status.progressPercent === null ? null : `${Math.round(status.progressPercent)}%`;
+  const percent = progressOf(status);
+  return percent === null ? null : `${Math.round(percent)}%`;
 }
 
 /** The label of Settings → About's update button. */
@@ -56,6 +65,7 @@ export function updateActionLabel(status: DesktopUpdateStatus): string {
     case "unsupported":
     case "idle":
     case "not_available": return "Check for Updates";
+    default: return "Check for Updates";
   }
 }
 
@@ -96,7 +106,7 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
         tone: "downloading",
         label: "Downloading",
         detail: percent,
-        progressPercent: status.progressPercent,
+        progressPercent: progressOf(status),
         accessibleName: percent ? `Downloading Update, ${percent}` : "Downloading Update",
         tooltip: `${named} is downloading. AmpleFile restarts when it finishes. Open Settings → About for details.`,
         click: "open-about",
@@ -134,5 +144,6 @@ export function updateIndicatorFor(status: DesktopUpdateStatus | null): UpdateIn
     case "idle":
     case "checking":
     case "not_available": return null;
+    default: return null;
   }
 }
