@@ -241,10 +241,16 @@ Apple submission.
    commit them, run local verification again, and build a fresh candidate
    before tagging. Review dependency audit results separately with
    `npm audit --audit-level=high` as part of release review.
-4. Create and push the annotated source tag for the checked release commit:
+4. Create and push the annotated source tag for the checked release commit.
+   Nothing else may be merged to `main` from the push of the release commit
+   until publication has finished: the tag is made from the local checkout,
+   and the publisher requires `origin/main` to be the tagged commit. The
+   first line refuses to tag when `main` has moved:
 
    ```bash
-   git tag -a v<version> -m "amplefile <version>" &&
+   git fetch origin main &&
+     test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" &&
+     git tag -a v<version> -m "amplefile <version>" &&
      git push origin refs/tags/v<version>:refs/tags/v<version>
    ```
 
@@ -363,8 +369,21 @@ feed the plain command reads changes with the stage.
    ```
 
 2. Make the 0.1.5 release commit: the version, the `bridge` stage, and what
-   [Changing the stage](#changing-the-stage) lists. Merge and push it to
-   `main`, then check and build:
+   [Changing the stage](#changing-the-stage) lists. **Freeze `main` when
+   that commit is pushed.** From then until step 7 has finished, nothing
+   may be merged or pushed to `main`, by anyone or any session; say so
+   before pushing. The check, the signed build, and notarization take a
+   long time, the tag is made from the local checkout, and every publisher
+   run requires `origin/main` to be the tagged release commit. The bridge
+   takes two runs with a manual check between them. A merge anywhere in
+   that span cannot be worked around: before the tag it means a new release
+   commit, check, and build; after the tag the remaining runs are refused
+   for good, a bridge already public in the source repository stays there
+   alone, and finishing the move needs a higher bridge version with a new
+   tag, build, and notarization. No installed copy is harmed by that, since
+   copies stay on the separate feed at their version, but 0.1.5 is spent.
+
+   Merge and push the commit to `main`, then check and build:
 
    ```bash
    npm run check
@@ -378,19 +397,13 @@ feed the plain command reads changes with the stage.
    feed the packaged app checks, and both repositories as publication
    targets. The strict verifier has already failed the build unless the
    packaged `app-update.yml` names `Mat-Tom-Son/amplefile`.
-3. **Freeze `main`, then tag.** From here until step 7 has finished, nothing
-   may be merged or pushed to `main`, by anyone or any session; say so
-   before tagging. Every publisher run requires `origin/main` to be the
-   tagged release commit, and the bridge takes two runs with a manual check
-   between them. A merge in that pause cannot be worked around: the second
-   run is refused for good, the bridge stays public in the source
-   repository only, and finishing the move needs a higher bridge version
-   with a new tag, build, and notarization. No installed copy is harmed by
-   that, since copies stay on the separate feed at their version, but 0.1.5
-   is spent.
+3. Confirm `main` is still the release commit, then tag. The first line
+   refuses to tag when `main` has moved since step 2:
 
    ```bash
-   git tag -a v0.1.5 -m "amplefile 0.1.5" &&
+   git fetch origin main &&
+     test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" &&
+     git tag -a v0.1.5 -m "amplefile 0.1.5" &&
      git push origin refs/tags/v0.1.5:refs/tags/v0.1.5
    ```
 
@@ -477,12 +490,16 @@ gh release delete v0.1.5 --repo <owner>/<repo> --yes
    The status must name the `source-repository` stage and
    `Mat-Tom-Son/amplefile` as both the packaged feed and the only
    publication target.
-2. Tag and publish. One run publishes to the source repository, attached to
-   the annotated tag. The publisher refuses unless the separate repository's
-   latest release is the bridge and the source repository already serves it:
+2. Tag and publish. `main` stays frozen from the push in step 1 until this
+   step has finished, and the first line refuses to tag when it has moved.
+   One run publishes to the source repository, attached to the annotated
+   tag. The publisher refuses unless the separate repository's latest
+   release is the bridge and the source repository already serves it:
 
    ```bash
-   git tag -a v0.1.6 -m "amplefile 0.1.6" &&
+   git fetch origin main &&
+     test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" &&
+     git tag -a v0.1.6 -m "amplefile 0.1.6" &&
      git push origin refs/tags/v0.1.6:refs/tags/v0.1.6
    npm run desktop:release:mac:resume
    ```

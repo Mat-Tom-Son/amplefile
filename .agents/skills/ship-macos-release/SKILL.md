@@ -137,14 +137,19 @@ The feed moves in two releases, and only on the owner's instruction:
    to the separate repository. Publishing there cannot be taken back: copies
    that take the bridge check the source repository from then on.
 
-   Nothing may be merged or pushed to `main` from the bridge's tag until its
-   second publication has finished. Every publisher run requires
-   `origin/main` to be the tagged commit, so a merge in that pause makes the
-   second run impossible and costs a new bridge version, tag, build, and
-   notarization. Before tagging, tell the owner the freeze is starting and
-   confirm no other session is about to merge; while it holds, merge
-   nothing yourself and never relax or bypass that publisher check. Say when
-   the freeze ends: after both feeds are verified to offer the bridge.
+   Nothing may be merged or pushed to `main` from the push of the bridge's
+   release commit until its second publication has finished. The tag is
+   made from the local checkout and every publisher run requires
+   `origin/main` to be the tagged commit, so a merge in that span costs a
+   new release commit and build before the tag, and a new bridge version,
+   tag, build, and notarization after it. Before pushing the release
+   commit, tell the owner the freeze is starting and confirm no other
+   session is about to merge; while it holds, merge nothing yourself and
+   never relax or bypass that publisher check. Tag only with the runbook's
+   command, which refuses when `origin/main` is no longer the local commit.
+   Say when the freeze ends: after both feeds are verified to offer the
+   bridge. Every other release freezes `main` the same way, from the push
+   of its release commit until its publication.
 2. Every later release, in the `source-repository` stage, published to the
    source repository alone and attached to its existing annotated tag.
 
